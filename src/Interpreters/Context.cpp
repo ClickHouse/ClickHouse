@@ -2029,6 +2029,8 @@ void Context::reloadConfig() const
 
 void Context::shutdown()
 {
+    // Disk selector might not be initialized if there was some error during
+    // its initialization. Don't try to initialize it again on shutdown.
     if (shared->merge_tree_disk_selector)
     {
         for (auto & [disk_name, disk] : getDisksMap())
