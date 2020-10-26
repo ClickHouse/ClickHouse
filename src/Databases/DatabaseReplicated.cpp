@@ -136,7 +136,7 @@ void DatabaseReplicated::createDatabaseZKNodes()
     current_zookeeper->createIfNotExists(zookeeper_path + "/replicas", String());
 }
 
-void DatabaseReplicated::RemoveOutdatedSnapshotsAndLog()
+void DatabaseReplicated::removeOutdatedSnapshotsAndLog()
 {
     /// This method removes all snapshots and logged queries
     /// that no longer will be in use by current replicas or
@@ -180,7 +180,7 @@ void DatabaseReplicated::RemoveOutdatedSnapshotsAndLog()
 
 void DatabaseReplicated::runBackgroundLogExecutor()
 {
-    if (last_executed_log_entry == "")
+    if (last_executed_log_entry.empty())
     {
         loadMetadataFromSnapshot();
     }
@@ -274,7 +274,8 @@ BlockIO DatabaseReplicated::getFeedback()
 
     Stopwatch watch;
 
-    NamesAndTypes block_structure = {
+    NamesAndTypes block_structure =
+    {
         {"replica_name", std::make_shared<DataTypeString>()},
         {"execution_feedback", std::make_shared<DataTypeString>()},
     };
@@ -334,7 +335,7 @@ void DatabaseReplicated::createSnapshot()
     }
     current_zookeeper->create(snapshot_path + "/.completed", String(), zkutil::CreateMode::Persistent);
 
-    RemoveOutdatedSnapshotsAndLog();
+    removeOutdatedSnapshotsAndLog();
 }
 
 void DatabaseReplicated::loadMetadataFromSnapshot()
