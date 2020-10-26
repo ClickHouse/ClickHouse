@@ -20,6 +20,7 @@
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Storages/MergeTree/MergeList.h>
+#include <Storages/MergeTree/ReplicatedFetchesList.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/CompressionCodecSelector.h>
@@ -329,6 +330,7 @@ struct ContextShared
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
     ProcessList process_list;                               /// Executing queries at the moment.
     MergeList merge_list;                                   /// The list of executable merge (for (Replicated)?MergeTree)
+    ReplicatedFetchList replicated_fetch_list;
     ConfigurationPtr users_config;                          /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
     std::optional<BackgroundSchedulePool> buffer_flush_schedule_pool; /// A thread pool that can do background flush for Buffer tables.
@@ -506,6 +508,8 @@ ProcessList & Context::getProcessList() { return shared->process_list; }
 const ProcessList & Context::getProcessList() const { return shared->process_list; }
 MergeList & Context::getMergeList() { return shared->merge_list; }
 const MergeList & Context::getMergeList() const { return shared->merge_list; }
+ReplicatedFetchList & Context::getReplicatedFetchList() { return shared->replicated_fetch_list; }
+const ReplicatedFetchList & Context::getReplicatedFetchList() const { return shared->replicated_fetch_list; }
 
 
 void Context::enableNamedSessions()

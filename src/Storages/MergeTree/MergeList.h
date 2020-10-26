@@ -107,6 +107,7 @@ using MergeListEntry = BackgroundProcessListEntry<MergeListElement, MergeInfo>;
   */
 class MergeList final : public BackgroundProcessList<MergeListElement, MergeInfo>
 {
+private:
     using Parent = BackgroundProcessList<MergeListElement, MergeInfo>;
     std::atomic<size_t> merges_with_ttl_counter = 0;
 public:

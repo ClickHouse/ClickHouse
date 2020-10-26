@@ -12,6 +12,7 @@
 #include <Poco/File.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/HTTPRequest.h>
+#include <Storages/MergeTree/ReplicatedFetchesList.h>
 
 
 namespace CurrentMetrics
@@ -51,6 +52,25 @@ std::string getEndpointId(const std::string & node_id)
 {
     return "DataPartsExchange:" + node_id;
 }
+
+
+struct ReplicatedFetchReadCallback
+{
+    ReplicatedFetchList::Entry & replicated_fetch_entry;
+
+    ReplicatedFetchReadCallback(ReplicatedFetchList::Entry & replicated_fetch_entry_)
+        : replicated_fetch_entry(replicated_fetch_entry_)
+    {}
+
+
+    void operator() (size_t bytes_count)
+    {
+        replicated_fetch_entry->bytes_read_compressed = bytes_count;
+        replicated_fetch_entry->progress.store(
+                replicated_fetch_entry->bytes_read_compressed.load(std::memory_order_relaxed) / replicated_fetch_entry->total_size_bytes_compressed,
+                std::memory_order_relaxed);
+    }
+};
 
 }
 
@@ -228,7 +248,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         throw Exception("Fetching of part was cancelled", ErrorCodes::ABORTED);
 
     /// Validation of the input that may come from malicious replica.
-    MergeTreePartInfo::fromPartName(part_name, data.format_version);
+    auto part_info = MergeTreePartInfo::fromPartName(part_name, data.format_version);
     const auto data_settings = data.getSettings();
 
     Poco::URI uri;
@@ -286,6 +306,13 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         /// We don't know real size of part because sender server version is too old
         reservation = data.makeEmptyReservationOnLargestDisk();
     }
+    auto storage_id = data.getStorageID();
+    auto entry = data.global_context.getReplicatedFetchList().insert(
+        storage_id.getDatabaseName(), storage_id.getTableName(),
+        part_info.partition_id, part_name, part_name,
+        replica_path, uri.toString(), interserver_scheme, to_detached, sum_files_size);
+
+    in.setNextReadCallback(ReplicatedFetchReadCallback(*entry));
 
     bool sync = (data_settings->min_compressed_bytes_to_fsync_after_fetch
                     && sum_files_size >= data_settings->min_compressed_bytes_to_fsync_after_fetch);
