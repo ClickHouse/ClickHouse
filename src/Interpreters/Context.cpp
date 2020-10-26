@@ -2016,10 +2016,15 @@ void Context::reloadConfig() const
 
 void Context::shutdown()
 {
-    for (auto & [disk_name, disk] : getDisksMap())
+    // Disk selector might not be initialized if there was some error during
+    // its initialization. Don't try to initialize it again on shutdown.
+    if (shared->merge_tree_disk_selector)
     {
-        LOG_INFO(shared->log, "Shutdown disk {}", disk_name);
-        disk->shutdown();
+        for (auto & [disk_name, disk] : getDisksMap())
+        {
+            LOG_INFO(shared->log, "Shutdown disk {}", disk_name);
+            disk->shutdown();
+        }
     }
 
     shared->shutdown();
