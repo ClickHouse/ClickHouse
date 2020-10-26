@@ -82,13 +82,13 @@ public:
 
     std::shared_ptr<const IDictionaryBase> getDictionary(const String & dictionary_name)
     {
-        auto dict = std::atomic_load(&dictionary);
-        if (dict)
-            return dict;
         String resolved_name = DatabaseCatalog::instance().resolveDictionaryName(dictionary_name);
-        dict = external_loader.getDictionary(resolved_name);
-        context.checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName());
-        std::atomic_store(&dictionary, dict);
+        auto dict = external_loader.getDictionary(resolved_name);
+        if (!access_checked)
+        {
+            context.checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName());
+            access_checked = true;
+        }
         return dict;
     }
 
@@ -122,6 +122,8 @@ private:
     const Context & context;
     const ExternalDictionariesLoader & external_loader;
     mutable std::shared_ptr<const IDictionaryBase> dictionary;
+    /// Access cannot be not granted, since in this case checkAccess() will throw and access_checked will not be updated.
+    std::atomic<bool> access_checked = false;
 };
 
 
