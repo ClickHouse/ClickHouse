@@ -451,9 +451,7 @@ void LocalServer::setupUsers()
 
 void LocalServer::cleanup()
 {
-    // Delete the temporary directory if needed. Just in case, check that it is
-    // in the system temporary directory, not to delete user data if there is a
-    // bug.
+    // Delete the temporary directory if needed.
     if (temporary_directory_to_delete)
     {
         const auto dir = *temporary_directory_to_delete;
