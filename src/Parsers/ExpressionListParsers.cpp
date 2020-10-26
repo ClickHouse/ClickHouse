@@ -1,14 +1,13 @@
 #include <tuple>
 #include <Parsers/IAST.h>
+#include <Parsers/ExpressionListParsers.h>
+
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/parseIntervalKind.h>
-#include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/ExpressionListParsers.h>
-#include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
-
-#include <Common/typeid_cast.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/parseIntervalKind.h>
 #include <Common/StringUtils/StringUtils.h>
 
 
@@ -691,6 +690,47 @@ bool ParserTimestampOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expe
     return true;
 }
 
+bool ParserIntervalOperatorExpression::parseArgumentAndIntervalKind(
+    Pos & pos, ASTPtr & expr, IntervalKind & interval_kind, Expected & expected)
+{
+    auto begin = pos;
+    auto init_expected = expected;
+    ASTPtr string_literal;
+    //// A String literal followed INTERVAL keyword,
+    /// the literal can be a part of an expression or
+    /// include Number and INTERVAL TYPE at the same time
+    if (ParserStringLiteral{}.parse(pos, string_literal, expected))
+    {
+        String literal;
+        if (string_literal->as<ASTLiteral &>().value.tryGet(literal))
+        {
+            Tokens tokens(literal.data(), literal.data() + literal.size());
+            Pos token_pos(tokens, 0);
+            Expected token_expected;
+
+            if (!ParserNumber{}.parse(token_pos, expr, token_expected))
+                return false;
+            else
+            {
+                /// case: INTERVAL '1' HOUR
+                /// back to begin
+                if (!token_pos.isValid())
+                {
+                    pos = begin;
+                    expected = init_expected;
+                }
+                else
+                    /// case: INTERVAL '1 HOUR'
+                    return parseIntervalKind(token_pos, token_expected, interval_kind);
+            }
+        }
+    }
+    // case: INTERVAL expr HOUR
+    if (!ParserExpressionWithOptionalAlias(false).parse(pos, expr, expected))
+        return false;
+    return parseIntervalKind(pos, expected, interval_kind);
+}
+
 bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     auto begin = pos;
@@ -700,15 +740,8 @@ bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expec
         return next_parser.parse(pos, node, expected);
 
     ASTPtr expr;
-    /// Any expression can be inside, because operator surrounds it.
-    if (!ParserExpressionWithOptionalAlias(false).parse(pos, expr, expected))
-    {
-        pos = begin;
-        return next_parser.parse(pos, node, expected);
-    }
-
     IntervalKind interval_kind;
-    if (!parseIntervalKind(pos, expected, interval_kind))
+    if (!parseArgumentAndIntervalKind(pos, expr, interval_kind, expected))
     {
         pos = begin;
         return next_parser.parse(pos, node, expected);
@@ -762,7 +795,7 @@ bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     }
 
     auto pair = std::make_shared<ASTPair>(with_brackets);
-    pair->first = Poco::toLower(typeid_cast<ASTIdentifier &>(*identifier.get()).name);
+    pair->first = Poco::toLower(identifier->as<ASTIdentifier>()->name());
     pair->set(pair->second, value);
     node = pair;
     return true;
@@ -775,3 +808,4 @@ bool ParserKeyValuePairsList::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 }
 
 }
+

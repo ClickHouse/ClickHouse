@@ -52,15 +52,28 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.empty())
             throw Exception("Function " + getName() + " requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        return std::make_shared<DataTypeTuple>(arguments);
+        DataTypes types;
+        Strings names;
+
+        for (const auto & argument : arguments)
+        {
+            types.emplace_back(argument.type);
+            names.emplace_back(argument.name);
+        }
+
+        /// Create named tuple if possible.
+        if (DataTypeTuple::canBeCreatedWithNames(names))
+            return std::make_shared<DataTypeTuple>(types, names, false);
+
+        return std::make_shared<DataTypeTuple>(types);
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         size_t tuple_size = arguments.size();
         Columns tuple_columns(tuple_size);
@@ -70,9 +83,9 @@ public:
               *  convert all to non-constant columns,
               *  because many places in code expect all non-constant columns in non-constant tuple.
               */
-            tuple_columns[i] = columns[arguments[i]].column->convertToFullColumnIfConst();
+            tuple_columns[i] = arguments[i].column->convertToFullColumnIfConst();
         }
-        columns[result].column = ColumnTuple::create(tuple_columns);
+        return ColumnTuple::create(tuple_columns);
     }
 };
 

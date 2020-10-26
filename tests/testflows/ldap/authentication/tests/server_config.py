@@ -267,5 +267,6 @@ def feature(self, node="clickhouse1"):
     """Check that LDAP server configuration.
     """
     self.context.node = self.context.cluster.node(node)
+
     for scenario in loads(current_module(), Scenario):
         scenario()

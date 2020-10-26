@@ -55,10 +55,10 @@ private:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        const auto & column = columns[arguments[0]].column;
-        const auto & column_char = columns[arguments[1]].column;
+        const auto & column = arguments[0].column;
+        const auto & column_char = arguments[1].column;
 
         if (!checkColumnConst<ColumnString>(column_char.get()))
             throw Exception{"Second argument of function " + getName() + " must be a constant string", ErrorCodes::ILLEGAL_COLUMN};
@@ -103,10 +103,10 @@ private:
             }
 
             dst_data.resize_assume_reserved(dst_offset);
-            columns[result].column = std::move(col_res);
+            return col_res;
         }
         else
-            throw Exception{"Illegal column " + columns[arguments[0]].column->getName() + " of argument of function " + getName(),
+            throw Exception{"Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN};
     }
 };
