@@ -35,7 +35,6 @@
 namespace DB
 {
 
-class MergeListEntry;
 class AlterCommands;
 class MergeTreePartsMover;
 class MutationCommands;
