@@ -392,6 +392,22 @@
                 </replica>
             </shard>
         </test_cluster_two_shards>
+        <test_cluster_two_shards_internal_replication>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>127.0.0.2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_cluster_two_shards_internal_replication>
         <test_shard_localhost_secure>
             <shard>
                 <replica>

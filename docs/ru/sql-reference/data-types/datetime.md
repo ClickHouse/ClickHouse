@@ -1,3 +1,8 @@
+---
+toc_priority: 48
+toc_title: DateTime
+---
+
 # DateTime {#data_type-datetime}
 
 Позволяет хранить момент времени, который может быть представлен как календарная дата и время.
