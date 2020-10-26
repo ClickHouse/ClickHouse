@@ -129,7 +129,7 @@ def create_entries_ldap_external_user_directory_config_content(entries, config_d
 
     return Config(content, path, name, uid, "config.xml")
 
-def invalid_ldap_external_user_directory_config(server, roles, message, tail=20, timeout=20, config=None):
+def invalid_ldap_external_user_directory_config(server, roles, message, tail=20, timeout=60, config=None):
     """Check that ClickHouse errors when trying to load invalid LDAP external user directory
     configuration file.
     """
@@ -181,7 +181,7 @@ def invalid_ldap_external_user_directory_config(server, roles, message, tail=20,
 
 @contextmanager
 def ldap_external_user_directory(server, roles, config_d_dir="/etc/clickhouse-server/config.d",
-        config_file=None, timeout=20, restart=True, config=None):
+        config_file=None, timeout=60, restart=True, config=None):
     """Add LDAP external user directory.
     """
     if config_file is None:
