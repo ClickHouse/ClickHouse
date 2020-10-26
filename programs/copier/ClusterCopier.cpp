@@ -1477,7 +1477,9 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
     {
         auto create_query_push_ast = rewriteCreateQueryStorage(task_shard.current_pull_table_create_query,
                                                                task_table.table_push, task_table.engine_push_ast);
-        create_query_push_ast->as<ASTCreateQuery &>().if_not_exists = true;
+        auto & create = create_query_push_ast->as<ASTCreateQuery &>();
+        create.if_not_exists = true;
+        InterpreterCreateQuery::prepareOnClusterQuery(create, context, task_table.cluster_push_name);
         String query = queryToString(create_query_push_ast);
 
         LOG_DEBUG(log, "Create destination tables. Query: {}", query);
