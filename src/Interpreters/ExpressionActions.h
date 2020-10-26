@@ -205,8 +205,10 @@ private:
         std::string toString() const;
     };
 
+public:
     using Actions = std::vector<Action>;
 
+private:
     struct ExecutionContext
     {
         ColumnsWithTypeAndName & input_columns;
