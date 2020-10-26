@@ -676,12 +676,12 @@ QueryPipelinePtr MutationsInterpreter::addStreamsForLaterStages(const std::vecto
             if (i < stage.filter_column_names.size())
             {
                 /// Execute DELETEs.
-                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentDataStream(), step->getExpression(), stage.filter_column_names[i], false));
+                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentDataStream(), step->actions(), stage.filter_column_names[i], false));
             }
             else
             {
                 /// Execute UPDATE or final projection.
-                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), step->getExpression()));
+                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), step->actions()));
             }
         }
 

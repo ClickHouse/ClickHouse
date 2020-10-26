@@ -45,7 +45,7 @@ namespace ErrorCodes
 }
 
 /// Read comment near usage
-static constexpr auto DUMMY_COLUMN_NAME = "_dummy";
+/// static constexpr auto DUMMY_COLUMN_NAME = "_dummy";
 
 
 std::string ExpressionActions::Action::toString() const
