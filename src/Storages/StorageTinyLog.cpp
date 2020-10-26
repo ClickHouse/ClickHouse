@@ -14,7 +14,7 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <Compression/CompressionFactory.h>
-#include <Compression/CompressedReadBufferFromFile.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -87,11 +87,13 @@ private:
     struct Stream
     {
         Stream(const DiskPtr & disk, const String & data_path, size_t max_read_buffer_size_)
-            : compressed(disk->readFile(data_path, std::min(max_read_buffer_size_, disk->getFileSize(data_path))))
+            : plain(disk->readFile(data_path, std::min(max_read_buffer_size_, disk->getFileSize(data_path))))
+            , compressed(*plain)
         {
         }
 
-        CompressedReadBufferFromFile compressed;
+        std::unique_ptr<ReadBufferFromFileBase> plain;
+        CompressedReadBuffer compressed;
     };
 
     using FileStreams = std::map<String, std::unique_ptr<Stream>>;
@@ -194,16 +196,24 @@ Chunk TinyLogSource::generate()
 
     for (const auto & name_type : columns)
     {
-        MutableColumnPtr column = name_type.type->createColumn();
-
-        try
+        MutableColumnPtr column;
+        if (name_type.isSubcolumn() && res.has(name_type.getStorageName()))
         {
-            readData(name_type, *column, block_size);
+            auto column_in_block = res.getByName(name_type.getStorageName()).column;
+            column = name_type.getStorageType()->getSubcolumn(name_type.getSubcolumnName(), *column_in_block->assumeMutable());
         }
-        catch (Exception & e)
+        else
         {
-            e.addMessage("while reading column " + name_type.name + " at " + fullPath(storage.disk, storage.table_path));
-            throw;
+            try
+            {
+                column = name_type.type->createColumn();
+                readData(name_type, *column, block_size);
+            }
+            catch (Exception & e)
+            {
+                e.addMessage("while reading column " + name_type.name + " at " + fullPath(storage.disk, storage.table_path));
+                throw;
+            }
         }
 
         if (!column->empty())
@@ -232,9 +242,6 @@ void TinyLogSource::readData(const NameAndTypePair & name_and_type, IColumn & co
         auto & stream = streams[stream_name];
         if (!stream)
             stream = std::make_unique<Stream>(storage.disk, storage.files[stream_name].data_file_path, max_read_buffer_size);
-
-        /// FIXME: avoid double reading of subcolumns
-        stream->compressed.seek(0, 0);
 
         return &stream->compressed;
     };
