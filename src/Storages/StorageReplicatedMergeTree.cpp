@@ -76,6 +76,10 @@ namespace ProfileEvents
     extern const Event NotCreatedLogEntryForMutation;
 }
 
+namespace CurrentMetrics
+{
+    extern const Metric BackgroundFetchesPoolTask;
+}
 
 namespace DB
 {
@@ -204,6 +208,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , part_check_thread(*this)
     , restarting_thread(*this)
     , allow_renaming(allow_renaming_)
+    , replicated_fetches_pool_size(global_context.getSettingsRef().background_fetches_pool_size)
 {
     queue_updating_task = global_context.getSchedulePool().createTask(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::queueUpdatingTask)", [this]{ queueUpdatingTask(); });
@@ -2614,10 +2619,36 @@ std::optional<JobAndPool> StorageReplicatedMergeTree::getDataProcessingJob()
     if (!selected_entry)
         return {};
 
+    PoolType pool_type;
+
+    if (selected_entry->log_entry->type == LogEntry::GET_PART)
+        pool_type = PoolType::FETCH;
+    else
+        pool_type = PoolType::MERGE_MUTATE;
+
     return JobAndPool{[this, selected_entry] () mutable
     {
         processQueueEntry(selected_entry);
-    }, PoolType::MERGE_MUTATE};
+    }, pool_type};
+}
+
+
+bool StorageReplicatedMergeTree::canExecuteFetch(const ReplicatedMergeTreeLogEntry & entry, String & disable_reason) const
+{
+    if (fetcher.blocker.isCancelled())
+    {
+        disable_reason = fmt::format("Not executing fetch of part {} because replicated fetches are cancelled now.", entry.new_part_name);
+        return false;
+    }
+
+    size_t busy_threads_in_pool = CurrentMetrics::values[CurrentMetrics::BackgroundFetchesPoolTask].load(std::memory_order_relaxed);
+    if (busy_threads_in_pool >= replicated_fetches_pool_size)
+    {
+        disable_reason = fmt::format("Not executing fetch of part {} because {} fetches already executing, max {}.", entry.new_part_name, busy_threads_in_pool, replicated_fetches_pool_size);
+        return false;
+    }
+
+    return true;
 }
 
 bool StorageReplicatedMergeTree::partIsAssignedToBackgroundOperation(const DataPartPtr & part) const

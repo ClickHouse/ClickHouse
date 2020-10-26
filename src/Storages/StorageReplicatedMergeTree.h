@@ -200,6 +200,8 @@ public:
 
     std::optional<JobAndPool> getDataProcessingJob() override;
 
+    bool canExecuteFetch(const ReplicatedMergeTreeLogEntry & entry, String & disable_reason) const;
+
 private:
 
     /// Get a sequential consistent view of current parts.
@@ -309,6 +311,8 @@ private:
 
     /// Do not allow RENAME TABLE if zookeeper_path contains {database} or {table} macro
     const bool allow_renaming;
+
+    const size_t replicated_fetches_pool_size;
 
     template <class Func>
     void foreachCommittedParts(const Func & func) const;

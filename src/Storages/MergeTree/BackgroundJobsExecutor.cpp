@@ -9,6 +9,7 @@ namespace CurrentMetrics
 {
     extern const Metric BackgroundPoolTask;
     extern const Metric BackgroundMovePoolTask;
+    extern const Metric BackgroundFetchesPoolTask;
 }
 
 namespace DB
@@ -183,7 +184,8 @@ BackgroundJobsExecutor::BackgroundJobsExecutor(
     : IBackgroundJobExecutor(
         global_context_,
         global_context_.getBackgroundProcessingTaskSchedulingSettings(),
-        {PoolConfig{PoolType::MERGE_MUTATE, global_context_.getSettingsRef().background_pool_size, CurrentMetrics::BackgroundPoolTask}})
+        {PoolConfig{PoolType::MERGE_MUTATE, global_context_.getSettingsRef().background_pool_size, CurrentMetrics::BackgroundPoolTask},
+         PoolConfig{PoolType::FETCH, global_context_.getSettingsRef().background_fetches_pool_size, CurrentMetrics::BackgroundFetchesPoolTask}})
     , data(data_)
 {
 }
