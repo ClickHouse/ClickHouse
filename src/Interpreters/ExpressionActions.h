@@ -81,8 +81,6 @@ public:
         std::string result_name;
         DataTypePtr result_type;
 
-        std::string unique_column_name_for_array_join;
-
         FunctionOverloadResolverPtr function_builder;
         /// Can be used after action was added to ExpressionActions if we want to get function signature or properties like monotonicity.
         FunctionBasePtr function_base;
@@ -111,6 +109,8 @@ private:
     std::shared_ptr<CompiledExpressionCache> compilation_cache;
 #endif
 
+    bool project_input = false;
+
 public:
     ActionsDAG() = default;
     ActionsDAG(const ActionsDAG &) = delete;
@@ -120,6 +120,7 @@ public:
 
     const Index & getIndex() const { return index; }
 
+    NamesAndTypesList getRequiredColumns() const;
     ColumnsWithTypeAndName getResultColumns() const;
     NamesAndTypesList getNamesAndTypesList() const;
     Names getNames() const;
@@ -129,13 +130,14 @@ public:
     const Node & addInput(ColumnWithTypeAndName column);
     const Node & addColumn(ColumnWithTypeAndName column);
     const Node & addAlias(const std::string & name, std::string alias, bool can_replace = false);
-    const Node & addArrayJoin(const std::string & source_name, std::string result_name, std::string unique_column_name);
+    const Node & addArrayJoin(const std::string & source_name, std::string result_name);
     const Node & addFunction(
             const FunctionOverloadResolverPtr & function,
             const Names & argument_names,
             std::string result_name,
             const Context & context);
 
+    void projectInput() { project_input = true; }
     void removeUnusedActions(const Names & required_names);
     ExpressionActionsPtr buildExpressions();
 
@@ -217,7 +219,7 @@ public:
     ExpressionActions(const ExpressionActions & other) = default;
 
     /// Adds to the beginning the removal of all extra columns.
-    void prependProjectInput() { project_input = true; }
+    void projectInput() { project_input = true; }
 
     /// - Adds actions to delete all but the specified columns.
     /// - Removes unused input columns.
@@ -286,8 +288,8 @@ struct ExpressionActionsChain
         /// If not empty, has the same size with required_output; is filled in finalize().
         std::vector<bool> can_remove_required_output;
 
-        virtual const NamesAndTypesList & getRequiredColumns() const = 0;
-        virtual const ColumnsWithTypeAndName & getResultColumns() const = 0;
+        virtual NamesAndTypesList getRequiredColumns() const = 0;
+        virtual ColumnsWithTypeAndName getResultColumns() const = 0;
         /// Remove unused result and update required columns
         virtual void finalize(const Names & required_output_) = 0;
         /// Add projections to expression
@@ -297,43 +299,41 @@ struct ExpressionActionsChain
         /// Only for ExpressionActionsStep
         ActionsDAGPtr & actions();
         const ActionsDAGPtr & actions() const;
-        ExpressionActionsPtr getExpression() const;
     };
 
     struct ExpressionActionsStep : public Step
     {
-        ActionsDAGPtr actions_dag;
-        ExpressionActionsPtr actions;
+        ActionsDAGPtr actions;
 
         explicit ExpressionActionsStep(ActionsDAGPtr actions_, Names required_output_ = Names())
             : Step(std::move(required_output_))
-            , actions_dag(std::move(actions_))
+            , actions(std::move(actions_))
         {
         }
 
-        const NamesAndTypesList & getRequiredColumns() const override
+        NamesAndTypesList getRequiredColumns() const override
         {
-            return actions->getRequiredColumnsWithTypes();
+            return actions->getRequiredColumns();
         }
 
-        const ColumnsWithTypeAndName & getResultColumns() const override
+        ColumnsWithTypeAndName getResultColumns() const override
         {
-            return actions->getSampleBlock().getColumnsWithTypeAndName();
+            return actions->getResultColumns();
         }
 
         void finalize(const Names & required_output_) override
         {
-            actions->finalize(required_output_);
+            actions->removeUnusedActions(required_output_);
         }
 
         void prependProjectInput() const override
         {
-            actions->prependProjectInput();
+            actions->projectInput();
         }
 
         std::string dump() const override
         {
-            return actions->dumpActions();
+            return actions->dump();
         }
     };
 
@@ -345,8 +345,8 @@ struct ExpressionActionsChain
 
         ArrayJoinStep(ArrayJoinActionPtr array_join_, ColumnsWithTypeAndName required_columns_);
 
-        const NamesAndTypesList & getRequiredColumns() const override { return required_columns; }
-        const ColumnsWithTypeAndName & getResultColumns() const override { return result_columns; }
+        NamesAndTypesList getRequiredColumns() const override { return required_columns; }
+        ColumnsWithTypeAndName getResultColumns() const override { return result_columns; }
         void finalize(const Names & required_output_) override;
         void prependProjectInput() const override {} /// TODO: remove unused columns before ARRAY JOIN ?
         std::string dump() const override { return "ARRAY JOIN"; }
@@ -361,8 +361,8 @@ struct ExpressionActionsChain
         ColumnsWithTypeAndName result_columns;
 
         JoinStep(std::shared_ptr<TableJoin> analyzed_join_, JoinPtr join_, ColumnsWithTypeAndName required_columns_);
-        const NamesAndTypesList & getRequiredColumns() const override { return required_columns; }
-        const ColumnsWithTypeAndName & getResultColumns() const override { return result_columns; }
+        NamesAndTypesList getRequiredColumns() const override { return required_columns; }
+        ColumnsWithTypeAndName getResultColumns() const override { return result_columns; }
         void finalize(const Names & required_output_) override;
         void prependProjectInput() const override {} /// TODO: remove unused columns before JOIN ?
         std::string dump() const override { return "JOIN"; }
@@ -383,7 +383,7 @@ struct ExpressionActionsChain
         steps.clear();
     }
 
-    ExpressionActionsPtr getLastActions(bool allow_empty = false)
+    ActionsDAGPtr getLastActions(bool allow_empty = false)
     {
         if (steps.empty())
         {
@@ -392,9 +392,7 @@ struct ExpressionActionsChain
             throw Exception("Empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
         }
 
-        auto * step = typeid_cast<ExpressionActionsStep *>(steps.back().get());
-        step->actions = step->actions_dag->buildExpressions(context);
-        return step->actions;
+        return typeid_cast<ExpressionActionsStep *>(steps.back().get())->actions;
     }
 
     Step & getLastStep()

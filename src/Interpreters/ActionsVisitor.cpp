@@ -475,7 +475,7 @@ void ScopeStack::addAlias(const std::string & name, std::string alias)
         stack[j].actions->addInput({node.column, node.result_type, node.result_name});
 }
 
-void ScopeStack::addArrayJoin(const std::string & source_name, std::string result_name, std::string unique_column_name)
+void ScopeStack::addArrayJoin(const std::string & source_name, std::string result_name)
 {
     getColumnLevel(source_name);
 
@@ -483,7 +483,7 @@ void ScopeStack::addArrayJoin(const std::string & source_name, std::string resul
         throw Exception("Expression with arrayJoin cannot depend on lambda argument: " + source_name,
                         ErrorCodes::BAD_ARGUMENTS);
 
-    const auto & node = stack.front().actions->addArrayJoin(source_name, std::move(result_name), std::move(unique_column_name));
+    const auto & node = stack.front().actions->addArrayJoin(source_name, std::move(result_name));
 
     for (size_t j = 1; j < stack.size(); ++j)
         stack[j].actions->addInput({node.column, node.result_type, node.result_name});

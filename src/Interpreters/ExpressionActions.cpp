@@ -634,12 +634,6 @@ void ExpressionActionsChain::addStep()
     if (steps.empty())
         throw Exception("Cannot add action to empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
 
-    if (auto * step = typeid_cast<ExpressionActionsStep *>(steps.back().get()))
-    {
-        if (!step->actions)
-            step->actions = step->actions_dag->buildExpressions();
-    }
-
     ColumnsWithTypeAndName columns = steps.back()->getResultColumns();
     steps.push_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ActionsDAG>(columns)));
 }
@@ -790,15 +784,10 @@ void ExpressionActionsChain::JoinStep::finalize(const Names & required_output_)
 
 ActionsDAGPtr & ExpressionActionsChain::Step::actions()
 {
-    return typeid_cast<ExpressionActionsStep *>(this)->actions_dag;
+    return typeid_cast<ExpressionActionsStep *>(this)->actions;
 }
 
 const ActionsDAGPtr & ExpressionActionsChain::Step::actions() const
-{
-    return typeid_cast<const ExpressionActionsStep *>(this)->actions_dag;
-}
-
-ExpressionActionsPtr ExpressionActionsChain::Step::getExpression() const
 {
     return typeid_cast<const ExpressionActionsStep *>(this)->actions;
 }
@@ -886,8 +875,7 @@ const ActionsDAG::Node & ActionsDAG::addAlias(const std::string & name, std::str
     return addNode(std::move(node), can_replace);
 }
 
-const ActionsDAG::Node & ActionsDAG::addArrayJoin(
-    const std::string & source_name, std::string result_name, std::string unique_column_name)
+const ActionsDAG::Node & ActionsDAG::addArrayJoin(const std::string & source_name, std::string result_name)
 {
     auto & child = getNode(source_name);
 
@@ -899,7 +887,6 @@ const ActionsDAG::Node & ActionsDAG::addArrayJoin(
     node.type = Type::ARRAY_JOIN;
     node.result_type = array_type->getNestedType();
     node.result_name = std::move(result_name);
-    node.unique_column_name_for_array_join = std::move(unique_column_name);
     node.children.emplace_back(&child);
 
     return addNode(std::move(node));
@@ -1004,6 +991,16 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     return addNode(std::move(node));
 }
 
+NamesAndTypesList ActionsDAG::getRequiredColumns() const
+{
+    NamesAndTypesList result;
+    for (const auto & node : nodes)
+        if (node.type == Type::INPUT)
+            result.push_back({node.result_name, node.result_type});
+
+    return result;
+}
+
 ColumnsWithTypeAndName ActionsDAG::getResultColumns() const
 {
     ColumnsWithTypeAndName result;
@@ -1073,6 +1070,13 @@ void ActionsDAG::removeUnusedActions(const Names & required_names)
     {
         auto * node = stack.top();
         stack.pop();
+
+        if (!node->children.empty() && node->column && node->allow_constant_folding)
+        {
+            /// Constant folding.
+            node->type = ActionsDAG::Type::COLUMN;
+            node->children.clear();
+        }
 
         for (auto * child : node->children)
         {
@@ -1203,6 +1207,7 @@ ExpressionActionsPtr ActionsDAG::buildExpressions()
                         dumpNames(), std::to_string(max_temporary_columns));
 
     expressions->max_temporary_non_const_columns = max_temporary_non_const_columns;
+    expressions->project_input = project_input;
 
     return expressions;
 }
