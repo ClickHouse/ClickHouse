@@ -1,3 +1,8 @@
+---
+toc_priority: 37
+toc_title: SHOW
+---
+
 # SHOW Queries {#show-queries}
 
 ## SHOW CREATE TABLE {#show-create-table}
