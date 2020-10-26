@@ -1053,7 +1053,7 @@ std::string ActionsDAG::dumpNames() const
 
 void ActionsDAG::removeUnusedActions(const Names & required_names)
 {
-    std::unordered_set<Node *> visited_nodes;
+    std::unordered_set<const Node *> visited_nodes;
     std::stack<Node *> stack;
 
     {
@@ -1097,7 +1097,7 @@ void ActionsDAG::removeUnusedActions(const Names & required_names)
         }
     }
 
-    nodes.remove_if([&](const Node & node) { return visited_nodes.count(node) == 0; });
+    nodes.remove_if([&](const Node & node) { return visited_nodes.count(&node) == 0; });
 }
 
 void ActionsDAG::addAliases(const NamesWithAliases & aliases)
