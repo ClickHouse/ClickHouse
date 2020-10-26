@@ -6,6 +6,8 @@
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
 
+#include <common/defines.h>
+
 #if defined(MEMORY_SANITIZER)
     #include <sanitizer/msan_interface.h>
 #endif

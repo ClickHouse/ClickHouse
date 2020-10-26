@@ -1,6 +1,6 @@
 ---
 toc_priority: 60
-toc_title: Settings
+toc_title: "\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438"
 ---
 
 # Настройки {#settings}

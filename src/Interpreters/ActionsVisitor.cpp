@@ -522,24 +522,13 @@ const ActionsDAG & ScopeStack::getLastActions() const
     return *stack.back().actions;
 }
 
-struct CachedColumnName
-{
-    String cached;
-
-    const String & get(const ASTPtr & ast)
-    {
-        if (cached.empty())
-            cached = ast->getColumnName();
-        return cached;
-    }
-};
-
 bool ActionsMatcher::needChildVisit(const ASTPtr & node, const ASTPtr & child)
 {
     /// Visit children themself
     if (node->as<ASTIdentifier>() ||
         node->as<ASTFunction>() ||
-        node->as<ASTLiteral>())
+        node->as<ASTLiteral>() ||
+        node->as<ASTExpressionList>())
         return false;
 
     /// Do not go to FROM, JOIN, UNION.
@@ -558,12 +547,122 @@ void ActionsMatcher::visit(const ASTPtr & ast, Data & data)
         visit(*node, ast, data);
     else if (const auto * literal = ast->as<ASTLiteral>())
         visit(*literal, ast, data);
+    else if (auto * expression_list = ast->as<ASTExpressionList>())
+        visit(*expression_list, ast, data);
+    else
+    {
+        for (auto & child : ast->children)
+            if (needChildVisit(ast, child))
+                visit(child, data);
+    }
+}
+
+std::optional<NameAndTypePair> ActionsMatcher::getNameAndTypeFromAST(const ASTPtr & ast, Data & data)
+{
+    // If the argument is a literal, we generated a unique column name for it.
+    // Use it instead of a generic display name.
+    auto child_column_name = ast->getColumnName();
+    const auto * as_literal = ast->as<ASTLiteral>();
+    if (as_literal)
+    {
+        assert(!as_literal->unique_column_name.empty());
+        child_column_name = as_literal->unique_column_name;
+    }
+
+    const auto & index = data.actions_stack.getLastActions().getIndex();
+    auto it = index.find(child_column_name);
+    if (it != index.end())
+        return NameAndTypePair(child_column_name, it->second->result_type);
+
+    if (!data.only_consts)
+        throw Exception("Unknown identifier: " + child_column_name + " there are columns: " + data.actions_stack.dumpNames(),
+                        ErrorCodes::UNKNOWN_IDENTIFIER);
+
+    return {};
+}
+
+ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Data & data)
+{
+    if (function->arguments->children.size() != 1)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Number of arguments for function untuple doesn't match. Passed {}, should be 1",
+                        function->arguments->children.size());
+
+    auto & child = function->arguments->children[0];
+
+    /// Calculate nested function.
+    visit(child, data);
+
+    /// Get type and name for tuple argument
+    auto tuple_name_type = getNameAndTypeFromAST(child, data);
+    if (!tuple_name_type)
+        return {};
+
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(tuple_name_type->type.get());
+
+    if (!tuple_type)
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Function untuple expect tuple argument, got {}",
+                        tuple_name_type->type->getName());
+
+    ASTs columns;
+    size_t tid = 0;
+    for (const auto & name : tuple_type->getElementNames())
+    {
+        auto tuple_ast = function->arguments->children[0];
+        if (tid != 0)
+            tuple_ast = tuple_ast->clone();
+
+        auto literal = std::make_shared<ASTLiteral>(UInt64(++tid));
+        visit(*literal, literal, data);
+
+        auto func = makeASTFunction("tupleElement", tuple_ast, literal);
+
+        if (tuple_type->haveExplicitNames())
+            func->setAlias(name);
+        else
+            func->setAlias(data.getUniqueName("_ut_" + name));
+
+        auto function_builder = FunctionFactory::instance().get(func->name, data.context);
+        data.addFunction(function_builder, {tuple_name_type->name, literal->getColumnName()}, func->getColumnName());
+
+        columns.push_back(std::move(func));
+    }
+
+    return columns;
+}
+
+void ActionsMatcher::visit(ASTExpressionList & expression_list, const ASTPtr &, Data & data)
+{
+    size_t num_children = expression_list.children.size();
+    for (size_t i = 0; i < num_children; ++i)
+    {
+        if (const auto * function = expression_list.children[i]->as<ASTFunction>())
+        {
+            if (function->name == "untuple")
+            {
+                auto columns = doUntuple(function, data);
+
+                if (columns.empty())
+                    continue;
+
+                expression_list.children.erase(expression_list.children.begin() + i);
+                expression_list.children.insert(expression_list.children.begin() + i, columns.begin(), columns.end());
+                num_children += columns.size() - 1;
+                i += columns.size() - 1;
+            }
+            else
+                visit(expression_list.children[i], data);
+        }
+        else
+            visit(expression_list.children[i], data);
+    }
 }
 
 void ActionsMatcher::visit(const ASTIdentifier & identifier, const ASTPtr & ast, Data & data)
 {
-    CachedColumnName column_name;
-    if (data.hasColumn(column_name.get(ast)))
+    auto column_name = ast->getColumnName();
+    if (data.hasColumn(column_name))
         return;
 
     if (!data.only_consts)
@@ -573,9 +672,9 @@ void ActionsMatcher::visit(const ASTIdentifier & identifier, const ASTPtr & ast,
 
         for (const auto & column_name_type : data.source_columns)
         {
-            if (column_name_type.name == column_name.get(ast))
+            if (column_name_type.name == column_name)
             {
-                throw Exception("Column " + backQuote(column_name.get(ast)) + " is not under aggregate function and not in GROUP BY",
+                throw Exception("Column " + backQuote(column_name) + " is not under aggregate function and not in GROUP BY",
                 ErrorCodes::NOT_AN_AGGREGATE);
             }
         }
@@ -588,8 +687,8 @@ void ActionsMatcher::visit(const ASTIdentifier & identifier, const ASTPtr & ast,
 
 void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & data)
 {
-    CachedColumnName column_name;
-    if (data.hasColumn(column_name.get(ast)))
+    auto column_name = ast->getColumnName();
+    if (data.hasColumn(column_name))
         return;
 
     if (node.name == "lambda")
@@ -604,10 +703,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         ASTPtr arg = node.arguments->children.at(0);
         visit(arg, data);
         if (!data.only_consts)
-        {
-            String result_name = column_name.get(ast);
-            data.addArrayJoin(arg->getColumnName(), result_name);
-        }
+            data.addArrayJoin(arg->getColumnName(), column_name);
 
         return;
     }
@@ -634,7 +730,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 data.addFunction(
                         FunctionFactory::instance().get(node.name + "IgnoreSet", data.context),
                         { argument_name, argument_name },
-                        column_name.get(ast));
+                        column_name);
             }
             return;
         }
@@ -662,20 +758,20 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
     /// If the function has an argument-lambda expression, you need to determine its type before the recursive call.
     bool has_lambda_arguments = false;
-
-    for (size_t arg = 0; arg < node.arguments->children.size(); ++arg)
+    size_t num_arguments = node.arguments->children.size();
+    for (size_t arg = 0; arg < num_arguments; ++arg)
     {
         auto & child = node.arguments->children[arg];
 
-        const auto * lambda = child->as<ASTFunction>();
+        const auto * function = child->as<ASTFunction>();
         const auto * identifier = child->as<ASTIdentifier>();
-        if (lambda && lambda->name == "lambda")
+        if (function && function->name == "lambda")
         {
             /// If the argument is a lambda expression, just remember its approximate type.
-            if (lambda->arguments->children.size() != 2)
+            if (function->arguments->children.size() != 2)
                 throw Exception("lambda requires two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-            const auto * lambda_args_tuple = lambda->arguments->children.at(0)->as<ASTFunction>();
+            const auto * lambda_args_tuple = function->arguments->children.at(0)->as<ASTFunction>();
 
             if (!lambda_args_tuple || lambda_args_tuple->name != "tuple")
                 throw Exception("First argument of lambda must be a tuple", ErrorCodes::TYPE_MISMATCH);
@@ -684,6 +780,29 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             argument_types.emplace_back(std::make_shared<DataTypeFunction>(DataTypes(lambda_args_tuple->arguments->children.size())));
             /// Select the name in the next cycle.
             argument_names.emplace_back();
+        }
+        else if (function && function->name == "untuple")
+        {
+            auto columns = doUntuple(function, data);
+
+            if (columns.empty())
+                continue;
+
+            for (const auto & column : columns)
+            {
+                if (auto name_type = getNameAndTypeFromAST(column, data))
+                {
+                    argument_types.push_back(name_type->type);
+                    argument_names.push_back(name_type->name);
+                }
+                else
+                    arguments_present = false;
+            }
+
+            node.arguments->children.erase(node.arguments->children.begin() + arg);
+            node.arguments->children.insert(node.arguments->children.begin() + arg, columns.begin(), columns.end());
+            num_arguments += columns.size() - 1;
+            arg += columns.size() - 1;
         }
         else if (checkFunctionIsInOrGlobalInOperator(node) && arg == 1 && prepared_set)
         {
@@ -731,32 +850,13 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             /// If the argument is not a lambda expression, call it recursively and find out its type.
             visit(child, data);
 
-            // In the above visit() call, if the argument is a literal, we
-            // generated a unique column name for it. Use it instead of a generic
-            // display name.
-            auto child_column_name = child->getColumnName();
-            const auto * as_literal = child->as<ASTLiteral>();
-            if (as_literal)
+            if (auto name_type = getNameAndTypeFromAST(child, data))
             {
-                assert(!as_literal->unique_column_name.empty());
-                child_column_name = as_literal->unique_column_name;
-            }
-
-            const auto & index = data.actions_stack.getLastActions().getIndex();
-            auto it = index.find(child_column_name);
-            if (it != index.end())
-            {
-                argument_types.push_back(it->second->result_type);
-                argument_names.push_back(child_column_name);
+                argument_types.push_back(name_type->type);
+                argument_names.push_back(name_type->name);
             }
             else
-            {
-                if (data.only_consts)
-                    arguments_present = false;
-                else
-                    throw Exception("Unknown identifier: " + child_column_name + " there are columns: " + data.actions_stack.dumpNames(),
-                                    ErrorCodes::UNKNOWN_IDENTIFIER);
-            }
+                arguments_present = false;
         }
     }
 
@@ -833,7 +933,8 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
     if (arguments_present)
     {
-        data.addFunction(function_builder, argument_names, column_name.get(ast));
+        /// Calculate column name here again, because AST may be changed here (in case of untuple).
+        data.addFunction(function_builder, argument_names, ast->getColumnName());
     }
 }
 
