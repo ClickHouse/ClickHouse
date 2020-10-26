@@ -65,9 +65,9 @@ $CLICKHOUSE_CLIENT -q "SELECT count() FROM test_01114_1.mt"   # result: 5
 
 $CLICKHOUSE_CLIENT -q "SELECT tuple(s, sleepEachRow(3)) FROM test_01114_1.mt" > /dev/null &    # 15s
 sleep 1
-$CLICKHOUSE_CLIENT -q "DROP DATABASE test_01114_1" && echo "dropped"
+$CLICKHOUSE_CLIENT -q "DROP DATABASE test_01114_1" --database_atomic_wait_for_drop_and_detach_synchronously=0 && echo "dropped"
 
 wait # for INSERT
 
 $CLICKHOUSE_CLIENT -q "SELECT count(n), sum(n) FROM test_01114_2.mt"    # result: 30, 435
-$CLICKHOUSE_CLIENT -q "DROP DATABASE test_01114_2"
+$CLICKHOUSE_CLIENT -q "DROP DATABASE test_01114_2" --database_atomic_wait_for_drop_and_detach_synchronously=0
