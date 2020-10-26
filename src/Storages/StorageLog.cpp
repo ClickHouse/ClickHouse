@@ -9,7 +9,7 @@
 
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
-#include <Compression/CompressedReadBufferFromFile.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -90,13 +90,15 @@ private:
     struct Stream
     {
         Stream(const DiskPtr & disk, const String & data_path, size_t offset, size_t max_read_buffer_size_)
-            : compressed(disk->readFile(data_path, std::min(max_read_buffer_size_, disk->getFileSize(data_path))))
+            : plain(disk->readFile(data_path, std::min(max_read_buffer_size_, disk->getFileSize(data_path))))
+            , compressed(*plain)
         {
             if (offset)
-                compressed.seek(offset, 0);
+                plain->seek(offset, 0);
         }
 
-        CompressedReadBufferFromFile compressed;
+        std::unique_ptr<ReadBufferFromFileBase> plain;
+        CompressedReadBuffer compressed;
     };
 
     using FileStreams = std::map<String, Stream>;
@@ -209,16 +211,24 @@ Chunk LogSource::generate()
 
     for (const auto & name_type : columns)
     {
-        MutableColumnPtr column = name_type.type->createColumn();
-
-        try
+        MutableColumnPtr column;
+        if (name_type.isSubcolumn() && res.has(name_type.getStorageName()))
         {
-            readData(name_type, *column, max_rows_to_read);
+            auto column_in_block = res.getByName(name_type.getStorageName()).column;
+            column = name_type.getStorageType()->getSubcolumn(name_type.getSubcolumnName(), *column_in_block->assumeMutable());
         }
-        catch (Exception & e)
+        else
         {
-            e.addMessage("while reading column " + name_type.name + " at " + fullPath(storage.disk, storage.table_path));
-            throw;
+            try
+            {
+                column = name_type.type->createColumn();
+                readData(name_type, *column, max_rows_to_read);
+            }
+            catch (Exception & e)
+            {
+                e.addMessage("while reading column " + name_type.name + " at " + fullPath(storage.disk, storage.table_path));
+                throw;
+            }
         }
 
         if (!column->empty())
@@ -264,9 +274,6 @@ void LogSource::readData(const NameAndTypePair & name_and_type, IColumn & column
 
             auto & data_file_path = file_it->second.data_file_path;
             auto it = streams.try_emplace(stream_name, storage.disk, data_file_path, offset, max_read_buffer_size).first;
-
-            /// FIXME: avoid double reading of subcolumns
-            it->second.compressed.seek(0, 0);
 
             return &it->second.compressed;
         };
