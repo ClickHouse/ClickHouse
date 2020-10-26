@@ -29,7 +29,7 @@ Queries that are parts of `UNION ALL` can’t be enclosed in round brackets. [OR
 The difference between `UNION ALL` and `UNION DISTINCT` is that `UNION DISTINCT` will do a distinct transform for union result, it is equivalent to `SELECT DISTINCT` from a subquery containing `UNION ALL`.
 
 # UNION Clause {#union-clause}
-By defaul, `UNION` has same react as `UNION ALL`, but you can specify union mode by setting `union_default_mode`, values can be 'ALL', 'DISTINCT' or empty string. However, if you use `UNION` with setting `union_default_mode` to empty string, it will throw an exception.
+By defaul, `UNION` has same react as `UNION DISTINCT`, but you can specify union mode by setting `union_default_mode`, values can be 'ALL', 'DISTINCT' or empty string. However, if you use `UNION` with setting `union_default_mode` to empty string, it will throw an exception.
 
 
 ## Implementation Details {#implementation-details}
