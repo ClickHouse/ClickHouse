@@ -1,5 +1,5 @@
 ---
-toc_title: EXCEPT
+toc_title: EXCEPT 
 ---
 
 # EXCEPT Clause {#select-except}

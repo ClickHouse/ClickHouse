@@ -1,5 +1,5 @@
 ---
-toc_title: APPLY
+toc_title: APPLY 
 ---
 
 # APPLY Clause {#apply-clause}
