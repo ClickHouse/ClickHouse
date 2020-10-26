@@ -22,6 +22,7 @@ public:
     }
     void transform(ASTs & nodes) const override;
     String func_name;
+    String column_name_prefix;
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;

@@ -46,6 +46,9 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, bool
             if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
                 return false;
         }
+
+        if (s_no_delay.ignore(pos, expected) || s_sync.ignore(pos, expected))
+            no_delay = true;
     }
     else
     {
