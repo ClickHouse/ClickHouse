@@ -236,7 +236,10 @@ Pipes StorageBuffer::read(
         }
 
         for (auto & pipe : pipes_from_dst)
+        {
             pipe.addTableLock(destination_lock);
+            pipe.addStorageHolder(destination);
+        }
     }
 
     Pipes pipes_from_buffers;
