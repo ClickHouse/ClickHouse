@@ -1,4 +1,8 @@
-#pragma GCC diagnostic ignored "-Wincompatible-library-redeclaration"
+#if defined(__clang__)
+    #pragma clang diagnostic ignored "-Wincompatible-library-redeclaration"
+#else
+    #pragma GCC diagnostic ignored "-Wbuiltin-declaration-mismatch"
+#endif
 
 #define TRAP(func) void func() { __builtin_trap(); }
 
