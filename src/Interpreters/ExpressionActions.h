@@ -157,6 +157,7 @@ public:
     ActionsDAGPtr splitActionsBeforeArrayJoin(const NameSet & array_joined_columns);
 
     bool hasArrayJoin() const;
+    bool empty() const;
 
 private:
     Node & addNode(Node node, bool can_replace = false);

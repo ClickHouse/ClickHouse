@@ -356,6 +356,15 @@ bool ActionsDAG::hasArrayJoin() const
     return false;
 }
 
+bool ActionsDAG::empty() const
+{
+    for (const auto & node : nodes)
+        if (node.type != Type::INPUT)
+            return false;
+
+    return true;
+}
+
 ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_joined_columns)
 {
     /// Split DAG into two parts.

@@ -438,7 +438,7 @@ static void tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node * 
         return;
 
     /// All actions was moved before ARRAY JOIN. Swap Expression and ArrayJoin.
-    if (expression->getActions().empty())
+    if (expression->empty())
     {
         auto expected_header = parent->getOutputStream().header;
 
