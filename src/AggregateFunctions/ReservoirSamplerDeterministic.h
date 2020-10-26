@@ -133,7 +133,7 @@ public:
     void merge(const ReservoirSamplerDeterministic & b)
     {
         if (max_sample_size != b.max_sample_size)
-            throw Poco::Exception("Cannot merge ReservoirSamplerDeterministic's with different max sample count");
+            throw Poco::Exception("Cannot merge ReservoirSamplerDeterministic's with different max sample size");
         sorted = false;
 
         if (b.skip_degree > skip_degree)
