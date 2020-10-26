@@ -307,6 +307,13 @@ void StoragePolicy::buildVolumeIndices()
     }
 }
 
+bool StoragePolicy::hasAnyVolumeWithDisabledMerges() const
+{
+    for (const auto & volume : volumes)
+        if (volume->areMergesAvoided())
+            return true;
+    return false;
+}
 
 StoragePolicySelector::StoragePolicySelector(
     const Poco::Util::AbstractConfiguration & config,

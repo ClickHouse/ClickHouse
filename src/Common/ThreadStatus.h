@@ -215,4 +215,22 @@ private:
     void setupState(const ThreadGroupStatusPtr & thread_group_);
 };
 
+/**
+ * Creates ThreadStatus for the main thread.
+ */
+class MainThreadStatus : public ThreadStatus
+{
+public:
+    static MainThreadStatus & getInstance();
+    static ThreadStatus * get() { return main_thread; }
+    static bool isMainThread() { return main_thread == current_thread; }
+
+    ~MainThreadStatus();
+
+private:
+    MainThreadStatus();
+
+    static ThreadStatus * main_thread;
+};
+
 }
