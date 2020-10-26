@@ -42,9 +42,9 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_hindex = columns[arguments[0]].column.get();
+        const auto * col_hindex = arguments[0].column.get();
 
         auto col_res = ColumnString::create();
         auto & vec_res = col_res->getChars();
@@ -74,7 +74,7 @@ public:
             vec_offsets[i] = ++pos - begin;
         }
         vec_res.resize(pos - begin);
-        columns[result].column = std::move(col_res);
+        return col_res;
     }
 };
 

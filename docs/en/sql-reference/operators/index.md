@@ -1,5 +1,5 @@
 ---
-toc_priority: 37
+toc_priority: 38
 toc_title: Operators
 ---
 
@@ -52,6 +52,8 @@ ClickHouse transforms operators to their corresponding functions at the query pa
 `a LIKE s` – The `like(a, b)` function.
 
 `a NOT LIKE s` – The `notLike(a, b)` function.
+
+`a ILIKE s` – The `ilike(a, b)` function.
 
 `a BETWEEN b AND c` – The same as `a >= b AND a <= c`.
 
