@@ -102,6 +102,7 @@ public:
     /// If add_aliases, only the calculated values in the desired order and add aliases.
     ///     If also project_result, than only aliases remain in the output block.
     /// Otherwise, only temporary columns will be deleted from the block.
+    ActionsDAGPtr getActionsDAG(bool add_aliases, bool project_result = true);
     ExpressionActionsPtr getActions(bool add_aliases, bool project_result = true);
 
     /// Actions that can be performed on an empty block: adding constants and applying functions that depend only on constants.
@@ -182,22 +183,22 @@ struct ExpressionAnalysisResult
     bool optimize_aggregation_in_order = false;
     bool join_has_delayed_stream = false;
 
-    ExpressionActionsPtr before_array_join;
+    ActionsDAGPtr before_array_join;
     ArrayJoinActionPtr array_join;
-    ExpressionActionsPtr before_join;
+    ActionsDAGPtr before_join;
     JoinPtr join;
-    ExpressionActionsPtr before_where;
-    ExpressionActionsPtr before_aggregation;
-    ExpressionActionsPtr before_having;
-    ExpressionActionsPtr before_order_and_select;
-    ExpressionActionsPtr before_limit_by;
-    ExpressionActionsPtr final_projection;
+    ActionsDAGPtr before_where;
+    ActionsDAGPtr before_aggregation;
+    ActionsDAGPtr before_having;
+    ActionsDAGPtr before_order_and_select;
+    ActionsDAGPtr before_limit_by;
+    ActionsDAGPtr final_projection;
 
     /// Columns from the SELECT list, before renaming them to aliases.
     Names selected_columns;
 
     /// Columns will be removed after prewhere actions execution.
-    Names columns_to_remove_after_prewhere;
+    NameSet columns_to_remove_after_prewhere;
 
     PrewhereInfoPtr prewhere_info;
     FilterInfoPtr filter_info;
@@ -229,7 +230,7 @@ struct ExpressionAnalysisResult
 
     void removeExtraColumns() const;
     void checkActions() const;
-    void finalize(const ExpressionActionsChain & chain, const Context & context, size_t where_step_num);
+    void finalize(const ExpressionActionsChain & chain, size_t where_step_num);
 };
 
 /// SelectQuery specific ExpressionAnalyzer part.
@@ -267,7 +268,7 @@ public:
     /// Tables that will need to be sent to remote servers for distributed query processing.
     const TemporaryTablesMapping & getExternalTables() const { return external_tables; }
 
-    ExpressionActionsPtr simpleSelectActions();
+    ActionsDAGPtr simpleSelectActions();
 
     /// These appends are public only for tests
     void appendSelect(ExpressionActionsChain & chain, bool only_types);

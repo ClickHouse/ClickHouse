@@ -70,16 +70,16 @@ namespace
 
 /// Check if there is an ignore function. It's used for disabling constant folding in query
 ///  predicates because some performance tests use ignore function as a non-optimize guard.
-bool allowEarlyConstantFolding(const ExpressionActions & actions, const Settings & settings)
+bool allowEarlyConstantFolding(const ActionsDAG & actions, const Settings & settings)
 {
     if (!settings.enable_early_constant_folding)
         return false;
 
-    for (const auto & action : actions.getActions())
+    for (const auto & node : actions.getNodes())
     {
-        if (action.type == action.APPLY_FUNCTION && action.function_base)
+        if (node.type == ActionsDAG::Type::FUNCTION && node.function_base)
         {
-            auto name = action.function_base->getName();
+            auto name = node.function_base->getName();
             if (name == "ignore")
                 return false;
         }
@@ -950,7 +950,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActio
     }
 
     auto actions = chain.getLastActions();
-    actions->add(ExpressionAction::project(result_columns));
+    actions->project(result_columns);
     return actions;
 }
 
@@ -963,7 +963,7 @@ void ExpressionAnalyzer::appendExpression(ExpressionActionsChain & chain, const 
 }
 
 
-ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool project_result)
+ActionsDAGPtr ExpressionAnalyzer::getActionsDAG(bool add_aliases, bool project_result)
 {
     auto actions_dag = std::make_shared<ActionsDAG>(aggregated_columns);
     NamesWithAliases result_columns;
@@ -989,14 +989,12 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool proje
         getRootActions(ast, false, actions_dag);
     }
 
-    auto actions = actions_dag->buildExpressions(context);
-
     if (add_aliases)
     {
         if (project_result)
-            actions->add(ExpressionAction::project(result_columns));
+            actions_dag->project(result_columns);
         else
-            actions->add(ExpressionAction::addAliases(result_columns));
+            actions_dag->addAliases(result_columns);
     }
 
     if (!(add_aliases && project_result))
@@ -1006,9 +1004,13 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool proje
             result_names.push_back(column_name_type.name);
     }
 
-    actions->finalize(result_names);
+    actions_dag->removeUnusedActions(result_names);
+    return actions_dag;
+}
 
-    return actions;
+ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool project_result)
+{
+    return getActionsDAG(add_aliases, project_result)->buildExpressions();
 }
 
 
@@ -1017,10 +1019,10 @@ ExpressionActionsPtr ExpressionAnalyzer::getConstActions()
     auto actions = std::make_shared<ActionsDAG>(NamesAndTypesList());
 
     getRootActions(query, true, actions, true);
-    return actions->buildExpressions(context);
+    return actions->buildExpressions();
 }
 
-ExpressionActionsPtr SelectQueryExpressionAnalyzer::simpleSelectActions()
+ActionsDAGPtr SelectQueryExpressionAnalyzer::simpleSelectActions()
 {
     ExpressionActionsChain new_chain(context);
     appendSelect(new_chain, false);
@@ -1061,7 +1063,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         if (!finalized)
         {
-            finalize(chain, context, where_step_num);
+            finalize(chain, where_step_num);
             finalized = true;
         }
 
@@ -1107,7 +1109,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 Block before_prewhere_sample = source_header;
                 if (sanitizeBlock(before_prewhere_sample))
                 {
-                    prewhere_info->prewhere_actions->execute(before_prewhere_sample);
+                    prewhere_info->prewhere_actions->buildExpressions()->execute(before_prewhere_sample);
                     auto & column_elem = before_prewhere_sample.getByName(query.prewhere()->getColumnName());
                     /// If the filter column is a constant, record it.
                     if (column_elem.column)
@@ -1140,7 +1142,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                     before_where_sample = source_header;
                 if (sanitizeBlock(before_where_sample))
                 {
-                    before_where->execute(before_where_sample);
+                    before_where->buildExpressions()->execute(before_where_sample);
                     auto & column_elem = before_where_sample.getByName(query.where()->getColumnName());
                     /// If the filter column is a constant, record it.
                     if (column_elem.column)
@@ -1210,28 +1212,31 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
     checkActions();
 }
 
-void ExpressionAnalysisResult::finalize(const ExpressionActionsChain & chain, const Context & context_, size_t where_step_num)
+void ExpressionAnalysisResult::finalize(const ExpressionActionsChain & chain, size_t where_step_num)
 {
     if (hasPrewhere())
     {
         const ExpressionActionsChain::Step & step = *chain.steps.at(0);
         prewhere_info->remove_prewhere_column = step.can_remove_required_output.at(0);
 
-        Names columns_to_remove;
+        NameSet columns_to_remove;
         for (size_t i = 1; i < step.required_output.size(); ++i)
         {
             if (step.can_remove_required_output[i])
-                columns_to_remove.push_back(step.required_output[i]);
+                columns_to_remove.insert(step.required_output[i]);
         }
 
         if (!columns_to_remove.empty())
         {
-            auto columns = prewhere_info->prewhere_actions->getSampleBlock().getNamesAndTypesList();
-            ExpressionActionsPtr actions = std::make_shared<ExpressionActions>(columns, context_);
-            for (const auto & column : columns_to_remove)
-                actions->add(ExpressionAction::removeColumn(column));
+            auto columns = prewhere_info->prewhere_actions->getResultColumns();
 
-            prewhere_info->remove_columns_actions = std::move(actions);
+            auto remove_actions = std::make_shared<ActionsDAG>();
+            for (const auto & column : columns)
+                if (columns_to_remove.count(column.name) == 0)
+                    remove_actions->addInput(column);
+
+            remove_actions->projectInput();
+            prewhere_info->remove_columns_actions = std::move(remove_actions);
         }
 
         columns_to_remove_after_prewhere = std::move(columns_to_remove);
@@ -1248,11 +1253,11 @@ void ExpressionAnalysisResult::finalize(const ExpressionActionsChain & chain, co
 void ExpressionAnalysisResult::removeExtraColumns() const
 {
     if (hasFilter())
-        filter_info->actions->prependProjectInput();
+        filter_info->actions->projectInput();
     if (hasWhere())
-        before_where->prependProjectInput();
+        before_where->projectInput();
     if (hasHaving())
-        before_having->prependProjectInput();
+        before_having->projectInput();
 }
 
 void ExpressionAnalysisResult::checkActions() const
@@ -1260,11 +1265,11 @@ void ExpressionAnalysisResult::checkActions() const
     /// Check that PREWHERE doesn't contain unusual actions. Unusual actions are that can change number of rows.
     if (hasPrewhere())
     {
-        auto check_actions = [](const ExpressionActionsPtr & actions)
+        auto check_actions = [](const ActionsDAGPtr & actions)
         {
             if (actions)
-                for (const auto & action : actions->getActions())
-                    if (action.type == ExpressionAction::Type::ARRAY_JOIN)
+                for (const auto & node : actions->getNodes())
+                    if (node.type == ActionsDAG::Type::ARRAY_JOIN)
                         throw Exception("PREWHERE cannot contain ARRAY JOIN action", ErrorCodes::ILLEGAL_PREWHERE);
         };
 

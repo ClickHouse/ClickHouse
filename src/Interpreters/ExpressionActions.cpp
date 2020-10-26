@@ -347,6 +347,15 @@ static std::string getUniqueNameForIndex(ActionsDAG::Index & index, std::string 
     return res;
 }
 
+bool ActionsDAG::hasArrayJoin() const
+{
+    for (const auto & node : nodes)
+        if (node.type == Type::ARRAY_JOIN)
+            return true;
+
+    return false;
+}
+
 ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_joined_columns)
 {
     /// Split DAG into two parts.
@@ -1091,6 +1100,67 @@ void ActionsDAG::removeUnusedActions(const Names & required_names)
     nodes.remove_if([&](Node * node) { return visited_nodes.count(node) == 0; });
 }
 
+void ActionsDAG::addAliases(const NamesWithAliases & aliases)
+{
+    for (const auto & item : aliases)
+        if (!item.second.empty())
+            addAlias(item.first, item.second, true);
+}
+
+void ActionsDAG::project(const NamesWithAliases & projection)
+{
+    addAliases(projection);
+
+    Names result_names;
+    result_names.reserve(projection.size());
+
+    for (const auto & item : projection)
+        result_names.push_back(item.second.empty() ? item.first : item.second);
+
+    removeUnusedActions(result_names);
+}
+
+void ActionsDAG::restoreColumn(const std::string & column_name)
+{
+    if (index.count(column_name))
+        return;
+
+    for (auto it = nodes.rbegin(); it != nodes.rend(); ++it)
+    {
+        auto & node = *it;
+        if (node.result_name == column_name)
+        {
+            index[node.result_name] = &node;
+            return;
+        }
+    }
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot restore column {} in ActionsDAG", column_name);
+}
+
+ActionsDAGPtr ActionsDAG::clone() const
+{
+    auto actions = cloneEmpty();
+
+    std::unordered_map<const Node *, Node *> copy_map;
+
+    for (const auto & node : nodes)
+    {
+        auto & copy_node = actions->nodes.emplace_back(node);
+        copy_map[&node] = &copy_node;
+
+        auto it = index.find(node.result_name);
+        if (it != index.end() && it->second == &node)
+            actions->index[copy_node.result_name] = &copy_node;
+    }
+
+    for (auto & node : actions->nodes)
+        for (auto & child : node.children)
+            child = copy_map[child];
+
+    return actions;
+}
+
 ExpressionActionsPtr ActionsDAG::linearizeActions() const
 {
     struct Data
@@ -1203,10 +1273,10 @@ ExpressionActionsPtr ActionsDAG::linearizeActions() const
 
 ExpressionActionsPtr ActionsDAG::buildExpressions()
 {
-    auto expressions = linearizeActions();
+    auto cloned = clone();
+    auto expressions = cloned->linearizeActions();
 
-    expressions->nodes.swap(nodes);
-    index.clear();
+    expressions->nodes.swap(cloned->nodes);
 
     if (max_temporary_columns && expressions->num_columns > max_temporary_columns)
         throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,

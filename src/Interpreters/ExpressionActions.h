@@ -97,9 +97,10 @@ public:
     };
 
     using Index = std::unordered_map<std::string_view, Node *>;
+    using Nodes = std::list<Node>;
 
 private:
-    std::list<Node> nodes;
+    Nodes nodes;
     Index index;
 
     size_t max_temporary_columns = 0;
@@ -118,11 +119,13 @@ public:
     explicit ActionsDAG(const NamesAndTypesList & inputs);
     explicit ActionsDAG(const ColumnsWithTypeAndName & inputs);
 
+    const Nodes & getNodes() const { return nodes; }
     const Index & getIndex() const { return index; }
 
     NamesAndTypesList getRequiredColumns() const;
     ColumnsWithTypeAndName getResultColumns() const;
     NamesAndTypesList getNamesAndTypesList() const;
+
     Names getNames() const;
     std::string dumpNames() const;
     std::string dump() const;
@@ -138,6 +141,13 @@ public:
             std::string result_name,
             const Context & context);
 
+    /// Call addAlias several times.
+    void addAliases(const NamesWithAliases & aliases);
+    /// Adds alias actions and removes unused columns from index.
+    void project(const NamesWithAliases & projection);
+    /// If column is not in index, try to find it in nodes and insert back into index.
+    void restoreColumn(const std::string & column_name);
+
     void projectInput() { project_input = true; }
     void removeUnusedActions(const Names & required_names);
     ExpressionActionsPtr buildExpressions();
@@ -146,10 +156,13 @@ public:
     /// Returns nullptr if no actions may be moved before ARRAY JOIN.
     ActionsDAGPtr splitActionsBeforeArrayJoin(const NameSet & array_joined_columns);
 
+    bool hasArrayJoin() const;
+
 private:
     Node & addNode(Node node, bool can_replace = false);
     Node & getNode(const std::string & name);
 
+    ActionsDAGPtr clone() const;
     ActionsDAGPtr cloneEmpty() const
     {
         auto actions = std::make_shared<ActionsDAG>();
@@ -220,6 +233,8 @@ public:
     ExpressionActions() = default;
 
     ExpressionActions(const ExpressionActions & other) = default;
+
+    const Actions & getActions() const { return actions; }
 
     /// Adds to the beginning the removal of all extra columns.
     void projectInput() { project_input = true; }
