@@ -49,6 +49,7 @@ static FormatSettings getInputFormatSetting(const Settings & settings, const Con
     format_settings.csv.allow_double_quotes = settings.format_csv_allow_double_quotes;
     format_settings.csv.unquoted_null_literal_as_null = settings.input_format_csv_unquoted_null_literal_as_null;
     format_settings.csv.empty_as_default = settings.input_format_defaults_for_omitted_fields;
+    format_settings.csv.input_format_enum_as_number = settings.input_format_csv_enum_as_number;
     format_settings.null_as_default = settings.input_format_null_as_default;
     format_settings.values.interpret_expressions = settings.input_format_values_interpret_expressions;
     format_settings.values.deduce_templates_of_expressions = settings.input_format_values_deduce_templates_of_expressions;
@@ -63,6 +64,7 @@ static FormatSettings getInputFormatSetting(const Settings & settings, const Con
     format_settings.template_settings.row_format = settings.format_template_row;
     format_settings.template_settings.row_between_delimiter = settings.format_template_rows_between_delimiter;
     format_settings.tsv.empty_as_default = settings.input_format_tsv_empty_as_default;
+    format_settings.tsv.input_format_enum_as_number = settings.input_format_tsv_enum_as_number;
     format_settings.schema.format_schema = settings.format_schema;
     format_settings.schema.format_schema_path = context.getFormatSchemaPath();
     format_settings.schema.is_server = context.hasGlobalContext() && (context.getGlobalContext().getApplicationType() == Context::ApplicationType::SERVER);

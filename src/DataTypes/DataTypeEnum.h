@@ -66,13 +66,18 @@ public:
 
     TypeIndex getTypeId() const override { return sizeof(FieldType) == 1 ? TypeIndex::Enum8 : TypeIndex::Enum16; }
 
-    const StringRef & getNameForValue(const FieldType & value) const
+    auto findByValue(const FieldType & value) const
     {
         const auto it = value_to_name_map.find(value);
         if (it == std::end(value_to_name_map))
             throw Exception{"Unexpected value " + toString(value) + " for type " + getName(), ErrorCodes::BAD_ARGUMENTS};
 
-        return it->second;
+        return it;
+    }
+
+    const StringRef & getNameForValue(const FieldType & value) const
+    {
+        return findByValue(value)->second;
     }
 
     FieldType getValue(StringRef field_name) const
@@ -82,6 +87,13 @@ public:
             throw Exception{"Unknown element '" + field_name.toString() + "' for type " + getName(), ErrorCodes::BAD_ARGUMENTS};
 
         return it->getMapped();
+    }
+
+    FieldType readValue(ReadBuffer & istr) const
+    {
+        FieldType x;
+        readText(x, istr);
+        return findByValue(x)->first;
     }
 
     Field castToName(const Field & value_or_name) const override;

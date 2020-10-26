@@ -1,3 +1,8 @@
+---
+toc_priority: 35
+toc_title: Dictionary
+---
+
 # Dictionary {#dictionary}
 
 Движок `Dictionary` отображает данные [словаря](../../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) как таблицу ClickHouse.

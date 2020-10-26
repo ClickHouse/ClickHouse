@@ -69,9 +69,9 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
-        const IColumn * col = columns[arguments[0]].column.get();
+        const IColumn * col = arguments[0].column.get();
 
         if (!isColumnConst(*col))
             throw Exception("The argument of function " + getName() + " must be constant.", ErrorCodes::ILLEGAL_COLUMN);
@@ -95,7 +95,7 @@ public:
         }
 
         /// convertToFullColumn needed, because otherwise (constant expression case) function will not get called on each columns.
-        columns[result].column = columns[result].type->createColumnConst(size, 0u)->convertToFullColumnIfConst();
+        return result_type->createColumnConst(size, 0u)->convertToFullColumnIfConst();
     }
 };
 

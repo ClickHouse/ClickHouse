@@ -174,11 +174,11 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
             bool all_const = true;
             bool all_suitable_for_constant_folding = true;
 
-            ColumnNumbers arguments(argument_names.size());
+            ColumnsWithTypeAndName arguments(argument_names.size());
             for (size_t i = 0; i < argument_names.size(); ++i)
             {
-                arguments[i] = sample_block.getPositionByName(argument_names[i]);
-                ColumnPtr col = sample_block.safeGetByPosition(arguments[i]).column;
+                arguments[i] = sample_block.getByName(argument_names[i]);
+                ColumnPtr col = arguments[i].column;
                 if (!col || !isColumnConst(*col))
                     all_const = false;
 
@@ -189,7 +189,7 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
             size_t result_position = sample_block.columns();
             sample_block.insert({nullptr, result_type, result_name});
             if (!function)
-                function = function_base->prepare(sample_block.data, arguments, result_position);
+                function = function_base->prepare(arguments);
             function->createLowCardinalityResultCache(settings.max_threads);
 
             bool compile_expressions = false;
@@ -204,7 +204,7 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
                 if (added_column)
                     sample_block.getByPosition(result_position).column = added_column;
                 else
-                    function->execute(sample_block.data, arguments, result_position, sample_block.rows(), true);
+                    sample_block.getByPosition(result_position).column = function->execute(arguments, result_type, sample_block.rows(), true);
 
                 /// If the result is not a constant, just in case, we will consider the result as unknown.
                 ColumnWithTypeAndName & col = sample_block.safeGetByPosition(result_position);
@@ -232,7 +232,7 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
             auto & res = sample_block.getByPosition(result_position);
             if (!res.column && function_base->isSuitableForConstantFolding())
             {
-                if (auto col = function_base->getResultIfAlwaysReturnsConstantAndHasArguments(sample_block.getColumnsWithTypeAndName(), arguments))
+                if (auto col = function_base->getResultIfAlwaysReturnsConstantAndHasArguments(arguments))
                 {
                     res.column = std::move(col);
                     names_not_for_constant_folding.insert(result_name);
@@ -316,6 +316,7 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
                 {
                     auto & result = sample_block.getByName(result_name);
                     result.type = result_type;
+                    result.name = result_name;
                     result.column = source.column;
                 }
                 else
@@ -345,9 +346,9 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
     {
         case APPLY_FUNCTION:
         {
-            ColumnNumbers arguments(argument_names.size());
+            ColumnsWithTypeAndName arguments(argument_names.size());
             for (size_t i = 0; i < argument_names.size(); ++i)
-                arguments[i] = block.getPositionByName(argument_names[i]);
+                arguments[i] = block.getByName(argument_names[i]);
 
             size_t num_columns_without_result = block.columns();
             block.insert({ nullptr, result_type, result_name});
@@ -355,7 +356,7 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
             ProfileEvents::increment(ProfileEvents::FunctionExecute);
             if (is_function_compiled)
                 ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
-            function->execute(block.data, arguments, num_columns_without_result, input_rows_count, dry_run);
+            block.getByPosition(num_columns_without_result).column = function->execute(arguments, result_type, input_rows_count, dry_run);
 
             break;
         }
@@ -595,7 +596,7 @@ void ExpressionActions::addImpl(ExpressionAction action, Names & new_names)
         if (!action.function_base)
         {
             action.function_base = action.function_builder->build(arguments);
-            action.result_type = action.function_base->getReturnType();
+            action.result_type = action.function_base->getResultType();
         }
     }
 
@@ -1550,7 +1551,6 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
 
     bool all_const = true;
     ColumnsWithTypeAndName arguments(num_arguments);
-    ColumnNumbers argument_numbers(num_arguments);
 
     for (size_t i = 0; i < num_arguments; ++i)
     {
@@ -1559,22 +1559,20 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         node.allow_constant_folding = node.allow_constant_folding && child.allow_constant_folding;
 
         ColumnWithTypeAndName argument;
+        argument.name = argument_names[i];
         argument.column = child.column;
         argument.type = child.result_type;
+        argument.name = child.result_name;
 
         if (!argument.column || !isColumnConst(*argument.column))
             all_const = false;
 
         arguments[i] = std::move(argument);
-        argument_numbers[i] = i;
     }
 
     node.function_base = function->build(arguments);
-    node.result_type = node.function_base->getReturnType();
-
-    Block sample_block(std::move(arguments));
-    sample_block.insert({nullptr, node.result_type, node.result_name});
-    node.function = node.function_base->prepare(sample_block.data, argument_numbers, num_arguments);
+    node.result_type = node.function_base->getResultType();
+    node.function = node.function_base->prepare(arguments);
 
     bool do_compile_expressions = false;
 #if USE_EMBEDDED_COMPILER
@@ -1585,20 +1583,20 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     /// so we don't want to unfold non deterministic functions
     if (all_const && node.function_base->isSuitableForConstantFolding() && (!do_compile_expressions || node.function_base->isDeterministic()))
     {
-        node.function->execute(sample_block.data, argument_numbers, num_arguments, sample_block.rows(), true);
+        size_t num_rows = arguments.empty() ? 0 : arguments.front().column->size();
+        auto col = node.function->execute(arguments, node.result_type, num_rows, true);
 
         /// If the result is not a constant, just in case, we will consider the result as unknown.
-        ColumnWithTypeAndName & col = sample_block.safeGetByPosition(num_arguments);
-        if (isColumnConst(*col.column))
+        if (isColumnConst(*col))
         {
             /// All constant (literal) columns in block are added with size 1.
             /// But if there was no columns in block before executing a function, the result has size 0.
             /// Change the size to 1.
 
-            if (col.column->empty())
-                col.column = col.column->cloneResized(1);
+            if (col->empty())
+                col = col->cloneResized(1);
 
-            node.column = std::move(col.column);
+            node.column = std::move(col);
         }
     }
 
@@ -1607,7 +1605,7 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     /// unnecessary materialization.
     if (!node.column && node.function_base->isSuitableForConstantFolding())
     {
-        if (auto col = node.function_base->getResultIfAlwaysReturnsConstantAndHasArguments(sample_block.getColumnsWithTypeAndName(), argument_numbers))
+        if (auto col = node.function_base->getResultIfAlwaysReturnsConstantAndHasArguments(arguments))
         {
             node.column = std::move(col);
             node.allow_constant_folding = false;
