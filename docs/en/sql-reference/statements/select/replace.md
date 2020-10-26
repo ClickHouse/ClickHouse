@@ -66,3 +66,5 @@ SELECT [db]table.* REPLACE(j + 2 AS j, i + 1 AS i) APPLY(avg) from [db.]table
 │             111 │              11 │  173.5 │
 └─────────────────┴─────────────────┴────────┘
 ```
+
+[Original article](https://clickhouse.tech/docs/en/sql-reference/statements/select/replace/) <!--hide-->

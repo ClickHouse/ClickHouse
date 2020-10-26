@@ -62,3 +62,5 @@ SELECT * EXCEPT(i, j) from [db.]table
 │  23 │
 └─────┘
 ```
+
+[Original article](https://clickhouse.tech/docs/en/sql-reference/statements/select/except/) <!--hide-->

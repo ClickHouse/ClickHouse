@@ -1,5 +1,5 @@
 ---
-toc_title: SPPLY
+toc_title: APPLY
 ---
 
 # APPLY Clause {#apply-clause}
@@ -63,3 +63,5 @@ SELECT COLUMNS('[jk]') APPLY(toString) APPLY(length) APPLY(max) from [db.]table
 │                        2 │                        3 │
 └──────────────────────────┴──────────────────────────┘
 ```
+
+[Original article](https://clickhouse.tech/docs/en/sql-reference/statements/select/apply/) <!--hide-->
