@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include <Common/typeid_cast.h>
+#include "Core/DecimalFunctions.h"
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
 #include <Columns/ColumnVectorHelper.h>
@@ -181,6 +182,8 @@ public:
         else
             throw Exception("getDataAt() is not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
     }
+
+    Float64 getFloat64(size_t n) const final { return DecimalUtils::convertTo<Float64>(data[n], scale); }
 
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
