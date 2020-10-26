@@ -1,3 +1,8 @@
+---
+toc_priority: 38
+toc_title: GRANT
+---
+
 # GRANT
 
 - Присваивает [привилегии](#grant-privileges) пользователям или ролям ClickHouse.
