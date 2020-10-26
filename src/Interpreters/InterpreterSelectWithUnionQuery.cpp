@@ -1,3 +1,5 @@
+#include <ctime>
+#include <memory>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/Context.h>
@@ -40,26 +42,38 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     if (!num_selects)
         throw Exception("Logical error: no children in ASTSelectWithUnionQuery", ErrorCodes::LOGICAL_ERROR);
 
-    /// For SELECT ... UNION/UNION ALL/UNION DISTINCT SELECT ... query,
-    /// rewrite ast with settings.union_default_mode
+    /// Rewrite ast with settings.union_default_mode
     if (num_selects > 1)
     {
-        if (ast.mode == ASTSelectWithUnionQuery::Mode::Unspecified)
+        const Settings & settings = context->getSettingsRef();
+        for (auto & mode : ast.union_modes)
         {
-            const Settings & settings = context->getSettingsRef();
+            if (mode == ASTSelectWithUnionQuery::Mode::Unspecified)
+            {
 
-            if (settings.union_default_mode == UnionMode::ALL)
-                ast.mode = ASTSelectWithUnionQuery::Mode::ALL;
-            else if (settings.union_default_mode == UnionMode::DISTINCT)
-                ast.mode = ASTSelectWithUnionQuery::Mode::DISTINCT;
-            else
-                throw Exception(
-                    "Expected ALL or DISTINCT in SelectWithUnion query, because setting (union_default_mode) is empty",
-                    DB::ErrorCodes::EXPECTED_ALL_OR_DISTINCT);
+                if (settings.union_default_mode == UnionMode::ALL)
+                    mode = ASTSelectWithUnionQuery::Mode::ALL;
+                else if (settings.union_default_mode == UnionMode::DISTINCT)
+                    mode = ASTSelectWithUnionQuery::Mode::DISTINCT;
+                else
+                    throw Exception(
+                        "Expected ALL or DISTINCT in SelectWithUnion query, because setting (union_default_mode) is empty",
+                        DB::ErrorCodes::EXPECTED_ALL_OR_DISTINCT);
+            }
         }
-
-        if (ast.mode == ASTSelectWithUnionQuery::Mode::DISTINCT)
-            distinct_union = true;
+        /// Optimize: if there is UNION DISTINCT, all previous UNION DISTINCT can be rewritten to UNION ALL.
+        /// Therefore we have at most one UNION DISTINCT in a sequence.
+        for (auto rit = ast.union_modes.rbegin(); rit != ast.union_modes.rend(); ++rit)
+        {
+            if (*rit == ASTSelectWithUnionQuery::Mode::DISTINCT)
+            {
+                /// Number of streams need to do a DISTINCT transform after unite
+                union_distinct_num = ast.union_modes.rend() - rit + 1;
+                for (auto mode_to_modify = ++rit; mode_to_modify != ast.union_modes.rend(); ++mode_to_modify)
+                    *mode_to_modify = ASTSelectWithUnionQuery::Mode::ALL;
+                break;
+            }
+        }
     }
 
     /// Initialize interpreters for each SELECT query.
@@ -207,31 +221,79 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
         return;
     }
 
-    std::vector<std::unique_ptr<QueryPlan>> plans(num_plans);
-    DataStreams data_streams(num_plans);
-
-    for (size_t i = 0; i < num_plans; ++i)
+    /// All UNION streams in the chain does not need to do DISTINCT transform
+    if (union_distinct_num == 0)
     {
-        plans[i] = std::make_unique<QueryPlan>();
-        nested_interpreters[i]->buildQueryPlan(*plans[i]);
-        data_streams[i] = plans[i]->getCurrentDataStream();
+        std::vector<std::unique_ptr<QueryPlan>> plans(num_plans);
+        DataStreams data_streams(num_plans);
+
+        for (size_t i = 0; i < num_plans; ++i)
+        {
+            plans[i] = std::make_unique<QueryPlan>();
+            nested_interpreters[i]->buildQueryPlan(*plans[i]);
+            data_streams[i] = plans[i]->getCurrentDataStream();
+        }
+
+        auto max_threads = context->getSettingsRef().max_threads;
+        auto union_step = std::make_unique<UnionStep>(std::move(data_streams), result_header, max_threads);
+
+        query_plan.unitePlans(std::move(union_step), std::move(plans));
     }
 
-    auto max_threads = context->getSettingsRef().max_threads;
-    auto union_step = std::make_unique<UnionStep>(std::move(data_streams), result_header, max_threads);
-
-    query_plan.unitePlans(std::move(union_step), std::move(plans));
-
-    /// Add distinct transform for UNION DISTINCT query
-    if (distinct_union)
+    /// The first union_distinct_num UNION streams need to do a DISTINCT transform after unite
+    else
     {
+        QueryPlan distinct_query_plan;
+
+        std::vector<std::unique_ptr<QueryPlan>> plans(union_distinct_num);
+        DataStreams data_streams(union_distinct_num);
+
+        for (size_t i = 0; i < union_distinct_num; ++i)
+        {
+            plans[i] = std::make_unique<QueryPlan>();
+            nested_interpreters[i]->buildQueryPlan(*plans[i]);
+            data_streams[i] = plans[i]->getCurrentDataStream();
+        }
+
+        auto max_threads = context->getSettingsRef().max_threads;
+        auto union_step = std::make_unique<UnionStep>(std::move(data_streams), result_header, max_threads);
+
+        distinct_query_plan.unitePlans(std::move(union_step), std::move(plans));
+
+        /// Add distinct transform
         const Settings & settings = context->getSettingsRef();
         SizeLimits limits(settings.max_rows_in_distinct, settings.max_bytes_in_distinct, settings.distinct_overflow_mode);
 
-        auto distinct_step = std::make_unique<DistinctStep>(query_plan.getCurrentDataStream(), limits, 0, result_header.getNames(), false);
+        auto distinct_step
+            = std::make_unique<DistinctStep>(distinct_query_plan.getCurrentDataStream(), limits, 0, result_header.getNames(), false);
 
-        query_plan.addStep(std::move(distinct_step));
+        distinct_query_plan.addStep(std::move(distinct_step));
+
+        /// No other UNION streams after DISTINCT stream
+        if (num_plans == union_distinct_num)
+        {
+            query_plan = std::move(distinct_query_plan);
+            return;
+        }
+
+        /// Build final UNION step
+        std::vector<std::unique_ptr<QueryPlan>> final_plans(num_plans - union_distinct_num + 1);
+        DataStreams final_data_streams(num_plans - union_distinct_num + 1);
+
+        final_plans[0] = std::make_unique<QueryPlan>(std::move(distinct_query_plan));
+        final_data_streams[0] = final_plans[0]->getCurrentDataStream();
+
+        for (size_t i = 1; i < num_plans - union_distinct_num + 1; ++i)
+        {
+            final_plans[i] = std::make_unique<QueryPlan>();
+            nested_interpreters[union_distinct_num + i - 1]->buildQueryPlan(*final_plans[i]);
+            final_data_streams[i] = final_plans[i]->getCurrentDataStream();
+        }
+
+        auto final_union_step = std::make_unique<UnionStep>(std::move(final_data_streams), result_header, max_threads);
+        query_plan.unitePlans(std::move(final_union_step), std::move(final_plans));
     }
+
 }
 
 BlockIO InterpreterSelectWithUnionQuery::execute()

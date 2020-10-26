@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/SelectQueryOptions.h>
@@ -54,7 +55,8 @@ private:
 
     size_t max_streams = 1;
 
-    bool distinct_union = false;
+    /// First union_distinct_num streams need to do a DISTINCT transform after unite
+    size_t union_distinct_num = 0;
 
     static Block getCommonHeaderForUnion(const Blocks & headers);
 };
