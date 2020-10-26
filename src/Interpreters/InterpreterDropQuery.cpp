@@ -47,39 +47,36 @@ BlockIO InterpreterDropQuery::execute()
     if (!drop.table.empty())
     {
         if (!drop.is_dictionary)
-            return executeToTable({drop.database, drop.table, drop.uuid}, drop);
+            return executeToTable(drop);
         else
             return executeToDictionary(drop.database, drop.table, drop.kind, drop.if_exists, drop.temporary, drop.no_ddl_lock);
     }
     else if (!drop.database.empty())
-        return executeToDatabase(drop.database, drop.kind, drop.if_exists);
+        return executeToDatabase(drop.database, drop.kind, drop.if_exists, drop.no_delay);
     else
         throw Exception("Nothing to drop, both names are empty", ErrorCodes::LOGICAL_ERROR);
 }
 
 
-BlockIO InterpreterDropQuery::executeToTable(
-    const StorageID & table_id_,
-    const ASTDropQuery & query)
+BlockIO InterpreterDropQuery::executeToTable(const ASTDropQuery & query)
 {
-    if (query.temporary || table_id_.database_name.empty())
+    /// NOTE: it does not contain UUID, we will resolve it with locked DDLGuard
+    auto table_id = StorageID(query);
+    if (query.temporary || table_id.database_name.empty())
     {
-        if (context.tryResolveStorageID(table_id_, Context::ResolveExternal))
-            return executeToTemporaryTable(table_id_.getTableName(), query.kind);
+        if (context.tryResolveStorageID(table_id, Context::ResolveExternal))
+            return executeToTemporaryTable(table_id.getTableName(), query.kind);
+        else
+            table_id.database_name = context.getCurrentDatabase();
     }
 
     if (query.temporary)
     {
         if (query.if_exists)
             return {};
-        throw Exception("Temporary table " + backQuoteIfNeed(table_id_.table_name) + " doesn't exist",
+        throw Exception("Temporary table " + backQuoteIfNeed(table_id.table_name) + " doesn't exist",
                         ErrorCodes::UNKNOWN_TABLE);
     }
-
-    auto table_id = query.if_exists ? context.tryResolveStorageID(table_id_, Context::ResolveOrdinary)
-                                    : context.resolveStorageID(table_id_, Context::ResolveOrdinary);
-    if (!table_id)
-        return {};
 
     auto ddl_guard = (!query.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name) : nullptr);
 
@@ -91,6 +88,9 @@ BlockIO InterpreterDropQuery::executeToTable(
     {
         if (query_ptr->as<ASTDropQuery &>().is_view && !table->isView())
             throw Exception("Table " + table_id.getNameForLogs() + " is not a View", ErrorCodes::LOGICAL_ERROR);
+
+        /// Now get UUID, so we can wait for table data to be finally dropped
+        table_id.uuid = database->tryGetTableUUID(table_id.table_name);
 
         if (query.kind == ASTDropQuery::Kind::Detach)
         {
@@ -223,7 +223,7 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
 }
 
 
-BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, ASTDropQuery::Kind kind, bool if_exists)
+BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, ASTDropQuery::Kind kind, bool if_exists, bool no_delay)
 {
     auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
 
@@ -251,11 +251,16 @@ BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, AS
 
                 ASTDropQuery query;
                 query.kind = kind;
+                query.if_exists = true;
                 query.database = database_name;
+                query.no_delay = no_delay;
+
                 for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
                 {
+                    /// Reset reference counter of the StoragePtr to allow synchronous drop.
+                    iterator->reset();
                     query.table = iterator->name();
-                    executeToTable({query.database, query.table}, query);
+                    executeToTable(query);
                 }
             }
 

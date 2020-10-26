@@ -277,6 +277,9 @@ void TCPHandler::runImpl()
             /// Do it before sending end of stream, to have a chance to show log message in client.
             query_scope->logPeakMemoryUsage();
 
+            if (state.is_connection_closed)
+                break;
+
             sendLogs();
             sendEndOfStream();
 
@@ -444,7 +447,11 @@ bool TCPHandler::readDataNext(const size_t & poll_interval, const int & receive_
 
     /// If client disconnected.
     if (in->eof())
+    {
+        LOG_INFO(log, "Client has dropped the connection, cancel the query.");
+        state.is_connection_closed = true;
         return false;
+    }
 
     /// We accept and process data. And if they are over, then we leave.
     if (!receivePacket())
@@ -477,9 +484,8 @@ void TCPHandler::readData(const Settings & connection_settings)
     std::tie(poll_interval, receive_timeout) = getReadTimeouts(connection_settings);
     sendLogs();
 
-    while (true)
-        if (!readDataNext(poll_interval, receive_timeout))
-            return;
+    while (readDataNext(poll_interval, receive_timeout))
+        ;
 }
 
 
@@ -567,6 +573,9 @@ void TCPHandler::processOrdinaryQuery()
             sendProgress();
         }
 
+        if (state.is_connection_closed)
+            return;
+
         sendData({});
     }
 
@@ -631,6 +640,9 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
             sendProgress();
             sendLogs();
         }
+
+        if (state.is_connection_closed)
+            return;
 
         sendData({});
     }
@@ -1190,6 +1202,14 @@ bool TCPHandler::isQueryCancelled()
     /// During request execution the only packet that can come from the client is stopping the query.
     if (static_cast<ReadBufferFromPocoSocket &>(*in).poll(0))
     {
+        if (in->eof())
+        {
+            LOG_INFO(log, "Client has dropped the connection, cancel the query.");
+            state.is_cancelled = true;
+            state.is_connection_closed = true;
+            return true;
+        }
+
         UInt64 packet_type = 0;
         readVarUInt(packet_type, *in);
 
