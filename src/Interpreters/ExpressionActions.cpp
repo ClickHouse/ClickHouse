@@ -255,12 +255,12 @@ void ExpressionActions::executeAction(const Action & action, ExecutionContext & 
             {
                 columns[action.result_position].column = columns[arg.pos].column;
                 columns[action.result_position].type = columns[arg.pos].type;
+
+                if (arg.remove)
+                    columns[arg.pos] = {};
             }
 
             columns[action.result_position].name = action.node->result_name;
-
-            if (arg.remove)
-                columns[arg.pos] = {};
 
             break;
         }
@@ -1252,6 +1252,9 @@ ExpressionActionsPtr ActionsDAG::linearizeActions() const
             ExpressionActions::Argument argument;
             argument.pos = arg.position;
             argument.remove = !arg.used_in_result && arg.num_created_parents == arg.parents.size();
+
+            if (argument.remove)
+                free_positions.push(argument.pos);
 
             arguments.emplace_back(argument);
         }
