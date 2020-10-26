@@ -122,8 +122,8 @@ void LocalServer::tryInitPath()
     }
     else
     {
-        // Path is not provided explicitly - use unique path in the system temporary directory
-        // (or in current dir if temporary don't exists)
+        // The path is not provided explicitly - use a unique path in the system temporary directory
+        // (or in the current dir if temporary don't exist)
         Poco::Logger * log = &logger();
         std::filesystem::path parent_folder;
         std::filesystem::path default_path;
@@ -144,7 +144,7 @@ void LocalServer::tryInitPath()
             LOG_DEBUG(log, "Will create working directory inside current directory: {}", parent_folder.string());
         }
 
-        /// we can have other clickhouse-local running simultaneously, even with same pid (for ex. - several docker mounting same folder)
+        /// we can have another clickhouse-local running simultaneously, even with the same PID (for ex. - several dockers mounting the same folder)
         /// or it can be some leftovers from other clickhouse-local runs
         /// as we can't accurately distinguish those situations we don't touch any existent folders
         /// we just try to pick some free name for our working folder
