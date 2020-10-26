@@ -555,15 +555,15 @@ LLVMFunction::Monotonicity LLVMFunction::getMonotonicityForRange(const IDataType
 }
 
 
-static bool isCompilable(const IFunctionBase & function)
-{
-    if (!canBeNativeType(*function.getResultType()))
-        return false;
-    for (const auto & type : function.getArgumentTypes())
-        if (!canBeNativeType(*type))
-            return false;
-    return function.isCompilable();
-}
+//static bool isCompilable(const IFunctionBase & function)
+//{
+//    if (!canBeNativeType(*function.getResultType()))
+//        return false;
+//    for (const auto & type : function.getArgumentTypes())
+//        if (!canBeNativeType(*type))
+//            return false;
+//    return function.isCompilable();
+//}
 
 //static std::vector<std::unordered_set<std::optional<size_t>>> getActionsDependents(const ExpressionActions::Actions & actions, const Names & output_columns)
 //{
