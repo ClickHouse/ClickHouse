@@ -271,7 +271,7 @@ TESTS_TO_SKIP=(
     00974_query_profiler
 
     # Look at DistributedFilesToInsert, so cannot run in parallel.
-    01457_DistributedFilesToInsert
+    01460_DistributedFilesToInsert
 
     01541_max_memory_usage_for_user
 
