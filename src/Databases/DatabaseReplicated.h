@@ -57,7 +57,7 @@ private:
 
     void loadMetadataFromSnapshot();
     void createSnapshot();
-    void RemoveOutdatedSnapshotsAndLog();
+    void removeOutdatedSnapshotsAndLog();
 
     std::unique_ptr<Context> current_context; // to run executeQuery
 

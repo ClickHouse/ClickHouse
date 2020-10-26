@@ -141,7 +141,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         throw Exception("Unknown database engine: " + ostr.str(), ErrorCodes::UNKNOWN_DATABASE_ENGINE);
     }
 
-    if (create.storage->engine->name == "Atomic")
+    if (create.storage->engine->name == "Atomic" || create.storage->engine->name == "Replicated")
     {
         if (create.attach && create.uuid == UUIDHelpers::Nil)
             throw Exception("UUID must be specified for ATTACH", ErrorCodes::INCORRECT_QUERY);
