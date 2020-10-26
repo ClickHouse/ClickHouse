@@ -14,7 +14,7 @@
 
 Репликация не зависит от шардирования. На каждом шарде репликация работает независимо.
 
-Реплицируются сжатые данные запросов `INSERT`, `ALTER` (см. подробности в описании запроса [ALTER](../../../engines/table-engines/mergetree-family/replication.md#query_language_queries_alter)).
+Реплицируются сжатые данные запросов `INSERT`, `ALTER` (см. подробности в описании запроса [ALTER](../../../sql-reference/statements/alter/index.md#query_language_queries_alter)).
 
 Запросы `CREATE`, `DROP`, `ATTACH`, `DETACH` и `RENAME` выполняются на одном сервере и не реплицируются:
 

@@ -33,14 +33,32 @@ void IASTColumnsTransformer::transform(const ASTPtr & transformer, ASTs & nodes)
 
 void ASTColumnsApplyTransformer::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "APPLY" << (settings.hilite ? hilite_none : "") << " " << func_name;
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "APPLY" << (settings.hilite ? hilite_none : "") << " ";
+
+    if (!column_name_prefix.empty())
+        settings.ostr << "(" << func_name << ", '" << column_name_prefix << "')";
+    else
+        settings.ostr << func_name;
 }
 
 void ASTColumnsApplyTransformer::transform(ASTs & nodes) const
 {
     for (auto & column : nodes)
     {
+        String name;
+        auto alias = column->tryGetAlias();
+        if (!alias.empty())
+            name = alias;
+        else
+        {
+            if (const auto * id = column->as<ASTIdentifier>())
+                name = id->shortName();
+            else
+                name = column->getColumnName();
+        }
         column = makeASTFunction(func_name, column);
+        if (!column_name_prefix.empty())
+            column->setAlias(column_name_prefix + name);
     }
 }
 
@@ -78,7 +96,7 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
                 {
                     for (int i = children.size() - 1; i >= 0; --i)
                     {
-                        if (children[i]->as<const ASTIdentifier &>().name == id->shortName())
+                        if (children[i]->as<const ASTIdentifier &>().name() == id->shortName())
                         {
                             expected_columns.erase(expected_columns.begin() + i);
                             return true;
@@ -96,7 +114,7 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
         {
             if (i > 0)
                 expected_columns_str += ", ";
-            expected_columns_str += expected_columns[i]->as<const ASTIdentifier &>().name;
+            expected_columns_str += expected_columns[i]->as<const ASTIdentifier &>().name();
         }
 
         throw Exception(

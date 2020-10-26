@@ -316,6 +316,7 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
                 {
                     auto & result = sample_block.getByName(result_name);
                     result.type = result_type;
+                    result.name = result_name;
                     result.column = source.column;
                 }
                 else
@@ -1560,6 +1561,7 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         ColumnWithTypeAndName argument;
         argument.column = child.column;
         argument.type = child.result_type;
+        argument.name = child.result_name;
 
         if (!argument.column || !isColumnConst(*argument.column))
             all_const = false;
