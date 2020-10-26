@@ -32,7 +32,7 @@ LDAPAccessStorage::LDAPAccessStorage(const String & storage_name_, AccessControl
 
 String LDAPAccessStorage::getLDAPServerName() const
 {
-    return ldap_server;
+    return ldap_server_name;
 }
 
 
