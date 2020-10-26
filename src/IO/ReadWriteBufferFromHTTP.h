@@ -106,6 +106,7 @@ namespace detail
         std::vector<Poco::Net::HTTPCookie> cookies;
         HTTPHeaderEntries http_header_entries;
         RemoteHostFilter remote_host_filter;
+        std::function<void(size_t)> read_callback;
 
         std::istream * call(const Poco::URI uri_, Poco::Net::HTTPResponse & response)
         {
@@ -208,6 +209,8 @@ namespace detail
                 return false;
             internal_buffer = impl->buffer();
             working_buffer = internal_buffer;
+            if (read_callback)
+                read_callback(count());
             return true;
         }
 
@@ -217,6 +220,11 @@ namespace detail
                 if (cookie.getName() == name)
                     return cookie.getValue();
             return def;
+        }
+
+        void setNextReadCallback(std::function<void(size_t)> read_callback_)
+        {
+            read_callback = read_callback_;
         }
     };
 }

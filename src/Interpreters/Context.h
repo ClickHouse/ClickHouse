@@ -65,6 +65,7 @@ class InterserverIOHandler;
 class BackgroundProcessingPool;
 class BackgroundSchedulePool;
 class MergeList;
+class ReplicatedFetchList;
 class Cluster;
 class Compiler;
 class MarkCache;
@@ -476,6 +477,9 @@ public:
 
     MergeList & getMergeList();
     const MergeList & getMergeList() const;
+
+    ReplicatedFetchList & getReplicatedFetchList();
+    const ReplicatedFetchList & getReplicatedFetchList() const;
 
     /// If the current session is expired at the time of the call, synchronously creates and returns a new session with the startNewSession() call.
     /// If no ZooKeeper configured, throws an exception.
