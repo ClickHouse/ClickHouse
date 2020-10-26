@@ -264,6 +264,7 @@
         "01456_modify_column_type_via_add_drop_update",
         "01060_avro",
         "00612_http_max_query_size",
+        "01293_system_distribution_queue",
         "attach",
         "ddl_dictionaries",
         "dictionary",
