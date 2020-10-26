@@ -66,10 +66,20 @@ void TraceCollector::collect(TraceType trace_type, const StackTrace & stack_trac
     char buffer[buf_size];
     WriteBufferFromFileDescriptorDiscardOnFailure out(pipe.fds_rw[1], buf_size, buffer);
 
-    StringRef query_id = CurrentThread::getQueryId();
-    query_id.size = std::min(query_id.size, QUERY_ID_MAX_LEN);
+    StringRef query_id;
+    UInt64 thread_id;
 
-    auto thread_id = CurrentThread::get().thread_id;
+    if (CurrentThread::isInitialized())
+    {
+        query_id = CurrentThread::getQueryId();
+        query_id.size = std::min(query_id.size, QUERY_ID_MAX_LEN);
+
+        thread_id = CurrentThread::get().thread_id;
+    }
+    else
+    {
+        thread_id = MainThreadStatus::get()->thread_id;
+    }
 
     writeChar(false, out);  /// true if requested to stop the collecting thread.
     writeStringBinary(query_id, out);
