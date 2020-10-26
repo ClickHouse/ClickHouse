@@ -129,33 +129,6 @@ Example:
 </macros>
 ```
 
-Allow omitting arguments for the Replicated table engine if defaults are specified in configuration file. For example:
-
-```xml
-<default_replica_path>/clickhouse/tables/{shard}</default_replica_path>
-<default_replica_name>{replica}</default_replica_path>
-```
-
-The two examples below will be equivalent in this case.
-
-An example of creating a table with specifying arguments:
-
-``` sql
-CREATE TABLE table_name (
-	x UInt32
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/table_name', '{replica}') 
-ORDER BY x
-```
-
-An example of creating a table without specifying arguments:
-
-``` sql
-CREATE TABLE table_name (
-	x UInt32
-) ENGINE = ReplicatedMergeTree 
-ORDER BY x
-```
-
 The path to the table in ZooKeeper should be unique for each replicated table. Tables on different shards should have different paths.
 In this case, the path consists of the following parts:
 
@@ -174,6 +147,33 @@ The replica name identifies different replicas of the same table. You can use th
 You can define the parameters explicitly instead of using substitutions. This might be convenient for testing and for configuring small clusters. However, you can’t use distributed DDL queries (`ON CLUSTER`) in this case.
 
 When working with large clusters, we recommend using substitutions because they reduce the probability of error.
+
+Allow omitting arguments for the Replicated table engine if defaults are specified in configuration file. For example:
+
+```xml
+<default_replica_path>/clickhouse/tables/{shard}/{database}/{table}</default_replica_path>
+<default_replica_name>{replica}</default_replica_path>
+```
+
+The two examples below will be equivalent in this case.
+
+An example of creating a table with specifying arguments:
+
+``` sql
+CREATE TABLE table_name (
+	x UInt32
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/{database}/table_name', '{replica}') 
+ORDER BY x
+```
+
+An example of creating a table without specifying arguments:
+
+``` sql
+CREATE TABLE table_name (
+	x UInt32
+) ENGINE = ReplicatedMergeTree 
+ORDER BY x
+```
 
 Run the `CREATE TABLE` query on each replica. This query creates a new replicated table, or adds a new replica to an existing one.
 

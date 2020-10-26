@@ -125,33 +125,6 @@ CREATE TABLE table_name
 </macros>
 ```
 
-Допускается не указывать параметры при создании реплицируемых таблиц, если в конфигурационном файле указаны значения по умолчанию, например: 
-
-```xml
-<default_replica_path>/clickhouse/tables/{shard}</default_replica_path>
-<default_replica_name>{replica}</default_replica_path>
-```
-
-Два приведенных ниже примера будут являться в данном случае эквивалентными.
-
-Пример создания таблицы с указанием параметров:
-
-``` sql
-CREATE TABLE table_name (
-	x UInt32
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/table_name', '{replica}') 
-ORDER BY x
-```
-
-Пример создания таблицы без указания параметров:
-
-``` sql
-CREATE TABLE table_name (
-	x UInt32
-) ENGINE = ReplicatedMergeTree 
-ORDER BY x
-```
-
 Путь к таблице в ZooKeeper должен быть разным для каждой реплицируемой таблицы. В том числе, для таблиц на разных шардах, должны быть разные пути.
 В данном случае, путь состоит из следующих частей:
 
@@ -170,6 +143,33 @@ ORDER BY x
 Можно не использовать подстановки, а указать соответствующие параметры явно. Это может быть удобным для тестирования и при настройке маленьких кластеров. Однако в этом случае нельзя пользоваться распределенными DDL-запросами (`ON CLUSTER`).
 
 При работе с большими кластерами мы рекомендуем использовать подстановки, они уменьшают вероятность ошибки.
+
+Допускается не указывать параметры при создании реплицируемых таблиц, если в конфигурационном файле указаны значения по умолчанию, например: 
+
+```xml
+<default_replica_path>/clickhouse/tables/{shard}/{database}/{table}</default_replica_path>
+<default_replica_name>{replica}</default_replica_path>
+```
+
+Два приведенных ниже примера будут являться в данном случае эквивалентными.
+
+Пример создания таблицы с указанием параметров:
+
+``` sql
+CREATE TABLE table_name (
+	x UInt32
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/{database}/table_name', '{replica}') 
+ORDER BY x
+```
+
+Пример создания таблицы без указания параметров:
+
+``` sql
+CREATE TABLE table_name (
+	x UInt32
+) ENGINE = ReplicatedMergeTree 
+ORDER BY x
+```
 
 Выполните запрос `CREATE TABLE` на каждой реплике. Запрос создаёт новую реплицируемую таблицу, или добавляет новую реплику к имеющимся.
 
