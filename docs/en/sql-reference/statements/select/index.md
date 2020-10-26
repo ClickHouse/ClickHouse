@@ -38,6 +38,8 @@ Specifics of each optional clause are covered in separate sections, which are li
 -   [FROM clause](../../../sql-reference/statements/select/from.md)
 -   [SAMPLE clause](../../../sql-reference/statements/select/sample.md)
 -   [JOIN clause](../../../sql-reference/statements/select/join.md)
+-   [APPLY clause](../../../sql-reference/statements/select/apply.md)
+-   [REPLACE clause](../../../sql-reference/statements/select/replace.md)
 -   [PREWHERE clause](../../../sql-reference/statements/select/prewhere.md)
 -   [WHERE clause](../../../sql-reference/statements/select/where.md)
 -   [GROUP BY clause](../../../sql-reference/statements/select/group-by.md)
@@ -45,6 +47,7 @@ Specifics of each optional clause are covered in separate sections, which are li
 -   [HAVING clause](../../../sql-reference/statements/select/having.md)
 -   [SELECT clause](#select-clause)
 -   [DISTINCT clause](../../../sql-reference/statements/select/distinct.md)
+-   [EXCEPT clause](../../../sql-reference/statements/select/except.md)
 -   [LIMIT clause](../../../sql-reference/statements/select/limit.md)
 -   [UNION ALL clause](../../../sql-reference/statements/select/union-all.md)
 -   [INTO OUTFILE clause](../../../sql-reference/statements/select/into-outfile.md)
@@ -112,6 +115,22 @@ Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of 
 In this example, `COLUMNS('a')` returns two columns: `aa` and `ab`. `COLUMNS('c')` returns the `bc` column. The `+` operator can’t apply to 3 arguments, so ClickHouse throws an exception with the relevant message.
 
 Columns that matched the `COLUMNS` expression can have different data types. If `COLUMNS` doesn’t match any columns and is the only expression in `SELECT`, ClickHouse throws an exception.
+
+If you want to exclude columns from the result, use `EXCEPT` statemnt. 
+
+For example:
+
+``` sql
+SELECT * EXCEPT (bc) from col_names
+```
+
+```
+┌──aa─┬───ab─┐
+│ 1   │ 1    │ 
+└─────┴──────┘
+```
+
+In this example, columns 'aa' and 'ab' are returned, but the 'bc' column is excluded from the result.
 
 ### Asterisk {#asterisk}
 
