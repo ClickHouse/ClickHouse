@@ -14,7 +14,7 @@ namespace DB
 template <class Numerator, class Denominator>
 struct RationalFraction
 {
-    constexpr RationalFraction(): numerator(0), denominator(0) {}
+   constexpr RationalFraction(): numerator(0), denominator(0) {}
 
     Numerator numerator;
     Denominator denominator;
@@ -114,8 +114,7 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const final
     {
-        const auto & column = static_cast<const ColumnVector<Float64> &>(*columns[0]);
-        this->data(place).numerator += column.getData()[row_num];
+        this->data(place).numerator += columns[0]->getFloat64(row_num);
         ++this->data(place).denominator;
     }
 
