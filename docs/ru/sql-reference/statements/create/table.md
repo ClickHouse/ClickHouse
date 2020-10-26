@@ -1,6 +1,6 @@
 ---
-toc_priority: 2
-toc_title: Таблица
+toc_priority: 36
+toc_title: "\u0422\u0430\u0431\u043b\u0438\u0446\u0430"
 ---
 
 # CREATE TABLE {#create-table-query}
