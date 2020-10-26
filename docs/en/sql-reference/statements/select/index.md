@@ -39,7 +39,7 @@ Specifics of each optional clause are covered in separate sections, which are li
 -   [SAMPLE clause](../../../sql-reference/statements/select/sample.md)
 -   [JOIN clause](../../../sql-reference/statements/select/join.md)
 -   [APPLY clause](../../../sql-reference/statements/select/apply.md)
--   [REPLACE clause](../../..sql-reference/statements/select/replace.md)
+-   [REPLACE clause](../../../sql-reference/statements/select/replace.md)
 -   [PREWHERE clause](../../../sql-reference/statements/select/prewhere.md)
 -   [WHERE clause](../../../sql-reference/statements/select/where.md)
 -   [GROUP BY clause](../../../sql-reference/statements/select/group-by.md)
