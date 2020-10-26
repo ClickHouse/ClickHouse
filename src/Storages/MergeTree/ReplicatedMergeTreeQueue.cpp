@@ -1033,6 +1033,15 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         }
     }
 
+    if (entry.type == LogEntry::GET_PART)
+    {
+        if (!storage.canExecuteFetch(entry, out_postpone_reason))
+        {
+            LOG_TRACE(log, out_postpone_reason);
+            return false;
+        }
+    }
+
     if (entry.type == LogEntry::MERGE_PARTS || entry.type == LogEntry::MUTATE_PART)
     {
         /** If any of the required parts are now fetched or in merge process, wait for the end of this operation.
