@@ -1076,7 +1076,7 @@ void ActionsDAG::removeUnusedActions(const Names & required_names)
                                 "Unknown column: {}, there are only columns {}", name, dumpNames());
 
             auto * node = it->second;
-            new_index[name] = node;
+            new_index[node->result_name] = node;
             visited_nodes.insert(node);
             stack.push(node);
         }
