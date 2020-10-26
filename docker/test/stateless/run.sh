@@ -27,7 +27,7 @@ function run_tests()
     # Skip these tests, because they fail when we rerun them multiple times
     if [ "$NUM_TRIES" -gt "1" ]; then
         ADDITIONAL_OPTIONS+=('--skip')
-        ADDITIONAL_OPTIONS+=('atomic')
+        ADDITIONAL_OPTIONS+=('00000_no_tests_to_skip')
     fi
 
     for i in $(seq 1 $NUM_TRIES); do
