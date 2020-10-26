@@ -46,7 +46,7 @@ ThreadStatus::ThreadStatus()
 
     /// Will set alternative signal stack to provide diagnostics for stack overflow errors.
     /// If not already installed for current thread.
-#if !defined(SANITIZER) /// Sanitizer makes larger stack usage and/or confused by alternative stack.
+#if !defined(SANITIZER) && !defined(ARCADIA_BUILD) /// Sanitizer makes larger stack usage and/or confused by alternative stack.
     if (!has_alt_stack)
     {
         /// Don't repeat tries even if not installed successfully.
