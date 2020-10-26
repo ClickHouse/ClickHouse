@@ -6,20 +6,24 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ${CLICKHOUSE_CLIENT} --query="SELECT avgWeighted(x, weight) FROM (SELECT t.1 AS x, t.2 AS weight FROM (SELECT arrayJoin([(1, 5), (2, 4), (3, 3), (4, 2), (5, 1)]) AS t));"
 ${CLICKHOUSE_CLIENT} --query="SELECT avgWeighted(x, weight) FROM (SELECT t.1 AS x, t.2 AS weight FROM (SELECT arrayJoin([(1, 0), (2, 0), (3, 0), (4, 0), (5, 0)]) AS t));"
 
-# Decimals not tested in types' combinations as they
-# 1) Require different initialization (precision + scale)
-# 2) Won't be used in these functions often
-types=("Int8" "Int16" "Int32" "Int64" "Int128" "Int256"
-       "UInt8" "UInt16" "UInt32" "UInt64" "UInt128" "UInt256"
-       "Float32" "Float64")
+types=("Int8" "Int16" "Int32" "Int64" "UInt8" "UInt16" "UInt32" "UInt64" "Float32" "Float64")
 
 for left in "${types[@]}"
 do
     for right in "${types[@]}"
     do
         ${CLICKHOUSE_CLIENT} --query="SELECT avgWeighted(x, w) FROM values('x ${left}, w ${right}', (4, 1), (1, 0), (10, 2))"
-        ${CLICKHOUSE_CLIENT} --query="SELECT avgWeighted(x, w) FROM values('x ${left}, w ${right}', (8, 1), (122, 0))"
         ${CLICKHOUSE_CLIENT} --query="SELECT avgWeighted(x, w) FROM values('x ${left}, w ${right}', (0, 0), (1, 0))"
+    done
+done
+
+exttypes=("Int128" "Int256" "UInt256")
+
+for left in "${exttypes[@]}"
+do
+    for right in "${exttypes[@]}"
+    do
+        ${CLICKHOUSE_CLIENT} --query="SELECT avgWeighted(to${left}(1), to${right}(2))"
     done
 done
 
@@ -34,6 +38,5 @@ do
     done
 done
 
-
 echo "$(${CLICKHOUSE_CLIENT} --server_logs_file=/dev/null --query="SELECT avgWeighted(['string'], toFloat64(0))" 2>&1)" \
-  | grep -c 'Code: 43. DB::Exception: .* DB::Exception:.* Types .* of arguments are non-conforming as arguments for aggregate function avgWeighted'
+  | grep -c 'Code: 43. DB::Exception: .* DB::Exception:.* Types .* are non-conforming as arguments for aggregate function avgWeighted'
