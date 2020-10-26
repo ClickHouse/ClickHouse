@@ -29,9 +29,8 @@ xfails = {
 @TestFeature
 @Name("external user directory")
 @ArgumentParser(argparser)
-@Requirements(
-    RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication("1.0")
-)
+@Specifications(SRS_009_ClickHouse_LDAP_External_User_Directory)
+@Requirements(RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication("1.0"))
 @XFails(xfails)
 def regression(self, local, clickhouse_binary_path):
     """ClickHouse LDAP external user directory regression module.

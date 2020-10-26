@@ -234,7 +234,7 @@ def auth_dn_value(self):
 
 @TestScenario
 @Requirements(
-    RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Server_Syntax("1.0")
+    RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Server_Syntax("2.0")
 )
 def syntax(self):
     """Check that server configuration with valid syntax can be loaded.
@@ -245,6 +245,7 @@ def syntax(self):
             <port>636</port>
             <auth_dn_prefix>cn=</auth_dn_prefix>
             <auth_dn_suffix>, ou=users, dc=example, dc=com</auth_dn_suffix>
+            <verification_cooldown>0</verification_cooldown>
             <enable_tls>yes</enable_tls>
             <tls_minimum_protocol_version>tls1.2</tls_minimum_protocol_version>
             <tls_require_cert>demand</tls_require_cert>
@@ -263,6 +264,7 @@ def syntax(self):
             "port": "389",
             "auth_dn_prefix": "cn=",
             "auth_dn_suffix": ",ou=users,dc=company,dc=com",
+            "verification_cooldown": "0",
             "enable_tls": "yes",
             "tls_minimum_protocol_version": "tls1.2" ,
             "tls_require_cert": "demand",

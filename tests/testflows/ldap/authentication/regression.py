@@ -29,9 +29,8 @@ xfails = {
 @TestFeature
 @Name("authentication")
 @ArgumentParser(argparser)
-@Requirements(
-    RQ_SRS_007_LDAP_Authentication("1.0")
-)
+@Specifications(SRS_007_ClickHouse_Authentication_of_Users_via_LDAP)
+@Requirements(RQ_SRS_007_LDAP_Authentication("1.0"))
 @XFails(xfails)
 def regression(self, local, clickhouse_binary_path):
     """ClickHouse integration with LDAP regression module.
