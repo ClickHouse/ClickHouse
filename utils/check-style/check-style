@@ -102,3 +102,6 @@ find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} -name '*.md' 
 
 # Too many exclamation marks
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -F '!!!' && echo "Too many exclamation marks (looks dirty, unconfident)."
+
+# Trailing whitespaces
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -P ' $' && echo "^ Trailing whitespaces."
