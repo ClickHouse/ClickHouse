@@ -125,6 +125,7 @@ public:
     NamesAndTypesList getNamesAndTypesList() const;
     Names getNames() const;
     std::string dumpNames() const;
+    std::string dump() const;
 
     const Node & addInput(std::string name, DataTypePtr type);
     const Node & addInput(ColumnWithTypeAndName column);
@@ -160,6 +161,8 @@ private:
 #endif
         return actions;
     }
+
+    ExpressionActionsPtr linearizeActions() const;
 };
 
 
@@ -181,7 +184,7 @@ private:
 
     struct Action
     {
-        Node * node;
+        const Node * node;
         Arguments arguments;
         size_t result_position;
         bool is_used_in_result;

@@ -272,7 +272,7 @@ public:
     /// These appends are public only for tests
     void appendSelect(ExpressionActionsChain & chain, bool only_types);
     /// Deletes all columns except mentioned by SELECT, arranges the remaining columns and renames them to aliases.
-    ExpressionActionsPtr appendProjectResult(ExpressionActionsChain & chain) const;
+    ActionsDAGPtr appendProjectResult(ExpressionActionsChain & chain) const;
 
 private:
     StorageMetadataPtr metadata_snapshot;
@@ -315,14 +315,14 @@ private:
       */
 
     /// Before aggregation:
-    ArrayJoinActionPtr appendArrayJoin(ExpressionActionsChain & chain, ExpressionActionsPtr & before_array_join, bool only_types);
+    ArrayJoinActionPtr appendArrayJoin(ExpressionActionsChain & chain, ActionsDAGPtr & before_array_join, bool only_types);
     bool appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types);
     JoinPtr appendJoin(ExpressionActionsChain & chain);
     /// Add preliminary rows filtration. Actions are created in other expression analyzer to prevent any possible alias injection.
-    void appendPreliminaryFilter(ExpressionActionsChain & chain, ExpressionActionsPtr actions, String column_name);
+    void appendPreliminaryFilter(ExpressionActionsChain & chain, ActionsDAGPtr actions, String column_name);
     /// remove_filter is set in ExpressionActionsChain::finalize();
     /// Columns in `additional_required_columns` will not be removed (they can be used for e.g. sampling or FINAL modifier).
-    ExpressionActionsPtr appendPrewhere(ExpressionActionsChain & chain, bool only_types, const Names & additional_required_columns);
+    ActionsDAGPtr appendPrewhere(ExpressionActionsChain & chain, bool only_types, const Names & additional_required_columns);
     bool appendWhere(ExpressionActionsChain & chain, bool only_types);
     bool appendGroupBy(ExpressionActionsChain & chain, bool only_types, bool optimize_aggregation_in_order, ManyExpressionActions &);
     void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);

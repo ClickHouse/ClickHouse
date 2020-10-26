@@ -1091,13 +1091,13 @@ void ActionsDAG::removeUnusedActions(const Names & required_names)
     nodes.remove_if([&](Node * node) { return visited_nodes.count(node) == 0; });
 }
 
-ExpressionActionsPtr ActionsDAG::buildExpressions()
+ExpressionActionsPtr ActionsDAG::linearizeActions() const
 {
     struct Data
     {
-        Node * node = nullptr;
+        const Node * node = nullptr;
         size_t num_created_children = 0;
-        std::vector<Node *> parents;
+        std::vector<const Node *> parents;
 
         ssize_t position = -1;
         size_t num_created_parents = 0;
@@ -1105,19 +1105,19 @@ ExpressionActionsPtr ActionsDAG::buildExpressions()
     };
 
     std::vector<Data> data(nodes.size());
-    std::unordered_map<Node *, size_t> reverse_index;
+    std::unordered_map<const Node *, size_t> reverse_index;
 
-    for (auto & node : nodes)
+    for (const auto & node : nodes)
     {
         size_t id = reverse_index.size();
         data[id].node = &node;
         reverse_index[&node] = id;
     }
 
-    std::queue<Node *> ready_nodes;
-    std::queue<Node *> ready_array_joins;
+    std::queue<const Node *> ready_nodes;
+    std::queue<const Node *> ready_array_joins;
 
-    for (auto & node : nodes)
+    for (const auto & node : nodes)
     {
         auto & node_data = data[reverse_index[&node]];
         auto it = index.find(node.result_name);
@@ -1127,7 +1127,7 @@ ExpressionActionsPtr ActionsDAG::buildExpressions()
             data[reverse_index[child]].parents.emplace_back(&node);
     }
 
-    for (auto & node : nodes)
+    for (const auto & node : nodes)
     {
         if (node.children.empty())
             ready_nodes.emplace(&node);
@@ -1139,7 +1139,7 @@ ExpressionActionsPtr ActionsDAG::buildExpressions()
     while (!ready_nodes.empty() || !ready_array_joins.empty())
     {
         auto & stack = ready_nodes.empty() ? ready_array_joins : ready_nodes;
-        Node * node = stack.front();
+        const Node * node = stack.front();
         stack.pop();
 
         Names argument_names;
@@ -1198,6 +1198,13 @@ ExpressionActionsPtr ActionsDAG::buildExpressions()
         }
     }
 
+    return expressions;
+}
+
+ExpressionActionsPtr ActionsDAG::buildExpressions()
+{
+    auto expressions = linearizeActions();
+
     expressions->nodes.swap(nodes);
     index.clear();
 
@@ -1210,6 +1217,11 @@ ExpressionActionsPtr ActionsDAG::buildExpressions()
     expressions->project_input = project_input;
 
     return expressions;
+}
+
+std::string ActionsDAG::dump() const
+{
+    return linearizeActions()->dumpActions();
 }
 
 }

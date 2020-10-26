@@ -481,7 +481,7 @@ ArrayJoinActionPtr ExpressionAnalyzer::addMultipleArrayJoinAction(ActionsDAGPtr 
     return std::make_shared<ArrayJoinAction>(result_columns, array_join_is_left, context);
 }
 
-ArrayJoinActionPtr SelectQueryExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain, ExpressionActionsPtr & before_array_join, bool only_types)
+ArrayJoinActionPtr SelectQueryExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain, ActionsDAGPtr & before_array_join, bool only_types)
 {
     const auto * select_query = getSelectQuery();
 
@@ -637,11 +637,11 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(const ASTTablesInSelectQuer
     return subquery_for_join.join;
 }
 
-ExpressionActionsPtr SelectQueryExpressionAnalyzer::appendPrewhere(
+ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
     ExpressionActionsChain & chain, bool only_types, const Names & additional_required_columns)
 {
     const auto * select_query = getSelectQuery();
-    ExpressionActionsPtr prewhere_actions;
+    ActionsDAGPtr prewhere_actions;
 
     if (!select_query->prewhere())
         return prewhere_actions;
@@ -661,8 +661,8 @@ ExpressionActionsPtr SelectQueryExpressionAnalyzer::appendPrewhere(
         /// Remove unused source_columns from prewhere actions.
         auto tmp_actions_dag = std::make_shared<ActionsDAG>(sourceColumns());
         getRootActions(select_query->prewhere(), only_types, tmp_actions_dag);
-        auto tmp_actions = tmp_actions_dag->buildExpressions(context);
-        tmp_actions->finalize({prewhere_column_name});
+        tmp_actions_dag->removeUnusedActions({prewhere_column_name});
+        auto tmp_actions = tmp_actions_dag->buildExpressions();
         auto required_columns = tmp_actions->getRequiredColumns();
         NameSet required_source_columns(required_columns.begin(), required_columns.end());
 
@@ -686,7 +686,7 @@ ExpressionActionsPtr SelectQueryExpressionAnalyzer::appendPrewhere(
 
         Names required_output(name_set.begin(), name_set.end());
         prewhere_actions = chain.getLastActions();
-        prewhere_actions->finalize(required_output);
+        prewhere_actions->removeUnusedActions(required_output);
     }
 
     {
@@ -697,7 +697,7 @@ ExpressionActionsPtr SelectQueryExpressionAnalyzer::appendPrewhere(
         /// 2. Store side columns which were calculated during prewhere actions execution if they are used.
         ///    Example: select F(A) prewhere F(A) > 0. F(A) can be saved from prewhere step.
         /// 3. Check if we can remove filter column at prewhere step. If we can, action will store single REMOVE_COLUMN.
-        ColumnsWithTypeAndName columns = prewhere_actions->getSampleBlock().getColumnsWithTypeAndName();
+        ColumnsWithTypeAndName columns = prewhere_actions->getResultColumns();
         auto required_columns = prewhere_actions->getRequiredColumns();
         NameSet prewhere_input_names(required_columns.begin(), required_columns.end());
         NameSet unused_source_columns;
@@ -721,7 +721,7 @@ ExpressionActionsPtr SelectQueryExpressionAnalyzer::appendPrewhere(
     return prewhere_actions;
 }
 
-void SelectQueryExpressionAnalyzer::appendPreliminaryFilter(ExpressionActionsChain & chain, ExpressionActionsPtr actions, String column_name)
+void SelectQueryExpressionAnalyzer::appendPreliminaryFilter(ExpressionActionsChain & chain, ActionsDAGPtr actions, String column_name)
 {
     ExpressionActionsChain::Step & step = chain.lastStep(sourceColumns());
 
@@ -780,7 +780,7 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
         {
             auto actions_dag = std::make_shared<ActionsDAG>(columns_after_join);
             getRootActions(child, only_types, actions_dag);
-            group_by_elements_actions.emplace_back(actions_dag->buildExpressions(context));
+            group_by_elements_actions.emplace_back(actions_dag->buildExpressions());
         }
     }
 
@@ -869,7 +869,7 @@ bool SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain
         {
             auto actions_dag = std::make_shared<ActionsDAG>(columns_after_join);
             getRootActions(child, only_types, actions_dag);
-            order_by_elements_actions.emplace_back(actions_dag->buildExpressions(context));
+            order_by_elements_actions.emplace_back(actions_dag->buildExpressions());
         }
     }
     return true;
@@ -903,7 +903,7 @@ bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain
     return true;
 }
 
-ExpressionActionsPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActionsChain & chain) const
+ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActionsChain & chain) const
 {
     const auto * select_query = getSelectQuery();
 
