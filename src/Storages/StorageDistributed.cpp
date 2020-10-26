@@ -271,7 +271,7 @@ std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const
             if (!id)
                 return false;
             /// TODO: if GROUP BY contains multiIf()/if() it should contain only columns from sharding_key
-            if (!sharding_key_block.has(id->name))
+            if (!sharding_key_block.has(id->name()))
                 return false;
         }
         return true;
@@ -454,7 +454,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Con
     if (settings.optimize_skip_unused_shards &&
         settings.optimize_distributed_group_by_sharding_key &&
         has_sharding_key &&
-        sharding_key_is_deterministic)
+        (settings.allow_nondeterministic_optimize_skip_unused_shards || sharding_key_is_deterministic))
     {
         Block sharding_key_block = sharding_key_expr->getSampleBlock();
         auto stage = getOptimizedQueryProcessingStage(query_ptr, settings.extremes, sharding_key_block);
@@ -710,7 +710,9 @@ ClusterPtr StorageDistributed::getOptimizedCluster(const Context & context, cons
     ClusterPtr cluster = getCluster();
     const Settings & settings = context.getSettingsRef();
 
-    if (has_sharding_key && sharding_key_is_deterministic)
+    bool sharding_key_is_usable = settings.allow_nondeterministic_optimize_skip_unused_shards || sharding_key_is_deterministic;
+
+    if (has_sharding_key && sharding_key_is_usable)
     {
         ClusterPtr optimized = skipUnusedShards(cluster, query_ptr, metadata_snapshot, context);
         if (optimized)
@@ -723,7 +725,7 @@ ClusterPtr StorageDistributed::getOptimizedCluster(const Context & context, cons
         std::stringstream exception_message;
         if (!has_sharding_key)
             exception_message << "No sharding key";
-        else if (!sharding_key_is_deterministic)
+        else if (!sharding_key_is_usable)
             exception_message << "Sharding key is not deterministic";
         else
             exception_message << "Sharding key " << sharding_key_column_name << " is not used";

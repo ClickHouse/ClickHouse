@@ -408,7 +408,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     /// Memory should not be limited during ATTACH TABLE query.
     /// This is already true at the server startup but must be also ensured for manual table ATTACH.
     /// Motivation: memory for index is shared between queries - not belong to the query itself.
-    auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
+    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
 
     loadColumns(require_columns_checksums);
     loadChecksums(require_columns_checksums);
@@ -758,6 +758,16 @@ void IMergeTreeDataPart::loadColumns(bool require)
     size_t pos = 0;
     for (const auto & column : columns)
         column_name_to_position.emplace(column.name, pos++);
+}
+
+bool IMergeTreeDataPart::shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const
+{
+    /// `IMergeTreeDataPart::volume` describes space where current part belongs, and holds
+    /// `SingleDiskVolume` object which does not contain up-to-date settings of corresponding volume.
+    /// Therefore we shall obtain volume from storage policy.
+    auto volume_ptr = storage_policy->getVolume(storage_policy->getVolumeIndexByDisk(volume->getDisk()));
+
+    return !volume_ptr->areMergesAvoided();
 }
 
 UInt64 IMergeTreeDataPart::calculateTotalSizeOnDisk(const DiskPtr & disk_, const String & from)

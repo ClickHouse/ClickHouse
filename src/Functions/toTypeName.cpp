@@ -22,10 +22,9 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     /// Execute the function on the columns.
-    void execute(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) override
     {
-        columns[result].column
-            = DataTypeString().createColumnConst(input_rows_count, columns[arguments[0]].type->getName());
+        return DataTypeString().createColumnConst(input_rows_count, arguments[0].type->getName());
     }
 };
 
@@ -43,14 +42,14 @@ public:
     bool isDeterministicInScopeOfQuery() const override { return true; }
 
     const DataTypes & getArgumentTypes() const override { return argument_types; }
-    const DataTypePtr & getReturnType() const override { return return_type; }
+    const DataTypePtr & getResultType() const override { return return_type; }
 
-    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &, const ColumnNumbers &, size_t) const override
+    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &) const override
     {
         return std::make_unique<ExecutableFunctionToTypeName>();
     }
 
-    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName &, const ColumnNumbers &) const override
+    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName &) const override
     {
         return DataTypeString().createColumnConst(1, argument_types.at(0)->getName());
     }

@@ -57,7 +57,7 @@ public:
         return std::make_shared<DataTypeUInt32>();
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
 
 private:
     /// Initially allocate a piece of memory for 512 elements. NOTE: This is just a guess.
@@ -121,7 +121,7 @@ private:
 };
 
 
-void FunctionArrayUniq::executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const
+ColumnPtr FunctionArrayUniq::executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const
 {
     const ColumnArray::Offsets * offsets = nullptr;
     const size_t num_arguments = arguments.size();
@@ -131,14 +131,14 @@ void FunctionArrayUniq::executeImpl(ColumnsWithTypeAndName & columns, const Colu
     Columns array_holders;
     for (size_t i = 0; i < num_arguments; ++i)
     {
-        const ColumnPtr & array_ptr = columns[arguments[i]].column;
+        const ColumnPtr & array_ptr = arguments[i].column;
         const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
         if (!array)
         {
             const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(
-                columns[arguments[i]].column.get());
+                arguments[i].column.get());
             if (!const_array)
-                throw Exception("Illegal column " + columns[arguments[i]].column->getName()
+                throw Exception("Illegal column " + arguments[i].column->getName()
                     + " of " + toString(i + 1) + "-th argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
             array_holders.emplace_back(const_array->convertToFullColumn());
@@ -196,7 +196,7 @@ void FunctionArrayUniq::executeImpl(ColumnsWithTypeAndName & columns, const Colu
             executeHashed(*offsets, data_columns, res_values);
     }
 
-    columns[result].column = std::move(res);
+    return res;
 }
 
 template <typename Method, bool has_null_map>

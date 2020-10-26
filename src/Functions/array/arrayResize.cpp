@@ -63,23 +63,18 @@ public:
             return std::make_shared<DataTypeArray>(getLeastSupertype({array_type->getNestedType(), arguments[2]}));
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override
     {
-        const auto & return_type = columns[result].type;
-
         if (return_type->onlyNull())
-        {
-            columns[result].column = return_type->createColumnConstWithDefaultValue(input_rows_count);
-            return;
-        }
+            return return_type->createColumnConstWithDefaultValue(input_rows_count);
 
         auto result_column = return_type->createColumn();
 
-        auto array_column = columns[arguments[0]].column;
-        auto size_column = columns[arguments[1]].column;
+        auto array_column = arguments[0].column;
+        auto size_column = arguments[1].column;
 
-        if (!columns[arguments[0]].type->equals(*return_type))
-            array_column = castColumn(columns[arguments[0]], return_type);
+        if (!arguments[0].type->equals(*return_type))
+            array_column = castColumn(arguments[0], return_type);
 
         const DataTypePtr & return_nested_type = typeid_cast<const DataTypeArray &>(*return_type).getNestedType();
         size_t size = array_column->size();
@@ -87,9 +82,9 @@ public:
         ColumnPtr appended_column;
         if (arguments.size() == 3)
         {
-            appended_column = columns[arguments[2]].column;
-            if (!columns[arguments[2]].type->equals(*return_nested_type))
-                appended_column = castColumn(columns[arguments[2]], return_nested_type);
+            appended_column = arguments[2].column;
+            if (!arguments[2].type->equals(*return_nested_type))
+                appended_column = castColumn(arguments[2], return_nested_type);
         }
         else
             appended_column = return_nested_type->createColumnConstWithDefaultValue(size);
@@ -127,7 +122,7 @@ public:
         else
             GatherUtils::resizeDynamicSize(*array_source, *value_source, *sink, *size_column);
 
-        columns[result].column = std::move(result_column);
+        return result_column;
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

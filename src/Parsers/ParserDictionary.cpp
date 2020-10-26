@@ -95,9 +95,9 @@ bool ParserDictionaryRange::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             return false;
 
         if (pair.first == "min")
-            res->min_attr_name = identifier->name;
+            res->min_attr_name = identifier->name();
         else if (pair.first == "max")
-            res->max_attr_name = identifier->name;
+            res->max_attr_name = identifier->name();
         else
             return false;
     }

@@ -511,7 +511,6 @@ public:
     BackgroundProcessingPool & getBackgroundPool();
     BackgroundProcessingPool & getBackgroundMovePool();
     BackgroundSchedulePool & getSchedulePool();
-    BackgroundSchedulePool & getMessageBrokerSchedulePool();
     BackgroundSchedulePool & getDistributedSchedulePool();
     BackgroundSchedulePool & getReplicatedSchedulePool();
 
