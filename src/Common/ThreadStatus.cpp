@@ -53,7 +53,11 @@ ThreadStatus::ThreadStatus()
         has_alt_stack = true;
 
         /// We have to call 'sigaltstack' before first 'sigaction'. (It does not work other way, for unknown reason).
-        stack_t altstack_description{ .ss_sp = alt_stack, .ss_flags = 0, .ss_size = sizeof(alt_stack) };
+        stack_t altstack_description{};
+        altstack_description.ss_sp = alt_stack;
+        altstack_description.ss_flags = 0;
+        altstack_description.ss_size = sizeof(alt_stack);
+
         if (0 != sigaltstack(&altstack_description, nullptr))
         {
             LOG_WARNING(log, "Cannot set alternative signal stack for thread, {}", errnoToString(errno));
