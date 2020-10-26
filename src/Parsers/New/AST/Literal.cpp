@@ -92,7 +92,7 @@ ASTSampleRatio::Rational NumberLiteral::convertToOldRational() const
     const char * pos = token.data(), * end = token.data() + token.size();
     const char * pos_after_first_num = tryReadIntText(num_before, pos, end);
 
-    bool has_num_before_point = pos_after_first_num > pos;
+    bool has_num_before_point [[maybe_unused]] = pos_after_first_num > pos;
     pos = pos_after_first_num;
     bool has_point = pos < end && *pos == '.';
 
@@ -115,7 +115,7 @@ ASTSampleRatio::Rational NumberLiteral::convertToOldRational() const
     if (has_exponent)
     {
         ++pos;
-        const char * pos_after_exponent = tryReadIntText(exponent, pos, end);
+        const char * pos_after_exponent [[maybe_unused]] = tryReadIntText(exponent, pos, end);
         assert (pos_after_exponent != pos);
     }
 
