@@ -25,8 +25,10 @@ namespace ErrorCodes
 thread_local ThreadStatus * current_thread = nullptr;
 thread_local ThreadStatus * main_thread = nullptr;
 
-alignas(4096) static thread_local char alt_stack[4096];
-static thread_local bool has_alt_stack = false;
+#if !defined(SANITIZER)
+    alignas(4096) static thread_local char alt_stack[4096];
+    static thread_local bool has_alt_stack = false;
+#endif
 
 
 ThreadStatus::ThreadStatus()
@@ -44,6 +46,7 @@ ThreadStatus::ThreadStatus()
 
     /// Will set alternative signal stack to provide diagnostics for stack overflow errors.
     /// If not already installed for current thread.
+#if !defined(SANITIZER) /// Sanitizer makes larger stack usage and/or confused by alternative stack.
     if (!has_alt_stack)
     {
         /// Don't repeat tries even if not installed successfully.
@@ -74,6 +77,7 @@ ThreadStatus::ThreadStatus()
             }
         }
     }
+#endif
 }
 
 ThreadStatus::~ThreadStatus()
