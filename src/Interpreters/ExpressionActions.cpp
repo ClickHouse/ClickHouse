@@ -22,6 +22,15 @@
 #    include "config_core.h"
 #endif
 
+#include <common/defines.h>
+
+#if defined(MEMORY_SANITIZER)
+    #include <sanitizer/msan_interface.h>
+#endif
+
+#if defined(ADDRESS_SANITIZER)
+    #include <sanitizer/asan_interface.h>
+#endif
 
 namespace ProfileEvents
 {
@@ -624,6 +633,22 @@ void ExpressionActions::execute(Block & block, bool dry_run) const
         }
         catch (Exception & e)
         {
+#if defined(MEMORY_SANITIZER)
+            const auto & msg = e.message();
+            if (__msan_test_shadow(msg.data(), msg.size()) != -1)
+            {
+                LOG_FATAL(&Poco::Logger::get("ExpressionActions"), "Poisoned exception message (msan): {}", e.getStackTraceString());
+            }
+#endif
+
+#if defined(ADDRESS_SANITIZER)
+            const auto & msg = e.message();
+            if (__asan_region_is_poisoned(const_cast<char *>(msg.data()), msg.size()))
+            {
+                LOG_FATAL(&Poco::Logger::get("ExpressionActions"), "Poisoned exception message (asan): {}", e.getStackTraceString());
+            }
+#endif
+
             e.addMessage(fmt::format("while executing '{}'", action.toString()));
             throw;
         }
@@ -1559,6 +1584,7 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         node.allow_constant_folding = node.allow_constant_folding && child.allow_constant_folding;
 
         ColumnWithTypeAndName argument;
+        argument.name = argument_names[i];
         argument.column = child.column;
         argument.type = child.result_type;
         argument.name = child.result_name;
