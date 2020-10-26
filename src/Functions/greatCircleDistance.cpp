@@ -255,23 +255,23 @@ private:
         return std::make_shared<DataTypeFloat32>();
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto dst = ColumnVector<Float32>::create();
         auto & dst_data = dst->getData();
         dst_data.resize(input_rows_count);
 
-        const IColumn & col_lon1 = *columns[arguments[0]].column;
-        const IColumn & col_lat1 = *columns[arguments[1]].column;
-        const IColumn & col_lon2 = *columns[arguments[2]].column;
-        const IColumn & col_lat2 = *columns[arguments[3]].column;
+        const IColumn & col_lon1 = *arguments[0].column;
+        const IColumn & col_lat1 = *arguments[1].column;
+        const IColumn & col_lon2 = *arguments[2].column;
+        const IColumn & col_lat2 = *arguments[3].column;
 
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
             dst_data[row_num] = distance<method>(
                 col_lon1.getFloat32(row_num), col_lat1.getFloat32(row_num),
                 col_lon2.getFloat32(row_num), col_lat2.getFloat32(row_num));
 
-        columns[result].column = std::move(dst);
+        return dst;
     }
 };
 
@@ -296,9 +296,9 @@ public:
     #endif
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        selector.selectAndExecute(columns, arguments, result, input_rows_count);
+        return selector.selectAndExecute(arguments, result_type, input_rows_count);
     }
 
     static FunctionPtr create(const Context & context)

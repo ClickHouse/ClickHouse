@@ -258,7 +258,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     Poco::Logger * log = &logger();
     UseSSL use_ssl;
 
-    ThreadStatus thread_status;
+    MainThreadStatus::getInstance();
 
     registerFunctions();
     registerAggregateFunctions();

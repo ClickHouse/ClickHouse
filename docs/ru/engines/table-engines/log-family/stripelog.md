@@ -1,3 +1,8 @@
+---
+toc_priority: 32
+toc_title: StripeLog
+---
+
 # StripeLog {#stripelog}
 
 Движок относится к семейству движков Log. Смотрите общие свойства и различия движков в статье [Семейство Log](index.md).
