@@ -21,8 +21,16 @@
 
 namespace ErrorCodes
 {
-extern const int BAD_ARGUMENTS;
+    extern const int BAD_ARGUMENTS;
 }
+
+#if defined(OS_DARWIN)
+extern "C"
+{
+    double lgamma_r(double x, int * signgamp);
+}
+#endif
+
 
 namespace DB
 {
