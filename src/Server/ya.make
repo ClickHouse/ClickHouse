@@ -22,6 +22,7 @@ SRCS(
     ReplicasStatusHandler.cpp
     StaticRequestHandler.cpp
     TCPHandler.cpp
+    WebUIRequestHandler.cpp
 
 )
 

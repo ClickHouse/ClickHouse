@@ -77,19 +77,32 @@ function restart
     while killall clickhouse-server; do echo . ; sleep 1 ; done
     echo all killed
 
-    set -m # Spawn servers in their own process groups
+    # Disable percpu arenas because they segfault when the process is bound to
+    # a particular NUMA node: https://github.com/jemalloc/jemalloc/pull/1939
+    # 
+    # About the jemalloc settings:
+    # https://github.com/jemalloc/jemalloc/wiki/Getting-Started
+    export MALLOC_CONF="percpu_arena:disabled,confirm_conf:true"
 
-    left/clickhouse-server --config-file=left/config/config.xml -- --path left/db --user_files_path left/db/user_files &>> left-server-log.log &
+    set -m # Spawn servers in their own process groups
+    
+    left/clickhouse-server --config-file=left/config/config.xml \
+           -- --path left/db --user_files_path left/db/user_files \
+           &>> left-server-log.log &
     left_pid=$!
     kill -0 $left_pid
     disown $left_pid
 
-    right/clickhouse-server --config-file=right/config/config.xml -- --path right/db --user_files_path right/db/user_files &>> right-server-log.log &
+     right/clickhouse-server --config-file=right/config/config.xml \
+         -- --path right/db --user_files_path right/db/user_files \
+         &>> right-server-log.log &
     right_pid=$!
     kill -0 $right_pid
     disown $right_pid
 
     set +m
+
+    unset MALLOC_CONF
 
     wait_for_server 9001 $left_pid
     echo left ok
@@ -449,7 +462,12 @@ wait
 unset IFS
 )
 
-parallel --joblog analyze/parallel-log.txt --null < analyze/commands.txt 2>> analyze/errors.log
+# The comparison script might be bound to one NUMA node for better test
+# stability, and the calculation runs out of memory because of this. Use
+# all nodes.
+numactl --show
+numactl --cpunodebind=all --membind=all numactl --show
+numactl --cpunodebind=all --membind=all parallel --joblog analyze/parallel-log.txt --null < analyze/commands.txt 2>> analyze/errors.log
 
 clickhouse-local --query "
 -- Join the metric names back to the metric statistics we've calculated, and make
@@ -1070,8 +1088,10 @@ case "$stage" in
     time configure
     ;&
 "restart")
+    numactl --show ||:
     numactl --hardware ||:
     lscpu ||:
+    dmidecode -t 4 ||:
     time restart
     ;&
 "run_tests")

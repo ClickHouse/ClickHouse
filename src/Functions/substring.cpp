@@ -79,9 +79,9 @@ public:
     }
 
     template <typename Source>
-    void executeForSource(const ColumnPtr & column_start, const ColumnPtr & column_length,
+    ColumnPtr executeForSource(const ColumnPtr & column_start, const ColumnPtr & column_length,
                           const ColumnConst * column_start_const, const ColumnConst * column_length_const,
-                          Int64 start_value, Int64 length_value, ColumnsWithTypeAndName & columns, size_t result, Source && source,
+                          Int64 start_value, Int64 length_value, Source && source,
                           size_t input_rows_count) const
     {
         auto col_res = ColumnString::create();
@@ -115,19 +115,19 @@ public:
                 sliceDynamicOffsetBounded(source, StringSink(*col_res, input_rows_count), *column_start, *column_length);
         }
 
-        columns[result].column = std::move(col_res);
+        return col_res;
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         size_t number_of_arguments = arguments.size();
 
-        ColumnPtr column_string = columns[arguments[0]].column;
-        ColumnPtr column_start = columns[arguments[1]].column;
+        ColumnPtr column_string = arguments[0].column;
+        ColumnPtr column_start = arguments[1].column;
         ColumnPtr column_length;
 
         if (number_of_arguments == 3)
-            column_length = columns[arguments[2]].column;
+            column_length = arguments[2].column;
 
         const ColumnConst * column_start_const = checkAndGetColumn<ColumnConst>(column_start.get());
         const ColumnConst * column_length_const = nullptr;
@@ -146,33 +146,33 @@ public:
         if constexpr (is_utf8)
         {
             if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_string.get()))
-                executeForSource(column_start, column_length, column_start_const, column_length_const, start_value,
-                                length_value, columns, result, UTF8StringSource(*col), input_rows_count);
+                return executeForSource(column_start, column_length, column_start_const, column_length_const, start_value,
+                                length_value, UTF8StringSource(*col), input_rows_count);
             else if (const ColumnConst * col_const = checkAndGetColumnConst<ColumnString>(column_string.get()))
-                executeForSource(column_start, column_length, column_start_const, column_length_const, start_value,
-                                length_value, columns, result, ConstSource<UTF8StringSource>(*col_const), input_rows_count);
+                return executeForSource(column_start, column_length, column_start_const, column_length_const, start_value,
+                                length_value, ConstSource<UTF8StringSource>(*col_const), input_rows_count);
             else
                 throw Exception(
-                    "Illegal column " + columns[arguments[0]].column->getName() + " of first argument of function " + getName(),
+                    "Illegal column " + arguments[0].column->getName() + " of first argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
         }
         else
         {
             if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_string.get()))
-                executeForSource(column_start, column_length, column_start_const, column_length_const, start_value,
-                                length_value, columns, result, StringSource(*col), input_rows_count);
+                return executeForSource(column_start, column_length, column_start_const, column_length_const, start_value,
+                                length_value, StringSource(*col), input_rows_count);
             else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column_string.get()))
-                executeForSource(column_start, column_length, column_start_const, column_length_const, start_value,
-                                length_value, columns, result, FixedStringSource(*col_fixed), input_rows_count);
+                return executeForSource(column_start, column_length, column_start_const, column_length_const, start_value,
+                                length_value, FixedStringSource(*col_fixed), input_rows_count);
             else if (const ColumnConst * col_const = checkAndGetColumnConst<ColumnString>(column_string.get()))
-                executeForSource(column_start, column_length, column_start_const, column_length_const, start_value,
-                                length_value, columns, result, ConstSource<StringSource>(*col_const), input_rows_count);
+                return executeForSource(column_start, column_length, column_start_const, column_length_const, start_value,
+                                length_value, ConstSource<StringSource>(*col_const), input_rows_count);
             else if (const ColumnConst * col_const_fixed = checkAndGetColumnConst<ColumnFixedString>(column_string.get()))
-                executeForSource(column_start, column_length, column_start_const, column_length_const, start_value,
-                                length_value, columns, result, ConstSource<FixedStringSource>(*col_const_fixed), input_rows_count);
+                return executeForSource(column_start, column_length, column_start_const, column_length_const, start_value,
+                                length_value, ConstSource<FixedStringSource>(*col_const_fixed), input_rows_count);
             else
                 throw Exception(
-                    "Illegal column " + columns[arguments[0]].column->getName() + " of first argument of function " + getName(),
+                    "Illegal column " + arguments[0].column->getName() + " of first argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
         }
     }

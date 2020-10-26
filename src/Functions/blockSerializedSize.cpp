@@ -30,15 +30,14 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         UInt64 size = 0;
 
-        for (auto arg_pos : arguments)
-            size += columnsSerializedSizeOne(columns[arg_pos]);
+        for (const auto & arg : arguments)
+            size += columnsSerializedSizeOne(arg);
 
-        columns[result].column = DataTypeUInt64().createColumnConst(
-            input_rows_count, size)->convertToFullColumnIfConst();
+        return DataTypeUInt64().createColumnConst(input_rows_count, size)->convertToFullColumnIfConst();
     }
 
     static UInt64 columnsSerializedSizeOne(const ColumnWithTypeAndName & elem)

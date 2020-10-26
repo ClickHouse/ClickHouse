@@ -76,7 +76,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(const ASTPtr 
             ASTPtr codec_arguments;
             if (const auto * family_name = inner_codec_ast->as<ASTIdentifier>())
             {
-                codec_family_name = family_name->name;
+                codec_family_name = family_name->name();
                 codec_arguments = {};
             }
             else if (const auto * ast_func = inner_codec_ast->as<ASTFunction>())
@@ -207,7 +207,7 @@ CompressionCodecPtr CompressionCodecFactory::get(const ASTPtr & ast, const IData
             ASTPtr codec_arguments;
             if (const auto * family_name = inner_codec_ast->as<ASTIdentifier>())
             {
-                codec_family_name = family_name->name;
+                codec_family_name = family_name->name();
                 codec_arguments = {};
             }
             else if (const auto * ast_func = inner_codec_ast->as<ASTFunction>())
