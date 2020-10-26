@@ -98,7 +98,7 @@ struct AggregateFunctionStudentTTestData final
 
     Float64 getSSquared() const
     {
-        /// The original formulae looks like  
+        /// The original formulae looks like
         /// \frac{\sum_{i = 1}^{n_x}{(x_i - \bar{x}) ^ 2} + \sum_{i = 1}^{n_y}{(y_i - \bar{y}) ^ 2}}{n_x + n_y - 2}
         /// But we made some mathematical transformations not to store original sequences.
         /// Also we dropped sqrt, because later it will be squared later.
@@ -150,7 +150,8 @@ struct AggregateFunctionStudentTTestData final
         const Float64 t = getTStatisticSquared();
         auto f = [&v] (double x) { return std::pow(x, v/2 - 1) / std::sqrt(1 - x); };
         Float64 numenator = integrateSimpson(0, v / (t + v), f);
-        Float64 denominator = std::exp(std::lgammal(v/2) + std::lgammal(0.5) - std::lgammal(v/2 + 0.5));
+        int unused;
+        Float64 denominator = std::exp(lgammal_r(v / 2, &unused) + lgammal_r(0.5, &unused) - lgammal_r(v / 2 + 0.5, &unused));
         return numenator / denominator;
     }
 

@@ -18,6 +18,7 @@
 
 #include <type_traits>
 
+
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
@@ -159,9 +160,10 @@ struct AggregateFunctionWelchTTestData final
     {
         const Float64 v = getDegreesOfFreedom();
         const Float64 t = getTStatisticSquared();
-        auto f = [&v] (double x) { return std::pow(x, v/2 - 1) / std::sqrt(1 - x); };
+        auto f = [&v] (double x) { return std::pow(x, v / 2 - 1) / std::sqrt(1 - x); };
         Float64 numenator = integrateSimpson(0, v / (t + v), f);
-        Float64 denominator = std::exp(std::lgammal(v/2) + std::lgammal(0.5) - std::lgammal(v/2 + 0.5));
+        int unused;
+        Float64 denominator = std::exp(lgammal_r(v / 2, &unused) + lgammal_r(0.5, &unused) - lgammal_r(v / 2 + 0.5, &unused));
         return numenator / denominator;
     }
 
