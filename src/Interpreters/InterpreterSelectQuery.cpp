@@ -1116,6 +1116,7 @@ void InterpreterSelectQuery::executeFetchColumns(
     /// Optimization for trivial query like SELECT count() FROM table.
     bool optimize_trivial_count =
         syntax_analyzer_result->optimize_trivial_count
+        && (settings.max_parallel_replicas <= 1)
         && storage
         && storage->getName() != "MaterializeMySQL"
         && !filter_info
@@ -1128,7 +1129,17 @@ void InterpreterSelectQuery::executeFetchColumns(
     {
         const auto & desc = query_analyzer->aggregates()[0];
         const auto & func = desc.function;
-        std::optional<UInt64> num_rows = storage->totalRows();
+        std::optional<UInt64> num_rows{};
+        if (!query.prewhere() && !query.where())
+            num_rows = storage->totalRows();
+        else // It's possible to optimize count() given only partition predicates
+        {
+            SelectQueryInfo temp_query_info;
+            temp_query_info.query = query_ptr;
+            temp_query_info.syntax_analyzer_result = syntax_analyzer_result;
+            temp_query_info.sets = query_analyzer->getPreparedSets();
+            num_rows = storage->totalRowsByPartitionPredicate(temp_query_info, *context);
+        }
         if (num_rows)
         {
             AggregateFunctionCount & agg_count = static_cast<AggregateFunctionCount &>(*func);

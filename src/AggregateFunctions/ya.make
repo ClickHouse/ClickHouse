@@ -42,6 +42,7 @@ SRCS(
     AggregateFunctionState.cpp
     AggregateFunctionStatistics.cpp
     AggregateFunctionStatisticsSimple.cpp
+    AggregateFunctionStudentTTest.cpp
     AggregateFunctionSum.cpp
     AggregateFunctionSumMap.cpp
     AggregateFunctionTimeSeriesGroupSum.cpp
@@ -49,6 +50,7 @@ SRCS(
     AggregateFunctionUniqCombined.cpp
     AggregateFunctionUniq.cpp
     AggregateFunctionUniqUpTo.cpp
+    AggregateFunctionWelchTTest.cpp
     AggregateFunctionWindowFunnel.cpp
     parseAggregateFunctionParameters.cpp
     registerAggregateFunctions.cpp

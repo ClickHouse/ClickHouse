@@ -87,7 +87,7 @@ private:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto size = input_rows_count;
 
@@ -101,7 +101,7 @@ private:
             for (const auto idx : ext::range(0, 4))
             {
                 int arg_idx = 2 + 4 * ellipse_idx + idx;
-                const auto * column = columns[arguments[arg_idx]].column.get();
+                const auto * column = arguments[arg_idx].column.get();
                 if (const auto * col = checkAndGetColumnConst<ColumnVector<Float64>>(column))
                 {
                     ellipse_data[idx] = col->getValue<Float64>();
@@ -119,7 +119,7 @@ private:
         int const_cnt = 0;
         for (const auto idx : ext::range(0, 2))
         {
-            const auto * column = columns[arguments[idx]].column.get();
+            const auto * column = arguments[idx].column.get();
             if (typeid_cast<const ColumnConst *> (column))
             {
                 ++const_cnt;
@@ -131,8 +131,8 @@ private:
             }
         }
 
-        const auto * col_x = columns[arguments[0]].column.get();
-        const auto * col_y = columns[arguments[1]].column.get();
+        const auto * col_x = arguments[0].column.get();
+        const auto * col_y = arguments[1].column.get();
         if (const_cnt == 0)
         {
                 const auto * col_vec_x = assert_cast<const ColumnVector<Float64> *> (col_x);
@@ -148,7 +148,7 @@ private:
                     dst_data[row] = isPointInEllipses(col_vec_x->getData()[row], col_vec_y->getData()[row], ellipses.data(), ellipses_count, start_index);
                 }
 
-                columns[result].column = std::move(dst);
+                return dst;
             }
             else if (const_cnt == 2)
             {
@@ -156,7 +156,7 @@ private:
                 const auto * col_const_y = assert_cast<const ColumnConst *> (col_y);
                 size_t start_index = 0;
                 UInt8 res = isPointInEllipses(col_const_x->getValue<Float64>(), col_const_y->getValue<Float64>(), ellipses.data(), ellipses_count, start_index);
-                columns[result].column = DataTypeUInt8().createColumnConst(size, res);
+                return DataTypeUInt8().createColumnConst(size, res);
             }
             else
             {
