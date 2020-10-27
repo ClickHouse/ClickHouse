@@ -9,7 +9,7 @@
 namespace DB
 {
 
-/// Common code for background processes lists, like system.merges and system.fetches
+/// Common code for background processes lists, like system.merges and system.replicated_fetches
 /// Look at examples in MergeList and ReplicatedFetchList
 
 template <typename ListElement, typename Info>

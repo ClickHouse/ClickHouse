@@ -52,7 +52,7 @@ std::string getEndpointId(const std::string & node_id)
     return "DataPartsExchange:" + node_id;
 }
 
-/// Simple functor for tracking fetch progress in system.fetches table.
+/// Simple functor for tracking fetch progress in system.replicated_fetches table.
 struct ReplicatedFetchReadCallback
 {
     ReplicatedFetchList::Entry & replicated_fetch_entry;
