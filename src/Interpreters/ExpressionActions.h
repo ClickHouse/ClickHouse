@@ -213,6 +213,7 @@ private:
     struct ExecutionContext
     {
         ColumnsWithTypeAndName & input_columns;
+        ColumnsWithTypeAndName inputs;
         ColumnsWithTypeAndName columns;
         size_t num_rows;
     };

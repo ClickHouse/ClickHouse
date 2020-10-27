@@ -122,7 +122,7 @@ void ExpressionActions::execute(Block & block, bool dry_run) const
         .num_rows = block.rows(),
     };
 
-    execution_context.columns.reserve(num_columns);
+    execution_context.inputs.reserve(required_columns.size());
 
     ColumnNumbers inputs_to_remove;
     inputs_to_remove.reserve(required_columns.size());
@@ -177,6 +177,7 @@ void ExpressionActions::execute(Block & block, bool dry_run) const
 
 void ExpressionActions::executeAction(const Action & action, ExecutionContext & execution_context, bool dry_run)
 {
+    auto & inputs = execution_context.inputs;
     auto & columns = execution_context.columns;
     auto & num_rows = execution_context.num_rows;
 
@@ -227,6 +228,10 @@ void ExpressionActions::executeAction(const Action & action, ExecutionContext & 
                 if (column.column)
                     column.column = column.column->replicate(array->getOffsets());
 
+            for (auto & column : inputs)
+                if (column.column)
+                    column.column = column.column->replicate(array->getOffsets());
+
             for (auto & column : execution_context.input_columns)
                 if (column.column)
                     column.column = column.column->replicate(array->getOffsets());
@@ -267,7 +272,8 @@ void ExpressionActions::executeAction(const Action & action, ExecutionContext & 
 
         case ActionsDAG::Type::INPUT:
         {
-            throw Exception("Cannot execute INPUT action", ErrorCodes::LOGICAL_ERROR);
+            columns[action.result_position] = std::move(inputs[action.arguments.front().pos]);
+            break;
         }
     }
 }
@@ -1260,9 +1266,17 @@ ExpressionActionsPtr ActionsDAG::linearizeActions() const
         }
 
         if (node->type == Type::INPUT)
+        {
+            /// Argument for input is special. It contains the position from required columns.
+            ExpressionActions::Argument argument;
+            argument.pos = expressions->required_columns.size();
+            argument.remove = false;
+            arguments.emplace_back(argument);
+
             expressions->required_columns.push_back({node->result_name, node->result_type});
-        else
-            expressions->actions.push_back({node, arguments, free_position, cur.used_in_result});
+        }
+
+        expressions->actions.push_back({node, arguments, free_position, cur.used_in_result});
 
         if (cur.used_in_result)
             expressions->sample_block.insert({cur.node->column, cur.node->result_type, cur.node->result_name});
