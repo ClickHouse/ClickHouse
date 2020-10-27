@@ -1,6 +1,6 @@
 ## system.asynchronous_metric_log {#system-tables-async-log}
 
-Contains the historical values for `system.asynchronous_metrics`, which are saved once per minute. This feature is enabled by default.
+Contains the historical values for `system.asynchronous_metrics`, which are saved once per minute. Enabled by default.
 
 Columns:
 
