@@ -17,32 +17,23 @@ namespace DB
 ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         ChannelPtr consumer_channel_,
         HandlerPtr event_handler_,
-        const String & exchange_name_,
         std::vector<String> & queues_,
         size_t channel_id_base_,
         const String & channel_base_,
-        const String & queue_base_,
         Poco::Logger * log_,
         char row_delimiter_,
-        size_t num_queues_,
-        const String & deadletter_exchange_,
         uint32_t queue_size_,
         const std::atomic<bool> & stopped_)
         : ReadBuffer(nullptr, 0)
         , consumer_channel(std::move(consumer_channel_))
         , event_handler(event_handler_)
-        , exchange_name(exchange_name_)
         , queues(queues_)
         , channel_base(channel_base_)
         , channel_id_base(channel_id_base_)
-        , queue_base(queue_base_)
-        , num_queues(num_queues_)
-        , deadletter_exchange(deadletter_exchange_)
         , log(log_)
         , row_delimiter(row_delimiter_)
-        , queue_size(queue_size_)
         , stopped(stopped_)
-        , received(queue_size * num_queues)
+        , received(queue_size_)
 {
     setupChannel();
 }
@@ -74,10 +65,9 @@ void ReadBufferFromRabbitMQConsumer::subscribe()
                 if (row_delimiter != '\0')
                     message_received += row_delimiter;
 
-                if (message.hasMessageID())
-                    received.push({message_received, message.messageID(), redelivered, AckTracker(delivery_tag, channel_id)});
-                else
-                    received.push({message_received, "", redelivered, AckTracker(delivery_tag, channel_id)});
+                received.push({message_received, message.hasMessageID() ? message.messageID() : "",
+                        message.hasTimestamp() ? message.timestamp() : 0,
+                        redelivered, AckTracker(delivery_tag, channel_id)});
             }
         })
         .onError([&](const char * message)

@@ -25,15 +25,11 @@ public:
     ReadBufferFromRabbitMQConsumer(
             ChannelPtr consumer_channel_,
             HandlerPtr event_handler_,
-            const String & exchange_name_,
             std::vector<String> & queues_,
             size_t channel_id_base_,
             const String & channel_base_,
-            const String & queue_base_,
             Poco::Logger * log_,
             char row_delimiter_,
-            size_t num_queues_,
-            const String & deadletter_exchange_,
             uint32_t queue_size_,
             const std::atomic<bool> & stopped_);
 
@@ -52,6 +48,7 @@ public:
     {
         String message;
         String message_id;
+        uint64_t timestamp;
         bool redelivered;
         AckTracker track;
     };
@@ -74,6 +71,7 @@ public:
     auto getDeliveryTag() const { return current.track.delivery_tag; }
     auto getRedelivered() const { return current.redelivered; }
     auto getMessageID() const { return current.message_id; }
+    auto getTimestamp() const { return current.timestamp; }
 
 private:
     bool nextImpl() override;
@@ -83,18 +81,12 @@ private:
 
     ChannelPtr consumer_channel;
     HandlerPtr event_handler;
-
-    const String exchange_name;
     std::vector<String> queues;
     const String channel_base;
     const size_t channel_id_base;
-    const String queue_base;
-    const size_t num_queues;
-    const String deadletter_exchange;
     Poco::Logger * log;
     char row_delimiter;
     bool allowed = true;
-    uint32_t queue_size;
     const std::atomic<bool> & stopped;
 
     String channel_id;

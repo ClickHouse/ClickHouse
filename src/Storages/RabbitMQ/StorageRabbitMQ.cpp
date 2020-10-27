@@ -689,9 +689,8 @@ ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
     ChannelPtr consumer_channel = std::make_shared<AMQP::TcpChannel>(connection.get());
 
     return std::make_shared<ReadBufferFromRabbitMQConsumer>(
-        consumer_channel, event_handler, consumer_exchange, queues, ++consumer_id,
-        unique_strbase, queue_base, log, row_delimiter, num_queues,
-        deadletter_exchange, queue_size, stream_cancelled);
+        consumer_channel, event_handler, queues, ++consumer_id,
+        unique_strbase, log, row_delimiter, queue_size, stream_cancelled);
 }
 
 
@@ -983,7 +982,8 @@ NamesAndTypesList StorageRabbitMQ::getVirtuals() const
             {"_channel_id", std::make_shared<DataTypeString>()},
             {"_delivery_tag", std::make_shared<DataTypeUInt64>()},
             {"_redelivered", std::make_shared<DataTypeUInt8>()},
-            {"_message_id", std::make_shared<DataTypeString>()}
+            {"_message_id", std::make_shared<DataTypeString>()},
+            {"_timestamp", std::make_shared<DataTypeUInt64>()}
     };
 }
 

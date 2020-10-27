@@ -148,4 +148,5 @@ Example:
 -   `_channel_id` - ChannelID, on which consumer, who received the message, was declared.
 -   `_delivery_tag` - DeliveryTag of the received message. Scoped per channel.
 -   `_redelivered` - `redelivered` flag of the message.
--   `_message_id` - MessageID of the received message; non-empty if was set, when message was published.
+-   `_message_id` - messageID of the received message; non-empty if was set, when message was published.
+-   `_timestamp` - timestamp of the received message; non-empty if was set, when message was published.
