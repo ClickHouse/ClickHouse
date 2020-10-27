@@ -942,7 +942,7 @@ SELECT defaultValueOfArgumentType( CAST(1 AS Nullable(Int8) ) )
 
 ## defaultValueOfTypeName {#defaultvalueoftypename}
 
-Outputs the default value for given type name.
+Outputs the default value for the given type name.
 
 Does not include default values for custom columns set by the user.
 
