@@ -12,9 +12,9 @@ toc_title: "\u067E\u0631\u0648\u0641\u0627\u06CC\u0644 \u067E\u0631\u0633 \u0648
 
 برای استفاده از پروفیل:
 
--   برپایی [_قطع](../server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) بخش پیکربندی سرور.
+-   برپایی [\_قطع](../server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) بخش پیکربندی سرور.
 
-    در این بخش پیکربندی [_قطع](../../operations/system-tables.md#system_tables-trace_log) جدول سیستم حاوی نتایج حاصل از عملکرد پیشفیلتر. این است که به طور پیش فرض پیکربندی شده است. به یاد داشته باشید که داده ها در این جدول تنها برای یک سرور در حال اجرا معتبر است. پس از راه اندازی مجدد سرور, تاتر تمیز نمی کند تا جدول و تمام نشانی حافظه مجازی ذخیره شده ممکن است نامعتبر.
+    در این بخش پیکربندی [\_قطع](../../operations/system-tables.md#system_tables-trace_log) جدول سیستم حاوی نتایج حاصل از عملکرد پیشفیلتر. این است که به طور پیش فرض پیکربندی شده است. به یاد داشته باشید که داده ها در این جدول تنها برای یک سرور در حال اجرا معتبر است. پس از راه اندازی مجدد سرور, تاتر تمیز نمی کند تا جدول و تمام نشانی حافظه مجازی ذخیره شده ممکن است نامعتبر.
 
 -   برپایی [ایران در تهران](../settings/settings.md#query_profiler_cpu_time_period_ns) یا [جستجو](../settings/settings.md#query_profiler_real_time_period_ns) تنظیمات. هر دو تنظیمات را می توان به طور همزمان استفاده کرد.
 
@@ -26,7 +26,7 @@ toc_title: "\u067E\u0631\u0648\u0641\u0627\u06CC\u0644 \u067E\u0631\u0633 \u0648
 
 -   نصب `clickhouse-common-static-dbg` بسته ببینید [نصب از بسته های دب](../../getting-started/install.md#install-from-deb-packages).
 
--   اجازه توابع درون گرایی توسط [اجازه دادن به _فعال کردن اختلال در عملکرد](../settings/settings.md#settings-allow_introspection_functions) تنظیمات.
+-   اجازه توابع درون گرایی توسط [اجازه دادن به \_فعال کردن اختلال در عملکرد](../settings/settings.md#settings-allow_introspection_functions) تنظیمات.
 
     به دلایل امنیتی, توابع درون گرایی به طور پیش فرض غیر فعال.
 

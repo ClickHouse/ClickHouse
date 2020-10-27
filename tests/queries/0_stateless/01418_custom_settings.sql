@@ -36,12 +36,3 @@ SELECT getSetting('custom_f') as v, toTypeName(v) SETTINGS custom_f = 'word';
 SELECT name, value FROM system.settings WHERE name = 'custom_f' SETTINGS custom_f = 'word';
 SELECT getSetting('custom_f') as v, toTypeName(v); -- { serverError 115 } -- Setting not found.
 SELECT COUNT() FROM system.settings WHERE name = 'custom_f';
-
-SELECT '';
-SET custom_compound.identifier.v1 = 'test';
-SELECT getSetting('custom_compound.identifier.v1') as v, toTypeName(v);
-SELECT name, value FROM system.settings WHERE name = 'custom_compound.identifier.v1';
-
-CREATE SETTINGS PROFILE s1_01418 SETTINGS custom_compound.identifier.v2 = 100;
-SHOW CREATE SETTINGS PROFILE s1_01418;
-DROP SETTINGS PROFILE s1_01418;

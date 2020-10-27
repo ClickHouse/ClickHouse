@@ -8,6 +8,7 @@
 namespace DB
 {
 
+
 /** SET query
   */
 class ASTSetQuery : public IAST
@@ -22,9 +23,19 @@ public:
 
     ASTPtr clone() const override { return std::make_shared<ASTSetQuery>(*this); }
 
-    void formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const override;
+    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
+    {
+        if (is_standalone)
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << "SET " << (settings.hilite ? hilite_none : "");
 
-    void updateTreeHashImpl(SipHash & hash_state) const override;
+        for (auto it = changes.begin(); it != changes.end(); ++it)
+        {
+            if (it != changes.begin())
+                settings.ostr << ", ";
+
+            settings.ostr << it->name << " = " << applyVisitor(FieldVisitorToString(), it->value);
+        }
+    }
 };
 
 }

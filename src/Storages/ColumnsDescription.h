@@ -7,7 +7,6 @@
 #include <Storages/ColumnDefault.h>
 #include <Storages/ColumnCodec.h>
 #include <optional>
-#include <Compression/CompressionFactory.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/sequenced_index.hpp>
@@ -31,7 +30,7 @@ struct ColumnDescription
     DataTypePtr type;
     ColumnDefault default_desc;
     String comment;
-    ASTPtr codec;
+    CompressionCodecPtr codec;
     ASTPtr ttl;
 
     ColumnDescription() = default;
@@ -112,11 +111,8 @@ public:
     bool hasDefaults() const;
     std::optional<ColumnDefault> getDefault(const String & column_name) const;
 
-    /// Does column has non default specified compression codec
-    bool hasCompressionCodec(const String & column_name) const;
     CompressionCodecPtr getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
     CompressionCodecPtr getCodecOrDefault(const String & column_name) const;
-    ASTPtr getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
 
     String toString() const;
     static ColumnsDescription parse(const String & str);

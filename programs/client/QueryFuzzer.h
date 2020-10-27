@@ -40,7 +40,7 @@ struct QueryFuzzer
     // ASTPtr to point to new AST with some random changes.
     void fuzzMain(ASTPtr & ast);
 
-    // Various helper functions follow, normally you shouldn't have to call them.
+    // Variuos helper functions follow, normally you shouldn't have to call them.
     Field getRandomField(int type);
     Field fuzzField(Field field);
     ASTPtr getRandomColumnLike();

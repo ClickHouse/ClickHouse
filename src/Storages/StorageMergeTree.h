@@ -37,7 +37,7 @@ public:
 
     bool supportsIndexForIn() const override { return true; }
 
-    Pipe read(
+    Pipes read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
@@ -47,7 +47,6 @@ public:
         unsigned num_streams) override;
 
     std::optional<UInt64> totalRows() const override;
-    std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo &, const Context &) const override;
     std::optional<UInt64> totalBytes() const override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
@@ -62,7 +61,7 @@ public:
         bool deduplicate,
         const Context & context) override;
 
-    Pipe alterPartition(
+    Pipes alterPartition(
         const ASTPtr & query,
         const StorageMetadataPtr & /* metadata_snapshot */,
         const PartitionCommands & commands,

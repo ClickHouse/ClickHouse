@@ -1,14 +1,4 @@
-if (ENABLE_PROTOBUF AND NOT USE_INTERNAL_PROTOBUF_LIBRARY)
-    option(PROTOBUF_OLD_ABI_COMPAT "Set to ON for compatiability with external protobuf which was compiled old C++ ABI" OFF)
-endif()
-
-if (PROTOBUF_OLD_ABI_COMPAT)
-    if (NOT ENABLE_PROTOBUF OR USE_INTERNAL_PROTOBUF_LIBRARY)
-        message (${RECONFIGURE_MESSAGE_LEVEL} "PROTOBUF_OLD_ABI_COMPAT option is ignored")
-    endif()
-endif()
-
-if (NOT USE_INTERNAL_PROTOBUF_LIBRARY AND PROTOBUF_OLD_ABI_COMPAT)
+if (NOT USE_INTERNAL_PROTOBUF_LIBRARY)
     # compatiable with protobuf which was compiled old C++ ABI
     set(CMAKE_CXX_FLAGS "-D_GLIBCXX_USE_CXX11_ABI=0")
     set(CMAKE_C_FLAGS "")
@@ -17,7 +7,7 @@ if (NOT USE_INTERNAL_PROTOBUF_LIBRARY AND PROTOBUF_OLD_ABI_COMPAT)
     endif ()
 endif()
 
-set(WITH_KERBEROS false)
+SET(WITH_KERBEROS false)
 # project and source dir
 set(HDFS3_ROOT_DIR ${ClickHouse_SOURCE_DIR}/contrib/libhdfs3)
 set(HDFS3_SOURCE_DIR ${HDFS3_ROOT_DIR}/src)
@@ -216,7 +206,7 @@ target_link_libraries(hdfs3 PRIVATE ${LIBGSASL_LIBRARY})
 if (WITH_KERBEROS)
     target_link_libraries(hdfs3 PRIVATE ${KERBEROS_LIBRARIES})
 endif()
-target_link_libraries(hdfs3 PRIVATE ${LIBXML2_LIBRARIES})
+target_link_libraries(hdfs3 PRIVATE ${LIBXML2_LIBRARY})
 
 # inherit from parent cmake
 target_include_directories(hdfs3 PRIVATE ${Protobuf_INCLUDE_DIR})

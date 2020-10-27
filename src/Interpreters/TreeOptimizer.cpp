@@ -140,7 +140,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
                     continue;
                 }
             }
-            else if (!function_factory.get(function->name, context)->isInjective({}))
+            else if (!function_factory.get(function->name, context)->isInjective(Block{}))
             {
                 ++i;
                 continue;
@@ -269,7 +269,7 @@ void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
 }
 
 /// Eliminates min/max/any-aggregators of functions of GROUP BY keys
-void optimizeAggregateFunctionsOfGroupByKeys(ASTSelectQuery * select_query, ASTPtr & node)
+void optimizeAggregateFunctionsOfGroupByKeys(ASTSelectQuery * select_query)
 {
     if (!select_query->groupBy())
         return;
@@ -279,8 +279,10 @@ void optimizeAggregateFunctionsOfGroupByKeys(ASTSelectQuery * select_query, ASTP
 
     GroupByKeysInfo group_by_keys_data = getGroupByKeysInfo(group_keys);
 
+    auto select = select_query->select();
+
     SelectAggregateFunctionOfGroupByKeysVisitor::Data visitor_data{group_by_keys_data.key_names};
-    SelectAggregateFunctionOfGroupByKeysVisitor(visitor_data).visit(node);
+    SelectAggregateFunctionOfGroupByKeysVisitor(visitor_data).visit(select);
 }
 
 /// Remove duplicate items from ORDER BY.
@@ -475,7 +477,7 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, const C
     }
 }
 
-/// If ORDER BY has argument x followed by f(x) transforms it to ORDER BY x.
+/// If ORDER BY has argument x followed by f(x) transfroms it to ORDER BY x.
 /// Optimize ORDER BY x, y, f(x), g(x, y), f(h(x)), t(f(x), g(x)) into ORDER BY x, y
 /// in case if f(), g(), h(), t() are deterministic (in scope of query).
 /// Don't optimize ORDER BY f(x), g(x), x even if f(x) is bijection for x or g(x).
@@ -649,7 +651,7 @@ void TreeOptimizer::apply(ASTPtr & query, Aliases & aliases, const NameSet & sou
         && !select_query->group_by_with_rollup
         && !select_query->group_by_with_cube)
     {
-        optimizeAggregateFunctionsOfGroupByKeys(select_query, query);
+        optimizeAggregateFunctionsOfGroupByKeys(select_query);
     }
 
     /// Remove duplicate items from ORDER BY.

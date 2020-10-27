@@ -1,7 +1,3 @@
-#include <Common/config.h>
-
-#if USE_AWS_S3
-
 #include "PocoHTTPClientFactory.h"
 
 #include <IO/S3/PocoHTTPClient.h>
@@ -15,7 +11,7 @@ namespace DB::S3
 std::shared_ptr<Aws::Http::HttpClient>
 PocoHTTPClientFactory::CreateHttpClient(const Aws::Client::ClientConfiguration & clientConfiguration) const
 {
-    return std::make_shared<PocoHTTPClient>(static_cast<const PocoHTTPClientConfiguration &>(clientConfiguration));
+    return std::make_shared<PocoHTTPClient>(clientConfiguration);
 }
 
 std::shared_ptr<Aws::Http::HttpRequest> PocoHTTPClientFactory::CreateHttpRequest(
@@ -36,5 +32,3 @@ std::shared_ptr<Aws::Http::HttpRequest> PocoHTTPClientFactory::CreateHttpRequest
 }
 
 }
-
-#endif

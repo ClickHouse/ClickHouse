@@ -2,7 +2,6 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
-#include <Common/HashTable/HashTable.h>
 #include <Functions/array/FunctionArrayMapped.h>
 #include <Functions/FunctionFactory.h>
 
@@ -68,7 +67,7 @@ struct ArrayCompactImpl
                 ++res_pos;
                 for (; src_pos < src_offset; ++src_pos)
                 {
-                    if (!bitEquals(src_values[src_pos], src_values[src_pos - 1]))
+                    if (src_values[src_pos] != src_values[src_pos - 1])
                     {
                         res_values[res_pos] = src_values[src_pos];
                         ++res_pos;

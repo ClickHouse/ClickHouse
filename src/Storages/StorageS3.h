@@ -34,14 +34,14 @@ public:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         Context & context_,
-        const String & compression_method_ = "");
+        const String & compression_method_);
 
     String getName() const override
     {
         return name;
     }
 
-    Pipe read(
+    Pipes read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,

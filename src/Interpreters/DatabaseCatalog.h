@@ -9,7 +9,6 @@
 #include <map>
 #include <set>
 #include <unordered_map>
-#include <unordered_set>
 #include <mutex>
 #include <shared_mutex>
 #include <array>
@@ -81,8 +80,7 @@ struct TemporaryTableHolder : boost::noncopyable
         const Context & context,
         const ColumnsDescription & columns,
         const ConstraintsDescription & constraints,
-        const ASTPtr & query = {},
-        bool create_for_global_subquery = false);
+        const ASTPtr & query = {});
 
     TemporaryTableHolder(TemporaryTableHolder && rhs);
     TemporaryTableHolder & operator = (TemporaryTableHolder && rhs);
@@ -182,8 +180,6 @@ public:
     /// Try convert qualified dictionary name to persistent UUID
     String resolveDictionaryName(const String & name) const;
 
-    void waitTableFinallyDropped(const UUID & uuid);
-
 private:
     // The global instance of database catalog. unique_ptr is to allow
     // deferred initialization. Thought I'd use std::optional, but I can't
@@ -254,13 +250,11 @@ private:
     mutable std::mutex ddl_guards_mutex;
 
     TablesMarkedAsDropped tables_marked_dropped;
-    std::unordered_set<UUID> tables_marked_dropped_ids;
     mutable std::mutex tables_marked_dropped_mutex;
 
     std::unique_ptr<BackgroundSchedulePoolTaskHolder> drop_task;
     static constexpr time_t default_drop_delay_sec = 8 * 60;
     time_t drop_delay_sec = default_drop_delay_sec;
-    std::condition_variable wait_table_finally_dropped;
 };
 
 }

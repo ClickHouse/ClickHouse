@@ -44,7 +44,7 @@ namespace ErrorCodes
   * To be more precise - for use in ColumnVector.
   * It differs from std::vector in that it does not initialize the elements.
   *
-  * Made noncopyable so that there are no accidental copies. You can copy the data using `assign` method.
+  * Made noncopyable so that there are no accidential copies. You can copy the data using `assign` method.
   *
   * Only part of the std::vector interface is supported.
   *
@@ -111,7 +111,7 @@ protected:
 
     void alloc_for_num_elements(size_t num_elements)
     {
-        alloc(minimum_memory_for_elements(num_elements));
+        alloc(roundUpToPowerOfTwoOrZero(minimum_memory_for_elements(num_elements)));
     }
 
     template <typename ... TAllocatorParams>
@@ -214,9 +214,6 @@ public:
     void clear() { c_end = c_start; }
 
     template <typename ... TAllocatorParams>
-#if defined(__clang__)
-    ALWAYS_INLINE /// Better performance in clang build, worse performance in gcc build.
-#endif
     void reserve(size_t n, TAllocatorParams &&... allocator_params)
     {
         if (n > capacity())
@@ -224,23 +221,9 @@ public:
     }
 
     template <typename ... TAllocatorParams>
-    void reserve_exact(size_t n, TAllocatorParams &&... allocator_params)
-    {
-        if (n > capacity())
-            realloc(minimum_memory_for_elements(n), std::forward<TAllocatorParams>(allocator_params)...);
-    }
-
-    template <typename ... TAllocatorParams>
     void resize(size_t n, TAllocatorParams &&... allocator_params)
     {
         reserve(n, std::forward<TAllocatorParams>(allocator_params)...);
-        resize_assume_reserved(n);
-    }
-
-    template <typename ... TAllocatorParams>
-    void resize_exact(size_t n, TAllocatorParams &&... allocator_params)
-    {
-        reserve_exact(n, std::forward<TAllocatorParams>(allocator_params)...);
         resize_assume_reserved(n);
     }
 
@@ -618,7 +601,7 @@ public:
     template <typename... TAllocatorParams>
     void assign(size_t n, const T & x, TAllocatorParams &&... allocator_params)
     {
-        this->resize_exact(n, std::forward<TAllocatorParams>(allocator_params)...);
+        this->resize(n, std::forward<TAllocatorParams>(allocator_params)...);
         std::fill(begin(), end(), x);
     }
 
@@ -629,7 +612,7 @@ public:
 
         size_t required_capacity = from_end - from_begin;
         if (required_capacity > this->capacity())
-            this->reserve_exact(required_capacity, std::forward<TAllocatorParams>(allocator_params)...);
+            this->reserve(roundUpToPowerOfTwoOrZero(required_capacity), std::forward<TAllocatorParams>(allocator_params)...);
 
         size_t bytes_to_copy = this->byte_size(required_capacity);
         memcpy(this->c_start, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);

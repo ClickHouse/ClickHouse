@@ -170,12 +170,10 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
     BlockOutputStreamPtr output = storage->write(ASTPtr(), storage->getInMemoryMetadataPtr(), context);
 
     /// Write data
-    data->pipe->resize(1);
-
     auto sink = std::make_shared<SinkToOutputStream>(std::move(output));
-    connect(*data->pipe->getOutputPort(0), sink->getPort());
+    connect(data->pipe->getPort(), sink->getPort());
 
-    auto processors = Pipe::detachProcessors(std::move(*data->pipe));
+    auto processors = std::move(*data->pipe).detachProcessors();
     processors.push_back(std::move(sink));
 
     auto executor = std::make_shared<PipelineExecutor>(processors);

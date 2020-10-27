@@ -22,9 +22,6 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
-namespace
-{
-
 class FunctionGeohashesInBox : public IFunction
 {
 public:
@@ -151,7 +148,7 @@ public:
 
         if (!res_offsets.empty() && res_offsets.back() != res_strings.size())
         {
-            throw Exception("Array column size mismatch (internal logical error)" +
+            throw Exception("Arrary column size mismatch (internal logical error)" +
                             std::to_string(res_offsets.back()) + " != " + std::to_string(res_strings.size()),
                             ErrorCodes::LOGICAL_ERROR);
         }
@@ -159,25 +156,21 @@ public:
         result = std::move(col_res);
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const IColumn * lon_min = arguments[0].column.get();
-        const IColumn * lat_min = arguments[1].column.get();
-        const IColumn * lon_max = arguments[2].column.get();
-        const IColumn * lat_max = arguments[3].column.get();
-        const IColumn * precision = arguments[4].column.get();
-        ColumnPtr res;
+        const IColumn * lon_min = block.getByPosition(arguments[0]).column.get();
+        const IColumn * lat_min = block.getByPosition(arguments[1]).column.get();
+        const IColumn * lon_max = block.getByPosition(arguments[2]).column.get();
+        const IColumn * lat_max = block.getByPosition(arguments[3]).column.get();
+        const IColumn * precision = block.getByPosition(arguments[4]).column.get();
+        ColumnPtr & res = block.getByPosition(result).column;
 
         if (checkColumn<ColumnVector<Float32>>(lon_min))
             execute<Float32, UInt8>(lon_min, lat_min, lon_max, lat_max, precision, res, input_rows_count);
         else
             execute<Float64, UInt8>(lon_min, lat_min, lon_max, lat_max, precision, res, input_rows_count);
-
-        return res;
     }
 };
-
-}
 
 void registerFunctionGeohashesInBox(FunctionFactory & factory)
 {

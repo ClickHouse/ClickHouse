@@ -3,7 +3,6 @@
 #include <ext/shared_ptr_helper.h>
 
 #include <Storages/StorageSet.h>
-#include <Storages/JoinSettings.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 
@@ -37,7 +36,7 @@ public:
     /// Verify that the data structure is suitable for implementing this type of JOIN.
     void assertCompatible(ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_) const;
 
-    Pipe read(
+    Pipes read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
@@ -45,9 +44,6 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
-
-    std::optional<UInt64> totalRows() const override;
-    std::optional<UInt64> totalBytes() const override;
 
 private:
     Block sample_block;
@@ -76,8 +72,7 @@ protected:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         bool overwrite,
-        const Context & context_,
-        bool persistent_);
+        const Context & context_);
 };
 
 }

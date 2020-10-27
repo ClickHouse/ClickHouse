@@ -101,7 +101,7 @@ void AggregatingStep::transformPipeline(QueryPipeline & pipeline)
                     group_by_sort_description,
                     max_block_size);
 
-                pipeline.addTransform(std::move(transform));
+                pipeline.addPipe({ std::move(transform) });
                 aggregating_sorted = collector.detachProcessors(1);
             }
             else
@@ -120,6 +120,8 @@ void AggregatingStep::transformPipeline(QueryPipeline & pipeline)
             });
 
             finalizing = collector.detachProcessors(2);
+
+            pipeline.enableQuotaForCurrentStreams();
             return;
         }
     }
@@ -154,6 +156,8 @@ void AggregatingStep::transformPipeline(QueryPipeline & pipeline)
 
         aggregating = collector.detachProcessors(0);
     }
+
+    pipeline.enableQuotaForCurrentStreams();
 }
 
 void AggregatingStep::describeActions(FormatSettings & settings) const

@@ -15,9 +15,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-namespace
-{
-
 class AggregateFunctionCombinatorNull final : public IAggregateFunctionCombinator
 {
 public:
@@ -72,7 +69,7 @@ public:
 
         assert(nested_function);
 
-        if (auto adapter = nested_function->getOwnNullAdapter(nested_function, arguments, params, properties))
+        if (auto adapter = nested_function->getOwnNullAdapter(nested_function, arguments, params))
             return adapter;
 
         /// If applied to aggregate function with -State combinator, we apply -Null combinator to it's nested_function instead of itself.
@@ -121,8 +118,6 @@ public:
         }
     }
 };
-
-}
 
 void registerAggregateFunctionCombinatorNull(AggregateFunctionCombinatorFactory & factory)
 {

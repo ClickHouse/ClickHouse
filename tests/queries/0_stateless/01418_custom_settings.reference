@@ -25,7 +25,3 @@ custom_e	UInt64_404
 word	String
 custom_f	\'word\'
 0
-
-test	String
-custom_compound.identifier.v1	\'test\'
-CREATE SETTINGS PROFILE s1_01418 SETTINGS custom_compound.identifier.v2 = 100

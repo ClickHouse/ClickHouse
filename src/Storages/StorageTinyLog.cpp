@@ -3,7 +3,6 @@
 #include <errno.h>
 
 #include <map>
-#include <cassert>
 
 #include <Poco/Util/XMLConfiguration.h>
 
@@ -390,7 +389,7 @@ void StorageTinyLog::addFiles(const String & column_name, const IDataType & type
         throw Exception("Duplicate column with name " + column_name + " in constructor of StorageTinyLog.",
             ErrorCodes::DUPLICATE_COLUMN);
 
-    IDataType::StreamCallback stream_callback = [&] (const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
+    IDataType::StreamCallback stream_callback = [&] (const IDataType::SubstreamPath & substream_path)
     {
         String stream_name = IDataType::getFileNameForStream(column_name, substream_path);
         if (!files.count(stream_name))
@@ -408,23 +407,20 @@ void StorageTinyLog::addFiles(const String & column_name, const IDataType & type
 
 void StorageTinyLog::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
-    assert(table_path != new_path_to_table_data);
-    {
-        std::unique_lock<std::shared_mutex> lock(rwlock);
+    std::unique_lock<std::shared_mutex> lock(rwlock);
 
-        disk->moveDirectory(table_path, new_path_to_table_data);
+    disk->moveDirectory(table_path, new_path_to_table_data);
 
-        table_path = new_path_to_table_data;
-        file_checker.setPath(table_path + "sizes.json");
+    table_path = new_path_to_table_data;
+    file_checker.setPath(table_path + "sizes.json");
 
-        for (auto & file : files)
-            file.second.data_file_path = table_path + fileName(file.second.data_file_path);
-    }
+    for (auto & file : files)
+        file.second.data_file_path = table_path + fileName(file.second.data_file_path);
     renameInMemory(new_table_id);
 }
 
 
-Pipe StorageTinyLog::read(
+Pipes StorageTinyLog::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
@@ -435,10 +431,14 @@ Pipe StorageTinyLog::read(
 {
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
+    Pipes pipes;
+
     // When reading, we lock the entire storage, because we only have one file
     // per column and can't modify it concurrently.
-    return Pipe(std::make_shared<TinyLogSource>(
+    pipes.emplace_back(std::make_shared<TinyLogSource>(
         max_block_size, Nested::collect(metadata_snapshot->getColumns().getAllPhysical().addTypes(column_names)), *this, context.getSettingsRef().max_read_buffer_size));
+
+    return pipes;
 }
 
 
