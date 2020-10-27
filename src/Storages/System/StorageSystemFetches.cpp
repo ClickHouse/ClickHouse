@@ -1,5 +1,5 @@
 #include <Storages/System/StorageSystemFetches.h>
-#include <Storages/MergeTree/ReplicatedFetchesList.h>
+#include <Storages/MergeTree/ReplicatedFetchList.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>

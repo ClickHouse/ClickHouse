@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/ReplicatedFetchesList.h>
+#include <Storages/MergeTree/ReplicatedFetchList.h>
 #include <Common/CurrentMetrics.h>
 #include <common/getThreadId.h>
 #include <Common/CurrentThread.h>

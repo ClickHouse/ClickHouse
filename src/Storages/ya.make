@@ -91,7 +91,7 @@ SRCS(
     MergeTree/MergeTreeWriteAheadLog.cpp
     MergeTree/MergeType.cpp
     MergeTree/registerStorageMergeTree.cpp
-    MergeTree/ReplicatedFetchesList.cpp
+    MergeTree/ReplicatedFetchList.cpp
     MergeTree/ReplicatedMergeTreeAddress.cpp
     MergeTree/ReplicatedMergeTreeAltersSequence.cpp
     MergeTree/ReplicatedMergeTreeBlockOutputStream.cpp
