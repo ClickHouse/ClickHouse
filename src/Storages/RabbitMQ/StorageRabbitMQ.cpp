@@ -40,6 +40,7 @@ static const auto CONNECT_SLEEP = 200;
 static const auto RETRIES_MAX = 20;
 static const uint32_t QUEUE_SIZE = 100000;
 static const auto MAX_FAILED_READ_ATTEMPTS = 10;
+static const auto RESCHEDULE_MS = 500;
 static const auto MAX_THREAD_WORK_DURATION_MS = 60000;
 
 namespace ErrorCodes
@@ -700,7 +701,7 @@ void StorageRabbitMQ::streamingToViewsFunc()
 
     /// Wait for attached views
     if (!stream_cancelled)
-        streaming_task->schedule();
+        streaming_task->scheduleAfter(RESCHEDULE_MS);
 }
 
 
