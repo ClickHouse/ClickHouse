@@ -184,4 +184,3 @@ def test_materialize_database_err_sync_user_privs_8_0(started_cluster, started_m
         print((clickhouse_node.query(
             "select '\n', thread_id, query_id, arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym from system.stack_trace format TSVRaw")))
         raise
-
