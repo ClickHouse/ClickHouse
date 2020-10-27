@@ -66,6 +66,9 @@ def test_system_fetches(started_cluster):
     assert first_non_empty['source_replica_port'] == 9009
     assert first_non_empty['source_replica_path'] == '/clickhouse/test/t/replicas/1'
     assert first_non_empty['interserver_scheme'] == 'http'
+    assert first_non_empty['result_part_name'] == 'all_0_0_0'
+    assert first_non_empty['result_part_path'].startswith('/var/lib/clickhouse/')
+    assert first_non_empty['result_part_path'].endswith('all_0_0_0/')
     assert first_non_empty['partition_id'] == 'all'
     assert first_non_empty['URI'].startswith('http://node1:9009/?endpoint=DataPartsExchange')
 

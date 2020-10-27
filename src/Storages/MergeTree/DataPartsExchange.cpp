@@ -12,7 +12,7 @@
 #include <Poco/File.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/HTTPRequest.h>
-#include <Storages/MergeTree/ReplicatedFetchesList.h>
+#include <Storages/MergeTree/ReplicatedFetchList.h>
 
 
 namespace CurrentMetrics
@@ -305,14 +305,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         /// We don't know real size of part because sender server version is too old
         reservation = data.makeEmptyReservationOnLargestDisk();
     }
-    auto storage_id = data.getStorageID();
-    String new_part_path = data.getFullPathOnDisk(reservation->getDisk()) + part_name + "/";
-    auto entry = data.global_context.getReplicatedFetchList().insert(
-        storage_id.getDatabaseName(), storage_id.getTableName(),
-        part_info.partition_id, part_name, new_part_path,
-        replica_path, uri, to_detached, sum_files_size);
-
-    in.setNextReadCallback(ReplicatedFetchReadCallback(*entry));
 
     bool sync = (data_settings->min_compressed_bytes_to_fsync_after_fetch
                     && sum_files_size >= data_settings->min_compressed_bytes_to_fsync_after_fetch);
@@ -320,6 +312,15 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     String part_type = "Wide";
     if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_TYPE)
         readStringBinary(part_type, in);
+
+    auto storage_id = data.getStorageID();
+    String new_part_path = part_type == "InMemory" ? "memory" : data.getFullPathOnDisk(reservation->getDisk()) + part_name + "/";
+    auto entry = data.global_context.getReplicatedFetchList().insert(
+        storage_id.getDatabaseName(), storage_id.getTableName(),
+        part_info.partition_id, part_name, new_part_path,
+        replica_path, uri, to_detached, sum_files_size);
+
+    in.setNextReadCallback(ReplicatedFetchReadCallback(*entry));
 
     return part_type == "InMemory" ? downloadPartToMemory(part_name, metadata_snapshot, std::move(reservation), in)
         : downloadPartToDisk(part_name, replica_path, to_detached, tmp_prefix_, sync, std::move(reservation), in);
