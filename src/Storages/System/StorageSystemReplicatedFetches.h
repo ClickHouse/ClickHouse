@@ -11,11 +11,11 @@ namespace DB
 class Context;
 
 /// system.fetches table. Takes data from context.getReplicatedFetchList()
-class StorageSystemFetches final : public ext::shared_ptr_helper<StorageSystemFetches>, public IStorageSystemOneBlock<StorageSystemFetches >
+class StorageSystemReplicatedFetches final : public ext::shared_ptr_helper<StorageSystemReplicatedFetches>, public IStorageSystemOneBlock<StorageSystemReplicatedFetches >
 {
-    friend struct ext::shared_ptr_helper<StorageSystemFetches>;
+    friend struct ext::shared_ptr_helper<StorageSystemReplicatedFetches>;
 public:
-    std::string getName() const override { return "SystemFetches"; }
+    std::string getName() const override { return "SystemReplicatedFetches"; }
 
     static NamesAndTypesList getNamesAndTypes();
 

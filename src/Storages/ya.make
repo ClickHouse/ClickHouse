@@ -156,7 +156,6 @@ SRCS(
     System/StorageSystemDistributionQueue.cpp
     System/StorageSystemEnabledRoles.cpp
     System/StorageSystemEvents.cpp
-    System/StorageSystemFetches.cpp
     System/StorageSystemFormats.cpp
     System/StorageSystemFunctions.cpp
     System/StorageSystemGrants.cpp
@@ -179,6 +178,7 @@ SRCS(
     System/StorageSystemQuotasUsage.cpp
     System/StorageSystemQuotaUsage.cpp
     System/StorageSystemReplicas.cpp
+    System/StorageSystemReplicatedFetches.cpp
     System/StorageSystemReplicationQueue.cpp
     System/StorageSystemRoleGrants.cpp
     System/StorageSystemRoles.cpp
