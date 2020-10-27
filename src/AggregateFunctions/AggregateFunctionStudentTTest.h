@@ -26,7 +26,7 @@ namespace ErrorCodes
 #if defined(OS_DARWIN)
 extern "C"
 {
-    double lgamma_r(double x, int * signgamp);
+    double lgammal_r(double x, int * signgamp);
 }
 #endif
 
