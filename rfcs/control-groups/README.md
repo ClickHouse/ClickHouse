@@ -2,8 +2,8 @@
 
 ## Goals
 
-Add a mechanism for flexible resource limits for query execution based on
-query, user, groups of users.
+Add a mechanism for flexible resource limits for query execution for a query,
+a user or groups of users.
 
 
 ## Background
@@ -14,7 +14,7 @@ according to some rules between users, different components of a system and
 even between arbitrary groups of the above mentioned entities.
 
 ClickHouse already comes with knobs for (performance) resource isolation.
-Let's walk other them:
+Let's walk over them:
 
 * It is a good manner to provide **global limits**, eg to stop accepting
 more work when the system is overloaded; to limit the amount of work that
@@ -25,15 +25,15 @@ don't exhaust resources needed for "real-time" queries.
 `max_connections`, `max_thread_pool_size`, `background_pool_size`.
 
 * With global limits in place it is also a good idea to have **per query 
-limits**. Having per query limits allows the server to process multiple "well 
-behaved" queries simultaneously by preventing "bad" queries causing havoc or 
-exhausting all available resources.
+limits**. Having per query limits allows the server to process multiple
+"well-behaved" queries simultaneously by preventing "bad" queries causing havoc
+or exhausting all available resources.
 
     Examples of per query limits: `max_memory_usage`, `min_execution_speed_bytes`,
 `max_network_bandwidth`.
 
     While individual queries can be "isolated" nothing stops a single user from
-sending as many "well behaved" queries as possible (intentionally, or by
+sending as many "well-behaved" queries as possible (intentionally, or by
 accident) rendering the system unavailable for other users.
 
 * Enter **per user limits.** While I don't know the exact reason they were
@@ -46,17 +46,17 @@ and started to have "adversarial" users. Examples of per user limits:
  suffixed with `_for_all_queries` or `_for_all_users`.
 
 * Other ways for isolating/controlling workload:
-    * **Quotas** allow to limit resource usage over periods of time.
+    * **Quotas** allow limiting resource usage over periods of time.
     Resource in this context means one of: queries, errors, read_rows,
     execution_time.
     
         While these have some valid use cases in general they are not very
         useful for resource isolation. Ie there is rarely a reason to limit
         someones access based on the amount of data they have read if the
-        system is idle or they are reading a lot of rows but all of them come
+        system is idle, or they are reading a lot of rows but all of them come
         from memory (ie PK).
 
-    * **Query Priorities** allow to freeze query execution if at least one
+    * **Query Priorities** allows suspending query execution if at least one
     query of higher priority is executed.
 
 _There are also per table limits (MergeTreeSettings.h)._
@@ -67,7 +67,7 @@ _There are also per table limits (MergeTreeSettings.h)._
 **Inconsistencies in the available resource limits.** Each new setting needs to
 be defined and implemented in different ways depending on the granularity it
 will operate on. One example is `max_concurrent_queries_for_user` introduced
-in 2017, the `max_concurrent_queries_for_all_users` variant was introduced
+in 2017, while the `max_concurrent_queries_for_all_users` variant was introduced
 3 years later ([Add max_concurrent_queries_for_all_users setting #16154][PR-16154]).
 
 Before writing this RFC I was very close to introducing one more _suffix_,
@@ -99,9 +99,9 @@ for critical users (system users).
 
 Example configuration which is not possible today:
 
-* system users: allow max 10 concurrent queries;
-* service accounts: max 100 concurrent queries;
-* analysts: max 20 concurrent queries.
+* system users: allow max 10 concurrent queries,
+* service accounts: max 100 concurrent queries,
+* analysts: max 20 concurrent queries,
 * and a global limit of 130+.
 
 A more advanced one would be to accept analysts queries only if the total
@@ -110,18 +110,18 @@ concurrency is < 50, but accept at most 20 concurrent queries from analysts.
 Extrapolate this to memory, cpu, network if interested.
 
 **Implementation "inconsistency".** There is a global `max_concurrent_queries`,
-which can't be adjusted at runtime and is used to set a upper limit on `ProcessList`
+which can't be adjusted at runtime and is used to set an upper limit on `ProcessList`
 (stored in `Context`). `max_concurrent_queries_for_all_users` is from profile/user
 settings and is compared with number of entries in the `ProcessList`.
 `max_concurrent_queries_for_user` is implemented with a different data structure
-called `ProcessListForUser`. More examples of inconsistencies are listed in [3].
+called `ProcessListForUser`. [3] contains additional examples.
 
 
 ## Design
 
 There are a lot of expectations from "resource pools", and different customers
 have different needs. The current goal is not to address all of them but rather
-lay a foundation that would allow to implement basic means for resource isolation
+lay a foundation that would allow implementing basic means for resource isolation
 today and not preclude future extensions with things like statistical multiplexing
 of CPU/IO/Network, preemptions based on query priorities and so on.
 
@@ -197,8 +197,8 @@ query concurrency, max memory usage.
 groups in order to achieve "consistent implementation" of the limits.
     * Maybe allow something like `CREATE CONTROL GROUP TEMPLATE zzz FOR QUERY ...`,
     `CREATE CONTROL GROUP TEMPLATE zzz FOR USER` (`... FOR QUOTA KEY`?).
-        * These would be applied for each query/user separately.
-        and automatically "nest" under the control group to which the user is assigned.
+        * These would be applied for each query/user separately
+        and automatically "nest" under the control group to which the user belongs.
 
 
 ### First rocks in the road
@@ -223,7 +223,7 @@ Hopefully all the above makes a good argument for introducing
 "unified (resource control groups) hierarchy" (buzz term from cgroupsv2)
 and convinces the community to start working on the implementation.
 
-I suggest to go ahead with the following steps:
+I suggest going ahead with the following steps:
 (every item should be enough to be merged/released independently)
 
 1. Agree on the rough design  (it is ok for it to be incomplete as long as
@@ -231,12 +231,12 @@ the direction looks right and doesn't preclude future development).
     
     1. Naming (eg "control groups").
     
-    1. Base classes design (a class diagram?). At first i was thinking to put them
+    1. Base classes design (a class diagram?). At first, I was thinking to put them
     in Access/ similar to where quotas are defined, but if we want to extend these
     to background threads then we'd want to put them somewhere else.
     
-    1. How these should be configured. For simplicity I propose to start with
-    XML configs. (scaffolding SQL AST, Parsers, Interpreters is too tedious for POC).
+    1. How these should be configured. For simplicity, I propose to start with
+    XML configs. (scaffolding SQL AST, Parsers, Interpreters is too tedious).
     
     1. How these are propagated and accessed to/from different system components.
     I reckon propagating current "control group" via [ThreadGroupStatus][TGS]
@@ -251,7 +251,7 @@ for query concurrency, allow users and roles to be assigned to "control groups".
         `TaskConcurrencyController<TaskType::Query>`).
         * In the future this could be re-implemented as a condition on
         ProfileEvents with a trigger similar to the design described in [3].
-    * No support for hierarchy, overcommit, bursting at this point .
+    * No support for hierarchies, overcommitting, bursting at this point .
     
 1. Add support for nesting/hierarchy, add support for "control groups" templates,
 hoist some existing "controllers" ie MemoryTracker.
