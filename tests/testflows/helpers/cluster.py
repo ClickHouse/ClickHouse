@@ -54,6 +54,34 @@ class ClickHouseNode(Node):
                     continue
                 assert False, "container is not healthy"
 
+    def stop(self, timeout=300, safe=True):
+        """Stop node.
+        """
+        if safe:
+            self.query("SYSTEM STOP MOVES")
+            self.query("SYSTEM STOP MERGES")
+            self.query("SYSTEM FLUSH LOGS")
+            with By("waiting for 5 sec for moves and merges to stop"):
+                time.sleep(5)
+            with And("forcing to sync everything to disk"):
+                self.command("sync", timeout=30)
+
+        with self.cluster.lock:
+            for key in list(self.cluster._bash.keys()):
+                if key.endswith(f"-{self.name}"):
+                    shell = self.cluster._bash.pop(key)
+                    shell.__exit__(None, None, None)
+
+        self.cluster.command(None, f'{self.cluster.docker_compose} stop {self.name}', timeout=timeout)
+
+    def start(self, timeout=300, wait_healthy=True):
+        """Start node.
+        """
+        self.cluster.command(None, f'{self.cluster.docker_compose} start {self.name}', timeout=timeout)
+
+        if wait_healthy:
+            self.wait_healthy(timeout)
+
     def restart(self, timeout=300, safe=True, wait_healthy=True):
         """Restart node.
         """
