@@ -155,6 +155,7 @@ namespace detail
         }
 
     public:
+        using NextReadCallback = std::function<void(size_t)>;
         using OutStreamCallback = std::function<void(std::ostream &)>;
 
         explicit ReadWriteBufferFromHTTPBase(
@@ -222,9 +223,14 @@ namespace detail
             return def;
         }
 
-        void setNextReadCallback(std::function<void(size_t)> read_callback_)
+        /// Set function to call on each nextImpl, useful when you need to track
+        /// progress.
+        /// NOTE: parameter on each call is not incremental -- it's all bytes count
+        /// passed through the buffer
+        void setNextReadCallback(NextReadCallback read_callback_)
         {
             read_callback = read_callback_;
+            /// Some data maybe already read
             read_callback(count());
         }
     };
