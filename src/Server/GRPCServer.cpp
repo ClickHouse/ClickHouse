@@ -21,11 +21,17 @@
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Server/IServer.h>
 #include <Storages/IStorage.h>
+#include <Poco/FileStream.h>
+#include <Poco/StreamCopier.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <grpc++/security/server_credentials.h>
 #include <grpc++/server.h>
 #include <grpc++/server_builder.h>
 
+
+/// For diagnosing problems use the following environment variables:
+/// export GRPC_TRACE=all
+/// export GRPC_VERBOSITY=DEBUG
 
 using GRPCService = clickhouse::grpc::ClickHouse::AsyncService;
 using GRPCQueryInfo = clickhouse::grpc::QueryInfo;
@@ -37,16 +43,84 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int INVALID_CONFIG_PARAMETER;
     extern const int INVALID_GRPC_QUERY_INFO;
     extern const int INVALID_SESSION_TIMEOUT;
     extern const int LOGICAL_ERROR;
     extern const int NETWORK_ERROR;
     extern const int NO_DATA_TO_INSERT;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int UNKNOWN_DATABASE;
 }
 
 namespace
 {
+    grpc_compression_algorithm parseCompressionAlgorithm(const String & str)
+    {
+        if (str == "none")
+            return GRPC_COMPRESS_NONE;
+        else if (str == "deflate")
+            return GRPC_COMPRESS_DEFLATE;
+        else if (str == "gzip")
+            return GRPC_COMPRESS_GZIP;
+        else if (str == "stream_gzip")
+            return GRPC_COMPRESS_STREAM_GZIP;
+        else
+            throw Exception("Unknown compression algorithm: '" + str + "'", ErrorCodes::INVALID_CONFIG_PARAMETER);
+    }
+
+    grpc_compression_level parseCompressionLevel(const String & str)
+    {
+        if (str == "none")
+            return GRPC_COMPRESS_LEVEL_NONE;
+        else if (str == "low")
+            return GRPC_COMPRESS_LEVEL_LOW;
+        else if (str == "medium")
+            return GRPC_COMPRESS_LEVEL_MED;
+        else if (str == "high")
+            return GRPC_COMPRESS_LEVEL_HIGH;
+        else
+            throw Exception("Unknown compression level: '" + str + "'", ErrorCodes::INVALID_CONFIG_PARAMETER);
+    }
+
+
+    /// Gets file's contents as a string, throws an exception if failed.
+    String readFile(const String & filepath)
+    {
+        Poco::FileInputStream ifs(filepath);
+        String res;
+        Poco::StreamCopier::copyToString(ifs, res);
+        return res;
+    }
+
+    /// Makes credentials based on the server config.
+    std::shared_ptr<grpc::ServerCredentials> makeCredentials(const Poco::Util::AbstractConfiguration & config)
+    {
+        if (config.getBool("grpc.enable_ssl", false))
+        {
+#if USE_SSL
+            grpc::SslServerCredentialsOptions options;
+            grpc::SslServerCredentialsOptions::PemKeyCertPair key_cert_pair;
+            key_cert_pair.private_key = readFile(config.getString("grpc.ssl_key_file"));
+            key_cert_pair.cert_chain = readFile(config.getString("grpc.ssl_cert_file"));
+            options.pem_key_cert_pairs.emplace_back(std::move(key_cert_pair));
+            if (config.getBool("grpc.ssl_require_client_auth", false))
+            {
+                options.client_certificate_request = GRPC_SSL_REQUEST_AND_REQUIRE_CLIENT_CERTIFICATE_AND_VERIFY;
+                if (config.has("grpc.ssl_ca_cert_file"))
+                    options.pem_root_certs = readFile(config.getString("grpc.ssl_ca_cert_file"));
+            }
+            return grpc::SslServerCredentials(options);
+#else
+            throw DB::Exception(
+                "Can't use SSL in grpc, because ClickHouse was built without SSL library",
+                DB::ErrorCodes::SUPPORT_IS_DISABLED);
+#endif
+        }
+        return grpc::InsecureServerCredentials();
+    }
+
+
     /// Gets session's timeout from query info or from the server config.
     std::chrono::steady_clock::duration getSessionTimeout(const GRPCQueryInfo & query_info, const Poco::Util::AbstractConfiguration & config)
     {
@@ -1274,9 +1348,12 @@ GRPCServer::~GRPCServer()
 void GRPCServer::start()
 {
     grpc::ServerBuilder builder;
-    builder.AddListeningPort(address_to_listen.toString(), grpc::InsecureServerCredentials());
+    builder.AddListeningPort(address_to_listen.toString(), makeCredentials(iserver.config()));
     builder.RegisterService(&grpc_service);
-    builder.SetMaxReceiveMessageSize(INT_MAX);
+    builder.SetMaxSendMessageSize(iserver.config().getInt("grpc.max_send_message_size", -1));
+    builder.SetMaxReceiveMessageSize(iserver.config().getInt("grpc.max_receive_message_size", -1));
+    builder.SetDefaultCompressionAlgorithm(parseCompressionAlgorithm(iserver.config().getString("grpc.compression", "none")));
+    builder.SetDefaultCompressionLevel(parseCompressionLevel(iserver.config().getString("grpc.compression_level", "none")));
 
     queue = builder.AddCompletionQueue();
     grpc_server = builder.BuildAndStart();
