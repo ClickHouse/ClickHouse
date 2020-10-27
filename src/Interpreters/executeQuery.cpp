@@ -209,7 +209,7 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
 
     // all callers to onExceptionBeforeStart method construct the timespec for event_time and
     // event_time_microseconds from the same time point. So, it can be assumed that both of these
-    // times are equal upto the precision of a second.
+    // times are equal up to the precision of a second.
     elem.event_time = current_time;
     elem.event_time_microseconds = current_time_microseconds;
     elem.query_start_time = current_time;
@@ -267,7 +267,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     ReadBuffer * istr)
 {
     // current_time and current_time_microseconds are both constructed from the same time point
-    // to ensure that both the times are equal upto the precision of a second.
+    // to ensure that both the times are equal up to the precision of a second.
     const auto now = std::chrono::system_clock::now();
 
     auto current_time = time_in_seconds(now);
@@ -631,7 +631,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 elem.type = QueryLogElementType::EXCEPTION_WHILE_PROCESSING;
 
                 // event_time and event_time_microseconds are being constructed from the same time point
-                // to ensure that both the times will be equal upto the precision of a second.
+                // to ensure that both the times will be equal up to the precision of a second.
                 const auto time_now = std::chrono::system_clock::now();
 
                 elem.event_time = time_in_seconds(time_now);
