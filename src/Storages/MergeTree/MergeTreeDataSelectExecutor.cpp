@@ -898,7 +898,7 @@ Pipe MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
             num_streams,
             sum_marks,
             min_marks_for_concurrent_read,
-            parts,
+            std::move(parts),
             data,
             metadata_snapshot,
             query_info.prewhere_info,
