@@ -114,6 +114,7 @@ private:
     std::atomic<bool> wait_confirm = true; /// needed to break waiting for confirmations for producer
     std::atomic<bool> exchange_removed = false;
     ChannelPtr setup_channel;
+    std::vector<String> queues;
 
     std::once_flag flag; /// remove exchange only once
     std::mutex task_mutex;
@@ -140,6 +141,7 @@ private:
 
     void initExchange();
     void bindExchange();
+    void bindQueue(size_t queue_id);
 
     bool restoreConnection(bool reconnecting);
     bool streamToViews();
