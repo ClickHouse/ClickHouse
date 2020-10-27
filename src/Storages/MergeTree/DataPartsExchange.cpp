@@ -57,10 +57,9 @@ struct ReplicatedFetchReadCallback
 {
     ReplicatedFetchList::Entry & replicated_fetch_entry;
 
-    ReplicatedFetchReadCallback(ReplicatedFetchList::Entry & replicated_fetch_entry_)
+    explicit ReplicatedFetchReadCallback(ReplicatedFetchList::Entry & replicated_fetch_entry_)
         : replicated_fetch_entry(replicated_fetch_entry_)
     {}
-
 
     void operator() (size_t bytes_count)
     {
