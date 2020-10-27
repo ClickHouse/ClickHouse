@@ -1,10 +1,10 @@
 #include <Storages/MergeTree/ReplicatedFetchList.h>
 #include <Common/CurrentMetrics.h>
 #include <common/getThreadId.h>
-#include <Common/CurrentThread.h>
 
 namespace DB
 {
+
 ReplicatedFetchListElement::ReplicatedFetchListElement(
     const std::string & database_, const std::string & table_,
     const std::string & partition_id_, const std::string & result_part_name_,
@@ -25,7 +25,6 @@ ReplicatedFetchListElement::ReplicatedFetchListElement(
     , thread_id(getThreadId())
 {
 }
-
 
 ReplicatedFetchInfo ReplicatedFetchListElement::getInfo() const
 {
