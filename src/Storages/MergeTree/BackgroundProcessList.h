@@ -85,5 +85,5 @@ public:
     virtual void onEntryDestroy(const Entry & /* entry */) {}
     virtual inline ~BackgroundProcessList() {}
 };
-   
+
 }
