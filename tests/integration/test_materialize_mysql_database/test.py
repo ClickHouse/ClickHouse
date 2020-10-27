@@ -153,3 +153,12 @@ def test_select_without_columns_5_7(started_cluster, started_mysql_5_7):
 
 def test_select_without_columns_8_0(started_cluster, started_mysql_8_0):
     materialize_with_ddl.select_without_columns(clickhouse_node, started_mysql_8_0, "mysql8_0")
+
+
+def test_materialize_database_err_sync_user_privs_5_7(started_cluster, started_mysql_5_7):
+    materialize_with_ddl.err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1")
+
+
+def test_materialize_database_err_sync_user_privs_8_0(started_cluster, started_mysql_8_0):
+    materialize_with_ddl.err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0, "mysql8_0")
+

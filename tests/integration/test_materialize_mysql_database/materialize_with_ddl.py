@@ -2,6 +2,8 @@ import time
 
 import pymysql.cursors
 
+import pytest
+from helpers.client import QueryRuntimeException
 
 def check_query(clickhouse_node, query, result_set, retry_count=3, interval_seconds=3):
     lastest_result = ''
@@ -163,7 +165,6 @@ def drop_table_with_materialize_mysql_database(clickhouse_node, mysql_node, serv
 
     clickhouse_node.query("DROP DATABASE test_database")
     mysql_node.query("DROP DATABASE test_database")
-
 
 def create_table_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
     mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
@@ -461,3 +462,53 @@ def select_without_columns(clickhouse_node, mysql_node, service_name):
     clickhouse_node.query("DROP VIEW v")
     clickhouse_node.query("DROP DATABASE db")
     mysql_node.query("DROP DATABASE db")
+
+
+def err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
+    mysql_node.query("CREATE TABLE test_database.test_table_1 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB;")
+    mysql_node.query("INSERT INTO test_database.test_table_1 VALUES(1), (2), (3), (4), (5), (6);")
+
+    mysql_node.query("CREATE USER 'test'@'%' IDENTIFIED BY '123'")
+
+    with pytest.raises(QueryRuntimeException) as exception:
+        clickhouse_node.query(
+            "CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'test', '123')".format(
+                service_name))
+
+    assert 'MySQL SYNC USER ACCESS ERR:' in str(exception.value)
+    assert "test_database" not in clickhouse_node.query("SHOW DATABASES")
+
+    mysql_node.query("GRANT SELECT ON test_database.* TO 'test'@'%'")
+
+    clickhouse_node.query(
+        "CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'test', '123')".format(
+            service_name))
+    assert "test_database" in clickhouse_node.query("SHOW DATABASES")
+    assert "test_table_1" not in clickhouse_node.query("SHOW TABLES FROM test_database")
+    clickhouse_node.query("DROP DATABASE test_database")
+
+    mysql_node.query("GRANT REPLICATION CLIENT, RELOAD ON *.* TO 'test'@'%'")
+    clickhouse_node.query(
+        "CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'test', '123')".format(
+            service_name))
+    assert "test_database" in clickhouse_node.query("SHOW DATABASES")
+    assert "test_table_1" not in clickhouse_node.query("SHOW TABLES FROM test_database")
+    clickhouse_node.query("DROP DATABASE test_database")
+
+    mysql_node.query("GRANT REPLICATION SLAVE ON *.* TO 'test'@'%'")
+
+    # wait mysql grant done
+    time.sleep(15)
+
+    clickhouse_node.query(
+        "CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'test', '123')".format(
+            service_name))
+
+    check_query(clickhouse_node, "SELECT count() FROM test_database.test_table_1 FORMAT TSV", "6\n", 5, 5)
+    mysql_node.query("INSERT INTO test_database.test_table_1 VALUES(7);")
+    check_query(clickhouse_node, "SELECT count() FROM test_database.test_table_1 FORMAT TSV", "7\n")
+
+    clickhouse_node.query("DROP DATABASE test_database;")
+    mysql_node.query("DROP DATABASE test_database;")
+    mysql_node.query("DROP USER 'test'@'%';")
