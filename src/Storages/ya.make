@@ -91,6 +91,7 @@ SRCS(
     MergeTree/MergeTreeWriteAheadLog.cpp
     MergeTree/MergeType.cpp
     MergeTree/registerStorageMergeTree.cpp
+    MergeTree/ReplicatedFetchesList.cpp
     MergeTree/ReplicatedMergeTreeAddress.cpp
     MergeTree/ReplicatedMergeTreeAltersSequence.cpp
     MergeTree/ReplicatedMergeTreeBlockOutputStream.cpp
@@ -155,6 +156,7 @@ SRCS(
     System/StorageSystemDistributionQueue.cpp
     System/StorageSystemEnabledRoles.cpp
     System/StorageSystemEvents.cpp
+    System/StorageSystemFetches.cpp
     System/StorageSystemFormats.cpp
     System/StorageSystemFunctions.cpp
     System/StorageSystemGrants.cpp
