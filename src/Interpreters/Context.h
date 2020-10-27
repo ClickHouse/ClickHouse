@@ -81,6 +81,7 @@ class TextLog;
 class TraceLog;
 class MetricLog;
 class AsynchronousMetricLog;
+class OpenTelemetrySpanLog;
 struct MergeTreeSettings;
 class StorageS3Settings;
 class IDatabase;
@@ -541,6 +542,7 @@ public:
     std::shared_ptr<TextLog> getTextLog();
     std::shared_ptr<MetricLog> getMetricLog();
     std::shared_ptr<AsynchronousMetricLog> getAsynchronousMetricLog();
+    std::shared_ptr<OpenTelemetrySpanLog> getOpenTelemetrySpanLog();
 
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.

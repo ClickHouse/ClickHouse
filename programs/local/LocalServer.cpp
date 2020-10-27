@@ -37,6 +37,7 @@
 #include <boost/program_options.hpp>
 #include <common/argsToConfig.h>
 #include <Common/TerminalSize.h>
+#include <Common/randomSeed.h>
 
 #include <filesystem>
 
@@ -47,9 +48,9 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int LOGICAL_ERROR;
     extern const int SYNTAX_ERROR;
     extern const int CANNOT_LOAD_CONFIG;
+    extern const int FILE_ALREADY_EXISTS;
 }
 
 
@@ -121,31 +122,43 @@ void LocalServer::tryInitPath()
     }
     else
     {
-        // Default unique path in the system temporary directory.
-        const auto tmp = std::filesystem::temp_directory_path();
-        const auto default_path = tmp
-            / fmt::format("clickhouse-local-{}", getpid());
+        // The path is not provided explicitly - use a unique path in the system temporary directory
+        // (or in the current dir if temporary don't exist)
+        Poco::Logger * log = &logger();
+        std::filesystem::path parent_folder;
+        std::filesystem::path default_path;
+
+        try
+        {
+            // try to guess a tmp folder name, and check if it's a directory (throw exception otherwise)
+            parent_folder = std::filesystem::temp_directory_path();
+
+        }
+        catch (const std::filesystem::filesystem_error& e)
+        {
+            // tmp folder don't exists? misconfiguration? chroot?
+            LOG_DEBUG(log, "Can not get temporary folder: {}", e.what());
+            parent_folder = std::filesystem::current_path();
+
+            std::filesystem::is_directory(parent_folder); // that will throw an exception if it's not a directory
+            LOG_DEBUG(log, "Will create working directory inside current directory: {}", parent_folder.string());
+        }
+
+        /// we can have another clickhouse-local running simultaneously, even with the same PID (for ex. - several dockers mounting the same folder)
+        /// or it can be some leftovers from other clickhouse-local runs
+        /// as we can't accurately distinguish those situations we don't touch any existent folders
+        /// we just try to pick some free name for our working folder
+
+        default_path = parent_folder / fmt::format("clickhouse-local-{}-{}-{}", getpid(), time(nullptr), randomSeed());
 
         if (exists(default_path))
-        {
-            // This is a directory that is left by a previous run of
-            // clickhouse-local that had the same pid and did not complete
-            // correctly. Remove it, with an additional sanity check.
-            if (!std::filesystem::equivalent(default_path.parent_path(), tmp))
-            {
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "The temporary directory of clickhouse-local '{}' is not"
-                    " inside the system temporary directory '{}'. Will not delete"
-                    " it", default_path.string(), tmp.string());
-            }
-
-            remove_all(default_path);
-        }
+            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Unsuccessfull attempt to create working directory: {} exist!", default_path.string());
 
         create_directory(default_path);
         temporary_directory_to_delete = default_path;
 
         path = default_path.string();
+        LOG_DEBUG(log, "Working directory created: {}", path);
     }
 
     if (path.back() != '/')
@@ -438,23 +451,12 @@ void LocalServer::setupUsers()
 
 void LocalServer::cleanup()
 {
-    // Delete the temporary directory if needed. Just in case, check that it is
-    // in the system temporary directory, not to delete user data if there is a
-    // bug.
+    // Delete the temporary directory if needed.
     if (temporary_directory_to_delete)
     {
-        const auto tmp = std::filesystem::temp_directory_path();
         const auto dir = *temporary_directory_to_delete;
         temporary_directory_to_delete.reset();
-
-        if (!std::filesystem::equivalent(dir.parent_path(), tmp))
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "The temporary directory of clickhouse-local '{}' is not inside"
-                " the system temporary directory '{}'. Will not delete it",
-                dir.string(), tmp.string());
-        }
-
+        LOG_DEBUG(&logger(), "Removing temporary directory: {}", dir.string());
         remove_all(dir);
     }
 }
