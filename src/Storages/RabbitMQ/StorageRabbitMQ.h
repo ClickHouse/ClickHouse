@@ -118,7 +118,6 @@ private:
     std::once_flag flag; /// remove exchange only once
     std::mutex task_mutex;
     BackgroundSchedulePool::TaskHolder streaming_task;
-    BackgroundSchedulePool::TaskHolder heartbeat_task;
     BackgroundSchedulePool::TaskHolder looping_task;
 
     std::atomic<bool> stream_cancelled{false};
