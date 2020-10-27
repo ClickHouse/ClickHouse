@@ -67,7 +67,7 @@
 /// Minimum revision supporting SettingsBinaryFormat::STRINGS.
 #define DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS 54429
 
-/// Mininum revision supporting interserver secret.
+/// Minimum revision supporting interserver secret.
 #define DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET 54441
 
 /// Version of ClickHouse TCP protocol. Increment it manually when you change the protocol.
