@@ -24,15 +24,14 @@ class ReadBufferFromRabbitMQConsumer : public ReadBuffer
 public:
     ReadBufferFromRabbitMQConsumer(
             ChannelPtr consumer_channel_,
-            ChannelPtr setup_channel_,
             HandlerPtr event_handler_,
             const String & exchange_name_,
+            std::vector<String> & queues_,
             size_t channel_id_base_,
             const String & channel_base_,
             const String & queue_base_,
             Poco::Logger * log_,
             char row_delimiter_,
-            bool hash_exchange_,
             size_t num_queues_,
             const String & deadletter_exchange_,
             uint32_t queue_size_,
@@ -79,19 +78,17 @@ public:
 private:
     bool nextImpl() override;
 
-    void bindQueue(size_t queue_id);
     void subscribe();
     void iterateEventLoop();
 
     ChannelPtr consumer_channel;
-    ChannelPtr setup_channel;
     HandlerPtr event_handler;
 
     const String exchange_name;
+    std::vector<String> queues;
     const String channel_base;
     const size_t channel_id_base;
     const String queue_base;
-    const bool hash_exchange;
     const size_t num_queues;
     const String deadletter_exchange;
     Poco::Logger * log;
@@ -102,7 +99,6 @@ private:
 
     String channel_id;
     std::atomic<bool> channel_error = true, wait_subscription = false;
-    std::vector<String> queues;
     ConcurrentBoundedQueue<MessageData> received;
     MessageData current;
     size_t subscribed = 0;

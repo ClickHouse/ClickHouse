@@ -52,6 +52,7 @@ namespace ErrorCodes
     extern const int CANNOT_BIND_RABBITMQ_EXCHANGE;
     extern const int CANNOT_DECLARE_RABBITMQ_EXCHANGE;
     extern const int CANNOT_REMOVE_RABBITMQ_EXCHANGE;
+    extern const int CANNOT_CREATE_RABBITMQ_QUEUE_BINDING;
 }
 
 namespace ExchangeType
@@ -385,6 +386,67 @@ void StorageRabbitMQ::bindExchange()
 }
 
 
+void StorageRabbitMQ::bindQueue(size_t queue_id)
+{
+    std::atomic<bool> binding_created = false;
+
+    auto success_callback = [&](const std::string &  queue_name, int msgcount, int /* consumercount */)
+    {
+        queues.emplace_back(queue_name);
+        LOG_DEBUG(log, "Queue {} is declared", queue_name);
+
+        if (msgcount)
+            LOG_INFO(log, "Queue {} is non-empty. Non-consumed messaged will also be delivered", queue_name);
+
+       /* Here we bind either to sharding exchange (consistent-hash) or to bridge exchange (fanout). All bindings to routing keys are
+        * done between client's exchange and local bridge exchange. Binding key must be a string integer in case of hash exchange, for
+        * fanout exchange it can be arbitrary
+        */
+        setup_channel->bindQueue(consumer_exchange, queue_name, std::to_string(queue_id))
+        .onSuccess([&] { binding_created = true; })
+        .onError([&](const char * message)
+        {
+            throw Exception(
+                ErrorCodes::CANNOT_CREATE_RABBITMQ_QUEUE_BINDING,
+                "Failed to create queue binding for exchange {}. Reason: {}", exchange_name, std::string(message));
+        });
+    };
+
+    auto error_callback([&](const char * message)
+    {
+        /* This error is most likely a result of an attempt to declare queue with different settings if it was declared before. So for a
+         * given queue name either deadletter_exchange parameter changed or queue_size changed, i.e. table was declared with different
+         * max_block_size parameter. Solution: client should specify a different queue_base parameter or manually delete previously
+         * declared queues via any of the various cli tools.
+         */
+        throw Exception("Failed to declare queue. Probably queue settings are conflicting: max_block_size, deadletter_exchange. Attempt \
+                specifying differently those settings or use a different queue_base or manually delete previously declared queues, \
+                which  were declared with the same names. ERROR reason: "
+                + std::string(message), ErrorCodes::BAD_ARGUMENTS);
+    });
+
+    AMQP::Table queue_settings;
+
+    queue_settings["x-max-length"] = queue_size;
+
+    if (!deadletter_exchange.empty())
+        queue_settings["x-dead-letter-exchange"] = deadletter_exchange;
+    else
+        queue_settings["x-overflow"] = "reject-publish";
+
+    /* The first option not just simplifies queue_name, but also implements the possibility to be able to resume reading from one
+     * specific queue when its name is specified in queue_base setting
+     */
+    const String queue_name = !hash_exchange ? queue_base : std::to_string(queue_id) + "_" + queue_base;
+    setup_channel->declareQueue(queue_name, AMQP::durable, queue_settings).onSuccess(success_callback).onError(error_callback);
+
+    while (!binding_created)
+    {
+        event_handler->iterateLoop();
+    }
+}
+
+
 bool StorageRabbitMQ::restoreConnection(bool reconnecting)
 {
     size_t cnt_retries = 0;
@@ -444,6 +506,7 @@ void StorageRabbitMQ::unbindExchange()
         event_handler->updateLoopState(Loop::STOP);
         looping_task->deactivate();
 
+        setup_channel = std::make_shared<AMQP::TcpChannel>(connection.get());
         setup_channel->removeExchange(bridge_exchange)
         .onSuccess([&]()
         {
@@ -458,6 +521,8 @@ void StorageRabbitMQ::unbindExchange()
         {
             event_handler->iterateLoop();
         }
+
+        setup_channel->close();
     });
 }
 
@@ -535,6 +600,13 @@ void StorageRabbitMQ::startup()
     setup_channel = std::make_shared<AMQP::TcpChannel>(connection.get());
     initExchange();
     bindExchange();
+
+    for (size_t i = 1; i <= num_queues; ++i)
+    {
+        bindQueue(i);
+    }
+
+    setup_channel->close();
 
     for (size_t i = 0; i < num_consumers; ++i)
     {
@@ -617,8 +689,8 @@ ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
     ChannelPtr consumer_channel = std::make_shared<AMQP::TcpChannel>(connection.get());
 
     return std::make_shared<ReadBufferFromRabbitMQConsumer>(
-        consumer_channel, setup_channel, event_handler, consumer_exchange, ++consumer_id,
-        unique_strbase, queue_base, log, row_delimiter, hash_exchange, num_queues,
+        consumer_channel, event_handler, consumer_exchange, queues, ++consumer_id,
+        unique_strbase, queue_base, log, row_delimiter, num_queues,
         deadletter_exchange, queue_size, stream_cancelled);
 }
 
@@ -665,6 +737,7 @@ void StorageRabbitMQ::streamingToViewsFunc()
     try
     {
         auto table_id = getStorageID();
+
         // Check if at least one direct dependency is attached
         size_t dependencies_count = DatabaseCatalog::instance().getDependencies(table_id).size();
 
@@ -757,7 +830,6 @@ bool StorageRabbitMQ::streamToViews()
 
     std::atomic<bool> stub = {false};
 
-    /// Loop could run untill this point only if select query was made
     if (!event_handler->loopRunning())
     {
         event_handler->updateLoopState(Loop::RUN);
@@ -831,7 +903,7 @@ bool StorageRabbitMQ::streamToViews()
         }
     }
 
-    if ((queue_empty == num_queues) && (++read_attempts == MAX_FAILED_READ_ATTEMPTS))
+    if ((queue_empty == num_created_consumers) && (++read_attempts == MAX_FAILED_READ_ATTEMPTS))
     {
         connection->heartbeat();
         read_attempts = 0;
