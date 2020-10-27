@@ -453,9 +453,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
 
     if (create.columns_list)
     {
-        if (create.as_table_function && (create.columns_list->indices || create.columns_list->constraints))
-            throw Exception("Indexes and constraints are not supported for table functions", ErrorCodes::INCORRECT_QUERY);
-
         if (create.columns_list->columns)
         {
             bool sanity_check_compression_codecs = !create.attach && !context.getSettingsRef().allow_suspicious_codecs;
@@ -492,12 +489,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
         properties.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
     }
     else if (create.as_table_function)
-    {
-        /// Table function without columns list.
-        auto table_function = TableFunctionFactory::instance().get(create.as_table_function, context);
-        properties.columns = table_function->getActualTableStructure(context);
-        assert(!properties.columns.empty());
-    }
+        return {};
     else
         throw Exception("Incorrect CREATE query: required list of column descriptions or AS section or SELECT.", ErrorCodes::INCORRECT_QUERY);
 
@@ -583,12 +575,9 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
 
 void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 {
-    if (create.as_table_function)
-        return;
-
     if (create.storage || create.is_view || create.is_materialized_view || create.is_live_view || create.is_dictionary)
     {
-        if (create.temporary && create.storage && create.storage->engine && create.storage->engine->name != "Memory")
+        if (create.temporary && create.storage->engine->name != "Memory")
             throw Exception(
                 "Temporary tables can only be created with ENGINE = Memory, not " + create.storage->engine->name,
                 ErrorCodes::INCORRECT_QUERY);
@@ -685,7 +674,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         create.attach_short_syntax = true;
         create.if_not_exists = if_not_exists;
     }
-    /// TODO maybe assert table structure if create.attach_short_syntax is false?
 
     if (!create.temporary && create.database.empty())
         create.database = current_database;
@@ -768,8 +756,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     /// NOTE: CREATE query may be rewritten by Storage creator or table function
     if (create.as_table_function)
     {
+        const auto & table_function = create.as_table_function->as<ASTFunction &>();
         const auto & factory = TableFunctionFactory::instance();
-        res = factory.get(create.as_table_function, context)->execute(create.as_table_function, context, create.table, properties.columns);
+        res = factory.get(table_function.name, context)->execute(create.as_table_function, context, create.table);
         res->renameInMemory({create.database, create.table, create.uuid});
     }
     else
@@ -869,16 +858,20 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, cons
     if (create.attach)
         return;
 
+    /// Allows to execute ON CLUSTER queries during version upgrade
+    bool force_backward_compatibility = !context.getSettingsRef().show_table_uuid_in_table_create_query_if_not_nil;
+
     /// For CREATE query generate UUID on initiator, so it will be the same on all hosts.
     /// It will be ignored if database does not support UUIDs.
-    if (create.uuid == UUIDHelpers::Nil)
+    if (!force_backward_compatibility && create.uuid == UUIDHelpers::Nil)
         create.uuid = UUIDHelpers::generateV4();
 
     /// For cross-replication cluster we cannot use UUID in replica path.
     String cluster_name_expanded = context.getMacros()->expand(cluster_name);
     ClusterPtr cluster = context.getCluster(cluster_name_expanded);
 
-    if (cluster->maybeCrossReplication())
+    bool maybe_cross_replication = cluster->maybeCrossReplication();
+    if (maybe_cross_replication || force_backward_compatibility)
     {
         /// Check that {uuid} macro is not used in zookeeper_path for ReplicatedMergeTree.
         /// Otherwise replicas will generate different paths.
@@ -898,17 +891,23 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, cons
         {
             String zk_path = create.storage->engine->arguments->children[0]->as<ASTLiteral>()->value.get<String>();
             Macros::MacroExpansionInfo info;
-            info.table_id.uuid = create.uuid;
+            info.table_id.uuid = UUIDHelpers::generateV4();     /// Some non-Nil UUID, just check it's not expanded
             info.ignore_unknown = true;
             context.getMacros()->expand(zk_path, info);
             if (!info.expanded_uuid)
                 return;
         }
 
-        throw Exception("Seems like cluster is configured for cross-replication, "
-                        "but zookeeper_path for ReplicatedMergeTree is not specified or contains {uuid} macro. "
-                        "It's not supported for cross replication, because tables must have different UUIDs. "
-                        "Please specify unique zookeeper_path explicitly.", ErrorCodes::INCORRECT_QUERY);
+        if (maybe_cross_replication)
+            throw Exception("Seems like cluster is configured for cross-replication, "
+                            "but zookeeper_path for ReplicatedMergeTree is not specified or contains {uuid} macro. "
+                            "It's not supported for cross replication, because tables must have different UUIDs. "
+                            "Please specify unique zookeeper_path explicitly.", ErrorCodes::INCORRECT_QUERY);
+        else /// if (force_backward_compatibility)
+            throw Exception("Forced backward compatibility of ON CLUSTER queries is enabled, "
+                            "but zookeeper_path for ReplicatedMergeTree is not specified or contains {uuid} macro. "
+                            "Please set show_table_uuid_in_table_create_query_if_not_nil=1 or specify unique zookeeper_path explicitly. "
+                            "Ensure all nodes in cluster are 20.8 or greater before enabling the setting.", ErrorCodes::INCORRECT_QUERY);
     }
 }
 

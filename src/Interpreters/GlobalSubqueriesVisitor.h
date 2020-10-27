@@ -22,7 +22,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int WRONG_GLOBAL_SUBQUERY;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -73,7 +73,8 @@ public:
                 is_table = true;
 
             if (!subquery_or_table_name)
-                throw Exception("Global subquery requires subquery or table name", ErrorCodes::WRONG_GLOBAL_SUBQUERY);
+                throw Exception("Logical error: unknown AST element passed to ExpressionAnalyzer::addExternalStorage method",
+                                ErrorCodes::LOGICAL_ERROR);
 
             if (is_table)
             {
@@ -135,8 +136,7 @@ public:
                 ast = database_and_table_name;
 
             external_tables[external_table_name] = external_storage_holder;
-            subqueries_for_sets[external_table_name].source = std::make_unique<QueryPlan>();
-            interpreter->buildQueryPlan(*subqueries_for_sets[external_table_name].source);
+            subqueries_for_sets[external_table_name].source = QueryPipeline::getPipe(interpreter->execute().pipeline);
             subqueries_for_sets[external_table_name].table = external_storage;
 
             /** NOTE If it was written IN tmp_table - the existing temporary (but not external) table,

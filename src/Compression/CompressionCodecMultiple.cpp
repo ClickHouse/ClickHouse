@@ -4,7 +4,6 @@
 #include <common/unaligned.h>
 #include <Compression/CompressionFactory.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTFunction.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -23,11 +22,6 @@ namespace ErrorCodes
 CompressionCodecMultiple::CompressionCodecMultiple(Codecs codecs_)
     : codecs(codecs_)
 {
-    ASTs arguments;
-    for (const auto & codec : codecs)
-        arguments.push_back(codec->getCodecDesc());
-    /// Special case, codec doesn't have name and contain list of codecs.
-    setCodecDescription("", arguments);
 }
 
 uint8_t CompressionCodecMultiple::getMethodByte() const
@@ -35,10 +29,12 @@ uint8_t CompressionCodecMultiple::getMethodByte() const
     return static_cast<uint8_t>(CompressionMethodByte::Multiple);
 }
 
-void CompressionCodecMultiple::updateHash(SipHash & hash) const
+ASTPtr CompressionCodecMultiple::getCodecDesc() const
 {
+    auto result = std::make_shared<ASTExpressionList>();
     for (const auto & codec : codecs)
-        codec->updateHash(hash);
+        result->children.push_back(codec->getCodecDesc());
+    return result;
 }
 
 UInt32 CompressionCodecMultiple::getMaxCompressedDataSize(UInt32 uncompressed_size) const

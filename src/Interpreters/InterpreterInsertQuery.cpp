@@ -17,7 +17,6 @@
 #include <Interpreters/InterpreterWatchQuery.h>
 #include <Interpreters/JoinedTables.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -30,8 +29,6 @@
 #include <Storages/StorageDistributed.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/checkStackSize.h>
-#include <Interpreters/TranslateQualifiedNamesVisitor.h>
-#include <Interpreters/getTableExpressions.h>
 
 namespace
 {
@@ -67,8 +64,9 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
 {
     if (query.table_function)
     {
+        const auto * table_function = query.table_function->as<ASTFunction>();
         const auto & factory = TableFunctionFactory::instance();
-        TableFunctionPtr table_function_ptr = factory.get(query.table_function, context);
+        TableFunctionPtr table_function_ptr = factory.get(table_function->name, context);
         return table_function_ptr->execute(query.table_function, context, table_function_ptr->getName());
     }
 
@@ -92,32 +90,9 @@ Block InterpreterInsertQuery::getSampleBlock(
     }
 
     Block table_sample = metadata_snapshot->getSampleBlock();
-
-    /// Process column transformers (e.g. * EXCEPT(a)), asterisks and qualified columns.
-    const auto & columns = metadata_snapshot->getColumns();
-    auto names_and_types = columns.getOrdinary();
-    removeDuplicateColumns(names_and_types);
-    auto table_expr = std::make_shared<ASTTableExpression>();
-    table_expr->database_and_table_name = createTableIdentifier(table->getStorageID());
-    table_expr->children.push_back(table_expr->database_and_table_name);
-    TablesWithColumns tables_with_columns;
-    tables_with_columns.emplace_back(DatabaseAndTableWithAlias(*table_expr, context.getCurrentDatabase()), names_and_types);
-
-    tables_with_columns[0].addHiddenColumns(columns.getMaterialized());
-    tables_with_columns[0].addHiddenColumns(columns.getAliases());
-    tables_with_columns[0].addHiddenColumns(table->getVirtuals());
-
-    NameSet source_columns_set;
-    for (const auto & identifier : query.columns->children)
-        source_columns_set.insert(identifier->getColumnName());
-    TranslateQualifiedNamesVisitor::Data visitor_data(source_columns_set, tables_with_columns);
-    TranslateQualifiedNamesVisitor visitor(visitor_data);
-    auto columns_ast = query.columns->clone();
-    visitor.visit(columns_ast);
-
     /// Form the block based on the column names from the query
     Block res;
-    for (const auto & identifier : columns_ast->children)
+    for (const auto & identifier : query.columns->children)
     {
         std::string current_name = identifier->getColumnName();
 

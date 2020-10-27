@@ -61,7 +61,6 @@ SRCS(
     ASTTTLElement.cpp
     ASTUserNameWithHost.cpp
     ASTWithAlias.cpp
-    ASTWithElement.cpp
     CommonParsers.cpp
     ExpressionElementParsers.cpp
     ExpressionListParsers.cpp
@@ -85,7 +84,6 @@ SRCS(
     MySQL/ASTDeclareReference.cpp
     MySQL/ASTDeclareSubPartition.cpp
     MySQL/ASTDeclareTableOptions.cpp
-    obfuscateQueries.cpp
     parseDatabaseAndTableName.cpp
     parseIdentifierOrStringLiteral.cpp
     parseIntervalKind.cpp
@@ -135,7 +133,6 @@ SRCS(
     ParserUseQuery.cpp
     ParserUserNameWithHost.cpp
     ParserWatchQuery.cpp
-    ParserWithElement.cpp
     parseUserName.cpp
     queryToString.cpp
     QueryWithOutputSettingsPushDownVisitor.cpp
