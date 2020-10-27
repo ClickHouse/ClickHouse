@@ -1,7 +1,6 @@
 #pragma once
 
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
+
 #include <ext/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
@@ -11,6 +10,7 @@ namespace DB
 
 class Context;
 
+/// system.fetches table. Takes data from context.getReplicatedFetchesList()
 class StorageSystemFetches final : public ext::shared_ptr_helper<StorageSystemFetches>, public IStorageSystemOneBlock<StorageSystemFetches >
 {
     friend struct ext::shared_ptr_helper<StorageSystemFetches>;

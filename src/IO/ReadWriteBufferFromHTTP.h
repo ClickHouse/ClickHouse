@@ -205,12 +205,12 @@ namespace detail
 
         bool nextImpl() override
         {
+            if (read_callback)
+                read_callback(count());
             if (!impl->next())
                 return false;
             internal_buffer = impl->buffer();
             working_buffer = internal_buffer;
-            if (read_callback)
-                read_callback(count());
             return true;
         }
 
@@ -225,6 +225,7 @@ namespace detail
         void setNextReadCallback(std::function<void(size_t)> read_callback_)
         {
             read_callback = read_callback_;
+            read_callback(count());
         }
     };
 }
