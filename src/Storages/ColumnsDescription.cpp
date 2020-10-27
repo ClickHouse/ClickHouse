@@ -182,10 +182,12 @@ void ColumnsDescription::add(ColumnDescription column, const String & after_colu
             throw Exception("Wrong column name. Cannot find column " + after_column + " to insert after",
                 ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
+        for (auto it = range.first; it != range.second; ++it)
+            addSubcolumns(it->name, it->type);
+
         insert_it = range.second;
     }
 
-    addSubcolumns(column.name, column.type);
     columns.get<0>().insert(insert_it, std::move(column));
 }
 
@@ -197,7 +199,10 @@ void ColumnsDescription::remove(const String & column_name)
             ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
     for (auto list_it = range.first; list_it != range.second;)
+    {
+        removeSubcolumns(list_it->name, list_it->type);
         list_it = columns.get<0>().erase(list_it);
+    }
 }
 
 void ColumnsDescription::rename(const String & column_from, const String & column_to)
@@ -540,6 +545,12 @@ void ColumnsDescription::addSubcolumns(const String & storage_name, const DataTy
 
         subcolumns[subcolumn.name] = subcolumn;
     }
+}
+
+void ColumnsDescription::removeSubcolumns(const String & storage_name, const DataTypePtr & storage_type)
+{
+    for (const auto & subcolumn_name : storage_type->getSubcolumnNames())
+        subcolumns.erase(storage_name + "." + subcolumn_name);
 }
 
 Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, const Context & context)
