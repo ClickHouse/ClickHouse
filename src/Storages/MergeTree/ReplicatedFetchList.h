@@ -50,21 +50,22 @@ struct ReplicatedFetchListElement : private boost::noncopyable
     const std::string result_part_name;
     const std::string result_part_path;
 
-    std::string source_replica_path;
-    std::string source_replica_hostname;
-    UInt16 source_replica_port;
-    std::string interserver_scheme;
-    std::string uri;
+    const std::string source_replica_path;
+    const std::string source_replica_hostname;
+    const UInt16 source_replica_port;
+    const std::string interserver_scheme;
+    const std::string uri;
 
     const UInt8 to_detached;
 
     Stopwatch watch;
     std::atomic<Float64> progress{};
-    std::atomic<bool> is_cancelled{};
+    /// How many bytes already read
     std::atomic<UInt64> bytes_read_compressed{};
-    UInt64 total_size_bytes_compressed{};
+    /// Total bytes to read
+    const UInt64 total_size_bytes_compressed{};
 
-    UInt64 thread_id;
+    const UInt64 thread_id;
 
     ReplicatedFetchListElement(
         const std::string & database_, const std::string & table_,
@@ -78,6 +79,7 @@ struct ReplicatedFetchListElement : private boost::noncopyable
 
 using ReplicatedFetchListEntry = BackgroundProcessListEntry<ReplicatedFetchListElement, ReplicatedFetchInfo>;
 
+/// List of currently processing replicated fetches
 class ReplicatedFetchList final : public BackgroundProcessList<ReplicatedFetchListElement, ReplicatedFetchInfo>
 {
 private:
