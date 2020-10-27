@@ -1294,7 +1294,7 @@ void ZooKeeper::receiveEvent()
         if (request_info.watch)
         {
             bool add_watch = false;
-            /// 3 indicates the ZooKeeperExistsRequest. 
+            /// 3 indicates the ZooKeeperExistsRequest.
             // For exists, we set the watch on both node exist and nonexist case.
             // For other case like getData, we only set the watch when node exists.
             if (request_info.request->getOpNum() == 3)
