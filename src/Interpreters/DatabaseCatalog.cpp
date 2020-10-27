@@ -164,7 +164,12 @@ void DatabaseCatalog::shutdownImpl()
     std::lock_guard lock(databases_mutex);
     assert(std::find_if(uuid_map.begin(), uuid_map.end(), [](const auto & elem)
     {
-        const auto & not_empty_mapping = [] (const auto & mapping) { return mapping.second.second; };
+        /// Ensure that all UUID mappings are emtpy (i.e. all mappings contain nullptr instead of a pointer to storage)
+        const auto & not_empty_mapping = [] (const auto & mapping)
+        {
+            auto & table = mapping.second.second;
+            return table;
+        };
         auto it = std::find_if(elem.map.begin(), elem.map.end(), not_empty_mapping);
         return it != elem.map.end();
     }) == uuid_map.end());
@@ -421,6 +426,11 @@ DatabasePtr DatabaseCatalog::getDatabaseForTemporaryTables() const
 DatabasePtr DatabaseCatalog::getSystemDatabase() const
 {
     return getDatabase(SYSTEM_DATABASE);
+}
+
+void DatabaseCatalog::addUUIDMapping(const UUID & uuid)
+{
+    addUUIDMapping(uuid, nullptr, nullptr);
 }
 
 void DatabaseCatalog::addUUIDMapping(const UUID & uuid, const DatabasePtr & database, const StoragePtr & table)
@@ -744,7 +754,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
             LOG_WARNING(log, "Cannot parse metadata of partially dropped table {} from {}. Will remove metadata file and data directory. Garbage may be left in /store directory and ZooKeeper.", table_id.getNameForLogs(), dropped_metadata_path);
         }
 
-        addUUIDMapping(table_id.uuid, {}, {});
+        addUUIDMapping(table_id.uuid);
         drop_time = Poco::File(dropped_metadata_path).getLastModified().epochTime();
     }
 
@@ -786,7 +796,7 @@ void DatabaseCatalog::dropTableDataTask()
         }
         else
         {
-            LOG_TRACE(log, "No tables to drop. Queue size: {}", tables_marked_dropped.size());
+            LOG_TRACE(log, "Not found any suitable tables to drop, still have {} tables in drop queue", tables_marked_dropped.size());
         }
         need_reschedule = !tables_marked_dropped.empty();
     }

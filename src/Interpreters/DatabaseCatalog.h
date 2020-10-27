@@ -167,13 +167,19 @@ public:
     /// If table has UUID, addUUIDMapping(...) must be called when table attached to some database
     /// removeUUIDMapping(...) must be called when it detached,
     /// and removeUUIDMappingFinally(...) must be called when table is dropped and its data removed from disk.
-    /// To "lock" some UUID and prevent collision, addUUIDMapping(...) may be called with nullptr arguments.
     /// Such tables can be accessed by persistent UUID instead of database and table name.
     void addUUIDMapping(const UUID & uuid, const DatabasePtr & database, const StoragePtr & table);
     void removeUUIDMapping(const UUID & uuid);
     void removeUUIDMappingFinally(const UUID & uuid);
     /// For moving table between databases
     void updateUUIDMapping(const UUID & uuid, DatabasePtr database, StoragePtr table);
+    /// This method adds empty mapping (with database and storage equal to nullptr).
+    /// It's required to "lock" some UUIDs and protect us from collision.
+    /// Collisions of random 122-bit integers are very unlikely to happen,
+    /// but we allow to explicitly specify UUID in CREATE query (in particular for testing).
+    /// If some UUID was already added and we are trying to add it again,
+    /// this method will throw an exception.
+    void addUUIDMapping(const UUID & uuid);
 
     static String getPathForUUID(const UUID & uuid);
 
