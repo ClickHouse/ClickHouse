@@ -1,5 +1,7 @@
 #include <Storages/System/StorageSystemFetches.h>
 #include <Storages/MergeTree/ReplicatedFetchesList.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Access/ContextAccess.h>
 
@@ -19,10 +21,11 @@ NamesAndTypesList StorageSystemFetches::getNamesAndTypes()
         {"total_size_bytes_compressed", std::make_shared<DataTypeUInt64>()},
         {"bytes_read_compressed", std::make_shared<DataTypeUInt64>()},
         {"source_replica_path", std::make_shared<DataTypeString>()},
-        {"source_replica_address", std::make_shared<DataTypeString>()},
+        {"source_replica_hostname", std::make_shared<DataTypeString>()},
+        {"source_replica_port", std::make_shared<DataTypeUInt16>()},
         {"interserver_scheme", std::make_shared<DataTypeString>()},
+        {"URI", std::make_shared<DataTypeString>()},
         {"to_detached", std::make_shared<DataTypeUInt8>()},
-        {"memory_usage", std::make_shared<DataTypeUInt64>()},
         {"thread_id", std::make_shared<DataTypeUInt64>()},
     };
 }
@@ -48,10 +51,11 @@ void StorageSystemFetches::fillData(MutableColumns & res_columns, const Context 
         res_columns[i++]->insert(fetch.total_size_bytes_compressed);
         res_columns[i++]->insert(fetch.bytes_read_compressed);
         res_columns[i++]->insert(fetch.source_replica_path);
-        res_columns[i++]->insert(fetch.source_replica_address);
+        res_columns[i++]->insert(fetch.source_replica_hostname);
+        res_columns[i++]->insert(fetch.source_replica_port);
         res_columns[i++]->insert(fetch.interserver_scheme);
+        res_columns[i++]->insert(fetch.uri);
         res_columns[i++]->insert(fetch.to_detached);
-        res_columns[i++]->insert(fetch.memory_usage);
         res_columns[i++]->insert(fetch.thread_id);
     }
 }

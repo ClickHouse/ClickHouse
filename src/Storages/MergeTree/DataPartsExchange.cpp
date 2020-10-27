@@ -53,7 +53,6 @@ std::string getEndpointId(const std::string & node_id)
     return "DataPartsExchange:" + node_id;
 }
 
-
 struct ReplicatedFetchReadCallback
 {
     ReplicatedFetchList::Entry & replicated_fetch_entry;
@@ -65,9 +64,9 @@ struct ReplicatedFetchReadCallback
 
     void operator() (size_t bytes_count)
     {
-        replicated_fetch_entry->bytes_read_compressed = bytes_count;
+        replicated_fetch_entry->bytes_read_compressed.store(bytes_count, std::memory_order_relaxed);
         replicated_fetch_entry->progress.store(
-                replicated_fetch_entry->bytes_read_compressed.load(std::memory_order_relaxed) / replicated_fetch_entry->total_size_bytes_compressed,
+                static_cast<double>(bytes_count) / replicated_fetch_entry->total_size_bytes_compressed,
                 std::memory_order_relaxed);
     }
 };
@@ -307,10 +306,11 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         reservation = data.makeEmptyReservationOnLargestDisk();
     }
     auto storage_id = data.getStorageID();
+    String new_part_path = data.getFullPathOnDisk(reservation->getDisk()) + part_name + "/";
     auto entry = data.global_context.getReplicatedFetchList().insert(
         storage_id.getDatabaseName(), storage_id.getTableName(),
-        part_info.partition_id, part_name, part_name,
-        replica_path, uri.toString(), interserver_scheme, to_detached, sum_files_size);
+        part_info.partition_id, part_name, new_part_path,
+        replica_path, uri, to_detached, sum_files_size);
 
     in.setNextReadCallback(ReplicatedFetchReadCallback(*entry));
 
