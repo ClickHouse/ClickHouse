@@ -1,9 +1,10 @@
 import os
-
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 
-ENABLE_DICT_CONFIG = ['configs/enable_dictionaries.xml']
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+config_dir = os.path.join(SCRIPT_DIR, './configs')
 DICTIONARY_FILES = [
     'configs/dictionaries/FileSourceConfig.xml',
     'configs/dictionaries/ExecutableSourceConfig.xml',
@@ -12,9 +13,8 @@ DICTIONARY_FILES = [
     'configs/dictionaries/ClickHouseSourceConfig.xml'
 ]
 
-cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance('node', main_configs=ENABLE_DICT_CONFIG + DICTIONARY_FILES)
-
+cluster = ClickHouseCluster(__file__, base_configs_dir=config_dir)
+instance = cluster.add_instance('node', main_configs=DICTIONARY_FILES, config_dir=config_dir)
 
 def prepare():
     node = instance
@@ -26,7 +26,7 @@ def prepare():
     node.exec_in_container([
         "bash",
         "-c",
-        "python3 /http_server.py --data-path={tbl} --schema=http --host=localhost --port=5555".format(
+        "python2 /http_server.py --data-path={tbl} --schema=http --host=localhost --port=5555".format(
             tbl=path)
     ], detach=True)
 
@@ -40,11 +40,8 @@ def start_cluster():
     finally:
         cluster.shutdown()
 
-
 def test_work(start_cluster):
     query = instance.query
-
-    instance.query("SYSTEM RELOAD DICTIONARIES")
 
     assert query("SELECT dictGetString('test_file', 'first', toUInt64(1))") == "\\\'a\n"
     assert query("SELECT dictGetString('test_file', 'second', toUInt64(1))") == "\"b\n"

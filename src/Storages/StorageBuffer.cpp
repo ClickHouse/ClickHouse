@@ -316,7 +316,7 @@ static void appendBlock(const Block & from, Block & to)
 
     size_t old_rows = to.rows();
 
-    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
+    auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
     try
     {
@@ -694,7 +694,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     }
     auto destination_metadata_snapshot = table->getInMemoryMetadataPtr();
 
-    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
+    auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
     auto insert = std::make_shared<ASTInsertQuery>();
     insert->table_id = destination_id;

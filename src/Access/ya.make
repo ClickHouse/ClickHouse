@@ -5,8 +5,6 @@ PEERDIR(
     clickhouse/src/Common
 )
 
-CFLAGS(-g0)
-
 SRCS(
     AccessControlManager.cpp
     AccessRights.cpp
@@ -24,7 +22,6 @@ SRCS(
     GrantedRoles.cpp
     IAccessEntity.cpp
     IAccessStorage.cpp
-    LDAPAccessStorage.cpp
     LDAPClient.cpp
     MemoryAccessStorage.cpp
     MultipleAccessStorage.cpp

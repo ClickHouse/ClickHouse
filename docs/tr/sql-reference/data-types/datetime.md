@@ -31,7 +31,7 @@ Bu [clickhouse-müşteri](../../interfaces/cli.md) veri türünü başlatırken 
 
 ClickHouse çıkış değerleri `YYYY-MM-DD hh:mm:ss` varsayılan olarak metin biçimi. Çıkış ile değiştirebilirsiniz [formatDateTime](../../sql-reference/functions/date-time-functions.md#formatdatetime) İşlev.
 
-Clickhouse'a veri eklerken, Tarih ve saat dizelerinin farklı biçimlerini kullanabilirsiniz. [date_time_input_format](../../operations/settings/settings.md#settings-date_time_input_format) ayar.
+Clickhouse'a veri eklerken, Tarih ve saat dizelerinin farklı biçimlerini kullanabilirsiniz. [date\_time\_input\_format](../../operations/settings/settings.md#settings-date_time_input_format) ayar.
 
 ## Örnekler {#examples}
 

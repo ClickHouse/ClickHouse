@@ -12,6 +12,4 @@
             <path>/var/lib/clickhouse/access3-ro/</path>
         </local_directory>
     </user_directories>
-    <users_config remove="remove"/>
-    <access_control_path remove="remove"/>
 </yandex>

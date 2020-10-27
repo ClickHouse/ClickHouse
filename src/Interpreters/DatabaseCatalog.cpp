@@ -64,20 +64,13 @@ TemporaryTableHolder::TemporaryTableHolder(
     const Context & context_,
     const ColumnsDescription & columns,
     const ConstraintsDescription & constraints,
-    const ASTPtr & query,
-    bool create_for_global_subquery)
+    const ASTPtr & query)
     : TemporaryTableHolder
       (
           context_,
           [&](const StorageID & table_id)
           {
-              auto storage = StorageMemory::create(
-                      table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints});
-
-              if (create_for_global_subquery)
-                  storage->delayReadForGlobalSubqueries();
-
-              return storage;
+              return StorageMemory::create(table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints});
           },
           query
       )
@@ -532,7 +525,7 @@ std::unique_ptr<DDLGuard> DatabaseCatalog::getDDLGuard(const String & database, 
     std::unique_lock lock(ddl_guards_mutex);
     auto db_guard_iter = ddl_guards.try_emplace(database).first;
     DatabaseGuard & db_guard = db_guard_iter->second;
-    return std::make_unique<DDLGuard>(db_guard.first, db_guard.second, std::move(lock), table, database);
+    return std::make_unique<DDLGuard>(db_guard.first, db_guard.second, std::move(lock), table);
 }
 
 std::unique_lock<std::shared_mutex> DatabaseCatalog::getExclusiveDDLGuardForDatabase(const String & database)
@@ -703,7 +696,6 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
         tables_marked_dropped.push_front({table_id, table, dropped_metadata_path, 0});
     else
         tables_marked_dropped.push_back({table_id, table, dropped_metadata_path, drop_time});
-    tables_marked_dropped_ids.insert(table_id.uuid);
     /// If list of dropped tables was empty, start a drop task
     if (drop_task && tables_marked_dropped.size() == 1)
         (*drop_task)->schedule();
@@ -745,9 +737,6 @@ void DatabaseCatalog::dropTableDataTask()
         try
         {
             dropTableFinally(table);
-            std::lock_guard lock(tables_marked_dropped_mutex);
-            [[maybe_unused]] auto removed = tables_marked_dropped_ids.erase(table.table_id.uuid);
-            assert(removed);
         }
         catch (...)
         {
@@ -761,8 +750,6 @@ void DatabaseCatalog::dropTableDataTask()
                     need_reschedule = true;
             }
         }
-
-        wait_table_finally_dropped.notify_all();
     }
 
     /// Do not schedule a task if there is no tables to drop
@@ -822,19 +809,8 @@ String DatabaseCatalog::resolveDictionaryName(const String & name) const
     return toString(db_and_table.second->getStorageID().uuid);
 }
 
-void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid)
-{
-    if (uuid == UUIDHelpers::Nil)
-        return;
-    std::unique_lock lock{tables_marked_dropped_mutex};
-    wait_table_finally_dropped.wait(lock, [&]()
-    {
-        return tables_marked_dropped_ids.count(uuid) == 0;
-    });
-}
 
-
-DDLGuard::DDLGuard(Map & map_, std::shared_mutex & db_mutex_, std::unique_lock<std::mutex> guards_lock_, const String & elem, const String & database_name)
+DDLGuard::DDLGuard(Map & map_, std::shared_mutex & db_mutex_, std::unique_lock<std::mutex> guards_lock_, const String & elem)
         : map(map_), db_mutex(db_mutex_), guards_lock(std::move(guards_lock_))
 {
     it = map.emplace(elem, Entry{std::make_unique<std::mutex>(), 0}).first;
@@ -843,26 +819,7 @@ DDLGuard::DDLGuard(Map & map_, std::shared_mutex & db_mutex_, std::unique_lock<s
     table_lock = std::unique_lock(*it->second.mutex);
     bool is_database = elem.empty();
     if (!is_database)
-    {
-
-        bool locked_database_for_read = db_mutex.try_lock_shared();
-        if (!locked_database_for_read)
-        {
-            removeTableLock();
-            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} is currently dropped or renamed", database_name);
-        }
-    }
-}
-
-void DDLGuard::removeTableLock()
-{
-    guards_lock.lock();
-    --it->second.counter;
-    if (!it->second.counter)
-    {
-        table_lock.unlock();
-        map.erase(it);
-    }
+        db_mutex.lock_shared();
 }
 
 DDLGuard::~DDLGuard()
@@ -870,7 +827,13 @@ DDLGuard::~DDLGuard()
     bool is_database = it->first.empty();
     if (!is_database)
         db_mutex.unlock_shared();
-    removeTableLock();
+    guards_lock.lock();
+    --it->second.counter;
+    if (!it->second.counter)
+    {
+        table_lock.unlock();
+        map.erase(it);
+    }
 }
 
 }

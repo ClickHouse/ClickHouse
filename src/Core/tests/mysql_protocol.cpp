@@ -283,7 +283,6 @@ int main(int argc, char ** argv)
     }
 
     {
-        /// mysql_protocol --host=172.17.0.3 --user=root --password=123 --db=sbtest
         try
         {
             boost::program_options::options_description desc("Allowed options");
@@ -357,10 +356,6 @@ int main(int argc, char ** argv)
                         break;
                     }
                     default:
-                        if (event->header.type != MySQLReplication::EventType::HEARTBEAT_EVENT)
-                        {
-                            event->dump(std::cerr);
-                        }
                         break;
                 }
             }

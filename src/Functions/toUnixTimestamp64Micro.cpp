@@ -3,8 +3,6 @@
 
 namespace DB
 {
-namespace
-{
 
 struct TransformToMicro
 {
@@ -13,8 +11,6 @@ struct TransformToMicro
     using SourceDataType = DataTypeDateTime64;
     using ResultDataType = DataTypeInt64;
 };
-
-}
 
 void registerToUnixTimestamp64Micro(FunctionFactory & factory)
 {

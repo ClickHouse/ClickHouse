@@ -12,14 +12,12 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
-
-namespace
-{
 
 class FunctionH3ToParent : public IFunction
 {
@@ -50,10 +48,10 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const auto * col_hindex = arguments[0].column.get();
-        const auto * col_resolution = arguments[1].column.get();
+        const auto * col_hindex = block.getByPosition(arguments[0]).column.get();
+        const auto * col_resolution = block.getByPosition(arguments[1]).column.get();
 
         auto dst = ColumnVector<UInt64>::create();
         auto & dst_data = dst->getData();
@@ -73,11 +71,10 @@ public:
             dst_data[row] = res;
         }
 
-        return dst;
+        block.getByPosition(result).column = std::move(dst);
     }
 };
 
-}
 
 void registerFunctionH3ToParent(FunctionFactory & factory)
 {
