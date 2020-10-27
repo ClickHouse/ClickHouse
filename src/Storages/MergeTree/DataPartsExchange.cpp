@@ -18,7 +18,6 @@
 namespace CurrentMetrics
 {
     extern const Metric ReplicatedSend;
-    extern const Metric ReplicatedFetch;
 }
 
 namespace DB
@@ -379,8 +378,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
 
     if (disk->exists(part_download_path))
         throw Exception("Directory " + fullPath(disk, part_download_path) + " already exists.", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
-
-    CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedFetch};
 
     disk->createDirectories(part_download_path);
 
