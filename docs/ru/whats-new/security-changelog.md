@@ -1,3 +1,8 @@
+---
+toc_priority: 76
+toc_title: Security Changelog
+---
+
 # Security Changelog {#security-changelog}
 
 ## Исправлено в релизе 19.14.3.3, 2019-09-10 {#ispravleno-v-relize-19-14-3-3-2019-09-10}

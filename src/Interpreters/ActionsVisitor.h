@@ -191,8 +191,11 @@ private:
     static void visit(const ASTIdentifier & identifier, const ASTPtr & ast, Data & data);
     static void visit(const ASTFunction & node, const ASTPtr & ast, Data & data);
     static void visit(const ASTLiteral & literal, const ASTPtr & ast, Data & data);
+    static void visit(ASTExpressionList & expression_list, const ASTPtr & ast, Data & data);
 
     static SetPtr makeSet(const ASTFunction & node, Data & data, bool no_subqueries);
+    static ASTs doUntuple(const ASTFunction * function, ActionsMatcher::Data & data);
+    static std::optional<NameAndTypePair> getNameAndTypeFromAST(const ASTPtr & ast, Data & data);
 };
 
 using ActionsVisitor = ActionsMatcher::Visitor;
