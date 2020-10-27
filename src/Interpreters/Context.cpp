@@ -1100,28 +1100,53 @@ void Context::setCurrentDatabase(const String & name)
 
 void Context::setCurrentQueryId(const String & query_id)
 {
-    String query_id_to_set = query_id;
+    /// Generate random UUID, but using lower quality RNG,
+    ///  because Poco::UUIDGenerator::generateRandom method is using /dev/random, that is very expensive.
+    /// NOTE: Actually we don't need to use UUIDs for query identifiers.
+    /// We could use any suitable string instead.
+    union
+    {
+        char bytes[16];
+        struct
+        {
+            UInt64 a;
+            UInt64 b;
+        } words;
+        __uint128_t uuid;
+    } random;
 
+    random.words.a = thread_local_rng(); //-V656
+    random.words.b = thread_local_rng(); //-V656
+
+    if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
+        && client_info.opentelemetry_trace_id == 0)
+    {
+        // If this is an initial query without any parent OpenTelemetry trace, we
+        // might start the trace ourselves, with some configurable probability.
+        std::bernoulli_distribution should_start_trace{
+            settings.opentelemetry_start_trace_probability};
+
+        if (should_start_trace(thread_local_rng))
+        {
+            // Use the randomly generated default query id as the new trace id.
+            client_info.opentelemetry_trace_id = random.uuid;
+            client_info.opentelemetry_parent_span_id = 0;
+            client_info.opentelemetry_span_id = thread_local_rng();
+            // Mark this trace as sampled in the flags.
+            client_info.opentelemetry_trace_flags = 1;
+        }
+    }
+    else
+    {
+        // The incoming request has an OpenTelemtry trace context. Its span id
+        // becomes our parent span id.
+        client_info.opentelemetry_parent_span_id = client_info.opentelemetry_span_id;
+        client_info.opentelemetry_span_id = thread_local_rng();
+    }
+
+    String query_id_to_set = query_id;
     if (query_id_to_set.empty())    /// If the user did not submit his query_id, then we generate it ourselves.
     {
-        /// Generate random UUID, but using lower quality RNG,
-        ///  because Poco::UUIDGenerator::generateRandom method is using /dev/random, that is very expensive.
-        /// NOTE: Actually we don't need to use UUIDs for query identifiers.
-        /// We could use any suitable string instead.
-
-        union
-        {
-            char bytes[16];
-            struct
-            {
-                UInt64 a;
-                UInt64 b;
-            } words;
-        } random;
-
-        random.words.a = thread_local_rng(); //-V656
-        random.words.b = thread_local_rng(); //-V656
-
         /// Use protected constructor.
         struct QueryUUID : Poco::UUID
         {
@@ -1750,6 +1775,17 @@ std::shared_ptr<AsynchronousMetricLog> Context::getAsynchronousMetricLog()
         return {};
 
     return shared->system_logs->asynchronous_metric_log;
+}
+
+
+std::shared_ptr<OpenTelemetrySpanLog> Context::getOpenTelemetrySpanLog()
+{
+    auto lock = getLock();
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->opentelemetry_span_log;
 }
 
 
