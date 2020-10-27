@@ -15,6 +15,6 @@ CREATE TABLE default.cast
 ENGINE = MergeTree
 ORDER BY e
 SETTINGS index_granularity = 8192
-x	UInt8
-e	Enum8(\'hello\' = 1, \'world\' = 2)	DEFAULT	cast(x, \'Enum8(\\\'hello\\\' = 1, \\\'world\\\' = 2)\')
+x	UInt8					
+e	Enum8(\'hello\' = 1, \'world\' = 2)	DEFAULT	cast(x, \'Enum8(\\\'hello\\\' = 1, \\\'world\\\' = 2)\')			
 1	hello
