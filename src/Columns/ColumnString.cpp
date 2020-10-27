@@ -288,7 +288,7 @@ struct ColumnString::cmp
 {
     const ColumnString & parent;
     bool reverse;
-    cmp(const ColumnString & parent_, bool reverse_=false) : parent(parent_), reverse(reverse_) {}
+    explicit cmp(const ColumnString & parent_, bool reverse_=false) : parent(parent_), reverse(reverse_) {}
     int operator()(size_t lhs, size_t rhs) const
     {
         int res = memcmpSmallAllowOverflow15(
