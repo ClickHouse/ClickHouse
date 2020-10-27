@@ -1414,6 +1414,11 @@ void ExternalLoader::checkLoaded(const ExternalLoader::LoadResult & result,
         {
             std::rethrow_exception(result.exception);
         }
+        catch (const Poco::Exception & e)
+        {
+            /// This will create a copy for Poco::Exception and DB::Exception
+            e.rethrow();
+        }
         catch (...)
         {
             throw DB::Exception(ErrorCodes::DICTIONARIES_WAS_NOT_LOADED,
