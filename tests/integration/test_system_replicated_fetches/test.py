@@ -27,7 +27,7 @@ def started_cluster():
 def get_random_string(length):
     return ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(length))
 
-def test_system_fetches(started_cluster):
+def test_system_replicated_fetches(started_cluster):
     node1.query("CREATE TABLE t (key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/test/t', '1') ORDER BY tuple()")
     node2.query("CREATE TABLE t (key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/test/t', '2') ORDER BY tuple()")
 
@@ -38,7 +38,7 @@ def test_system_fetches(started_cluster):
         node2.query("SYSTEM START FETCHES t")
         fetches_result = []
         for _ in range(1000):
-            result = json.loads(node2.query("SELECT * FROM system.fetches FORMAT JSON"))
+            result = json.loads(node2.query("SELECT * FROM system.replicated_fetches FORMAT JSON"))
             if not result["data"]:
                 if fetches_result:
                     break

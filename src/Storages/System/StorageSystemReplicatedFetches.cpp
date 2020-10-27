@@ -1,4 +1,4 @@
-#include <Storages/System/StorageSystemFetches.h>
+#include <Storages/System/StorageSystemReplicatedFetches.h>
 #include <Storages/MergeTree/ReplicatedFetchList.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -8,7 +8,7 @@
 namespace DB
 {
 
-NamesAndTypesList StorageSystemFetches::getNamesAndTypes()
+NamesAndTypesList StorageSystemReplicatedFetches::getNamesAndTypes()
 {
     return {
         {"database", std::make_shared<DataTypeString>()},
@@ -30,7 +30,7 @@ NamesAndTypesList StorageSystemFetches::getNamesAndTypes()
     };
 }
 
-void StorageSystemFetches::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
+void StorageSystemReplicatedFetches::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
     const auto access = context.getAccess();
     const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES);

@@ -19,7 +19,7 @@
 
 #include <Storages/System/StorageSystemMacros.h>
 #include <Storages/System/StorageSystemMerges.h>
-#include <Storages/System/StorageSystemFetches.h>
+#include <Storages/System/StorageSystemReplicatedFetches.h>
 #include <Storages/System/StorageSystemMetrics.h>
 #include <Storages/System/StorageSystemModels.h>
 #include <Storages/System/StorageSystemMutations.h>
@@ -138,7 +138,7 @@ void attachSystemTablesServer(IDatabase & system_database, bool has_zookeeper)
     attach<StorageSystemClusters>(system_database, "clusters");
     attach<StorageSystemGraphite>(system_database, "graphite_retentions");
     attach<StorageSystemMacros>(system_database, "macros");
-    attach<StorageSystemFetches>(system_database, "fetches");
+    attach<StorageSystemReplicatedFetches>(system_database, "replicated_fetches");
 
     if (has_zookeeper)
         attach<StorageSystemZooKeeper>(system_database, "zookeeper");
