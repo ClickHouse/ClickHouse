@@ -5,69 +5,22 @@ from testflows.core import *
 from testflows.asserts import error
 
 from rbac.requirements import *
-import rbac.tests.errors as errors
-
-table_types = {
-    "MergeTree": "CREATE TABLE {name} (d DATE, a String, b UInt8, x String, y Int8, z UInt32) ENGINE = MergeTree(d, (a, b), 111)",
-    "ReplacingMergeTree": "CREATE TABLE {name} (d DATE, a String, b UInt8, x String, y Int8, z UInt32) ENGINE = ReplacingMergeTree(d, (a, b), 111)",
-    "SummingMergeTree": "CREATE TABLE {name} (d DATE, a String, b UInt8, x String, y Int8, z UInt32) ENGINE = SummingMergeTree(d, (a, b), 111)",
-    "AggregatingMergeTree": "CREATE TABLE {name} (d DATE, a String, b UInt8, x String, y Int8, z UInt32) ENGINE = AggregatingMergeTree(d, (a, b), 111)",
-    "CollapsingMergeTree": "CREATE TABLE {name} (d Date, a String, b UInt8, x String, y Int8, z UInt32) ENGINE = CollapsingMergeTree(d, (a, b), 111, y);",
-    "VersionedCollapsingMergeTree": "CREATE TABLE {name} (d Date, a String, b UInt8, x String, y Int8, z UInt32, version UInt64, sign Int8, INDEX a (b * y, d) TYPE minmax GRANULARITY 3) ENGINE = VersionedCollapsingMergeTree(sign, version) ORDER BY tuple()",
-    "GraphiteMergeTree": "CREATE TABLE {name} (key UInt32, Path String, Time DateTime, d Date, a String, b UInt8, x String, y Int8, z UInt32, Value Float64, Version UInt32, col UInt64, INDEX a (key * Value, Time) TYPE minmax GRANULARITY 3) ENGINE = GraphiteMergeTree('graphite_rollup_example') ORDER BY tuple()"
-}
-
-table_requirements ={
-    "MergeTree": RQ_SRS_006_RBAC_Privileges_Select_MergeTree("1.0"),
-    "ReplacingMergeTree": RQ_SRS_006_RBAC_Privileges_Select_ReplacingMergeTree("1.0"),
-    "SummingMergeTree": RQ_SRS_006_RBAC_Privileges_Select_SummingMergeTree("1.0"),
-    "AggregatingMergeTree": RQ_SRS_006_RBAC_Privileges_Select_AggregatingMergeTree("1.0"),
-    "CollapsingMergeTree": RQ_SRS_006_RBAC_Privileges_Select_CollapsingMergeTree("1.0"),
-    "VersionedCollapsingMergeTree": RQ_SRS_006_RBAC_Privileges_Select_VersionedCollapsingMergeTree("1.0"),
-    "GraphiteMergeTree": RQ_SRS_006_RBAC_Privileges_Select_GraphiteMergeTree("1.0"),
-}
-
-@contextmanager
-def table(node, name, table_type="MergeTree"):
-    try:
-        with Given(f"I have a {table_type} table"):
-            node.query(table_types[table_type].format(name=name))
-        yield
-    finally:
-        with Finally("I drop the table"):
-            node.query(f"DROP TABLE IF EXISTS {name}")
-
-@contextmanager
-def user(node, name):
-    try:
-        with Given("I have a user"):
-            node.query(f"CREATE USER OR REPLACE {name}")
-        yield
-    finally:
-        with Finally("I drop the user"):
-            node.query(f"DROP USER IF EXISTS {name}")
-
-@contextmanager
-def role(node, role):
-    try:
-        with Given("I have a role"):
-            node.query(f"CREATE ROLE OR REPLACE {role}")
-        yield
-    finally:
-        with Finally("I drop the role"):
-            node.query(f"DROP ROLE IF EXISTS {role}")
+from rbac.helper.common import *
+import rbac.helper.errors as errors
 
 @TestScenario
 def without_privilege(self, table_type, node=None):
     """Check that user without select privilege on a table is not able to select on that table.
     """
+    user_name = f"user_{getuid()}"
+    table_name = f"table_{getuid()}"
     if node is None:
         node = self.context.node
-    with table(node, "merge_tree", table_type):
-        with user(node, "user0"):
+    with table(node, table_name, table_type):
+        with user(node, user_name):
             with When("I run SELECT without privilege"):
-                exitcode, message = errors.not_enough_privileges(name="user0")
-                node.query("SELECT * FROM merge_tree", settings = [("user","user0")],
+                exitcode, message = errors.not_enough_privileges(name=user_name)
+                node.query(f"SELECT * FROM {table_name}", settings = [("user",user_name)],
                             exitcode=exitcode, message=message)
 
 @TestScenario
@@ -77,19 +30,19 @@ def without_privilege(self, table_type, node=None):
 def user_with_privilege(self, table_type, node=None):
     """Check that user can select from a table on which they have select privilege.
     """
+    user_name = f"user_{getuid()}"
+    table_name = f"table_{getuid()}"
     if node is None:
         node = self.context.node
-    with table(node, "merge_tree", table_type):
+    with table(node, table_name, table_type):
         with Given("I have some data inserted into table"):
-            node.query("INSERT INTO merge_tree (d) VALUES ('2020-01-01')")
-        with user(node, "user88"):
-            pass
-        with user(node, "user0"):
+            node.query(f"INSERT INTO {table_name} (d) VALUES ('2020-01-01')")
+        with user(node, user_name):
             with When("I grant privilege"):
-                node.query("GRANT SELECT ON merge_tree TO user0")
+                node.query(f"GRANT SELECT ON {table_name} TO {user_name}")
             with Then("I verify SELECT command"):
-                user_select = node.query("SELECT d FROM merge_tree", settings = [("user","user0")])
-                default = node.query("SELECT d FROM merge_tree")
+                user_select = node.query(f"SELECT d FROM {table_name}", settings = [("user",user_name)])
+                default = node.query(f"SELECT d FROM {table_name}")
                 assert user_select.output == default.output, error()
 
 @TestScenario
@@ -100,26 +53,28 @@ def user_with_revoked_privilege(self, table_type, node=None):
     """Check that user is unable to select from a table after select privilege
     on that table has been revoked from the user.
     """
+    user_name = f"user_{getuid()}"
+    table_name = f"table_{getuid()}"
     if node is None:
         node = self.context.node
-    with table(node, "merge_tree", table_type):
-        with user(node, "user0"):
+    with table(node, table_name, table_type):
+        with user(node, user_name):
             with When("I grant privilege"):
-                node.query("GRANT SELECT ON merge_tree TO user0")
+                node.query(f"GRANT SELECT ON {table_name} TO {user_name}")
             with And("I revoke privilege"):
-                node.query("REVOKE SELECT ON merge_tree FROM user0")
+                node.query(f"REVOKE SELECT ON {table_name} FROM {user_name}")
             with And("I use SELECT, throws exception"):
-                exitcode, message = errors.not_enough_privileges(name="user0")
-                node.query("SELECT * FROM merge_tree", settings = [("user","user0")],
-                            exitcode=exitcode, message=message)
+                exitcode, message = errors.not_enough_privileges(name=user_name)
+                node.query(f"SELECT * FROM {table_name}", settings = [("user",user_name)],
+                    exitcode=exitcode, message=message)
 
 @TestScenario
 def user_with_privilege_on_columns(self, table_type):
     Scenario(run=user_column_privileges,
-             examples=Examples("grant_columns revoke_columns select_columns_fail select_columns_pass data_pass table_type",
-                               [tuple(list(row)+[table_type]) for row in user_column_privileges.examples]))
+        examples=Examples("grant_columns revoke_columns select_columns_fail select_columns_pass data_pass table_type",
+            [tuple(list(row)+[table_type]) for row in user_column_privileges.examples]))
 
-@TestOutline(Scenario)
+@TestOutline
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_Select_Column("1.0"),
 )
@@ -133,28 +88,30 @@ def user_column_privileges(self, grant_columns, select_columns_pass, data_pass, 
     """Check that user is able to select on granted columns
     and unable to select on not granted or revoked columns.
     """
+    user_name = f"user_{getuid()}"
+    table_name = f"table_{getuid()}"
     if node is None:
         node = self.context.node
-    with table(node, "merge_tree", table_type), user(node, "user0"):
+    with table(node, table_name, table_type), user(node, user_name):
         with Given("The table has some data on some columns"):
-            node.query(f"INSERT INTO merge_tree ({select_columns_pass}) VALUES ({data_pass})")
+            node.query(f"INSERT INTO {table_name} ({select_columns_pass}) VALUES ({data_pass})")
         with When("I grant select privilege"):
-            node.query(f"GRANT SELECT({grant_columns}) ON merge_tree TO user0")
+            node.query(f"GRANT SELECT({grant_columns}) ON {table_name} TO {user_name}")
         if select_columns_fail is not None:
             with And("I select from not granted column"):
-                exitcode, message = errors.not_enough_privileges(name="user0")
-                node.query(f"SELECT ({select_columns_fail}) FROM merge_tree",
-                            settings = [("user","user0")], exitcode=exitcode, message=message)
+                exitcode, message = errors.not_enough_privileges(name=user_name)
+                node.query(f"SELECT ({select_columns_fail}) FROM {table_name}",
+                    settings = [("user",user_name)], exitcode=exitcode, message=message)
         with Then("I select from granted column, verify correct result"):
-            user_select = node.query("SELECT d FROM merge_tree", settings = [("user","user0")])
-            default = node.query("SELECT d FROM merge_tree")
+            user_select = node.query(f"SELECT ({select_columns_pass}) FROM {table_name}", settings = [("user",user_name)])
+            default = node.query(f"SELECT ({select_columns_pass}) FROM {table_name}")
             assert user_select.output == default.output
         if revoke_columns is not None:
             with When("I revoke select privilege for columns from user"):
-                node.query(f"REVOKE SELECT({revoke_columns}) ON merge_tree FROM user0")
+                node.query(f"REVOKE SELECT({revoke_columns}) ON {table_name} FROM {user_name}")
             with And("I select from revoked columns"):
-                exitcode, message = errors.not_enough_privileges(name="user0")
-                node.query(f"SELECT ({select_columns_pass}) FROM merge_tree", settings = [("user","user0")], exitcode=exitcode, message=message)
+                exitcode, message = errors.not_enough_privileges(name=user_name)
+                node.query(f"SELECT ({select_columns_pass}) FROM {table_name}", settings = [("user",user_name)], exitcode=exitcode, message=message)
 
 @TestScenario
 @Requirements(
@@ -164,20 +121,23 @@ def role_with_privilege(self, table_type, node=None):
     """Check that user can select from a table after it is granted a role that
     has the select privilege for that table.
     """
+    user_name = f"user_{getuid()}"
+    role_name = f"role_{getuid()}"
+    table_name = f"table_{getuid()}"
     if node is None:
         node = self.context.node
-    with table(node, "merge_tree", table_type):
+    with table(node, table_name, table_type):
         with Given("I have some data inserted into table"):
-            node.query("INSERT INTO merge_tree (d) VALUES ('2020-01-01')")
-        with user(node, "user0"):
-            with role(node, "role0"):
+            node.query(f"INSERT INTO {table_name} (d) VALUES ('2020-01-01')")
+        with user(node, user_name):
+            with role(node, role_name):
                 with When("I grant select privilege to a role"):
-                    node.query("GRANT SELECT ON merge_tree TO role0")
+                    node.query(f"GRANT SELECT ON {table_name} TO {role_name}")
                 with And("I grant role to the user"):
-                    node.query("GRANT role0 TO user0")
+                    node.query(f"GRANT {role_name} TO {user_name}")
                 with Then("I verify SELECT command"):
-                    user_select = node.query("SELECT d FROM merge_tree", settings = [("user","user0")])
-                    default = node.query("SELECT d FROM merge_tree")
+                    user_select = node.query(f"SELECT d FROM {table_name}", settings = [("user",user_name)])
+                    default = node.query(f"SELECT d FROM {table_name}")
                     assert user_select.output == default.output, error()
 
 @TestScenario
@@ -188,48 +148,54 @@ def role_with_revoked_privilege(self, table_type, node=None):
     """Check that user with a role that has select privilege on a table is unable
     to select from that table after select privilege has been revoked from the role.
     """
+    user_name = f"user_{getuid()}"
+    role_name = f"role_{getuid()}"
+    table_name = f"table_{getuid()}"
     if node is None:
         node = self.context.node
-    with table(node, "merge_tree", table_type):
-        with user(node, "user0"), role(node, "role0"):
+    with table(node, table_name, table_type):
+        with user(node, user_name), role(node, role_name):
             with When("I grant privilege to a role"):
-                node.query("GRANT SELECT ON merge_tree TO role0")
+                node.query(f"GRANT SELECT ON {table_name} TO {role_name}")
             with And("I grant the role to a user"):
-                node.query("GRANT role0 TO user0")
+                node.query(f"GRANT {role_name} TO {user_name}")
             with And("I revoke privilege from the role"):
-                node.query("REVOKE SELECT ON merge_tree FROM role0")
+                node.query(f"REVOKE SELECT ON {table_name} FROM {role_name}")
             with And("I select from the table"):
-                exitcode, message = errors.not_enough_privileges(name="user0")
-                node.query("SELECT * FROM merge_tree", settings = [("user","user0")],
-                            exitcode=exitcode, message=message)
+                exitcode, message = errors.not_enough_privileges(name=user_name)
+                node.query(f"SELECT * FROM {table_name}", settings = [("user",user_name)],
+                    exitcode=exitcode, message=message)
 
 @TestScenario
 def user_with_revoked_role(self, table_type, node=None):
-    """Check that user with a role that has select privilege on a table is unable to 
+    """Check that user with a role that has select privilege on a table is unable to
     select from that table after the role with select privilege has been revoked from the user.
     """
+    user_name = f"user_{getuid()}"
+    role_name = f"role_{getuid()}"
+    table_name = f"table_{getuid()}"
     if node is None:
         node = self.context.node
-    with table(node, "merge_tree", table_type):
-        with user(node, "user0"), role(node, "role0"):
+    with table(node, table_name, table_type):
+        with user(node, user_name), role(node, role_name):
             with When("I grant privilege to a role"):
-                node.query("GRANT SELECT ON merge_tree TO role0")
+                node.query(f"GRANT SELECT ON {table_name} TO {role_name}")
             with And("I grant the role to a user"):
-                node.query("GRANT role0 TO user0")
+                node.query(f"GRANT {role_name} TO {user_name}")
             with And("I revoke the role from the user"):
-                node.query("REVOKE role0 FROM user0")
+                node.query(f"REVOKE {role_name} FROM {user_name}")
             with And("I select from the table"):
-                exitcode, message = errors.not_enough_privileges(name="user0")
-                node.query("SELECT * FROM merge_tree", settings = [("user","user0")],
-                            exitcode=exitcode, message=message)
+                exitcode, message = errors.not_enough_privileges(name=user_name)
+                node.query(f"SELECT * FROM {table_name}", settings = [("user",user_name)],
+                    exitcode=exitcode, message=message)
 
 @TestScenario
 def role_with_privilege_on_columns(self, table_type):
     Scenario(run=role_column_privileges,
-             examples=Examples("grant_columns revoke_columns select_columns_fail select_columns_pass data_pass table_type",
-                               [tuple(list(row)+[table_type]) for row in role_column_privileges.examples]))
+        examples=Examples("grant_columns revoke_columns select_columns_fail select_columns_pass data_pass table_type",
+            [tuple(list(row)+[table_type]) for row in role_column_privileges.examples]))
 
-@TestOutline(Scenario)
+@TestOutline
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_Select_Column("1.0"),
 )
@@ -243,32 +209,35 @@ def role_column_privileges(self, grant_columns, select_columns_pass, data_pass, 
     """Check that user is able to select from granted columns and unable
     to select from not granted or revoked columns.
     """
+    user_name = f"user_{getuid()}"
+    role_name = f"role_{getuid()}"
+    table_name = f"table_{getuid()}"
     if node is None:
         node = self.context.node
-    with table(node, "merge_tree", table_type):
+    with table(node, table_name, table_type):
         with Given("The table has some data on some columns"):
-            node.query(f"INSERT INTO merge_tree ({select_columns_pass}) VALUES ({data_pass})")
-        with user(node, "user0"), role(node, "role0"):
+            node.query(f"INSERT INTO {table_name} ({select_columns_pass}) VALUES ({data_pass})")
+        with user(node, user_name), role(node, role_name):
             with When("I grant select privilege"):
-                node.query(f"GRANT SELECT({grant_columns}) ON merge_tree TO role0")
+                node.query(f"GRANT SELECT({grant_columns}) ON {table_name} TO {role_name}")
             with And("I grant the role to a user"):
-                node.query("GRANT role0 TO user0")
+                node.query(f"GRANT {role_name} TO {user_name}")
             if select_columns_fail is not None:
                 with And("I select from not granted column"):
-                    exitcode, message = errors.not_enough_privileges(name="user0")
-                    node.query(f"SELECT ({select_columns_fail}) FROM merge_tree",
-                                settings = [("user","user0")], exitcode=exitcode, message=message)
+                    exitcode, message = errors.not_enough_privileges(name=user_name)
+                    node.query(f"SELECT ({select_columns_fail}) FROM {table_name}",
+                        settings = [("user",user_name)], exitcode=exitcode, message=message)
             with Then("I verify SELECT command"):
-                user_select = node.query("SELECT d FROM merge_tree", settings = [("user","user0")])
-                default = node.query("SELECT d FROM merge_tree")
+                user_select = node.query(f"SELECT d FROM {table_name}", settings = [("user",user_name)])
+                default = node.query(f"SELECT d FROM {table_name}")
                 assert user_select.output == default.output, error()
             if revoke_columns is not None:
                 with When("I revoke select privilege for columns from role"):
-                    node.query(f"REVOKE SELECT({revoke_columns}) ON merge_tree FROM role0")
+                    node.query(f"REVOKE SELECT({revoke_columns}) ON {table_name} FROM {role_name}")
                 with And("I select from revoked columns"):
-                    exitcode, message = errors.not_enough_privileges(name="user0")
-                    node.query(f"SELECT ({select_columns_pass}) FROM merge_tree",
-                                settings = [("user","user0")], exitcode=exitcode, message=message)
+                    exitcode, message = errors.not_enough_privileges(name=user_name)
+                    node.query(f"SELECT ({select_columns_pass}) FROM {table_name}",
+                        settings = [("user",user_name)], exitcode=exitcode, message=message)
 
 @TestScenario
 @Requirements(
@@ -278,23 +247,26 @@ def user_with_privilege_on_cluster(self, table_type, node=None):
     """Check that user is able to select from a table with
     privilege granted on a cluster.
     """
+    user_name = f"user_{getuid()}"
+    role_name = f"role_{getuid()}"
+    table_name = f"table_{getuid()}"
     if node is None:
         node = self.context.node
-    with table(node, "merge_tree", table_type):
+    with table(node, table_name, table_type):
         try:
             with Given("I have some data inserted into table"):
-                node.query("INSERT INTO merge_tree (d) VALUES ('2020-01-01')")
+                node.query(f"INSERT INTO {table_name} (d) VALUES ('2020-01-01')")
             with Given("I have a user on a cluster"):
-                node.query("CREATE USER OR REPLACE user0 ON CLUSTER sharded_cluster")
+                node.query(f"CREATE USER OR REPLACE {user_name} ON CLUSTER sharded_cluster")
             with When("I grant select privilege on a cluster"):
-                node.query("GRANT ON CLUSTER sharded_cluster SELECT ON merge_tree TO user0")
+                node.query(f"GRANT ON CLUSTER sharded_cluster SELECT ON {table_name} TO {user_name}")
             with Then("I verify SELECT command"):
-                user_select = node.query("SELECT d FROM merge_tree", settings = [("user","user0")])
-                default = node.query("SELECT d FROM merge_tree")
+                user_select = node.query(f"SELECT d FROM {table_name}", settings = [("user",user_name)])
+                default = node.query(f"SELECT d FROM {table_name}")
                 assert user_select.output == default.output, error()
         finally:
             with Finally("I drop the user"):
-                node.query("DROP USER user0 ON CLUSTER sharded_cluster")
+                node.query(f"DROP USER {user_name} ON CLUSTER sharded_cluster")
 
 @TestScenario
 @Requirements(
@@ -304,19 +276,22 @@ def user_with_privilege_from_user_with_grant_option(self, table_type, node=None)
     """Check that user is able to select from a table when granted privilege
     from another user with grant option.
     """
+    user0_name = f"user0_{getuid()}"
+    user1_name = f"user1_{getuid()}"
+    table_name = f"table_{getuid()}"
     if node is None:
         node = self.context.node
-    with table(node, "merge_tree", table_type):
+    with table(node, table_name, table_type):
         with Given("I have some data inserted into table"):
-            node.query("INSERT INTO merge_tree (d) VALUES ('2020-01-01')")
-        with user(node, "user0"), user(node, "user1"):
+            node.query(f"INSERT INTO {table_name} (d) VALUES ('2020-01-01')")
+        with user(node, f"{user0_name},{user1_name}"):
             with When("I grant privilege with grant option to user"):
-                node.query("GRANT SELECT ON merge_tree TO user0 WITH GRANT OPTION")
+                node.query(f"GRANT SELECT ON {table_name} TO {user0_name} WITH GRANT OPTION")
             with And("I grant privilege to another user via grant option"):
-                node.query("GRANT SELECT ON merge_tree TO user1", settings = [("user","user0")])
+                node.query(f"GRANT SELECT ON {table_name} TO {user1_name}", settings = [("user",user0_name)])
             with Then("I verify SELECT command"):
-                user_select = node.query("SELECT d FROM merge_tree", settings = [("user","user1")])
-                default = node.query("SELECT d FROM merge_tree")
+                user_select = node.query(f"SELECT d FROM {table_name}", settings = [("user",user1_name)])
+                default = node.query(f"SELECT d FROM {table_name}")
                 assert user_select.output == default.output, error()
 
 @TestScenario
@@ -327,21 +302,25 @@ def role_with_privilege_from_user_with_grant_option(self, table_type, node=None)
     """Check that user is able to select from a table when granted a role with
     select privilege that was granted by another user with grant option.
     """
+    user0_name = f"user0_{getuid()}"
+    user1_name = f"user1_{getuid()}"
+    role_name = f"role_{getuid()}"
+    table_name = f"table_{getuid()}"
     if node is None:
         node = self.context.node
-    with table(node, "merge_tree", table_type):
+    with table(node, table_name, table_type):
         with Given("I have some data inserted into table"):
-            node.query("INSERT INTO merge_tree (d) VALUES ('2020-01-01')")
-        with user(node, "user0"), user(node, "user1"), role(node, "role0"):
+            node.query(f"INSERT INTO {table_name} (d) VALUES ('2020-01-01')")
+        with user(node, f"{user0_name},{user1_name}"), role(node, role_name):
             with When("I grant privilege with grant option to user"):
-                node.query("GRANT SELECT ON merge_tree TO user0 WITH GRANT OPTION")
+                node.query(f"GRANT SELECT ON {table_name} TO {user0_name} WITH GRANT OPTION")
             with And("I grant privilege to a role via grant option"):
-                node.query("GRANT SELECT ON merge_tree TO role0", settings = [("user","user0")])
+                node.query(f"GRANT SELECT ON {table_name} TO {role_name}", settings = [("user",user0_name)])
             with And("I grant the role to another user"):
-                node.query("GRANT role0 TO user1")
+                node.query(f"GRANT {role_name} TO {user1_name}")
             with Then("I verify SELECT command"):
-                user_select = node.query("SELECT d FROM merge_tree", settings = [("user","user1")])
-                default = node.query("SELECT d FROM merge_tree")
+                user_select = node.query(f"SELECT d FROM {table_name}", settings = [("user",user1_name)])
+                default = node.query(f"SELECT d FROM {table_name}")
                 assert user_select.output == default.output, error()
 
 @TestScenario
@@ -352,21 +331,25 @@ def user_with_privilege_from_role_with_grant_option(self, table_type, node=None)
     """Check that user is able to select from a table when granted privilege from
     a role with grant option
     """
+    user0_name = f"user0_{getuid()}"
+    user1_name = f"user1_{getuid()}"
+    role_name = f"role_{getuid()}"
+    table_name = f"table_{getuid()}"
     if node is None:
         node = self.context.node
-    with table(node, "merge_tree", table_type):
+    with table(node, table_name, table_type):
         with Given("I have some data inserted into table"):
-            node.query("INSERT INTO merge_tree (d) VALUES ('2020-01-01')")
-        with user(node, "user0"), user(node, "user1"), role(node, "role0"):
+            node.query(f"INSERT INTO {table_name} (d) VALUES ('2020-01-01')")
+        with user(node, f"{user0_name},{user1_name}"), role(node, role_name):
             with When("I grant privilege with grant option to a role"):
-                node.query("GRANT SELECT ON merge_tree TO role0 WITH GRANT OPTION")
+                node.query(f"GRANT SELECT ON {table_name} TO {role_name} WITH GRANT OPTION")
             with When("I grant role to a user"):
-                node.query("GRANT role0 TO user0")
+                node.query(f"GRANT {role_name} TO {user0_name}")
             with And("I grant privilege to a user via grant option"):
-                node.query("GRANT SELECT ON merge_tree TO user1", settings = [("user","user0")])
+                node.query(f"GRANT SELECT ON {table_name} TO {user1_name}", settings = [("user",user0_name)])
             with Then("I verify SELECT command"):
-                user_select = node.query("SELECT d FROM merge_tree", settings = [("user","user1")])
-                default = node.query("SELECT d FROM merge_tree")
+                user_select = node.query(f"SELECT d FROM {table_name}", settings = [("user",user1_name)])
+                default = node.query(f"SELECT d FROM {table_name}")
                 assert user_select.output == default.output, error()
 
 @TestScenario
@@ -377,23 +360,28 @@ def role_with_privilege_from_role_with_grant_option(self, table_type, node=None)
     """Check that a user is able to select from a table with a role that was
     granted privilege by another role with grant option
     """
+    user0_name = f"user0_{getuid()}"
+    user1_name = f"user1_{getuid()}"
+    role0_name = f"role0_{getuid()}"
+    role1_name = f"role1_{getuid()}"
+    table_name = f"table_{getuid()}"
     if node is None:
         node = self.context.node
-    with table(node, "merge_tree", table_type):
+    with table(node, table_name, table_type):
         with Given("I have some data inserted into table"):
-            node.query("INSERT INTO merge_tree (d) VALUES ('2020-01-01')")
-        with user(node, "user0"), user(node, "user1"), role(node, "role0"), role(node, "role1"):
+            node.query(f"INSERT INTO {table_name} (d) VALUES ('2020-01-01')")
+        with user(node, f"{user0_name},{user1_name}"), role(node, f"{role0_name},{role1_name}"):
             with When("I grant privilege with grant option to role"):
-                node.query("GRANT SELECT ON merge_tree TO role0 WITH GRANT OPTION")
+                node.query(f"GRANT SELECT ON {table_name} TO {role0_name} WITH GRANT OPTION")
             with And("I grant the role to a user"):
-                node.query("GRANT role0 TO user0")
+                node.query(f"GRANT {role0_name} TO {user0_name}")
             with And("I grant privilege to another role via grant option"):
-                node.query("GRANT SELECT ON merge_tree TO role1", settings = [("user","user0")])
+                node.query(f"GRANT SELECT ON {table_name} TO {role1_name}", settings = [("user",user0_name)])
             with And("I grant the second role to another user"):
-                node.query("GRANT role1 TO user1")
+                node.query(f"GRANT {role1_name} TO {user1_name}")
             with Then("I verify SELECT command"):
-                user_select = node.query("SELECT d FROM merge_tree", settings = [("user","user1")])
-                default = node.query("SELECT d FROM merge_tree")
+                user_select = node.query(f"SELECT d FROM {table_name}", settings = [("user",user1_name)])
+                default = node.query(f"SELECT d FROM {table_name}")
                 assert user_select.output == default.output, error()
 
 @TestScenario
@@ -403,16 +391,19 @@ def role_with_privilege_from_role_with_grant_option(self, table_type, node=None)
 def revoke_privilege_from_user_via_user_with_grant_option(self, table_type, node=None):
     """Check that user is unable to revoke a column they don't have access to from a user.
     """
+    user0_name = f"user0_{getuid()}"
+    user1_name = f"user1_{getuid()}"
+    table_name = f"table_{getuid()}"
     if node is None:
         node = self.context.node
-    with table(node, "merge_tree", table_type):
-        with user(node, "user0"), user(node, "user1"):
+    with table(node, table_name, table_type):
+        with user(node, f"{user0_name},{user1_name}"):
             with When("I grant privilege with grant option to user"):
-                node.query("GRANT SELECT(d) ON merge_tree TO user0 WITH GRANT OPTION")
+                node.query(f"GRANT SELECT(d) ON {table_name} TO {user0_name} WITH GRANT OPTION")
             with Then("I revoke privilege on a column the user with grant option does not have access to"):
-                exitcode, message = errors.not_enough_privileges(name="user0")
-                node.query("REVOKE SELECT(b) ON merge_tree FROM user1", settings=[("user","user0")],
-                            exitcode=exitcode, message=message)
+                exitcode, message = errors.not_enough_privileges(name=user0_name)
+                node.query(f"REVOKE SELECT(b) ON {table_name} FROM {user1_name}", settings=[("user",user0_name)],
+                    exitcode=exitcode, message=message)
 
 @TestScenario
 @Requirements(
@@ -421,16 +412,19 @@ def revoke_privilege_from_user_via_user_with_grant_option(self, table_type, node
 def revoke_privilege_from_role_via_user_with_grant_option(self, table_type, node=None):
     """Check that user is unable to revoke a column they dont have acces to from a role.
     """
+    user_name = f"user_{getuid()}"
+    role_name = f"role_{getuid()}"
+    table_name = f"table_{getuid()}"
     if node is None:
         node = self.context.node
-    with table(node, "merge_tree", table_type):
-        with user(node, "user0"), role(node, "role0"):
+    with table(node, table_name, table_type):
+        with user(node, user_name), role(node, role_name):
             with When("I grant privilege with grant option to user"):
-                node.query("GRANT SELECT(d) ON merge_tree TO user0 WITH GRANT OPTION")
+                node.query(f"GRANT SELECT(d) ON {table_name} TO {user_name} WITH GRANT OPTION")
             with Then("I revoke privilege on a column the user with grant option does not have access to"):
-                exitcode, message = errors.not_enough_privileges(name="user0")
-                node.query("REVOKE SELECT(b) ON merge_tree FROM role0", settings=[("user","user0")],
-                            exitcode=exitcode, message=message)
+                exitcode, message = errors.not_enough_privileges(name=user_name)
+                node.query(f"REVOKE SELECT(b) ON {table_name} FROM {role_name}", settings=[("user",user_name)],
+                    exitcode=exitcode, message=message)
 
 @TestScenario
 @Requirements(
@@ -439,18 +433,22 @@ def revoke_privilege_from_role_via_user_with_grant_option(self, table_type, node
 def revoke_privilege_from_user_via_role_with_grant_option(self, table_type, node=None):
     """Check that user with a role is unable to revoke a column they dont have acces to from a user.
     """
+    user0_name = f"user0_{getuid()}"
+    user1_name = f"user1_{getuid()}"
+    role_name = f"role_{getuid()}"
+    table_name = f"table_{getuid()}"
     if node is None:
         node = self.context.node
-    with table(node, "merge_tree", table_type):
-        with user(node, "user0"), user(node,"user1"), role(node, "role0"):
+    with table(node, table_name, table_type):
+        with user(node, f"{user0_name},{user1_name}"), role(node, role_name):
             with When("I grant privilege with grant option to a role"):
-                node.query("GRANT SELECT(d) ON merge_tree TO role0 WITH GRANT OPTION")
+                node.query(f"GRANT SELECT(d) ON {table_name} TO {role_name} WITH GRANT OPTION")
             with And("I grant the role to a user"):
-                node.query("GRANT role0 TO user0")
+                node.query(f"GRANT {role_name} TO {user0_name}")
             with Then("I revoke privilege on a column the user with grant option does not have access to"):
-                exitcode, message = errors.not_enough_privileges(name="user0")
-                node.query("REVOKE SELECT(b) ON merge_tree FROM user1", settings=[("user","user0")],
-                            exitcode=exitcode, message=message)
+                exitcode, message = errors.not_enough_privileges(name=user0_name)
+                node.query(f"REVOKE SELECT(b) ON {table_name} FROM {user1_name}", settings=[("user",user0_name)],
+                    exitcode=exitcode, message=message)
 
 @TestScenario
 @Requirements(
@@ -459,44 +457,45 @@ def revoke_privilege_from_user_via_role_with_grant_option(self, table_type, node
 def revoke_privilege_from_role_via_role_with_grant_option(self, table_type, node=None):
     """Check that user with a role is unable to revoke a column they dont have acces to from a role.
     """
+    user_name = f"user_{getuid()}"
+    role0_name = f"role0_{getuid()}"
+    role1_name = f"role1_{getuid()}"
+    table_name = f"table_{getuid()}"
     if node is None:
         node = self.context.node
-    with table(node, "merge_tree", table_type):
-        with user(node, "user0"), role(node, "role0"), role(node, "role1"):
+    with table(node, table_name, table_type):
+        with user(node, user_name), role(node, f"{role0_name},{role1_name}"):
             with When("I grant privilege with grant option to a role"):
-                node.query("GRANT SELECT(d) ON merge_tree TO user0 WITH GRANT OPTION")
+                node.query(f"GRANT SELECT(d) ON {table_name} TO {role0_name} WITH GRANT OPTION")
             with And("I grant the role to a user"):
-                node.query("GRANT role0 TO user0")
+                node.query(f"GRANT {role0_name} TO {user_name}")
             with Then("I revoke privilege on a column the user with grant option does not have access to"):
-                exitcode, message = errors.not_enough_privileges(name="user0")
-                node.query("REVOKE SELECT(b) ON merge_tree FROM role1", settings=[("user","user0")],
-                            exitcode=exitcode, message=message)
+                exitcode, message = errors.not_enough_privileges(name=user_name)
+                node.query(f"REVOKE SELECT(b) ON {table_name} FROM {role1_name}", settings=[("user",user_name)],
+                    exitcode=exitcode, message=message)
 
 @TestOutline(Feature)
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_Select("1.0"),
+    RQ_SRS_006_RBAC_Privileges_Select_TableEngines("1.0")
 )
 @Examples("table_type", [
-    (table_type, Requirements(requirement)) for table_type, requirement in list(table_requirements.items())
+    (key,) for key in table_types.keys()
 ])
 @Name("select")
-def feature(self, table_type, node="clickhouse1"):
+def feature(self, table_type, parallel=None, stress=None, node="clickhouse1"):
     self.context.node = self.context.cluster.node(node)
 
-    Scenario(test=without_privilege)(table_type=table_type)
-    Scenario(test=user_with_privilege)(table_type=table_type)
-    Scenario(test=user_with_revoked_privilege)(table_type=table_type)
-    Scenario(test=user_with_privilege_on_columns)(table_type=table_type)
-    Scenario(test=role_with_privilege)(table_type=table_type)
-    Scenario(test=role_with_revoked_privilege)(table_type=table_type)
-    Scenario(test=user_with_revoked_role)(table_type=table_type)
-    Scenario(test=role_with_privilege_on_columns)(table_type=table_type)
-    Scenario(test=user_with_privilege_on_cluster)(table_type=table_type)
-    Scenario(test=user_with_privilege_from_user_with_grant_option)(table_type=table_type)
-    Scenario(test=role_with_privilege_from_user_with_grant_option)(table_type=table_type)
-    Scenario(test=user_with_privilege_from_role_with_grant_option)(table_type=table_type)
-    Scenario(test=role_with_privilege_from_role_with_grant_option)(table_type=table_type)
-    Scenario(test=revoke_privilege_from_user_via_user_with_grant_option)(table_type=table_type)
-    Scenario(test=revoke_privilege_from_role_via_user_with_grant_option)(table_type=table_type)
-    Scenario(test=revoke_privilege_from_user_via_role_with_grant_option)(table_type=table_type)
-    Scenario(test=revoke_privilege_from_role_via_role_with_grant_option)(table_type=table_type)
+    if stress is not None:
+        self.context.stress = stress
+    if parallel is not None:
+        self.context.stress = parallel
+
+    tasks = []
+    pool = Pool(3)
+
+    try:
+        for scenario in loads(current_module(), Scenario):
+            run_scenario(pool, tasks, scenario, {"table_type" : table_type})
+    finally:
+        join(tasks)
