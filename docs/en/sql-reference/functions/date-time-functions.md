@@ -410,9 +410,7 @@ Result:
 
 # now {#now}
 
-Returns the current date and time (at one of the moments of request execution). 
-
-Function returns a constant, even if the request took a long time to complete.
+Returns the current date and time. 
 
 **Syntax** 
 
