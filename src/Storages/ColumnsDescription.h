@@ -149,6 +149,7 @@ private:
 
     void modifyColumnOrder(const String & column_name, const String & after_column, bool first);
     void addSubcolumns(const String & storage_name, const DataTypePtr & storage_type);
+    void removeSubcolumns(const String & storage_name, const DataTypePtr & storage_type);
 };
 
 /// Validate default expressions and corresponding types compatibility, i.e.
