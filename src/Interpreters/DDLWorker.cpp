@@ -759,6 +759,7 @@ void DDLWorker::processTask(DDLTask & task)
     else if (code == Coordination::Error::ZNONODE)
     {
         /// There is no parent
+        //TODO why not to create parent before active_node?
         createStatusDirs(task.entry_path, zookeeper);
         if (Coordination::Error::ZOK != zookeeper->tryCreate(active_node_path, "", zkutil::CreateMode::Ephemeral, dummy))
             throw Coordination::Exception(code, active_node_path);

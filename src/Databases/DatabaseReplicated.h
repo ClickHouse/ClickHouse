@@ -35,7 +35,9 @@ namespace DB
 class DatabaseReplicated : public DatabaseAtomic
 {
 public:
-    DatabaseReplicated(const String & name_, const String & metadata_path_, UUID uuid, const String & zookeeper_path_, const String & replica_name_, Context & context);
+    DatabaseReplicated(const String & name_, const String & metadata_path_, UUID uuid,
+                       const String & zookeeper_path_, const String & shard_name_, const String & replica_name_,
+                       Context & context);
 
     void drop(const Context & /*context*/) override;
 
@@ -45,11 +47,9 @@ public:
 
     BlockIO getFeedback();
 
-    String zookeeper_path;
-    String replica_name;
-
 private:
-    void createDatabaseZKNodes();
+    void createDatabaseZooKeeperNodes();
+    void createReplicaZooKeeperNodes();
 
     void runBackgroundLogExecutor();
     void executeLogName(const String &);
@@ -58,6 +58,10 @@ private:
     void loadMetadataFromSnapshot();
     void createSnapshot();
     void removeOutdatedSnapshotsAndLog();
+
+    String zookeeper_path;
+    String shard_name;
+    String replica_name;
 
     std::unique_ptr<Context> current_context; // to run executeQuery
 

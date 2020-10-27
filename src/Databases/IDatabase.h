@@ -197,7 +197,7 @@ public:
         const StoragePtr & /*table*/,
         const ASTPtr & /*query*/)
     {
-        throw Exception("There is no CREATE TABLE query for Database " + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("There is no CREATE TABLE query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// Add the dictionary to the database. Record its presence in the metadata.
@@ -206,7 +206,7 @@ public:
         const String & /*dictionary_name*/,
         const ASTPtr & /*query*/)
     {
-        throw Exception("There is no CREATE DICTIONARY query for Database " + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("There is no CREATE DICTIONARY query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// Delete the table from the database, drop table and delete the metadata.
@@ -215,7 +215,7 @@ public:
         const String & /*name*/,
         [[maybe_unused]] bool no_delay = false)
     {
-        throw Exception("There is no DROP TABLE query for Database " + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("There is no DROP TABLE query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// Delete the dictionary from the database. Delete the metadata.
@@ -223,32 +223,32 @@ public:
         const Context & /*context*/,
         const String & /*dictionary_name*/)
     {
-        throw Exception("There is no DROP DICTIONARY query for Database " + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("There is no DROP DICTIONARY query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// Add a table to the database, but do not add it to the metadata. The database may not support this method.
     virtual void attachTable(const String & /*name*/, const StoragePtr & /*table*/, [[maybe_unused]] const String & relative_table_path = {})
     {
-        throw Exception("There is no ATTACH TABLE query for Database " + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("There is no ATTACH TABLE query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// Add dictionary to the database, but do not add it to the metadata. The database may not support this method.
     /// If dictionaries_lazy_load is false it also starts loading the dictionary asynchronously.
     virtual void attachDictionary(const String & /* dictionary_name */, const DictionaryAttachInfo & /* attach_info */)
     {
-        throw Exception("There is no ATTACH DICTIONARY query for Database " + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("There is no ATTACH DICTIONARY query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// Forget about the table without deleting it, and return it. The database may not support this method.
     virtual StoragePtr detachTable(const String & /*name*/)
     {
-        throw Exception("There is no DETACH TABLE query for Database " + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("There is no DETACH TABLE query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// Forget about the dictionary without deleting it. The database may not support this method.
     virtual void detachDictionary(const String & /*name*/)
     {
-        throw Exception("There is no DETACH DICTIONARY query for Database " + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("There is no DETACH DICTIONARY query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// Rename the table and possibly move the table to another database.
@@ -352,14 +352,14 @@ protected:
     virtual ASTPtr getCreateTableQueryImpl(const String & /*name*/, const Context & /*context*/, bool throw_on_error) const
     {
         if (throw_on_error)
-            throw Exception("There is no SHOW CREATE TABLE query for Database " + getEngineName(), ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY);
+            throw Exception("There is no SHOW CREATE TABLE query for Database" + getEngineName(), ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY);
         return nullptr;
     }
 
     virtual ASTPtr getCreateDictionaryQueryImpl(const String & /*name*/, bool throw_on_error) const
     {
         if (throw_on_error)
-            throw Exception("There is no SHOW CREATE DICTIONARY query for Database " + getEngineName(), ErrorCodes::CANNOT_GET_CREATE_DICTIONARY_QUERY);
+            throw Exception("There is no SHOW CREATE DICTIONARY query for Database" + getEngineName(), ErrorCodes::CANNOT_GET_CREATE_DICTIONARY_QUERY);
         return nullptr;
     }
 
