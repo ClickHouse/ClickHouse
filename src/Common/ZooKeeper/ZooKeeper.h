@@ -189,11 +189,6 @@ public:
     /// Remove all children nodes (non recursive).
     void removeChildren(const std::string & path);
 
-    /// Remove all children nodes (non recursive).
-    /// If there're no children for the given path,
-    /// this method does not throw an exception.
-    void tryRemoveChildren(const std::string & path);
-
     using WaitCondition = std::function<bool()>;
 
     /// Wait for the node to disappear or return immediately if it doesn't exist.

@@ -24,6 +24,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+//FIXME never used
 void DatabaseReplicated::setZooKeeper(zkutil::ZooKeeperPtr zookeeper)
 {
     std::lock_guard lock(current_zookeeper_mutex);
@@ -50,16 +51,16 @@ DatabaseReplicated::DatabaseReplicated(
     const String & metadata_path_,
     UUID uuid,
     const String & zookeeper_path_,
+    const String & shard_name_,
     const String & replica_name_,
     Context & context_)
     : DatabaseAtomic(name_, metadata_path_, uuid, "DatabaseReplicated (" + name_ + ")", context_)
     , zookeeper_path(zookeeper_path_)
+    , shard_name(shard_name_)
     , replica_name(replica_name_)
 {
-    if (zookeeper_path.empty() || replica_name.empty())
-    {
-        throw Exception("ZooKeeper path and replica name must be non-empty", ErrorCodes::BAD_ARGUMENTS);
-    }
+    if (zookeeper_path.empty() || shard_name.empty() || replica_name.empty())
+        throw Exception("ZooKeeper path and shard and replica names must be non-empty", ErrorCodes::BAD_ARGUMENTS);
 
     if (zookeeper_path.back() == '/')
         zookeeper_path.resize(zookeeper_path.size() - 1);
@@ -79,10 +80,12 @@ DatabaseReplicated::DatabaseReplicated(
     /// New database
     if (!current_zookeeper->exists(zookeeper_path))
     {
-        createDatabaseZKNodes();
-        /// Old replica recovery
+        createDatabaseZooKeeperNodes();
     }
-    else if (current_zookeeper->exists(zookeeper_path + "/replicas/" + replica_name))
+
+    /// Attach existing replica
+    //TODO better protection from wrong replica names
+    if (current_zookeeper->exists(zookeeper_path + "/replicas/" + replica_name))
     {
         String remote_last_entry = current_zookeeper->get(zookeeper_path + "/replicas/" + replica_name, {}, nullptr);
 
@@ -106,17 +109,23 @@ DatabaseReplicated::DatabaseReplicated(
         }
         else
         {
+            //FIXME
             throw Exception(
                 "Replica name might be in use by a different node. Please check replica_name parameter. Remove .last_entry file from "
                 "metadata to create a new replica.",
                 ErrorCodes::LOGICAL_ERROR);
         }
     }
+    else
+    {
+        createReplicaZooKeeperNodes();
+    }
 
     snapshot_period = context_.getConfigRef().getInt("database_replicated_snapshot_period", 10);
     feedback_timeout = context_.getConfigRef().getInt("database_replicated_feedback_timeout", 0);
     LOG_DEBUG(log, "Snapshot period is set to {} log entries per one snapshot", snapshot_period);
 
+    //TODO do we need separate pool?
     background_log_executor = context_.getReplicatedSchedulePool().createTask(
         database_name + "(DatabaseReplicated::background_executor)", [this] { runBackgroundLogExecutor(); }
     );
@@ -124,7 +133,7 @@ DatabaseReplicated::DatabaseReplicated(
     background_log_executor->scheduleAfter(500);
 }
 
-void DatabaseReplicated::createDatabaseZKNodes()
+void DatabaseReplicated::createDatabaseZooKeeperNodes()
 {
     current_zookeeper = getZooKeeper();
 
@@ -134,6 +143,11 @@ void DatabaseReplicated::createDatabaseZKNodes()
     current_zookeeper->createIfNotExists(zookeeper_path + "/log", String());
     current_zookeeper->createIfNotExists(zookeeper_path + "/snapshots", String());
     current_zookeeper->createIfNotExists(zookeeper_path + "/replicas", String());
+}
+
+void DatabaseReplicated::createReplicaZooKeeperNodes()
+{
+    current_zookeeper->create(zookeeper_path + "/replicas/" + replica_name, "", zkutil::CreateMode::Persistent);
 }
 
 void DatabaseReplicated::removeOutdatedSnapshotsAndLog()
@@ -151,6 +165,9 @@ void DatabaseReplicated::removeOutdatedSnapshotsAndLog()
     /// to a greater one than the least advanced current replica.
     current_zookeeper = getZooKeeper();
     Strings replica_states = current_zookeeper->getChildren(zookeeper_path + "/replicas");
+    //TODO do not use log pointers to determine which entries to remove if there are staled pointers.
+    // We can just remove all entries older than previous snapshot version.
+    // Possible invariant: store all entries since last snapshot, replica becomes lost when it cannot get log entry.
     auto least_advanced = std::min_element(replica_states.begin(), replica_states.end());
     Strings snapshots = current_zookeeper->getChildren(zookeeper_path + "/snapshots");
 

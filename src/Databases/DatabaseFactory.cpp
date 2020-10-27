@@ -169,15 +169,17 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     {
         const ASTFunction * engine = engine_define->engine;
 
-        if (!engine->arguments || engine->arguments->children.size() != 2)
-            throw Exception("Replicated database requires zoo_path and replica_name arguments", ErrorCodes::BAD_ARGUMENTS);
+        if (!engine->arguments || engine->arguments->children.size() != 3)
+            throw Exception("Replicated database requires 3 arguments: zookeeper path, shard name and replica name", ErrorCodes::BAD_ARGUMENTS);
 
         const auto & arguments = engine->arguments->children;
 
-        const auto & zoo_path = safeGetLiteralValue<String>(arguments[0], "Replicated");
-        const auto & replica_name  = safeGetLiteralValue<String>(arguments[1], "Replicated");
+        //TODO allow macros in arguments
+        const auto & zookeeper_path = safeGetLiteralValue<String>(arguments[0], "Replicated");
+        const auto & shard_name  = safeGetLiteralValue<String>(arguments[1], "Replicated");
+        const auto & replica_name  = safeGetLiteralValue<String>(arguments[2], "Replicated");
 
-        return std::make_shared<DatabaseReplicated>(database_name, metadata_path, uuid, zoo_path, replica_name, context);
+        return std::make_shared<DatabaseReplicated>(database_name, metadata_path, uuid, zookeeper_path, shard_name, replica_name, context);
     }
 
     throw Exception("Unknown database engine: " + engine_name, ErrorCodes::UNKNOWN_DATABASE_ENGINE);

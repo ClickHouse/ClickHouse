@@ -588,23 +588,6 @@ void ZooKeeper::removeChildren(const std::string & path)
 }
 
 
-void ZooKeeper::tryRemoveChildren(const std::string & path)
-{
-    Strings children;
-    if (tryGetChildren(path, children) != Coordination::Error::ZOK)
-        return;
-    while (!children.empty())
-    {
-        Coordination::Requests ops;
-        for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
-        {
-            ops.emplace_back(makeRemoveRequest(path + "/" + children.back(), -1));
-            children.pop_back();
-        }
-        multi(ops);
-    }
-}
-
 void ZooKeeper::removeChildrenRecursive(const std::string & path)
 {
     Strings children = getChildren(path);
