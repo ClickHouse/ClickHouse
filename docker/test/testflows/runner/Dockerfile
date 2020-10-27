@@ -72,5 +72,5 @@ RUN set -x \
 VOLUME /var/lib/docker
 EXPOSE 2375
 ENTRYPOINT ["dockerd-entrypoint.sh"]
-CMD ["sh", "-c", "python3 regression.py --no-color --only \"/clickhouse/ldap/external user directory/connection protocols/tls minimum protocol version/version='ssl2', exitcode=None, message=None/*\" --repeat \"/clickhouse/ldap/external user directory/connection protocols/tls minimum protocol version/version='ssl2', exitcode=None, message=None\",1000 -o classic --local --clickhouse-binary-path ${CLICKHOUSE_TESTS_SERVER_BIN_PATH} --log test.log ${TESTFLOWS_OPTS}; cat test.log | tfs report results --format json > results.json"]
+CMD ["sh", "-c", "python3 regression.py --no-color --only \"/clickhouse/ldap/external user directory/connection protocols/tls minimum protocol version/version='ssl2', exitcode=None, message=None/*\" --repeat \"\\\"/clickhouse/ldap/external user directory/connection protocols/tls minimum protocol version/version='ssl2', exitcode=None, message=None\\\"\",1000 -o classic --local --clickhouse-binary-path ${CLICKHOUSE_TESTS_SERVER_BIN_PATH} --log test.log ${TESTFLOWS_OPTS}; cat test.log | tfs report results --format json > results.json"]
 
