@@ -57,6 +57,7 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
+    extern const int DICTIONARIES_WAS_NOT_LOADED;
 }
 
 
@@ -82,14 +83,29 @@ public:
 
     std::shared_ptr<const IDictionaryBase> getDictionary(const String & dictionary_name)
     {
-        String resolved_name = DatabaseCatalog::instance().resolveDictionaryName(dictionary_name);
-        auto dict = external_loader.getDictionary(resolved_name);
-        if (!access_checked)
+        // Exception from external_loader may be shared for dictGet call from multiple threads.
+        // Don't just rethrow it, because sharing the same exception object
+        // between multiple threads can lead to weird effects if they decide to
+        // modify it, for example, by adding some error context.
+        try
         {
-            context.checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName());
-            access_checked = true;
+            String resolved_name = DatabaseCatalog::instance().resolveDictionaryName(dictionary_name);
+            auto dict = external_loader.getDictionary(resolved_name);
+            if (!access_checked)
+            {
+                context.checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName());
+                access_checked = true;
+            }
+            return dict;
         }
-        return dict;
+        catch (...)
+        {
+            throw DB::Exception(ErrorCodes::DICTIONARIES_WAS_NOT_LOADED,
+                                "Failed to load dictionary '{}': {}",
+                                dictionary_name,
+                                getCurrentExceptionMessage(true /*with stack trace*/,
+                                                           true /*check embedded stack trace*/));
+        }
     }
 
     std::shared_ptr<const IDictionaryBase> getDictionary(const ColumnWithTypeAndName & column)
