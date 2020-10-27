@@ -32,6 +32,7 @@ quantileExact(level)(expr)
 -   [Float64](../../../sql-reference/data-types/float.md) для входных данных числового типа.
 -   [Date](../../../sql-reference/data-types/date.md), если входные значения имеют тип `Date`.
 -   [DateTime](../../../sql-reference/data-types/datetime.md), если входные значения имеют тип `DateTime`.
+
 **Пример**
 
 Запрос:
@@ -58,7 +59,7 @@ SELECT quantileExact(number) FROM numbers(10)
 
 Для всех остальных уровней возвращается элемент с индексом, соответствующим значению `level * size_of_array`. Например:
 
-```$sql
+``` sql
 SELECT quantileExactLow(0.1)(number) FROM numbers(10)
 
 ┌─quantileExactLow(0.1)(number)─┐

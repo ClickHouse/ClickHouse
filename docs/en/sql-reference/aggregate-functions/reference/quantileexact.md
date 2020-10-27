@@ -59,7 +59,7 @@ The return value depends on the quantile level and the number of elements in the
 
 For all other levels, the element at the index corresponding to the value of `level * size_of_array` is returned. For example:
 
-```$sql
+``` sql
 SELECT quantileExactLow(0.1)(number) FROM numbers(10)
 
 ┌─quantileExactLow(0.1)(number)─┐
