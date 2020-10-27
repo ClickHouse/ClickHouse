@@ -33,7 +33,7 @@ xfails = {
     RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication("1.0")
 )
 @XFails(xfails)
-def regression(self, local, clickhouse_binary_path):
+def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
     """ClickHouse LDAP external user directory regression module.
     """
     nodes = {
@@ -42,6 +42,11 @@ def regression(self, local, clickhouse_binary_path):
 
     with Cluster(local, clickhouse_binary_path, nodes=nodes) as cluster:
         self.context.cluster = cluster
+        
+        if stress is not None or not hasattr(self.context, "stress"):
+            self.context.stress = stress
+        if parallel is not None or not hasattr(self.context, "parallel"):
+            self.context.parallel = parallel
 
         Scenario(run=load("ldap.authentication.tests.sanity", "scenario"))
         Scenario(run=load("ldap.external_user_directory.tests.simple", "scenario"))
