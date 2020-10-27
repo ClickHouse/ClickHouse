@@ -30,7 +30,7 @@ private:
     Context & context;
 
     BlockIO executeToDatabase(const ASTDropQuery & query);
-    BlockIO executeToDatabaseImpl(const ASTDropQuery & query, DatabasePtr & db, std::vector<UUID> & uuids_to_wait);
+    BlockIO executeToDatabaseImpl(const ASTDropQuery & query, DatabasePtr & database, std::vector<UUID> & uuids_to_wait);
 
     BlockIO executeToTable(const ASTDropQuery & query);
     BlockIO executeToTableImpl(const ASTDropQuery & query, DatabasePtr & db, UUID & uuid_to_wait);
