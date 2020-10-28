@@ -271,6 +271,7 @@
         "limit_memory",
         "live_view",
         "memory_leak",
+        "01541_max_memory_usage_for_user",
         "memory_limit"
     ]
 }
