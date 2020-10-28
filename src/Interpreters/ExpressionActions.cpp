@@ -149,33 +149,43 @@ void ExpressionActions::execute(Block & block, bool dry_run) const
         }
     }
 
-    if (project_input)
-        block.clear();
-
-    ColumnNumbers inputs_to_remove;
-
+    Block res;
     for (const auto & action : actions)
     {
         auto & column = execution_context.columns[action.result_position];
-        column.name = action.node->result_name;
-
-        if (!project_input && action.node->type == ActionsDAG::Type::INPUT)
-        {
-            auto pos = execution_context.inputs_pos[action.arguments.front().pos];
-            if (action.is_used_in_result)
-                block.getByPosition(pos) = std::move(execution_context.columns[action.result_position]);
-            else
-                inputs_to_remove.push_back(pos);
-        }
-        else if (action.is_used_in_result)
-        {
+        if (action.is_used_in_result)
             block.insert(std::move(column));
-        }
     }
 
-    std::sort(inputs_to_remove.rbegin(), inputs_to_remove.rend());
-    for (auto input : inputs_to_remove)
-        block.erase(input);
+    if (project_input)
+    {
+        block.swap(res);
+    }
+    else
+    {
+        ColumnNumbers inputs_to_remove;
+        size_t pos = 0;
+        for (const auto & col : required_columns)
+        {
+            if (res.has(col.name))
+            {
+                auto res_pos = res.getPositionByName(col.name);
+                res.getByName(col.name) = std::move(res.getByPosition(res_pos));
+                res.erase(res_pos);
+            }
+            else
+                inputs_to_remove.push_back(pos);
+
+            ++pos;
+        }
+
+        std::sort(inputs_to_remove.rbegin(), inputs_to_remove.rend());
+        for (auto input : inputs_to_remove)
+            block.erase(input);
+
+        for (auto & col : res)
+            block.insert(std::move(col));
+    }
 }
 
 void ExpressionActions::executeAction(const Action & action, ExecutionContext & execution_context, bool dry_run)
