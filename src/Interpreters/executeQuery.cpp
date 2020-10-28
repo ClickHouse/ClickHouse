@@ -31,6 +31,7 @@
 #include <Access/EnabledQuota.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ApplyWithGlobalVisitor.h>
@@ -139,15 +140,26 @@ static void logQuery(const String & query, const Context & context, bool interna
     }
     else
     {
-        const auto & current_query_id = context.getClientInfo().current_query_id;
-        const auto & initial_query_id = context.getClientInfo().initial_query_id;
-        const auto & current_user = context.getClientInfo().current_user;
+        const auto & client_info = context.getClientInfo();
+
+        const auto & current_query_id = client_info.current_query_id;
+        const auto & initial_query_id = client_info.initial_query_id;
+        const auto & current_user = client_info.current_user;
 
         LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(from {}{}{}) {}",
-            context.getClientInfo().current_address.toString(),
-            (current_user != "default" ? ", user: " + context.getClientInfo().current_user : ""),
+            client_info.current_address.toString(),
+            (current_user != "default" ? ", user: " + current_user : ""),
             (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
             joinLines(query));
+
+        if (client_info.opentelemetry_trace_id)
+        {
+            LOG_TRACE(&Poco::Logger::get("executeQuery"),
+                "OpenTelemetry trace id {:x}, span id {}, parent span id {}",
+                client_info.opentelemetry_trace_id,
+                client_info.opentelemetry_span_id,
+                client_info.opentelemetry_parent_span_id);
+        }
     }
 }
 
@@ -194,7 +206,7 @@ inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system_clock>
     return std::chrono::duration_cast<std::chrono::seconds>(timepoint.time_since_epoch()).count();
 }
 
-static void onExceptionBeforeStart(const String & query_for_logging, Context & context, time_t current_time, UInt64 current_time_microseconds, ASTPtr ast)
+static void onExceptionBeforeStart(const String & query_for_logging, Context & context, UInt64 current_time_us, ASTPtr ast)
 {
     /// Exception before the query execution.
     if (auto quota = context.getQuota())
@@ -210,10 +222,10 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
     // all callers to onExceptionBeforeStart method construct the timespec for event_time and
     // event_time_microseconds from the same time point. So, it can be assumed that both of these
     // times are equal upto the precision of a second.
-    elem.event_time = current_time;
-    elem.event_time_microseconds = current_time_microseconds;
-    elem.query_start_time = current_time;
-    elem.query_start_time_microseconds = current_time_microseconds;
+    elem.event_time = current_time_us / 1000000;
+    elem.event_time_microseconds = current_time_us;
+    elem.query_start_time = current_time_us / 1000000;
+    elem.query_start_time_microseconds = current_time_us;
 
     elem.current_database = context.getCurrentDatabase();
     elem.query = query_for_logging;
@@ -232,6 +244,39 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
     if (settings.log_queries && elem.type >= settings.log_queries_min_type)
         if (auto query_log = context.getQueryLog())
             query_log->add(elem);
+
+    if (auto opentelemetry_span_log = context.getOpenTelemetrySpanLog();
+        context.getClientInfo().opentelemetry_trace_id
+            && opentelemetry_span_log)
+    {
+        OpenTelemetrySpanLogElement span;
+        span.trace_id = context.getClientInfo().opentelemetry_trace_id;
+        span.span_id = context.getClientInfo().opentelemetry_span_id;
+        span.parent_span_id = context.getClientInfo().opentelemetry_parent_span_id;
+        span.operation_name = "query";
+        span.start_time_us = current_time_us;
+        span.finish_time_us = current_time_us;
+        span.duration_ns = 0;
+
+        // keep values synchonized to type enum in QueryLogElement::createBlock
+        span.attribute_names.push_back("clickhouse.query_status");
+        span.attribute_values.push_back("ExceptionBeforeStart");
+
+        span.attribute_names.push_back("db.statement");
+        span.attribute_values.push_back(elem.query);
+
+        span.attribute_names.push_back("clickhouse.query_id");
+        span.attribute_values.push_back(elem.client_info.current_query_id);
+
+        if (!context.getClientInfo().opentelemetry_tracestate.empty())
+        {
+            span.attribute_names.push_back("clickhouse.tracestate");
+            span.attribute_values.push_back(
+                context.getClientInfo().opentelemetry_tracestate);
+        }
+
+        opentelemetry_span_log->add(span);
+    }
 
     ProfileEvents::increment(ProfileEvents::FailedQuery);
 
@@ -266,12 +311,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     bool has_query_tail,
     ReadBuffer * istr)
 {
-    // current_time and current_time_microseconds are both constructed from the same time point
-    // to ensure that both the times are equal upto the precision of a second.
-    const auto now = std::chrono::system_clock::now();
-
-    auto current_time = time_in_seconds(now);
-    auto current_time_microseconds = time_in_microseconds(now);
+    const auto current_time = std::chrono::system_clock::now();
 
     /// If we already executing query and it requires to execute internal query, than
     /// don't replace thread context with given (it can be temporary). Otherwise, attach context to thread.
@@ -322,7 +362,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         if (!internal)
         {
-            onExceptionBeforeStart(query_for_logging, context, current_time, current_time_microseconds, ast);
+            onExceptionBeforeStart(query_for_logging, context, time_in_microseconds(current_time), ast);
         }
 
         throw;
@@ -494,10 +534,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             elem.type = QueryLogElementType::QUERY_START;
 
-            elem.event_time = current_time;
-            elem.event_time_microseconds = current_time_microseconds;
-            elem.query_start_time = current_time;
-            elem.query_start_time_microseconds = current_time_microseconds;
+            elem.event_time = time_in_seconds(current_time);
+            elem.event_time_microseconds = time_in_microseconds(current_time);
+            elem.query_start_time = time_in_seconds(current_time);
+            elem.query_start_time_microseconds = time_in_microseconds(current_time);
 
             elem.current_database = context.getCurrentDatabase();
             elem.query = query_for_logging;
@@ -568,9 +608,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 // construct event_time and event_time_microseconds using the same time point
                 // so that the two times will always be equal up to a precision of a second.
-                const auto time_now = std::chrono::system_clock::now();
-                elem.event_time = time_in_seconds(time_now);
-                elem.event_time_microseconds = time_in_microseconds(time_now);
+                const auto finish_time = std::chrono::system_clock::now();
+                elem.event_time = time_in_seconds(finish_time);
+                elem.event_time_microseconds = time_in_microseconds(finish_time);
                 status_info_to_query_log(elem, info, ast);
 
                 auto progress_callback = context.getProgressCallback();
@@ -619,6 +659,38 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 {
                     if (auto query_log = context.getQueryLog())
                         query_log->add(elem);
+                }
+
+                if (auto opentelemetry_span_log = context.getOpenTelemetrySpanLog();
+                    context.getClientInfo().opentelemetry_trace_id
+                        && opentelemetry_span_log)
+                {
+                    OpenTelemetrySpanLogElement span;
+                    span.trace_id = context.getClientInfo().opentelemetry_trace_id;
+                    span.span_id = context.getClientInfo().opentelemetry_span_id;
+                    span.parent_span_id = context.getClientInfo().opentelemetry_parent_span_id;
+                    span.operation_name = "query";
+                    span.start_time_us = elem.query_start_time_microseconds;
+                    span.finish_time_us = time_in_microseconds(finish_time);
+                    span.duration_ns = elapsed_seconds * 1000000000;
+
+                    // keep values synchonized to type enum in QueryLogElement::createBlock
+                    span.attribute_names.push_back("clickhouse.query_status");
+                    span.attribute_values.push_back("QueryFinish");
+
+                    span.attribute_names.push_back("db.statement");
+                    span.attribute_values.push_back(elem.query);
+
+                    span.attribute_names.push_back("clickhouse.query_id");
+                    span.attribute_values.push_back(elem.client_info.current_query_id);
+                    if (!context.getClientInfo().opentelemetry_tracestate.empty())
+                    {
+                        span.attribute_names.push_back("clickhouse.tracestate");
+                        span.attribute_values.push_back(
+                            context.getClientInfo().opentelemetry_tracestate);
+                    }
+
+                    opentelemetry_span_log->add(span);
                 }
             };
 
@@ -694,7 +766,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             if (query_for_logging.empty())
                 query_for_logging = prepareQueryForLogging(query, context);
 
-            onExceptionBeforeStart(query_for_logging, context, current_time, current_time_microseconds, ast);
+            onExceptionBeforeStart(query_for_logging, context, time_in_microseconds(current_time), ast);
         }
 
         throw;
