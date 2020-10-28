@@ -63,7 +63,7 @@ std::string ExpressionActions::Action::toString() const
             break;
 
         case ActionsDAG::Type::ALIAS:
-            out << "ALIAS " << node->children.front()->result_name << arguments.front();
+            out << "ALIAS " << node->children.front()->result_name << " " << arguments.front();
             break;
 
         case ActionsDAG::Type::FUNCTION:
@@ -82,13 +82,13 @@ std::string ExpressionActions::Action::toString() const
             break;
 
         case ActionsDAG::Type::INPUT:
-            out << "INPUT " << " " << arguments.front();
+            out << "INPUT " << arguments.front();
             break;
     }
 
     out << " -> " << node->result_name
-        << (node->result_type ? node->result_type->getName() : "(no type)")
-        << " " << result_position;
+        << " " << (node->result_type ? node->result_type->getName() : "(no type)")
+        << " " << result_position << (is_used_in_result ? "*" : " ");
     return out.str();
 }
 
