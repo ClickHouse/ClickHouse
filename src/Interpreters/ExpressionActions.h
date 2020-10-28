@@ -279,7 +279,6 @@ private:
 public:
     ~ExpressionActions();
     ExpressionActions() = default;
-
     ExpressionActions(const ExpressionActions &) = delete;
     ExpressionActions & operator=(const ExpressionActions &) = delete;
 
@@ -312,14 +311,13 @@ public:
 
     static std::string getSmallestColumn(const NamesAndTypesList & columns);
 
-    const Settings & getSettings() const { return settings; }
-
     /// Check if column is always zero. True if it's definite, false if we can't say for sure.
     /// Call it only after subqueries for sets were executed.
     bool checkColumnIsAlwaysFalse(const String & column_name) const;
 
+    ExpressionActionsPtr clone() const;
+
 private:
-    Settings settings;
 
     void checkLimits(ExecutionContext & execution_context) const;
 

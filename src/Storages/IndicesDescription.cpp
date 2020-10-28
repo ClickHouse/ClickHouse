@@ -31,7 +31,7 @@ IndexDescription::IndexDescription(const IndexDescription & other)
     , granularity(other.granularity)
 {
     if (other.expression)
-        expression = std::make_shared<ExpressionActions>(*other.expression);
+        expression = other.expression->clone();
 }
 
 

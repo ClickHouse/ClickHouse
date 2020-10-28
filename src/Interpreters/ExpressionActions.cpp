@@ -1198,6 +1198,35 @@ ActionsDAGPtr ActionsDAG::clone() const
     return actions;
 }
 
+ExpressionActionsPtr ExpressionActions::clone() const
+{
+    auto expressions = std::make_shared<ExpressionActions>();
+
+    expressions->actions = actions;
+    expressions->num_columns = num_columns;
+    expressions->required_columns = required_columns;
+    expressions->sample_block = sample_block;
+    expressions->project_input = project_input;
+    expressions->max_temporary_non_const_columns = max_temporary_non_const_columns;
+
+    std::unordered_map<const Node *, Node *> copy_map;
+    for (const auto & node : nodes)
+    {
+        auto & copy_node = expressions->nodes.emplace_back(node);
+        copy_map[&node] = &copy_node;
+    }
+
+    for (auto & node : expressions->nodes)
+        for (auto & child : node.children)
+            child = copy_map[child];
+
+    for (auto & action : expressions->actions)
+        action.node = copy_map[action.node];
+
+    return expressions;
+}
+
+
 ExpressionActionsPtr ActionsDAG::linearizeActions() const
 {
     struct Data
