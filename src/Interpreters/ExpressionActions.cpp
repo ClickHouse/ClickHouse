@@ -154,12 +154,12 @@ void ExpressionActions::execute(Block & block, bool dry_run) const
         }
     }
 
-    Block res;
+    Block res = sample_block;
     for (const auto & action : actions)
     {
         auto & column = execution_context.columns[action.result_position];
         if (action.is_used_in_result)
-            res.insert(std::move(column));
+            res.getByName(column.name) = std::move(column);
     }
 
     if (project_input)
@@ -359,14 +359,14 @@ std::string ExpressionActions::dumpActions() const
 
 static std::string getUniqueNameForIndex(ActionsDAG::Index & index, std::string name)
 {
-    if (index.count(name) == 0)
+    if (index.contains(name))
         return name;
 
     size_t next_id = 0;
     std::string res;
     do
         res = name + "_" + std::to_string(next_id);
-    while (index.count(res));
+    while (index.contains(res));
 
     return res;
 }
@@ -458,7 +458,7 @@ ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_join
 
                 /// If node was in index, we would add it to index of part.
                 auto it = index.find(cur.node->result_name);
-                bool in_index = it != index.end() && it->second == cur.node;
+                bool in_index = it != index.end() && *it == cur.node;
 
                 if (cur_data.depend_on_array_join)
                 {
@@ -864,7 +864,7 @@ ActionsDAG::Node & ActionsDAG::getNode(const std::string & name)
     if (it == index.end())
         throw Exception("Unknown identifier: '" + name + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
 
-    return *it->second;
+    return **it;
 }
 
 const ActionsDAG::Node & ActionsDAG::addInput(std::string name, DataTypePtr type)
@@ -1047,8 +1047,8 @@ ColumnsWithTypeAndName ActionsDAG::getResultColumns() const
 {
     ColumnsWithTypeAndName result;
     result.reserve(index.size());
-    for (const auto & [name, node] : index)
-        result.emplace_back(node->column, node->result_type, std::string(name));
+    for (const auto & node : index)
+        result.emplace_back(node->column, node->result_type, node->result_name);
 
     return result;
 }
@@ -1056,8 +1056,8 @@ ColumnsWithTypeAndName ActionsDAG::getResultColumns() const
 NamesAndTypesList ActionsDAG::getNamesAndTypesList() const
 {
     NamesAndTypesList result;
-    for (const auto & [name, node] : index)
-        result.emplace_back(std::string(name), node->result_type);
+    for (const auto & node : index)
+        result.emplace_back(node->result_name, node->result_type);
 
     return result;
 }
@@ -1066,8 +1066,8 @@ Names ActionsDAG::getNames() const
 {
     Names names;
     names.reserve(index.size());
-    for (const auto & pair : index)
-        names.emplace_back(pair.first);
+    for (const auto & node : index)
+        names.emplace_back(node->result_name);
 
     return names;
 }
@@ -1099,7 +1099,7 @@ void ActionsDAG::removeUnusedActions(const Names & required_names)
                 throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
                                 "Unknown column: {}, there are only columns {}", name, dumpNames());
 
-            auto * node = it->second;
+            auto * node = *it;
             new_index[node->result_name] = node;
             visited_nodes.insert(node);
             stack.push(node);
@@ -1151,11 +1151,12 @@ void ActionsDAG::project(const NamesWithAliases & projection)
         result_names.push_back(item.second.empty() ? item.first : item.second);
 
     removeUnusedActions(result_names);
+    projectInput();
 }
 
 void ActionsDAG::restoreColumn(const std::string & column_name)
 {
-    if (index.count(column_name))
+    if (index.contains(column_name))
         return;
 
     for (auto it = nodes.rbegin(); it != nodes.rend(); ++it)
@@ -1183,7 +1184,7 @@ ActionsDAGPtr ActionsDAG::clone() const
         copy_map[&node] = &copy_node;
 
         auto it = index.find(node.result_name);
-        if (it != index.end() && it->second == &node)
+        if (it != index.end() && *it == &node)
             actions->index[copy_node.result_name] = &copy_node;
     }
 
@@ -1224,7 +1225,7 @@ ExpressionActionsPtr ActionsDAG::linearizeActions() const
     {
         auto & node_data = data[reverse_index[&node]];
         auto it = index.find(node.result_name);
-        node_data.used_in_result = it != index.end() && it->second == &node;
+        node_data.used_in_result = it != index.end() && *it == &node;
 
         for (const auto & child : node.children)
             data[reverse_index[child]].parents.emplace_back(&node);
@@ -1296,15 +1297,6 @@ ExpressionActionsPtr ActionsDAG::linearizeActions() const
 
         expressions->actions.push_back({node, arguments, free_position, cur.used_in_result});
 
-        if (cur.used_in_result)
-        {
-            ColumnWithTypeAndName col{cur.node->column, cur.node->result_type, cur.node->result_name};
-            if (col.column == nullptr)
-                col.column = col.type->createColumn();
-
-            expressions->sample_block.insert(std::move(col));
-        }
-
         for (const auto & parent : cur.parents)
         {
             auto & parent_data = data[reverse_index[parent]];
@@ -1316,6 +1308,15 @@ ExpressionActionsPtr ActionsDAG::linearizeActions() const
                 push_stack.push(parent);
             }
         }
+    }
+
+    for (const auto & node : index)
+    {
+        ColumnWithTypeAndName col{node->column, node->result_type, node->result_name};
+        if (col.column == nullptr)
+            col.column = col.type->createColumn();
+
+        expressions->sample_block.insert(std::move(col));
     }
 
     return expressions;

@@ -12,6 +12,11 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <DataTypes/DataTypeArray.h>
 
+#include <boost/multi_index_container.hpp>
+#include <boost/multi_index/sequenced_index.hpp>
+#include <boost/multi_index/hashed_index.hpp>
+#include <boost/multi_index/identity.hpp>
+
 #include <variant>
 
 #if !defined(ARCADIA_BUILD)
@@ -97,7 +102,45 @@ public:
         bool allow_constant_folding = true;
     };
 
-    using Index = std::unordered_map<std::string_view, Node *>;
+    class Index
+    {
+    public:
+        Node *& operator[](std::string_view key)
+        {
+            auto res = map.emplace(key, list.end());
+            if (res.second)
+                res.first->second = list.emplace(list.end(), nullptr);
+
+            return *res.first->second;
+        }
+
+        void swap(Index & other)
+        {
+            list.swap(other.list);
+            map.swap(other.map);
+        }
+
+        auto size() const { return map.size(); }
+        bool contains(std::string_view key) const { return map.count(key) != 0; }
+
+        std::list<Node *>::iterator begin() { return list.begin(); }
+        std::list<Node *>::iterator end() { return list.end(); }
+        std::list<Node *>::const_iterator begin() const { return list.begin(); }
+        std::list<Node *>::const_iterator end() const { return list.end(); }
+        std::list<Node *>::const_iterator find(std::string_view key) const
+        {
+            auto it = map.find(key);
+            if (it == map.end())
+                return list.end();
+
+            return it->second;
+        }
+
+    private:
+        std::list<Node *> list;
+        std::unordered_map<std::string_view, std::list<Node *>::iterator> map;
+    };
+
     using Nodes = std::list<Node>;
 
 private:

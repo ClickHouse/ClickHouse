@@ -234,7 +234,7 @@ void ExpressionAnalyzer::analyzeAggregation()
                     if (it == index.end())
                         throw Exception("Unknown identifier (in GROUP BY): " + column_name, ErrorCodes::UNKNOWN_IDENTIFIER);
 
-                    const auto & node = it->second;
+                    const auto & node = *it;
 
                     /// Constant expressions have non-null column pointer at this stage.
                     if (node->column && isColumnConst(*node->column))
@@ -382,7 +382,7 @@ void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
                 auto temp_actions = std::make_shared<ActionsDAG>(columns_after_join);
                 getRootActions(left_in_operand, true, temp_actions);
 
-                if (temp_actions->getIndex().count(left_in_operand->getColumnName()) != 0)
+                if (temp_actions->getIndex().contains(left_in_operand->getColumnName()))
                     makeExplicitSet(func, *temp_actions, true, context,
                         settings.size_limits_for_set, prepared_sets);
             }
@@ -434,7 +434,7 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions)
             if (it == index.end())
                 throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown identifier (in aggregate function '{}'): {}", node->name, name);
 
-            types[i] = it->second->result_type;
+            types[i] = (*it)->result_type;
             aggregate.argument_names[i] = name;
         }
 
@@ -652,7 +652,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
     step.required_output.push_back(prewhere_column_name);
     step.can_remove_required_output.push_back(true);
 
-    auto filter_type = step.actions()->getIndex().find(prewhere_column_name)->second->result_type;
+    auto filter_type = (*step.actions()->getIndex().find(prewhere_column_name))->result_type;
     if (!filter_type->canBeUsedInBooleanContext())
         throw Exception("Invalid type for filter in PREWHERE: " + filter_type->getName(),
                         ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
@@ -752,7 +752,7 @@ bool SelectQueryExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, 
 
     getRootActions(select_query->where(), only_types, step.actions());
 
-    auto filter_type = step.actions()->getIndex().find(where_column_name)->second->result_type;
+    auto filter_type = (*step.actions()->getIndex().find(where_column_name))->result_type;
     if (!filter_type->canBeUsedInBooleanContext())
         throw Exception("Invalid type for filter in WHERE: " + filter_type->getName(),
                         ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
