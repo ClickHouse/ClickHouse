@@ -192,6 +192,9 @@ void ExpressionActions::execute(Block & block, bool dry_run) const
         for (auto & col : res)
             block.insert(std::move(col));
     }
+
+    if (!block)
+        block.insert({DataTypeUInt8().createColumnConst(execution_context.num_rows, 0), std::make_shared<DataTypeUInt8>(), "_dummy"});
 }
 
 void ExpressionActions::executeAction(const Action & action, ExecutionContext & execution_context, bool dry_run)
