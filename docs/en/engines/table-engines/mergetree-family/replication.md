@@ -148,30 +148,28 @@ You can define the parameters explicitly instead of using substitutions. This mi
 
 When working with large clusters, we recommend using substitutions because they reduce the probability of error.
 
-Allow omitting arguments for the Replicated table engine if defaults are specified in configuration file. For example:
+You can specify default arguments for `Replicated` table engine in the server configuration file. For instance:
 
 ```xml
 <default_replica_path>/clickhouse/tables/{shard}/{database}/{table}</default_replica_path>
 <default_replica_name>{replica}</default_replica_path>
 ```
 
-The two examples below will be equivalent in this case.
-
-An example of creating a table with specifying arguments:
-
-``` sql
-CREATE TABLE table_name (
-	x UInt32
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/{database}/table_name', '{replica}') 
-ORDER BY x
-```
-
-An example of creating a table without specifying arguments:
+In this case, you can omit arguments when creating tables:
 
 ``` sql
 CREATE TABLE table_name (
 	x UInt32
 ) ENGINE = ReplicatedMergeTree 
+ORDER BY x
+```
+
+It is equivalent to:
+
+``` sql
+CREATE TABLE table_name (
+	x UInt32
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/{database}/table_name', '{replica}') 
 ORDER BY x
 ```
 

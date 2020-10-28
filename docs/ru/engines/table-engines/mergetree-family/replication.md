@@ -144,30 +144,28 @@ CREATE TABLE table_name
 
 При работе с большими кластерами мы рекомендуем использовать подстановки, они уменьшают вероятность ошибки.
 
-Допускается не указывать параметры при создании реплицируемых таблиц, если в конфигурационном файле указаны значения по умолчанию, например: 
+Можно указать аргументы по умолчанию для движка реплицируемых таблиц в файле конфигурации сервера.
 
 ```xml
 <default_replica_path>/clickhouse/tables/{shard}/{database}/{table}</default_replica_path>
 <default_replica_name>{replica}</default_replica_path>
 ```
 
-Два приведенных ниже примера будут являться в данном случае эквивалентными.
-
-Пример создания таблицы с указанием параметров:
-
-``` sql
-CREATE TABLE table_name (
-	x UInt32
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/{database}/table_name', '{replica}') 
-ORDER BY x
-```
-
-Пример создания таблицы без указания параметров:
+В этом случае можно опустить аргументы при создании таблиц:
 
 ``` sql
 CREATE TABLE table_name (
 	x UInt32
 ) ENGINE = ReplicatedMergeTree 
+ORDER BY x
+```
+
+Это будет эквивалентно следующему запросу:
+
+``` sql
+CREATE TABLE table_name (
+	x UInt32
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/{database}/table_name', '{replica}') 
 ORDER BY x
 ```
 
