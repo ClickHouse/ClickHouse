@@ -230,6 +230,17 @@ public:
     {
     }
 
+    StringHashTable & operator=(StringHashTable && rhs)
+     {
+        std::swap(m0, rhs.m0);
+        std::swap(m1, rhs.m1);
+        std::swap(m2, rhs.m2);
+        std::swap(m3, rhs.m3);
+        std::swap(ms, rhs.ms);
+
+        return *this;
+    }
+
     ~StringHashTable() = default;
 
 public:

@@ -19,6 +19,7 @@ namespace DB
 class ColumnFixedString final : public COWHelper<ColumnVectorHelper, ColumnFixedString>
 {
 public:
+    using ValueType = StringRef;
     friend class COWHelper<ColumnVectorHelper, ColumnFixedString>;
 
     using Chars = PaddedPODArray<UInt8>;
@@ -180,6 +181,11 @@ public:
     void insertString(const String & string) { insertData(string.c_str(), string.size()); }
     Chars & getChars() { return chars; }
     const Chars & getChars() const { return chars; }
+
+    ValueType getElement(size_t index) const
+    {
+        return getDataAt(index);
+    }
 
     size_t getN() const { return n; }
 };

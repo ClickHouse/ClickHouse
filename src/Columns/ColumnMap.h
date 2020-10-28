@@ -5,6 +5,12 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnTuple.h>
 
+#include <Core/Field.h>
+
+#include <mutex>
+#include <memory>
+#include <boost/smart_ptr/atomic_shared_ptr.hpp>
+
 namespace DB
 {
 
@@ -12,16 +18,22 @@ namespace DB
  */
 class ColumnMap final : public COWHelper<IColumn, ColumnMap>
 {
+public:
+    class IIndex;
+
 private:
     friend class COWHelper<IColumn, ColumnMap>;
 
     WrappedPtr nested;
+    mutable boost::atomic_shared_ptr<IIndex> key_index;
+    mutable std::mutex key_index_mutex;
 
     explicit ColumnMap(MutableColumnPtr && nested_);
-
-    ColumnMap(const ColumnMap &) = default;
+    ColumnMap(const ColumnMap &);
 
 public:
+    ~ColumnMap() override;
+
     /** Create immutable column using immutable arguments. This arguments may be shared with other columns.
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
       */
@@ -84,10 +96,13 @@ public:
     bool structureEquals(const IColumn & rhs) const override;
 
     const ColumnArray & getNestedColumn() const { return assert_cast<const ColumnArray &>(*nested); }
-    ColumnArray & getNestedColumn() { return assert_cast<ColumnArray &>(*nested); }
+    ColumnArray & getNestedColumn();
 
     const ColumnTuple & getNestedData() const { return assert_cast<const ColumnTuple &>(getNestedColumn().getData()); }
-    ColumnTuple & getNestedData() { return assert_cast<ColumnTuple &>(getNestedColumn().getData()); }
+    ColumnTuple & getNestedData();
+
+    // Find all keys from `keys` column and return equally sized Column of values.
+    ColumnPtr findAll(const IColumn & keys, size_t rows_count) const;
 };
 
 }
