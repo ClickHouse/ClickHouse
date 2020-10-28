@@ -5,9 +5,8 @@
 
 namespace DB
 {
-
-/** Single SELECT query or multiple SELECT queries with UNION ALL.
-  * Only UNION ALL is possible. No UNION DISTINCT or plain UNION.
+/** Single SELECT query or multiple SELECT queries with UNION
+ * or UNION or UNION DISTINCT
   */
 class ASTSelectWithUnionQuery : public ASTQueryWithOutput
 {
@@ -29,6 +28,9 @@ public:
     Modes union_modes;
 
     ASTPtr list_of_selects;
+
+    /// we need flatten_nodes to help build nested_interpreter
+    ASTPtr flatten_nodes_list;
 };
 
 }

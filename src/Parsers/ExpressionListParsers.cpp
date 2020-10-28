@@ -139,7 +139,7 @@ bool ParserUnionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!parseUtil(pos, parse_element, parse_separator))
         return false;
 
-    auto list = std::make_shared<ASTExpressionList>(result_separator);
+    auto list = std::make_shared<ASTExpressionList>();
     list->children = std::move(elements);
     node = list;
     return true;

@@ -119,7 +119,6 @@ private:
     ParserPtr s_union_parser;
     ParserPtr s_all_parser;
     ParserPtr s_distinct_parser;
-    char result_separator = ',';
     ASTSelectWithUnionQuery::Modes union_modes;
 };
 
