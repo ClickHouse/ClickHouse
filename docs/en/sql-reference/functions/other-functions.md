@@ -551,7 +551,7 @@ formatReadableTimeDelta(column[, maximum_unit])
 **Parameters**
 
 -   `column` — A column with numeric time delta.
--   `maximum_unit` — Optional. Maximum unit to show. Acceptable values seconds, minutes, hours, days, months, years. 
+-   `maximum_unit` — Optional. Maximum unit to show. Acceptable values seconds, minutes, hours, days, months, years.
 
 Example:
 
@@ -1584,7 +1584,7 @@ isDecimalOverflow(d, [p])
 **Parameters**
 
 -   `d` — value. [Decimal](../../sql-reference/data-types/decimal.md).
--   `p` — precision. Optional. If omitted, the initial presicion of the first argument is used. Using of this paratemer could be helpful for data extraction to another DBMS or file. [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
+-   `p` — precision. Optional. If omitted, the initial precision of the first argument is used. Using of this paratemer could be helpful for data extraction to another DBMS or file. [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
 
 **Returned values**
 

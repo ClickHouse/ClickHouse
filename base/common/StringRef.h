@@ -51,7 +51,7 @@ struct StringRef
 };
 
 /// Here constexpr doesn't implicate inline, see https://www.viva64.com/en/w/v1043/
-/// nullptr can't be used because the StringRef values are used in SipHash's pointer arithmetics
+/// nullptr can't be used because the StringRef values are used in SipHash's pointer arithmetic
 /// and the UBSan thinks that something like nullptr + 8 is UB.
 constexpr const inline char empty_string_ref_addr{};
 constexpr const inline StringRef EMPTY_STRING_REF{&empty_string_ref_addr, 0};

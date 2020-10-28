@@ -116,7 +116,7 @@ void DatabaseAtomic::dropTable(const Context &, const String & table_name, bool 
     }
     tryRemoveSymlink(table_name);
     /// Remove the inner table (if any) to avoid deadlock
-    /// (due to attemp to execute DROP from the worker thread)
+    /// (due to attempt to execute DROP from the worker thread)
     if (auto * mv = dynamic_cast<StorageMaterializedView *>(table.get()))
         mv->dropInnerTable(no_delay);
     /// Notify DatabaseCatalog that table was dropped. It will remove table data in background.
