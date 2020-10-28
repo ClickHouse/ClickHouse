@@ -154,7 +154,7 @@ void ExpressionActions::execute(Block & block, bool dry_run) const
     {
         auto & column = execution_context.columns[action.result_position];
         if (action.is_used_in_result)
-            block.insert(std::move(column));
+            res.insert(std::move(column));
     }
 
     if (project_input)
