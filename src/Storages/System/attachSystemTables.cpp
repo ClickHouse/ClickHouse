@@ -41,6 +41,7 @@
     #include <Storages/System/StorageSystemLicenses.h>
     #include <Storages/System/StorageSystemTimeZones.h>
 #endif
+#include <Storages/System/StorageSystemErrors.h>
 #include <Storages/System/StorageSystemDisks.h>
 #include <Storages/System/StorageSystemStoragePolicies.h>
 #include <Storages/System/StorageSystemZeros.h>
@@ -110,6 +111,7 @@ void attachSystemTablesLocal(IDatabase & system_database)
 #if !defined(ARCADIA_BUILD)
     attach<StorageSystemLicenses>(system_database, "licenses");
     attach<StorageSystemTimeZones>(system_database, "time_zones");
+    attach<StorageSystemErrors>(system_database, "errors");
 #endif
 #ifdef OS_LINUX
     attach<StorageSystemStackTrace>(system_database, "stack_trace");

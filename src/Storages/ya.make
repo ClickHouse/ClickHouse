@@ -154,6 +154,7 @@ SRCS(
     System/StorageSystemDisks.cpp
     System/StorageSystemDistributionQueue.cpp
     System/StorageSystemEnabledRoles.cpp
+    System/StorageSystemErrors.cpp
     System/StorageSystemEvents.cpp
     System/StorageSystemFormats.cpp
     System/StorageSystemFunctions.cpp

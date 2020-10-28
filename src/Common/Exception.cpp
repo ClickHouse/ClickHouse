@@ -12,13 +12,18 @@
 #include <IO/ReadBufferFromFile.h>
 #include <common/demangle.h>
 #include <common/errnoToString.h>
+#include <Interpreters/AggregationCommon.h>
 #include <Common/formatReadable.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/HashTable/HashMap.h>
 #include <filesystem>
+#include <atomic>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
 #endif
+
+extern HashMap<int, std::atomic<uint64_t>, DefaultHash<int>> error_codes_count;
 
 namespace DB
 {
@@ -45,6 +50,7 @@ Exception::Exception(const std::string & msg, int code)
         LOG_FATAL(&Poco::Logger::root(), "Logical error: '{}'.", msg);
         abort();
     }
+    ++error_codes_count[code];
 #endif
 }
 
