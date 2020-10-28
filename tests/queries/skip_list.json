@@ -265,6 +265,7 @@
         "01060_avro",
         "00612_http_max_query_size",
         "01293_system_distribution_queue",
+        "01114_database_atomic",
         "attach",
         "ddl_dictionaries",
         "dictionary",
