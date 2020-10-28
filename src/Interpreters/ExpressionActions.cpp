@@ -1279,7 +1279,13 @@ ExpressionActionsPtr ActionsDAG::linearizeActions() const
         expressions->actions.push_back({node, arguments, free_position, cur.used_in_result});
 
         if (cur.used_in_result)
-            expressions->sample_block.insert({cur.node->column, cur.node->result_type, cur.node->result_name});
+        {
+            ColumnWithTypeAndName col{cur.node->column, cur.node->result_type, cur.node->result_name};
+            if (col.column == nullptr)
+                col.column = col.type->createColumn();
+
+            expressions->sample_block.insert(std::move(col));
+        }
 
         for (const auto & parent : cur.parents)
         {
