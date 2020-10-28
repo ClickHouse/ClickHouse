@@ -139,6 +139,7 @@ SRCS(
     parseUserName.cpp
     queryToString.cpp
     QueryWithOutputSettingsPushDownVisitor.cpp
+    StorageID.cpp
     TokenIterator.cpp
 )
 

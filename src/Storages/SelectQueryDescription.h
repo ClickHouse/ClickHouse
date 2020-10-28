@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Interpreters/StorageID.h>
+#include <Parsers/StorageID.h>
 
 namespace DB
 {

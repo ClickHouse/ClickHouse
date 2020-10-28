@@ -19,7 +19,10 @@ def run_client(bin_prefix, port, query, reference, replace_map={}):
         result = result.replace(old.encode('utf-8'), new.encode('utf-8'))
 
     if client.returncode != 0:
-        print(error.decode('utf-8'), file=sys.stderr)
+        try:
+            print(error.decode('utf-8'), file=sys.stderr)
+        except UnicodeDecodeError:
+            print(error.decode('latin1'), file=sys.stderr)  # encoding with 1 symbol per 1 byte, covering all values
         pytest.fail('Client died unexpectedly with code {code}'.format(code=client.returncode), pytrace=False)
     elif result != reference:
         pytest.fail("Query output doesn't match reference:{eol}{diff}".format(

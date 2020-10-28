@@ -5,7 +5,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Interpreters/StorageID.h>
+#include <Parsers/StorageID.h>
 
 
 namespace DB

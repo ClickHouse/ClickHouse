@@ -1,6 +1,6 @@
 #include <Parsers/New/AST/CheckQuery.h>
 
-#include <Interpreters/StorageID.h>
+#include <Parsers/StorageID.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/New/AST/Identifier.h>

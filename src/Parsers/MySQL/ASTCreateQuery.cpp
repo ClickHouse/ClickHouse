@@ -1,6 +1,6 @@
 #include <Parsers/MySQL/ASTCreateQuery.h>
 
-#include <Interpreters/StorageID.h>
+#include <Parsers/StorageID.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>

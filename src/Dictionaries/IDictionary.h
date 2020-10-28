@@ -4,7 +4,7 @@
 #include <Core/Names.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/IExternalLoadable.h>
-#include <Interpreters/StorageID.h>
+#include <Parsers/StorageID.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Common/PODArray.h>
 #include <common/StringRef.h>

@@ -1,7 +1,7 @@
 #include <Common/typeid_cast.h>
 
 #include <Interpreters/IdentifierSemantic.h>
-#include <Interpreters/StorageID.h>
+#include <Parsers/StorageID.h>
 
 namespace DB
 {

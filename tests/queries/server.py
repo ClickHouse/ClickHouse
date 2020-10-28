@@ -181,6 +181,9 @@ ServerThread.DEFAULT_SERVER_CONFIG = \
             </shard>
         </test_unavailable_shard>
     </remote_servers>
+    <zookeeper>
+        <implementation>testkeeper</implementation>
+    </zookeeper>
 </yandex>
 """
 

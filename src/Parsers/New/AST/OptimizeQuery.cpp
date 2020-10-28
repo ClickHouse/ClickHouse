@@ -1,6 +1,6 @@
 #include <Parsers/New/AST/OptimizeQuery.h>
 
-#include <Interpreters/StorageID.h>
+#include <Parsers/StorageID.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/New/AST/AlterTableQuery.h>

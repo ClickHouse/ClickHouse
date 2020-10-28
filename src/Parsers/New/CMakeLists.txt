@@ -47,6 +47,9 @@ add_library (clickhouse_parsers_new ${SRCS})
 # XXX: hack for old clang-10!
 check_cxx_compiler_flag("-Wsuggest-destructor-override" HAS_SUGGEST_DESTRUCTOR_OVERRIDE)
 
+# XXX: hack for old gcc-10!
+check_cxx_compiler_flag("-Wshadow" HAS_SHADOW)
+
 target_compile_options (clickhouse_parsers_new
     PRIVATE
         -Wno-c++20-compat
@@ -65,6 +68,12 @@ if (HAS_SUGGEST_DESTRUCTOR_OVERRIDE)
     target_compile_options (clickhouse_parsers_new
         PRIVATE
             -Wno-suggest-destructor-override
+    )
+endif ()
+if (HAS_SHADOW)
+    target_compile_options (clickhouse_parsers_new
+        PRIVATE
+            -Wno-shadow
     )
 endif ()
 

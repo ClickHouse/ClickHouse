@@ -1,4 +1,4 @@
-#include <Interpreters/StorageID.h>
+#include <Parsers/StorageID.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Common/quoteString.h>

@@ -418,7 +418,7 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions)
     for (const ASTFunction * node : aggregates())
     {
         AggregateDescription aggregate;
-        getRootActionsNoMakeSet(node->arguments, true, actions);
+        if (node->arguments) getRootActionsNoMakeSet(node->arguments, true, actions);
 
         aggregate.column_name = node->getColumnName();
 

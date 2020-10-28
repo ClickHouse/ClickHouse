@@ -12,7 +12,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TableLockHolder.h>
 #include <Storages/ReadInOrderOptimizer.h>
-#include <Interpreters/StorageID.h>
+#include <Parsers/StorageID.h>
 
 #include <Columns/FilterDescription.h>
 

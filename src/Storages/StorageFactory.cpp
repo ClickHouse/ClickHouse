@@ -5,7 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/StorageID.h>
+#include <Parsers/StorageID.h>
 
 namespace DB
 {

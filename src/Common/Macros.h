@@ -2,7 +2,7 @@
 
 #include <common/types.h>
 #include <Core/Names.h>
-#include <Interpreters/StorageID.h>
+#include <Parsers/StorageID.h>
 
 #include <map>
 

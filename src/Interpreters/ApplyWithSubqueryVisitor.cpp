@@ -1,6 +1,6 @@
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/IdentifierSemantic.h>
-#include <Interpreters/StorageID.h>
+#include <Parsers/StorageID.h>
 #include <Interpreters/misc.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>

@@ -2468,6 +2468,7 @@ public:
     antlr4::tree::TerminalNode *LIKE();
     antlr4::tree::TerminalNode *LIMIT();
     antlr4::tree::TerminalNode *LOCAL();
+    antlr4::tree::TerminalNode *LOGS();
     antlr4::tree::TerminalNode *MATERIALIZED();
     antlr4::tree::TerminalNode *MERGES();
     antlr4::tree::TerminalNode *MINUTE();
@@ -2542,6 +2543,7 @@ public:
     KeywordForAliasContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *ID();
+    antlr4::tree::TerminalNode *KEY();
 
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
    

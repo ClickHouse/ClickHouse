@@ -2,7 +2,7 @@
 
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/ClusterProxy/IStreamFactory.h>
-#include <Interpreters/StorageID.h>
+#include <Parsers/StorageID.h>
 #include <Storages/IStorage_fwd.h>
 
 namespace DB

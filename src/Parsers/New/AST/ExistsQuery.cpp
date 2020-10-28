@@ -1,6 +1,6 @@
 #include <Parsers/New/AST/ExistsQuery.h>
 
-#include <Interpreters/StorageID.h>
+#include <Parsers/StorageID.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/ParseTreeVisitor.h>

@@ -2,7 +2,7 @@
 
 #include <TableFunctions/ITableFunction.h>
 #include <Interpreters/Cluster.h>
-#include <Interpreters/StorageID.h>
+#include <Parsers/StorageID.h>
 
 
 namespace DB

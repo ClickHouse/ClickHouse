@@ -7,7 +7,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/MySQL/ASTDeclareOption.h>
 #include <Parsers/MySQL/ASTDeclareTableOptions.h>
-#include <Interpreters/StorageID.h>
+#include <Parsers/StorageID.h>
 
 namespace DB
 {
