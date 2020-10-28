@@ -185,9 +185,9 @@ void CompressedReadBufferBase::decompress(char * to, size_t size_decompressed, s
         }
         else
         {
-            throw Exception("Data compressed with different methods, given method byte "
+            throw Exception("Data compressed with different methods, given method byte 0x"
                             + getHexUIntLowercase(method)
-                            + ", previous method byte "
+                            + ", previous method byte 0x"
                             + getHexUIntLowercase(codec->getMethodByte()),
                             ErrorCodes::CANNOT_DECOMPRESS);
         }
