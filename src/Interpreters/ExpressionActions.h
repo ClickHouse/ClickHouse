@@ -4,6 +4,7 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Names.h>
 #include <Core/Settings.h>
+#include <Core/ColumnNumbers.h>
 #include <Common/SipHash.h>
 #include <Common/UInt128.h>
 #include <unordered_map>
