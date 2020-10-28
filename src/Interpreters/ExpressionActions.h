@@ -184,7 +184,7 @@ private:
   */
 class ExpressionActions
 {
-private:
+public:
     using Node = ActionsDAG::Node;
     using Index = ActionsDAG::Index;
 
@@ -206,15 +206,14 @@ private:
         std::string toString() const;
     };
 
-public:
     using Actions = std::vector<Action>;
 
 private:
     struct ExecutionContext
     {
-        ColumnsWithTypeAndName & input_columns;
-        ColumnsWithTypeAndName inputs;
+        ColumnsWithTypeAndName & inputs;
         ColumnsWithTypeAndName columns;
+        ColumnNumbers inputs_pos;
         size_t num_rows;
     };
 

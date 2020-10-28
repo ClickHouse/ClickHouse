@@ -47,46 +47,49 @@ namespace ErrorCodes
 /// Read comment near usage
 /// static constexpr auto DUMMY_COLUMN_NAME = "_dummy";
 
+static std::ostream & operator << (std::ostream & out, const ExpressionActions::Argument & argument)
+{
+    return out << (argument.remove ? "*" : "") << argument.pos;
+}
 
 std::string ExpressionActions::Action::toString() const
 {
-    std::stringstream ss;
+    std::stringstream out;
     switch (node->type)
     {
         case ActionsDAG::Type::COLUMN:
-            ss << "COLUMN " << node->result_name << " "
-                << (node->result_type ? node->result_type->getName() : "(no type)") << " "
+            out << "COLUMN "
                 << (node->column ? node->column->getName() : "(no column)");
             break;
 
         case ActionsDAG::Type::ALIAS:
-            ss << "ALIAS " << node->result_name << " = " << node->children.front()->result_name;
-            if (arguments.front().remove)
-                ss << " (removing)";
+            out << "ALIAS " << node->children.front()->result_name << arguments.front();
             break;
 
         case ActionsDAG::Type::FUNCTION:
-            ss << "FUNCTION " << node->result_name << " " << (node->is_function_compiled ? "[compiled] " : "")
-                << (node->result_type ? node->result_type->getName() : "(no type)") << " = "
+            out << "FUNCTION " << (node->is_function_compiled ? "[compiled] " : "")
                 << (node->function_base ? node->function_base->getName() : "(no function)") << "(";
             for (size_t i = 0; i < node->children.size(); ++i)
             {
                 if (i)
-                    ss << ", ";
-                ss << node->children[i]->result_name;
+                    out << ", ";
+                out << node->children[i]->result_name << " " << arguments[i];
             }
-            ss << ")";
             break;
 
         case ActionsDAG::Type::ARRAY_JOIN:
-            ss << "ARRAY JOIN " << node->children.front()->result_name << " -> " << node->result_name;
+            out << "ARRAY JOIN " << node->children.front()->result_name << " " << arguments.front();
             break;
 
         case ActionsDAG::Type::INPUT:
+            out << "INPUT " << " " << arguments.front();
             break;
     }
 
-    return ss.str();
+    out << " -> " << node->result_name
+        << (node->result_type ? node->result_type->getName() : "(no type)")
+        << " " << result_position;
+    return out.str();
 }
 
 ExpressionActions::~ExpressionActions() = default;
@@ -118,21 +121,16 @@ void ExpressionActions::execute(Block & block, bool dry_run) const
 {
     ExecutionContext execution_context
     {
-        .input_columns = block.data,
+        .inputs = block.data,
         .num_rows = block.rows(),
     };
 
-    execution_context.inputs.reserve(required_columns.size());
+    execution_context.inputs_pos.reserve(required_columns.size());
 
-    ColumnNumbers inputs_to_remove;
-    inputs_to_remove.reserve(required_columns.size());
     for (const auto & column : required_columns)
     {
         size_t pos = block.getPositionByName(column.name);
-        execution_context.columns.emplace_back(std::move(block.getByPosition(pos)));
-
-        if (!sample_block.has(column.name))
-            inputs_to_remove.emplace_back(pos);
+        execution_context.inputs_pos.push_back(pos);
     }
 
     execution_context.columns.resize(num_columns);
@@ -153,26 +151,31 @@ void ExpressionActions::execute(Block & block, bool dry_run) const
 
     if (project_input)
         block.clear();
-    else
-    {
-        std::sort(inputs_to_remove.rbegin(), inputs_to_remove.rend());
-        for (auto input : inputs_to_remove)
-            block.erase(input);
-    }
+
+    ColumnNumbers inputs_to_remove;
 
     for (const auto & action : actions)
     {
-        if (!action.is_used_in_result)
-            continue;
-
         auto & column = execution_context.columns[action.result_position];
         column.name = action.node->result_name;
 
-        if (block.has(action.node->result_name))
-            block.getByName(action.node->result_name) = std::move(column);
-        else
+        if (!project_input && action.node->type == ActionsDAG::Type::INPUT)
+        {
+            auto pos = execution_context.inputs_pos[action.arguments.front().pos];
+            if (action.is_used_in_result)
+                block.getByPosition(pos) = std::move(execution_context.columns[action.result_position]);
+            else
+                inputs_to_remove.push_back(pos);
+        }
+        else if (action.is_used_in_result)
+        {
             block.insert(std::move(column));
+        }
     }
+
+    std::sort(inputs_to_remove.rbegin(), inputs_to_remove.rend());
+    for (auto input : inputs_to_remove)
+        block.erase(input);
 }
 
 void ExpressionActions::executeAction(const Action & action, ExecutionContext & execution_context, bool dry_run)
@@ -232,10 +235,6 @@ void ExpressionActions::executeAction(const Action & action, ExecutionContext & 
                 if (column.column)
                     column.column = column.column->replicate(array->getOffsets());
 
-            for (auto & column : execution_context.input_columns)
-                if (column.column)
-                    column.column = column.column->replicate(array->getOffsets());
-
             auto & res_column = columns[action.result_position];
 
             res_column.column = array->getDataPtr();
@@ -272,7 +271,8 @@ void ExpressionActions::executeAction(const Action & action, ExecutionContext & 
 
         case ActionsDAG::Type::INPUT:
         {
-            columns[action.result_position] = std::move(inputs[action.arguments.front().pos]);
+            auto pos = execution_context.inputs_pos[action.arguments.front().pos];
+            columns[action.result_position] = std::move(inputs[pos]);
             break;
         }
     }
