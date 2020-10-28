@@ -1,5 +1,5 @@
 ---
-toc_priority: 34
+toc_priority: 33
 toc_title: INSERT INTO
 ---
 
@@ -14,41 +14,42 @@ INSERT INTO [db.]table [(c1, c2, c3)] VALUES (v11, v12, v13), (v21, v22, v23), .
 ```
 
 You can specify a list of columns to insert using  the `(c1, c2, c3)` or `COLUMNS(c1,c2,c3)` syntax. 
-Insert statements can have asterisk with column transformers in the column list.
+You can use asterisk when specifying the column list.
 
-For example:
+For example, consider the table:
 
 ``` sql
-SHOW CREATE [db.]table
+SHOW CREATE insert_select_testtable
 ```
 
 ```
 ┌─statement────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ CREATE TABLE [db.]table
+│ CREATE TABLE insert_select_testtable
 (
-    `id` Int8,
-    `name` String,
-    `days` Int8
+    `a` Int8,
+    `b` String,
+    `c` Int8
 )
 ENGINE = MergeTree()
-ORDER BY id
+ORDER BY a
 SETTINGS index_granularity = 8192 │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ``` sql
-INSERT INTO [db.]table (*) VALUES (1, 'a', 1) 
+INSERT INTO insert_select_testtable (*) VALUES (1, 'a', 1) 
 ```
 
 If you want to insert data in all the columns, except 'b', you need to pass so many values how many columns you chose in parenthesis then:
 
 ``` sql
-INSERT INTO [db.]table (* EXCEPT(b)) Values (2, 2)
+INSERT INTO insert_select_testtable (* EXCEPT(b)) Values (2, 2)
 ```
 
 ``` sql
-SELECT * FROM [db.]table
+SELECT * FROM insert_select_testtable
 ```
+
 ```
 ┌─a─┬─b─┬─c─┐
 │ 2 │   │ 2 │
