@@ -2150,7 +2150,7 @@ Result:
 
 ## output_format_pretty_row_numbers {#output_format_pretty_row_numbers}
 
-Enables adding row numbers before each row in [Pretty](../../interfaces/formats.md#pretty) output format.
+Adds row numbers to output in the [Pretty](../../interfaces/formats.md#pretty) format.
 
 Possible values:
 
