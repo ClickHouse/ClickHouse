@@ -2,6 +2,11 @@
 
 #include <Core/Block.h>
 
+#include <Core/Field.h>
+
+#include <mutex>
+#include <memory>
+
 namespace DB
 {
 
@@ -13,16 +18,22 @@ class ColumnMap final : public COWHelper<IColumn, ColumnMap>
 private:
     friend class COWHelper<IColumn, ColumnMap>;
 
-    using MapColumns = std::vector<WrappedPtr>;
-    MapColumns columns;
-
     template <bool positive>
     struct Less;
+    using MapColumns = std::vector<WrappedPtr>;
+    class Index;
+
+    MapColumns columns;
+
+    mutable std::shared_ptr<Index> key_index = nullptr; //since there is no std::atomic<std::unique_ptr<T>>
+    mutable std::mutex key_index_mutex;
 
     explicit ColumnMap(MutableColumns && columns);
-    ColumnMap(const ColumnMap &) = default;
+    ColumnMap(const ColumnMap &);
 
 public:
+    ~ColumnMap() override;
+
     /** Create immutable column using immutable arguments. This arguments may be shared with other columns.
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
       */
@@ -87,6 +98,9 @@ public:
     Columns getColumnsCopy() const { return {columns.begin(), columns.end()}; }
 
     const ColumnPtr & getColumnPtr(size_t idx) const { return columns[idx]; }
+
+    // Find all keys from `keys` column and return equally sized Column of values.
+    ColumnPtr findAll(const IColumn & keys, const Field & default_value = {}) const;
 };
 
 }

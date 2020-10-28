@@ -1,4 +1,5 @@
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/IColumnImpl.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteBufferFromString.h>
@@ -10,6 +11,8 @@
 #include <Common/WeakHash.h>
 #include <Core/Field.h>
 
+#include <Common/HashTable/HashMap.h>
+#include <Common/UInt128.h>
 
 namespace DB
 {
@@ -20,7 +23,145 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE;
     extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
 }
+
+struct MapKey
+{
+    size_t row = 0;
+    StringRef data = {};
+
+    inline bool operator==(const MapKey & other) const
+    {
+        return row == other.row && data == other.data;
+    }
+};
+
+struct MapKeyHash
+{
+    size_t operator()(const MapKey & map_key) const
+    {
+        return UInt128Hash()(UInt128{map_key.row, StringRefHash()(map_key.data)});
+    }
+};
+
+struct DefaultKeyEqualityOp
+{
+    template <typename T>
+    static bool areEqual(const T && left, const T && right)
+    {
+        return left == right;
+    }
+};
+
+template <typename T>
+bool areEqual(const T & left, const T & right)
+{
+    return left == right;
+}
+
+template <typename Key, typename TMapped, typename Hash, typename TState = HashTableNoState, bool (*KeyEqualityOp)(const Key &, const Key &) = &areEqual>
+struct HashMapCellWithKeyEquality : public HashMapCell<Key, TMapped, Hash, TState>
+{
+    using Base = HashMapCell<Key, TMapped, Hash, TState>;
+    using Base::Base;
+
+    bool keyEquals(const Key & key_) const { return KeyEqualityOp(this->value.first, key_); }
+    bool keyEquals(const Key & key_, size_t /*hash_*/) const { return KeyEqualityOp(this->value.first, key_); }
+    bool keyEquals(const Key & key_, size_t hash_, const typename Base::State &) const { return keyEquals(key_, hash_); }
+};
+
+template <
+    typename Key,
+    typename Mapped,
+    typename Hash = DefaultHash<Key>,
+    typename Grower = HashTableGrower<>,
+    typename Allocator = HashTableAllocator>
+using HashMap2 = HashMapTable<Key, HashMapCellWithKeyEquality<Key, Mapped, Hash>, Hash, Grower, Allocator>;
+
+}
+
+
+namespace ZeroTraits
+{
+
+template <>
+bool check<DB::MapKey>(const DB::MapKey x) { return x.row == 0 && x.data.data == nullptr; }
+template <>
+void set<DB::MapKey>(DB::MapKey & x) { x.row = 0; x.data = StringRef{}; }
+
+}
+
+namespace DB
+{
+
+class ColumnMap::Index
+{
+    using MapIndex = HashMap2<MapKey, UInt64, MapKeyHash>;
+    const std::string key_type;
+    const ColumnArray & values_column;
+    MapIndex index;
+
+public:
+    Index(const ColumnArray & keys_column, const ColumnArray & values_column_)
+        : key_type(keys_column.getData().getName()),
+          values_column(values_column_)
+    {
+        const auto & map_values_offsets = values_column.getOffsets();
+        const auto & map_keys_offsets = keys_column.getOffsets();
+        const auto & map_keys_data = keys_column.getData();
+
+        // Build an index, store global key offset as mapped values since that greatly simplifies value extraction.
+        size_t starting_offset = 0;
+        for (size_t row = 0; row < keys_column.size(); ++row)
+        {
+            if (map_keys_offsets[row] != map_values_offsets[row])
+                throw Exception(
+                        fmt::format("Different number of elements in key ({}) and value ({}) arrays on row {}.",
+                                map_keys_offsets[row], map_values_offsets[row], row),
+                        ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
+
+            const size_t final_offset = map_keys_offsets[row];
+            for (size_t i = starting_offset; i < final_offset; ++i)
+            {
+                MapIndex::LookupResult it;
+                bool inserted;
+                const auto key_data = map_keys_data.getDataAt(i);
+
+                index.emplace(MapKey{row, key_data}, it, inserted);
+                if (inserted)
+                    new (&it->getMapped()) UInt64(i);
+            }
+            starting_offset = final_offset;
+        }
+    }
+
+    IColumn::Ptr findAll(const IColumn & needles, const Field & default_value) const
+    {
+        if (needles.getName() != key_type)
+            throw Exception("Incompatitable needle column type " + needles.getName() + " expected " + key_type,
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        // TODO: make sure to convert needles-value to values-type to avoid
+        // false negative when searching for UInt64(1) while Map is keyed in UInt32.
+
+        const auto & nested_values = values_column.getData();
+        auto result = nested_values.cloneEmpty();
+        result->reserve(needles.size());
+
+        for (size_t row = 0; row < needles.size(); ++row)
+        {
+            const auto & key_val = needles.getDataAt(row);
+            if (auto res = index.find(MapKey{row, StringRef{key_val}}))
+                result->insertFrom(nested_values, res->getMapped());
+            else
+                result->insert(default_value);
+        }
+
+        return result;
+    }
+};
 
 
 std::string ColumnMap::getName() const
@@ -41,6 +182,14 @@ ColumnMap::ColumnMap(MutableColumns && mutable_columns)
         columns.push_back(std::move(column));
     }
 }
+
+ColumnMap::ColumnMap(const ColumnMap & other)
+    : columns(other.columns),
+      key_index(nullptr)
+{}
+
+ColumnMap::~ColumnMap()
+{}
 
 ColumnMap::Ptr ColumnMap::create(const Columns & columns)
 {
@@ -390,6 +539,22 @@ bool ColumnMap::structureEquals(const IColumn & rhs) const
     }
     else
         return false;
+}
+
+
+ColumnPtr ColumnMap::findAll(const IColumn & keys, const Field & default_value) const
+{
+    {
+        std::lock_guard<std::mutex> lock(key_index_mutex);
+        if (key_index == nullptr)
+        {
+            const ColumnArray & keys_array = assert_cast<const ColumnArray &>(*columns[0]);
+            const ColumnArray & values_array = assert_cast<const ColumnArray &>(*columns[1]);
+            std::make_shared<Index>(keys_array, values_array).swap(key_index);
+        }
+    }
+
+    return key_index->findAll(keys, default_value);
 }
 
 }
