@@ -490,13 +490,16 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
     {
         std::sort(log_entries.begin(), log_entries.end());
 
-        for (size_t entry_idx = 0, num_entries = log_entries.size(); entry_idx < num_entries; entry_idx += current_multi_batch_size)
+        for (size_t entry_idx = 0, num_entries = log_entries.size(); entry_idx < num_entries;)
         {
             auto begin = log_entries.begin() + entry_idx;
             auto end = entry_idx + current_multi_batch_size >= log_entries.size()
                 ? log_entries.end()
                 : (begin + current_multi_batch_size);
             auto last = end - 1;
+
+            /// Increment entry_idx before batch size increase (we copied at most current_multi_batch_size entries)
+            entry_idx += current_multi_batch_size;
 
             /// Increase the batch size exponentially, so it will saturate to MAX_MULTI_OPS.
             if (current_multi_batch_size < MAX_MULTI_OPS)
