@@ -1,3 +1,8 @@
+---
+toc_priority: 37
+toc_title: file
+---
+
 # file {#file}
 
 Создаёт таблицу из файла. Данная табличная функция похожа на табличные функции [file](file.md) и [hdfs](hdfs.md).

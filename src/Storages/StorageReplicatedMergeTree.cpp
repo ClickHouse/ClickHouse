@@ -3500,8 +3500,10 @@ void StorageReplicatedMergeTree::startup()
     {
         queue.initialize(getDataParts());
 
-        data_parts_exchange_endpoint = std::make_shared<DataPartsExchange::Service>(*this);
-        global_context.getInterserverIOHandler().addEndpoint(data_parts_exchange_endpoint->getId(replica_path), data_parts_exchange_endpoint);
+        InterserverIOEndpointPtr data_parts_exchange_ptr = std::make_shared<DataPartsExchange::Service>(*this);
+        [[maybe_unused]] auto prev_ptr = std::atomic_exchange(&data_parts_exchange_endpoint, data_parts_exchange_ptr);
+        assert(prev_ptr == nullptr);
+        global_context.getInterserverIOHandler().addEndpoint(data_parts_exchange_ptr->getId(replica_path), data_parts_exchange_ptr);
 
         /// In this thread replica will be activated.
         restarting_thread.start();
@@ -3553,15 +3555,15 @@ void StorageReplicatedMergeTree::shutdown()
     }
     background_moves_executor.finish();
 
-    if (data_parts_exchange_endpoint)
+    auto data_parts_exchange_ptr = std::atomic_exchange(&data_parts_exchange_endpoint, InterserverIOEndpointPtr{});
+    if (data_parts_exchange_ptr)
     {
-        global_context.getInterserverIOHandler().removeEndpointIfExists(data_parts_exchange_endpoint->getId(replica_path));
+        global_context.getInterserverIOHandler().removeEndpointIfExists(data_parts_exchange_ptr->getId(replica_path));
         /// Ask all parts exchange handlers to finish asap. New ones will fail to start
-        data_parts_exchange_endpoint->blocker.cancelForever();
+        data_parts_exchange_ptr->blocker.cancelForever();
         /// Wait for all of them
-        std::unique_lock lock(data_parts_exchange_endpoint->rwlock);
+        std::unique_lock lock(data_parts_exchange_ptr->rwlock);
     }
-    data_parts_exchange_endpoint.reset();
 
     /// We clear all old parts after stopping all background operations. It's
     /// important, because background operations can produce temporary parts
@@ -5904,7 +5906,10 @@ ActionLock StorageReplicatedMergeTree::getActionLock(StorageActionBlockType acti
         return fetcher.blocker.cancel();
 
     if (action_type == ActionLocks::PartsSend)
-        return data_parts_exchange_endpoint ? data_parts_exchange_endpoint->blocker.cancel() : ActionLock();
+    {
+        auto data_parts_exchange_ptr = std::atomic_load(&data_parts_exchange_endpoint);
+        return data_parts_exchange_ptr ? data_parts_exchange_ptr->blocker.cancel() : ActionLock();
+    }
 
     if (action_type == ActionLocks::ReplicationQueue)
         return queue.actions_blocker.cancel();

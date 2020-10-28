@@ -63,7 +63,7 @@ function configure
     # Make copies of the original db for both servers. Use hardlinks instead
     # of copying to save space. Before that, remove preprocessed configs and
     # system tables, because sharing them between servers with hardlinks may
-    # lead to weird effects. 
+    # lead to weird effects.
     rm -r left/db ||:
     rm -r right/db ||:
     rm -r db0/preprocessed_configs ||:
@@ -77,15 +77,12 @@ function restart
     while killall clickhouse-server; do echo . ; sleep 1 ; done
     echo all killed
 
-    # Disable percpu arenas because they segfault when the process is bound to
-    # a particular NUMA node: https://github.com/jemalloc/jemalloc/pull/1939
-    # 
-    # About the jemalloc settings:
+    # Change the jemalloc settings here.
     # https://github.com/jemalloc/jemalloc/wiki/Getting-Started
-    export MALLOC_CONF="percpu_arena:disabled,confirm_conf:true"
+    export MALLOC_CONF="confirm_conf:true"
 
     set -m # Spawn servers in their own process groups
-    
+
     left/clickhouse-server --config-file=left/config/config.xml \
            -- --path left/db --user_files_path left/db/user_files \
            &>> left-server-log.log &
@@ -211,7 +208,7 @@ function run_tests
         echo test "$test_name"
 
         # Don't profile if we're past the time limit.
-        # Use awk because bash doesn't support floating point arithmetics.
+        # Use awk because bash doesn't support floating point arithmetic.
         profile_seconds=$(awk "BEGIN { print ($profile_seconds_left > 0 ? 10 : 0) }")
 
         TIMEFORMAT=$(printf "$test_name\t%%3R\t%%3U\t%%3S\n")
@@ -544,10 +541,10 @@ create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
     as select
         abs(diff) > report_threshold        and abs(diff) > stat_threshold as changed_fail,
         abs(diff) > report_threshold - 0.05 and abs(diff) > stat_threshold as changed_show,
-        
+
         not changed_fail and stat_threshold > report_threshold + 0.10 as unstable_fail,
         not changed_show and stat_threshold > report_threshold - 0.05 as unstable_show,
-        
+
         left, right, diff, stat_threshold,
         if(report_threshold > 0, report_threshold, 0.10) as report_threshold,
         query_metric_stats.test test, query_metric_stats.query_index query_index,
@@ -770,7 +767,7 @@ create table all_tests_report engine File(TSV, 'report/all-queries.tsv') as
 -- The threshold for 2) is significantly larger than the threshold for 1), to
 -- avoid jitter.
 create view shortness
-    as select 
+    as select
         (test, query_index) in
             (select * from file('analyze/marked-short-queries.tsv', TSV,
             'test text, query_index int'))
