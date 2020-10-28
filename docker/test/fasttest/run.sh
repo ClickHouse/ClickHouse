@@ -172,6 +172,9 @@ function build
 (
 cd "$FASTTEST_BUILD"
 time ninja clickhouse-bundle | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/build_log.txt"
+if [ "$COPY_CLICKHOUSE_BINARY_TO_OUTPUT" -eq "1" ]; then
+    cp programs/clickhouse "$FASTTEST_OUTPUT/clickhouse"
+fi
 ccache --show-stats ||:
 )
 }
@@ -268,7 +271,7 @@ TESTS_TO_SKIP=(
     00974_query_profiler
 
     # Look at DistributedFilesToInsert, so cannot run in parallel.
-    01457_DistributedFilesToInsert
+    01460_DistributedFilesToInsert
 
     01541_max_memory_usage_for_user
 
