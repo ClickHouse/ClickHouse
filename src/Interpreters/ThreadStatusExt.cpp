@@ -166,7 +166,7 @@ void ThreadStatus::initPerformanceCounters()
     memory_tracker.setDescription("(for thread)");
 
     // query_start_time_{microseconds, nanoseconds} are all constructed from the same time point
-    // to ensure that they are all equal upto the precision of a second.
+    // to ensure that they are all equal up to the precision of a second.
     const auto now = std::chrono::system_clock::now();
 
     query_start_time_nanoseconds = time_in_nanoseconds(now);
@@ -300,8 +300,8 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
     performance_counters.setParent(&ProfileEvents::global_counters);
     memory_tracker.reset();
 
-    /// Must reset pointer to thread_group's memory_tracker, because it will be destroyed two lines below.
-    memory_tracker.setParent(nullptr);
+    /// Must reset pointer to thread_group's memory_tracker, because it will be destroyed two lines below (will reset to its parent).
+    memory_tracker.setParent(thread_group->memory_tracker.getParent());
 
     query_id.clear();
     query_context = nullptr;

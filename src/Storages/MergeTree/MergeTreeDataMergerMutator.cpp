@@ -227,6 +227,9 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
     IMergeSelector::PartsRanges parts_ranges;
 
     StoragePolicyPtr storage_policy = data.getStoragePolicy();
+    /// Volumes with stopped merges are extremely rare situation.
+    /// Check it once and don't check each part (this is bad for performance).
+    bool has_volumes_with_disabled_merges = storage_policy->hasAnyVolumeWithDisabledMerges();
 
     const String * prev_partition_id = nullptr;
     /// Previous part only in boundaries of partition frame
@@ -277,7 +280,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         part_info.data = &part;
         part_info.ttl_infos = &part->ttl_infos;
         part_info.compression_codec_desc = part->default_codec->getFullCodecDesc();
-        part_info.shall_participate_in_merges = part->shallParticipateInMerges(storage_policy);
+        part_info.shall_participate_in_merges = has_volumes_with_disabled_merges ? part->shallParticipateInMerges(storage_policy) : true;
 
         parts_ranges.back().emplace_back(part_info);
 
@@ -295,7 +298,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
 
     if (metadata_snapshot->hasAnyTTL() && merge_with_ttl_allowed && !ttl_merges_blocker.isCancelled())
     {
-        /// TTL delete is prefered to recompression
+        /// TTL delete is preferred to recompression
         TTLDeleteMergeSelector delete_ttl_selector(
                 next_delete_ttl_merge_times_by_partition,
                 current_time,
