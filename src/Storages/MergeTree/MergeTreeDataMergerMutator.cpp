@@ -298,7 +298,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
 
     if (metadata_snapshot->hasAnyTTL() && merge_with_ttl_allowed && !ttl_merges_blocker.isCancelled())
     {
-        /// TTL delete is prefered to recompression
+        /// TTL delete is preferred to recompression
         TTLDeleteMergeSelector delete_ttl_selector(
                 next_delete_ttl_merge_times_by_partition,
                 current_time,

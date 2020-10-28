@@ -152,7 +152,7 @@ void LocalServer::tryInitPath()
         default_path = parent_folder / fmt::format("clickhouse-local-{}-{}-{}", getpid(), time(nullptr), randomSeed());
 
         if (exists(default_path))
-            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Unsuccessfull attempt to create working directory: {} exist!", default_path.string());
+            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Unsuccessful attempt to create working directory: {} exist!", default_path.string());
 
         create_directory(default_path);
         temporary_directory_to_delete = default_path;
