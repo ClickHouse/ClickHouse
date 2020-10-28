@@ -333,7 +333,7 @@
                 "with_coverage": false
             }
         },
-        "Functional stateless tests (release, polymorphic parts enabled)": {
+        "Functional stateless tests (release, wide parts enabled)": {
             "required_build_properties": {
                 "compiler": "clang-11",
                 "package_type": "deb",

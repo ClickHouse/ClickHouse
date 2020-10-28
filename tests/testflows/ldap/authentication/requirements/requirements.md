@@ -460,14 +460,14 @@ time user configuration contains any of the `<password*>` entries.
 #### RQ.SRS-007.LDAP.Configuration.User.LDAP.InvalidServerName.NotDefined
 version: 1.0
 
-[ClickHouse] SHALL throw an error during any authentification attempt
+[ClickHouse] SHALL throw an error during any authentication attempt
 if the name of the [LDAP] server used inside the `<ldap>` entry
 is not defined in the `<ldap_servers>` section.
 
 #### RQ.SRS-007.LDAP.Configuration.User.LDAP.InvalidServerName.Empty
 version: 1.0
 
-[ClickHouse] SHALL throw an error during any authentification attempt
+[ClickHouse] SHALL throw an error during any authentication attempt
 if the name of the [LDAP] server used inside the `<ldap>` entry
 is empty.
 

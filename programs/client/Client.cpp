@@ -2324,6 +2324,8 @@ public:
             ("log-level", po::value<std::string>(), "client log level")
             ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
             ("query-fuzzer-runs", po::value<int>()->default_value(0), "query fuzzer runs")
+            ("opentelemetry-traceparent", po::value<std::string>(), "OpenTelemetry traceparent header as described by W3C Trace Context recommendation")
+            ("opentelemetry-tracestate", po::value<std::string>(), "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
         ;
 
         Settings cmd_settings;
@@ -2490,6 +2492,25 @@ public:
             // TODO stop using parseQuery.
             config().setBool("ignore-error", true);
             ignore_error = true;
+        }
+
+        if (options.count("opentelemetry-traceparent"))
+        {
+            std::string traceparent = options["opentelemetry-traceparent"].as<std::string>();
+            std::string error;
+            if (!context.getClientInfo().parseTraceparentHeader(
+                traceparent, error))
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot parse OpenTelemetry traceparent '{}': {}",
+                    traceparent, error);
+            }
+        }
+
+        if (options.count("opentelemetry-tracestate"))
+        {
+            context.getClientInfo().opentelemetry_tracestate =
+                options["opentelemetry-tracestate"].as<std::string>();
         }
 
         argsToConfig(common_arguments, config(), 100);
