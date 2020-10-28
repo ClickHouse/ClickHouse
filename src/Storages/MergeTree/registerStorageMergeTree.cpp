@@ -769,7 +769,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             date_column_name,
             merging_params,
             std::move(storage_settings),
-            args.has_force_restore_data_flag);
+            args.has_force_restore_data_flag,
+            allow_renaming);
     }
     else
         return StorageMergeTree::create(
