@@ -167,14 +167,15 @@ void ExpressionActions::execute(Block & block, bool dry_run) const
         size_t pos = 0;
         for (const auto & col : required_columns)
         {
+            auto input_pos = execution_context.inputs_pos[pos];
             if (res.has(col.name))
             {
                 auto res_pos = res.getPositionByName(col.name);
-                res.getByName(col.name) = std::move(res.getByPosition(res_pos));
+                block.getByPosition(input_pos) = std::move(res.getByPosition(res_pos));
                 res.erase(res_pos);
             }
             else
-                inputs_to_remove.push_back(pos);
+                inputs_to_remove.push_back(input_pos);
 
             ++pos;
         }
