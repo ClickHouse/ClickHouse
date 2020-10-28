@@ -406,7 +406,7 @@ bool StorageRabbitMQ::restoreConnection(bool reconnecting)
         connection->close(); /// Connection might be unusable, but not closed
 
         /* Connection is not closed immediately (firstly, all pending operations are completed, and then
-         * an AMQP closing-handshake is  performed). But cannot open a new connection untill previous one is properly closed
+         * an AMQP closing-handshake is  performed). But cannot open a new connection until previous one is properly closed
          */
         while (!connection->closed() && ++cnt_retries != RETRIES_MAX)
             event_handler->iterateLoop();
@@ -731,7 +731,7 @@ bool StorageRabbitMQ::streamToViews()
     auto column_names = block_io.out->getHeader().getNames();
     auto sample_block = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
 
-    /* event_handler->connectionRunning() does not guarantee that connnection is not closed in case loop was not running before, but
+    /* event_handler->connectionRunning() does not guarantee that connection is not closed in case loop was not running before, but
      * need to anyway start the loop to activate error callbacks and update connection state, because even checking with
      * connection->usable() will not give correct answer before callbacks are activated.
      */
