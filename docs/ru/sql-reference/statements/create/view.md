@@ -1,6 +1,6 @@
 ---
-toc_priority: 3
-toc_title: Представление
+toc_priority: 37
+toc_title: "\u041f\u0440\u0435\u0434\u0441\u0442\u0430\u0432\u043b\u0435\u043d\u0438\u0435"
 ---
 
 # CREATE VIEW {#create-view}

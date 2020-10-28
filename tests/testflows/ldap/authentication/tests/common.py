@@ -85,19 +85,31 @@ def add_config(config, timeout=60, restart=False):
     :param config: configuration file description
     :param timeout: timeout, default: 20 sec
     """
-    def check_preprocessed_config_is_updated():
+    node = current().context.node
+
+    def check_preprocessed_config_is_updated(after_removal=False):
         """Check that preprocessed config is updated.
         """
         started = time.time()
         command = f"cat /var/lib/clickhouse/preprocessed_configs/{config.preprocessed_name} | grep {config.uid}{' > /dev/null' if not settings.debug else ''}"
+
         while time.time() - started < timeout:
             exitcode = node.command(command, steps=False).exitcode
-            if exitcode == 0:
-                break
+            if after_removal:
+                if exitcode == 1:
+                    break
+            else:
+                if exitcode == 0:
+                    break
             time.sleep(1)
+
         if settings.debug:
             node.command(f"cat /var/lib/clickhouse/preprocessed_configs/{config.preprocessed_name}")
-        assert exitcode == 0, error()
+
+        if after_removal:
+            assert exitcode == 1, error()
+        else:
+            assert exitcode == 0, error()
 
     def wait_for_config_to_be_loaded():
         """Wait for config to be loaded.
@@ -106,13 +118,16 @@ def add_config(config, timeout=60, restart=False):
             with When("I close terminal to the node to be restarted"):
                 bash.close()
 
-            with And("I get the current log size"):
-                logsize = \
-                    node.command("stat --format=%s /var/log/clickhouse-server/clickhouse-server.log").output.split(" ")[
-                    0].strip()
+            with And("I stop ClickHouse to apply the config changes"):
+                node.stop(safe=False)
 
-            with And("I restart ClickHouse to apply the config changes"):
-                node.restart(safe=False)
+            with And("I get the current log size"):
+                cmd = node.cluster.command(None,
+                    f"stat --format=%s {os.environ['CLICKHOUSE_TESTS_DIR']}/_instances/{node.name}/logs/clickhouse-server.log")
+                logsize = cmd.output.split(" ")[0].strip()
+
+            with And("I start ClickHouse back up"):
+                node.start()
 
             with Then("I tail the log file from using previous log size as the offset"):
                 bash.prompt = bash.__class__.prompt
@@ -129,7 +144,6 @@ def add_config(config, timeout=60, restart=False):
                     f"ConfigReloader: Loaded config '/etc/clickhouse-server/{config.preprocessed_name}', performed update on configuration",
                     timeout=timeout)
 
-    node = current().context.node
     try:
         with Given(f"{config.name}"):
             if settings.debug:
@@ -160,7 +174,7 @@ def add_config(config, timeout=60, restart=False):
                     node.command(f"rm -rf {config.path}", exitcode=0)
 
                 with Then(f"{config.preprocessed_name} should be updated", description=f"timeout {timeout}"):
-                    check_preprocessed_config_is_updated()
+                    check_preprocessed_config_is_updated(after_removal=True)
 
                 with And("I wait for config to be reloaded"):
                     wait_for_config_to_be_loaded()
