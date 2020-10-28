@@ -75,6 +75,7 @@ std::string ExpressionActions::Action::toString() const
                     out << ", ";
                 out << node->children[i]->result_name << " " << arguments[i];
             }
+            out << ")";
             break;
 
         case ActionsDAG::Type::ARRAY_JOIN:
@@ -141,6 +142,10 @@ void ExpressionActions::execute(Block & block, bool dry_run) const
         {
             executeAction(action, execution_context, dry_run);
             checkLimits(execution_context);
+
+            //std::cerr << "Action: " << action.toString() << std::endl;
+            //for (const auto & col : execution_context.columns)
+            //    std::cerr << col.dumpStructure() << std::endl;
         }
         catch (Exception & e)
         {
@@ -218,7 +223,7 @@ void ExpressionActions::executeAction(const Action & action, ExecutionContext & 
 
             for (size_t i = 0; i < arguments.size(); ++i)
                 if (!action.arguments[i].remove)
-                    arguments[i] = std::move(columns[action.arguments[i].pos]);
+                    columns[action.arguments[i].pos] = std::move(arguments[i]);
 
             break;
         }
