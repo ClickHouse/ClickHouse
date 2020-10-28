@@ -31,6 +31,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
 }
@@ -83,6 +84,9 @@ enum class TieBreakingMode
     Auto, // use banker's rounding for floating point numbers, round up otherwise
     Bankers, // use banker's rounding
 };
+
+/// For N, no more than the number of digits in the largest type.
+using Scale = Int16;
 
 
 /** Rounding functions for integer values.
@@ -416,7 +420,7 @@ private:
     using Container = typename ColumnDecimal<T>::Container;
 
 public:
-    static NO_INLINE void apply(const Container & in, Container & out, Int64 scale_arg)
+    static NO_INLINE void apply(const Container & in, Container & out, Scale scale_arg)
     {
         scale_arg = in.getScale() - scale_arg;
         if (scale_arg > 0)
@@ -458,7 +462,7 @@ class Dispatcher
         FloatRoundingImpl<T, rounding_mode, scale_mode>,
         IntegerRoundingImpl<T, rounding_mode, scale_mode, tie_breaking_mode>>;
 
-    static ColumnPtr apply(const ColumnVector<T> * col, Int64 scale_arg)
+    static ColumnPtr apply(const ColumnVector<T> * col, Scale scale_arg)
     {
         auto col_res = ColumnVector<T>::create();
 
@@ -487,7 +491,7 @@ class Dispatcher
         return col_res;
     }
 
-    static ColumnPtr apply(const ColumnDecimal<T> * col, Int64 scale_arg)
+    static ColumnPtr apply(const ColumnDecimal<T> * col, Scale scale_arg)
     {
         const typename ColumnDecimal<T>::Container & vec_src = col->getData();
 
@@ -501,7 +505,7 @@ class Dispatcher
     }
 
 public:
-    static ColumnPtr apply(const IColumn * column, Int64 scale_arg)
+    static ColumnPtr apply(const IColumn * column, Scale scale_arg)
     {
         if constexpr (IsNumber<T>)
             return apply(checkAndGetColumn<ColumnVector<T>>(column), scale_arg);
@@ -544,20 +548,25 @@ public:
         return arguments[0];
     }
 
-    static Int64 getScaleArg(ColumnsWithTypeAndName & arguments)
+    static Scale getScaleArg(ColumnsWithTypeAndName & arguments)
     {
         if (arguments.size() == 2)
         {
             const IColumn & scale_column = *arguments[1].column;
             if (!isColumnConst(scale_column))
-                throw Exception("Scale argument for rounding functions must be constant.", ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception("Scale argument for rounding functions must be constant", ErrorCodes::ILLEGAL_COLUMN);
 
             Field scale_field = assert_cast<const ColumnConst &>(scale_column).getField();
             if (scale_field.getType() != Field::Types::UInt64
                 && scale_field.getType() != Field::Types::Int64)
-                throw Exception("Scale argument for rounding functions must have integer type.", ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception("Scale argument for rounding functions must have integer type", ErrorCodes::ILLEGAL_COLUMN);
 
-            return scale_field.get<Int64>();
+            Int64 scale64 = scale_field.get<Int64>();
+            if (scale64 > std::numeric_limits<Scale>::max()
+                || scale64 < std::numeric_limits<Scale>::min())
+                throw Exception("Scale argument for rounding function is too large", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+            return scale64;
         }
         return 0;
     }
@@ -568,7 +577,7 @@ public:
     ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const ColumnWithTypeAndName & column = arguments[0];
-        Int64 scale_arg = getScaleArg(arguments);
+        Scale scale_arg = getScaleArg(arguments);
 
         ColumnPtr res;
         auto call = [&](const auto & types) -> bool
