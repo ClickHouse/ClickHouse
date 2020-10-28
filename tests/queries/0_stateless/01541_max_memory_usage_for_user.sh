@@ -14,28 +14,28 @@ query="SELECT groupArray(repeat('a', 1000)) FROM numbers(10000) GROUP BY number%
 function execute_http()
 {
     for _ in {1..100}; do
-        $CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL&max_memory_usage_for_user=100Mi&max_threads=1" -d@- <<<"$query" | grep -F DB::Exception:
+        $CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL&user=secondary&max_memory_usage_for_user=100Mi&max_threads=1" -d@- <<<"$query" | grep -F DB::Exception:
     done
 }
 function execute_tcp()
 {
     # slow in debug, but should trigger the problem in ~10 iterations, so 20 is ok
     for _ in {1..20}; do
-        ${CLICKHOUSE_CLIENT} --max_memory_usage_for_user=100Mi --max_threads=1 -q "$query" | grep -F DB::Exception:
+        ${CLICKHOUSE_CLIENT} --user secondary --max_memory_usage_for_user=100Mi --max_threads=1 -q "$query" | grep -F DB::Exception:
     done
 }
 function execute_tcp_one_session()
 {
     for _ in {1..30}; do
         echo "$query;"
-    done | ${CLICKHOUSE_CLIENT} -nm --max_memory_usage_for_user=100Mi --max_threads=1 | grep -F DB::Exception:
+    done | ${CLICKHOUSE_CLIENT} --user secondary -nm --max_memory_usage_for_user=100Mi --max_threads=1 | grep -F DB::Exception:
 }
 
 
 # one users query in background (to avoid reseting max_memory_usage_for_user)
 # --max_block_size=1 to make it killable (check the state each 1 second, 1 row)
 # (the test takes ~40 seconds in debug build, so 60 seconds is ok)
-${CLICKHOUSE_CLIENT} --max_block_size=1 --format Null -q 'SELECT sleepEachRow(1) FROM numbers(600)' &
+${CLICKHOUSE_CLIENT} --user secondary --max_block_size=1 --format Null -q 'SELECT sleepEachRow(1) FROM numbers(600)' &
 # trap
 sleep_query_pid=$!
 function cleanup()
