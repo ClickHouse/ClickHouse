@@ -626,7 +626,12 @@ neighbor(column, offset[, default_value])
 ```
 
 The result of the function depends on the affected data blocks and the order of data in the block.
-If you make a subquery with ORDER BY and call the function from outside the subquery, you can get the expected result.
+
+!!! warning "Warning"
+    It can reach the neighbor rows only inside the currently processed data block.
+
+The rows order used during the calculation of `neighbor` can differ from the order of rows returned to the user.
+To prevent that you can make a subquery with ORDER BY and call the function from outside the subquery.
 
 **Parameters**
 
@@ -731,8 +736,13 @@ Result:
 Calculates the difference between successive row values ​​in the data block.
 Returns 0 for the first row and the difference from the previous row for each subsequent row.
 
+!!! warning "Warning"
+    It can reach the previos row only inside the currently processed data block.
+    
 The result of the function depends on the affected data blocks and the order of data in the block.
-If you make a subquery with ORDER BY and call the function from outside the subquery, you can get the expected result.
+
+The rows order used during the calculation of `runningDifference` can differ from the order of rows returned to the user.
+To prevent that you can make a subquery with ORDER BY and call the function from outside the subquery.
 
 Example:
 
