@@ -280,7 +280,8 @@ public:
     ~ExpressionActions();
     ExpressionActions() = default;
 
-    ExpressionActions(const ExpressionActions & other) = default;
+    ExpressionActions(const ExpressionActions &) = delete;
+    ExpressionActions & operator=(const ExpressionActions &) = delete;
 
     const Actions & getActions() const { return actions; }
 
