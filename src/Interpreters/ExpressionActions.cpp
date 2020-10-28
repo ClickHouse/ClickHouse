@@ -249,6 +249,7 @@ void ExpressionActions::executeAction(const Action & action, ExecutionContext & 
 
             res_column.column = array->getDataPtr();
             res_column.type = assert_cast<const DataTypeArray &>(*array_join_key.type).getNestedType();
+            res_column.name = action.node->result_name;
 
             num_rows = res_column.column->size();
             break;
@@ -259,6 +260,7 @@ void ExpressionActions::executeAction(const Action & action, ExecutionContext & 
             auto & res_column = columns[action.result_position];
             res_column.column = action.node->column->cloneResized(num_rows);
             res_column.type = action.node->result_type;
+            res_column.name = action.node->result_name;
             break;
         }
 
