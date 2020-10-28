@@ -104,7 +104,7 @@ void ExpressionActions::checkLimits(ExecutionContext & execution_context) const
             if (column.column && !isColumnConst(*column.column))
                 ++non_const_columns;
 
-        if (non_const_columns > settings.max_temporary_non_const_columns)
+        if (non_const_columns > max_temporary_non_const_columns)
         {
             std::stringstream list_of_non_const_columns;
             for (const auto & column : execution_context.columns)
@@ -112,7 +112,7 @@ void ExpressionActions::checkLimits(ExecutionContext & execution_context) const
                     list_of_non_const_columns << "\n" << column.name;
 
             throw Exception("Too many temporary non-const columns:" + list_of_non_const_columns.str()
-                + ". Maximum: " + settings.max_temporary_non_const_columns.toString(),
+                + ". Maximum: " + max_temporary_non_const_columns.toString(),
                 ErrorCodes::TOO_MANY_TEMPORARY_NON_CONST_COLUMNS);
         }
     }
