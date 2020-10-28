@@ -48,7 +48,7 @@ TotalsHavingStep::TotalsHavingStep(
 void TotalsHavingStep::transformPipeline(QueryPipeline & pipeline)
 {
     auto totals_having = std::make_shared<TotalsHavingTransform>(
-            pipeline.getHeader(), overflow_row, actions->buildExpressions(),
+            pipeline.getHeader(), overflow_row, (actions ? actions->buildExpressions() : nullptr),
             filter_column_name, totals_mode, auto_include_threshold, final);
 
     pipeline.addTotalsHavingTransform(std::move(totals_having));
