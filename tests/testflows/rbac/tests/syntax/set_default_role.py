@@ -2,8 +2,8 @@ from contextlib import contextmanager
 
 from testflows.core import *
 
+import rbac.helper.errors as errors
 from rbac.requirements import *
-import rbac.tests.errors as errors
 
 @TestFeature
 @Name("set default role")
@@ -56,7 +56,7 @@ def feature(self, node="clickhouse1"):
                 exitcode, message = errors.user_not_found_in_disk(name="user0")
                 node.query("SET DEFAULT ROLE role0 TO user0", exitcode=exitcode, message=message)
 
-    # In SET DEFAULT ROLE, the nonexistent user is noticed first and becomes the thrown exception
+    #in SET DEFAULT ROLE, the nonexistent user is noticed first and becomes the thrown exception
     with Scenario("I set default a nonexistent role to a nonexistent user", requirements=[
             RQ_SRS_006_RBAC_SetDefaultRole("1.0")]):
         with setup(0,0):

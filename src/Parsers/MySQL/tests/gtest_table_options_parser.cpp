@@ -11,7 +11,7 @@ using namespace DB::MySQLParser;
 
 TEST(ParserTableOptions, AllSubpatitionOptions)
 {
-    String input = "AUTO_INCREMENt = 1 AVG_ROW_LENGTh 3 CHARACTER SET utf-8 CHECKSUM 1 COLLATE utf8_bin"
+    String input = "AUTO_INCREMENt = 1 AVG_ROW_LENGTh 3 CHARACTER SET utf8 CHECKSUM 1 COLLATE utf8_bin"
                    " COMMENT 'table option comment' COMPRESSION 'LZ4' CONNECTION 'connect_string' DATA DIRECTORY 'data_directory'"
                    " INDEX DIRECTORY 'index_directory' DELAY_KEY_WRITE 0 ENCRYPTION 'Y' ENGINE INNODB INSERT_METHOD NO KEY_BLOCK_SIZE 3"
                    " MAX_ROWS 1000 MIN_ROWS 0 PACK_KEYS DEFAULT PASSWORD 'password' ROW_FORMAT DYNAMIC STATS_AUTO_RECALC DEFAULT "
@@ -23,7 +23,7 @@ TEST(ParserTableOptions, AllSubpatitionOptions)
     ASTDeclareOptions * declare_options = ast->as<ASTDeclareOptions>();
     EXPECT_EQ(declare_options->changes["auto_increment"]->as<ASTLiteral>()->value.safeGet<UInt64>(), 1);
     EXPECT_EQ(declare_options->changes["avg_row_length"]->as<ASTLiteral>()->value.safeGet<UInt64>(), 3);
-    EXPECT_EQ(declare_options->changes["character_set"]->as<ASTIdentifier>()->name(), "utf-8");
+    EXPECT_EQ(declare_options->changes["character_set"]->as<ASTIdentifier>()->name(), "utf8");
     EXPECT_EQ(declare_options->changes["checksum"]->as<ASTLiteral>()->value.safeGet<UInt64>(), 1);
     EXPECT_EQ(declare_options->changes["collate"]->as<ASTIdentifier>()->name(), "utf8_bin");
     EXPECT_EQ(declare_options->changes["comment"]->as<ASTLiteral>()->value.safeGet<String>(), "table option comment");
