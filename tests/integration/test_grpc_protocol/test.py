@@ -4,6 +4,7 @@ import subprocess
 import sys
 import grpc
 from helpers.cluster import ClickHouseCluster
+from threading import Thread
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -101,6 +102,21 @@ def query_and_get_logs(*args, **kwargs):
             #print(log_entry)
             logs += log_entry.text + "\n"
     return logs
+
+class QueryThread(Thread):
+    def __init__(self, query_text, expected_output, query_id, use_separate_channel=False):
+        Thread.__init__(self)
+        self.query_text = query_text
+        self.expected_output = expected_output
+        self.use_separate_channel = use_separate_channel
+        self.query_id = query_id
+    
+    def run(self):
+        if self.use_separate_channel:
+            with create_channel() as channel:
+                assert query(self.query_text, query_id=self.query_id, channel=channel) == self.expected_output
+        else:
+            assert query(self.query_text, query_id=self.query_id) == self.expected_output
 
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
@@ -236,3 +252,25 @@ def test_session():
 def test_no_session():
     e = query_and_get_error("SET custom_x=1")
     assert "There is no session" in e.display_text
+
+def test_simultaneous_queries_same_channel():
+    threads=[]
+    try:
+        for i in range(0, 100):
+            thread = QueryThread("SELECT sum(number) FROM numbers(10)", expected_output="45\n", query_id='sqA'+str(i))
+            threads.append(thread)
+            thread.start()
+    finally:
+        for thread in threads:
+            thread.join()
+
+def test_simultaneous_queries_multiple_channels():
+    threads=[]
+    try:
+        for i in range(0, 100):
+            thread = QueryThread("SELECT sum(number) FROM numbers(10)", expected_output="45\n", query_id='sqB'+str(i), use_separate_channel=True)
+            threads.append(thread)
+            thread.start()
+    finally:
+        for thread in threads:
+            thread.join()
