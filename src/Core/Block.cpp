@@ -295,6 +295,19 @@ std::string Block::dumpStructure() const
     return out.str();
 }
 
+std::string Block::dumpIndex() const
+{
+    WriteBufferFromOwnString out;
+    bool first = true;
+    for (const auto & [name, pos] : index_by_name)
+    {
+        if (!first)
+            out << ", ";
+        first = false;
+
+        out << name << ' ' << pos;
+    }
+}
 
 Block Block::cloneEmpty() const
 {

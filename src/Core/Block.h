@@ -119,6 +119,9 @@ public:
      /** List of names, types and lengths of columns. Designed for debugging. */
     std::string dumpStructure() const;
 
+    /** List of column names and positions from index */
+    std::string dumpIndex() const;
+
     /** Get the same block, but empty. */
     Block cloneEmpty() const;
 
