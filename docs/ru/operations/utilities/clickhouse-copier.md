@@ -1,3 +1,8 @@
+---
+toc_priority: 59
+toc_title: clickhouse-copier
+---
+
 # clickhouse-copier {#clickhouse-copier}
 
 Копирует данные из таблиц одного кластера в таблицы другого (или этого же) кластера.
