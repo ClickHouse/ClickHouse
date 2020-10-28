@@ -307,6 +307,7 @@ std::string Block::dumpIndex() const
 
         out << name << ' ' << pos;
     }
+    return out.str();
 }
 
 Block Block::cloneEmpty() const
