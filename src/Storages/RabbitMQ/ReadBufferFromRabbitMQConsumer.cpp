@@ -155,7 +155,7 @@ void ReadBufferFromRabbitMQConsumer::subscribe()
         .onError([&](const char * message)
         {
             /* End up here either if channel ends up in an error state (then there will be resubscription) or consume call error, which
-             * arises from queue settings mismatch or queue level error, which should not happen as noone else is supposed to touch them
+             * arises from queue settings mismatch or queue level error, which should not happen as no one else is supposed to touch them
              */
             LOG_ERROR(log, "Consumer failed on channel {}. Reason: {}", channel_id, message);
             wait_subscription.store(false);
@@ -173,16 +173,16 @@ bool ReadBufferFromRabbitMQConsumer::ackMessages()
      */
     if (record_info.channel_id == channel_id && record_info.delivery_tag && record_info.delivery_tag > prev_tag)
     {
-        /// Commit all received messages with delivery tags from last commited to last inserted
+        /// Commit all received messages with delivery tags from last committed to last inserted
         if (!consumer_channel->ack(record_info.delivery_tag, AMQP::multiple))
         {
-            LOG_ERROR(log, "Failed to commit messages with delivery tags from last commited to {} on channel {}",
+            LOG_ERROR(log, "Failed to commit messages with delivery tags from last committed to {} on channel {}",
                      record_info.delivery_tag, channel_id);
             return false;
         }
 
         prev_tag = record_info.delivery_tag;
-        LOG_TRACE(log, "Consumer commited messages with deliveryTags up to {} on channel {}", record_info.delivery_tag, channel_id);
+        LOG_TRACE(log, "Consumer committed messages with deliveryTags up to {} on channel {}", record_info.delivery_tag, channel_id);
     }
 
     return true;

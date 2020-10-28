@@ -92,25 +92,23 @@ def parallel_login(self, server, user_count=10, timeout=200):
     with Given("a group of LDAP users"):
         users = [{"cn": f"parallel_user{i}", "userpassword": randomword(20)} for i in range(user_count)]
 
-    with rbac_roles("ldap_role") as roles:
-        with ldap_external_user_directory(server=server, roles=roles, restart=True):
-            with ldap_users(*users):
-                tasks = []
-                try:
-                    with When("users try to login in parallel", description="""
-                        * with valid username and password
-                        * with invalid username and valid password
-                        * with valid username and invalid password
-                        """):
-                        p = Pool(15)
-                        for i in range(25):
-                            tasks.append(p.apply_async(login_with_valid_username_and_password, (users, i, 50,)))
-                            tasks.append(p.apply_async(login_with_valid_username_and_invalid_password, (users, i, 50,)))
-                            tasks.append(p.apply_async(login_with_invalid_username_and_valid_password, (users, i, 50,)))
+    with ldap_users(*users):
+        tasks = []
+        try:
+            with When("users try to login in parallel", description="""
+                * with valid username and password
+                * with invalid username and valid password
+                * with valid username and invalid password
+                """):
+                p = Pool(15)
+                for i in range(25):
+                    tasks.append(p.apply_async(login_with_valid_username_and_password, (users, i, 50,)))
+                    tasks.append(p.apply_async(login_with_valid_username_and_invalid_password, (users, i, 50,)))
+                    tasks.append(p.apply_async(login_with_invalid_username_and_valid_password, (users, i, 50,)))
 
-                finally:
-                    with Then("it should work"):
-                        join(tasks, timeout)
+        finally:
+            with Then("it should work"):
+                join(tasks, timeout)
 
 @TestScenario
 @Requirements(
@@ -127,25 +125,23 @@ def parallel_login_with_the_same_user(self, server, timeout=200):
     with Given("only one LDAP user"):
         users = [{"cn": f"parallel_user1", "userpassword": randomword(20)}]
 
-    with rbac_roles("ldap_role") as roles:
-        with ldap_external_user_directory(server=server, roles=roles, restart=True):
-            with ldap_users(*users):
-                tasks = []
-                try:
-                    with When("the same user tries to login in parallel", description="""
-                        * with valid username and password
-                        * with invalid username and valid password
-                        * with valid username and invalid password
-                        """):
-                        p = Pool(15)
-                        for i in range(25):
-                            tasks.append(p.apply_async(login_with_valid_username_and_password, (users, i, 50,)))
-                            tasks.append(p.apply_async(login_with_valid_username_and_invalid_password, (users, i, 50,)))
-                            tasks.append(p.apply_async(login_with_invalid_username_and_valid_password, (users, i, 50,)))
+    with ldap_users(*users):
+        tasks = []
+        try:
+            with When("the same user tries to login in parallel", description="""
+                * with valid username and password
+                * with invalid username and valid password
+                * with valid username and invalid password
+                """):
+                p = Pool(15)
+                for i in range(25):
+                    tasks.append(p.apply_async(login_with_valid_username_and_password, (users, i, 50,)))
+                    tasks.append(p.apply_async(login_with_valid_username_and_invalid_password, (users, i, 50,)))
+                    tasks.append(p.apply_async(login_with_invalid_username_and_valid_password, (users, i, 50,)))
 
-                finally:
-                    with Then("it should work"):
-                        join(tasks, timeout)
+        finally:
+            with Then("it should work"):
+                join(tasks, timeout)
 
 @TestScenario
 def login_after_ldap_external_user_directory_is_removed(self, server):
@@ -162,6 +158,7 @@ def login_after_ldap_external_user_directory_is_removed(self, server):
         login_and_execute_query(username="user2", password="user2", exitcode=exitcode, message=message)
 
 @TestScenario
+@Tags("custom config")
 @Requirements(
     RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication_Parallel_SameUser("1.0"),
     RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication_Parallel_ValidAndInvalid("1.0")
@@ -204,6 +201,7 @@ def parallel_login_with_the_same_user_multiple_servers(self, server, timeout=200
                         join(tasks, timeout)
 
 @TestScenario
+@Tags("custom config")
 @Requirements(
     RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication_Parallel_MultipleServers("1.0"),
     RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication_Parallel_ValidAndInvalid("1.0")
@@ -256,6 +254,7 @@ def parallel_login_with_multiple_servers(self, server, user_count=10, timeout=20
                         join(tasks, timeout)
 
 @TestScenario
+@Tags("custom config")
 @Requirements(
     RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication_Parallel_LocalAndMultipleLDAP("1.0"),
     RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication_Parallel_ValidAndInvalid("1.0")
@@ -323,20 +322,18 @@ def parallel_login_with_rbac_users(self, server, user_count=10, timeout=200):
 
     users = [{"cn": f"parallel_user{i}", "userpassword": randomword(20)} for i in range(user_count)]
 
-    with rbac_roles("ldap_role") as roles:
-        with ldap_external_user_directory(server=server, roles=roles, restart=True):
-            with rbac_users(*users):
-                tasks = []
-                try:
-                    with When("I login in parallel"):
-                        p = Pool(15)
-                        for i in range(25):
-                            tasks.append(p.apply_async(login_with_valid_username_and_password, (users, i, 50,)))
-                            tasks.append(p.apply_async(login_with_valid_username_and_invalid_password, (users, i, 50,)))
-                            tasks.append(p.apply_async(login_with_invalid_username_and_valid_password, (users, i, 50,)))
-                finally:
-                    with Then("it should work"):
-                        join(tasks, timeout)
+    with rbac_users(*users):
+        tasks = []
+        try:
+            with When("I login in parallel"):
+                p = Pool(15)
+                for i in range(25):
+                    tasks.append(p.apply_async(login_with_valid_username_and_password, (users, i, 50,)))
+                    tasks.append(p.apply_async(login_with_valid_username_and_invalid_password, (users, i, 50,)))
+                    tasks.append(p.apply_async(login_with_invalid_username_and_valid_password, (users, i, 50,)))
+        finally:
+            with Then("it should work"):
+                join(tasks, timeout)
 
 @TestScenario
 @Requirements(
@@ -347,10 +344,8 @@ def login_after_user_is_added_to_ldap(self, server):
     """
     user = {"cn": "myuser", "userpassword": "myuser"}
 
-    with rbac_roles("ldap_role") as roles:
-        with ldap_external_user_directory(server=server, roles=roles, restart=True):
-            with When(f"I add user to LDAP and try to login"):
-                add_user_to_ldap_and_login(user=user, server=server)
+    with When(f"I add user to LDAP and try to login"):
+        add_user_to_ldap_and_login(user=user, server=server)
 
 @TestScenario
 @Requirements(
@@ -363,27 +358,25 @@ def login_after_user_is_deleted_from_ldap(self, server):
     self.context.ldap_node = self.context.cluster.node(server)
     user = None
 
-    with rbac_roles("ldap_role") as roles:
-        with ldap_external_user_directory(server=server, roles=roles, restart=True):
-            try:
-                with Given(f"I add user to LDAP"):
-                    user = {"cn": "myuser", "userpassword": "myuser"}
-                    user = add_user_to_ldap(**user)
+    try:
+        with Given(f"I add user to LDAP"):
+            user = {"cn": "myuser", "userpassword": "myuser"}
+            user = add_user_to_ldap(**user)
 
-                login_and_execute_query(username=user["cn"], password=user["userpassword"])
+        login_and_execute_query(username=user["cn"], password=user["userpassword"])
 
-                with When("I delete this user from LDAP"):
-                    delete_user_from_ldap(user)
+        with When("I delete this user from LDAP"):
+            delete_user_from_ldap(user)
 
-                with Then("when I try to login again it should fail"):
-                    login_and_execute_query(username=user["cn"], password=user["userpassword"],
-                        exitcode=4,
-                        message=f"DB::Exception: {user['cn']}: Authentication failed: password is incorrect or there is no user with such name"
-                    )
-            finally:
-                with Finally("I make sure LDAP user is deleted"):
-                    if user is not None:
-                        delete_user_from_ldap(user, exitcode=None)
+        with Then("when I try to login again it should fail"):
+            login_and_execute_query(username=user["cn"], password=user["userpassword"],
+                exitcode=4,
+                message=f"DB::Exception: {user['cn']}: Authentication failed: password is incorrect or there is no user with such name"
+            )
+    finally:
+        with Finally("I make sure LDAP user is deleted"):
+            if user is not None:
+                delete_user_from_ldap(user, exitcode=None)
 
 @TestScenario
 @Requirements(
@@ -396,31 +389,29 @@ def login_after_user_password_changed_in_ldap(self, server):
     self.context.ldap_node = self.context.cluster.node(server)
     user = None
 
-    with rbac_roles("ldap_role") as roles:
-        with ldap_external_user_directory(server=server, roles=roles, restart=True):
-            try:
-                with Given(f"I add user to LDAP"):
-                    user = {"cn": "myuser", "userpassword": "myuser"}
-                    user = add_user_to_ldap(**user)
+    try:
+        with Given(f"I add user to LDAP"):
+            user = {"cn": "myuser", "userpassword": "myuser"}
+            user = add_user_to_ldap(**user)
 
-                login_and_execute_query(username=user["cn"], password=user["userpassword"])
+        login_and_execute_query(username=user["cn"], password=user["userpassword"])
 
-                with When("I change user password in LDAP"):
-                    change_user_password_in_ldap(user, "newpassword")
+        with When("I change user password in LDAP"):
+            change_user_password_in_ldap(user, "newpassword")
 
-                with Then("when I try to login again it should fail"):
-                    login_and_execute_query(username=user["cn"], password=user["userpassword"],
-                        exitcode=4,
-                        message=f"DB::Exception: {user['cn']}: Authentication failed: password is incorrect or there is no user with such name"
-                    )
+        with Then("when I try to login again it should fail"):
+            login_and_execute_query(username=user["cn"], password=user["userpassword"],
+                exitcode=4,
+                message=f"DB::Exception: {user['cn']}: Authentication failed: password is incorrect or there is no user with such name"
+            )
 
-                with And("when I try to login with the new password it should work"):
-                    login_and_execute_query(username=user["cn"], password="newpassword")
+        with And("when I try to login with the new password it should work"):
+            login_and_execute_query(username=user["cn"], password="newpassword")
 
-            finally:
-                with Finally("I make sure LDAP user is deleted"):
-                    if user is not None:
-                        delete_user_from_ldap(user, exitcode=None)
+    finally:
+        with Finally("I make sure LDAP user is deleted"):
+            if user is not None:
+                delete_user_from_ldap(user, exitcode=None)
 
 @TestScenario
 @Requirements(
@@ -434,27 +425,25 @@ def login_after_user_cn_changed_in_ldap(self, server):
     user = None
     new_user = None
 
-    with rbac_roles("ldap_role") as roles:
-        with ldap_external_user_directory(server=server, roles=roles, restart=True):
-            try:
-                with Given(f"I add user to LDAP"):
-                    user = {"cn": "myuser", "userpassword": "myuser"}
-                    user = add_user_to_ldap(**user)
+    try:
+        with Given(f"I add user to LDAP"):
+            user = {"cn": "myuser", "userpassword": "myuser"}
+            user = add_user_to_ldap(**user)
 
-                login_and_execute_query(username=user["cn"], password=user["userpassword"])
+        login_and_execute_query(username=user["cn"], password=user["userpassword"])
 
-                with When("I change user password in LDAP"):
-                    new_user = change_user_cn_in_ldap(user, "myuser2")
+        with When("I change user password in LDAP"):
+            new_user = change_user_cn_in_ldap(user, "myuser2")
 
-                with Then("when I try to login again it should fail"):
-                    login_and_execute_query(username=user["cn"], password=user["userpassword"],
-                        exitcode=4,
-                        message=f"DB::Exception: {user['cn']}: Authentication failed: password is incorrect or there is no user with such name"
-                    )
-            finally:
-                with Finally("I make sure LDAP user is deleted"):
-                    if new_user is not None:
-                        delete_user_from_ldap(new_user, exitcode=None)
+        with Then("when I try to login again it should fail"):
+            login_and_execute_query(username=user["cn"], password=user["userpassword"],
+                exitcode=4,
+                message=f"DB::Exception: {user['cn']}: Authentication failed: password is incorrect or there is no user with such name"
+            )
+    finally:
+        with Finally("I make sure LDAP user is deleted"):
+            if new_user is not None:
+                delete_user_from_ldap(new_user, exitcode=None)
 
 @TestScenario
 @Requirements(
@@ -467,31 +456,29 @@ def login_after_ldap_server_is_restarted(self, server, timeout=60):
     self.context.ldap_node = self.context.cluster.node(server)
     user = None
 
-    with rbac_roles("ldap_role") as roles:
-        with ldap_external_user_directory(server=server, roles=roles, restart=True):
-            try:
-                with Given(f"I add user to LDAP"):
-                    user = {"cn": "myuser", "userpassword": getuid()}
-                    user = add_user_to_ldap(**user)
+    try:
+        with Given(f"I add user to LDAP"):
+            user = {"cn": "myuser", "userpassword": getuid()}
+            user = add_user_to_ldap(**user)
 
-                login_and_execute_query(username=user["cn"], password=user["userpassword"])
+        login_and_execute_query(username=user["cn"], password=user["userpassword"])
 
-                with When("I restart LDAP server"):
-                    self.context.ldap_node.restart()
+        with When("I restart LDAP server"):
+            self.context.ldap_node.restart()
 
-                with Then("I try to login until it works", description=f"timeout {timeout} sec"):
-                    started = time.time()
-                    while True:
-                        r = self.context.node.query("SELECT 1",
-                            settings=[("user", user["cn"]), ("password", user["userpassword"])],
-                            no_checks=True)
-                        if r.exitcode == 0:
-                            break
-                        assert time.time() - started < timeout, error(r.output)
-            finally:
-                with Finally("I make sure LDAP user is deleted"):
-                    if user is not None:
-                        delete_user_from_ldap(user, exitcode=None)
+        with Then("I try to login until it works", description=f"timeout {timeout} sec"):
+            started = time.time()
+            while True:
+                r = self.context.node.query("SELECT 1",
+                    settings=[("user", user["cn"]), ("password", user["userpassword"])],
+                    no_checks=True)
+                if r.exitcode == 0:
+                    break
+                assert time.time() - started < timeout, error(r.output)
+    finally:
+        with Finally("I make sure LDAP user is deleted"):
+            if user is not None:
+                delete_user_from_ldap(user, exitcode=None)
 
 @TestScenario
 @Requirements(
@@ -504,31 +491,29 @@ def login_after_clickhouse_server_is_restarted(self, server, timeout=60):
     self.context.ldap_node = self.context.cluster.node(server)
     user = None
 
-    with rbac_roles("ldap_role") as roles:
-        with ldap_external_user_directory(server=server, roles=roles, restart=True):
-            try:
-                with Given(f"I add user to LDAP"):
-                    user = {"cn": "myuser", "userpassword": getuid()}
-                    user = add_user_to_ldap(**user)
+    try:
+        with Given(f"I add user to LDAP"):
+            user = {"cn": "myuser", "userpassword": getuid()}
+            user = add_user_to_ldap(**user)
 
-                login_and_execute_query(username=user["cn"], password=user["userpassword"])
+        login_and_execute_query(username=user["cn"], password=user["userpassword"])
 
-                with When("I restart ClickHouse server"):
-                    self.context.node.restart()
+        with When("I restart ClickHouse server"):
+            self.context.node.restart()
 
-                with Then("I try to login until it works", description=f"timeout {timeout} sec"):
-                    started = time.time()
-                    while True:
-                        r = self.context.node.query("SELECT 1",
-                            settings=[("user", user["cn"]), ("password", user["userpassword"])],
-                            no_checks=True)
-                        if r.exitcode == 0:
-                            break
-                        assert time.time() - started < timeout, error(r.output)
-            finally:
-                with Finally("I make sure LDAP user is deleted"):
-                    if user is not None:
-                        delete_user_from_ldap(user, exitcode=None)
+        with Then("I try to login until it works", description=f"timeout {timeout} sec"):
+            started = time.time()
+            while True:
+                r = self.context.node.query("SELECT 1",
+                    settings=[("user", user["cn"]), ("password", user["userpassword"])],
+                    no_checks=True)
+                if r.exitcode == 0:
+                    break
+                assert time.time() - started < timeout, error(r.output)
+    finally:
+        with Finally("I make sure LDAP user is deleted"):
+            if user is not None:
+                delete_user_from_ldap(user, exitcode=None)
 
 @TestScenario
 @Requirements(
@@ -542,9 +527,7 @@ def valid_username_with_valid_empty_password(self, server):
     exitcode = 4
     message = f"DB::Exception: {user['cn']}: Authentication failed: password is incorrect or there is no user with such name"
 
-    with rbac_roles("ldap_role") as roles:
-        with ldap_external_user_directory(server=server, roles=roles, restart=True):
-            add_user_to_ldap_and_login(user=user, exitcode=exitcode, message=message, server=server)
+    add_user_to_ldap_and_login(user=user, exitcode=exitcode, message=message, server=server)
 
 @TestScenario
 @Requirements(
@@ -561,9 +544,7 @@ def valid_username_and_invalid_empty_password(self, server):
     exitcode = 4
     message = f"DB::Exception: {username}: Authentication failed: password is incorrect or there is no user with such name"
 
-    with rbac_roles("ldap_role") as roles:
-        with ldap_external_user_directory(server=server, roles=roles, restart=True):
-            add_user_to_ldap_and_login(user=user, login=login, exitcode=exitcode, message=message, server=server)
+    add_user_to_ldap_and_login(user=user, login=login, exitcode=exitcode, message=message, server=server)
 
 @TestScenario
 @Requirements(
@@ -575,10 +556,8 @@ def valid_username_and_password(self, server):
     username = "valid_username_and_password"
     user = {"cn": username, "userpassword": username}
 
-    with rbac_roles("ldap_role") as roles:
-        with ldap_external_user_directory(server=server, roles=roles, restart=True):
-            with When(f"I add user {username} to LDAP and try to login"):
-                add_user_to_ldap_and_login(user=user, server=server)
+    with When(f"I add user {username} to LDAP and try to login"):
+        add_user_to_ldap_and_login(user=user, server=server)
 
 @TestScenario
 @Requirements(
@@ -593,9 +572,7 @@ def valid_username_and_password_invalid_server(self, server=None):
     exitcode = 4
     message = f"DB::Exception: user2: Authentication failed: password is incorrect or there is no user with such name"
 
-    with rbac_roles("ldap_role") as roles:
-        with ldap_external_user_directory(server=server, roles=roles, restart=True):
-            login_and_execute_query(username="user2", password="user2", exitcode=exitcode, message=message)
+    login_and_execute_query(username="user2", password="user2", exitcode=exitcode, message=message)
 
 @TestScenario
 @Requirements(
@@ -608,9 +585,7 @@ def valid_long_username_and_short_password(self, server):
     username = "long_username_12345678901234567890123456789012345678901234567890123456789012345678901234567890"
     user = {"cn": username, "userpassword": "long_username"}
 
-    with rbac_roles("ldap_role") as roles:
-        with ldap_external_user_directory(server=server, roles=roles, restart=True):
-            add_user_to_ldap_and_login(user=user, server=server)
+    add_user_to_ldap_and_login(user=user, server=server)
 
 @TestScenario
 @Requirements(
@@ -626,9 +601,7 @@ def invalid_long_username_and_valid_short_password(self, server):
     exitcode = 4
     message=f"DB::Exception: {login['username']}: Authentication failed: password is incorrect or there is no user with such name"
 
-    with rbac_roles("ldap_role") as roles:
-        with ldap_external_user_directory(server=server, roles=roles, restart=True):
-            add_user_to_ldap_and_login(user=user, login=login, exitcode=exitcode, message=message, server=server)
+    add_user_to_ldap_and_login(user=user, login=login, exitcode=exitcode, message=message, server=server)
 
 @TestScenario
 @Requirements(
@@ -641,9 +614,7 @@ def valid_short_username_and_long_password(self, server):
     username = "long_password"
     user = {"cn": username, "userpassword": "long_password_12345678901234567890123456789012345678901234567890123456789012345678901234567890"}
 
-    with rbac_roles("ldap_role") as roles:
-        with ldap_external_user_directory(server=server, roles=roles, restart=True):
-            add_user_to_ldap_and_login(user=user, server=server)
+    add_user_to_ldap_and_login(user=user, server=server)
 
 @TestScenario
 @Requirements(
@@ -659,9 +630,7 @@ def valid_short_username_and_invalid_long_password(self, server):
     exitcode = 4
     message=f"DB::Exception: {username}: Authentication failed: password is incorrect or there is no user with such name"
 
-    with rbac_roles("ldap_role") as roles:
-        with ldap_external_user_directory(server=server, roles=roles, restart=True):
-            add_user_to_ldap_and_login(user=user, login=login, exitcode=exitcode, message=message, server=server)
+    add_user_to_ldap_and_login(user=user, login=login, exitcode=exitcode, message=message, server=server)
 
 @TestScenario
 @Requirements(
@@ -677,9 +646,7 @@ def valid_username_and_invalid_password(self, server):
     exitcode = 4
     message=f"DB::Exception: {username}: Authentication failed: password is incorrect or there is no user with such name"
 
-    with rbac_roles("ldap_role") as roles:
-        with ldap_external_user_directory(server=server, roles=roles, restart=True):
-            add_user_to_ldap_and_login(user=user, login=login, exitcode=exitcode, message=message, server=server)
+    add_user_to_ldap_and_login(user=user, login=login, exitcode=exitcode, message=message, server=server)
 
 @TestScenario
 @Requirements(
@@ -695,9 +662,7 @@ def invalid_username_and_valid_password(self, server):
     exitcode = 4
     message=f"DB::Exception: {login['username']}: Authentication failed: password is incorrect or there is no user with such name"
 
-    with rbac_roles("ldap_role") as roles:
-        with ldap_external_user_directory(server=server, roles=roles, restart=True):
-            add_user_to_ldap_and_login(user=user, login=login, exitcode=exitcode, message=message, server=server)
+    add_user_to_ldap_and_login(user=user, login=login, exitcode=exitcode, message=message, server=server)
 
 @TestScenario
 @Requirements(
@@ -710,9 +675,7 @@ def valid_utf8_username_and_ascii_password(self, server):
     username = "utf8_username_Gãńdåłf_Thê_Gręât"
     user = {"cn": username, "userpassword": "utf8_username"}
 
-    with rbac_roles("ldap_role") as roles:
-        with ldap_external_user_directory(server=server, roles=roles, restart=True):
-            add_user_to_ldap_and_login(user=user, server=server)
+    add_user_to_ldap_and_login(user=user, server=server)
 
 @TestScenario
 @Requirements(
@@ -725,18 +688,14 @@ def valid_ascii_username_and_utf8_password(self, server):
     username = "utf8_password"
     user = {"cn": username, "userpassword": "utf8_password_Gãńdåłf_Thê_Gręât"}
 
-    with rbac_roles("ldap_role") as roles:
-        with ldap_external_user_directory(server=server, roles=roles, restart=True):
-            add_user_to_ldap_and_login(user=user, server=server)
+    add_user_to_ldap_and_login(user=user, server=server)
 
 @TestScenario
 def empty_username_and_empty_password(self, server=None):
     """Check that we can login using empty username and empty password as
     it will use the default user and that has an empty password.
     """
-    with rbac_roles("ldap_role") as roles:
-        with ldap_external_user_directory(server=server, roles=roles, restart=True):
-            login_and_execute_query(username="", password="")
+    login_and_execute_query(username="", password="")
 
 @TestScenario
 @Requirements(
@@ -763,18 +722,16 @@ def user_lookup_priority(self, server):
         "ldap": {"username": "ldap", "password": "userldap"}
     }
 
-    with rbac_roles("ldap_role") as roles:
-        with ldap_external_user_directory(server=server, roles=roles, restart=True):
-            with ldap_users(*[{"cn": user["username"], "userpassword": user["password"]} for user in users.values()]):
-                with rbac_users({"cn": "local", "userpassword": "local"}):
-                    with When("I try to login as 'default' user which is also defined in users.xml it should fail"):
-                        login_and_execute_query(**users["default"], exitcode=exitcode, message=message.format(username="default"))
+    with ldap_users(*[{"cn": user["username"], "userpassword": user["password"]} for user in users.values()]):
+        with rbac_users({"cn": "local", "userpassword": "local"}):
+            with When("I try to login as 'default' user which is also defined in users.xml it should fail"):
+                login_and_execute_query(**users["default"], exitcode=exitcode, message=message.format(username="default"))
 
-                    with When("I try to login as 'local' user which is also defined in local storage it should fail"):
-                        login_and_execute_query(**users["local"], exitcode=exitcode, message=message.format(username="local"))
+            with When("I try to login as 'local' user which is also defined in local storage it should fail"):
+                login_and_execute_query(**users["local"], exitcode=exitcode, message=message.format(username="local"))
 
-                    with When("I try to login as 'ldap' user defined only in LDAP it should work"):
-                        login_and_execute_query(**users["ldap"])
+            with When("I try to login as 'ldap' user defined only in LDAP it should work"):
+                login_and_execute_query(**users["ldap"])
 
 
 @TestOutline(Feature)
@@ -795,5 +752,10 @@ def feature(self, servers=None, server=None, node="clickhouse1"):
         server = "openldap1"
 
     with ldap_servers(servers):
-        for scenario in loads(current_module(), Scenario):
+        with rbac_roles("ldap_role") as roles:
+            with ldap_external_user_directory(server=server, roles=roles, restart=True):
+                for scenario in loads(current_module(), Scenario, filter=~has.tag("custom config")):
+                    Scenario(test=scenario, flags=TE)(server=server)
+
+        for scenario in loads(current_module(), Scenario, filter=has.tag("custom config")):
             Scenario(test=scenario, flags=TE)(server=server)
