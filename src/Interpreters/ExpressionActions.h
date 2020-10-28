@@ -173,6 +173,7 @@ public:
     Names getNames() const;
     std::string dumpNames() const;
     std::string dump() const;
+    std::string dumpDAG() const;
 
     const Node & addInput(std::string name, DataTypePtr type);
     const Node & addInput(ColumnWithTypeAndName column);

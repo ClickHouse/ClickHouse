@@ -1348,4 +1348,61 @@ std::string ActionsDAG::dump() const
     return linearizeActions()->dumpActions();
 }
 
+std::string ActionsDAG::dumpDAG() const
+{
+    std::unordered_map<const Node *, size_t> map;
+    for (const auto & node : nodes)
+    {
+        size_t idx = map.size();
+        map[&node] = idx;
+    }
+
+    std::stringstream out;
+    for (const auto & node : nodes)
+    {
+        out << map[&node] << " : ";
+        switch (node.type)
+        {
+            case ActionsDAG::Type::COLUMN:
+                out << "COLUMN ";
+                break;
+
+            case ActionsDAG::Type::ALIAS:
+                out << "ALIAS ";
+                break;
+
+            case ActionsDAG::Type::FUNCTION:
+                out << "FUNCTION ";
+                break;
+
+            case ActionsDAG::Type::ARRAY_JOIN:
+                out << "ARRAY JOIN ";
+                break;
+
+            case ActionsDAG::Type::INPUT:
+                out << "INPUT ";
+                break;
+        }
+
+        out << "(";
+        for (size_t i = 0; i < node.children.size(); ++i)
+        {
+            if (i)
+                out << ", ";
+            out << map[node.children[i]];
+        }
+        out << ")";
+
+        out << " " << (node.column ? node.column->getName() : "(no column)");
+        out << " " << (node.result_type ? node.result_type->getName() : "(no type)");
+        out << " " << (!node.result_name.empty() ? node.result_name : "(no name)");
+        if (node.function_base)
+            out << " [" << node.function_base->getName() << "]";
+
+        out << "\n";
+    }
+
+    return out.str();
+}
+
 }
