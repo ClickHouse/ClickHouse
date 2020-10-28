@@ -449,11 +449,8 @@ def test_jbod_overflow(start_cluster, name, engine):
                 data.append(get_random_string(1024 * 1024))  # 1MB row
             node1.query("INSERT INTO {} VALUES {}".format(name, ','.join(["('" + x + "')" for x in data])))
 
-        for p in ("/jbod1", "/jbod2", "/external"):
-            print(node1.exec_in_container([f"bash", "-c", f"find {p} | xargs -n1 du -sh"])) 
-
         used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {'jbod1'}
+        assert all(disk == 'jbod1' for disk in used_disks)
 
         # should go to the external disk (jbod is overflown)
         data = []  # 10MB in total
