@@ -1,9 +1,11 @@
 #include <Parsers/ParserDataType.h>
-#include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/CommonParsers.h>
+
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/CommonParsers.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
+
 
 namespace DB
 {
@@ -78,14 +80,24 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ++pos;
 
     /// Parse optional parameters
-    ParserList args_parser(std::make_unique<ParserExpression>(), std::make_unique<ParserToken>(TokenType::Comma));
     ASTPtr expr_list_args;
 
-    if (!args_parser.parse(pos, expr_list_args, expected))
-        return false;
-    if (pos->type != TokenType::ClosingRoundBracket)
-        return false;
-    ++pos;
+    ParserList args_parser_nested(std::make_unique<ParserNestedTable>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+    if (args_parser_nested.parse(pos, expr_list_args, expected))
+    {
+        if (pos->type != TokenType::ClosingRoundBracket)
+            return false;
+        ++pos;
+    }
+    else
+    {
+        ParserList args_parser_expr(std::make_unique<ParserExpression>(), std::make_unique<ParserToken>(TokenType::Comma));
+        if (!args_parser_expr.parse(pos, expr_list_args, expected))
+            return false;
+        if (pos->type != TokenType::ClosingRoundBracket)
+            return false;
+        ++pos;
+    }
 
     function_node->arguments = expr_list_args;
     function_node->children.push_back(function_node->arguments);
