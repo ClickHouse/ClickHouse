@@ -44,7 +44,7 @@ INSERT INTO insert_select_testtable (*) VALUES (1, 'a', 1) ;
 If you want to insert data in all the columns, except 'b', you need to pass so many values how many columns you chose in parenthesis then:
 
 ``` sql
-INSERT INTO insert_select_testtable (* EXCEPT(b)) Values (2, 2)
+INSERT INTO insert_select_testtable (* EXCEPT(b)) Values (2, 2);
 ```
 
 ``` sql
