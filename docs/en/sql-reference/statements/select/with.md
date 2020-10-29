@@ -4,12 +4,13 @@ toc_title: WITH
 
 # WITH Clause {#with-clause}
 
-This section provides support for Common Table Expressions ([CTE](https://en.wikipedia.org/wiki/Hierarchical_and_recursive_queries_in_SQL)), so the results of `WITH` clause can be used in the rest of `SELECT` query. Named subqueries can be included to the current and children query context. Those identifiers can appear in places where table objects are allowed. Recursion is prevented by hiding the current level CTEs from the WITH expression.
+Clickhouse support Common Table Expressions ([CTE](https://en.wikipedia.org/wiki/Hierarchical_and_recursive_queries_in_SQL)), that is provides to use results of `WITH` clause in the rest of `SELECT` query. Named subqueries can be included to the current and child query context in places where table objects are allowed. Recursion is prevented by hiding the current level CTEs from the WITH expression.
 
 ## Syntax
 
 ``` sql
-WITH <expression> AS <identifier|expression>
+WITH <expression> AS <identifier|subquery>
+...
 ```
 
 ## Examples {#examples}
