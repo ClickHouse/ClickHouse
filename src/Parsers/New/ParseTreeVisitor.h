@@ -56,6 +56,8 @@ public:
     antlrcpp::Any visitColumnExprIsNull(ClickHouseParser::ColumnExprIsNullContext * ctx) override;
     antlrcpp::Any visitColumnExprList(ClickHouseParser::ColumnExprListContext * ctx) override;
     antlrcpp::Any visitColumnExprLiteral(ClickHouseParser::ColumnExprLiteralContext * ctx) override;
+    antlrcpp::Any visitColumnExprNegate(ClickHouseParser::ColumnExprNegateContext * ctx) override;
+    antlrcpp::Any visitColumnExprNot(ClickHouseParser::ColumnExprNotContext * ctx) override;
     antlrcpp::Any visitColumnExprOr(ClickHouseParser::ColumnExprOrContext * ctx) override;
     antlrcpp::Any visitColumnExprParens(ClickHouseParser::ColumnExprParensContext * ctx) override;
     antlrcpp::Any visitColumnExprPrecedence1(ClickHouseParser::ColumnExprPrecedence1Context * ctx) override;
@@ -68,7 +70,6 @@ public:
     antlrcpp::Any visitColumnExprTrim(ClickHouseParser::ColumnExprTrimContext * ctx) override;
     antlrcpp::Any visitColumnExprTuple(ClickHouseParser::ColumnExprTupleContext * ctx) override;
     antlrcpp::Any visitColumnExprTupleAccess(ClickHouseParser::ColumnExprTupleAccessContext * ctx) override;
-    antlrcpp::Any visitColumnExprUnaryOp(ClickHouseParser::ColumnExprUnaryOpContext * ctx) override;
 
     // ColumnTypeExpr
     antlrcpp::Any visitColumnTypeExprSimple(ClickHouseParser::ColumnTypeExprSimpleContext * ctx) override;
@@ -245,7 +246,6 @@ public:
     antlrcpp::Any visitKeywordForAlias(ClickHouseParser::KeywordForAliasContext * ctx) override;
     antlrcpp::Any visitLiteral(ClickHouseParser::LiteralContext *ctx) override;
     antlrcpp::Any visitNumberLiteral(ClickHouseParser::NumberLiteralContext *ctx) override;
-    antlrcpp::Any visitUnaryOp(ClickHouseParser::UnaryOpContext *ctx) override;  // returns |AST::ColumnExpr::UnaryOpType|
 };
 
 }

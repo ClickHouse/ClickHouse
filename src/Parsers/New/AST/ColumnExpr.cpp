@@ -343,6 +343,26 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprLiteral(ClickHouseParser::ColumnE
     return ColumnExpr::createLiteral(visit(ctx->literal()).as<PtrTo<Literal>>());
 }
 
+antlrcpp::Any ParseTreeVisitor::visitColumnExprNegate(ClickHouseParser::ColumnExprNegateContext *ctx)
+{
+    auto name = std::make_shared<Identifier>("negate");
+    auto args = std::make_shared<ColumnExprList>();
+
+    args->push(visit(ctx->columnExpr()));
+
+    return ColumnExpr::createFunction(name, nullptr, args);
+}
+
+antlrcpp::Any ParseTreeVisitor::visitColumnExprNot(ClickHouseParser::ColumnExprNotContext *ctx)
+{
+    auto name = std::make_shared<Identifier>("not");
+    auto args = std::make_shared<ColumnExprList>();
+
+    args->push(visit(ctx->columnExpr()));
+
+    return ColumnExpr::createFunction(name, nullptr, args);
+}
+
 antlrcpp::Any ParseTreeVisitor::visitColumnExprOr(ClickHouseParser::ColumnExprOrContext *ctx)
 {
     auto name = std::make_shared<Identifier>("or");
@@ -486,16 +506,6 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprTupleAccess(ClickHouseParser::Col
     return ColumnExpr::createFunction(name, nullptr, args);
 }
 
-antlrcpp::Any ParseTreeVisitor::visitColumnExprUnaryOp(ClickHouseParser::ColumnExprUnaryOpContext *ctx)
-{
-    auto name = std::make_shared<Identifier>(visit(ctx->unaryOp()).as<String>());
-    auto args = std::make_shared<ColumnExprList>();
-
-    args->push(visit(ctx->columnExpr()));
-
-    return ColumnExpr::createFunction(name, nullptr, args);
-}
-
 antlrcpp::Any ParseTreeVisitor::visitColumnLambdaExpr(ClickHouseParser::ColumnLambdaExprContext *ctx)
 {
     auto params = std::make_shared<List<Identifier>>();
@@ -517,13 +527,6 @@ antlrcpp::Any ParseTreeVisitor::visitColumnsExprSubquery(ClickHouseParser::Colum
 antlrcpp::Any ParseTreeVisitor::visitColumnsExprColumn(ClickHouseParser::ColumnsExprColumnContext *ctx)
 {
     return visit(ctx->columnExpr());
-}
-
-antlrcpp::Any ParseTreeVisitor::visitUnaryOp(ClickHouseParser::UnaryOpContext *ctx)
-{
-    if (ctx->DASH()) return String("negate");
-    if (ctx->NOT()) return String("not");
-    __builtin_unreachable();
 }
 
 }

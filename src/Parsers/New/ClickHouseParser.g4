@@ -269,7 +269,7 @@ columnExpr
     // FIXME(ilezhankin): this part looks very ugly, maybe there is another way to express it
     | columnExpr LBRACKET columnExpr RBRACKET                                             # ColumnExprArrayAccess
     | columnExpr DOT DECIMAL_LITERAL                                                      # ColumnExprTupleAccess
-    | unaryOp columnExpr                                                                  # ColumnExprUnaryOp
+    | DASH columnExpr                                                                     # ColumnExprNegate
     | columnExpr ( ASTERISK                                                               // multiply
                  | SLASH                                                                  // divide
                  | PERCENT                                                                // modulo
@@ -289,6 +289,7 @@ columnExpr
                  | NOT? LIKE                                                              // like, notLike
                  ) columnExpr                                                             # ColumnExprPrecedence3
     | columnExpr IS NOT? NULL_SQL                                                         # ColumnExprIsNull
+    | NOT columnExpr                                                                      # ColumnExprNot
     | columnExpr AND columnExpr                                                           # ColumnExprAnd
     | columnExpr OR columnExpr                                                            # ColumnExprOr
     | columnExpr NOT? BETWEEN columnExpr AND columnExpr                                   # ColumnExprBetween
@@ -366,5 +367,4 @@ keywordForAlias
 alias: IDENTIFIER | keywordForAlias;
 identifier: IDENTIFIER | interval | keyword;
 identifierOrNull: identifier | NULL_SQL;  // NULL_SQL can be only 'Null' here.
-unaryOp: DASH | NOT;
 enumValue: STRING_LITERAL EQ_SINGLE numberLiteral;

@@ -75,7 +75,7 @@ public:
     RuleTableArgExpr = 74, RuleDatabaseIdentifier = 75, RuleFloatingLiteral = 76, 
     RuleNumberLiteral = 77, RuleLiteral = 78, RuleInterval = 79, RuleKeyword = 80, 
     RuleKeywordForAlias = 81, RuleAlias = 82, RuleIdentifier = 83, RuleIdentifierOrNull = 84, 
-    RuleUnaryOp = 85, RuleEnumValue = 86
+    RuleEnumValue = 85
   };
 
   ClickHouseParser(antlr4::TokenStream *input);
@@ -173,7 +173,6 @@ public:
   class AliasContext;
   class IdentifierContext;
   class IdentifierOrNullContext;
-  class UnaryOpContext;
   class EnumValueContext; 
 
   class  QueryStmtContext : public antlr4::ParserRuleContext {
@@ -1832,6 +1831,15 @@ public:
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
+  class  ColumnExprNegateContext : public ColumnExprContext {
+  public:
+    ColumnExprNegateContext(ColumnExprContext *ctx);
+
+    antlr4::tree::TerminalNode *DASH();
+    ColumnExprContext *columnExpr();
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
   class  ColumnExprSubqueryContext : public ColumnExprContext {
   public:
     ColumnExprSubqueryContext(ColumnExprContext *ctx);
@@ -1938,15 +1946,6 @@ public:
     antlr4::tree::TerminalNode *LIKE();
     antlr4::tree::TerminalNode *GLOBAL();
     antlr4::tree::TerminalNode *NOT();
-    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
-  };
-
-  class  ColumnExprUnaryOpContext : public ColumnExprContext {
-  public:
-    ColumnExprUnaryOpContext(ColumnExprContext *ctx);
-
-    UnaryOpContext *unaryOp();
-    ColumnExprContext *columnExpr();
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
@@ -2081,6 +2080,15 @@ public:
 
     antlr4::tree::TerminalNode *DATE();
     antlr4::tree::TerminalNode *STRING_LITERAL();
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  ColumnExprNotContext : public ColumnExprContext {
+  public:
+    ColumnExprNotContext(ColumnExprContext *ctx);
+
+    antlr4::tree::TerminalNode *NOT();
+    ColumnExprContext *columnExpr();
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
@@ -2590,19 +2598,6 @@ public:
   };
 
   IdentifierOrNullContext* identifierOrNull();
-
-  class  UnaryOpContext : public antlr4::ParserRuleContext {
-  public:
-    UnaryOpContext(antlr4::ParserRuleContext *parent, size_t invokingState);
-    virtual size_t getRuleIndex() const override;
-    antlr4::tree::TerminalNode *DASH();
-    antlr4::tree::TerminalNode *NOT();
-
-    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
-   
-  };
-
-  UnaryOpContext* unaryOp();
 
   class  EnumValueContext : public antlr4::ParserRuleContext {
   public:
