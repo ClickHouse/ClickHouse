@@ -44,6 +44,7 @@ namespace ErrorCodes
     extern const int SIZES_OF_MARKS_FILES_ARE_INCONSISTENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_FILE_NAME;
+    extern const int NOT_IMPLEMENTED;
 }
 
 class LogSource final : public SourceWithProgress
@@ -94,7 +95,7 @@ private:
             , compressed(*plain)
         {
             if (offset)
-                plain->seek(offset, 0);
+                plain->seek(offset, SEEK_SET);
         }
 
         std::unique_ptr<ReadBufferFromFileBase> plain;
@@ -631,7 +632,14 @@ Pipe StorageLog::read(
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
     loadMarks();
 
-    NamesAndTypesList all_columns = metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(column_names);
+    auto all_columns = metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(column_names);
+
+    /// TODO: implement DataType Nested and support them
+    for (const auto & column : all_columns)
+        if (column.isSubcolumn() && startsWith(column.getSubcolumnName(), "size"))
+            throw Exception("Subcolumns of arrays are not supported in StorageLog", ErrorCodes::NOT_IMPLEMENTED);
+
+    all_columns = Nested::collect(all_columns);
 
     std::shared_lock<std::shared_mutex> lock(rwlock);
 
