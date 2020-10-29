@@ -12,9 +12,9 @@ JSONEachRowRowOutputFormat::JSONEachRowRowOutputFormat(
     WriteBuffer & out_,
     const Block & header_,
     const RowOutputFormatParams & params_,
-    const FormatSettings & settings_,
-    bool yield_strings_)
-    : IRowOutputFormat(header_, out_, params_), settings(settings_), yield_strings(yield_strings_)
+    const FormatSettings & settings_)
+        : IRowOutputFormat(header_, out_, params_),
+            settings(settings_)
 {
     const auto & sample = getPort(PortKind::Main).getHeader();
     size_t columns = sample.columns();
@@ -33,7 +33,7 @@ void JSONEachRowRowOutputFormat::writeField(const IColumn & column, const IDataT
     writeString(fields[field_number], out);
     writeChar(':', out);
 
-    if (yield_strings)
+    if (settings.json.serialize_as_strings)
     {
         WriteBufferFromOwnString buf;
 
@@ -61,8 +61,39 @@ void JSONEachRowRowOutputFormat::writeRowStartDelimiter()
 
 void JSONEachRowRowOutputFormat::writeRowEndDelimiter()
 {
-    writeCString("}\n", out);
+    writeCString("}", out);
     field_number = 0;
+}
+
+
+void JSONEachRowRowOutputFormat::writeRowBetweenDelimiter()
+{
+    if (settings.json.list_of_rows)
+    {
+        writeCString(",\n", out);
+    }
+    else
+    {
+        writeCString("\n", out);
+    }
+}
+
+
+void JSONEachRowRowOutputFormat::writePrefix()
+{
+    if (settings.json.list_of_rows)
+    {
+        writeCString("[\n", out);
+    }
+}
+
+
+void JSONEachRowRowOutputFormat::writeSuffix()
+{
+    if (settings.json.list_of_rows)
+    {
+        writeCString("\n]\n", out);
+    }
 }
 
 
@@ -72,18 +103,36 @@ void registerOutputFormatProcessorJSONEachRow(FormatFactory & factory)
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,
-        const FormatSettings & format_settings)
+        const FormatSettings & _format_settings)
     {
-        return std::make_shared<JSONEachRowRowOutputFormat>(buf, sample, params, format_settings, false);
+        FormatSettings settings = _format_settings;
+        settings.json.serialize_as_strings = false;
+        return std::make_shared<JSONEachRowRowOutputFormat>(buf, sample, params,
+            settings);
     });
 
     factory.registerOutputFormatProcessor("JSONStringsEachRow", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,
-        const FormatSettings & format_settings)
+        const FormatSettings & _format_settings)
     {
-        return std::make_shared<JSONEachRowRowOutputFormat>(buf, sample, params, format_settings, true);
+        FormatSettings settings = _format_settings;
+        settings.json.serialize_as_strings = true;
+        return std::make_shared<JSONEachRowRowOutputFormat>(buf, sample, params,
+            settings);
+    });
+
+    factory.registerOutputFormatProcessor("JSONList", [](
+        WriteBuffer & buf,
+        const Block & sample,
+        const RowOutputFormatParams & params,
+        const FormatSettings & _format_settings)
+    {
+        FormatSettings settings = _format_settings;
+        settings.json.list_of_rows = true;
+        return std::make_shared<JSONEachRowRowOutputFormat>(buf, sample, params,
+            settings);
     });
 }
 

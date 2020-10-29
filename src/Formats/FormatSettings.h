@@ -22,6 +22,10 @@ struct FormatSettings
         bool quote_64bit_integers = true;
         bool quote_denormals = true;
         bool escape_forward_slashes = true;
+        bool write_metadata = false;
+        bool named_tuple_as_object = true;
+        bool list_of_rows = false;
+        bool serialize_as_strings = false;
     };
 
     JSON json;

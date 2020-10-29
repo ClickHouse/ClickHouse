@@ -1,11 +1,44 @@
+#include <Processors/Formats/Impl/JSONRowOutputFormat.h>
+
+#include <DataTypes/DataTypeTuple.h>
+#include <Columns/ColumnTuple.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferValidUTF8.h>
-#include <Processors/Formats/Impl/JSONRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
 
 
 namespace DB
 {
+
+void JSONRowOutputFormat::addColumn(String name, DataTypePtr type,
+    bool & need_validate_utf8, std::string tabs)
+{
+    if (!type->textCanContainOnlyValidUTF8())
+        need_validate_utf8 = true;
+
+    WriteBufferFromOwnString buf;
+    writeJSONString(name, buf, settings);
+
+    const auto * as_tuple = typeid_cast<const DataTypeTuple *>(type.get());
+    const bool recurse = settings.json.named_tuple_as_object
+        && as_tuple && as_tuple->haveExplicitNames();
+
+    fields.emplace_back(FieldInfo{buf.str(), type, recurse, tabs});
+
+    if (recurse)
+    {
+        const auto & types = as_tuple->getElements();
+        const auto & names = as_tuple->getElementNames();
+
+        assert(types.size() == names.size());
+        for (size_t i = 0; i < types.size(); i++)
+        {
+            addColumn(names[i], types[i], need_validate_utf8, tabs + "\t");
+        }
+    }
+}
 
 JSONRowOutputFormat::JSONRowOutputFormat(
     WriteBuffer & out_,
@@ -17,19 +50,21 @@ JSONRowOutputFormat::JSONRowOutputFormat(
 {
     const auto & sample = getPort(PortKind::Main).getHeader();
     NamesAndTypesList columns(sample.getNamesAndTypesList());
-    fields.assign(columns.begin(), columns.end());
 
+    fields.reserve(columns.size());
+
+    const std::string initial_tabs = settings.json.write_metadata ? "\t\t\t" : "\t\t";
     bool need_validate_utf8 = false;
-    for (size_t i = 0; i < sample.columns(); ++i)
+    for (const auto & column : columns)
     {
-        if (!sample.getByPosition(i).type->textCanContainOnlyValidUTF8())
-            need_validate_utf8 = true;
-
-        WriteBufferFromOwnString buf;
-        writeJSONString(fields[i].name, buf, settings);
-
-        fields[i].name = buf.str();
+        addColumn(column.name, column.type, need_validate_utf8, initial_tabs);
     }
+
+//    for (size_t i = 0; i < fields.size(); i++)
+//    {
+//        fmt::print(stderr, "{}: '{}' '{}' '{}\n",
+//            i, fields[i].name, fields[i].type->getName(), fields[i].recurse);
+//    }
 
     if (need_validate_utf8)
     {
@@ -43,39 +78,75 @@ JSONRowOutputFormat::JSONRowOutputFormat(
 
 void JSONRowOutputFormat::writePrefix()
 {
-    writeCString("{\n", *ostr);
-    writeCString("\t\"meta\":\n", *ostr);
-    writeCString("\t[\n", *ostr);
-
-    for (size_t i = 0; i < fields.size(); ++i)
+    if (settings.json.write_metadata)
     {
-        writeCString("\t\t{\n", *ostr);
+        writeCString("{\n", *ostr);
+        writeCString("\t\"meta\":\n", *ostr);
+        writeCString("\t[\n", *ostr);
 
-        writeCString("\t\t\t\"name\": ", *ostr);
-        writeString(fields[i].name, *ostr);
-        writeCString(",\n", *ostr);
-        writeCString("\t\t\t\"type\": ", *ostr);
-        writeJSONString(fields[i].type->getName(), *ostr, settings);
-        writeChar('\n', *ostr);
+        for (size_t i = 0; i < fields.size(); ++i)
+        {
+            writeCString("\t\t{\n", *ostr);
 
-        writeCString("\t\t}", *ostr);
-        if (i + 1 < fields.size())
-            writeChar(',', *ostr);
+            writeCString("\t\t\t\"name\": ", *ostr);
+            writeString(fields[i].name, *ostr);
+            writeCString(",\n", *ostr);
+            writeCString("\t\t\t\"type\": ", *ostr);
+            writeJSONString(fields[i].type->getName(), *ostr, settings);
+            writeChar('\n', *ostr);
+
+            writeCString("\t\t}", *ostr);
+            if (i + 1 < fields.size())
+                writeChar(',', *ostr);
+            writeChar('\n', *ostr);
+        }
+
+        writeCString("\t],\n", *ostr);
         writeChar('\n', *ostr);
+        writeCString("\t\"data\":\n", *ostr);
+        writeCString("\t", *ostr);
     }
-
-    writeCString("\t],\n", *ostr);
-    writeChar('\n', *ostr);
-    writeCString("\t\"data\":\n", *ostr);
-    writeCString("\t[\n", *ostr);
+    writeCString("[\n", *ostr);
 }
-
 
 void JSONRowOutputFormat::writeField(const IColumn & column, const IDataType & type, size_t row_num)
 {
-    writeCString("\t\t\t", *ostr);
+//    fmt::print(stderr, "write field column '{}' type '{}'\n",
+//        column.getName(), type.getName());
+
+    writeString(fields[field_number].tabs, *ostr);
     writeString(fields[field_number].name, *ostr);
     writeCString(": ", *ostr);
+
+    // Sanity check: the input column type is the same as in header block.
+    // If I don't write out the raw pointer explicitly, for some reason clang
+    // complains about side effect in dereferencing the pointer:
+    // src/Processors/Formats/Impl/JSONRowOutputFormat.cpp:120:35: warning: expression with side effects will be evaluated despite being used as an operand to 'typeid' [-Wpotentially-evaluated-expression]
+    [[maybe_unused]] const IDataType * raw_ptr = fields[field_number].type.get();
+    assert(typeid(type) == typeid(*raw_ptr));
+
+    if (fields[field_number].recurse)
+    {
+        const auto & tabs = fields[field_number].tabs;
+        ++field_number;
+        const auto & tuple_column = assert_cast<const ColumnTuple &>(column);
+        const auto & nested_columns = tuple_column.getColumns();
+        writeCString("{\n", *ostr);
+        for (size_t i = 0; i < nested_columns.size(); i++)
+        {
+            // field_number is incremented inside, and should match the nested
+            // columns.
+            writeField(*nested_columns[i], *fields[field_number].type, row_num);
+            if (i + 1 < nested_columns.size())
+            {
+                writeCString(",", *ostr);
+            }
+            writeCString("\n", *ostr);
+        }
+        writeString(tabs, *ostr);
+        writeCString("}", *ostr);
+        return;
+    }
 
     if (yield_strings)
     {
@@ -144,6 +215,12 @@ void JSONRowOutputFormat::writeSuffix()
 
 void JSONRowOutputFormat::writeBeforeTotals()
 {
+    if (!settings.json.write_metadata)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Cannot output totals in JSON format without metadata");
+    }
+
     writeCString(",\n", *ostr);
     writeChar('\n', *ostr);
     writeCString("\t\"totals\":\n", *ostr);
@@ -172,6 +249,12 @@ void JSONRowOutputFormat::writeAfterTotals()
 
 void JSONRowOutputFormat::writeBeforeExtremes()
 {
+    if (!settings.json.write_metadata)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Cannot output extremes in JSON format without metadata");
+    }
+
     writeCString(",\n", *ostr);
     writeChar('\n', *ostr);
     writeCString("\t\"extremes\":\n", *ostr);
@@ -217,17 +300,20 @@ void JSONRowOutputFormat::writeAfterExtremes()
 
 void JSONRowOutputFormat::writeLastSuffix()
 {
-    writeCString(",\n\n", *ostr);
-    writeCString("\t\"rows\": ", *ostr);
-    writeIntText(row_count, *ostr);
+    if (settings.json.write_metadata)
+    {
+        writeCString(",\n\n", *ostr);
+        writeCString("\t\"rows\": ", *ostr);
+        writeIntText(row_count, *ostr);
 
-    writeRowsBeforeLimitAtLeast();
+        writeRowsBeforeLimitAtLeast();
 
-    if (settings.write_statistics)
-        writeStatistics();
+        if (settings.write_statistics)
+            writeStatistics();
 
-    writeChar('\n', *ostr);
-    writeCString("}\n", *ostr);
+        writeChar('\n', *ostr);
+        writeCString("}\n", *ostr);
+    }
     ostr->next();
 }
 

@@ -439,6 +439,8 @@ class IColumn;
     M(Bool, output_format_json_quote_denormals, false, "Enables '+nan', '-nan', '+inf', '-inf' outputs in JSON output format.", 0) \
     \
     M(Bool, output_format_json_escape_forward_slashes, true, "Controls escaping forward slashes for string outputs in JSON output format. This is intended for compatibility with JavaScript. Don't confuse with backslashes that are always escaped.", 0) \
+    M(Bool, output_format_json_write_metadata, true, "Write metadata in JSON output format.", 0) \
+    M(Bool, output_format_json_named_tuple_as_object, false, "Serialize named tuple columns as JSON objects.", 0) \
     \
     M(UInt64, output_format_pretty_max_rows, 10000, "Rows limit for Pretty formats.", 0) \
     M(UInt64, output_format_pretty_max_column_pad_width, 250, "Maximum width to pad all values in a column in Pretty formats.", 0) \
