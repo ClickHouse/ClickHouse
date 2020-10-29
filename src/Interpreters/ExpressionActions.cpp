@@ -926,18 +926,13 @@ const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column)
     node.result_name = std::move(column.name);
     node.column = std::move(column.column);
 
-    if (node.column && !isColumnConst(*node.column))
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Cannot add input {} because it has not constant column {}",
-                        node.result_name, node.column->getName());
-
     return addNode(std::move(node));
 }
 
 const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column)
 {
     if (!column.column)
-        throw Exception("Cannot add column " + column.name + " because it is nullptr", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add column {} because it is nullptr", column.name);
 
     Node node;
     node.type = Type::COLUMN;
@@ -1159,7 +1154,7 @@ void ActionsDAG::removeUnusedActions(const Names & required_names)
         auto * node = stack.top();
         stack.pop();
 
-        if (!node->children.empty() && node->column && node->allow_constant_folding)
+        if (!node->children.empty() && node->column && isColumnConst(*node->column) && node->allow_constant_folding)
         {
             /// Constant folding.
             node->type = ActionsDAG::Type::COLUMN;

@@ -12,7 +12,6 @@ namespace DB
 class Context;
 class ASTFunction;
 
-struct ExpressionAction;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
