@@ -42,7 +42,7 @@ public:
 
     ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, size_t input_rows_count) const override
     {
-        auto & input_column = *arguments[0].column;
+        const auto & input_column = *arguments[0].column;
         auto col_res = res_type->createColumn();
 
         for (size_t i = 0; i < input_rows_count; ++i)
