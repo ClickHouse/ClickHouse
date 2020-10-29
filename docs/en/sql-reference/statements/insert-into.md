@@ -20,7 +20,7 @@ Instead of listing all the required columns you can use the `(* EXCEPT(column_li
 For example, consider the table:
 
 ``` sql
-SHOW CREATE insert_select_testtable
+SHOW CREATE insert_select_testtable;
 ```
 
 ```
