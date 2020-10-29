@@ -60,7 +60,7 @@ SELECT * FROM insert_select_testtable;
 └───┴───┴───┘
 ```
  
-In this example, we see that the second inserted row has a and c columns filled by values, and b filled with value by default.
+In this example, we see that the second inserted row has `a` and `c` columns filled by the passed values, and `b` filled with value by default.
 
 If a list of columns doesn't include all existing columns, the rest of the columns are filled with:
 
