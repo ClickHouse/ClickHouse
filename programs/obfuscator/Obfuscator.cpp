@@ -23,6 +23,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Formats/registerFormats.h>
 #include <Core/Block.h>
 #include <common/StringRef.h>
 #include <common/DateLUT.h>
@@ -1047,6 +1048,8 @@ public:
 int mainEntryClickHouseObfuscator(int argc, char ** argv)
 try
 {
+    registerFormats();
+
     using namespace DB;
     namespace po = boost::program_options;
 
