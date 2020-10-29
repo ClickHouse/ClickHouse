@@ -49,7 +49,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
 private:
     /// lazy initialization in getReturnTypeImpl
@@ -105,7 +105,7 @@ DataTypePtr FunctionArrayReduce::getReturnTypeImpl(const ColumnsWithTypeAndName 
 }
 
 
-void FunctionArrayReduce::executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
+ColumnPtr FunctionArrayReduce::executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
     IAggregateFunction & agg_func = *aggregate_function;
     std::unique_ptr<Arena> arena = std::make_unique<Arena>();
@@ -120,7 +120,7 @@ void FunctionArrayReduce::executeImpl(ColumnsWithTypeAndName & columns, const Co
 
     for (size_t i = 0; i < num_arguments_columns; ++i)
     {
-        const IColumn * col = columns[arguments[i + 1]].column.get();
+        const IColumn * col = arguments[i + 1].column.get();
 
         const ColumnArray::Offsets * offsets_i = nullptr;
         if (const ColumnArray * arr = checkAndGetColumn<ColumnArray>(col))
@@ -146,7 +146,7 @@ void FunctionArrayReduce::executeImpl(ColumnsWithTypeAndName & columns, const Co
     }
     const IColumn ** aggregate_arguments = aggregate_arguments_vec.data();
 
-    MutableColumnPtr result_holder = columns[result].type->createColumn();
+    MutableColumnPtr result_holder = result_type->createColumn();
     IColumn & res_col = *result_holder;
 
     /// AggregateFunction's states should be inserted into column using specific way
@@ -154,7 +154,7 @@ void FunctionArrayReduce::executeImpl(ColumnsWithTypeAndName & columns, const Co
 
     if (!res_col_aggregate_function && agg_func.isState())
         throw Exception("State function " + agg_func.getName() + " inserts results into non-state column "
-                        + columns[result].type->getName(), ErrorCodes::ILLEGAL_COLUMN);
+                        + result_type->getName(), ErrorCodes::ILLEGAL_COLUMN);
 
     PODArray<AggregateDataPtr> places(input_rows_count);
     for (size_t i = 0; i < input_rows_count; ++i)
@@ -191,7 +191,7 @@ void FunctionArrayReduce::executeImpl(ColumnsWithTypeAndName & columns, const Co
             agg_func.insertResultInto(places[i], res_col, arena.get());
         else
             res_col_aggregate_function->insertFrom(places[i]);
-    columns[result].column = std::move(result_holder);
+    return result_holder;
 }
 
 

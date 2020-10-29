@@ -1,5 +1,5 @@
 ---
-toc_priority: 34
+toc_priority: 33
 toc_title: INSERT INTO
 ---
 

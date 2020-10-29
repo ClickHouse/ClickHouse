@@ -145,7 +145,7 @@ public:
 
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
-    String getColumnNameWithMinumumCompressedSize(const StorageMetadataPtr & metadata_snapshot) const;
+    String getColumnNameWithMinimumCompressedSize(const StorageMetadataPtr & metadata_snapshot) const;
 
     bool contains(const IMergeTreeDataPart & other) const { return info.contains(other.info); }
 
@@ -316,15 +316,19 @@ public:
     /// Makes clone of a part in detached/ directory via hard links
     virtual void makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const;
 
-    /// Makes full clone of part in detached/ on another disk
-    void makeCloneOnDiskDetached(const ReservationPtr & reservation) const;
+    /// Makes full clone of part in specified subdirectory (relative to storage data directory, e.g. "detached") on another disk
+    void makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const;
 
     /// Checks that .bin and .mrk files exist.
     ///
     /// NOTE: Doesn't take column renames into account, if some column renames
     /// take place, you must take original name of column for this part from
     /// storage and pass it to this method.
-    virtual bool hasColumnFiles(const String & /* column */, const IDataType & /* type */) const{ return false; }
+    virtual bool hasColumnFiles(const String & /* column */, const IDataType & /* type */) const { return false; }
+
+    /// Returns true if this part shall participate in merges according to
+    /// settings of given storage policy.
+    bool shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const;
 
     /// Calculate the total size of the entire directory with all the files
     static UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk_, const String & from);

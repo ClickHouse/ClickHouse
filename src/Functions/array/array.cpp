@@ -30,19 +30,15 @@ public:
         return std::make_shared<DataTypeArray>(getLeastSupertype(arguments));
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         size_t num_elements = arguments.size();
 
         if (num_elements == 0)
-        {
             /// We should return constant empty array.
-            columns[result].column = columns[result].type->createColumnConstWithDefaultValue(input_rows_count);
-            return;
-        }
+            return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
-        const DataTypePtr & return_type = columns[result].type;
-        const DataTypePtr & elem_type = static_cast<const DataTypeArray &>(*return_type).getNestedType();
+        const DataTypePtr & elem_type = static_cast<const DataTypeArray &>(*result_type).getNestedType();
 
         /** If part of columns have not same type as common type of all elements of array,
             *  then convert them to common type.
@@ -55,7 +51,7 @@ public:
 
         for (size_t i = 0; i < num_elements; ++i)
         {
-            const auto & arg = columns[arguments[i]];
+            const auto & arg = arguments[i];
 
             ColumnPtr preprocessed_column = arg.column;
 
@@ -87,7 +83,7 @@ public:
             out_offsets[i] = current_offset;
         }
 
-        columns[result].column = std::move(out);
+        return out;
     }
 
 private:
