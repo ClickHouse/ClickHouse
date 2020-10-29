@@ -577,7 +577,7 @@ private:
             auto input_value = input_column->getDataAt(r);
             if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
             {
-                // empty plaintext results in empty ciphertext + tag, means there should be atleast tag_size bytes.
+                // empty plaintext results in empty ciphertext + tag, means there should be at least tag_size bytes.
                 if (input_value.size < tag_size)
                     throw Exception(fmt::format("Encrypted data is too short: only {} bytes, "
                             "should contain at least {} bytes of a tag.",
