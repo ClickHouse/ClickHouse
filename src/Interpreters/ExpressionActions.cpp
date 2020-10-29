@@ -890,6 +890,11 @@ const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column)
     node.result_name = std::move(column.name);
     node.column = std::move(column.column);
 
+    if (node.column && !isColumnConst(*node.column))
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Cannot add input {} because it has not constant column {}",
+                        column.name, node.column->getName());
+
     return addNode(std::move(node));
 }
 
