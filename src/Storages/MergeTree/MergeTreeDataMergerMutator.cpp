@@ -681,6 +681,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         single_disk_volume,
         TMP_PREFIX + future_part.name);
 
+    new_data_part->uuid = future_part.uuid;
     new_data_part->setColumns(storage_columns);
     new_data_part->partition.assign(future_part.getPartition());
     new_data_part->is_temp = true;
@@ -1137,8 +1138,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     auto new_data_part = data.createPart(
         future_part.name, future_part.type, future_part.part_info, single_disk_volume, "tmp_mut_" + future_part.name);
 
+    new_data_part->uuid = future_part.uuid;
     new_data_part->is_temp = true;
-    new_data_part->uuid = source_part->uuid;
     new_data_part->ttl_infos = source_part->ttl_infos;
 
     /// It shouldn't be changed by mutation.
@@ -1820,8 +1821,10 @@ void MergeTreeDataMergerMutator::finalizeMutatedPart(
 {
     auto disk = new_data_part->volume->getDisk();
 
-    if (new_data_part->uuid != UUIDHelpers::Nil)
     {
+        if (new_data_part->uuid == UUIDHelpers::Nil)
+            throw Exception("Empty IMergeTreeDataPart#uuid in finalize for part: " + new_data_part->name, ErrorCodes::LOGICAL_ERROR);
+
         auto out = disk->writeFile(new_data_part->getFullRelativePath() + IMergeTreeDataPart::UUID_FILE_NAME, 4096);
         writeUUIDText(new_data_part->uuid, *out);
     }

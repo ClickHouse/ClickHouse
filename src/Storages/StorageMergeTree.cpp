@@ -641,6 +641,7 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
     auto data_settings = getSettings();
 
     FutureMergedMutatedPart future_part;
+    future_part.uuid = UUIDHelpers::generateV4();
 
     /// You must call destructor with unlocked `currently_processing_in_background_mutex`.
     CurrentlyMergingPartsTaggerPtr merging_tagger;
@@ -862,7 +863,8 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
         future_part.parts.push_back(part);
         future_part.part_info = new_part_info;
         future_part.name = part->getNewName(new_part_info);
-        future_part.type = part->getType();
+        future_part.uuid = UUIDHelpers::generateV4();
+            future_part.type = part->getType();
 
         tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this, metadata_snapshot, true);
         return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), commands);

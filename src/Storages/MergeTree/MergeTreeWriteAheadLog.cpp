@@ -2,7 +2,9 @@
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <IO/MemoryReadWriteBuffer.h>
 #include <IO/ReadHelpers.h>
+#include <IO/copyData.h>
 #include <Poco/File.h>
 #include <sys/time.h>
 
@@ -56,18 +58,23 @@ void MergeTreeWriteAheadLog::init()
     bytes_at_last_sync = 0;
 }
 
-void MergeTreeWriteAheadLog::addPart(const Block & block, const String & part_name)
+void MergeTreeWriteAheadLog::addPart(DataPartInMemoryPtr & part)
 {
     std::unique_lock lock(write_mutex);
 
-    auto part_info = MergeTreePartInfo::fromPartName(part_name, storage.format_version);
+    auto part_info = MergeTreePartInfo::fromPartName(part->name, storage.format_version);
     min_block_number = std::min(min_block_number, part_info.min_block);
     max_block_number = std::max(max_block_number, part_info.max_block);
 
     writeIntBinary(WAL_VERSION, *out);
+
+    ActionMetadata metadata{};
+    metadata.part_uuid = part->uuid;
+    metadata.write(*out);
+
     writeIntBinary(static_cast<UInt8>(ActionType::ADD_PART), *out);
-    writeStringBinary(part_name, *out);
-    block_out->write(block);
+    writeStringBinary(part->name, *out);
+    block_out->write(part->block);
     block_out->flush();
     sync(lock);
 
@@ -81,6 +88,10 @@ void MergeTreeWriteAheadLog::dropPart(const String & part_name)
     std::unique_lock lock(write_mutex);
 
     writeIntBinary(WAL_VERSION, *out);
+
+    ActionMetadata metadata{};
+    metadata.write(*out);
+
     writeIntBinary(static_cast<UInt8>(ActionType::DROP_PART), *out);
     writeStringBinary(part_name, *out);
     out->next();
@@ -136,12 +147,25 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
                 auto part_disk = storage.reserveSpace(0)->getDisk();
                 auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk, 0);
 
+                /// Likely part written by older ClickHouse version which didn't support UUIDs.
+                if (metadata.part_uuid == UUIDHelpers::Nil)
+                {
+                    /// Defensive check. Since WAL version 1 we expect all parts to have UUID.
+                    if (version > 0)
+                        throw Exception("Unexpected empty part_uuid in entry version: " + toString(version), ErrorCodes::CORRUPTED_DATA);
+                    metadata.part_uuid = UUIDHelpers::generateV4();
+                }
+
+                /// TODO(nv) Create part should check for empty UUIDs and crash.
+
                 part = storage.createPart(
                     part_name,
                     MergeTreeDataPartType::IN_MEMORY,
                     MergeTreePartInfo::fromPartName(part_name, storage.format_version),
                     single_disk_volume,
                     part_name);
+
+                part->uuid = metadata.part_uuid;
 
                 block = block_in.read();
             }
@@ -249,8 +273,8 @@ void MergeTreeWriteAheadLog::ActionMetadata::read(ReadBuffer & meta_in)
 
     UInt32 metadata_start = meta_in.offset();
 
-    /// For the future: read metadata here.
-
+    if (meta_in.hasPendingData())
+        readUUIDText(part_uuid, meta_in);
 
     /// Skip extra fields if any. If min_compatible_version is lower than WAL_VERSION it means
     /// that the fields are not critical for the correctness.
@@ -260,6 +284,16 @@ void MergeTreeWriteAheadLog::ActionMetadata::read(ReadBuffer & meta_in)
 void MergeTreeWriteAheadLog::ActionMetadata::write(WriteBuffer & meta_out) const
 {
     writeIntBinary(min_compatible_version, meta_out);
-    writeVarUInt(static_cast<UInt32>(0), meta_out);
+
+    /// Write metadata to a temporary buffer first to compute the size.
+    MemoryWriteBuffer buf{};
+
+    writeUUIDText(part_uuid, buf);
+
+    buf.finalize();
+    auto read_buf = buf.tryGetReadBuffer();
+
+    writeVarUInt(static_cast<UInt32>(read_buf->available()), meta_out);
+    copyData(*read_buf, meta_out);
 }
 }

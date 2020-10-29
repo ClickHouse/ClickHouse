@@ -247,6 +247,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
         createVolumeFromReservation(reservation, volume),
         TMP_PREFIX + part_name);
 
+    new_data_part->uuid = UUIDHelpers::generateV4();
     new_data_part->setColumns(columns);
     new_data_part->partition = std::move(partition);
     new_data_part->minmax_idx = std::move(minmax_idx);

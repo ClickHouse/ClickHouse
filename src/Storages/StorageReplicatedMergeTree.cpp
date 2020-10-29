@@ -1443,6 +1443,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
         throw Exception("Future merged part name " + backQuote(future_merged_part.name) + " differs from part name in log entry: "
             + backQuote(entry.new_part_name), ErrorCodes::BAD_DATA_PART_NAME);
     }
+    future_merged_part.uuid = entry.new_part_uuid;
     future_merged_part.updatePath(*this, reserved_space);
     future_merged_part.merge_type = entry.merge_type;
 
@@ -1567,9 +1568,10 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
     Transaction transaction(*this);
 
     FutureMergedMutatedPart future_mutated_part;
+    future_mutated_part.name = entry.new_part_name;
+    future_mutated_part.uuid = entry.new_part_uuid;
     future_mutated_part.parts.push_back(source_part);
     future_mutated_part.part_info = new_part_info;
-    future_mutated_part.name = entry.new_part_name;
     future_mutated_part.updatePath(*this, reserved_space);
     future_mutated_part.type = source_part->getType();
 
@@ -2824,6 +2826,7 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     entry.type = LogEntry::MERGE_PARTS;
     entry.source_replica = replica_name;
     entry.new_part_name = merged_name;
+    entry.new_part_uuid = UUIDHelpers::generateV4();
     entry.new_part_type = merged_part_type;
     entry.merge_type = merge_type;
     entry.deduplicate = deduplicate;
@@ -2899,6 +2902,7 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     entry.source_replica = replica_name;
     entry.source_parts.push_back(part.name);
     entry.new_part_name = new_part_name;
+    entry.new_part_uuid = UUIDHelpers::generateV4();
     entry.create_time = time(nullptr);
     entry.alter_version = alter_version;
 

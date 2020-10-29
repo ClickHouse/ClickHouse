@@ -139,6 +139,9 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
         if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_TYPE)
             writeStringBinary(part->getType().toString(), out);
 
+        if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID)
+            writeUUIDText(part->uuid, out);
+
         if (isInMemoryPart(part))
             sendPartFromMemory(part, out);
         else
@@ -322,6 +325,10 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_TYPE)
         readStringBinary(part_type, in);
 
+    UUID part_uuid;
+    if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID)
+        readUUIDText(part_uuid, in);
+
     auto storage_id = data.getStorageID();
     String new_part_path = part_type == "InMemory" ? "memory" : data.getFullPathOnDisk(reservation->getDisk()) + part_name + "/";
     auto entry = data.global_context.getReplicatedFetchList().insert(
@@ -331,12 +338,14 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
 
     in.setNextCallback(ReplicatedFetchReadCallback(*entry));
 
-    return part_type == "InMemory" ? downloadPartToMemory(part_name, metadata_snapshot, std::move(reservation), in)
-        : downloadPartToDisk(part_name, replica_path, to_detached, tmp_prefix_, sync, std::move(reservation), in);
+
+    return part_type == "InMemory" ? downloadPartToMemory(part_name, part_uuid, metadata_snapshot, std::move(reservation), in)
+                                   : downloadPartToDisk(part_name, part_uuid, replica_path, to_detached, tmp_prefix_, sync, std::move(reservation), in);
 }
 
 MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     const String & part_name,
+    const UUID & part_uuid,
     const StorageMetadataPtr & metadata_snapshot,
     ReservationPtr reservation,
     PooledReadWriteBufferFromHTTP & in)
@@ -352,6 +361,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     MergeTreeData::MutableDataPartPtr new_data_part =
         std::make_shared<MergeTreeDataPartInMemory>(data, part_name, volume);
 
+    new_data_part->uuid = part_uuid;
     new_data_part->is_temp = true;
     new_data_part->setColumns(block.getNamesAndTypesList());
     new_data_part->minmax_idx.update(block, data.minmax_idx_columns);
@@ -368,6 +378,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
 
 MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     const String & part_name,
+    const UUID & part_uuid,
     const String & replica_path,
     bool to_detached,
     const String & tmp_prefix_,
@@ -446,6 +457,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
 
     auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk, 0);
     MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(part_name, volume, part_relative_path);
+    new_data_part->uuid = part_uuid;
     new_data_part->is_temp = true;
     new_data_part->modification_time = time(nullptr);
     new_data_part->loadColumnsChecksumsIndexes(true, false);
