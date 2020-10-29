@@ -136,6 +136,11 @@ public:
             return it->second;
         }
 
+        /// Insert method doesn't check if map already have node with the same name.
+        /// If node with the same name exists, it is removed from map, but not list.
+        /// It is expected and used for project(), when result may have several columns with the same name.
+        void insert(Node * node) { map[node->result_name] = list.emplace(list.end(), node); }
+
     private:
         std::list<Node *> list;
         std::unordered_map<std::string_view, std::list<Node *>::iterator> map;

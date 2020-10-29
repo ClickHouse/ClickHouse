@@ -154,30 +154,39 @@ void ExpressionActions::execute(Block & block, bool dry_run) const
         }
     }
 
-    Block res = sample_block;
+    Block res_block;
     for (const auto & action : actions)
     {
         auto & column = execution_context.columns[action.result_position];
         if (action.is_used_in_result)
-            res.getByName(column.name) = std::move(column);
+            res_block.insert(std::move(column));
     }
+
+    /// Copy result to separate list cause we may want several columns with the same name in sample block.
+    ColumnNumbers res_positions;
+    res_positions.reserve(sample_block.columns());
+    for (const auto & col : sample_block)
+        res_positions.push_back(res_block.getPositionByName(col.name));
 
     if (project_input)
     {
-        block.swap(res);
+        block.clear();
+        for (auto pos : res_positions)
+            block.insert(res_block.getByPosition(pos));
     }
     else
     {
         ColumnNumbers inputs_to_remove;
+        std::unordered_set<size_t> inserted_positions;
         size_t pos = 0;
         for (const auto & col : required_columns)
         {
             auto input_pos = execution_context.inputs_pos[pos];
-            if (res.has(col.name))
+            if (res_block.has(col.name))
             {
-                auto res_pos = res.getPositionByName(col.name);
-                block.getByPosition(input_pos) = std::move(res.getByPosition(res_pos));
-                res.erase(res_pos);
+                auto res_pos = res_block.getPositionByName(col.name);
+                block.getByPosition(input_pos) = res_block.getByPosition(res_pos);
+                inserted_positions.insert(res_pos);
             }
             else
                 inputs_to_remove.push_back(input_pos);
@@ -189,8 +198,16 @@ void ExpressionActions::execute(Block & block, bool dry_run) const
         for (auto input : inputs_to_remove)
             block.erase(input);
 
-        for (auto & col : res)
-            block.insert(std::move(col));
+        for (auto res_pos : res_positions)
+        {
+            if (inserted_positions.count(res_pos))
+            {
+                inserted_positions.erase(res_pos);
+                continue;
+            }
+
+            block.insert(res_block.getByPosition(res_pos));
+        }
     }
 
     if (!block)
