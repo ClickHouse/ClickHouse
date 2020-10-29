@@ -37,7 +37,7 @@ GROUP BY table
 ORDER BY s;
 ```
 
-**Example 3:** Using results of scalar subquery
+**Example 3:** Using results of a scalar subquery
 
 ``` sql
 /* this example would return TOP 10 of most huge tables */
