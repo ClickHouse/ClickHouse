@@ -1388,8 +1388,8 @@ ExpressionActionsPtr ActionsDAG::linearizeActions() const
     for (const auto & node : index)
     {
         ColumnWithTypeAndName col{node->column, node->result_type, node->result_name};
-        if (col.column == nullptr)
-            col.column = col.type->createColumn();
+//        if (col.column == nullptr)
+//            col.column = col.type->createColumn();
 
         expressions->sample_block.insert(std::move(col));
     }
