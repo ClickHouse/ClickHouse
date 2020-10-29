@@ -1151,7 +1151,7 @@ void ActionsDAG::removeUnusedActions(const Names & required_names)
 void ActionsDAG::addAliases(const NamesWithAliases & aliases)
 {
     for (const auto & item : aliases)
-        if (!item.second.empty())
+        if (!item.second.empty() && item.first != item.second)
             addAlias(item.first, item.second, true);
 }
 
