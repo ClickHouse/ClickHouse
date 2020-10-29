@@ -266,6 +266,7 @@
         "00612_http_max_query_size",
         "01293_system_distribution_queue",
         "01114_database_atomic",
+        "00840_long_concurrent_select_and_drop_deadlock",
         "attach",
         "ddl_dictionaries",
         "dictionary",
