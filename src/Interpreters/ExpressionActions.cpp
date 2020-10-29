@@ -1191,6 +1191,8 @@ void ActionsDAG::addAliases(const NamesWithAliases & aliases)
             node.column = child.column;
             node.allow_constant_folding = child.allow_constant_folding;
             node.children.emplace_back(&child);
+
+            alias_nodes.push_back(std::move(node));
         }
     }
 
