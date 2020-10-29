@@ -34,7 +34,7 @@ TotalsHavingStep::TotalsHavingStep(
     bool final_)
     : ITransformingStep(
             input_stream_,
-            TotalsHavingTransform::transformHeader(input_stream_.header, actions_->buildExpressions(), final_),
+            TotalsHavingTransform::transformHeader(input_stream_.header, (actions_ ? actions_->buildExpressions() : nullptr), final_),
             getTraits(!filter_column_.empty()))
     , overflow_row(overflow_row_)
     , actions(actions_)
