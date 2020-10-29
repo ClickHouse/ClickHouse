@@ -99,6 +99,7 @@ SRCS(
     getMappedArea.cpp
     getMultipleKeysFromConfig.cpp
     getNumberOfPhysicalCPUCores.cpp
+    getPageSize.cpp
     hasLinuxCapability.cpp
     hex.cpp
     isLocalAddress.cpp
