@@ -99,6 +99,28 @@ It is not possible to set default values for elements in nested data structures.
 
 ## Constraints {#constraints}
 
+You can define a `PRIMARY KEY` in column list when creating the table. 
+
+For example:
+
+``` sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1], PRIMARY KEY(name1)) ENGINE = engine ORDER BY (name1)
+```
+
+``` sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1]) ENGINE = engine ORDER BY (name1) PRIMARY KEY(name1)
+```
+
+Both of these syntaxes are valid when creating a primary key with only one field.
+
+You can also define a `PRIMARY KEY` constraint on multiple columns. 
+
+Syntax:
+
+``` sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name(name1 [type1], name2 [type2]) ENGINE = engine ORDER BY (name1, name2) PRIMARY KEY(name1, name2)
+```
+
 Along with columns descriptions constraints could be defined:
 
 ``` sql
