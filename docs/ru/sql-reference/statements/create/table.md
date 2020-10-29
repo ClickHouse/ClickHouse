@@ -82,28 +82,6 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 
 ### Ограничения (constraints) {#constraints}
 
-При создании таблицы в списке столбцов вы можете задать первичный ключ (`PRIMARY KEY`).
-
-Например:
-
-``` sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1], PRIMARY KEY(name1)) ENGINE = engine ORDER BY (name1)
-```
-
-``` sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1]) ENGINE = engine ORDER BY (name1) PRIMARY KEY(name1)
-```
-
-Оба данных синтаксиса допустимы при создании первичного ключа для одного поля.
-
-Вы также можете определить ограничение в виде `PRIMARY KEY` для нескольких столбцов.
-
-Синтаксис:
-
-``` sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name(name1 [type1], name2 [type2]) ENGINE = engine ORDER BY (name1, name2) PRIMARY KEY(name1, name2)
-```
-
 Наряду с объявлением столбцов можно объявить ограничения на значения в столбцах таблицы:
 
 ``` sql
