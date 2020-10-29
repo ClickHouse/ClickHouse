@@ -15,7 +15,7 @@
 
     <fill_query>OPTIMIZE TABLE optimized_select_final</fill_query>
 
-    <query>SELECT * FROM optimized_select_final FINAL</query>
+    <query>SELECT * FROM optimized_select_final FINAL FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS  optimized_select_final</drop_query>
 
