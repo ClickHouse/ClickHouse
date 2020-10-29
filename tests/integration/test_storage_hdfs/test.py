@@ -187,7 +187,6 @@ def test_read_write_gzip_table_with_parameter_auto_gz(started_cluster):
 
 
 def test_write_gz_storage(started_cluster):
-
     node1.query(
         "create table GZHDFSStorage (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/storage.gz', 'TSV')")
     node1.query("insert into GZHDFSStorage values (1, 'Mark', 72.53)")
@@ -196,7 +195,6 @@ def test_write_gz_storage(started_cluster):
 
 
 def test_write_gzip_storage(started_cluster):
-
     node1.query(
         "create table GZIPHDFSStorage (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/gzip_storage', 'TSV', 'gzip')")
     node1.query("insert into GZIPHDFSStorage values (1, 'Mark', 72.53)")
