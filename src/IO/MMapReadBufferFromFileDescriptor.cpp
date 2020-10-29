@@ -6,6 +6,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
 #include <Common/Exception.h>
+#include <Common/getPageSize.h>
 #include <IO/WriteHelpers.h>
 #include <IO/MMapReadBufferFromFileDescriptor.h>
 
@@ -39,7 +40,7 @@ void MMapReadBufferFromFileDescriptor::init(int fd_, size_t offset, size_t lengt
 
         BufferBase::set(static_cast<char *>(buf), length, 0);
         
-        int page_size = ::getpagesize();
+        int page_size = ::getPageSize();
         ReadBuffer::padded = (length % page_size) > 0 && (length % page_size) <= (page_size - 15);
     }
 }

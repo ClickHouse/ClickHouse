@@ -86,6 +86,7 @@ private:
 
     static size_t roundUpToPageSize(size_t s)
     {
+        /// TODO: Consider to fix, better to store ::getPageSize in Arena instance
         return (s + 4096 - 1) / 4096 * 4096;
     }
 
