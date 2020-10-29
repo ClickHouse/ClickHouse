@@ -22,7 +22,7 @@ namespace ErrorCodes
 
     /// Get name of error_code by identifier.
     /// Returns statically allocated string.
-    std::string_view getName(ErrorCode event);
+    std::string_view getName(ErrorCode error_code);
 
     /// ErrorCode identifier -> current value of error_code.
     extern std::atomic<Value> values[];
