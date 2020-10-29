@@ -25,7 +25,7 @@ WHERE
     EventTime <= ts_upper_bound;
 ```
 
-**Example 2:** Evicting sum(bytes) expression result from SELECT clause column list
+**Example 2:** Evicting a sum(bytes) expression result from the SELECT clause column list
 
 ``` sql
 WITH sum(bytes) as s
