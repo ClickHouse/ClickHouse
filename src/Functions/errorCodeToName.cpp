@@ -2,6 +2,7 @@
 
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <string>
@@ -36,13 +37,13 @@ public:
         if (!isNumber(types.at(0)))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of function {} must have simple numeric type, possibly Nullable", name);
 
-        return std::make_shared<DataTypeString>();
+        return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, size_t input_rows_count) const override
     {
         auto & input_column = *arguments[0].column;
-        auto col_res = ColumnString::create();
+        auto col_res = res_type->createColumn();
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {

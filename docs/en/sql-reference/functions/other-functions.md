@@ -1663,7 +1663,7 @@ Result:
 
 -   Variable name for the error code.
 
-Type: [String](../../sql-reference/data-types/string.md).
+Type: [LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md).
 
 **Syntax**
 
