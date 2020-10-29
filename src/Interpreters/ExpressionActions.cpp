@@ -848,7 +848,12 @@ ActionsDAG::ActionsDAG(const NamesAndTypesList & inputs)
 ActionsDAG::ActionsDAG(const ColumnsWithTypeAndName & inputs)
 {
     for (const auto & input : inputs)
-        addInput(input);
+    {
+        if (input.column && isColumnConst(*input.column))
+            addInput(input);
+        else
+            addInput(input.name, input.type);
+    }
 }
 
 ActionsDAG::Node & ActionsDAG::addNode(Node node, bool can_replace)
@@ -893,7 +898,7 @@ const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column)
     if (node.column && !isColumnConst(*node.column))
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Cannot add input {} because it has not constant column {}",
-                        column.name, node.column->getName());
+                        node.result_name, node.column->getName());
 
     return addNode(std::move(node));
 }
