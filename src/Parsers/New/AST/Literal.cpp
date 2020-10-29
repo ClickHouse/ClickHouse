@@ -2,6 +2,8 @@
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/New/ParseTreeVisitor.h>
 
@@ -75,12 +77,24 @@ ASTPtr Literal::convertToOld() const
     return std::make_shared<ASTLiteral>(as_field());
 }
 
+String Literal::toString() const
+{
+    WriteBufferFromOwnString wb;
+    writeEscapedString(token, wb);
+    return wb.str();
+}
+
 NumberLiteral::NumberLiteral(antlr4::tree::TerminalNode * literal) : Literal(LiteralType::NUMBER, literal->getSymbol()->getText())
 {
 }
 
 NumberLiteral::NumberLiteral(const String & literal) : Literal(LiteralType::NUMBER, literal)
 {
+}
+
+String NumberLiteral::toString() const
+{
+    return (minus ? String("-") : String()) + Literal::toString();
 }
 
 ASTSampleRatio::Rational NumberLiteral::convertToOldRational() const

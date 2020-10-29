@@ -31,7 +31,7 @@ class Literal : public INode
         static PtrTo<StringLiteral> createString(const String& literal); // without quotes
 
         ASTPtr convertToOld() const override;
-        String toString() const override { return token; }
+        String toString() const override;
 
         bool is(LiteralType what) const { return type == what; }
 
@@ -66,6 +66,8 @@ class NumberLiteral : public Literal
     public:
         explicit NumberLiteral(antlr4::tree::TerminalNode * literal);
         explicit NumberLiteral(const String & literal);
+
+        String toString() const override;
 
         void makeNegative() { minus = true; }
         bool isNegative() const { return minus; }
