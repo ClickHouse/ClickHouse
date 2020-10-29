@@ -56,7 +56,7 @@ ORDER BY table_disk_usage DESC
 LIMIT 10;
 ```
 
-**Example 4:** Re-using expression in subquery
+**Example 4:** Reusing expression in a subquery
 
 ``` sql
 WITH test1 AS (SELECT i + 1, j + 1 FROM test1) 
