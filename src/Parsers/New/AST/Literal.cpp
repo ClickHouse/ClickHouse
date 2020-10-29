@@ -152,14 +152,7 @@ using namespace AST;
 antlrcpp::Any ParseTreeVisitor::visitFloatingLiteral(ClickHouseParser::FloatingLiteralContext * ctx)
 {
     if (ctx->FLOATING_LITERAL()) return Literal::createNumber(ctx->FLOATING_LITERAL());
-    if (ctx->INTEGER_LITERAL().size() == 2)
-        return Literal::createNumber(
-            ctx->INTEGER_LITERAL(0)->getSymbol()->getText() + ctx->DOT()->getSymbol()->getText()
-            + ctx->INTEGER_LITERAL(1)->getSymbol()->getText());
-    if (ctx->DOT()->getSymbol()->getTokenIndex() < ctx->INTEGER_LITERAL(0)->getSymbol()->getTokenIndex())
-        return Literal::createNumber(ctx->DOT()->getSymbol()->getText() + ctx->INTEGER_LITERAL(0)->getSymbol()->getText());
-    else
-        return Literal::createNumber(ctx->INTEGER_LITERAL(0)->getSymbol()->getText() + ctx->DOT()->getSymbol()->getText());
+    else return Literal::createNumber(ctx->DOT()->getSymbol()->getText() + ctx->DECIMAL_LITERAL()->getSymbol()->getText());
     __builtin_unreachable();
 }
 
@@ -182,8 +175,9 @@ antlrcpp::Any ParseTreeVisitor::visitNumberLiteral(ClickHouseParser::NumberLiter
         if (ctx->DASH()) number->makeNegative();
         return number;
     }
+    if (ctx->OCTAL_LITERAL()) return Literal::createNumber(ctx->OCTAL_LITERAL(), !!ctx->DASH());
+    if (ctx->DECIMAL_LITERAL()) return Literal::createNumber(ctx->DECIMAL_LITERAL(), !!ctx->DASH());
     if (ctx->HEXADECIMAL_LITERAL()) return Literal::createNumber(ctx->HEXADECIMAL_LITERAL(), !!ctx->DASH());
-    if (ctx->INTEGER_LITERAL()) return Literal::createNumber(ctx->INTEGER_LITERAL(), !!ctx->DASH());
     if (ctx->INF()) return Literal::createNumber(ctx->INF(), !!ctx->DASH());
     if (ctx->NAN_SQL()) return Literal::createNumber(ctx->NAN_SQL());
     __builtin_unreachable();

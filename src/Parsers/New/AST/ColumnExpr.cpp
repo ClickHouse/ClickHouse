@@ -481,7 +481,7 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprTupleAccess(ClickHouseParser::Col
     auto args = std::make_shared<ColumnExprList>();
 
     args->push(visit(ctx->columnExpr()));
-    args->push(ColumnExpr::createLiteral(Literal::createNumber(ctx->INTEGER_LITERAL())));
+    args->push(ColumnExpr::createLiteral(Literal::createNumber(ctx->DECIMAL_LITERAL())));
 
     return ColumnExpr::createFunction(name, nullptr, args);
 }

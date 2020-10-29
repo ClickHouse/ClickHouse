@@ -39,14 +39,14 @@ public:
     TTL = 135, TYPE = 136, UNION = 137, USE = 138, USING = 139, VALUES = 140, 
     VIEW = 141, VOLUME = 142, WEEK = 143, WHEN = 144, WHERE = 145, WITH = 146, 
     YEAR = 147, JSON_FALSE = 148, JSON_TRUE = 149, IDENTIFIER = 150, FLOATING_LITERAL = 151, 
-    HEXADECIMAL_LITERAL = 152, INTEGER_LITERAL = 153, STRING_LITERAL = 154, 
-    ARROW = 155, ASTERISK = 156, BACKQUOTE = 157, BACKSLASH = 158, COLON = 159, 
-    COMMA = 160, CONCAT = 161, DASH = 162, DOT = 163, EQ_DOUBLE = 164, EQ_SINGLE = 165, 
-    GE = 166, GT = 167, LBRACE = 168, LBRACKET = 169, LE = 170, LPAREN = 171, 
-    LT = 172, NOT_EQ = 173, PERCENT = 174, PLUS = 175, QUERY = 176, QUOTE_DOUBLE = 177, 
-    QUOTE_SINGLE = 178, RBRACE = 179, RBRACKET = 180, RPAREN = 181, SEMICOLON = 182, 
-    SLASH = 183, UNDERSCORE = 184, MULTI_LINE_COMMENT = 185, SINGLE_LINE_COMMENT = 186, 
-    WHITESPACE = 187
+    OCTAL_LITERAL = 152, DECIMAL_LITERAL = 153, HEXADECIMAL_LITERAL = 154, 
+    STRING_LITERAL = 155, ARROW = 156, ASTERISK = 157, BACKQUOTE = 158, 
+    BACKSLASH = 159, COLON = 160, COMMA = 161, CONCAT = 162, DASH = 163, 
+    DOT = 164, EQ_DOUBLE = 165, EQ_SINGLE = 166, GE = 167, GT = 168, LBRACE = 169, 
+    LBRACKET = 170, LE = 171, LPAREN = 172, LT = 173, NOT_EQ = 174, PERCENT = 175, 
+    PLUS = 176, QUERY = 177, QUOTE_DOUBLE = 178, QUOTE_SINGLE = 179, RBRACE = 180, 
+    RBRACKET = 181, RPAREN = 182, SEMICOLON = 183, SLASH = 184, UNDERSCORE = 185, 
+    MULTI_LINE_COMMENT = 186, SINGLE_LINE_COMMENT = 187, WHITESPACE = 188
   };
 
   enum {
@@ -796,7 +796,7 @@ public:
     antlr4::tree::TerminalNode *TYPE();
     ColumnTypeExprContext *columnTypeExpr();
     antlr4::tree::TerminalNode *GRANULARITY();
-    antlr4::tree::TerminalNode *INTEGER_LITERAL();
+    antlr4::tree::TerminalNode *DECIMAL_LITERAL();
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
@@ -1430,8 +1430,8 @@ public:
   public:
     LimitExprContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
-    std::vector<antlr4::tree::TerminalNode *> INTEGER_LITERAL();
-    antlr4::tree::TerminalNode* INTEGER_LITERAL(size_t i);
+    std::vector<antlr4::tree::TerminalNode *> DECIMAL_LITERAL();
+    antlr4::tree::TerminalNode* DECIMAL_LITERAL(size_t i);
     antlr4::tree::TerminalNode *COMMA();
     antlr4::tree::TerminalNode *OFFSET();
 
@@ -2055,7 +2055,7 @@ public:
 
     ColumnExprContext *columnExpr();
     antlr4::tree::TerminalNode *DOT();
-    antlr4::tree::TerminalNode *INTEGER_LITERAL();
+    antlr4::tree::TerminalNode *DECIMAL_LITERAL();
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
@@ -2321,9 +2321,8 @@ public:
     FloatingLiteralContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *FLOATING_LITERAL();
-    std::vector<antlr4::tree::TerminalNode *> INTEGER_LITERAL();
-    antlr4::tree::TerminalNode* INTEGER_LITERAL(size_t i);
     antlr4::tree::TerminalNode *DOT();
+    antlr4::tree::TerminalNode *DECIMAL_LITERAL();
 
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
    
@@ -2336,8 +2335,9 @@ public:
     NumberLiteralContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     FloatingLiteralContext *floatingLiteral();
+    antlr4::tree::TerminalNode *OCTAL_LITERAL();
+    antlr4::tree::TerminalNode *DECIMAL_LITERAL();
     antlr4::tree::TerminalNode *HEXADECIMAL_LITERAL();
-    antlr4::tree::TerminalNode *INTEGER_LITERAL();
     antlr4::tree::TerminalNode *INF();
     antlr4::tree::TerminalNode *NAN_SQL();
     antlr4::tree::TerminalNode *PLUS();

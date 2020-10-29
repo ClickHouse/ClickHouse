@@ -132,3 +132,6 @@ website/package-lock.json
 /src/Parsers/New/*.interp
 /src/Parsers/New/*.tokens
 /src/Parsers/New/ClickHouseParserBaseVisitor.*
+
+# pytest-profiling
+/prof

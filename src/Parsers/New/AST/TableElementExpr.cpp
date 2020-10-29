@@ -202,7 +202,7 @@ antlrcpp::Any ParseTreeVisitor::visitTableElementExprConstraint(ClickHouseParser
 antlrcpp::Any ParseTreeVisitor::visitTableElementExprIndex(ClickHouseParser::TableElementExprIndexContext *ctx)
 {
     return TableElementExpr::createIndex(
-        visit(ctx->identifier()), visit(ctx->columnExpr()), visit(ctx->columnTypeExpr()), Literal::createNumber(ctx->INTEGER_LITERAL()));
+        visit(ctx->identifier()), visit(ctx->columnExpr()), visit(ctx->columnTypeExpr()), Literal::createNumber(ctx->DECIMAL_LITERAL()));
 }
 
 }

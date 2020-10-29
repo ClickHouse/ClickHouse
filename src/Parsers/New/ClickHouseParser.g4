@@ -100,7 +100,7 @@ engineExpr: ENGINE EQ_SINGLE? identifierOrNull (LPAREN columnExprList? RPAREN)?;
 tableElementExpr
     : tableColumnDfnt                                                              # TableElementExprColumn
     | CONSTRAINT identifier CHECK columnExpr                                       # TableElementExprConstraint
-    | INDEX identifier columnExpr TYPE columnTypeExpr GRANULARITY INTEGER_LITERAL  # TableElementExprIndex
+    | INDEX identifier columnExpr TYPE columnTypeExpr GRANULARITY DECIMAL_LITERAL  # TableElementExprIndex
     ;
 tableColumnDfnt
     : nestedIdentifier columnTypeExpr tableColumnPropertyExpr? (COMMENT STRING_LITERAL)? codecExpr? (TTL columnExpr)?
@@ -199,7 +199,7 @@ joinConstraintClause
     ;
 
 sampleClause: SAMPLE ratioExpr (OFFSET ratioExpr)?;
-limitExpr: INTEGER_LITERAL ((COMMA | OFFSET) INTEGER_LITERAL)?;
+limitExpr: DECIMAL_LITERAL ((COMMA | OFFSET) DECIMAL_LITERAL)?;
 orderExprList: orderExpr (COMMA orderExpr)*;
 orderExpr: columnExpr (ASCENDING | DESCENDING | DESC)? (NULLS (FIRST | LAST))? (COLLATE STRING_LITERAL)?;
 ratioExpr: numberLiteral (SLASH numberLiteral)?;
@@ -268,7 +268,7 @@ columnExpr
 
     // FIXME(ilezhankin): this part looks very ugly, maybe there is another way to express it
     | columnExpr LBRACKET columnExpr RBRACKET                                             # ColumnExprArrayAccess
-    | columnExpr DOT INTEGER_LITERAL                                                      # ColumnExprTupleAccess
+    | columnExpr DOT DECIMAL_LITERAL                                                      # ColumnExprTupleAccess
     | unaryOp columnExpr                                                                  # ColumnExprUnaryOp
     | columnExpr ( ASTERISK                                                               // multiply
                  | SLASH                                                                  // divide
@@ -338,10 +338,9 @@ databaseIdentifier: identifier;
 
 floatingLiteral
     : FLOATING_LITERAL
-    | INTEGER_LITERAL DOT INTEGER_LITERAL?
-    | DOT INTEGER_LITERAL
+    | DOT DECIMAL_LITERAL
     ;
-numberLiteral: (PLUS | DASH)? (floatingLiteral | HEXADECIMAL_LITERAL | INTEGER_LITERAL | INF | NAN_SQL);
+numberLiteral: (PLUS | DASH)? (floatingLiteral | OCTAL_LITERAL | DECIMAL_LITERAL | HEXADECIMAL_LITERAL | INF | NAN_SQL);
 literal
     : numberLiteral
     | STRING_LITERAL

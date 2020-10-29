@@ -1,8 +1,9 @@
+#include <strstream>
+
 #include <Parsers/New/parseQuery.h>
 
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/New/AST/InsertQuery.h>
-#include <Parsers/New/CharInputStream.h>
 #include <Parsers/New/ClickHouseLexer.h>
 #include <Parsers/New/ClickHouseParser.h>
 #include <Parsers/New/LexerErrorListener.h>
@@ -42,9 +43,12 @@ ASTPtr parseQuery(const char * begin, const char * end, size_t, size_t)
 {
     // TODO: do not ignore |max_parser_depth|.
 
-    // TODO: we should implement either CharInputStream with on-the-fly convertion UTF-8 to UTF-32 chars and correlate |end| with offset,
-    //       or should adapt current Lexer with CommonTokenStream. Otherwise, we can't read UTF-8 strings at all.
-    CharInputStream input(begin, end);
+    size_t size = end - begin;
+    std::strstreambuf buffer(begin, size);
+    std::wbuffer_convert<std::codecvt_utf8<wchar_t>> converter(&buffer);
+    std::wistream stream(&converter);
+
+    UnbufferedCharStream input(stream, size);
     ClickHouseLexer lexer(&input);
     CommonTokenStream tokens(&lexer);
     ClickHouseParser parser(&tokens);
