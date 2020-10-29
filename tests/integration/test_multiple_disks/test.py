@@ -493,7 +493,7 @@ def test_background_move(start_cluster, name, engine):
             SETTINGS storage_policy='moving_jbod_with_external'
         """.format(name=name, engine=engine))
 
-        node1.query(f"SYSTEM START MERGES {name}")
+        node1.query(f"SYSTEM STOP MERGES {name}")
 
         for i in range(5):
             data = []  # 5MB in total
