@@ -440,7 +440,7 @@ def test_jbod_overflow(start_cluster, name, engine):
             SETTINGS storage_policy='small_jbod_with_external'
         """.format(name=name, engine=engine))
 
-        node1.query("SYSTEM STOP MERGES")
+        node1.query(f"SYSTEM STOP MERGES {name}")
 
         # small jbod size is 40MB, so lets insert 5MB batch 7 times
         for i in range(7):
@@ -463,7 +463,7 @@ def test_jbod_overflow(start_cluster, name, engine):
 
         assert used_disks[-1] == 'external'
 
-        node1.query("SYSTEM START MERGES")
+        node1.query(f"SYSTEM START MERGES {name}")
         time.sleep(1)
 
         node1.query("OPTIMIZE TABLE {} FINAL".format(name))
