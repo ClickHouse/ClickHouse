@@ -38,7 +38,7 @@ SETTINGS index_granularity = 8192 │
 ```
 
 ``` sql
-INSERT INTO insert_select_testtable (*) VALUES (1, 'a', 1) 
+INSERT INTO insert_select_testtable (*) VALUES (1, 'a', 1) ;
 ```
 
 If you want to insert data in all the columns, except 'b', you need to pass so many values how many columns you chose in parenthesis then:
