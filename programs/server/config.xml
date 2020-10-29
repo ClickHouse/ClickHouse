@@ -270,7 +270,7 @@
                         This parameter is mandatory and cannot be empty.
                 roles - section with a list of locally defined roles that will be assigned to each user retrieved from the LDAP server.
                         If no roles are specified, user will not be able to perform any actions after authentication.
-                        If any of the listed roles is not defined locally at the time of authentication, the authenthication attept
+                        If any of the listed roles is not defined locally at the time of authentication, the authenthication attempt
                          will fail as if the provided password was incorrect.
              Example:
                 <ldap>
