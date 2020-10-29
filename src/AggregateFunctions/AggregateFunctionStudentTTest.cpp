@@ -47,6 +47,6 @@ AggregateFunctionPtr createAggregateFunctionStudentTTest(const std::string & nam
 
 void registerAggregateFunctionStudentTTest(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("studentTTest", createAggregateFunctionStudentTTest, AggregateFunctionFactory::CaseInsensitive);
+    factory.registerFunction("studentTTest", createAggregateFunctionStudentTTest);
 }
 }
