@@ -360,19 +360,19 @@ std::string ExpressionActions::dumpActions() const
     return ss.str();
 }
 
-static std::string getUniqueNameForIndex(ActionsDAG::Index & index, std::string name)
-{
-    if (index.contains(name))
-        return name;
-
-    size_t next_id = 0;
-    std::string res;
-    do
-        res = name + "_" + std::to_string(next_id);
-    while (index.contains(res));
-
-    return res;
-}
+//static std::string getUniqueNameForIndex(ActionsDAG::Index & index, std::string name)
+//{
+//    if (index.contains(name))
+//        return name;
+//
+//    size_t next_id = 0;
+//    std::string res;
+//    do
+//        res = name + "_" + std::to_string(next_id);
+//    while (index.contains(res));
+//
+//    return res;
+//}
 
 bool ActionsDAG::hasArrayJoin() const
 {
@@ -486,7 +486,7 @@ ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_join
                                 Node input_node;
                                 input_node.type = Type::INPUT;
                                 input_node.result_type = child->result_type;
-                                input_node.result_name = getUniqueNameForIndex(index, child->result_name);
+                                input_node.result_name = child->result_name; // getUniqueNameForIndex(index, child->result_name);
                                 child_data.to_this = &this_nodes.emplace_back(std::move(input_node));
 
                                 /// This node is needed for current action, so put it to index also.
