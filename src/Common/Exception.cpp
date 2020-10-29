@@ -46,8 +46,8 @@ Exception::Exception(const std::string & msg, int code)
         LOG_FATAL(&Poco::Logger::root(), "Logical error: '{}'.", msg);
         abort();
     }
-    ErrorCodes::increment(code);
 #endif
+    ErrorCodes::increment(code);
 }
 
 Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
