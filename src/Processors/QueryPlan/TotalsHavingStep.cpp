@@ -78,7 +78,8 @@ void TotalsHavingStep::describeActions(FormatSettings & settings) const
     settings.out << prefix << "Mode: " << totalsModeToString(totals_mode, auto_include_threshold) << '\n';
 
     bool first = true;
-    for (const auto & action : actions->buildExpressions()->getActions())
+    auto expression = actions->buildExpressions();
+    for (const auto & action : expression->getActions())
     {
         settings.out << prefix << (first ? "Actions: "
                                          : "         ");

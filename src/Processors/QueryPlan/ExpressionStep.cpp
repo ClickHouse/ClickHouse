@@ -88,7 +88,8 @@ void ExpressionStep::describeActions(FormatSettings & settings) const
     String prefix(settings.offset, ' ');
     bool first = true;
 
-    for (const auto & action : actions->buildExpressions()->getActions())
+    auto expression = actions->buildExpressions();
+    for (const auto & action : expression->getActions())
     {
         settings.out << prefix << (first ? "Actions: "
                                          : "         ");
