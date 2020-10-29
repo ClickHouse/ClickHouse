@@ -224,15 +224,15 @@ returns
 
 ## OFFSET FETCH Clause {#offset-fetch}
 
-`OFFSET` and `FETCH` are optional parts of the query, which allow you to retrieve just a portion of the rows.
+`OFFSET` and `FETCH` allow you to retrieve data by portions. They specify a row block which you want to get by a single query.
 
 ``` sql
-[OFFSET offset_row_count {ROW | ROWS}] [FETCH {FIRST | NEXT} fetch_row_count {ROW | ROWS} {ONLY | WITH TIES}]
+OFFSET offset_row_count {ROW | ROWS}] [FETCH {FIRST | NEXT} fetch_row_count {ROW | ROWS} {ONLY | WITH TIES}]
 ```
 
-The `offset_row_count` or `fetch_row_count` value can be a literal constant, a parameter, or a variable name. If `fetch_row_count` is omitted, it defaults to 1.
+The `offset_row_count` or `fetch_row_count` value can be a number or a literal constant. You can omit `fetch_row_count`; by default, it equals 1.
 
-The `OFFSET` specifies to skip that many rows before beginning to return rows.
+`OFFSET` specifies the number of rows to skip before starting to return rows from the query.
 
 The `FETCH` specifies the maximum number of rows that can be in the result of a query.
 
@@ -247,10 +247,6 @@ is identical to the query
 ``` sql
 SELECT * FROM test_fetch ORDER BY a LIMIT 3 OFFSET 1;
 ```
-
-But unlike `LIMIT` the `FETCH` has the `WITH TIES` option which used to return any additional rows that tie for the last place in the result set according to the `ORDER BY` clause.
-
-`ROW` and `ROWS` as well as `FIRST` and `NEXT` are noise words that don't influence the effects of these conditions.
 
 !!! note "Note"
     According to the standard, the `OFFSET` clause must come before the `FETCH` clause if both are present.

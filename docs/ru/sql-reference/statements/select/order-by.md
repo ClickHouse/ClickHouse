@@ -214,3 +214,83 @@ ORDER BY
 │ 1970-03-12 │ 1970-01-08 │ original │ 
 └────────────┴────────────┴──────────┘                  
 ```
+
+## Секция OFFSET FETCH {#offset-fetch}
+
+`OFFSET` и `FETCH` позволяют извлекать данные по частям. Они указывают блок строк, который вы хотите получить с помощью одного запроса.
+
+``` sql
+OFFSET offset_row_count {ROW | ROWS}] [FETCH {FIRST | NEXT} fetch_row_count {ROW | ROWS} {ONLY | WITH TIES}]
+```
+
+Значение `offset_row_count` или `fetch_row_count` может быть числом или литеральной константой. Вы можете опустить `fetch_row_count`; по умолчанию, оно равно 1.
+
+`OFFSET` указывает количество строк, которые необходимо пропустить перед началом возврата строк из запроса.
+
+`FETCH` указывает максимальное количество строк, которые могут быть в результате запроса.
+
+Опция `ONLY` используется для возврата строк, которые следуют сразу же за строками, пропущенными секцией `OFFSET`. В этом случае `FETCH` — это альтернатива секции [LIMIT](../../../sql-reference/statements/select/limit.md). Например, следующий запрос
+
+``` sql
+SELECT * FROM test_fetch ORDER BY a OFFSET 1 ROW FETCH FIRST 3 ROWS ONLY;
+```
+
+идентичен запросу
+
+``` sql
+SELECT * FROM test_fetch ORDER BY a LIMIT 3 OFFSET 1;
+```
+
+!!! note "Примечание"
+    В соответствии со стандартом секция `OFFSET` должна находиться перед секцией `FETCH`, если обе присутствуют.
+	
+### Примеры {#examples}
+
+Входная таблица:
+
+``` text
+┌─a─┬─b─┐
+│ 1 │ 1 │
+│ 2 │ 1 │
+│ 3 │ 4 │
+│ 1 │ 3 │
+│ 5 │ 4 │
+│ 0 │ 6 │
+│ 5 │ 7 │
+└───┴───┘
+```
+
+Использование опции `ONLY`:
+
+``` sql
+SELECT * FROM test_fetch ORDER BY a OFFSET 3 ROW FETCH FIRST 3 ROWS ONLY;
+```
+
+Результат:
+
+``` text
+┌─a─┬─b─┐
+│ 2 │ 1 │
+│ 3 │ 4 │
+│ 5 │ 4 │
+└───┴───┘
+```
+
+Использование опции `WITH TIES`:
+
+``` sql
+SELECT * FROM test_fetch ORDER BY a OFFSET 3 ROW FETCH FIRST 3 ROWS WITH TIES;
+```
+
+Результат:
+
+``` text
+┌─a─┬─b─┐
+│ 2 │ 1 │
+│ 3 │ 4 │
+│ 5 │ 4 │
+│ 5 │ 7 │
+└───┴───┘
+```
+
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/select/order-by/#select-order-by) <!--hide-->
