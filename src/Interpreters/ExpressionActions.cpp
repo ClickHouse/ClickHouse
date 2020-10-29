@@ -216,18 +216,18 @@ void ExpressionActions::executeAction(const Action & action, ExecutionContext & 
 
             ColumnsWithTypeAndName arguments(action.arguments.size());
             for (size_t i = 0; i < arguments.size(); ++i)
-                arguments[i] = std::move(columns[action.arguments[i].pos]);
+            {
+                if (action.arguments[i].remove)
+                    arguments[i] = std::move(columns[action.arguments[i].pos]);
+                else
+                    arguments[i] = columns[action.arguments[i].pos];
+            }
 
             ProfileEvents::increment(ProfileEvents::FunctionExecute);
             if (action.node->is_function_compiled)
                 ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
             res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run);
-
-            for (size_t i = 0; i < arguments.size(); ++i)
-                if (!action.arguments[i].remove)
-                    columns[action.arguments[i].pos] = std::move(arguments[i]);
-
             break;
         }
 
