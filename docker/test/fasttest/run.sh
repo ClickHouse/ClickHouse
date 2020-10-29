@@ -242,6 +242,8 @@ TESTS_TO_SKIP=(
     01411_bayesian_ab_testing
     01532_collate_in_low_cardinality
     01533_collate_in_nullable
+    01542_collate_in_array
+    01543_collate_in_tuple
     _orc_
     arrow
     avro

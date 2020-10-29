@@ -284,11 +284,11 @@ void ColumnString::compareColumn(
                                          compare_results, direction, nan_direction_hint);
 }
 
-struct ColumnString::cmp
+struct ColumnString::Cmp
 {
     const ColumnString & parent;
     bool reverse;
-    explicit cmp(const ColumnString & parent_, bool reverse_=false) : parent(parent_), reverse(reverse_) {}
+    explicit Cmp(const ColumnString & parent_, bool reverse_=false) : parent(parent_), reverse(reverse_) {}
     int operator()(size_t lhs, size_t rhs) const
     {
         int res = memcmpSmallAllowOverflow15(
@@ -299,8 +299,8 @@ struct ColumnString::cmp
     }
 };
 
-template <typename Cmp>
-void ColumnString::getPermutationImpl(size_t limit, Permutation & res, Cmp comparator) const
+template <typename Comparator>
+void ColumnString::getPermutationImpl(size_t limit, Permutation & res, Comparator cmp) const
 {
     size_t s = offsets.size();
     res.resize(s);
@@ -310,7 +310,7 @@ void ColumnString::getPermutationImpl(size_t limit, Permutation & res, Cmp compa
     if (limit >= s)
         limit = 0;
 
-    auto less = [&comparator](size_t lhs, size_t rhs){ return comparator(lhs, rhs) < 0; };
+    auto less = [&cmp](size_t lhs, size_t rhs){ return cmp(lhs, rhs) < 0; };
 
     if (limit)
         std::partial_sort(res.begin(), res.begin() + limit, res.end(), less);
@@ -318,8 +318,8 @@ void ColumnString::getPermutationImpl(size_t limit, Permutation & res, Cmp compa
         std::sort(res.begin(), res.end(), less);
 }
 
-template <typename Cmp>
-void ColumnString::updatePermutationImpl(size_t limit, Permutation & res, EqualRanges & equal_ranges, Cmp comparator) const
+template <typename Comparator>
+void ColumnString::updatePermutationImpl(size_t limit, Permutation & res, EqualRanges & equal_ranges, Comparator cmp) const
 {
     if (equal_ranges.empty())
         return;
@@ -334,7 +334,7 @@ void ColumnString::updatePermutationImpl(size_t limit, Permutation & res, EqualR
     if (limit)
         --number_of_ranges;
 
-    auto less = [&comparator](size_t lhs, size_t rhs){ return comparator(lhs, rhs) < 0; };
+    auto less = [&cmp](size_t lhs, size_t rhs){ return cmp(lhs, rhs) < 0; };
 
     for (size_t i = 0; i < number_of_ranges; ++i)
     {
@@ -344,7 +344,7 @@ void ColumnString::updatePermutationImpl(size_t limit, Permutation & res, EqualR
         size_t new_first = first;
         for (size_t j = first + 1; j < last; ++j)
         {
-            if (comparator(res[j], res[new_first]) != 0)
+            if (cmp(res[j], res[new_first]) != 0)
             {
                 if (j - new_first > 1)
                     new_ranges.emplace_back(new_first, j);
@@ -370,7 +370,7 @@ void ColumnString::updatePermutationImpl(size_t limit, Permutation & res, EqualR
         size_t new_first = first;
         for (size_t j = first + 1; j < limit; ++j)
         {
-            if (comparator(res[j], res[new_first]) != 0)
+            if (cmp(res[j], res[new_first]) != 0)
             {
                 if (j - new_first > 1)
                     new_ranges.emplace_back(new_first, j);
@@ -380,7 +380,7 @@ void ColumnString::updatePermutationImpl(size_t limit, Permutation & res, EqualR
         size_t new_last = limit;
         for (size_t j = limit; j < last; ++j)
         {
-            if (comparator(res[j], res[new_first]) == 0)
+            if (cmp(res[j], res[new_first]) == 0)
             {
                 std::swap(res[j], res[new_last]);
                 ++new_last;
@@ -393,21 +393,21 @@ void ColumnString::updatePermutationImpl(size_t limit, Permutation & res, EqualR
 
 void ColumnString::getPermutation(bool reverse, size_t limit, int /*nan_direction_hint*/, Permutation & res) const
 {
-    getPermutationImpl(limit, res, cmp(*this, reverse));
+    getPermutationImpl(limit, res, Cmp(*this, reverse));
 }
 
 void ColumnString::updatePermutation(bool reverse, size_t limit, int /*nan_direction_hint*/, Permutation & res, EqualRanges & equal_ranges) const
 {
-    updatePermutationImpl(limit, res, equal_ranges, cmp(*this, reverse));
+    updatePermutationImpl(limit, res, equal_ranges, Cmp(*this, reverse));
 }
 
-struct ColumnString::cmpWithCollation
+struct ColumnString::CmpWithCollation
 {
     const ColumnString & parent;
     const Collator & collator;
     bool reverse;
 
-    cmpWithCollation(const ColumnString & parent_, const Collator & collator_, bool reverse_=false) : parent(parent_), collator(collator_), reverse(reverse_) {}
+    CmpWithCollation(const ColumnString & parent_, const Collator & collator_, bool reverse_=false) : parent(parent_), collator(collator_), reverse(reverse_) {}
 
     int operator()(size_t lhs, size_t rhs) const
     {
@@ -419,16 +419,15 @@ struct ColumnString::cmpWithCollation
     }
 };
 
-void ColumnString::getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, Permutation & res) const
+void ColumnString::getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int, Permutation & res) const
 {
-    getPermutationImpl(limit, res, cmpWithCollation(*this, collator, reverse));
+    getPermutationImpl(limit, res, CmpWithCollation(*this, collator, reverse));
 }
 
 void ColumnString::updatePermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_ranges) const
 {
-    updatePermutationImpl(limit, res, equal_ranges, cmpWithCollation(*this, collator, reverse));
+    updatePermutationImpl(limit, res, equal_ranges, CmpWithCollation(*this, collator, reverse));
 }
-
 
 ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
 {
@@ -498,7 +497,7 @@ void ColumnString::getExtremes(Field & min, Field & max) const
     size_t min_idx = 0;
     size_t max_idx = 0;
 
-    cmp cmp_op(*this);
+    Cmp cmp_op(*this);
 
     for (size_t i = 1; i < col_size; ++i)
     {
@@ -513,7 +512,7 @@ void ColumnString::getExtremes(Field & min, Field & max) const
 }
 
 
-int ColumnString::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, const Collator & collator) const
+int ColumnString::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, int, const Collator & collator) const
 {
     const ColumnString & rhs = assert_cast<const ColumnString &>(rhs_);
 

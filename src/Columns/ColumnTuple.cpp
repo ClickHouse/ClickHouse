@@ -275,14 +275,25 @@ MutableColumns ColumnTuple::scatter(ColumnIndex num_columns, const Selector & se
     return res;
 }
 
-int ColumnTuple::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+int ColumnTuple::compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator * collator) const
 {
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
-        if (int res = columns[i]->compareAt(n, m, *assert_cast<const ColumnTuple &>(rhs).columns[i], nan_direction_hint))
+    {
+        int res;
+        if (collator && columns[i]->isCollationSupported())
+            res = columns[i]->compareAtWithCollation(n, m, *assert_cast<const ColumnTuple &>(rhs).columns[i], nan_direction_hint, *collator);
+        else
+            res = columns[i]->compareAt(n, m, *assert_cast<const ColumnTuple &>(rhs).columns[i], nan_direction_hint);
+        if (res)
             return res;
-
+    }
     return 0;
+}
+
+int ColumnTuple::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+{
+    return compareAtImpl(n, m, rhs, nan_direction_hint);
 }
 
 void ColumnTuple::compareColumn(const IColumn & rhs, size_t rhs_row_num,
@@ -293,14 +304,20 @@ void ColumnTuple::compareColumn(const IColumn & rhs, size_t rhs_row_num,
                                         compare_results, direction, nan_direction_hint);
 }
 
-template <bool positive>
+int ColumnTuple::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator & collator) const
+{
+    return compareAtImpl(n, m, rhs, nan_direction_hint, &collator);
+}
+
 struct ColumnTuple::Less
 {
     TupleColumns columns;
     int nan_direction_hint;
+    bool reverse;
+    const Collator * collator;
 
-    Less(const TupleColumns & columns_, int nan_direction_hint_)
-        : columns(columns_), nan_direction_hint(nan_direction_hint_)
+    Less(const TupleColumns & columns_, int nan_direction_hint_, bool reverse_=false, const Collator * collator_=nullptr)
+        : columns(columns_), nan_direction_hint(nan_direction_hint_), reverse(reverse_), collator(collator_)
     {
     }
 
@@ -308,17 +325,22 @@ struct ColumnTuple::Less
     {
         for (const auto & column : columns)
         {
-            int res = column->compareAt(a, b, *column, nan_direction_hint);
+            int res;
+            if (collator && column->isCollationSupported())
+                res = column->compareAtWithCollation(a, b, *column, nan_direction_hint, *collator);
+            else
+                res = column->compareAt(a, b, *column, nan_direction_hint);
             if (res < 0)
-                return positive;
+                return !reverse;
             else if (res > 0)
-                return !positive;
+                return reverse;
         }
         return false;
     }
 };
 
-void ColumnTuple::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
+template <typename LessOperator>
+void ColumnTuple::getPermutationImpl(size_t limit, Permutation & res, LessOperator less) const
 {
     size_t rows = size();
     res.resize(rows);
@@ -330,28 +352,25 @@ void ColumnTuple::getPermutation(bool reverse, size_t limit, int nan_direction_h
 
     if (limit)
     {
-        if (reverse)
-            std::partial_sort(res.begin(), res.begin() + limit, res.end(), Less<false>(columns, nan_direction_hint));
-        else
-            std::partial_sort(res.begin(), res.begin() + limit, res.end(), Less<true>(columns, nan_direction_hint));
+        std::partial_sort(res.begin(), res.begin() + limit, res.end(), less);
     }
     else
     {
-        if (reverse)
-            std::sort(res.begin(), res.end(), Less<false>(columns, nan_direction_hint));
-        else
-            std::sort(res.begin(), res.end(), Less<true>(columns, nan_direction_hint));
+        std::sort(res.begin(), res.end(), less);
     }
 }
 
-void ColumnTuple::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
+void ColumnTuple::updatePermutationImpl(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges, const Collator * collator) const
 {
     if (equal_ranges.empty())
         return;
 
     for (const auto & column : columns)
     {
-        column->updatePermutation(reverse, limit, nan_direction_hint, res, equal_ranges);
+        if (collator && column->isCollationSupported())
+            column->updatePermutationWithCollation(*collator, reverse, limit, nan_direction_hint, res, equal_ranges);
+        else
+            column->updatePermutation(reverse, limit, nan_direction_hint, res, equal_ranges);
 
         while (limit && !equal_ranges.empty() && limit <= equal_ranges.back().first)
             equal_ranges.pop_back();
@@ -359,6 +378,26 @@ void ColumnTuple::updatePermutation(bool reverse, size_t limit, int nan_directio
         if (equal_ranges.empty())
             break;
     }
+}
+
+void ColumnTuple::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
+{
+    getPermutationImpl(limit, res, Less(columns, nan_direction_hint, reverse));
+}
+
+void ColumnTuple::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
+{
+    updatePermutationImpl(reverse, limit, nan_direction_hint, res, equal_ranges);
+}
+
+void ColumnTuple::getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
+{
+    getPermutationImpl(limit, res, Less(columns, nan_direction_hint, reverse, &collator));
+}
+
+void ColumnTuple::updatePermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const
+{
+    updatePermutationImpl(reverse, limit, nan_direction_hint, res, equal_ranges, &collator);
 }
 
 void ColumnTuple::gather(ColumnGathererStream & gatherer)
@@ -431,6 +470,16 @@ bool ColumnTuple::structureEquals(const IColumn & rhs) const
     }
     else
         return false;
+}
+
+bool ColumnTuple::isCollationSupported() const
+{
+    for (const auto& column : columns)
+    {
+        if (column->isCollationSupported())
+            return true;
+    }
+    return false;
 }
 
 

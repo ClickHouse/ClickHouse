@@ -15,7 +15,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
-    extern const int BAD_COLLATION;
 }
 
 namespace
@@ -280,12 +279,24 @@ MutableColumnPtr ColumnLowCardinality::cloneResized(size_t size) const
     return ColumnLowCardinality::create(IColumn::mutate(std::move(unique_ptr)), getIndexes().cloneResized(size));
 }
 
-int ColumnLowCardinality::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+int ColumnLowCardinality::compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator * collator) const
 {
     const auto & low_cardinality_column = assert_cast<const ColumnLowCardinality &>(rhs);
     size_t n_index = getIndexes().getUInt(n);
     size_t m_index = low_cardinality_column.getIndexes().getUInt(m);
+    if (collator)
+        return getDictionary().getNestedColumn()->compareAtWithCollation(n_index, m_index, *low_cardinality_column.getDictionary().getNestedColumn(), nan_direction_hint, *collator);
     return getDictionary().compareAt(n_index, m_index, low_cardinality_column.getDictionary(), nan_direction_hint);
+}
+
+int ColumnLowCardinality::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+{
+    return compareAtImpl(n, m, rhs, nan_direction_hint);
+}
+
+int ColumnLowCardinality::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator & collator) const
+{
+    return compareAtImpl(n, m, rhs, nan_direction_hint, &collator);
 }
 
 void ColumnLowCardinality::compareColumn(const IColumn & rhs, size_t rhs_row_num,
@@ -306,12 +317,7 @@ void ColumnLowCardinality::getPermutationImpl(bool reverse, size_t limit, int na
     Permutation unique_perm;
     if (collator)
     {
-        /// Collations are supported only for ColumnString
-        const ColumnString * column_string = checkAndGetColumn<ColumnString>(getDictionary().getNestedColumn().get());
-        if (!column_string)
-            throw Exception("Collations could be specified only for String columns or columns where nested column is String.", ErrorCodes::BAD_COLLATION);
-
-        column_string->getPermutationWithCollation(*collator, reverse, unique_limit, unique_perm);
+        getDictionary().getNestedColumn()->getPermutationWithCollation(*collator, reverse, unique_limit, nan_direction_hint, unique_perm);
     }
     else
         getDictionary().getNestedColumn()->getPermutation(reverse, unique_limit, nan_direction_hint, unique_perm);
@@ -438,16 +444,11 @@ void ColumnLowCardinality::getPermutationWithCollation(const Collator & collator
     getPermutationImpl(reverse, limit, nan_direction_hint, res, &collator);
 }
 
-void ColumnLowCardinality::updatePermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_ranges) const
+void ColumnLowCardinality::updatePermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const
 {
-    /// Collations are supported only for ColumnString
-    const ColumnString * column_string = checkAndGetColumn<ColumnString>(getDictionary().getNestedColumn().get());
-    if (!column_string)
-        throw Exception("Collations could be specified only for String columns or columns where nested column is String.", ErrorCodes::BAD_COLLATION);
-
-    auto comparator = [this, &column_string, &collator, reverse](size_t lhs, size_t rhs)
+    auto comparator = [this, &collator, reverse, nan_direction_hint](size_t lhs, size_t rhs)
     {
-        int ret = column_string->compareAtWithCollation(getIndexes().getUInt(lhs), getIndexes().getUInt(rhs), *column_string, collator);
+        int ret = getDictionary().getNestedColumn()->compareAtWithCollation(getIndexes().getUInt(lhs), getIndexes().getUInt(rhs), *getDictionary().getNestedColumn(), nan_direction_hint, collator);
         return reverse ? -ret : ret;
     };
 
