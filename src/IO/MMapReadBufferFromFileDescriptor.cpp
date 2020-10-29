@@ -38,7 +38,9 @@ void MMapReadBufferFromFileDescriptor::init(int fd_, size_t offset, size_t lengt
                 ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
         BufferBase::set(static_cast<char *>(buf), length, 0);
-        ReadBuffer::padded = (length % 4096) > 0 && (length % 4096) <= (4096 - 15); /// TODO determine page size
+        
+        int page_size = ::getpagesize();
+        ReadBuffer::padded = (length % page_size) > 0 && (length % page_size) <= (page_size - 15);
     }
 }
 
