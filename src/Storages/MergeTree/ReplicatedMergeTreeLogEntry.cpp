@@ -31,13 +31,18 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
             break;
 
         case MERGE_PARTS:
+            assert(new_part_uuid != UUIDHelpers::Nil);
+
             out << "merge\n";
             for (const String & s : source_parts)
                 out << s << '\n';
             out << "into\n" << new_part_name;
             out << "\ndeduplicate: " << deduplicate;
+
             if (merge_type != MergeType::REGULAR)
                 out <<"\nmerge_type: " << static_cast<UInt64>(merge_type);
+
+            out << "\ninto_uuid: " << new_part_uuid;
             break;
 
         case DROP_RANGE:
@@ -70,10 +75,14 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
             break;
 
         case MUTATE_PART:
+            assert(new_part_uuid != UUIDHelpers::Nil);
+
             out << "mutate\n"
                 << source_parts.at(0) << "\n"
                 << "to\n"
-                << new_part_name;
+                << new_part_name
+                << "\nto_uuid\n"
+                << new_part_uuid;
 
             if (isAlterMutation())
                 out << "\nalter_version\n" << alter_version;
@@ -156,15 +165,21 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
             in >> "\ndeduplicate: " >> deduplicate;
 
             /// Trying to be more backward compatible
-            in >> "\n";
-            if (checkString("merge_type: ", in))
+            while (!trailing_newline_found)
             {
-                UInt64 value;
-                in >> value;
-                merge_type = checkAndGetMergeType(value);
+                in >> "\n";
+
+                if (checkString("merge_type: ", in))
+                {
+                    UInt64 value;
+                    in >> value;
+                    merge_type = checkAndGetMergeType(value);
+                }
+                else if (checkString("into_uuid: ", in))
+                    in >> new_part_uuid;
+                else
+                    trailing_newline_found = true;
             }
-            else
-                trailing_newline_found = true;
         }
     }
     else if (type_str == "drop" || type_str == "detach")
@@ -198,12 +213,17 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
            >> new_part_name;
         source_parts.push_back(source_part);
 
-        in >> "\n";
+        while (!trailing_newline_found)
+        {
+            in >> "\n";
 
-        if (in.eof())
-            trailing_newline_found = true;
-        else if (checkString("alter_version\n", in))
-            in >> alter_version;
+            if (checkString("alter_version\n", in))
+                in >> alter_version;
+            else if (checkString("to_uuid\n", in))
+                in >> new_part_uuid;
+            else
+                trailing_newline_found = true;
+        }
     }
     else if (type_str == "alter")
     {
