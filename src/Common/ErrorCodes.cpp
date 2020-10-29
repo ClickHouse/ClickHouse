@@ -540,10 +540,10 @@ namespace ErrorCodes
 
     struct ErrorCodesNames
     {
-        const char * strings[END+1];
+        std::string_view names[END+1];
         ErrorCodesNames()
         {
-            #define M(NAME, VALUE) strings[VALUE] = #NAME;
+            #define M(NAME, VALUE) names[VALUE] = std::string_view(#NAME);
                 APPLY_FOR_ERROR_CODES(M)
             #undef M
         }
@@ -553,10 +553,7 @@ namespace ErrorCodes
     {
         if (error_code >= END)
             return std::string_view();
-        const char * name = error_codes_names.strings[error_code];
-        if (!name)
-            return std::string_view();
-        return std::string_view(name);
+        return error_codes_names.names[error_code];
     }
 
     ErrorCode end() { return END+1; }
