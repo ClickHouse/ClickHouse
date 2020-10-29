@@ -41,6 +41,11 @@ class MySQLNodeInstance:
         with self.alloc_connection().cursor() as cursor:
             cursor.execute(execution_query)
 
+    def result(self, execution_query):
+        with self.alloc_connection().cursor() as cursor:
+            cursor.execute(execution_query)
+            print(cursor.fetchone())
+
     def close(self):
         if self.mysql_connection is not None:
             self.mysql_connection.close()
