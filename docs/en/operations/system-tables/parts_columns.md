@@ -145,7 +145,5 @@ column_marks_bytes:                    48
 
 -   [MergeTree family](../../engines/table-engines/mergetree-family/mergetree.md)
 -   [TTL for Columns and Tables](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl)
--   [system.parts](../../../operations/system_tables/parts.md)
--   [system.columns](../../../operations/system_tables/columns.md)
 
 [Original article](https://clickhouse.tech/docs/en/operations/system_tables/parts_columns) <!--hide-->
