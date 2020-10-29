@@ -23,7 +23,7 @@
             <volumes>
                 <main>
                     <disk>jbod1</disk>
-                    <move_factor>0.09</move_factor>
+                    <move_factor>0.08</move_factor>
                 </main>
                 <external>
                     <disk>external</disk>
