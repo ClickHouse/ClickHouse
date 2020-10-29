@@ -24,7 +24,7 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, const Context &
         UInt64 value = ErrorCodes::values[i];
         std::string_view name = ErrorCodes::getName(i);
 
-        if (!name.size())
+        if (name.empty())
             continue;
 
         if (value || context.getSettingsRef().system_events_show_zero_values)
