@@ -513,7 +513,19 @@ ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_join
                     }
 
                     if (in_index)
+                    {
                         split_index[copy.result_name] = &copy;
+
+                        /// If this node is needed in result, add it as input.
+                        Node input_node;
+                        input_node.type = Type::INPUT;
+                        input_node.result_type = node.result_type;
+                        input_node.result_name = node.result_name;
+                        cur_data.to_this = &this_nodes.emplace_back(std::move(input_node));
+
+                        /// This node is needed for current action, so put it to index also.
+                        this_index[cur_data.to_this->result_name] = cur_data.to_this;
+                    }
                 }
             }
         }
