@@ -9,24 +9,28 @@ namespace DB::AST
 class SystemQuery : public Query
 {
     public:
-        static PtrTo<SystemQuery> createDistributed(bool stop, PtrTo<TableIdentifier> identifier);
+        static PtrTo<SystemQuery> createDistributedSends(bool stop, PtrTo<TableIdentifier> identifier);
         static PtrTo<SystemQuery> createFetches(bool stop, PtrTo<TableIdentifier> identifier);
-        static PtrTo<SystemQuery> createFlush(PtrTo<TableIdentifier> identifier);
-        static PtrTo<SystemQuery> createLogs();
+        static PtrTo<SystemQuery> createFlushDistributed(PtrTo<TableIdentifier> identifier);
+        static PtrTo<SystemQuery> createFlushLogs();
         static PtrTo<SystemQuery> createMerges(bool stop, PtrTo<TableIdentifier> identifier);
-        static PtrTo<SystemQuery> createSync(PtrTo<TableIdentifier> identifier);
+        static PtrTo<SystemQuery> createSyncReplica(PtrTo<TableIdentifier> identifier);
 
         ASTPtr convertToOld() const override;
 
     private:
+        enum ChildIndex : UInt8
+        {
+            TABLE = 0,
+        };
         enum class QueryType
         {
-            DISTRIBUTED,
+            DISTRIBUTED_SENDS,
             FETCHES,
-            FLUSH,
-            LOGS,
+            FLUSH_DISTRIBUTED,
+            FLUSH_LOGS,
             MERGES,
-            SYNC,
+            SYNC_REPLICA,
         };
 
         QueryType query_type;
