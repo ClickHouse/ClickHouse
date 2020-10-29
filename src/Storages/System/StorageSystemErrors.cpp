@@ -1,20 +1,8 @@
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/System/StorageSystemErrors.h>
-#include <Storages/Distributed/DirectoryMonitor.h>
-#include <Storages/StorageDistributed.h>
-#include <Storages/VirtualColumnUtils.h>
-#include <Access/ContextAccess.h>
-#include <Common/typeid_cast.h>
-#include <Common/HashTable/HashMap.h>
-#include <Databases/IDatabase.h>
-#include <Interpreters/AggregationCommon.h>
-#include <atomic>
-
-extern std::string_view errorCodeToName(int code);
-extern HashMap<int, std::atomic<uint64_t>, DefaultHash<int>> error_codes_count;
+#include <Common/ErrorCodes.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -29,14 +17,23 @@ NamesAndTypesList StorageSystemErrors::getNamesAndTypes()
 }
 
 
-void StorageSystemErrors::fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const
+void StorageSystemErrors::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
-    for (const auto & error_code_pair : error_codes_count)
+    for (size_t i = 0, end = ErrorCodes::end(); i < end; ++i)
     {
-        size_t col_num = 0;
-        res_columns[col_num++]->insert(errorCodeToName(error_code_pair.getKey()));
-        res_columns[col_num++]->insert(error_code_pair.getKey());
-        res_columns[col_num++]->insert(uint64_t(error_code_pair.getMapped()));
+        UInt64 value = ErrorCodes::values[i];
+        std::string_view name = ErrorCodes::getName(i);
+
+        if (!name.size())
+            continue;
+
+        if (value || context.getSettingsRef().system_events_show_zero_values)
+        {
+            size_t col_num = 0;
+            res_columns[col_num++]->insert(name);
+            res_columns[col_num++]->insert(i);
+            res_columns[col_num++]->insert(value);
+        }
     }
 }
 

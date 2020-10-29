@@ -86,21 +86,6 @@ endif()
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
 list (APPEND clickhouse_common_io_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
 
-# ErrorCodes
-set(ERROR_CODES_IN ${CMAKE_CURRENT_SOURCE_DIR}/Common/ErrorCodes.cpp)
-set(ERROR_CODES_OUT ${CMAKE_CURRENT_BINARY_DIR}/Common/errorCodes.generated.cpp)
-add_custom_target(generate-error-codes
-    env
-        ERROR_CODES_IN_FILE=${ERROR_CODES_IN}
-        ERROR_CODES_OUT_FILE=${ERROR_CODES_OUT}
-        CXX=${CMAKE_CXX_COMPILER}
-        ${CMAKE_CURRENT_SOURCE_DIR}/Common/errorCodes.sh
-    SOURCES Common/errorCodes.sh
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-    BYPRODUCTS ${ERROR_CODES_OUT}
-)
-list(APPEND clickhouse_common_io_sources ${ERROR_CODES_OUT})
-
 list (APPEND dbms_sources Functions/IFunction.cpp Functions/FunctionFactory.cpp Functions/FunctionHelpers.cpp Functions/extractTimeZoneFromFunctionArguments.cpp)
 list (APPEND dbms_headers Functions/IFunctionImpl.h Functions/FunctionFactory.h Functions/FunctionHelpers.h Functions/extractTimeZoneFromFunctionArguments.h)
 
