@@ -53,8 +53,6 @@ endif()
 
 target_include_directories(clickhouse_functions SYSTEM PRIVATE ${SPARSEHASH_INCLUDE_DIR})
 
-add_dependencies(clickhouse_functions generate-error-codes)
-
 if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE"
     OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO"
     OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")
