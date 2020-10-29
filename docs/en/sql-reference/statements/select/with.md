@@ -10,9 +10,10 @@ Clickhouse supports Common Table Expressions ([CTE](https://en.wikipedia.org/wik
 
 ``` sql
 WITH <expression> AS <identifier>
-|
+```
+or
+``` sql
 WITH <identifier> AS <subquery expression>
-...
 ```
 
 ## Examples {#examples}
@@ -65,3 +66,5 @@ LIMIT 10;
 WITH test1 AS (SELECT i + 1, j + 1 FROM test1) 
 SELECT * FROM test1;
 ```
+
+[Original article](https://clickhouse.tech/docs/en/sql-reference/statements/select/with/) <!--hide-->
