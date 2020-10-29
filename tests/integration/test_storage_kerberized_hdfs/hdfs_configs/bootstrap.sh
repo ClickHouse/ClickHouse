@@ -1,7 +1,6 @@
 #!/bin/bash
 
-: ${HADOOP_PREFIX:=/usr/local/hadoop}
-
+: "${HADOOP_PREFIX:=/usr/local/hadoop}"
 
 cat >> $HADOOP_PREFIX/etc/hadoop/hadoop-env.sh <<EOF
 export HADOOP_SECURE_DN_USER=hdfs
@@ -11,16 +10,18 @@ export JSVC_HOME=$HADOOP_PREFIX/sbin
 EOF
 $HADOOP_PREFIX/etc/hadoop/hadoop-env.sh
 
-mkdir -p ${HADOOP_SECURE_DN_PID_DIR}
-mkdir -p ${HADOOP_SECURE_DN_LOG_DIR}
+mkdir -p "${HADOOP_SECURE_DN_PID_DIR}"
+mkdir -p "${HADOOP_SECURE_DN_LOG_DIR}"
 
 rm /tmp/*.pid
 
 # installing libraries if any - (resource urls added comma separated to the ACP system variable)
-cd $HADOOP_PREFIX/share/hadoop/common ; for cp in ${ACP//,/ }; do  echo == $cp; curl -LO $cp ; done; cd -
+cd "${HADOOP_PREFIX}/share/hadoop/common" || exit
+for cp in ${ACP//,/ }; do  echo "== ${cp}"; curl -LO "${cp}" ; done;
+cd - || exit
 
 # altering the core-site configuration
-sed s/HOSTNAME/$HOSTNAME/ /usr/local/hadoop/etc/hadoop/core-site.xml.template | grep -v '/configuration' > /usr/local/hadoop/etc/hadoop/core-site.xml
+sed "s/HOSTNAME/${HOSTNAME}/" /usr/local/hadoop/etc/hadoop/core-site.xml.template | grep -v '/configuration' > /usr/local/hadoop/etc/hadoop/core-site.xml
 
 cat >> /usr/local/hadoop/etc/hadoop/core-site.xml << EOF
   <property>

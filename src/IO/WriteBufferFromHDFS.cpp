@@ -37,8 +37,12 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
         if (path.find_first_of("*?{") != std::string::npos)
             throw Exception("URI '" + hdfs_uri + "' contains globs, so the table is in readonly mode", ErrorCodes::CANNOT_OPEN_FILE);
 
-        int flags = hdfsExists(fs.get(), path.c_str()) ? (O_WRONLY|O_APPEND) : O_WRONLY; /// O_WRONLY meaning create or overwrite i.e., implies O_TRUNCAT here
-        fout =  hdfsOpenFile(fs.get(), path.c_str(), flags, 0, 0, 0);
+        // int flags = hdfsExists(fs.get(), path.c_str()) ? (O_WRONLY|O_SYNC) : (O_WRONLY|O_APPEND|O_SYNC); /// O_WRONLY meaning create or overwrite i.e., implies O_TRUNCAT here
+        // fout =  hdfsOpenFile(fs.get(), path.c_str(), flags, 0, 0, 1024*1024);
+
+        if (!hdfsExists(fs.get(), path.c_str()))
+            throw Exception("File: " + path + " is already exists", ErrorCodes::BAD_ARGUMENTS);
+        fout = hdfsOpenFile(fs.get(), path.c_str(), O_WRONLY, 0, 0, 0);     /// O_WRONLY meaning create or overwrite i.e., implies O_TRUNCAT here
 
         if (fout == nullptr)
         {

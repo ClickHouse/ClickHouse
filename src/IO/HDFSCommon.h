@@ -103,26 +103,23 @@ class HDFSBuilderWrapper
 
     static std::mutex kinit_mtx;
 
-    /*mutable*/ std::vector<std::pair<String, String>> config_stor;
+    std::vector<std::pair<String, String>> config_stor;
 
     std::pair<String, String>& keep(const String & k, const String & v)
     {
         return config_stor.emplace_back(std::make_pair(k, v));
     }
 
-
-    void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const String & path);
+    void loadFromConfig(const Poco::Util::AbstractConfiguration & config,
+				const String & config_path, bool isUser = false);
 
     String getKinitCmd();
 
+    bool needKinit{false};
 
-    bool
-    needKinit{false};
+    void runKinit();
 
-
-
-    void
-    runKinit();
+		void makeCachePath(const String & cachePath, String user = "");
 
     static const String CONFIG_PREFIX;
 
