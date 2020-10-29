@@ -175,9 +175,7 @@ static std::string nodeName(avro::NodePtr node)
 
 AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::NodePtr root_node, DataTypePtr target_type)
 {
-    const WhichDataType target = target_type->getTypeId() == TypeIndex::LowCardinality
-        ? removeLowCardinality(target_type)
-        : target_type;
+    const WhichDataType target = removeLowCardinality(target_type);
 
     switch (root_node->type())
     {
