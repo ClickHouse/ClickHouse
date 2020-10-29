@@ -1176,9 +1176,26 @@ void ActionsDAG::removeUnusedActions(const Names & required_names)
 
 void ActionsDAG::addAliases(const NamesWithAliases & aliases)
 {
+    std::vector<Node> alias_nodes;
+
     for (const auto & item : aliases)
+    {
         if (!item.second.empty() && item.first != item.second)
-            addAlias(item.first, item.second, true);
+        {
+            auto & child = getNode(item.first);
+
+            Node node;
+            node.type = Type::ALIAS;
+            node.result_type = child.result_type;
+            node.result_name = std::move(item.second);
+            node.column = child.column;
+            node.allow_constant_folding = child.allow_constant_folding;
+            node.children.emplace_back(&child);
+        }
+    }
+
+    for (auto & node : alias_nodes)
+        addNode(std::move(node), true);
 }
 
 void ActionsDAG::project(const NamesWithAliases & projection)
