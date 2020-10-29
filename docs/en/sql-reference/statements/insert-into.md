@@ -14,7 +14,8 @@ INSERT INTO [db.]table [(c1, c2, c3)] VALUES (v11, v12, v13), (v21, v22, v23), .
 ```
 
 You can specify a list of columns to insert using  the `(c1, c2, c3)` or `COLUMNS(c1,c2,c3)` syntax. 
-You can use asterisk when specifying the column list.
+
+Instead of listing all the required columns you can use the `(* EXCEPT(column_list))` syntax.
 
 For example, consider the table:
 
