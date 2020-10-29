@@ -1048,10 +1048,10 @@ public:
 int mainEntryClickHouseObfuscator(int argc, char ** argv)
 try
 {
-    registerFormats();
-
     using namespace DB;
     namespace po = boost::program_options;
+
+    registerFormats();
 
     po::options_description description = createOptionsDescription("Options", getTerminalWidth());
     description.add_options()
