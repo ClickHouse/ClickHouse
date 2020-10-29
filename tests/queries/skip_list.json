@@ -267,6 +267,7 @@
         "01293_system_distribution_queue",
         "01114_database_atomic",
         "00840_long_concurrent_select_and_drop_deadlock",
+        "00575_illegal_column_exception_when_drop_depen_column",
         "attach",
         "ddl_dictionaries",
         "dictionary",
