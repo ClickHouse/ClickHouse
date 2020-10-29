@@ -9,7 +9,9 @@ Clickhouse supports Common Table Expressions ([CTE](https://en.wikipedia.org/wik
 ## Syntax
 
 ``` sql
-WITH <expression> AS <identifier|subquery>
+WITH <expression> AS <identifier>
+|
+WITH <identifier> AS <subquery expression>
 ...
 ```
 

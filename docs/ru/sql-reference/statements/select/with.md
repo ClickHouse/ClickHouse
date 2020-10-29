@@ -5,7 +5,9 @@ Clickhouse поддерживает [Общие табличные выраже�
 ## Синтаксис
 
 ``` sql
-WITH <expression> AS <identifier|subquery>
+WITH <expression> AS <identifier>
+|
+WITH <identifier> AS <subquery expression>
 ...
 ```
  
