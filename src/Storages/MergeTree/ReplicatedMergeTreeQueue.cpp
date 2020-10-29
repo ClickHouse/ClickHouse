@@ -57,6 +57,7 @@ bool ReplicatedMergeTreeQueue::isVirtualPart(const MergeTreeData::DataPartPtr & 
     return virtual_parts.getContainingPart(data_part->info) != data_part->name;
 }
 
+
 bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
 {
     auto queue_path = replica_path + "/queue";
@@ -67,6 +68,9 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
 
     {
         std::lock_guard pull_logs_lock(pull_logs_to_queue_mutex);
+
+        /// Reset batch size on initialization to recover from possible errors of too large batch size.
+        current_multi_batch_size = 1;
 
         String log_pointer_str = zookeeper->get(replica_path + "/log_pointer");
         log_pointer = log_pointer_str.empty() ? 0 : parse<UInt64>(log_pointer_str);
@@ -486,19 +490,20 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
     {
         std::sort(log_entries.begin(), log_entries.end());
 
-        /// ZK contains a limit on the number or total size of operations in a multi-request.
-        /// If the limit is exceeded, the connection is simply closed.
-        /// The constant is selected with a margin. The default limit in ZK is 1 MB of data in total.
-        /// The average size of the node value in this case is less than 10 kilobytes.
-        static constexpr auto MAX_MULTI_OPS = 100;
-
-        for (size_t entry_idx = 0, num_entries = log_entries.size(); entry_idx < num_entries; entry_idx += MAX_MULTI_OPS)
+        for (size_t entry_idx = 0, num_entries = log_entries.size(); entry_idx < num_entries;)
         {
             auto begin = log_entries.begin() + entry_idx;
-            auto end = entry_idx + MAX_MULTI_OPS >= log_entries.size()
+            auto end = entry_idx + current_multi_batch_size >= log_entries.size()
                 ? log_entries.end()
-                : (begin + MAX_MULTI_OPS);
+                : (begin + current_multi_batch_size);
             auto last = end - 1;
+
+            /// Increment entry_idx before batch size increase (we copied at most current_multi_batch_size entries)
+            entry_idx += current_multi_batch_size;
+
+            /// Increase the batch size exponentially, so it will saturate to MAX_MULTI_OPS.
+            if (current_multi_batch_size < MAX_MULTI_OPS)
+                current_multi_batch_size = std::min<size_t>(MAX_MULTI_OPS, current_multi_batch_size * 2);
 
             String last_entry = *last;
             if (!startsWith(last_entry, "log-"))
