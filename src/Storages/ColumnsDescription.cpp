@@ -182,12 +182,10 @@ void ColumnsDescription::add(ColumnDescription column, const String & after_colu
             throw Exception("Wrong column name. Cannot find column " + after_column + " to insert after",
                 ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
-        for (auto it = range.first; it != range.second; ++it)
-            addSubcolumns(it->name, it->type);
-
         insert_it = range.second;
     }
 
+    addSubcolumns(column.name, column.type);
     columns.get<0>().insert(insert_it, std::move(column));
 }
 
@@ -275,6 +273,7 @@ void ColumnsDescription::flattenNested()
         }
 
         ColumnDescription column = std::move(*it);
+        removeSubcolumns(column.name, column.type);
         it = columns.get<0>().erase(it);
 
         const DataTypes & elements = type_tuple->getElements();
@@ -288,6 +287,7 @@ void ColumnsDescription::flattenNested()
             nested_column.name = Nested::concatenateName(column.name, names[i]);
             nested_column.type = std::make_shared<DataTypeArray>(elements[i]);
 
+            addSubcolumns(nested_column.name, nested_column.type);
             columns.get<0>().insert(it, std::move(nested_column));
         }
     }

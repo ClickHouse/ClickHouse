@@ -49,6 +49,7 @@ namespace ErrorCodes
     extern const int DUPLICATE_COLUMN;
     extern const int INCORRECT_FILE_NAME;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -92,7 +93,7 @@ private:
         {
         }
 
-        std::unique_ptr<ReadBufferFromFileBase> plain;
+        std::unique_ptr<ReadBuffer> plain;
         CompressedReadBuffer compressed;
     };
 
@@ -447,10 +448,17 @@ Pipe StorageTinyLog::read(
 {
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
+    auto all_columns = metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(column_names);
+
+    /// TODO: implement DataType Nested and support them
+    for (const auto & column : all_columns)
+        if (column.isSubcolumn() && startsWith(column.getSubcolumnName(), "size"))
+            throw Exception("Subcolumns of arrays are not supported in StorageLog", ErrorCodes::NOT_IMPLEMENTED);
+
     // When reading, we lock the entire storage, because we only have one file
     // per column and can't modify it concurrently.
     return Pipe(std::make_shared<TinyLogSource>(
-        max_block_size, metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(column_names),
+        max_block_size, Nested::collect(all_columns),
         *this, context.getSettingsRef().max_read_buffer_size));
 }
 
