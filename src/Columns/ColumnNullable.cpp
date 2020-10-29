@@ -275,9 +275,7 @@ void ColumnNullable::getPermutationImpl(bool reverse, size_t limit, int null_dir
     /// Cannot pass limit because of unknown amount of NULLs.
 
     if (collator)
-    {
         getNestedColumn().getPermutationWithCollation(*collator, reverse, 0, null_direction_hint, res);
-    }
     else
         getNestedColumn().getPermutation(reverse, 0, null_direction_hint, res);
 
@@ -453,9 +451,7 @@ void ColumnNullable::updatePermutationImpl(bool reverse, size_t limit, int null_
     }
 
     if (collator)
-    {
         getNestedColumn().updatePermutationWithCollation(*collator, reverse, limit, null_direction_hint, res, new_ranges);
-    }
     else
         getNestedColumn().updatePermutation(reverse, limit, null_direction_hint, res, new_ranges);
 
