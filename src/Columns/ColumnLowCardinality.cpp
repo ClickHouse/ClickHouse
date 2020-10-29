@@ -316,9 +316,7 @@ void ColumnLowCardinality::getPermutationImpl(bool reverse, size_t limit, int na
     size_t unique_limit = getDictionary().size();
     Permutation unique_perm;
     if (collator)
-    {
         getDictionary().getNestedColumn()->getPermutationWithCollation(*collator, reverse, unique_limit, nan_direction_hint, unique_perm);
-    }
     else
         getDictionary().getNestedColumn()->getPermutation(reverse, unique_limit, nan_direction_hint, unique_perm);
 
