@@ -18,7 +18,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
     extern const int SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT;
-    extern const int BAD_COLLATION;
 }
 
 
@@ -225,7 +224,7 @@ ColumnPtr ColumnNullable::index(const IColumn & indexes, size_t limit) const
     return ColumnNullable::create(indexed_data, indexed_null_map);
 }
 
-int ColumnNullable::compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const
+int ColumnNullable::compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint, const Collator * collator) const
 {
     /// NULL values share the properties of NaN values.
     /// Here the last parameter of compareAt is called null_direction_hint
@@ -247,7 +246,20 @@ int ColumnNullable::compareAt(size_t n, size_t m, const IColumn & rhs_, int null
     }
 
     const IColumn & nested_rhs = nullable_rhs.getNestedColumn();
+    if (collator)
+        return getNestedColumn().compareAtWithCollation(n, m, nested_rhs, null_direction_hint, *collator);
+
     return getNestedColumn().compareAt(n, m, nested_rhs, null_direction_hint);
+}
+
+int ColumnNullable::compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const
+{
+    return compareAtImpl(n, m, rhs_, null_direction_hint);
+}
+
+int ColumnNullable::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint, const Collator & collator) const
+{
+    return compareAtImpl(n, m, rhs_, null_direction_hint, &collator);
 }
 
 void ColumnNullable::compareColumn(const IColumn & rhs, size_t rhs_row_num,
@@ -264,12 +276,7 @@ void ColumnNullable::getPermutationImpl(bool reverse, size_t limit, int null_dir
 
     if (collator)
     {
-        /// Collations are supported only for ColumnString
-        const ColumnString * column_string = checkAndGetColumn<ColumnString>(&getNestedColumn());
-        if (!column_string)
-            throw Exception("Collations could be specified only for String columns or columns where nested column is String.", ErrorCodes::BAD_COLLATION);
-
-        column_string->getPermutationWithCollation(*collator, reverse, 0, res);
+        getNestedColumn().getPermutationWithCollation(*collator, reverse, 0, null_direction_hint, res);
     }
     else
         getNestedColumn().getPermutation(reverse, 0, null_direction_hint, res);
@@ -447,12 +454,7 @@ void ColumnNullable::updatePermutationImpl(bool reverse, size_t limit, int null_
 
     if (collator)
     {
-        /// Collations are supported only for ColumnString
-        const ColumnString * column_string = checkAndGetColumn<ColumnString>(getNestedColumn());
-        if (!column_string)
-            throw Exception("Collations could be specified only for String columns or columns where nested column is String.", ErrorCodes::BAD_COLLATION);
-
-        column_string->updatePermutationWithCollation(*collator, reverse, limit, null_direction_hint, res, new_ranges);
+        getNestedColumn().updatePermutationWithCollation(*collator, reverse, limit, null_direction_hint, res, new_ranges);
     }
     else
         getNestedColumn().updatePermutation(reverse, limit, null_direction_hint, res, new_ranges);
