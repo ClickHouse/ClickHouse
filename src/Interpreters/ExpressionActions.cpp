@@ -466,6 +466,7 @@ ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_join
                 if (cur_data.depend_on_array_join)
                 {
                     auto & copy = this_nodes.emplace_back(*cur.node);
+                    cur_data.to_this = &copy;
 
                     /// Replace children to newly created nodes.
                     for (auto & child : copy.children)
@@ -500,6 +501,7 @@ ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_join
                 else
                 {
                     auto & copy = split_nodes.emplace_back(*cur.node);
+                    cur_data.to_split = &copy;
 
                     /// Replace children to newly created nodes.
                     for (auto & child : copy.children)
