@@ -5,6 +5,7 @@
 #include <Parsers/IParserBase.h>
 #include <Parsers/CommonParsers.h>
 
+#include <Common/IntervalKind.h>
 
 namespace DB
 {
@@ -232,6 +233,9 @@ protected:
 
     const char * getName() const  override { return "INTERVAL operator expression"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+
+private:
+    static bool parseArgumentAndIntervalKind(Pos & pos, ASTPtr & expr, IntervalKind & interval_kind, Expected & expected);
 };
 
 class ParserAdditiveExpression : public IParserBase

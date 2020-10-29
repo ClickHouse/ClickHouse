@@ -1,3 +1,8 @@
+---
+toc_priority: 66
+toc_title: "\u041f\u0440\u043e\u0447\u0438\u0435\u0020\u0444\u0443\u043d\u043a\u0446\u0438\u0438"
+---
+
 # Прочие функции {#other-functions}
 
 ## hostName() {#hostname}
@@ -1468,7 +1473,7 @@ SELECT getSetting('custom_a');
 
 ## isDecimalOverflow {#is-decimal-overflow}
 
-Проверяет, находится ли число [Decimal](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s) вне собственной (или заданной) области значений.
+Проверяет, находится ли число [Decimal](../../sql-reference/data-types/decimal.md) вне собственной (или заданной) области значений.
 
 **Синтаксис**
 
@@ -1478,7 +1483,7 @@ isDecimalOverflow(d, [p])
 
 **Параметры** 
 
--   `d` — число. [Decimal](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s).
+-   `d` — число. [Decimal](../../sql-reference/data-types/decimal.md).
 -   `p` — точность. Необязательный параметр. Если опущен, используется исходная точность первого аргумента. Использование этого параметра может быть полезно для извлечения данных в другую СУБД или файл. [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges). 
 
 **Возвращаемое значение**
@@ -1515,7 +1520,7 @@ countDigits(x)
 
 **Параметры** 
 
--   `x` — [целое](../../sql-reference/data-types/int-uint.md#uint8-uint16-uint32-uint64-int8-int16-int32-int64) или [дробное](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s) число.
+-   `x` — [целое](../../sql-reference/data-types/int-uint.md#uint8-uint16-uint32-uint64-int8-int16-int32-int64) или [дробное](../../sql-reference/data-types/decimal.md) число.
 
 **Возвращаемое значение**
 
