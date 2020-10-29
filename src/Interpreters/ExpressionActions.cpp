@@ -477,7 +477,10 @@ ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_join
                         if (!child_data.to_this)
                         {
                             if (child->type == Type::COLUMN) /// Just create new node for COLUMN action.
-                                child_data.to_this = &this_nodes.emplace_back(*child);
+                            {
+                                auto & child_copy = this_nodes.emplace_back(*child);
+                                child_data.to_this = &child_copy;
+                            }
                             else
                             {
                                 /// Node from split part is added as new input.
@@ -485,7 +488,8 @@ ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_join
                                 node.type = Type::INPUT;
                                 node.result_type = child->result_type;
                                 node.result_name = getUniqueNameForIndex(index, child->result_name);
-                                child_data.to_this = &this_nodes.emplace_back(std::move(input_node));
+                                auto & child_copy = this_nodes.emplace_back(std::move(input_node));
+                                child_data.to_this = &child_copy;
 
                                 /// This node is needed for current action, so put it to index also.
                                 split_index[child_data.to_split->result_name] = child_data.to_split;
