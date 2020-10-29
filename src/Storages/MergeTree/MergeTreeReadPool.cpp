@@ -272,8 +272,8 @@ void MergeTreeReadPool::fillPerThreadInfo(
     std::queue<PartsInfo> parts_queue;
 
     {
-        /// Group parts by volume name.
-        /// We try minimize the number of threads concurrently read from the same volume.
+        /// Group parts by disk name.
+        /// We try minimize the number of threads concurrently read from the same disk.
         /// It improves the performance for JBOD architecture.
         std::map<String, std::vector<PartInfo>> parts_per_disk;
 
@@ -355,8 +355,8 @@ void MergeTreeReadPool::fillPerThreadInfo(
                 remaining_thread_tasks.insert(i);
         }
 
-        /// Before processing next thread, change volume if possible.
-        /// Different threads will likely start reading from different volumes,
+        /// Before processing next thread, change disk if possible.
+        /// Different threads will likely start reading from different disk,
         /// which may improve read parallelism for JBOD.
         /// It also may be helpful in case we have backoff threads.
         /// Backoff threads will likely to reduce load for different disks, not the same one.
