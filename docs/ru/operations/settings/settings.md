@@ -2009,14 +2009,14 @@ SELECT TOP 3 name, value FROM system.settings;
 
 ## allow_experimental_bigint_types {#allow_experimental_bigint_types}
 
-Enables or disables integer values exceeding the range that is supported by the int data type.
+Включает или отключает поддержку целочисленных значений, превышающих максимальное значение, допустимое для типа `int`.
 
-Possible values:
+Возможные значения:
 
--   1 — The bigint data type is enabled.
--   0 — The bigint data type is disabled.
+-   1 — большие целочисленные значения поддерживаются.
+-   0 — большие целочисленные значения не поддерживаются.
 
-Default value: `0`.
+Значение по умолчанию: `0`.
 
 
 ## lock_acquire_timeout {#lock_acquire_timeout}
