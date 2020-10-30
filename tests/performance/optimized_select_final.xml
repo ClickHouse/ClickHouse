@@ -9,9 +9,10 @@
         PARTITION BY toYYYYMM(t) ORDER BY x
     </create_query>
 
-    <fill_query>INSERT INTO optimized_select_final SELECT toDate('2000-01-01'), number FROM numbers(1000000)</fill_query>
-
-    <fill_query>INSERT INTO optimized_select_final SELECT toDate('2020-01-01'), number FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO optimized_select_final SELECT toDate('2000-01-01'), number FROM numbers(5000000)</fill_query>
+    <fill_query>INSERT INTO optimized_select_final SELECT toDate('2020-01-01'), number FROM numbers(5000000)</fill_query>
+    <fill_query>INSERT INTO optimized_select_final SELECT toDate('2021-01-01'), number FROM numbers(5000000)</fill_query>
+    <fill_query>INSERT INTO optimized_select_final SELECT toDate('2022-01-01'), number FROM numbers(5000000)</fill_query>
 
     <fill_query>OPTIMIZE TABLE optimized_select_final</fill_query>
 
