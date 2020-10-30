@@ -368,13 +368,14 @@ void ColumnArray::compareColumn(const IColumn & rhs, size_t rhs_row_num,
                                         compare_results, direction, nan_direction_hint);
 }
 
-struct ColumnArray::Cmp {
+struct ColumnArray::Cmp
+{
     const ColumnArray & parent;
     int nan_direction_hint;
     bool reverse;
     const Collator * collator;
 
-    Cmp(const ColumnArray & parent_, int nan_direction_hint_, bool reverse_=false, const Collator * collator_=nullptr)
+    Cmp(const ColumnArray & parent_, int nan_direction_hint_, bool reverse_ = false, const Collator * collator_ = nullptr)
         : parent(parent_), nan_direction_hint(nan_direction_hint_), reverse(reverse_), collator(collator_) {}
 
     int operator()(size_t lhs, size_t rhs) const
