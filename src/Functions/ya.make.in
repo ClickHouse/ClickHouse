@@ -34,7 +34,7 @@ PEERDIR(
 CFLAGS(-g0)
 
 SRCS(
-<? find . -name '*.cpp' | grep -i -v -P 'tests|Bitmap|sumbur|abtesting|errorCodeToName' | sed 's/^\.\//    /' | sort ?>
+<? find . -name '*.cpp' | grep -i -v -P 'tests|Bitmap|sumbur|abtesting' | sed 's/^\.\//    /' | sort ?>
 )
 
 END()
