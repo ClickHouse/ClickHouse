@@ -5,6 +5,7 @@
 #include <common/logger_useful.h>
 #include <Server/IServer.h>
 #include <Server/TCPHandler.h>
+#include <Server/TestKeeperTCPHandler.h>
 
 namespace Poco { class Logger; }
 
@@ -16,6 +17,7 @@ class TCPHandlerFactory : public Poco::Net::TCPServerConnectionFactory
 private:
     IServer & server;
     Poco::Logger * log;
+    bool test_keeper;
 
     class DummyTCPHandler : public Poco::Net::TCPServerConnection
     {
@@ -25,9 +27,10 @@ private:
     };
 
 public:
-    explicit TCPHandlerFactory(IServer & server_, bool secure_ = false)
+    explicit TCPHandlerFactory(IServer & server_, bool secure_ = false, bool test_keeper_ = false)
         : server(server_)
         , log(&Poco::Logger::get(std::string("TCP") + (secure_ ? "S" : "") + "HandlerFactory"))
+        , test_keeper(test_keeper_)
     {
     }
 
@@ -36,7 +39,11 @@ public:
         try
         {
             LOG_TRACE(log, "TCP Request. Address: {}", socket.peerAddress().toString());
-            return new TCPHandler(server, socket);
+
+            if (test_keeper)
+                return new TestKeeperTCPHandler(server, socket);
+            else
+                return new TCPHandler(server, socket);
         }
         catch (const Poco::Net::NetException &)
         {

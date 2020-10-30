@@ -40,6 +40,7 @@ namespace Poco
 namespace zkutil
 {
     class ZooKeeper;
+    class TestKeeperStorage;
 }
 
 
@@ -483,6 +484,8 @@ public:
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
     /// Same as above but return a zookeeper connection from auxiliary_zookeepers configuration entry.
     std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
+
+    std::shared_ptr<zkutil::TestKeeperStorage> & getTestKeeperStorage() const;
     /// Has ready or expired ZooKeeper
     bool hasZooKeeper() const;
     /// Reset current zookeeper session. Do not create a new one.
