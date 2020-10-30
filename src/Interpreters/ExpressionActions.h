@@ -160,6 +160,7 @@ private:
 #endif
 
     bool project_input = false;
+    bool projected_output = false;
 
 public:
     ActionsDAG() = default;
@@ -208,6 +209,7 @@ public:
 
     bool hasArrayJoin() const;
     bool empty() const;
+    bool projectedOutput() const { return projected_output; }
 
 private:
     Node & addNode(Node node, bool can_replace = false);

@@ -1198,6 +1198,7 @@ void ActionsDAG::project(const NamesWithAliases & projection)
     addAliases(projection, result_nodes);
     removeUnusedActions(result_nodes);
     projectInput();
+    projected_output = true;
 }
 
 bool ActionsDAG::tryRestoreColumn(const std::string & column_name)
