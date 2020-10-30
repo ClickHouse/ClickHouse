@@ -12,6 +12,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 void JSONRowOutputFormat::addColumn(String name, DataTypePtr type,
     bool & need_validate_utf8, std::string tabs)
 {
@@ -29,13 +34,13 @@ void JSONRowOutputFormat::addColumn(String name, DataTypePtr type,
 
     if (recurse)
     {
-        const auto & types = as_tuple->getElements();
+        const auto & element_types = as_tuple->getElements();
         const auto & names = as_tuple->getElementNames();
 
-        assert(types.size() == names.size());
-        for (size_t i = 0; i < types.size(); i++)
+        assert(element_types.size() == names.size());
+        for (size_t i = 0; i < element_types.size(); i++)
         {
-            addColumn(names[i], types[i], need_validate_utf8, tabs + "\t");
+            addColumn(names[i], element_types[i], need_validate_utf8, tabs + "\t");
         }
     }
 }
@@ -195,7 +200,7 @@ void JSONRowOutputFormat::writeRowStartDelimiter()
 void JSONRowOutputFormat::writeRowEndDelimiter()
 {
     writeChar('\n', *ostr);
-    writeCString("\t\t}", *ostr);
+    writeCString("\t\t}\n", *ostr);
     field_number = 0;
     ++row_count;
 }
