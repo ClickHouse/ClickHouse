@@ -1136,20 +1136,32 @@ std::string ActionsDAG::dumpNames() const
 
 void ActionsDAG::removeUnusedActions(const Names & required_names)
 {
+    std::vector<Node *> required_nodes;
+    required_nodes.reserve(required_names.size());
+
+    for (const auto & name : required_names)
+    {
+        auto it = index.find(name);
+        if (it == index.end())
+            throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                            "Unknown column: {}, there are only columns {}", name, dumpNames());
+
+        required_nodes.push_back(*it);
+    }
+
+    removeUnusedActions(required_nodes);
+}
+
+void ActionsDAG::removeUnusedActions(const std::vector<Node *> & required_nodes)
+{
     std::unordered_set<const Node *> visited_nodes;
     std::stack<Node *> stack;
 
     {
         Index new_index;
 
-        for (const auto & name : required_names)
+        for (auto * node : required_nodes)
         {
-            auto it = index.find(name);
-            if (it == index.end())
-                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
-                                "Unknown column: {}, there are only columns {}", name, dumpNames());
-
-            auto * node = *it;
             new_index.insert(node);
             visited_nodes.insert(node);
             stack.push(node);
@@ -1183,43 +1195,52 @@ void ActionsDAG::removeUnusedActions(const Names & required_names)
     nodes.remove_if([&](const Node & node) { return visited_nodes.count(&node) == 0; });
 }
 
-void ActionsDAG::addAliases(const NamesWithAliases & aliases)
+void ActionsDAG::addAliases(const NamesWithAliases & aliases, std::vector<Node *> & result_nodes)
 {
-    std::vector<Node> alias_nodes;
+    std::vector<Node *> required_nodes;
 
     for (const auto & item : aliases)
     {
-        if (!item.second.empty() && item.first != item.second)
-        {
-            auto & child = getNode(item.first);
-
-            Node node;
-            node.type = Type::ALIAS;
-            node.result_type = child.result_type;
-            node.result_name = std::move(item.second);
-            node.column = child.column;
-            node.allow_constant_folding = child.allow_constant_folding;
-            node.children.emplace_back(&child);
-
-            alias_nodes.push_back(std::move(node));
-        }
+        auto & child = getNode(item.first);
+        required_nodes.push_back(&child);
     }
 
-    for (auto & node : alias_nodes)
-        addNode(std::move(node), true);
+    result_nodes.reserve(aliases.size());
+
+    for (size_t i = 0; i < aliases.size(); ++i)
+    {
+        const auto & item = aliases[i];
+        auto * child = required_nodes[i];
+
+        if (!item.second.empty() && item.first != item.second)
+        {
+            Node node;
+            node.type = Type::ALIAS;
+            node.result_type = child->result_type;
+            node.result_name = std::move(item.second);
+            node.column = child->column;
+            node.allow_constant_folding = child->allow_constant_folding;
+            node.children.emplace_back(child);
+
+            auto & alias = addNode(std::move(node), true);
+            result_nodes.push_back(&alias);
+        }
+        else
+            result_nodes.push_back(child);
+    }
+}
+
+void ActionsDAG::addAliases(const NamesWithAliases & aliases)
+{
+    std::vector<Node *> result_nodes;
+    addAliases(aliases, result_nodes);
 }
 
 void ActionsDAG::project(const NamesWithAliases & projection)
 {
-    addAliases(projection);
-
-    Names result_names;
-    result_names.reserve(projection.size());
-
-    for (const auto & item : projection)
-        result_names.push_back(item.second.empty() ? item.first : item.second);
-
-    removeUnusedActions(result_names);
+    std::vector<Node *> result_nodes;
+    addAliases(projection, result_nodes);
+    removeUnusedActions(result_nodes);
     projectInput();
 }
 

@@ -227,6 +227,8 @@ private:
     }
 
     ExpressionActionsPtr linearizeActions() const;
+    void removeUnusedActions(const std::vector<Node *> & required_nodes);
+    void addAliases(const NamesWithAliases & aliases, std::vector<Node *> & result_nodes);
 };
 
 
