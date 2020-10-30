@@ -1,5 +1,3 @@
-#if !defined(ARCADIA_BUILD)
-
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -61,5 +59,3 @@ void registerFunctionErrorCodeToName(FunctionFactory & factory)
 }
 
 }
-
-#endif
