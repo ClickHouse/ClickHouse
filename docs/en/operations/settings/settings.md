@@ -2160,3 +2160,16 @@ Possible values:
 -   0 — The bigint data type is disabled.
 
 Default value: `0`.
+
+## disable_set_and_join_persistency {#dusable_set_and_join_persistency}
+
+Disables persistency for StorageSet and StorageJoin. 
+
+Reduces the IO overhead when using StorageSet and StorageJoin. Suitable for scenarios that pursue performance and do not require persistence.
+
+Possible values:
+
+- 1 - Enabled.
+- 0 - Disabled.
+
+Default value: `1`.
