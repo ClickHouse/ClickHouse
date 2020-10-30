@@ -23,7 +23,7 @@ avgWeighted(x)
 
 **Returned value**
 
-- `0` if the supplied parameter is empty.
+- `NaN` if the supplied parameter is empty.
 - Mean otherwise.
 
 **Return type** is always [Float64](../../../sql-reference/data-types/float.md).
@@ -57,6 +57,6 @@ Result:
 
 ``` text
 ┌─avg(x)─┐
-│      0 │
+│    nan │
 └────────┘
 ```

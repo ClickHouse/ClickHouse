@@ -5,10 +5,10 @@
 
 namespace DB
 {
-class AggregateFunctionAvgWeighted final : public AggregateFunctionAvgBase<Float64, true, AggregateFunctionAvgWeighted>
+class AggregateFunctionAvgWeighted final : public AggregateFunctionAvgBase<Float64, AggregateFunctionAvgWeighted>
 {
 public:
-    using AggregateFunctionAvgBase<Float64, true, AggregateFunctionAvgWeighted>::AggregateFunctionAvgBase;
+    using AggregateFunctionAvgBase<Float64, AggregateFunctionAvgWeighted>::AggregateFunctionAvgBase;
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {

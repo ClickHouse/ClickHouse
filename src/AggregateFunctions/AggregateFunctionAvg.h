@@ -11,8 +11,7 @@
 namespace DB
 {
 
-/// @tparam BothZeroMeansNaN If false, the pair 0 / 0 = 0, nan otherwise.
-template <class Denominator, bool BothZeroMeansNaN = true>
+template <class Denominator>
 struct RationalFraction
 {
     Float64 numerator{0};
@@ -20,7 +19,7 @@ struct RationalFraction
 
     Float64 NO_SANITIZE_UNDEFINED result() const
     {
-        if constexpr (BothZeroMeansNaN && std::numeric_limits<Float64>::is_iec559)
+        if constexpr (std::numeric_limits<Float64>::is_iec559)
             return static_cast<Float64>(numerator) / denominator; /// allow division by zero
 
         if (denominator == static_cast<Denominator>(0))
@@ -43,12 +42,12 @@ struct RationalFraction
  * @tparam Derived When deriving from this class, use the child class name as in CRTP, e.g.
  *         class Self : Agg<char, bool, bool, Self>.
  */
-template <class Denominator, bool BothZeroMeansNaN, class Derived>
+template <class Denominator, class Derived>
 class AggregateFunctionAvgBase : public
-        IAggregateFunctionDataHelper<RationalFraction<Denominator, BothZeroMeansNaN>, Derived>
+        IAggregateFunctionDataHelper<RationalFraction<Denominator>, Derived>
 {
 public:
-    using Fraction = RationalFraction<Denominator, BothZeroMeansNaN>;
+    using Fraction = RationalFraction<Denominator>;
     using Base = IAggregateFunctionDataHelper<Fraction, Derived>;
 
     explicit AggregateFunctionAvgBase(const DataTypes & argument_types_): Base(argument_types_, {}) {}
@@ -87,10 +86,10 @@ public:
     }
 };
 
-class AggregateFunctionAvg final : public AggregateFunctionAvgBase<UInt64, false, AggregateFunctionAvg>
+class AggregateFunctionAvg final : public AggregateFunctionAvgBase<UInt64, AggregateFunctionAvg>
 {
 public:
-    using AggregateFunctionAvgBase<UInt64, false, AggregateFunctionAvg>::AggregateFunctionAvgBase;
+    using AggregateFunctionAvgBase<UInt64, AggregateFunctionAvg>::AggregateFunctionAvgBase;
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const final
     {
