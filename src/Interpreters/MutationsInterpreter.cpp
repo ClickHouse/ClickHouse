@@ -644,6 +644,10 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
     for (const auto & column_name : prepared_stages[0].output_columns)
         select->select()->children.push_back(std::make_shared<ASTIdentifier>(column_name));
 
+    /// Don't let select list be empty.
+    if (select->select()->children.empty())
+        select->select()->children.push_back(std::make_shared<ASTLiteral>(Field(0)));
+
     if (!prepared_stages[0].filters.empty())
     {
         ASTPtr where_expression;
