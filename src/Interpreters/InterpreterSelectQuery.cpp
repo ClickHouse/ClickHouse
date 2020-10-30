@@ -1312,7 +1312,7 @@ void InterpreterSelectQuery::executeFetchColumns(
             {
                 /// Don't remove columns which are needed to be aliased.
                 for (const auto & name : required_columns)
-                    prewhere_info->prewhere_actions->restoreColumn(name);
+                    prewhere_info->prewhere_actions->tryRestoreColumn(name);
 
                 auto analyzed_result
                     = TreeRewriter(*context).analyze(required_columns_from_prewhere_expr, metadata_snapshot->getColumns().getAllPhysical());

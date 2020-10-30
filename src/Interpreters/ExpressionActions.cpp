@@ -1223,10 +1223,10 @@ void ActionsDAG::project(const NamesWithAliases & projection)
     projectInput();
 }
 
-void ActionsDAG::restoreColumn(const std::string & column_name)
+bool ActionsDAG::tryRestoreColumn(const std::string & column_name)
 {
     if (index.contains(column_name))
-        return;
+        return true;
 
     for (auto it = nodes.rbegin(); it != nodes.rend(); ++it)
     {
@@ -1234,11 +1234,11 @@ void ActionsDAG::restoreColumn(const std::string & column_name)
         if (node.result_name == column_name)
         {
             index[node.result_name] = &node;
-            return;
+            return true;
         }
     }
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot restore column {} in ActionsDAG", column_name);
+    return false;
 }
 
 ActionsDAGPtr ActionsDAG::clone() const

@@ -196,7 +196,7 @@ public:
     /// Adds alias actions and removes unused columns from index.
     void project(const NamesWithAliases & projection);
     /// If column is not in index, try to find it in nodes and insert back into index.
-    void restoreColumn(const std::string & column_name);
+    bool tryRestoreColumn(const std::string & column_name);
 
     void projectInput() { project_input = true; }
     void removeUnusedActions(const Names & required_names);
