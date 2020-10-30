@@ -90,7 +90,7 @@ void JSONEachRowRowOutputFormat::writePrefix()
 
 void JSONEachRowRowOutputFormat::writeSuffix()
 {
-    writeCString("\n");
+    writeCString("\n", out);
     if (settings.json.array_of_rows)
     {
         writeCString("]\n", out);
