@@ -118,13 +118,13 @@ void ExpressionActions::checkLimits(ExecutionContext & execution_context) const
     }
 }
 
-void ExpressionActions::execute(Block & block, bool dry_run) const
+void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) const
 {
     ExecutionContext execution_context
-    {
-        .inputs = block.data,
-        .num_rows = block.rows(),
-    };
+            {
+                    .inputs = block.data,
+                    .num_rows = num_rows,
+            };
 
     execution_context.inputs_pos.reserve(required_columns.size());
 
@@ -210,8 +210,17 @@ void ExpressionActions::execute(Block & block, bool dry_run) const
         }
     }
 
+    num_rows = execution_context.num_rows;
+}
+
+void ExpressionActions::execute(Block & block, bool dry_run) const
+{
+    size_t num_rows = block.rows();
+
+    execute(block, num_rows, dry_run);
+
     if (!block)
-        block.insert({DataTypeUInt8().createColumnConst(execution_context.num_rows, 0), std::make_shared<DataTypeUInt8>(), "_dummy"});
+        block.insert({DataTypeUInt8().createColumnConst(num_rows, 0), std::make_shared<DataTypeUInt8>(), "_dummy"});
 }
 
 void ExpressionActions::executeAction(const Action & action, ExecutionContext & execution_context, bool dry_run)
