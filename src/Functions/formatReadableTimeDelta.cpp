@@ -131,7 +131,7 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            /// Virtual call is Ok (neglible comparing to the rest of calculations).
+            /// Virtual call is Ok (negligible comparing to the rest of calculations).
             Float64 value = arguments[0].column->getFloat64(i);
 
             bool is_negative = value < 0;
