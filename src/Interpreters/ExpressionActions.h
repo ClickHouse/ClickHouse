@@ -211,11 +211,12 @@ public:
     bool empty() const;
     bool projectedOutput() const { return projected_output; }
 
+    ActionsDAGPtr clone() const;
+
 private:
     Node & addNode(Node node, bool can_replace = false);
     Node & getNode(const std::string & name);
 
-    ActionsDAGPtr clone() const;
     ActionsDAGPtr cloneEmpty() const
     {
         auto actions = std::make_shared<ActionsDAG>();

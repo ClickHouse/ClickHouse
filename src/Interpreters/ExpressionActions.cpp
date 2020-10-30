@@ -1092,6 +1092,7 @@ std::string ActionsDAG::dumpNames() const
 
 void ActionsDAG::removeUnusedActions(const Names & required_names)
 {
+    std::unordered_set<Node *> nodes_set;
     std::vector<Node *> required_nodes;
     required_nodes.reserve(required_names.size());
 
@@ -1102,7 +1103,8 @@ void ActionsDAG::removeUnusedActions(const Names & required_names)
             throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
                             "Unknown column: {}, there are only columns {}", name, dumpNames());
 
-        required_nodes.push_back(*it);
+        if (nodes_set.insert(*it).second)
+            required_nodes.push_back(*it);
     }
 
     removeUnusedActions(required_nodes);
