@@ -253,7 +253,6 @@ public:
         const Node * node;
         Arguments arguments;
         size_t result_position;
-        bool is_used_in_result;
 
         std::string toString() const;
     };

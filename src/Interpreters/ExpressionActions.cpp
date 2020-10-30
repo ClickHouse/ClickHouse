@@ -88,8 +88,7 @@ std::string ExpressionActions::Action::toString() const
     }
 
     out << " -> " << node->result_name
-        << " " << (node->result_type ? node->result_type->getName() : "(no type)")
-        << " " << result_position << (is_used_in_result ? "*" : " ");
+        << " " << (node->result_type ? node->result_type->getName() : "(no type)") << " " << result_position;
     return out.str();
 }
 
@@ -398,6 +397,7 @@ ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_join
     {
         bool depend_on_array_join = false;
         bool visited = false;
+        bool used_in_result = false;
 
         /// Copies of node in one of the DAGs.
         /// For COLUMN and INPUT both copies may exist.
@@ -407,6 +407,9 @@ ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_join
 
     std::stack<Frame> stack;
     std::unordered_map<Node *, Data> data;
+
+    for (const auto & node : index)
+        data[node].used_in_result = true;
 
     /// DFS. Decide if node depends on ARRAY JOIN and move it to one of the DAGs.
     for (auto & node : nodes)
@@ -445,10 +448,6 @@ ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_join
                 cur_data.visited = true;
                 stack.pop();
 
-                /// If node was in index, we would add it to index of part.
-                auto it = index.find(cur.node->result_name);
-                bool in_index = it != index.end() && *it == cur.node;
-
                 if (cur_data.depend_on_array_join)
                 {
                     auto & copy = this_nodes.emplace_back(*cur.node);
@@ -482,9 +481,6 @@ ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_join
 
                         child = child_data.to_this;
                     }
-
-                    if (in_index)
-                        this_index[copy.result_name] = &copy;
                 }
                 else
                 {
@@ -498,7 +494,7 @@ ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_join
                         assert(child != nullptr);
                     }
 
-                    if (in_index)
+                    if (cur_data.used_in_result)
                     {
                         split_index[copy.result_name] = &copy;
 
@@ -508,14 +504,14 @@ ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_join
                         input_node.result_type = node.result_type;
                         input_node.result_name = node.result_name;
                         cur_data.to_this = &this_nodes.emplace_back(std::move(input_node));
-
-                        /// This node is needed for current action, so put it to index also.
-                        this_index[cur_data.to_this->result_name] = cur_data.to_this;
                     }
                 }
             }
         }
     }
+
+    for (auto * node : index)
+        this_index.insert(data[node].to_this);
 
     /// Consider actions are empty if all nodes are constants or inputs.
     bool split_actions_are_empty = true;
@@ -1300,12 +1296,11 @@ ExpressionActionsPtr ActionsDAG::linearizeActions() const
     std::queue<const Node *> ready_nodes;
     std::queue<const Node *> ready_array_joins;
 
+    for (const auto * node : index)
+        data[reverse_index[node]].used_in_result = true;
+
     for (const auto & node : nodes)
     {
-        auto & node_data = data[reverse_index[&node]];
-        auto it = index.find(node.result_name);
-        node_data.used_in_result = it != index.end() && *it == &node;
-
         for (const auto & child : node.children)
             data[reverse_index[child]].parents.emplace_back(&node);
     }
@@ -1374,7 +1369,7 @@ ExpressionActionsPtr ActionsDAG::linearizeActions() const
             expressions->required_columns.push_back({node->result_name, node->result_type});
         }
 
-        expressions->actions.push_back({node, arguments, free_position, cur.used_in_result});
+        expressions->actions.push_back({node, arguments, free_position});
 
         for (const auto & parent : cur.parents)
         {
