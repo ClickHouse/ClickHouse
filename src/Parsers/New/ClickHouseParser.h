@@ -2330,7 +2330,9 @@ public:
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *FLOATING_LITERAL();
     antlr4::tree::TerminalNode *DOT();
-    antlr4::tree::TerminalNode *DECIMAL_LITERAL();
+    std::vector<antlr4::tree::TerminalNode *> DECIMAL_LITERAL();
+    antlr4::tree::TerminalNode* DECIMAL_LITERAL(size_t i);
+    antlr4::tree::TerminalNode *OCTAL_LITERAL();
 
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
    

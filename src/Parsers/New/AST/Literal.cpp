@@ -166,7 +166,29 @@ using namespace AST;
 antlrcpp::Any ParseTreeVisitor::visitFloatingLiteral(ClickHouseParser::FloatingLiteralContext * ctx)
 {
     if (ctx->FLOATING_LITERAL()) return Literal::createNumber(ctx->FLOATING_LITERAL());
-    else return Literal::createNumber(ctx->DOT()->getSymbol()->getText() + ctx->DECIMAL_LITERAL()->getSymbol()->getText());
+
+    const auto * dot = ctx->DOT()->getSymbol();
+
+    if (!ctx->DECIMAL_LITERAL().empty())
+    {
+        // .1234
+        if (dot->getTokenIndex() < ctx->DECIMAL_LITERAL(0)->getSymbol()->getTokenIndex())
+            return Literal::createNumber(dot->getText() + ctx->DECIMAL_LITERAL(0)->getSymbol()->getText());
+        // 1234.
+        else if (ctx->DECIMAL_LITERAL().size() == 1 && !ctx->OCTAL_LITERAL())
+            return Literal::createNumber(ctx->DECIMAL_LITERAL(0)->getSymbol()->getText() + dot->getText());
+        // 1234.1234
+        else if (ctx->DECIMAL_LITERAL().size() == 2)
+            return Literal::createNumber(
+                ctx->DECIMAL_LITERAL(0)->getSymbol()->getText() + dot->getText() + ctx->DECIMAL_LITERAL(1)->getSymbol()->getText());
+        // 1234.0123
+        else
+            return Literal::createNumber(
+                ctx->DECIMAL_LITERAL(0)->getSymbol()->getText() + dot->getText() + ctx->OCTAL_LITERAL()->getSymbol()->getText());
+    }
+    else
+        // .0123
+        return Literal::createNumber(dot->getText() + ctx->OCTAL_LITERAL()->getSymbol()->getText());
     __builtin_unreachable();
 }
 
