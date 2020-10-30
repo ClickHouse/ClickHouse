@@ -1144,7 +1144,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             int head_alter = alter_sequence.getHeadAlterVersion(state_lock);
             const char * format_str = "Cannot execute alter metadata {} with version {} because another alter {} must be executed before";
             LOG_TRACE(log, format_str, entry.znode_name, entry.alter_version, head_alter);
-            out_postpone_reason = fmt::format(format_str, entry.znode_name, entry.alter_version);
+            out_postpone_reason = fmt::format(format_str, entry.znode_name, entry.alter_version, head_alter);
             return false;
         }
     }
