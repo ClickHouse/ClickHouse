@@ -12,6 +12,8 @@ using namespace DB;
 
 class TestKeeperStorage
 {
+
+public:
     struct TestKeeperRequest;
     using TestKeeperRequestPtr = std::shared_ptr<TestKeeperRequest>;
 
@@ -60,6 +62,8 @@ class TestKeeperStorage
     ThreadFromGlobalPool processing_thread;
 
     void processingThread();
+
+    void writeResponse(const Coordination::ZooKeeperResponsePtr & response);
 
 public:
     void putRequest(const Coordination::ZooKeeperRequestPtr & request, std::shared_ptr<WriteBuffer> response_out);

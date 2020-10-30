@@ -43,6 +43,8 @@ private:
 
     void receiveHeartbeatRequest();
     void sendHeartbeatResponse();
+
+    void receiveCreateRequest();
 };
 
 }
