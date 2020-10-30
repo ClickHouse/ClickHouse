@@ -14,7 +14,8 @@ namespace DB
 struct AggregateFunctionCountEqualRangesData
 {
     UInt64 count = 0;
-    Field value;
+    Field first;
+    Field last;
 };
 
 class AggregateFunctionCountEqualRanges final : public IAggregateFunctionDataHelper<
@@ -44,31 +45,53 @@ public:
     {
         const Field & value = (*columns[0])[row_num];
 
-        if (!this->data(place).count || this->data(place).value != value)
+        if (this->data(place).count)
+        {
+            if (this->data(place).last != value)
+            {
+                this->data(place).count += 1;
+                this->data(place).last = value;
+            }
+        }
+        else
         {
             this->data(place).count += 1;
-            this->data(place).value = value;
+            this->data(place).first = value;
+            this->data(place).last = value;
         }
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        this->data(place).count += this->data(rhs).count;
+        if (this->data(place).count && this->data(rhs).count)
+        {
+            if (this->data(place).last == this->data(rhs).first)
+                this->data(place).count += this->data(rhs).count - 1;
+            else
+                this->data(place).count += this->data(rhs).count;
 
-        if (this->data(rhs).count)
-            this->data(place).value = this->data(rhs).value;
+            this->data(place).last = this->data(rhs).last;
+        }
+        else if (this->data(rhs).count)
+        {
+            this->data(place).count = this->data(rhs).count;
+            this->data(place).first = this->data(rhs).first;
+            this->data(place).last = this->data(rhs).last;
+        }
     }
 
     void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
     {
         writeIntBinary(this->data(place).count, buf);
-        writeIntBinary(this->data(place).value, buf);
+        writeIntBinary(this->data(place).first, buf);
+        writeIntBinary(this->data(place).last, buf);
     }
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
     {
         readIntBinary(this->data(place).count, buf);
-        readIntBinary(this->data(place).value, buf);
+        readIntBinary(this->data(place).first, buf);
+        readIntBinary(this->data(place).last, buf);
     }
 
     void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
