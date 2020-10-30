@@ -68,7 +68,7 @@ MergeInfo MergeListElement::getInfo() const
     res.memory_usage = memory_tracker.get();
     res.thread_id = thread_id;
     res.merge_type = toString(merge_type);
-    res.merge_algorithm = toString(merge_algorithm);
+    res.merge_algorithm = toString(merge_algorithm.load(std::memory_order_relaxed));
 
     for (const auto & source_part_name : source_part_names)
         res.source_part_names.emplace_back(source_part_name);

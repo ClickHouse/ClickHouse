@@ -480,7 +480,7 @@ void readEscapedString(String & s, ReadBuffer & buf)
 }
 
 template void readEscapedStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
-template void readEscapedStringInto<NullSink>(NullSink & s, ReadBuffer & buf);
+template void readEscapedStringInto<NullOutput>(NullOutput & s, ReadBuffer & buf);
 
 
 /** If enable_sql_style_quoting == true,
@@ -566,7 +566,7 @@ void readQuotedStringWithSQLStyle(String & s, ReadBuffer & buf)
 
 
 template void readQuotedStringInto<true>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
-template void readDoubleQuotedStringInto<false>(NullSink & s, ReadBuffer & buf);
+template void readDoubleQuotedStringInto<false>(NullOutput & s, ReadBuffer & buf);
 
 void readDoubleQuotedString(String & s, ReadBuffer & buf)
 {
@@ -746,7 +746,7 @@ void readJSONString(String & s, ReadBuffer & buf)
 
 template void readJSONStringInto<PaddedPODArray<UInt8>, void>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template bool readJSONStringInto<PaddedPODArray<UInt8>, bool>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
-template void readJSONStringInto<NullSink>(NullSink & s, ReadBuffer & buf);
+template void readJSONStringInto<NullOutput>(NullOutput & s, ReadBuffer & buf);
 template void readJSONStringInto<String>(String & s, ReadBuffer & buf);
 
 
@@ -895,7 +895,7 @@ void skipJSONField(ReadBuffer & buf, const StringRef & name_of_field)
         throw Exception("Unexpected EOF for key '" + name_of_field.toString() + "'", ErrorCodes::INCORRECT_DATA);
     else if (*buf.position() == '"') /// skip double-quoted string
     {
-        NullSink sink;
+        NullOutput sink;
         readJSONStringInto(sink, buf);
     }
     else if (isNumericASCII(*buf.position()) || *buf.position() == '-' || *buf.position() == '+' || *buf.position() == '.') /// skip number
@@ -959,7 +959,7 @@ void skipJSONField(ReadBuffer & buf, const StringRef & name_of_field)
             // field name
             if (*buf.position() == '"')
             {
-                NullSink sink;
+                NullOutput sink;
                 readJSONStringInto(sink, buf);
             }
             else
