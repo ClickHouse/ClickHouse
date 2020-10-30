@@ -25,7 +25,6 @@ namespace Coordination
 using XID = int32_t;
 using OpNum = int32_t;
 
-
 struct ZooKeeperResponse : virtual Response
 {
     virtual ~ZooKeeperResponse() override = default;

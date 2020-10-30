@@ -949,6 +949,22 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 LOG_INFO(log, "Listening for connections with native protocol (tcp): {}", address.toString());
             });
 
+            /// TCP TestKeeper
+            create_server("test_keeper_tcp_port", [&](UInt16 port)
+            {
+                Poco::Net::ServerSocket socket;
+                auto address = socket_bind_listen(socket, listen_host, port);
+                socket.setReceiveTimeout(settings.receive_timeout);
+                socket.setSendTimeout(settings.send_timeout);
+                servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
+                    new TCPHandlerFactory(*this, false, true),
+                    server_pool,
+                    socket,
+                    new Poco::Net::TCPServerParams));
+
+                LOG_INFO(log, "Listening for connections to fake zookeeper (tcp): {}", address.toString());
+            });
+
             /// TCP with SSL
             create_server("tcp_port_secure", [&](UInt16 port)
             {
