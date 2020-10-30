@@ -64,9 +64,15 @@ struct ReplicatedFetchReadCallback
     void operator() (size_t bytes_count)
     {
         replicated_fetch_entry->bytes_read_compressed.store(bytes_count, std::memory_order_relaxed);
-        replicated_fetch_entry->progress.store(
-                static_cast<double>(bytes_count) / replicated_fetch_entry->total_size_bytes_compressed,
-                std::memory_order_relaxed);
+
+        /// It's possible when we fetch part from very old clickhouse version
+        /// which doesn't send total size.
+        if (replicated_fetch_entry->total_size_bytes_compressed != 0)
+        {
+            replicated_fetch_entry->progress.store(
+                    static_cast<double>(bytes_count) / replicated_fetch_entry->total_size_bytes_compressed,
+                    std::memory_order_relaxed);
+        }
     }
 };
 

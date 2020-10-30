@@ -63,6 +63,8 @@ struct ReplicatedFetchListElement : private boost::noncopyable
     /// How many bytes already read
     std::atomic<UInt64> bytes_read_compressed{};
     /// Total bytes to read
+    /// NOTE: can be zero if we fetching data from old server.
+    /// In this case progress is not tracked.
     const UInt64 total_size_bytes_compressed{};
 
     const UInt64 thread_id;
