@@ -1,0 +1,76 @@
+syntax = "proto3";
+
+package DB.Protobuf.ReplicatedMergeTree;
+
+message LogEntry {
+  uint64 create_time = 1;
+  string source_replica = 2;
+
+  oneof EntryPayload {
+    GetPart get_part = 100;
+    MergeParts merge_parts = 101;
+    MutatePart mutate_part = 102;
+    AlterMetadata alter_metadata = 103;
+
+    DropRange drop_range = 104;
+    ReplaceRange replace_range = 105;
+  }
+
+  message GetPart {
+    string new_part_name = 1;
+    string block_id = 2;
+    bool quorum = 3;
+    PartType part_type = 4;
+  }
+
+  message MergeParts {
+    repeated string source_parts = 1;
+    string new_part_name = 2;
+    bool deduplicate = 3;
+    Type merge_type = 4;
+    PartType part_type = 5;
+
+    enum Type {
+      UNKNOWN = 0;
+      REGULAR = 1;
+      TTL_DELETE = 2;
+      TTL_RECOMPRESS = 3;
+    }
+  }
+
+  message DropRange {
+    string part_name = 1;
+    bool detach = 2;
+  }
+
+  message ReplaceRange {
+    string drop_range_part_name = 1;
+
+    string from_database = 2;
+    string from_table = 3;
+    repeated string src_part_names = 4;
+    repeated string new_part_names = 5;
+    repeated string part_names_checksums = 6;
+    int32 columns_version = 7;
+  }
+
+  message MutatePart {
+    string src_part_name = 1;
+    string dst_part_name = 2;
+    int32 alter_version = 3;
+  }
+
+  message AlterMetadata {
+    int32 alter_version = 1;
+    bool have_mutation = 2;
+    string columns = 3;
+    string metadata = 4;
+  }
+}
+
+enum PartType {
+  UNKNOWN = 0;
+  WIDE = 1;
+  COMPACT = 2;
+  IN_MEMORY = 3;
+}

@@ -173,12 +173,22 @@ add_object_library(clickhouse_processors_merges Processors/Merges)
 add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Algorithms)
 add_object_library(clickhouse_processors_queryplan Processors/QueryPlan)
 
+protobuf_generate_cpp(Protobuf_Srcs Protobuf_Hdrs Storages/MergeTree/proto/ReplicationLogEntry.proto)
+list (APPEND dbms_sources ${Protobuf_Srcs})
+list (APPEND dbms_headers ${Protobuf_Hdrs})
+
+# Exists as a shortcut for developers to re-build protos.
+add_library(clickhouse_storages_mergetree_proto ${Protobuf_Srcs} ${Protobuf_Hdrs})
+target_link_libraries(clickhouse_storages_mergetree_proto ${Protobuf_LIBRARY})
+
 set (DBMS_COMMON_LIBRARIES)
 # libgcc_s does not provide an implementation of an atomics library. Instead,
 # GCC’s libatomic library can be used to supply these when using libgcc_s.
 if ((NOT USE_LIBCXX) AND COMPILER_CLANG AND OS_LINUX)
     list (APPEND DBMS_COMMON_LIBRARIES atomic)
 endif()
+
+list (APPEND DBMS_COMMON_LIBRARIES ${Protobuf_LIBRARY})
 
 if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
     add_library (dbms STATIC ${dbms_headers} ${dbms_sources})

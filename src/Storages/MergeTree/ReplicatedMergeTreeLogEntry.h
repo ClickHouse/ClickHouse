@@ -27,6 +27,8 @@ namespace ErrorCodes
 /// Record about what needs to be done. Only data (you can copy them).
 struct ReplicatedMergeTreeLogEntryData
 {
+    auto static constexpr LOG_PROTOTEXT_VERSION = 5;
+
     enum Type
     {
         EMPTY,          /// Not used.
@@ -62,8 +64,15 @@ struct ReplicatedMergeTreeLogEntryData
         return typeToString(type);
     }
 
-    void writeText(WriteBuffer & out) const;
-    void readText(ReadBuffer & in);
+protected:
+    void fromV5ProtoText(ReadBuffer & in);
+    void fromV4ManualText(ReadBuffer & in, UInt8 format_version);
+
+private:
+    String toV5ProtoTextString() const;
+    String toV4ManualTextString() const;
+
+public:
     String toString() const;
 
     String znode_name;

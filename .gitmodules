@@ -43,7 +43,7 @@
 	url = https://github.com/ClickHouse-Extras/UnixODBC.git
 [submodule "contrib/protobuf"]
 	path = contrib/protobuf
-	url = https://github.com/ClickHouse-Extras/protobuf.git
+	url = https://github.com/nvartolomei/protobuf.git
 [submodule "contrib/boost"]
 	path = contrib/boost
 	url = https://github.com/ClickHouse-Extras/boost.git

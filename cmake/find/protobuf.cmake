@@ -1,12 +1,3 @@
-option(ENABLE_PROTOBUF "Enable protobuf" ${ENABLE_LIBRARIES})
-
-if(NOT ENABLE_PROTOBUF)
-  if(USE_INTERNAL_PROTOBUF_LIBRARY)
-    message(${RECONFIGURE_MESSAGE_LEVEL} "Can't use internal protobuf with ENABLE_PROTOBUF=OFF")
-  endif()
-  return()
-endif()
-
 # Normally we use the internal protobuf library.
 # You can set USE_INTERNAL_PROTOBUF_LIBRARY to OFF to force using the external protobuf library, which should be installed in the system in this case.
 # The external protobuf library can be installed in the system by running
