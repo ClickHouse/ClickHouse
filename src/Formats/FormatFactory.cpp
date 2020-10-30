@@ -41,8 +41,10 @@ const FormatFactory::Creators & FormatFactory::getCreators(const String & name) 
 }
 
 
-static FormatSettings getInputFormatSetting(const Settings & settings, const Context & context)
+FormatSettings getInputFormatSettings(const Context & context)
 {
+    const auto & settings = context.getSettingsRef();
+
     FormatSettings format_settings;
     format_settings.csv.delimiter = settings.format_csv_delimiter;
     format_settings.csv.allow_single_quotes = settings.format_csv_allow_single_quotes;
@@ -92,8 +94,10 @@ static FormatSettings getInputFormatSetting(const Settings & settings, const Con
     return format_settings;
 }
 
-static FormatSettings getOutputFormatSetting(const Settings & settings, const Context & context)
+FormatSettings getOutputFormatSettings(const Context & context)
 {
+    const auto & settings = context.getSettingsRef();
+
     FormatSettings format_settings;
     format_settings.enable_streaming = settings.output_format_enable_streaming;
     format_settings.json.quote_64bit_integers = settings.output_format_json_quote_64bit_integers;
@@ -144,7 +148,7 @@ BlockInputStreamPtr FormatFactory::getInput(
     const Block & sample,
     const Context & context,
     UInt64 max_block_size,
-    ReadCallback callback) const
+    std::optional<FormatSettings> format_settings) const
 {
     if (name == "Native")
         return std::make_shared<NativeBlockInputStream>(buf, sample, 0);
@@ -155,10 +159,12 @@ BlockInputStreamPtr FormatFactory::getInput(
         if (!input_getter)
             throw Exception("Format " + name + " is not suitable for input", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT);
 
-        const Settings & settings = context.getSettingsRef();
-        FormatSettings format_settings = getInputFormatSetting(settings, context);
+        if (!format_settings)
+        {
+            format_settings = getInputFormatSettings(context);
+        }
 
-        return input_getter(buf, sample, max_block_size, callback ? callback : ReadCallback(), format_settings);
+        return input_getter(buf, sample, max_block_size, {}, *format_settings);
     }
 
     const Settings & settings = context.getSettingsRef();
@@ -184,17 +190,21 @@ BlockInputStreamPtr FormatFactory::getInput(
         if (!input_getter)
             throw Exception("Format " + name + " is not suitable for input", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT);
 
-        FormatSettings format_settings = getInputFormatSetting(settings, context);
+        if (!format_settings)
+        {
+            format_settings = getInputFormatSettings(context);
+        }
 
         RowInputFormatParams row_input_format_params;
         row_input_format_params.max_block_size = max_block_size;
-        row_input_format_params.allow_errors_num = format_settings.input_allow_errors_num;
-        row_input_format_params.allow_errors_ratio = format_settings.input_allow_errors_ratio;
-        row_input_format_params.callback = std::move(callback);
+        row_input_format_params.allow_errors_num = format_settings->input_allow_errors_num;
+        row_input_format_params.allow_errors_ratio = format_settings->input_allow_errors_ratio;
         row_input_format_params.max_execution_time = settings.max_execution_time;
         row_input_format_params.timeout_overflow_mode = settings.timeout_overflow_mode;
 
-        auto input_creator_params = ParallelParsingBlockInputStream::InputCreatorParams{sample, row_input_format_params, format_settings};
+        auto input_creator_params =
+            ParallelParsingBlockInputStream::InputCreatorParams{sample,
+                row_input_format_params, *format_settings};
         ParallelParsingBlockInputStream::Params params{buf, input_getter,
             input_creator_params, file_segmentation_engine,
             static_cast<int>(settings.max_threads),
@@ -202,13 +212,15 @@ BlockInputStreamPtr FormatFactory::getInput(
         return std::make_shared<ParallelParsingBlockInputStream>(params);
     }
 
-    auto format = getInputFormat(name, buf, sample, context, max_block_size, std::move(callback));
+    auto format = getInputFormat(name, buf, sample, context, max_block_size,
+        format_settings);
     return std::make_shared<InputStreamFromInputFormat>(std::move(format));
 }
 
 
-BlockOutputStreamPtr FormatFactory::getOutput(
-    const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback, const bool ignore_no_row_delimiter) const
+BlockOutputStreamPtr FormatFactory::getOutput(const String & name,
+    WriteBuffer & buf, const Block & sample, const Context & context,
+    WriteCallback callback, std::optional<FormatSettings> format_settings) const
 {
     if (!getCreators(name).output_processor_creator)
     {
@@ -216,18 +228,23 @@ BlockOutputStreamPtr FormatFactory::getOutput(
         if (!output_getter)
             throw Exception("Format " + name + " is not suitable for output", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT);
 
-        const Settings & settings = context.getSettingsRef();
-        FormatSettings format_settings = getOutputFormatSetting(settings, context);
+        if (!format_settings)
+        {
+            format_settings = getOutputFormatSettings(context);
+        }
 
         /**  Materialization is needed, because formats can use the functions `IDataType`,
           *  which only work with full columns.
           */
         return std::make_shared<MaterializingBlockOutputStream>(
-                output_getter(buf, sample, std::move(callback), format_settings), sample);
+            output_getter(buf, sample, std::move(callback), *format_settings),
+            sample);
     }
 
-    auto format = getOutputFormat(name, buf, sample, context, std::move(callback), ignore_no_row_delimiter);
-    return std::make_shared<MaterializingBlockOutputStream>(std::make_shared<OutputStreamToOutputFormat>(format), sample);
+    auto format = getOutputFormat(name, buf, sample, context, std::move(callback),
+        format_settings);
+    return std::make_shared<MaterializingBlockOutputStream>(
+        std::make_shared<OutputStreamToOutputFormat>(format), sample);
 }
 
 
@@ -237,24 +254,27 @@ InputFormatPtr FormatFactory::getInputFormat(
     const Block & sample,
     const Context & context,
     UInt64 max_block_size,
-    ReadCallback callback) const
+    std::optional<FormatSettings> format_settings) const
 {
     const auto & input_getter = getCreators(name).input_processor_creator;
     if (!input_getter)
         throw Exception("Format " + name + " is not suitable for input", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT);
 
     const Settings & settings = context.getSettingsRef();
-    FormatSettings format_settings = getInputFormatSetting(settings, context);
+
+    if (!format_settings)
+    {
+        format_settings = getInputFormatSettings(context);
+    }
 
     RowInputFormatParams params;
     params.max_block_size = max_block_size;
-    params.allow_errors_num = format_settings.input_allow_errors_num;
-    params.allow_errors_ratio = format_settings.input_allow_errors_ratio;
-    params.callback = std::move(callback);
+    params.allow_errors_num = format_settings->input_allow_errors_num;
+    params.allow_errors_ratio = format_settings->input_allow_errors_ratio;
     params.max_execution_time = settings.max_execution_time;
     params.timeout_overflow_mode = settings.timeout_overflow_mode;
 
-    auto format = input_getter(buf, sample, params, format_settings);
+    auto format = input_getter(buf, sample, params, *format_settings);
 
     /// It's a kludge. Because I cannot remove context from values format.
     if (auto * values = typeid_cast<ValuesBlockInputFormat *>(format.get()))
@@ -265,26 +285,29 @@ InputFormatPtr FormatFactory::getInputFormat(
 
 
 OutputFormatPtr FormatFactory::getOutputFormat(
-    const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback, const bool ignore_no_row_delimiter) const
+    const String & name, WriteBuffer & buf, const Block & sample,
+    const Context & context, WriteCallback callback,
+    std::optional<FormatSettings> format_settings) const
 {
     const auto & output_getter = getCreators(name).output_processor_creator;
     if (!output_getter)
         throw Exception("Format " + name + " is not suitable for output", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT);
 
-    const Settings & settings = context.getSettingsRef();
-    FormatSettings format_settings = getOutputFormatSetting(settings, context);
+    if (!format_settings)
+    {
+        format_settings = getOutputFormatSettings(context);
+    }
 
     RowOutputFormatParams params;
-    params.ignore_no_row_delimiter = ignore_no_row_delimiter;
     params.callback = std::move(callback);
 
     /** TODO: Materialization is needed, because formats can use the functions `IDataType`,
       *  which only work with full columns.
       */
-    auto format = output_getter(buf, sample, params, format_settings);
+    auto format = output_getter(buf, sample, params, *format_settings);
 
     /// Enable auto-flush for streaming mode. Currently it is needed by INSERT WATCH query.
-    if (format_settings.enable_streaming)
+    if (format_settings->enable_streaming)
         format->setAutoFlush();
 
     /// It's a kludge. Because I cannot remove context from MySQL format.

@@ -3,6 +3,7 @@
 #include <common/types.h>
 #include <Columns/IColumn.h>
 #include <DataStreams/IBlockStream_fwd.h>
+#include <Formats/FormatSettings.h>
 #include <IO/BufferWithOwnMemory.h>
 
 #include <functional>
@@ -16,6 +17,7 @@ namespace DB
 class Block;
 class Context;
 struct FormatSettings;
+struct Settings;
 
 class ReadBuffer;
 class WriteBuffer;
@@ -32,6 +34,8 @@ struct RowOutputFormatParams;
 using InputFormatPtr = std::shared_ptr<IInputFormat>;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
+FormatSettings getInputFormatSettings(const Context & context);
+FormatSettings getOutputFormatSettings(const Context & context);
 
 /** Allows to create an IBlockInputStream or IBlockOutputStream by the name of the format.
   * Note: format and compression are independent things.
@@ -105,10 +109,11 @@ public:
         const Block & sample,
         const Context & context,
         UInt64 max_block_size,
-        ReadCallback callback = {}) const;
+        std::optional<FormatSettings> format_settings = std::nullopt) const;
 
     BlockOutputStreamPtr getOutput(const String & name, WriteBuffer & buf,
-        const Block & sample, const Context & context, WriteCallback callback = {}, const bool ignore_no_row_delimiter = false) const;
+        const Block & sample, const Context & context, WriteCallback callback = {},
+        std::optional<FormatSettings> format_settings = std::nullopt) const;
 
     InputFormatPtr getInputFormat(
         const String & name,
@@ -116,10 +121,12 @@ public:
         const Block & sample,
         const Context & context,
         UInt64 max_block_size,
-        ReadCallback callback = {}) const;
+        std::optional<FormatSettings> format_settings = std::nullopt) const;
 
     OutputFormatPtr getOutputFormat(
-        const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback = {}, const bool ignore_no_row_delimiter = false) const;
+        const String & name, WriteBuffer & buf, const Block & sample,
+        const Context & context, WriteCallback callback = {},
+        std::optional<FormatSettings> format_settings = std::nullopt) const;
 
     /// Register format by its name.
     void registerInputFormat(const String & name, InputCreator input_creator);
