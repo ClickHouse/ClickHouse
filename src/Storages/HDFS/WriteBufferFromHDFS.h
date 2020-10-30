@@ -4,7 +4,6 @@
 
 #if USE_HDFS
 #include <IO/WriteBuffer.h>
-#include <Storages/IStorage.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <string>
 #include <memory>

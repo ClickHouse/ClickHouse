@@ -33,6 +33,11 @@ set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/CMake" ${CMAKE_MODULE_PATH})
 include(Platform)
 include(Options)
 
+# # prefer shared libraries
+# if (WITH_KERBEROS)
+#     find_package(KERBEROS REQUIRED)
+# endif()
+
 # source
 set(PROTO_FILES
     #${HDFS3_SOURCE_DIR}/proto/encryption.proto
@@ -207,14 +212,11 @@ target_include_directories(hdfs3 PRIVATE ${HDFS3_COMMON_DIR})
 target_include_directories(hdfs3 PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
 target_include_directories(hdfs3 PRIVATE ${LIBGSASL_INCLUDE_DIR})
-# if (WITH_KERBEROS)
-#     target_include_directories(hdfs3 PRIVATE ${KERBEROS_INCLUDE_DIRS})
-# endif()
 target_include_directories(hdfs3 PRIVATE ${LIBXML2_INCLUDE_DIR})
 
 target_link_libraries(hdfs3 PRIVATE ${LIBGSASL_LIBRARY})
 if (WITH_KERBEROS)
-    target_link_libraries(hdfs3 PUBLIC ${KRB5_LIBRARY})
+    target_link_libraries(hdfs3 PRIVATE ${KRB5_LIBRARY})
 endif()
 target_link_libraries(hdfs3 PRIVATE ${LIBXML2_LIBRARIES})
 

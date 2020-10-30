@@ -3,15 +3,15 @@
 #if USE_HDFS
 
 #include <Storages/StorageFactory.h>
-#include <Storages/StorageHDFS.h>
+#include <Storages/HDFS/StorageHDFS.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromHDFS.h>
-#include <IO/WriteBufferFromHDFS.h>
+#include <Storages/HDFS/ReadBufferFromHDFS.h>
+#include <Storages/HDFS/WriteBufferFromHDFS.h>
 #include <IO/WriteHelpers.h>
-#include <IO/HDFSCommon.h>
+#include <Storages/HDFS/HDFSCommon.h>
 #include <Formats/FormatFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataStreams/IBlockOutputStream.h>
@@ -176,7 +176,7 @@ public:
     HDFSBlockOutputStream(const String & uri,
         const String & format,
         const Block & sample_block_,
-        Context & context,
+        const Context & context,
         const CompressionMethod compression_method)
         : sample_block(sample_block_)
     {

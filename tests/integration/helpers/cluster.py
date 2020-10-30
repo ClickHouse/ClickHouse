@@ -169,7 +169,7 @@ class ClickHouseCluster:
             cmd += " client"
         return cmd
 
-    def add_instance(self, name, base_config_dir=None, main_configs=None, user_configs=None, dictionaries = None,
+    def add_instance(self, name, base_config_dir=None, main_configs=None, user_configs=None, dictionaries=None,
                      macros=None,
                      with_zookeeper=False, with_mysql=False, with_kafka=False, with_kerberized_kafka=False, with_rabbitmq=False,
                      clickhouse_path_dir=None,
@@ -321,7 +321,8 @@ class ClickHouseCluster:
             self.with_kerberized_hdfs = True
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_kerberized_hdfs.yml')])
             self.base_kerberized_hdfs_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                  self.project_name, '--file', p.join(docker_compose_yml_dir, 'docker_compose_kerberized_hdfs.yml')]
+                                             self.project_name, '--file',
+                                             p.join(docker_compose_yml_dir, 'docker_compose_kerberized_hdfs.yml')]
             cmds.append(self.base_kerberized_hdfs_cmd)
 
         if with_mongo and not self.with_mongo:
@@ -485,38 +486,32 @@ class ClickHouseCluster:
 
         raise Exception("Cannot wait ZooKeeper container")
 
-    def wait_hdfs_to_start(self, timeout=60, kerberized=False):
-        start = time.time()
+    def make_hdfs_api(self, timeout=60, kerberized=False):
         if kerberized:
             keytab = p.abspath(p.join(self.instances['node1'].path, "secrets/clickhouse.keytab"))
-            krb_conf = p.abspath(p.join(self.instances['node1'].path, "secrets/krb.conf"))
+            krb_conf = p.abspath(p.join(self.instances['node1'].path, "secrets/krb_long.conf"))
             hdfs_ip = self.get_instance_ip('kerberizedhdfs1')
-            print("kerberizedhdfs1 ip ", hdfs_ip)
+            # print("kerberizedhdfs1 ip ", hdfs_ip)
             kdc_ip = self.get_instance_ip('hdfskerberos')
-            print("kdc_ip ", kdc_ip)
+            # print("kdc_ip ", kdc_ip)
             self.hdfs_api = HDFSApi(user="root",
                                timeout=timeout,
                                kerberized=True,
                                principal="root@TEST.CLICKHOUSE.TECH",
                                keytab=keytab,
                                krb_conf=krb_conf,
-                               # host="kerberizedhdfs1.test.clickhouse.tech",
                                host="kerberizedhdfs1",
                                protocol="http",
-                               # protocol="https",
                                proxy_port=50070,
-                               # proxy_port=50470,
-                               # data_port=50475,
                                data_port=1006,
                                hdfs_ip=hdfs_ip,
                                kdc_ip=kdc_ip)
-            # self.hdfs_api = hdfs_api
         else:
             self.hdfs_api = HDFSApi(user="root", host="hdfs1")
 
-        # time.sleep(150)
-        # return
 
+    def wait_hdfs_to_start(self, timeout=60):
+        start = time.time()
         while time.time() - start < timeout:
             try:
                 self.hdfs_api.write_data("/somefilewithrandomname222", "1")
@@ -658,6 +653,7 @@ class ClickHouseCluster:
                 self.wait_schema_registry_to_start(120)
 
             if self.with_kerberized_kafka and self.base_kerberized_kafka_cmd:
+                print('Setup kerberized kafka')
                 env = os.environ.copy()
                 env['KERBERIZED_KAFKA_DIR'] = instance.path + '/'
                 subprocess.check_call(self.base_kerberized_kafka_cmd + common_opts + ['--renew-anon-volumes'], env=env)
@@ -669,21 +665,16 @@ class ClickHouseCluster:
             if self.with_hdfs and self.base_hdfs_cmd:
                 print('Setup HDFS')
                 subprocess_check_call(self.base_hdfs_cmd + common_opts)
+                self.make_hdfs_api()
                 self.wait_hdfs_to_start(120)
 
             if self.with_kerberized_hdfs and self.base_kerberized_hdfs_cmd:
                 print('Setup kerberized HDFS')
-                env_var = {}
-                env_var['KERBERIZED_HDFS_DIR'] = instance.path + '/'
-
-                # different docker_compose versions look for .env in different places
-                #   -- env-file too recent to rely on it
-                files_to_cleanup = []
-                files_to_cleanup.append(_create_env_file(self.base_dir, env_var, ".env"))
-                files_to_cleanup.append(_create_env_file(os.getcwd(), env_var, ".env"))
-                subprocess.check_call(self.base_kerberized_hdfs_cmd + common_opts, env=env_var)
-                self.wait_hdfs_to_start(kerberized=True, timeout=300)
-                remove_files(files_to_cleanup)
+                env = os.environ.copy()
+                env['KERBERIZED_HDFS_DIR'] = instance.path + '/'
+                subprocess.check_call(self.base_kerberized_hdfs_cmd + common_opts, env=env)
+                self.make_hdfs_api(kerberized=True)
+                self.wait_hdfs_to_start(timeout=300)
 
             if self.with_mongo and self.base_mongo_cmd:
                 print('Setup Mongo')
@@ -940,7 +931,7 @@ class ClickHouseInstance:
 
         if with_kerberized_kafka or with_kerberized_hdfs:
             self.keytab_path = '- ' + os.path.dirname(self.docker_compose_path) + "/secrets:/tmp/keytab"
-            self.krb5_conf = '- ' + os.path.dirname(self.docker_compose_path) + "/secrets/krb_ch.conf:/etc/krb5.conf:ro"
+            self.krb5_conf = '- ' + os.path.dirname(self.docker_compose_path) + "/secrets/krb.conf:/etc/krb5.conf:ro"
         else:
             self.keytab_path = ""
             self.krb5_conf = ""

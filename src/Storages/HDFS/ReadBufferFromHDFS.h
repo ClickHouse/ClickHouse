@@ -4,10 +4,16 @@
 
 #if USE_HDFS
 #include <IO/ReadBuffer.h>
-#include <Storages/IStorage.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <string>
 #include <memory>
+
+#include <hdfs/hdfs.h>
+
+#include <common/types.h>
+
+#include <Interpreters/Context.h>
+
 
 namespace DB
 {
@@ -20,9 +26,6 @@ class ReadBufferFromHDFS : public BufferWithOwnMemory<ReadBuffer>
     std::unique_ptr<ReadBufferFromHDFSImpl> impl;
 public:
     ReadBufferFromHDFS(const std::string & hdfs_name_, const Context & context, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
-
-    // ReadBufferFromHDFS(ReadBufferFromHDFS &&) = default;
-    ReadBufferFromHDFS(ReadBufferFromHDFS &&) = default;
     ~ReadBufferFromHDFS() override;
 
     bool nextImpl() override;
