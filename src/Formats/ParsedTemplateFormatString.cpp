@@ -1,3 +1,4 @@
+#include <Common/getPageSize.h>
 #include <Formats/ParsedTemplateFormatString.h>
 #include <Formats/verbosePrintString.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -17,7 +18,8 @@ namespace ErrorCodes
 
 ParsedTemplateFormatString::ParsedTemplateFormatString(const FormatSchemaInfo & schema, const ColumnIdxGetter & idx_by_name)
 {
-    ReadBufferFromFile schema_file(schema.absoluteSchemaPath(), 4096);
+    size_t page_size = static_cast<size_t>(::getPageSize()); 
+    ReadBufferFromFile schema_file(schema.absoluteSchemaPath(), page_size);
     String format_string;
     readStringUntilEOF(format_string, schema_file);
     try

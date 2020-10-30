@@ -4,6 +4,7 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
+#include <Common/getPageSize.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 
@@ -121,7 +122,7 @@ public:
         , metadata_snapshot(metadata_snapshot_)
         , lock(storage.rwlock)
         , marks_stream(
-            storage.disk->writeFile(storage.marks_file_path, 4096, WriteMode::Rewrite))
+            storage.disk->writeFile(storage.marks_file_path, static_cast<size_t>(::getPageSize()), WriteMode::Rewrite))
     {
     }
 
