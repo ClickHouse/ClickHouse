@@ -398,7 +398,8 @@ struct ExpressionActionsChain
 
         void finalize(const Names & required_output_) override
         {
-            actions->removeUnusedActions(required_output_);
+            if (!actions->projectedOutput())
+                actions->removeUnusedActions(required_output_);
         }
 
         void prependProjectInput() const override
