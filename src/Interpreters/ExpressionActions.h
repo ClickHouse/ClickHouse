@@ -120,7 +120,7 @@ public:
             map.swap(other.map);
         }
 
-        auto size() const { return map.size(); }
+        auto size() const { return list.size(); }
         bool contains(std::string_view key) const { return map.count(key) != 0; }
 
         std::list<Node *>::iterator begin() { return list.begin(); }
@@ -274,6 +274,7 @@ private:
     size_t num_columns;
 
     NamesAndTypesList required_columns;
+    ColumnNumbers result_positions;
     Block sample_block;
 
     /// This flag means that all columns except input will be removed from block before execution.

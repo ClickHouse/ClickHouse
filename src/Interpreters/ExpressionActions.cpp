@@ -154,60 +154,20 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) 
         }
     }
 
-    Block res_block;
-    for (const auto & action : actions)
-    {
-        auto & column = execution_context.columns[action.result_position];
-        if (action.is_used_in_result)
-            res_block.insert(std::move(column));
-    }
-
-    /// Copy result to separate list cause we may want several columns with the same name in sample block.
-    ColumnNumbers res_positions;
-    res_positions.reserve(sample_block.columns());
-    for (const auto & col : sample_block)
-        res_positions.push_back(res_block.getPositionByName(col.name));
-
     if (project_input)
     {
         block.clear();
-        for (auto pos : res_positions)
-            block.insert(res_block.getByPosition(pos));
+        for (auto pos : result_positions)
+            block.insert(execution_context.columns[pos]);
     }
     else
     {
-        ColumnNumbers inputs_to_remove;
-        std::unordered_set<size_t> inserted_positions;
-        size_t pos = 0;
-        for (const auto & col : required_columns)
-        {
-            auto input_pos = execution_context.inputs_pos[pos];
-            if (res_block.has(col.name))
-            {
-                auto res_pos = res_block.getPositionByName(col.name);
-                block.getByPosition(input_pos) = res_block.getByPosition(res_pos);
-                inserted_positions.insert(res_pos);
-            }
-            else
-                inputs_to_remove.push_back(input_pos);
-
-            ++pos;
-        }
-
-        std::sort(inputs_to_remove.rbegin(), inputs_to_remove.rend());
-        for (auto input : inputs_to_remove)
+        std::sort(execution_context.inputs_pos.rbegin(), execution_context.inputs_pos.rend());
+        for (auto input : execution_context.inputs_pos)
             block.erase(input);
 
-        for (auto res_pos : res_positions)
-        {
-            if (inserted_positions.count(res_pos))
-            {
-                inserted_positions.erase(res_pos);
-                continue;
-            }
-
-            block.insert(res_block.getByPosition(res_pos));
-        }
+        for (auto pos : result_positions)
+            block.insert(execution_context.columns[pos]);
     }
 
     num_rows = execution_context.num_rows;
@@ -1292,6 +1252,7 @@ ExpressionActionsPtr ExpressionActions::clone() const
     expressions->actions = actions;
     expressions->num_columns = num_columns;
     expressions->required_columns = required_columns;
+    expressions->result_positions = result_positions;
     expressions->sample_block = sample_block;
     expressions->project_input = project_input;
     expressions->max_temporary_non_const_columns = max_temporary_non_const_columns;
@@ -1429,12 +1390,18 @@ ExpressionActionsPtr ActionsDAG::linearizeActions() const
         }
     }
 
+    expressions->result_positions.reserve(index.size());
+
     for (const auto & node : index)
     {
-        ColumnWithTypeAndName col{node->column, node->result_type, node->result_name};
-//        if (col.column == nullptr)
-//            col.column = col.type->createColumn();
+        auto pos = data[reverse_index[node]].position;
 
+        if (pos < 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Action for {} was not calculated", node->result_name);
+
+        expressions->result_positions.push_back(pos);
+
+        ColumnWithTypeAndName col{node->column, node->result_type, node->result_name};
         expressions->sample_block.insert(std::move(col));
     }
 
