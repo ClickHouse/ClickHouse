@@ -1232,10 +1232,6 @@ ActionsDAGPtr ActionsDAG::clone() const
     {
         auto & copy_node = actions->nodes.emplace_back(node);
         copy_map[&node] = &copy_node;
-
-        auto it = index.find(node.result_name);
-        if (it != index.end() && *it == &node)
-            actions->index[copy_node.result_name] = &copy_node;
     }
 
     for (auto & node : actions->nodes)
