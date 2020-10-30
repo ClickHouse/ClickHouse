@@ -2,6 +2,7 @@
 
 #include <unistd.h>
 
-long getPageSize() {
+long getPageSize()
+{
     return sysconf(_SC_PAGESIZE);
 }

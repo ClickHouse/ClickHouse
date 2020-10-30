@@ -3,6 +3,7 @@
 #include <Databases/IDatabase.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
+#include <Common/getPageSize.h>
 #include <Common/FieldVisitors.h>
 #include <Common/ThreadPool.h>
 #include <Interpreters/InterpreterAlterQuery.h>
@@ -1371,6 +1372,7 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, const Context & c
     else
         data_parts = getDataPartsVector();
 
+    size_t page_size = static_cast<size_t>(::getPageSize());
     for (auto & part : data_parts)
     {
         auto disk = part->volume->getDisk();
@@ -1384,7 +1386,7 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, const Context & c
             {
                 auto calculated_checksums = checkDataPart(part, false);
                 calculated_checksums.checkEqual(part->checksums, true);
-                auto out = disk->writeFile(tmp_checksums_path, 4096);
+                auto out = disk->writeFile(tmp_checksums_path, page_size);
                 part->checksums.write(*out);
                 disk->moveFile(tmp_checksums_path, checksums_path);
                 results.emplace_back(part->name, true, "Checksums recounted and written to disk.");

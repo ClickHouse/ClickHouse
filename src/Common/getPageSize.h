@@ -1,4 +1,4 @@
 #pragma once
 
-/// Get memory page size 
+/// Get memory page size
 long getPageSize();
