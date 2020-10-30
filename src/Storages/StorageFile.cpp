@@ -167,18 +167,18 @@ StorageFile::StorageFile(int table_fd_, CommonArguments args)
 StorageFile::StorageFile(const std::string & table_path_, const std::string & user_files_path, CommonArguments args)
     : StorageFile(args)
 {
-    fmt::print(stderr, "Create storage File '{}' from file at \n{}\n",
-        args.table_id.getNameForLogs(), StackTrace().toString());
-
-    const auto & changes = args.context.getSettings().changes();
-    for (const auto & change : changes)
-    {
-        fmt::print(stderr, "Changed setting '{}' to '{}'\n",
-            change.name, toString(change.value));
-    }
-
-    fmt::print(stderr, "delimiter = '{}'\n",
-        toString(args.context.getSettings().get("format_csv_delimiter")));
+//    fmt::print(stderr, "Create storage File '{}' from file at \n{}\n",
+//        args.table_id.getNameForLogs(), StackTrace().toString());
+//
+//    const auto & changes = args.context.getSettings().changes();
+//    for (const auto & change : changes)
+//    {
+//        fmt::print(stderr, "Changed setting '{}' to '{}'\n",
+//            change.name, toString(change.value));
+//    }
+//
+//    fmt::print(stderr, "delimiter = '{}'\n",
+//        toString(args.context.getSettings().get("format_csv_delimiter")));
 
 
     is_db_table = false;
@@ -204,8 +204,8 @@ StorageFile::StorageFile(const std::string & table_path_, const std::string & us
 StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArguments args)
     : StorageFile(args)
 {
-    fmt::print(stderr, "Create storage File '{}' from database at \n{}\n",
-        args.table_id.getNameForLogs(), StackTrace().toString());
+//    fmt::print(stderr, "Create storage File '{}' from database at \n{}\n",
+//        args.table_id.getNameForLogs(), StackTrace().toString());
 
     if (relative_table_dir_path.empty())
         throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
