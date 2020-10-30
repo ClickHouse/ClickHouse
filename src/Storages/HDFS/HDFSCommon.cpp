@@ -1,12 +1,12 @@
-#include <IO/HDFSCommon.h>
+#include <Storages/HDFS/HDFSCommon.h>
 #include <Poco/URI.h>
-#include <Poco/Util/AbstractConfiguration.h>
 #include <boost/algorithm/string/replace.hpp>
-#include <Interpreters/Context.h>
-
 
 #if USE_HDFS
+#include <Common/ShellCommand.h>
 #include <Common/Exception.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -19,25 +19,9 @@ extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
 
 const String HDFSBuilderWrapper::CONFIG_PREFIX = "hdfs";
 
-// void HDFSBuilderWrapper::makeCachePath(const String & cachePath, String user)
-// {
-//     if (hadoop_security_kerberos_ticket_cache_path.empty())
-//     {
-//         hadoop_security_kerberos_ticket_cache_path = cachePath + "KRB5CACHEPATH" + user;
-//         hdfsBuilderSetKerbTicketCachePath(hdfs_builder, hadoop_security_kerberos_ticket_cache_path.c_str());
-//     }
-// }
-
 void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration & config,
     const String & config_path, bool isUser)
 {
-    hdfsBuilderConfSetStr(hdfs_builder, "input.read.timeout", "60000"); // 1 min
-    hdfsBuilderConfSetStr(hdfs_builder, "input.write.timeout", "60000"); // 1 min
-    hdfsBuilderConfSetStr(hdfs_builder, "input.connect.timeout", "60000"); // 1 min
-
-    // hdfsBuilderConfSetStr(rawBuilder, "hadoop.security.authentication", "kerberos");
-    // hdfsBuilderConfSetStr(rawBuilder, "dfs.client.log.severity", "TRACE");
-
     Poco::Util::AbstractConfiguration::Keys keys;
 
     config.keys(config_path, keys);
@@ -85,19 +69,16 @@ void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration 
 
         const auto & [k,v] = keep(key_name, config.getString(key_path));
         hdfsBuilderConfSetStr(hdfs_builder, k.c_str(), v.c_str());
-
     }
 }
 
 String HDFSBuilderWrapper::getKinitCmd()
 {
-    std::stringstream ss;
-<<<<<<< HEAD
+    WriteBufferFromOwnString ss;
 
     String cache_name =  hadoop_security_kerberos_ticket_cache_path.empty() ?
         String() :
         (String(" -c \"") + hadoop_security_kerberos_ticket_cache_path + "\"");
-
 
     ss << hadoop_kerberos_kinit_command << cache_name <<
         " -R -t \"" << hadoop_kerberos_keytab << "\" -k " << hadoop_kerberos_principal <<
@@ -113,21 +94,14 @@ void HDFSBuilderWrapper::runKinit()
 
     std::unique_lock<std::mutex> lck(kinit_mtx);
 
-    int ret = system(cmd.c_str());
-    if (ret)
-    { // check it works !!
-        throw Exception("kinit failure: " + std::to_string(ret) + " " + cmd, ErrorCodes::NETWORK_ERROR);
+    auto command = ShellCommand::execute(cmd);
+    auto status = command->tryWait();
+    if (status)
+    {
+        throw Exception("kinit failure: " + cmd, ErrorCodes::BAD_ARGUMENTS);
     }
 }
 
-
-=======
-    ss << "kinit -R -t \"" << hadoop_kerberos_keytab << "\" -k " << hadoop_kerberos_principal <<
-        "|| kinit -t \"" << hadoop_kerberos_keytab << "\" -k " << hadoop_kerberos_principal;
-    return ss.str();
-}
-
->>>>>>> kerberized hdfs compiled
 HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Context & context)
 {
     const Poco::URI uri(uri_str);
@@ -142,46 +116,15 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Context & con
         throw Exception("Unable to create builder to connect to HDFS: " +
             uri.toString() + " " + String(hdfsGetLastError()),
             ErrorCodes::NETWORK_ERROR);
-    // hdfsBuilderConfSetStr(builder.get(), "input.read.timeout", "60000"); // 1 min
-    // hdfsBuilderConfSetStr(builder.get(), "input.write.timeout", "60000"); // 1 min
-    // hdfsBuilderConfSetStr(builder.get(), "input.connect.timeout", "60000"); // 1 min
 
-
-    // hdfsBuilderConfSetStr(builder.get(), "hadoop.security.authentication", "kerberos");
-    // hdfsBuilderConfSetStr(builder.get(), "dfs.client.log.severity", "TRACE");
-
-    const auto & config = context.getConfigRef();
-    if (config.has(HDFSBuilderWrapper::CONFIG_PREFIX))
-    {
-        builder.loadFromConfig(config, HDFSBuilderWrapper::CONFIG_PREFIX);
-        if (builder.needKinit)
-        {
-            String cmd = builder.getKinitCmd();
-            int ret = system(cmd.c_str());
-            if (ret)
-            {
-                throw Exception("kinit failure: " + std::to_string(ret) + " " + cmd, ErrorCodes::NETWORK_ERROR);
-            }
-        }
-    }
-
-<<<<<<< HEAD
-
-    // hdfsBuilderConfSetStr(builder.get(), "hadoop.security.authentication", "kerberos");
-    // hdfsBuilderConfSetStr(builder.get(), "dfs.client.log.severity", "TRACE");
-
-    const auto & config = context.getConfigRef();
+    hdfsBuilderConfSetStr(builder.get(), "input.read.timeout", "60000"); // 1 min
+    hdfsBuilderConfSetStr(builder.get(), "input.write.timeout", "60000"); // 1 min
+    hdfsBuilderConfSetStr(builder.get(), "input.connect.timeout", "60000"); // 1 min
 
     String user_info = uri.getUserInfo();
     String user;
     if (!user_info.empty() && user_info.front() != ':')
     {
-=======
-    String user_info = uri.getUserInfo();
-    if (!user_info.empty() && user_info.front() != ':')
-    {
-        String user;
->>>>>>> kerberized hdfs compiled
         size_t delim_pos = user_info.find(':');
         if (delim_pos != String::npos)
             user = user_info.substr(0, delim_pos);
@@ -196,11 +139,11 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Context & con
         hdfsBuilderSetNameNodePort(builder.get(), port);
     }
 
-
+    // const auto & config = context.getGlobalContext().getConfigRef();
+    const auto & config = context.getConfigRef();
     if (config.has(HDFSBuilderWrapper::CONFIG_PREFIX))
     {
         builder.loadFromConfig(config, HDFSBuilderWrapper::CONFIG_PREFIX);
-        // builder.makeCachePath(context.getUserFilesPath());
     }
 
     if (!user.empty())
@@ -211,17 +154,11 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Context & con
 #if USE_INTERNAL_HDFS3_LIBRARY
             builder.loadFromConfig(config, user_config_prefix, true);
 #else
-        throw Exception("Multi user HDFS configuration required internal libhdfs3",
-            ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+            throw Exception("Multi user HDFS configuration required internal libhdfs3",
+                ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 #endif
         }
-        // builder.makeCachePath(context.getUserFilesPath(), user);
     }
-    // else
-    // {
-    //     builder.makeCachePath(context.getUserFilesPath());
-    // }
-
 
     if (builder.needKinit)
     {

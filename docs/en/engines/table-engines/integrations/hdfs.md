@@ -183,12 +183,17 @@ hadoop\_kerberos\_keytab
 hadoop\_kerberos\_principal
 hadoop\_kerberos\_kinit\_command
 
+#### Limitations {#limitations}
+
+  * hadoop\_security\_kerberos\_ticket\_cache\_path can be global only, not user specific
+
 ## Kerberos support {#kerberos-support}
 
 If hadoop\_security\_authentication parameter has value 'kerberos', ClickHouse authentifies via Kerberos facility.
 Parameters [here](#clickhouse-extras) and hadoop\_security\_kerberos\_ticket\_cache\_path may be of help.
 Note that due to libhdfs3 limitations only old-fashioned approach is supported,
-datanode communications are not secured by SASL. Use tests/integration/test\_storage\_kerberized\_hdfs/hdfs_configs/bootstrap.sh for reference.
+datanode communications are not secured by SASL (HADOOP\_SECURE\_DN\_USER is a reliable indicator of such
+security approach). Use tests/integration/test\_storage\_kerberized\_hdfs/hdfs_configs/bootstrap.sh for reference.
 
 ## Virtual Columns {#virtual-columns}
 
@@ -198,6 +203,5 @@ datanode communications are not secured by SASL. Use tests/integration/test\_sto
 **See Also**
 
 -   [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
-
 
 [Original article](https://clickhouse.tech/docs/en/operations/table_engines/hdfs/) <!--hide-->

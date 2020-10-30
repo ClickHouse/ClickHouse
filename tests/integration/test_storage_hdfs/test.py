@@ -203,5 +203,5 @@ def test_write_gzip_storage(started_cluster):
 
 if __name__ == '__main__':
     cluster.start()
-    raw_input("Cluster created, press any key to destroy...")
+    input("Cluster created, press any key to destroy...")
     cluster.shutdown()

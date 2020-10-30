@@ -1,8 +1,7 @@
 #include "ReadBufferFromHDFS.h"
 
 #if USE_HDFS
-#include <Interpreters/Context.h>
-#include <IO/HDFSCommon.h>
+#include <Storages/HDFS/HDFSCommon.h>
 #include <hdfs/hdfs.h>
 #include <mutex>
 
@@ -28,11 +27,11 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
     HDFSFSPtr fs;
 
     explicit ReadBufferFromHDFSImpl(const std::string & hdfs_name_, const Context & context_)
-        : hdfs_uri(hdfs_name_)
+        : hdfs_uri(hdfs_name_),
+          builder(createHDFSBuilder(hdfs_uri, context_))
     {
         std::lock_guard lock(hdfs_init_mutex);
 
-        builder = createHDFSBuilder(hdfs_uri, context_);
         fs = createHDFSFS(builder.get());
         const size_t begin_of_path = hdfs_uri.find('/', hdfs_uri.find("//") + 2);
         const std::string path = hdfs_uri.substr(begin_of_path);
