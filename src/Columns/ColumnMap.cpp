@@ -1,5 +1,6 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/IColumnImpl.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteBufferFromString.h>
@@ -25,7 +26,23 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
+
+//class ColumnMap::IIndex
+//{
+//public:
+//    virtual ~IIndex() {}
+
+//    virtual IColumn::Ptr findAll(const IColumn & needles, size_t rows_count) const = 0;
+
+//    // updates the index with N last rows of the key/value columns.
+//    virtual void afterAppend(size_t N) = 0;
+//    virtual void beforeRemove(size_t N) = 0;
+
+//    // Completely rebuilds an index.
+//    virtual void reset() = 0;
+//};
 
 struct MapKey
 {
@@ -40,23 +57,15 @@ struct MapKey
 
 struct MapKeyHash
 {
-    size_t operator()(const MapKey & map_key) const
+    inline size_t operator()(const MapKey & map_key) const
     {
+//        return StringRefHash()(map_key.data);
         return UInt128Hash()(UInt128{map_key.row, StringRefHash()(map_key.data)});
     }
 };
 
-struct DefaultKeyEqualityOp
-{
-    template <typename T>
-    static bool areEqual(const T && left, const T && right)
-    {
-        return left == right;
-    }
-};
-
 template <typename T>
-bool areEqual(const T & left, const T & right)
+inline bool areEqual(const T & left, const T & right)
 {
     return left == right;
 }
@@ -87,10 +96,57 @@ namespace ZeroTraits
 {
 
 template <>
-bool check<DB::MapKey>(const DB::MapKey x) { return x.row == 0 && x.data.data == nullptr; }
-template <>
-void set<DB::MapKey>(DB::MapKey & x) { x.row = 0; x.data = StringRef{}; }
+inline bool check<DB::MapKey>(const DB::MapKey x)
+{
+    return x.data.data == nullptr;
+//    return x.row == 0 && x.data.data == nullptr;
 
+//    static const DB::MapKey zero_key;
+//    return memcmp(&x, &zero_key, sizeof(x)) == 0;
+}
+template <>
+inline void set<DB::MapKey>(DB::MapKey & x) { memset(&x, 0, sizeof(x)); }
+
+}
+
+namespace
+{
+using namespace DB;
+
+//class ColumnMapIndexBase : public DB::ColumnMap::IIndex
+//{
+//protected:
+//    const ColumnArray & keys_column;
+//    const ColumnArray & values_column;
+
+//    ColumnMapIndexBase(const ColumnArray & keys_column_, const ColumnArray & values_column_)
+//        : keys_column(keys_column_),
+//          values_column(values_column_)
+//    {}
+
+
+//    void validateNeedlesType(const IColumn & needles) const
+//    {
+//    }
+//};
+
+//template <typename ColumnVectorType, typename KeyStorageType>
+//class ColumnVectorIndex : public DB::ColumnMap::IIndex
+//{
+//public:
+//    // Assert cast keys are of given ColumnVector<T> specialization, also make sure that T size is <= KeyStorageSize
+//    ColumnVectorIndex(const IColumn & keys, const IColumn & values)
+//    {
+
+//    }
+
+//    // updates the index with N last rows of the key/value columns.
+//    void afterAppend(size_t N) override;
+//    void beforeRemove(size_t N) override;
+
+//    // Completely rebuilds an index.
+//    void reset() override;
+//};
 }
 
 namespace DB
@@ -99,18 +155,20 @@ namespace DB
 class ColumnMap::Index
 {
     using MapIndex = HashMap2<MapKey, UInt64, MapKeyHash>;
-    const std::string key_type;
+    const ColumnArray & keys_column;
     const ColumnArray & values_column;
     MapIndex index;
 
 public:
-    Index(const ColumnArray & keys_column, const ColumnArray & values_column_)
-        : key_type(keys_column.getData().getName()),
+    Index(const ColumnArray & keys_column_, const ColumnArray & values_column_)
+        : keys_column(keys_column_),
           values_column(values_column_)
     {
         const auto & map_values_offsets = values_column.getOffsets();
         const auto & map_keys_offsets = keys_column.getOffsets();
         const auto & map_keys_data = keys_column.getData();
+
+        index.reserve(map_values_offsets.size());
 
         // Build an index, store global key offset as mapped values since that greatly simplifies value extraction.
         size_t starting_offset = 0;
@@ -137,11 +195,16 @@ public:
         }
     }
 
-    IColumn::Ptr findAll(const IColumn & needles, const Field & default_value) const
+    inline IColumn::Ptr findAll(const IColumn & needles, size_t rows_count) const
     {
-        if (needles.getName() != key_type)
-            throw Exception("Incompatitable needle column type " + needles.getName() + " expected " + key_type,
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        {
+            const IColumn & needle_type_column = isColumnConst(needles)
+                    ? typeid_cast<const ColumnConst&>(needles).getDataColumn() : needles;
+
+            if (!keys_column.getData().structureEquals(needle_type_column))
+                throw Exception("Incompatitable needle column type " + needle_type_column.getName() + " expected " + keys_column.getName(),
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
 
         // TODO: make sure to convert needles-value to values-type to avoid
         // false negative when searching for UInt64(1) while Map is keyed in UInt32.
@@ -150,13 +213,14 @@ public:
         auto result = nested_values.cloneEmpty();
         result->reserve(needles.size());
 
-        for (size_t row = 0; row < needles.size(); ++row)
+        for (size_t row = 0; row < rows_count; ++row)
         {
-            const auto & key_val = needles.getDataAt(row);
-            if (auto res = index.find(MapKey{row, StringRef{key_val}}))
+            const auto & key = MapKey{row, needles.getDataAt(row)};
+            const auto hash = MapKeyHash{}(key);
+            if (auto res = index.find(key, hash))
                 result->insertFrom(nested_values, res->getMapped());
             else
-                result->insert(default_value);
+                result->insertDefault();
         }
 
         return result;
@@ -172,6 +236,9 @@ std::string ColumnMap::getName() const
 }
 
 ColumnMap::ColumnMap(MutableColumns && mutable_columns)
+    : key_index(std::make_shared<Index>(
+        assert_cast<const ColumnArray &>(*mutable_columns[0]),
+        assert_cast<const ColumnArray &>(*mutable_columns[1])))
 {
     columns.reserve(mutable_columns.size());
     for (auto & column : mutable_columns)
@@ -185,7 +252,9 @@ ColumnMap::ColumnMap(MutableColumns && mutable_columns)
 
 ColumnMap::ColumnMap(const ColumnMap & other)
     : columns(other.columns),
-      key_index(nullptr)
+      key_index(std::make_shared<Index>(
+            assert_cast<const ColumnArray &>(*columns[0]),
+            assert_cast<const ColumnArray &>(*columns[1])))
 {}
 
 ColumnMap::~ColumnMap()
@@ -197,10 +266,11 @@ ColumnMap::Ptr ColumnMap::create(const Columns & columns)
         if (isColumnConst(*column))
             throw Exception{"ColumnMap cannot have ColumnConst as its element", ErrorCodes::ILLEGAL_COLUMN};
 
-    auto column_map = ColumnMap::create(MutableColumns());
-    column_map->columns.assign(columns.begin(), columns.end());
+    MutableColumns map_columns(2);
+    for (size_t i = 0; i < 2; ++i)
+        map_columns[i] = columns[i]->assumeMutable();
 
-    return column_map;
+    return Base::create(std::move(map_columns));
 }
 
 ColumnMap::Ptr ColumnMap::create(const MapColumns & columns)
@@ -419,7 +489,6 @@ struct ColumnMap::Less
         : columns(columns_), nan_direction_hint(nan_direction_hint_)
     {
     }
-
     bool operator() (size_t a, size_t b) const
     {
         for (const auto & column : columns)
@@ -542,10 +611,14 @@ bool ColumnMap::structureEquals(const IColumn & rhs) const
 }
 
 
-ColumnPtr ColumnMap::findAll(const IColumn & keys, const Field & default_value) const
+ColumnPtr ColumnMap::findAll(const IColumn & keys, size_t rows_count) const
 {
+    if (unlikely(rows_count > columns[0]->size() || rows_count > keys.size()))
+        throw Exception("Too many rows for ColumnMap", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+    if (key_index == nullptr)
     {
-        std::lock_guard<std::mutex> lock(key_index_mutex);
+//        std::lock_guard<std::mutex> lock(key_index_mutex);
         if (key_index == nullptr)
         {
             const ColumnArray & keys_array = assert_cast<const ColumnArray &>(*columns[0]);
@@ -554,7 +627,7 @@ ColumnPtr ColumnMap::findAll(const IColumn & keys, const Field & default_value) 
         }
     }
 
-    return key_index->findAll(keys, default_value);
+    return key_index->findAll(keys, rows_count);
 }
 
 }

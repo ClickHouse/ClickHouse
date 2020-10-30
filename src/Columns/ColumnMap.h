@@ -23,15 +23,16 @@ private:
     using MapColumns = std::vector<WrappedPtr>;
     class Index;
 
-    MapColumns columns;
 
-    mutable std::shared_ptr<Index> key_index = nullptr; //since there is no std::atomic<std::unique_ptr<T>>
-    mutable std::mutex key_index_mutex;
+    MapColumns columns;
+    mutable std::shared_ptr<Index> key_index = nullptr;
 
     explicit ColumnMap(MutableColumns && columns);
     ColumnMap(const ColumnMap &);
 
 public:
+    class IIndex;
+
     ~ColumnMap() override;
 
     /** Create immutable column using immutable arguments. This arguments may be shared with other columns.
@@ -100,7 +101,7 @@ public:
     const ColumnPtr & getColumnPtr(size_t idx) const { return columns[idx]; }
 
     // Find all keys from `keys` column and return equally sized Column of values.
-    ColumnPtr findAll(const IColumn & keys, const Field & default_value = {}) const;
+    ColumnPtr findAll(const IColumn & keys, size_t rows_count) const;
 };
 
 }
