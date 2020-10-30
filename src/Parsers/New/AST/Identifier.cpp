@@ -1,8 +1,8 @@
 #include <Parsers/New/AST/Identifier.h>
 
-#include <Parsers/New/ParseTreeVisitor.h>
-
+#include <IO/ReadHelpers.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/New/ParseTreeVisitor.h>
 
 
 namespace DB::AST
@@ -11,7 +11,18 @@ namespace DB::AST
 Identifier::Identifier(const String & name_) : name(name_)
 {
     if (name.front() == '`' || name.front() == '"')
-        name = name.substr(1, name.size() - 2);
+    {
+        String s;
+        ReadBufferFromMemory in(name.data(), name.size());
+
+        if (name.front() == '`')
+            readBackQuotedStringWithSQLStyle(s, in);
+        else
+            readDoubleQuotedStringWithSQLStyle(s, in);
+
+        assert(in.count() == name.size());
+        name = s;
+    }
 }
 
 Identifier::Identifier(const String & name_, const String & nested_name) : name(name_ + "." + nested_name)

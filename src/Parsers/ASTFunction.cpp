@@ -64,6 +64,35 @@ void ASTFunction::updateTreeHashImpl(SipHash & hash_state) const
 }
 
 
+ASTPtr ASTFunction::toLiteral() const
+{
+    if (!arguments) return {};
+
+    if (name == "array")
+    {
+        Array array;
+
+        for (const auto & arg : arguments->children)
+        {
+            if (auto * literal = arg->as<ASTLiteral>())
+                array.push_back(literal->value);
+            else if (auto * func = arg->as<ASTFunction>())
+            {
+                if (auto func_literal = func->toLiteral())
+                    array.push_back(func_literal->as<ASTLiteral>()->value);
+            }
+            else
+                /// Some of the Array arguments is not literal
+                return {};
+        }
+
+        return std::make_shared<ASTLiteral>(array);
+    }
+
+    return {};
+}
+
+
 /** A special hack. If it's [I]LIKE or NOT [I]LIKE expression and the right hand side is a string literal,
   *  we will highlight unescaped metacharacters % and _ in string literal for convenience.
   * Motivation: most people are unaware that _ is a metacharacter and forgot to properly escape it with two backslashes.

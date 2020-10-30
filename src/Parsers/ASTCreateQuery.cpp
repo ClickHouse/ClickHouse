@@ -4,7 +4,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Common/quoteString.h>
-#include <Parsers/StorageID.h>
+#include <Interpreters/StorageID.h>
 
 
 namespace DB

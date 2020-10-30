@@ -6,7 +6,7 @@
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/StorageID.h>
+#include <Interpreters/StorageID.h>
 
 namespace DB
 {

@@ -6,7 +6,7 @@
 #include <Databases/IDatabase.h>
 #include <Interpreters/CancellationCode.h>
 #include <Storages/IStorage_fwd.h>
-#include <Parsers/StorageID.h>
+#include <Interpreters/StorageID.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TableLockHolder.h>
 #include <Storages/CheckResults.h>

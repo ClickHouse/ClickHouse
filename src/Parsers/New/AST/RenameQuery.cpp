@@ -1,6 +1,6 @@
 #include <Parsers/New/AST/RenameQuery.h>
 
-#include <Parsers/StorageID.h>
+#include <Interpreters/StorageID.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/New/AST/Identifier.h>

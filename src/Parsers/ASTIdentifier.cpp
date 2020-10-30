@@ -3,7 +3,7 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/IdentifierSemantic.h>
-#include <Parsers/StorageID.h>
+#include <Interpreters/StorageID.h>
 #include <Parsers/queryToString.h>
 
 

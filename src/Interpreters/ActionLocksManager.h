@@ -3,7 +3,7 @@
 #include <common/types.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/ActionLock.h>
-#include <Parsers/StorageID.h>
+#include <Interpreters/StorageID.h>
 
 #include <mutex>
 #include <unordered_map>

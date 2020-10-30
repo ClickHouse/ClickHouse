@@ -4,7 +4,7 @@
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/ParseTreeVisitor.h>
-#include <Parsers/StorageID.h>
+#include <Interpreters/StorageID.h>
 
 
 namespace DB::AST

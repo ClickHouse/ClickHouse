@@ -1,6 +1,6 @@
 #include <Parsers/New/AST/AlterTableQuery.h>
 
-#include <Parsers/StorageID.h>
+#include <Interpreters/StorageID.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>

@@ -30,6 +30,8 @@ public:
 
     ASTSelectWithUnionQuery * tryGetQueryArgument() const;
 
+    ASTPtr toLiteral() const;  // Try to convert functions like Array or Tuple to a literal form.
+
 protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
