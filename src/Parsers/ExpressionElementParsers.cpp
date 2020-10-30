@@ -1346,7 +1346,7 @@ bool ParserAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserQualifiedAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (!ParserCompoundIdentifier().parse(pos, node, expected))
+    if (!ParserCompoundIdentifier(true).parse(pos, node, expected))
         return false;
 
     if (pos->type != TokenType::Dot)

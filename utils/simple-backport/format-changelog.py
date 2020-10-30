@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/python3.8
 
 import argparse
 import collections
@@ -18,7 +18,7 @@ args = parser.parse_args()
 def parse_one_pull_request(item):
     description = item['body']
     # Don't skip empty lines because they delimit parts of description
-    lines = [line for line in [x.strip() for x in description.split('\n') if description else []]]
+    lines = [line for line in [x.strip() for x in description.split('\n')] if description]
     lines = [re.sub(r'\s+', ' ', l) for l in lines]
 
     category = ''
