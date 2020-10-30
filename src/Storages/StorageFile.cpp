@@ -4,6 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 
@@ -166,7 +167,8 @@ StorageFile::StorageFile(int table_fd_, CommonArguments args)
 StorageFile::StorageFile(const std::string & table_path_, const std::string & user_files_path, CommonArguments args)
     : StorageFile(args)
 {
-    fmt::print(stderr, "Create storage file from file at \n{}\n", StackTrace().toString());
+    fmt::print(stderr, "Create storage File '{}' from file at \n{}\n",
+        args.table_id.getNameForLogs(), StackTrace().toString());
 
     const auto & changes = args.context.getSettings().changes();
     for (const auto & change : changes)
@@ -175,7 +177,7 @@ StorageFile::StorageFile(const std::string & table_path_, const std::string & us
             change.name, toString(change.value));
     }
 
-    fmt::print(stderr, "delimiter = {}\n",
+    fmt::print(stderr, "delimiter = '{}'\n",
         toString(args.context.getSettings().get("format_csv_delimiter")));
 
 
@@ -202,6 +204,9 @@ StorageFile::StorageFile(const std::string & table_path_, const std::string & us
 StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArguments args)
     : StorageFile(args)
 {
+    fmt::print(stderr, "Create storage File '{}' from database at \n{}\n",
+        args.table_id.getNameForLogs(), StackTrace().toString());
+
     if (relative_table_dir_path.empty())
         throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
     if (args.format_name == "Distributed")
@@ -215,6 +220,7 @@ StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArgu
 StorageFile::StorageFile(CommonArguments args)
     : IStorage(args.table_id)
     , format_name(args.format_name)
+    , format_settings(args.format_settings)
     , compression_method(args.compression_method)
     , base_path(args.context.getPath())
 {
@@ -256,12 +262,12 @@ public:
     }
 
     StorageFileSource(
-        std::shared_ptr<StorageFile> storage_,
-        const StorageMetadataPtr & metadata_snapshot_,
-        const Context & context_,
-        UInt64 max_block_size_,
-        FilesInfoPtr files_info_,
-        ColumnsDescription columns_description_)
+            std::shared_ptr<StorageFile> storage_,
+            const StorageMetadataPtr & metadata_snapshot_,
+            const Context & context_,
+            UInt64 max_block_size_,
+            FilesInfoPtr files_info_,
+            ColumnsDescription columns_description_)
         : SourceWithProgress(getHeader(metadata_snapshot_, files_info_->need_path_column, files_info_->need_file_column))
         , storage(std::move(storage_))
         , metadata_snapshot(metadata_snapshot_)
@@ -337,9 +343,11 @@ public:
                     method = chooseCompressionMethod(current_path, storage->compression_method);
                 }
 
-                read_buf = wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method);
-                reader = FormatFactory::instance().getInput(
-                        storage->format_name, *read_buf, metadata_snapshot->getSampleBlock(), context, max_block_size);
+                read_buf = wrapReadBufferWithCompressionMethod(
+                    std::move(nested_buffer), method);
+                reader = FormatFactory::instance().getInput(storage->format_name,
+                    *read_buf, metadata_snapshot->getSampleBlock(), context,
+                    max_block_size, storage->format_settings);
 
                 if (columns_description.hasDefaults())
                     reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, columns_description, context);
@@ -443,8 +451,11 @@ Pipe StorageFile::read(
     pipes.reserve(num_streams);
 
     for (size_t i = 0; i < num_streams; ++i)
+    {
         pipes.emplace_back(std::make_shared<StorageFileSource>(
-                this_ptr, metadata_snapshot, context, max_block_size, files_info, metadata_snapshot->getColumns()));
+            this_ptr, metadata_snapshot, context, max_block_size, files_info,
+            metadata_snapshot->getColumns()));
+    }
 
     return Pipe::unitePipes(std::move(pipes));
 }
@@ -457,7 +468,8 @@ public:
         StorageFile & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const CompressionMethod compression_method,
-        const Context & context)
+        const Context & context,
+        const FormatSettings & format_settings)
         : storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
         , lock(storage.rwlock)
@@ -485,7 +497,9 @@ public:
 
         write_buf = wrapWriteBufferWithCompressionMethod(std::move(naked_buffer), compression_method, 3);
 
-        writer = FormatFactory::instance().getOutput(storage.format_name, *write_buf, metadata_snapshot->getSampleBlock(), context);
+        writer = FormatFactory::instance().getOutput(storage.format_name,
+            *write_buf, metadata_snapshot->getSampleBlock(), context,
+            {}, format_settings);
     }
 
     Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
@@ -534,7 +548,8 @@ BlockOutputStreamPtr StorageFile::write(
         path = paths[0];
 
     return std::make_shared<StorageFileBlockOutputStream>(*this, metadata_snapshot,
-        chooseCompressionMethod(path, compression_method), context);
+        chooseCompressionMethod(path, compression_method), context,
+        format_settings);
 }
 
 Strings StorageFile::getDataPaths() const
@@ -619,6 +634,20 @@ void registerStorageFile(StorageFactory & factory)
 
             engine_args_ast[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args_ast[0], factory_args.local_context);
             storage_args.format_name = engine_args_ast[0]->as<ASTLiteral &>().value.safeGet<String>();
+
+            if (factory_args.storage_def->settings)
+            {
+                Context local_context_copy = factory_args.local_context;
+                local_context_copy.applySettingsChanges(
+                    factory_args.storage_def->settings->changes);
+                storage_args.format_settings = getFormatSettings(
+                    local_context_copy);
+            }
+            else
+            {
+                storage_args.format_settings = getFormatSettings(
+                    factory_args.local_context);
+            }
 
             if (engine_args_ast.size() == 1) /// Table in database
                 return StorageFile::create(factory_args.relative_data_path, storage_args);

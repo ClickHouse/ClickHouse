@@ -34,8 +34,7 @@ struct RowOutputFormatParams;
 using InputFormatPtr = std::shared_ptr<IInputFormat>;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
-FormatSettings getInputFormatSettings(const Context & context);
-FormatSettings getOutputFormatSettings(const Context & context);
+FormatSettings getFormatSettings(const Context & context);
 
 /** Allows to create an IBlockInputStream or IBlockOutputStream by the name of the format.
   * Note: format and compression are independent things.

@@ -52,6 +52,7 @@ public:
     {
         StorageID table_id;
         std::string format_name;
+        FormatSettings format_settings;
         std::string compression_method;
         const ColumnsDescription & columns;
         const ConstraintsDescription & constraints;
@@ -79,6 +80,7 @@ private:
     explicit StorageFile(CommonArguments args);
 
     std::string format_name;
+    FormatSettings format_settings;
 
     int table_fd = -1;
     String compression_method;

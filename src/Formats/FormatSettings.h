@@ -85,7 +85,7 @@ struct FormatSettings
         bool escape_forward_slashes = true;
         bool write_metadata = false;
         bool named_tuple_as_object = true;
-        bool list_of_rows = false;
+        bool array_of_rows = false;
         bool serialize_as_strings = false;
     } json;
 
