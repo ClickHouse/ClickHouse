@@ -431,7 +431,7 @@ static void tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node * 
     const auto & expression = expression_step ? expression_step->getExpression()
                                               : filter_step->getExpression();
 
-    bool empty_result = expression->getResultColumns().empty();
+    bool empty_result = expression->getResultColumns().empty() || !child->getOutputStream().header;
     auto split_actions = expression->splitActionsBeforeArrayJoin(array_join->columns);
 
     /// No actions can be moved before ARRAY JOIN.
