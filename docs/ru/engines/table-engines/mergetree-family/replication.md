@@ -157,7 +157,7 @@ CREATE TABLE table_name
 CREATE TABLE table_name (
 	x UInt32
 ) ENGINE = ReplicatedMergeTree 
-ORDER BY x
+ORDER BY x;
 ```
 
 Это будет эквивалентно следующему запросу:
@@ -166,7 +166,7 @@ ORDER BY x
 CREATE TABLE table_name (
 	x UInt32
 ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/{database}/table_name', '{replica}') 
-ORDER BY x
+ORDER BY x;
 ```
 
 Выполните запрос `CREATE TABLE` на каждой реплике. Запрос создаёт новую реплицируемую таблицу, или добавляет новую реплику к имеющимся.

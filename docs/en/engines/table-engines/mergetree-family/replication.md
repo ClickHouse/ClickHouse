@@ -161,7 +161,7 @@ In this case, you can omit arguments when creating tables:
 CREATE TABLE table_name (
 	x UInt32
 ) ENGINE = ReplicatedMergeTree 
-ORDER BY x
+ORDER BY x;
 ```
 
 It is equivalent to:
@@ -170,7 +170,7 @@ It is equivalent to:
 CREATE TABLE table_name (
 	x UInt32
 ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/{database}/table_name', '{replica}') 
-ORDER BY x
+ORDER BY x;
 ```
 
 Run the `CREATE TABLE` query on each replica. This query creates a new replicated table, or adds a new replica to an existing one.
