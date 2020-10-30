@@ -17,80 +17,6 @@ struct FormatSettings
     /// Option means that each chunk of data need to be formatted independently. Also each chunk will be flushed at the end of processing.
     bool enable_streaming = false;
 
-    struct JSON
-    {
-        bool quote_64bit_integers = true;
-        bool quote_denormals = true;
-        bool escape_forward_slashes = true;
-        bool write_metadata = false;
-        bool named_tuple_as_object = true;
-        bool list_of_rows = false;
-        bool serialize_as_strings = false;
-    };
-
-    JSON json;
-
-    struct CSV
-    {
-        char delimiter = ',';
-        bool allow_single_quotes = true;
-        bool allow_double_quotes = true;
-        bool unquoted_null_literal_as_null = false;
-        bool empty_as_default = false;
-        bool crlf_end_of_line = false;
-        bool input_format_enum_as_number = false;
-    };
-
-    CSV csv;
-
-    struct Pretty
-    {
-        UInt64 max_rows = 10000;
-        UInt64 max_column_pad_width = 250;
-        UInt64 max_value_width = 10000;
-        bool color = true;
-
-        bool output_format_pretty_row_numbers = false;
-
-        enum class Charset
-        {
-            UTF8,
-            ASCII,
-        };
-
-        Charset charset = Charset::UTF8;
-    };
-
-    Pretty pretty;
-
-    struct Values
-    {
-        bool interpret_expressions = true;
-        bool deduce_templates_of_expressions = true;
-        bool accurate_types_of_literals = true;
-    };
-
-    Values values;
-
-    struct Template
-    {
-        String resultset_format;
-        String row_format;
-        String row_between_delimiter;
-    };
-
-    Template template_settings;
-
-    struct TSV
-    {
-        bool empty_as_default = false;
-        bool crlf_end_of_line = false;
-        String null_representation = "\\N";
-        bool input_format_enum_as_number = false;
-    };
-
-    TSV tsv;
-
     bool skip_unknown_fields = false;
     bool with_names_use_header = false;
     bool write_statistics = true;
@@ -117,24 +43,29 @@ struct FormatSettings
     UInt64 input_allow_errors_num = 0;
     Float32 input_allow_errors_ratio = 0;
 
-    struct Arrow
+    struct
     {
         UInt64 row_group_size = 1000000;
     } arrow;
 
-    struct Parquet
+    struct
     {
-        UInt64 row_group_size = 1000000;
-    } parquet;
+        String schema_registry_url;
+        String output_codec;
+        UInt64 output_sync_interval = 16 * 1024;
+        bool allow_missing_fields = false;
+    } avro;
 
-    struct Schema
+    struct CSV
     {
-        std::string format_schema;
-        std::string format_schema_path;
-        bool is_server = false;
-    };
-
-    Schema schema;
+        char delimiter = ',';
+        bool allow_single_quotes = true;
+        bool allow_double_quotes = true;
+        bool unquoted_null_literal_as_null = false;
+        bool empty_as_default = false;
+        bool crlf_end_of_line = false;
+        bool input_format_enum_as_number = false;
+    } csv;
 
     struct Custom
     {
@@ -145,29 +76,92 @@ struct FormatSettings
         std::string row_between_delimiter;
         std::string field_delimiter;
         std::string escaping_rule;
-    };
+    } custom;
 
-    Custom custom;
-
-    struct Avro
+    struct
     {
-        String schema_registry_url;
-        String output_codec;
-        UInt64 output_sync_interval = 16 * 1024;
-        bool allow_missing_fields = false;
-    };
+        bool quote_64bit_integers = true;
+        bool quote_denormals = true;
+        bool escape_forward_slashes = true;
+        bool write_metadata = false;
+        bool named_tuple_as_object = true;
+        bool list_of_rows = false;
+        bool serialize_as_strings = false;
+    } json;
 
-    Avro avro;
+    struct
+    {
+        UInt64 row_group_size = 1000000;
+    } parquet;
 
-    struct Regexp
+    struct Pretty
+    {
+        UInt64 max_rows = 10000;
+        UInt64 max_column_pad_width = 250;
+        UInt64 max_value_width = 10000;
+        bool color = true;
+
+        bool output_format_pretty_row_numbers = false;
+
+        enum class Charset
+        {
+            UTF8,
+            ASCII,
+        };
+
+        Charset charset = Charset::UTF8;
+    } pretty;
+
+    struct
+    {
+        bool write_row_delimiters = true;
+        /**
+         * Some buffers (kafka / rabbit) split the rows internally using callback
+         * so we can push there formats without framing / delimiters (like
+         * ProtobufSingle). In other cases you can't write more than single row
+         * in unframed format.
+         * Not sure we need this parameter at all, it only serves as an additional
+         * safety check in ProtobufSingle format, but exporting constant-size
+         * records w/o delimiters might be generally useful, not only for Kafka.
+         */
+        bool allow_many_rows_no_delimiters = false;
+    } protobuf;
+
+    struct
     {
         std::string regexp;
         std::string escaping_rule;
         bool skip_unmatched = false;
-    };
+    } regexp;
 
-    Regexp regexp;
+    struct
+    {
+        std::string format_schema;
+        std::string format_schema_path;
+        bool is_server = false;
+    } schema;
 
+    struct
+    {
+        String resultset_format;
+        String row_format;
+        String row_between_delimiter;
+    } template_settings;
+
+    struct
+    {
+        bool empty_as_default = false;
+        bool crlf_end_of_line = false;
+        String null_representation = "\\N";
+        bool input_format_enum_as_number = false;
+    } tsv;
+
+    struct
+    {
+        bool interpret_expressions = true;
+        bool deduce_templates_of_expressions = true;
+        bool accurate_types_of_literals = true;
+    } values;
 };
 
 }

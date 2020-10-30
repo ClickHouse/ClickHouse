@@ -50,9 +50,9 @@ public:
 
     struct CommonArguments
     {
-        const StorageID & table_id;
-        const std::string & format_name;
-        const std::string & compression_method;
+        StorageID table_id;
+        std::string format_name;
+        std::string compression_method;
         const ColumnsDescription & columns;
         const ConstraintsDescription & constraints;
         const Context & context;
