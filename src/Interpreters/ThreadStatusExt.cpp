@@ -166,7 +166,7 @@ void ThreadStatus::initPerformanceCounters()
     memory_tracker.setDescription("(for thread)");
 
     // query_start_time_{microseconds, nanoseconds} are all constructed from the same time point
-    // to ensure that they are all equal upto the precision of a second.
+    // to ensure that they are all equal up to the precision of a second.
     const auto now = std::chrono::system_clock::now();
 
     query_start_time_nanoseconds = time_in_nanoseconds(now);

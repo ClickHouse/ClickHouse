@@ -28,11 +28,6 @@ public:
         return tables.emplace_back(storage);
     }
 
-    void reset() override
-    {
-        tables.clear();
-    }
-
     UUID uuid() const override { return nested_iterator->uuid(); }
 
     DatabaseMaterializeTablesIterator(DatabaseTablesIteratorPtr nested_iterator_, DatabaseMaterializeMySQL * database_)

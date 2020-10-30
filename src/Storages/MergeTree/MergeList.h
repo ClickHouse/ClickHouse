@@ -92,7 +92,8 @@ struct MergeListElement : boost::noncopyable
 
     UInt64 thread_id;
     MergeType merge_type;
-    MergeAlgorithm merge_algorithm;
+    /// Detected after merge already started
+    std::atomic<MergeAlgorithm> merge_algorithm;
 
     MergeListElement(const std::string & database, const std::string & table, const FutureMergedMutatedPart & future_part);
 

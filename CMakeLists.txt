@@ -59,25 +59,6 @@ set(CMAKE_DEBUG_POSTFIX "d" CACHE STRING "Generate debug library name with a pos
 # For more info see https://cmake.org/cmake/help/latest/prop_gbl/USE_FOLDERS.html
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
-# cmake 3.9+ needed.
-# Usually impractical.
-# See also ${ENABLE_THINLTO}
-option(ENABLE_IPO "Full link time optimization")
-
-if(ENABLE_IPO)
-    cmake_policy(SET CMP0069 NEW)
-    include(CheckIPOSupported)
-    check_ipo_supported(RESULT IPO_SUPPORTED OUTPUT IPO_NOT_SUPPORTED)
-    if(IPO_SUPPORTED)
-        message(STATUS "IPO/LTO is supported, enabling")
-        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
-    else()
-        message (${RECONFIGURE_MESSAGE_LEVEL} "IPO/LTO is not supported: <${IPO_NOT_SUPPORTED}>")
-    endif()
-else()
-    message(STATUS "IPO/LTO not enabled.")
-endif()
-
 # Check that submodules are present only if source was downloaded with git
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git" AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/boost/boost")
     message (FATAL_ERROR "Submodules are not initialized. Run\n\tgit submodule update --init --recursive")
