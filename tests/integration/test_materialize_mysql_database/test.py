@@ -41,10 +41,16 @@ class MySQLNodeInstance:
         with self.alloc_connection().cursor() as cursor:
             cursor.execute(execution_query)
 
+    def create_min_priv_user(self):
+        self.query("CREATE USER 'test'@'%' IDENTIFIED BY '123'")
+        self.query("GRANT REPLICATION SLAVE, REPLICATION CLIENT, RELOAD ON *.* TO 'test'@'%'")
+        self.query("GRANT SELECT ON test_database.* TO 'test'@'%'")
+
     def result(self, execution_query):
         with self.alloc_connection().cursor() as cursor:
-            cursor.execute(execution_query)
-            print(cursor.fetchone())
+            result = cursor.execute(execution_query)
+            if result is not None:
+                print(cursor.fetchall())
 
     def close(self):
         if self.mysql_connection is not None:
@@ -56,6 +62,8 @@ class MySQLNodeInstance:
             try:
                 self.alloc_connection()
                 print("Mysql Started")
+                self.create_min_priv_user()
+                print("min priv user created")
                 return
             except Exception as ex:
                 print("Can't connect to MySQL " + str(ex))
@@ -161,9 +169,19 @@ def test_select_without_columns_8_0(started_cluster, started_mysql_8_0):
 
 
 def test_materialize_database_err_sync_user_privs_5_7(started_cluster, started_mysql_5_7):
-    materialize_with_ddl.err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1")
+    try:
+        materialize_with_ddl.err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1")
+    except:
+        print((clickhouse_node.query(
+            "select '\n', thread_id, query_id, arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym from system.stack_trace format TSVRaw")))
+        raise
 
 
 def test_materialize_database_err_sync_user_privs_8_0(started_cluster, started_mysql_8_0):
-    materialize_with_ddl.err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0, "mysql8_0")
+    try:
+        materialize_with_ddl.err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0, "mysql8_0")
+    except:
+        print((clickhouse_node.query(
+            "select '\n', thread_id, query_id, arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym from system.stack_trace format TSVRaw")))
+        raise
 

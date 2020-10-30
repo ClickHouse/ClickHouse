@@ -469,16 +469,16 @@ def err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, mysql_n
     mysql_node.query("CREATE TABLE test_database.test_table_1 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB;")
     mysql_node.query("INSERT INTO test_database.test_table_1 VALUES(1), (2), (3), (4), (5), (6);")
 
-    mysql_node.query("CREATE USER 'test'@'%' IDENTIFIED BY '123'")
-    mysql_node.query("GRANT REPLICATION SLAVE, REPLICATION CLIENT, RELOAD ON *.* TO 'test'@'%'")
-    mysql_node.query("GRANT SELECT ON test_database.* TO 'test'@'%'")
-    print('Eason test')
-    mysql_node.result("SHOW GRANTS FOR 'test'@'%'")
+    mysql_node.result("SHOW GRANTS FOR 'test'@'%';")
 
     clickhouse_node.query(
         "CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'test', '123')".format(
             service_name))
 
+    # wait MaterializeMySQL read binlog events
+    time.sleep(90)
+
+    assert "test_table_1" in clickhouse_node.query("SHOW TABLES FROM test_database")
     check_query(clickhouse_node, "SELECT count() FROM test_database.test_table_1 FORMAT TSV", "6\n", 5, 5)
     mysql_node.query("INSERT INTO test_database.test_table_1 VALUES(7);")
     check_query(clickhouse_node, "SELECT count() FROM test_database.test_table_1 FORMAT TSV", "7\n")
