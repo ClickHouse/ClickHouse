@@ -1242,6 +1242,9 @@ ActionsDAGPtr ActionsDAG::clone() const
         for (auto & child : node.children)
             child = copy_map[child];
 
+    for (auto & node : actions->index)
+        node = copy_map[node];
+
     return actions;
 }
 
