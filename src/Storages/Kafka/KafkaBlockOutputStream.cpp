@@ -32,7 +32,7 @@ void KafkaBlockOutputStream::writePrefix()
     if (!buffer)
         throw Exception("Failed to create Kafka producer!", ErrorCodes::CANNOT_CREATE_IO_BUFFER);
 
-    auto format_settings = getOutputFormatSettings(*context);
+    auto format_settings = getFormatSettings(*context);
     format_settings.protobuf.allow_many_rows_no_delimiters = true;
 
     child = FormatFactory::instance().getOutput(storage.getFormatName(), *buffer,

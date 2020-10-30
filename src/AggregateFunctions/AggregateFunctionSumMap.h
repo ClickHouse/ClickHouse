@@ -105,7 +105,7 @@ public:
             types.emplace_back(std::make_shared<DataTypeArray>(result_type));
         }
 
-        return std::make_shared<DataTypeTuple>(types, Strings{"keys", "values"});
+        return std::make_shared<DataTypeTuple>(types);
     }
 
     static const auto & getArgumentColumns(const IColumn**& columns)

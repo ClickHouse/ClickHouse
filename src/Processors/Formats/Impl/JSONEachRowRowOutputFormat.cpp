@@ -68,7 +68,7 @@ void JSONEachRowRowOutputFormat::writeRowEndDelimiter()
 
 void JSONEachRowRowOutputFormat::writeRowBetweenDelimiter()
 {
-    if (settings.json.list_of_rows)
+    if (settings.json.array_of_rows)
     {
         writeCString(",\n", out);
     }
@@ -81,7 +81,7 @@ void JSONEachRowRowOutputFormat::writeRowBetweenDelimiter()
 
 void JSONEachRowRowOutputFormat::writePrefix()
 {
-    if (settings.json.list_of_rows)
+    if (settings.json.array_of_rows)
     {
         writeCString("[\n", out);
     }
@@ -90,9 +90,10 @@ void JSONEachRowRowOutputFormat::writePrefix()
 
 void JSONEachRowRowOutputFormat::writeSuffix()
 {
-    if (settings.json.list_of_rows)
+    writeCString("\n");
+    if (settings.json.array_of_rows)
     {
-        writeCString("\n]\n", out);
+        writeCString("]\n", out);
     }
 }
 
@@ -123,14 +124,14 @@ void registerOutputFormatProcessorJSONEachRow(FormatFactory & factory)
             settings);
     });
 
-    factory.registerOutputFormatProcessor("JSONList", [](
+    factory.registerOutputFormatProcessor("JSONArray", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,
         const FormatSettings & _format_settings)
     {
         FormatSettings settings = _format_settings;
-        settings.json.list_of_rows = true;
+        settings.json.array_of_rows = true;
         return std::make_shared<JSONEachRowRowOutputFormat>(buf, sample, params,
             settings);
     });

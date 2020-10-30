@@ -200,7 +200,7 @@ void JSONRowOutputFormat::writeRowStartDelimiter()
 void JSONRowOutputFormat::writeRowEndDelimiter()
 {
     writeChar('\n', *ostr);
-    writeCString("\t\t}\n", *ostr);
+    writeCString("\t\t}", *ostr);
     field_number = 0;
     ++row_count;
 }
