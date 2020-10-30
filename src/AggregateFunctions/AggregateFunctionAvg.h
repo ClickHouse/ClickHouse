@@ -10,26 +10,23 @@
 
 namespace DB
 {
-/// A type-fixed fraction represented by a pair of #Numerator and #Denominator.
-template <class Numerator, class Denominator>
+
+/// @tparam BothZeroMeansNaN If false, the pair 0 / 0 = 0, nan otherwise.
+template <class Denominator, bool BothZeroMeansNaN = true>
 struct RationalFraction
 {
-   constexpr RationalFraction(): numerator(0), denominator(0) {}
+    Float64 numerator{0};
+    Denominator denominator{0};
 
-    Numerator numerator;
-    Denominator denominator;
-
-    /// Calculate the fraction as a #Result.
-    template <class Result>
-    Result NO_SANITIZE_UNDEFINED result() const
+    Float64 NO_SANITIZE_UNDEFINED result() const
     {
-        if constexpr (std::is_floating_point_v<Result> && std::numeric_limits<Result>::is_iec559)
-            return static_cast<Result>(numerator) / denominator; /// allow division by zero
+        if constexpr (BothZeroMeansNaN && std::numeric_limits<Float64>::is_iec559)
+            return static_cast<Float64>(numerator) / denominator; /// allow division by zero
 
         if (denominator == static_cast<Denominator>(0))
-            return static_cast<Result>(0);
+            return static_cast<Float64>(0);
 
-        return static_cast<Result>(numerator / denominator);
+        return static_cast<Float64>(numerator / denominator);
     }
 };
 
@@ -46,31 +43,17 @@ struct RationalFraction
  * @tparam Derived When deriving from this class, use the child class name as in CRTP, e.g.
  *         class Self : Agg<char, bool, bool, Self>.
  */
-template <class Denominator, class Derived>
+template <class Denominator, bool BothZeroMeansNaN, class Derived>
 class AggregateFunctionAvgBase : public
-        IAggregateFunctionDataHelper<RationalFraction<Float64, Denominator>, Derived>
+        IAggregateFunctionDataHelper<RationalFraction<Denominator, BothZeroMeansNaN>, Derived>
 {
 public:
-    using Numerator = Float64;
-    using Fraction = RationalFraction<Numerator, Denominator>;
-
-    using ResultType       = Float64;
-    using ResultDataType   = DataTypeNumber<Float64>;
-    using ResultVectorType = ColumnVector<Float64>;
-
+    using Fraction = RationalFraction<Denominator, BothZeroMeansNaN>;
     using Base = IAggregateFunctionDataHelper<Fraction, Derived>;
 
-    /// ctor for native types
-    explicit AggregateFunctionAvgBase(const DataTypes & argument_types_): Base(argument_types_, {}), scale(0) {}
+    explicit AggregateFunctionAvgBase(const DataTypes & argument_types_): Base(argument_types_, {}) {}
 
-    /// ctor for Decimals
-    AggregateFunctionAvgBase(const IDataType & data_type, const DataTypes & argument_types_)
-        : Base(argument_types_, {}), scale(getDecimalScale(data_type)) {}
-
-    DataTypePtr getReturnType() const override
-    {
-        return std::make_shared<ResultDataType>();
-    }
+    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeNumber<Float64>>(); }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
@@ -100,17 +83,14 @@ public:
 
     void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
-        static_cast<ResultVectorType &>(to).getData().push_back(this->data(place).template result<ResultType>());
+        static_cast<ColumnVector<Float64> &>(to).getData().push_back(this->data(place).result());
     }
-
-protected:
-    UInt32 scale;
 };
 
-class AggregateFunctionAvg final : public AggregateFunctionAvgBase<UInt64, AggregateFunctionAvg>
+class AggregateFunctionAvg final : public AggregateFunctionAvgBase<UInt64, false, AggregateFunctionAvg>
 {
 public:
-    using AggregateFunctionAvgBase<UInt64, AggregateFunctionAvg>::AggregateFunctionAvgBase;
+    using AggregateFunctionAvgBase<UInt64, false, AggregateFunctionAvg>::AggregateFunctionAvgBase;
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const final
     {

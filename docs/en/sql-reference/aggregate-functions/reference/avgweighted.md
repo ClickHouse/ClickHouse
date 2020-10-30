@@ -25,7 +25,7 @@ but may have different types.
 
 **Returned value**
 
--   `NaN`. If all the weights are equal to 0.
+-   `NaN` if all the weights are equal to 0 or the supplied weights parameter is empty.
 -   Weighted mean otherwise.
 
 **Return type** is always [Float64](../../../sql-reference/data-types/float.md).
@@ -61,5 +61,39 @@ Result:
 ``` text
 ┌─avgWeighted(x, weight)─┐
 │                      8 │
+└────────────────────────┘
+```
+
+**Example**
+
+Query:
+
+``` sql
+SELECT avgWeighted(x, w)
+FROM values('x Int8, w Int8', (0, 0), (1, 0), (10, 0))
+```
+
+Result:
+
+``` text
+┌─avgWeighted(x, weight)─┐
+│                    nan │
+└────────────────────────┘
+```
+
+**Example**
+
+Query:
+
+``` sql
+CREATE table test (t UInt8) ENGINE = Memory;
+SELECT avgWeighted(t) FROM test
+```
+
+Result:
+
+``` text
+┌─avgWeighted(x, weight)─┐
+│                    nan │
 └────────────────────────┘
 ```
