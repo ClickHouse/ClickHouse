@@ -133,7 +133,7 @@ struct ZooKeeperCloseResponse final : ZooKeeperResponse
     OpNum getOpNum() const override { return -11; }
 };
 
-struct ZooKeeperCreateRequest final : CreateRequest, ZooKeeperRequest
+struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
 {
     ZooKeeperCreateRequest() = default;
     explicit ZooKeeperCreateRequest(const CreateRequest & base) : CreateRequest(base) {}
