@@ -1,0 +1,9 @@
+CREATE TABLE IF NOT EXISTS test_01035 (
+    t UInt16
+) ENGINE = Memory;
+
+SELECT avg(t) FROM test_01035;
+INSERT INTO test_01035 SELECT * FROM system.numbers LIMIT 1000;
+SELECT avg(t) FROM test_01035;
+
+DROP TABLE IF EXISTS test_01035
