@@ -1238,7 +1238,7 @@ void ExpressionAnalysisResult::finalize(const ExpressionActionsChain & chain, si
                 if (columns_to_remove.count(column.name))
                     remove_actions->addInput(column);
 
-            remove_actions->projectInput();
+            remove_actions->project({});
             prewhere_info->remove_columns_actions = std::move(remove_actions);
         }
 
