@@ -1,8 +1,8 @@
-1
-1
-2
-3
-Specify either `query` or `queries-file` option
+Code: 81. DB::Exception: Received from localhost:9000. DB::Exception: Database `test` doesn't exist. 
+
+Code: 81. DB::Exception: Received from localhost:9000. DB::Exception: Database `test` doesn't exist. 
+
+Code: 36. DB::Exception: Specify either `query` or `queries-file` option
+
 1	2
 3	4
-Specify either `query` or `queries-file` option
