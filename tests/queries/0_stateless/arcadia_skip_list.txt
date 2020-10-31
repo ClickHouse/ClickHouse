@@ -156,3 +156,4 @@
 01526_max_untracked_memory
 01530_drop_database_atomic_sync
 01547_query_log_current_database
+01548_query_log_query_execution_ms
