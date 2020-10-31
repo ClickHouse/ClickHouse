@@ -336,7 +336,7 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String
     elem.event_time_microseconds = current_time_microseconds;
     elem.query_start_time = query_start_time;
     elem.query_start_time_microseconds = query_start_time_microseconds;
-    elem.query_duration_ms = (getCurrentTimeNanoseconds() - query_start_time_nanoseconds) / 1000000U;
+    elem.query_duration_ms = (time_in_nanoseconds(now) - query_start_time_nanoseconds) / 1000000U;
 
     elem.read_rows = progress_in.read_rows.load(std::memory_order_relaxed);
     elem.read_bytes = progress_in.read_bytes.load(std::memory_order_relaxed);
