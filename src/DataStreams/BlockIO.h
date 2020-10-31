@@ -1,21 +1,20 @@
 #pragma once
 
 #include <DataStreams/IBlockStream_fwd.h>
-
-#include <functional>
-
 #include <Processors/QueryPipeline.h>
+#include <functional>
+#include <memory>
 
 
 namespace DB
 {
 
-class ProcessListEntry;
+class QueryProcess;
 
 struct BlockIO
 {
-    BlockIO() = default;
-    BlockIO(BlockIO &&) = default;
+    BlockIO();
+    BlockIO(BlockIO &&);
 
     BlockIO & operator= (BlockIO && rhs);
     ~BlockIO();
@@ -23,7 +22,7 @@ struct BlockIO
     BlockIO(const BlockIO &) = delete;
     BlockIO & operator= (const BlockIO & rhs) = delete;
 
-    std::shared_ptr<ProcessListEntry> process_list_entry;
+    std::shared_ptr<QueryProcess> query_process;
 
     BlockOutputStreamPtr out;
     BlockInputStreamPtr in;
