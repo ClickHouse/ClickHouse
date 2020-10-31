@@ -1290,6 +1290,7 @@ ExpressionActionsPtr ActionsDAG::linearizeActions() const
         ssize_t position = -1;
         size_t num_created_parents = 0;
         bool used_in_result = false;
+        bool skipped_input = false;
     };
 
     std::vector<Data> data(nodes.size());
@@ -1369,13 +1370,20 @@ ExpressionActionsPtr ActionsDAG::linearizeActions() const
 
         if (node->type == Type::INPUT)
         {
-            /// Argument for input is special. It contains the position from required columns.
-            ExpressionActions::Argument argument;
-            argument.pos = expressions->required_columns.size();
-            argument.remove = false;
-            arguments.emplace_back(argument);
+            /// Skip adding input if it is not used by any action and not removes column.
+            bool unused_input = cur.parents.empty() && cur.used_in_result;
+            if (!unused_input && !project_input)
+            {
+                /// Argument for input is special. It contains the position from required columns.
+                ExpressionActions::Argument argument;
+                argument.pos = expressions->required_columns.size();
+                argument.remove = false;
+                arguments.emplace_back(argument);
 
-            expressions->required_columns.push_back({node->result_name, node->result_type});
+                expressions->required_columns.push_back({node->result_name, node->result_type});
+            }
+            else
+                cur.skipped_input = true;
         }
 
         expressions->actions.push_back({node, arguments, free_position});
@@ -1397,7 +1405,11 @@ ExpressionActionsPtr ActionsDAG::linearizeActions() const
 
     for (const auto & node : index)
     {
-        auto pos = data[reverse_index[node]].position;
+        auto & cur = data[reverse_index[node]];
+        if (cur.skipped_input)
+            continue;
+
+        auto pos = cur.position;
 
         if (pos < 0)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Action for {} was not calculated", node->result_name);
