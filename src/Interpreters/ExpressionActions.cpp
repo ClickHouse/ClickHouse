@@ -1372,7 +1372,7 @@ ExpressionActionsPtr ActionsDAG::linearizeActions() const
         {
             /// Skip adding input if it is not used by any action and not removes column.
             bool unused_input = cur.parents.empty() && cur.used_in_result;
-            if (!unused_input && !project_input)
+            if (!unused_input || project_input)
             {
                 /// Argument for input is special. It contains the position from required columns.
                 ExpressionActions::Argument argument;
