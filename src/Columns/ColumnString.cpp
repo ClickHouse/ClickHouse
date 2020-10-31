@@ -407,7 +407,8 @@ struct ColumnString::CmpWithCollation
     const Collator & collator;
     bool reverse;
 
-    CmpWithCollation(const ColumnString & parent_, const Collator & collator_, bool reverse_=false) : parent(parent_), collator(collator_), reverse(reverse_) {}
+    CmpWithCollation(const ColumnString & parent_, const Collator & collator_, bool reverse_ = false)
+        : parent(parent_), collator(collator_), reverse(reverse_) {}
 
     int operator()(size_t lhs, size_t rhs) const
     {
