@@ -22,7 +22,7 @@ namespace
 {
 
 /// Returns 1 if and Decimal value has more digits then it's Precision allow, 0 otherwise.
-/// Precision could be set as second argument or omitted. If ommited function uses Decimal presicion of the first argument.
+/// Precision could be set as second argument or omitted. If omitted function uses Decimal precision of the first argument.
 class FunctionIsDecimalOverflow : public IFunction
 {
 public:
