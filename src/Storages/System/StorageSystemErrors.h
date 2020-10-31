@@ -10,8 +10,10 @@ namespace DB
 class Context;
 
 
-/** Implements the `distribution_queue` system table, which allows you to view the INSERT queues for the Distributed tables.
-  */
+/**
+ * Implements the `errors` system table, which shows the error code and the number of times it happens
+ * (i.e. Exception with this code had been thrown).
+ */
 class StorageSystemErrors final : public ext::shared_ptr_helper<StorageSystemErrors>, public IStorageSystemOneBlock<StorageSystemErrors>
 {
     friend struct ext::shared_ptr_helper<StorageSystemErrors>;
