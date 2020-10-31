@@ -27,3 +27,17 @@ SELECT count() FROM (SELECT * FROM test_distributed) SETTINGS max_bytes_to_read_
 
 DROP TABLE IF EXISTS test_local;
 DROP TABLE IF EXISTS test_distributed;
+
+SELECT * FROM remote('127.{1,1}', system.numbers) LIMIT 40000 SETTINGS max_rows_to_read = 60000 FORMAT Null; -- { serverError 158 }
+-- FIXME: see comments in QueryPlan::addQueryProcessHolder()
+--SELECT * FROM remote('127.{1,1}', system.numbers) LIMIT 40000 SETTINGS max_rows_to_read_leaf = 60000 FORMAT Null;
+
+-- UNION creates SourceWithProgress for each thread
+SELECT * FROM numbers(40000) union all select * from numbers(40000) SETTINGS max_rows_to_read = 60000 FORMAT Null; -- { serverError 158 }
+-- FIXME: UNION does not supports separate QueryProcess yet
+--SELECT * FROM numbers(40000) union all select * from numbers(40000) SETTINGS max_rows_to_read_leaf = 60000 FORMAT Null;
+
+-- numbers_mt creates SourceWithProgress for each thread
+SELECT * FROM numbers_mt(100000) SETTINGS max_rows_to_read = 80000 FORMAT Null; -- { serverError 158 }
+-- FIXME: numbers_mt does not supports separate QueryProcess yet
+-- SELECT * FROM numbers_mt(100000) SETTINGS max_rows_to_read_leaf = 80000 FORMAT Null;
