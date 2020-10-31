@@ -186,3 +186,9 @@
 [submodule "contrib/cyrus-sasl"]
 	path = contrib/cyrus-sasl
 	url = https://github.com/cyrusimap/cyrus-sasl
+[submodule "contrib/xz-mirror"]
+	path = contrib/xz-mirror
+	url = https://github.com/xz-mirror/xz
+[submodule "contrib/xz"]
+	path = contrib/xz
+	url = https://github.com/xz-mirror/xz
