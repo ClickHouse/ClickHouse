@@ -148,6 +148,31 @@ You can define the parameters explicitly instead of using substitutions. This mi
 
 When working with large clusters, we recommend using substitutions because they reduce the probability of error.
 
+You can specify default arguments for `Replicated` table engine in the server configuration file. For instance:
+
+```xml
+<default_replica_path>/clickhouse/tables/{shard}/{database}/{table}</default_replica_path>
+<default_replica_name>{replica}</default_replica_path>
+```
+
+In this case, you can omit arguments when creating tables:
+
+``` sql
+CREATE TABLE table_name (
+	x UInt32
+) ENGINE = ReplicatedMergeTree 
+ORDER BY x;
+```
+
+It is equivalent to:
+
+``` sql
+CREATE TABLE table_name (
+	x UInt32
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/{database}/table_name', '{replica}') 
+ORDER BY x;
+```
+
 Run the `CREATE TABLE` query on each replica. This query creates a new replicated table, or adds a new replica to an existing one.
 
 If you add a new replica after the table already contains some data on other replicas, the data will be copied from the other replicas to the new one after running the query. In other words, the new replica syncs itself with the others.
