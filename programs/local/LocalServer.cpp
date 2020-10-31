@@ -207,8 +207,7 @@ try
 
     if (config().has("query") && config().has("queries-file"))
     {
-        std::cerr << "Specify either `query` or `queries-file` option" << std::endl;
-        return Application::EXIT_OK;
+        throw Exception("Specify either `query` or `queries-file` option", ErrorCodes::BAD_ARGUMENTS);
     }
 
     shared_context = Context::createShared();
@@ -355,7 +354,7 @@ void LocalServer::processQueries()
     else
     {
         String queries_from_file;
-        ReadBufferFromFile in(config().getRawString("queries-file"));
+        ReadBufferFromFile in(config().getString("queries-file"));
         readStringUntilEOF(queries_from_file, in);
         queries_str += queries_from_file;
     }

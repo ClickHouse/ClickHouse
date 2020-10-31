@@ -21,6 +21,4 @@ DROP TABLE table;" > 01523_client_local_queries_file_parameter_tmp.sql
 
 echo -e "1,2\n3,4" | $CLICKHOUSE_LOCAL --queries-file=01523_client_local_queries_file_parameter_tmp.sql 2>&1
 
-$CLICKHOUSE_LOCAL --queries='t' --query='t' 2>&1
-
 rm 01523_client_local_queries_file_parameter_tmp.sql

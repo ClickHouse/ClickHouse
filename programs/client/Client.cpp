@@ -483,8 +483,7 @@ private:
 
         if (config().has("query") && config().has("queries-file"))
         {
-            std::cerr << "Specify either `query` or `queries-file` option" << std::endl;
-            return Application::EXIT_OK;
+            throw Exception("Specify either `query` or `queries-file` option", ErrorCodes::BAD_ARGUMENTS);
         }
 
         std::cout << std::fixed << std::setprecision(3);
@@ -797,7 +796,7 @@ private:
 
         if (config().has("queries-file"))
         {
-            ReadBufferFromFile in(config().getRawString("queries-file"));
+            ReadBufferFromFile in(config().getString("queries-file"));
             readStringUntilEOF(text, in);
             processMultiQuery(text);
             return;
