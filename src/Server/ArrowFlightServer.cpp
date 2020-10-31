@@ -141,7 +141,7 @@ std::string ArrowFlightServer::getIpRepresentation(const Poco::Net::IPAddress & 
         default:
             throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
                             "Unsupported ip address family for address {}",
-                            address);
+                            address.toString());
     }
 }
 
