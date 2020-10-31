@@ -1383,7 +1383,10 @@ ExpressionActionsPtr ActionsDAG::linearizeActions() const
                 expressions->required_columns.push_back({node->result_name, node->result_type});
             }
             else
+            {
                 cur.skipped_input = true;
+                continue;
+            }
         }
 
         expressions->actions.push_back({node, arguments, free_position});
