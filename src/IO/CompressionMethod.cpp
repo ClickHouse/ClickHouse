@@ -6,6 +6,8 @@
 #include <IO/ZlibDeflatingWriteBuffer.h>
 #include <IO/BrotliReadBuffer.h>
 #include <IO/BrotliWriteBuffer.h>
+#include <IO/LzmaReadBuffer.h>
+#include <IO/LzmaWriteBuffer.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
@@ -28,6 +30,7 @@ std::string toContentEncodingName(CompressionMethod method)
         case CompressionMethod::Gzip:   return "gzip";
         case CompressionMethod::Zlib:   return "deflate";
         case CompressionMethod::Brotli: return "br";
+        case CompressionMethod::Xz:     return "xz";
         case CompressionMethod::None:   return "";
     }
     __builtin_unreachable();
@@ -73,6 +76,8 @@ std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
     if (method == CompressionMethod::Brotli)
         return std::make_unique<BrotliReadBuffer>(std::move(nested), buf_size, existing_memory, alignment);
 #endif
+    if (method == CompressionMethod::Xz)
+        return std::make_unique<LzmaReadBuffer>(std::move(nested), buf_size, existing_memory, alignment);
 
     if (method == CompressionMethod::None)
         return nested;
