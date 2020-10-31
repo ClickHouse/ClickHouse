@@ -145,6 +145,7 @@ ASTPtr TableElementExpr::convertToOld() const
             return expr;
         }
     }
+    __builtin_unreachable();
 }
 
 }

@@ -51,6 +51,7 @@ ASTPtr ShowCreateQuery::convertToOld() const
             return query;
         }
     }
+    __builtin_unreachable();
 }
 
 }

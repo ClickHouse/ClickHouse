@@ -104,6 +104,7 @@ ASTPtr TableExpr::convertToOld() const
             return expr;
         }
     }
+    __builtin_unreachable();
 }
 
 TableExpr::TableExpr(TableExpr::ExprType type, PtrList exprs) : INode(exprs), expr_type(type)

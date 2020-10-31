@@ -71,6 +71,7 @@ ASTPtr Literal::convertToOld() const
             case LiteralType::STRING:
                 return asString();
         }
+        __builtin_unreachable();
     };
 
     return std::make_shared<ASTLiteral>(as_field());

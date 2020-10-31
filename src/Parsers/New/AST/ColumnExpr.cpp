@@ -135,6 +135,7 @@ ASTPtr ColumnExpr::convertToOld() const
             return subquery;
         }
     }
+    __builtin_unreachable();
 }
 
 String ColumnExpr::dumpInfo() const
