@@ -13,15 +13,14 @@ namespace ErrorCodes
 extern const int UNKNOWN_EXCEPTION;
 }
 
-ArrowFlightServer::ArrowFlightServer(IServer & server_, std::string host, int port)
+ArrowFlightServer::ArrowFlightServer(IServer & server_, const Poco::Net::SocketAddress & address)
     : server(server_)
 {
-    auto parse_location_status = arrow::flight::Location::ForGrpcTcp(host, port, &location);
+    auto parse_location_status = arrow::flight::Location::ForGrpcTcp(address.host().toString(), address.port(), &location);
     if (!parse_location_status.ok())
         throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
-                        "Invalid location {}:{} for Arrow Flight Server: {}",
-                        host,
-                        port,
+                        "Invalid address {} for Arrow Flight Server: {}",
+                        address.toString(),
                         parse_location_status.ToString());
 }
 

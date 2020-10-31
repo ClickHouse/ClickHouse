@@ -1040,7 +1040,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
             create_server("arrow_flight_port", [&](UInt16 port)
             {
 //#if USE_ARROW
-                auto arrow_flight_server = std::make_unique<DB::ArrowFlightServer>(*this, listen_host, port);
+                auto address = make_socket_address(listen_host, port);
+                auto arrow_flight_server = std::make_unique<DB::ArrowFlightServer>(*this, address);
                 std::string location = arrow_flight_server->getLocation();
                 servers.emplace_back(std::move(arrow_flight_server));
                 LOG_INFO(log, "Listening for Arrow Flight compatibility protocol: ", location);
