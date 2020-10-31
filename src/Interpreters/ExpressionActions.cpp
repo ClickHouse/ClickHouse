@@ -1290,7 +1290,6 @@ ExpressionActionsPtr ActionsDAG::linearizeActions() const
         ssize_t position = -1;
         size_t num_created_parents = 0;
         bool used_in_result = false;
-        bool skipped_input = false;
     };
 
     std::vector<Data> data(nodes.size());
@@ -1330,10 +1329,6 @@ ExpressionActionsPtr ActionsDAG::linearizeActions() const
         const Node * node = stack.front();
         stack.pop();
 
-        Names argument_names;
-        for (const auto & child : node->children)
-            argument_names.emplace_back(child->result_name);
-
         auto & cur = data[reverse_index[node]];
 
         size_t free_position = expressions->num_columns;
@@ -1370,23 +1365,13 @@ ExpressionActionsPtr ActionsDAG::linearizeActions() const
 
         if (node->type == Type::INPUT)
         {
-            /// Skip adding input if it is not used by any action and not removes column.
-            bool unused_input = cur.parents.empty() && cur.used_in_result;
-            if (!unused_input || project_input)
-            {
-                /// Argument for input is special. It contains the position from required columns.
-                ExpressionActions::Argument argument;
-                argument.pos = expressions->required_columns.size();
-                argument.remove = false;
-                arguments.emplace_back(argument);
+            /// Argument for input is special. It contains the position from required columns.
+            ExpressionActions::Argument argument;
+            argument.pos = expressions->required_columns.size();
+            argument.remove = false;
+            arguments.emplace_back(argument);
 
-                expressions->required_columns.push_back({node->result_name, node->result_type});
-            }
-            else
-            {
-                cur.skipped_input = true;
-                continue;
-            }
+            expressions->required_columns.push_back({node->result_name, node->result_type});
         }
 
         expressions->actions.push_back({node, arguments, free_position});
@@ -1409,9 +1394,6 @@ ExpressionActionsPtr ActionsDAG::linearizeActions() const
     for (const auto & node : index)
     {
         auto & cur = data[reverse_index[node]];
-        if (cur.skipped_input)
-            continue;
-
         auto pos = cur.position;
 
         if (pos < 0)
