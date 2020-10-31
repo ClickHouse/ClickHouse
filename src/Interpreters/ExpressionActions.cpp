@@ -1290,6 +1290,7 @@ ExpressionActionsPtr ActionsDAG::linearizeActions() const
         ssize_t position = -1;
         size_t num_created_parents = 0;
         bool used_in_result = false;
+        bool skipped_input = false;
     };
 
     std::vector<Data> data(nodes.size());
