@@ -60,6 +60,9 @@ public:
 //    ) override;
 
 private:
+    static std::string getIpRepresentation(const Poco::Net::IPAddress & address);
+
+private:
     Poco::Logger * log = &Poco::Logger::get("ArrowFlightServer");
 
     IServer & server;

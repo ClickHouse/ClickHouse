@@ -16,7 +16,7 @@ extern const int UNKNOWN_EXCEPTION;
 ArrowFlightServer::ArrowFlightServer(IServer & server_, const Poco::Net::SocketAddress & address)
     : server(server_)
 {
-    auto parse_location_status = arrow::flight::Location::ForGrpcTcp(address.host().toString(), address.port(), &location);
+    auto parse_location_status = arrow::flight::Location::ForGrpcTcp(getIpRepresentation(address.host()), address.port(), &location);
     if (!parse_location_status.ok())
         throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
                         "Invalid address {} for Arrow Flight Server: {}",
@@ -128,6 +128,21 @@ arrow::Status ArrowFlightServer::DoGet(
 
     *data_stream = std::unique_ptr<arrow::flight::FlightDataStream>(new arrow::flight::RecordBatchStream(batch_reader));
     return arrow::Status::OK();
+}
+
+std::string ArrowFlightServer::getIpRepresentation(const Poco::Net::IPAddress & address)
+{
+    switch (address.family())
+    {
+        case Poco::Net::AddressFamily::IPv4:
+            return address.toString();
+        case Poco::Net::AddressFamily::IPv6:
+            return "[" + address.toString() + "]";
+        default:
+            throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
+                            "Unsupported ip address family for address {}",
+                            address);
+    }
 }
 
 }
