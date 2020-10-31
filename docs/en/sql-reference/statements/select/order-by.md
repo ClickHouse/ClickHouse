@@ -248,6 +248,8 @@ is identical to the query
 SELECT * FROM test_fetch ORDER BY a LIMIT 3 OFFSET 1;
 ```
 
+The `WITH TIES` option is used to return any additional rows that tie for the last place in the result set according to the `ORDER BY` clause.
+
 !!! note "Note"
     According to the standard, the `OFFSET` clause must come before the `FETCH` clause if both are present.
 	
