@@ -833,7 +833,7 @@ void DatabaseCatalog::dropTableDataTask()
 
     /// Do not schedule a task if there is no tables to drop
     if (need_reschedule)
-        (*drop_task)->scheduleAfter(reschedule_time_ms);
+        (*drop_task)->scheduleAfter(drop_reschedule_time_ms);
 }
 
 void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)

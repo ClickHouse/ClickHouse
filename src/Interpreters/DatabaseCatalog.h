@@ -233,8 +233,6 @@ private:
     void dropTableDataTask();
     void dropTableFinally(const TableMarkedAsDropped & table);
 
-    static constexpr size_t reschedule_time_ms = 100;
-
 private:
     using UUIDToDatabaseMap = std::unordered_map<UUID, DatabasePtr>;
 
@@ -266,6 +264,7 @@ private:
     std::unordered_set<UUID> tables_marked_dropped_ids;
     mutable std::mutex tables_marked_dropped_mutex;
 
+    static constexpr size_t drop_reschedule_time_ms = 1000;
     std::unique_ptr<BackgroundSchedulePoolTaskHolder> drop_task;
     static constexpr time_t default_drop_delay_sec = 8 * 60;
     time_t drop_delay_sec = default_drop_delay_sec;
