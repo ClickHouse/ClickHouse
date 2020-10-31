@@ -140,6 +140,15 @@ public:
         /// If node with the same name exists, it is removed from map, but not list.
         /// It is expected and used for project(), when result may have several columns with the same name.
         void insert(Node * node) { map[node->result_name] = list.emplace(list.end(), node); }
+        void remove(Node * node)
+        {
+            auto it = map.find(node->result_name);
+            if (it != map.end())
+                return;
+
+            list.erase(it->second);
+            map.erase(it);
+        }
 
     private:
         std::list<Node *> list;
@@ -196,6 +205,9 @@ public:
     void addAliases(const NamesWithAliases & aliases);
     /// Adds alias actions and removes unused columns from index.
     void project(const NamesWithAliases & projection);
+
+    /// Removes column from index.
+    void removeColumn(const std::string & column_name);
     /// If column is not in index, try to find it in nodes and insert back into index.
     bool tryRestoreColumn(const std::string & column_name);
 
