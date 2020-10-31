@@ -61,7 +61,8 @@ String ReplicatedMergeTreeLogEntryData::toV5ProtoTextString() const
             merge_parts->set_deduplicate(deduplicate);
 
             Protobuf::ReplicatedMergeTree::LogEntry_MergeParts_Type proto_merge_type;
-            switch (merge_type) {
+            switch (merge_type)
+            {
                 case MergeType::REGULAR:
                     proto_merge_type = Protobuf::ReplicatedMergeTree::LogEntry_MergeParts_Type_REGULAR;
                     break;
