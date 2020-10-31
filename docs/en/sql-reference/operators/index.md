@@ -169,7 +169,7 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL
 **See Also**
 
 -   [Interval](../../sql-reference/data-types/special-data-types/interval.md) data type
--   [toInterval](../../sql-reference/functions/type-conversion-functions.md#function-tointerval) type convertion functions
+-   [toInterval](../../sql-reference/functions/type-conversion-functions.md#function-tointerval) type conversion functions
 
 ## Logical Negation Operator {#logical-negation-operator}
 
