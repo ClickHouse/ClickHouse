@@ -1236,7 +1236,7 @@ void ExpressionAnalysisResult::finalize(const ExpressionActionsChain & chain, si
             auto remove_actions = std::make_shared<ActionsDAG>();
             for (const auto & column : columns)
             {
-                if (columns_to_remove.count(column.name) == 0)
+                if (columns_to_remove.count(column.name))
                 {
                     remove_actions->addInput(column);
                     remove_actions->removeColumn(column.name);
