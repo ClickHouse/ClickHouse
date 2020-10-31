@@ -121,7 +121,8 @@ void GTIDSets::update(const GTID & other)
 
 void GTIDSet::tryShirnk(GTIDSet & set, unsigned int i, GTIDSet::Interval & current)
 {
-    if (i != set.intervals.size() -1) {
+    if (i != set.intervals.size() -1)
+    {
         auto & next = set.intervals[i+1];
         if (current.end == next.start)
             set.tryMerge(i);
