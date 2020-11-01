@@ -1340,8 +1340,16 @@ ExpressionActionsPtr ActionsDAG::linearizeActions() const
     std::queue<const Node *> ready_nodes;
     std::queue<const Node *> ready_array_joins;
 
-    for (const auto & node : index)
-        data[reverse_index[node.second]].used_in_result = true;
+    if (projection.empty())
+    {
+        for (const auto & node : index)
+            data[reverse_index[node.second]].used_in_result = true;
+    }
+    else
+    {
+        for (const auto & node : projection)
+            data[reverse_index[node]].used_in_result = true;
+    }
 
     for (const auto & node : nodes)
     {
