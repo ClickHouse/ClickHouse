@@ -1150,11 +1150,11 @@ void ActionsDAG::finalize(std::vector<Node *> & required_nodes, InputsPolicy pol
     {
         for (auto & node : nodes)
             if (node.type == Type::INPUT)
-                projection.push_back(&node);
+                required_nodes.push_back(&node);
     }
 
-    removeUnusedActions(projection);
-    projection.resize(num_nodes);
+    removeUnusedActions(required_nodes);
+    required_nodes.resize(num_nodes);
 
     if (policy == InputsPolicy::DROP_ALL)
         project_input = true;
@@ -1412,7 +1412,7 @@ ExpressionActionsPtr ActionsDAG::linearizeActions() const
         }
     }
 
-    expressions->result_positions.reserve(index.size());
+    expressions->result_positions.reserve(projection.size());
 
     auto add_to_sample = [&](Node * node)
     {
@@ -1447,6 +1447,7 @@ ExpressionActionsPtr ActionsDAG::buildExpressions() const
 {
     auto cloned = clone();
     cloned->project_input = project_input;
+    cloned->projection = projection;
     auto expressions = cloned->linearizeActions();
 
     expressions->nodes.swap(cloned->nodes);
