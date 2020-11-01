@@ -962,8 +962,7 @@ static ActionsDAGPtr createProjection(const Pipe & pipe)
 {
     const auto & header = pipe.getHeader();
     auto projection = std::make_shared<ActionsDAG>(header.getNamesAndTypesList());
-    projection->finalize(header.getNames());
-    projection->projectInput();
+    projection->finalize(header.getNames(), ActionsDAG::InputsPolicy::DROP_ALL);
     return projection;
 }
 
