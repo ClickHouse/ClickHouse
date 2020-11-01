@@ -70,12 +70,10 @@ namespace ErrorCodes
 
 static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
 {
-    std::cout << "\n\n before check limits";
     if (settings.max_ast_depth)
         ast.checkDepth(settings.max_ast_depth);
     if (settings.max_ast_elements)
         ast.checkSize(settings.max_ast_elements);
-    std::cout << "\n\n after check limits";
 }
 
 

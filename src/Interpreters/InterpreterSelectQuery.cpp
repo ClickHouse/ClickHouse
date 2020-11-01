@@ -119,7 +119,6 @@ String InterpreterSelectQuery::generateFilterActions(
         ParserExpression expr_parser;
         expr_list->children.push_back(parseQuery(expr_parser, column_str, 0, context->getSettingsRef().max_parser_depth));
     }
-
     select_ast->setExpression(ASTSelectQuery::Expression::TABLES, std::make_shared<ASTTablesInSelectQuery>());
     auto tables = select_ast->tables();
     auto tables_elem = std::make_shared<ASTTablesInSelectQueryElement>();
@@ -215,10 +214,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const SelectQueryOptions & options_,
     const Names & required_result_column_names,
     const StorageMetadataPtr & metadata_snapshot_)
-    : options(options_)
     /// NOTE: the query almost always should be cloned because it will be modified during analysis.
-    , query_ptr(options.modify_inplace ? query_ptr_ : query_ptr_->clone())
-    , context(std::make_shared<Context>(context_))
+    : IInterpreterUnionOrSelectQuery(options_.modify_inplace ? query_ptr_ : query_ptr_->clone(), context_, options_)
     , storage(storage_)
     , input(input_)
     , input_pipe(std::move(input_pipe_))
@@ -462,12 +459,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     ///  null non-const columns to avoid useless memory allocations. However, a valid block sample
     ///  requires all columns to be of size 0, thus we need to sanitize the block here.
     sanitizeBlock(result_header, true);
-}
-
-
-Block InterpreterSelectQuery::getSampleBlock()
-{
-    return result_header;
 }
 
 void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
