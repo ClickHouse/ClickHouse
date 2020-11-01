@@ -289,6 +289,47 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 Disabled by default.
 
+## input_format_tsv_enum_as_number {#settings-input_format_tsv_enum_as_number}
+
+Включает или отключает парсинг значений перечислений как идентификаторов перечислений для входного формата TSV.
+
+Возможные значения:
+
+-   0 — выключена.
+-   1 — включена.
+
+Значение по умолчанию: 0.
+
+**Пример**
+
+Запрос:
+
+```sql
+DROP TABLE IF EXISTS table_with_enum_column_for_tsv_insert;
+
+CREATE TABLE table_with_enum_column_for_tsv_insert (Id Int32,Value Enum('ef' = 1, 'es' = 2)) ENGINE=Memory() FORMAT TabSeparatedRaw;
+
+SET input_format_tsv_enum_as_number = 1;
+
+INSERT INTO table_with_enum_column_for_tsv_insert VALUES (102, 2);
+INSERT INTO table_with_enum_column_for_tsv_insert VALUES (103, 1);
+SELECT * FROM table_with_enum_column_for_tsv_insert;
+
+SET input_format_tsv_enum_as_number = 0;
+DROP TABLE IF EXISTS table_with_enum_column_for_tsv_insert;
+```
+
+Результат:
+
+```text
+┌──Id─┬─Value─┐
+│ 102 │ es    │
+└─────┴───────┘
+┌──Id─┬─Value─┐
+│ 103 │ ef    │
+└─────┴───────┘
+```
+
 ## input_format_null_as_default {#settings-input-format-null-as-default}
 
 Включает или отключает использование значений по умолчанию в случаях, когда во входных данных содержится `NULL`, но тип соответствующего столбца не `Nullable(T)` (для текстовых форматов).
