@@ -202,7 +202,7 @@ Version de débogage de `jemalloc` est utilisé pour la construction de débogag
 Clickhouse fuzzing est implémenté à la fois en utilisant [libFuzzer](https://llvm.org/docs/LibFuzzer.html) et des requêtes SQL aléatoires.
 Tous les tests de fuzz doivent être effectués avec des désinfectants (adresse et indéfini).
 
-LibFuzzer est utilisé pour les tests de fuzz isolés du code de la bibliothèque. Les Fuzzers sont implémentés dans le cadre du code de test et ont “\_fuzzer” nom postfixes.
+LibFuzzer est utilisé pour les tests de fuzz isolés du code de la bibliothèque. Les Fuzzers sont implémentés dans le cadre du code de test et ont “_fuzzer” nom postfixes.
 Exemple Fuzzer peut être trouvé à `src/Parsers/tests/lexer_fuzzer.cpp`. Les configs, dictionnaires et corpus spécifiques à LibFuzzer sont stockés à `tests/fuzz`.
 Nous vous encourageons à écrire des tests fuzz pour chaque fonctionnalité qui gère l'entrée de l'utilisateur.
 

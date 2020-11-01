@@ -7,7 +7,7 @@ toc_title: Build on Linux
 
 Supported platforms:
 
--   x86\_64
+-   x86_64
 -   AArch64
 -   Power9 (experimental)
 

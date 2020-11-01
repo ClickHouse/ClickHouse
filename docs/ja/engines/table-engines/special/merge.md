@@ -31,7 +31,7 @@ Regular expressions — [re2](https://github.com/google/re2) (PCREのサブセ�
 
 例2:
 
-古いテーブル（WatchLog\_old）があり、データを新しいテーブル（WatchLog\_new）に移動せずにパーティション分割を変更することにしたとしましょう。
+古いテーブル（WatchLog_old）があり、データを新しいテーブル（WatchLog_new）に移動せずにパーティション分割を変更することにしたとしましょう。
 
 ``` sql
 CREATE TABLE WatchLog_old(date Date, UserId Int64, EventType String, Cnt UInt64)

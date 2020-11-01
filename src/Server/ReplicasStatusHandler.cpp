@@ -43,8 +43,8 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
         /// Iterate through all the replicated tables.
         for (const auto & db : databases)
         {
-            /// Lazy database can not contain replicated tables
-            if (db.second->getEngineName() == "Lazy")
+            /// Check if database can contain replicated tables
+            if (!db.second->canContainMergeTreeTables())
                 continue;
 
             for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())

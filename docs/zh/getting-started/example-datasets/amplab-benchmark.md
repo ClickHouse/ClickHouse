@@ -2,7 +2,7 @@
 
 参考 https://amplab.cs.berkeley.edu/benchmark/
 
-需要您在https://aws.amazon.com注册一个免费的账号。注册时需要您提供信用卡、邮箱、电话等信息。之后可以在https://console.aws.amazon.com/iam/home?nc2=h\_m\_sc\#security\_credential获取新的访问密钥
+需要您在https://aws.amazon.com注册一个免费的账号。注册时需要您提供信用卡、邮箱、电话等信息。之后可以在https://console.aws.amazon.com/iam/home?nc2=h_m_sc#security_credential获取新的访问密钥
 
 在控制台运行以下命令：
 

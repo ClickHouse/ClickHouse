@@ -226,6 +226,11 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
 
     IMergeSelector::PartsRanges parts_ranges;
 
+    StoragePolicyPtr storage_policy = data.getStoragePolicy();
+    /// Volumes with stopped merges are extremely rare situation.
+    /// Check it once and don't check each part (this is bad for performance).
+    bool has_volumes_with_disabled_merges = storage_policy->hasAnyVolumeWithDisabledMerges();
+
     const String * prev_partition_id = nullptr;
     /// Previous part only in boundaries of partition frame
     const MergeTreeData::DataPartPtr * prev_part = nullptr;
@@ -275,6 +280,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         part_info.data = &part;
         part_info.ttl_infos = &part->ttl_infos;
         part_info.compression_codec_desc = part->default_codec->getFullCodecDesc();
+        part_info.shall_participate_in_merges = has_volumes_with_disabled_merges ? part->shallParticipateInMerges(storage_policy) : true;
 
         parts_ranges.back().emplace_back(part_info);
 
@@ -292,7 +298,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
 
     if (metadata_snapshot->hasAnyTTL() && merge_with_ttl_allowed && !ttl_merges_blocker.isCancelled())
     {
-        /// TTL delete is prefered to recompression
+        /// TTL delete is preferred to recompression
         TTLDeleteMergeSelector delete_ttl_selector(
                 next_delete_ttl_merge_times_by_partition,
                 current_time,
@@ -667,7 +673,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         merging_columns,
         merging_column_names);
 
-    auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + future_part.name, disk);
+    auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + future_part.name, disk, 0);
     MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(
         future_part.name,
         future_part.type,
@@ -704,10 +710,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     size_t sum_input_rows_upper_bound = merge_entry->total_rows_count;
     size_t sum_compressed_bytes_upper_bound = merge_entry->total_size_bytes_compressed;
-    MergeAlgorithm merge_alg = chooseMergeAlgorithm(parts, sum_input_rows_upper_bound, gathering_columns, deduplicate, need_remove_expired_values);
-    merge_entry->merge_algorithm = merge_alg;
+    MergeAlgorithm chosen_merge_algorithm = chooseMergeAlgorithm(parts, sum_input_rows_upper_bound, gathering_columns, deduplicate, need_remove_expired_values);
+    merge_entry->merge_algorithm.store(chosen_merge_algorithm, std::memory_order_relaxed);
 
-    LOG_DEBUG(log, "Selected MergeAlgorithm: {}", toString(merge_alg));
+    LOG_DEBUG(log, "Selected MergeAlgorithm: {}", toString(chosen_merge_algorithm));
 
     /// Note: this is done before creating input streams, because otherwise data.data_parts_mutex
     /// (which is locked in data.getTotalActiveSizeInBytes())
@@ -722,7 +728,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     std::unique_ptr<WriteBuffer> rows_sources_write_buf;
     std::optional<ColumnSizeEstimator> column_sizes;
 
-    if (merge_alg == MergeAlgorithm::Vertical)
+    if (chosen_merge_algorithm == MergeAlgorithm::Vertical)
     {
         tmp_disk->createDirectories(new_part_tmp_path);
         rows_sources_file_path = new_part_tmp_path + "rows_sources";
@@ -812,7 +818,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     ProcessorPtr merged_transform;
 
     /// If merge is vertical we cannot calculate it
-    bool blocks_are_granules_size = (merge_alg == MergeAlgorithm::Vertical);
+    bool blocks_are_granules_size = (chosen_merge_algorithm == MergeAlgorithm::Vertical);
 
     UInt64 merge_block_size = data_settings->merge_max_block_size;
     switch (data.merging_params.mode)
@@ -911,7 +917,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         {
             /// The same progress from merge_entry could be used for both algorithms (it should be more accurate)
             /// But now we are using inaccurate row-based estimation in Horizontal case for backward compatibility
-            Float64 progress = (merge_alg == MergeAlgorithm::Horizontal)
+            Float64 progress = (chosen_merge_algorithm == MergeAlgorithm::Horizontal)
                 ? std::min(1., 1. * rows_written / sum_input_rows_upper_bound)
                 : std::min(1., merge_entry->progress.load(std::memory_order_relaxed));
 
@@ -932,7 +938,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     MergeTreeData::DataPart::Checksums checksums_gathered_columns;
 
     /// Gather ordinary columns
-    if (merge_alg == MergeAlgorithm::Vertical)
+    if (chosen_merge_algorithm == MergeAlgorithm::Vertical)
     {
         size_t sum_input_rows_exact = merge_entry->rows_read;
         merge_entry->columns_written = merging_column_names.size();
@@ -1048,7 +1054,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             ReadableSize(merge_entry->bytes_read_uncompressed / elapsed_seconds));
     }
 
-    if (merge_alg != MergeAlgorithm::Vertical)
+    if (chosen_merge_algorithm != MergeAlgorithm::Vertical)
         to.writeSuffixAndFinalizePart(new_data_part, need_sync);
     else
         to.writeSuffixAndFinalizePart(new_data_part, need_sync, &storage_columns, &checksums_gathered_columns);
@@ -1127,7 +1133,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         in->setProgressCallback(MergeProgressCallback(merge_entry, watch_prev_elapsed, stage_progress));
     }
 
-    auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + future_part.name, space_reservation->getDisk());
+    auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + future_part.name, space_reservation->getDisk(), 0);
     auto new_data_part = data.createPart(
         future_part.name, future_part.type, future_part.part_info, single_disk_volume, "tmp_mut_" + future_part.name);
 

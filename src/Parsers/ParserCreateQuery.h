@@ -391,6 +391,7 @@ protected:
   *     ...
   *     INDEX name1 expr TYPE type1(args) GRANULARITY value,
   *     ...
+  *     PRIMARY KEY expr
   * ) ENGINE = engine
   *
   * Or:

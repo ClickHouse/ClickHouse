@@ -202,7 +202,7 @@ Versión de depuración de `jemalloc` se utiliza para la compilación de depurac
 ClickHouse fuzzing se implementa tanto usando [LibFuzzer](https://llvm.org/docs/LibFuzzer.html) y consultas SQL aleatorias.
 Todas las pruebas de fuzz deben realizarse con desinfectantes (Dirección y Undefined).
 
-LibFuzzer se usa para pruebas de fuzz aisladas del código de la biblioteca. Fuzzers se implementan como parte del código de prueba y tienen “\_fuzzer” nombre postfixes.
+LibFuzzer se usa para pruebas de fuzz aisladas del código de la biblioteca. Fuzzers se implementan como parte del código de prueba y tienen “_fuzzer” nombre postfixes.
 El ejemplo de Fuzzer se puede encontrar en `src/Parsers/tests/lexer_fuzzer.cpp`. Las configuraciones, diccionarios y corpus específicos de LibFuzzer se almacenan en `tests/fuzz`.
 Le recomendamos que escriba pruebas fuzz para cada funcionalidad que maneje la entrada del usuario.
 

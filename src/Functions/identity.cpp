@@ -31,9 +31,9 @@ public:
         return arguments.front();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        block[result].column = block[arguments.front()].column;
+        return arguments.front().column;
     }
 };
 

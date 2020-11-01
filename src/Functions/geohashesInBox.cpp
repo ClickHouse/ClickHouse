@@ -159,19 +159,21 @@ public:
         result = std::move(col_res);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const IColumn * lon_min = block[arguments[0]].column.get();
-        const IColumn * lat_min = block[arguments[1]].column.get();
-        const IColumn * lon_max = block[arguments[2]].column.get();
-        const IColumn * lat_max = block[arguments[3]].column.get();
-        const IColumn * precision = block[arguments[4]].column.get();
-        ColumnPtr & res = block[result].column;
+        const IColumn * lon_min = arguments[0].column.get();
+        const IColumn * lat_min = arguments[1].column.get();
+        const IColumn * lon_max = arguments[2].column.get();
+        const IColumn * lat_max = arguments[3].column.get();
+        const IColumn * precision = arguments[4].column.get();
+        ColumnPtr res;
 
         if (checkColumn<ColumnVector<Float32>>(lon_min))
             execute<Float32, UInt8>(lon_min, lat_min, lon_max, lat_max, precision, res, input_rows_count);
         else
             execute<Float64, UInt8>(lon_min, lat_min, lon_max, lat_max, precision, res, input_rows_count);
+
+        return res;
     }
 };
 
