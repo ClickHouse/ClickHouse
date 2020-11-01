@@ -31,10 +31,6 @@ def cleanup_after_test():
 
 
 def test_smoke():
-    # Test has known possible deadlocks
-    # TODO Fix as soon as possible
-    if instance.is_built_with_thread_sanitizer():
-        return
     instance.query("CREATE USER A")
     assert "Not enough privileges" in instance.query_and_get_error("SELECT * FROM test.table", user='A')
 
@@ -46,10 +42,6 @@ def test_smoke():
 
 
 def test_grant_option():
-    # Test has known possible deadlocks
-    # TODO Fix as soon as possible
-    if instance.is_built_with_thread_sanitizer():
-        return
     instance.query("CREATE USER A")
     instance.query("CREATE USER B")
 
@@ -65,10 +57,6 @@ def test_grant_option():
 
 
 def test_revoke_requires_grant_option():
-    # Test has known possible deadlocks
-    # TODO Fix as soon as possible
-    if instance.is_built_with_thread_sanitizer():
-        return
     instance.query("CREATE USER A")
     instance.query("CREATE USER B")
 
@@ -119,10 +107,6 @@ def test_revoke_requires_grant_option():
 
 
 def test_grant_all_on_table():
-    # Test has known possible deadlocks
-    # TODO Fix as soon as possible
-    if instance.is_built_with_thread_sanitizer():
-        return
     instance.query("CREATE USER A, B")
     instance.query("GRANT ALL ON test.table TO A WITH GRANT OPTION")
     instance.query("GRANT ALL ON test.table TO B", user='A')
@@ -133,10 +117,6 @@ def test_grant_all_on_table():
 
 
 def test_implicit_show_grants():
-    # Test has known possible deadlocks
-    # TODO Fix as soon as possible
-    if instance.is_built_with_thread_sanitizer():
-        return
     instance.query("CREATE USER A")
     assert instance.query("select count() FROM system.databases WHERE name='test'", user="A") == "0\n"
     assert instance.query("select count() FROM system.tables WHERE database='test' AND name='table'", user="A") == "0\n"
@@ -179,10 +159,6 @@ def test_implicit_show_grants():
 
 
 def test_implicit_create_view_grant():
-    # Test has known possible deadlocks
-    # TODO Fix as soon as possible
-    if instance.is_built_with_thread_sanitizer():
-        return
     instance.query("CREATE USER A")
     expected_error = "Not enough privileges"
     assert expected_error in instance.query_and_get_error("CREATE VIEW test.view_1 AS SELECT 1", user="A")
@@ -197,10 +173,6 @@ def test_implicit_create_view_grant():
 
 
 def test_implicit_create_temporary_table_grant():
-    # Test has known possible deadlocks
-    # TODO Fix as soon as possible
-    if instance.is_built_with_thread_sanitizer():
-        return
     instance.query("CREATE USER A")
     expected_error = "Not enough privileges"
     assert expected_error in instance.query_and_get_error("CREATE TEMPORARY TABLE tmp(name String)", user="A")
@@ -213,10 +185,6 @@ def test_implicit_create_temporary_table_grant():
 
 
 def test_introspection():
-    # Test has known possible deadlocks
-    # TODO Fix as soon as possible
-    if instance.is_built_with_thread_sanitizer():
-        return
     instance.query("CREATE USER A")
     instance.query("CREATE USER B")
     instance.query('GRANT SELECT ON test.table TO A')
@@ -263,10 +231,6 @@ def test_introspection():
 
 
 def test_current_database():
-    # Test has known possible deadlocks
-    # TODO Fix as soon as possible
-    if instance.is_built_with_thread_sanitizer():
-        return
     instance.query("CREATE USER A")
     instance.query("GRANT SELECT ON table TO A", database="test")
 

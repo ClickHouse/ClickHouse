@@ -39,7 +39,9 @@ struct QueryThreadLogElement
     UInt64 thread_id{};
     UInt64 master_thread_id{};
 
+    String current_database;
     String query;
+
     ClientInfo client_info;
 
     std::shared_ptr<ProfileEvents::Counters> profile_counters;

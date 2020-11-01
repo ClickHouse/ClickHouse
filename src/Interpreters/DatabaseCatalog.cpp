@@ -13,8 +13,15 @@
 #include <IO/ReadHelpers.h>
 #include <Poco/DirectoryIterator.h>
 #include <Common/renameat2.h>
+#include <Common/CurrentMetrics.h>
 
 #include <filesystem>
+
+
+namespace CurrentMetrics
+{
+    extern const Metric TablesToDropQueueSize;
+}
 
 namespace DB
 {
@@ -155,7 +162,17 @@ void DatabaseCatalog::shutdownImpl()
     tables_marked_dropped.clear();
 
     std::lock_guard lock(databases_mutex);
-    assert(std::find_if_not(uuid_map.begin(), uuid_map.end(), [](const auto & elem) { return elem.map.empty(); }) == uuid_map.end());
+    assert(std::find_if(uuid_map.begin(), uuid_map.end(), [](const auto & elem)
+    {
+        /// Ensure that all UUID mappings are emtpy (i.e. all mappings contain nullptr instead of a pointer to storage)
+        const auto & not_empty_mapping = [] (const auto & mapping)
+        {
+            auto & table = mapping.second.second;
+            return table;
+        };
+        auto it = std::find_if(elem.map.begin(), elem.map.end(), not_empty_mapping);
+        return it != elem.map.end();
+    }) == uuid_map.end());
     databases.clear();
     db_uuid_map.clear();
     view_dependencies.clear();
@@ -411,14 +428,40 @@ DatabasePtr DatabaseCatalog::getSystemDatabase() const
     return getDatabase(SYSTEM_DATABASE);
 }
 
-void DatabaseCatalog::addUUIDMapping(const UUID & uuid, DatabasePtr database, StoragePtr table)
+void DatabaseCatalog::addUUIDMapping(const UUID & uuid)
+{
+    addUUIDMapping(uuid, nullptr, nullptr);
+}
+
+void DatabaseCatalog::addUUIDMapping(const UUID & uuid, const DatabasePtr & database, const StoragePtr & table)
 {
     assert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
+    assert((database && table) || (!database && !table));
     UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
     std::lock_guard lock{map_part.mutex};
-    auto [_, inserted] = map_part.map.try_emplace(uuid, std::move(database), std::move(table));
-    if (!inserted)
-        throw Exception("Mapping for table with UUID=" + toString(uuid) + " already exists", ErrorCodes::LOGICAL_ERROR);
+    auto [it, inserted] = map_part.map.try_emplace(uuid, database, table);
+    if (inserted)
+        return;
+
+    auto & prev_database = it->second.first;
+    auto & prev_table = it->second.second;
+    assert((prev_database && prev_table) || (!prev_database && !prev_table));
+
+    if (!prev_table && table)
+    {
+        /// It's empty mapping, it was created to "lock" UUID and prevent collision. Just update it.
+        prev_database = database;
+        prev_table = table;
+        return;
+    }
+
+    /// We are trying to replace existing mapping (prev_table != nullptr), it's logical error
+    if (table)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapping for table with UUID={} already exists", toString(uuid));
+    /// Normally this should never happen, but it's possible when the same UUIDs are explicitly specified in different CREATE queries,
+    /// so it's not LOGICAL_ERROR
+    throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Mapping for table with UUID={} already exists. It happened due to UUID collision, "
+                    "most likely because some not random UUIDs were manually specified in CREATE queries.", toString(uuid));
 }
 
 void DatabaseCatalog::removeUUIDMapping(const UUID & uuid)
@@ -426,19 +469,35 @@ void DatabaseCatalog::removeUUIDMapping(const UUID & uuid)
     assert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
     UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
     std::lock_guard lock{map_part.mutex};
+    auto it = map_part.map.find(uuid);
+    if (it == map_part.map.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapping for table with UUID={} doesn't exist", toString(uuid));
+    it->second = {};
+}
+
+void DatabaseCatalog::removeUUIDMappingFinally(const UUID & uuid)
+{
+    assert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
+    UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
+    std::lock_guard lock{map_part.mutex};
     if (!map_part.map.erase(uuid))
-        throw Exception("Mapping for table with UUID=" + toString(uuid) + " doesn't exist", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapping for table with UUID={} doesn't exist", toString(uuid));
 }
 
 void DatabaseCatalog::updateUUIDMapping(const UUID & uuid, DatabasePtr database, StoragePtr table)
 {
     assert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
+    assert(database && table);
     UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
     std::lock_guard lock{map_part.mutex};
     auto it = map_part.map.find(uuid);
     if (it == map_part.map.end())
-        throw Exception("Mapping for table with UUID=" + toString(uuid) + " doesn't exist", ErrorCodes::LOGICAL_ERROR);
-    it->second = std::make_pair(std::move(database), std::move(table));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapping for table with UUID={} doesn't exist", toString(uuid));
+    auto & prev_database = it->second.first;
+    auto & prev_table = it->second.second;
+    assert(prev_database && prev_table);
+    prev_database = std::move(database);
+    prev_table = std::move(table);
 }
 
 std::unique_ptr<DatabaseCatalog> DatabaseCatalog::database_catalog;
@@ -530,7 +589,7 @@ std::unique_ptr<DDLGuard> DatabaseCatalog::getDDLGuard(const String & database, 
     std::unique_lock lock(ddl_guards_mutex);
     auto db_guard_iter = ddl_guards.try_emplace(database).first;
     DatabaseGuard & db_guard = db_guard_iter->second;
-    return std::make_unique<DDLGuard>(db_guard.first, db_guard.second, std::move(lock), table);
+    return std::make_unique<DDLGuard>(db_guard.first, db_guard.second, std::move(lock), table, database);
 }
 
 std::unique_lock<std::shared_mutex> DatabaseCatalog::getExclusiveDDLGuardForDatabase(const String & database)
@@ -629,6 +688,8 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
         dropped_metadata.emplace(std::move(full_path), std::move(dropped_id));
     }
 
+    LOG_INFO(log, "Found {} partially dropped tables. Will load them and retry removal.", dropped_metadata.size());
+
     ThreadPool pool;
     for (const auto & elem : dropped_metadata)
     {
@@ -693,6 +754,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
             LOG_WARNING(log, "Cannot parse metadata of partially dropped table {} from {}. Will remove metadata file and data directory. Garbage may be left in /store directory and ZooKeeper.", table_id.getNameForLogs(), dropped_metadata_path);
         }
 
+        addUUIDMapping(table_id.uuid);
         drop_time = Poco::File(dropped_metadata_path).getLastModified().epochTime();
     }
 
@@ -702,6 +764,8 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
     else
         tables_marked_dropped.push_back({table_id, table, dropped_metadata_path, drop_time});
     tables_marked_dropped_ids.insert(table_id.uuid);
+    CurrentMetrics::add(CurrentMetrics::TablesToDropQueueSize, 1);
+
     /// If list of dropped tables was empty, start a drop task
     if (drop_task && tables_marked_dropped.size() == 1)
         (*drop_task)->schedule();
@@ -729,6 +793,10 @@ void DatabaseCatalog::dropTableDataTask()
             table = std::move(*it);
             LOG_INFO(log, "Will try drop {}", table.table_id.getNameForLogs());
             tables_marked_dropped.erase(it);
+        }
+        else
+        {
+            LOG_TRACE(log, "Not found any suitable tables to drop, still have {} tables in drop queue", tables_marked_dropped.size());
         }
         need_reschedule = !tables_marked_dropped.empty();
     }
@@ -768,7 +836,7 @@ void DatabaseCatalog::dropTableDataTask()
         (*drop_task)->scheduleAfter(reschedule_time_ms);
 }
 
-void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table) const
+void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
 {
     if (table.table)
     {
@@ -787,6 +855,9 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table) const
 
     LOG_INFO(log, "Removing metadata {} of dropped table {}", table.metadata_path, table.table_id.getNameForLogs());
     Poco::File(table.metadata_path).remove();
+
+    removeUUIDMappingFinally(table.table_id.uuid);
+    CurrentMetrics::sub(CurrentMetrics::TablesToDropQueueSize, 1);
 }
 
 String DatabaseCatalog::getPathForUUID(const UUID & uuid)
@@ -824,6 +895,8 @@ void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid)
 {
     if (uuid == UUIDHelpers::Nil)
         return;
+
+    LOG_DEBUG(log, "Waiting for table {} to be finally dropped", toString(uuid));
     std::unique_lock lock{tables_marked_dropped_mutex};
     wait_table_finally_dropped.wait(lock, [&]()
     {
@@ -832,7 +905,7 @@ void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid)
 }
 
 
-DDLGuard::DDLGuard(Map & map_, std::shared_mutex & db_mutex_, std::unique_lock<std::mutex> guards_lock_, const String & elem)
+DDLGuard::DDLGuard(Map & map_, std::shared_mutex & db_mutex_, std::unique_lock<std::mutex> guards_lock_, const String & elem, const String & database_name)
         : map(map_), db_mutex(db_mutex_), guards_lock(std::move(guards_lock_))
 {
     it = map.emplace(elem, Entry{std::make_unique<std::mutex>(), 0}).first;
@@ -841,14 +914,19 @@ DDLGuard::DDLGuard(Map & map_, std::shared_mutex & db_mutex_, std::unique_lock<s
     table_lock = std::unique_lock(*it->second.mutex);
     bool is_database = elem.empty();
     if (!is_database)
-        db_mutex.lock_shared();
+    {
+
+        bool locked_database_for_read = db_mutex.try_lock_shared();
+        if (!locked_database_for_read)
+        {
+            removeTableLock();
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} is currently dropped or renamed", database_name);
+        }
+    }
 }
 
-DDLGuard::~DDLGuard()
+void DDLGuard::removeTableLock()
 {
-    bool is_database = it->first.empty();
-    if (!is_database)
-        db_mutex.unlock_shared();
     guards_lock.lock();
     --it->second.counter;
     if (!it->second.counter)
@@ -856,6 +934,14 @@ DDLGuard::~DDLGuard()
         table_lock.unlock();
         map.erase(it);
     }
+}
+
+DDLGuard::~DDLGuard()
+{
+    bool is_database = it->first.empty();
+    if (!is_database)
+        db_mutex.unlock_shared();
+    removeTableLock();
 }
 
 }

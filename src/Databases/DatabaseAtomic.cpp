@@ -115,6 +115,10 @@ void DatabaseAtomic::dropTable(const Context &, const String & table_name, bool 
         table_name_to_path.erase(table_name);
     }
     tryRemoveSymlink(table_name);
+    /// Remove the inner table (if any) to avoid deadlock
+    /// (due to attempt to execute DROP from the worker thread)
+    if (auto * mv = dynamic_cast<StorageMaterializedView *>(table.get()))
+        mv->dropInnerTable(no_delay);
     /// Notify DatabaseCatalog that table was dropped. It will remove table data in background.
     /// Cleanup is performed outside of database to allow easily DROP DATABASE without waiting for cleanup to complete.
     DatabaseCatalog::instance().enqueueDroppedTableCleanup(table->getStorageID(), table, table_metadata_path_drop, no_delay);
@@ -257,21 +261,29 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
 {
     DetachedTables not_in_use;
     auto table_data_path = getTableDataPath(query);
+    bool locked_uuid = false;
     try
     {
         std::unique_lock lock{mutex};
         if (query.database != database_name)
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed to `{}`, cannot create table in `{}`",
                             database_name, query.database);
+        /// Do some checks before renaming file from .tmp to .sql
         not_in_use = cleanupDetachedTables();
         assertDetachedTableNotInUse(query.uuid);
-        renameNoReplace(table_metadata_tmp_path, table_metadata_path);
+        /// We will get en exception if some table with the same UUID exists (even if it's detached table or table from another database)
+        DatabaseCatalog::instance().addUUIDMapping(query.uuid);
+        locked_uuid = true;
+        /// It throws if `table_metadata_path` already exists (it's possible if table was detached)
+        renameNoReplace(table_metadata_tmp_path, table_metadata_path);  /// Commit point (a sort of)
         attachTableUnlocked(query.table, table, lock);   /// Should never throw
         table_name_to_path.emplace(query.table, table_data_path);
     }
     catch (...)
     {
         Poco::File(table_metadata_tmp_path).remove();
+        if (locked_uuid)
+            DatabaseCatalog::instance().removeUUIDMappingFinally(query.uuid);
         throw;
     }
     tryCreateSymlink(query.table, table_data_path);

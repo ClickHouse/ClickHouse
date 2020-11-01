@@ -1,7 +1,8 @@
 #include <map>
-#include <boost/algorithm/string.hpp>
 #include <cstdlib>
+#include <stdio.h>
 #include <iostream>
+#include <string>
 
 #include <pcg_random.hpp>
 #include <Core/Field.h>
@@ -16,6 +17,10 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 
+#include <boost/algorithm/string.hpp>
+#include <boost/program_options.hpp>
+
+namespace po = boost::program_options;
 
 using ColumnType = uint32_t;
 using TableAndColumn = std::pair<std::string, std::string>;
@@ -617,7 +622,7 @@ FuncRet arrayJoinFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
         {
             auto ident = std::dynamic_pointer_cast<DB::ASTIdentifier>(arg);
             if (ident)
-                indents.insert(ident->name);
+                indents.insert(ident->name());
         }
         for (const auto & indent : indents)
         {
@@ -649,7 +654,7 @@ FuncRet inFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             auto ident = std::dynamic_pointer_cast<DB::ASTIdentifier>(arg);
             if (ident)
             {
-                indents.insert(ident->name);
+                indents.insert(ident->name());
             }
             auto literal = std::dynamic_pointer_cast<DB::ASTLiteral>(arg);
             if (literal)
@@ -729,7 +734,7 @@ FuncRet arrayFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             if (ident)
             {
                 no_indent = false;
-                indents.insert(ident->name);
+                indents.insert(ident->name());
             }
             auto literal = std::dynamic_pointer_cast<DB::ASTLiteral>(arg);
             if (literal)
@@ -779,7 +784,7 @@ FuncRet arithmeticFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             if (ident)
             {
                 no_indent = false;
-                indents.insert(ident->name);
+                indents.insert(ident->name());
             }
             auto literal = std::dynamic_pointer_cast<DB::ASTLiteral>(arg);
             if (literal)
@@ -843,7 +848,7 @@ FuncRet likeFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
         {
             auto ident = std::dynamic_pointer_cast<DB::ASTIdentifier>(arg);
             if (ident)
-                indents.insert(ident->name);
+                indents.insert(ident->name());
             auto literal = std::dynamic_pointer_cast<DB::ASTLiteral>(arg);
             if (literal)
             {
@@ -900,7 +905,7 @@ FuncRet simpleFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             if (ident)
             {
                 no_indent = false;
-                indents.insert(ident->name);
+                indents.insert(ident->name());
             }
             auto literal = std::dynamic_pointer_cast<DB::ASTLiteral>(arg);
             if (literal)
@@ -1041,7 +1046,7 @@ std::set<std::string> getIndent(DB::ASTPtr ch)
     std::set<std::string> ret = {};
     auto x = std::dynamic_pointer_cast<DB::ASTIdentifier>(ch);
     if (x)
-        ret.insert(x->name);
+        ret.insert(x->name());
     for (const auto & child : (*ch).children)
     {
         auto child_ind = getIndent(child);
@@ -1264,8 +1269,41 @@ TableList getTablesFromSelect(std::vector<std::string> queries)
     return result;
 }
 
-int main(int, char **)
+int main(int argc, const char *argv[])
 {
+    try
+    {
+        po::options_description desc("Allowed options");
+        desc.add_options()
+            ("help,h", "Display greeting and allowed options.")
+            ("input,i", po::value<std::string>(), "Input filename.")
+            ("output,o", po::value<std::string>(), "Output filename.");
+
+        po::variables_map vm;
+        po::store(po::parse_command_line(argc, argv, desc), vm);
+        po::notify(vm);
+
+        if (vm.count("help") || vm.count("h"))
+        {
+            std::cout << "Hello! It is datasets generator for ClickHouse's queries." << std::endl;
+            std::cout << "Put some query as an input and it will produce queries for table creating and filling." << std::endl;
+            std::cout << "After that your query could be executed on this tables." << std::endl;
+            std::cout << desc << std::endl;
+            return 1;
+        }
+        if (vm.count("input"))
+            freopen(vm["input"].as<std::string>().c_str(), "r", stdin);
+        if (vm.count("output"))
+            freopen(vm["output"].as<std::string>().c_str(), "w", stdout);
+        if (vm.empty())
+            std::cout << "Copy your queries (with semicolons) here, press Enter and Ctrl+D." << std::endl;
+    }
+    catch (...)
+    {
+        std::cerr << "Got error while parse command line arguments: " << DB::getCurrentExceptionMessage(true) << std::endl;
+        throw;
+    }
+
     handlers["plus"] = arithmeticFunc;
     handlers["minus"] = arithmeticFunc;
     handlers["like"] = likeFunc;

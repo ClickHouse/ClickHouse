@@ -31,12 +31,12 @@ La función también funciona para matrices.
 Devuelve la longitud de una cadena en puntos de código Unicode (no en caracteres), suponiendo que la cadena contiene un conjunto de bytes que componen texto codificado en UTF-8. Si no se cumple esta suposición, devuelve algún resultado (no arroja una excepción).
 El tipo de resultado es UInt64.
 
-## char\_length, CHAR\_LENGTH {#char-length}
+## char_length, CHAR_LENGTH {#char-length}
 
 Devuelve la longitud de una cadena en puntos de código Unicode (no en caracteres), suponiendo que la cadena contiene un conjunto de bytes que componen texto codificado en UTF-8. Si no se cumple esta suposición, devuelve algún resultado (no arroja una excepción).
 El tipo de resultado es UInt64.
 
-## character\_length, CHARACTER\_LENGTH {#character-length}
+## character_length, CHARACTER_LENGTH {#character-length}
 
 Devuelve la longitud de una cadena en puntos de código Unicode (no en caracteres), suponiendo que la cadena contiene un conjunto de bytes que componen texto codificado en UTF-8. Si no se cumple esta suposición, devuelve algún resultado (no arroja una excepción).
 El tipo de resultado es UInt64.
@@ -77,7 +77,7 @@ toValidUTF8( input_string )
 
 Parámetros:
 
--   input\_string — Any set of bytes represented as the [Cadena](../../sql-reference/data-types/string.md) objeto de tipo de datos.
+-   input_string — Any set of bytes represented as the [Cadena](../../sql-reference/data-types/string.md) objeto de tipo de datos.
 
 Valor devuelto: cadena UTF-8 válida.
 
