@@ -2161,7 +2161,7 @@ Possible values:
 
 Default value: `0`.
 
-## disable_set_and_join_persistency {#dusable_set_and_join_persistency}
+## persistent {#persistent}
 
 Disables persistency for StorageSet and StorageJoin. 
 
