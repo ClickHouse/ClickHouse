@@ -520,9 +520,6 @@ ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_join
             this_index[cur.to_this->result_name] = cur.to_this;
     }
 
-    for (auto & node : projection)
-        node = data[node].to_this;
-
     /// Consider actions are empty if all nodes are constants or inputs.
     bool split_actions_are_empty = true;
     for (const auto & node : split_nodes)
@@ -534,6 +531,9 @@ ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_join
 
     index.swap(this_index);
     nodes.swap(this_nodes);
+
+    for (auto & node : projection)
+        node = data[node].to_this;
 
     auto split_actions = cloneEmpty();
     split_actions->nodes.swap(split_nodes);
