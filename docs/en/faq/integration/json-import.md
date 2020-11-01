@@ -6,7 +6,8 @@ toc_priority: 11
 
 # How to Import JSON Into ClickHouse? {#how-to-import-json-into-clickhouse}
 
-ClickHouse supports a wide range of [data formats for input and output](../../interfaces/formats.md). There are multiple JSON variations among them, but the most commonly used for data ingestion is [JSONEachRow](../../interfaces/formats.md#jsoneachrow). It expects one JSON object per row, each object separated by a newline.
+ClickHouse supports a wide range of [data formats for input and output](../../interfaces/formats.md). There are multiple JSON variations among them, but the most commonly used for data ingestion is [JSONEachRow](../../interfaces/formats.md#jsoneachrow). It expects one JSON object per row, each object separated by a newline. 
+In JSON format, the presence of quotation marks can determine whether the data is a number or a string. In the case of a number, you must always interpret it as an enum id.
 
 ## Examples {#examples}
 
