@@ -3,8 +3,6 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ParserUnionQueryElement.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Common/typeid_cast.h>
-
 
 namespace DB
 {
@@ -32,10 +30,7 @@ bool ParserSelectWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     /// NOTE: We cann't flatten inner union query now, since we may have different union mode in query,
     /// so flatten may change it's semantics. For example:
     /// flatten `SELECT 1 UNION (SELECT 1 UNION ALL SELETC 1)` -> `SELECT 1 UNION SELECT 1 UNION ALL SELECT 1`
-
     return true;
 }
-
-
 
 }
