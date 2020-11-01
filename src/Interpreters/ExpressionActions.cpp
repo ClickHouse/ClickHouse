@@ -1055,9 +1055,19 @@ NamesAndTypesList ActionsDAG::getRequiredColumns() const
 ColumnsWithTypeAndName ActionsDAG::getResultColumns() const
 {
     ColumnsWithTypeAndName result;
-    result.reserve(index.size());
-    for (const auto & node : index)
-        result.emplace_back(node.second->column, node.second->result_type, node.second->result_name);
+
+    if (projection.empty())
+    {
+        result.reserve(index.size());
+        for (const auto & node : index)
+            result.emplace_back(node.second->column, node.second->result_type, node.second->result_name);
+    }
+    else
+    {
+        result.reserve(index.size());
+        for (const auto & node : projection)
+            result.emplace_back(node->column, node->result_type, node->result_name);
+    }
 
     return result;
 }
@@ -1065,8 +1075,17 @@ ColumnsWithTypeAndName ActionsDAG::getResultColumns() const
 NamesAndTypesList ActionsDAG::getNamesAndTypesList() const
 {
     NamesAndTypesList result;
-    for (const auto & node : index)
-        result.emplace_back(node.second->result_name, node.second->result_type);
+
+    if (projection.empty())
+    {
+        for (const auto & node : index)
+            result.emplace_back(node.second->result_name, node.second->result_type);
+    }
+    else
+    {
+        for (const auto & node : projection)
+            result.emplace_back(node->result_name, node->result_type);
+    }
 
     return result;
 }
