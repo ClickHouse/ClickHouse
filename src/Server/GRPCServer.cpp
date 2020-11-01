@@ -39,6 +39,49 @@ namespace ErrorCodes
 
 namespace
 {
+    /// Generates a description of a query by a specified query info.
+    /// This description is used for logging only.
+    String getQueryDescription(const GRPCQueryInfo & query_info)
+    {
+        String str;
+        if (!query_info.query().empty())
+        {
+            std::string_view query = query_info.query();
+            constexpr size_t max_query_length_to_log = 64;
+            if (query.length() > max_query_length_to_log)
+                query.remove_suffix(query.length() - max_query_length_to_log);
+            if (size_t format_pos = query.find(" FORMAT "); format_pos != String::npos)
+                query.remove_suffix(query.length() - format_pos - strlen(" FORMAT "));
+            str.append("\"").append(query);
+            if (query != query_info.query())
+                str.append("...");
+            str.append("\"");
+        }
+        if (!query_info.query_id().empty())
+            str.append(str.empty() ? "" : ", ").append("query_id: ").append(query_info.query_id());
+        if (!query_info.input_data().empty())
+            str.append(str.empty() ? "" : ", ").append("input_data: ").append(std::to_string(query_info.input_data().size())).append(" bytes");
+        return str;
+    }
+
+    /// Generates a description of a result.
+    /// This description is used for logging only.
+    String getResultDescription(const GRPCResult & result)
+    {
+        String str;
+        if (!result.output().empty())
+            str.append("output: ").append(std::to_string(result.output().size())).append(" bytes");
+        if (!result.totals().empty())
+            str.append(str.empty() ? "" : ", ").append("totals");
+        if (!result.extremes().empty())
+            str.append(str.empty() ? "" : ", ").append("extremes");
+        if (result.has_progress())
+            str.append(str.empty() ? "" : ", ").append("progress");
+        if (result.has_exception())
+            str.append(str.empty() ? "" : ", ").append("exception");
+        return str;
+    }
+
     using CompletionCallback = std::function<void(bool)>;
 
     /// Requests a connection and provides low-level interface for reading and writing.
@@ -160,6 +203,10 @@ namespace
         bool finalize = false;
         bool responder_finished = false;
 
+        Stopwatch query_time;
+        UInt64 waited_for_client_reading = 0;
+        UInt64 waited_for_client_writing = 0;
+
         std::atomic<bool> sending_result = false; /// atomic because it can be accessed both from call_thread and queue_thread
         std::atomic<bool> failed_to_send_result = false;
 
@@ -223,7 +270,11 @@ namespace
 
     void Call::receiveQuery()
     {
+        LOG_INFO(log, "Handling call ExecuteQuery()");
+
         readQueryInfo();
+
+        LOG_DEBUG(log, "Received initial QueryInfo: {}", getQueryDescription(query_info));
     }
 
     void Call::executeQuery()
@@ -382,6 +433,7 @@ namespace
                                 "Only the following fields can be set: input_data, next_query_info",
                                 ErrorCodes::INVALID_GRPC_QUERY_INFO);
             }
+            LOG_DEBUG(log, "Received extra QueryInfo: input_data: {} bytes", query_info.input_data().size());
             if (!query_info.input_data().empty())
             {
                 const char * begin = query_info.input_data().data();
@@ -484,6 +536,13 @@ namespace
         query_scope->logPeakMemoryUsage();
         sendResult();
         close();
+
+        LOG_INFO(
+            log,
+            "Finished call ExecuteQuery() in {} secs. (including reading by client: {}, writing by client: {})",
+            query_time.elapsedSeconds(),
+            static_cast<double>(waited_for_client_reading) / 1000000000ULL,
+            static_cast<double>(waited_for_client_writing) / 1000000000ULL);
     }
 
     void Call::onException(const Exception & exception)
@@ -518,6 +577,7 @@ namespace
     void Call::readQueryInfo()
     {
         bool ok = false;
+        Stopwatch client_writing_watch;
 
         /// Start reading a query info.
         bool reading_query_info = true;
@@ -532,13 +592,14 @@ namespace
         /// Wait until the reading is finished.
         std::unique_lock lock{dummy_mutex};
         read_finished.wait(lock, [&] { return !reading_query_info; });
+        waited_for_client_writing += client_writing_watch.elapsedNanoseconds();
 
         if (!ok)
         {
             if (!query_info_index)
                 throw Exception("Failed to read initial QueryInfo", ErrorCodes::NETWORK_ERROR);
             else
-                throw Exception("Failed to read extra QueryInfo with input data", ErrorCodes::NETWORK_ERROR);
+                throw Exception("Failed to read extra QueryInfo", ErrorCodes::NETWORK_ERROR);
         }
 
         ++query_info_index;
@@ -592,12 +653,17 @@ namespace
         /// (gRPC doesn't allow to start sending another result while the previous is still being sending.)
         if (sending_result)
         {
+            Stopwatch client_reading_watch;
             std::unique_lock lock{dummy_mutex};
             write_finished.wait(lock, [this] { return !sending_result; });
+            waited_for_client_reading += client_reading_watch.elapsedNanoseconds();
         }
         throwIfFailedToSendResult();
 
         /// Start sending the result.
+        bool send_final_message = finalize || result.has_exception();
+        LOG_DEBUG(log, "Sending {} result to the client: {}", (send_final_message ? "final" : "intermediate"), getResultDescription(result));
+
         sending_result = true;
         auto callback = [this](bool ok)
         {
@@ -608,7 +674,7 @@ namespace
             write_finished.notify_one();
         };
 
-        bool send_final_message = finalize || result.has_exception();
+        Stopwatch client_reading_final_watch;
         if (send_final_message)
         {
             responder_finished = true;
@@ -625,14 +691,16 @@ namespace
             /// Wait until the result is actually sent.
             std::unique_lock lock{dummy_mutex};
             write_finished.wait(lock, [this] { return !sending_result; });
+            waited_for_client_reading += client_reading_final_watch.elapsedNanoseconds();
             throwIfFailedToSendResult();
+            LOG_TRACE(log, "Final result has been sent to the client");
         }
     }
 
     void Call::throwIfFailedToSendResult()
     {
         if (failed_to_send_result)
-            throw Exception("Failed to send result to client", ErrorCodes::NETWORK_ERROR);
+            throw Exception("Failed to send result to the client", ErrorCodes::NETWORK_ERROR);
     }
 
     void Call::sendException(const Exception & exception)
