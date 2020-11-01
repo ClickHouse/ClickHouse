@@ -7,7 +7,10 @@ namespace ErrorCodes
     extern const int LZMA_STREAM_DECODER_FAILED;
 }
 LzmaReadBuffer::LzmaReadBuffer(
-    std::unique_ptr<ReadBuffer> in_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, char * existing_memory = nullptr, size_t alignment = 0)
+    std::unique_ptr<ReadBuffer> in_, 
+    size_t buf_size, 
+    char * existing_memory, 
+    size_t alignment)
     : BufferWithOwnMemory<ReadBuffer>(buf_size, existing_memory, alignment), in(std::move(in_))
 {
     lstr = LZMA_STREAM_INIT;
@@ -67,6 +70,6 @@ bool LzmaReadBuffer::nextImpl()
             std::string("lzma_stream_decoder failed: error code: ") + std::to_string(ret) + "; lzma version: " + LZMA_VERSION_STRING,
             ErrorCodes::LZMA_STREAM_DECODER_FAILED);
 
-    return true
+    return true;
 }
 }
