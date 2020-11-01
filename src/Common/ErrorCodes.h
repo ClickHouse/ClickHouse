@@ -33,7 +33,12 @@ namespace ErrorCodes
     /// Add value for specified error_code.
     inline void increment(ErrorCode error_code)
     {
-        error_code = std::min<Value>(error_code, end()-1);
+        if (error_code >= end())
+        {
+            /// For everything outside the range, use END.
+            /// (end() is the pointer pass the end, while END is the last value that has an element in values array).
+            error_code = end() - 1;
+        }
         values[error_code].fetch_add(1, std::memory_order_relaxed);
     }
 }
