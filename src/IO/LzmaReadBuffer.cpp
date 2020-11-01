@@ -21,13 +21,13 @@ LzmaReadBuffer::LzmaReadBuffer(
     lstr.avail_out = 0;
 
     // 500 mb
-    uint64_t memlimit = 500 << 30;
+    uint64_t memlimit = 500 << 20;
 
-    lzma_ret ret = lzma_stream_decoder(&lstr, memlimit, LZMA_CONCATENATED | LZMA_IGNORE_CHECK);
+    lzma_ret ret = lzma_stream_decoder(&lstr, memlimit, LZMA_CONCATENATED);
     // lzma does not provide api for converting error code to string unlike zlib
     if (ret != LZMA_OK)
         throw Exception(
-            std::string("lzma_stream_decoder failed: error code: ") + std::to_string(ret) + "; lzma version: " + LZMA_VERSION_STRING,
+            std::string("lzma_stream_decoder initialization failed: error code: ") + std::to_string(ret) + "; lzma version: " + LZMA_VERSION_STRING,
             ErrorCodes::LZMA_STREAM_DECODER_FAILED);
 }
 
@@ -52,9 +52,10 @@ bool LzmaReadBuffer::nextImpl()
     lstr.next_out = reinterpret_cast<unsigned char *>(internal_buffer.begin());
     lstr.avail_out = internal_buffer.size();
 
-    lzma_ret ret = lzma_code(&lstr, LZMA_FINISH);
+    lzma_ret ret = lzma_code(&lstr, LZMA_RUN);
 
     in->position() = in->buffer().end() - lstr.avail_in;
+    working_buffer.resize(internal_buffer.size() - lstr.avail_out);
 
     if (ret == LZMA_STREAM_END)
     {
@@ -62,6 +63,10 @@ bool LzmaReadBuffer::nextImpl()
         {
             eof = true;
             return working_buffer.size() != 0;
+        } else {
+            throw Exception(
+                std::string("lzma decoder finished, but stream is still alive: error code: ") + std::to_string(ret) + "; lzma version: " + LZMA_VERSION_STRING,
+                ErrorCodes::LZMA_STREAM_DECODER_FAILED);
         }
     }
 
