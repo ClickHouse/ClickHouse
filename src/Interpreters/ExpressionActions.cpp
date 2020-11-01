@@ -1179,13 +1179,15 @@ void ActionsDAG::finalize(std::vector<Node *> & required_nodes, InputsPolicy pol
         project_input = true;
 }
 
-void ActionsDAG::removeUnusedActions(const std::vector<Node *> & required_nodes)
+void ActionsDAG::removeUnusedActions(std::vector<Node *> & required_nodes)
 {
     std::unordered_set<const Node *> visited_nodes;
     std::stack<Node *> stack;
 
     {
         Index new_index;
+        std::vector<Node *> new_required_nodes;
+        new_required_nodes.reserve(required_nodes.size());
 
         for (auto * node : required_nodes)
         {
@@ -1195,9 +1197,11 @@ void ActionsDAG::removeUnusedActions(const std::vector<Node *> & required_nodes)
             new_index[node->result_name] = node;
             visited_nodes.insert(node);
             stack.push(node);
+            new_required_nodes.push_back(node);
         }
 
         index.swap(new_index);
+        required_nodes.swap(new_required_nodes);
     }
 
     while (!stack.empty())
