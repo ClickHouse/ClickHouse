@@ -51,6 +51,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
     extern const int INCORRECT_FILE_NAME;
     extern const int FILE_DOESNT_EXIST;
+    extern const int INCOMPATIBLE_COLUMNS;
 }
 
 namespace
@@ -125,11 +126,33 @@ void checkCreationIsAllowed(const Context & context_global, const std::string & 
 }
 }
 
+Strings StorageFile::getPathsList(const String & table_path, const String & user_files_path, const Context & context)
+{
+    String user_files_absolute_path = Poco::Path(user_files_path).makeAbsolute().makeDirectory().toString();
+    Poco::Path poco_path = Poco::Path(table_path);
+    if (poco_path.isRelative())
+        poco_path = Poco::Path(user_files_absolute_path, poco_path);
+
+    Strings paths;
+    const String path = poco_path.absolute().toString();
+    if (path.find_first_of("*?{") == std::string::npos)
+        paths.push_back(path);
+    else
+        paths = listFilesWithRegexpMatching("/", path);
+
+    for (const auto & cur_path : paths)
+        checkCreationIsAllowed(context, user_files_absolute_path, cur_path);
+
+    return paths;
+}
+
 StorageFile::StorageFile(int table_fd_, CommonArguments args)
     : StorageFile(args)
 {
     if (args.context.getApplicationType() == Context::ApplicationType::SERVER)
         throw Exception("Using file descriptor as source of storage isn't allowed for server daemons", ErrorCodes::DATABASE_ACCESS_DENIED);
+    if (args.format_name == "Distributed")
+        throw Exception("Distributed format is allowed only with explicit file path", ErrorCodes::INCORRECT_FILE_NAME);
 
     is_db_table = false;
     use_table_fd = true;
@@ -144,32 +167,22 @@ StorageFile::StorageFile(const std::string & table_path_, const std::string & us
     : StorageFile(args)
 {
     is_db_table = false;
-    std::string user_files_absolute_path = Poco::Path(user_files_path).makeAbsolute().makeDirectory().toString();
-    Poco::Path poco_path = Poco::Path(table_path_);
-    if (poco_path.isRelative())
-        poco_path = Poco::Path(user_files_absolute_path, poco_path);
-
-    const std::string path = poco_path.absolute().toString();
-    if (path.find_first_of("*?{") == std::string::npos)
-        paths.push_back(path);
-    else
-        paths = listFilesWithRegexpMatching("/", path);
-
-    for (const auto & cur_path : paths)
-        checkCreationIsAllowed(args.context, user_files_absolute_path, cur_path);
+    paths = getPathsList(table_path_, user_files_path, args.context);
 
     if (args.format_name == "Distributed")
     {
-        if (!paths.empty())
-        {
-            auto & first_path = paths[0];
-            Block header = StorageDistributedDirectoryMonitor::createStreamFromFile(first_path)->getHeader();
+        if (paths.empty())
+            throw Exception("Cannot get table structure from file, because no files match specified name", ErrorCodes::INCORRECT_FILE_NAME);
 
+        auto & first_path = paths[0];
+        Block header = StorageDistributedDirectoryMonitor::createStreamFromFile(first_path)->getHeader();
 
-            StorageInMemoryMetadata storage_metadata;
-            storage_metadata.setColumns(ColumnsDescription(header.getNamesAndTypesList()));
-            setInMemoryMetadata(storage_metadata);
-        }
+        StorageInMemoryMetadata storage_metadata;
+        auto columns = ColumnsDescription(header.getNamesAndTypesList());
+        if (!args.columns.empty() && columns != args.columns)
+            throw Exception("Table structure and file structure are different", ErrorCodes::INCOMPATIBLE_COLUMNS);
+        storage_metadata.setColumns(columns);
+        setInMemoryMetadata(storage_metadata);
     }
 }
 
@@ -178,6 +191,8 @@ StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArgu
 {
     if (relative_table_dir_path.empty())
         throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
+    if (args.format_name == "Distributed")
+        throw Exception("Distributed format is allowed only with explicit file path", ErrorCodes::INCORRECT_FILE_NAME);
 
     String table_dir_path = base_path + relative_table_dir_path + "/";
     Poco::File(table_dir_path).createDirectories();

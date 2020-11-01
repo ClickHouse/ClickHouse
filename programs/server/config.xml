@@ -212,22 +212,10 @@
     <!-- Directory with user provided files that are accessible by 'file' table function. -->
     <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 
-    <!-- Sources to read users, roles, access rights, profiles of settings, quotas. -->
-    <user_directories>
-        <users_xml>
-            <!-- Path to configuration file with predefined users. -->
-            <path>users.xml</path>
-        </users_xml>
-        <local_directory>
-            <!-- Path to folder where users created by SQL commands are stored. -->
-            <path>/var/lib/clickhouse/access/</path>
-        </local_directory>
-    </user_directories>
-
-    <!-- External user directories (LDAP). -->
+    <!-- LDAP server definitions. -->
     <ldap_servers>
-        <!-- List LDAP servers with their connection parameters here to later use them as authenticators for dedicated users,
-             who have 'ldap' authentication mechanism specified instead of 'password'.
+        <!-- List LDAP servers with their connection parameters here to later 1) use them as authenticators for dedicated local users,
+              who have 'ldap' authentication mechanism specified instead of 'password', or to 2) use them as remote user directories.
              Parameters:
                 host - LDAP server hostname or IP, this parameter is mandatory and cannot be empty.
                 port - LDAP server port, default is 636 if enable_tls is set to true, 389 otherwise.
@@ -246,7 +234,7 @@
                 tls_key_file - path to certificate key file.
                 tls_ca_cert_file - path to CA certificate file.
                 tls_ca_cert_dir - path to the directory containing CA certificates.
-                tls_cipher_suite - allowed cipher suite.
+                tls_cipher_suite - allowed cipher suite (in OpenSSL notation).
              Example:
                 <my_ldap_server>
                     <host>localhost</host>
@@ -264,6 +252,36 @@
                 </my_ldap_server>
         -->
     </ldap_servers>
+
+    <!-- Sources to read users, roles, access rights, profiles of settings, quotas. -->
+    <user_directories>
+        <users_xml>
+            <!-- Path to configuration file with predefined users. -->
+            <path>users.xml</path>
+        </users_xml>
+        <local_directory>
+            <!-- Path to folder where users created by SQL commands are stored. -->
+            <path>/var/lib/clickhouse/access/</path>
+        </local_directory>
+
+        <!-- To add an LDAP server as a remote user directory of users that are not defined locally, define a single 'ldap' section
+              with the following parameters:
+                server - one of LDAP server names defined in 'ldap_servers' config section above.
+                        This parameter is mandatory and cannot be empty.
+                roles - section with a list of locally defined roles that will be assigned to each user retrieved from the LDAP server.
+                        If no roles are specified, user will not be able to perform any actions after authentication.
+                        If any of the listed roles is not defined locally at the time of authentication, the authenthication attempt
+                         will fail as if the provided password was incorrect.
+             Example:
+                <ldap>
+                    <server>my_ldap_server</server>
+                    <roles>
+                        <my_local_role1 />
+                        <my_local_role2 />
+                    </roles>
+                </ldap>
+        -->
+    </user_directories>
 
     <!-- Default profile of settings. -->
     <default_profile>default</default_profile>
@@ -374,6 +392,22 @@
                 </replica>
             </shard>
         </test_cluster_two_shards>
+        <test_cluster_two_shards_internal_replication>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>127.0.0.2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_cluster_two_shards_internal_replication>
         <test_shard_localhost_secure>
             <shard>
                 <replica>
@@ -594,6 +628,31 @@
         <flush_interval_milliseconds>60000</flush_interval_milliseconds>
     </asynchronous_metric_log>
 
+    <!--
+        OpenTelemetry log contains OpenTelemetry trace spans.
+    -->
+    <opentelemetry_span_log>
+        <!--
+            The default table creation code is insufficient, this <engine> spec
+            is a workaround. There is no 'event_time' for this log, but two times,
+            start and finish. It is sorted by finish time, to avoid inserting
+            data too far away in the past (probably we can sometimes insert a span
+            that is seconds earlier than the last span in the table, due to a race
+            between several spans inserted in parallel). This gives the spans a
+            global order that we can use to e.g. retry insertion into some external
+            system.
+        -->
+        <engine>
+            engine MergeTree
+            partition by toYYYYMM(finish_date)
+            order by (finish_date, finish_time_us, trace_id)
+        </engine>
+        <database>system</database>
+        <table>opentelemetry_span_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </opentelemetry_span_log>
+
+
     <!-- Crash log. Stores stack traces for fatal errors.
          This table is normally empty. -->
     <crash_log>
@@ -704,18 +763,22 @@
       -->
     <format_schema_path>/var/lib/clickhouse/format_schemas/</format_schema_path>
 
-    <!-- Uncomment to use query masking rules.
+    <!-- Default query masking rules, matching lines would be replaced with something else in the logs
+        (both text logs and system.query_log).
         name - name for the rule (optional)
         regexp - RE2 compatible regular expression (mandatory)
         replace - substitution string for sensitive data (optional, by default - six asterisks)
+    -->
     <query_masking_rules>
         <rule>
-            <name>hide SSN</name>
-            <regexp>\b\d{3}-\d{2}-\d{4}\b</regexp>
-            <replace>000-00-0000</replace>
+            <name>hide encrypt/decrypt arguments</name>
+            <regexp>((?:aes_)?(?:encrypt|decrypt)(?:_mysql)?)\s*\(\s*(?:'(?:\\'|.)+'|.*?)\s*\)</regexp>
+            <!-- or more secure, but also more invasive:
+                (aes_\w+)\s*\(.*\)
+            -->
+            <replace>\1(???)</replace>
         </rule>
     </query_masking_rules>
-    -->
 
     <!-- Uncomment to use custom http handlers.
         rules are checked from top to bottom, first match runs the handler

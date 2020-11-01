@@ -12,6 +12,7 @@
                 <!-- Avoid extra retries to speed up tests -->
                 <retry_attempts>0</retry_attempts>
             </s3>
+            <default/>
         </disks>
         <policies>
             <s3>
@@ -21,6 +22,16 @@
                     </main>
                 </volumes>
             </s3>
+            <s3_cold>
+                <volumes>
+                    <main>
+                        <disk>default</disk>
+                    </main>
+                    <external>
+                        <disk>s3</disk>
+                    </external>
+                </volumes>
+            </s3_cold>
         </policies>
     </storage_configuration>
 </yandex>

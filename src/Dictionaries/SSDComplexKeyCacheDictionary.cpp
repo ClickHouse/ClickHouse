@@ -1467,7 +1467,6 @@ void SSDComplexKeyCacheDictionary::getItemsNumberImpl(
 {
     assert(dict_struct.key);
     assert(key_columns.size() == key_types.size());
-    assert(key_columns.size() == dict_struct.key->size());
 
     dict_struct.validateKeyTypes(key_types);
 

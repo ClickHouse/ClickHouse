@@ -57,7 +57,7 @@ CHECK TABLE [db.]name
 テーブルが破損している場合は、破損していないデータを別のテーブルにコピーできます。 これを行うには:
 
 1.  破損したテーブルと同じ構造を持つ新しいテーブルを作成します。 これを行うにはクエリを実行します `CREATE TABLE <new_table_name> AS <damaged_table_name>`.
-2.  セット [max\_threads](../../operations/settings/settings.md#settings-max_threads) 単一のスレッドで次のクエリを処理するには、値を1に設定します。 このクエリ `SET max_threads = 1`.
+2.  セット [max_threads](../../operations/settings/settings.md#settings-max_threads) 単一のスレッドで次のクエリを処理するには、値を1に設定します。 このクエリ `SET max_threads = 1`.
 3.  クエリの実行 `INSERT INTO <new_table_name> SELECT * FROM <damaged_table_name>`. この要求により、破損していないデータが破損した表から別の表にコピーされます。 破損した部分の前のデータのみがコピーされます。
 4.  再起動 `clickhouse-client` リセットするには `max_threads` 値。
 
@@ -253,7 +253,7 @@ OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION I
 
 とき `OPTIMIZE` と共に使用されます [複製マージツリー](../../engines/table-engines/mergetree-family/replication.md) テーブルエンジンのファミリでは、ClickHouseはマージ用のタスクを作成し、すべてのノードで実行を待機します。 `replication_alter_partitions_sync` 設定が有効になっています）。
 
--   もし `OPTIMIZE` 何らかの理由でマージを実行せず、クライアントに通知しません。 通知を有効にするには、 [optimize\_throw\_if\_noop](../../operations/settings/settings.md#setting-optimize_throw_if_noop) 設定。
+-   もし `OPTIMIZE` 何らかの理由でマージを実行せず、クライアントに通知しません。 通知を有効にするには、 [optimize_throw_if_noop](../../operations/settings/settings.md#setting-optimize_throw_if_noop) 設定。
 -   を指定した場合 `PARTITION` 指定したパーティションのみが最適化されます。 [パーティション式の設定方法](alter.md#alter-how-to-specify-part-expr).
 -   指定した場合 `FINAL`、最適化は、すべてのデータが一つの部分に既にある場合でも実行されます。
 -   指定した場合 `DEDUPLICATE` その後、完全に同一の行が重複除外されます（すべての列が比較されます）。

@@ -17,6 +17,9 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <common/logger_useful.h>
+#include <re2/re2.h>
+
+#include <boost/algorithm/string.hpp>
 
 
 namespace ProfileEvents
@@ -49,6 +52,24 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     : Aws::Client::ClientConfiguration(cfg)
     , remote_host_filter(remote_host_filter_)
 {
+}
+
+void PocoHTTPClientConfiguration::updateSchemeAndRegion()
+{
+    if (!endpointOverride.empty())
+    {
+        static const RE2 region_pattern(R"(^s3[.\-]([a-z0-9\-]+)\.amazonaws\.)");
+        Poco::URI uri(endpointOverride);
+        if (uri.getScheme() == "http")
+            scheme = Aws::Http::Scheme::HTTP;
+
+        String matched_region;
+        if (re2::RE2::PartialMatch(uri.getHost(), region_pattern, &matched_region))
+        {
+            boost::algorithm::to_lower(matched_region);
+            region = matched_region;
+        }
+    }
 }
 
 

@@ -229,7 +229,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
 
             ShuffledPool & shuffled_pool = shuffled_pools[i];
             TryResult & result = try_results[i];
-            if (shuffled_pool.error_count >= max_tries || !result.entry.isNull())
+            if (max_tries && (shuffled_pool.error_count >= max_tries || !result.entry.isNull()))
                 continue;
 
             std::string fail_message;
