@@ -409,7 +409,7 @@
 
 ## ClickHouse release 20.6
 
-### ClickHouse release v20.6.3.28-stable 
+### ClickHouse release v20.6.3.28-stable
 
 #### New Feature
 
@@ -2362,7 +2362,7 @@ No changes compared to v20.4.3.16-stable.
 * `Live View` table engine refactoring. [#8519](https://github.com/ClickHouse/ClickHouse/pull/8519) ([vzakaznikov](https://github.com/vzakaznikov))
 * Add additional checks for external dictionaries created from DDL-queries. [#8127](https://github.com/ClickHouse/ClickHouse/pull/8127) ([alesapin](https://github.com/alesapin))
 * Fix error `Column ... already exists` while using `FINAL` and `SAMPLE` together, e.g. `select count() from table final sample 1/2`. Fixes [#5186](https://github.com/ClickHouse/ClickHouse/issues/5186). [#7907](https://github.com/ClickHouse/ClickHouse/pull/7907) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
-* Now table the first argument of `joinGet` function can be table indentifier. [#7707](https://github.com/ClickHouse/ClickHouse/pull/7707) ([Amos Bird](https://github.com/amosbird))
+* Now table the first argument of `joinGet` function can be table identifier. [#7707](https://github.com/ClickHouse/ClickHouse/pull/7707) ([Amos Bird](https://github.com/amosbird))
 * Allow using `MaterializedView` with subqueries above `Kafka` tables. [#8197](https://github.com/ClickHouse/ClickHouse/pull/8197) ([filimonov](https://github.com/filimonov))
 * Now background moves between disks run it the seprate thread pool. [#7670](https://github.com/ClickHouse/ClickHouse/pull/7670) ([Vladimir Chebotarev](https://github.com/excitoon))
 * `SYSTEM RELOAD DICTIONARY` now executes synchronously. [#8240](https://github.com/ClickHouse/ClickHouse/pull/8240) ([Vitaly Baranov](https://github.com/vitlibar))
