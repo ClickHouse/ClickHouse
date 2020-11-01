@@ -1447,7 +1447,6 @@ ExpressionActionsPtr ActionsDAG::buildExpressions() const
 {
     auto cloned = clone();
     cloned->project_input = project_input;
-    cloned->projection = projection;
     auto expressions = cloned->linearizeActions();
 
     expressions->nodes.swap(cloned->nodes);
