@@ -409,7 +409,7 @@ ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_join
     std::unordered_map<Node *, Data> data;
 
     for (const auto & node : index)
-        data[node].used_in_result = true;
+        data[node.second].used_in_result = true;
 
     /// DFS. Decide if node depends on ARRAY JOIN and move it to one of the DAGs.
     for (auto & node : nodes)
@@ -510,8 +510,11 @@ ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_join
         }
     }
 
-    for (auto * node : index)
-        this_index.insert(data[node].to_this);
+    for (auto & node : index)
+    {
+        auto & cur = data[node.second];
+        this_index[cur.to_this->result_name] = cur.to_this;
+    }
 
     /// Consider actions are empty if all nodes are constants or inputs.
     bool split_actions_are_empty = true;
@@ -870,7 +873,7 @@ ActionsDAG::Node & ActionsDAG::getNode(const std::string & name)
     if (it == index.end())
         throw Exception("Unknown identifier: '" + name + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
 
-    return **it;
+    return *it->second;
 }
 
 const ActionsDAG::Node & ActionsDAG::addInput(std::string name, DataTypePtr type)
@@ -1054,7 +1057,7 @@ ColumnsWithTypeAndName ActionsDAG::getResultColumns() const
     ColumnsWithTypeAndName result;
     result.reserve(index.size());
     for (const auto & node : index)
-        result.emplace_back(node->column, node->result_type, node->result_name);
+        result.emplace_back(node.second->column, node.second->result_type, node.second->result_name);
 
     return result;
 }
@@ -1063,7 +1066,7 @@ NamesAndTypesList ActionsDAG::getNamesAndTypesList() const
 {
     NamesAndTypesList result;
     for (const auto & node : index)
-        result.emplace_back(node->result_name, node->result_type);
+        result.emplace_back(node.second->result_name, node.second->result_type);
 
     return result;
 }
@@ -1073,7 +1076,7 @@ Names ActionsDAG::getNames() const
     Names names;
     names.reserve(index.size());
     for (const auto & node : index)
-        names.emplace_back(node->result_name);
+        names.emplace_back(node.second->result_name);
 
     return names;
 }
@@ -1090,11 +1093,9 @@ std::string ActionsDAG::dumpNames() const
     return out.str();
 }
 
-void ActionsDAG::removeUnusedActions(const Names & required_names)
+void ActionsDAG::finalize(const Names & required_names, InputsPolicy policy)
 {
-    std::unordered_set<Node *> nodes_set;
-    std::vector<Node *> required_nodes;
-    required_nodes.reserve(required_names.size());
+    projection.reserve(required_names.size());
 
     for (const auto & name : required_names)
     {
@@ -1103,11 +1104,60 @@ void ActionsDAG::removeUnusedActions(const Names & required_names)
             throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
                             "Unknown column: {}, there are only columns {}", name, dumpNames());
 
-        if (nodes_set.insert(*it).second)
-            required_nodes.push_back(*it);
+        projection.push_back(it->second);
     }
 
-    removeUnusedActions(required_nodes);
+    finalize(projection, policy);
+}
+
+void ActionsDAG::finalize(const NamesWithAliases & aliases, InputsPolicy policy)
+{
+    projection.reserve(aliases.size());
+
+    for (const auto & item : aliases)
+    {
+        auto & child = getNode(item.first);
+        projection.push_back(&child);
+    }
+
+    for (size_t i = 0; i < aliases.size(); ++i)
+    {
+        const auto & item = aliases[i];
+        auto & child = projection[i];
+
+        if (!item.second.empty() && item.first != item.second)
+        {
+            Node node;
+            node.type = Type::ALIAS;
+            node.result_type = child->result_type;
+            node.result_name = std::move(item.second);
+            node.column = child->column;
+            node.allow_constant_folding = child->allow_constant_folding;
+            node.children.emplace_back(child);
+
+            child = &addNode(std::move(node), true);
+        }
+    }
+
+    finalize(projection, policy);
+}
+
+void ActionsDAG::finalize(std::vector<Node *> & required_nodes, InputsPolicy policy)
+{
+    size_t num_nodes = required_nodes.size();
+
+    if (policy == InputsPolicy::KEEP)
+    {
+        for (auto & node : nodes)
+            if (node.type == Type::INPUT)
+                projection.push_back(&node);
+    }
+
+    removeUnusedActions(projection);
+    projection.resize(num_nodes);
+
+    if (policy == InputsPolicy::DROP_ALL)
+        project_input = true;
 }
 
 void ActionsDAG::removeUnusedActions(const std::vector<Node *> & required_nodes)
@@ -1120,7 +1170,10 @@ void ActionsDAG::removeUnusedActions(const std::vector<Node *> & required_nodes)
 
         for (auto * node : required_nodes)
         {
-            new_index.insert(node);
+            if (visited_nodes.count(node))
+                continue;
+
+            new_index[node->result_name] = node;
             visited_nodes.insert(node);
             stack.push(node);
         }
@@ -1153,60 +1206,10 @@ void ActionsDAG::removeUnusedActions(const std::vector<Node *> & required_nodes)
     nodes.remove_if([&](const Node & node) { return visited_nodes.count(&node) == 0; });
 }
 
-void ActionsDAG::addAliases(const NamesWithAliases & aliases, std::vector<Node *> & result_nodes)
-{
-    std::vector<Node *> required_nodes;
-
-    for (const auto & item : aliases)
-    {
-        auto & child = getNode(item.first);
-        required_nodes.push_back(&child);
-    }
-
-    result_nodes.reserve(aliases.size());
-
-    for (size_t i = 0; i < aliases.size(); ++i)
-    {
-        const auto & item = aliases[i];
-        auto * child = required_nodes[i];
-
-        if (!item.second.empty() && item.first != item.second)
-        {
-            Node node;
-            node.type = Type::ALIAS;
-            node.result_type = child->result_type;
-            node.result_name = std::move(item.second);
-            node.column = child->column;
-            node.allow_constant_folding = child->allow_constant_folding;
-            node.children.emplace_back(child);
-
-            auto & alias = addNode(std::move(node), true);
-            result_nodes.push_back(&alias);
-        }
-        else
-            result_nodes.push_back(child);
-    }
-}
-
-void ActionsDAG::addAliases(const NamesWithAliases & aliases)
-{
-    std::vector<Node *> result_nodes;
-    addAliases(aliases, result_nodes);
-}
-
-void ActionsDAG::project(const NamesWithAliases & projection)
-{
-    std::vector<Node *> result_nodes;
-    addAliases(projection, result_nodes);
-    removeUnusedActions(result_nodes);
-    projectInput();
-    projected_output = true;
-}
-
 void ActionsDAG::removeColumn(const std::string & column_name)
 {
     auto & node = getNode(column_name);
-    index.remove(&node);
+    index.erase(node.result_name);
 }
 
 bool ActionsDAG::tryRestoreColumn(const std::string & column_name)
@@ -1244,7 +1247,14 @@ ActionsDAGPtr ActionsDAG::clone() const
             child = copy_map[child];
 
     for (const auto & node : index)
-        actions->index.insert(copy_map[node]);
+    {
+        auto * copy = copy_map[node.second];
+        actions->index[copy->result_name] = copy;
+    }
+
+    actions->projection = projection;
+    for (auto & node : actions->projection)
+        node = copy_map[node];
 
     return actions;
 }
@@ -1306,8 +1316,8 @@ ExpressionActionsPtr ActionsDAG::linearizeActions() const
     std::queue<const Node *> ready_nodes;
     std::queue<const Node *> ready_array_joins;
 
-    for (const auto * node : index)
-        data[reverse_index[node]].used_in_result = true;
+    for (const auto & node : index)
+        data[reverse_index[node.second]].used_in_result = true;
 
     for (const auto & node : nodes)
     {
@@ -1367,8 +1377,10 @@ ExpressionActionsPtr ActionsDAG::linearizeActions() const
         if (node->type == Type::INPUT)
         {
             /// Skip adding input if it is not used by any action and not removes column.
-            bool unused_input = cur.parents.empty() && cur.used_in_result;
-            if (!unused_input || project_input)
+            bool used_input = !cur.parents.empty()
+                           || (cur.used_in_result && !projection.empty()) /// used in final result
+                           || (!cur.used_in_result && project_input); /// removed
+            if (used_input)
             {
                 /// Argument for input is special. It contains the position from required columns.
                 ExpressionActions::Argument argument;
@@ -1402,11 +1414,11 @@ ExpressionActionsPtr ActionsDAG::linearizeActions() const
 
     expressions->result_positions.reserve(index.size());
 
-    for (const auto & node : index)
+    auto add_to_sample = [&](Node * node)
     {
         auto & cur = data[reverse_index[node]];
         if (cur.skipped_input)
-            continue;
+            return;
 
         auto pos = cur.position;
 
@@ -1417,12 +1429,21 @@ ExpressionActionsPtr ActionsDAG::linearizeActions() const
 
         ColumnWithTypeAndName col{node->column, node->result_type, node->result_name};
         expressions->sample_block.insert(std::move(col));
+    };
+
+    if (!projection.empty())
+    {
+        for (const auto & node : projection)
+            add_to_sample(node);
     }
+    else
+        for (const auto & node : index)
+            add_to_sample(node.second);
 
     return expressions;
 }
 
-ExpressionActionsPtr ActionsDAG::buildExpressions()
+ExpressionActionsPtr ActionsDAG::buildExpressions() const
 {
     auto cloned = clone();
     cloned->project_input = project_input;

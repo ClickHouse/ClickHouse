@@ -793,7 +793,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 auto lambda_dag = data.actions_stack.popLevel();
 
                 String result_name = lambda->arguments->children.at(1)->getColumnName();
-                lambda_dag->removeUnusedActions(Names(1, result_name));
+                lambda_dag->finalize(Names(1, result_name));
 
                 auto lambda_actions = lambda_dag->buildExpressions();
 

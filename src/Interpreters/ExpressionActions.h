@@ -102,64 +102,14 @@ public:
         bool allow_constant_folding = true;
     };
 
-    class Index
-    {
-    public:
-        Node *& operator[](std::string_view key)
-        {
-            auto res = map.emplace(key, list.end());
-            if (res.second)
-                res.first->second = list.emplace(list.end(), nullptr);
-
-            return *res.first->second;
-        }
-
-        void swap(Index & other)
-        {
-            list.swap(other.list);
-            map.swap(other.map);
-        }
-
-        auto size() const { return list.size(); }
-        bool contains(std::string_view key) const { return map.count(key) != 0; }
-
-        std::list<Node *>::iterator begin() { return list.begin(); }
-        std::list<Node *>::iterator end() { return list.end(); }
-        std::list<Node *>::const_iterator begin() const { return list.begin(); }
-        std::list<Node *>::const_iterator end() const { return list.end(); }
-        std::list<Node *>::const_iterator find(std::string_view key) const
-        {
-            auto it = map.find(key);
-            if (it == map.end())
-                return list.end();
-
-            return it->second;
-        }
-
-        /// Insert method doesn't check if map already have node with the same name.
-        /// If node with the same name exists, it is removed from map, but not list.
-        /// It is expected and used for project(), when result may have several columns with the same name.
-        void insert(Node * node) { map[node->result_name] = list.emplace(list.end(), node); }
-        void remove(Node * node)
-        {
-            auto it = map.find(node->result_name);
-            if (it != map.end())
-                return;
-
-            list.erase(it->second);
-            map.erase(it);
-        }
-
-    private:
-        std::list<Node *> list;
-        std::unordered_map<std::string_view, std::list<Node *>::iterator> map;
-    };
-
+    using Index = std::unordered_map<std::string_view, Node *>;
     using Nodes = std::list<Node>;
+    using Projection = std::vector<Node *>;
 
 private:
     Nodes nodes;
     Index index;
+    Projection projection;
 
     size_t max_temporary_columns = 0;
     size_t max_temporary_non_const_columns = 0;
@@ -169,7 +119,6 @@ private:
 #endif
 
     bool project_input = false;
-    bool projected_output = false;
 
 public:
     ActionsDAG() = default;
@@ -201,19 +150,23 @@ public:
             std::string result_name,
             const Context & context);
 
-    /// Call addAlias several times.
-    void addAliases(const NamesWithAliases & aliases);
-    /// Adds alias actions and removes unused columns from index.
-    void project(const NamesWithAliases & projection);
-
     /// Removes column from index.
     void removeColumn(const std::string & column_name);
     /// If column is not in index, try to find it in nodes and insert back into index.
     bool tryRestoreColumn(const std::string & column_name);
 
     void projectInput() { project_input = true; }
-    void removeUnusedActions(const Names & required_names);
-    ExpressionActionsPtr buildExpressions();
+
+    enum class InputsPolicy
+    {
+        KEEP,
+        DROP_UNUSED,
+        DROP_ALL,
+    };
+
+    void finalize(const Names & required_names, InputsPolicy policy);
+    void finalize(const NamesWithAliases & aliases, InputsPolicy policy);
+    ExpressionActionsPtr buildExpressions() const;
 
     /// Splits actions into two parts. Returned half may be swapped with ARRAY JOIN.
     /// Returns nullptr if no actions may be moved before ARRAY JOIN.
@@ -221,7 +174,7 @@ public:
 
     bool hasArrayJoin() const;
     bool empty() const;
-    bool projectedOutput() const { return projected_output; }
+    bool projectedOutput() const { return !projection.empty(); }
 
     ActionsDAGPtr clone() const;
 
@@ -243,7 +196,7 @@ private:
 
     ExpressionActionsPtr linearizeActions() const;
     void removeUnusedActions(const std::vector<Node *> & required_nodes);
-    void addAliases(const NamesWithAliases & aliases, std::vector<Node *> & result_nodes);
+    void finalize(std::vector<Node *> & required_nodes, InputsPolicy policy);
 };
 
 
@@ -412,7 +365,7 @@ struct ExpressionActionsChain
         void finalize(const Names & required_output_) override
         {
             if (!actions->projectedOutput())
-                actions->removeUnusedActions(required_output_);
+                actions->finalize(required_output_, ActionsDAG::InputsPolicy::DROP_UNUSED);
         }
 
         void prependProjectInput() const override

@@ -237,7 +237,7 @@ void ExpressionAnalyzer::analyzeAggregation()
                     const auto & node = *it;
 
                     /// Constant expressions have non-null column pointer at this stage.
-                    if (node->column && isColumnConst(*node->column))
+                    if (node.second->column && isColumnConst(*node.second->column))
                     {
                         /// But don't remove last key column if no aggregate functions, otherwise aggregation will not work.
                         if (!aggregate_descriptions.empty() || size > 1)
@@ -252,7 +252,7 @@ void ExpressionAnalyzer::analyzeAggregation()
                         }
                     }
 
-                    NameAndTypePair key{column_name, node->result_type};
+                    NameAndTypePair key{column_name, node.second->result_type};
 
                     /// Aggregation keys are uniqued.
                     if (!unique_keys.count(key.name))
@@ -434,7 +434,7 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions)
             if (it == index.end())
                 throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown identifier (in aggregate function '{}'): {}", node->name, name);
 
-            types[i] = (*it)->result_type;
+            types[i] = it->second->result_type;
             aggregate.argument_names[i] = name;
         }
 
@@ -652,7 +652,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
     step.required_output.push_back(prewhere_column_name);
     step.can_remove_required_output.push_back(true);
 
-    auto filter_type = (*step.actions()->getIndex().find(prewhere_column_name))->result_type;
+    auto filter_type = step.actions()->getIndex().find(prewhere_column_name)->second->result_type;
     if (!filter_type->canBeUsedInBooleanContext())
         throw Exception("Invalid type for filter in PREWHERE: " + filter_type->getName(),
                         ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
@@ -661,7 +661,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
         /// Remove unused source_columns from prewhere actions.
         auto tmp_actions_dag = std::make_shared<ActionsDAG>(sourceColumns());
         getRootActions(select_query->prewhere(), only_types, tmp_actions_dag);
-        tmp_actions_dag->removeUnusedActions({prewhere_column_name});
+        tmp_actions_dag->finalize({prewhere_column_name}, ActionsDAG::InputsPolicy::DROP_ALL);
         auto tmp_actions = tmp_actions_dag->buildExpressions();
         auto required_columns = tmp_actions->getRequiredColumns();
         NameSet required_source_columns(required_columns.begin(), required_columns.end());
@@ -686,7 +686,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
 
         Names required_output(name_set.begin(), name_set.end());
         prewhere_actions = chain.getLastActions();
-        prewhere_actions->removeUnusedActions(required_output);
+        prewhere_actions->finalize(required_output, ActionsDAG::InputsPolicy::DROP_ALL);
     }
 
     {
@@ -752,7 +752,7 @@ bool SelectQueryExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, 
 
     getRootActions(select_query->where(), only_types, step.actions());
 
-    auto filter_type = (*step.actions()->getIndex().find(where_column_name))->result_type;
+    auto filter_type = step.actions()->getIndex().find(where_column_name)->second->result_type;
     if (!filter_type->canBeUsedInBooleanContext())
         throw Exception("Invalid type for filter in WHERE: " + filter_type->getName(),
                         ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
@@ -953,7 +953,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActio
     }
 
     auto actions = chain.getLastActions();
-    actions->project(result_columns);
+    actions->finalize(result_columns, ActionsDAG::InputsPolicy::DROP_ALL);
     return actions;
 }
 
@@ -970,7 +970,6 @@ ActionsDAGPtr ExpressionAnalyzer::getActionsDAG(bool add_aliases, bool project_r
 {
     auto actions_dag = std::make_shared<ActionsDAG>(aggregated_columns);
     NamesWithAliases result_columns;
-    Names result_names;
 
     ASTs asts;
 
@@ -988,26 +987,19 @@ ActionsDAGPtr ExpressionAnalyzer::getActionsDAG(bool add_aliases, bool project_r
         else
             alias = name;
         result_columns.emplace_back(name, alias);
-        result_names.push_back(alias);
         getRootActions(ast, false, actions_dag);
     }
 
     if (add_aliases)
     {
         if (project_result)
-            actions_dag->project(result_columns);
+            actions_dag->finalize(result_columns, ActionsDAG::InputsPolicy::DROP_ALL);
         else
-            actions_dag->addAliases(result_columns);
+            actions_dag->finalize(result_columns, ActionsDAG::InputsPolicy::DROP_UNUSED);
     }
+    else
+        actions_dag->finalize(result_columns, ActionsDAG::InputsPolicy::KEEP);
 
-    if (!(add_aliases && project_result))
-    {
-        /// We will not delete the original columns.
-        for (const auto & column_name_type : sourceColumns())
-            result_names.push_back(column_name_type.name);
-    }
-
-    actions_dag->removeUnusedActions(result_names);
     return actions_dag;
 }
 
