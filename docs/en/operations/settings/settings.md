@@ -2148,8 +2148,6 @@ Result:
 └───────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
-
 ## allow_experimental_bigint_types {#allow_experimental_bigint_types}
 
 Enables or disables integer values exceeding the range that is supported by the int data type.
@@ -2173,3 +2171,5 @@ Possible values:
 - 0 - Disabled.
 
 Default value: `1`.
+
+[Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
