@@ -195,7 +195,7 @@ private:
     }
 
     ExpressionActionsPtr linearizeActions() const;
-    void removeUnusedActions(std::vector<Node *> & required_nodes);
+    void removeUnusedActions(const std::vector<Node *> & required_nodes, InputsPolicy policy);
     void finalize(std::vector<Node *> & required_nodes, InputsPolicy policy);
 };
 

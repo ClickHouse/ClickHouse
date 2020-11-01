@@ -1178,13 +1178,13 @@ void ActionsDAG::finalize(std::vector<Node *> & required_nodes, InputsPolicy pol
                 required_nodes.push_back(&node);
     }
 
-    removeUnusedActions(required_nodes);
+    removeUnusedActions(required_nodes, policy);
 
     if (policy == InputsPolicy::DROP_ALL)
         project_input = true;
 }
 
-void ActionsDAG::removeUnusedActions(std::vector<Node *> & required_nodes)
+void ActionsDAG::removeUnusedActions(const std::vector<Node *> & required_nodes, InputsPolicy policy)
 {
     std::unordered_set<const Node *> visited_nodes;
     std::stack<Node *> stack;
@@ -1195,6 +1195,11 @@ void ActionsDAG::removeUnusedActions(std::vector<Node *> & required_nodes)
         for (auto * node : required_nodes)
         {
             if (visited_nodes.count(node))
+                continue;
+
+            /// Remove input from index if we keep inputs.
+            /// It will be dropped if no other actions depend on it.
+            if  (policy == InputsPolicy::KEEP && node->type == ActionsDAG::Type::INPUT)
                 continue;
 
             new_index[node->result_name] = node;
@@ -1408,25 +1413,13 @@ ExpressionActionsPtr ActionsDAG::linearizeActions() const
 
         if (node->type == Type::INPUT)
         {
-            /// Skip adding input if it is not used by any action and not removes column.
-            bool used_input = !cur.parents.empty()
-                           || (cur.used_in_result && !projection.empty()) /// used in final result
-                           || (!cur.used_in_result && project_input); /// removed
-            if (used_input)
-            {
-                /// Argument for input is special. It contains the position from required columns.
-                ExpressionActions::Argument argument;
-                argument.pos = expressions->required_columns.size();
-                argument.remove = false;
-                arguments.emplace_back(argument);
+            /// Argument for input is special. It contains the position from required columns.
+            ExpressionActions::Argument argument;
+            argument.pos = expressions->required_columns.size();
+            argument.remove = false;
+            arguments.emplace_back(argument);
 
-                expressions->required_columns.push_back({node->result_name, node->result_type});
-            }
-            else
-            {
-                cur.skipped_input = true;
-                continue;
-            }
+            expressions->required_columns.push_back({node->result_name, node->result_type});
         }
 
         expressions->actions.push_back({node, arguments, free_position});
