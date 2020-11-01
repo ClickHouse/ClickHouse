@@ -1163,8 +1163,6 @@ void ActionsDAG::finalize(const NamesWithAliases & aliases, InputsPolicy policy)
 
 void ActionsDAG::finalize(std::vector<Node *> & required_nodes, InputsPolicy policy)
 {
-    size_t num_nodes = required_nodes.size();
-
     if (policy == InputsPolicy::KEEP)
     {
         for (auto & node : nodes)
@@ -1173,7 +1171,6 @@ void ActionsDAG::finalize(std::vector<Node *> & required_nodes, InputsPolicy pol
     }
 
     removeUnusedActions(required_nodes);
-    required_nodes.resize(num_nodes);
 
     if (policy == InputsPolicy::DROP_ALL)
         project_input = true;
