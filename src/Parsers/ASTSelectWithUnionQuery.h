@@ -28,9 +28,6 @@ public:
     Modes union_modes;
 
     ASTPtr list_of_selects;
-
-    /// we need flatten_nodes to help build nested_interpreter
-    ASTPtr flatten_nodes_list;
 };
 
 }

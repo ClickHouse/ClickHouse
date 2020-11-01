@@ -76,18 +76,13 @@ void IAST::updateTreeHashImpl(SipHash & hash_state) const
 
 size_t IAST::checkDepthImpl(size_t max_depth, size_t level) const
 {
-    std::cout << "\n\n in check depth impl\n\n";
-    std::cout << "\nchildren.size = " << children.size() << "\n\n";
     size_t res = level + 1;
     for (const auto & child : children)
     {
-        std::cout << "\n in for\n\n";
         if (level >= max_depth)
             throw Exception("AST is too deep. Maximum: " + toString(max_depth), ErrorCodes::TOO_DEEP_AST);
         res = std::max(res, child->checkDepthImpl(max_depth, level + 1));
-        std::cout << "\n after  for\n\n";
     }
-    std::cout << "\n\n after impl\n\n";
 
     return res;
 }

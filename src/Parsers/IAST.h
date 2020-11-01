@@ -11,7 +11,6 @@
 #include <set>
 #include <sstream>
 
-#include <iostream>
 
 class SipHash;
 
@@ -92,7 +91,6 @@ public:
       */
     size_t checkDepth(size_t max_depth) const
     {
-        std::cout << "\n in check depth\n\n";
         return checkDepthImpl(max_depth, 0);
     }
 
