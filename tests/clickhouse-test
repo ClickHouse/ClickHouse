@@ -180,7 +180,7 @@ def need_retry(stderr):
 
 def get_processlist(client_cmd):
     try:
-        return subprocess.check_output("{} --query 'SHOW PROCESSLIST FORMAT Vertical'".format(client_cmd), shell=True)
+        return subprocess.check_output("{} --query 'SHOW PROCESSLIST FORMAT Vertical'".format(client_cmd), shell=True).decode('utf-8')
     except:
         return "" #  server seems dead
 
@@ -189,7 +189,7 @@ def get_processlist(client_cmd):
 def get_stacktraces_from_gdb(server_pid):
     cmd = "gdb -batch -ex 'thread apply all backtrace' -p {}".format(server_pid)
     try:
-        return subprocess.check_output(cmd, shell=True)
+        return subprocess.check_output(cmd, shell=True).decode('utf-8')
     except Exception as ex:
         return "Error occured while receiving stack traces from gdb: {}".format(str(ex))
 
@@ -198,7 +198,10 @@ def get_stacktraces_from_gdb(server_pid):
 # it does not work in Sandbox
 def get_stacktraces_from_clickhouse(client):
     try:
-        return subprocess.check_output("{} --allow_introspection_functions=1 --query \"SELECT arrayStringConcat(arrayMap(x, y -> concat(x, ': ', y), arrayMap(x -> addressToLine(x), trace), arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace FROM system.stack_trace format Vertical\"".format(client), shell=True)
+        return subprocess.check_output("{} --allow_introspection_functions=1 --query "
+               "\"SELECT arrayStringConcat(arrayMap(x, y -> concat(x, ': ', y), arrayMap(x -> addressToLine(x), trace), "
+               "arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace "
+               "FROM system.stack_trace format Vertical\"".format(client), shell=True).decode('utf-8')
     except Exception as ex:
         return "Error occured while receiving stack traces from client: {}".format(str(ex))
 
@@ -353,20 +356,22 @@ def run_tests_array(all_tests_with_params):
 
                             if os.path.isfile(stdout_file):
                                 print(", result:\n")
-                                print(open(stdout_file).read())
+                                print('\n'.join(open(stdout_file).read().split('\n')[:100]))
 
                         elif stderr:
                             failures += 1
                             failures_chain += 1
                             print(MSG_FAIL, end='')
                             print_test_time(total_time)
-                            print(" - having stderror:\n{}".format(stderr))
+                            print(" - having stderror:\n{}".format(
+                                '\n'.join(stderr.split('\n')[:100])))
                         elif 'Exception' in stdout:
                             failures += 1
                             failures_chain += 1
                             print(MSG_FAIL, end='')
                             print_test_time(total_time)
-                            print(" - having exception:\n{}".format(stdout))
+                            print(" - having exception:\n{}".format(
+                                '\n'.join(stdout.split('\n')[:100])))
                         elif not os.path.isfile(reference_file):
                             print(MSG_UNKNOWN, end='')
                             print_test_time(total_time)

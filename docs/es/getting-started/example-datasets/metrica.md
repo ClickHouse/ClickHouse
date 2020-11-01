@@ -9,7 +9,7 @@ toc_title: El Yandex.Metrica Datos
 
 El conjunto de datos consta de dos tablas que contienen datos anónimos sobre los hits (`hits_v1`) y visitas (`visits_v1`) el Yandex.Métrica. Puedes leer más sobre Yandex.Metrica en [Historial de ClickHouse](../../introduction/history.md) apartado.
 
-El conjunto de datos consta de dos tablas, cualquiera de ellas se puede descargar como `tsv.xz` o como particiones preparadas. Además, una versión extendida de la `hits` La tabla que contiene 100 millones de filas está disponible como TSV en https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits\_100m\_obfuscated\_v1.tsv.xz y como particiones preparadas en https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits\_100m\_obfuscated\_v1.tar.xz.
+El conjunto de datos consta de dos tablas, cualquiera de ellas se puede descargar como `tsv.xz` o como particiones preparadas. Además, una versión extendida de la `hits` La tabla que contiene 100 millones de filas está disponible como TSV en https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_100m_obfuscated_v1.tsv.xz y como particiones preparadas en https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits_100m_obfuscated_v1.tar.xz.
 
 ## Obtención de tablas a partir de particiones preparadas {#obtaining-tables-from-prepared-partitions}
 

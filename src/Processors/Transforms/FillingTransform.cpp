@@ -113,7 +113,7 @@ void FillingTransform::transform(Chunk & chunk)
 
     if (generate_suffix)
     {
-        const auto & empty_columns = inputs.front().getHeader().getColumns();
+        const auto & empty_columns = input.getHeader().getColumns();
         init_columns_by_positions(empty_columns, old_fill_columns, res_fill_columns, fill_column_positions);
         init_columns_by_positions(empty_columns, old_other_columns, res_other_columns, other_column_positions);
 

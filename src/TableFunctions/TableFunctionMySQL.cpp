@@ -24,8 +24,6 @@
 
 #    include <Databases/MySQL/DatabaseConnectionMySQL.h> // for fetchTablesColumnsList
 
-#    include <mysqlxx/Pool.h>
-
 
 namespace DB
 {
@@ -38,8 +36,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
 }
 
-
-StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, const Context & context)
 {
     const auto & args_func = ast_function->as<ASTFunction &>();
 
@@ -55,14 +52,12 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
-    std::string host_port = args[0]->as<ASTLiteral &>().value.safeGet<String>();
-    std::string remote_database_name = args[1]->as<ASTLiteral &>().value.safeGet<String>();
-    std::string remote_table_name = args[2]->as<ASTLiteral &>().value.safeGet<String>();
-    std::string user_name = args[3]->as<ASTLiteral &>().value.safeGet<String>();
-    std::string password = args[4]->as<ASTLiteral &>().value.safeGet<String>();
+    String host_port = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+    remote_database_name = args[1]->as<ASTLiteral &>().value.safeGet<String>();
+    remote_table_name = args[2]->as<ASTLiteral &>().value.safeGet<String>();
+    user_name = args[3]->as<ASTLiteral &>().value.safeGet<String>();
+    password = args[4]->as<ASTLiteral &>().value.safeGet<String>();
 
-    bool replace_query = false;
-    std::string on_duplicate_clause;
     if (args.size() >= 6)
         replace_query = args[5]->as<ASTLiteral &>().value.safeGet<UInt64>() > 0;
     if (args.size() == 7)
@@ -74,26 +69,45 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
             ErrorCodes::BAD_ARGUMENTS);
 
     /// 3306 is the default MySQL port number
-    auto parsed_host_port = parseAddress(host_port, 3306);
+    parsed_host_port = parseAddress(host_port, 3306);
+}
 
-    mysqlxx::Pool pool(remote_database_name, parsed_host_port.first, user_name, password, parsed_host_port.second);
+ColumnsDescription TableFunctionMySQL::getActualTableStructure(const Context & context) const
+{
+    assert(!parsed_host_port.first.empty());
+    if (!pool)
+        pool.emplace(remote_database_name, parsed_host_port.first, user_name, password, parsed_host_port.second);
+
     const auto & settings = context.getSettingsRef();
-    const auto tables_and_columns = fetchTablesColumnsList(pool, remote_database_name, {remote_table_name}, settings.external_table_functions_use_nulls, settings.mysql_datatypes_support_level);
+    const auto tables_and_columns = fetchTablesColumnsList(*pool, remote_database_name, {remote_table_name}, settings.external_table_functions_use_nulls, settings.mysql_datatypes_support_level);
 
     const auto columns = tables_and_columns.find(remote_table_name);
     if (columns == tables_and_columns.end())
         throw Exception("MySQL table " + backQuoteIfNeed(remote_database_name) + "." + backQuoteIfNeed(remote_table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
+    return ColumnsDescription{columns->second};
+}
+
+StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+{
+    assert(!parsed_host_port.first.empty());
+    if (!pool)
+        pool.emplace(remote_database_name, parsed_host_port.first, user_name, password, parsed_host_port.second);
+
+    auto columns = getActualTableStructure(context);
+
     auto res = StorageMySQL::create(
         StorageID(getDatabaseName(), table_name),
-        std::move(pool),
+        std::move(*pool),
         remote_database_name,
         remote_table_name,
         replace_query,
         on_duplicate_clause,
-        ColumnsDescription{columns->second},
+        columns,
         ConstraintsDescription{},
         context);
+
+    pool.reset();
 
     res->startup();
     return res;

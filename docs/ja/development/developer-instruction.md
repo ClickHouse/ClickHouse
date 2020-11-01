@@ -44,7 +44,7 @@ Ubuntuでこれを行うには、コマンドラインターミナルで実行�
     git clone --recursive git@github.com:your_github_username/ClickHouse.git
     cd ClickHouse
 
-注:、代理して下さい *your\_github\_username* 適切なもので！
+注:、代理して下さい *your_github_username* 適切なもので！
 
 このコマンドディレクトリの作成 `ClickHouse` プロジェクトの作業コピーを含む。
 
@@ -154,7 +154,7 @@ ClickHouseを構築する準備ができたので、別のディレクトリを�
     mkdir build
     cd build
 
-いくつかの異なるディレクトリ（build\_release、build\_debugなど）を持つことができます。）ビルドの異なるタイプのために。
+いくつかの異なるディレクトリ（build_release、build_debugなど）を持つことができます。）ビルドの異なるタイプのために。
 
 中の間 `build` cmakeを実行してビルドを構成します。 最初の実行の前に、コンパイラ（この例ではバージョン9gccコンパイラ）を指定する環境変数を定義する必要があります。
 
