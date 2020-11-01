@@ -350,7 +350,7 @@ SetPtr makeExplicitSet(
     auto it = index.find(left_arg->getColumnName());
     if (it == index.end())
         throw Exception("Unknown identifier: '" + left_arg->getColumnName() + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
-    const DataTypePtr & left_arg_type = (*it)->result_type;
+    const DataTypePtr & left_arg_type = it->second->result_type;
 
     DataTypes set_element_types = {left_arg_type};
     const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(left_arg_type.get());
@@ -414,8 +414,8 @@ ScopeStack::ScopeStack(ActionsDAGPtr actions, const Context & context_)
     level.actions = std::move(actions);
 
     for (const auto & node : level.actions->getIndex())
-        if (node->type == ActionsDAG::Type::INPUT)
-            level.inputs.emplace(node->result_name);
+        if (node.second->type == ActionsDAG::Type::INPUT)
+            level.inputs.emplace(node.second->result_name);
 }
 
 void ScopeStack::pushLevel(const NamesAndTypesList & input_columns)
@@ -434,8 +434,8 @@ void ScopeStack::pushLevel(const NamesAndTypesList & input_columns)
 
     for (const auto & node : prev.actions->getIndex())
     {
-        if (!index.contains(node->result_name))
-            level.actions->addInput({node->column, node->result_type, node->result_name});
+        if (!index.contains(node.second->result_name))
+            level.actions->addInput({node.second->column, node.second->result_type, node.second->result_name});
     }
 }
 
@@ -451,7 +451,7 @@ size_t ScopeStack::getColumnLevel(const std::string & name)
         const auto & index = stack[i].actions->getIndex();
         auto it = index.find(name);
 
-        if (it != index.end() && (*it)->type != ActionsDAG::Type::INPUT)
+        if (it != index.end() && it->second->type != ActionsDAG::Type::INPUT)
             return i;
     }
 
@@ -745,7 +745,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             auto it = index.find(child_column_name);
             if (it != index.end())
             {
-                argument_types.push_back((*it)->result_type);
+                argument_types.push_back(it->second->result_type);
                 argument_names.push_back(child_column_name);
             }
             else
@@ -793,7 +793,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 auto lambda_dag = data.actions_stack.popLevel();
 
                 String result_name = lambda->arguments->children.at(1)->getColumnName();
-                lambda_dag->finalize(Names(1, result_name));
+                lambda_dag->finalize(Names(1, result_name), ActionsDAG::InputsPolicy::DROP_ALL);
 
                 auto lambda_actions = lambda_dag->buildExpressions();
 
@@ -854,7 +854,7 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
 
         auto it = index.find(default_name);
         if (it != index.end())
-            existing_column = *it;
+            existing_column = it->second;
 
         /*
          * To approximate CSE, bind all identical literals to a single temporary
