@@ -119,6 +119,7 @@ String InterpreterSelectQuery::generateFilterActions(
         ParserExpression expr_parser;
         expr_list->children.push_back(parseQuery(expr_parser, column_str, 0, context->getSettingsRef().max_parser_depth));
     }
+
     select_ast->setExpression(ASTSelectQuery::Expression::TABLES, std::make_shared<ASTTablesInSelectQuery>());
     auto tables = select_ast->tables();
     auto tables_elem = std::make_shared<ASTTablesInSelectQueryElement>();
