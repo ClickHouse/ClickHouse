@@ -197,7 +197,7 @@ size_t InterpreterSelectWithUnionQuery::optimizeUnionList()
                         DB::ErrorCodes::EXPECTED_ALL_OR_DISTINCT);
             }
         }
-        /// Optimize: if there is UNION DISTINCT, all previous UNION DISTINCT can be rewritten to UNION ALL.
+        /// Optimize general cases: if there is UNION DISTINCT, all previous UNION DISTINCT can be rewritten to UNION ALL.
         /// Therefore we have at most one UNION DISTINCT in a sequence.
         for (auto rit = ast.union_modes.rbegin(); rit != ast.union_modes.rend(); ++rit)
         {
