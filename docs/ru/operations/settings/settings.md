@@ -1127,6 +1127,43 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 Для формата CSV включает или выключает парсинг неэкранированной строки `NULL` как литерала (синоним для `\N`)
 
+## input_format_csv_enum_as_number {#settings-input_format_csv_enum_as_number}
+
+Включает или отключает парсинг значений перечислений как идентификаторов перечислений для входного формата CSV.
+
+Возможные значения:
+
+-   0 — выключена.
+-   1 — включена.
+
+Значение по умолчанию: 0.
+
+**Пример**
+
+Запрос:
+
+```sql
+DROP TABLE IF EXISTS table_with_enum_column_for_csv_insert;
+
+CREATE TABLE table_with_enum_column_for_csv_insert (Id Int32,Value Enum('ef' = 1, 'es' = 2)) ENGINE=Memory();
+
+SET input_format_csv_enum_as_number = 1;
+
+INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2;
+SELECT * FROM table_with_enum_column_for_csv_insert;
+
+SET input_format_csv_enum_as_number = 0;
+DROP TABLE IF EXISTS table_with_enum_column_for_csv_insert;
+```
+
+Результат:
+
+```text
+┌──Id─┬─Value─┐
+│ 102 │ es    │
+└─────┴───────┘
+```
+
 ## output_format_csv_crlf_end_of_line {#settings-output-format-csv-crlf-end-of-line}
 
 Использовать в качестве разделителя строк для CSV формата CRLF (DOS/Windows стиль) вместо LF (Unix стиль).
