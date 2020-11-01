@@ -1,14 +1,15 @@
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/Context.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Columns/getLeastSuperColumn.h>
-#include <Common/typeid_cast.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/queryToString.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/UnionStep.h>
-#include <Processors/QueryPlan/DistinctStep.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -30,7 +31,6 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     if (!num_children)
         throw Exception("Logical error: no children in ASTSelectWithUnionQuery", ErrorCodes::LOGICAL_ERROR);
 
-    /// We first build nested interpreters for each select query, then using this nested interpreters to build Tree Structured nested interpreter.
     /// Note that we pass 'required_result_column_names' to first SELECT.
     /// And for the rest, we pass names at the corresponding positions of 'required_result_column_names' in the result of first SELECT,
     ///  because names could be different.
