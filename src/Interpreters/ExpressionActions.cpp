@@ -1182,6 +1182,9 @@ void ActionsDAG::finalize(std::vector<Node *> & required_nodes, InputsPolicy pol
 
     if (policy == InputsPolicy::DROP_ALL)
         project_input = true;
+
+    if (policy == InputsPolicy::KEEP)
+        required_nodes.clear();
 }
 
 void ActionsDAG::removeUnusedActions(const std::vector<Node *> & required_nodes, InputsPolicy policy)
