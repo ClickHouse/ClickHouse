@@ -53,6 +53,7 @@ namespace ErrorCodes
     extern const int AIO_READ_ERROR;
     extern const int AIO_WRITE_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int CACHE_DICTIONARY_UPDATE_FAIL;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int CANNOT_CREATE_DIRECTORY;
     extern const int CANNOT_FSYNC;
@@ -1193,8 +1194,23 @@ void SSDCacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector
             {
                 /// TODO: use old values
 
-                /// We don't have expired data for that `id` so all we can do is to rethrow `last_exception`.
-                std::rethrow_exception(last_update_exception);
+                // We don't have expired data for that `id` so all we can do is
+                // to rethrow `last_exception`. We might have to throw the same
+                // exception for different callers of dictGet() in different
+                // threads, which might then modify the exception object, so we
+                // have to throw a copy.
+                try
+                {
+                    std::rethrow_exception(last_update_exception);
+                }
+                catch (...)
+                {
+                    throw DB::Exception(ErrorCodes::CACHE_DICTIONARY_UPDATE_FAIL,
+                        "Update failed for dictionary '{}': {}",
+                        getPath(),
+                        getCurrentExceptionMessage(true /*with stack trace*/,
+                            true /*check embedded stack trace*/));
+                }
             }
 
             /// Set key

@@ -136,7 +136,7 @@ TypeIndex baseType(TypeIndex type_idx)
     return TypeIndex::Nothing;
 }
 
-TypeIndex typeIdx(const DataTypePtr & data_type)
+TypeIndex typeIdx(const IDataType * data_type)
 {
     if (!data_type)
         return TypeIndex::Nothing;
@@ -656,7 +656,7 @@ void CompressionCodecT64::updateHash(SipHash & hash) const
 
 void registerCodecT64(CompressionCodecFactory & factory)
 {
-    auto reg_func = [&](const ASTPtr & arguments, DataTypePtr type) -> CompressionCodecPtr
+    auto reg_func = [&](const ASTPtr & arguments, const IDataType * type) -> CompressionCodecPtr
     {
         Variant variant = Variant::Byte;
 
@@ -683,7 +683,7 @@ void registerCodecT64(CompressionCodecFactory & factory)
 
         auto type_idx = typeIdx(type);
         if (type && type_idx == TypeIndex::Nothing)
-            throw Exception("T64 codec is not supported for specified type", ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
+            throw Exception("T64 codec is not supported for specified type " + type->getName(), ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
         return std::make_shared<CompressionCodecT64>(type_idx, variant);
     };
 

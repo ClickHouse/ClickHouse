@@ -35,7 +35,7 @@ def cluster_without_dns_cache_update():
         yield cluster
 
     except Exception as ex:
-        print ex
+        print(ex)
 
     finally:
         cluster.shutdown()
@@ -90,7 +90,7 @@ def cluster_with_dns_cache_update():
         yield cluster
 
     except Exception as ex:
-        print ex
+        print(ex)
 
     finally:
         cluster.shutdown()
@@ -117,7 +117,7 @@ def test_ip_change_update_dns_cache(cluster_with_dns_cache_update):
     curl_result = node4.exec_in_container(["bash", "-c", "curl -s 'node3:8123'"])
     assert curl_result == 'Ok.\n'
     cat_resolv = node4.exec_in_container(["bash", "-c", "cat /etc/resolv.conf"])
-    print("RESOLV {}".format(cat_resolv))
+    print(("RESOLV {}".format(cat_resolv)))
 
     assert_eq_with_retry(node4, "SELECT * FROM remote('node3', 'system', 'one')", "0", sleep_time=0.5)
 

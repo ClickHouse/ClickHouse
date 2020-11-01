@@ -61,7 +61,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.type = MATERIALIZE_INDEX;
         res.partition = command->partition;
         res.predicate = nullptr;
-        res.index_name = command->index->as<ASTIdentifier &>().name;
+        res.index_name = command->index->as<ASTIdentifier &>().name();
         return res;
     }
     else if (parse_alter_commands && command->type == ASTAlterCommand::MODIFY_COLUMN)
@@ -92,7 +92,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         MutationCommand res;
         res.ast = command->ptr();
         res.type = MutationCommand::Type::DROP_INDEX;
-        res.column_name = command->index->as<ASTIdentifier &>().name;
+        res.column_name = command->index->as<ASTIdentifier &>().name();
         if (command->partition)
             res.partition = command->partition;
         if (command->clear_index)
@@ -104,8 +104,8 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         MutationCommand res;
         res.ast = command->ptr();
         res.type = MutationCommand::Type::RENAME_COLUMN;
-        res.column_name = command->column->as<ASTIdentifier &>().name;
-        res.rename_to = command->rename_to->as<ASTIdentifier &>().name;
+        res.column_name = command->column->as<ASTIdentifier &>().name();
+        res.rename_to = command->rename_to->as<ASTIdentifier &>().name();
         return res;
     }
     else if (command->type == ASTAlterCommand::MATERIALIZE_TTL)

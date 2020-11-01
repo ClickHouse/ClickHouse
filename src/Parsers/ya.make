@@ -5,7 +5,6 @@ PEERDIR(
     clickhouse/src/Common
 )
 
-CFLAGS(-g0)
 
 SRCS(
     ASTAlterQuery.cpp
@@ -85,6 +84,7 @@ SRCS(
     MySQL/ASTDeclareReference.cpp
     MySQL/ASTDeclareSubPartition.cpp
     MySQL/ASTDeclareTableOptions.cpp
+    obfuscateQueries.cpp
     parseDatabaseAndTableName.cpp
     parseIdentifierOrStringLiteral.cpp
     parseIntervalKind.cpp

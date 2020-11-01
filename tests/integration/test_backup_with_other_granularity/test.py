@@ -17,6 +17,7 @@ node4 = cluster.add_instance('node4')
 def started_cluster():
     try:
         cluster.start()
+
         yield cluster
     finally:
         cluster.shutdown()
@@ -141,22 +142,24 @@ def test_backup_from_old_version_config(started_cluster):
 
 
 def test_backup_and_alter(started_cluster):
-    node4.query("CREATE TABLE backup_table(A Int64, B String, C Date) Engine = MergeTree order by tuple()")
+    node4.query("CREATE DATABASE test ENGINE=Ordinary") # Different path in shadow/ with Atomic
 
-    node4.query("INSERT INTO backup_table VALUES(2, '2', toDate('2019-10-01'))")
+    node4.query("CREATE TABLE test.backup_table(A Int64, B String, C Date) Engine = MergeTree order by tuple()")
 
-    node4.query("ALTER TABLE backup_table FREEZE PARTITION tuple();")
+    node4.query("INSERT INTO test.backup_table VALUES(2, '2', toDate('2019-10-01'))")
 
-    node4.query("ALTER TABLE backup_table DROP COLUMN C")
+    node4.query("ALTER TABLE test.backup_table FREEZE PARTITION tuple();")
 
-    node4.query("ALTER TABLE backup_table MODIFY COLUMN B UInt64")
+    node4.query("ALTER TABLE test.backup_table DROP COLUMN C")
 
-    node4.query("ALTER TABLE backup_table DROP PARTITION tuple()")
+    node4.query("ALTER TABLE test.backup_table MODIFY COLUMN B UInt64")
+
+    node4.query("ALTER TABLE test.backup_table DROP PARTITION tuple()")
 
     node4.exec_in_container(['bash', '-c',
-                             'cp -r /var/lib/clickhouse/shadow/1/data/default/backup_table/all_1_1_0/ /var/lib/clickhouse/data/default/backup_table/detached'])
+                             'cp -r /var/lib/clickhouse/shadow/1/data/test/backup_table/all_1_1_0/ /var/lib/clickhouse/data/test/backup_table/detached'])
 
-    node4.query("ALTER TABLE backup_table ATTACH PARTITION tuple()")
+    node4.query("ALTER TABLE test.backup_table ATTACH PARTITION tuple()")
 
-    assert node4.query("SELECT sum(A) FROM backup_table") == "2\n"
-    assert node4.query("SELECT B + 2 FROM backup_table") == "4\n"
+    assert node4.query("SELECT sum(A) FROM test.backup_table") == "2\n"
+    assert node4.query("SELECT B + 2 FROM test.backup_table") == "4\n"

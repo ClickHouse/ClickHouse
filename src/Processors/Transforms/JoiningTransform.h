@@ -14,7 +14,7 @@ public:
     JoiningTransform(Block input_header, JoinPtr join_,
                      bool on_totals_ = false, bool default_totals_ = false);
 
-    String getName() const override { return "InflatingExpressionTransform"; }
+    String getName() const override { return "JoiningTransform"; }
 
     static Block transformHeader(Block header, const JoinPtr & join);
 

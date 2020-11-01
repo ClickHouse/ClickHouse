@@ -21,7 +21,6 @@
 namespace CurrentMetrics
 {
     extern const Metric BackgroundPoolTask;
-    extern const Metric MemoryTrackingInBackgroundProcessingPool;
 }
 
 namespace DB
@@ -67,7 +66,6 @@ public:
         double task_sleep_seconds_when_no_work_random_part = 1.0;
 
         CurrentMetrics::Metric tasks_metric = CurrentMetrics::BackgroundPoolTask;
-        CurrentMetrics::Metric memory_metric = CurrentMetrics::MemoryTrackingInBackgroundProcessingPool;
 
         PoolSettings() noexcept {}
     };

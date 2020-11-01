@@ -336,7 +336,7 @@ def test_polymorphic_parts_non_adaptive(start_cluster):
         "Wide\t2\n")
 
     assert node1.contains_in_log(
-        "<Warning> default.non_adaptive_table: Table can't create parts with adaptive granularity")
+        "<Warning> default.non_adaptive_table ([0-9a-f-]*): Table can't create parts with adaptive granularity")
 
 
 def test_in_memory(start_cluster):
@@ -408,24 +408,29 @@ def test_in_memory_wal(start_cluster):
         pm.partition_instances(node11, node12)
         check(node11, 300, 6)
 
-        wal_file = os.path.join(node11.path, "database/data/default/wal_table/wal.bin")
+        wal_file = "/var/lib/clickhouse/data/default/wal_table/wal.bin"
         # Corrupt wal file
-        open(wal_file, 'rw+').truncate(os.path.getsize(wal_file) - 10)
+        # Truncate it to it's size minus 10 bytes
+        node11.exec_in_container(['bash', '-c', 'truncate --size="$(($(stat -c "%s" {}) - 10))" {}'.format(wal_file, wal_file)],
+                                 privileged=True, user='root')
         node11.restart_clickhouse(kill=True)
 
         # Broken part is lost, but other restored successfully
         check(node11, 250, 5)
         # WAL with blocks from 0 to 4
-        broken_wal_file = os.path.join(node11.path, "database/data/default/wal_table/wal_0_4.bin")
-        assert os.path.exists(broken_wal_file)
+        broken_wal_file = "/var/lib/clickhouse/data/default/wal_table/wal_0_4.bin"
+        # Check file exists
+        node11.exec_in_container(['bash', '-c', 'test -f {}'.format(broken_wal_file)])
 
     # Fetch lost part from replica
     node11.query("SYSTEM SYNC REPLICA wal_table", timeout=20)
     check(node11, 300, 6)
 
     # Check that new data is written to new wal, but old is still exists for restoring
-    assert os.path.getsize(wal_file) > 0
-    assert os.path.exists(broken_wal_file)
+    # Check file not empty
+    node11.exec_in_container(['bash', '-c', 'test -s {}'.format(wal_file)])
+    # Check file exists
+    node11.exec_in_container(['bash', '-c', 'test -f {}'.format(broken_wal_file)])
 
     # Data is lost without WAL
     node11.query("ALTER TABLE wal_table MODIFY SETTING in_memory_parts_enable_wal = 0")
@@ -446,8 +451,8 @@ def test_in_memory_wal_rotate(start_cluster):
         insert_random_data('restore_table', node11, 50)
 
     for i in range(5):
-        wal_file = os.path.join(node11.path, "database/data/default/restore_table/wal_{0}_{0}.bin".format(i))
-        assert os.path.exists(wal_file)
+        # Check file exists
+        node11.exec_in_container(['bash', '-c', 'test -f /var/lib/clickhouse/data/default/restore_table/wal_{0}_{0}.bin'.format(i)])
 
     for node in [node11, node12]:
         node.query(
@@ -459,13 +464,14 @@ def test_in_memory_wal_rotate(start_cluster):
     node11.restart_clickhouse(kill=True)
 
     for i in range(5):
-        wal_file = os.path.join(node11.path, "database/data/default/restore_table/wal_{0}_{0}.bin".format(i))
-        assert not os.path.exists(wal_file)
+        # check file doesn't exist
+        node11.exec_in_container(['bash', '-c', 'test ! -e /var/lib/clickhouse/data/default/restore_table/wal_{0}_{0}.bin'.format(i)])
 
     # New wal file was created and ready to write part to it
-    wal_file = os.path.join(node11.path, "database/data/default/restore_table/wal.bin")
-    assert os.path.exists(wal_file)
-    assert os.path.getsize(wal_file) == 0
+    # Check file exists
+    node11.exec_in_container(['bash', '-c', 'test -f /var/lib/clickhouse/data/default/restore_table/wal.bin'])
+    # Chech file empty
+    node11.exec_in_container(['bash', '-c', 'test ! -s /var/lib/clickhouse/data/default/restore_table/wal.bin'])
 
 
 def test_in_memory_deduplication(start_cluster):
@@ -509,19 +515,20 @@ def test_in_memory_alters(start_cluster):
 
 
 def test_polymorphic_parts_index(start_cluster):
+    node1.query('CREATE DATABASE test_index ENGINE=Ordinary')   # Different paths with Atomic
     node1.query('''
-        CREATE TABLE index_compact(a UInt32, s String)
+        CREATE TABLE test_index.index_compact(a UInt32, s String)
         ENGINE = MergeTree ORDER BY a
         SETTINGS min_rows_for_wide_part = 1000, index_granularity = 128, merge_max_block_size = 100''')
 
-    node1.query("INSERT INTO index_compact SELECT number, toString(number) FROM numbers(100)")
-    node1.query("INSERT INTO index_compact SELECT number, toString(number) FROM numbers(30)")
-    node1.query("OPTIMIZE TABLE index_compact FINAL")
+    node1.query("INSERT INTO test_index.index_compact SELECT number, toString(number) FROM numbers(100)")
+    node1.query("INSERT INTO test_index.index_compact SELECT number, toString(number) FROM numbers(30)")
+    node1.query("OPTIMIZE TABLE test_index.index_compact FINAL")
 
     assert node1.query("SELECT part_type FROM system.parts WHERE table = 'index_compact' AND active") == "Compact\n"
     assert node1.query("SELECT marks FROM system.parts WHERE table = 'index_compact' AND active") == "2\n"
 
-    index_path = os.path.join(node1.path, "database/data/default/index_compact/all_1_2_1/primary.idx")
+    index_path = os.path.join(node1.path, "database/data/test_index/index_compact/all_1_2_1/primary.idx")
     f = open(index_path, 'rb')
 
     assert os.path.getsize(index_path) == 8

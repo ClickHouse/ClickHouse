@@ -14,7 +14,6 @@ PEERDIR(
 
 NO_COMPILER_WARNINGS()
 
-CFLAGS(-g0)
 
 SRCS(
     ActionLocksManager.cpp
@@ -23,6 +22,8 @@ SRCS(
     addTypeConversionToAST.cpp
     AggregateDescription.cpp
     Aggregator.cpp
+    ApplyWithAliasVisitor.cpp
+    ApplyWithGlobalVisitor.cpp
     ApplyWithSubqueryVisitor.cpp
     ArithmeticOperationsInAgrFuncOptimize.cpp
     ArrayJoinAction.cpp
@@ -61,6 +62,7 @@ SRCS(
     ExtractExpressionInfoVisitor.cpp
     FillingRow.cpp
     getClusterName.cpp
+    getHeaderForProcessingStage.cpp
     getTableExpressions.cpp
     HashJoin.cpp
     IdentifierSemantic.cpp
@@ -116,6 +118,7 @@ SRCS(
     MutationsInterpreter.cpp
     MySQL/InterpretersMySQLDDLQuery.cpp
     NullableUtils.cpp
+    OpenTelemetrySpanLog.cpp
     OptimizeIfChains.cpp
     OptimizeIfWithConstantConditionVisitor.cpp
     PartLog.cpp
@@ -126,6 +129,7 @@ SRCS(
     QueryAliasesVisitor.cpp
     QueryLog.cpp
     QueryNormalizer.cpp
+    QueryParameterVisitor.cpp
     QueryThreadLog.cpp
     RemoveInjectiveFunctionsVisitor.cpp
     RenameColumnVisitor.cpp

@@ -67,3 +67,13 @@ SELECT
     sum(j),
     sum(k)
 FROM columns_transformers
+100	10	100	10	324	10
+120	8	120	8	23	8
+SELECT
+    i,
+    j,
+    toFloat64(i),
+    toFloat64(j),
+    toFloat64(k),
+    j
+FROM columns_transformers

@@ -15,14 +15,14 @@ instance = cluster.add_instance('instance', user_configs=["configs/users.d/assig
 def check_system_quotas(canonical):
     canonical_tsv = TSV(canonical)
     r = TSV(instance.query("SELECT * FROM system.quotas ORDER BY name"))
-    print("system_quotas: {},\ncanonical: {}".format(r, TSV(canonical_tsv)))
+    print(("system_quotas: {},\ncanonical: {}".format(r, TSV(canonical_tsv))))
     assert r == canonical_tsv
 
 
 def system_quota_limits(canonical):
     canonical_tsv = TSV(canonical)
     r = TSV(instance.query("SELECT * FROM system.quota_limits ORDER BY quota_name, duration"))
-    print("system_quota_limits: {},\ncanonical: {}".format(r, TSV(canonical_tsv)))
+    print(("system_quota_limits: {},\ncanonical: {}".format(r, TSV(canonical_tsv))))
     assert r == canonical_tsv
 
 
@@ -32,7 +32,7 @@ def system_quota_usage(canonical):
             "result_bytes, max_result_bytes, read_rows, max_read_rows, read_bytes, max_read_bytes, max_execution_time " \
             "FROM system.quota_usage ORDER BY duration"
     r = TSV(instance.query(query))
-    print("system_quota_usage: {},\ncanonical: {}".format(r, TSV(canonical_tsv)))
+    print(("system_quota_usage: {},\ncanonical: {}".format(r, TSV(canonical_tsv))))
     assert r == canonical_tsv
 
 
@@ -42,7 +42,7 @@ def system_quotas_usage(canonical):
             "result_bytes, max_result_bytes, read_rows, max_read_rows, read_bytes, max_read_bytes, max_execution_time " \
             "FROM system.quotas_usage ORDER BY quota_name, quota_key, duration"
     r = TSV(instance.query(query))
-    print("system_quotas_usage: {},\ncanonical: {}".format(r, TSV(canonical_tsv)))
+    print(("system_quotas_usage: {},\ncanonical: {}".format(r, TSV(canonical_tsv))))
     assert r == canonical_tsv
 
 
@@ -81,18 +81,18 @@ def reset_quotas_and_usage_info():
 def test_quota_from_users_xml():
     check_system_quotas([["myQuota", "e651da9c-a748-8703-061a-7e5e5096dae7", "users.xml", "['user_name']", [31556952],
                           0, "['default']", "[]"]])
-    system_quota_limits([["myQuota", 31556952, 0, 1000, "\N", "\N", "\N", 1000, "\N", "\N"]])
-    system_quota_usage([["myQuota", "default", 31556952, 0, 1000, 0, "\N", 0, "\N", 0, "\N", 0, 1000, 0, "\N", "\N"]])
+    system_quota_limits([["myQuota", 31556952, 0, 1000, "\\N", "\\N", "\\N", 1000, "\\N", "\\N"]])
+    system_quota_usage([["myQuota", "default", 31556952, 0, 1000, 0, "\\N", 0, "\\N", 0, "\\N", 0, 1000, 0, "\\N", "\\N"]])
     system_quotas_usage(
-        [["myQuota", "default", 1, 31556952, 0, 1000, 0, "\N", 0, "\N", 0, "\N", 0, 1000, 0, "\N", "\N"]])
+        [["myQuota", "default", 1, 31556952, 0, 1000, 0, "\\N", 0, "\\N", 0, "\\N", 0, 1000, 0, "\\N", "\\N"]])
 
     instance.query("SELECT * from test_table")
     system_quota_usage(
-        [["myQuota", "default", 31556952, 1, 1000, 0, "\N", 50, "\N", 200, "\N", 50, 1000, 200, "\N", "\N"]])
+        [["myQuota", "default", 31556952, 1, 1000, 0, "\\N", 50, "\\N", 200, "\\N", 50, 1000, 200, "\\N", "\\N"]])
 
     instance.query("SELECT COUNT() from test_table")
     system_quota_usage(
-        [["myQuota", "default", 31556952, 2, 1000, 0, "\N", 51, "\N", 208, "\N", 50, 1000, 200, "\N", "\N"]])
+        [["myQuota", "default", 31556952, 2, 1000, 0, "\\N", 51, "\\N", 208, "\\N", 50, 1000, 200, "\\N", "\\N"]])
 
 
 def test_simpliest_quota():
@@ -102,11 +102,11 @@ def test_simpliest_quota():
                           "['default']", "[]"]])
     system_quota_limits("")
     system_quota_usage(
-        [["myQuota", "default", "\N", "\N", "\N", "\N", "\N", "\N", "\N", "\N", "\N", "\N", "\N", "\N", "\N", "\N"]])
+        [["myQuota", "default", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N"]])
 
     instance.query("SELECT * from test_table")
     system_quota_usage(
-        [["myQuota", "default", "\N", "\N", "\N", "\N", "\N", "\N", "\N", "\N", "\N", "\N", "\N", "\N", "\N", "\N"]])
+        [["myQuota", "default", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N"]])
 
 
 def test_tracking_quota():
@@ -114,16 +114,16 @@ def test_tracking_quota():
     copy_quota_xml('tracking.xml')
     check_system_quotas([["myQuota", "e651da9c-a748-8703-061a-7e5e5096dae7", "users.xml", "['user_name']", "[31556952]",
                           0, "['default']", "[]"]])
-    system_quota_limits([["myQuota", 31556952, 0, "\N", "\N", "\N", "\N", "\N", "\N", "\N"]])
-    system_quota_usage([["myQuota", "default", 31556952, 0, "\N", 0, "\N", 0, "\N", 0, "\N", 0, "\N", 0, "\N", "\N"]])
+    system_quota_limits([["myQuota", 31556952, 0, "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N"]])
+    system_quota_usage([["myQuota", "default", 31556952, 0, "\\N", 0, "\\N", 0, "\\N", 0, "\\N", 0, "\\N", 0, "\\N", "\\N"]])
 
     instance.query("SELECT * from test_table")
     system_quota_usage(
-        [["myQuota", "default", 31556952, 1, "\N", 0, "\N", 50, "\N", 200, "\N", 50, "\N", 200, "\N", "\N"]])
+        [["myQuota", "default", 31556952, 1, "\\N", 0, "\\N", 50, "\\N", 200, "\\N", 50, "\\N", 200, "\\N", "\\N"]])
 
     instance.query("SELECT COUNT() from test_table")
     system_quota_usage(
-        [["myQuota", "default", 31556952, 2, "\N", 0, "\N", 51, "\N", 208, "\N", 50, "\N", 200, "\N", "\N"]])
+        [["myQuota", "default", 31556952, 2, "\\N", 0, "\\N", 51, "\\N", 208, "\\N", 50, "\\N", 200, "\\N", "\\N"]])
 
 
 def test_exceed_quota():
@@ -131,55 +131,55 @@ def test_exceed_quota():
     copy_quota_xml('tiny_limits.xml')
     check_system_quotas([["myQuota", "e651da9c-a748-8703-061a-7e5e5096dae7", "users.xml", "['user_name']", "[31556952]",
                           0, "['default']", "[]"]])
-    system_quota_limits([["myQuota", 31556952, 0, 1, 1, 1, "\N", 1, "\N", "\N"]])
-    system_quota_usage([["myQuota", "default", 31556952, 0, 1, 0, 1, 0, 1, 0, "\N", 0, 1, 0, "\N", "\N"]])
+    system_quota_limits([["myQuota", 31556952, 0, 1, 1, 1, "\\N", 1, "\\N", "\\N"]])
+    system_quota_usage([["myQuota", "default", 31556952, 0, 1, 0, 1, 0, 1, 0, "\\N", 0, 1, 0, "\\N", "\\N"]])
 
     assert re.search("Quota.*has\ been\ exceeded", instance.query_and_get_error("SELECT * from test_table"))
-    system_quota_usage([["myQuota", "default", 31556952, 1, 1, 1, 1, 0, 1, 0, "\N", 50, 1, 0, "\N", "\N"]])
+    system_quota_usage([["myQuota", "default", 31556952, 1, 1, 1, 1, 0, 1, 0, "\\N", 50, 1, 0, "\\N", "\\N"]])
 
     # Change quota, now the limits are enough to execute queries.
     copy_quota_xml('normal_limits.xml')
     check_system_quotas([["myQuota", "e651da9c-a748-8703-061a-7e5e5096dae7", "users.xml", "['user_name']", "[31556952]",
                           0, "['default']", "[]"]])
-    system_quota_limits([["myQuota", 31556952, 0, 1000, "\N", "\N", "\N", 1000, "\N", "\N"]])
-    system_quota_usage([["myQuota", "default", 31556952, 1, 1000, 1, "\N", 0, "\N", 0, "\N", 50, 1000, 0, "\N", "\N"]])
+    system_quota_limits([["myQuota", 31556952, 0, 1000, "\\N", "\\N", "\\N", 1000, "\\N", "\\N"]])
+    system_quota_usage([["myQuota", "default", 31556952, 1, 1000, 1, "\\N", 0, "\\N", 0, "\\N", 50, 1000, 0, "\\N", "\\N"]])
 
     instance.query("SELECT * from test_table")
     system_quota_usage(
-        [["myQuota", "default", 31556952, 2, 1000, 1, "\N", 50, "\N", 200, "\N", 100, 1000, 200, "\N", "\N"]])
+        [["myQuota", "default", 31556952, 2, 1000, 1, "\\N", 50, "\\N", 200, "\\N", 100, 1000, 200, "\\N", "\\N"]])
 
 
 def test_add_remove_interval():
     check_system_quotas([["myQuota", "e651da9c-a748-8703-061a-7e5e5096dae7", "users.xml", "['user_name']", [31556952],
                           0, "['default']", "[]"]])
-    system_quota_limits([["myQuota", 31556952, 0, 1000, "\N", "\N", "\N", 1000, "\N", "\N"]])
-    system_quota_usage([["myQuota", "default", 31556952, 0, 1000, 0, "\N", 0, "\N", 0, "\N", 0, 1000, 0, "\N", "\N"]])
+    system_quota_limits([["myQuota", 31556952, 0, 1000, "\\N", "\\N", "\\N", 1000, "\\N", "\\N"]])
+    system_quota_usage([["myQuota", "default", 31556952, 0, 1000, 0, "\\N", 0, "\\N", 0, "\\N", 0, 1000, 0, "\\N", "\\N"]])
 
     # Add interval.
     copy_quota_xml('two_intervals.xml')
     check_system_quotas([["myQuota", "e651da9c-a748-8703-061a-7e5e5096dae7", "users.xml", "['user_name']",
                           "[31556952,63113904]", 0, "['default']", "[]"]])
-    system_quota_limits([["myQuota", 31556952, 0, 1000, "\N", "\N", "\N", 1000, "\N", "\N"],
-                         ["myQuota", 63113904, 1, "\N", "\N", "\N", 30000, "\N", 20000, 120]])
-    system_quota_usage([["myQuota", "default", 31556952, 0, 1000, 0, "\N", 0, "\N", 0, "\N", 0, 1000, 0, "\N", "\N"],
-                        ["myQuota", "default", 63113904, 0, "\N", 0, "\N", 0, "\N", 0, 30000, 0, "\N", 0, 20000, 120]])
+    system_quota_limits([["myQuota", 31556952, 0, 1000, "\\N", "\\N", "\\N", 1000, "\\N", "\\N"],
+                         ["myQuota", 63113904, 1, "\\N", "\\N", "\\N", 30000, "\\N", 20000, 120]])
+    system_quota_usage([["myQuota", "default", 31556952, 0, 1000, 0, "\\N", 0, "\\N", 0, "\\N", 0, 1000, 0, "\\N", "\\N"],
+                        ["myQuota", "default", 63113904, 0, "\\N", 0, "\\N", 0, "\\N", 0, 30000, 0, "\\N", 0, 20000, 120]])
 
     instance.query("SELECT * from test_table")
     system_quota_usage(
-        [["myQuota", "default", 31556952, 1, 1000, 0, "\N", 50, "\N", 200, "\N", 50, 1000, 200, "\N", "\N"],
-         ["myQuota", "default", 63113904, 1, "\N", 0, "\N", 50, "\N", 200, 30000, 50, "\N", 200, 20000, 120]])
+        [["myQuota", "default", 31556952, 1, 1000, 0, "\\N", 50, "\\N", 200, "\\N", 50, 1000, 200, "\\N", "\\N"],
+         ["myQuota", "default", 63113904, 1, "\\N", 0, "\\N", 50, "\\N", 200, 30000, 50, "\\N", 200, 20000, 120]])
 
     # Remove interval.
     copy_quota_xml('normal_limits.xml')
     check_system_quotas([["myQuota", "e651da9c-a748-8703-061a-7e5e5096dae7", "users.xml", "['user_name']", [31556952],
                           0, "['default']", "[]"]])
-    system_quota_limits([["myQuota", 31556952, 0, 1000, "\N", "\N", "\N", 1000, "\N", "\N"]])
+    system_quota_limits([["myQuota", 31556952, 0, 1000, "\\N", "\\N", "\\N", 1000, "\\N", "\\N"]])
     system_quota_usage(
-        [["myQuota", "default", 31556952, 1, 1000, 0, "\N", 50, "\N", 200, "\N", 50, 1000, 200, "\N", "\N"]])
+        [["myQuota", "default", 31556952, 1, 1000, 0, "\\N", 50, "\\N", 200, "\\N", 50, 1000, 200, "\\N", "\\N"]])
 
     instance.query("SELECT * from test_table")
     system_quota_usage(
-        [["myQuota", "default", 31556952, 2, 1000, 0, "\N", 100, "\N", 400, "\N", 100, 1000, 400, "\N", "\N"]])
+        [["myQuota", "default", 31556952, 2, 1000, 0, "\\N", 100, "\\N", 400, "\\N", 100, 1000, 400, "\\N", "\\N"]])
 
     # Remove all intervals.
     copy_quota_xml('simpliest.xml')
@@ -187,26 +187,26 @@ def test_add_remove_interval():
                           "['default']", "[]"]])
     system_quota_limits("")
     system_quota_usage(
-        [["myQuota", "default", "\N", "\N", "\N", "\N", "\N", "\N", "\N", "\N", "\N", "\N", "\N", "\N", "\N", "\N"]])
+        [["myQuota", "default", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N"]])
 
     instance.query("SELECT * from test_table")
     system_quota_usage(
-        [["myQuota", "default", "\N", "\N", "\N", "\N", "\N", "\N", "\N", "\N", "\N", "\N", "\N", "\N", "\N", "\N"]])
+        [["myQuota", "default", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", "\\N"]])
 
     # Add one interval back.
     copy_quota_xml('normal_limits.xml')
     check_system_quotas([["myQuota", "e651da9c-a748-8703-061a-7e5e5096dae7", "users.xml", "['user_name']", [31556952],
                           0, "['default']", "[]"]])
-    system_quota_limits([["myQuota", 31556952, 0, 1000, "\N", "\N", "\N", 1000, "\N", "\N"]])
-    system_quota_usage([["myQuota", "default", 31556952, 0, 1000, 0, "\N", 0, "\N", 0, "\N", 0, 1000, 0, "\N", "\N"]])
+    system_quota_limits([["myQuota", 31556952, 0, 1000, "\\N", "\\N", "\\N", 1000, "\\N", "\\N"]])
+    system_quota_usage([["myQuota", "default", 31556952, 0, 1000, 0, "\\N", 0, "\\N", 0, "\\N", 0, 1000, 0, "\\N", "\\N"]])
 
 
 def test_add_remove_quota():
     check_system_quotas([["myQuota", "e651da9c-a748-8703-061a-7e5e5096dae7", "users.xml", "['user_name']", [31556952],
                           0, "['default']", "[]"]])
-    system_quota_limits([["myQuota", 31556952, 0, 1000, "\N", "\N", "\N", 1000, "\N", "\N"]])
+    system_quota_limits([["myQuota", 31556952, 0, 1000, "\\N", "\\N", "\\N", 1000, "\\N", "\\N"]])
     system_quotas_usage(
-        [["myQuota", "default", 1, 31556952, 0, 1000, 0, "\N", 0, "\N", 0, "\N", 0, 1000, 0, "\N", "\N"]])
+        [["myQuota", "default", 1, 31556952, 0, 1000, 0, "\\N", 0, "\\N", 0, "\\N", 0, 1000, 0, "\\N", "\\N"]])
 
     # Add quota.
     copy_quota_xml('two_quotas.xml')
@@ -214,19 +214,19 @@ def test_add_remove_quota():
                           0, "['default']", "[]"],
                          ["myQuota2", "4590510c-4d13-bf21-ec8a-c2187b092e73", "users.xml", "['client_key','user_name']",
                           "[3600,2629746]", 0, "[]", "[]"]])
-    system_quota_limits([["myQuota", 31556952, 0, 1000, "\N", "\N", "\N", 1000, "\N", "\N"],
-                         ["myQuota2", 3600, 1, "\N", "\N", 4000, 400000, 4000, 400000, 60],
-                         ["myQuota2", 2629746, 0, "\N", "\N", "\N", "\N", "\N", "\N", 1800]])
+    system_quota_limits([["myQuota", 31556952, 0, 1000, "\\N", "\\N", "\\N", 1000, "\\N", "\\N"],
+                         ["myQuota2", 3600, 1, "\\N", "\\N", 4000, 400000, 4000, 400000, 60],
+                         ["myQuota2", 2629746, 0, "\\N", "\\N", "\\N", "\\N", "\\N", "\\N", 1800]])
     system_quotas_usage(
-        [["myQuota", "default", 1, 31556952, 0, 1000, 0, "\N", 0, "\N", 0, "\N", 0, 1000, 0, "\N", "\N"]])
+        [["myQuota", "default", 1, 31556952, 0, 1000, 0, "\\N", 0, "\\N", 0, "\\N", 0, 1000, 0, "\\N", "\\N"]])
 
     # Drop quota.
     copy_quota_xml('normal_limits.xml')
     check_system_quotas([["myQuota", "e651da9c-a748-8703-061a-7e5e5096dae7", "users.xml", "['user_name']", "[31556952]",
                           0, "['default']", "[]"]])
-    system_quota_limits([["myQuota", 31556952, 0, 1000, "\N", "\N", "\N", 1000, "\N", "\N"]])
+    system_quota_limits([["myQuota", 31556952, 0, 1000, "\\N", "\\N", "\\N", 1000, "\\N", "\\N"]])
     system_quotas_usage(
-        [["myQuota", "default", 1, 31556952, 0, 1000, 0, "\N", 0, "\N", 0, "\N", 0, 1000, 0, "\N", "\N"]])
+        [["myQuota", "default", 1, 31556952, 0, 1000, 0, "\\N", 0, "\\N", 0, "\\N", 0, 1000, 0, "\\N", "\\N"]])
 
     # Drop all quotas.
     copy_quota_xml('no_quotas.xml')
@@ -238,15 +238,15 @@ def test_add_remove_quota():
     copy_quota_xml('normal_limits.xml')
     check_system_quotas([["myQuota", "e651da9c-a748-8703-061a-7e5e5096dae7", "users.xml", "['user_name']", "[31556952]",
                           0, "['default']", "[]"]])
-    system_quota_limits([["myQuota", 31556952, 0, 1000, "\N", "\N", "\N", 1000, "\N", "\N"]])
+    system_quota_limits([["myQuota", 31556952, 0, 1000, "\\N", "\\N", "\\N", 1000, "\\N", "\\N"]])
     system_quotas_usage(
-        [["myQuota", "default", 1, 31556952, 0, 1000, 0, "\N", 0, "\N", 0, "\N", 0, 1000, 0, "\N", "\N"]])
+        [["myQuota", "default", 1, 31556952, 0, 1000, 0, "\\N", 0, "\\N", 0, "\\N", 0, 1000, 0, "\\N", "\\N"]])
 
 
 def test_reload_users_xml_by_timer():
     check_system_quotas([["myQuota", "e651da9c-a748-8703-061a-7e5e5096dae7", "users.xml", "['user_name']", "[31556952]",
                           0, "['default']", "[]"]])
-    system_quota_limits([["myQuota", 31556952, 0, 1000, "\N", "\N", "\N", 1000, "\N", "\N"]])
+    system_quota_limits([["myQuota", 31556952, 0, 1000, "\\N", "\\N", "\\N", 1000, "\\N", "\\N"]])
 
     time.sleep(1)  # The modification time of the 'quota.xml' file should be different,
     # because config files are reload by timer only when the modification time is changed.
@@ -255,7 +255,7 @@ def test_reload_users_xml_by_timer():
         ["myQuota", "e651da9c-a748-8703-061a-7e5e5096dae7", "users.xml", ['user_name'], "[31556952]", 0, "['default']",
          "[]"]])
     assert_eq_with_retry(instance, "SELECT * FROM system.quota_limits",
-                         [["myQuota", 31556952, 0, 1, 1, 1, "\N", 1, "\N", "\N"]])
+                         [["myQuota", 31556952, 0, 1, 1, 1, "\\N", 1, "\\N", "\\N"]])
 
 
 def test_dcl_introspection():

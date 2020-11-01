@@ -371,7 +371,7 @@ def test_version_update_two_nodes(start_dynamic_cluster):
             node12.query("SYSTEM SYNC REPLICA table_with_default_granularity_new", timeout=120)
             break
         except Exception as ex:
-            print("Exception during replica sync", ex)
+            print(("Exception during replica sync", ex))
             node11.query("SYSTEM RESTART REPLICA table_with_default_granularity_new")
             node12.query("SYSTEM RESTART REPLICA table_with_default_granularity_new")
             time.sleep(2 * i)
@@ -386,7 +386,7 @@ def test_version_update_two_nodes(start_dynamic_cluster):
             node12.query("SYSTEM SYNC REPLICA table_with_default_granularity", timeout=120)
             break
         except Exception as ex:
-            print("Exception during replica sync", ex)
+            print(("Exception during replica sync", ex))
             node11.query("SYSTEM RESTART REPLICA table_with_default_granularity")
             node12.query("SYSTEM RESTART REPLICA table_with_default_granularity")
             time.sleep(2 * i)

@@ -125,11 +125,11 @@ Devuelve la ruta de acceso. Ejemplo: `/top/news.html` La ruta de acceso no inclu
 
 ### pathFull {#pathfull}
 
-Lo mismo que el anterior, pero incluyendo cadena de consulta y fragmento. Ejemplo: /top/news.html?Página = 2 \# comentarios
+Lo mismo que el anterior, pero incluyendo cadena de consulta y fragmento. Ejemplo: /top/news.html?Página = 2 # comentarios
 
 ### queryString {#querystring}
 
-Devuelve la cadena de consulta. Ejemplo: page=1&lr=213. query-string no incluye el signo de interrogación inicial, así como \# y todo después de \#.
+Devuelve la cadena de consulta. Ejemplo: page=1&lr=213. query-string no incluye el signo de interrogación inicial, así como # y todo después de #.
 
 ### fragmento {#fragment}
 
@@ -137,7 +137,7 @@ Devuelve el identificador de fragmento. el fragmento no incluye el símbolo hash
 
 ### queryStringAndFragment {#querystringandfragment}
 
-Devuelve la cadena de consulta y el identificador de fragmento. Ejemplo: page=1\#29390.
+Devuelve la cadena de consulta y el identificador de fragmento. Ejemplo: page=1#29390.
 
 ### extractURLParameter(URL, nombre) {#extracturlparameterurl-name}
 

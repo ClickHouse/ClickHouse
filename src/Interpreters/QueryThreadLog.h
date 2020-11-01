@@ -16,6 +16,7 @@ namespace DB
 struct QueryThreadLogElement
 {
     time_t event_time{};
+    UInt64 event_time_microseconds{};
     /// When query was attached to current thread
     time_t query_start_time{};
     /// same as above but adds microsecond precision
@@ -38,7 +39,9 @@ struct QueryThreadLogElement
     UInt64 thread_id{};
     UInt64 master_thread_id{};
 
+    String current_database;
     String query;
+
     ClientInfo client_info;
 
     std::shared_ptr<ProfileEvents::Counters> profile_counters;

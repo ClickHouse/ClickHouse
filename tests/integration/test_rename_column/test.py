@@ -1,4 +1,4 @@
-from __future__ import print_function
+
 
 import random
 import time
@@ -37,7 +37,6 @@ def started_cluster():
 def drop_table(nodes, table_name):
     for node in nodes:
         node.query("DROP TABLE IF EXISTS {} NO DELAY".format(table_name))
-    time.sleep(1)
 
 
 def create_table(nodes, table_name, with_storage_policy=False, with_time_column=False,

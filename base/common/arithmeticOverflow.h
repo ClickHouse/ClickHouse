@@ -31,8 +31,8 @@ namespace common
     template <>
     inline bool addOverflow(__int128 x, __int128 y, __int128 & res)
     {
-        static constexpr __int128 min_int128 = __int128(0x8000000000000000ll) << 64;
-        static constexpr __int128 max_int128 = (__int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
+        static constexpr __int128 min_int128 = minInt128();
+        static constexpr __int128 max_int128 = maxInt128();
         res = x + y;
         return (y > 0 && x > max_int128 - y) || (y < 0 && x < min_int128 - y);
     }
@@ -79,8 +79,8 @@ namespace common
     template <>
     inline bool subOverflow(__int128 x, __int128 y, __int128 & res)
     {
-        static constexpr __int128 min_int128 = __int128(0x8000000000000000ll) << 64;
-        static constexpr __int128 max_int128 = (__int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
+        static constexpr __int128 min_int128 = minInt128();
+        static constexpr __int128 max_int128 = maxInt128();
         res = x - y;
         return (y < 0 && x > max_int128 + y) || (y > 0 && x < min_int128 + y);
     }

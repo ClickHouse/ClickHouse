@@ -13,7 +13,6 @@ namespace ErrorCodes
 
 namespace GatherUtils
 {
-#pragma GCC visibility push(hidden)
 
 struct IValueSource
 {
@@ -26,6 +25,8 @@ struct IValueSource
 
     virtual bool isConst() const { return false; }
 };
+
+#pragma GCC visibility push(hidden)
 
 template <typename Derived>
 class ValueSourceImpl : public Visitable<Derived, IValueSource, ValueSourceVisitor> {};

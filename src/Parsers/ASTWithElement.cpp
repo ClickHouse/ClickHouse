@@ -6,6 +6,7 @@ namespace DB
 ASTPtr ASTWithElement::clone() const
 {
     const auto res = std::make_shared<ASTWithElement>(*this);
+    res->children.clear();
     res->name = name;
     res->subquery = subquery->clone();
     res->children.emplace_back(res->subquery);

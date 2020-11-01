@@ -65,7 +65,7 @@ def test_reload_zookeeper(start_cluster):
                 print("All instances of ZooKeeper started")
                 return
             except Exception as ex:
-                print("Can't connect to ZooKeeper " + str(ex))
+                print(("Can't connect to ZooKeeper " + str(ex)))
                 time.sleep(0.5)
 
     node.query("INSERT INTO test_table(date, id) select today(), number FROM numbers(1000)")

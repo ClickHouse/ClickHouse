@@ -1,3 +1,4 @@
+#pragma once
 #include <Functions/IFunctionImpl.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -33,7 +34,7 @@ public:
     }
 
     size_t getNumberOfArguments() const override { return 2; }
-    bool isInjective(const Block &) const override { return true; }
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -51,17 +52,17 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        const auto n = block.getByPosition(arguments[1]).column->getUInt(0);
-        return executeForN(block, arguments, result, n);
+        const auto n = arguments[1].column->getUInt(0);
+        return executeForN(arguments, n);
     }
 
-    static void executeForN(Block & block, const ColumnNumbers & arguments, const size_t result, const size_t n)
+    static ColumnPtr executeForN(ColumnsWithTypeAndName & arguments, const size_t n)
     {
-        const auto & column = block.getByPosition(arguments[0]).column;
+        const auto & column = arguments[0].column;
 
-        if (const auto column_string = checkAndGetColumn<ColumnString>(column.get()))
+        if (const auto * column_string = checkAndGetColumn<ColumnString>(column.get()))
         {
             auto column_fixed = ColumnFixedString::create(n);
 
@@ -81,9 +82,9 @@ public:
                 memcpy(&out_chars[i * n], &in_chars[off], len);
             }
 
-            block.getByPosition(result).column = std::move(column_fixed);
+            return column_fixed;
         }
-        else if (const auto column_fixed_string = checkAndGetColumn<ColumnFixedString>(column.get()))
+        else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
             const auto src_n = column_fixed_string->getN();
             if (src_n > n)
@@ -99,7 +100,7 @@ public:
             for (size_t i = 0; i < size; ++i)
                 memcpy(&out_chars[i * n], &in_chars[i * src_n], src_n);
 
-            block.getByPosition(result).column = std::move(column_fixed);
+            return column_fixed;
         }
         else
             throw Exception("Unexpected column: " + column->getName(), ErrorCodes::ILLEGAL_COLUMN);

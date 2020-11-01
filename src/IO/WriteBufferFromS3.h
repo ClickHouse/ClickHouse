@@ -57,9 +57,13 @@ public:
     ~WriteBufferFromS3() override;
 
 private:
+    bool finalized = false;
+
     void initiate();
     void writePart(const String & data);
     void complete();
+
+    void finalizeImpl();
 };
 
 }

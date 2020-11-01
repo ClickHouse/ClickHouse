@@ -193,6 +193,10 @@ public:
     /// Get a new Cluster that contains all servers (all shards with all replicas) from existing cluster as independent shards.
     std::unique_ptr<Cluster> getClusterWithReplicasAsShards(const Settings & settings) const;
 
+    /// Returns false if cluster configuration doesn't allow to use it for cross-replication.
+    /// NOTE: true does not mean, that it's actually a cross-replication cluster.
+    bool maybeCrossReplication() const;
+
 private:
     using SlotToShard = std::vector<UInt64>;
     SlotToShard slot_to_shard;

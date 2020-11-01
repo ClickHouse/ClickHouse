@@ -13,7 +13,7 @@ node1 = cluster.add_instance('node1', main_configs=["configs/config.d/zookeeper_
 def start_cluster():
     try:
         cluster.start()
-        node1.query("CREATE DATABASE zktest ENGINE=Ordinary;")
+        node1.query("CREATE DATABASE zktest ENGINE=Ordinary;")  # Different behaviour with Atomic
         node1.query(
             '''
             CREATE TABLE zktest.atomic_drop_table (n UInt32)

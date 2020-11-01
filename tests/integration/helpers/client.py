@@ -31,7 +31,7 @@ class Client:
             command += ['--query', sql]
 
         if settings is not None:
-            for setting, value in settings.iteritems():
+            for setting, value in settings.items():
                 command += ['--' + setting, str(value)]
 
         if user is not None:
@@ -67,7 +67,7 @@ class QueryRuntimeException(Exception):
 class CommandRequest:
     def __init__(self, command, stdin=None, timeout=None, ignore_error=False):
         # Write data to tmp file to avoid PIPEs and execution blocking
-        stdin_file = tempfile.TemporaryFile()
+        stdin_file = tempfile.TemporaryFile(mode='w+')
         stdin_file.write(stdin)
         stdin_file.seek(0)
         self.stdout_file = tempfile.TemporaryFile()
@@ -80,7 +80,7 @@ class CommandRequest:
         # can print some debug information there
         env = {}
         env["TSAN_OPTIONS"] = "verbosity=0"
-        self.process = sp.Popen(command, stdin=stdin_file, stdout=self.stdout_file, stderr=self.stderr_file, env=env)
+        self.process = sp.Popen(command, stdin=stdin_file, stdout=self.stdout_file, stderr=self.stderr_file, env=env, universal_newlines=True)
 
         self.timer = None
         self.process_finished_before_timeout = True
@@ -98,8 +98,8 @@ class CommandRequest:
         self.stdout_file.seek(0)
         self.stderr_file.seek(0)
 
-        stdout = self.stdout_file.read()
-        stderr = self.stderr_file.read()
+        stdout = self.stdout_file.read().decode()
+        stderr = self.stderr_file.read().decode()
 
         if self.timer is not None and not self.process_finished_before_timeout and not self.ignore_error:
             raise QueryTimeoutExceedException('Client timed out!')
@@ -115,8 +115,8 @@ class CommandRequest:
         self.stdout_file.seek(0)
         self.stderr_file.seek(0)
 
-        stdout = self.stdout_file.read()
-        stderr = self.stderr_file.read()
+        stdout = self.stdout_file.read().decode()
+        stderr = self.stderr_file.read().decode()
 
         if self.timer is not None and not self.process_finished_before_timeout and not self.ignore_error:
             raise QueryTimeoutExceedException('Client timed out!')
@@ -131,8 +131,8 @@ class CommandRequest:
         self.stdout_file.seek(0)
         self.stderr_file.seek(0)
 
-        stdout = self.stdout_file.read()
-        stderr = self.stderr_file.read()
+        stdout = self.stdout_file.read().decode()
+        stderr = self.stderr_file.read().decode()
 
         if self.timer is not None and not self.process_finished_before_timeout and not self.ignore_error:
             raise QueryTimeoutExceedException('Client timed out!')

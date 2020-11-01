@@ -50,7 +50,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         return rewritten_query.str();
     }
 
-    /// SHOW CLUSTER/CLUSTERS 
+    /// SHOW CLUSTER/CLUSTERS
     if (query.clusters)
     {
         std::stringstream rewritten_query;

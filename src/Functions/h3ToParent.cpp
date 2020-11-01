@@ -50,10 +50,10 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_hindex = block.getByPosition(arguments[0]).column.get();
-        const auto * col_resolution = block.getByPosition(arguments[1]).column.get();
+        const auto * col_hindex = arguments[0].column.get();
+        const auto * col_resolution = arguments[1].column.get();
 
         auto dst = ColumnVector<UInt64>::create();
         auto & dst_data = dst->getData();
@@ -73,7 +73,7 @@ public:
             dst_data[row] = res;
         }
 
-        block.getByPosition(result).column = std::move(dst);
+        return dst;
     }
 };
 

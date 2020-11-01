@@ -2,7 +2,6 @@
 #include <Storages/Kafka/parseSyslogLevel.h>
 
 #include <DataStreams/IBlockInputStream.h>
-#include <DataStreams/LimitBlockInputStream.h>
 #include <DataStreams/UnionBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -50,6 +49,96 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+struct StorageKafkaInterceptors
+{
+    static rd_kafka_resp_err_t rdKafkaOnThreadStart(rd_kafka_t *, rd_kafka_thread_type_t thread_type, const char *, void * ctx)
+    {
+        StorageKafka * self = reinterpret_cast<StorageKafka *>(ctx);
+
+        const auto & storage_id = self->getStorageID();
+        const auto & table = storage_id.getTableName();
+
+        switch (thread_type)
+        {
+            case RD_KAFKA_THREAD_MAIN:
+                setThreadName(("rdk:m/" + table.substr(0, 9)).c_str());
+                break;
+            case RD_KAFKA_THREAD_BACKGROUND:
+                setThreadName(("rdk:bg/" + table.substr(0, 8)).c_str());
+                break;
+            case RD_KAFKA_THREAD_BROKER:
+                setThreadName(("rdk:b/" + table.substr(0, 9)).c_str());
+                break;
+        }
+
+        /// Create ThreadStatus to track memory allocations from librdkafka threads.
+        //
+        /// And store them in a separate list (thread_statuses) to make sure that they will be destroyed,
+        /// regardless how librdkafka calls the hooks.
+        /// But this can trigger use-after-free if librdkafka will not destroy threads after rd_kafka_wait_destroyed()
+        auto thread_status = std::make_shared<ThreadStatus>();
+        std::lock_guard lock(self->thread_statuses_mutex);
+        self->thread_statuses.emplace_back(std::move(thread_status));
+
+        return RD_KAFKA_RESP_ERR_NO_ERROR;
+    }
+    static rd_kafka_resp_err_t rdKafkaOnThreadExit(rd_kafka_t *, rd_kafka_thread_type_t, const char *, void * ctx)
+    {
+        StorageKafka * self = reinterpret_cast<StorageKafka *>(ctx);
+
+        std::lock_guard lock(self->thread_statuses_mutex);
+        const auto it = std::find_if(self->thread_statuses.begin(), self->thread_statuses.end(), [](const auto & thread_status_ptr)
+        {
+            return thread_status_ptr.get() == current_thread;
+        });
+        if (it == self->thread_statuses.end())
+            throw Exception("No thread status for this librdkafka thread.", ErrorCodes::LOGICAL_ERROR);
+
+        self->thread_statuses.erase(it);
+
+        return RD_KAFKA_RESP_ERR_NO_ERROR;
+    }
+
+    static rd_kafka_resp_err_t rdKafkaOnNew(rd_kafka_t * rk, const rd_kafka_conf_t *, void * ctx, char * /*errstr*/, size_t /*errstr_size*/)
+    {
+        StorageKafka * self = reinterpret_cast<StorageKafka *>(ctx);
+        rd_kafka_resp_err_t status;
+
+        status = rd_kafka_interceptor_add_on_thread_start(rk, "init-thread", rdKafkaOnThreadStart, ctx);
+        if (status != RD_KAFKA_RESP_ERR_NO_ERROR)
+        {
+            LOG_ERROR(self->log, "Cannot set on thread start interceptor due to {} error", status);
+            return status;
+        }
+
+        status = rd_kafka_interceptor_add_on_thread_exit(rk, "exit-thread", rdKafkaOnThreadExit, ctx);
+        if (status != RD_KAFKA_RESP_ERR_NO_ERROR)
+            LOG_ERROR(self->log, "Cannot set on thread exit interceptor due to {} error", status);
+
+        return status;
+    }
+
+    static rd_kafka_resp_err_t rdKafkaOnConfDup(rd_kafka_conf_t * new_conf, const rd_kafka_conf_t * /*old_conf*/, size_t /*filter_cnt*/, const char ** /*filter*/, void * ctx)
+    {
+        StorageKafka * self = reinterpret_cast<StorageKafka *>(ctx);
+        rd_kafka_resp_err_t status;
+
+        // cppkafka copies configuration multiple times
+        status = rd_kafka_conf_interceptor_add_on_conf_dup(new_conf, "init", rdKafkaOnConfDup, ctx);
+        if (status != RD_KAFKA_RESP_ERR_NO_ERROR)
+        {
+            LOG_ERROR(self->log, "Cannot set on conf dup interceptor due to {} error", status);
+            return status;
+        }
+
+        status = rd_kafka_conf_interceptor_add_on_new(new_conf, "init", rdKafkaOnNew, ctx);
+        if (status != RD_KAFKA_RESP_ERR_NO_ERROR)
+            LOG_ERROR(self->log, "Cannot set on conf new interceptor due to {} error", status);
+
+        return status;
+    }
+};
+
 namespace
 {
     const auto RESCHEDULE_MS = 500;
@@ -75,46 +164,6 @@ namespace
             const String key_name = (key == "log_level") ? key : boost::replace_all_copy(key, "_", ".");
             conf.set(key_name, config.getString(key_path));
         }
-    }
-
-    rd_kafka_resp_err_t rdKafkaOnThreadStart(rd_kafka_t *, rd_kafka_thread_type_t thread_type, const char *, void * ctx)
-    {
-        StorageKafka * self = reinterpret_cast<StorageKafka *>(ctx);
-
-        const auto & storage_id = self->getStorageID();
-        const auto & table = storage_id.getTableName();
-
-        switch (thread_type)
-        {
-            case RD_KAFKA_THREAD_MAIN:
-                setThreadName(("rdk:m/" + table.substr(0, 9)).c_str());
-                break;
-            case RD_KAFKA_THREAD_BACKGROUND:
-                setThreadName(("rdk:bg/" + table.substr(0, 8)).c_str());
-                break;
-            case RD_KAFKA_THREAD_BROKER:
-                setThreadName(("rdk:b/" + table.substr(0, 9)).c_str());
-                break;
-        }
-        return RD_KAFKA_RESP_ERR_NO_ERROR;
-    }
-
-    rd_kafka_resp_err_t rdKafkaOnNew(rd_kafka_t * rk, const rd_kafka_conf_t *, void * ctx, char * /*errstr*/, size_t /*errstr_size*/)
-    {
-        return rd_kafka_interceptor_add_on_thread_start(rk, "setThreadName", rdKafkaOnThreadStart, ctx);
-    }
-
-    rd_kafka_resp_err_t rdKafkaOnConfDup(rd_kafka_conf_t * new_conf, const rd_kafka_conf_t * /*old_conf*/, size_t /*filter_cnt*/, const char ** /*filter*/, void * ctx)
-    {
-        rd_kafka_resp_err_t status;
-
-        // cppkafka copies configuration multiple times
-        status = rd_kafka_conf_interceptor_add_on_conf_dup(new_conf, "setThreadName", rdKafkaOnConfDup, ctx);
-        if (status != RD_KAFKA_RESP_ERR_NO_ERROR)
-            return status;
-
-        status = rd_kafka_conf_interceptor_add_on_new(new_conf, "setThreadName", rdKafkaOnNew, ctx);
-        return status;
     }
 }
 
@@ -443,14 +492,16 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
 
         int status;
 
-        status = rd_kafka_conf_interceptor_add_on_new(conf.get_handle(), "setThreadName", rdKafkaOnNew, self);
+        status = rd_kafka_conf_interceptor_add_on_new(conf.get_handle(),
+            "init", StorageKafkaInterceptors::rdKafkaOnNew, self);
         if (status != RD_KAFKA_RESP_ERR_NO_ERROR)
-            LOG_ERROR(log, "Cannot set new interceptor");
+            LOG_ERROR(log, "Cannot set new interceptor due to {} error", status);
 
         // cppkafka always copy the configuration
-        status = rd_kafka_conf_interceptor_add_on_conf_dup(conf.get_handle(), "setThreadName", rdKafkaOnConfDup, self);
+        status = rd_kafka_conf_interceptor_add_on_conf_dup(conf.get_handle(),
+            "init", StorageKafkaInterceptors::rdKafkaOnConfDup, self);
         if (status != RD_KAFKA_RESP_ERR_NO_ERROR)
-            LOG_ERROR(log, "Cannot set dup conf interceptor");
+            LOG_ERROR(log, "Cannot set dup conf interceptor due to {} error", status);
     }
 }
 

@@ -44,7 +44,7 @@ Komut satırında terminal Çalıştır:
     git clone --recursive git@github.com:your_github_username/ClickHouse.git
     cd ClickHouse
 
-Not: lütfen, yerine *your\_github\_username* uygun olanı ile!
+Not: lütfen, yerine *your_github_username* uygun olanı ile!
 
 Bu komut bir dizin oluşturacaktır `ClickHouse` projenin çalışma kopyasını içeren.
 
@@ -154,7 +154,7 @@ Artık ClickHouse oluşturmaya hazır olduğunuza göre ayrı bir dizin oluştur
     mkdir build
     cd build
 
-Birkaç farklı dizine (build\_release, build\_debug, vb.) sahip olabilirsiniz.) farklı yapı türleri için.
+Birkaç farklı dizine (build_release, build_debug, vb.) sahip olabilirsiniz.) farklı yapı türleri için.
 
 İçinde iken `build` dizin, cmake çalıştırarak yapı yapılandırın. İlk çalıştırmadan önce, derleyici belirten ortam değişkenlerini tanımlamanız gerekir (bu örnekte sürüm 9 gcc derleyicisi).
 

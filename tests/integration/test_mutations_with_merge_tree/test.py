@@ -44,8 +44,8 @@ def test_mutations_with_merge_background_task(started_cluster):
             all_done = True
             break
 
-    print instance_test_mutations.query(
-        "SELECT mutation_id, command, parts_to_do, is_done FROM system.mutations WHERE table = 'test_mutations_with_ast_elements' SETTINGS force_index_by_date = 0, force_primary_key = 0 FORMAT TSVWithNames")
+    print(instance_test_mutations.query(
+        "SELECT mutation_id, command, parts_to_do, is_done FROM system.mutations WHERE table = 'test_mutations_with_ast_elements' SETTINGS force_index_by_date = 0, force_primary_key = 0 FORMAT TSVWithNames"))
     assert all_done
 
 

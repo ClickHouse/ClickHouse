@@ -42,7 +42,7 @@ def test_memory_consumption(cluster):
     allocated_first = int(node.query("select bytes_allocated from system.dictionaries where name = 'radars'").strip())
 
     alloc_array = []
-    for i in xrange(5):
+    for i in range(5):
         node.query("select dictGetString('radars', 'client_id', tuple(toString(number))) from numbers(0, 5000)")
 
         allocated = int(node.query("select bytes_allocated from system.dictionaries where name = 'radars'").strip())
@@ -51,7 +51,7 @@ def test_memory_consumption(cluster):
     # size doesn't grow
     assert all(allocated_first >= a for a in alloc_array)
 
-    for i in xrange(5):
+    for i in range(5):
         node.query("select dictGetString('radars', 'client_id', tuple(toString(number))) from numbers(0, 5000)")
 
         allocated = int(node.query("select bytes_allocated from system.dictionaries where name = 'radars'").strip())

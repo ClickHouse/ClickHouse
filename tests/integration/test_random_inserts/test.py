@@ -55,7 +55,7 @@ def test_random_inserts(started_cluster):
             cmd = ['/bin/bash', bash_script, node.ip_address, str(min_timestamp), str(max_timestamp),
                    str(cluster.get_client_cmd())]
             inserters.append(CommandRequest(cmd, timeout=DURATION_SECONDS * 2, stdin=''))
-            print node.name, node.ip_address
+            print(node.name, node.ip_address)
 
         for inserter in inserters:
             inserter.get_answer()
@@ -105,8 +105,8 @@ class Runner:
                     self.total_inserted += 2 * x + 1
                 self.mtx.release()
 
-            except Exception, e:
-                print 'Exception:', e
+            except Exception as e:
+                print('Exception:', e)
 
             x += 2
             self.stop_ev.wait(0.1 + random.random() / 10)

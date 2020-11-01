@@ -56,10 +56,12 @@ void ReplicatedMergeTreeCleanupThread::run()
 void ReplicatedMergeTreeCleanupThread::iterate()
 {
     storage.clearOldPartsAndRemoveFromZK();
-    storage.clearOldWriteAheadLogs();
 
     {
         auto lock = storage.lockForShare(RWLockImpl::NO_QUERY, storage.getSettings()->lock_acquire_timeout_for_background_operations);
+        /// Both use relative_data_path which changes during rename, so we
+        /// do it under share lock
+        storage.clearOldWriteAheadLogs();
         storage.clearOldTemporaryDirectories();
     }
 
@@ -272,6 +274,7 @@ void ReplicatedMergeTreeCleanupThread::markLostReplicas(const std::unordered_map
     for (const auto & pair : log_pointers_candidate_lost_replicas)
     {
         String replica = pair.first;
+        LOG_WARNING(log, "Will mark replica {} as lost, because it has stale log pointer: {}", replica, pair.second);
         Coordination::Requests ops;
         /// If host changed version we can not mark replicas, because replica started to be active.
         ops.emplace_back(zkutil::makeCheckRequest(

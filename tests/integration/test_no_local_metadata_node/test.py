@@ -47,7 +47,7 @@ def test_table_start_without_metadata(start_cluster):
 
     node1.query("DETACH TABLE test")
 
-    zk_cli.set("/clickhouse/table/test_table/replicas/1/metadata", "")
+    zk_cli.set("/clickhouse/table/test_table/replicas/1/metadata", b"")
 
     node1.query("ATTACH TABLE test")
 

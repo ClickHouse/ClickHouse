@@ -11,7 +11,7 @@ RUN apt-get update \
     && echo "${LLVM_PUBKEY_HASH} /tmp/llvm-snapshot.gpg.key" | sha384sum -c \
     && apt-key add /tmp/llvm-snapshot.gpg.key \
     && export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
-    && echo "deb [trusted=yes] http://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-${LLVM_VERSION} main" >> \
+    && echo "deb [trusted=yes] https://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-${LLVM_VERSION} main" >> \
         /etc/apt/sources.list
 
 # initial packages
@@ -52,16 +52,18 @@ RUN apt-get update \
         moreutils \
         ninja-build \
         psmisc \
-        python \
-        python-lxml \
-        python-requests \
-        python-termcolor \
-        qemu-user-static \
+        python3 \
+        python3-pip \
+        python3-lxml \
+        python3-requests \
+        python3-termcolor \
         rename \
         software-properties-common \
         tzdata \
         unixodbc \
        --yes --no-install-recommends
+
+RUN pip3 install numpy scipy pandas
 
 # This symlink required by gcc to find lld compiler
 RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld
@@ -80,6 +82,7 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 ENV COMMIT_SHA=''
 ENV PULL_REQUEST_NUMBER=''
+ENV COPY_CLICKHOUSE_BINARY_TO_OUTPUT=0
 
 COPY run.sh /
 CMD ["/bin/bash", "/run.sh"]

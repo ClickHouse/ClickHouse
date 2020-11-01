@@ -31,7 +31,7 @@ ClickHouseは以下の構文をサポートしています `count`:
 
 **詳細**
 
-クリックハウスは `COUNT(DISTINCT ...)` 構文。 この構造の動作は、 [count\_distinct\_implementation](../../operations/settings/settings.md#settings-count_distinct_implementation) 設定。 それはのどれを定義します [uniq\*](#agg_function-uniq) 関数は、操作を実行するために使用されます。 デフォルトは [uniqExact](#agg_function-uniqexact) 機能。
+クリックハウスは `COUNT(DISTINCT ...)` 構文。 この構造の動作は、 [count_distinct_implementation](../../operations/settings/settings.md#settings-count_distinct_implementation) 設定。 それはのどれを定義します [uniq\*](#agg_function-uniq) 関数は、操作を実行するために使用されます。 デフォルトは [uniqExact](#agg_function-uniqexact) 機能。
 
 その `SELECT count() FROM table` テーブル内のエントリの数が別々に格納されないため、クエリは最適化されません。 テーブルから小さな列を選択し、その中の値の数をカウントします。
 
@@ -721,7 +721,7 @@ uniqExact(x[, ...])
 -   [uniqCombined](#agg_function-uniqcombined)
 -   [uniqHLL12](#agg_function-uniqhll12)
 
-## groupArray(x),groupArray(max\_size)(x) {#agg_function-grouparray}
+## groupArray(x),groupArray(max_size)(x) {#agg_function-grouparray}
 
 引数値の配列を作成します。
 値は、任意の（不確定な）順序で配列に追加できます。
@@ -967,7 +967,7 @@ FROM t
 └───────────┴──────────────────────────────────┴───────────────────────┘
 ```
 
-## groupUniqArray(x),groupUniqArray(max\_size)(x) {#groupuniqarrayx-groupuniqarraymax-sizex}
+## groupUniqArray(x),groupUniqArray(max_size)(x) {#groupuniqarrayx-groupuniqarraymax-sizex}
 
 異なる引数値から配列を作成します。 メモリ消費量は `uniqExact` 機能。
 

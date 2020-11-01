@@ -63,7 +63,7 @@ function configure
     # Make copies of the original db for both servers. Use hardlinks instead
     # of copying to save space. Before that, remove preprocessed configs and
     # system tables, because sharing them between servers with hardlinks may
-    # lead to weird effects. 
+    # lead to weird effects.
     rm -r left/db ||:
     rm -r right/db ||:
     rm -r db0/preprocessed_configs ||:
@@ -77,19 +77,29 @@ function restart
     while killall clickhouse-server; do echo . ; sleep 1 ; done
     echo all killed
 
+    # Change the jemalloc settings here.
+    # https://github.com/jemalloc/jemalloc/wiki/Getting-Started
+    export MALLOC_CONF="confirm_conf:true"
+
     set -m # Spawn servers in their own process groups
 
-    left/clickhouse-server --config-file=left/config/config.xml -- --path left/db --user_files_path left/db/user_files &>> left-server-log.log &
+    left/clickhouse-server --config-file=left/config/config.xml \
+           -- --path left/db --user_files_path left/db/user_files \
+           &>> left-server-log.log &
     left_pid=$!
     kill -0 $left_pid
     disown $left_pid
 
-    right/clickhouse-server --config-file=right/config/config.xml -- --path right/db --user_files_path right/db/user_files &>> right-server-log.log &
+     right/clickhouse-server --config-file=right/config/config.xml \
+         -- --path right/db --user_files_path right/db/user_files \
+         &>> right-server-log.log &
     right_pid=$!
     kill -0 $right_pid
     disown $right_pid
 
     set +m
+
+    unset MALLOC_CONF
 
     wait_for_server 9001 $left_pid
     echo left ok
@@ -114,8 +124,6 @@ function run_tests
     # Just check that the script runs at all
     "$script_dir/perf.py" --help > /dev/null
 
-    changed_test_files=""
-
     # Find the directory with test files.
     if [ -v CHPC_TEST_PATH ]
     then
@@ -130,14 +138,6 @@ function run_tests
     else
         # For PRs, use newer test files so we can test these changes.
         test_prefix=right/performance
-
-        # If only the perf tests were changed in the PR, we will run only these
-        # tests. The list of changed tests in changed-test.txt is prepared in
-        # entrypoint.sh from git diffs, because it has the cloned repo.  Used
-        # to use rsync for that but it was really ugly and not always correct
-        # (e.g. when the reference SHA is really old and has some other
-        # differences to the tested SHA, besides the one introduced by the PR).
-        changed_test_files=$(sed "s/tests\/performance/${test_prefix//\//\\/}/" changed-tests.txt)
     fi
 
     # Determine which tests to run.
@@ -146,25 +146,32 @@ function run_tests
         # Run only explicitly specified tests, if any.
         # shellcheck disable=SC2010
         test_files=$(ls "$test_prefix" | grep "$CHPC_TEST_GREP" | xargs -I{} -n1 readlink -f "$test_prefix/{}")
-    elif [ "$changed_test_files" != "" ]
+    elif [ "$PR_TO_TEST" -ne 0 ] \
+        && [ "$(wc -l < changed-test-definitions.txt)" -gt 0 ] \
+        && [ "$(wc -l < changed-test-scripts.txt)" -eq 0 ] \
+        && [ "$(wc -l < other-changed-files.txt)" -eq 0 ]
     then
-        # Use test files that changed in the PR.
-        test_files="$changed_test_files"
+        # If only the perf tests were changed in the PR, we will run only these
+        # tests. The lists of changed files are prepared in entrypoint.sh because
+        # it has the repository.
+        test_files=$(sed "s/tests\/performance/${test_prefix//\//\\/}/" changed-test-definitions.txt)
     else
         # The default -- run all tests found in the test dir.
         test_files=$(ls "$test_prefix"/*.xml)
     fi
 
-    # For PRs, test only a subset of queries, and run them less times.
-    # If the corresponding environment variables are already set, keep
-    # those values.
-    if [ "$PR_TO_TEST" == "0" ]
+    # For PRs w/o changes in test definitons and scripts, test only a subset of
+    # queries, and run them less times. If the corresponding environment variables
+    # are already set, keep those values.
+    if [ "$PR_TO_TEST" -ne 0 ] \
+        && [ "$(wc -l < changed-test-definitions.txt)" -eq 0 ] \
+        && [ "$(wc -l < changed-test-scripts.txt)" -eq 0 ]
     then
-        CHPC_RUNS=${CHPC_RUNS:-13}
-        CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-0}
-    else
         CHPC_RUNS=${CHPC_RUNS:-7}
         CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-20}
+    else
+        CHPC_RUNS=${CHPC_RUNS:-13}
+        CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-0}
     fi
     export CHPC_RUNS
     export CHPC_MAX_QUERIES
@@ -184,6 +191,9 @@ function run_tests
     # Randomize test order.
     test_files=$(for f in $test_files; do echo "$f"; done | sort -R)
 
+    # Limit profiling time to 10 minutes, not to run for too long.
+    profile_seconds_left=600
+
     # Run the tests.
     test_name="<none>"
     for test in $test_files
@@ -197,15 +207,24 @@ function run_tests
         test_name=$(basename "$test" ".xml")
         echo test "$test_name"
 
+        # Don't profile if we're past the time limit.
+        # Use awk because bash doesn't support floating point arithmetic.
+        profile_seconds=$(awk "BEGIN { print ($profile_seconds_left > 0 ? 10 : 0) }")
+
         TIMEFORMAT=$(printf "$test_name\t%%3R\t%%3U\t%%3S\n")
         # The grep is to filter out set -x output and keep only time output.
         # The '2>&1 >/dev/null' redirects stderr to stdout, and discards stdout.
         { \
             time "$script_dir/perf.py" --host localhost localhost --port 9001 9002 \
                 --runs "$CHPC_RUNS" --max-queries "$CHPC_MAX_QUERIES" \
+                --profile-seconds "$profile_seconds" \
                 -- "$test" > "$test_name-raw.tsv" 2> "$test_name-err.log" ; \
         } 2>&1 >/dev/null | tee >(grep -v ^+ >> "wall-clock-times.tsv") \
             || echo "Test $test_name failed with error code $?" >> "$test_name-err.log"
+
+        profile_seconds_left=$(awk -F'	' \
+            'BEGIN { s = '$profile_seconds_left'; } /^profile-total/ { s -= $2 } END { print s }' \
+            "$test_name-raw.tsv")
     done
 
     unset TIMEFORMAT
@@ -297,6 +316,7 @@ for test_file in *-raw.tsv
 do
     test_name=$(basename "$test_file" "-raw.tsv")
     sed -n "s/^query\t/$test_name\t/p" < "$test_file" >> "analyze/query-runs.tsv"
+    sed -n "s/^profile\t/$test_name\t/p" < "$test_file" >> "analyze/query-profiles.tsv"
     sed -n "s/^client-time\t/$test_name\t/p" < "$test_file" >> "analyze/client-times.tsv"
     sed -n "s/^report-threshold\t/$test_name\t/p" < "$test_file" >> "analyze/report-thresholds.tsv"
     sed -n "s/^skipped\t/$test_name\t/p" < "$test_file" >> "analyze/skipped-tests.tsv"
@@ -439,7 +459,12 @@ wait
 unset IFS
 )
 
-parallel --joblog analyze/parallel-log.txt --null < analyze/commands.txt 2>> analyze/errors.log
+# The comparison script might be bound to one NUMA node for better test
+# stability, and the calculation runs out of memory because of this. Use
+# all nodes.
+numactl --show
+numactl --cpunodebind=all --membind=all numactl --show
+numactl --cpunodebind=all --membind=all parallel --joblog analyze/parallel-log.txt --null < analyze/commands.txt 2>> analyze/errors.log
 
 clickhouse-local --query "
 -- Join the metric names back to the metric statistics we've calculated, and make
@@ -516,10 +541,10 @@ create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
     as select
         abs(diff) > report_threshold        and abs(diff) > stat_threshold as changed_fail,
         abs(diff) > report_threshold - 0.05 and abs(diff) > stat_threshold as changed_show,
-        
+
         not changed_fail and stat_threshold > report_threshold + 0.10 as unstable_fail,
         not changed_show and stat_threshold > report_threshold - 0.05 as unstable_show,
-        
+
         left, right, diff, stat_threshold,
         if(report_threshold > 0, report_threshold, 0.10) as report_threshold,
         query_metric_stats.test test, query_metric_stats.query_index query_index,
@@ -629,18 +654,92 @@ create table test_time engine Memory as
     from total_client_time_per_query full join queries using (test, query_index)
     group by test;
 
+create view query_runs as select * from file('analyze/query-runs.tsv', TSV,
+    'test text, query_index int, query_id text, version UInt8, time float');
+
+--
+-- Guess the number of query runs used for this test. The number is required to
+-- calculate and check the average query run time in the report.
+-- We have to be careful, because we will encounter:
+--  1) partial queries which run only on one server
+--  2) short queries which run for a much higher number of times
+--  3) some errors that make query run for a different number of times on a
+--     particular server.
+--
+create view test_runs as
+    select test,
+        -- Default to 7 runs if there are only 'short' queries in the test, and
+        -- we can't determine the number of runs.
+        if((ceil(medianOrDefaultIf(t.runs, not short), 0) as r) != 0, r, 7) runs
+    from (
+        select
+            -- The query id is the same for both servers, so no need to divide here.
+            uniqExact(query_id) runs,
+            (test, query_index) in
+                (select * from file('analyze/marked-short-queries.tsv', TSV,
+                    'test text, query_index int'))
+            as short,
+            test, query_index
+        from query_runs
+        group by test, query_index
+        ) t
+    group by test
+    ;
+
+create view test_times_view as
+    select
+        wall_clock_time_per_test.test test,
+        real,
+        total_client_time,
+        queries,
+        query_max,
+        real / queries avg_real_per_query,
+        query_min,
+        runs
+    from test_time
+        -- wall clock times are also measured for skipped tests, so don't
+        -- do full join
+        left join wall_clock_time_per_test
+            on wall_clock_time_per_test.test = test_time.test
+        full join test_runs
+            on test_runs.test = test_time.test
+    ;
+
+-- WITH TOTALS doesn't work with INSERT SELECT, so we have to jump through these
+-- hoops: https://github.com/ClickHouse/ClickHouse/issues/15227
+create view test_times_view_total as
+    select
+        'Total' test,
+        sum(real),
+        sum(total_client_time),
+        sum(queries),
+        max(query_max),
+        sum(real) / sum(queries) avg_real_per_query,
+        min(query_min),
+        -- Totaling the number of runs doesn't make sense, but use the max so
+        -- that the reporting script doesn't complain about queries being too
+        -- long.
+        max(runs)
+    from test_times_view
+    ;
+
 create table test_times_report engine File(TSV, 'report/test-times.tsv') as
-    select wall_clock_time_per_test.test, real,
+    select
+        test,
+        toDecimal64(real, 3),
         toDecimal64(total_client_time, 3),
         queries,
         toDecimal64(query_max, 3),
-        toDecimal64(real / queries, 3) avg_real_per_query,
-        toDecimal64(query_min, 3)
-    from test_time
-    -- wall clock times are also measured for skipped tests, so don't
-    -- do full join
-    left join wall_clock_time_per_test using test
-    order by avg_real_per_query desc;
+        toDecimal64(avg_real_per_query, 3),
+        toDecimal64(query_min, 3),
+        runs
+    from (
+        select * from test_times_view
+        union all
+        select * from test_times_view_total
+        )
+    order by test = 'Total' desc, avg_real_per_query desc
+    ;
 
 -- report for all queries page, only main metric
 create table all_tests_report engine File(TSV, 'report/all-queries.tsv') as
@@ -661,15 +760,14 @@ create table all_tests_report engine File(TSV, 'report/all-queries.tsv') as
         test, query_index, query_display_name
     from queries order by test, query_index;
 
--- queries for which we will build flamegraphs (see below)
-create table queries_for_flamegraph engine File(TSVWithNamesAndTypes,
-        'report/queries-for-flamegraph.tsv') as
-    select test, query_index from queries where unstable_show or changed_show
-    ;
 
-
+-- Report of queries that have inconsistent 'short' markings:
+-- 1) have short duration, but are not marked as 'short'
+-- 2) the reverse -- marked 'short' but take too long.
+-- The threshold for 2) is significantly larger than the threshold for 1), to
+-- avoid jitter.
 create view shortness
-    as select 
+    as select
         (test, query_index) in
             (select * from file('analyze/marked-short-queries.tsv', TSV,
             'test text, query_index int'))
@@ -685,15 +783,11 @@ create view shortness
                 and times.query_index = query_display_names.query_index
     ;
 
--- Report of queries that have inconsistent 'short' markings:
--- 1) have short duration, but are not marked as 'short'
--- 2) the reverse -- marked 'short' but take too long.
--- The threshold for 2) is twice the threshold for 1), to avoid jitter.
 create table inconsistent_short_marking_report
-    engine File(TSV, 'report/inconsistent-short-marking.tsv')
+    engine File(TSV, 'report/unexpected-query-duration.tsv')
     as select
-        multiIf(marked_short and time > 0.1, 'marked as short but is too long',
-                not marked_short and time < 0.02, 'is short but not marked as such',
+        multiIf(marked_short and time > 0.1, '\"short\" queries must run faster than 0.02 s',
+                not marked_short and time < 0.02, '\"normal\" queries must run longer than 0.1 s',
                 '') problem,
         marked_short, time,
         test, query_index, query_display_name
@@ -725,18 +819,15 @@ create table all_query_metrics_tsv engine File(TSV, 'report/all-query-metrics.ts
 " 2> >(tee -a report/errors.log 1>&2)
 
 
-# Prepare source data for metrics and flamegraphs for unstable queries.
+# Prepare source data for metrics and flamegraphs for queries that were profiled
+# by perf.py.
 for version in {right,left}
 do
     rm -rf data
     clickhouse-local --query "
-create view queries_for_flamegraph as
-    select * from file('report/queries-for-flamegraph.tsv', TSVWithNamesAndTypes,
-        'test text, query_index int');
-
-create view query_runs as
+create view query_profiles as
     with 0 as left, 1 as right
-    select * from file('analyze/query-runs.tsv', TSV,
+    select * from file('analyze/query-profiles.tsv', TSV,
         'test text, query_index int, query_id text, version UInt8, time float')
     where version = $version
     ;
@@ -748,15 +839,12 @@ create view query_display_names as select * from
 
 create table unstable_query_runs engine File(TSVWithNamesAndTypes,
         'unstable-query-runs.$version.rep') as
-    select query_runs.test test, query_runs.query_index query_index,
+    select query_profiles.test test, query_profiles.query_index query_index,
         query_display_name, query_id
-    from query_runs
-    join queries_for_flamegraph on
-        query_runs.test = queries_for_flamegraph.test
-        and query_runs.query_index = queries_for_flamegraph.query_index
+    from query_profiles
     left join query_display_names on
-        query_runs.test = query_display_names.test
-        and query_runs.query_index = query_display_names.query_index
+        query_profiles.test = query_display_names.test
+        and query_profiles.query_index = query_display_names.query_index
     ;
 
 create view query_log as select *
@@ -997,8 +1085,10 @@ case "$stage" in
     time configure
     ;&
 "restart")
+    numactl --show ||:
     numactl --hardware ||:
     lscpu ||:
+    dmidecode -t 4 ||:
     time restart
     ;&
 "run_tests")
@@ -1031,7 +1121,7 @@ case "$stage" in
     # to collect the logs. Prefer not to restart, because addresses might change
     # and we won't be able to process trace_log data. Start in a subshell, so that
     # it doesn't interfere with the watchdog through `wait`.
-    ( get_profiles || restart && get_profiles ) ||:
+    ( get_profiles || { restart && get_profiles ; } ) ||:
 
     # Kill the whole process group, because somehow when the subshell is killed,
     # the sleep inside remains alive and orphaned.

@@ -26,12 +26,12 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
                 main_configs += [os.path.join(self.test_config_dir, f) for f in
                                  ["server.crt", "server.key", "dhparam.pem", "config.d/ssl_conf.xml"]]
 
-            for i in xrange(4):
+            for i in range(4):
                 self.add_instance(
                     'ch{}'.format(i + 1),
                     main_configs=main_configs,
                     user_configs=user_configs,
-                    macros={"layer": 0, "shard": i / 2 + 1, "replica": i % 2 + 1},
+                    macros={"layer": 0, "shard": i // 2 + 1, "replica": i % 2 + 1},
                     with_zookeeper=True)
 
             self.start()
@@ -62,11 +62,11 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
             self.ddl_check_query(instance, "CREATE DATABASE IF NOT EXISTS test ON CLUSTER 'cluster'")
 
         except Exception as e:
-            print e
+            print(e)
             raise
 
     def sync_replicas(self, table, timeout=5):
-        for instance in self.instances.values():
+        for instance in list(self.instances.values()):
             instance.query("SYSTEM SYNC REPLICA {}".format(table), timeout=timeout)
 
     def check_all_hosts_successfully_executed(self, tsv_content, num_hosts=None):
@@ -90,7 +90,7 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
     def replace_domains_to_ip_addresses_in_cluster_config(self, instances_to_replace):
         clusters_config = open(p.join(self.base_dir, '{}/config.d/clusters.xml'.format(self.test_config_dir))).read()
 
-        for inst_name, inst in self.instances.items():
+        for inst_name, inst in list(self.instances.items()):
             clusters_config = clusters_config.replace(inst_name, str(inst.ip_address))
 
         for inst_name in instances_to_replace:
@@ -113,7 +113,7 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
         Make retries in case of UNKNOWN_STATUS_OF_INSERT or zkutil::KeeperException errors
         """
 
-        for i in xrange(100):
+        for i in range(100):
             try:
                 instance.query(query_insert)
                 return

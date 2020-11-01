@@ -7,7 +7,6 @@ PEERDIR(
     contrib/libs/protobuf
 )
 
-CFLAGS(-g0)
 
 SRCS(
     Chunk.cpp
@@ -47,6 +46,8 @@ SRCS(
     Formats/Impl/PrettySpaceBlockOutputFormat.cpp
     Formats/Impl/ProtobufRowInputFormat.cpp
     Formats/Impl/ProtobufRowOutputFormat.cpp
+    Formats/Impl/RawBLOBRowInputFormat.cpp
+    Formats/Impl/RawBLOBRowOutputFormat.cpp
     Formats/Impl/RegexpRowInputFormat.cpp
     Formats/Impl/TabSeparatedRowInputFormat.cpp
     Formats/Impl/TabSeparatedRowOutputFormat.cpp

@@ -17,8 +17,9 @@ if (USE_DEBUG_HELPERS)
 endif ()
 
 # Add some warnings that are not available even with -Wall -Wextra -Wpedantic.
-
-option (WEVERYTHING "Enables -Weverything option with some exceptions. This is intended for exploration of new compiler warnings that may be found to be useful. Only makes sense for clang." ON)
+# Intended for exploration of new compiler warnings that may be found useful.
+# Applies to clang only
+option (WEVERYTHING "Enable -Weverything option with some exceptions." ON)
 
 # Control maximum size of stack frames. It can be important if the code is run in fibers with small stack size.
 # Only in release build because debug has too large stack frames.
@@ -30,6 +31,7 @@ if (COMPILER_CLANG)
     add_warning(pedantic)
     no_warning(vla-extension)
     no_warning(zero-length-array)
+    no_warning(c11-extensions)
 
     add_warning(comma)
     add_warning(conditional-uninitialized)
@@ -56,7 +58,10 @@ if (COMPILER_CLANG)
     add_warning(unused-exception-parameter)
     add_warning(unused-macros)
     add_warning(unused-member-function)
-    add_warning(zero-as-null-pointer-constant)
+    # XXX: libstdc++ has some of these for 3way compare
+    if (USE_LIBCXX)
+        add_warning(zero-as-null-pointer-constant)
+    endif()
 
     if (WEVERYTHING)
         add_warning(everything)
@@ -86,6 +91,11 @@ if (COMPILER_CLANG)
         no_warning(vla)
         no_warning(weak-template-vtables)
         no_warning(weak-vtables)
+
+        # XXX: libstdc++ has some of these for 3way compare
+        if (NOT USE_LIBCXX)
+            no_warning(zero-as-null-pointer-constant)
+        endif()
 
         # TODO Enable conversion, sign-conversion, double-promotion warnings.
     endif ()
@@ -168,6 +178,11 @@ elseif (COMPILER_GCC)
     add_cxx_compile_options(-Wunused)
     # Warn if vector operation is not implemented via SIMD capabilities of the architecture
     add_cxx_compile_options(-Wvector-operation-performance)
+    # XXX: libstdc++ has some of these for 3way compare
+    if (USE_LIBCXX)
+        # Warn when a literal 0 is used as null pointer constant.
+        add_cxx_compile_options(-Wzero-as-null-pointer-constant)
+    endif()
 
     if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 10)
         # XXX: gcc10 stuck with this option while compiling GatherUtils code

@@ -24,7 +24,7 @@ def test_user_zero_database_access(start_cluster):
     except AssertionError:
         raise
     except Exception as ex:
-        print ex
+        print(ex)
 
     try:
         node.exec_in_container(
@@ -47,7 +47,7 @@ def test_user_zero_database_access(start_cluster):
     except AssertionError:
         raise
     except Exception as ex:
-        print ex
+        print(ex)
 
     try:
         node.exec_in_container(
@@ -57,7 +57,7 @@ def test_user_zero_database_access(start_cluster):
     except AssertionError:
         raise
     except Exception as ex:
-        print ex
+        print(ex)
 
     try:
         node.exec_in_container(

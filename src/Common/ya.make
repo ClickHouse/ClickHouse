@@ -21,7 +21,6 @@ PEERDIR(
 
 INCLUDE(${ARCADIA_ROOT}/clickhouse/cmake/yandex/ya.make.versions.inc)
 
-CFLAGS(-g0)
 
 SRCS(
     ActionLock.cpp
@@ -99,6 +98,7 @@ SRCS(
     ThreadProfileEvents.cpp
     ThreadStatus.cpp
     TraceCollector.cpp
+    UnicodeBar.cpp
     UTF8Helpers.cpp
     WeakHash.cpp
     ZooKeeper/IKeeper.cpp

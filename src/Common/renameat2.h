@@ -14,4 +14,7 @@ void renameNoReplace(const std::string & old_path, const std::string & new_path)
 /// Atomically exchange oldpath and newpath. Throw exception if some of them does not exist
 void renameExchange(const std::string & old_path, const std::string & new_path);
 
+/// Returns false instead of throwing exception if renameat2 is not supported
+bool renameExchangeIfSupported(const std::string & old_path, const std::string & new_path);
+
 }

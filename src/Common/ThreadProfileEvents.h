@@ -82,13 +82,6 @@ inline UInt64 getCurrentTimeNanoseconds(clockid_t clock_type = CLOCK_MONOTONIC)
     return ts.tv_sec * 1000000000ULL + ts.tv_nsec;
 }
 
-inline UInt64 getCurrentTimeMicroseconds()
-{
-    struct timeval tv;
-    gettimeofday(&tv, nullptr);
-    return (tv.tv_sec) * 1000000U + (tv.tv_usec);
-}
-
 struct RUsageCounters
 {
     /// In nanoseconds
@@ -113,13 +106,6 @@ struct RUsageCounters
 
         soft_page_faults = static_cast<UInt64>(rusage.ru_minflt);
         hard_page_faults = static_cast<UInt64>(rusage.ru_majflt);
-    }
-
-    static RUsageCounters zeros(UInt64 real_time_ = getCurrentTimeNanoseconds())
-    {
-        RUsageCounters res;
-        res.real_time = real_time_;
-        return res;
     }
 
     static RUsageCounters current(UInt64 real_time_ = getCurrentTimeNanoseconds())
