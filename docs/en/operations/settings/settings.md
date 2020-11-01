@@ -307,7 +307,44 @@ Disabled by default.
 
 ## input_format_tsv_enum_as_number {#settings-input_format_tsv_enum_as_number}
 
-For TSV input format switches to parsing enum values as enum ids.
+Enables or disables to parsing enum values as enum ids for TSV input format.
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 0.
+
+**Example**
+
+Query:
+
+```sql
+DROP TABLE IF EXISTS table_with_enum_column_for_tsv_insert;
+
+CREATE TABLE table_with_enum_column_for_tsv_insert (Id Int32,Value Enum('ef' = 1, 'es' = 2)) ENGINE=Memory() FORMAT TabSeparatedRaw;
+
+SET input_format_tsv_enum_as_number = 1;
+
+INSERT INTO table_with_enum_column_for_tsv_insert VALUES (102, 2);
+INSERT INTO table_with_enum_column_for_tsv_insert VALUES (103, 1);
+SELECT * FROM table_with_enum_column_for_tsv_insert;
+
+SET input_format_tsv_enum_as_number = 0;
+DROP TABLE IF EXISTS table_with_enum_column_for_tsv_insert;
+```
+
+Result:
+
+```text
+┌──Id─┬─Value─┐
+│ 102 │ es    │
+└─────┴───────┘
+┌──Id─┬─Value─┐
+│ 103 │ ef    │
+└─────┴───────┘
+```
 
 ## input_format_null_as_default {#settings-input-format-null-as-default}
 
