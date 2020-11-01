@@ -38,32 +38,34 @@ namespace ErrorCodes
 
 namespace
 {
+    using CompletionCallback = std::function<void(bool)>;
+
     /// Requests a connection and provides low-level interface for reading and writing.
     class Responder
     {
     public:
-        Responder() : tag(this) {}
-
-        void setTag(void * tag_) { tag = tag_; }
-
-        void start(GRPCService & grpc_service, grpc::ServerCompletionQueue & new_call_queue, grpc::ServerCompletionQueue & notification_queue)
+        void start(
+            GRPCService & grpc_service,
+            grpc::ServerCompletionQueue & new_call_queue,
+            grpc::ServerCompletionQueue & notification_queue,
+            const CompletionCallback & callback)
         {
-            grpc_service.RequestExecuteQuery(&grpc_context, &reader_writer, &new_call_queue, &notification_queue, tag);
+            grpc_service.RequestExecuteQuery(&grpc_context, &reader_writer, &new_call_queue, &notification_queue, getCallbackPtr(callback));
         }
 
-        void read(GRPCQueryInfo & query_info_)
+        void read(GRPCQueryInfo & query_info_, const CompletionCallback & callback)
         {
-            reader_writer.Read(&query_info_, tag);
+            reader_writer.Read(&query_info_, getCallbackPtr(callback));
         }
 
-        void write(const GRPCResult & result)
+        void write(const GRPCResult & result, const CompletionCallback & callback)
         {
-            reader_writer.Write(result, tag);
+            reader_writer.Write(result, getCallbackPtr(callback));
         }
 
-        void writeAndFinish(const GRPCResult & result, const grpc::Status & status)
+        void writeAndFinish(const GRPCResult & result, const grpc::Status & status, const CompletionCallback & callback)
         {
-            reader_writer.WriteAndFinish(result, {}, status, tag);
+            reader_writer.WriteAndFinish(result, {}, status, getCallbackPtr(callback));
         }
 
         Poco::Net::SocketAddress getClientAddress() const
@@ -73,9 +75,31 @@ namespace
         }
 
     private:
+        CompletionCallback * getCallbackPtr(const CompletionCallback & callback)
+        {
+            /// It would be better to pass callbacks to gRPC calls.
+            /// However gRPC calls can be tagged with `void *` tags only.
+            /// The map `callbacks` here is used to keep callbacks until they're called.
+            std::lock_guard lock{mutex};
+            size_t callback_id = next_callback_id++;
+            auto & callback_in_map = callbacks[callback_id];
+            callback_in_map = [this, callback, callback_id](bool ok)
+            {
+                CompletionCallback callback_to_call;
+                {
+                    std::lock_guard lock2{mutex};
+                    callback_to_call = callback;
+                    callbacks.erase(callback_id);
+                }
+                callback_to_call(ok);
+            };
+            return &callback_in_map;
+        }
         grpc::ServerContext grpc_context;
         grpc::ServerAsyncReaderWriter<GRPCResult, GRPCQueryInfo> reader_writer{&grpc_context};
-        void * tag;
+        std::unordered_map<size_t, CompletionCallback> callbacks;
+        size_t next_callback_id = 0;
+        std::mutex mutex;
     };
 
 
@@ -87,11 +111,9 @@ namespace
         ~Call();
 
         void start(const std::function<void(void)> & on_finish_call_callback);
-        void sync(bool ok);
 
     private:
         void run();
-        void waitForSync();
 
         void receiveQuery();
         void executeQuery();
@@ -102,11 +124,13 @@ namespace
         void onException(const Exception & exception);
         void close();
 
+        void readQueryInfo();
         void addOutputToResult(const Block & block);
         void addProgressToResult();
         void addTotalsToResult(const Block & totals);
         void addExtremesToResult(const Block & extremes);
         void sendResult();
+        void throwIfFailedToSendResult();
         void sendException(const Exception & exception);
 
         std::unique_ptr<Responder> responder;
@@ -129,19 +153,24 @@ namespace
         GRPCQueryInfo query_info; /// We reuse the same messages multiple times.
         GRPCResult result;
 
+        /// 0 - no query info has been read, 1 - initial query info, 2 - next query info, ...
+        size_t query_info_index = 0;
+
         bool finalize = false;
         bool responder_finished = false;
 
+        std::atomic<bool> sending_result = false; /// atomic because it can be accessed both from call_thread and queue_thread
+        std::atomic<bool> failed_to_send_result = false;
+
         ThreadFromGlobalPool call_thread;
-        std::condition_variable signal;
-        std::atomic<size_t> num_syncs_pending = 0;
-        std::atomic<bool> sync_failed = false;
+        std::condition_variable read_finished;
+        std::condition_variable write_finished;
+        std::mutex dummy_mutex; /// Doesn't protect anything.
     };
 
     Call::Call(std::unique_ptr<Responder> responder_, IServer & iserver_, Poco::Logger * log_)
         : responder(std::move(responder_)), iserver(iserver_), log(log_)
     {
-        responder->setTag(this);
     }
 
     Call::~Call()
@@ -165,24 +194,6 @@ namespace
             on_finish_call_callback();
         };
         call_thread = ThreadFromGlobalPool(runner_function);
-    }
-
-    void Call::sync(bool ok)
-    {
-        ++num_syncs_pending;
-        if (!ok)
-            sync_failed = true;
-        signal.notify_one();
-    }
-
-    void Call::waitForSync()
-    {
-        std::mutex mutex;
-        std::unique_lock lock{mutex};
-        signal.wait(lock, [&] { return (num_syncs_pending > 0) || sync_failed; });
-        if (sync_failed)
-            throw Exception("Client has gone away or network failure", ErrorCodes::NETWORK_ERROR);
-        --num_syncs_pending;
     }
 
     void Call::run()
@@ -211,8 +222,7 @@ namespace
 
     void Call::receiveQuery()
     {
-        responder->read(query_info);
-        waitForSync();
+        readQueryInfo();
     }
 
     void Call::executeQuery()
@@ -360,8 +370,7 @@ namespace
 
         while (query_info.next_query_info())
         {
-            responder->read(query_info);
-            waitForSync();
+            readQueryInfo();
             if (!query_info.input_data().empty())
             {
                 const char * begin = query_info.input_data().data();
@@ -403,6 +412,8 @@ namespace
                     break;
             }
 
+            throwIfFailedToSendResult();
+
             if (block && !io.null_format)
                 addOutputToResult(block);
 
@@ -414,6 +425,8 @@ namespace
 
             if (!result.output().empty() || result.has_progress())
                 sendResult();
+
+            throwIfFailedToSendResult();
         }
         async_in.readSuffix();
 
@@ -432,11 +445,10 @@ namespace
         Block block;
         while (executor->pull(block, interactive_delay / 1000))
         {
-            if (block)
-            {
-                if (!io.null_format)
-                    addOutputToResult(block);
-            }
+            throwIfFailedToSendResult();
+
+            if (block && !io.null_format)
+                addOutputToResult(block);
 
             if (after_send_progress.elapsedMicroseconds() >= interactive_delay)
             {
@@ -446,6 +458,8 @@ namespace
 
             if (!result.output().empty() || result.has_progress())
                 sendResult();
+
+            throwIfFailedToSendResult();
         }
 
         addTotalsToResult(executor->getTotalsBlock());
@@ -486,6 +500,35 @@ namespace
         io = {};
         query_scope.reset();
         query_context.reset();
+    }
+
+    void Call::readQueryInfo()
+    {
+        bool ok = false;
+
+        /// Start reading a query info.
+        bool reading_query_info = true;
+        responder->read(query_info, [&](bool ok_)
+        {
+            /// Called on queue_thread.
+            ok = ok_;
+            reading_query_info = false;
+            read_finished.notify_one();
+        });
+
+        /// Wait until the reading is finished.
+        std::unique_lock lock{dummy_mutex};
+        read_finished.wait(lock, [&] { return !reading_query_info; });
+
+        if (!ok)
+        {
+            if (!query_info_index)
+                throw Exception("Failed to read initial QueryInfo", ErrorCodes::NETWORK_ERROR);
+            else
+                throw Exception("Failed to read extra QueryInfo with input data", ErrorCodes::NETWORK_ERROR);
+        }
+
+        ++query_info_index;
     }
 
     void Call::addOutputToResult(const Block & block)
@@ -532,17 +575,51 @@ namespace
         if (responder_finished)
             return;
 
+        /// Wait for previous write to finish.
+        /// (gRPC doesn't allow to start sending another result while the previous is still being sending.)
+        if (sending_result)
+        {
+            std::unique_lock lock{dummy_mutex};
+            write_finished.wait(lock, [this] { return !sending_result; });
+        }
+        throwIfFailedToSendResult();
+
+        /// Start sending the result.
+        sending_result = true;
+        auto callback = [this](bool ok)
+        {
+            /// Called on queue_thread.
+            if (!ok)
+                failed_to_send_result = true;
+            sending_result = false;
+            write_finished.notify_one();
+        };
+
         bool send_final_message = finalize || result.has_exception();
         if (send_final_message)
         {
             responder_finished = true;
-            responder->writeAndFinish(result, {});
+            responder->writeAndFinish(result, {}, callback);
         }
         else
-            responder->write(result);
+            responder->write(result, callback);
 
-        waitForSync();
+        /// gRPC has already retrieved all data from `result`, so we don't have to keep it.
         result.Clear();
+
+        if (send_final_message)
+        {
+            /// Wait until the result is actually sent.
+            std::unique_lock lock{dummy_mutex};
+            write_finished.wait(lock, [this] { return !sending_result; });
+            throwIfFailedToSendResult();
+        }
+    }
+
+    void Call::throwIfFailedToSendResult()
+    {
+        if (failed_to_send_result)
+            throw Exception("Failed to send result to client", ErrorCodes::NETWORK_ERROR);
     }
 
     void Call::sendException(const Exception & exception)
@@ -604,7 +681,7 @@ private:
     {
         /// `mutex` is already locked.
         responder_for_new_call = std::make_unique<Responder>();
-        responder_for_new_call->start(owner.grpc_service, *owner.queue, *owner.queue);
+        responder_for_new_call->start(owner.grpc_service, *owner.queue, *owner.queue, [this](bool ok) { onNewCall(ok); });
     }
 
     void stopReceivingNewCalls()
@@ -613,14 +690,14 @@ private:
         should_stop = true;
     }
 
-    void onNewCall(bool responder_started)
+    void onNewCall(bool responder_started_ok)
     {
-        /// `mutex` is already locked.
+        std::lock_guard lock{mutex};
         auto responder = std::move(responder_for_new_call);
         if (should_stop)
             return;
         makeResponderForNewCall();
-        if (responder_started)
+        if (responder_started_ok)
         {
             /// Connection established and the responder has been started.
             /// So we pass this responder to a Call and make another responder for next connection.
@@ -663,18 +740,8 @@ private:
                 break;
             }
 
-            {
-                std::lock_guard lock{mutex};
-                if (tag == responder_for_new_call.get())
-                {
-                    onNewCall(ok);
-                    continue;
-                }
-            }
-
-            /// Continue handling a Call.
-            auto call = static_cast<Call *>(tag);
-            call->sync(ok);
+            auto & callback = *static_cast<CompletionCallback *>(tag);
+            callback(ok);
         }
     }
 
