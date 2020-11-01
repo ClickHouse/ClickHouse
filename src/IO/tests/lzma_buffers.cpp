@@ -14,7 +14,7 @@ try
 {
     std::cout << std::fixed << std::setprecision(2);
 
-    size_t n = 100000;
+    size_t n = 10000000;
     Stopwatch stopwatch;
 
     {
@@ -35,7 +35,7 @@ try
             << ", " << (lzma_buf.count() / stopwatch.elapsedSeconds() / 1000000) << " MB/s"
             << std::endl;
     }
-/*
+
     {
         auto buf = std::make_unique<DB::ReadBufferFromFile>("test_lzma_buffers.xz");
         DB::LzmaReadBuffer lzma_buf(std::move(buf));
@@ -56,7 +56,7 @@ try
             << std::endl;
 
     }
-*/
+
     return 0;
 }
 catch (const DB::Exception & e)
