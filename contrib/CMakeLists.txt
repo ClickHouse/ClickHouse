@@ -32,7 +32,7 @@ add_subdirectory (murmurhash)
 add_subdirectory (replxx-cmake)
 add_subdirectory (ryu-cmake)
 add_subdirectory (unixodbc-cmake)
-add_subdirectory (xz-cmake)
+add_subdirectory (xz)
 
 add_subdirectory (poco-cmake)
 

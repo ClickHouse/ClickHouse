@@ -512,6 +512,9 @@ namespace ErrorCodes
     extern const int CONDITIONAL_TREE_PARENT_NOT_FOUND = 2001;
     extern const int ILLEGAL_PROJECTION_MANIPULATOR = 2002;
     extern const int UNRECOGNIZED_ARGUMENTS = 2003;
+
+    extern const int LZMA_STREAM_ENCODER_FAILED = 2004;
+    extern const int LZMA_STREAM_DECODER_FAILED = 2005;
 }
 
 }
