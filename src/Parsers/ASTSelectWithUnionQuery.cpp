@@ -1,8 +1,7 @@
-#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Common/typeid_cast.h>
-
-#include <iostream>
 
 namespace DB
 {
@@ -40,10 +39,18 @@ void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, F
     {
         if (it != list_of_selects->children.begin())
             settings.ostr << settings.nl_or_ws << indent_str << (settings.hilite ? hilite_keyword : "") << "UNION "
-						  << mode_to_str(union_modes[it - list_of_selects->children.begin() - 1]) << (settings.hilite ? hilite_none : "")
-                          << settings.nl_or_ws;
-
-        (*it)->formatImpl(settings, state, frame);
+                          << mode_to_str(union_modes[it - list_of_selects->children.begin() - 1]) << (settings.hilite ? hilite_none : "");
+        if (auto _ = (*it)->as<ASTSelectWithUnionQuery>())
+        {
+            auto sub_query = std::make_shared<ASTSubquery>();
+            sub_query->children.push_back(*it);
+            sub_query->formatImpl(settings, state, frame);
+        }
+        else
+        {
+            settings.ostr << settings.nl_or_ws;
+            (*it)->formatImpl(settings, state, frame);
+        }
     }
 }
 
