@@ -1191,6 +1191,7 @@ void ActionsDAG::removeUnusedActions(const std::vector<Node *> & required_nodes,
 {
     std::unordered_set<const Node *> visited_nodes;
     std::stack<Node *> stack;
+    std::vector<Node *> removed_inputs;
 
     {
         Index new_index;
@@ -1203,7 +1204,10 @@ void ActionsDAG::removeUnusedActions(const std::vector<Node *> & required_nodes,
             /// Remove input from index if we keep inputs.
             /// It will be dropped if no other actions depend on it.
             if  (policy == InputsPolicy::KEEP && node->type == ActionsDAG::Type::INPUT)
+            {
+                removed_inputs.push_back(node);
                 continue;
+            }
 
             new_index[node->result_name] = node;
             visited_nodes.insert(node);
@@ -1234,6 +1238,11 @@ void ActionsDAG::removeUnusedActions(const std::vector<Node *> & required_nodes,
             }
         }
     }
+
+    /// If input was not removed, add it back to index.
+    for (auto * input : removed_inputs)
+        if (visited_nodes.count(input))
+            index[input->result_name] = input;
 
     nodes.remove_if([&](const Node & node) { return visited_nodes.count(&node) == 0; });
 }
