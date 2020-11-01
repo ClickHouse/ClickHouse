@@ -411,6 +411,9 @@ ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_join
     for (const auto & node : index)
         data[node.second].used_in_result = true;
 
+    for (const auto & node : projection)
+        data[node].used_in_result = true;
+
     /// DFS. Decide if node depends on ARRAY JOIN and move it to one of the DAGs.
     for (auto & node : nodes)
     {
@@ -513,8 +516,12 @@ ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_join
     for (auto & node : index)
     {
         auto & cur = data[node.second];
-        this_index[cur.to_this->result_name] = cur.to_this;
+        if (cur.to_this)
+            this_index[cur.to_this->result_name] = cur.to_this;
     }
+
+    for (auto & node : projection)
+        node = data[node].to_this;
 
     /// Consider actions are empty if all nodes are constants or inputs.
     bool split_actions_are_empty = true;
