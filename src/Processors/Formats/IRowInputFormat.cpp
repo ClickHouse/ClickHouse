@@ -63,8 +63,6 @@ Chunk IRowInputFormat::generate()
                 info.read_columns.clear();
                 if (!readRow(columns, info))
                     break;
-                if (params.callback)
-                    params.callback();
 
                 for (size_t column_idx = 0; column_idx < info.read_columns.size(); ++column_idx)
                 {
