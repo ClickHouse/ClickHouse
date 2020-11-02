@@ -11,14 +11,26 @@
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Functions/IFunction.h>
+#include <IO/Operators.h>
 #include <optional>
 #include <Columns/ColumnSet.h>
+#include <queue>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
 #endif
 
+#include <common/defines.h>
+
+#if defined(MEMORY_SANITIZER)
+    #include <sanitizer/msan_interface.h>
+#endif
+
+#if defined(ADDRESS_SANITIZER)
+    #include <sanitizer/asan_interface.h>
+#endif
 
 namespace ProfileEvents
 {
@@ -153,14 +165,6 @@ ExpressionAction ExpressionAction::arrayJoin(std::string source_name, std::strin
     return a;
 }
 
-ExpressionAction ExpressionAction::ordinaryJoin(std::shared_ptr<TableJoin> table_join, JoinPtr join)
-{
-    ExpressionAction a;
-    a.type = JOIN;
-    a.table_join = table_join;
-    a.join = join;
-    return a;
-}
 
 void ExpressionAction::prepare(Block & sample_block, const Settings & settings, NameSet & names_not_for_constant_folding)
 {
@@ -179,11 +183,11 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
             bool all_const = true;
             bool all_suitable_for_constant_folding = true;
 
-            ColumnNumbers arguments(argument_names.size());
+            ColumnsWithTypeAndName arguments(argument_names.size());
             for (size_t i = 0; i < argument_names.size(); ++i)
             {
-                arguments[i] = sample_block.getPositionByName(argument_names[i]);
-                ColumnPtr col = sample_block.safeGetByPosition(arguments[i]).column;
+                arguments[i] = sample_block.getByName(argument_names[i]);
+                ColumnPtr col = arguments[i].column;
                 if (!col || !isColumnConst(*col))
                     all_const = false;
 
@@ -193,7 +197,8 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
 
             size_t result_position = sample_block.columns();
             sample_block.insert({nullptr, result_type, result_name});
-            function = function_base->prepare(sample_block, arguments, result_position);
+            if (!function)
+                function = function_base->prepare(arguments);
             function->createLowCardinalityResultCache(settings.max_threads);
 
             bool compile_expressions = false;
@@ -205,7 +210,10 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
             /// so we don't want to unfold non deterministic functions
             if (all_const && function_base->isSuitableForConstantFolding() && (!compile_expressions || function_base->isDeterministic()))
             {
-                function->execute(sample_block, arguments, result_position, sample_block.rows(), true);
+                if (added_column)
+                    sample_block.getByPosition(result_position).column = added_column;
+                else
+                    sample_block.getByPosition(result_position).column = function->execute(arguments, result_type, sample_block.rows(), true);
 
                 /// If the result is not a constant, just in case, we will consider the result as unknown.
                 ColumnWithTypeAndName & col = sample_block.safeGetByPosition(result_position);
@@ -233,7 +241,7 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
             auto & res = sample_block.getByPosition(result_position);
             if (!res.column && function_base->isSuitableForConstantFolding())
             {
-                if (auto col = function_base->getResultIfAlwaysReturnsConstantAndHasArguments(sample_block, arguments))
+                if (auto col = function_base->getResultIfAlwaysReturnsConstantAndHasArguments(arguments))
                 {
                     res.column = std::move(col);
                     names_not_for_constant_folding.insert(result_name);
@@ -257,12 +265,6 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
             current.column = nullptr; /// Result is never const
             sample_block.insert(std::move(current));
 
-            break;
-        }
-
-        case JOIN:
-        {
-            table_join->addJoinedColumnsAndCorrectNullability(sample_block);
             break;
         }
 
@@ -323,6 +325,7 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
                 {
                     auto & result = sample_block.getByName(result_name);
                     result.type = result_type;
+                    result.name = result_name;
                     result.column = source.column;
                 }
                 else
@@ -333,19 +336,6 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
 
             break;
         }
-    }
-}
-
-void ExpressionAction::execute(Block & block, ExtraBlockPtr & not_processed) const
-{
-    switch (type)
-    {
-        case JOIN:
-            join->joinBlock(block, not_processed);
-            break;
-
-        default:
-            throw Exception("Unexpected expression call", ErrorCodes::LOGICAL_ERROR);
     }
 }
 
@@ -365,9 +355,9 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
     {
         case APPLY_FUNCTION:
         {
-            ColumnNumbers arguments(argument_names.size());
+            ColumnsWithTypeAndName arguments(argument_names.size());
             for (size_t i = 0; i < argument_names.size(); ++i)
-                arguments[i] = block.getPositionByName(argument_names[i]);
+                arguments[i] = block.getByName(argument_names[i]);
 
             size_t num_columns_without_result = block.columns();
             block.insert({ nullptr, result_type, result_name});
@@ -375,7 +365,7 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
             ProfileEvents::increment(ProfileEvents::FunctionExecute);
             if (is_function_compiled)
                 ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
-            function->execute(block, arguments, num_columns_without_result, input_rows_count, dry_run);
+            block.getByPosition(num_columns_without_result).column = function->execute(arguments, result_type, input_rows_count, dry_run);
 
             break;
         }
@@ -401,9 +391,6 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
 
             break;
         }
-
-        case JOIN:
-            throw Exception("Unexpected JOIN expression call", ErrorCodes::LOGICAL_ERROR);
 
         case PROJECT:
         {
@@ -463,14 +450,6 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
     }
 }
 
-void ExpressionAction::executeOnTotals(Block & block) const
-{
-    if (type != JOIN)
-        execute(block, false);
-    else
-        join->joinTotals(block);
-}
-
 
 std::string ExpressionAction::toString() const
 {
@@ -508,17 +487,6 @@ std::string ExpressionAction::toString() const
 
         case ARRAY_JOIN:
             ss << "ARRAY JOIN " << source_name << " -> " << result_name;
-            break;
-
-        case JOIN:
-            ss << "JOIN ";
-            for (NamesAndTypesList::const_iterator it = table_join->columnsAddedByJoin().begin();
-                 it != table_join->columnsAddedByJoin().end(); ++it)
-            {
-                if (it != table_join->columnsAddedByJoin().begin())
-                    ss << ", ";
-                ss << it->name;
-            }
             break;
 
         case PROJECT: [[fallthrough]];
@@ -634,8 +602,11 @@ void ExpressionActions::addImpl(ExpressionAction action, Names & new_names)
             arguments[i] = sample_block.getByName(action.argument_names[i]);
         }
 
-        action.function_base = action.function_builder->build(arguments);
-        action.result_type = action.function_base->getReturnType();
+        if (!action.function_base)
+        {
+            action.function_base = action.function_builder->build(arguments);
+            action.result_type = action.function_base->getResultType();
+        }
     }
 
     if (action.type == ExpressionAction::ADD_ALIASES)
@@ -655,58 +626,44 @@ void ExpressionActions::execute(Block & block, bool dry_run) const
 {
     for (const auto & action : actions)
     {
-        action.execute(block, dry_run);
-        checkLimits(block);
-    }
-}
-
-void ExpressionActions::execute(Block & block, ExtraBlockPtr & not_processed) const
-{
-    if (actions.size() != 1)
-        throw Exception("Continuation over multiple expressions is not supported", ErrorCodes::LOGICAL_ERROR);
-
-    actions[0].execute(block, not_processed);
-    checkLimits(block);
-}
-
-bool ExpressionActions::hasJoinOrArrayJoin() const
-{
-    for (const auto & action : actions)
-        if (action.type == ExpressionAction::JOIN || action.type == ExpressionAction::ARRAY_JOIN)
-            return true;
-
-    return false;
-}
-
-bool ExpressionActions::hasTotalsInJoin() const
-{
-    for (const auto & action : actions)
-        if (action.table_join && action.join->hasTotals())
-            return true;
-    return false;
-}
-
-void ExpressionActions::executeOnTotals(Block & block) const
-{
-    /// If there is `totals` in the subquery for JOIN, but we do not have totals, then take the block with the default values instead of `totals`.
-    if (!block)
-    {
-        if (hasTotalsInJoin())
+        try
         {
-            for (const auto & name_and_type : input_columns)
-            {
-                auto column = name_and_type.type->createColumn();
-                column->insertDefault();
-                block.insert(ColumnWithTypeAndName(std::move(column), name_and_type.type, name_and_type.name));
-            }
+            action.execute(block, dry_run);
+            checkLimits(block);
         }
-        else
-            return; /// There's nothing to JOIN.
-    }
+        catch (Exception & e)
+        {
+#if defined(MEMORY_SANITIZER)
+            const auto & msg = e.message();
+            if (__msan_test_shadow(msg.data(), msg.size()) != -1)
+            {
+                LOG_FATAL(&Poco::Logger::get("ExpressionActions"), "Poisoned exception message (msan): {}", e.getStackTraceString());
+            }
+#endif
 
-    for (const auto & action : actions)
-        action.executeOnTotals(block);
+#if defined(ADDRESS_SANITIZER)
+            const auto & msg = e.message();
+            if (__asan_region_is_poisoned(const_cast<char *>(msg.data()), msg.size()))
+            {
+                LOG_FATAL(&Poco::Logger::get("ExpressionActions"), "Poisoned exception message (asan): {}", e.getStackTraceString());
+            }
+#endif
+
+            e.addMessage(fmt::format("while executing '{}'", action.toString()));
+            throw;
+        }
+    }
 }
+
+bool ExpressionActions::hasArrayJoin() const
+{
+    for (const auto & action : actions)
+        if (action.type == ExpressionAction::ARRAY_JOIN)
+            return true;
+
+    return false;
+}
+
 
 std::string ExpressionActions::getSmallestColumn(const NamesAndTypesList & columns)
 {
@@ -1183,33 +1140,7 @@ ExpressionActionsPtr ExpressionActions::splitActionsBeforeArrayJoin(const NameSe
     input_columns = split_actions->getSampleBlock().getNamesAndTypesList();
     input_columns.insert(input_columns.end(), inputs_from_array_join.begin(), inputs_from_array_join.end());
 
-    /// Remove not needed columns.
-    if (!actions.empty())
-        prependProjectInput();
-
     return split_actions;
-}
-
-JoinPtr ExpressionActions::getTableJoinAlgo() const
-{
-    for (const auto & action : actions)
-        if (action.join)
-            return action.join;
-    return {};
-}
-
-
-bool ExpressionActions::resultIsAlwaysEmpty() const
-{
-    /// Check that has join which returns empty result.
-
-    for (const auto & action : actions)
-    {
-        if (action.type == action.JOIN && action.join && action.join->alwaysReturnsEmptySet())
-            return true;
-    }
-
-    return false;
 }
 
 
@@ -1293,10 +1224,6 @@ UInt128 ExpressionAction::ActionHash::operator()(const ExpressionAction & action
             hash.update(action.result_name);
             hash.update(action.source_name);
             break;
-        case JOIN:
-            for (const auto & col : action.table_join->columnsAddedByJoin())
-                hash.update(col.name);
-            break;
         case PROJECT:
             for (const auto & pair_of_strs : action.projection)
             {
@@ -1360,8 +1287,14 @@ void ExpressionActionsChain::addStep()
     if (steps.empty())
         throw Exception("Cannot add action to empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
 
+    if (auto * step = typeid_cast<ExpressionActionsStep *>(steps.back().get()))
+    {
+        if (!step->actions)
+            step->actions = step->actions_dag->buildExpressions(context);
+    }
+
     ColumnsWithTypeAndName columns = steps.back()->getResultColumns();
-    steps.push_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ExpressionActions>(columns, context)));
+    steps.push_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ActionsDAG>(columns)));
 }
 
 void ExpressionActionsChain::finalize()
@@ -1422,8 +1355,8 @@ std::string ExpressionActionsChain::dumpChain() const
     return ss.str();
 }
 
-ExpressionActionsChain::ArrayJoinStep::ArrayJoinStep(ArrayJoinActionPtr array_join_, ColumnsWithTypeAndName required_columns_, Names required_output_)
-    : Step(std::move(required_output_))
+ExpressionActionsChain::ArrayJoinStep::ArrayJoinStep(ArrayJoinActionPtr array_join_, ColumnsWithTypeAndName required_columns_)
+    : Step({})
     , array_join(std::move(array_join_))
     , result_columns(std::move(required_columns_))
 {
@@ -1462,14 +1395,426 @@ void ExpressionActionsChain::ArrayJoinStep::finalize(const Names & required_outp
     std::swap(result_columns, new_result_columns);
 }
 
-ExpressionActionsPtr & ExpressionActionsChain::Step::actions()
+ExpressionActionsChain::JoinStep::JoinStep(
+    std::shared_ptr<TableJoin> analyzed_join_,
+    JoinPtr join_,
+    ColumnsWithTypeAndName required_columns_)
+    : Step({})
+    , analyzed_join(std::move(analyzed_join_))
+    , join(std::move(join_))
+    , result_columns(std::move(required_columns_))
 {
-    return typeid_cast<ExpressionActionsStep *>(this)->actions;
+    for (const auto & column : result_columns)
+        required_columns.emplace_back(column.name, column.type);
+
+    analyzed_join->addJoinedColumnsAndCorrectNullability(result_columns);
 }
 
-const ExpressionActionsPtr & ExpressionActionsChain::Step::actions() const
+void ExpressionActionsChain::JoinStep::finalize(const Names & required_output_)
+{
+    /// We need to update required and result columns by removing unused ones.
+    NamesAndTypesList new_required_columns;
+    ColumnsWithTypeAndName new_result_columns;
+
+    /// That's an input columns we need.
+    NameSet required_names(required_output_.begin(), required_output_.end());
+    for (const auto & name : analyzed_join->keyNamesLeft())
+        required_names.emplace(name);
+
+    for (const auto & column : required_columns)
+    {
+        if (required_names.count(column.name) != 0)
+            new_required_columns.emplace_back(column);
+    }
+
+    /// Result will also contain joined columns.
+    for (const auto & column : analyzed_join->columnsAddedByJoin())
+        required_names.emplace(column.name);
+
+    for (const auto & column : result_columns)
+    {
+        if (required_names.count(column.name) != 0)
+            new_result_columns.emplace_back(column);
+    }
+
+    std::swap(required_columns, new_required_columns);
+    std::swap(result_columns, new_result_columns);
+}
+
+ActionsDAGPtr & ExpressionActionsChain::Step::actions()
+{
+    return typeid_cast<ExpressionActionsStep *>(this)->actions_dag;
+}
+
+const ActionsDAGPtr & ExpressionActionsChain::Step::actions() const
+{
+    return typeid_cast<const ExpressionActionsStep *>(this)->actions_dag;
+}
+
+ExpressionActionsPtr ExpressionActionsChain::Step::getExpression() const
 {
     return typeid_cast<const ExpressionActionsStep *>(this)->actions;
+}
+
+ActionsDAG::ActionsDAG(const NamesAndTypesList & inputs)
+{
+    for (const auto & input : inputs)
+        addInput(input.name, input.type);
+}
+
+ActionsDAG::ActionsDAG(const ColumnsWithTypeAndName & inputs)
+{
+    for (const auto & input : inputs)
+        addInput(input);
+}
+
+ActionsDAG::Node & ActionsDAG::addNode(Node node, bool can_replace)
+{
+    auto it = index.find(node.result_name);
+    if (it != index.end() && !can_replace)
+        throw Exception("Column '" + node.result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
+
+    auto & res = nodes.emplace_back(std::move(node));
+
+    if (it != index.end())
+        it->second->renaming_parent = &res;
+
+    index[res.result_name] = &res;
+    return res;
+}
+
+ActionsDAG::Node & ActionsDAG::getNode(const std::string & name)
+{
+    auto it = index.find(name);
+    if (it == index.end())
+        throw Exception("Unknown identifier: '" + name + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
+
+    return *it->second;
+}
+
+const ActionsDAG::Node & ActionsDAG::addInput(std::string name, DataTypePtr type)
+{
+    Node node;
+    node.type = Type::INPUT;
+    node.result_type = std::move(type);
+    node.result_name = std::move(name);
+
+    return addNode(std::move(node));
+}
+
+const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column)
+{
+    Node node;
+    node.type = Type::INPUT;
+    node.result_type = std::move(column.type);
+    node.result_name = std::move(column.name);
+    node.column = std::move(column.column);
+
+    return addNode(std::move(node));
+}
+
+const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column)
+{
+    if (!column.column)
+        throw Exception("Cannot add column " + column.name + " because it is nullptr", ErrorCodes::LOGICAL_ERROR);
+
+    Node node;
+    node.type = Type::COLUMN;
+    node.result_type = std::move(column.type);
+    node.result_name = std::move(column.name);
+    node.column = std::move(column.column);
+
+    return addNode(std::move(node));
+}
+
+const ActionsDAG::Node & ActionsDAG::addAlias(const std::string & name, std::string alias, bool can_replace)
+{
+    auto & child = getNode(name);
+
+    Node node;
+    node.type = Type::ALIAS;
+    node.result_type = child.result_type;
+    node.result_name = std::move(alias);
+    node.column = child.column;
+    node.allow_constant_folding = child.allow_constant_folding;
+    node.children.emplace_back(&child);
+
+    return addNode(std::move(node), can_replace);
+}
+
+const ActionsDAG::Node & ActionsDAG::addArrayJoin(
+    const std::string & source_name, std::string result_name, std::string unique_column_name)
+{
+    auto & child = getNode(source_name);
+
+    const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(child.result_type.get());
+    if (!array_type)
+        throw Exception("ARRAY JOIN requires array argument", ErrorCodes::TYPE_MISMATCH);
+
+    Node node;
+    node.type = Type::ARRAY_JOIN;
+    node.result_type = array_type->getNestedType();
+    node.result_name = std::move(result_name);
+    node.unique_column_name_for_array_join = std::move(unique_column_name);
+    node.children.emplace_back(&child);
+
+    return addNode(std::move(node));
+}
+
+const ActionsDAG::Node & ActionsDAG::addFunction(
+    const FunctionOverloadResolverPtr & function,
+    const Names & argument_names,
+    std::string result_name,
+    bool compile_expressions [[maybe_unused]])
+{
+    size_t num_arguments = argument_names.size();
+
+    Node node;
+    node.type = Type::FUNCTION;
+    node.function_builder = function;
+    node.children.reserve(num_arguments);
+
+    bool all_const = true;
+    ColumnsWithTypeAndName arguments(num_arguments);
+
+    for (size_t i = 0; i < num_arguments; ++i)
+    {
+        auto & child = getNode(argument_names[i]);
+        node.children.emplace_back(&child);
+        node.allow_constant_folding = node.allow_constant_folding && child.allow_constant_folding;
+
+        ColumnWithTypeAndName argument;
+        argument.name = argument_names[i];
+        argument.column = child.column;
+        argument.type = child.result_type;
+        argument.name = child.result_name;
+
+        if (!argument.column || !isColumnConst(*argument.column))
+            all_const = false;
+
+        arguments[i] = std::move(argument);
+    }
+
+    node.function_base = function->build(arguments);
+    node.result_type = node.function_base->getResultType();
+    node.function = node.function_base->prepare(arguments);
+
+    bool do_compile_expressions = false;
+#if USE_EMBEDDED_COMPILER
+    do_compile_expressions = compile_expressions;
+#endif
+    /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
+    /// But if we compile expressions compiled version of this function maybe placed in cache,
+    /// so we don't want to unfold non deterministic functions
+    if (all_const && node.function_base->isSuitableForConstantFolding() && (!do_compile_expressions || node.function_base->isDeterministic()))
+    {
+        size_t num_rows = arguments.empty() ? 0 : arguments.front().column->size();
+        auto col = node.function->execute(arguments, node.result_type, num_rows, true);
+
+        /// If the result is not a constant, just in case, we will consider the result as unknown.
+        if (isColumnConst(*col))
+        {
+            /// All constant (literal) columns in block are added with size 1.
+            /// But if there was no columns in block before executing a function, the result has size 0.
+            /// Change the size to 1.
+
+            if (col->empty())
+                col = col->cloneResized(1);
+
+            node.column = std::move(col);
+        }
+    }
+
+    /// Some functions like ignore() or getTypeName() always return constant result even if arguments are not constant.
+    /// We can't do constant folding, but can specify in sample block that function result is constant to avoid
+    /// unnecessary materialization.
+    if (!node.column && node.function_base->isSuitableForConstantFolding())
+    {
+        if (auto col = node.function_base->getResultIfAlwaysReturnsConstantAndHasArguments(arguments))
+        {
+            node.column = std::move(col);
+            node.allow_constant_folding = false;
+        }
+    }
+
+    if (result_name.empty())
+    {
+        result_name = function->getName() + "(";
+        for (size_t i = 0; i < argument_names.size(); ++i)
+        {
+            if (i)
+                result_name += ", ";
+            result_name += argument_names[i];
+        }
+        result_name += ")";
+    }
+
+    node.result_name = std::move(result_name);
+
+    return addNode(std::move(node));
+}
+
+ColumnsWithTypeAndName ActionsDAG::getResultColumns() const
+{
+    ColumnsWithTypeAndName result;
+    result.reserve(index.size());
+    for (const auto & node : nodes)
+        if (!node.renaming_parent)
+            result.emplace_back(node.column, node.result_type, node.result_name);
+
+    return result;
+}
+
+NamesAndTypesList ActionsDAG::getNamesAndTypesList() const
+{
+    NamesAndTypesList result;
+    for (const auto & node : nodes)
+        if (!node.renaming_parent)
+            result.emplace_back(node.result_name, node.result_type);
+
+    return result;
+}
+
+Names ActionsDAG::getNames() const
+{
+    Names names;
+    names.reserve(index.size());
+    for (const auto & node : nodes)
+        if (!node.renaming_parent)
+            names.emplace_back(node.result_name);
+
+    return names;
+}
+
+std::string ActionsDAG::dumpNames() const
+{
+    WriteBufferFromOwnString out;
+    for (auto it = nodes.begin(); it != nodes.end(); ++it)
+    {
+        if (it != nodes.begin())
+            out << ", ";
+        out << it->result_name;
+    }
+    return out.str();
+}
+
+ExpressionActionsPtr ActionsDAG::buildExpressions(const Context & context)
+{
+    struct Data
+    {
+        Node * node = nullptr;
+        size_t num_created_children = 0;
+        size_t num_expected_children = 0;
+        std::vector<Node *> parents;
+        Node * renamed_child = nullptr;
+    };
+
+    std::vector<Data> data(nodes.size());
+    std::unordered_map<Node *, size_t> reverse_index;
+
+    for (auto & node : nodes)
+    {
+        size_t id = reverse_index.size();
+        data[id].node = &node;
+        reverse_index[&node] = id;
+    }
+
+    std::queue<Node *> ready_nodes;
+    std::queue<Node *> ready_array_joins;
+
+    for (auto & node : nodes)
+    {
+        data[reverse_index[&node]].num_expected_children += node.children.size();
+
+        for (const auto & child : node.children)
+            data[reverse_index[child]].parents.emplace_back(&node);
+
+        if (node.renaming_parent)
+        {
+
+            auto & cur = data[reverse_index[node.renaming_parent]];
+            cur.renamed_child = &node;
+            cur.num_expected_children += 1;
+        }
+    }
+
+    for (auto & node : nodes)
+    {
+        if (node.children.empty() && data[reverse_index[&node]].renamed_child == nullptr)
+            ready_nodes.emplace(&node);
+    }
+
+    auto update_parent = [&](Node * parent)
+    {
+        auto & cur = data[reverse_index[parent]];
+        ++cur.num_created_children;
+
+        if (cur.num_created_children == cur.num_expected_children)
+        {
+            auto & push_stack = parent->type == Type::ARRAY_JOIN ? ready_array_joins : ready_nodes;
+            push_stack.push(parent);
+        }
+    };
+
+    auto expressions = std::make_shared<ExpressionActions>(NamesAndTypesList(), context);
+
+    while (!ready_nodes.empty() || !ready_array_joins.empty())
+    {
+        auto & stack = ready_nodes.empty() ? ready_array_joins : ready_nodes;
+        Node * node = stack.front();
+        stack.pop();
+
+        Names argument_names;
+        for (const auto & child : node->children)
+            argument_names.emplace_back(child->result_name);
+
+        auto & cur = data[reverse_index[node]];
+
+        switch (node->type)
+        {
+            case Type::INPUT:
+                expressions->addInput({node->column, node->result_type, node->result_name});
+                break;
+            case Type::COLUMN:
+                expressions->add(ExpressionAction::addColumn({node->column, node->result_type, node->result_name}));
+                break;
+            case Type::ALIAS:
+                expressions->add(ExpressionAction::copyColumn(argument_names.at(0), node->result_name, cur.renamed_child != nullptr));
+                break;
+            case Type::ARRAY_JOIN:
+                /// Here we copy argument because arrayJoin removes source column.
+                /// It makes possible to remove source column before arrayJoin if it won't be needed anymore.
+
+                /// It could have been possible to implement arrayJoin which keeps source column,
+                /// but in this case it will always be replicated (as many arrays), which is expensive.
+                expressions->add(ExpressionAction::copyColumn(argument_names.at(0), node->unique_column_name_for_array_join));
+                expressions->add(ExpressionAction::arrayJoin(node->unique_column_name_for_array_join, node->result_name));
+                break;
+            case Type::FUNCTION:
+            {
+                ExpressionAction action;
+                action.type = ExpressionAction::APPLY_FUNCTION;
+                action.result_name = node->result_name;
+                action.result_type = node->result_type;
+                action.function_builder = node->function_builder;
+                action.function_base = node->function_base;
+                action.function = node->function;
+                action.argument_names = std::move(argument_names);
+                action.added_column = node->column;
+
+                expressions->add(action);
+                break;
+            }
+        }
+
+        for (const auto & parent : cur.parents)
+            update_parent(parent);
+
+        if (node->renaming_parent)
+            update_parent(node->renaming_parent);
+    }
+
+    return expressions;
 }
 
 }

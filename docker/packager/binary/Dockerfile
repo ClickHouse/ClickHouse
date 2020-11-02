@@ -1,7 +1,7 @@
 #  docker build -t yandex/clickhouse-binary-builder .
-FROM ubuntu:19.10
+FROM ubuntu:20.04
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=10
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=11
 
 RUN apt-get update \
     && apt-get install ca-certificates lsb-release wget gnupg apt-transport-https \
@@ -32,16 +32,16 @@ RUN apt-get update \
         curl \
         gcc-9 \
         g++-9 \
-        llvm-${LLVM_VERSION} \
-        clang-${LLVM_VERSION} \
-        lld-${LLVM_VERSION} \
-        clang-tidy-${LLVM_VERSION} \
-        clang-9 \
-        lld-9 \
-        clang-tidy-9 \
-        clang-8 \
-        lld-8 \
-        clang-tidy-8 \
+        clang-10 \
+        clang-tidy-10 \
+        lld-10 \
+        llvm-10 \
+        llvm-10-dev \
+        clang-11 \
+        clang-tidy-11 \
+        lld-11 \
+        llvm-11 \
+        llvm-11-dev \
         libicu-dev \
         libreadline-dev \
         ninja-build \
@@ -90,6 +90,17 @@ RUN wget -nv "https://developer.arm.com/-/media/Files/downloads/gnu-a/8.3-2019.0
 
 # Download toolchain for FreeBSD 11.3
 RUN wget -nv https://clickhouse-datasets.s3.yandex.net/toolchains/toolchains/freebsd-11.3-toolchain.tar.xz
+
+# NOTE: For some reason we have outdated version of gcc-10 in ubuntu 20.04 stable.
+# Current workaround is to use latest version proposed repo. Remove as soon as
+# gcc-10.2 appear in stable repo.
+RUN echo 'deb http://archive.ubuntu.com/ubuntu/ focal-proposed restricted main multiverse universe' > /etc/apt/sources.list.d/proposed-repositories.list
+
+RUN apt-get update \
+    && apt-get install gcc-10 g++-10 --yes
+
+RUN rm /etc/apt/sources.list.d/proposed-repositories.list && apt-get update
+
 
 COPY build.sh /
 CMD ["/bin/bash", "/build.sh"]

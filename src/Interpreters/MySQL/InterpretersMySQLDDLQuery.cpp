@@ -56,7 +56,7 @@ static inline String resolveDatabase(
         }
     }
 
-    /// When USE other_database_name; CREATE TABLE table_name; 
+    /// When USE other_database_name; CREATE TABLE table_name;
     /// context.getCurrentDatabase() is always return `default database`
     /// When USE replica_mysql_database; CREATE TABLE table_name;
     /// context.getCurrentDatabase() is always return replica_clickhouse_database

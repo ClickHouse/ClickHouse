@@ -5,7 +5,6 @@
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataStreams/NullBlockInputStream.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTSelectQuery.h>

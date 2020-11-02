@@ -1,4 +1,4 @@
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -86,7 +86,7 @@ TEST(ParserDictionaryDDL, SimpleDictionary)
     auto * primary_key = create->dictionary->primary_key;
 
     EXPECT_EQ(primary_key->children.size(), 1);
-    EXPECT_EQ(primary_key->children[0]->as<ASTIdentifier>()->name, "key_column");
+    EXPECT_EQ(primary_key->children[0]->as<ASTIdentifier>()->name(), "key_column");
 
     /// range test
     auto * range = create->dictionary->range;

@@ -14,6 +14,10 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
+
+namespace
+{
+
 class FunctionH3ToString : public IFunction
 {
 public:
@@ -38,9 +42,9 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_hindex = block.getByPosition(arguments[0]).column.get();
+        const auto * col_hindex = arguments[0].column.get();
 
         auto col_res = ColumnString::create();
         auto & vec_res = col_res->getChars();
@@ -70,10 +74,11 @@ public:
             vec_offsets[i] = ++pos - begin;
         }
         vec_res.resize(pos - begin);
-        block.getByPosition(result).column = std::move(col_res);
+        return col_res;
     }
 };
 
+}
 
 void registerFunctionH3ToString(FunctionFactory & factory)
 {

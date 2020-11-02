@@ -3,6 +3,7 @@
 #include <ext/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/SetSettings.h>
 
 
 namespace DB
@@ -31,10 +32,12 @@ protected:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const Context & context_);
+        const Context & context_,
+        bool persistent_);
 
     String base_path;
     String path;
+    bool persistent;
 
     std::atomic<UInt64> increment = 0;    /// For the backup file names.
 
@@ -69,6 +72,9 @@ public:
 
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &) override;
 
+    std::optional<UInt64> totalRows() const override;
+    std::optional<UInt64> totalBytes() const override;
+
 private:
     SetPtr set;
 
@@ -82,7 +88,8 @@ protected:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const Context & context_);
+        const Context & context_,
+        bool persistent_);
 };
 
 }

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 from multiprocessing import cpu_count
 from subprocess import Popen, check_call
@@ -28,8 +28,18 @@ def get_options(i):
     options = ""
     if 0 < i:
         options += " --order=random"
-    if i == 1:
-        options += " --atomic-db-engine"
+
+    if i % 2 == 1:
+        options += " --db-engine=Ordinary"
+
+    # If database name is not specified, new database is created for each functional test.
+    # Run some threads with one database for all tests.
+    if i % 3 == 1:
+        options += " --database=test_{}".format(i)
+
+    if i == 13:
+        options += " --client-option='memory_tracker_fault_probability=0.00001'"
+
     return options
 
 

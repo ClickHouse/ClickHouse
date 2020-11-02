@@ -15,6 +15,9 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
+namespace
+{
+
 // Implements function, giving value for column within range of given
 // Example:
 // | c1 |
@@ -74,12 +77,10 @@ public:
         return arguments[0];
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        const DataTypePtr & result_type = block.getByPosition(result).type;
-
-        const ColumnWithTypeAndName & source_elem = block.getByPosition(arguments[0]);
-        const ColumnWithTypeAndName & offset_elem = block.getByPosition(arguments[1]);
+        const ColumnWithTypeAndName & source_elem = arguments[0];
+        const ColumnWithTypeAndName & offset_elem = arguments[1];
         bool has_defaults = arguments.size() == 3;
 
         ColumnPtr source_column_casted = castColumn(source_elem, result_type);
@@ -88,7 +89,7 @@ public:
         ColumnPtr default_column_casted;
         if (has_defaults)
         {
-            const ColumnWithTypeAndName & default_elem = block.getByPosition(arguments[2]);
+            const ColumnWithTypeAndName & default_elem = arguments[2];
             default_column_casted = castColumn(default_elem, result_type);
         }
 
@@ -150,7 +151,7 @@ public:
             if (offset == 0)
             {
                 /// Degenerate case, just copy source column as is.
-                block.getByPosition(result).column = source_is_constant
+                return source_is_constant
                     ? ColumnConst::create(source_column_casted, input_rows_count)
                     : source_column_casted;
             }
@@ -158,13 +159,13 @@ public:
             {
                 insert_range_from(source_is_constant, source_column_casted, offset, Int64(input_rows_count) - offset);
                 insert_range_from(default_is_constant, default_column_casted, Int64(input_rows_count) - offset, offset);
-                block.getByPosition(result).column = std::move(result_column);
+                return result_column;
             }
             else
             {
                 insert_range_from(default_is_constant, default_column_casted, 0, -offset);
                 insert_range_from(source_is_constant, source_column_casted, 0, Int64(input_rows_count) + offset);
-                block.getByPosition(result).column = std::move(result_column);
+                return result_column;
             }
         }
         else
@@ -189,10 +190,12 @@ public:
                     result_column->insertDefault();
             }
 
-            block.getByPosition(result).column = std::move(result_column);
+            return result_column;
         }
     }
 };
+
+}
 
 void registerFunctionNeighbor(FunctionFactory & factory)
 {

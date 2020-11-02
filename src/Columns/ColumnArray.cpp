@@ -781,18 +781,21 @@ void ColumnArray::getPermutation(bool reverse, size_t limit, int nan_direction_h
 
 void ColumnArray::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_range) const
 {
+    if (equal_range.empty())
+        return;
+
     if (limit >= size() || limit >= equal_range.back().second)
         limit = 0;
 
-    size_t n = equal_range.size();
+    size_t number_of_ranges = equal_range.size();
 
     if (limit)
-        --n;
+        --number_of_ranges;
 
     EqualRanges new_ranges;
-    for (size_t i = 0; i < n; ++i)
+    for (size_t i = 0; i < number_of_ranges; ++i)
     {
-        const auto& [first, last] = equal_range[i];
+        const auto & [first, last] = equal_range[i];
 
         if (reverse)
             std::sort(res.begin() + first, res.begin() + last, Less<false>(*this, nan_direction_hint));
@@ -817,7 +820,13 @@ void ColumnArray::updatePermutation(bool reverse, size_t limit, int nan_directio
 
     if (limit)
     {
-        const auto& [first, last] = equal_range.back();
+        const auto & [first, last] = equal_range.back();
+
+        if (limit < first || limit > last)
+            return;
+
+        /// Since then we are working inside the interval.
+
         if (reverse)
             std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, Less<false>(*this, nan_direction_hint));
         else

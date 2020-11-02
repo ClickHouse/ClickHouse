@@ -6,6 +6,7 @@
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
 
+#include <ext/scope_guard.h>
 
 namespace DB
 {
@@ -329,19 +330,24 @@ void ColumnLowCardinality::getPermutation(bool reverse, size_t limit, int nan_di
     }
 }
 
-void ColumnLowCardinality::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_range) const
+void ColumnLowCardinality::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
-    if (limit >= size() || limit >= equal_range.back().second)
+    if (equal_ranges.empty())
+        return;
+
+    if (limit >= size() || limit >= equal_ranges.back().second)
         limit = 0;
 
-    size_t n = equal_range.size();
+    size_t number_of_ranges = equal_ranges.size();
     if (limit)
-        --n;
+        --number_of_ranges;
 
     EqualRanges new_ranges;
-    for (size_t i = 0; i < n; ++i)
+    SCOPE_EXIT({equal_ranges = std::move(new_ranges);});
+
+    for (size_t i = 0; i < number_of_ranges; ++i)
     {
-        const auto& [first, last] = equal_range[i];
+        const auto& [first, last] = equal_ranges[i];
         if (reverse)
             std::sort(res.begin() + first, res.begin() + last, [this, nan_direction_hint](size_t a, size_t b)
                       {return getDictionary().compareAt(getIndexes().getUInt(a), getIndexes().getUInt(b), getDictionary(), nan_direction_hint) > 0; });
@@ -366,7 +372,13 @@ void ColumnLowCardinality::updatePermutation(bool reverse, size_t limit, int nan
 
     if (limit)
     {
-        const auto& [first, last] = equal_range.back();
+        const auto & [first, last] = equal_ranges.back();
+
+        if (limit < first || limit > last)
+            return;
+
+        /// Since then we are working inside the interval.
+
         if (reverse)
             std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, [this, nan_direction_hint](size_t a, size_t b)
                               {return getDictionary().compareAt(getIndexes().getUInt(a), getIndexes().getUInt(b), getDictionary(), nan_direction_hint) > 0; });
@@ -374,6 +386,7 @@ void ColumnLowCardinality::updatePermutation(bool reverse, size_t limit, int nan
             std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, [this, nan_direction_hint](size_t a, size_t b)
                               {return getDictionary().compareAt(getIndexes().getUInt(a), getIndexes().getUInt(b), getDictionary(), nan_direction_hint) < 0; });
         auto new_first = first;
+
         for (auto j = first + 1; j < limit; ++j)
         {
             if (getDictionary().compareAt(getIndexes().getUInt(res[new_first]), getIndexes().getUInt(res[j]), getDictionary(), nan_direction_hint) != 0)
@@ -384,6 +397,7 @@ void ColumnLowCardinality::updatePermutation(bool reverse, size_t limit, int nan
                 new_first = j;
             }
         }
+
         auto new_last = limit;
         for (auto j = limit; j < last; ++j)
         {
@@ -396,7 +410,6 @@ void ColumnLowCardinality::updatePermutation(bool reverse, size_t limit, int nan
         if (new_last - new_first > 1)
             new_ranges.emplace_back(new_first, new_last);
     }
-    equal_range = std::move(new_ranges);
 }
 
 std::vector<MutableColumnPtr> ColumnLowCardinality::scatter(ColumnIndex num_columns, const Selector & selector) const

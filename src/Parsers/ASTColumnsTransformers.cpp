@@ -71,7 +71,7 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
                 {
                     for (const auto & except_child : children)
                     {
-                        if (except_child->as<const ASTIdentifier &>().name == id->shortName())
+                        if (except_child->as<const ASTIdentifier &>().name() == id->shortName())
                             return true;
                     }
                 }
@@ -110,7 +110,7 @@ void ASTColumnsReplaceTransformer::replaceChildren(ASTPtr & node, const ASTPtr &
         if (const auto * id = child->as<ASTIdentifier>())
         {
             if (id->shortName() == name)
-                child = replacement;
+                child = replacement->clone();
         }
         else
             replaceChildren(child, replacement, name);

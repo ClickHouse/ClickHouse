@@ -42,21 +42,6 @@ class StorageDistributed final : public ext::shared_ptr_helper<StorageDistribute
 public:
     ~StorageDistributed() override;
 
-    static StoragePtr createWithOwnCluster(
-        const StorageID & table_id_,
-        const ColumnsDescription & columns_,
-        const String & remote_database_,       /// database on remote servers.
-        const String & remote_table_,          /// The name of the table on the remote servers.
-        ClusterPtr owned_cluster_,
-        const Context & context_);
-
-    static StoragePtr createWithOwnCluster(
-            const StorageID & table_id_,
-        const ColumnsDescription & columns_,
-        ASTPtr & remote_table_function_ptr_,     /// Table function ptr.
-        ClusterPtr & owned_cluster_,
-        const Context & context_);
-
     std::string getName() const override { return "Distributed"; }
 
     bool supportsSampling() const override { return true; }
@@ -165,7 +150,8 @@ protected:
         const ASTPtr & sharding_key_,
         const String & storage_policy_name_,
         const String & relative_data_path_,
-        bool attach_);
+        bool attach_,
+        ClusterPtr owned_cluster_ = {});
 
     StorageDistributed(
         const StorageID & id_,
@@ -177,12 +163,18 @@ protected:
         const ASTPtr & sharding_key_,
         const String & storage_policy_name_,
         const String & relative_data_path_,
-        bool attach);
+        bool attach,
+        ClusterPtr owned_cluster_ = {});
 
     String relative_data_path;
 
     /// Can be empty if relative_data_path is empty. In this case, a directory for the data to be sent is not created.
     StoragePolicyPtr storage_policy;
+    /// The main volume to store data.
+    /// Storage policy may have several configured volumes, but second and other volumes are used for parts movement in MergeTree engine.
+    /// For Distributed engine such configuration doesn't make sense and only the first (main) volume will be used to store data.
+    /// Other volumes will be ignored. It's needed to allow using the same multi-volume policy both for Distributed and other engines.
+    VolumePtr data_volume;
 
     struct ClusterNodeData
     {

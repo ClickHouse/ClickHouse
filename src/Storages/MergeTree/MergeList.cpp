@@ -5,22 +5,20 @@
 #include <Common/CurrentThread.h>
 
 
-namespace CurrentMetrics
-{
-    extern const Metric MemoryTrackingForMerges;
-}
-
-
 namespace DB
 {
 
 MergeListElement::MergeListElement(const std::string & database_, const std::string & table_, const FutureMergedMutatedPart & future_part)
-    : database{database_}, table{table_}, partition_id{future_part.part_info.partition_id}
+    : database{database_}
+    , table{table_}
+    , partition_id{future_part.part_info.partition_id}
     , result_part_name{future_part.name}
     , result_part_path{future_part.path}
     , result_data_version{future_part.part_info.getDataVersion()}
     , num_parts{future_part.parts.size()}
     , thread_id{getThreadId()}
+    , merge_type{future_part.merge_type}
+    , merge_algorithm{MergeAlgorithm::Undecided}
 {
     for (const auto & source_part : future_part.parts)
     {
@@ -42,7 +40,6 @@ MergeListElement::MergeListElement(const std::string & database_, const std::str
     background_thread_memory_tracker = CurrentThread::getMemoryTracker();
     if (background_thread_memory_tracker)
     {
-        memory_tracker.setMetric(CurrentMetrics::MemoryTrackingForMerges);
         background_thread_memory_tracker_prev_parent = background_thread_memory_tracker->getParent();
         background_thread_memory_tracker->setParent(&memory_tracker);
     }
@@ -70,6 +67,8 @@ MergeInfo MergeListElement::getInfo() const
     res.columns_written = columns_written.load(std::memory_order_relaxed);
     res.memory_usage = memory_tracker.get();
     res.thread_id = thread_id;
+    res.merge_type = toString(merge_type);
+    res.merge_algorithm = toString(merge_algorithm.load(std::memory_order_relaxed));
 
     for (const auto & source_part_name : source_part_names)
         res.source_part_names.emplace_back(source_part_name);

@@ -34,7 +34,7 @@ public:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         Context & context_,
-        const String & compression_method_);
+        const String & compression_method_ = "");
 
     String getName() const override
     {

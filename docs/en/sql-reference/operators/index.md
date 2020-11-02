@@ -1,5 +1,5 @@
 ---
-toc_priority: 37
+toc_priority: 38
 toc_title: Operators
 ---
 
@@ -52,6 +52,8 @@ ClickHouse transforms operators to their corresponding functions at the query pa
 `a LIKE s` – The `like(a, b)` function.
 
 `a NOT LIKE s` – The `notLike(a, b)` function.
+
+`a ILIKE s` – The `ilike(a, b)` function.
 
 `a BETWEEN b AND c` – The same as `a >= b AND a <= c`.
 
@@ -167,7 +169,7 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL
 **See Also**
 
 -   [Interval](../../sql-reference/data-types/special-data-types/interval.md) data type
--   [toInterval](../../sql-reference/functions/type-conversion-functions.md#function-tointerval) type convertion functions
+-   [toInterval](../../sql-reference/functions/type-conversion-functions.md#function-tointerval) type conversion functions
 
 ## Logical Negation Operator {#logical-negation-operator}
 

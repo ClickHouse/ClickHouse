@@ -183,13 +183,14 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
         return;
     }
 
-    std::vector<QueryPlan> plans(num_plans);
+    std::vector<std::unique_ptr<QueryPlan>> plans(num_plans);
     DataStreams data_streams(num_plans);
 
     for (size_t i = 0; i < num_plans; ++i)
     {
-        nested_interpreters[i]->buildQueryPlan(plans[i]);
-        data_streams[i] = plans[i].getCurrentDataStream();
+        plans[i] = std::make_unique<QueryPlan>();
+        nested_interpreters[i]->buildQueryPlan(*plans[i]);
+        data_streams[i] = plans[i]->getCurrentDataStream();
     }
 
     auto max_threads = context->getSettingsRef().max_threads;

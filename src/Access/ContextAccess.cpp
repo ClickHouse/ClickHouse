@@ -100,7 +100,7 @@ namespace
             if (res & alter_table)
                 res |= alter_view;
 
-            /// CREATE TABLE (on any database/table) => CREATE_TEMPORARY_TABLE (global) 
+            /// CREATE TABLE (on any database/table) => CREATE_TEMPORARY_TABLE (global)
             static const AccessFlags create_temporary_table = AccessType::CREATE_TEMPORARY_TABLE;
             if ((level == 0) && (max_flags_with_children & create_table))
                 res |= create_temporary_table;
@@ -285,23 +285,6 @@ void ContextAccess::calculateAccessRights() const
         LOG_TRACE(trace_log, "Settings: readonly={}, allow_ddl={}, allow_introspection_functions={}", params.readonly, params.allow_ddl, params.allow_introspection);
         LOG_TRACE(trace_log, "List of all grants: {}", access->toString());
     }
-}
-
-
-bool ContextAccess::isCorrectPassword(const String & password) const
-{
-    std::lock_guard lock{mutex};
-    if (!user)
-        return false;
-    return user->authentication.isCorrectPassword(password, user_name, manager->getExternalAuthenticators());
-}
-
-bool ContextAccess::isClientHostAllowed() const
-{
-    std::lock_guard lock{mutex};
-    if (!user)
-        return false;
-    return user->allowed_client_hosts.contains(params.address);
 }
 
 
@@ -595,17 +578,22 @@ void ContextAccess::checkGrantOption(const AccessRightsElements & elements) cons
 
 
 template <typename Container, typename GetNameFunction>
-void ContextAccess::checkAdminOptionImpl(const Container & role_ids, const GetNameFunction & get_name_function) const
+bool ContextAccess::checkAdminOptionImpl(bool throw_on_error, const Container & role_ids, const GetNameFunction & get_name_function) const
 {
     if (isGranted(AccessType::ROLE_ADMIN))
-        return;
+        return true;
 
     auto info = getRolesInfo();
     if (!info)
     {
         if (!user)
-            throw Exception(user_name + ": User has been dropped", ErrorCodes::UNKNOWN_USER);
-        return;
+        {
+            if (throw_on_error)
+                throw Exception(user_name + ": User has been dropped", ErrorCodes::UNKNOWN_USER);
+            else
+                return false;
+        }
+        return true;
     }
 
     size_t i = 0;
@@ -621,38 +609,73 @@ void ContextAccess::checkAdminOptionImpl(const Container & role_ids, const GetNa
         String msg = "To execute this query it's necessary to have the role " + backQuoteIfNeed(*role_name) + " granted with ADMIN option";
         if (info->enabled_roles.count(role_id))
             msg = "Role " + backQuote(*role_name) + " is granted, but without ADMIN option. " + msg;
-        throw Exception(getUserName() + ": Not enough privileges. " + msg, ErrorCodes::ACCESS_DENIED);
+        if (throw_on_error)
+            throw Exception(getUserName() + ": Not enough privileges. " + msg, ErrorCodes::ACCESS_DENIED);
+        else
+            return false;
     }
+
+    return true;
+}
+
+bool ContextAccess::hasAdminOption(const UUID & role_id) const
+{
+    return checkAdminOptionImpl(false, to_array(role_id), [this](const UUID & id, size_t) { return manager->tryReadName(id); });
+}
+
+bool ContextAccess::hasAdminOption(const UUID & role_id, const String & role_name) const
+{
+    return checkAdminOptionImpl(false, to_array(role_id), [&role_name](const UUID &, size_t) { return std::optional<String>{role_name}; });
+}
+
+bool ContextAccess::hasAdminOption(const UUID & role_id, const std::unordered_map<UUID, String> & names_of_roles) const
+{
+    return checkAdminOptionImpl(false, to_array(role_id), [&names_of_roles](const UUID & id, size_t) { auto it = names_of_roles.find(id); return (it != names_of_roles.end()) ? it->second : std::optional<String>{}; });
+}
+
+bool ContextAccess::hasAdminOption(const std::vector<UUID> & role_ids) const
+{
+    return checkAdminOptionImpl(false, role_ids, [this](const UUID & id, size_t) { return manager->tryReadName(id); });
+}
+
+bool ContextAccess::hasAdminOption(const std::vector<UUID> & role_ids, const Strings & names_of_roles) const
+{
+    return checkAdminOptionImpl(false, role_ids, [&names_of_roles](const UUID &, size_t i) { return std::optional<String>{names_of_roles[i]}; });
+}
+
+bool ContextAccess::hasAdminOption(const std::vector<UUID> & role_ids, const std::unordered_map<UUID, String> & names_of_roles) const
+{
+    return checkAdminOptionImpl(false, role_ids, [&names_of_roles](const UUID & id, size_t) { auto it = names_of_roles.find(id); return (it != names_of_roles.end()) ? it->second : std::optional<String>{}; });
 }
 
 void ContextAccess::checkAdminOption(const UUID & role_id) const
 {
-    checkAdminOptionImpl(to_array(role_id), [this](const UUID & id, size_t) { return manager->tryReadName(id); });
+    checkAdminOptionImpl(true, to_array(role_id), [this](const UUID & id, size_t) { return manager->tryReadName(id); });
 }
 
 void ContextAccess::checkAdminOption(const UUID & role_id, const String & role_name) const
 {
-    checkAdminOptionImpl(to_array(role_id), [&role_name](const UUID &, size_t) { return std::optional<String>{role_name}; });
+    checkAdminOptionImpl(true, to_array(role_id), [&role_name](const UUID &, size_t) { return std::optional<String>{role_name}; });
 }
 
 void ContextAccess::checkAdminOption(const UUID & role_id, const std::unordered_map<UUID, String> & names_of_roles) const
 {
-    checkAdminOptionImpl(to_array(role_id), [&names_of_roles](const UUID & id, size_t) { auto it = names_of_roles.find(id); return (it != names_of_roles.end()) ? it->second : std::optional<String>{}; });
+    checkAdminOptionImpl(true, to_array(role_id), [&names_of_roles](const UUID & id, size_t) { auto it = names_of_roles.find(id); return (it != names_of_roles.end()) ? it->second : std::optional<String>{}; });
 }
 
 void ContextAccess::checkAdminOption(const std::vector<UUID> & role_ids) const
 {
-    checkAdminOptionImpl(role_ids, [this](const UUID & id, size_t) { return manager->tryReadName(id); });
+    checkAdminOptionImpl(true, role_ids, [this](const UUID & id, size_t) { return manager->tryReadName(id); });
 }
 
 void ContextAccess::checkAdminOption(const std::vector<UUID> & role_ids, const Strings & names_of_roles) const
 {
-    checkAdminOptionImpl(role_ids, [&names_of_roles](const UUID &, size_t i) { return std::optional<String>{names_of_roles[i]}; });
+    checkAdminOptionImpl(true, role_ids, [&names_of_roles](const UUID &, size_t i) { return std::optional<String>{names_of_roles[i]}; });
 }
 
 void ContextAccess::checkAdminOption(const std::vector<UUID> & role_ids, const std::unordered_map<UUID, String> & names_of_roles) const
 {
-    checkAdminOptionImpl(role_ids, [&names_of_roles](const UUID & id, size_t) { auto it = names_of_roles.find(id); return (it != names_of_roles.end()) ? it->second : std::optional<String>{}; });
+    checkAdminOptionImpl(true, role_ids, [&names_of_roles](const UUID & id, size_t) { auto it = names_of_roles.find(id); return (it != names_of_roles.end()) ? it->second : std::optional<String>{}; });
 }
 
 }

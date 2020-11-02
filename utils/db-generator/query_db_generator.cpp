@@ -1,12 +1,13 @@
-#include <boost/algorithm/string.hpp>
+#include <map>
 #include <cstdlib>
+#include <stdio.h>
 #include <iostream>
+#include <string>
 
 #include <pcg_random.hpp>
 #include <Core/Field.h>
 #include <Core/Types.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.cpp>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -15,6 +16,11 @@
 #include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
+
+#include <boost/algorithm/string.hpp>
+#include <boost/program_options.hpp>
+
+namespace po = boost::program_options;
 
 using ColumnType = uint32_t;
 using TableAndColumn = std::pair<std::string, std::string>;
@@ -92,7 +98,7 @@ TableAndColumn get_table_a_column(const std::string & c)
 }
 
 
-enum type : ColumnType
+enum Type : ColumnType
 {
     i = 1,
     // int
@@ -114,9 +120,11 @@ enum type : ColumnType
 };
 
 
-std::map<ColumnType, std::string> type_definition = {
-        {type::i, "Int64"}, {type::f, "Float64"}, {type::s, "String"}, {type::d, "Date"}, {type::dt, "DateTime"}, {type::b, "UInt8"}
+std::map<ColumnType, std::string> type_definition =
+{
+    {Type::i, "Int64"}, {Type::f, "Float64"}, {Type::s, "String"}, {Type::d, "Date"}, {Type::dt, "DateTime"}, {Type::b, "UInt8"}
 };
+
 ColumnType time_type(std::string value)
 {
     if (value.length() == 12)
@@ -124,14 +132,14 @@ ColumnType time_type(std::string value)
         for (size_t i : {5, 8})
         {
             if (value[i] != '-')
-                return type::s;
+                return Type::s;
         }
         for (size_t i : {1, 2, 3, 4, 6, 7, 9, 10})
         {
             if (!isdigit(value[i]))
-                return type::s;
+                return Type::s;
         }
-        return type::d;
+        return Type::d;
     }
 
     if (value.length() == 21)
@@ -139,18 +147,18 @@ ColumnType time_type(std::string value)
         for (size_t i : {5, 8})
         {
             if (value[i] != '-')
-                return type::s;
+                return Type::s;
         }
         for (size_t i : {14, 17})
         {
             if (value[i] != '-')
-                return type::s;
+                return Type::s;
         }
         if (value[11] != '-')
-            return type::s;
-        return type::dt;
+            return Type::s;
+        return Type::dt;
     }
-    return type::s;
+    return Type::s;
 }
 // Casting inner clickhouse parser type to our type
 ColumnType type_cast(int t)
@@ -164,21 +172,21 @@ ColumnType type_cast(int t)
         case 19:
         case 20:
         case 21:
-            return type::i;
+            return Type::i;
 
         case 3:
-            return type::f;
+            return Type::f;
 
         case 16:
-            return type::s;
+            return Type::s;
 
         case 17:
-            return type::a | type::all;
+            return Type::a | Type::all;
 
         case 18:
-            return type::t | type::all;
+            return Type::t | Type::all;
     }
-    return type::all;
+    return Type::all;
 }
 
 
@@ -197,28 +205,28 @@ public:
             , is_array(is_a) {}
 
     std::string value{};
-    ColumnType type = type::all;
+    ColumnType type = Type::all;
     bool is_array = false;
 };
 
 
 std::map<std::string, FuncRet> func_to_return_type = {
-        {"divide", FuncRet(type::f, "")}, {"e", FuncRet(type::f, "e()")}, {"pi", FuncRet(type::f, "pi()")}, {"exp", FuncRet(type::f, "")},
-        {"log", FuncRet(type::f,"")}, {"exp2", FuncRet(type::f, "")}, {"log2", FuncRet(type::f, "")}, {"exp10", FuncRet(type::f, "")},
-        {"log10", FuncRet(type::f, "")}, {"sqrt", FuncRet(type::f, "")}, {"cbrt", FuncRet(type::f, "")}, {"erf", FuncRet(type::f, "")},
-        {"erfc", FuncRet(type::f, "")}, {"lgamma", FuncRet(type::f, "")}, {"tgamma", FuncRet(type::f, "")}, {"sin", FuncRet(type::f, "")},
-        {"cos", FuncRet(type::f, "")}, {"tan", FuncRet(type::f, "")}, {"asin", FuncRet(type::f, "")}, {"acos", FuncRet(type::f, "")},
-        {"atan", FuncRet(type::f, "")}, {"pow", FuncRet(type::f, "")}, {"splitbystring", FuncRet(type::s | type::a,"")},
-        {"splitbychar", FuncRet(type::s | type::a, "")}, {"alphatokens", FuncRet(type::s | type::a, "")}, {"toyear", FuncRet(type::i, "")},
-        {"tomonth", FuncRet(type::i, "")}, {"todayofmonth", FuncRet(type::i, "")}, {"tohour", FuncRet(type::dt, "")}, {"tominute", FuncRet(type::dt, "")},
-        {"toseconds", FuncRet(type::dt, "")}, {"tounixtimestamp", FuncRet(type::i, "")}, {"tostartofyear", FuncRet(type::dt | type::d, "")},
-        {"tostartofquater",FuncRet(type::dt | type::d, "")}, {"tostartofmonth", FuncRet(type::dt | type::d, "")}, {"tomonday", FuncRet(type::dt | type::d, "")},
-        {"tostartoffiveminutes", FuncRet(type::dt, "")}, {"tostartoftenminutes", FuncRet(type::dt, "")}, {"tostartoffifteenminutes", FuncRet(type::dt, "")},
-        {"tostartofinterval", FuncRet(type::dt, "")}, {"totime", FuncRet(type::dt, "")}, {"torelativemonthnum", FuncRet(type::i, "")},
-        {"torelativeweeknum", FuncRet(type::i, "")}, {"torelativedaynum", FuncRet(type::i, "")}, {"torelativehournum", FuncRet(type::i, "")},
-        {"torelativeminutenum", FuncRet(type::i, "")}, {"torelativesecondsnum", FuncRet(type::i, "")}, {"datediff", FuncRet(type::d | type::dt, "")},
-        {"formatdatetime", FuncRet(type::s, "")}, {"now", FuncRet(type::dt | type::d, "now()")}, {"today", FuncRet(type::d | type::dt, "today()")},
-        {"yesterday", FuncRet(type::d | type::dt, "yesterday()")}
+        {"divide", FuncRet(Type::f, "")}, {"e", FuncRet(Type::f, "e()")}, {"pi", FuncRet(Type::f, "pi()")}, {"exp", FuncRet(Type::f, "")},
+        {"log", FuncRet(Type::f,"")}, {"exp2", FuncRet(Type::f, "")}, {"log2", FuncRet(Type::f, "")}, {"exp10", FuncRet(Type::f, "")},
+        {"log10", FuncRet(Type::f, "")}, {"sqrt", FuncRet(Type::f, "")}, {"cbrt", FuncRet(Type::f, "")}, {"erf", FuncRet(Type::f, "")},
+        {"erfc", FuncRet(Type::f, "")}, {"lgamma", FuncRet(Type::f, "")}, {"tgamma", FuncRet(Type::f, "")}, {"sin", FuncRet(Type::f, "")},
+        {"cos", FuncRet(Type::f, "")}, {"tan", FuncRet(Type::f, "")}, {"asin", FuncRet(Type::f, "")}, {"acos", FuncRet(Type::f, "")},
+        {"atan", FuncRet(Type::f, "")}, {"pow", FuncRet(Type::f, "")}, {"splitbystring", FuncRet(Type::s | Type::a,"")},
+        {"splitbychar", FuncRet(Type::s | Type::a, "")}, {"alphatokens", FuncRet(Type::s | Type::a, "")}, {"toyear", FuncRet(Type::i, "")},
+        {"tomonth", FuncRet(Type::i, "")}, {"todayofmonth", FuncRet(Type::i, "")}, {"tohour", FuncRet(Type::dt, "")}, {"tominute", FuncRet(Type::dt, "")},
+        {"toseconds", FuncRet(Type::dt, "")}, {"tounixtimestamp", FuncRet(Type::i, "")}, {"tostartofyear", FuncRet(Type::dt | Type::d, "")},
+        {"tostartofquater",FuncRet(Type::dt | Type::d, "")}, {"tostartofmonth", FuncRet(Type::dt | Type::d, "")}, {"tomonday", FuncRet(Type::dt | Type::d, "")},
+        {"tostartoffiveminutes", FuncRet(Type::dt, "")}, {"tostartoftenminutes", FuncRet(Type::dt, "")}, {"tostartoffifteenminutes", FuncRet(Type::dt, "")},
+        {"tostartofinterval", FuncRet(Type::dt, "")}, {"totime", FuncRet(Type::dt, "")}, {"torelativemonthnum", FuncRet(Type::i, "")},
+        {"torelativeweeknum", FuncRet(Type::i, "")}, {"torelativedaynum", FuncRet(Type::i, "")}, {"torelativehournum", FuncRet(Type::i, "")},
+        {"torelativeminutenum", FuncRet(Type::i, "")}, {"torelativesecondsnum", FuncRet(Type::i, "")}, {"datediff", FuncRet(Type::d | Type::dt, "")},
+        {"formatdatetime", FuncRet(Type::s, "")}, {"now", FuncRet(Type::dt | Type::d, "now()")}, {"today", FuncRet(Type::d | Type::dt, "today()")},
+        {"yesterday", FuncRet(Type::d | Type::dt, "yesterday()")}
 };
 
 std::set<std::string> func_args_same_types = {
@@ -226,23 +234,23 @@ std::set<std::string> func_args_same_types = {
 };
 
 std::map<std::string, ColumnType> func_to_param_type = {
-        {"tostartofminute", type::dt}, {"plus", type::i | type::f | type::d | type::dt}, {"multiply", type::i | type::f},
-        {"minus", type::i | type::f | type::d | type::dt}, {"negate", type::i | type::f}, {"divide", type::i | type::f},
-        {"abs", type::i | type::f}, {"gcd", type::i | type::f}, {"lcm", type::i | type::f}, {"bitnot", type::i}, {"bitshiftleft", type::i},
-        {"bitshiftright", type::i}, {"bittest", type::i}, {"exp", type::i | type::f}, {"log", type::i | type::f},
-        {"exp2", type::i | type::f}, {"log2", type::i | type::f}, {"exp10", type::i | type::f}, {"log10", type::i | type::f},
-        {"sqrt", type::i | type::f}, {"cbrt", type::i | type::f}, {"erf", type::i | type::f}, {"erfc", type::i | type::f},
-        {"lgamma", type::i | type::f}, {"tgamma", type::i | type::f}, {"sin", type::i | type::f}, {"cos", type::i | type::f},
-        {"tan", type::i | type::f}, {"asin", type::i | type::f}, {"acos", type::i | type::f}, {"atan", type::i | type::f},
-        {"pow", type::i | type::f}, {"arrayjoin", type::all | type::a}, {"substring", type::s}, {"splitbystring", type::s}, {"splitbychar", type::s},
-        {"alphatokens", type::s}, {"toyear", type::d | type::dt}, {"tomonth", type::d | type::dt}, {"todayofmonth", type::d | type::dt}, {"tohour", type::dt},
-        {"tominute", type::dt}, {"tosecond", type::dt}, {"touixtimestamp", type::dt}, {"tostartofyear", type::d | type::dt},
-        {"tostartofquarter", type::d | type::dt}, {"tostartofmonth", type::d | type::dt}, {"tomonday", type::d | type::dt},
-        {"tostartoffiveminute", type::dt}, {"tostartoftenminutes", type::dt}, {"tostartoffifteenminutes", type::d | type::dt},
-        {"tostartofinterval", type::d | type::dt}, {"totime", type::d | type::dt}, {"torelativehonthnum", type::d | type::dt},
-        {"torelativeweeknum", type::d | type::dt}, {"torelativedaynum", type::d | type::dt}, {"torelativehournum", type::d | type::dt},
-        {"torelativeminutenum", type::d | type::dt}, {"torelativesecondnum", type::d | type::dt}, {"datediff", type::d | type::dt},
-        {"formatdatetime", type::dt}
+        {"tostartofminute", Type::dt}, {"plus", Type::i | Type::f | Type::d | Type::dt}, {"multiply", Type::i | Type::f},
+        {"minus", Type::i | Type::f | Type::d | Type::dt}, {"negate", Type::i | Type::f}, {"divide", Type::i | Type::f},
+        {"abs", Type::i | Type::f}, {"gcd", Type::i | Type::f}, {"lcm", Type::i | Type::f}, {"bitnot", Type::i}, {"bitshiftleft", Type::i},
+        {"bitshiftright", Type::i}, {"bittest", Type::i}, {"exp", Type::i | Type::f}, {"log", Type::i | Type::f},
+        {"exp2", Type::i | Type::f}, {"log2", Type::i | Type::f}, {"exp10", Type::i | Type::f}, {"log10", Type::i | Type::f},
+        {"sqrt", Type::i | Type::f}, {"cbrt", Type::i | Type::f}, {"erf", Type::i | Type::f}, {"erfc", Type::i | Type::f},
+        {"lgamma", Type::i | Type::f}, {"tgamma", Type::i | Type::f}, {"sin", Type::i | Type::f}, {"cos", Type::i | Type::f},
+        {"tan", Type::i | Type::f}, {"asin", Type::i | Type::f}, {"acos", Type::i | Type::f}, {"atan", Type::i | Type::f},
+        {"pow", Type::i | Type::f}, {"arrayjoin", Type::all | Type::a}, {"substring", Type::s}, {"splitbystring", Type::s}, {"splitbychar", Type::s},
+        {"alphatokens", Type::s}, {"toyear", Type::d | Type::dt}, {"tomonth", Type::d | Type::dt}, {"todayofmonth", Type::d | Type::dt}, {"tohour", Type::dt},
+        {"tominute", Type::dt}, {"tosecond", Type::dt}, {"touixtimestamp", Type::dt}, {"tostartofyear", Type::d | Type::dt},
+        {"tostartofquarter", Type::d | Type::dt}, {"tostartofmonth", Type::d | Type::dt}, {"tomonday", Type::d | Type::dt},
+        {"tostartoffiveminute", Type::dt}, {"tostartoftenminutes", Type::dt}, {"tostartoffifteenminutes", Type::d | Type::dt},
+        {"tostartofinterval", Type::d | Type::dt}, {"totime", Type::d | Type::dt}, {"torelativehonthnum", Type::d | Type::dt},
+        {"torelativeweeknum", Type::d | Type::dt}, {"torelativedaynum", Type::d | Type::dt}, {"torelativehournum", Type::d | Type::dt},
+        {"torelativeminutenum", Type::d | Type::dt}, {"torelativesecondnum", Type::d | Type::dt}, {"datediff", Type::d | Type::dt},
+        {"formatdatetime", Type::dt}
 };
 
 
@@ -252,7 +260,7 @@ public:
     TableAndColumn name;
     std::set<TableAndColumn> equals;
     std::set<std::string> values;
-    ColumnType type = type::all;
+    ColumnType type = Type::all;
     bool is_array = false;
 
     Column() = default;
@@ -260,7 +268,7 @@ public:
     explicit Column(const std::string & column_name)
     {
         name = std::make_pair("", column_name);
-        type = type::all;
+        type = Type::all;
     }
 
     void merge(Column other)
@@ -275,15 +283,15 @@ public:
 
     void printType() const
     {
-        if (type & type::i)
+        if (type & Type::i)
             std::cout << "I";
-        if (type & type::f)
+        if (type & Type::f)
             std::cout << "F";
-        if (type & type::s)
+        if (type & Type::s)
             std::cout << "S";
-        if (type & type::d)
+        if (type & Type::d)
             std::cout << "D";
-        if (type & type::dt)
+        if (type & Type::dt)
             std::cout << "DT";
         if (is_array)
             std::cout << "ARR";
@@ -307,22 +315,22 @@ public:
 
     std::string generateOneValue() const
     {
-        if (type & type::i)
+        if (type & Type::i)
             return randomInteger();
 
-        if (type & type::f)
+        if (type & Type::f)
             return randomFloat();
 
-        if (type & type::d)
+        if (type & Type::d)
             return randomDate();
 
-        if (type & type::dt)
+        if (type & Type::dt)
             return randomDatetime();
 
-        if (type & type::s)
+        if (type & Type::s)
             return "'" + randomString(rng() % 40) + "'";
 
-        if (type & type::b)
+        if (type & Type::b)
             return "0";
 
         return "";
@@ -332,7 +340,7 @@ public:
     {
         if (values.size() > 2 && amount == 0)
             return false;
-        while (values.size() < 1 or amount > 0)
+        while (values.empty() or amount > 0)
         {
             amount -= 1;
             if (is_array)
@@ -357,18 +365,18 @@ public:
 
     void unifyType()
     {
-        if (type & type::i)
-            type = type::i;
-        else if (type & type::f)
-            type = type::f;
-        else if (type & type::d)
-            type = type::d;
-        else if (type & type::dt)
-            type = type::dt;
-        else if (type & type::s)
-            type = type::s;
-        else if (type & type::b)
-            type = type::b;
+        if (type & Type::i)
+            type = Type::i;
+        else if (type & Type::f)
+            type = Type::f;
+        else if (type & Type::d)
+            type = Type::d;
+        else if (type & Type::dt)
+            type = Type::dt;
+        else if (type & Type::s)
+            type = Type::s;
+        else if (type & Type::b)
+            type = Type::b;
         else
             throw std::runtime_error("Error in determination column type " + name.first + '.' + name.second);
     }
@@ -381,13 +389,15 @@ decartMul(
         std::set<std::string> &              mul)
 {
     std::set<std::vector<std::string>> result;
-    for (auto v : prev)
-        for (auto m : mul)
+    for (const auto & v : prev)
+    {
+        for (const auto & m : mul)
         {
             std::vector<std::string> tmp = v;
             tmp.push_back(m);
             result.insert(tmp);
         }
+    }
     return result;
 }
 
@@ -438,7 +448,7 @@ public:
     {
         name = other.name;
         columns.insert(other.columns.begin(), other.columns.end());
-        for (auto desc : other.column_description)
+        for (const auto & desc : other.column_description)
             column_description[desc.first].merge(desc.second);
     }
 
@@ -576,7 +586,7 @@ public:
 
     void merge(TableList other)
     {
-        for (auto table : other.tables)
+        for (const auto & table : other.tables)
             tables[table.first].merge(table.second);
         nested.insert(other.nested.begin(), other.nested.end());
         if (main_table.empty())
@@ -612,19 +622,19 @@ FuncRet arrayJoinFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
         {
             auto ident = std::dynamic_pointer_cast<DB::ASTIdentifier>(arg);
             if (ident)
-                indents.insert(ident->name);
+                indents.insert(ident->name());
         }
         for (const auto & indent : indents)
         {
             auto c = Column(indent);
-            c.type = type::all;
+            c.type = Type::all;
             c.is_array = true;
             if (columns.count(indent))
                 columns[indent].merge(c);
             else
                 columns[indent] = c;
         }
-        FuncRet r(type::all, "");
+        FuncRet r(Type::all, "");
         return r;
     }
     return FuncRet();
@@ -637,40 +647,39 @@ FuncRet inFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
     {
         std::set<std::string> indents{};
         std::set<std::string> values{};
-        ColumnType type_value = type::all;
+        ColumnType type_value = Type::all;
 
         for (auto & arg : x->arguments->children)
         {
             auto ident = std::dynamic_pointer_cast<DB::ASTIdentifier>(arg);
             if (ident)
             {
-                indents.insert(ident->name);
+                indents.insert(ident->name());
             }
             auto literal = std::dynamic_pointer_cast<DB::ASTLiteral>(arg);
             if (literal)
             {
                 ColumnType type = type_cast(literal->value.getType());
 
-                /// C++20
-                auto routine = [&] <typename T>(const T & arr_values)
+                auto routine = [&](const auto & arr_values)
                 {
-                    for (auto val : arr_values)
+                    for (auto & val : arr_values)
                     {
                         type = type_cast(val.getType());
-                        if (type == type::s || type == type::d || type == type::dt)
+                        if (type == Type::s || type == Type::d || type == Type::dt)
                             type = time_type(applyVisitor(DB::FieldVisitorToString(), val));
                         type_value &= type;
                         values.insert(applyVisitor(DB::FieldVisitorToString(), val));
                     }
                 };
 
-                if (type & type::a)
+                if (type & Type::a)
                 {
                     auto arr_values = literal->value.get<DB::Array>();
                     routine(arr_values);
                 }
 
-                if (type & type::a)
+                if (type & Type::a)
                 {
                     auto arr_values = literal->value.get<DB::Tuple>();
                     routine(arr_values);
@@ -686,7 +695,7 @@ FuncRet inFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
                 else
                     f = handlers[""];
                 FuncRet ret = f(arg, columns);
-                if (ret.value != "")
+                if (!ret.value.empty())
                 {
                     values.insert(ret.value);
                 }
@@ -704,7 +713,7 @@ FuncRet inFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             else
                 columns[indent] = c;
         }
-        FuncRet r(type::b | type::i, "");
+        FuncRet r(Type::b | Type::i, "");
         return r;
     }
     return FuncRet();
@@ -717,7 +726,7 @@ FuncRet arrayFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
     {
         std::set<std::string> indents = {};
         std::string value = "[";
-        ColumnType type_value = type::i | type::f | type::d | type::dt | type::s;
+        ColumnType type_value = Type::i | Type::f | Type::d | Type::dt | Type::s;
         bool no_indent = true;
         for (const auto & arg : x->arguments->children)
         {
@@ -725,13 +734,13 @@ FuncRet arrayFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             if (ident)
             {
                 no_indent = false;
-                indents.insert(ident->name);
+                indents.insert(ident->name());
             }
             auto literal = std::dynamic_pointer_cast<DB::ASTLiteral>(arg);
             if (literal)
             {
                 ColumnType type = type_cast(literal->value.getType());
-                if (type == type::s || type == type::d || type == type::dt)
+                if (type == Type::s || type == Type::d || type == Type::dt)
                     type = time_type(value);
                 type_value &= type;
 
@@ -765,7 +774,7 @@ FuncRet arithmeticFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
     {
         std::set<std::string> indents = {};
         std::set<std::string> values = {};
-        ColumnType type_value = type::i | type::f | type::d | type::dt;
+        ColumnType type_value = Type::i | Type::f | Type::d | Type::dt;
         ColumnType args_types = 0;
         bool no_indent = true;
         for (auto & arg : x->arguments->children)
@@ -775,7 +784,7 @@ FuncRet arithmeticFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             if (ident)
             {
                 no_indent = false;
-                indents.insert(ident->name);
+                indents.insert(ident->name());
             }
             auto literal = std::dynamic_pointer_cast<DB::ASTLiteral>(arg);
             if (literal)
@@ -794,11 +803,11 @@ FuncRet arithmeticFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             }
             args_types |= type;
         }
-        if (args_types & (type::d | type::dt))
-            type_value -= type::f;
-        if (args_types & type::f)
-            type_value -= type::d | type::dt;
-        for (auto indent : indents)
+        if (args_types & (Type::d | Type::dt))
+            type_value -= Type::f;
+        if (args_types & Type::f)
+            type_value -= Type::d | Type::dt;
+        for (const auto & indent : indents)
         {
             auto c = Column(indent);
             c.type = type_value;
@@ -808,14 +817,14 @@ FuncRet arithmeticFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
                 columns[indent] = c;
         }
         ColumnType ret_type = 0;
-        if (args_types & type::dt)
-            ret_type = type::dt;
-        else if (args_types & type::d)
-            ret_type = type::d | type::dt;
-        else if (args_types & type::f)
-            ret_type = type::f;
+        if (args_types & Type::dt)
+            ret_type = Type::dt;
+        else if (args_types & Type::d)
+            ret_type = Type::d | Type::dt;
+        else if (args_types & Type::f)
+            ret_type = Type::f;
         else
-            ret_type = type::d | type::f | type::dt | type::i;
+            ret_type = Type::d | Type::f | Type::dt | Type::i;
         FuncRet r(ret_type, "");
         if (no_indent)
         {
@@ -834,12 +843,12 @@ FuncRet likeFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
     {
         std::set<std::string> indents = {};
         std::set<std::string> values = {};
-        ColumnType type_value = type::s;
+        ColumnType type_value = Type::s;
         for (auto & arg : x->arguments->children)
         {
             auto ident = std::dynamic_pointer_cast<DB::ASTIdentifier>(arg);
             if (ident)
-                indents.insert(ident->name);
+                indents.insert(ident->name());
             auto literal = std::dynamic_pointer_cast<DB::ASTLiteral>(arg);
             if (literal)
             {
@@ -867,7 +876,7 @@ FuncRet likeFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             else
                 columns[indent] = c;
         }
-        FuncRet r(type::b, "");
+        FuncRet r(Type::b, "");
         return r;
     }
     return FuncRet();
@@ -875,35 +884,35 @@ FuncRet likeFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
 
 FuncRet simpleFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
 {
-    auto X = std::dynamic_pointer_cast<DB::ASTFunction>(ch);
-    if (X)
+    auto x = std::dynamic_pointer_cast<DB::ASTFunction>(ch);
+    if (x)
     {
         std::set<std::string> indents = {};
         std::set<std::string> values = {};
-        ColumnType type_value = type::all;
+        ColumnType type_value = Type::all;
         bool is_array = false;
         bool no_indent = true;
-        if (func_to_param_type.count(boost::algorithm::to_lower_copy(X->name)))
+        if (func_to_param_type.count(boost::algorithm::to_lower_copy(x->name)))
         {
-            type_value &= func_to_param_type[boost::algorithm::to_lower_copy(X->name)];
-            is_array = func_to_param_type[boost::algorithm::to_lower_copy(X->name)] & type::a;
+            type_value &= func_to_param_type[boost::algorithm::to_lower_copy(x->name)];
+            is_array = func_to_param_type[boost::algorithm::to_lower_copy(x->name)] & Type::a;
         }
-        for (auto arg : X->arguments->children)
+        for (const auto & arg : x->arguments->children)
         {
-            ColumnType type = type::all;
+            ColumnType type = Type::all;
             std::string value;
             auto ident = std::dynamic_pointer_cast<DB::ASTIdentifier>(arg);
             if (ident)
             {
                 no_indent = false;
-                indents.insert(ident->name);
+                indents.insert(ident->name());
             }
             auto literal = std::dynamic_pointer_cast<DB::ASTLiteral>(arg);
             if (literal)
             {
                 value = applyVisitor(DB::FieldVisitorToString(), literal->value);
                 type = type_cast(literal->value.getType());
-                is_array |= type & type::a;
+                is_array |= type & Type::a;
             }
             auto subfunc = std::dynamic_pointer_cast<DB::ASTFunction>(arg);
             if (subfunc)
@@ -923,31 +932,31 @@ FuncRet simpleFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             }
             if (!value.empty())
             {
-                if (type == type::i)
+                if (type == Type::i)
                 {
                     values.insert(value);
                     values.insert(value + " + " + randomInteger(1, 10));
                     values.insert(value + " - " + randomInteger(1, 10));
                 }
-                if (type == type::f)
+                if (type == Type::f)
                 {
                     values.insert(value);
                     values.insert(value + " + " + randomFloat(1, 10));
                     values.insert(value + " - " + randomFloat(1, 10));
                 }
-                if (type & type::s || type & type::d || type & type::dt)
+                if (type & Type::s || type & Type::d || type & Type::dt)
                 {
-                    if (type == type::s)
+                    if (type == Type::s)
                         type = time_type(value);
-                    if (type == type::s)
+                    if (type == Type::s)
                         values.insert(value);
-                    if (type & type::d)
+                    if (type & Type::d)
                     {
                         values.insert(value);
                         values.insert("toDate(" + value + ") + " + randomInteger(1, 10));
                         values.insert("toDate(" + value + ") - " + randomInteger(1, 10));
                     }
-                    else if (type & type::dt)
+                    else if (type & Type::dt)
                     {
                         values.insert(value);
                         values.insert(
@@ -957,7 +966,7 @@ FuncRet simpleFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
                     }
                 }
             }
-            if (func_args_same_types.count(boost::algorithm::to_lower_copy(X->name)))
+            if (func_args_same_types.count(boost::algorithm::to_lower_copy(x->name)))
                 type_value &= type;
         }
         for (const auto & indent : indents)
@@ -966,7 +975,7 @@ FuncRet simpleFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             c.type = type_value;
             c.is_array = is_array;
             if (func_args_same_types.count(
-                    boost::algorithm::to_lower_copy(X->name)))
+                    boost::algorithm::to_lower_copy(x->name)))
                 c.values = values;
             for (const auto & ind : indents)
                 if (ind != indent)
@@ -977,31 +986,31 @@ FuncRet simpleFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             else
                 columns[indent] = c;
         }
-        if (func_to_return_type.count(boost::algorithm::to_lower_copy(X->name)))
+        if (func_to_return_type.count(boost::algorithm::to_lower_copy(x->name)))
         {
             if (no_indent)
             {
                 std::ostringstream ss;
                 formatAST(*ch, ss);
-                auto r = func_to_return_type[boost::algorithm::to_lower_copy(X->name)];
+                auto r = func_to_return_type[boost::algorithm::to_lower_copy(x->name)];
                 r.value = ss.str();
                 return r;
             }
-            return func_to_return_type[boost::algorithm::to_lower_copy(X->name)];
+            return func_to_return_type[boost::algorithm::to_lower_copy(x->name)];
         }
         else if (func_to_param_type.count(
-                boost::algorithm::to_lower_copy(X->name)))
+            boost::algorithm::to_lower_copy(x->name)))
         {
             if (no_indent)
             {
                 std::ostringstream ss;
                 formatAST(*ch, ss);
                 return FuncRet(
-                        func_to_param_type[boost::algorithm::to_lower_copy(X->name)],
+                        func_to_param_type[boost::algorithm::to_lower_copy(x->name)],
                         ss.str());
             }
             return FuncRet(
-                    func_to_param_type[boost::algorithm::to_lower_copy(X->name)],
+                    func_to_param_type[boost::algorithm::to_lower_copy(x->name)],
                     "");
         }
     }
@@ -1037,7 +1046,7 @@ std::set<std::string> getIndent(DB::ASTPtr ch)
     std::set<std::string> ret = {};
     auto x = std::dynamic_pointer_cast<DB::ASTIdentifier>(ch);
     if (x)
-        ret.insert(x->name);
+        ret.insert(x->name());
     for (const auto & child : (*ch).children)
     {
         auto child_ind = getIndent(child);
@@ -1071,7 +1080,7 @@ connectedEqualityFind(
         std::set<TableAndColumn> & visited)
 {
     std::set<TableAndColumn> result;
-    for (auto & column : now.equals)
+    for (const auto & column : now.equals)
         if (!visited.count(column))
         {
             visited.insert(column);
@@ -1118,18 +1127,18 @@ unificateColumns(
                 result[column.second.name.first + "." + column.second.name.second],
                 result,
                 visited);
-            for (auto c : equal)
+            for (const auto & c : equal)
                 result[c.first + "." + c.second].equals = equal;
         }
     for (auto & column : result)
-        for (auto e : column.second.equals)
+        for (const auto & e : column.second.equals)
             column.second.merge(result[e.first + "." + e.second]);
 
     for (auto & column : result)
     {
         column.second.unifyType();
         if (column.second.generateValues())
-            for (auto e : column.second.equals)
+            for (const auto & e : column.second.equals)
                 result[e.first + "." + e.second].merge(column.second);
 
     }
@@ -1175,18 +1184,18 @@ void parseSelectQuery(DB::ASTPtr ast, TableList & all_tables)
     for (auto & child : x->children)
     {
         auto ch = std::dynamic_pointer_cast<DB::ASTTablesInSelectQueryElement>(child);
-        auto TEast = std::dynamic_pointer_cast<DB::ASTTableExpression>(ch->table_expression);
-        if (TEast && TEast->database_and_table_name)
+        auto table_expression_ast = std::dynamic_pointer_cast<DB::ASTTableExpression>(ch->table_expression);
+        if (table_expression_ast && table_expression_ast->database_and_table_name)
         {
-            auto table_name = *(getIndent(TEast->database_and_table_name).begin());
+            auto table_name = *(getIndent(table_expression_ast->database_and_table_name).begin());
             all_tables.addTable(table_name);
             auto alias = getAlias(ch);
             if (!alias.empty())
                 all_tables.aliases[alias] = table_name;
         }
-        if (TEast && TEast->subquery)
+        if (table_expression_ast && table_expression_ast->subquery)
         {
-            for (auto select : getSelect(TEast->subquery))
+            for (const auto & select : getSelect(table_expression_ast->subquery))
             {
                 TableList local;
                 parseSelectQuery(select, local);
@@ -1260,8 +1269,41 @@ TableList getTablesFromSelect(std::vector<std::string> queries)
     return result;
 }
 
-int main(int, char **)
+int main(int argc, const char *argv[])
 {
+    try
+    {
+        po::options_description desc("Allowed options");
+        desc.add_options()
+            ("help,h", "Display greeting and allowed options.")
+            ("input,i", po::value<std::string>(), "Input filename.")
+            ("output,o", po::value<std::string>(), "Output filename.");
+
+        po::variables_map vm;
+        po::store(po::parse_command_line(argc, argv, desc), vm);
+        po::notify(vm);
+
+        if (vm.count("help") || vm.count("h"))
+        {
+            std::cout << "Hello! It is datasets generator for ClickHouse's queries." << std::endl;
+            std::cout << "Put some query as an input and it will produce queries for table creating and filling." << std::endl;
+            std::cout << "After that your query could be executed on this tables." << std::endl;
+            std::cout << desc << std::endl;
+            return 1;
+        }
+        if (vm.count("input"))
+            freopen(vm["input"].as<std::string>().c_str(), "r", stdin);
+        if (vm.count("output"))
+            freopen(vm["output"].as<std::string>().c_str(), "w", stdout);
+        if (vm.empty())
+            std::cout << "Copy your queries (with semicolons) here, press Enter and Ctrl+D." << std::endl;
+    }
+    catch (...)
+    {
+        std::cerr << "Got error while parse command line arguments: " << DB::getCurrentExceptionMessage(true) << std::endl;
+        throw;
+    }
+
     handlers["plus"] = arithmeticFunc;
     handlers["minus"] = arithmeticFunc;
     handlers["like"] = likeFunc;

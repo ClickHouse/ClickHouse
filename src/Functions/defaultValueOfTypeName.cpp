@@ -13,6 +13,9 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+namespace
+{
+
 /// Returns global default value for type name (example: 0 for numeric types, '' for String).
 class FunctionDefaultValueOfTypeName : public IFunction
 {
@@ -46,13 +49,14 @@ public:
         return DataTypeFactory::instance().get(col_type_const->getValue<String>());
     }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        const IDataType & type = *block.getByPosition(result).type;
-        block.getByPosition(result).column = type.createColumnConst(input_rows_count, type.getDefault());
+        const IDataType & type = *result_type;
+        return type.createColumnConst(input_rows_count, type.getDefault());
     }
 };
 
+}
 
 void registerFunctionDefaultValueOfTypeName(FunctionFactory & factory)
 {

@@ -179,7 +179,7 @@ Clang 有更多有用的警告 - 您可以使用 `-Weverything` 查找它们并�
 ClickHouse模糊测试可以通过[libFuzzer](https://llvm.org/docs/LibFuzzer.html)和随机SQL查询实现。
 所有的模糊测试都应使用sanitizers（Address及Undefined）。
 
-LibFuzzer用于对库代码进行独立的模糊测试。模糊器作为测试代码的一部分实现，并具有“\_fuzzer”名称后缀。
+LibFuzzer用于对库代码进行独立的模糊测试。模糊器作为测试代码的一部分实现，并具有“_fuzzer”名称后缀。
 模糊测试示例在`src/Parsers/tests/lexer_fuzzer.cpp`。LibFuzzer配置、字典及语料库存放在`tests/fuzz`。
 我们鼓励您为每个处理用户输入的功能编写模糊测试。
 

@@ -28,6 +28,7 @@ import test
 import util
 import website
 
+from cmake_in_clickhouse_generator import generate_cmake_flags_files
 
 class ClickHouseMarkdown(markdown.extensions.Extension):
     class ClickHousePreprocessor(markdown.util.Processor):
@@ -184,6 +185,8 @@ def build(args):
         test.test_templates(args.website_dir)
 
     if not args.skip_docs:
+        generate_cmake_flags_files()
+
         build_docs(args)
         from github import build_releases
         build_releases(args, build_docs)
@@ -200,6 +203,7 @@ def build(args):
 if __name__ == '__main__':
     os.chdir(os.path.join(os.path.dirname(__file__), '..'))
     website_dir = os.path.join('..', 'website')
+
     arg_parser = argparse.ArgumentParser()
     arg_parser.add_argument('--lang', default='en,es,fr,ru,zh,ja,tr,fa')
     arg_parser.add_argument('--blog-lang', default='en,ru')

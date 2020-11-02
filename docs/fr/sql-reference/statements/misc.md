@@ -57,7 +57,7 @@ Pour `MergeTree` moteurs de la famille, le `CHECK TABLE` query affiche un État 
 Si la table est corrompue, vous pouvez copier les données non corrompues dans une autre table. Pour ce faire:
 
 1.  Créez une nouvelle table avec la même structure que la table endommagée. Pour ce faire exécutez la requête `CREATE TABLE <new_table_name> AS <damaged_table_name>`.
-2.  Définir le [max\_threads](../../operations/settings/settings.md#settings-max_threads) la valeur 1 pour traiter la requête suivante dans un seul thread. Pour ce faire, exécutez la requête `SET max_threads = 1`.
+2.  Définir le [max_threads](../../operations/settings/settings.md#settings-max_threads) la valeur 1 pour traiter la requête suivante dans un seul thread. Pour ce faire, exécutez la requête `SET max_threads = 1`.
 3.  Exécuter la requête `INSERT INTO <new_table_name> SELECT * FROM <damaged_table_name>`. Cette demande copie les données non corrompues de la table endommagée vers une autre table. Seules les données avant la partie corrompue seront copiées.
 4.  Redémarrez l' `clickhouse-client` pour réinitialiser l' `max_threads` valeur.
 
@@ -253,7 +253,7 @@ Le `OPTMIZE` la requête est également prise en charge pour [MaterializedView](
 
 Lorsque `OPTIMIZE` est utilisé avec le [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md) famille de moteurs de table, ClickHouse crée une tâche pour la fusion et attend l'exécution sur tous les nœuds (si le `replication_alter_partitions_sync` paramètre est activé).
 
--   Si `OPTIMIZE` n'effectue pas de fusion pour une raison quelconque, il ne notifie pas le client. Pour activer les notifications, utilisez [optimize\_throw\_if\_noop](../../operations/settings/settings.md#setting-optimize_throw_if_noop) paramètre.
+-   Si `OPTIMIZE` n'effectue pas de fusion pour une raison quelconque, il ne notifie pas le client. Pour activer les notifications, utilisez [optimize_throw_if_noop](../../operations/settings/settings.md#setting-optimize_throw_if_noop) paramètre.
 -   Si vous spécifiez un `PARTITION`, seule la partition spécifiée est optimisé. [Comment définir l'expression de la partition](alter.md#alter-how-to-specify-part-expr).
 -   Si vous spécifiez `FINAL`, l'optimisation est effectuée, même lorsque toutes les données sont déjà dans une partie.
 -   Si vous spécifiez `DEDUPLICATE`, alors des lignes complètement identiques seront dédupliquées (toutes les colonnes sont comparées), cela n'a de sens que pour le moteur MergeTree.

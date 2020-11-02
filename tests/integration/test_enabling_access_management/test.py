@@ -4,6 +4,7 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance', user_configs=["configs/users.d/extra_users.xml"])
 
+
 @pytest.fixture(scope="module", autouse=True)
 def started_cluster():
     try:

@@ -202,7 +202,7 @@ Clangにはさらに便利な警告があります。 `-Weverything` デフォ�
 ClickHouseファジングは、両方を使用して実装されます [libFuzzer](https://llvm.org/docs/LibFuzzer.html) とランダムSQLクエリ。
 すべてのファズテストは、サニタイザー（アドレスと未定義）で実行する必要があります。
 
-LibFuzzerは、ライブラリコードの分離ファズテストに使用されます。 ファザーはテストコードの一部として実装され “\_fuzzer” 名前の接尾辞。
+LibFuzzerは、ライブラリコードの分離ファズテストに使用されます。 ファザーはテストコードの一部として実装され “_fuzzer” 名前の接尾辞。
 Fuzzerの例はで見つけることができます `src/Parsers/tests/lexer_fuzzer.cpp`. LibFuzzer固有の設定、辞書、およびコーパスは次の場所に格納されます `tests/fuzz`.
 ご協力をお願いいたし書きファズ試験べての機能を取り扱うユーザー入力します。
 

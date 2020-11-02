@@ -11,6 +11,7 @@
 #include <common/LocalDateTime.h>
 #include <common/find_symbols.h>
 #include <common/StringRef.h>
+#include <common/wide_integer_to_string.h>
 
 #include <Core/DecimalFunctions.h>
 #include <Core/Types.h>
@@ -40,6 +41,12 @@ namespace ErrorCodes
 {
     extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
+template <typename T>
+inline std::string bigintToString(const T & x)
+{
+    return to_string(x);
 }
 
 /// Helper functions for formatted and binary output.
@@ -629,6 +636,19 @@ inline void writeUUIDText(const UUID & uuid, WriteBuffer & buf)
     buf.write(s, sizeof(s));
 }
 
+template<typename DecimalType>
+inline void writeDecimalTypeFractionalText(typename DecimalType::NativeType fractional, UInt32 scale, WriteBuffer & buf)
+{
+    static constexpr UInt32 MaxScale = DecimalUtils::maxPrecision<DecimalType>();
+
+    char data[20] = {'0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'};
+    static_assert(sizeof(data) >= MaxScale);
+
+    for (Int32 pos = scale - 1; pos >= 0 && fractional; --pos, fractional /= DateTime64(10))
+        data[pos] += fractional % DateTime64(10);
+
+    writeString(&data[0], static_cast<size_t>(scale), buf);
+}
 
 static const char digits100[201] =
     "00010203040506070809"
@@ -753,15 +773,7 @@ inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer &
     if (scale > 0)
     {
         buf.write(fractional_time_delimiter);
-
-        char data[20] = {'0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'};
-        static_assert(sizeof(data) >= MaxScale);
-
-        auto fractional = c.fractional;
-        for (Int32 pos = scale - 1; pos >= 0 && fractional; --pos, fractional /= DateTime64(10))
-            data[pos] += fractional % DateTime64(10);
-
-        writeString(&data[0], static_cast<size_t>(scale), buf);
+        writeDecimalTypeFractionalText<DateTime64>(c.fractional, scale, buf);
     }
 }
 
@@ -791,6 +803,32 @@ inline void writeDateTimeTextRFC1123(time_t datetime, WriteBuffer & buf, const D
     buf.write(" GMT", 4);
 }
 
+inline void writeDateTimeTextISO(time_t datetime, WriteBuffer & buf, const DateLUTImpl & utc_time_zone)
+{
+    writeDateTimeText<'-', ':', 'T'>(datetime, buf, utc_time_zone);
+    buf.write('Z');
+}
+
+inline void writeDateTimeTextISO(DateTime64 datetime64, UInt32 scale, WriteBuffer & buf, const DateLUTImpl & utc_time_zone)
+{
+    writeDateTimeText<'-', ':', 'T'>(datetime64, scale, buf, utc_time_zone);
+    buf.write('Z');
+}
+
+inline void writeDateTimeUnixTimestamp(DateTime64 datetime64, UInt32 scale, WriteBuffer & buf)
+{
+    static constexpr UInt32 MaxScale = DecimalUtils::maxPrecision<DateTime64>();
+    scale = scale > MaxScale ? MaxScale : scale;
+
+    auto c = DecimalUtils::split(datetime64, scale);
+    writeIntText(c.whole, buf);
+
+    if (scale > 0)
+    {
+        buf.write('.');
+        writeDecimalTypeFractionalText<DateTime64>(c.fractional, scale, buf);
+    }
+}
 
 /// Methods for output in binary format.
 template <typename T>

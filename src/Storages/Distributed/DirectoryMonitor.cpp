@@ -3,7 +3,6 @@
 #include <Common/escapeForFileName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/ClickHouseRevision.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <Common/hex.h>
@@ -236,8 +235,17 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
         }
 
         return std::make_shared<ConnectionPool>(
-            1, address.host_name, address.port, address.default_database, address.user, address.password,
-            storage.getName() + '_' + address.user, Protocol::Compression::Enable, address.secure);
+            1, /* max_connections */
+            address.host_name,
+            address.port,
+            address.default_database,
+            address.user,
+            address.password,
+            address.cluster,
+            address.cluster_secret,
+            storage.getName() + '_' + address.user, /* client */
+            Protocol::Compression::Enable,
+            address.secure);
     };
 
     auto pools = createPoolsForAddresses(name, pool_factory);
@@ -357,7 +365,7 @@ void StorageDistributedDirectoryMonitor::readHeader(
 
         UInt64 initiator_revision;
         readVarUInt(initiator_revision, header_buf);
-        if (ClickHouseRevision::get() < initiator_revision)
+        if (DBMS_TCP_PROTOCOL_VERSION < initiator_revision)
         {
             LOG_WARNING(log, "ClickHouse shard version is older than ClickHouse initiator version. It may lack support for new features.");
         }
@@ -576,7 +584,7 @@ public:
     explicit DirectoryMonitorBlockInputStream(const String & file_name)
         : in(file_name)
         , decompressing_in(in)
-        , block_in(decompressing_in, ClickHouseRevision::get())
+        , block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION)
         , log{&Poco::Logger::get("DirectoryMonitorBlockInputStream")}
     {
         Settings insert_settings;
@@ -681,7 +689,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
             readHeader(in, insert_settings, insert_query, client_info, log);
 
             CompressedReadBuffer decompressing_in(in);
-            NativeBlockInputStream block_in(decompressing_in, ClickHouseRevision::get());
+            NativeBlockInputStream block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
             block_in.readPrefix();
 
             while (Block block = block_in.read())

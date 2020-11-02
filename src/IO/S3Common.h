@@ -4,7 +4,7 @@
 
 #if USE_AWS_S3
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <aws/core/Aws.h>
 #include <aws/core/client/ClientConfiguration.h>
 #include <Poco/URI.h>

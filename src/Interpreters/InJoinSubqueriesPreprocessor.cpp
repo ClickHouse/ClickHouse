@@ -27,7 +27,9 @@ namespace
 
 StoragePtr tryGetTable(const ASTPtr & database_and_table, const Context & context)
 {
-    auto table_id = context.resolveStorageID(database_and_table);
+    auto table_id = context.tryResolveStorageID(database_and_table);
+    if (!table_id)
+        return {};
     return DatabaseCatalog::instance().tryGetTable(table_id, context);
 }
 

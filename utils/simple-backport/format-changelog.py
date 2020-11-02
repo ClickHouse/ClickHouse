@@ -18,7 +18,7 @@ args = parser.parse_args()
 def parse_one_pull_request(item):
     description = item['body']
     # Don't skip empty lines because they delimit parts of description
-    lines = [line for line in map(lambda x: x.strip(), description.split('\n') if description else [])]
+    lines = [line for line in [x.strip() for x in description.split('\n') if description else []]]
     lines = [re.sub(r'\s+', ' ', l) for l in lines]
 
     category = ''
@@ -93,7 +93,7 @@ for line in args.file:
 
     # Normalize category name
     for c in categories_preferred_order:
-        if fuzzywuzzy.fuzz.ratio(pr['category'], c) >= 90:
+        if fuzzywuzzy.fuzz.ratio(pr['category'].lower(), c.lower()) >= 90:
             pr['category'] = c
             break
 
@@ -102,7 +102,7 @@ for line in args.file:
     users[user_id] = json.loads(open(f'user{user_id}.json').read())
 
 def print_category(category):
-    print("#### " + category)
+    print(("#### " + category))
     print()
     for pr in category_to_pr[category]:
         user = users[pr["user"]["id"]]

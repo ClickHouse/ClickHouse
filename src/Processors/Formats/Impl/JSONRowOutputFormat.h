@@ -16,7 +16,12 @@ namespace DB
 class JSONRowOutputFormat : public IRowOutputFormat
 {
 public:
-    JSONRowOutputFormat(WriteBuffer & out_, const Block & header, FormatFactory::WriteCallback callback, const FormatSettings & settings_);
+    JSONRowOutputFormat(
+        WriteBuffer & out_,
+        const Block & header,
+        const RowOutputFormatParams & params_,
+        const FormatSettings & settings_,
+        bool yield_strings_);
 
     String getName() const override { return "JSONRowOutputFormat"; }
 
@@ -78,6 +83,8 @@ protected:
     Progress progress;
     Stopwatch watch;
     FormatSettings settings;
+
+    bool yield_strings;
 };
 
 }

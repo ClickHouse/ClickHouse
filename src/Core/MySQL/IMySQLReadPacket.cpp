@@ -50,21 +50,22 @@ uint64_t readLengthEncodedNumber(ReadBuffer & buffer)
     uint64_t buf = 0;
     buffer.readStrict(c);
     auto cc = static_cast<uint8_t>(c);
-    if (cc < 0xfc)
+    switch (cc)
     {
-        return cc;
-    }
-    else if (cc < 0xfd)
-    {
-        buffer.readStrict(reinterpret_cast<char *>(&buf), 2);
-    }
-    else if (cc < 0xfe)
-    {
-        buffer.readStrict(reinterpret_cast<char *>(&buf), 3);
-    }
-    else
-    {
-        buffer.readStrict(reinterpret_cast<char *>(&buf), 8);
+        /// NULL
+        case 0xfb:
+            break;
+        case 0xfc:
+            buffer.readStrict(reinterpret_cast<char *>(&buf), 2);
+            break;
+        case 0xfd:
+            buffer.readStrict(reinterpret_cast<char *>(&buf), 3);
+            break;
+        case 0xfe:
+            buffer.readStrict(reinterpret_cast<char *>(&buf), 8);
+            break;
+        default:
+            return cc;
     }
     return buf;
 }
