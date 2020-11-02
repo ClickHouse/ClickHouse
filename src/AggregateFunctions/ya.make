@@ -17,6 +17,7 @@ SRCS(
     AggregateFunctionCategoricalInformationValue.cpp
     AggregateFunctionCombinatorFactory.cpp
     AggregateFunctionCount.cpp
+    AggregateFunctionCountEqualRanges.cpp
     AggregateFunctionDistinct.cpp
     AggregateFunctionEntropy.cpp
     AggregateFunctionFactory.cpp
