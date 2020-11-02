@@ -184,48 +184,101 @@ public:
         std::cerr << "!!! Rebuilt ColumnMapIndex with total " << total_items << " hash cell items" << std::endl;
     }
 
-    IColumn::Ptr findAll(const IColumn & needles, size_t /*rows_count*/) const override
+    IColumn::Ptr findAll(const IColumn & needles, size_t rows_count) const override
     {
-        // TODO: cast needles down to concrete type, and then dispatch based on that type.
-
-        {
-            const IColumn & needle_type_column = isColumnConst(needles)
-                    ? typeid_cast<const ColumnConst&>(needles).getDataColumn() : needles;
-
-            if (!keys_column.getData().structureEquals(needle_type_column))
-                throw Exception("Incompatitable needle column type " + needle_type_column.getName() + " expected " + keys_column.getName(),
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        }
-
         if (index.size() < needles.size())
             throw Exception(fmt::format("There are more needles ({}) that rows in index ({})", needles.size(), index.size()),
                 ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-        // TODO: make sure to convert needles-value to values-type to avoid
-        // false negative when searching for UInt64(1) while Map is keyed in UInt32.
+        if (const auto * needles_column = checkAndGetColumn<ColumnConst>(needles))
+        {
+            auto findConst = [this](const auto & typed_needles_column, size_t rows_count_ ) -> auto
+            {
+                return this->findAllTypedConst(typed_needles_column, rows_count_);
+            };
+            return findDispatch(findConst, needles_column->getDataColumn(), rows_count);
+        }
+        else
+        {
+            auto findVector = [this](const auto & typed_needles_column, size_t rows_count_ ) -> auto
+            {
+                return this->findAllTypedVector(typed_needles_column, rows_count_);
+            };
+            return findDispatch(findVector, needles, rows_count);
+        }
+    }
 
+    template <typename FindFunction>
+    IColumn::Ptr findDispatch(FindFunction find_function, const IColumn & needles, size_t rows_count) const
+    {
+        if constexpr (std::is_same_v<KeyStorageType, StringRef>)
+        {
+            if (const auto * needles_column = checkAndGetColumn<ColumnString>(needles))
+                return find_function(*needles_column, rows_count);
+            if (const auto * needles_column = checkAndGetColumn<ColumnFixedString>(needles))
+                return find_function(*needles_column, rows_count);
+        }
+        else if constexpr (std::is_unsigned_v<KeyStorageType>)
+        {
+            if (const auto * needles_column = checkAndGetColumn<ColumnVector<UInt8>>(needles))
+                return find_function(*needles_column, rows_count);
+            if (const auto * needles_column = checkAndGetColumn<ColumnVector<UInt16>>(needles))
+                return find_function(*needles_column, rows_count);
+            if (const auto * needles_column = checkAndGetColumn<ColumnVector<UInt32>>(needles))
+                return find_function(*needles_column, rows_count);
+            if (const auto * needles_column = checkAndGetColumn<ColumnVector<UInt64>>(needles))
+                return find_function(*needles_column, rows_count);
+        }
+        else if constexpr (std::is_signed_v<KeyStorageType>)
+        {
+            if (const auto * needles_column = checkAndGetColumn<ColumnVector<Int8>>(needles))
+                return find_function(*needles_column, rows_count);
+            if (const auto * needles_column = checkAndGetColumn<ColumnVector<Int16>>(needles))
+                return find_function(*needles_column, rows_count);
+            if (const auto * needles_column = checkAndGetColumn<ColumnVector<Int32>>(needles))
+                return find_function(*needles_column, rows_count);
+            if (const auto * needles_column = checkAndGetColumn<ColumnVector<Int64>>(needles))
+                return find_function(*needles_column, rows_count);
+        }
+
+        throw Exception(fmt::format("Unsupported needle type for Map: {} expected {}",
+                needles.getName(), keys_column.getData().getName()),
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+
+    template <typename NeedleColumnType>
+    IColumn::Ptr findAllTypedVector(const NeedleColumnType & needles, size_t rows_count) const
+    {
         const auto & nested_values = values_column.getData();
         auto result = nested_values.cloneEmpty();
         result->reserve(needles.size());
 
-//        for (size_t row = 0; row < rows_count; ++row)
-//        {
-////            const auto & key = needles.getDataAt(row);
-//            typename HashMapType::LookupResult p;
-//            if constexpr (std::is_same_v<KeyStorageType, StringRef>)
-//            {
-//                p = index[row].find(keys_data.getDataAt(i));
-//            }
-//            else
-//            {
-//                map.emplace(static_cast<KeyStorageType>(keys_data.getElement(i)), it, inserted);
-//            }
+        for (size_t row = 0; row < rows_count; ++row)
+        {
+            if (auto res = index[row].find(static_cast<KeyStorageType>(needles.getElement(row))))
+                result->insertFrom(nested_values, res->getMapped());
+            else
+                result->insertDefault();
+        }
 
-//            if (auto res = index[row].find(key))
-//                result->insertFrom(nested_values, res->getMapped());
-//            else
-//                result->insertDefault();
-//        }
+        return result;
+    }
+
+    template <typename NeedleColumnType>
+    IColumn::Ptr findAllTypedConst(const NeedleColumnType & needles, size_t rows_count) const
+    {
+        const auto & nested_values = values_column.getData();
+        auto result = nested_values.cloneEmpty();
+        result->reserve(needles.size());
+
+        const auto key = static_cast<KeyStorageType>(needles.getElement(0));
+        for (size_t row = 0; row < rows_count; ++row)
+        {
+            if (auto res = index[row].find(key))
+                result->insertFrom(nested_values, res->getMapped());
+            else
+                result->insertDefault();
+        }
 
         return result;
     }
