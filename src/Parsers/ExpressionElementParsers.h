@@ -39,6 +39,7 @@ protected:
 
 
 /** An identifier, for example, x_yz123 or `something special`
+  * If allow_query_parameter_ = true, also parses substitutions in form {name:Identifier}
   */
 class ParserIdentifier : public IParserBase
 {
@@ -312,7 +313,7 @@ private:
 class ParserIdentifierOrSubstitution : public IParserBase
 {
 protected:
-    const char * getName() const override { return "identifier substitution"; }
+    const char * getName() const override { return "identifier or substitution"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
