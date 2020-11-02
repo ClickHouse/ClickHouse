@@ -64,16 +64,14 @@ bool LzmaReadBuffer::nextImpl()
             eof = true;
             return working_buffer.size() != 0;
         } else {
-            throw Exception(
-                std::string("lzma decoder finished, but stream is still alive: error code: ") + std::to_string(ret) + "; lzma version: " + LZMA_VERSION_STRING,
-                ErrorCodes::LZMA_STREAM_DECODER_FAILED);
+            throw Exception(ErrorCodes::LZMA_STREAM_DECODER_FAILED, 
+        "lzma decoder finished, but stream is still alive: error code: {}; lzma version: {}", ret, LZMA_VERSION_STRING); 
         }
     }
 
     if (ret != LZMA_OK)
-        throw Exception(
-            std::string("lzma_stream_decoder failed: error code: ") + std::to_string(ret) + "; lzma version: " + LZMA_VERSION_STRING,
-            ErrorCodes::LZMA_STREAM_DECODER_FAILED);
+        throw Exception(ErrorCodes::LZMA_STREAM_DECODER_FAILED,
+    "lzma_stream_decoder failed: error code: error codeL {}; lzma version: {}", ret, LZMA_VERSION_STRING);
 
     return true;
 }

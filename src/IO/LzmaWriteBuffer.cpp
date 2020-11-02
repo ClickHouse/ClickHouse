@@ -25,9 +25,9 @@ LzmaWriteBuffer::LzmaWriteBuffer(
     
     // options for further compression
     lzma_options_lzma opt_lzma2;
-    if (lzma_lzma_preset(&opt_lzma2, compression_level)) {
+    if (lzma_lzma_preset(&opt_lzma2, compression_level))
         throw Exception(std::string("lzma preset failed: ") + "; lzma version: " + LZMA_VERSION_STRING, ErrorCodes::LZMA_STREAM_ENCODER_FAILED);
-    }
+
 
     lzma_filter filters[] = {
 		{ .id = LZMA_FILTER_X86, .options = NULL },
@@ -43,7 +43,8 @@ LzmaWriteBuffer::LzmaWriteBuffer(
 
 LzmaWriteBuffer::~LzmaWriteBuffer()
 {
-    try {
+    try
+    {
         finish();
 
         lzma_end(&lstr);
@@ -60,31 +61,26 @@ void LzmaWriteBuffer::nextImpl()
 
     lstr.next_in = reinterpret_cast<unsigned char *>(working_buffer.begin());
     lstr.avail_in = offset();
-    //std::cout << lstr.avail_in << std::endl;
 
     lzma_action action = LZMA_RUN;
-    do {
+    do
+    {
         out->nextIfAtEnd();
         lstr.next_out = reinterpret_cast<unsigned char *>(out->position());
         lstr.avail_out = out->buffer().end() - out->position();
-        //std::cout << lstr.avail_out << " BEFOR" << std::endl;
 
 
         lzma_ret ret = lzma_code(&lstr, action);
         out->position() = out->buffer().end() - lstr.avail_out;
 
-        //std::cout << lstr.avail_out << " AFTER" << std::endl;
 
-		//std::cout << ret << " RET IMPL" << std::endl;
 
-        if (ret == LZMA_STREAM_END) {
-                return;
-        }
+        if (ret == LZMA_STREAM_END)
+            return;
         
         if (ret != LZMA_OK)
             throw Exception(std::string("lzma stream encoding failed: ") + "; lzma version: " + LZMA_VERSION_STRING, ErrorCodes::LZMA_STREAM_ENCODER_FAILED);
     
-        //std::cout << lstr.avail_in << " " << lstr.avail_out << std::endl;
     } while (lstr.avail_in > 0 || lstr.avail_out == 0);
 }
 
@@ -96,7 +92,8 @@ void LzmaWriteBuffer::finish()
 
     next();
 
-    do {
+    do
+    {
         out->nextIfAtEnd();
         lstr.next_out = reinterpret_cast<unsigned char *>(out->position());
         lstr.avail_out = out->buffer().end() - out->position();
@@ -104,9 +101,9 @@ void LzmaWriteBuffer::finish()
         lzma_ret ret = lzma_code(&lstr, LZMA_FINISH);
         out->position() = out->buffer().end() - lstr.avail_out;
 
-		//std::cout << ret << " RET FIN" << std::endl;
 
-        if (ret == LZMA_STREAM_END) {
+        if (ret == LZMA_STREAM_END) 
+        {
             finished = true;
 			return;
         }
@@ -114,7 +111,6 @@ void LzmaWriteBuffer::finish()
         if (ret != LZMA_OK)
             throw Exception(std::string("lzma stream encoding failed: ") + "; lzma version: " + LZMA_VERSION_STRING, ErrorCodes::LZMA_STREAM_ENCODER_FAILED);
     
-        //std::cout << lstr.avail_in << std::endl;
     } while (lstr.avail_out == 0);
 }
 
