@@ -19,9 +19,7 @@ namespace ErrorCodes
 namespace
 {
 
-/** map(x, y, ...) is a function that allows you to make key-value pair 
-  */
-
+// map(x, y, ...) is a function that allows you to make key-value pair
 class FunctionMap : public IFunction
 {
 public:
@@ -75,7 +73,6 @@ public:
 
     ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        
         size_t num_elements = arguments.size();
 
         if (num_elements == 0)

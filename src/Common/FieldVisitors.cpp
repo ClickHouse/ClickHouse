@@ -209,7 +209,7 @@ String FieldVisitorToString::operator() (const Map & x) const
 }
 
 
-void FieldVisitorWriteBinary::operator() (const Null &, WriteBuffer &) const { return ; }
+void FieldVisitorWriteBinary::operator() (const Null &, WriteBuffer &) const { }
 void FieldVisitorWriteBinary::operator() (const UInt64 & x, WriteBuffer & buf) const { DB::writeVarUInt(x, buf); }
 void FieldVisitorWriteBinary::operator() (const Int64 & x, WriteBuffer & buf) const { DB::writeVarInt(x, buf); }
 void FieldVisitorWriteBinary::operator() (const Float64 & x, WriteBuffer & buf) const { DB::writeFloatBinary(x, buf); }
@@ -233,15 +233,11 @@ void FieldVisitorWriteBinary::operator() (const Array & x, WriteBuffer & buf) co
     const size_t size = x.size();
     DB::writeBinary(size, buf);
 
-    for (auto it = x.begin(); it != x.end(); ++it)
+    for (size_t i = 0; i < size; ++i)
     {
-        const UInt8 type = it->getType();
+        const UInt8 type = x[i].getType();
         DB::writeBinary(type, buf);
-        Field::dispatch(
-            [&buf](const auto & value) {
-                DB::FieldVisitorWriteBinary()(value, buf);
-            },
-            *it);
+        Field::dispatch([&buf] (const auto & value) { DB::FieldVisitorWriteBinary()(value, buf); }, x[i]);
     }
 }
 
@@ -250,15 +246,11 @@ void FieldVisitorWriteBinary::operator() (const Tuple & x, WriteBuffer & buf) co
     const size_t size = x.size();
     DB::writeBinary(size, buf);
 
-    for (auto it = x.begin(); it != x.end(); ++it)
+    for (size_t i = 0; i < size; ++i)
     {
-        const UInt8 type = it->getType();
+        const UInt8 type = x[i].getType();
         DB::writeBinary(type, buf);
-        Field::dispatch(
-            [&buf](const auto & value) {
-                DB::FieldVisitorWriteBinary()(value, buf);
-            },
-            *it);
+        Field::dispatch([&buf] (const auto & value) { DB::FieldVisitorWriteBinary()(value, buf); }, x[i]);
     }
 }
 
@@ -267,15 +259,12 @@ void FieldVisitorWriteBinary::operator() (const Map & x, WriteBuffer & buf) cons
 {
     const size_t size = x.size();
     DB::writeBinary(size, buf);
-    for (auto it = x.begin(); it != x.end(); ++it)
+
+    for (size_t i = 0; i < size; ++i)
     {
-        const UInt8 type = it->getType();
+        const UInt8 type = x[i].getType();
         writeBinary(type, buf);
-        Field::dispatch(
-            [&buf](const auto & value) {
-                DB::FieldVisitorWriteBinary()(value, buf);
-            },
-            *it);
+        Field::dispatch([&buf] (const auto & value) { DB::FieldVisitorWriteBinary()(value, buf); }, x[i]);
     }
 }
 
