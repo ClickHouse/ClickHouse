@@ -50,6 +50,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_TEMPORARY_COLUMNS;
     extern const int TOO_MANY_TEMPORARY_NON_CONST_COLUMNS;
     extern const int TYPE_MISMATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 /// Read comment near usage
@@ -375,7 +376,6 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
             auto source = block.getByName(source_name);
             block.erase(source_name);
             source.column = source.column->convertToFullColumnIfConst();
-
             const ColumnArray * array = typeid_cast<const ColumnArray *>(source.column.get());
             if (!array)
                 throw Exception("ARRAY JOIN of not array: " + source_name, ErrorCodes::TYPE_MISMATCH);
@@ -386,6 +386,9 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
             source.column = array->getDataPtr();
             source.type = assert_cast<const DataTypeArray &>(*source.type).getNestedType();
             source.name = result_name;
+
+            if (source.type->getTypeId() == TypeIndex::Nothing)
+                throw Exception("ARRAY JOIN of empty array is not allowed", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             block.insert(std::move(source));
 
