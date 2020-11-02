@@ -105,7 +105,7 @@ static bool isSingleSelect(const ASTPtr & select, ASTPtr & res)
     if (new_select.list_of_selects->children.size() != 1)
         return false;
     auto & new_inner_query = new_select.list_of_selects->children.at(0);
-    if (auto _ = new_inner_query->as<ASTSelectQuery>())
+    if (new_inner_query->as<ASTSelectQuery>())
     {
         res = new_inner_query;
         return true;

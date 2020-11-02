@@ -40,7 +40,7 @@ void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, F
         if (it != list_of_selects->children.begin())
             settings.ostr << settings.nl_or_ws << indent_str << (settings.hilite ? hilite_keyword : "") << "UNION "
                           << mode_to_str(union_modes[it - list_of_selects->children.begin() - 1]) << (settings.hilite ? hilite_none : "");
-        if (auto node = (*it)->as<ASTSelectWithUnionQuery>())
+        if (auto * node = (*it)->as<ASTSelectWithUnionQuery>())
         {
             // just one child in subquery, () is not need
             if (node->list_of_selects->children.size() == 1)
