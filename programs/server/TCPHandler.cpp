@@ -1164,6 +1164,7 @@ void TCPHandler::sendTableColumns(const ColumnsDescription & columns)
     out->next();
 }
 
+
 void TCPHandler::sendException(const Exception & e, bool with_stack_trace)
 {
     writeVarUInt(Protocol::Server::Exception, *out);
