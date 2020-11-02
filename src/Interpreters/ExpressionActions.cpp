@@ -120,16 +120,18 @@ void ExpressionActions::checkLimits(ExecutionContext & execution_context) const
 void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) const
 {
     ExecutionContext execution_context
-            {
-                    .inputs = block.data,
-                    .num_rows = num_rows,
-            };
+    {
+        .inputs = block.data,
+        .num_rows = num_rows,
+    };
 
     execution_context.inputs_pos.reserve(required_columns.size());
 
     for (const auto & column : required_columns)
     {
-        size_t pos = block.getPositionByName(column.name);
+        ssize_t pos = -1;
+        if (block.has(column.name))
+            pos = block.getPositionByName(column.name);
         execution_context.inputs_pos.push_back(pos);
     }
 
@@ -156,18 +158,18 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) 
     if (project_input)
     {
         block.clear();
-        for (auto pos : result_positions)
-            block.insert(execution_context.columns[pos]);
     }
     else
     {
         std::sort(execution_context.inputs_pos.rbegin(), execution_context.inputs_pos.rend());
         for (auto input : execution_context.inputs_pos)
-            block.erase(input);
-
-        for (auto pos : result_positions)
-            block.insert(execution_context.columns[pos]);
+            if (input >= 0)
+                block.erase(input);
     }
+
+    for (auto pos : result_positions)
+        if (execution_context.columns[pos].column)
+            block.insert(execution_context.columns[pos]);
 
     num_rows = execution_context.num_rows;
 }
@@ -278,7 +280,14 @@ void ExpressionActions::executeAction(const Action & action, ExecutionContext & 
         case ActionsDAG::Type::INPUT:
         {
             auto pos = execution_context.inputs_pos[action.arguments.front().pos];
-            columns[action.result_position] = std::move(inputs[pos]);
+            if (pos < 0)
+            {
+                if (action.arguments.front().remove)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found column {} in block", action.node->result_name);
+            }
+            else
+                columns[action.result_position] = std::move(inputs[pos]);
+
             break;
         }
     }
@@ -1372,8 +1381,7 @@ ExpressionActionsPtr ActionsDAG::linearizeActions() const
             /// Argument for input is special. It contains the position from required columns.
             ExpressionActions::Argument argument;
             argument.pos = expressions->required_columns.size();
-            argument.remove = false;
-            arguments.emplace_back(argument);
+            argument.remove = !cur.parents.empty();
 
             expressions->required_columns.push_back({node->result_name, node->result_type});
         }

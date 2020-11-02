@@ -279,7 +279,7 @@ private:
     {
         ColumnsWithTypeAndName & inputs;
         ColumnsWithTypeAndName columns;
-        ColumnNumbers inputs_pos;
+        std::vector<ssize_t> inputs_pos;
         size_t num_rows;
     };
 
