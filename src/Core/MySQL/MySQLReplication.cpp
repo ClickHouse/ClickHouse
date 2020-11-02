@@ -705,7 +705,7 @@ namespace MySQLReplication
                 break;
             }
             default:
-                throw ReplicationError("Position update with unsupport event", ErrorCodes::LOGICAL_ERROR);
+                throw ReplicationError("Position update with unsupported event", ErrorCodes::LOGICAL_ERROR);
         }
     }
 

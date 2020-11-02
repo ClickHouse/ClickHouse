@@ -744,12 +744,12 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     {
         function_builder = FunctionFactory::instance().get(node.name, data.context);
     }
-    catch (DB::Exception & e)
+    catch (Exception & e)
     {
         auto hints = AggregateFunctionFactory::instance().getHints(node.name);
         if (!hints.empty())
             e.addMessage("Or unknown aggregate function " + node.name + ". Maybe you meant: " + toString(hints));
-        e.rethrow();
+        throw;
     }
 
     Names argument_names;
