@@ -2642,6 +2642,14 @@ void MergeTreeData::checkPartitionCanBeDropped(const ASTPtr & partition)
     global_context.checkPartitionCanBeDropped(table_id.database_name, table_id.table_name, partition_size);
 }
 
+void MergeTreeData::checkPartCanBeDropped(const ASTPtr & part_ast)
+{
+    String part_name = part_ast->as<ASTLiteral &>().value.safeGet<String>();
+    auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Committed});
+    if (!part)
+        throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No part {} in commited state", part_name);
+}
+
 void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String & name, bool moving_part, const Context & context)
 {
     String partition_id;

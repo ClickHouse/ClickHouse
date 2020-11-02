@@ -560,6 +560,8 @@ public:
 
     void checkPartitionCanBeDropped(const ASTPtr & partition) override;
 
+    void checkPartCanBeDropped(const ASTPtr & part);
+
     size_t getColumnCompressedSize(const std::string & name) const
     {
         auto lock = lockParts();

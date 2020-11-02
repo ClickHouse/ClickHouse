@@ -535,6 +535,7 @@ private:
     std::mutex existing_nodes_cache_mutex;
     bool existsNodeCached(const std::string & path);
 
+    void getClearBlocksInPartitionOps(Coordination::Requests & ops, zkutil::ZooKeeper & zookeeper, const String & partition_id, Int64 min_block_num, Int64 max_block_num);
     /// Remove block IDs from `blocks/` in ZooKeeper for the given partition ID in the given block number range.
     void clearBlocksInPartition(
         zkutil::ZooKeeper & zookeeper, const String & partition_id, Int64 min_block_num, Int64 max_block_num);

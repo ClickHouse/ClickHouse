@@ -1117,9 +1117,7 @@ Pipe StorageMergeTree::alterPartition(
         {
             case PartitionCommand::DROP_PARTITION:
                 if (command.part)
-                {
-                    /// TODO(nv) what would be a good check here?
-                }
+                    checkPartCanBeDropped(command.partition);
                 else
                     checkPartitionCanBeDropped(command.partition);
                 dropPartition(command.partition, command.detach, command.part, query_context);
