@@ -71,7 +71,6 @@ public:
 private:
     MergeTreeData::MutableDataPartPtr downloadPartToDisk(
             const String & part_name,
-            const UUID & part_uuid,
             const String & replica_path,
             bool to_detached,
             const String & tmp_prefix_,
