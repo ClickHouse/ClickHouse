@@ -243,7 +243,7 @@ void ThreadStatus::finalizePerformanceCounters()
             const auto & settings = query_context->getSettingsRef();
             if (settings.log_queries && settings.log_query_threads)
                 if (auto thread_log = global_context->getQueryThreadLog())
-                    logToQueryThreadLog(*thread_log);
+                    logToQueryThreadLog(*thread_log, query_context->getCurrentDatabase());
         }
     }
     catch (...)
@@ -322,7 +322,7 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 #endif
 }
 
-void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
+void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String & current_database)
 {
     QueryThreadLogElement elem;
 
@@ -350,6 +350,7 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
     elem.thread_name = getThreadName();
     elem.thread_id = thread_id;
 
+    elem.current_database = current_database;
     if (thread_group)
     {
         {
