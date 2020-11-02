@@ -1,6 +1,6 @@
 # system.text_log {#system_tables-text_log}
 
-Contains logging entries. Logging level which goes to this table can be limited with `text_log.level` server setting.
+Contains logging entries. The logging level which goes to this table can be limited to the `text_log.level` server setting.
 
 Columns:
 

@@ -1,6 +1,8 @@
 ---
-toc_priority: 33
-toc_title: SELECT
+title: "\u0421\u0438\u043d\u0442\u0430\u043a\u0441\u0438\u0441\u0020\u0437\u0430\u043f\u0440\u043e\u0441\u043e\u0432\u0020\u0053\u0045\u004c\u0045\u0043\u0054"
+toc_folder_title: SELECT
+toc_priority: 32
+toc_title: "\u041e\u0431\u0437\u043e\u0440"
 ---
 
 # Синтаксис запросов SELECT {#select-queries-syntax}

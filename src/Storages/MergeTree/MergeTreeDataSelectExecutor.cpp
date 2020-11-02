@@ -898,7 +898,7 @@ Pipe MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
             num_streams,
             sum_marks,
             min_marks_for_concurrent_read,
-            parts,
+            std::move(parts),
             data,
             metadata_snapshot,
             query_info.prewhere_info,
@@ -1573,7 +1573,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     {
         /// In case when SELECT's predicate defines a single continuous interval of keys,
         /// we can use binary search algorithm to find the left and right endpoint key marks of such interval.
-        /// The returned value is the minumum range of marks, containing all keys for which KeyCondition holds
+        /// The returned value is the minimum range of marks, containing all keys for which KeyCondition holds
 
         LOG_TRACE(log, "Running binary search on index range for part {} ({} marks)", part->name, marks_count);
 

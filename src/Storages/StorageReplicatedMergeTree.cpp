@@ -3282,12 +3282,15 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
     auto zookeeper = zookeeper_ ? zookeeper_ : getZooKeeper();
     const auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
 
-    if (auto part = getPartIfExists(part_info, {IMergeTreeDataPart::State::Outdated, IMergeTreeDataPart::State::Deleting}))
+    if (!to_detached)
     {
-        LOG_DEBUG(log, "Part {} should be deleted after previous attempt before fetch", part->name);
-        /// Force immediate parts cleanup to delete the part that was left from the previous fetch attempt.
-        cleanup_thread.wakeup();
-        return false;
+        if (auto part = getPartIfExists(part_info, {IMergeTreeDataPart::State::Outdated, IMergeTreeDataPart::State::Deleting}))
+        {
+            LOG_DEBUG(log, "Part {} should be deleted after previous attempt before fetch", part->name);
+            /// Force immediate parts cleanup to delete the part that was left from the previous fetch attempt.
+            cleanup_thread.wakeup();
+            return false;
+        }
     }
 
     {
@@ -3481,8 +3484,10 @@ void StorageReplicatedMergeTree::startup()
     {
         queue.initialize(getDataParts());
 
-        data_parts_exchange_endpoint = std::make_shared<DataPartsExchange::Service>(*this);
-        global_context.getInterserverIOHandler().addEndpoint(data_parts_exchange_endpoint->getId(replica_path), data_parts_exchange_endpoint);
+        InterserverIOEndpointPtr data_parts_exchange_ptr = std::make_shared<DataPartsExchange::Service>(*this);
+        [[maybe_unused]] auto prev_ptr = std::atomic_exchange(&data_parts_exchange_endpoint, data_parts_exchange_ptr);
+        assert(prev_ptr == nullptr);
+        global_context.getInterserverIOHandler().addEndpoint(data_parts_exchange_ptr->getId(replica_path), data_parts_exchange_ptr);
 
         /// In this thread replica will be activated.
         restarting_thread.start();
@@ -3549,15 +3554,15 @@ void StorageReplicatedMergeTree::shutdown()
         global_context.getBackgroundMovePool().removeTask(move_parts_task_handle);
     move_parts_task_handle.reset();
 
-    if (data_parts_exchange_endpoint)
+    auto data_parts_exchange_ptr = std::atomic_exchange(&data_parts_exchange_endpoint, InterserverIOEndpointPtr{});
+    if (data_parts_exchange_ptr)
     {
-        global_context.getInterserverIOHandler().removeEndpointIfExists(data_parts_exchange_endpoint->getId(replica_path));
+        global_context.getInterserverIOHandler().removeEndpointIfExists(data_parts_exchange_ptr->getId(replica_path));
         /// Ask all parts exchange handlers to finish asap. New ones will fail to start
-        data_parts_exchange_endpoint->blocker.cancelForever();
+        data_parts_exchange_ptr->blocker.cancelForever();
         /// Wait for all of them
-        std::unique_lock lock(data_parts_exchange_endpoint->rwlock);
+        std::unique_lock lock(data_parts_exchange_ptr->rwlock);
     }
-    data_parts_exchange_endpoint.reset();
 
     /// We clear all old parts after stopping all background operations. It's
     /// important, because background operations can produce temporary parts
@@ -3678,6 +3683,36 @@ std::optional<UInt64> StorageReplicatedMergeTree::totalRows() const
 {
     UInt64 res = 0;
     foreachCommittedParts([&res](auto & part) { res += part->rows_count; });
+    return res;
+}
+
+std::optional<UInt64> StorageReplicatedMergeTree::totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, const Context & context) const
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    const auto & partition_key = metadata_snapshot->getPartitionKey();
+    Names partition_key_columns = partition_key.column_names;
+    KeyCondition key_condition(
+        query_info, context, partition_key_columns, partition_key.expression, true /* single_point */, true /* strict */);
+    if (key_condition.alwaysUnknownOrTrue())
+        return {};
+    std::unordered_map<String, bool> partition_filter_map;
+    size_t res = 0;
+    foreachCommittedParts([&](auto & part)
+    {
+        const auto & partition_id = part->info.partition_id;
+        bool is_valid;
+        if (auto it = partition_filter_map.find(partition_id); it != partition_filter_map.end())
+            is_valid = it->second;
+        else
+        {
+            const auto & partition_value = part->partition.value;
+            std::vector<FieldRef> index_value(partition_value.begin(), partition_value.end());
+            is_valid = key_condition.mayBeTrueInRange(partition_value.size(), index_value.data(), index_value.data(), partition_key.data_types);
+            partition_filter_map.emplace(partition_id, is_valid);
+        }
+        if (is_valid)
+            res += part->rows_count;
+    });
     return res;
 }
 
@@ -5870,7 +5905,10 @@ ActionLock StorageReplicatedMergeTree::getActionLock(StorageActionBlockType acti
         return fetcher.blocker.cancel();
 
     if (action_type == ActionLocks::PartsSend)
-        return data_parts_exchange_endpoint ? data_parts_exchange_endpoint->blocker.cancel() : ActionLock();
+    {
+        auto data_parts_exchange_ptr = std::atomic_load(&data_parts_exchange_endpoint);
+        return data_parts_exchange_ptr ? data_parts_exchange_ptr->blocker.cancel() : ActionLock();
+    }
 
     if (action_type == ActionLocks::ReplicationQueue)
         return queue.actions_blocker.cancel();
