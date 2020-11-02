@@ -48,7 +48,8 @@ void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, F
         }
         else
         {
-            settings.ostr << settings.nl_or_ws;
+            if (it != list_of_selects->children.begin())
+                settings.ostr << settings.nl_or_ws;
             (*it)->formatImpl(settings, state, frame);
         }
     }
