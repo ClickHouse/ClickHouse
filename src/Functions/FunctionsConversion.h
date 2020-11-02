@@ -2208,15 +2208,14 @@ private:
         {
             const auto * col = arguments.front().column.get();
 
-            // size_t tuple_size = from_kv_types.size();
-            const ColumnMap & column_tuple = typeid_cast<const ColumnMap &>(*col);
+            const ColumnMap & column_map = typeid_cast<const ColumnMap &>(*col);
 
             Columns converted_columns(2);
 
             /// invoke conversion for each element
             for (size_t i = 0; i < 2; ++i)
             {
-                ColumnsWithTypeAndName element = {{column_tuple.getColumns()[i], from_kv_types[i], "" }};
+                ColumnsWithTypeAndName element = {{column_map.getColumns()[i], from_kv_types[i], "" }};
                 converted_columns[i] = element_wrappers[i](element, to_kv_types[i], nullable_source, input_rows_count);
             }
 
