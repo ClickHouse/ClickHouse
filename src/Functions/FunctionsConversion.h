@@ -571,7 +571,7 @@ template <>
 inline void parseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
 {
     UUID tmp;
-    readText(tmp, rb);
+    readUUIDText(tmp, rb);
     x = tmp;
 }
 
@@ -601,6 +601,17 @@ inline bool tryParseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, Read
     time_t tmp = 0;
     if (!tryReadDateTimeText(tmp, rb, *time_zone))
         return false;
+    x = tmp;
+    return true;
+}
+
+template <>
+inline bool tryParseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
+{
+    UUID tmp;
+    if (!tryReadUUIDText(tmp, rb))
+        return false;
+
     x = tmp;
     return true;
 }
@@ -1757,6 +1768,7 @@ struct NameToDecimal32OrZero { static constexpr auto name = "toDecimal32OrZero";
 struct NameToDecimal64OrZero { static constexpr auto name = "toDecimal64OrZero"; };
 struct NameToDecimal128OrZero { static constexpr auto name = "toDecimal128OrZero"; };
 struct NameToDecimal256OrZero { static constexpr auto name = "toDecimal256OrZero"; };
+struct NameToUUIDOrZero { static constexpr auto name = "toUUIDOrZero"; };
 
 using FunctionToUInt8OrZero = FunctionConvertFromString<DataTypeUInt8, NameToUInt8OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToUInt16OrZero = FunctionConvertFromString<DataTypeUInt16, NameToUInt16OrZero, ConvertFromStringExceptionMode::Zero>;
@@ -1778,6 +1790,7 @@ using FunctionToDecimal32OrZero = FunctionConvertFromString<DataTypeDecimal<Deci
 using FunctionToDecimal64OrZero = FunctionConvertFromString<DataTypeDecimal<Decimal64>, NameToDecimal64OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToDecimal128OrZero = FunctionConvertFromString<DataTypeDecimal<Decimal128>, NameToDecimal128OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToDecimal256OrZero = FunctionConvertFromString<DataTypeDecimal<Decimal256>, NameToDecimal256OrZero, ConvertFromStringExceptionMode::Zero>;
+using FunctionToUUIDOrZero = FunctionConvertFromString<DataTypeUUID, NameToUUIDOrZero, ConvertFromStringExceptionMode::Zero>;
 
 struct NameToUInt8OrNull { static constexpr auto name = "toUInt8OrNull"; };
 struct NameToUInt16OrNull { static constexpr auto name = "toUInt16OrNull"; };
@@ -1799,6 +1812,7 @@ struct NameToDecimal32OrNull { static constexpr auto name = "toDecimal32OrNull";
 struct NameToDecimal64OrNull { static constexpr auto name = "toDecimal64OrNull"; };
 struct NameToDecimal128OrNull { static constexpr auto name = "toDecimal128OrNull"; };
 struct NameToDecimal256OrNull { static constexpr auto name = "toDecimal256OrNull"; };
+struct NameToUUIDOrNull { static constexpr auto name = "toUUIDOrNull"; };
 
 using FunctionToUInt8OrNull = FunctionConvertFromString<DataTypeUInt8, NameToUInt8OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToUInt16OrNull = FunctionConvertFromString<DataTypeUInt16, NameToUInt16OrNull, ConvertFromStringExceptionMode::Null>;
@@ -1820,6 +1834,7 @@ using FunctionToDecimal32OrNull = FunctionConvertFromString<DataTypeDecimal<Deci
 using FunctionToDecimal64OrNull = FunctionConvertFromString<DataTypeDecimal<Decimal64>, NameToDecimal64OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDecimal128OrNull = FunctionConvertFromString<DataTypeDecimal<Decimal128>, NameToDecimal128OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDecimal256OrNull = FunctionConvertFromString<DataTypeDecimal<Decimal256>, NameToDecimal256OrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToUUIDOrNull = FunctionConvertFromString<DataTypeUUID, NameToUUIDOrNull, ConvertFromStringExceptionMode::Null>;
 
 struct NameParseDateTimeBestEffort { static constexpr auto name = "parseDateTimeBestEffort"; };
 struct NameParseDateTimeBestEffortUS { static constexpr auto name = "parseDateTimeBestEffortUS"; };

@@ -8,7 +8,6 @@ PEERDIR(
 
 NO_COMPILER_WARNINGS()
 
-CFLAGS(-g0)
 
 SRCS(
     AddingDefaultBlockOutputStream.cpp

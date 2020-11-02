@@ -1,44 +1,61 @@
+---
+toc_priority: 21
+toc_title: "\u0424\u043e\u0440\u043c\u0430\u0442\u044b\u0020\u0432\u0445\u043e\u0434\u043d\u044b\u0445\u0020\u0438\u0020\u0432\u044b\u0445\u043e\u0434\u043d\u044b\u0445\u0020\u0434\u0430\u043d\u043d\u044b\u0445"
+---
+
 # Форматы входных и выходных данных {#formats}
 
 ClickHouse может принимать (`INSERT`) и отдавать (`SELECT`) данные в различных форматах.
 
 Поддерживаемые форматы и возможность использовать их в запросах `INSERT` и `SELECT` перечислены в таблице ниже.
 
-| Формат                                                          | INSERT | SELECT |
-|-----------------------------------------------------------------|--------|--------|
-| [TabSeparated](#tabseparated)                                   | ✔      | ✔      |
-| [TabSeparatedRaw](#tabseparatedraw)                             | ✔      | ✔      |
-| [TabSeparatedWithNames](#tabseparatedwithnames)                 | ✔      | ✔      |
-| [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes) | ✔      | ✔      |
-| [Template](#format-template)                                    | ✔      | ✔      |
-| [TemplateIgnoreSpaces](#templateignorespaces)                   | ✔      | ✗      |
-| [CSV](#csv)                                                     | ✔      | ✔      |
-| [CSVWithNames](#csvwithnames)                                   | ✔      | ✔      |
-| [CustomSeparated](#format-customseparated)                      | ✔      | ✔      |
-| [Values](#data-format-values)                                   | ✔      | ✔      |
-| [Vertical](#vertical)                                           | ✗      | ✔      |
-| [JSON](#json)                                                   | ✗      | ✔      |
-| [JSONCompact](#jsoncompact)                                     | ✗      | ✔      |
-| [JSONEachRow](#jsoneachrow)                                     | ✔      | ✔      |
-| [TSKV](#tskv)                                                   | ✔      | ✔      |
-| [Pretty](#pretty)                                               | ✗      | ✔      |
-| [PrettyCompact](#prettycompact)                                 | ✗      | ✔      |
-| [PrettyCompactMonoBlock](#prettycompactmonoblock)               | ✗      | ✔      |
-| [PrettyNoEscapes](#prettynoescapes)                             | ✗      | ✔      |
-| [PrettySpace](#prettyspace)                                     | ✗      | ✔      |
-| [Protobuf](#protobuf)                                           | ✔      | ✔      |
-| [ProtobufSingle](#protobufsingle)                               | ✔      | ✔      |
-| [Parquet](#data-format-parquet)                                 | ✔      | ✔      |
-| [Arrow](#data-format-arrow)                                     | ✔      | ✔      |
-| [ArrowStream](#data-format-arrow-stream)                        | ✔      | ✔      |
-| [ORC](#data-format-orc)                                         | ✔      | ✗      |
-| [RowBinary](#rowbinary)                                         | ✔      | ✔      |
-| [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)       | ✔      | ✔      |
-| [Native](#native)                                               | ✔      | ✔      |
-| [Null](#null)                                                   | ✗      | ✔      |
-| [XML](#xml)                                                     | ✗      | ✔      |
-| [CapnProto](#capnproto)                                         | ✔      | ✗      |
-| [LineAsString](#lineasstring)                                   | ✔      | ✗      |
+| Формат                                                                                  | INSERT | SELECT |
+|-----------------------------------------------------------------------------------------|--------|--------|
+| [TabSeparated](#tabseparated)                                                           | ✔     | ✔      |
+| [TabSeparatedRaw](#tabseparatedraw)                                                     | ✔     | ✔      |
+| [TabSeparatedWithNames](#tabseparatedwithnames)                                         | ✔     | ✔      |
+| [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes)                         | ✔     | ✔      |
+| [Template](#format-template)                                                            | ✔     | ✔      |
+| [TemplateIgnoreSpaces](#templateignorespaces)                                           | ✔     | ✗      |
+| [CSV](#csv)                                                                             | ✔     | ✔      |
+| [CSVWithNames](#csvwithnames)                                                           | ✔     | ✔      |
+| [CustomSeparated](#format-customseparated)                                              | ✔     | ✔      |
+| [Values](#data-format-values)                                                           | ✔     | ✔      |
+| [Vertical](#vertical)                                                                   | ✗     | ✔      |
+| [VerticalRaw](#verticalraw)                                                             | ✗     | ✔      |
+| [JSON](#json)                                                                           | ✗     | ✔      |
+| [JSONString](#jsonstring)                                                               | ✗     | ✔      |
+| [JSONCompact](#jsoncompact)                                                             | ✗     | ✔      |
+| [JSONCompactString](#jsoncompactstring)                                                 | ✗     | ✔      |
+| [JSONEachRow](#jsoneachrow)                                                             | ✔     | ✔      |
+| [JSONEachRowWithProgress](#jsoneachrowwithprogress)                                     | ✗     | ✔      |
+| [JSONStringEachRow](#jsonstringeachrow)                                                 | ✔     | ✔      |
+| [JSONStringEachRowWithProgress](#jsonstringeachrowwithprogress)                         | ✗     | ✔      |
+| [JSONCompactEachRow](#jsoncompacteachrow)                                               | ✔     | ✔      |
+| [JSONCompactEachRowWithNamesAndTypes](#jsoncompacteachrowwithnamesandtypes)             | ✔     | ✔      |
+| [JSONCompactStringEachRow](#jsoncompactstringeachrow)                                   | ✔     | ✔      |
+| [JSONCompactStringEachRowWithNamesAndTypes](#jsoncompactstringeachrowwithnamesandtypes) | ✔     | ✔      |
+| [TSKV](#tskv)                                                                           | ✔     | ✔      |
+| [Pretty](#pretty)                                                                       | ✗     | ✔      |
+| [PrettyCompact](#prettycompact)                                                         | ✗     | ✔      |
+| [PrettyCompactMonoBlock](#prettycompactmonoblock)                                       | ✗     | ✔      |
+| [PrettyNoEscapes](#prettynoescapes)                                                     | ✗     | ✔      |
+| [PrettySpace](#prettyspace)                                                             | ✗     | ✔      |
+| [Protobuf](#protobuf)                                                                   | ✔     | ✔      |
+| [ProtobufSingle](#protobufsingle)                                                       | ✔     | ✔      |
+| [Avro](#data-format-avro)                                                               | ✔     | ✔      |
+| [AvroConfluent](#data-format-avro-confluent)                                            | ✔     | ✗      |
+| [Parquet](#data-format-parquet)                                                         | ✔     | ✔      |
+| [Arrow](#data-format-arrow)                                                             | ✔     | ✔      |
+| [ArrowStream](#data-format-arrow-stream)                                                | ✔     | ✔      |
+| [ORC](#data-format-orc)                                                                 | ✔     | ✗      |
+| [RowBinary](#rowbinary)                                                                 | ✔     | ✔      |
+| [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                               | ✔     | ✔      |
+| [Native](#native)                                                                       | ✔     | ✔      |
+| [Null](#null)                                                                           | ✗     | ✔      |
+| [XML](#xml)                                                                             | ✗     | ✔      |
+| [CapnProto](#capnproto)                                                                 | ✔     | ✗      |
+| [LineAsString](#lineasstring)                                                           | ✔     | ✗      |
 
 Вы можете регулировать некоторые параметры работы с форматами с помощью настроек ClickHouse. За дополнительной информацией обращайтесь к разделу [Настройки](../operations/settings/settings.md).
 
@@ -364,62 +381,41 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
         "meta":
         [
                 {
-                        "name": "SearchPhrase",
+                        "name": "'hello'",
                         "type": "String"
                 },
                 {
-                        "name": "c",
+                        "name": "multiply(42, number)",
                         "type": "UInt64"
+				},
+                {
+                        "name": "range(5)",
+                        "type": "Array(UInt8)"
                 }
         ],
 
         "data":
         [
                 {
-                        "SearchPhrase": "",
-                        "c": "8267016"
+                        "'hello'": "hello",
+                        "multiply(42, number)": "0",
+                        "range(5)": [0,1,2,3,4]
                 },
                 {
-                        "SearchPhrase": "bathroom interior design",
-                        "c": "2166"
+                        "'hello'": "hello",
+                        "multiply(42, number)": "42",
+                        "range(5)": [0,1,2,3,4]
                 },
                 {
-                        "SearchPhrase": "yandex",
-                        "c": "1655"
-                },
-                {
-                        "SearchPhrase": "spring 2014 fashion",
-                        "c": "1549"
-                },
-                {
-                        "SearchPhrase": "freeform photos",
-                        "c": "1480"
+                        "'hello'": "hello",
+                        "multiply(42, number)": "84",
+                        "range(5)": [0,1,2,3,4]
                 }
         ],
 
-        "totals":
-        {
-                "SearchPhrase": "",
-                "c": "8873898"
-        },
+        "rows": 3,
 
-        "extremes":
-        {
-                "min":
-                {
-                        "SearchPhrase": "",
-                        "c": "1480"
-                },
-                "max":
-                {
-                        "SearchPhrase": "",
-                        "c": "8267016"
-                }
-        },
-
-        "rows": 5,
-
-        "rows_before_limit_at_least": 141137
+        "rows_before_limit_at_least": 3
 }
 ```
 
@@ -438,65 +434,167 @@ JSON совместим с JavaScript. Для этого, дополнитель
 
 ClickHouse поддерживает [NULL](../sql-reference/syntax.md), который при выводе JSON будет отображен как `null`. Чтобы включить отображение в результате значений  `+nan`, `-nan`, `+inf`, `-inf`, установите параметр [output_format_json_quote_denormals](../operations/settings/settings.md#settings-output_format_json_quote_denormals) равным 1.
 
-Смотрите также формат [JSONEachRow](#jsoneachrow) .
+Смотрите также формат [JSONEachRow](#jsoneachrow).
+
+## JSONString {#jsonstring}
+
+Отличается от JSON только тем, что поля данных выводятся в строках, а не в типизированных значениях JSON.
+
+Пример:
+
+```json
+{
+        "meta":
+        [
+                {
+                        "name": "'hello'",
+                        "type": "String"
+                },
+                {
+                        "name": "multiply(42, number)",
+                        "type": "UInt64"
+                },
+                {
+                        "name": "range(5)",
+                        "type": "Array(UInt8)"
+                }
+        ],
+
+        "data":
+        [
+                {
+                        "'hello'": "hello",
+                        "multiply(42, number)": "0",
+                        "range(5)": "[0,1,2,3,4]"
+                },
+                {
+                        "'hello'": "hello",
+                        "multiply(42, number)": "42",
+                        "range(5)": "[0,1,2,3,4]"
+                },
+                {
+                        "'hello'": "hello",
+                        "multiply(42, number)": "84",
+                        "range(5)": "[0,1,2,3,4]"
+                }
+        ],
+
+        "rows": 3,
+
+        "rows_before_limit_at_least": 3
+}
+```
 
 ## JSONCompact {#jsoncompact}
+## JSONCompactString {#jsoncompactstring}
 
 Отличается от JSON только тем, что строчки данных выводятся в массивах, а не в object-ах.
 
 Пример:
 
 ``` json
+// JSONCompact
 {
         "meta":
         [
                 {
-                        "name": "SearchPhrase",
+                        "name": "'hello'",
                         "type": "String"
                 },
                 {
-                        "name": "c",
+                        "name": "multiply(42, number)",
                         "type": "UInt64"
+				},
+                {
+                        "name": "range(5)",
+                        "type": "Array(UInt8)"
                 }
         ],
 
         "data":
         [
-                ["", "8267016"],
-                ["интерьер ванной комнаты", "2166"],
-                ["яндекс", "1655"],
-                ["весна 2014 мода", "1549"],
-                ["фриформ фото", "1480"]
+                ["hello", "0", [0,1,2,3,4]],
+                ["hello", "42", [0,1,2,3,4]],
+                ["hello", "84", [0,1,2,3,4]]
         ],
 
-        "totals": ["","8873898"],
+        "rows": 3,
 
-        "extremes":
-        {
-                "min": ["","1480"],
-                "max": ["","8267016"]
-        },
-
-        "rows": 5,
-
-        "rows_before_limit_at_least": 141137
+        "rows_before_limit_at_least": 3
 }
 ```
 
-Этот формат подходит только для вывода результата выполнения запроса, но не для парсинга (приёма данных для вставки в таблицу).
-Смотрите также формат `JSONEachRow`.
+```json
+// JSONCompactString
+{
+        "meta":
+        [
+                {
+                        "name": "'hello'",
+                        "type": "String"
+                },
+                {
+                        "name": "multiply(42, number)",
+                        "type": "UInt64"
+                },
+                {
+                        "name": "range(5)",
+                        "type": "Array(UInt8)"
+                }
+        ],
 
-## JSONEachRow {#jsoneachrow}
+        "data":
+        [
+                ["hello", "0", "[0,1,2,3,4]"],
+                ["hello", "42", "[0,1,2,3,4]"],
+                ["hello", "84", "[0,1,2,3,4]"]
+        ],
 
-При использовании этого формата, ClickHouse выводит каждую запись как объект JSON (каждый объект отдельной строкой), при этом данные в целом — невалидный JSON.
+        "rows": 3,
 
-``` json
-{"SearchPhrase":"дизайн штор","count()":"1064"}
-{"SearchPhrase":"баку","count()":"1000"}
-{"SearchPhrase":"","count":"8267016"}
+        "rows_before_limit_at_least": 3
+}
 ```
 
-При вставке данных необходимо каждую запись передавать как отдельный объект JSON.
+## JSONEachRow {#jsoneachrow}
+## JSONStringEachRow {#jsonstringeachrow}
+## JSONCompactEachRow {#jsoncompacteachrow}
+## JSONCompactStringEachRow {#jsoncompactstringeachrow}
+
+При использовании этих форматов ClickHouse выводит каждую запись как значения JSON (каждое значение отдельной строкой), при этом данные в целом — невалидный JSON.
+
+``` json
+{"some_int":42,"some_str":"hello","some_tuple":[1,"a"]} // JSONEachRow
+[42,"hello",[1,"a"]] // JSONCompactEachRow
+["42","hello","(2,'a')"] // JSONCompactStringsEachRow
+```
+
+При вставке данных вы должны предоставить отдельное значение JSON для каждой строки.
+
+## JSONEachRowWithProgress {#jsoneachrowwithprogress}
+## JSONStringEachRowWithProgress {#jsonstringeachrowwithprogress}
+
+Отличается от `JSONEachRow`/`JSONStringEachRow` тем, что ClickHouse будет выдавать информацию о ходе выполнения в виде значений JSON.
+
+```json
+{"row":{"'hello'":"hello","multiply(42, number)":"0","range(5)":[0,1,2,3,4]}}
+{"row":{"'hello'":"hello","multiply(42, number)":"42","range(5)":[0,1,2,3,4]}}
+{"row":{"'hello'":"hello","multiply(42, number)":"84","range(5)":[0,1,2,3,4]}}
+{"progress":{"read_rows":"3","read_bytes":"24","written_rows":"0","written_bytes":"0","total_rows_to_read":"3"}}
+```
+
+## JSONCompactEachRowWithNamesAndTypes {#jsoncompacteachrowwithnamesandtypes}
+## JSONCompactStringEachRowWithNamesAndTypes {#jsoncompactstringeachrowwithnamesandtypes}
+
+Отличается от `JSONCompactEachRow`/`JSONCompactStringEachRow` тем, что имена и типы столбцов записываются как первые две строки.
+
+```json
+["'hello'", "multiply(42, number)", "range(5)"]
+["String", "UInt64", "Array(UInt8)"]
+["hello", "0", [0,1,2,3,4]]
+["hello", "42", [0,1,2,3,4]]
+["hello", "84", [0,1,2,3,4]]
+```
 
 ### Вставка данных {#vstavka-dannykh}
 
@@ -783,6 +881,10 @@ test: string with 'quotes' and   with some special
 ```
 
 Этот формат подходит только для вывода результата выполнения запроса, но не для парсинга (приёма данных для вставки в таблицу).
+
+## VerticalRaw {#verticalraw}
+
+Аналогичен [Vertical](#vertical), но с отключенным выходом. Этот формат подходит только для вывода результата выполнения запроса, но не для парсинга (приёма данных для вставки в таблицу).
 
 ## XML {#xml}
 
