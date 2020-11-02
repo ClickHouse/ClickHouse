@@ -114,7 +114,7 @@ namespace detail
             if (uri.getPath().empty())
                 uri.setPath("/");
 
-            Poco::Net::HTTPRequest request(method, uri_.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
+            Poco::Net::HTTPRequest request(method, uri_.toString(), Poco::Net::HTTPRequest::HTTP_1_1);
             request.setHost(uri_.getHost()); // use original, not resolved host name in header
 
             if (out_stream_callback)
