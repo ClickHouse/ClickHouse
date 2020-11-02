@@ -58,6 +58,7 @@ RUN apt-get --allow-unauthenticated update -y \
             python3-lxml \
             python3-requests \
             python3-termcolor \
+            python3-pip \
             qemu-user-static \
             sudo \
             telnet \
@@ -67,6 +68,8 @@ RUN apt-get --allow-unauthenticated update -y \
             unixodbc-dev \
             wget \
             zlib1g-dev
+
+RUN pip3 install numpy scipy pandas
 
 RUN mkdir -p /tmp/clickhouse-odbc-tmp \
    && wget -nv -O - ${odbc_driver_url} | tar --strip-components=1 -xz -C /tmp/clickhouse-odbc-tmp \
