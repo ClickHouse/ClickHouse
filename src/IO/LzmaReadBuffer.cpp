@@ -6,11 +6,7 @@ namespace ErrorCodes
 {
     extern const int LZMA_STREAM_DECODER_FAILED;
 }
-LzmaReadBuffer::LzmaReadBuffer(
-    std::unique_ptr<ReadBuffer> in_, 
-    size_t buf_size, 
-    char * existing_memory, 
-    size_t alignment)
+LzmaReadBuffer::LzmaReadBuffer(std::unique_ptr<ReadBuffer> in_, size_t buf_size, char * existing_memory, size_t alignment)
     : BufferWithOwnMemory<ReadBuffer>(buf_size, existing_memory, alignment), in(std::move(in_))
 {
     lstr = LZMA_STREAM_INIT;
@@ -27,7 +23,8 @@ LzmaReadBuffer::LzmaReadBuffer(
     // lzma does not provide api for converting error code to string unlike zlib
     if (ret != LZMA_OK)
         throw Exception(
-            std::string("lzma_stream_decoder initialization failed: error code: ") + std::to_string(ret) + "; lzma version: " + LZMA_VERSION_STRING,
+            std::string("lzma_stream_decoder initialization failed: error code: ") + std::to_string(ret)
+                + "; lzma version: " + LZMA_VERSION_STRING,
             ErrorCodes::LZMA_STREAM_DECODER_FAILED);
 }
 
@@ -39,9 +36,8 @@ LzmaReadBuffer::~LzmaReadBuffer()
 bool LzmaReadBuffer::nextImpl()
 {
     if (eof)
-    {
         return false;
-    }
+
 
     if (!lstr.avail_in)
     {
@@ -63,15 +59,23 @@ bool LzmaReadBuffer::nextImpl()
         {
             eof = true;
             return working_buffer.size() != 0;
-        } else {
-            throw Exception(ErrorCodes::LZMA_STREAM_DECODER_FAILED, 
-        "lzma decoder finished, but stream is still alive: error code: {}; lzma version: {}", ret, LZMA_VERSION_STRING); 
+        }
+        else
+        {
+            throw Exception(
+                ErrorCodes::LZMA_STREAM_DECODER_FAILED,
+                "lzma decoder finished, but stream is still alive: error code: {}; lzma version: {}",
+                ret,
+                LZMA_VERSION_STRING);
         }
     }
 
     if (ret != LZMA_OK)
-        throw Exception(ErrorCodes::LZMA_STREAM_DECODER_FAILED,
-    "lzma_stream_decoder failed: error code: error codeL {}; lzma version: {}", ret, LZMA_VERSION_STRING);
+        throw Exception(
+            ErrorCodes::LZMA_STREAM_DECODER_FAILED,
+            "lzma_stream_decoder failed: error code: error codeL {}; lzma version: {}",
+            ret,
+            LZMA_VERSION_STRING);
 
     return true;
 }
