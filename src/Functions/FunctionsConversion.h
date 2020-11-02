@@ -2164,6 +2164,27 @@ private:
 
     WrapperType createMapWrapper(const DataTypePtr & from_type_untyped, const DataTypeMap * to_type) const
     {
+        if (const auto from_tuple = checkAndGetDataType<DataTypeTuple>(from_type_untyped.get()))
+        {
+            if (from_tuple->getElements().size() != to_type->getElements().size())
+                throw Exception{"CAST AS Map from tuple with not enough elements.\n"
+                    "Left type: " + from_tuple->getName() + ", right type: " + to_type->getName(), ErrorCodes::TYPE_MISMATCH};
+
+            return []
+                (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * /*nullable_source*/, size_t /*input_rows_count*/)
+            {
+                const auto col = arguments.front().column.get();
+                const auto & column_tuple = typeid_cast<const ColumnTuple &>(*col);
+
+                Columns converted_columns(2);
+                converted_columns[0] = column_tuple.getColumns()[0];
+                converted_columns[1] = column_tuple.getColumns()[1];
+
+                return ColumnMap::create(converted_columns);
+            };
+        }
+
+
         const auto from_type = checkAndGetDataType<DataTypeMap>(from_type_untyped.get());
         if (!from_type)
             throw Exception{"CAST AS Map can only be performed between map types.\nLeft type: "
