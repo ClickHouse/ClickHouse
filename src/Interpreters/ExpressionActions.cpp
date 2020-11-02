@@ -1136,6 +1136,28 @@ void ActionsDAG::finalize(const Names & required_names, InputsPolicy policy)
     finalize(projection, policy);
 }
 
+void ActionsDAG::addAliases(const NamesWithAliases & aliases)
+{
+    for (size_t i = 0; i < aliases.size(); ++i)
+    {
+        const auto & item = aliases[i];
+        auto * child = &getNode(item.first);
+
+        if (!item.second.empty() && item.first != item.second)
+        {
+            Node node;
+            node.type = Type::ALIAS;
+            node.result_type = child->result_type;
+            node.result_name = std::move(item.second);
+            node.column = child->column;
+            node.allow_constant_folding = child->allow_constant_folding;
+            node.children.emplace_back(child);
+
+            addNode(std::move(node), true);
+        }
+    }
+}
+
 void ActionsDAG::finalize(const NamesWithAliases & aliases, InputsPolicy policy)
 {
     projection.reserve(aliases.size());

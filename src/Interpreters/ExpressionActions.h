@@ -166,6 +166,7 @@ public:
 
     void finalize(const Names & required_names, InputsPolicy policy);
     void finalize(const NamesWithAliases & aliases, InputsPolicy policy);
+    void addAliases(const NamesWithAliases & aliases);
     ExpressionActionsPtr buildExpressions() const;
 
     /// Splits actions into two parts. Returned half may be swapped with ARRAY JOIN.

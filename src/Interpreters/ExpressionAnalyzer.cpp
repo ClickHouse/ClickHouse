@@ -995,7 +995,7 @@ ActionsDAGPtr ExpressionAnalyzer::getActionsDAG(bool add_aliases, bool project_r
         if (project_result)
             actions_dag->finalize(result_columns, ActionsDAG::InputsPolicy::DROP_ALL);
         else
-            actions_dag->finalize(result_columns, ActionsDAG::InputsPolicy::DROP_UNUSED);
+            actions_dag->addAliases(result_columns);
     }
     else
         actions_dag->finalize(result_columns, ActionsDAG::InputsPolicy::KEEP);
