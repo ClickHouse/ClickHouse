@@ -142,7 +142,7 @@ Block InterpreterInsertQuery::getSampleBlock(
   */
 static bool isTrivialSelect(const ASTPtr & select)
 {
-    if (auto select_query = select->as<ASTSelectQuery>())
+    if (auto * select_query = select->as<ASTSelectQuery>())
     {
         const auto & tables = select_query->tables();
 
@@ -201,7 +201,7 @@ BlockIO InterpreterInsertQuery::execute()
         auto new_query = std::dynamic_pointer_cast<ASTInsertQuery>(query.clone());
         if (select.list_of_selects->children.size() == 1)
         {
-            if (auto select_query = select.list_of_selects->children.at(0)->as<ASTSelectQuery>())
+            if (auto * select_query = select.list_of_selects->children.at(0)->as<ASTSelectQuery>())
             {
                 JoinedTables joined_tables(Context(context), *select_query);
 
