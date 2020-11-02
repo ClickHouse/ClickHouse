@@ -325,7 +325,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_TYPE)
         readStringBinary(part_type, in);
 
-    UUID part_uuid;
+    UUID part_uuid = UUIDHelpers::Nil;
     if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID)
         readUUIDText(part_uuid, in);
 
