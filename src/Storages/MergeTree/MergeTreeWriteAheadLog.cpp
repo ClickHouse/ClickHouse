@@ -147,17 +147,6 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
                 auto part_disk = storage.reserveSpace(0)->getDisk();
                 auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk, 0);
 
-                /// Likely part written by older ClickHouse version which didn't support UUIDs.
-                if (metadata.part_uuid == UUIDHelpers::Nil)
-                {
-                    /// Defensive check. Since WAL version 1 we expect all parts to have UUID.
-                    if (version > 0)
-                        throw Exception("Unexpected empty part_uuid in entry version: " + toString(version), ErrorCodes::CORRUPTED_DATA);
-                    metadata.part_uuid = UUIDHelpers::generateV4();
-                }
-
-                /// TODO(nv) Create part should check for empty UUIDs and crash.
-
                 part = storage.createPart(
                     part_name,
                     MergeTreeDataPartType::IN_MEMORY,

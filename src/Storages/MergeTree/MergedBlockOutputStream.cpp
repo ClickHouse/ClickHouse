@@ -133,10 +133,8 @@ void MergedBlockOutputStream::finalizePartOnDisk(
     MergeTreeData::DataPart::Checksums & checksums,
     bool sync)
 {
+    if (new_part->uuid != UUIDHelpers::Nil)
     {
-        if (new_part->uuid == UUIDHelpers::Nil)
-            throw Exception("Empty IMergeTreeDataPart#uuid in finalize for part: " + new_part->name, ErrorCodes::LOGICAL_ERROR);
-
         auto out = volume->getDisk()->writeFile(part_path + IMergeTreeDataPart::UUID_FILE_NAME, 4096);
         writeUUIDText(new_part->uuid, *out);
         out->finalize();

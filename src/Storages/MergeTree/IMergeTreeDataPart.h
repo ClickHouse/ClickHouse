@@ -167,7 +167,7 @@ public:
     /// Part unique identifier.
     /// The intention is to use it for identifying cases where the same part is
     /// processed by multiple shards.
-    UUID uuid;
+    UUID uuid = UUIDHelpers::Nil;
 
     VolumePtr volume;
 

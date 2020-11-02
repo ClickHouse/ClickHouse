@@ -1821,10 +1821,8 @@ void MergeTreeDataMergerMutator::finalizeMutatedPart(
 {
     auto disk = new_data_part->volume->getDisk();
 
+    if (new_data_part->uuid != UUIDHelpers::Nil)
     {
-        if (new_data_part->uuid == UUIDHelpers::Nil)
-            throw Exception("Empty IMergeTreeDataPart#uuid in finalize for part: " + new_data_part->name, ErrorCodes::LOGICAL_ERROR);
-
         auto out = disk->writeFile(new_data_part->getFullRelativePath() + IMergeTreeDataPart::UUID_FILE_NAME, 4096);
         writeUUIDText(new_data_part->uuid, *out);
     }
