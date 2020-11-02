@@ -18,19 +18,26 @@ namespace DB
 namespace
 {
 
+/** Student T-test applies to two samples of independent random variables
+  * that have normal distributions with equal (but unknown) variances.
+  * It allows to answer the question whether means of the distributions differ.
+  *
+  * If variances are not considered equal, Welch T-test should be used instead.
+  */
 struct StudentTTestData : public TTestMoments<Float64>
 {
     static constexpr auto name = "studentTTest";
 
     std::pair<Float64, Float64> getResult() const
     {
-        Float64 degrees_of_freedom = 2.0 * (m0 - 1);
-
         Float64 mean_x = x1 / m0;
         Float64 mean_y = y1 / m0;
 
-        /// Calculate s^2
+        /// To estimate the variance we first estimate two means.
+        /// That's why the number of degrees of freedom is the total number of values of both samples minus 2.
+        Float64 degrees_of_freedom = 2.0 * (m0 - 1);
 
+        /// Calculate s^2
         /// The original formulae looks like
         /// \frac{\sum_{i = 1}^{n_x}{(x_i - \bar{x}) ^ 2} + \sum_{i = 1}^{n_y}{(y_i - \bar{y}) ^ 2}}{n_x + n_y - 2}
         /// But we made some mathematical transformations not to store original sequences.
@@ -42,7 +49,7 @@ struct StudentTTestData : public TTestMoments<Float64>
         Float64 s2 = (all_x + all_y) / degrees_of_freedom;
         Float64 std_err2 = 2.0 * s2 / m0;
 
-        /// t-statistic, squared
+        /// t-statistic
         Float64 t_stat = (mean_x - mean_y) / sqrt(std_err2);
 
         return {t_stat, getPValue(degrees_of_freedom, t_stat * t_stat)};
