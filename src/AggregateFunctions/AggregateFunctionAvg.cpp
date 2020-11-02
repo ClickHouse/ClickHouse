@@ -14,7 +14,7 @@ namespace ErrorCodes
 
 namespace
 {
-constexpr bool allowType(const DataTypePtr& type) noexcept
+bool allowType(const DataTypePtr& type) noexcept
 {
     const WhichDataType t(type);
     return t.isInt() || t.isUInt() || t.isFloat() || t.isDecimal();

@@ -15,7 +15,7 @@ namespace ErrorCodes
 
 namespace
 {
-constexpr bool allowTypes(const DataTypePtr& left, const DataTypePtr& right) noexcept
+bool allowTypes(const DataTypePtr& left, const DataTypePtr& right) noexcept
 {
     const WhichDataType l_dt(left), r_dt(right);
 
