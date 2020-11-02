@@ -181,9 +181,20 @@ ServerThread.DEFAULT_SERVER_CONFIG = \
             </shard>
         </test_unavailable_shard>
     </remote_servers>
+
     <zookeeper>
         <implementation>testkeeper</implementation>
     </zookeeper>
+
+    <query_log>
+        <database>system</database>
+        <table>query_log</table>
+    </query_log>
+
+    <query_thread_log>
+        <database>system</database>
+        <table>query_thread_log</table>
+    </query_thread_log>
 </yandex>
 """
 

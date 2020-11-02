@@ -88,8 +88,8 @@ ASTPtr SettingsClause::convertToOld() const
 
 // SELECT Statement
 
-SelectStmt::SelectStmt(bool distinct_, bool with_totals_, PtrTo<ColumnExprList> expr_list)
-    : INode(MAX_INDEX), distinct(distinct_), with_totals(with_totals_)
+SelectStmt::SelectStmt(bool distinct_, ModifierType type, bool totals, PtrTo<ColumnExprList> expr_list)
+    : INode(MAX_INDEX), modifier_type(type), distinct(distinct_), with_totals(totals)
 {
     set(COLUMNS, expr_list);
 }
@@ -156,6 +156,18 @@ ASTPtr SelectStmt::convertToOld() const
     old_select->setExpression(ASTSelectQuery::Expression::SELECT, get(COLUMNS)->convertToOld());
     old_select->distinct = distinct;
     old_select->group_by_with_totals = with_totals;
+
+    switch(modifier_type)
+    {
+        case ModifierType::NONE:
+            break;
+        case ModifierType::CUBE:
+            old_select->group_by_with_cube = true;
+            break;
+        case ModifierType::ROLLUP:
+            old_select->group_by_with_rollup = true;
+            break;
+    }
 
     if (has(WITH)) old_select->setExpression(ASTSelectQuery::Expression::WITH, get(WITH)->convertToOld());
     if (has(FROM)) old_select->setExpression(ASTSelectQuery::Expression::TABLES, get(FROM)->convertToOld());
@@ -280,7 +292,12 @@ antlrcpp::Any ParseTreeVisitor::visitSettingsClause(ClickHouseParser::SettingsCl
 
 antlrcpp::Any ParseTreeVisitor::visitSelectStmt(ClickHouseParser::SelectStmtContext *ctx)
 {
-    auto select_stmt = std::make_shared<SelectStmt>(!!ctx->DISTINCT(), !!ctx->WITH(), visit(ctx->columnExprList()));
+    SelectStmt::ModifierType type = SelectStmt::ModifierType::NONE;
+
+    if (ctx->CUBE()) type = SelectStmt::ModifierType::CUBE;
+    else if (ctx->ROLLUP() || (ctx->groupByClause() && ctx->groupByClause()->ROLLUP())) type = SelectStmt::ModifierType::ROLLUP;
+
+    auto select_stmt = std::make_shared<SelectStmt>(!!ctx->DISTINCT(), type, !!ctx->TOTALS(), visit(ctx->columnExprList()));
 
     if (ctx->withClause()) select_stmt->setWithClause(visit(ctx->withClause()));
     if (ctx->fromClause()) select_stmt->setFromClause(visit(ctx->fromClause()));

@@ -88,7 +88,14 @@ class SettingsClause : public INode
 class SelectStmt : public INode
 {
     public:
-        SelectStmt(bool distinct_, bool with_totals_, PtrTo<ColumnExprList> expr_list);
+        enum class ModifierType
+        {
+            NONE,
+            CUBE,
+            ROLLUP,
+        };
+
+        SelectStmt(bool distinct_, ModifierType type, bool totals, PtrTo<ColumnExprList> expr_list);
 
         void setWithClause(PtrTo<WithClause> clause);
         void setFromClause(PtrTo<FromClause> clause);
@@ -123,6 +130,7 @@ class SelectStmt : public INode
             MAX_INDEX,
         };
 
+        const ModifierType modifier_type;
         const bool distinct, with_totals;
 };
 

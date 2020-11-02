@@ -419,6 +419,11 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprPrecedence3(ClickHouseParser::Col
         if (ctx->NOT()) name = std::make_shared<Identifier>("notLike");
         else name = std::make_shared<Identifier>("like");
     }
+    else if (ctx->ILIKE())
+    {
+        if (ctx->NOT()) name = std::make_shared<Identifier>("notILike");
+        else name = std::make_shared<Identifier>("ilike");
+    }
     else if (ctx->IN())
     {
         if (ctx->GLOBAL())

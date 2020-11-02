@@ -47,6 +47,14 @@ PtrTo<SystemQuery> SystemQuery::createMerges(bool stop, PtrTo<TableIdentifier> i
 }
 
 // static
+PtrTo<SystemQuery> SystemQuery::createReplicatedSends(bool stop)
+{
+    PtrTo<SystemQuery> query(new SystemQuery(QueryType::REPLICATED_SENDS, {}));
+    query->stop = stop;
+    return query;
+}
+
+// static
 PtrTo<SystemQuery> SystemQuery::createSyncReplica(PtrTo<TableIdentifier> identifier)
 {
     return PtrTo<SystemQuery>(new SystemQuery(QueryType::SYNC_REPLICA, {identifier}));
@@ -97,6 +105,9 @@ ASTPtr SystemQuery::convertToOld() const
                 query->table = table_id.table_name;
             }
             break;
+        case QueryType::REPLICATED_SENDS:
+            query->type = stop ? ASTSystemQuery::Type::STOP_REPLICATED_SENDS : ASTSystemQuery::Type::START_REPLICATED_SENDS;
+            break;
         case QueryType::SYNC_REPLICA:
             query->type = ASTSystemQuery::Type::SYNC_REPLICA;
             {
@@ -124,6 +135,7 @@ antlrcpp::Any ParseTreeVisitor::visitSystemStmt(ClickHouseParser::SystemStmtCont
     if (ctx->DISTRIBUTED() && ctx->SENDS()) return SystemQuery::createDistributedSends(!!ctx->STOP(), visit(ctx->tableIdentifier()));
     if (ctx->FETCHES()) return SystemQuery::createFetches(!!ctx->STOP(), visit(ctx->tableIdentifier()));
     if (ctx->MERGES()) return SystemQuery::createMerges(!!ctx->STOP(), visit(ctx->tableIdentifier()));
+    if (ctx->REPLICATED() && ctx->SENDS()) return SystemQuery::createReplicatedSends(!!ctx->STOP());
     if (ctx->SYNC() && ctx->REPLICA()) return SystemQuery::createSyncReplica(visit(ctx->tableIdentifier()));
     __builtin_unreachable();
 }

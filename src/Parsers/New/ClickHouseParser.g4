@@ -155,7 +155,7 @@ selectStmt:
     arrayJoinClause?
     prewhereClause?
     whereClause?
-    groupByClause? (WITH TOTALS)?
+    groupByClause? (WITH (CUBE | ROLLUP))? (WITH TOTALS)?
     havingClause?
     orderByClause?
     limitByClause?
@@ -168,7 +168,7 @@ fromClause: FROM joinExpr;
 arrayJoinClause: (LEFT | INNER)? ARRAY JOIN columnExprList;
 prewhereClause: PREWHERE columnExpr;
 whereClause: WHERE columnExpr;
-groupByClause: GROUP BY columnExprList;
+groupByClause: GROUP BY (ROLLUP LPAREN columnExprList RPAREN | columnExprList);
 havingClause: HAVING columnExpr;
 orderByClause: ORDER BY orderExprList;
 limitByClause: LIMIT limitExpr BY columnExprList;
@@ -225,6 +225,7 @@ systemStmt
     : SYSTEM FLUSH DISTRIBUTED tableIdentifier
     | SYSTEM FLUSH LOGS
     | SYSTEM (START | STOP) (DISTRIBUTED SENDS | FETCHES | MERGES) tableIdentifier
+    | SYSTEM (START | STOP) REPLICATED SENDS
     | SYSTEM SYNC REPLICA tableIdentifier
     ;
 
@@ -286,7 +287,7 @@ columnExpr
                  | LT                                                                     // less
                  | GT                                                                     // greater
                  | GLOBAL? NOT? IN                                                        // in, notIn, globalIn, globalNotIn
-                 | NOT? LIKE                                                              // like, notLike
+                 | NOT? (LIKE | ILIKE)                                                    // like, notLike, ilike, notILike
                  ) columnExpr                                                             # ColumnExprPrecedence3
     | columnExpr IS NOT? NULL_SQL                                                         # ColumnExprIsNull
     | NOT columnExpr                                                                      # ColumnExprNot
@@ -352,15 +353,15 @@ interval: SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR;
 keyword
     // except NULL_SQL, INF, NAN_SQL
     : AFTER | ALIAS | ALL | ALTER | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | ATTACH | BETWEEN | BOTH | BY | CASE | CAST
-    | CHECK | CLEAR | CLUSTER | CODEC | COLLATE | COLUMN | COMMENT | CONSTRAINT | CREATE | CROSS | DATABASE | DATABASES | DATE | DAY
+    | CHECK | CLEAR | CLUSTER | CODEC | COLLATE | COLUMN | COMMENT | CONSTRAINT | CREATE | CROSS | CUBE | DATABASE | DATABASES | DATE | DAY
     | DEDUPLICATE | DEFAULT | DELAY | DELETE | DESCRIBE | DESC | DESCENDING | DETACH | DISK | DISTINCT | DISTRIBUTED | DROP | ELSE | END
     | ENGINE | EXISTS | EXPLAIN | EXTRACT | FETCHES | FINAL | FIRST | FLUSH | FOR | FORMAT | FROM | FULL | FUNCTION | GLOBAL | GRANULARITY
-    | GROUP | HAVING | HOUR | ID | IF | IN | INDEX | INNER | INSERT | INTERVAL | INTO | IS | JOIN | JSON_FALSE | JSON_TRUE | KEY | LAST
-    | LEADING | LEFT | LIKE | LIMIT | LOCAL | LOGS | MATERIALIZED | MERGES | MINUTE | MODIFY | MONTH | NO | NOT | NULLS | OFFSET | ON
-    | OPTIMIZE | OR | ORDER | OUTER | OUTFILE | PARTITION | POPULATE | PREWHERE | PRIMARY | QUARTER | REMOVE | RENAME | REPLACE | REPLICA
-    | RIGHT | SAMPLE | SECOND | SELECT | SEMI | SENDS | SET | SETTINGS | SHOW | START | STOP | SUBSTRING | SYNC | SYNTAX | SYSTEM | TABLE
-    | TABLES | TEMPORARY | THEN | TIES | TIMESTAMP | TOTALS | TRAILING | TRIM | TRUNCATE | TO | TTL | TYPE | UNION | USE | USING | VALUES
-    | VIEW | VOLUME | WEEK | WHEN | WHERE | WITH | YEAR
+    | GROUP | HAVING | HOUR | ID | IF | ILIKE | IN | INDEX | INNER | INSERT | INTERVAL | INTO | IS | JOIN | JSON_FALSE | JSON_TRUE | KEY
+    | LAST | LEADING | LEFT | LIKE | LIMIT | LOCAL | LOGS | MATERIALIZED | MERGES | MINUTE | MODIFY | MONTH | NO | NOT | NULLS | OFFSET
+    | ON | OPTIMIZE | OR | ORDER | OUTER | OUTFILE | PARTITION | POPULATE | PREWHERE | PRIMARY | QUARTER | REMOVE | RENAME | REPLACE
+    | REPLICA | REPLICATED | RIGHT | ROLLUP | SAMPLE | SECOND | SELECT | SEMI | SENDS | SET | SETTINGS | SHOW | START | STOP | SUBSTRING
+    | SYNC | SYNTAX | SYSTEM | TABLE | TABLES | TEMPORARY | THEN | TIES | TIMESTAMP | TOTALS | TRAILING | TRIM | TRUNCATE | TO | TTL | TYPE
+    | UNION | USE | USING | VALUES | VIEW | VOLUME | WEEK | WHEN | WHERE | WITH | YEAR
     ;
 keywordForAlias
     : ID | KEY

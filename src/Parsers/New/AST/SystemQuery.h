@@ -14,6 +14,7 @@ class SystemQuery : public Query
         static PtrTo<SystemQuery> createFlushDistributed(PtrTo<TableIdentifier> identifier);
         static PtrTo<SystemQuery> createFlushLogs();
         static PtrTo<SystemQuery> createMerges(bool stop, PtrTo<TableIdentifier> identifier);
+        static PtrTo<SystemQuery> createReplicatedSends(bool stop);
         static PtrTo<SystemQuery> createSyncReplica(PtrTo<TableIdentifier> identifier);
 
         ASTPtr convertToOld() const override;
@@ -30,6 +31,7 @@ class SystemQuery : public Query
             FLUSH_DISTRIBUTED,
             FLUSH_LOGS,
             MERGES,
+            REPLICATED_SENDS,
             SYNC_REPLICA,
         };
 
