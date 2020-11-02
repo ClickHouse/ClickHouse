@@ -2,7 +2,6 @@
 
 #include <Functions/IFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
