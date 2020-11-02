@@ -342,6 +342,11 @@ std::string ExpressionActions::dumpActions() const
     for (const auto & output_column : output_columns)
         ss << output_column.name << " " << output_column.type->getName() << "\n";
 
+    ss << "\nproject input: " << project_input << "\noutput positions:";
+    for (auto pos : result_positions)
+        ss << " " << pos;
+    ss << "\n";
+
     return ss.str();
 }
 
@@ -1122,14 +1127,20 @@ std::string ActionsDAG::dumpNames() const
 void ActionsDAG::finalize(const Names & required_names, InputsPolicy policy)
 {
     projection.reserve(required_names.size());
+    NameSet added;
 
     for (const auto & name : required_names)
     {
+        /// Do not repeat columns in result.
+        if (added.count(name))
+            continue;
+
         auto it = index.find(name);
         if (it == index.end())
             throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
                             "Unknown column: {}, there are only columns {}", name, dumpNames());
 
+        added.insert(name);
         projection.push_back(it->second);
     }
 
