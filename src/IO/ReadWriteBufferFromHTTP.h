@@ -187,7 +187,7 @@ namespace detail
 
                 session->updateSession(uri_redirect);
 
-                istr = call(uri_redirect,response);
+                istr = call(uri_redirect, response);
             }
 
             try
@@ -241,7 +241,8 @@ class UpdatableSession : public UpdatableSessionBase<HTTPSessionPtr>
     using Parent = UpdatableSessionBase<HTTPSessionPtr>;
 
 public:
-    explicit UpdatableSession(const Poco::URI uri,
+    explicit UpdatableSession(
+        const Poco::URI uri,
         const ConnectionTimeouts & timeouts_,
         const UInt64 max_redirects_)
         : Parent(uri, timeouts_, max_redirects_)
@@ -260,7 +261,8 @@ class ReadWriteBufferFromHTTP : public detail::ReadWriteBufferFromHTTPBase<std::
     using Parent = detail::ReadWriteBufferFromHTTPBase<std::shared_ptr<UpdatableSession>>;
 
 public:
-    explicit ReadWriteBufferFromHTTP(Poco::URI uri_,
+    explicit ReadWriteBufferFromHTTP(
+        Poco::URI uri_,
         const std::string & method_,
         OutStreamCallback out_stream_callback_,
         const ConnectionTimeouts & timeouts,
@@ -269,7 +271,8 @@ public:
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         const HTTPHeaderEntries & http_header_entries_ = {},
         const RemoteHostFilter & remote_host_filter_ = {})
-        : Parent(std::make_shared<UpdatableSession>(uri_, timeouts, max_redirects), uri_, method_, out_stream_callback_, credentials_, buffer_size_, http_header_entries_, remote_host_filter_)
+        : Parent(std::make_shared<UpdatableSession>(uri_, timeouts, max_redirects),
+            uri_, method_, out_stream_callback_, credentials_, buffer_size_, http_header_entries_, remote_host_filter_)
     {
     }
 };
