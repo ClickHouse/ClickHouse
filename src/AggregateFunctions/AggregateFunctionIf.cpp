@@ -59,7 +59,7 @@ public:
 
     String getName() const override
     {
-        return Base::getName() + "If";
+        return Base::getName();
     }
 
     AggregateFunctionIfNullUnary(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
@@ -100,7 +100,7 @@ public:
 
     String getName() const override
     {
-        return Base::getName() + "If";
+        return Base::getName();
     }
 
     AggregateFunctionIfNullVariadic(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
