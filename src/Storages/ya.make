@@ -7,7 +7,6 @@ PEERDIR(
     contrib/libs/poco/MongoDB
 )
 
-CFLAGS(-g0)
 
 SRCS(
     AlterCommands.cpp
@@ -91,6 +90,7 @@ SRCS(
     MergeTree/MergeTreeWriteAheadLog.cpp
     MergeTree/MergeType.cpp
     MergeTree/registerStorageMergeTree.cpp
+    MergeTree/ReplicatedFetchList.cpp
     MergeTree/ReplicatedMergeTreeAddress.cpp
     MergeTree/ReplicatedMergeTreeAltersSequence.cpp
     MergeTree/ReplicatedMergeTreeBlockOutputStream.cpp
@@ -177,6 +177,7 @@ SRCS(
     System/StorageSystemQuotasUsage.cpp
     System/StorageSystemQuotaUsage.cpp
     System/StorageSystemReplicas.cpp
+    System/StorageSystemReplicatedFetches.cpp
     System/StorageSystemReplicationQueue.cpp
     System/StorageSystemRoleGrants.cpp
     System/StorageSystemRoles.cpp
