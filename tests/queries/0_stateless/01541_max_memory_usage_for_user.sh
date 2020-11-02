@@ -35,7 +35,8 @@ function execute_tcp_one_session()
 # one users query in background (to avoid reseting max_memory_usage_for_user)
 # --max_block_size=1 to make it killable (check the state each 1 second, 1 row)
 # (the test takes ~40 seconds in debug build, so 60 seconds is ok)
-${CLICKHOUSE_CLIENT} --max_block_size=1 --format Null -q 'SELECT sleepEachRow(1) FROM numbers(600)' &
+query_id=$$-$RANDOM-$SECONDS
+${CLICKHOUSE_CLIENT} --max_block_size=1 --format Null --query_id $query_id -q 'SELECT sleepEachRow(1) FROM numbers(600)' &
 # trap
 sleep_query_pid=$!
 function cleanup()
@@ -43,6 +44,10 @@ function cleanup()
     echo 'KILL sleep'
     # if the timeout will not be enough, it will trigger "No such process" error/message
     kill $sleep_query_pid
+    # waiting for a query to finish
+    while ${CLICKHOUSE_CLIENT} -q "SELECT query_id FROM system.processes WHERE query_id = '$query_id'" | grep -xq "$query_id"; do
+        sleep 0.1
+    done
 }
 trap cleanup EXIT
 

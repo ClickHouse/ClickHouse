@@ -1,3 +1,8 @@
+---
+toc_priority: 43
+toc_title: "\u0423\u0441\u043b\u043e\u0432\u043d\u044b\u0435\u0020\u0444\u0443\u043d\u043a\u0446\u0438\u0438"
+---
+
 # Условные функции {#uslovnye-funktsii}
 
 ## if {#if}

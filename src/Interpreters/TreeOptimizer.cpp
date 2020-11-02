@@ -644,8 +644,13 @@ void TreeOptimizer::apply(ASTPtr & query, Aliases & aliases, const NameSet & sou
         optimizeInjectiveFunctionsInsideUniq(query, context);
 
     /// Eliminate min/max/any aggregators of functions of GROUP BY keys
-    if (settings.optimize_aggregators_of_group_by_keys)
+    if (settings.optimize_aggregators_of_group_by_keys
+        && !select_query->group_by_with_totals
+        && !select_query->group_by_with_rollup
+        && !select_query->group_by_with_cube)
+    {
         optimizeAggregateFunctionsOfGroupByKeys(select_query, query);
+    }
 
     /// Remove duplicate items from ORDER BY.
     optimizeDuplicatesInOrderBy(select_query);
