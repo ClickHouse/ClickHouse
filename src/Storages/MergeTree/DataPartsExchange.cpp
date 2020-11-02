@@ -190,9 +190,6 @@ void Service::sendPartFromDisk(const MergeTreeData::DataPartPtr & part, WriteBuf
         if (client_protocol_version < REPLICATION_PROTOCOL_VERSION_WITH_PARTS_DEFAULT_COMPRESSION && file_name == IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME)
             continue;
 
-        if (client_protocol_version < REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID && file_name == IMergeTreeDataPart::UUID_FILE_NAME)
-            continue;
-
         checksums.files[file_name] = {};
     }
 
@@ -340,7 +337,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
 
 
     return part_type == "InMemory" ? downloadPartToMemory(part_name, part_uuid, metadata_snapshot, std::move(reservation), in)
-                                   : downloadPartToDisk(part_name, part_uuid, replica_path, to_detached, tmp_prefix_, sync, std::move(reservation), in);
+                                   : downloadPartToDisk(part_name, replica_path, to_detached, tmp_prefix_, sync, std::move(reservation), in);
 }
 
 MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
@@ -378,7 +375,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
 
 MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     const String & part_name,
-    const UUID & part_uuid,
     const String & replica_path,
     bool to_detached,
     const String & tmp_prefix_,
@@ -445,8 +441,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
 
         if (file_name != "checksums.txt" &&
             file_name != "columns.txt" &&
-            file_name != IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME &&
-            file_name != IMergeTreeDataPart::UUID_FILE_NAME)
+            file_name != IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME)
             checksums.addFile(file_name, file_size, expected_hash);
 
         if (sync)
@@ -457,7 +452,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
 
     auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk, 0);
     MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(part_name, volume, part_relative_path);
-    new_data_part->uuid = part_uuid;
     new_data_part->is_temp = true;
     new_data_part->modification_time = time(nullptr);
     new_data_part->loadColumnsChecksumsIndexes(true, false);

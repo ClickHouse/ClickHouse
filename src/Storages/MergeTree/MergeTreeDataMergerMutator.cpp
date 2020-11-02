@@ -1824,7 +1824,10 @@ void MergeTreeDataMergerMutator::finalizeMutatedPart(
     if (new_data_part->uuid != UUIDHelpers::Nil)
     {
         auto out = disk->writeFile(new_data_part->getFullRelativePath() + IMergeTreeDataPart::UUID_FILE_NAME, 4096);
-        writeUUIDText(new_data_part->uuid, *out);
+        HashingWriteBuffer out_hashing(*out);
+        writeUUIDText(new_data_part->uuid, out_hashing);
+        new_data_part->checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_size = out_hashing.count();
+        new_data_part->checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_hash = out_hashing.getHash();
     }
 
     if (need_remove_expired_values)

@@ -487,10 +487,6 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
     if (volume->getDisk()->exists(default_codec_path))
         result.emplace(DEFAULT_COMPRESSION_CODEC_FILE_NAME);
 
-    String uuid_path = getFullRelativePath() + UUID_FILE_NAME;
-    if (volume->getDisk()->exists(uuid_path))
-        result.emplace(UUID_FILE_NAME);
-
     return result;
 }
 
@@ -913,7 +909,6 @@ void IMergeTreeDataPart::remove() const
             for (const auto & file : {"checksums.txt", "columns.txt"})
                 volume->getDisk()->remove(to + "/" + file);
 
-            volume->getDisk()->removeIfExists(to + "/" + UUID_FILE_NAME);
             volume->getDisk()->removeIfExists(to + "/" + DEFAULT_COMPRESSION_CODEC_FILE_NAME);
             volume->getDisk()->removeIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME);
 

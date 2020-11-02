@@ -24,7 +24,7 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
     /// Conditionally bump format_version only when uuid has been assigned.
     /// If some other feature requires bumping format_version to >= 5 then this code becomes no-op.
     if (new_part_uuid != UUIDHelpers::Nil)
-        format_version = std::min(format_version, static_cast<UInt8>(5));
+        format_version = std::max(format_version, static_cast<UInt8>(5));
 
     out << "format version: " << format_version << "\n"
         << "create_time: " << LocalDateTime(create_time ? create_time : time(nullptr)) << "\n"
