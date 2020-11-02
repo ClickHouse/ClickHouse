@@ -36,7 +36,7 @@ struct WelchTTestData : public TTestMoments<Float64>
         Float64 sx2 = (x2 + m0 * mean_x * mean_x - 2 * mean_x * x1) / (m0 - 1);
         Float64 sy2 = (y2 + m0 * mean_y * mean_y - 2 * mean_y * y1) / (m0 - 1);
 
-        /// t-statistic, squared
+        /// t-statistic
         Float64 t_stat = (mean_x - mean_y) / sqrt(sx2 / m0 + sy2 / m0);
 
         /// degrees of freedom
