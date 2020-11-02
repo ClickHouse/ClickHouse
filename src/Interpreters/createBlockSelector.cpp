@@ -30,7 +30,7 @@ IColumn::Selector createBlockSelector(
       * This is not suitable for our task. So we will process signed numbers as unsigned.
       * It is not near like remainder of division, but is suitable for our task.
       */
-    using UnsignedT = std::make_unsigned_t<T>;
+    using UnsignedT = make_unsigned_t<T>;
 
     /// const columns contain only one value, therefore we do not need to read it at every iteration
     if (isColumnConst(column))

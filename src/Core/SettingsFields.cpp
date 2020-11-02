@@ -77,9 +77,9 @@ void SettingFieldNumber<T>::parseFromString(const String & str)
 template <typename T>
 void SettingFieldNumber<T>::writeBinary(WriteBuffer & out) const
 {
-    if constexpr (is_integral_v<T> && is_unsigned_v<T>)
+    if constexpr (std::is_integral_v<T> && is_unsigned_v<T>)
         writeVarUInt(static_cast<UInt64>(value), out);
-    else if constexpr (is_integral_v<T> && is_signed_v<T>)
+    else if constexpr (std::is_integral_v<T> && is_signed_v<T>)
         writeVarInt(static_cast<Int64>(value), out);
     else
     {
@@ -91,13 +91,13 @@ void SettingFieldNumber<T>::writeBinary(WriteBuffer & out) const
 template <typename T>
 void SettingFieldNumber<T>::readBinary(ReadBuffer & in)
 {
-    if constexpr (is_integral_v<T> && is_unsigned_v<T>)
+    if constexpr (std::is_integral_v<T> && is_unsigned_v<T>)
     {
         UInt64 x;
         readVarUInt(x, in);
         *this = static_cast<T>(x);
     }
-    else if constexpr (is_integral_v<T> && is_signed_v<T>)
+    else if constexpr (std::is_integral_v<T> && is_signed_v<T>)
     {
         Int64 x;
         readVarInt(x, in);

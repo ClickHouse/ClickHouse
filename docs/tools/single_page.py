@@ -15,7 +15,7 @@ import website
 
 def recursive_values(item):
     if isinstance(item, dict):
-        for _, value in item.items():
+        for _, value in list(item.items()):
             yield from recursive_values(value)
     elif isinstance(item, list):
         for value in item:

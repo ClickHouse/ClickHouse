@@ -1,55 +1,59 @@
+/** List of tests which should be skipped depending on clickhouse build options.
+  * This file in json format, but javascript-style comments are allowed.
+  */
 {
     "thread-sanitizer": [
-        "00281",
         "00877",
         "00985",
-        "avx2",
         "query_profiler",
         "memory_profiler",
+        /// 01083 and 00505 and 00505 are critical and temproray disabled
         "01083_expressions_in_engine_arguments",
         "00505_shard_secure",
         "00505_secure",
         "01103_check_cpu_instructions_at_startup",
-        "01098_temporary_and_external_tables",
+        "01098_temporary_and_external_tables", /// race in openssl (should be enabled as fast as possible)
         "00152_insert_different_granularity",
         "00151_replace_partition_with_different_granularity",
-        "01193_metadata_loading"
+        "00157_cache_dictionary",
+        "01193_metadata_loading",
+        "01473_event_time_microseconds",
+        "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
+        "01474_executable_dictionary" /// informational stderr from sanitizer at start
     ],
     "address-sanitizer": [
-        "00281",
         "00877",
-        "avx2",
         "query_profiler",
         "memory_profiler",
         "odbc_roundtrip",
         "01103_check_cpu_instructions_at_startup",
+        "01473_event_time_microseconds",
+        "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
         "01193_metadata_loading"
     ],
     "ub-sanitizer": [
-        "00281",
         "capnproto",
-        "avx2",
         "query_profiler",
         "memory_profiler",
         "01103_check_cpu_instructions_at_startup",
         "00900_orc_load",
+        "01473_event_time_microseconds",
+        "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
         "01193_metadata_loading"
     ],
     "memory-sanitizer": [
-        "00281",
         "capnproto",
-        "avx2",
         "query_profiler",
         "memory_profiler",
         "01103_check_cpu_instructions_at_startup",
-        "01086_odbc_roundtrip",
-        "00877_memory_limit_for_new_delete",
-        "01114_mysql_database_engine_segfault",
+        "01086_odbc_roundtrip", /// can't pass because odbc libraries are not instrumented
+        "00877_memory_limit_for_new_delete", /// memory limits don't work correctly under msan because it replaces malloc/free
+        "01114_mysql_database_engine_segfault", /// it fails in _nss_files_parse_servent while using NSS from GLibc to authenticate (need to get rid of it)
+        "01473_event_time_microseconds",
+        "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
         "01193_metadata_loading"
     ],
     "debug-build": [
-        "00281",
-        "avx2",
         "query_profiler",
         "memory_profiler",
         "00899_long_attach",
@@ -60,16 +64,16 @@
         "01103_check_cpu_instructions_at_startup",
         "01037_polygon_dicts_",
         "hyperscan",
-        "01193_metadata_loading"
+        "01193_metadata_loading",
+        "01473_event_time_microseconds",
+        "01396_inactive_replica_cleanup_nodes"
     ],
     "unbundled-build": [
         "00429",
-        "00428",
         "00877",
         "pocopatch",
         "parquet",
         "xxhash",
-        "avx2",
         "_h3",
         "query_profiler",
         "memory_profiler",
@@ -88,57 +92,19 @@
         "01300_client_save_history_when_terminated",
         "orc_output",
         "01370_client_autocomplete_word_break_characters",
-        "01193_metadata_loading"
+        "01193_metadata_loading",
+        "01455_time_zones"
     ],
     "release-build": [
-        "avx2"
     ],
-    "database-atomic": [
-        "00065_loyalty_with_storage_join",
-        "avx",
-        "00738_lock_for_inner_table",
-        "00699_materialized_view_mutations",
+    "database-ordinary": [
+        "00604_show_create_database",
         "00609_mv_index_in_in",
         "00510_materizlized_view_and_deduplication_zookeeper",
-        "00604_show_create_database",
-        "00080_show_tables_and_system_tables",
-        "01272_suspicious_codecs",
-        "01249_bad_arguments_for_bloom_filter",
-        "00423_storage_log_single_thread",
-        "00311_array_primary_key",
-        "00226_zookeeper_deduplication_and_unexpected_parts",
-        "00180_attach_materialized_view",
-        "00116_storage_set",
-        "00816_long_concurrent_alter_column",
-        "00992_system_parts_race_condition_zookeeper",
-        "01320_create_sync_race_condition",
-        "01305_replica_create_drop_zookeeper",
-        "01130_in_memory_parts_partitons",
-        "01225_show_create_table_from_dictionary",
-        "01224_no_superfluous_dict_reload"
+        "00738_lock_for_inner_table"
     ],
     "polymorphic-parts": [
-        "avx",
-        "01045_order_by_pk_special_storages",
-        "01042_check_query_and_last_granule_size",
-        "00961_checksums_in_system_parts_columns_table",
-        "00933_test_fix_extra_seek_on_compressed_cache",
-        "00926_adaptive_index_granularity_collapsing_merge_tree",
-        "00926_adaptive_index_granularity_merge_tree",
-        "00926_adaptive_index_granularity_replacing_merge_tree",
-        "00926_adaptive_index_granularity_versioned_collapsing_merge_tree",
-        "00804_test_delta_codec_compression",
-        "00731_long_merge_tree_select_opened_files",
-        "00653_verification_monotonic_data_load",
-        "00484_preferred_max_column_in_block_size_bytes",
-        "00446_clear_column_in_partition_zookeeper",
-        "00443_preferred_block_size_bytes",
-        "00160_merge_and_index_in_in",
-        "01055_compact_parts",
-        "01039_mergetree_exec_time",
-        "00933_ttl_simple",
-        "00753_system_columns_and_system_tables",
-        "01343_min_bytes_to_use_mmap_io",
-        "01344_min_bytes_to_use_mmap_io_index"
+        "01508_partition_pruning", /// bug, shoud be fixed
+        "01482_move_to_prewhere_and_cast" /// bug, shoud be fixed
     ]
 }

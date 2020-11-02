@@ -4,7 +4,7 @@
 
 #include <Core/Row.h>
 #include <Core/Block.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
@@ -145,7 +145,7 @@ public:
 
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
-    String getColumnNameWithMinumumCompressedSize(const StorageMetadataPtr & metadata_snapshot) const;
+    String getColumnNameWithMinimumCompressedSize(const StorageMetadataPtr & metadata_snapshot) const;
 
     bool contains(const IMergeTreeDataPart & other) const { return info.contains(other.info); }
 
@@ -288,6 +288,8 @@ public:
     /// Columns with values, that all have been zeroed by expired ttl
     NameSet expired_columns;
 
+    CompressionCodecPtr default_codec;
+
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
@@ -314,15 +316,19 @@ public:
     /// Makes clone of a part in detached/ directory via hard links
     virtual void makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const;
 
-    /// Makes full clone of part in detached/ on another disk
-    void makeCloneOnDiskDetached(const ReservationPtr & reservation) const;
+    /// Makes full clone of part in specified subdirectory (relative to storage data directory, e.g. "detached") on another disk
+    void makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const;
 
     /// Checks that .bin and .mrk files exist.
     ///
     /// NOTE: Doesn't take column renames into account, if some column renames
     /// take place, you must take original name of column for this part from
     /// storage and pass it to this method.
-    virtual bool hasColumnFiles(const String & /* column */, const IDataType & /* type */) const{ return false; }
+    virtual bool hasColumnFiles(const String & /* column */, const IDataType & /* type */) const { return false; }
+
+    /// Returns true if this part shall participate in merges according to
+    /// settings of given storage policy.
+    bool shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const;
 
     /// Calculate the total size of the entire directory with all the files
     static UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk_, const String & from);
@@ -330,7 +336,25 @@ public:
 
     String getRelativePathForPrefix(const String & prefix) const;
 
+
+    /// Return set of metadat file names without checksums. For example,
+    /// columns.txt or checksums.txt itself.
+    NameSet getFileNamesWithoutChecksums() const;
+
+    /// File with compression codec name which was used to compress part columns
+    /// by default. Some columns may have their own compression codecs, but
+    /// default will be stored in this file.
+    static inline constexpr auto DEFAULT_COMPRESSION_CODEC_FILE_NAME = "default_compression_codec.txt";
+
+    static inline constexpr auto DELETE_ON_DESTROY_MARKER_FILE_NAME = "delete-on-destroy.txt";
+
+    /// Checks that all TTLs (table min/max, column ttls, so on) for part
+    /// calculated. Part without calculated TTL may exist if TTL was added after
+    /// part creation (using alter query with materialize_ttl setting).
+    bool checkAllTTLCalculated(const StorageMetadataPtr & metadata_snapshot) const;
+
 protected:
+
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
     ColumnSize total_columns_size;
 
@@ -380,6 +404,15 @@ private:
     void loadTTLInfos();
 
     void loadPartitionAndMinMaxIndex();
+
+    /// Load default compression codec from file default_compression_codec.txt
+    /// if it not exists tries to deduce codec from compressed column without
+    /// any specifial compression.
+    void loadDefaultCompressionCodec();
+
+    /// Found column without specific compression and return codec
+    /// for this column with default parameters.
+    CompressionCodecPtr detectDefaultCompressionCodec() const;
 };
 
 using MergeTreeDataPartState = IMergeTreeDataPart::State;

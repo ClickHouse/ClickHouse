@@ -168,7 +168,7 @@ void registerOutputFormatProcessorNative(FormatFactory & factory)
     factory.registerOutputFormatProcessor("Native", [](
         WriteBuffer & buf,
         const Block & sample,
-        FormatFactory::WriteCallback,
+        const RowOutputFormatParams &,
         const FormatSettings &)
     {
         return std::make_shared<NativeOutputFormatFromNativeBlockOutputStream>(sample, buf);

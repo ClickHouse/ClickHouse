@@ -11,7 +11,9 @@ logging.getLogger().addHandler(logging.StreamHandler())
 def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        cluster.add_instance("node", config_dir="configs", with_minio=True)
+        cluster.add_instance("node", main_configs=["configs/config.d/log_conf.xml", "configs/config.d/storage_conf.xml",
+                                                   "configs/config.d/ssl_conf.xml", "configs/config.d/query_log.xml"],
+                             user_configs=["configs/config.d/users.xml"], with_minio=True)
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
@@ -38,7 +40,8 @@ def get_query_stat(instance, hint):
     return result
 
 
-def test_write_is_cached(cluster):
+@pytest.mark.parametrize("min_rows_for_wide_part,read_requests", [(0, 2), (8192, 1)])
+def test_write_is_cached(cluster, min_rows_for_wide_part, read_requests):
     node = cluster.instances["node"]
 
     node.query(
@@ -48,8 +51,8 @@ def test_write_is_cached(cluster):
             data String
         ) ENGINE=MergeTree()
         ORDER BY id
-        SETTINGS storage_policy='s3'
-        """
+        SETTINGS storage_policy='s3', min_rows_for_wide_part={}
+        """.format(min_rows_for_wide_part)
     )
 
     node.query("SYSTEM FLUSH LOGS")
@@ -61,12 +64,12 @@ def test_write_is_cached(cluster):
     assert node.query(select_query) == "(0,'data'),(1,'data')"
 
     stat = get_query_stat(node, select_query)
-    assert stat["S3ReadRequestsCount"] == 2  # Only .bin files should be accessed from S3.
+    assert stat["S3ReadRequestsCount"] == read_requests  # Only .bin files should be accessed from S3.
 
     node.query("DROP TABLE IF EXISTS s3_test NO DELAY")
 
-
-def test_read_after_cache_is_wiped(cluster):
+@pytest.mark.parametrize("min_rows_for_wide_part,all_files,bin_files", [(0, 4, 2), (8192, 2, 1)])
+def test_read_after_cache_is_wiped(cluster, min_rows_for_wide_part, all_files, bin_files):
     node = cluster.instances["node"]
 
     node.query(
@@ -76,8 +79,8 @@ def test_read_after_cache_is_wiped(cluster):
             data String
         ) ENGINE=MergeTree()
         ORDER BY id
-        SETTINGS storage_policy='s3'
-        """
+        SETTINGS storage_policy='s3', min_rows_for_wide_part={}
+        """.format(min_rows_for_wide_part)
     )
 
     node.query("SYSTEM FLUSH LOGS")
@@ -91,12 +94,12 @@ def test_read_after_cache_is_wiped(cluster):
     select_query = "SELECT * FROM s3_test"
     node.query(select_query)
     stat = get_query_stat(node, select_query)
-    assert stat["S3ReadRequestsCount"] == 4  # .mrk and .bin files should be accessed from S3.
+    assert stat["S3ReadRequestsCount"] == all_files  # .mrk and .bin files should be accessed from S3.
 
     # After cache is populated again, only .bin files should be accessed from S3.
     select_query = "SELECT * FROM s3_test order by id FORMAT Values"
     assert node.query(select_query) == "(0,'data'),(1,'data')"
     stat = get_query_stat(node, select_query)
-    assert stat["S3ReadRequestsCount"] == 2
+    assert stat["S3ReadRequestsCount"] == bin_files
 
     node.query("DROP TABLE IF EXISTS s3_test NO DELAY")

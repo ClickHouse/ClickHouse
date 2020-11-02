@@ -45,7 +45,7 @@ ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS table_for_mutations"
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS replicated_table_for_mutations"
 
-${CLICKHOUSE_CLIENT} --query="CREATE TABLE replicated_table_for_mutations(k UInt32, v1 UInt64) ENGINE ReplicatedMergeTree('/clickhouse/tables/replicated_table_for_mutations', '1') ORDER BY k PARTITION BY modulo(k, 2)"
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE replicated_table_for_mutations(k UInt32, v1 UInt64) ENGINE ReplicatedMergeTree('/clickhouse/tables/test_01045/replicated_table_for_mutations', '1') ORDER BY k PARTITION BY modulo(k, 2)"
 
 ${CLICKHOUSE_CLIENT} --query="SYSTEM STOP MERGES"
 

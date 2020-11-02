@@ -35,7 +35,7 @@ RUN apt-get update \
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-RUN pip3 install urllib3 testflows==1.6.39 docker-compose docker dicttoxml kazoo tzlocal
+RUN pip3 install urllib3 testflows==1.6.59 docker-compose docker dicttoxml kazoo tzlocal
 
 ENV DOCKER_CHANNEL stable
 ENV DOCKER_VERSION 17.09.1-ce
@@ -44,7 +44,7 @@ RUN set -eux; \
   \
 # this "case" statement is generated via "update.sh"
   \
-  if ! wget -O docker.tgz "https://download.docker.com/linux/static/${DOCKER_CHANNEL}/x86_64/docker-${DOCKER_VERSION}.tgz"; then \
+  if ! wget -nv -O docker.tgz "https://download.docker.com/linux/static/${DOCKER_CHANNEL}/x86_64/docker-${DOCKER_VERSION}.tgz"; then \
     echo >&2 "error: failed to download 'docker-${DOCKER_VERSION}' from '${DOCKER_CHANNEL}' for '${x86_64}'"; \
     exit 1; \
   fi; \
@@ -72,5 +72,5 @@ RUN set -x \
 VOLUME /var/lib/docker
 EXPOSE 2375
 ENTRYPOINT ["dockerd-entrypoint.sh"]
-CMD ["sh", "-c", "python3 regression.py --no-color --local --clickhouse-binary-path ${CLICKHOUSE_TESTS_SERVER_BIN_PATH} --log test.log ${TESTFLOWS_OPTS}; cat test.log | tfs report results --format json > results.json"]
+CMD ["sh", "-c", "python3 regression.py --no-color -o classic --local --clickhouse-binary-path ${CLICKHOUSE_TESTS_SERVER_BIN_PATH} --log test.log ${TESTFLOWS_OPTS}; cat test.log | tfs report results --format json > results.json"]
 

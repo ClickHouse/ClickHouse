@@ -2,7 +2,7 @@
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Core/MySQL/PacketsProtocolText.h>
+#include <Core/MySQL/PacketsGeneric.h>
 
 namespace DB
 {
@@ -26,7 +26,7 @@ size_t RegisterSlave::getPayloadSize() const
 
 void RegisterSlave::writePayloadImpl(WriteBuffer & buffer) const
 {
-    buffer.write(ProtocolText::COM_REGISTER_SLAVE);
+    buffer.write(Generic::COM_REGISTER_SLAVE);
     buffer.write(reinterpret_cast<const char *>(&server_id), 4);
     writeLengthEncodedString(slaves_hostname, buffer);
     writeLengthEncodedString(slaves_users, buffer);
@@ -36,24 +36,30 @@ void RegisterSlave::writePayloadImpl(WriteBuffer & buffer) const
     buffer.write(reinterpret_cast<const char *>(&master_id), 4);
 }
 
-BinlogDump::BinlogDump(UInt32 binlog_pos_, String binlog_file_name_, UInt32 server_id_)
-    : binlog_pos(binlog_pos_), flags(0x00), server_id(server_id_), binlog_file_name(std::move(binlog_file_name_))
+BinlogDumpGTID::BinlogDumpGTID(UInt32 server_id_, String gtid_datas_)
+    : flags(0x04), server_id(server_id_), gtid_datas(std::move(gtid_datas_))
 {
 }
 
-size_t BinlogDump::getPayloadSize() const
-{
-    return 1 + 4 + 2 + 4 + binlog_file_name.size() + 1;
-}
+size_t BinlogDumpGTID::getPayloadSize() const { return 1 + 2 + 4 + 4 + 0 + 8 + 4 + gtid_datas.size(); }
 
-void BinlogDump::writePayloadImpl(WriteBuffer & buffer) const
+void BinlogDumpGTID::writePayloadImpl(WriteBuffer & buffer) const
 {
-    buffer.write(ProtocolText::COM_BINLOG_DUMP);
-    buffer.write(reinterpret_cast<const char *>(&binlog_pos), 4);
+    buffer.write(Generic::COM_BINLOG_DUMP_GTID);
     buffer.write(reinterpret_cast<const char *>(&flags), 2);
     buffer.write(reinterpret_cast<const char *>(&server_id), 4);
-    buffer.write(binlog_file_name.data(), binlog_file_name.length());
-    buffer.write(0x00);
+
+    // Binlog file.
+    UInt32 file_size = 0;
+    buffer.write(reinterpret_cast<const char *>(&file_size), 4);
+    buffer.write("", 0);
+
+    const UInt64 position = 4;
+    buffer.write(reinterpret_cast<const char *>(&position), 8);
+
+    UInt32 gtid_size = gtid_datas.size();
+    buffer.write(reinterpret_cast<const char *>(&gtid_size), 4);
+    buffer.write(gtid_datas.data(), gtid_datas.size());
 }
 
 }

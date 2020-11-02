@@ -1,15 +1,13 @@
 import pytest
-import time
 
 from helpers.cluster import ClickHouseCluster
-from helpers.network import PartitionManager
-from helpers.test_tools import TSV
-
 
 cluster = ClickHouseCluster(__file__)
 
-node_old = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'], image='yandex/clickhouse-server:19.17.8.54', stay_alive=True, with_installed_binary=True)
+node_old = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'], image='yandex/clickhouse-server',
+                                tag='19.17.8.54', stay_alive=True, with_installed_binary=True)
 node_new = cluster.add_instance('node2', main_configs=['configs/remote_servers.xml'])
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -22,13 +20,16 @@ def started_cluster():
         node_old.query("INSERT INTO local_table VALUES (1, 'node1')")
         node_new.query("INSERT INTO local_table VALUES (2, 'node2')")
 
-        node_old.query("CREATE TABLE distributed(id UInt32, val String) ENGINE = Distributed(test_cluster, default, local_table)")
-        node_new.query("CREATE TABLE distributed(id UInt32, val String) ENGINE = Distributed(test_cluster, default, local_table)")
+        node_old.query(
+            "CREATE TABLE distributed(id UInt32, val String) ENGINE = Distributed(test_cluster, default, local_table)")
+        node_new.query(
+            "CREATE TABLE distributed(id UInt32, val String) ENGINE = Distributed(test_cluster, default, local_table)")
 
         yield cluster
 
     finally:
         cluster.shutdown()
+
 
 def test_distributed_in_tuple(started_cluster):
     query1 = "SELECT count() FROM distributed WHERE (id, val) IN ((1, 'node1'), (2, 'a'), (3, 'b'))"

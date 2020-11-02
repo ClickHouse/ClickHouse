@@ -10,7 +10,7 @@
     -   `NEW_PART` — вставка нового куска.
     -   `MERGE_PARTS` — слияние кусков.
     -   `DOWNLOAD_PART` — загрузка с реплики.
-    -   `REMOVE_PART` — удаление или отсоединение из таблицы с помощью [DETACH PARTITION](../../sql-reference/statements/alter.md#alter_detach-partition).
+    -   `REMOVE_PART` — удаление или отсоединение из таблицы с помощью [DETACH PARTITION](../../sql-reference/statements/alter/partition.md#alter_detach-partition).
     -   `MUTATE_PART` — изменение куска.
     -   `MOVE_PART` — перемещение куска между дисками.
 -   `event_date` (Date) — дата события.

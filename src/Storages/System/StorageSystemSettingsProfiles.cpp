@@ -76,7 +76,7 @@ void StorageSystemSettingsProfiles::fillData(MutableColumns & res_columns, const
         if (!profile)
             continue;
 
-        const auto * storage = access_control.findStorage(id);
+        auto storage = access_control.findStorage(id);
         if (!storage)
             continue;
 

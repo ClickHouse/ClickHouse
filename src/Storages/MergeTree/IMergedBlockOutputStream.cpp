@@ -51,7 +51,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     for (const NameAndTypePair & column : columns)
     {
         column.type->enumerateStreams(
-            [&](const IDataType::SubstreamPath & substream_path)
+            [&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_path */)
             {
                 ++stream_counts[IDataType::getFileNameForStream(column.name, substream_path)];
             },
@@ -62,7 +62,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     const String mrk_extension = data_part->getMarksFileExtension();
     for (const auto & column_name : empty_columns)
     {
-        IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path)
+        IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_path */)
         {
             String stream_name = IDataType::getFileNameForStream(column_name, substream_path);
             /// Delete files if they are no longer shared with another column.

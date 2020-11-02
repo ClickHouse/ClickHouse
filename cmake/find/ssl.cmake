@@ -1,12 +1,18 @@
 option(ENABLE_SSL "Enable ssl" ${ENABLE_LIBRARIES})
 
-if(ENABLE_SSL)
+if(NOT ENABLE_SSL)
+    if (USE_INTERNAL_SSL_LIBRARY)
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Can't use internal ssl library with ENABLE_SSL=OFF")
+    endif()
+    return()
+endif()
 
 option(USE_INTERNAL_SSL_LIBRARY "Set to FALSE to use system *ssl library instead of bundled" ${NOT_UNBUNDLED})
 
 if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/openssl/README")
     if(USE_INTERNAL_SSL_LIBRARY)
         message(WARNING "submodule contrib/openssl is missing. to fix try run: \n git submodule update --init --recursive")
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal ssl library")
     endif()
     set(USE_INTERNAL_SSL_LIBRARY 0)
     set(MISSING_INTERNAL_SSL_LIBRARY 1)
@@ -36,6 +42,10 @@ if (NOT USE_INTERNAL_SSL_LIBRARY)
             set (OPENSSL_FOUND 1)
         endif ()
     endif ()
+
+    if (NOT OPENSSL_FOUND)
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find system ssl")
+    endif()
 endif ()
 
 if (NOT OPENSSL_FOUND AND NOT MISSING_INTERNAL_SSL_LIBRARY)
@@ -122,8 +132,5 @@ if(OPENSSL_FOUND AND NOT USE_INTERNAL_SSL_LIBRARY)
     endif()
   endif()
 endif()
-
-
-endif ()
 
 message (STATUS "Using ssl=${USE_SSL}: ${OPENSSL_INCLUDE_DIR} : ${OPENSSL_LIBRARIES}")

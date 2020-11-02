@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/Exception.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Poco/SHA1Engine.h>

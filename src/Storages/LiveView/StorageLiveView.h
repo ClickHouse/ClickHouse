@@ -1,3 +1,4 @@
+#pragma once
 /* Copyright (c) 2018 BlackBerry Limited
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -9,7 +10,6 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License. */
-#pragma once
 
 #include <ext/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
@@ -37,6 +37,10 @@ class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
 using BlocksMetadataPtr = std::shared_ptr<BlocksMetadata>;
 using MergeableBlocksPtr = std::shared_ptr<MergeableBlocks>;
+
+class Pipe;
+using Pipes = std::vector<Pipe>;
+
 
 class StorageLiveView final : public ext::shared_ptr_helper<StorageLiveView>, public IStorage
 {
@@ -70,7 +74,9 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
-    bool isTemporary() { return is_temporary; }
+    bool isTemporary() const { return is_temporary; }
+    std::chrono::seconds getTimeout() const { return temporary_live_view_timeout; }
+
 
     /// Check if we have any readers
     /// must be called with mutex locked
@@ -85,11 +91,7 @@ public:
     {
         return active_ptr.use_count() > 1;
     }
-    /// No users thread mutex, predicate and wake up condition
-    void startNoUsersThread(const UInt64 & timeout);
-    std::mutex no_users_thread_wakeup_mutex;
-    bool no_users_thread_wakeup = false;
-    std::condition_variable no_users_thread_condition;
+
     /// Get blocks hash
     /// must be called with mutex locked
     String getBlocksHashKey()
@@ -122,7 +124,7 @@ public:
     void startup() override;
     void shutdown() override;
 
-    void refresh(const Context & context);
+    void refresh();
 
     Pipe read(
         const Names & column_names,
@@ -175,6 +177,8 @@ private:
     std::unique_ptr<Context> live_view_context;
 
     bool is_temporary = false;
+    std::chrono::seconds temporary_live_view_timeout;
+
     /// Mutex to protect access to sample block and inner_blocks_query
     mutable std::mutex sample_block_lock;
     mutable Block sample_block;
@@ -193,14 +197,7 @@ private:
     std::shared_ptr<BlocksMetadataPtr> blocks_metadata_ptr;
     MergeableBlocksPtr mergeable_blocks;
 
-    /// Background thread for temporary tables
-    /// which drops this table if there are no users
-    static void noUsersThread(std::shared_ptr<StorageLiveView> storage, const UInt64 & timeout);
-    std::mutex no_users_thread_mutex;
-    std::thread no_users_thread;
     std::atomic<bool> shutdown_called = false;
-    std::atomic<bool> start_no_users_thread_called = false;
-    UInt64 temporary_live_view_timeout;
 
     StorageLiveView(
         const StorageID & table_id_,

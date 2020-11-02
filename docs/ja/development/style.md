@@ -356,7 +356,7 @@ class IBlockInputStream
 bool info_successfully_loaded = false;
 ```
 
-**9.** の名前 `define`sおよびグローバル定数を使用ALL\_CAPSをアンダースコア(\_).
+**9.** の名前 `define`sおよびグローバル定数を使用ALL_CAPSをアンダースコア(_).
 
 ``` cpp
 #define MAX_SRC_TABLE_NAMES_TO_STORE 1000
@@ -396,7 +396,7 @@ FileQueueProcessor(
 timer (not m_timer)
 ```
 
-**14.** の定数に対して `enum`、大文字でキャメルケースを使用します。 ALL\_CAPSも許容されます。 もし `enum` は非ローカルである。 `enum class`.
+**14.** の定数に対して `enum`、大文字でキャメルケースを使用します。 ALL_CAPSも許容されます。 もし `enum` は非ローカルである。 `enum class`.
 
 ``` cpp
 enum class CompressionMethod
@@ -705,11 +705,11 @@ auto s = std::string{"Hello"};
 
 **3.** コンパイラ: `gcc`. 2020年現在、コードはバージョン9.3を使用してコンパイルされている。 （以下を使ってコンパイルできます `clang 8`.)
 
-標準ライブラリが使用されます (`libstdc++` または `libc++`).
+標準ライブラリが使用されます (`libc++`).
 
 **4.**OS：LinuxのUbuntuの、正確よりも古いではありません。
 
-**5.**コードはx86\_64CPUアーキテクチャ用に書かれている。
+**5.**コードはx86_64CPUアーキテクチャ用に書かれている。
 
 CPU命令セットは、サーバー間でサポートされる最小のセットです。 現在、SSE4.2です。
 

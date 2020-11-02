@@ -9,7 +9,7 @@ toc_title: "Linux \xFCzerinde ClickHouse nas\u0131l olu\u015Fturulur"
 
 Aşağıdaki öğretici Ubuntu Linux sistemine dayanmaktadır.
 Uygun değişikliklerle, başka herhangi bir Linux dağıtımı üzerinde de çalışması gerekir.
-Desteklenen platformlar: x86\_64 ve AArch64. Power9 için destek deneyseldir.
+Desteklenen platformlar: x86_64 ve AArch64. Power9 için destek deneyseldir.
 
 ## Git, Cmake, Python ve Ninja'yı yükleyin {#install-git-cmake-python-and-ninja}
 
@@ -102,7 +102,7 @@ OpenSUSE Tumbleweed için örnek:
 Fedora Rawhide için örnek:
 
     sudo yum update
-    yum --nogpg install git cmake make gcc-c++ python2
+    yum --nogpg install git cmake make gcc-c++ python3
     git clone --recursive https://github.com/ClickHouse/ClickHouse.git
     mkdir build && cd build
     cmake ../ClickHouse

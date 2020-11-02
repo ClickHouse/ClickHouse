@@ -1,7 +1,6 @@
 #include <Processors/QueryPipeline.h>
 
 #include <Processors/ResizeProcessor.h>
-#include <Processors/ConcatProcessor.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
 #include <Processors/Transforms/ExtremesTransform.h>
@@ -124,18 +123,7 @@ void QueryPipeline::addMergingAggregatedMemoryEfficientTransform(AggregatingTran
 void QueryPipeline::resize(size_t num_streams, bool force, bool strict)
 {
     checkInitializedAndNotCompleted();
-
-    if (!force && num_streams == getNumStreams())
-        return;
-
-    ProcessorPtr resize;
-
-    if (strict)
-        resize = std::make_shared<StrictResizeProcessor>(getHeader(), getNumStreams(), num_streams);
-    else
-        resize = std::make_shared<ResizeProcessor>(getHeader(), getNumStreams(), num_streams);
-
-    pipe.addTransform(std::move(resize));
+    pipe.resize(num_streams, force, strict);
 }
 
 void QueryPipeline::addTotalsHavingTransform(ProcessorPtr transform)
@@ -194,26 +182,6 @@ void QueryPipeline::addExtremesTransform()
     auto transform = std::make_shared<ExtremesTransform>(getHeader());
     auto * port = &transform->getExtremesPort();
     pipe.addTransform(std::move(transform), nullptr, port);
-}
-
-void QueryPipeline::addCreatingSetsTransform(ProcessorPtr transform)
-{
-    checkInitializedAndNotCompleted();
-
-    if (!typeid_cast<const CreatingSetsTransform *>(transform.get()))
-        throw Exception("CreatingSetsTransform expected for QueryPipeline::addExtremesTransform.",
-                        ErrorCodes::LOGICAL_ERROR);
-
-    resize(1);
-
-    /// Order is important for concat. Connect manually.
-    pipe.transform([&](OutputPortRawPtrs ports) -> Processors
-    {
-        auto concat = std::make_shared<ConcatProcessor>(getHeader(), 2);
-        connect(transform->getOutputs().front(), concat->getInputs().front());
-        connect(*ports.back(), concat->getInputs().back());
-        return { std::move(concat), std::move(transform) };
-    });
 }
 
 void QueryPipeline::setOutputFormat(ProcessorPtr output)
@@ -282,14 +250,51 @@ QueryPipeline QueryPipeline::unitePipelines(
     return pipeline;
 }
 
+
+void QueryPipeline::addCreatingSetsTransform(const Block & res_header, SubqueryForSet subquery_for_set, const SizeLimits & limits, const Context & context)
+{
+    resize(1);
+
+    auto transform = std::make_shared<CreatingSetsTransform>(
+            getHeader(),
+            res_header,
+            std::move(subquery_for_set),
+            limits,
+            context);
+
+    InputPort * totals_port = nullptr;
+
+    if (pipe.getTotalsPort())
+        totals_port = transform->addTotalsPort();
+
+    pipe.addTransform(std::move(transform), totals_port, nullptr);
+}
+
+void QueryPipeline::addPipelineBefore(QueryPipeline pipeline)
+{
+    checkInitializedAndNotCompleted();
+    assertBlocksHaveEqualStructure(getHeader(), pipeline.getHeader(), "QueryPipeline");
+
+    IProcessor::PortNumbers delayed_streams(pipe.numOutputPorts());
+    for (size_t i = 0; i < delayed_streams.size(); ++i)
+        delayed_streams[i] = i;
+
+    auto * collected_processors = pipe.collected_processors;
+
+    Pipes pipes;
+    pipes.emplace_back(std::move(pipe));
+    pipes.emplace_back(QueryPipeline::getPipe(std::move(pipeline)));
+    pipe = Pipe::unitePipes(std::move(pipes), collected_processors);
+
+    auto processor = std::make_shared<DelayedPortsProcessor>(getHeader(), pipe.numOutputPorts(), delayed_streams);
+    addTransform(std::move(processor));
+}
+
 void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
 {
     for (auto & processor : pipe.processors)
     {
         if (auto * source = dynamic_cast<ISourceWithProgress *>(processor.get()))
-            source->setProgressCallback(callback);
-
-        if (auto * source = typeid_cast<CreatingSetsTransform *>(processor.get()))
             source->setProgressCallback(callback);
     }
 }
@@ -301,9 +306,6 @@ void QueryPipeline::setProcessListElement(QueryStatus * elem)
     for (auto & processor : pipe.processors)
     {
         if (auto * source = dynamic_cast<ISourceWithProgress *>(processor.get()))
-            source->setProcessListElement(elem);
-
-        if (auto * source = typeid_cast<CreatingSetsTransform *>(processor.get()))
             source->setProcessListElement(elem);
     }
 }

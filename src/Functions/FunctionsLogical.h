@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Core/Defines.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunctionImpl.h>
@@ -154,13 +154,15 @@ public:
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result_index, size_t input_rows_count) const override;
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
 
 #if USE_EMBEDDED_COMPILER
     bool isCompilableImpl(const DataTypes &) const override { return useDefaultImplementationForNulls(); }
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, ValuePlaceholders values) const override
     {
+        assert(!types.empty() && !values.empty());
+
         auto & b = static_cast<llvm::IRBuilder<> &>(builder);
         if constexpr (!Impl::isSaturable())
         {
@@ -215,7 +217,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override;
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override;
 
 #if USE_EMBEDDED_COMPILER
     bool isCompilableImpl(const DataTypes &) const override { return true; }

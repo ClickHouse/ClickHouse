@@ -75,6 +75,9 @@ struct TTLDescription
     /// Name of destination disk or volume
     String destination_name;
 
+    /// Codec name which will be used to recompress data
+    ASTPtr recompression_codec;
+
     /// Parse TTL structure from definition. Able to parse both column and table
     /// TTLs.
     static TTLDescription getTTLFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context, const KeyDescription & primary_key);
@@ -101,6 +104,8 @@ struct TTLTableDescription
 
     /// Moving data TTL (to other disks or volumes)
     TTLDescriptions move_ttl;
+
+    TTLDescriptions recompression_ttl;
 
     TTLTableDescription() = default;
     TTLTableDescription(const TTLTableDescription & other);

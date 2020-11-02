@@ -1,32 +1,11 @@
 # docker build -t yandex/clickhouse-coverage .
-FROM yandex/clickhouse-deb-builder
-
-RUN apt-get --allow-unauthenticated update -y \
-    && env DEBIAN_FRONTEND=noninteractive \
-    apt-get --allow-unauthenticated install --yes --no-install-recommends \
-    bash \
-    fakeroot \
-    cmake \
-    ccache \
-    curl \
-    software-properties-common
-
-
-RUN apt-get --allow-unauthenticated update -y \
-    && env DEBIAN_FRONTEND=noninteractive \
-        apt-get --allow-unauthenticated install --yes --no-install-recommends \
-            perl \
-            lcov \
-            clang-10 \
-            llvm-10 \
-            tzdata
-
+ARG PARENT_TAG=latest
+FROM yandex/clickhouse-test-base:${PARENT_TAG}
 
 ENV COVERAGE_DIR=/coverage_reports
 ENV SOURCE_DIR=/build
 ENV OUTPUT_DIR=/output
 ENV IGNORE='.*contrib.*'
-
 
 CMD mkdir -p /build/obj-x86_64-linux-gnu && cd /build/obj-x86_64-linux-gnu && CC=clang-10 CXX=clang++-10 cmake .. && cd /; \
     dpkg -i /package_folder/clickhouse-common-static_*.deb; \

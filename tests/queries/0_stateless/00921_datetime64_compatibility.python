@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # encoding: utf-8
 
 import re
@@ -35,6 +35,10 @@ toStartOfInterval(N, INTERVAL 1 year)
 toStartOfInterval(N, INTERVAL 1 month)
 toStartOfInterval(N, INTERVAL 1 day)
 toStartOfInterval(N, INTERVAL 15 minute)
+date_trunc('year', N)
+date_trunc('month', N)
+date_trunc('day', N)
+date_trunc('minute', N)
 toTime(N)
 toRelativeYearNum(N)
 toRelativeQuarterNum(N)
@@ -84,8 +88,7 @@ formatDateTime(N, '%C %d %D %e %F %H %I %j %m %M %p %R %S %T %u %V %w %y %Y %%')
 
 # Expanded later to cartesian product of all arguments.
 # NOTE: {N} to be turned into N after str.format() for keys (format string), but not for list of values!
-extra_ops =\
-[
+extra_ops = [
     # With same type:
     (
         ['N {op} N'],
@@ -157,37 +160,35 @@ extra_ops =\
 
 # Expand extra_ops here
 for funcs, args in extra_ops:
-    args_keys = args.keys()
-    for args_vals in itertools.product(*args.values()):
+    args_keys = list(args.keys())
+    for args_vals in itertools.product(*list(args.values())):
         for func in funcs:
-            result_func = func.format(**dict(zip(args_keys, args_vals)))
+            result_func = func.format(**dict(list(zip(args_keys, args_vals))))
             FUNCTIONS.append(result_func)
 
 # filter out empty lines and commented out lines
 COMMENTED_OUT_LINE_RE = re.compile(r"^\s*#")
-FUNCTIONS = list(filter(lambda f: len(f) != 0 and COMMENTED_OUT_LINE_RE.match(f) == None, FUNCTIONS))
+FUNCTIONS = list([f for f in FUNCTIONS if len(f) != 0 and COMMENTED_OUT_LINE_RE.match(f) == None])
 TYPES = ['D', 'DT', 'DT64']
 
-if sys.version_info[0] > 2:
-    escape_string_codec = 'unicode_escape'
-else:
-    escape_string_codec = 'string-escape'
-
 def escape_string(s):
-    return s.encode(escape_string_codec).decode('utf-8')
+    if sys.version_info[0] > 2:
+        return s.encode('unicode_escape').decode('utf-8').replace("'", "\\'")
+    else:
+        return s.encode('string-escape').decode('utf-8')
 
 
 def execute_functions_for_types(functions, types):
     # TODO: use string.Template here to allow lines that do not contain type, like: SELECT CAST(toDateTime64(1234567890), 'DateTime64')
     for func in functions:
-        print("""SELECT 'SELECT {func}';""".format(func=escape_string(func)))
+        print(("""SELECT 'SELECT {func}';""".format(func=escape_string(func))))
         for dt in types:
             prologue = "\
 WITH \
 toDateTime64('2019-09-16 19:20:11.234', 3, 'Europe/Minsk') as DT64, \
 toDateTime('2019-09-16 19:20:11', 'Europe/Minsk') as DT, \
 toDate('2019-09-16') as D, {X} as N".format(X=dt)
-            print("""{prologue} SELECT toTypeName(r), {func} as r FORMAT CSV;""".format(prologue=prologue, func=func))
+            print(("""{prologue} SELECT toTypeName(r), {func} as r FORMAT CSV;""".format(prologue=prologue, func=func)))
         print("""SELECT '------------------------------------------';""")
 
 def main():
@@ -206,19 +207,19 @@ def main():
     types = TYPES
 
     if args.functions_re:
-        functions = list(filter(lambda f : args.functions_re.search(f), functions))
+        functions = list([f for f in functions if args.functions_re.search(f)])
         if len(functions) == 0:
             print("functions list is empty")
             return -1
 
     if args.types_re:
-        types = list(filter(lambda t : args.types_re.match(t), types))
+        types = list([t for t in types if args.types_re.match(t)])
         if len(types) == 0:
             print("types list is empty")
             return -1
 
     if args.list_functions:
-        print("\n".join(functions))
+        print(("\n".join(functions)))
         return 0
 
     execute_functions_for_types(functions, types)

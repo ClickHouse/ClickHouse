@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 from multiprocessing import cpu_count
 from subprocess import Popen, check_call
@@ -28,18 +28,33 @@ def get_options(i):
     options = ""
     if 0 < i:
         options += " --order=random"
-    if i == 1:
-        options += " --atomic-db-engine"
+
+    if i % 2 == 1:
+        options += " --db-engine=Ordinary"
+
+    # If database name is not specified, new database is created for each functional test.
+    # Run some threads with one database for all tests.
+    if i % 3 == 1:
+        options += " --database=test_{}".format(i)
+
+    if i == 13:
+        options += " --client-option='memory_tracker_fault_probability=0.00001'"
+
     return options
 
 
-def run_func_test(cmd, output_prefix, num_processes, skip_tests_option):
+def run_func_test(cmd, output_prefix, num_processes, skip_tests_option, global_time_limit):
     skip_list_opt = get_skip_list_cmd(cmd)
+
+    global_time_limit_option = ''
+    if global_time_limit:
+        global_time_limit_option = "--global_time_limit={}".format(global_time_limit)
+
     output_paths = [os.path.join(output_prefix, "stress_test_run_{}.txt".format(i)) for i in range(num_processes)]
     pipes = []
     for i in range(0, len(output_paths)):
         f = open(output_paths[i], 'w')
-        full_command = "{} {} {} {}".format(cmd, skip_list_opt, get_options(i), skip_tests_option)
+        full_command = "{} {} {} {} {}".format(cmd, skip_list_opt, get_options(i), global_time_limit_option, skip_tests_option)
         logging.info("Run func tests '%s'", full_command)
         p = Popen(full_command, shell=True, stdout=f, stderr=f)
         pipes.append(p)
@@ -57,13 +72,14 @@ if __name__ == "__main__":
     parser.add_argument("--perf-test-xml-path", default='/usr/share/clickhouse-test/performance/')
     parser.add_argument("--server-log-folder", default='/var/log/clickhouse-server')
     parser.add_argument("--output-folder")
-    parser.add_argument("--num-parallel", default=cpu_count() // 3);
+    parser.add_argument("--global-time-limit", type=int, default=3600)
+    parser.add_argument("--num-parallel", default=cpu_count());
 
     args = parser.parse_args()
     func_pipes = []
     perf_process = None
     perf_process = run_perf_test(args.perf_test_cmd, args.perf_test_xml_path, args.output_folder)
-    func_pipes = run_func_test(args.test_cmd, args.output_folder, args.num_parallel, args.skip_func_tests)
+    func_pipes = run_func_test(args.test_cmd, args.output_folder, args.num_parallel, args.skip_func_tests, args.global_time_limit)
 
     logging.info("Will wait functests to finish")
     while True:

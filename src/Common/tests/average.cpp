@@ -3,7 +3,7 @@
 
 #include <fmt/format.h>
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/PODArray.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/Arena.h>
@@ -500,6 +500,56 @@ Float NO_INLINE really_unrolled(const PODArray<UInt8> & keys, const PODArray<Flo
 }
 
 
+struct State4
+{
+    Float sum[4]{};
+    size_t count[4]{};
+
+    template <UInt32 idx>
+    void add(Float value)
+    {
+        sum[idx] += value;
+        ++count[idx];
+    }
+
+    Float result() const
+    {
+        return (sum[0] + sum[1] + sum[2] + sum[3]) / (count[0] + count[1] + count[2] + count[3]);
+    }
+};
+
+Float NO_INLINE another_unrolled_x4(const PODArray<UInt8> & keys, const PODArray<Float> & values)
+{
+    State4 map[256]{};
+
+    size_t size = keys.size() / 4 * 4;
+    for (size_t i = 0; i < size; i += 4)
+    {
+        map[keys[i]].add<0>(values[i]);
+        map[keys[i + 1]].add<1>(values[i]);
+        map[keys[i + 2]].add<2>(values[i]);
+        map[keys[i + 3]].add<3>(values[i]);
+    }
+
+    /// tail
+    switch (keys.size() % 4)
+    {
+        case 3:
+            map[keys[size + 2]].add<2>(values[size + 2]);
+            [[fallthrough]];
+        case 2:
+            map[keys[size + 1]].add<1>(values[size + 1]);
+            [[fallthrough]];
+        case 1:
+            map[keys[size]].add<0>(values[size]);
+            [[fallthrough]];
+        default:
+            break;
+    }
+
+    return map[0].result();
+}
+
 int main(int argc, char ** argv)
 {
     size_t size = argc > 1 ? std::stoull(argv[1]) : 1000000000;
@@ -533,6 +583,7 @@ int main(int argc, char ** argv)
         case 9: res = baseline_baseline(keys, values); break;
         case 10: res = buffered(keys, values); break;
         case 11: res = really_unrolled<1>(keys, values); break;
+        case 12: res = another_unrolled_x4(keys, values); break;
 
         case 32: res = unrolled<2>(keys, values); break;
         case 34: res = unrolled<4>(keys, values); break;
@@ -569,6 +620,8 @@ int main(int argc, char ** argv)
         case 116: res = really_unrolled<5>(keys, values); break;
         case 118: res = really_unrolled<8>(keys, values); break;
         case 1116: res = really_unrolled<16>(keys, values); break;
+
+        case 124: res = another_unrolled_x4(keys, values); break;
 
         default: break;
     }

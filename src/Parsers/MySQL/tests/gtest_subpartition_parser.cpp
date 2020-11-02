@@ -19,13 +19,13 @@ TEST(ParserSubpartition, AllSubpatitionOptions)
     ASTDeclareSubPartition * declare_subpartition = ast->as<ASTDeclareSubPartition>();
     EXPECT_EQ(declare_subpartition->logical_name, "subpartition_name");
     ASTDeclareOptions * declare_options = declare_subpartition->options->as<ASTDeclareOptions>();
-    EXPECT_EQ(declare_options->changes["engine"]->as<ASTIdentifier>()->name, "engine_name");
+    EXPECT_EQ(declare_options->changes["engine"]->as<ASTIdentifier>()->name(), "engine_name");
     EXPECT_EQ(declare_options->changes["comment"]->as<ASTLiteral>()->value.safeGet<String>(), "subpartition comment");
     EXPECT_EQ(declare_options->changes["data_directory"]->as<ASTLiteral>()->value.safeGet<String>(), "data_directory");
     EXPECT_EQ(declare_options->changes["index_directory"]->as<ASTLiteral>()->value.safeGet<String>(), "index_directory");
     EXPECT_EQ(declare_options->changes["min_rows"]->as<ASTLiteral>()->value.safeGet<UInt64>(), 0);
     EXPECT_EQ(declare_options->changes["max_rows"]->as<ASTLiteral>()->value.safeGet<UInt64>(), 1000);
-    EXPECT_EQ(declare_options->changes["tablespace"]->as<ASTIdentifier>()->name, "table_space_name");
+    EXPECT_EQ(declare_options->changes["tablespace"]->as<ASTIdentifier>()->name(), "table_space_name");
 }
 
 TEST(ParserSubpartition, OptionalSubpatitionOptions)
@@ -37,9 +37,9 @@ TEST(ParserSubpartition, OptionalSubpatitionOptions)
     ASTDeclareSubPartition * declare_subpartition = ast->as<ASTDeclareSubPartition>();
     EXPECT_EQ(declare_subpartition->logical_name, "subpartition_name");
     ASTDeclareOptions * declare_options = declare_subpartition->options->as<ASTDeclareOptions>();
-    EXPECT_EQ(declare_options->changes["engine"]->as<ASTIdentifier>()->name, "engine_name");
+    EXPECT_EQ(declare_options->changes["engine"]->as<ASTIdentifier>()->name(), "engine_name");
     EXPECT_EQ(declare_options->changes["min_rows"]->as<ASTLiteral>()->value.safeGet<UInt64>(), 0);
     EXPECT_EQ(declare_options->changes["max_rows"]->as<ASTLiteral>()->value.safeGet<UInt64>(), 1000);
-    EXPECT_EQ(declare_options->changes["tablespace"]->as<ASTIdentifier>()->name, "table_space_name");
+    EXPECT_EQ(declare_options->changes["tablespace"]->as<ASTIdentifier>()->name(), "table_space_name");
 }
 

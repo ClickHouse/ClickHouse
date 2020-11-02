@@ -10,7 +10,7 @@ $CLICKHOUSE_CLIENT --query "
         key UInt64,
         value String
     )
-    ENGINE = ReplicatedMergeTree('/clickhouse/tables/mutation_table', '1')
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_01318/mutation_table', '1')
     ORDER BY key
     PARTITION BY key % 10
 "

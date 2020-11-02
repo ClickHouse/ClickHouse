@@ -1,4 +1,5 @@
 #include "AvroRowInputFormat.h"
+#include "DataTypes/DataTypeLowCardinality.h"
 #if USE_AVRO
 
 #include <numeric>
@@ -72,6 +73,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int TYPE_MISMATCH;
     extern const int CANNOT_PARSE_UUID;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 class InputStreamReadBufferAdapter : public avro::InputStream
@@ -173,7 +175,8 @@ static std::string nodeName(avro::NodePtr node)
 
 AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::NodePtr root_node, DataTypePtr target_type)
 {
-    WhichDataType target(target_type);
+    const WhichDataType target = removeLowCardinality(target_type);
+
     switch (root_node->type())
     {
         case avro::AVRO_STRING: [[fallthrough]];
@@ -383,7 +386,8 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
     }
 
     throw Exception(
-        "Type " + target_type->getName() + " is not compatible with Avro " + avro::toString(root_node->type()) + ":\n" + nodeToJson(root_node),
+        "Type " + target_type->getName() + " is not compatible with Avro " + avro::toString(root_node->type()) + ":\n"
+        + nodeToJson(root_node),
         ErrorCodes::ILLEGAL_COLUMN);
 }
 
@@ -697,8 +701,21 @@ static uint32_t readConfluentSchemaId(ReadBuffer & in)
     uint8_t magic;
     uint32_t schema_id;
 
-    readBinaryBigEndian(magic, in);
-    readBinaryBigEndian(schema_id, in);
+    try
+    {
+        readBinaryBigEndian(magic, in);
+        readBinaryBigEndian(schema_id, in);
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::CANNOT_READ_ALL_DATA)
+        {
+            /* empty or incomplete message without Avro Confluent magic number or schema id */
+            throw Exception("Missing AvroConfluent magic byte or schema identifier.", ErrorCodes::INCORRECT_DATA);
+        }
+        else
+            throw;
+    }
 
     if (magic != 0x00)
     {

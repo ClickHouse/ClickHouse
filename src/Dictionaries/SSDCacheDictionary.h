@@ -76,7 +76,7 @@ public:
     {
         using time_point_t = std::chrono::system_clock::time_point;
         using time_point_rep_t = time_point_t::rep;
-        using time_point_urep_t = std::make_unsigned_t<time_point_rep_t>;
+        using time_point_urep_t = make_unsigned_t<time_point_rep_t>;
 
         time_point_t expiresAt() const;
         void setExpiresAt(const time_point_t & t);

@@ -1,6 +1,7 @@
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 
 #include <Poco/String.h>
+#include <Common/SipHash.h>
 
 namespace DB
 {
@@ -35,6 +36,16 @@ void ASTPair::formatImpl(const FormatSettings & settings, FormatState & state, F
     settings.ostr << (settings.hilite ? hilite_none : "");
 }
 
+
+void ASTPair::updateTreeHashImpl(SipHash & hash_state) const
+{
+    hash_state.update(first.size());
+    hash_state.update(first);
+    hash_state.update(second_with_brackets);
+    IAST::updateTreeHashImpl(hash_state);
+}
+
+
 String ASTFunctionWithKeyValueArguments::getID(char delim) const
 {
     return "FunctionWithKeyValueArguments " + (delim + name);
@@ -62,6 +73,15 @@ void ASTFunctionWithKeyValueArguments::formatImpl(const FormatSettings & setting
     elements->formatImpl(settings, state, frame);
     settings.ostr << (has_brackets ? ")" : "");
     settings.ostr << (settings.hilite ? hilite_none : "");
+}
+
+
+void ASTFunctionWithKeyValueArguments::updateTreeHashImpl(SipHash & hash_state) const
+{
+    hash_state.update(name.size());
+    hash_state.update(name);
+    hash_state.update(has_brackets);
+    IAST::updateTreeHashImpl(hash_state);
 }
 
 }

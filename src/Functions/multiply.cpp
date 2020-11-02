@@ -9,13 +9,20 @@ template <typename A, typename B>
 struct MultiplyImpl
 {
     using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type;
-    static const constexpr bool allow_decimal = true;
     static const constexpr bool allow_fixed_string = false;
 
     template <typename Result = ResultType>
     static inline NO_SANITIZE_UNDEFINED Result apply(A a, B b)
     {
-        return static_cast<Result>(a) * b;
+        if constexpr (is_big_int_v<A> || is_big_int_v<B>)
+        {
+            using CastA = std::conditional_t<std::is_floating_point_v<B>, B, A>;
+            using CastB = std::conditional_t<std::is_floating_point_v<A>, A, B>;
+
+            return bigint_cast<Result>(bigint_cast<CastA>(a)) * bigint_cast<Result>(bigint_cast<CastB>(b));
+        }
+        else
+            return static_cast<Result>(a) * b;
     }
 
     /// Apply operation and check overflow. It's used for Deciamal operations. @returns true if overflowed, false otherwise.
@@ -36,7 +43,7 @@ struct MultiplyImpl
 };
 
 struct NameMultiply { static constexpr auto name = "multiply"; };
-using FunctionMultiply = FunctionBinaryArithmetic<MultiplyImpl, NameMultiply>;
+using FunctionMultiply = BinaryArithmeticOverloadResolver<MultiplyImpl, NameMultiply>;
 
 void registerFunctionMultiply(FunctionFactory & factory)
 {

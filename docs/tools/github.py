@@ -71,8 +71,8 @@ def choose_latest_releases(args):
             logging.fatal('Unexpected GitHub response: %s', str(candidates))
             sys.exit(1)
 
-    logging.info('Found LTS releases: %s', ', '.join(seen_lts.keys()))
-    logging.info('Found stable releases: %s', ', '.join(seen_stable.keys()))
+    logging.info('Found LTS releases: %s', ', '.join(list(seen_lts.keys())))
+    logging.info('Found stable releases: %s', ', '.join(list(seen_stable.keys())))
     return sorted(list(seen_lts.items()) + list(seen_stable.items()))
 
 

@@ -1,14 +1,14 @@
 SET send_logs_level = 'fatal';
 
 DROP TABLE IF EXISTS old_style;
-CREATE TABLE old_style(d Date, x UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/test/old_style', 'r1', d, x, 8192);
+CREATE TABLE old_style(d Date, x UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/test_00754/old_style', 'r1', d, x, 8192);
 ALTER TABLE old_style ADD COLUMN y UInt32, MODIFY ORDER BY (x, y); -- { serverError 36 }
 DROP TABLE old_style;
 
 DROP TABLE IF EXISTS test.summing_r1;
 DROP TABLE IF EXISTS test.summing_r2;
-CREATE TABLE test.summing_r1(x UInt32, y UInt32, val UInt32) ENGINE ReplicatedSummingMergeTree('/clickhouse/tables/test/summing', 'r1') ORDER BY (x, y);
-CREATE TABLE test.summing_r2(x UInt32, y UInt32, val UInt32) ENGINE ReplicatedSummingMergeTree('/clickhouse/tables/test/summing', 'r2') ORDER BY (x, y);
+CREATE TABLE test.summing_r1(x UInt32, y UInt32, val UInt32) ENGINE ReplicatedSummingMergeTree('/clickhouse/tables/test_00754/summing', 'r1') ORDER BY (x, y);
+CREATE TABLE test.summing_r2(x UInt32, y UInt32, val UInt32) ENGINE ReplicatedSummingMergeTree('/clickhouse/tables/test_00754/summing', 'r2') ORDER BY (x, y);
 
 /* Can't add an expression with existing column to ORDER BY. */
 ALTER TABLE test.summing_r1 MODIFY ORDER BY (x, y, -val); -- { serverError 36 }
@@ -48,6 +48,5 @@ SYSTEM SYNC REPLICA test.summing_r2;
 SELECT '*** Check SHOW CREATE TABLE after offline ALTER ***';
 SHOW CREATE TABLE test.summing_r2;
 
-DROP TABLE test.summing_r1 NO DELAY;
-DROP TABLE test.summing_r2 NO DELAY;
-SELECT sleep(1) Format Null;
+DROP TABLE test.summing_r1;
+DROP TABLE test.summing_r2;

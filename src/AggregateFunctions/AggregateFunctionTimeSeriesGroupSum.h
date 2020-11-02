@@ -92,7 +92,7 @@ struct AggregateFunctionTimeSeriesGroupSumData
             it_ss->second.add(t, v);
         }
         if (result.size() > 0 && t < result.back().first)
-            throw Exception{"timeSeriesGroupSum or timeSeriesGroupRateSum must order by timestamp asc!!!", ErrorCodes::LOGICAL_ERROR};
+            throw Exception{"timeSeriesGroupSum or timeSeriesGroupRateSum must order by timestamp asc.", ErrorCodes::LOGICAL_ERROR};
         if (result.size() > 0 && t == result.back().first)
         {
             //do not add new point
@@ -108,13 +108,13 @@ struct AggregateFunctionTimeSeriesGroupSumData
             else
                 result.emplace_back(std::make_pair(t, v));
         }
-        size_t i = result.size() - 1;
+        ssize_t i = result.size() - 1;
         //reverse find out the index of timestamp that more than previous timestamp of t
         while (result[i].first > it_ss->second.dps.front().first && i >= 0)
             i--;
 
         i++;
-        while (i < result.size() - 1)
+        while (i < ssize_t(result.size()) - 1)
         {
             result[i].second += it_ss->second.getval(result[i].first);
             i++;

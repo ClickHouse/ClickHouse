@@ -12,7 +12,7 @@ WHERE b = t2.b
 SELECT `--t1.a` AS `t1.a`
 FROM 
 (
-    SELECT 
+    SELECT
         a AS `--t1.a`,
         t2.a AS `--t2.a`
     FROM t1
@@ -23,7 +23,7 @@ WHERE (`--t1.a` = `--t2.a`) AND (`--t1.a` = a)
 SELECT `--t1.a` AS `t1.a`
 FROM 
 (
-    SELECT 
+    SELECT
         b AS `--t1.b`,
         a AS `--t1.a`,
         t2.b AS `--t2.b`
@@ -35,13 +35,13 @@ WHERE (`--t1.b` = `--t2.b`) AND (`--t1.b` = b)
 SELECT `--t1.a` AS `t1.a`
 FROM 
 (
-    SELECT 
+    SELECT
         `--t1.a`,
         `--t2.a`,
         a AS `--t3.a`
     FROM 
     (
-        SELECT 
+        SELECT
             a AS `--t1.a`,
             t2.a AS `--t2.a`
         FROM t1
@@ -54,14 +54,14 @@ WHERE (`--t1.a` = `--t2.a`) AND (`--t1.a` = `--t3.a`) AND (`--t1.a` = a)
 SELECT `--t1.a` AS `t1.a`
 FROM 
 (
-    SELECT 
+    SELECT
         `--t1.b`,
         `--t1.a`,
         `--t2.b`,
         b AS `--t3.b`
     FROM 
     (
-        SELECT 
+        SELECT
             b AS `--t1.b`,
             a AS `--t1.a`,
             t2.b AS `--t2.b`
@@ -75,13 +75,13 @@ WHERE (`--t1.b` = `--t2.b`) AND (`--t1.b` = `--t3.b`) AND (`--t1.b` = b)
 SELECT `--t1.a` AS `t1.a`
 FROM 
 (
-    SELECT 
+    SELECT
         `--t1.a`,
         `--t2.a`,
         a AS `--t3.a`
     FROM 
     (
-        SELECT 
+        SELECT
             a AS `--t1.a`,
             t2.a AS `--t2.a`
         FROM t1
@@ -94,13 +94,13 @@ WHERE (`--t2.a` = `--t1.a`) AND (`--t2.a` = `--t3.a`) AND (`--t2.a` = a)
 SELECT `--t1.a` AS `t1.a`
 FROM 
 (
-    SELECT 
+    SELECT
         `--t1.a`,
         `--t2.a`,
         a AS `--t3.a`
     FROM 
     (
-        SELECT 
+        SELECT
             a AS `--t1.a`,
             t2.a AS `--t2.a`
         FROM t1
@@ -113,13 +113,13 @@ WHERE (`--t3.a` = `--t1.a`) AND (`--t3.a` = `--t2.a`) AND (`--t3.a` = a)
 SELECT `--t1.a` AS `t1.a`
 FROM 
 (
-    SELECT 
+    SELECT
         `--t1.a`,
         `--t2.a`,
         a AS `--t3.a`
     FROM 
     (
-        SELECT 
+        SELECT
             a AS `--t1.a`,
             t2.a AS `--t2.a`
         FROM t1
@@ -132,13 +132,13 @@ WHERE (a = `--t1.a`) AND (a = `--t2.a`) AND (a = `--t3.a`)
 SELECT `--t1.a` AS `t1.a`
 FROM 
 (
-    SELECT 
+    SELECT
         `--t1.a`,
         `--t2.a`,
         a AS `--t3.a`
     FROM 
     (
-        SELECT 
+        SELECT
             a AS `--t1.a`,
             t2.a AS `--t2.a`
         FROM t1
@@ -185,7 +185,7 @@ CROSS JOIN t3
 SELECT `--t1.a` AS `t1.a`
 FROM 
 (
-    SELECT 
+    SELECT
         a AS `--t1.a`,
         t2.a AS `--t2.a`
     FROM t1

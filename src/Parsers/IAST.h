@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Common/Exception.h>
@@ -203,6 +203,7 @@ public:
         UInt8 indent = 0;
         bool need_parens = false;
         bool expression_list_always_start_on_new_line = false;  /// Line feed and indent before expression list even if it's of single element.
+        bool expression_list_prepend_whitespace = false; /// Prepend whitespace (if it is required)
         const IAST * current_select = nullptr;
     };
 

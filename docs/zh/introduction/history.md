@@ -13,7 +13,7 @@ Yandex.Metrica基于用户定义的字段，对实时访问、连接会话，生
 
 ClickHouse还被使用在：
 
--   存储来自Yandex.Metrica回话重放数据。
+-   存储来自Yandex.Metrica的会话重放数据。
 -   处理中间数据
 -   与Analytics一起构建全球报表。
 -   为调试Yandex.Metrica引擎运行查询

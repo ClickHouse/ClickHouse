@@ -80,7 +80,7 @@ void MaterializeMetadata::fetchMasterStatus(mysqlxx::PoolWithFailover::Entry & c
     if (!master_status || master_status.rows() != 1)
         throw Exception("Unable to get master status from MySQL.", ErrorCodes::LOGICAL_ERROR);
 
-    version = 1;
+    data_version = 1;
     binlog_file = (*master_status.getByPosition(0).column)[0].safeGet<String>();
     binlog_position = (*master_status.getByPosition(1).column)[0].safeGet<UInt64>();
     binlog_do_db = (*master_status.getByPosition(2).column)[0].safeGet<String>();
@@ -140,18 +140,19 @@ void MaterializeMetadata::transaction(const MySQLReplication::Position & positio
 {
     binlog_file = position.binlog_name;
     binlog_position = position.binlog_pos;
+    executed_gtid_set = position.gtid_sets.toString();
 
     String persistent_tmp_path = persistent_path + ".tmp";
 
     {
-        WriteBufferFromFile out(persistent_tmp_path, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_TRUNC | O_CREAT | O_EXCL);
+        WriteBufferFromFile out(persistent_tmp_path, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_TRUNC | O_CREAT);
 
         /// TSV format metadata file.
-        writeString("Version:\t1", out);
+        writeString("Version:\t" + toString(meta_version), out);
         writeString("\nBinlog File:\t" + binlog_file, out);
         writeString("\nExecuted GTID:\t" + executed_gtid_set, out);
         writeString("\nBinlog Position:\t" + toString(binlog_position), out);
-        writeString("\nData Version:\t" + toString(version), out);
+        writeString("\nData Version:\t" + toString(data_version), out);
 
         out.next();
         out.sync();
@@ -169,7 +170,7 @@ MaterializeMetadata::MaterializeMetadata(
     if (Poco::File(persistent_path).exists())
     {
         ReadBufferFromFile in(persistent_path, DBMS_DEFAULT_BUFFER_SIZE);
-        assertString("Version:\t1", in);
+        assertString("Version:\t" + toString(meta_version), in);
         assertString("\nBinlog File:\t", in);
         readString(binlog_file, in);
         assertString("\nExecuted GTID:\t", in);
@@ -177,7 +178,7 @@ MaterializeMetadata::MaterializeMetadata(
         assertString("\nBinlog Position:\t", in);
         readIntText(binlog_position, in);
         assertString("\nData Version:\t", in);
-        readIntText(version, in);
+        readIntText(data_version, in);
 
         if (checkBinlogFileExists(connection, mysql_version))
             return;

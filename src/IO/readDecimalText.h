@@ -5,25 +5,6 @@
 #include <Common/intExp.h>
 
 
-/// This is only needed for non-official, "unbundled" build.
-/// https://stackoverflow.com/questions/41198673/uint128-t-not-working-with-clang-and-libstdc
-#if !defined(_LIBCPP_LIMITS) && !defined(__GLIBCXX_BITSIZE_INT_N_0) && defined(__SIZEOF_INT128__)
-namespace std
-{
-    template <>
-    struct numeric_limits<__int128_t>
-    {
-        static constexpr bool is_specialized = true;
-        static constexpr bool is_signed = true;
-        static constexpr bool is_integer = true;
-        static constexpr int radix = 2;
-        static constexpr int digits = 127;
-        static constexpr int digits10 = 38;
-    };
-}
-#endif
-
-
 namespace DB
 {
 
@@ -40,7 +21,7 @@ namespace ErrorCodes
 template <bool _throw_on_error, typename T>
 inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exponent, bool digits_only = false)
 {
-    x = 0;
+    x = T(0);
     exponent = 0;
     uint32_t max_digits = digits;
     digits = 0;
@@ -173,10 +154,16 @@ inline void readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_
     readDigits<true>(buf, x, digits, exponent, digits_only);
 
     if (static_cast<int32_t>(digits) + exponent > static_cast<int32_t>(precision - scale))
-        throw Exception(fmt::format(
+    {
+        static constexpr const char * pattern =
             "Decimal value is too big: {} digits were read: {}e{}."
-            " Expected to read decimal with scale {} and precision {}",
-            digits, x, exponent, scale, precision), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            " Expected to read decimal with scale {} and precision {}";
+
+        if constexpr (is_big_int_v<typename T::NativeType>)
+            throw Exception(fmt::format(pattern, digits, bigintToString(x.value), exponent, scale, precision), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        else
+            throw Exception(fmt::format(pattern, digits, x, exponent, scale, precision), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+    }
 
     if (static_cast<int32_t>(scale) + exponent < 0)
     {
@@ -192,8 +179,8 @@ inline void readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_
         else
         {
             /// Too many digits after point. Just cut off excessive digits.
-            auto divisor = intExp10OfSize<T>(divisor_exp);
-            assert(divisor > 0);    /// This is for Clang Static Analyzer. It is not smart enough to infer it automatically.
+            auto divisor = intExp10OfSize<typename T::NativeType>(divisor_exp);
+            assert(divisor > 0); /// This is for Clang Static Analyzer. It is not smart enough to infer it automatically.
             x.value /= divisor;
             scale = 0;
             return;

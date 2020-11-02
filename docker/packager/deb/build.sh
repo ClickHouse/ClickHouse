@@ -2,21 +2,19 @@
 
 set -x -e
 
-# Update tzdata to the latest version. It is embedded into clickhouse binary.
-sudo apt-get update && sudo apt-get install tzdata
-
 ccache --show-stats ||:
 ccache --zero-stats ||:
-build/release --no-pbuilder $ALIEN_PKGS | ts '%Y-%m-%d %H:%M:%S'
+read -ra ALIEN_PKGS <<< "${ALIEN_PKGS:-}"
+build/release --no-pbuilder "${ALIEN_PKGS[@]}" | ts '%Y-%m-%d %H:%M:%S'
 mv /*.deb /output
-mv *.changes /output
-mv *.buildinfo /output
+mv -- *.changes /output
+mv -- *.buildinfo /output
 mv /*.rpm /output ||: # if exists
 mv /*.tgz /output ||: # if exists
 
 if [ -n "$BINARY_OUTPUT" ] && { [ "$BINARY_OUTPUT" = "programs" ] || [ "$BINARY_OUTPUT" = "tests" ] ;}
 then
-  echo Place $BINARY_OUTPUT to output
+  echo "Place $BINARY_OUTPUT to output"
   mkdir /output/binary ||: # if exists
   mv /build/obj-*/programs/clickhouse* /output/binary
   if [ "$BINARY_OUTPUT" = "tests" ]

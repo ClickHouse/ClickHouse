@@ -114,7 +114,7 @@ void StorageSystemQuotas::fillData(MutableColumns & res_columns, const Context &
         auto quota = access_control.tryRead<Quota>(id);
         if (!quota)
             continue;
-        const auto * storage = access_control.findStorage(id);
+        auto storage = access_control.findStorage(id);
         if (!storage)
             continue;
 

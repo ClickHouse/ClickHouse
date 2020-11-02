@@ -1,11 +1,3 @@
-option (USE_INTERNAL_POCO_LIBRARY "Use internal Poco library" ${NOT_UNBUNDLED})
-
-if (USE_INTERNAL_POCO_LIBRARY)
-    set (LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/poco)
-else ()
-    find_path (ROOT_DIR NAMES Foundation/include/Poco/Poco.h include/Poco/Poco.h)
-endif ()
-
 add_subdirectory (Crypto)
 add_subdirectory (Data)
 add_subdirectory (Data/ODBC)

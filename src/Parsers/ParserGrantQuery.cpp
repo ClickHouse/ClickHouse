@@ -14,6 +14,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int INVALID_GRANT;
     extern const int SYNTAX_ERROR;
 }
 
@@ -156,6 +157,29 @@ namespace
     }
 
 
+    void removeNonGrantableFlags(AccessRightsElements & elements)
+    {
+        for (auto & element : elements)
+        {
+            if (element.empty())
+                continue;
+            auto old_flags = element.access_flags;
+            element.removeNonGrantableFlags();
+            if (!element.empty())
+                continue;
+
+            if (!element.any_column)
+                throw Exception(old_flags.toString() + " cannot be granted on the column level", ErrorCodes::INVALID_GRANT);
+            else if (!element.any_table)
+                throw Exception(old_flags.toString() + " cannot be granted on the table level", ErrorCodes::INVALID_GRANT);
+            else if (!element.any_database)
+                throw Exception(old_flags.toString() + " cannot be granted on the database level", ErrorCodes::INVALID_GRANT);
+            else
+                throw Exception(old_flags.toString() + " cannot be granted", ErrorCodes::INVALID_GRANT);
+        }
+    }
+
+
     bool parseRoles(IParser::Pos & pos, Expected & expected, Kind kind, bool id_mode, std::shared_ptr<ASTRolesOrUsersSet> & roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
@@ -273,6 +297,9 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         throw Exception("GRANT OPTION should be specified for access types", ErrorCodes::SYNTAX_ERROR);
     if (admin_option && !elements.empty())
         throw Exception("ADMIN OPTION should be specified for roles", ErrorCodes::SYNTAX_ERROR);
+
+    if (kind == Kind::GRANT)
+        removeNonGrantableFlags(elements);
 
     auto query = std::make_shared<ASTGrantQuery>();
     node = query;

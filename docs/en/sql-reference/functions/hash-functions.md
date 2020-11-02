@@ -315,7 +315,7 @@ Calculates JumpConsistentHash form a UInt64.
 Accepts two arguments: a UInt64-type key and the number of buckets. Returns Int32.
 For more information, see the link: [JumpConsistentHash](https://arxiv.org/pdf/1406.2294.pdf)
 
-## murmurHash2\_32, murmurHash2\_64 {#murmurhash2-32-murmurhash2-64}
+## murmurHash2_32, murmurHash2_64 {#murmurhash2-32-murmurhash2-64}
 
 Produces a [MurmurHash2](https://github.com/aappleby/smhasher) hash value.
 
@@ -383,7 +383,7 @@ Result:
 └──────────────────────┴─────────────────────┘
 ```
 
-## murmurHash3\_32, murmurHash3\_64 {#murmurhash3-32-murmurhash3-64}
+## murmurHash3_32, murmurHash3_64 {#murmurhash3-32-murmurhash3-64}
 
 Produces a [MurmurHash3](https://github.com/aappleby/smhasher) hash value.
 
@@ -413,7 +413,7 @@ SELECT murmurHash3_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 └─────────────┴────────┘
 ```
 
-## murmurHash3\_128 {#murmurhash3-128}
+## murmurHash3_128 {#murmurhash3-128}
 
 Produces a 128-bit [MurmurHash3](https://github.com/aappleby/smhasher) hash value.
 

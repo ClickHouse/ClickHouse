@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/BoolMask.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/FieldToDataType.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
@@ -367,8 +368,10 @@ KeyCondition::KeyCondition(
     const SelectQueryInfo & query_info,
     const Context & context,
     const Names & key_column_names,
-    const ExpressionActionsPtr & key_expr_)
-    : key_expr(key_expr_), prepared_sets(query_info.sets)
+    const ExpressionActionsPtr & key_expr_,
+    bool single_point_,
+    bool strict_)
+    : key_expr(key_expr_), prepared_sets(query_info.sets), single_point(single_point_), strict(strict_)
 {
     for (size_t i = 0, size = key_column_names.size(); i < size; ++i)
     {
@@ -453,14 +456,13 @@ static Field applyFunctionForField(
     const DataTypePtr & arg_type,
     const Field & arg_value)
 {
-    Block block
+    ColumnsWithTypeAndName columns
     {
         { arg_type->createColumnConst(1, arg_value), arg_type, "x" },
-        { nullptr, func->getReturnType(), "y" }
     };
 
-    func->execute(block, {0}, 1, 1);
-    return (*block.safeGetByPosition(1).column)[0];
+    auto col = func->execute(columns, func->getResultType(), 1);
+    return (*col)[0];
 }
 
 /// The case when arguments may have types different than in the primary key.
@@ -469,21 +471,15 @@ static std::pair<Field, DataTypePtr> applyFunctionForFieldOfUnknownType(
     const DataTypePtr & arg_type,
     const Field & arg_value)
 {
-    ColumnWithTypeAndName argument = { arg_type->createColumnConst(1, arg_value), arg_type, "x" };
+    ColumnsWithTypeAndName arguments{{ arg_type->createColumnConst(1, arg_value), arg_type, "x" }};
 
-    FunctionBasePtr func_base = func->build({argument});
+    FunctionBasePtr func_base = func->build(arguments);
 
-    DataTypePtr return_type = func_base->getReturnType();
+    DataTypePtr return_type = func_base->getResultType();
 
-    Block block
-    {
-        std::move(argument),
-        { nullptr, return_type, "result" }
-    };
+    auto col = func_base->execute(arguments, return_type, 1);
 
-    func_base->execute(block, {0}, 1, 1);
-
-    Field result = (*block.safeGetByPosition(1).column)[0];
+    Field result = (*col)[0];
 
     return {std::move(result), std::move(return_type)};
 }
@@ -496,18 +492,23 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
         return applyFunctionForField(func, current_type, field);
 
     String result_name = "_" + func->getName() + "_" + toString(field.column_idx);
-    size_t result_idx;
-    const auto & block = field.block;
-    if (!block->has(result_name))
-    {
-        result_idx = block->columns();
-        field.block->insert({nullptr, func->getReturnType(), result_name});
-        func->execute(*block, {field.column_idx}, result_idx, block->rows());
-    }
-    else
-        result_idx = block->getPositionByName(result_name);
+    const auto & columns = field.columns;
+    size_t result_idx = columns->size();
 
-    return {field.block, field.row_idx, result_idx};
+    for (size_t i = 0; i < result_idx; ++i)
+    {
+        if ((*columns)[i].name == result_name)
+            result_idx = i;
+    }
+
+    ColumnsWithTypeAndName args{(*columns)[field.column_idx]};
+    if (result_idx == columns->size())
+    {
+        field.columns->emplace_back(ColumnWithTypeAndName {nullptr, func->getResultType(), result_name});
+        (*columns)[result_idx].column = func->execute(args, (*columns)[result_idx].type, columns->front().column->size());
+    }
+
+    return {field.columns, field.row_idx, result_idx};
 }
 
 void KeyCondition::traverseAST(const ASTPtr & node, const Context & context, Block & block_with_constants)
@@ -550,6 +551,18 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     Field & out_value,
     DataTypePtr & out_type)
 {
+    /// We don't look for inversed key transformations when strict is true, which is required for trivial count().
+    /// Consider the following test case:
+    ///
+    /// create table test1(p DateTime, k int) engine MergeTree partition by toDate(p) order by k;
+    /// insert into test1 values ('2020-09-01 00:01:02', 1), ('2020-09-01 20:01:03', 2), ('2020-09-02 00:01:03', 3);
+    /// select count() from test1 where p > toDateTime('2020-09-01 10:00:00');
+    ///
+    /// toDate(DateTime) is always monotonic, but we cannot relaxing the predicates to be
+    /// >= toDate(toDateTime('2020-09-01 10:00:00')), which returns 3 instead of the right count: 2.
+    if (strict)
+        return false;
+
     String expr_name = node->getColumnName();
     const auto & sample_block = key_expr->getSampleBlock();
     if (!sample_block.has(expr_name))
@@ -711,14 +724,33 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
 
     for (auto it = chain_not_tested_for_monotonicity.rbegin(); it != chain_not_tested_for_monotonicity.rend(); ++it)
     {
+        const auto & args = (*it)->arguments->children;
         auto func_builder = FunctionFactory::instance().tryGet((*it)->name, context);
-        ColumnsWithTypeAndName arguments{{ nullptr, key_column_type, "" }};
+        ColumnsWithTypeAndName arguments;
+        if (args.size() == 2)
+        {
+            if (const auto * arg_left = args[0]->as<ASTLiteral>())
+            {
+                auto left_arg_type = applyVisitor(FieldToDataType(), arg_left->value);
+                arguments.push_back({ left_arg_type->createColumnConst(0, arg_left->value), left_arg_type, "" });
+                arguments.push_back({ nullptr, key_column_type, "" });
+            }
+            else if (const auto * arg_right = args[1]->as<ASTLiteral>())
+            {
+                arguments.push_back({ nullptr, key_column_type, "" });
+                auto right_arg_type = applyVisitor(FieldToDataType(), arg_right->value);
+                arguments.push_back({ right_arg_type->createColumnConst(0, arg_right->value), right_arg_type, "" });
+            }
+        }
+        else
+            arguments.push_back({ nullptr, key_column_type, "" });
         auto func = func_builder->build(arguments);
 
-        if (!func || !func->hasInformationAboutMonotonicity())
+        /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
+        if (!func || (!single_point && !func->hasInformationAboutMonotonicity()))
             return false;
 
-        key_column_type = func->getReturnType();
+        key_column_type = func->getResultType();
         out_functions_chain.push_back(func);
     }
 
@@ -750,12 +782,27 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
     if (const auto * func = node->as<ASTFunction>())
     {
         const auto & args = func->arguments->children;
-        if (args.size() != 1)
+        if (args.size() > 2 || args.empty())
             return false;
 
         out_functions_chain.push_back(func);
-
-        return isKeyPossiblyWrappedByMonotonicFunctionsImpl(args[0], out_key_column_num, out_key_column_type, out_functions_chain);
+        bool ret = false;
+        if (args.size() == 2)
+        {
+            if (args[0]->as<ASTLiteral>())
+            {
+                ret = isKeyPossiblyWrappedByMonotonicFunctionsImpl(args[1], out_key_column_num, out_key_column_type, out_functions_chain);
+            }
+            else if (args[1]->as<ASTLiteral>())
+            {
+                ret = isKeyPossiblyWrappedByMonotonicFunctionsImpl(args[0], out_key_column_num, out_key_column_type, out_functions_chain);
+            }
+        }
+        else
+        {
+            ret = isKeyPossiblyWrappedByMonotonicFunctionsImpl(args[0], out_key_column_num, out_key_column_type, out_functions_chain);
+        }
+        return ret;
     }
 
     return false;
@@ -1129,13 +1176,16 @@ BoolMask KeyCondition::checkInRange(
 std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     Range key_range,
     const MonotonicFunctionsChain & functions,
-    DataTypePtr current_type)
+    DataTypePtr current_type,
+    bool single_point)
 {
     for (const auto & func : functions)
     {
         /// We check the monotonicity of each function on a specific range.
-        IFunction::Monotonicity monotonicity = func->getMonotonicityForRange(
-            *current_type.get(), key_range.left, key_range.right);
+        /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
+        IFunction::Monotonicity monotonicity = single_point
+            ? IFunction::Monotonicity{true}
+            : func->getMonotonicityForRange(*current_type.get(), key_range.left, key_range.right);
 
         if (!monotonicity.is_monotonic)
         {
@@ -1157,7 +1207,7 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
             key_range.right_included = true;
         }
 
-        current_type = func->getReturnType();
+        current_type = func->getResultType();
 
         if (!monotonicity.is_positive)
             key_range.swapLeftAndRight();
@@ -1265,7 +1315,8 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
                     *key_range,
                     element.monotonic_functions_chain,
-                    data_types[element.key_column]
+                    data_types[element.key_column],
+                    single_point
                 );
 
                 if (!new_range)

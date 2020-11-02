@@ -61,12 +61,28 @@ namespace
             String name_,
             const Block & sample_block,
             const Context & context,
-            const ColumnDefaults & column_defaults,
+            const ColumnsDescription & columns,
             UInt64 max_block_size,
             const ConnectionTimeouts & timeouts,
             const CompressionMethod compression_method)
             : SourceWithProgress(sample_block), name(std::move(name_))
         {
+            ReadWriteBufferFromHTTP::HTTPHeaderEntries header;
+
+            // Propagate OpenTelemetry trace context, if any, downstream.
+            const auto & client_info = context.getClientInfo();
+            if (client_info.opentelemetry_trace_id)
+            {
+                header.emplace_back("traceparent",
+                    client_info.composeTraceparentHeader());
+
+                if (!client_info.opentelemetry_tracestate.empty())
+                {
+                    header.emplace_back("tracestate",
+                        client_info.opentelemetry_tracestate);
+                }
+            }
+
             read_buf = wrapReadBufferWithCompressionMethod(
                 std::make_unique<ReadWriteBufferFromHTTP>(
                     uri,
@@ -76,12 +92,12 @@ namespace
                     context.getSettingsRef().max_http_get_redirects,
                     Poco::Net::HTTPBasicCredentials{},
                     DBMS_DEFAULT_BUFFER_SIZE,
-                    ReadWriteBufferFromHTTP::HTTPHeaderEntries{},
+                    header,
                     context.getRemoteHostFilter()),
                 compression_method);
 
             reader = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
-            reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, column_defaults, context);
+            reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, columns, context);
         }
 
         String getName() const override
@@ -201,7 +217,7 @@ Pipe IStorageURLBase::read(
         getName(),
         getHeaderBlock(column_names, metadata_snapshot),
         context,
-        metadata_snapshot->getColumns().getDefaults(),
+        metadata_snapshot->getColumns(),
         max_block_size,
         ConnectionTimeouts::getHTTPTimeouts(context),
         chooseCompressionMethod(request_uri.getPath(), compression_method)));

@@ -1,8 +1,10 @@
-import pytest
 import os
+
+import pytest
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV, assert_eq_with_retry
-from generate_dictionaries import generate_structure, generate_dictionaries, DictionaryTestTable
+from helpers.test_tools import TSV
+
+from .generate_dictionaries import generate_structure, generate_dictionaries, DictionaryTestTable
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -19,18 +21,18 @@ def setup_module(module):
     structure = generate_structure()
     dictionary_files = generate_dictionaries(os.path.join(SCRIPT_DIR, 'configs/dictionaries'), structure)
 
-    cluster = ClickHouseCluster(__file__, base_configs_dir=os.path.join(SCRIPT_DIR, 'configs'))
-    instance = cluster.add_instance('instance', main_configs=dictionary_files)
+    cluster = ClickHouseCluster(__file__)
+    instance = cluster.add_instance('instance', main_configs=dictionary_files + ['configs/enable_dictionaries.xml'])
     test_table = DictionaryTestTable(os.path.join(SCRIPT_DIR, 'configs/dictionaries/source.tsv'))
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="module", autouse=True)
 def started_cluster():
     try:
         cluster.start()
         test_table.create_clickhouse_source(instance)
         for line in TSV(instance.query('select name from system.dictionaries')).lines:
-            print line,
+            print(line, end=' ')
 
         yield cluster
 
@@ -70,7 +72,7 @@ def test_select_all(dictionary_structure):
     result = TSV(query('select * from test.{0}'.format(name)))
 
     diff = test_table.compare_by_keys(keys, result.lines, use_parent, add_not_found_rows=True)
-    print test_table.process_diff(diff)
+    print(test_table.process_diff(diff))
     assert not diff
 
 
@@ -101,7 +103,7 @@ def test_select_all_from_cached(cached_dictionary_structure):
     for i in range(4):
         result = TSV(query('select * from test.{0}'.format(name)))
         diff = test_table.compare_by_keys(keys, result.lines, use_parent, add_not_found_rows=False)
-        print test_table.process_diff(diff)
+        print(test_table.process_diff(diff))
         assert not diff
 
         key = []
@@ -118,5 +120,5 @@ def test_select_all_from_cached(cached_dictionary_structure):
 
     result = TSV(query('select * from test.{0}'.format(name)))
     diff = test_table.compare_by_keys(keys, result.lines, use_parent, add_not_found_rows=True)
-    print test_table.process_diff(diff)
+    print(test_table.process_diff(diff))
     assert not diff

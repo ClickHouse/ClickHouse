@@ -3,7 +3,7 @@
 #include <chrono>
 #include <functional>
 #include <unordered_map>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Interpreters/IExternalLoadable.h>
 #include <Interpreters/IExternalLoaderConfigRepository.h>
 #include <common/logger_useful.h>

@@ -164,13 +164,15 @@ public:
     void detachQuery(bool exit_if_already_detached = false, bool thread_exits = false);
 
 protected:
+    void applyQuerySettings();
+
     void initPerformanceCounters();
 
     void initQueryProfiler();
 
     void finalizeQueryProfiler();
 
-    void logToQueryThreadLog(QueryThreadLog & thread_log);
+    void logToQueryThreadLog(QueryThreadLog & thread_log, const String & current_database);
 
     void assertState(const std::initializer_list<int> & permitted_states, const char * description = nullptr) const;
 
@@ -190,6 +192,7 @@ protected:
 
     bool performance_counters_finalized = false;
     UInt64 query_start_time_nanoseconds = 0;
+    UInt64 query_start_time_microseconds = 0;
     time_t query_start_time = 0;
     size_t queries_started = 0;
 
@@ -210,6 +213,24 @@ protected:
 
 private:
     void setupState(const ThreadGroupStatusPtr & thread_group_);
+};
+
+/**
+ * Creates ThreadStatus for the main thread.
+ */
+class MainThreadStatus : public ThreadStatus
+{
+public:
+    static MainThreadStatus & getInstance();
+    static ThreadStatus * get() { return main_thread; }
+    static bool isMainThread() { return main_thread == current_thread; }
+
+    ~MainThreadStatus();
+
+private:
+    MainThreadStatus();
+
+    static ThreadStatus * main_thread;
 };
 
 }

@@ -3,6 +3,7 @@
 #include <boost/program_options.hpp>
 
 #include <sys/stat.h>
+#include <pwd.h>
 
 #if defined(__linux__)
     #include <syscall.h>
@@ -204,6 +205,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             "clickhouse-benchmark",
             "clickhouse-copier",
             "clickhouse-obfuscator",
+            "clickhouse-git-import",
             "clickhouse-compressor",
             "clickhouse-format",
             "clickhouse-extract-from-config"
@@ -546,11 +548,27 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                            users_config_file.string(), users_d.string());
         }
 
-        /// Set capabilities for the binary.
+        /** Set capabilities for the binary.
+          *
+          * 1. Check that "setcap" tool exists.
+          * 2. Check that an arbitrary program with installed capabilities can run.
+          * 3. Set the capabilities.
+          *
+          * The second is important for Docker and systemd-nspawn.
+          * When the container has no capabilities,
+          * but the executable file inside the container has capabilities,
+          *  then attempt to run this file will end up with a cryptic "Operation not permitted" message.
+          */
 
 #if defined(__linux__)
         fmt::print("Setting capabilities for clickhouse binary. This is optional.\n");
-        std::string command = fmt::format("command setcap && setcap 'cap_net_admin,cap_ipc_lock,cap_sys_nice+ep' {}", main_bin_path.string());
+        std::string command = fmt::format("command -v setcap >/dev/null"
+            " && echo > {0} && chmod a+x {0} && {0} && setcap 'cap_net_admin,cap_ipc_lock,cap_sys_nice+ep' {0} && {0} && rm {0}"
+            " && setcap 'cap_net_admin,cap_ipc_lock,cap_sys_nice+ep' {1}"
+            " || echo \"Cannot set 'net_admin' or 'ipc_lock' or 'sys_nice' capability for clickhouse binary."
+                " This is optional. Taskstats accounting will be disabled."
+                " To enable taskstats accounting you may add the required capability later manually.\"",
+            "/tmp/test_setcap.sh", main_bin_path.string());
         fmt::print(" {}\n", command);
         executeScript(command);
 #endif
@@ -621,15 +639,36 @@ namespace
                 fs::remove(pid_file);
             }
         }
+        else
+        {
+            /// Create a directory for pid file.
+            /// It's created by "install" but we also support cases when ClickHouse is already installed different way.
+            fs::path pid_path = pid_file;
+            pid_path.remove_filename();
+            fs::create_directories(pid_path);
+            /// All users are allowed to read pid file (for clickhouse status command).
+            fs::permissions(pid_path, fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read, fs::perm_options::replace);
+
+            {
+                std::string command = fmt::format("chown --recursive {} '{}'", user, pid_path.string());
+                fmt::print(" {}\n", command);
+                executeScript(command);
+            }
+        }
 
         std::string command = fmt::format("{} --config-file {} --pid-file {} --daemon",
             executable.string(), config.string(), pid_file.string());
 
         if (!user.empty())
         {
-            bool need_sudo = geteuid() != 0;
-            if (need_sudo)
-                command = fmt::format("sudo -u '{}' {}", user, command);
+            bool may_need_sudo = geteuid() != 0;
+            if (may_need_sudo)
+            {
+                struct passwd *p = getpwuid(geteuid());
+                // Only use sudo when we are not the given user
+                if (p == nullptr || std::string(p->pw_name) != user)
+                    command = fmt::format("sudo -u '{}' {}", user, command);
+            }
             else
                 command = fmt::format("su -s /bin/sh '{}' -c '{}'", user, command);
         }
@@ -655,6 +694,28 @@ namespace
         if (try_num == num_tries)
         {
             fmt::print("Cannot start server. You can execute {} without --daemon option to run manually.\n", command);
+
+            fs::path log_path;
+
+            {
+                ConfigProcessor processor(config.string(), /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
+                ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(processor.processConfig()));
+
+                if (configuration->has("logger.log"))
+                    log_path = fs::path(configuration->getString("logger.log")).remove_filename();
+            }
+
+            if (log_path.empty())
+            {
+                fmt::print("Cannot obtain path to logs (logger.log) from config file {}.\n", config.string());
+            }
+            else
+            {
+                fs::path stderr_path = log_path;
+                stderr_path.replace_filename("stderr.log");
+                fmt::print("Look for logs at {} and for {}.\n", log_path.string(), stderr_path.string());
+            }
+
             return 3;
         }
 

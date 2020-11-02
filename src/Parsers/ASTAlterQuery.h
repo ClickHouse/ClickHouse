@@ -31,10 +31,12 @@ public:
         COMMENT_COLUMN,
         RENAME_COLUMN,
         MODIFY_ORDER_BY,
+        MODIFY_SAMPLE_BY,
         MODIFY_TTL,
         MATERIALIZE_TTL,
         MODIFY_SETTING,
         MODIFY_QUERY,
+        REMOVE_TTL,
 
         ADD_INDEX,
         DROP_INDEX,
@@ -77,6 +79,10 @@ public:
     /** For MODIFY ORDER BY
      */
     ASTPtr order_by;
+
+    /** For MODIFY SAMPLE BY
+     */
+    ASTPtr sample_by;
 
     /** The ADD INDEX query stores the IndexDeclaration there.
      */
@@ -161,6 +167,9 @@ public:
 
     /// Target column name
     ASTPtr rename_to;
+
+    /// Which property user want to remove
+    String remove_property;
 
     String getID(char delim) const override { return "AlterCommand" + (delim + std::to_string(static_cast<int>(type))); }
 

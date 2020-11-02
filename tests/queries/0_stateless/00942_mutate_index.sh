@@ -2,10 +2,8 @@
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
-. "$CURDIR"/mergetree_mutations.lib
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS minmax_idx;"
-
 
 $CLICKHOUSE_CLIENT -n --query="
 CREATE TABLE minmax_idx
@@ -17,7 +15,6 @@ CREATE TABLE minmax_idx
 ) ENGINE = MergeTree()
 ORDER BY u64
 SETTINGS index_granularity = 2;"
-
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO minmax_idx VALUES
 (0, 1, 1),
@@ -34,8 +31,7 @@ $CLICKHOUSE_CLIENT --query="INSERT INTO minmax_idx VALUES
 $CLICKHOUSE_CLIENT --query="SELECT count() FROM minmax_idx WHERE i64 = 1;"
 $CLICKHOUSE_CLIENT --query="SELECT count() FROM minmax_idx WHERE i64 = 5;"
 
-$CLICKHOUSE_CLIENT --query="ALTER TABLE minmax_idx UPDATE i64 = 5 WHERE i64 = 1;"
-wait_for_mutation "minmax_idx" "mutation_2.txt" "$CLICKHOUSE_DATABASE"
+$CLICKHOUSE_CLIENT --query="ALTER TABLE minmax_idx UPDATE i64 = 5 WHERE i64 = 1;" --mutations_sync=1
 
 $CLICKHOUSE_CLIENT --query="SELECT count() FROM minmax_idx WHERE i64 = 1;"
 $CLICKHOUSE_CLIENT --query="SELECT count() FROM minmax_idx WHERE i64 = 5;"

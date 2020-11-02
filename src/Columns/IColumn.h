@@ -267,17 +267,6 @@ public:
       */
     virtual void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const = 0;
 
-    enum class SpecialSort
-    {
-        NONE = 0,
-        OPENCL_BITONIC,
-    };
-
-    virtual void getSpecialPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, SpecialSort) const
-    {
-        getPermutation(reverse, limit, nan_direction_hint, res);
-    }
-
     /*in updatePermutation we pass the current permutation and the intervals at which it should be sorted
      * Then for each interval separately (except for the last one, if there is a limit)
      * We sort it based on data about the current column, and find all the intervals within this
@@ -402,7 +391,6 @@ public:
     virtual size_t sizeOfValueIfFixed() const { throw Exception("Values of column " + getName() + " are not fixed size.", ErrorCodes::CANNOT_GET_SIZE_OF_FIELD); }
 
     /// Column is ColumnVector of numbers or ColumnConst of it. Note that Nullable columns are not numeric.
-    /// Implies isFixedAndContiguous.
     virtual bool isNumeric() const { return false; }
 
     /// If the only value column can contain is NULL.
