@@ -282,7 +282,7 @@ void ExpressionActions::executeAction(const Action & action, ExecutionContext & 
             auto pos = execution_context.inputs_pos[action.arguments.front().pos];
             if (pos < 0)
             {
-                if (action.arguments.front().remove)
+                if (!action.arguments.front().remove)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found column {} in block", action.node->result_name);
             }
             else
@@ -1381,7 +1381,8 @@ ExpressionActionsPtr ActionsDAG::linearizeActions() const
             /// Argument for input is special. It contains the position from required columns.
             ExpressionActions::Argument argument;
             argument.pos = expressions->required_columns.size();
-            argument.remove = !cur.parents.empty();
+            argument.remove = cur.parents.empty();
+            arguments.emplace_back(argument);
 
             expressions->required_columns.push_back({node->result_name, node->result_type});
         }
