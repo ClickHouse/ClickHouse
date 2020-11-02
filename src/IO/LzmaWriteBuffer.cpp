@@ -1,20 +1,16 @@
 #include <IO/LzmaWriteBuffer.h>
 
 
-namespace DB {
+namespace DB
+{
 namespace ErrorCodes
 {
     extern const int LZMA_STREAM_ENCODER_FAILED;
 }
 
 LzmaWriteBuffer::LzmaWriteBuffer(
-        std::unique_ptr<WriteBuffer> out_,
-        int compression_level,
-        size_t buf_size,
-        char * existing_memory,
-        size_t alignment)
-    : BufferWithOwnMemory<WriteBuffer>(buf_size, existing_memory, alignment)
-    , out(std::move(out_))
+    std::unique_ptr<WriteBuffer> out_, int compression_level, size_t buf_size, char * existing_memory, size_t alignment)
+    : BufferWithOwnMemory<WriteBuffer>(buf_size, existing_memory, alignment), out(std::move(out_))
 {
     lstr = LZMA_STREAM_INIT;
     lstr.allocator = nullptr;
@@ -22,23 +18,25 @@ LzmaWriteBuffer::LzmaWriteBuffer(
     lstr.avail_in = 0;
     lstr.next_out = nullptr;
     lstr.avail_out = 0;
-    
+
     // options for further compression
     lzma_options_lzma opt_lzma2;
     if (lzma_lzma_preset(&opt_lzma2, compression_level))
-        throw Exception(std::string("lzma preset failed: ") + "; lzma version: " + LZMA_VERSION_STRING, ErrorCodes::LZMA_STREAM_ENCODER_FAILED);
+        throw Exception(
+            std::string("lzma preset failed: ") + "; lzma version: " + LZMA_VERSION_STRING, ErrorCodes::LZMA_STREAM_ENCODER_FAILED);
 
 
     lzma_filter filters[] = {
-		{ .id = LZMA_FILTER_X86, .options = NULL },
-		{ .id = LZMA_FILTER_LZMA2, .options = &opt_lzma2 },
-        { .id = LZMA_VLI_UNKNOWN, .options = NULL },
+        {.id = LZMA_FILTER_X86, .options = NULL},
+        {.id = LZMA_FILTER_LZMA2, .options = &opt_lzma2},
+        {.id = LZMA_VLI_UNKNOWN, .options = NULL},
     };
     lzma_ret ret = lzma_stream_encoder(&lstr, filters, LZMA_CHECK_CRC64);
 
-    if (ret != LZMA_OK) 
-        throw Exception(std::string("lzma stream encoder init failed: ") + std::to_string(ret) + "; lzma version: " + LZMA_VERSION_STRING, ErrorCodes::LZMA_STREAM_ENCODER_FAILED);
-     
+    if (ret != LZMA_OK)
+        throw Exception(
+            std::string("lzma stream encoder init failed: ") + std::to_string(ret) + "; lzma version: " + LZMA_VERSION_STRING,
+            ErrorCodes::LZMA_STREAM_ENCODER_FAILED);
 }
 
 LzmaWriteBuffer::~LzmaWriteBuffer()
@@ -48,7 +46,8 @@ LzmaWriteBuffer::~LzmaWriteBuffer()
         finish();
 
         lzma_end(&lstr);
-    } catch (...)
+    }
+    catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
@@ -74,13 +73,14 @@ void LzmaWriteBuffer::nextImpl()
         out->position() = out->buffer().end() - lstr.avail_out;
 
 
-
         if (ret == LZMA_STREAM_END)
             return;
-        
+
         if (ret != LZMA_OK)
-            throw Exception(std::string("lzma stream encoding failed: ") + "; lzma version: " + LZMA_VERSION_STRING, ErrorCodes::LZMA_STREAM_ENCODER_FAILED);
-    
+            throw Exception(
+                std::string("lzma stream encoding failed: ") + "; lzma version: " + LZMA_VERSION_STRING,
+                ErrorCodes::LZMA_STREAM_ENCODER_FAILED);
+
     } while (lstr.avail_in > 0 || lstr.avail_out == 0);
 }
 
@@ -102,16 +102,17 @@ void LzmaWriteBuffer::finish()
         out->position() = out->buffer().end() - lstr.avail_out;
 
 
-        if (ret == LZMA_STREAM_END) 
+        if (ret == LZMA_STREAM_END)
         {
             finished = true;
-			return;
+            return;
         }
-        
+
         if (ret != LZMA_OK)
-            throw Exception(std::string("lzma stream encoding failed: ") + "; lzma version: " + LZMA_VERSION_STRING, ErrorCodes::LZMA_STREAM_ENCODER_FAILED);
-    
+            throw Exception(
+                std::string("lzma stream encoding failed: ") + "; lzma version: " + LZMA_VERSION_STRING,
+                ErrorCodes::LZMA_STREAM_ENCODER_FAILED);
+
     } while (lstr.avail_out == 0);
 }
-
 }

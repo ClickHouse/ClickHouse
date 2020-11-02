@@ -30,5 +30,4 @@ private:
     lzma_stream lstr;
     bool eof;
 };
-
 }
