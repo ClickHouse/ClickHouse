@@ -1,6 +1,5 @@
 set (SRCS
     AST/AlterTableQuery.cpp
-    AST/AnalyzeQuery.cpp
     AST/CheckQuery.cpp
     AST/ColumnExpr.cpp
     AST/ColumnTypeExpr.cpp
@@ -13,6 +12,7 @@ set (SRCS
     AST/DropQuery.cpp
     AST/EngineExpr.cpp
     AST/ExistsQuery.cpp
+    AST/ExplainQuery.cpp
     AST/Identifier.cpp
     AST/InsertQuery.cpp
     AST/JoinExpr.cpp

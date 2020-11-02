@@ -31,7 +31,7 @@ int main(int argc, const char **)
             std::cout << std::endl << "Query:" << std::endl;
             std::cout << q << std::endl;
 
-            ParserQuery parser(q.data() + q.size(), true);
+            ParserQuery parser(q.data() + q.size());
             ASTPtr orig_ast = parseQuery(parser, q, 10000000, 10000);
 
             std::cout << std::endl << "New AST:" << std::endl;

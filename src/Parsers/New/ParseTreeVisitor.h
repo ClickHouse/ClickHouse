@@ -33,9 +33,6 @@ public:
     antlrcpp::Any visitAlterTableStmt(ClickHouseParser::AlterTableStmtContext * ctx) override;
     antlrcpp::Any visitTableColumnPropertyType(ClickHouseParser::TableColumnPropertyTypeContext * ctx) override;
 
-    // AnalyzeQuery
-    antlrcpp::Any visitAnalyzeStmt(ClickHouseParser::AnalyzeStmtContext * ctx) override;
-
     // CheckQuery
     antlrcpp::Any visitCheckStmt(ClickHouseParser::CheckStmtContext * ctx) override;
 
@@ -108,6 +105,9 @@ public:
 
     // ExistsQuery
     antlrcpp::Any visitExistsStmt(ClickHouseParser::ExistsStmtContext * ctx) override;
+
+    // ExplainQuery
+    antlrcpp::Any visitExplainStmt(ClickHouseParser::ExplainStmtContext * ctx) override;
 
     // Identifier
     antlrcpp::Any visitTableIdentifier(ClickHouseParser::TableIdentifierContext * ctx) override;

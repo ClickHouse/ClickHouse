@@ -60,8 +60,6 @@ public:
 
     virtual antlrcpp::Any visitPartitionClause(ClickHouseParser::PartitionClauseContext *context) = 0;
 
-    virtual antlrcpp::Any visitAnalyzeStmt(ClickHouseParser::AnalyzeStmtContext *context) = 0;
-
     virtual antlrcpp::Any visitCheckStmt(ClickHouseParser::CheckStmtContext *context) = 0;
 
     virtual antlrcpp::Any visitCreateDatabaseStmt(ClickHouseParser::CreateDatabaseStmtContext *context) = 0;
@@ -115,6 +113,8 @@ public:
     virtual antlrcpp::Any visitDropTableStmt(ClickHouseParser::DropTableStmtContext *context) = 0;
 
     virtual antlrcpp::Any visitExistsStmt(ClickHouseParser::ExistsStmtContext *context) = 0;
+
+    virtual antlrcpp::Any visitExplainStmt(ClickHouseParser::ExplainStmtContext *context) = 0;
 
     virtual antlrcpp::Any visitInsertStmt(ClickHouseParser::InsertStmtContext *context) = 0;
 
