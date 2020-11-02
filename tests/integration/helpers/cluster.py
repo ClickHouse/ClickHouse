@@ -908,12 +908,12 @@ class ClickHouseInstance:
         return "-fsanitize=thread" in build_opts
 
     # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
-    def query(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None,
+    def query(self, sql, stdin=None, timeout=60, settings=None, user=None, password=None, database=None,
               ignore_error=False):
         return self.client.query(sql, stdin=stdin, timeout=timeout, settings=settings, user=user, password=password,
                                  database=database, ignore_error=ignore_error)
 
-    def query_with_retry(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None,
+    def query_with_retry(self, sql, stdin=None, timeout=10, settings=None, user=None, password=None, database=None,
                          ignore_error=False,
                          retry_count=20, sleep_time=0.5, check_callback=lambda x: True):
         result = None
@@ -937,13 +937,13 @@ class ClickHouseInstance:
         return self.client.get_query_request(*args, **kwargs)
 
     # Connects to the instance via clickhouse-client, sends a query (1st argument), expects an error and return its code
-    def query_and_get_error(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None,
+    def query_and_get_error(self, sql, stdin=None, timeout=60, settings=None, user=None, password=None,
                             database=None):
         return self.client.query_and_get_error(sql, stdin=stdin, timeout=timeout, settings=settings, user=user,
                                                password=password, database=database)
 
     # The same as query_and_get_error but ignores successful query.
-    def query_and_get_answer_with_error(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None,
+    def query_and_get_answer_with_error(self, sql, stdin=None, timeout=60, settings=None, user=None, password=None,
                                         database=None):
         return self.client.query_and_get_answer_with_error(sql, stdin=stdin, timeout=timeout, settings=settings,
                                                            user=user, password=password, database=database)
