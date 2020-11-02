@@ -26,6 +26,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int LOGICAL_ERROR;
 }
 
 template <typename T, typename SFINAE = void>
@@ -767,9 +768,10 @@ T & Field::get()
 #ifndef NDEBUG
     // Disregard signedness when converting between int64 types.
     constexpr Field::Types::Which target = TypeToEnum<NearestFieldType<ValueType>>::value;
-    assert(target == which
-           || (isInt64FieldType(target) && isInt64FieldType(which))
-           || target == Field::Types::Decimal64 /* DateTime64 fields */);
+    if (target != which
+           && (!isInt64FieldType(target) || !isInt64FieldType(which))
+        && target != Field::Types::Decimal64 /* DateTime64 fields */)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid Field get from type {} to type {}", Types::toString(which), Types::toString(target));
 #endif
 
     ValueType * MAY_ALIAS ptr = reinterpret_cast<ValueType *>(&storage);
