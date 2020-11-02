@@ -4,6 +4,7 @@
 
 #include <Core/Settings.h>
 #include <Core/Block.h>
+#include <Core/ColumnsWithTypeAndName.h>
 
 #include <Common/StringUtils/StringUtils.h>
 
@@ -228,9 +229,9 @@ void TableJoin::addJoinedColumn(const NameAndTypePair & joined_column)
         columns_added_by_join.push_back(joined_column);
 }
 
-void TableJoin::addJoinedColumnsAndCorrectNullability(Block & sample_block) const
+void TableJoin::addJoinedColumnsAndCorrectNullability(ColumnsWithTypeAndName & columns) const
 {
-    for (auto & col : sample_block)
+    for (auto & col : columns)
     {
         /// Materialize column.
         /// Column is not empty if it is constant, but after Join all constants will be materialized.
@@ -249,7 +250,7 @@ void TableJoin::addJoinedColumnsAndCorrectNullability(Block & sample_block) cons
         if (rightBecomeNullable(res_type))
             res_type = makeNullable(res_type);
 
-        sample_block.insert(ColumnWithTypeAndName(nullptr, res_type, col.name));
+        columns.emplace_back(nullptr, res_type, col.name);
     }
 }
 

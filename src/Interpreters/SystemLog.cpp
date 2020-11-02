@@ -7,6 +7,7 @@
 #include <Interpreters/CrashLog.h>
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 #include <common/logger_useful.h>
@@ -63,8 +64,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
         engine = "ENGINE = MergeTree";
         if (!partition_by.empty())
             engine += " PARTITION BY (" + partition_by + ")";
-        engine += " ORDER BY (event_date, event_time)"
-            "SETTINGS min_bytes_for_wide_part = '10M'"; /// Use polymorphic parts for log tables by default
+        engine += " ORDER BY (event_date, event_time)";
     }
 
     size_t flush_interval_milliseconds = config.getUInt64(config_prefix + ".flush_interval_milliseconds",
@@ -88,6 +88,9 @@ SystemLogs::SystemLogs(Context & global_context, const Poco::Util::AbstractConfi
     asynchronous_metric_log = createSystemLog<AsynchronousMetricLog>(
         global_context, "system", "asynchronous_metric_log", config,
         "asynchronous_metric_log");
+    opentelemetry_span_log = createSystemLog<OpenTelemetrySpanLog>(
+        global_context, "system", "opentelemetry_span_log", config,
+        "opentelemetry_span_log");
 
     if (query_log)
         logs.emplace_back(query_log.get());
@@ -105,6 +108,8 @@ SystemLogs::SystemLogs(Context & global_context, const Poco::Util::AbstractConfi
         logs.emplace_back(metric_log.get());
     if (asynchronous_metric_log)
         logs.emplace_back(asynchronous_metric_log.get());
+    if (opentelemetry_span_log)
+        logs.emplace_back(opentelemetry_span_log.get());
 
     try
     {

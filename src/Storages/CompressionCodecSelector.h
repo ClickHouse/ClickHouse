@@ -1,3 +1,4 @@
+#pragma once
 #include <IO/ReadHelpers.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -91,7 +92,7 @@ public:
 
         for (const auto & element : elements)
             if (element.check(part_size, part_size_ratio))
-                res = factory.get(element.family_name, element.level, false);
+                res = factory.get(element.family_name, element.level);
 
         return res;
     }

@@ -7,6 +7,7 @@ PEERDIR(
     contrib/libs/poco/NetSSL_OpenSSL
 )
 
+
 SRCS(
 <? find . -name '*.cpp' | grep -v -F tests | grep -v -P 'S3|HDFS' | sed 's/^\.\//    /' | sort ?>
 )

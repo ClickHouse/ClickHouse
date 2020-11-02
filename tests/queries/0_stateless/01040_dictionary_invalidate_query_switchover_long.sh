@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS dictdb"
 
-$CLICKHOUSE_CLIENT --query "CREATE DATABASE dictdb Engine = Ordinary"
+$CLICKHOUSE_CLIENT --query "CREATE DATABASE dictdb"
 
 $CLICKHOUSE_CLIENT --query "
 CREATE TABLE dictdb.dict_invalidate

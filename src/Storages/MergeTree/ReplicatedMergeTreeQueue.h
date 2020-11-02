@@ -46,9 +46,15 @@ private:
         }
     };
 
+    struct OperationsInQueue
+    {
+        size_t merges = 0;
+        size_t mutations = 0;
+        size_t merges_with_ttl = 0;
+    };
+
     /// To calculate min_unprocessed_insert_time, max_processed_insert_time, for which the replica lag is calculated.
     using InsertsByTime = std::set<LogEntryPtr, ByTime>;
-
 
     StorageReplicatedMergeTree & storage;
     MergeTreeDataFormatVersion format_version;
@@ -199,6 +205,7 @@ private:
       * Should be called under state_mutex.
       */
     bool isNotCoveredByFuturePartsImpl(
+        const String & log_entry_name,
         const String & new_part_name, String & out_reason,
         std::lock_guard<std::mutex> & state_lock) const;
 
@@ -252,6 +259,19 @@ private:
     public:
         ~CurrentlyExecuting();
     };
+
+    /// ZK contains a limit on the number or total size of operations in a multi-request.
+    /// If the limit is exceeded, the connection is simply closed.
+    /// The constant is selected with a margin. The default limit in ZK is 1 MB of data in total.
+    /// The average size of the node value in this case is less than 10 kilobytes.
+    static constexpr size_t MAX_MULTI_OPS = 100;
+
+    /// Very large queue entries may appear occasionally.
+    /// We cannot process MAX_MULTI_OPS at once because it will fail.
+    /// But we have to process more than one entry at once because otherwise lagged replicas keep up slowly.
+    /// Let's start with one entry per transaction and icrease it exponentially towards MAX_MULTI_OPS.
+    /// It will allow to make some progress before failing and remain operational even in extreme cases.
+    size_t current_multi_batch_size = 1;
 
 public:
     ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_);
@@ -325,7 +345,7 @@ public:
     bool processEntry(std::function<zkutil::ZooKeeperPtr()> get_zookeeper, LogEntryPtr & entry, const std::function<bool(LogEntryPtr &)> func);
 
     /// Count the number of merges and mutations of single parts in the queue.
-    std::pair<size_t, size_t> countMergesAndPartMutations() const;
+    OperationsInQueue countMergesAndPartMutations() const;
 
     /// Count the total number of active mutations.
     size_t countMutations() const;

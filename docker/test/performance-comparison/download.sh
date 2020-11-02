@@ -10,7 +10,7 @@ mkdir left ||:
 left_pr=$1
 left_sha=$2
 
-right_pr=$3
+# right_pr=$3 not used for now
 right_sha=$4
 
 datasets=${CHPC_DATASETS:-"hits1 hits10 hits100 values"}

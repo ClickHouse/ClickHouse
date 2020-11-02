@@ -77,7 +77,7 @@ ColumnDefinition::ColumnDefinition(
 
 size_t ColumnDefinition::getPayloadSize() const
 {
-    return 13 + getLengthEncodedStringSize("def") + getLengthEncodedStringSize(schema) + getLengthEncodedStringSize(table) + getLengthEncodedStringSize(org_table) + \
+    return 12 + getLengthEncodedStringSize("def") + getLengthEncodedStringSize(schema) + getLengthEncodedStringSize(table) + getLengthEncodedStringSize(org_table) + \
             getLengthEncodedStringSize(name) + getLengthEncodedStringSize(org_name) + getLengthEncodedNumberSize(next_length);
 }
 
@@ -96,7 +96,7 @@ void ColumnDefinition::readPayloadImpl(ReadBuffer & payload)
     payload.readStrict(reinterpret_cast<char *>(&column_length), 4);
     payload.readStrict(reinterpret_cast<char *>(&column_type), 1);
     payload.readStrict(reinterpret_cast<char *>(&flags), 2);
-    payload.readStrict(reinterpret_cast<char *>(&decimals), 2);
+    payload.readStrict(reinterpret_cast<char *>(&decimals), 1);
     payload.ignore(2);
 }
 
@@ -113,7 +113,7 @@ void ColumnDefinition::writePayloadImpl(WriteBuffer & buffer) const
     buffer.write(reinterpret_cast<const char *>(&column_length), 4);
     buffer.write(reinterpret_cast<const char *>(&column_type), 1);
     buffer.write(reinterpret_cast<const char *>(&flags), 2);
-    buffer.write(reinterpret_cast<const char *>(&decimals), 2);
+    buffer.write(reinterpret_cast<const char *>(&decimals), 1);
     writeChar(0x0, 2, buffer);
 }
 

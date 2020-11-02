@@ -1,3 +1,8 @@
+---
+toc_priority: 66
+toc_title: "\u041f\u0440\u043e\u0447\u0438\u0435\u0020\u0444\u0443\u043d\u043a\u0446\u0438\u0438"
+---
+
 # Прочие функции {#other-functions}
 
 ## hostName() {#hostname}
@@ -410,7 +415,7 @@ ORDER BY h ASC
 Преобразовать значение согласно явно указанному отображению одних элементов на другие.
 Имеется два варианта функции:
 
-### transform(x, array\_from, array\_to, default) {#transformx-array-from-array-to-default}
+### transform(x, array_from, array_to, default) {#transformx-array-from-array-to-default}
 
 `x` - что преобразовывать.
 
@@ -430,7 +435,7 @@ ORDER BY h ASC
 При этом, где обозначена одна и та же буква (T или U), могут быть, в случае числовых типов, не совпадающие типы, а типы, для которых есть общий тип.
 Например, первый аргумент может иметь тип Int64, а второй - Array(UInt16).
 
-Если значение x равно одному из элементов массива array\_from, то возвращает соответствующий (такой же по номеру) элемент массива array\_to; иначе возвращает default. Если имеется несколько совпадающих элементов в array\_from, то возвращает какой-нибудь из соответствующих.
+Если значение x равно одному из элементов массива array_from, то возвращает соответствующий (такой же по номеру) элемент массива array_to; иначе возвращает default. Если имеется несколько совпадающих элементов в array_from, то возвращает какой-нибудь из соответствующих.
 
 Пример:
 
@@ -452,10 +457,10 @@ ORDER BY c DESC
 └───────────┴────────┘
 ```
 
-### transform(x, array\_from, array\_to) {#transformx-array-from-array-to}
+### transform(x, array_from, array_to) {#transformx-array-from-array-to}
 
 Отличается от первого варианта отсутствующим аргументом default.
-Если значение x равно одному из элементов массива array\_from, то возвращает соответствующий (такой же по номеру) элемент массива array\_to; иначе возвращает x.
+Если значение x равно одному из элементов массива array_from, то возвращает соответствующий (такой же по номеру) элемент массива array_to; иначе возвращает x.
 
 Типы:
 
@@ -506,6 +511,29 @@ SELECT
 │        1048576 │ 1.00 MiB   │
 │      192851925 │ 183.92 MiB │
 └────────────────┴────────────┘
+```
+
+## formatReadableQuantity(x) {#formatreadablequantityx}
+
+Принимает число. Возвращает округленное число с суффиксом (thousand, million, billion и т.д.) в виде строки.
+
+Облегчает визуальное восприятие больших чисел живым человеком.
+
+Пример:
+
+``` sql
+SELECT
+    arrayJoin([1024, 1234 * 1000, (4567 * 1000) * 1000, 98765432101234]) AS number,
+    formatReadableQuantity(number) AS number_for_humans
+```
+
+``` text
+┌─────────number─┬─number_for_humans─┐
+│           1024 │ 1.02 thousand     │
+│        1234000 │ 1.23 million      │
+│     4567000000 │ 4.57 billion      │
+│ 98765432101234 │ 98.77 trillion    │
+└────────────────┴───────────────────┘
 ```
 
 ## least(a, b) {#leasta-b}
@@ -714,7 +742,7 @@ WHERE diff != 1
 
 ## runningDifferenceStartingWithFirstValue {#runningdifferencestartingwithfirstvalue}
 
-То же, что и \[runningDifference\] (./other\_functions.md \# other\_functions-runningdifference), но в первой строке возвращается значение первой строки, а не ноль.
+То же, что и \[runningDifference\] (./other_functions.md # other_functions-runningdifference), но в первой строке возвращается значение первой строки, а не ноль.
 
 ## MACNumToString(num) {#macnumtostringnum}
 
@@ -1165,7 +1193,7 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 Возвращает значение по списку ключей.
 
-Если значения не существует в исходной таблице, вернется `0` или `null` в соответствии с настройками [join\_use\_nulls](../../operations/settings/settings.md#join_use_nulls).
+Если значения не существует в исходной таблице, вернется `0` или `null` в соответствии с настройками [join_use_nulls](../../operations/settings/settings.md#join_use_nulls).
 
 Подробнее о настройке `join_use_nulls` в [операциях Join](../../sql-reference/functions/other-functions.md).
 
@@ -1204,16 +1232,16 @@ SELECT joinGet(db_test.id_val,'val',toUInt32(number)) from numbers(4) SETTINGS j
 └──────────────────────────────────────────────────┘
 ```
 
-## modelEvaluate(model\_name, …) {#function-modelevaluate}
+## modelEvaluate(model_name, …) {#function-modelevaluate}
 
 Оценивает внешнюю модель.
 
 Принимает на вход имя и аргументы модели. Возвращает Float64.
 
-## throwIf(x\[, custom\_message\]) {#throwifx-custom-message}
+## throwIf(x\[, custom_message\]) {#throwifx-custom-message}
 
 Бросает исключение, если аргумент не равен нулю.
-custom\_message - необязательный параметр, константная строка, задает текст сообщения об ошибке.
+custom_message - необязательный параметр, константная строка, задает текст сообщения об ошибке.
 
 ``` sql
 SELECT throwIf(number = 3, 'Too many') FROM numbers(10);
@@ -1408,5 +1436,115 @@ SELECT randomStringUTF8(13)
 
 ```
 
+## getSetting {#getSetting}
+
+Возвращает текущее значение [пользовательской настройки](../../operations/settings/index.md#custom_settings).
+
+**Синтаксис** 
+
+```sql
+getSetting('custom_setting');    
+```
+
+**Параметр** 
+
+-   `custom_setting` — название настройки. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   Текущее значение пользовательской настройки.
+
+**Пример**
+
+```sql
+SET custom_a = 123;
+SELECT getSetting('custom_a');    
+```
+
+**Результат**
+
+```
+123
+```
+
+**См. также** 
+
+-   [Пользовательские настройки](../../operations/settings/index.md#custom_settings)
+
+## isDecimalOverflow {#is-decimal-overflow}
+
+Проверяет, находится ли число [Decimal](../../sql-reference/data-types/decimal.md) вне собственной (или заданной) области значений.
+
+**Синтаксис**
+
+``` sql
+isDecimalOverflow(d, [p])
+```
+
+**Параметры** 
+
+-   `d` — число. [Decimal](../../sql-reference/data-types/decimal.md).
+-   `p` — точность. Необязательный параметр. Если опущен, используется исходная точность первого аргумента. Использование этого параметра может быть полезно для извлечения данных в другую СУБД или файл. [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges). 
+
+**Возвращаемое значение**
+
+-   `1` — число имеет больше цифр, чем позволяет точность.
+-   `0` — число удовлетворяет заданной точности.
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT isDecimalOverflow(toDecimal32(1000000000, 0), 9),
+       isDecimalOverflow(toDecimal32(1000000000, 0)),
+       isDecimalOverflow(toDecimal32(-1000000000, 0), 9),
+       isDecimalOverflow(toDecimal32(-1000000000, 0));
+```
+
+Результат:
+
+``` text
+1	1	1	1
+```
+
+## countDigits {#count-digits}
+
+Возвращает количество десятичных цифр, необходимых для представления значения.
+
+**Синтаксис**
+
+``` sql
+countDigits(x)
+```
+
+**Параметры** 
+
+-   `x` — [целое](../../sql-reference/data-types/int-uint.md#uint8-uint16-uint32-uint64-int8-int16-int32-int64) или [дробное](../../sql-reference/data-types/decimal.md) число.
+
+**Возвращаемое значение**
+
+Количество цифр.
+
+Тип: [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
+
+ !!! note "Примечание"
+    Для `Decimal` значений учитывается их масштаб: вычисляется результат по базовому целочисленному типу, полученному как `(value * scale)`. Например: `countDigits(42) = 2`, `countDigits(42.000) = 5`, `countDigits(0.04200) = 4`. То есть вы можете проверить десятичное переполнение для `Decimal64` с помощью `countDecimal(x) > 18`. Это медленный вариант [isDecimalOverflow](#is-decimal-overflow).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT countDigits(toDecimal32(1, 9)), countDigits(toDecimal32(-1, 9)),
+       countDigits(toDecimal64(1, 18)), countDigits(toDecimal64(-1, 18)),
+       countDigits(toDecimal128(1, 38)), countDigits(toDecimal128(-1, 38));
+```
+
+Результат:
+
+``` text
+10	10	19	19	39	39
+```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/other_functions/) <!--hide-->

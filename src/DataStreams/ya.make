@@ -8,6 +8,7 @@ PEERDIR(
 
 NO_COMPILER_WARNINGS()
 
+
 SRCS(
     AddingDefaultBlockOutputStream.cpp
     AddingDefaultsBlockInputStream.cpp
@@ -20,11 +21,9 @@ SRCS(
     ConvertingBlockInputStream.cpp
     copyData.cpp
     CountingBlockOutputStream.cpp
-    CreatingSetsBlockInputStream.cpp
     DistinctSortedBlockInputStream.cpp
     ExecutionSpeedLimits.cpp
     ExpressionBlockInputStream.cpp
-    FilterBlockInputStream.cpp
     finalizeBlock.cpp
     IBlockInputStream.cpp
     InputStreamFromASTInsertQuery.cpp

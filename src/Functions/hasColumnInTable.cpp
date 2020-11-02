@@ -12,7 +12,6 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -20,6 +19,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
 }
 
+namespace
+{
 
 /** Usage:
  *  hasColumnInTable(['hostname'[, 'username'[, 'password']],] 'database', 'table', 'column')
@@ -55,7 +56,7 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
 
 private:
     const Context & global_context;
@@ -84,12 +85,11 @@ DataTypePtr FunctionHasColumnInTable::getReturnTypeImpl(const ColumnsWithTypeAnd
 }
 
 
-void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
+ColumnPtr FunctionHasColumnInTable::executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
 {
-    auto get_string_from_block = [&](size_t column_pos) -> String
+    auto get_string_from_columns = [&](ColumnWithTypeAndName & column) -> String
     {
-        ColumnPtr column = block.getByPosition(column_pos).column;
-        const ColumnConst * const_column = checkAndGetColumnConst<ColumnString>(column.get());
+        const ColumnConst * const_column = checkAndGetColumnConst<ColumnString>(column.column.get());
         return const_column->getValue<String>();
     };
 
@@ -99,17 +99,17 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
     String password;
 
     if (arguments.size() > 3)
-        host_name = get_string_from_block(arguments[arg++]);
+        host_name = get_string_from_columns(arguments[arg++]);
 
     if (arguments.size() > 4)
-        user_name = get_string_from_block(arguments[arg++]);
+        user_name = get_string_from_columns(arguments[arg++]);
 
     if (arguments.size() > 5)
-        password = get_string_from_block(arguments[arg++]);
+        password = get_string_from_columns(arguments[arg++]);
 
-    String database_name = get_string_from_block(arguments[arg++]);
-    String table_name = get_string_from_block(arguments[arg++]);
-    String column_name = get_string_from_block(arguments[arg++]);
+    String database_name = get_string_from_columns(arguments[arg++]);
+    String table_name = get_string_from_columns(arguments[arg++]);
+    String column_name = get_string_from_columns(arguments[arg++]);
 
     if (table_name.empty())
         throw Exception("Table name is empty", ErrorCodes::UNKNOWN_TABLE);
@@ -137,9 +137,10 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
         has_column = remote_columns.hasPhysical(column_name);
     }
 
-    block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count, Field(has_column));
+    return DataTypeUInt8().createColumnConst(input_rows_count, Field(has_column));
 }
 
+}
 
 void registerFunctionHasColumnInTable(FunctionFactory & factory)
 {

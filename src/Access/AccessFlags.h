@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Access/AccessType.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/Exception.h>
 #include <ext/range.h>
 #include <ext/push_back.h>
@@ -95,6 +95,22 @@ public:
 
     /// Returns all the flags related to a dictionary.
     static AccessFlags allDictionaryFlags();
+
+    /// Returns all the flags which could be granted on the global level.
+    /// The same as allFlags().
+    static AccessFlags allFlagsGrantableOnGlobalLevel();
+
+    /// Returns all the flags which could be granted on the database level.
+    /// Returns allDatabaseFlags() | allTableFlags() | allDictionaryFlags() | allColumnFlags().
+    static AccessFlags allFlagsGrantableOnDatabaseLevel();
+
+    /// Returns all the flags which could be granted on the table level.
+    /// Returns allTableFlags() | allDictionaryFlags() | allColumnFlags().
+    static AccessFlags allFlagsGrantableOnTableLevel();
+
+    /// Returns all the flags which could be granted on the global level.
+    /// The same as allColumnFlags().
+    static AccessFlags allFlagsGrantableOnColumnLevel();
 
 private:
     static constexpr size_t NUM_FLAGS = 128;
@@ -193,6 +209,10 @@ public:
     const Flags & getTableFlags() const { return all_flags_for_target[TABLE]; }
     const Flags & getColumnFlags() const { return all_flags_for_target[COLUMN]; }
     const Flags & getDictionaryFlags() const { return all_flags_for_target[DICTIONARY]; }
+    const Flags & getAllFlagsGrantableOnGlobalLevel() const { return getAllFlags(); }
+    const Flags & getAllFlagsGrantableOnDatabaseLevel() const { return all_flags_grantable_on_database_level; }
+    const Flags & getAllFlagsGrantableOnTableLevel() const { return all_flags_grantable_on_table_level; }
+    const Flags & getAllFlagsGrantableOnColumnLevel() const { return getColumnFlags(); }
 
 private:
     enum NodeType
@@ -381,6 +401,9 @@ private:
         }
         for (const auto & child : start_node->children)
             collectAllFlags(child.get());
+
+        all_flags_grantable_on_table_level = all_flags_for_target[TABLE] | all_flags_for_target[DICTIONARY] | all_flags_for_target[COLUMN];
+        all_flags_grantable_on_database_level = all_flags_for_target[DATABASE] | all_flags_grantable_on_table_level;
     }
 
     Impl()
@@ -431,6 +454,8 @@ private:
     std::vector<Flags> access_type_to_flags_mapping;
     Flags all_flags;
     Flags all_flags_for_target[static_cast<size_t>(DICTIONARY) + 1];
+    Flags all_flags_grantable_on_database_level;
+    Flags all_flags_grantable_on_table_level;
 };
 
 
@@ -447,6 +472,10 @@ inline AccessFlags AccessFlags::allDatabaseFlags() { return Impl<>::instance().g
 inline AccessFlags AccessFlags::allTableFlags() { return Impl<>::instance().getTableFlags(); }
 inline AccessFlags AccessFlags::allColumnFlags() { return Impl<>::instance().getColumnFlags(); }
 inline AccessFlags AccessFlags::allDictionaryFlags() { return Impl<>::instance().getDictionaryFlags(); }
+inline AccessFlags AccessFlags::allFlagsGrantableOnGlobalLevel() { return Impl<>::instance().getAllFlagsGrantableOnGlobalLevel(); }
+inline AccessFlags AccessFlags::allFlagsGrantableOnDatabaseLevel() { return Impl<>::instance().getAllFlagsGrantableOnDatabaseLevel(); }
+inline AccessFlags AccessFlags::allFlagsGrantableOnTableLevel() { return Impl<>::instance().getAllFlagsGrantableOnTableLevel(); }
+inline AccessFlags AccessFlags::allFlagsGrantableOnColumnLevel() { return Impl<>::instance().getAllFlagsGrantableOnColumnLevel(); }
 
 inline AccessFlags operator |(AccessType left, AccessType right) { return AccessFlags(left) | right; }
 inline AccessFlags operator &(AccessType left, AccessType right) { return AccessFlags(left) & right; }

@@ -2,6 +2,7 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <IO/ReadBufferFromFileBase.h>
 
 
 namespace DB

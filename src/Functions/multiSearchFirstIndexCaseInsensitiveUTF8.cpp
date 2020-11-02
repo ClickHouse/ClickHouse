@@ -6,6 +6,8 @@
 
 namespace DB
 {
+namespace
+{
 
 struct NameMultiSearchFirstIndexCaseInsensitiveUTF8
 {
@@ -14,6 +16,8 @@ struct NameMultiSearchFirstIndexCaseInsensitiveUTF8
 
 using FunctionMultiSearchFirstIndexCaseInsensitiveUTF8
     = FunctionsMultiStringSearch<MultiSearchFirstIndexImpl<PositionCaseInsensitiveUTF8>, NameMultiSearchFirstIndexCaseInsensitiveUTF8>;
+
+}
 
 void registerFunctionMultiSearchFirstIndexCaseInsensitiveUTF8(FunctionFactory & factory)
 {

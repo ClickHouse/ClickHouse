@@ -4,7 +4,7 @@
 #include <vector>
 #include <stdint.h>
 #include <string.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Poco/Unicode.h>
 #include <Common/StringSearcher.h>
 #include <Common/StringUtils/StringUtils.h>

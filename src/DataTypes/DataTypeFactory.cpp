@@ -43,7 +43,7 @@ DataTypePtr DataTypeFactory::get(const ASTPtr & ast) const
 
     if (const auto * ident = ast->as<ASTIdentifier>())
     {
-        return get(ident->name, {});
+        return get(ident->name(), {});
     }
 
     if (const auto * lit = ast->as<ASTLiteral>())
@@ -165,7 +165,6 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeDecimal(*this);
     registerDataTypeDate(*this);
     registerDataTypeDateTime(*this);
-    registerDataTypeDateTime64(*this);
     registerDataTypeString(*this);
     registerDataTypeFixedString(*this);
     registerDataTypeEnum(*this);

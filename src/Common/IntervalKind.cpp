@@ -176,4 +176,50 @@ const char * IntervalKind::toNameOfFunctionExtractTimePart() const
     }
     __builtin_unreachable();
 }
+
+
+bool IntervalKind::tryParseString(const std::string & kind, IntervalKind::Kind & result)
+{
+    if ("second" == kind)
+    {
+        result = IntervalKind::Second;
+        return true;
+    }
+    if ("minute" == kind)
+    {
+        result = IntervalKind::Minute;
+        return true;
+    }
+    if ("hour" == kind)
+    {
+        result = IntervalKind::Hour;
+        return true;
+    }
+    if ("day" == kind)
+    {
+        result = IntervalKind::Day;
+        return true;
+    }
+    if ("week" == kind)
+    {
+        result = IntervalKind::Week;
+        return true;
+    }
+    if ("month" == kind)
+    {
+        result = IntervalKind::Month;
+        return true;
+    }
+    if ("quarter" == kind)
+    {
+        result = IntervalKind::Quarter;
+        return true;
+    }
+    if ("year" == kind)
+    {
+        result = IntervalKind::Year;
+        return true;
+    }
+    return false;
+}
 }

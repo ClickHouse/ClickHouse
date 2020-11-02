@@ -7,8 +7,8 @@ ch="$CLICKHOUSE_CLIENT --stacktrace -q"
 
 $ch "DROP TABLE IF EXISTS clear_column1"
 $ch "DROP TABLE IF EXISTS clear_column2"
-$ch "CREATE TABLE clear_column1 (d Date, i Int64, s String) ENGINE = ReplicatedMergeTree('/clickhouse/test/tables/clear_column', '1', d, d, 8192)"
-$ch "CREATE TABLE clear_column2 (d Date, i Int64, s String) ENGINE = ReplicatedMergeTree('/clickhouse/test/tables/clear_column', '2', d, d, 8192)"
+$ch "CREATE TABLE clear_column1 (d Date, i Int64, s String) ENGINE = ReplicatedMergeTree('/clickhouse/test_00446/tables/clear_column_concurrent', '1', d, d, 8192)"
+$ch "CREATE TABLE clear_column2 (d Date, i Int64, s String) ENGINE = ReplicatedMergeTree('/clickhouse/test_00446/tables/clear_column_concurrent', '2', d, d, 8192)"
 
 $ch "ALTER TABLE clear_column1 CLEAR COLUMN VasyaUnexistingColumn IN PARTITION '200001'" --replication_alter_partitions_sync=2 1>/dev/null 2>/dev/null
 rc=$?
@@ -34,6 +34,5 @@ wait
 $ch "SELECT DISTINCT * FROM clear_column1 WHERE d != toDate('2000-03-01') ORDER BY d, i, s"
 $ch "SELECT DISTINCT * FROM clear_column2 WHERE d != toDate('2000-03-01') ORDER BY d, i, s"
 
-$ch "DROP TABLE clear_column1 NO DELAY"
-$ch "DROP TABLE clear_column2 NO DELAY"
-sleep 1
+$ch "DROP TABLE clear_column1"
+$ch "DROP TABLE clear_column2"

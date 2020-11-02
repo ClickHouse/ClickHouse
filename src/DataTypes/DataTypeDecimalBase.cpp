@@ -101,5 +101,6 @@ T DataTypeDecimalBase<T>::getScaleMultiplier(UInt32 scale_)
 template class DataTypeDecimalBase<Decimal32>;
 template class DataTypeDecimalBase<Decimal64>;
 template class DataTypeDecimalBase<Decimal128>;
+template class DataTypeDecimalBase<Decimal256>;
 
 }

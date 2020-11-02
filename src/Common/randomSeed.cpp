@@ -4,7 +4,8 @@
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
 #include <Common/SipHash.h>
-#include <Core/Types.h>
+#include <common/getThreadId.h>
+#include <common/types.h>
 
 
 namespace DB
@@ -19,7 +20,7 @@ namespace DB
 DB::UInt64 randomSeed()
 {
     struct timespec times;
-    if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &times))
+    if (clock_gettime(CLOCK_MONOTONIC, &times))
         DB::throwFromErrno("Cannot clock_gettime.", DB::ErrorCodes::CANNOT_CLOCK_GETTIME);
 
     /// Not cryptographically secure as time, pid and stack address can be predictable.
@@ -27,7 +28,7 @@ DB::UInt64 randomSeed()
     SipHash hash;
     hash.update(times.tv_nsec);
     hash.update(times.tv_sec);
-    hash.update(getpid());
+    hash.update(getThreadId());
     hash.update(&times);
     return hash.get64();
 }

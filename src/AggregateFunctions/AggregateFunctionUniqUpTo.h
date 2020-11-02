@@ -43,9 +43,7 @@ struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
   *   then set count to `threshold + 1`, and values from another state are not copied.
   */
     UInt8 count = 0;
-
     T data[0];
-
 
     size_t size() const
     {
@@ -134,6 +132,28 @@ struct AggregateFunctionUniqUpToData<UInt128> : AggregateFunctionUniqUpToData<UI
     void ALWAYS_INLINE add(const IColumn & column, size_t row_num, UInt8 threshold)
     {
         UInt128 value = assert_cast<const ColumnVector<UInt128> &>(column).getData()[row_num];
+        insert(sipHash64(value), threshold);
+    }
+};
+
+template <>
+struct AggregateFunctionUniqUpToData<UInt256> : AggregateFunctionUniqUpToData<UInt64>
+{
+    /// ALWAYS_INLINE is required to have better code layout for uniqUpTo function
+    void ALWAYS_INLINE add(const IColumn & column, size_t row_num, UInt8 threshold)
+    {
+        UInt256 value = assert_cast<const ColumnVector<UInt256> &>(column).getData()[row_num];
+        insert(sipHash64(value), threshold);
+    }
+};
+
+template <>
+struct AggregateFunctionUniqUpToData<Int256> : AggregateFunctionUniqUpToData<UInt64>
+{
+    /// ALWAYS_INLINE is required to have better code layout for uniqUpTo function
+    void ALWAYS_INLINE add(const IColumn & column, size_t row_num, UInt8 threshold)
+    {
+        Int256 value = assert_cast<const ColumnVector<Int256> &>(column).getData()[row_num];
         insert(sipHash64(value), threshold);
     }
 };

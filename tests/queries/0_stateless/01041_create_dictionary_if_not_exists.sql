@@ -2,7 +2,7 @@ DROP TABLE IF EXISTS dictdb.table_for_dict;
 DROP DICTIONARY IF EXISTS dictdb.dict_exists;
 DROP DATABASE IF EXISTS dictdb;
 
-CREATE DATABASE dictdb ENGINE = Ordinary;
+CREATE DATABASE dictdb;
 
 CREATE TABLE dictdb.table_for_dict
 (

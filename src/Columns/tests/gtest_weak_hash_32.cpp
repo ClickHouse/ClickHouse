@@ -262,6 +262,23 @@ TEST(WeakHash32, ColumnVectorU128)
     checkColumn(hash.getData(), eq_data, [&](size_t row) { return col->getElement(row).toHexString(); });
 }
 
+TEST(WeakHash32, ColumnVectorI128)
+{
+    auto col = ColumnInt128::create();
+    auto & data = col->getData();
+
+    for (int idx [[maybe_unused]] : {1, 2})
+    {
+        for (int64_t i = -32768; i < 32768; ++i)
+            data.push_back(i << 32); //-V610
+    }
+
+    WeakHash32 hash(col->size());
+    col->updateWeakHash32(hash);
+
+    checkColumn(hash.getData(), col->getData(), [&](size_t row) { return std::to_string(Int64(col->getElement(row))); });
+}
+
 TEST(WeakHash32, ColumnDecimal32)
 {
     auto col = ColumnDecimal<Decimal32>::create(0, 0);
@@ -300,23 +317,17 @@ TEST(WeakHash32, ColumnDecimal128)
 {
     auto col = ColumnDecimal<Decimal128>::create(0, 0);
     auto & data = col->getData();
-    auto eq = ColumnUInt32::create();
-    auto & eq_data = eq->getData();
 
     for (int idx [[maybe_unused]] : {1, 2})
     {
-        for (uint64_t i = 0; i < 65536; ++i)
-        {
-            UInt128 val(i << 32u, i << 32u);
-            data.push_back(val);
-            eq_data.push_back(i);
-        }
+        for (int64_t i = -32768; i < 32768; ++i)
+            data.push_back(i << 32); //-V610
     }
 
     WeakHash32 hash(col->size());
     col->updateWeakHash32(hash);
 
-    checkColumn(hash.getData(), eq_data, [&](size_t row) { return getHexUIntLowercase(col->getElement(row)); });
+    checkColumn(hash.getData(), col->getData(), [&](size_t row) { return std::to_string(Int64(col->getElement(row))); });
 }
 
 TEST(WeakHash32, ColumnString1)

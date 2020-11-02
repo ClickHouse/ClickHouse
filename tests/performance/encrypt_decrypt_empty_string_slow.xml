@@ -1,0 +1,55 @@
+<test>
+  <!-- "Strict" mode (key and iv length checks), empty plaintext.
+  Ciphers that produce non-empty ciphertext on empty plaintext, and hence can't be optimized.-->
+
+    <substitutions>
+        <substitution>
+          <name>func</name>
+          <values>
+              <!-- materialize(plaitext) is to avoid all-args-are-const optimization, resulting in executing function exactly once. -->
+              <value>encrypt('aes-128-cbc', materialize(plaintext), key16, iv16)</value>
+              <value>encrypt('aes-128-ecb', materialize(plaintext), key16)</value>
+              <value>encrypt('aes-128-gcm', materialize(plaintext), key16, iv12, 'aadaadaadaad')</value>
+
+              <value>encrypt('aes-192-cbc', materialize(plaintext), key24, iv16)</value>
+              <value>encrypt('aes-192-ecb', materialize(plaintext), key24)</value>
+              <value>encrypt('aes-192-gcm', materialize(plaintext), key24, iv12, 'aadaadaadaad')</value>
+
+              <value>encrypt('aes-256-cbc', materialize(plaintext), key32, iv16)</value>
+              <value>encrypt('aes-256-ecb', materialize(plaintext), key32)</value>
+              <value>encrypt('aes-256-gcm', materialize(plaintext), key32, iv12, 'aadaadaadaad')</value>
+
+              <!-- decrypt + encrypt since it is really hard to compose decrypt-only case -->
+              <value>decrypt('aes-128-cbc', encrypt('aes-128-cbc', materialize(plaintext), key16, iv16), key16, iv16)</value>
+              <value>decrypt('aes-128-ecb', encrypt('aes-128-ecb', materialize(plaintext), key16), key16)</value>
+              <value>decrypt('aes-128-gcm', encrypt('aes-128-gcm', materialize(plaintext), key16, iv12, 'aadaadaadaad'), key16, iv12, 'aadaadaadaad')</value>
+
+              <value>decrypt('aes-192-cbc', encrypt('aes-192-cbc', materialize(plaintext), key24, iv16), key24, iv16)</value>
+              <value>decrypt('aes-192-ecb', encrypt('aes-192-ecb', materialize(plaintext), key24), key24)</value>
+              <value>decrypt('aes-192-gcm', encrypt('aes-192-gcm', materialize(plaintext), key24, iv12, 'aadaadaadaad'), key24, iv12, 'aadaadaadaad')</value>
+
+              <value>decrypt('aes-256-cbc', encrypt('aes-256-cbc', materialize(plaintext), key32, iv16), key32, iv16)</value>
+              <value>decrypt('aes-256-ecb', encrypt('aes-256-ecb', materialize(plaintext), key32), key32)</value>
+              <value>decrypt('aes-256-gcm', encrypt('aes-256-gcm', materialize(plaintext), key32, iv12, 'aadaadaadaad'), key32, iv12, 'aadaadaadaad')</value>
+
+           </values>
+        </substitution>
+        <substitution>
+           <name>table</name>
+           <values>
+               <value>numbers(100000)</value>
+           </values>
+        </substitution>
+        <substitution>
+           <name>plaintext</name>
+           <values>
+              <value>''</value>
+           </values>
+        </substitution>
+    </substitutions>
+
+    <!-- allow OpenSSL-related code load ciphers and warm-up -->
+    <fill_query>WITH {plaintext} as plaintext, repeat('k', 32) as key32, substring(key32, 1, 24) as key24, substring(key32, 1, 16) as key16, repeat('iv', 8) as iv16, substring(iv16, 1, 12) as iv12 SELECT count() FROM {table} WHERE NOT ignore({func}) LIMIT 1</fill_query>
+
+    <query>WITH {plaintext} as plaintext, repeat('k', 32) as key32, substring(key32, 1, 24) as key24, substring(key32, 1, 16) as key16, repeat('iv', 8) as iv16, substring(iv16, 1, 12) as iv12 SELECT count() FROM {table} WHERE NOT ignore({func})</query>
+</test>

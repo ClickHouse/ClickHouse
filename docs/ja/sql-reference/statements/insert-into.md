@@ -20,7 +20,7 @@ INSERT INTO [db.]table [(c1, c2, c3)] VALUES (v11, v12, v13), (v21, v22, v23), .
 -   から計算される値 `DEFAULT` テーブル定義で指定された式。
 -   ゼロと空の文字列 `DEFAULT` 式は定義されていません。
 
-もし [strict\_insert\_defaults=1](../../operations/settings/settings.md),を持たない列 `DEFAULT` 定義され記載されていることを返します。
+もし [strict_insert_defaults=1](../../operations/settings/settings.md),を持たない列 `DEFAULT` 定義され記載されていることを返します。
 
 データは、任意の場所でINSERTに渡すことができます [形式](../../interfaces/formats.md#formats) ClickHouseがサポートしています。 この形式は、クエリで明示的に指定する必要があります:
 

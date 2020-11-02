@@ -1,7 +1,5 @@
-import time
 import pytest
 
-from contextlib import contextmanager
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -9,7 +7,8 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'])
 node2 = cluster.add_instance('node2', main_configs=['configs/remote_servers.xml'])
 
-#test reproducing issue https://github.com/ClickHouse/ClickHouse/issues/3162
+
+# test reproducing issue https://github.com/ClickHouse/ClickHouse/issues/3162
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -44,7 +43,9 @@ CREATE TABLE dist_test (
     finally:
         cluster.shutdown()
 
+
 def test(started_cluster):
     node1.query("INSERT INTO local_test (t, shard, col1, col2) VALUES (1000, 0, 'x', 'y')")
     node2.query("INSERT INTO local_test (t, shard, col1, col2) VALUES (1000, 1, 'foo', 'bar')")
-    assert node1.query("SELECT col1, col2 FROM dist_test WHERE (t < 3600000) AND (col1 = 'foo') ORDER BY t ASC") == "foo\tbar\n"
+    assert node1.query(
+        "SELECT col1, col2 FROM dist_test WHERE (t < 3600000) AND (col1 = 'foo') ORDER BY t ASC") == "foo\tbar\n"

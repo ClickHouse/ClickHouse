@@ -36,7 +36,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ParserIdentifier name_p;
-    ParserList columns_p(std::make_unique<ParserCompoundIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+    ParserList columns_p(std::make_unique<ParserInsertElement>(), std::make_unique<ParserToken>(TokenType::Comma), false);
     ParserFunction table_function_p{false};
 
     ASTPtr database;
@@ -189,5 +189,12 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
+bool ParserInsertElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    return ParserColumnsMatcher().parse(pos, node, expected)
+        || ParserQualifiedAsterisk().parse(pos, node, expected)
+        || ParserAsterisk().parse(pos, node, expected)
+        || ParserCompoundIdentifier().parse(pos, node, expected);
+}
 
 }

@@ -67,6 +67,7 @@ set(dbms_sources)
 add_headers_and_sources(clickhouse_common_io Common)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
 add_headers_and_sources(clickhouse_common_io IO)
+add_headers_and_sources(clickhouse_common_io IO/S3)
 list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/new_delete.cpp)
 
 if(USE_RDKAFKA)
@@ -116,6 +117,10 @@ if (NOT ENABLE_SSL)
 endif ()
 
 add_library(clickhouse_common_io ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
+
+if (SPLIT_SHARED_LIBRARIES)
+    target_compile_definitions(clickhouse_common_io PRIVATE SPLIT_SHARED_LIBRARIES)
+endif ()
 
 add_library (clickhouse_malloc OBJECT Common/malloc.cpp)
 set_source_files_properties(Common/malloc.cpp PROPERTIES COMPILE_FLAGS "-fno-builtin")
@@ -168,14 +173,20 @@ add_object_library(clickhouse_processors_merges Processors/Merges)
 add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Algorithms)
 add_object_library(clickhouse_processors_queryplan Processors/QueryPlan)
 
+set (DBMS_COMMON_LIBRARIES)
+# libgcc_s does not provide an implementation of an atomics library. Instead,
+# GCC’s libatomic library can be used to supply these when using libgcc_s.
+if ((NOT USE_LIBCXX) AND COMPILER_CLANG AND OS_LINUX)
+    list (APPEND DBMS_COMMON_LIBRARIES atomic)
+endif()
 
 if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
     add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
-    target_link_libraries (dbms PRIVATE jemalloc libdivide)
+    target_link_libraries (dbms PRIVATE jemalloc libdivide ${DBMS_COMMON_LIBRARIES})
     set (all_modules dbms)
 else()
     add_library (dbms SHARED ${dbms_headers} ${dbms_sources})
-    target_link_libraries (dbms PUBLIC ${all_modules})
+    target_link_libraries (dbms PUBLIC ${all_modules} ${DBMS_COMMON_LIBRARIES})
     target_link_libraries (clickhouse_interpreters PRIVATE jemalloc libdivide)
     list (APPEND all_modules dbms)
     # force all split libs to be linked
@@ -262,6 +273,8 @@ target_link_libraries(clickhouse_common_io
             roaring
 )
 
+
+
 if (USE_RDKAFKA)
     dbms_target_link_libraries(PRIVATE ${CPPKAFKA_LIBRARY} ${RDKAFKA_LIBRARY})
     if(NOT USE_INTERNAL_RDKAFKA_LIBRARY)
@@ -271,6 +284,14 @@ endif()
 
 if (USE_AMQPCPP)
     dbms_target_link_libraries(PUBLIC amqp-cpp)
+endif()
+
+if (USE_CYRUS_SASL)
+    dbms_target_link_libraries(PRIVATE ${CYRUS_SASL_LIBRARY})
+endif()
+
+if (USE_KRB5)
+    dbms_target_link_libraries(PRIVATE ${KRB5_LIBRARY})
 endif()
 
 if(RE2_INCLUDE_DIR)
@@ -321,6 +342,9 @@ if (USE_PARQUET)
     dbms_target_link_libraries(PRIVATE ${PARQUET_LIBRARY})
     if (NOT USE_INTERNAL_PARQUET_LIBRARY OR USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
         dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${PARQUET_INCLUDE_DIR} ${ARROW_INCLUDE_DIR})
+        if (USE_STATIC_LIBRARIES)
+            dbms_target_link_libraries(PRIVATE ${ARROW_LIBRARY})
+        endif()
     endif ()
 endif ()
 
@@ -360,11 +384,6 @@ if (USE_BROTLI)
     target_link_libraries (clickhouse_common_io PRIVATE ${BROTLI_LIBRARY})
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${BROTLI_INCLUDE_DIR})
 endif()
-
-if (USE_OPENCL)
-    target_link_libraries (clickhouse_common_io PRIVATE ${OpenCL_LIBRARIES})
-    target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${OpenCL_INCLUDE_DIRS})
-endif ()
 
 if (USE_CASSANDRA)
     dbms_target_link_libraries(PUBLIC ${CASSANDRA_LIBRARY})

@@ -10,7 +10,6 @@ ADDINCL(
     contrib/libs/farmhash
     contrib/libs/h3/h3lib/include
     contrib/libs/hyperscan/src
-    contrib/libs/icu/common
     contrib/libs/libdivide
     contrib/libs/rapidjson/include
     contrib/libs/xxhash
@@ -18,6 +17,7 @@ ADDINCL(
 
 PEERDIR(
     clickhouse/src/Common
+    clickhouse/src/Parsers
     clickhouse/src/Dictionaries
     contrib/libs/farmhash
     contrib/libs/fastops/fastops
@@ -32,6 +32,7 @@ PEERDIR(
 )
 
 # "Arcadia" build is slightly deficient. It lacks many libraries that we need.
+
 SRCS(
     abs.cpp
     acos.cpp
@@ -45,6 +46,8 @@ SRCS(
     addSeconds.cpp
     addWeeks.cpp
     addYears.cpp
+    aes_decrypt_mysql.cpp
+    aes_encrypt_mysql.cpp
     appendTrailingCharIfAbsent.cpp
     array/arrayAll.cpp
     array/arrayAUC.cpp
@@ -97,6 +100,7 @@ SRCS(
     array/indexOf.cpp
     array/length.cpp
     array/mapOp.cpp
+    array/mapPopulateSeries.cpp
     array/range.cpp
     array/registerFunctionsArray.cpp
     asin.cpp
@@ -109,6 +113,7 @@ SRCS(
     bitBoolMaskAnd.cpp
     bitBoolMaskOr.cpp
     bitCount.cpp
+    bitmaskToList.cpp
     bitNot.cpp
     bitOr.cpp
     bitRotateLeft.cpp
@@ -131,16 +136,21 @@ SRCS(
     concat.cpp
     convertCharset.cpp
     cos.cpp
+    countDigits.cpp
     CRC.cpp
     currentDatabase.cpp
     currentUser.cpp
     dateDiff.cpp
+    date_trunc.cpp
+    decrypt.cpp
     defaultValueOfArgumentType.cpp
+    defaultValueOfTypeName.cpp
     demange.cpp
     divide.cpp
     dumpColumnStructure.cpp
     e.cpp
     empty.cpp
+    encrypt.cpp
     endsWith.cpp
     equals.cpp
     erfc.cpp
@@ -157,6 +167,9 @@ SRCS(
     filesystem.cpp
     finalizeAggregation.cpp
     formatDateTime.cpp
+    formatReadableQuantity.cpp
+    formatReadableSize.cpp
+    formatReadableTimeDelta.cpp
     formatRow.cpp
     formatString.cpp
     fromUnixTimestamp64Micro.cpp
@@ -166,12 +179,12 @@ SRCS(
     FunctionFQDN.cpp
     FunctionHelpers.cpp
     FunctionJoinGet.cpp
+    FunctionsAES.cpp
     FunctionsCoding.cpp
     FunctionsConversion.cpp
     FunctionsEmbeddedDictionaries.cpp
     FunctionsExternalDictionaries.cpp
     FunctionsExternalModels.cpp
-    FunctionsFormatting.cpp
     FunctionsHashing.cpp
     FunctionsJSON.cpp
     FunctionsLogical.cpp
@@ -184,7 +197,9 @@ SRCS(
     GatherUtils/createArraySink.cpp
     GatherUtils/createArraySource.cpp
     GatherUtils/createValueSource.cpp
-    GatherUtils/has.cpp
+    GatherUtils/has_all.cpp
+    GatherUtils/has_any.cpp
+    GatherUtils/has_substr.cpp
     GatherUtils/push.cpp
     GatherUtils/resizeConstantSize.cpp
     GatherUtils/resizeDynamicSize.cpp
@@ -240,6 +255,7 @@ SRCS(
     intExp10.cpp
     intExp2.cpp
     isConstant.cpp
+    isDecimalOverflow.cpp
     isFinite.cpp
     isInfinite.cpp
     isNaN.cpp
@@ -258,6 +274,7 @@ SRCS(
     log10.cpp
     log2.cpp
     log.cpp
+    logTrace.cpp
     lowCardinalityIndices.cpp
     lowCardinalityKeys.cpp
     lower.cpp
@@ -293,6 +310,8 @@ SRCS(
     multiSearchFirstPositionUTF8.cpp
     negate.cpp
     neighbor.cpp
+    normalizedQueryHash.cpp
+    normalizeQuery.cpp
     notEmpty.cpp
     notEquals.cpp
     notILike.cpp
@@ -323,6 +342,7 @@ SRCS(
     registerFunctionsConsistentHashing.cpp
     registerFunctions.cpp
     registerFunctionsDateTime.cpp
+    registerFunctionsFormatting.cpp
     registerFunctionsGeo.cpp
     registerFunctionsHigherOrder.cpp
     registerFunctionsIntrospection.cpp
@@ -377,6 +397,7 @@ SRCS(
     TargetSpecific.cpp
     tgamma.cpp
     throwIf.cpp
+    tid.cpp
     timeSlot.cpp
     timeSlots.cpp
     timezone.cpp

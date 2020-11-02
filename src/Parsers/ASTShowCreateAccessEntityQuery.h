@@ -8,6 +8,8 @@ namespace DB
 {
 class ASTRowPolicyNames;
 
+using Strings = std::vector<String>;
+
 /** SHOW CREATE USER [name | CURRENT_USER]
   * SHOW CREATE USERS [name [, name2 ...]
   * SHOW CREATE ROLE name

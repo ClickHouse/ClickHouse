@@ -20,7 +20,7 @@ CREATE TABLE test.cast1
             'world' = 2
         )
     )
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_cast', 'r1') ORDER BY e;
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_00643/cast', 'r1') ORDER BY e;
 
 SHOW CREATE TABLE test.cast1 FORMAT TSVRaw;
 DESC TABLE test.cast1;
@@ -28,7 +28,7 @@ DESC TABLE test.cast1;
 INSERT INTO test.cast1 (x) VALUES (1);
 SELECT * FROM test.cast1;
 
-CREATE TABLE test.cast2 AS test.cast1 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_cast', 'r2') ORDER BY e;
+CREATE TABLE test.cast2 AS test.cast1 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_00643/cast', 'r2') ORDER BY e;
 
 SYSTEM SYNC REPLICA test.cast2;
 

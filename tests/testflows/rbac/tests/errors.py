@@ -2,7 +2,7 @@
 
 # Errors: not found
 
-not_found = "Exception: There is no {type} `{name}` in [disk, users.xml]"
+not_found = "Exception: There is no {type} `{name}` in user directories"
 
 def user_not_found_in_disk(name):
     return (192,not_found.format(type="user",name=name))
@@ -21,7 +21,7 @@ def row_policy_not_found_in_disk(name):
 
 # Errors: cannot_rename
 
-cannot_rename = "Exception: {type} `{name}`: cannot rename to `{name_new}` because {type} `{name_new}` already exists in [disk]"
+cannot_rename = "Exception: {type} `{name}`: cannot rename to `{name_new}` because {type} `{name_new}` already exists in local directory"
 cannot_rename_exitcode = 237
 
 def cannot_rename_user(name,name_new):
@@ -41,7 +41,7 @@ def cannot_rename_row_policy(name,name_new):
 
 # Errors: cannot insert
 
-cannot_insert = "Exception: {type} `{name}`: cannot insert because {type} `{name}` already exists in [disk]"
+cannot_insert = "Exception: {type} `{name}`: cannot insert because {type} `{name}` already exists in local directory"
 cannot_insert_exitcode = 237
 
 def cannot_insert_user(name):
@@ -62,10 +62,10 @@ def cannot_insert_row_policy(name):
 # Error: default is readonly
 
 default_readonly_exitcode = 239
-cannot_remove_default = "Exception: Cannot remove {type} `default` from [users.xml] because this storage is readonly"
+cannot_remove_default = "Exception: Cannot remove {type} `default` from users.xml because this storage is readonly"
 
 def cannot_update_default():
-    return (default_readonly_exitcode, "Exception: Cannot update user `default` in [users.xml] because this storage is readonly")
+    return (default_readonly_exitcode, "Exception: Cannot update user `default` in users.xml because this storage is readonly")
 
 def cannot_remove_user_default():
     return (default_readonly_exitcode, cannot_remove_default.format(type="user"))

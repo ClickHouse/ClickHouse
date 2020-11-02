@@ -9,7 +9,7 @@
 #include <boost/noncopyable.hpp>
 
 #include <Core/Defines.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/Exception.h>
 
 #include <IO/WriteBuffer.h>
@@ -850,6 +850,11 @@ protected:
 
 
 public:
+    void reserve(size_t num_elements)
+    {
+        resize(num_elements);
+    }
+
     /// Insert a value. In the case of any more complex values, it is better to use the `emplace` function.
     std::pair<LookupResult, bool> ALWAYS_INLINE insert(const value_type & x)
     {

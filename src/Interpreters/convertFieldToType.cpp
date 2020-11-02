@@ -191,7 +191,20 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     else if (which_type.isStringOrFixedString())
     {
         if (src.getType() == Field::Types::String)
+        {
+            if (which_type.isFixedString())
+            {
+                size_t n = assert_cast<const DataTypeFixedString &>(type).getN();
+                const auto & src_str = src.get<String>();
+                if (src_str.size() < n)
+                {
+                    String src_str_extended = src_str;
+                    src_str_extended.resize(n);
+                    return src_str_extended;
+                }
+            }
             return src;
+        }
     }
     else if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(&type))
     {

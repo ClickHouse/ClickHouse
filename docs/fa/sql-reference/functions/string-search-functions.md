@@ -21,15 +21,16 @@ toc_title: "\u0628\u0631\u0627\u06CC \u062C\u0633\u062A\u062C\u0648\u06CC \u0631
 **نحو**
 
 ``` sql
-position(haystack, needle)
+position(haystack, needle[, start_pos])
 ```
 
-نام مستعار: `locate(haystack, needle)`.
+نام مستعار: `locate(haystack, needle[, start_pos])`.
 
 **پارامترها**
 
 -   `haystack` — string, in which substring will to be searched. [رشته](../syntax.md#syntax-string-literal).
 -   `needle` — substring to be searched. [رشته](../syntax.md#syntax-string-literal).
+-   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **مقادیر بازگشتی**
 
@@ -81,13 +82,14 @@ SELECT position('Привет, мир!', '!')
 **نحو**
 
 ``` sql
-positionCaseInsensitive(haystack, needle)
+positionCaseInsensitive(haystack, needle[, start_pos])
 ```
 
 **پارامترها**
 
 -   `haystack` — string, in which substring will to be searched. [رشته](../syntax.md#syntax-string-literal).
 -   `needle` — substring to be searched. [رشته](../syntax.md#syntax-string-literal).
+-   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **مقادیر بازگشتی**
 
@@ -123,13 +125,14 @@ SELECT positionCaseInsensitive('Hello, world!', 'hello')
 **نحو**
 
 ``` sql
-positionUTF8(haystack, needle)
+positionUTF8(haystack, needle[, start_pos])
 ```
 
 **پارامترها**
 
 -   `haystack` — string, in which substring will to be searched. [رشته](../syntax.md#syntax-string-literal).
 -   `needle` — substring to be searched. [رشته](../syntax.md#syntax-string-literal).
+-   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **مقادیر بازگشتی**
 
@@ -195,13 +198,14 @@ SELECT positionUTF8('Salut, étudiante!', '!')
 **نحو**
 
 ``` sql
-positionCaseInsensitiveUTF8(haystack, needle)
+positionCaseInsensitiveUTF8(haystack, needle[, start_pos])
 ```
 
 **پارامترها**
 
 -   `haystack` — string, in which substring will to be searched. [رشته](../syntax.md#syntax-string-literal).
 -   `needle` — substring to be searched. [رشته](../syntax.md#syntax-string-literal).
+-   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **مقدار بازگشتی**
 

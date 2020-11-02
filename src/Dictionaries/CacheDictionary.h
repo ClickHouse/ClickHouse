@@ -66,7 +66,7 @@ public:
 
     std::string getTypeName() const override { return "Cache"; }
 
-    size_t getBytesAllocated() const override { return bytes_allocated + (string_arena ? string_arena->size() : 0); }
+    size_t getBytesAllocated() const override;
 
     size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
@@ -97,7 +97,7 @@ public:
                 max_threads_for_updates);
     }
 
-    const IDictionarySource * getSource() const override { return source_ptr.get(); }
+    const IDictionarySource * getSource() const override;
 
     const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
 
@@ -388,15 +388,30 @@ private:
                 PresentIdHandler present_id_handler_,
                 AbsentIdHandler absent_id_handler_) :
                 requested_ids(std::move(requested_ids_)),
+                alive_keys(CurrentMetrics::CacheDictionaryUpdateQueueKeys, requested_ids.size()),
                 present_id_handler(present_id_handler_),
-                absent_id_handler(absent_id_handler_),
-                alive_keys(CurrentMetrics::CacheDictionaryUpdateQueueKeys, requested_ids.size()){}
+                absent_id_handler(absent_id_handler_){}
 
         explicit UpdateUnit(std::vector<Key> requested_ids_) :
                 requested_ids(std::move(requested_ids_)),
+                alive_keys(CurrentMetrics::CacheDictionaryUpdateQueueKeys, requested_ids.size()),
                 present_id_handler([](Key, size_t){}),
-                absent_id_handler([](Key, size_t){}),
-                alive_keys(CurrentMetrics::CacheDictionaryUpdateQueueKeys, requested_ids.size()){}
+                absent_id_handler([](Key, size_t){}){}
+
+
+        void callPresentIdHandler(Key key, size_t cell_idx)
+        {
+            std::lock_guard lock(callback_mutex);
+            if (can_use_callback)
+                present_id_handler(key, cell_idx);
+        }
+
+        void callAbsentIdHandler(Key key, size_t cell_idx)
+        {
+            std::lock_guard lock(callback_mutex);
+            if (can_use_callback)
+                absent_id_handler(key, cell_idx);
+        }
 
         std::vector<Key> requested_ids;
 
@@ -405,129 +420,20 @@ private:
         std::mutex callback_mutex;
         bool can_use_callback{true};
 
-        PresentIdHandler present_id_handler;
-        AbsentIdHandler absent_id_handler;
-
         std::atomic<bool> is_done{false};
         std::exception_ptr current_exception{nullptr};
 
         /// While UpdateUnit is alive, it is accounted in update_queue size.
         CurrentMetrics::Increment alive_batch{CurrentMetrics::CacheDictionaryUpdateQueueBatches};
         CurrentMetrics::Increment alive_keys;
+
+      private:
+        PresentIdHandler present_id_handler;
+        AbsentIdHandler absent_id_handler;
     };
 
     using UpdateUnitPtr = std::shared_ptr<UpdateUnit>;
     using UpdateQueue = ConcurrentBoundedQueue<UpdateUnitPtr>;
-
-
-    /*
-     * This class is used to concatenate requested_keys.
-     *
-     * Imagine that we have several UpdateUnit with different vectors of keys and callbacks for that keys.
-     * We concatenate them into a long vector of keys that looks like:
-     *
-     * a1...ak_a b1...bk_2 c1...ck_3,
-     *
-     * where a1...ak_a are requested_keys from the first UpdateUnit.
-     * In addition we have the same number (three in this case) of callbacks.
-     * This class helps us to find a callback (or many callbacks) for a special key.
-     * */
-
-    class BunchUpdateUnit
-    {
-    public:
-        explicit BunchUpdateUnit(std::vector<UpdateUnitPtr> & update_request)
-        {
-            /// Here we prepare total count of all requested ids
-            /// not to do useless allocations later.
-            size_t total_requested_keys_count = 0;
-
-            for (auto & unit_ptr: update_request)
-            {
-                total_requested_keys_count += unit_ptr->requested_ids.size();
-                if (helper.empty())
-                    helper.push_back(unit_ptr->requested_ids.size());
-                else
-                    helper.push_back(unit_ptr->requested_ids.size() + helper.back());
-                present_id_handlers.emplace_back(unit_ptr->present_id_handler);
-                absent_id_handlers.emplace_back(unit_ptr->absent_id_handler);
-                update_units.emplace_back(unit_ptr);
-            }
-
-            concatenated_requested_ids.reserve(total_requested_keys_count);
-            for (auto & unit_ptr: update_request)
-                std::for_each(std::begin(unit_ptr->requested_ids), std::end(unit_ptr->requested_ids),
-                              [&] (const Key & key) {concatenated_requested_ids.push_back(key);});
-
-        }
-
-        const std::vector<Key> & getRequestedIds()
-        {
-            return concatenated_requested_ids;
-        }
-
-        void informCallersAboutPresentId(Key id, size_t cell_idx)
-        {
-            for (size_t position = 0; position < concatenated_requested_ids.size(); ++position)
-            {
-                if (concatenated_requested_ids[position] == id)
-                {
-                    auto unit_number = getUpdateUnitNumberForRequestedIdPosition(position);
-                    auto lock = getLockToCurrentUnit(unit_number);
-                    if (canUseCallback(unit_number))
-                        getPresentIdHandlerForPosition(unit_number)(id, cell_idx);
-                }
-            }
-        }
-
-        void informCallersAboutAbsentId(Key id, size_t cell_idx)
-        {
-            for (size_t position = 0; position < concatenated_requested_ids.size(); ++position)
-                if (concatenated_requested_ids[position] == id)
-                {
-                    auto unit_number = getUpdateUnitNumberForRequestedIdPosition(position);
-                    auto lock = getLockToCurrentUnit(unit_number);
-                    if (canUseCallback(unit_number))
-                        getAbsentIdHandlerForPosition(unit_number)(id, cell_idx);
-                }
-        }
-
-
-    private:
-        /// Needed for control the usage of callback to avoid SEGFAULTs.
-        bool canUseCallback(size_t unit_number)
-        {
-            return update_units[unit_number].get()->can_use_callback;
-        }
-
-        std::unique_lock<std::mutex> getLockToCurrentUnit(size_t unit_number)
-        {
-            return std::unique_lock<std::mutex>(update_units[unit_number].get()->callback_mutex);
-        }
-
-        PresentIdHandler & getPresentIdHandlerForPosition(size_t unit_number)
-        {
-            return update_units[unit_number].get()->present_id_handler;
-        }
-
-        AbsentIdHandler & getAbsentIdHandlerForPosition(size_t unit_number)
-        {
-            return update_units[unit_number].get()->absent_id_handler;
-        }
-
-        size_t getUpdateUnitNumberForRequestedIdPosition(size_t position)
-        {
-            return std::lower_bound(helper.begin(), helper.end(), position) - helper.begin();
-        }
-
-        std::vector<Key> concatenated_requested_ids;
-        std::vector<PresentIdHandler> present_id_handlers;
-        std::vector<AbsentIdHandler> absent_id_handlers;
-
-        std::vector<std::reference_wrapper<UpdateUnitPtr>> update_units;
-
-        std::vector<size_t> helper;
-    };
 
     mutable UpdateQueue update_queue;
 
@@ -548,7 +454,7 @@ private:
      *
      */
     void updateThreadFunction();
-    void update(BunchUpdateUnit & bunch_update_unit) const;
+    void update(UpdateUnitPtr & update_unit_ptr) const;
 
 
     void tryPushToUpdateQueueOrThrow(UpdateUnitPtr & update_unit_ptr) const;

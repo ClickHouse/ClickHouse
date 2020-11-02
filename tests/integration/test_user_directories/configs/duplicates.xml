@@ -1,0 +1,13 @@
+<yandex>
+    <user_directories replace="replace">
+        <local_directory>
+            <path>/var/lib/clickhouse/access7/</path>
+        </local_directory>
+        <users_xml>
+            <path>/etc/clickhouse-server/users7.xml</path>
+        </users_xml>
+    </user_directories>
+
+    <users_config>/etc/clickhouse-server/users7.xml</users_config>
+    <access_control_path>/var/lib/clickhouse/access7/</access_control_path>
+</yandex>

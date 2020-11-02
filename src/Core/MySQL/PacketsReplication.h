@@ -37,14 +37,13 @@ public:
     RegisterSlave(UInt32 server_id_);
 };
 
-/// https://dev.mysql.com/doc/internals/en/com-binlog-dump.html
-class BinlogDump : public IMySQLWritePacket
+/// https://dev.mysql.com/doc/internals/en/com-binlog-dump-gtid.html
+class BinlogDumpGTID : public IMySQLWritePacket
 {
 public:
-    UInt32 binlog_pos;
     UInt16 flags;
     UInt32 server_id;
-    String binlog_file_name;
+    String gtid_datas;
 
 protected:
     size_t getPayloadSize() const override;
@@ -52,7 +51,7 @@ protected:
     void writePayloadImpl(WriteBuffer & buffer) const override;
 
 public:
-    BinlogDump(UInt32 binlog_pos_, String binlog_file_name_, UInt32 server_id_);
+    BinlogDumpGTID(UInt32 server_id_, String gtid_datas_);
 };
 
 }

@@ -14,6 +14,8 @@
 
 #include <Access/AccessFlags.h>
 
+#include <Interpreters/ApplyWithAliasVisitor.h>
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
@@ -25,15 +27,16 @@
 #include <Interpreters/JoinToSubqueryTransformVisitor.h>
 #include <Interpreters/CrossToInnerJoinVisitor.h>
 #include <Interpreters/TableJoin.h>
-#include <Interpreters/HashJoin.h>
+#include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/InflatingExpressionTransform.h>
+#include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/ReadFromStorageStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -63,11 +66,9 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageView.h>
 
-#include <TableFunctions/ITableFunction.h>
-
 #include <Functions/IFunction.h>
 #include <Core/Field.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Columns/Collator.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/typeid_cast.h>
@@ -93,7 +94,6 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int INVALID_LIMIT_EXPRESSION;
     extern const int INVALID_WITH_FILL_EXPRESSION;
-    extern const int INVALID_SETTING_VALUE;
 }
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
@@ -190,7 +190,7 @@ static Context getSubqueryContext(const Context & context)
     return subquery_context;
 }
 
-static void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & tables, const String & database, const Settings & settings)
+static void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & tables, const String & database)
 {
     ASTSelectQuery & select = query->as<ASTSelectQuery &>();
 
@@ -202,11 +202,7 @@ static void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & table
     CrossToInnerJoinVisitor::Data cross_to_inner{tables, aliases, database};
     CrossToInnerJoinVisitor(cross_to_inner).visit(query);
 
-    size_t rewriter_version = settings.multiple_joins_rewriter_version;
-    if (!rewriter_version || rewriter_version > 2)
-        throw Exception("Bad multiple_joins_rewriter_version setting value: " + settings.multiple_joins_rewriter_version.toString(),
-                        ErrorCodes::INVALID_SETTING_VALUE);
-    JoinToSubqueryTransformVisitor::Data join_to_subs_data{tables, aliases, rewriter_version};
+    JoinToSubqueryTransformVisitor::Data join_to_subs_data{tables, aliases};
     JoinToSubqueryTransformVisitor(join_to_subs_data).visit(query);
 }
 
@@ -250,6 +246,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         source_header = input_pipe->getHeader();
     }
 
+    if (context->getSettingsRef().enable_global_with_statement)
+        ApplyWithAliasVisitor().visit(query_ptr);
+    ApplyWithSubqueryVisitor().visit(query_ptr);
+
     JoinedTables joined_tables(getSubqueryContext(*context), getSelectQuery());
 
     if (!has_input && !storage)
@@ -269,7 +269,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     /// Rewrite JOINs
     if (!has_input && joined_tables.tablesCount() > 1)
     {
-        rewriteMultipleJoins(query_ptr, joined_tables.tablesWithColumns(), context->getCurrentDatabase(), settings);
+        rewriteMultipleJoins(query_ptr, joined_tables.tablesWithColumns(), context->getCurrentDatabase());
 
         joined_tables.reset(getSelectQuery());
         joined_tables.resolveTables();
@@ -303,6 +303,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     StorageView * view = nullptr;
     if (storage)
         view = dynamic_cast<StorageView *>(storage.get());
+
+    SubqueriesForSets subquery_for_sets;
 
     auto analyze = [&] (bool try_move_to_prewhere)
     {
@@ -344,7 +346,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         query_analyzer = std::make_unique<SelectQueryExpressionAnalyzer>(
                 query_ptr, syntax_analyzer_result, *context, metadata_snapshot,
                 NameSet(required_result_column_names.begin(), required_result_column_names.end()),
-                !options.only_analyze, options);
+                !options.only_analyze, options, std::move(subquery_for_sets));
 
         if (!options.only_analyze)
         {
@@ -430,6 +432,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (need_analyze_again)
     {
+        subquery_for_sets = std::move(query_analyzer->getSubqueriesForSets());
         /// Do not try move conditions to PREWHERE for the second time.
         /// Otherwise, we won't be able to fallback from inefficient PREWHERE to WHERE later.
         analyze(/* try_move_to_prewhere = */ false);
@@ -552,6 +555,11 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         return res;
     }
 
+    if (options.to_stage == QueryProcessingStage::Enum::WithMergeableStateAfterAggregation)
+    {
+        return analysis_result.before_order_and_select->getSampleBlock();
+    }
+
     return analysis_result.final_projection->getSampleBlock();
 }
 
@@ -614,7 +622,6 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, const Co
 {
     SortDescription order_descr;
     order_descr.reserve(query.orderBy()->children.size());
-    SpecialSort special_sort = context.getSettings().special_sort.value;
     for (const auto & elem : query.orderBy()->children)
     {
         String name = elem->children.front()->getColumnName();
@@ -628,10 +635,10 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, const Co
         {
             FillColumnDescription fill_desc = getWithFillDescription(order_by_elem, context);
             order_descr.emplace_back(name, order_by_elem.direction,
-                order_by_elem.nulls_direction, collator, special_sort, true, fill_desc);
+                order_by_elem.nulls_direction, collator, true, fill_desc);
         }
         else
-            order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator, special_sort);
+            order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator);
     }
 
     return order_descr;
@@ -737,8 +744,10 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
     auto & query = getSelectQuery();
     const Settings & settings = context->getSettingsRef();
     auto & expressions = analysis_result;
-    const auto & subqueries_for_sets = query_analyzer->getSubqueriesForSets();
+    auto & subqueries_for_sets = query_analyzer->getSubqueriesForSets();
     bool intermediate_stage = false;
+    bool to_aggregation_stage = false;
+    bool from_aggregation_stage = false;
 
     if (options.only_analyze)
     {
@@ -786,6 +795,14 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
         if (from_stage == QueryProcessingStage::WithMergeableState &&
             options.to_stage == QueryProcessingStage::WithMergeableState)
             intermediate_stage = true;
+
+        /// Support optimize_distributed_group_by_sharding_key
+        /// Is running on the initiating server during distributed processing?
+        if (from_stage == QueryProcessingStage::WithMergeableStateAfterAggregation)
+            from_aggregation_stage = true;
+        /// Is running on remote servers during distributed processing?
+        if (options.to_stage == QueryProcessingStage::WithMergeableStateAfterAggregation)
+            to_aggregation_stage = true;
 
         if (storage && expressions.filter_info && expressions.prewhere_info)
             throw Exception("PREWHERE is not supported if the table is filtered by row-level security expression", ErrorCodes::ILLEGAL_PREWHERE);
@@ -847,6 +864,12 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             if (expressions.need_aggregate)
                 executeMergeAggregated(query_plan, aggregate_overflow_row, aggregate_final);
         }
+        if (from_aggregation_stage)
+        {
+            if (intermediate_stage || expressions.first_stage || expressions.second_stage)
+                throw Exception("Query with after aggregation stage cannot have any other stages", ErrorCodes::LOGICAL_ERROR);
+        }
+
 
         if (expressions.first_stage)
         {
@@ -862,6 +885,25 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 query_plan.addStep(std::move(row_level_security_step));
             }
 
+            if (expressions.before_array_join)
+            {
+                QueryPlanStepPtr before_array_join_step = std::make_unique<ExpressionStep>(
+                        query_plan.getCurrentDataStream(),
+                        expressions.before_array_join);
+                before_array_join_step->setStepDescription("Before ARRAY JOIN");
+                query_plan.addStep(std::move(before_array_join_step));
+            }
+
+            if (expressions.array_join)
+            {
+                QueryPlanStepPtr array_join_step = std::make_unique<ArrayJoinStep>(
+                        query_plan.getCurrentDataStream(),
+                        expressions.array_join);
+
+                array_join_step->setStepDescription("ARRAY JOIN");
+                query_plan.addStep(std::move(array_join_step));
+            }
+
             if (expressions.before_join)
             {
                 QueryPlanStepPtr before_join_step = std::make_unique<ExpressionStep>(
@@ -874,20 +916,21 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             if (expressions.hasJoin())
             {
                 Block join_result_sample;
-                JoinPtr join = expressions.join->getTableJoinAlgo();
+                JoinPtr join = expressions.join;
 
-                join_result_sample = InflatingExpressionTransform::transformHeader(
+                join_result_sample = JoiningTransform::transformHeader(
                     query_plan.getCurrentDataStream().header, expressions.join);
 
-                QueryPlanStepPtr join_step = std::make_unique<InflatingExpressionStep>(
+                QueryPlanStepPtr join_step = std::make_unique<JoinStep>(
                     query_plan.getCurrentDataStream(),
                     expressions.join);
 
                 join_step->setStepDescription("JOIN");
                 query_plan.addStep(std::move(join_step));
 
-                if (auto stream = join->createStreamWithNonJoinedRows(join_result_sample, settings.max_block_size))
+                if (expressions.join_has_delayed_stream)
                 {
+                    auto stream = std::make_shared<LazyNonJoinedBlockInputStream>(*join, join_result_sample, settings.max_block_size);
                     auto source = std::make_shared<SourceFromInputStream>(std::move(stream));
                     auto add_non_joined_rows_step = std::make_unique<AddingDelayedSourceStep>(
                             query_plan.getCurrentDataStream(), std::move(source));
@@ -919,9 +962,13 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 executeSubqueriesInSetsAndJoins(query_plan, subqueries_for_sets);
         }
 
-        if (expressions.second_stage)
+        if (expressions.second_stage || from_aggregation_stage)
         {
-            if (expressions.need_aggregate)
+            if (from_aggregation_stage)
+            {
+                /// No need to aggregate anything, since this was done on remote shards.
+            }
+            else if (expressions.need_aggregate)
             {
                 /// If you need to combine aggregated results from multiple servers
                 if (!expressions.first_stage)
@@ -974,7 +1021,8 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
               * limiting the number of rows in each up to `offset + limit`.
               */
             bool has_prelimit = false;
-            if (query.limitLength() && !query.limit_with_ties && !hasWithTotalsInAnySubqueryInFromClause(query) &&
+            if (!to_aggregation_stage &&
+                query.limitLength() && !query.limit_with_ties && !hasWithTotalsInAnySubqueryInFromClause(query) &&
                 !query.arrayJoinExpressionList() && !query.distinct && !expressions.hasLimitBy() && !settings.extremes)
             {
                 executePreLimit(query_plan, false);
@@ -1003,23 +1051,59 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 has_prelimit = true;
             }
 
-            /** We must do projection after DISTINCT because projection may remove some columns.
-              */
-            executeProjection(query_plan, expressions.final_projection);
+            /// Projection not be done on the shards, since then initiator will not find column in blocks.
+            /// (significant only for WithMergeableStateAfterAggregation).
+            if (!to_aggregation_stage)
+            {
+                /// We must do projection after DISTINCT because projection may remove some columns.
+                executeProjection(query_plan, expressions.final_projection);
+            }
 
-            /** Extremes are calculated before LIMIT, but after LIMIT BY. This is Ok.
-              */
+            /// Extremes are calculated before LIMIT, but after LIMIT BY. This is Ok.
             executeExtremes(query_plan);
 
-            if (!has_prelimit)  /// Limit is no longer needed if there is prelimit.
+            /// Limit is no longer needed if there is prelimit.
+            if (!to_aggregation_stage && !has_prelimit)
                 executeLimit(query_plan);
 
-            executeOffset(query_plan);
+            if (!to_aggregation_stage)
+                executeOffset(query_plan);
         }
     }
 
     if (query_analyzer->hasGlobalSubqueries() && !subqueries_for_sets.empty())
         executeSubqueriesInSetsAndJoins(query_plan, subqueries_for_sets);
+}
+
+static StreamLocalLimits getLimitsForStorage(const Settings & settings, const SelectQueryOptions & options)
+{
+    StreamLocalLimits limits;
+    limits.mode = LimitsMode::LIMITS_TOTAL;
+    limits.size_limits = SizeLimits(settings.max_rows_to_read, settings.max_bytes_to_read,
+                                    settings.read_overflow_mode);
+    limits.speed_limits.max_execution_time = settings.max_execution_time;
+    limits.timeout_overflow_mode = settings.timeout_overflow_mode;
+
+    /** Quota and minimal speed restrictions are checked on the initiating server of the request, and not on remote servers,
+      *  because the initiating server has a summary of the execution of the request on all servers.
+      *
+      * But limits on data size to read and maximum execution time are reasonable to check both on initiator and
+      *  additionally on each remote server, because these limits are checked per block of data processed,
+      *  and remote servers may process way more blocks of data than are received by initiator.
+      *
+      * The limits to throttle maximum execution speed is also checked on all servers.
+      */
+    if (options.to_stage == QueryProcessingStage::Complete)
+    {
+        limits.speed_limits.min_execution_rps = settings.min_execution_speed;
+        limits.speed_limits.min_execution_bps = settings.min_execution_speed_bytes;
+    }
+
+    limits.speed_limits.max_execution_rps = settings.max_execution_speed;
+    limits.speed_limits.max_execution_bps = settings.max_execution_speed_bytes;
+    limits.speed_limits.timeout_before_checking_execution_speed = settings.timeout_before_checking_execution_speed;
+
+    return limits;
 }
 
 void InterpreterSelectQuery::executeFetchColumns(
@@ -1032,7 +1116,9 @@ void InterpreterSelectQuery::executeFetchColumns(
     /// Optimization for trivial query like SELECT count() FROM table.
     bool optimize_trivial_count =
         syntax_analyzer_result->optimize_trivial_count
+        && (settings.max_parallel_replicas <= 1)
         && storage
+        && storage->getName() != "MaterializeMySQL"
         && !filter_info
         && processing_stage == QueryProcessingStage::FetchColumns
         && query_analyzer->hasAggregation()
@@ -1043,7 +1129,17 @@ void InterpreterSelectQuery::executeFetchColumns(
     {
         const auto & desc = query_analyzer->aggregates()[0];
         const auto & func = desc.function;
-        std::optional<UInt64> num_rows = storage->totalRows();
+        std::optional<UInt64> num_rows{};
+        if (!query.prewhere() && !query.where())
+            num_rows = storage->totalRows();
+        else // It's possible to optimize count() given only partition predicates
+        {
+            SelectQueryInfo temp_query_info;
+            temp_query_info.query = query_ptr;
+            temp_query_info.syntax_analyzer_result = syntax_analyzer_result;
+            temp_query_info.sets = query_analyzer->getPreparedSets();
+            num_rows = storage->totalRowsByPartitionPredicate(temp_query_info, *context);
+        }
         if (num_rows)
         {
             AggregateFunctionCount & agg_count = static_cast<AggregateFunctionCount &>(*func);
@@ -1360,12 +1456,24 @@ void InterpreterSelectQuery::executeFetchColumns(
             query_info.input_order_info = query_info.order_optimizer->getInputOrder(storage, metadata_snapshot);
         }
 
-        auto read_step = std::make_unique<ReadFromStorageStep>(
-            table_lock, metadata_snapshot, options, storage,
-                required_columns, query_info, context, processing_stage, max_block_size, max_streams);
+        StreamLocalLimits limits;
+        SizeLimits leaf_limits;
+        std::shared_ptr<const EnabledQuota> quota;
 
-        read_step->setStepDescription("Read from " + storage->getName());
-        query_plan.addStep(std::move(read_step));
+
+        /// Set the limits and quota for reading data, the speed and time of the query.
+        if (!options.ignore_limits)
+        {
+            limits = getLimitsForStorage(settings, options);
+            leaf_limits = SizeLimits(settings.max_rows_to_read_leaf, settings.max_bytes_to_read_leaf,
+                                          settings.read_overflow_mode_leaf);
+        }
+
+        if (!options.ignore_quota && (options.to_stage == QueryProcessingStage::Complete))
+            quota = context->getQuota();
+
+        storage->read(query_plan, table_lock, metadata_snapshot, limits, leaf_limits, std::move(quota),
+                      required_columns, query_info, context, processing_stage, max_block_size, max_streams);
     }
     else
         throw Exception("Logical error in InterpreterSelectQuery: nowhere to read", ErrorCodes::LOGICAL_ERROR);
@@ -1806,21 +1914,15 @@ void InterpreterSelectQuery::executeExtremes(QueryPlan & query_plan)
     query_plan.addStep(std::move(extremes_step));
 }
 
-void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPlan & query_plan, const SubqueriesForSets & subqueries_for_sets)
+void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPlan & query_plan, SubqueriesForSets & subqueries_for_sets)
 {
     if (query_info.input_order_info)
         executeMergeSorted(query_plan, query_info.input_order_info->order_key_prefix_descr, 0, "before creating sets for subqueries and joins");
 
     const Settings & settings = context->getSettingsRef();
 
-    auto creating_sets = std::make_unique<CreatingSetsStep>(
-            query_plan.getCurrentDataStream(),
-            subqueries_for_sets,
-            SizeLimits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode),
-            *context);
-
-    creating_sets->setStepDescription("Create sets for subqueries and joins");
-    query_plan.addStep(std::move(creating_sets));
+    SizeLimits limits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode);
+    addCreatingSetsStep(query_plan, std::move(subqueries_for_sets), limits, *context);
 }
 
 

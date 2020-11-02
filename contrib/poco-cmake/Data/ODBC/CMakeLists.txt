@@ -1,4 +1,8 @@
 if (ENABLE_ODBC)
+    if (NOT TARGET unixodbc)
+        message(FATAL_ERROR "Configuration error: unixodbc is not a target")
+    endif()
+
     if (USE_INTERNAL_POCO_LIBRARY)
         set (SRCS
             ${LIBRARY_DIR}/Data/ODBC/src/Binder.cpp

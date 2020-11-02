@@ -4,7 +4,7 @@ import os
 import sys
 import tempfile
 
-from server import ServerThread
+from .server import ServerThread
 
 
 def pytest_addoption(parser):
@@ -44,9 +44,9 @@ def standalone_server(bin_prefix, tmp_path):
 
     if wait_result is not None:
         with open(os.path.join(server.log_dir, 'server', 'stdout.txt'), 'r') as f:
-            print >> sys.stderr, f.read()
+            print(f.read(), file=sys.stderr)
         with open(os.path.join(server.log_dir, 'server', 'stderr.txt'), 'r') as f:
-            print >> sys.stderr, f.read()
+            print(f.read(), file=sys.stderr)
         pytest.fail('Server died unexpectedly with code {code}'.format(code=server._proc.returncode), pytrace=False)
 
     yield server

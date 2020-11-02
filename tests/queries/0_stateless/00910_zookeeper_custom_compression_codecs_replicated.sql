@@ -11,7 +11,7 @@ CREATE TABLE test.compression_codec_replicated1(
     somenum Float64 CODEC(ZSTD(2)),
     somestr FixedString(3) CODEC(LZ4HC(7)),
     othernum Int64 CODEC(Delta)
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/compression_codec_replicated', '1') ORDER BY tuple();
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_00910/compression_codec_replicated', '1') ORDER BY tuple();
 
 CREATE TABLE test.compression_codec_replicated2(
   id UInt64 CODEC(LZ4),
@@ -20,7 +20,7 @@ CREATE TABLE test.compression_codec_replicated2(
   somenum Float64 CODEC(ZSTD(2)),
   somestr FixedString(3) CODEC(LZ4HC(7)),
   othernum Int64 CODEC(Delta)
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/compression_codec_replicated', '2') ORDER BY tuple();
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_00910/compression_codec_replicated', '2') ORDER BY tuple();
 
 
 INSERT INTO test.compression_codec_replicated1 VALUES(1, 'hello', toDate('2018-12-14'), 1.1, 'aaa', 5);
@@ -57,14 +57,14 @@ CREATE TABLE test.compression_codec_multiple_replicated1 (
     data String CODEC(ZSTD(2), NONE, Delta(2), LZ4HC, LZ4, LZ4, Delta(8)),
     ddd Date CODEC(NONE, NONE, NONE, Delta(1), LZ4, ZSTD, LZ4HC, LZ4HC),
     somenum Float64 CODEC(Delta(4), LZ4, LZ4, ZSTD(2), LZ4HC(5), ZSTD(3), ZSTD)
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/compression_codec_multiple', '1') ORDER BY tuple();
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_00910/compression_codec_multiple', '1') ORDER BY tuple();
 
 CREATE TABLE test.compression_codec_multiple_replicated2 (
     id UInt64 CODEC(LZ4, ZSTD, NONE, LZ4HC, Delta(4)),
     data String CODEC(ZSTD(2), NONE, Delta(2), LZ4HC, LZ4, LZ4, Delta(8)),
     ddd Date CODEC(NONE, NONE, NONE, Delta(1), LZ4, ZSTD, LZ4HC, LZ4HC),
     somenum Float64 CODEC(Delta(4), LZ4, LZ4, ZSTD(2), LZ4HC(5), ZSTD(3), ZSTD)
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/compression_codec_multiple', '2') ORDER BY tuple();
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_00910/compression_codec_multiple', '2') ORDER BY tuple();
 
 
 INSERT INTO test.compression_codec_multiple_replicated2 VALUES (1, 'world', toDate('2018-10-05'), 1.1), (2, 'hello', toDate('2018-10-01'), 2.2), (3, 'buy', toDate('2018-10-11'), 3.3);
@@ -106,7 +106,7 @@ CREATE TABLE test.compression_codec_multiple_more_types_replicated (
     id Decimal128(13) CODEC(ZSTD, LZ4, ZSTD, ZSTD, Delta(2), Delta(4), Delta(1), LZ4HC),
     data FixedString(12) CODEC(ZSTD, ZSTD, Delta(1), Delta(1), Delta(1), NONE, NONE, NONE, LZ4HC),
     ddd Nested (age UInt8, Name String) CODEC(LZ4, LZ4HC, NONE, NONE, NONE, ZSTD, Delta(8))
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/compression_codec_multiple_more_types_replicated', '1') ORDER BY tuple();
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_00910/compression_codec_multiple_more_types_replicated', '1') ORDER BY tuple();
 
 SHOW CREATE TABLE test.compression_codec_multiple_more_types_replicated;
 
@@ -124,7 +124,7 @@ CREATE TABLE test.compression_codec_multiple_with_key_replicated (
     somedate Date CODEC(ZSTD, ZSTD, ZSTD(12), LZ4HC(12), Delta, Delta),
     id UInt64 CODEC(LZ4, ZSTD, Delta, NONE, LZ4HC, Delta),
     data String CODEC(ZSTD(2), Delta(1), LZ4HC, NONE, LZ4, LZ4)
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/compression_codec_multiple_with_key_replicated', '1') PARTITION BY somedate ORDER BY id SETTINGS index_granularity = 2;
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_00910/compression_codec_multiple_with_key_replicated', '1') PARTITION BY somedate ORDER BY id SETTINGS index_granularity = 2;
 
 
 INSERT INTO test.compression_codec_multiple_with_key_replicated VALUES(toDate('2018-10-12'), 100000, 'hello'), (toDate('2018-10-12'), 100002, 'world'), (toDate('2018-10-12'), 1111, '!');

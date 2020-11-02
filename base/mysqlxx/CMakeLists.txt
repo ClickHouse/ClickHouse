@@ -50,6 +50,14 @@ if (NOT USE_INTERNAL_MYSQL_LIBRARY AND OPENSSL_INCLUDE_DIR)
     target_include_directories (mysqlxx SYSTEM PRIVATE ${OPENSSL_INCLUDE_DIR})
 endif ()
 
+if (NOT USE_INTERNAL_MYSQL_LIBRARY AND USE_STATIC_LIBRARIES)
+   message(WARNING "Statically linking with system mysql/mariadb only works "
+           "if mysql client libraries are built with same openssl version as "
+           "we are going to use now. It wouldn't work if GnuTLS is used. "
+           "Try -D\"USE_INTERNAL_MYSQL_LIBRARY\"=ON or -D\"ENABLE_MYSQL\"=OFF or "
+           "-D\"USE_STATIC_LIBRARIES\"=OFF")
+endif ()
+
 if (ENABLE_TESTS)
     add_subdirectory (tests)
 endif ()

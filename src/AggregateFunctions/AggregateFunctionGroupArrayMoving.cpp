@@ -37,12 +37,12 @@ struct MovingAvg
 template <typename T, typename LimitNumberOfElements> using MovingSumTemplate = typename MovingSum<T, LimitNumberOfElements>::Function;
 template <typename T, typename LimitNumberOfElements> using MovingAvgTemplate = typename MovingAvg<T, LimitNumberOfElements>::Function;
 
-template <template <typename, typename> class Function, typename HasLimit, typename ... TArgs>
+template <template <typename, typename> class Function, typename HasLimit, typename DecimalArg, typename ... TArgs>
 inline AggregateFunctionPtr createAggregateFunctionMovingImpl(const std::string & name, const DataTypePtr & argument_type, TArgs ... args)
 {
     AggregateFunctionPtr res;
 
-    if (isDecimal(argument_type))
+    if constexpr (DecimalArg::value)
         res.reset(createWithDecimalType<Function, HasLimit>(*argument_type, argument_type, std::forward<TArgs>(args)...));
     else
         res.reset(createWithNumericType<Function, HasLimit>(*argument_type, argument_type, std::forward<TArgs>(args)...));
@@ -84,10 +84,21 @@ AggregateFunctionPtr createAggregateFunctionMoving(const std::string & name, con
         throw Exception("Incorrect number of parameters for aggregate function " + name + ", should be 0 or 1",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
+    const DataTypePtr & argument_type = argument_types[0];
     if (!limit_size)
-        return createAggregateFunctionMovingImpl<Function, std::false_type>(name, argument_types[0]);
+    {
+        if (isDecimal(argument_type))
+            return createAggregateFunctionMovingImpl<Function, std::false_type, std::true_type>(name, argument_type);
+        else
+            return createAggregateFunctionMovingImpl<Function, std::false_type, std::false_type>(name, argument_type);
+    }
     else
-        return createAggregateFunctionMovingImpl<Function, std::true_type>(name, argument_types[0], max_elems);
+    {
+        if (isDecimal(argument_type))
+            return createAggregateFunctionMovingImpl<Function, std::true_type, std::true_type>(name, argument_type, max_elems);
+        else
+            return createAggregateFunctionMovingImpl<Function, std::true_type, std::false_type>(name, argument_type, max_elems);
+    }
 }
 
 }

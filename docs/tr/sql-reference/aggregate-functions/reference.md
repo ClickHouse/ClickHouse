@@ -31,7 +31,7 @@ Her iki durumda da döndürülen değerin türü [Uİnt64](../../sql-reference/d
 
 **Ayrıntı**
 
-ClickHouse destekler `COUNT(DISTINCT ...)` sözdizimi. Bu yapının davranışı Aşağıdakilere bağlıdır [count\_distinct\_implementation](../../operations/settings/settings.md#settings-count_distinct_implementation) ayar. Aşağıdakilerden hang theisini tanımlar [uniq\*](#agg_function-uniq) fonksiyonlar işlemi gerçekleştirmek için kullanılır. Varsayılan değer [uniqExact](#agg_function-uniqexact) İşlev.
+ClickHouse destekler `COUNT(DISTINCT ...)` sözdizimi. Bu yapının davranışı Aşağıdakilere bağlıdır [count_distinct_implementation](../../operations/settings/settings.md#settings-count_distinct_implementation) ayar. Aşağıdakilerden hang theisini tanımlar [uniq\*](#agg_function-uniq) fonksiyonlar işlemi gerçekleştirmek için kullanılır. Varsayılan değer [uniqExact](#agg_function-uniqexact) İşlev.
 
 Bu `SELECT count() FROM table` tablodaki girdi sayısı ayrı olarak depolanmadığı için sorgu en iyi duruma getirilmez. Tablodan küçük bir sütun seçer ve içindeki değerlerin sayısını sayar.
 
@@ -721,7 +721,7 @@ Fonksiyon değişken sayıda parametre alır. Parametreler olabilir `Tuple`, `Ar
 -   [uniqCombined](#agg_function-uniqcombined)
 -   [uniqHLL12](#agg_function-uniqhll12)
 
-## groupArray (x), groupArray (max\_size)(x) {#agg_function-grouparray}
+## groupArray (x), groupArray (max_size)(x) {#agg_function-grouparray}
 
 Bağımsız değişken değerleri dizisi oluşturur.
 Değerler diziye herhangi bir (belirsiz) sırayla eklenebilir.
@@ -967,7 +967,7 @@ FROM t
 └───────────┴──────────────────────────────────┴───────────────────────┘
 ```
 
-## groupUniqArray (x), groupUniqArray (max\_size)(x) {#groupuniqarrayx-groupuniqarraymax-sizex}
+## groupUniqArray (x), groupUniqArray (max_size)(x) {#groupuniqarrayx-groupuniqarraymax-sizex}
 
 Farklı bağımsız değişken değerlerinden bir dizi oluşturur. Bellek tüketimi için aynıdır `uniqExact` İşlev.
 

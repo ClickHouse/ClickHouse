@@ -21,6 +21,13 @@ class QueryPipelineProcessorsCollector;
 struct AggregatingTransformParams;
 using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
 
+class QueryPlan;
+
+struct SubqueryForSet;
+using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
+
+struct SizeLimits;
+
 class QueryPipeline
 {
 public:
@@ -50,8 +57,6 @@ public:
     void addTotalsHavingTransform(ProcessorPtr transform);
     /// Add transform which calculates extremes. This transform adds extremes port and doesn't change inputs number.
     void addExtremesTransform();
-    /// Adds transform which creates sets. It will be executed before reading any data from input ports.
-    void addCreatingSetsTransform(ProcessorPtr transform);
     /// Resize pipeline to single output and add IOutputFormat. Pipeline will be completed after this transformation.
     void setOutputFormat(ProcessorPtr output);
     /// Get current OutputFormat.
@@ -71,7 +76,7 @@ public:
 
     void addMergingAggregatedMemoryEfficientTransform(AggregatingTransformParamsPtr params, size_t num_merging_processors);
 
-    /// Changes the number of input ports if needed. Adds ResizeTransform.
+    /// Changes the number of output ports if needed. Adds ResizeTransform.
     void resize(size_t num_streams, bool force = false, bool strict = false);
 
     /// Unite several pipelines together. Result pipeline would have common_header structure.
@@ -82,6 +87,12 @@ public:
             size_t max_threads_limit = 0,
             Processors * collected_processors = nullptr);
 
+    /// Add other pipeline and execute it before current one.
+    /// Pipeline must have same header.
+    void addPipelineBefore(QueryPipeline pipeline);
+
+    void addCreatingSetsTransform(const Block & res_header, SubqueryForSet subquery_for_set, const SizeLimits & limits, const Context & context);
+
     PipelineExecutorPtr execute();
 
     size_t getNumStreams() const { return pipe.numOutputPorts(); }
@@ -90,9 +101,10 @@ public:
 
     const Block & getHeader() const { return pipe.getHeader(); }
 
-    void addTableLock(const TableLockHolder & lock) { pipe.addTableLock(lock); }
+    void addTableLock(TableLockHolder lock) { pipe.addTableLock(std::move(lock)); }
     void addInterpreterContext(std::shared_ptr<Context> context) { pipe.addInterpreterContext(std::move(context)); }
     void addStorageHolder(StoragePtr storage) { pipe.addStorageHolder(std::move(storage)); }
+    void addQueryPlan(std::unique_ptr<QueryPlan> plan) { pipe.addQueryPlan(std::move(plan)); }
 
     /// For compatibility with IBlockInputStream.
     void setProgressCallback(const ProgressCallback & callback);

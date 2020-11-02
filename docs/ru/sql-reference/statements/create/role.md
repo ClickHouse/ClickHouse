@@ -1,6 +1,6 @@
 ---
-toc_priority: 6
-toc_title: Роль
+toc_priority: 40
+toc_title: "\u0420\u043e\u043b\u044c"
 ---
 
 # CREATE ROLE {#create-role-statement}
@@ -20,7 +20,7 @@ CREATE ROLE [IF NOT EXISTS | OR REPLACE] name
 
 Одному пользователю можно назначить несколько ролей. Пользователи могут применять назначенные роли в произвольных комбинациях с помощью выражения [SET ROLE](../misc.md#set-role-statement). Конечный объем привилегий — это комбинация всех привилегий всех примененных ролей. Если у пользователя имеются привилегии, присвоенные его аккаунту напрямую, они также прибавляются к привилегиям, присвоенным через роли.
 
-Роли по умолчанию применяются при входе пользователя в систему. Установить роли по умолчанию можно с помощью выражений [SET DEFAULT ROLE](../misc.md#set-default-role-statement) или [ALTER USER](../alter.md#alter-user-statement).
+Роли по умолчанию применяются при входе пользователя в систему. Установить роли по умолчанию можно с помощью выражений [SET DEFAULT ROLE](../misc.md#set-default-role-statement) или [ALTER USER](../alter/index.md#alter-user-statement).
 
 Для отзыва роли используется выражение [REVOKE](../../../sql-reference/statements/revoke.md).
 

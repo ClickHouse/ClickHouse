@@ -140,6 +140,8 @@ bool RowInputFormatWithDiagnosticInfo::deserializeFieldAndPrintDiagnosticInfo(co
             out << "ERROR: Date must be in YYYY-MM-DD format.\n";
         else
             out << "ERROR\n";
+        // Print exception message
+        out << getExceptionMessage(exception, false) << '\n';
         return false;
     }
 

@@ -1,10 +1,8 @@
 ---
-machine_translated: true
-machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
 toc_title: WITH
 ---
 
-# WITH条款 {#with-clause}
+# WITH子句 {#with-clause}
 
 本节提供对公共表表达式的支持 ([CTE](https://en.wikipedia.org/wiki/Hierarchical_and_recursive_queries_in_SQL)），所以结果 `WITH` 子句可以在其余部分中使用 `SELECT` 查询。
 

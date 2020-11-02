@@ -29,7 +29,7 @@ baseUrl="https://partner-images.canonical.com/core/$VERSION"
 # install qemu-user-static
 if [ -n "${QEMU_ARCH}" ]; then
     if [ ! -f x86_64_qemu-${QEMU_ARCH}-static.tar.gz ]; then
-        wget -N https://github.com/multiarch/qemu-user-static/releases/download/${QEMU_VER}/x86_64_qemu-${QEMU_ARCH}-static.tar.gz
+        wget -nv -N https://github.com/multiarch/qemu-user-static/releases/download/${QEMU_VER}/x86_64_qemu-${QEMU_ARCH}-static.tar.gz
     fi
     tar -xvf x86_64_qemu-${QEMU_ARCH}-static.tar.gz -C $ROOTFS/usr/bin/
 fi
@@ -37,13 +37,13 @@ fi
 
 # get the image
 if \
-    wget -q --spider "$baseUrl/current" \
-    && wget -q --spider "$baseUrl/current/$thisTar" \
+    wget -nv --spider "$baseUrl/current" \
+    && wget -nv --spider "$baseUrl/current/$thisTar" \
     ; then
         baseUrl+='/current'
 fi
-wget -qN "$baseUrl/"{{MD5,SHA{1,256}}SUMS{,.gpg},"$thisTarBase.manifest",'unpacked/build-info.txt'} || true
-wget -N "$baseUrl/$thisTar"
+wget -nv -N "$baseUrl/"{{MD5,SHA{1,256}}SUMS{,.gpg},"$thisTarBase.manifest",'unpacked/build-info.txt'} || true
+wget -nv -N "$baseUrl/$thisTar"
 
 # check checksum
 if [ -f SHA256SUMS ]; then

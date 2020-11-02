@@ -31,7 +31,10 @@ namespace detail
     {
         static Ret hash(T x)
         {
-            return static_cast<Ret>(intHash64(x));
+            if constexpr (sizeof(T) > sizeof(UInt64))
+                return static_cast<Ret>(DefaultHash64<T>(x));
+            else
+                return static_cast<Ret>(intHash64(x));
         }
     };
 

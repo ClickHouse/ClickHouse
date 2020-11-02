@@ -1,3 +1,8 @@
+---
+toc_priority: 40
+toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0434\u043b\u044f\u0020\u0440\u0430\u0431\u043e\u0442\u044b\u0020\u0441\u043e\u0020\u0441\u0442\u0440\u043e\u043a\u0430\u043c\u0438"
+---
+
 # Функции для работы со строками {#funktsii-dlia-raboty-so-strokami}
 
 ## empty {#empty}
@@ -24,12 +29,12 @@
 Возвращает длину строки в кодовых точках Unicode (не символах), при допущении, что строка содержит набор байтов, являющийся текстом в кодировке UTF-8. Если допущение не выполнено, то возвращает какой-нибудь результат (не кидает исключение).
 Тип результата — UInt64.
 
-## char\_length, CHAR\_LENGTH {#char-length}
+## char_length, CHAR_LENGTH {#char-length}
 
 Возвращает длину строки в кодовых точках Unicode (не символах), при допущении, что строка содержит набор байтов, являющийся текстом в кодировке UTF-8. Если допущение не выполнено, возвращает какой-нибудь результат (не кидает исключение).
 Тип результата — UInt64.
 
-## character\_length, CHARACTER\_LENGTH {#character-length}
+## character_length, CHARACTER_LENGTH {#character-length}
 
 Возвращает длину строки в кодовых точках Unicode (не символах), при допущении, что строка содержит набор байтов, являющийся текстом в кодировке UTF-8. Если допущение не выполнено, возвращает какой-нибудь результат (не кидает исключение).
 Тип результата — UInt64.
@@ -70,7 +75,7 @@ toValidUTF8( input_string )
 
 Параметры:
 
--   input\_string — произвольный набор байтов, представленный как объект типа [String](../../sql-reference/functions/string-functions.md).
+-   input_string — произвольный набор байтов, представленный как объект типа [String](../../sql-reference/functions/string-functions.md).
 
 Возвращаемое значение: Корректная строка UTF-8.
 
@@ -478,5 +483,76 @@ SELECT trimBoth('     Hello, world!     ')
 Возвращает чексумму CRC64 данной строки, используется CRC-64-ECMA многочлен.
 
 Тип результата — UInt64.
+
+## normalizeQuery {#normalized-query}
+
+Заменяет литералы, последовательности литералов и сложные псевдонимы заполнителями.
+
+**Синтаксис** 
+``` sql
+normalizeQuery(x)
+```
+
+**Параметры** 
+
+-   `x` — Последовательность символов. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   Последовательность символов с заполнителями.
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT normalizeQuery('[1, 2, 3, x]') AS query;
+```
+
+Результат:
+
+``` text
+┌─query────┐
+│ [?.., x] │
+└──────────┘
+```
+
+## normalizedQueryHash {#normalized-query-hash}
+
+Возвращает идентичные 64-битные хэш - суммы без значений литералов для аналогичных запросов. Это помогает анализировать журнал запросов.
+
+**Синтаксис** 
+
+``` sql
+normalizedQueryHash(x)
+```
+
+**Параметры** 
+
+-   `x` — Последовательность символов. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   Хэш-сумма.
+
+Тип: [UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT normalizedQueryHash('SELECT 1 AS `xyz`') != normalizedQueryHash('SELECT 1 AS `abc`') AS res;
+```
+
+Результат:
+
+``` text
+┌─res─┐
+│   1 │
+└─────┘
+```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/string_functions/) <!--hide-->

@@ -81,8 +81,8 @@ public:
     void initSkipIndices() final;
     void initPrimaryIndex() final;
 
-    void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums) final;
-    void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums) final;
+    void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums, bool sync) final;
+    void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums, bool sync) final;
 
     void setWrittenOffsetColumns(WrittenOffsetColumns * written_offset_columns_)
     {

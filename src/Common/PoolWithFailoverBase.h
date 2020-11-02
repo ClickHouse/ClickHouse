@@ -7,7 +7,6 @@
 #include <functional>
 #include <common/types.h>
 #include <ext/scope_guard.h>
-#include <Core/Types.h>
 #include <Common/PoolBase.h>
 #include <Common/ProfileEvents.h>
 #include <Common/NetException.h>
@@ -124,7 +123,12 @@ protected:
 
     /// This function returns a copy of pool states to avoid race conditions when modifying shared pool states.
     PoolStates updatePoolStates(size_t max_ignored_errors);
-    PoolStates getPoolStates() const;
+
+    auto getPoolExtendedStates() const
+    {
+        std::lock_guard lock(pool_states_mutex);
+        return std::make_tuple(shared_pool_states, nested_pools, last_error_decrease_time);
+    }
 
     NestedPools nested_pools;
 
@@ -225,7 +229,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
 
             ShuffledPool & shuffled_pool = shuffled_pools[i];
             TryResult & result = try_results[i];
-            if (shuffled_pool.error_count >= max_tries || !result.entry.isNull())
+            if (max_tries && (shuffled_pool.error_count >= max_tries || !result.entry.isNull()))
                 continue;
 
             std::string fail_message;
@@ -381,12 +385,4 @@ PoolWithFailoverBase<TNestedPool>::updatePoolStates(size_t max_ignored_errors)
         state.error_count = std::max<UInt64>(0, state.error_count - max_ignored_errors);
 
     return result;
-}
-
-template <typename TNestedPool>
-typename PoolWithFailoverBase<TNestedPool>::PoolStates
-PoolWithFailoverBase<TNestedPool>::getPoolStates() const
-{
-    std::lock_guard lock(pool_states_mutex);
-    return shared_pool_states;
 }

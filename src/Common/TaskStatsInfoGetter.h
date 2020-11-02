@@ -1,7 +1,7 @@
 #pragma once
 
 #include <sys/types.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <boost/noncopyable.hpp>
 
 struct taskstats;

@@ -132,7 +132,7 @@ void MySQLClient::ping()
     writeCommand(Command::COM_PING, "");
 }
 
-void MySQLClient::startBinlogDump(UInt32 slave_id, String replicate_db, String binlog_file_name, UInt64 binlog_pos)
+void MySQLClient::startBinlogDumpGTID(UInt32 slave_id, String replicate_db, String gtid_str)
 {
     /// Set binlog checksum to CRC32.
     String checksum = "CRC32";
@@ -145,12 +145,16 @@ void MySQLClient::startBinlogDump(UInt32 slave_id, String replicate_db, String b
     // Register slave.
     registerSlaveOnMaster(slave_id);
 
+    /// Set GTID Sets.
+    GTIDSets gtid_sets;
+    gtid_sets.parse(gtid_str);
+    replication.setGTIDSets(gtid_sets);
+
     /// Set Filter rule to replication.
     replication.setReplicateDatabase(replicate_db);
 
-    binlog_pos = binlog_pos < 4 ? 4 : binlog_pos;
-    BinlogDump binlog_dump(binlog_pos, binlog_file_name, slave_id);
-    packet_endpoint->sendPacket<BinlogDump>(binlog_dump, true);
+    BinlogDumpGTID binlog_dump(slave_id, gtid_sets.toPayload());
+    packet_endpoint->sendPacket<BinlogDumpGTID>(binlog_dump, true);
 }
 
 BinlogEventPtr MySQLClient::readOneBinlogEvent(UInt64 milliseconds)

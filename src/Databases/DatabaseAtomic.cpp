@@ -65,6 +65,7 @@ String DatabaseAtomic::getTableDataPath(const ASTCreateQuery & query) const
 
 void DatabaseAtomic::drop(const Context &)
 {
+    assert(tables.empty());
     try
     {
         Poco::File(path_to_metadata_symlink).remove();
@@ -82,7 +83,7 @@ void DatabaseAtomic::attachTable(const String & name, const StoragePtr & table, 
     assert(relative_table_path != data_path && !relative_table_path.empty());
     DetachedTables not_in_use;
     std::unique_lock lock(mutex);
-    not_in_use = cleenupDetachedTables();
+    not_in_use = cleanupDetachedTables();
     auto table_id = table->getStorageID();
     assertDetachedTableNotInUse(table_id.uuid);
     DatabaseWithDictionaries::attachTableUnlocked(name, table, lock);
@@ -96,7 +97,7 @@ StoragePtr DatabaseAtomic::detachTable(const String & name)
     auto table = DatabaseWithDictionaries::detachTableUnlocked(name, lock);
     table_name_to_path.erase(name);
     detached_tables.emplace(table->getStorageID().uuid, table);
-    not_in_use = cleenupDetachedTables();
+    not_in_use = cleanupDetachedTables();
     return table;
 }
 
@@ -114,6 +115,10 @@ void DatabaseAtomic::dropTable(const Context &, const String & table_name, bool 
         table_name_to_path.erase(table_name);
     }
     tryRemoveSymlink(table_name);
+    /// Remove the inner table (if any) to avoid deadlock
+    /// (due to attempt to execute DROP from the worker thread)
+    if (auto * mv = dynamic_cast<StorageMaterializedView *>(table.get()))
+        mv->dropInnerTable(no_delay);
     /// Notify DatabaseCatalog that table was dropped. It will remove table data in background.
     /// Cleanup is performed outside of database to allow easily DROP DATABASE without waiting for cleanup to complete.
     DatabaseCatalog::instance().enqueueDroppedTableCleanup(table->getStorageID(), table, table_metadata_path_drop, no_delay);
@@ -206,11 +211,13 @@ void DatabaseAtomic::renameTable(const Context & context, const String & table_n
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot move dictionary to other database");
 
     StoragePtr table = getTableUnlocked(table_name, db_lock);
+    table->checkTableCanBeRenamed();
     assert_can_move_mat_view(table);
     StoragePtr other_table;
     if (exchange)
     {
         other_table = other_db.getTableUnlocked(to_table_name, other_db_lock);
+        other_table->checkTableCanBeRenamed();
         assert_can_move_mat_view(other_table);
     }
 
@@ -254,21 +261,29 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
 {
     DetachedTables not_in_use;
     auto table_data_path = getTableDataPath(query);
+    bool locked_uuid = false;
     try
     {
         std::unique_lock lock{mutex};
         if (query.database != database_name)
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed to `{}`, cannot create table in `{}`",
                             database_name, query.database);
-        not_in_use = cleenupDetachedTables();
+        /// Do some checks before renaming file from .tmp to .sql
+        not_in_use = cleanupDetachedTables();
         assertDetachedTableNotInUse(query.uuid);
-        renameNoReplace(table_metadata_tmp_path, table_metadata_path);
+        /// We will get en exception if some table with the same UUID exists (even if it's detached table or table from another database)
+        DatabaseCatalog::instance().addUUIDMapping(query.uuid);
+        locked_uuid = true;
+        /// It throws if `table_metadata_path` already exists (it's possible if table was detached)
+        renameNoReplace(table_metadata_tmp_path, table_metadata_path);  /// Commit point (a sort of)
         attachTableUnlocked(query.table, table, lock);   /// Should never throw
         table_name_to_path.emplace(query.table, table_data_path);
     }
     catch (...)
     {
         Poco::File(table_metadata_tmp_path).remove();
+        if (locked_uuid)
+            DatabaseCatalog::instance().removeUUIDMappingFinally(query.uuid);
         throw;
     }
     tryCreateSymlink(query.table, table_data_path);
@@ -276,7 +291,7 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
 
 void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path)
 {
-    bool check_file_exists = supportsRenameat2();
+    bool check_file_exists = true;
     SCOPE_EXIT({ std::error_code code; if (check_file_exists) std::filesystem::remove(table_metadata_tmp_path, code); });
 
     std::unique_lock lock{mutex};
@@ -285,9 +300,8 @@ void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String &
     if (table_id.uuid != actual_table_id.uuid)
         throw Exception("Cannot alter table because it was renamed", ErrorCodes::CANNOT_ASSIGN_ALTER);
 
-    if (check_file_exists)
-        renameExchange(table_metadata_tmp_path, table_metadata_path);
-    else
+    check_file_exists = renameExchangeIfSupported(table_metadata_tmp_path, table_metadata_path);
+    if (!check_file_exists)
         std::filesystem::rename(table_metadata_tmp_path, table_metadata_path);
 }
 
@@ -301,10 +315,10 @@ void DatabaseAtomic::assertDetachedTableNotInUse(const UUID & uuid)
     /// To avoid it, we remember UUIDs of detached tables and does not allow ATTACH table with such UUID until detached instance still in use.
     if (detached_tables.count(uuid))
         throw Exception("Cannot attach table with UUID " + toString(uuid) +
-              ", because it was detached but still used by come query. Retry later.", ErrorCodes::TABLE_ALREADY_EXISTS);
+              ", because it was detached but still used by some query. Retry later.", ErrorCodes::TABLE_ALREADY_EXISTS);
 }
 
-DatabaseAtomic::DetachedTables DatabaseAtomic::cleenupDetachedTables()
+DatabaseAtomic::DetachedTables DatabaseAtomic::cleanupDetachedTables()
 {
     DetachedTables not_in_use;
     auto it = detached_tables.begin();
@@ -322,14 +336,14 @@ DatabaseAtomic::DetachedTables DatabaseAtomic::cleenupDetachedTables()
     return not_in_use;
 }
 
-void DatabaseAtomic::assertCanBeDetached(bool cleenup)
+void DatabaseAtomic::assertCanBeDetached(bool cleanup)
 {
-    if (cleenup)
+    if (cleanup)
     {
         DetachedTables not_in_use;
         {
             std::lock_guard lock(mutex);
-            not_in_use = cleenupDetachedTables();
+            not_in_use = cleanupDetachedTables();
         }
     }
     std::lock_guard lock(mutex);
@@ -497,6 +511,28 @@ void DatabaseAtomic::renameDictionaryInMemoryUnlocked(const StorageID & old_name
         return;
     const auto & dict = dynamic_cast<const IDictionaryBase &>(*result.object);
     dict.updateDictionaryName(new_name);
+}
+void DatabaseAtomic::waitDetachedTableNotInUse(const UUID & uuid)
+{
+    {
+        std::lock_guard lock{mutex};
+        if (detached_tables.count(uuid) == 0)
+            return;
+    }
+
+    /// Table is in use while its shared_ptr counter is greater than 1.
+    /// We cannot trigger condvar on shared_ptr destruction, so it's busy wait.
+    while (true)
+    {
+        DetachedTables not_in_use;
+        {
+            std::lock_guard lock{mutex};
+            not_in_use = cleanupDetachedTables();
+            if (detached_tables.count(uuid) == 0)
+                return;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
 }
 
 }
