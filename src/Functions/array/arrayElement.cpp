@@ -797,8 +797,6 @@ bool FunctionArrayElement::executeMappedKeyStringArgument(const ColumnArray * co
     return true;
 }
 
-
-
 template <typename DataType>
 bool FunctionArrayElement::executeMappedKeyNumberConst(const ColumnArray * column, Field & index,
     std::vector<int> &matched_idxs)

@@ -95,7 +95,7 @@ void writeBinary(const Array & x, WriteBuffer & buf)
     DB::writeBinary(size, buf);
 
     for (const auto & elem : x)
-        Field::dispatch([&buf](const auto & value) { DB::FieldVisitorWriteBinary()(value, buf); }, elem);
+        Field::dispatch([&buf] (const auto & value) { DB::FieldVisitorWriteBinary()(value, buf); }, elem);
 }
 
 void writeText(const Array & x, WriteBuffer & buf)
@@ -126,11 +126,7 @@ void writeBinary(const Tuple & x, WriteBuffer & buf)
     {
         const UInt8 type = elem.getType();
         DB::writeBinary(type, buf);
-        Field::dispatch(
-            [&buf](const auto & value) {
-                DB::FieldVisitorWriteBinary()(value, buf);
-            },
-            elem);
+        Field::dispatch([&buf] (const auto & value) { DB::FieldVisitorWriteBinary()(value, buf); }, elem);
     }
 }
 
@@ -161,11 +157,7 @@ void writeBinary(const Map & x, WriteBuffer & buf)
     {
         const UInt8 type = elem.getType();
         DB::writeBinary(type, buf);
-        Field::dispatch(
-            [&buf](const auto & value) {
-                DB::FieldVisitorWriteBinary()(value, buf);
-            },
-            elem);
+        Field::dispatch([&buf] (const auto & value) { DB::FieldVisitorWriteBinary()(value, buf); }, elem);
     }
 }
 
