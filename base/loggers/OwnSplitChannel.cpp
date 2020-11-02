@@ -76,6 +76,7 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
         TextLogElement elem;
 
         elem.event_time = msg_ext.time_seconds;
+        elem.event_time_microseconds = msg_ext.time_in_microseconds;
         elem.microseconds = msg_ext.time_microseconds;
 
         elem.thread_name = getThreadName();

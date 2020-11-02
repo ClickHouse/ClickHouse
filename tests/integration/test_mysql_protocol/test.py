@@ -1,18 +1,16 @@
 # coding: utf-8
 
-import docker
 import datetime
 import math
 import os
-import pytest
 import subprocess
 import time
+
+import docker
 import pymysql.connections
-
+import pytest
 from docker.models.containers import Container
-
 from helpers.cluster import ClickHouseCluster, get_docker_compose_path
-
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 DOCKER_COMPOSE_PATH = get_docker_compose_path()
@@ -37,7 +35,8 @@ def server_address():
 @pytest.fixture(scope='module')
 def mysql_client():
     docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mysql_client.yml')
-    subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--no-build'])
+    subprocess.check_call(
+        ['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--no-build'])
     yield docker.from_env().containers.get(cluster.project_name + '_mysql1_1')
 
 
@@ -63,28 +62,32 @@ def mysql_server(mysql_client):
 @pytest.fixture(scope='module')
 def golang_container():
     docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mysql_golang_client.yml')
-    subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--no-build'])
+    subprocess.check_call(
+        ['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--no-build'])
     yield docker.from_env().containers.get(cluster.project_name + '_golang1_1')
 
 
 @pytest.fixture(scope='module')
 def php_container():
     docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mysql_php_client.yml')
-    subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--no-build'])
+    subprocess.check_call(
+        ['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--no-build'])
     yield docker.from_env().containers.get(cluster.project_name + '_php1_1')
 
 
 @pytest.fixture(scope='module')
 def nodejs_container():
     docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mysql_js_client.yml')
-    subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--no-build'])
+    subprocess.check_call(
+        ['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--no-build'])
     yield docker.from_env().containers.get(cluster.project_name + '_mysqljs1_1')
 
 
 @pytest.fixture(scope='module')
 def java_container():
     docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mysql_java_client.yml')
-    subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--no-build'])
+    subprocess.check_call(
+        ['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--no-build'])
     yield docker.from_env().containers.get(cluster.project_name + '_java1_1')
 
 
@@ -95,7 +98,7 @@ def test_mysql_client(mysql_client, server_address):
         -e "SELECT 1;"
     '''.format(host=server_address, port=server_port), demux=True)
 
-    assert stdout == '\n'.join(['1', '1', ''])
+    assert stdout.decode() == '\n'.join(['1', '1', ''])
 
     code, (stdout, stderr) = mysql_client.exec_run('''
         mysql --protocol tcp -h {host} -P {port} default -u default --password=123
@@ -103,13 +106,13 @@ def test_mysql_client(mysql_client, server_address):
         -e "SELECT 'тест' as b;"
     '''.format(host=server_address, port=server_port), demux=True)
 
-    assert stdout == '\n'.join(['a', '1', 'b', 'тест', ''])
+    assert stdout.decode() == '\n'.join(['a', '1', 'b', 'тест', ''])
 
     code, (stdout, stderr) = mysql_client.exec_run('''
         mysql --protocol tcp -h {host} -P {port} default -u default --password=abc -e "select 1 as a;"
     '''.format(host=server_address, port=server_port), demux=True)
 
-    assert stderr == 'mysql: [Warning] Using a password on the command line interface can be insecure.\n' \
+    assert stderr.decode() == 'mysql: [Warning] Using a password on the command line interface can be insecure.\n' \
                      'ERROR 516 (00000): default: Authentication failed: password is incorrect or there is no user with such name\n'
 
     code, (stdout, stderr) = mysql_client.exec_run('''
@@ -119,9 +122,9 @@ def test_mysql_client(mysql_client, server_address):
         -e "use system2;"
     '''.format(host=server_address, port=server_port), demux=True)
 
-    assert stdout == 'count()\n1\n'
-    assert stderr[0:182] == "mysql: [Warning] Using a password on the command line interface can be insecure.\n" \
-                     "ERROR 81 (00000) at line 1: Code: 81, e.displayText() = DB::Exception: Database system2 doesn't exist"
+    assert stdout.decode() == 'count()\n1\n'
+    assert stderr[0:182].decode() == "mysql: [Warning] Using a password on the command line interface can be insecure.\n" \
+                            "ERROR 81 (00000) at line 1: Code: 81, e.displayText() = DB::Exception: Database system2 doesn't exist"
 
     code, (stdout, stderr) = mysql_client.exec_run('''
         mysql --protocol tcp -h {host} -P {port} default -u default --password=123
@@ -137,17 +140,18 @@ def test_mysql_client(mysql_client, server_address):
         -e "SELECT * FROM tmp ORDER BY tmp_column;"
     '''.format(host=server_address, port=server_port), demux=True)
 
-    assert stdout == '\n'.join(['column', '0', '0', '1', '1', '5', '5', 'tmp_column', '0', '1', ''])
+    assert stdout.decode() == '\n'.join(['column', '0', '0', '1', '1', '5', '5', 'tmp_column', '0', '1', ''])
+
 
 def test_mysql_client_exception(mysql_client, server_address):
-   # Poco exception.
+    # Poco exception.
     code, (stdout, stderr) = mysql_client.exec_run('''
         mysql --protocol tcp -h {host} -P {port} default -u default --password=123
         -e "CREATE TABLE default.t1_remote_mysql AS mysql('127.0.0.1:10086','default','t1_local','default','');"
     '''.format(host=server_address, port=server_port), demux=True)
 
-    assert stderr[0:266] == "mysql: [Warning] Using a password on the command line interface can be insecure.\n" \
-            "ERROR 1000 (00000) at line 1: Poco::Exception. Code: 1000, e.code() = 2002, e.displayText() = mysqlxx::ConnectionFailed: Can't connect to MySQL server on '127.0.0.1' (115) ((nullptr):0)"
+    assert stderr[0:266].decode() == "mysql: [Warning] Using a password on the command line interface can be insecure.\n" \
+                            "ERROR 1000 (00000) at line 1: Poco::Exception. Code: 1000, e.code() = 2002, e.displayText() = mysqlxx::ConnectionFailed: Can't connect to MySQL server on '127.0.0.1' (115) ((nullptr):0)"
 
 
 def test_mysql_replacement_query(mysql_client, server_address):
@@ -184,14 +188,14 @@ def test_mysql_replacement_query(mysql_client, server_address):
         --password=123 -e "select database();"
     '''.format(host=server_address, port=server_port), demux=True)
     assert code == 0
-    assert stdout == 'database()\ndefault\n'
+    assert stdout.decode() == 'database()\ndefault\n'
 
     code, (stdout, stderr) = mysql_client.exec_run('''
         mysql --protocol tcp -h {host} -P {port} default -u default
         --password=123 -e "select DATABASE();"
     '''.format(host=server_address, port=server_port), demux=True)
     assert code == 0
-    assert stdout == 'DATABASE()\ndefault\n'
+    assert stdout.decode() == 'DATABASE()\ndefault\n'
 
 
 def test_mysql_explain(mysql_client, server_address):
@@ -233,6 +237,12 @@ def test_mysql_federated(mysql_server, server_address):
         node.query('''CREATE TABLE mysql_federated.test (col UInt32) ENGINE = Log''', settings={"password": "123"})
         node.query('''INSERT INTO mysql_federated.test VALUES (0), (1), (5)''', settings={"password": "123"})
 
+        def check_retryable_error_in_stderr(stderr):
+            stderr = stderr.decode()
+            return ("Can't connect to local MySQL server through socket" in stderr
+                    or "MySQL server has gone away" in stderr
+                    or "Server shutdown in progress" in stderr)
+
         code, (stdout, stderr) = mysql_server.exec_run('''
             mysql
             -e "DROP SERVER IF EXISTS clickhouse;"
@@ -243,9 +253,9 @@ def test_mysql_federated(mysql_server, server_address):
         '''.format(host=server_address, port=server_port), demux=True)
 
         if code != 0:
-            print("stdout", stdout)
-            print("stderr", stderr)
-            if try_num + 1 < retries and "Can't connect to local MySQL server through socket" in stderr:
+            print(("stdout", stdout))
+            print(("stderr", stderr))
+            if try_num + 1 < retries and check_retryable_error_in_stderr(stderr):
                 time.sleep(1)
                 continue
         assert code == 0
@@ -257,14 +267,14 @@ def test_mysql_federated(mysql_server, server_address):
         '''.format(host=server_address, port=server_port), demux=True)
 
         if code != 0:
-            print("stdout", stdout)
-            print("stderr", stderr)
-            if try_num + 1 < retries and "Can't connect to local MySQL server through socket" in stderr:
+            print(("stdout", stdout))
+            print(("stderr", stderr))
+            if try_num + 1 < retries and check_retryable_error_in_stderr(stderr):
                 time.sleep(1)
                 continue
         assert code == 0
 
-        assert stdout == '\n'.join(['col', '0', '1', '5', ''])
+        assert stdout.decode() == '\n'.join(['col', '0', '1', '5', ''])
 
         code, (stdout, stderr) = mysql_server.exec_run('''
             mysql
@@ -273,20 +283,20 @@ def test_mysql_federated(mysql_server, server_address):
         '''.format(host=server_address, port=server_port), demux=True)
 
         if code != 0:
-            print("stdout", stdout)
-            print("stderr", stderr)
-            if try_num + 1 < retries and "Can't connect to local MySQL server through socket" in stderr:
+            print(("stdout", stdout))
+            print(("stderr", stderr))
+            if try_num + 1 < retries and check_retryable_error_in_stderr(stderr):
                 time.sleep(1)
                 continue
         assert code == 0
 
-        assert stdout == '\n'.join(['col', '0', '0', '1', '1', '5', '5', ''])
+        assert stdout.decode() == '\n'.join(['col', '0', '0', '1', '1', '5', '5', ''])
 
 
 def test_mysql_set_variables(mysql_client, server_address):
     code, (stdout, stderr) = mysql_client.exec_run('''
         mysql --protocol tcp -h {host} -P {port} default -u default --password=123
-        -e 
+        -e
         "
         SET NAMES=default;
         SET character_set_results=default;
@@ -301,28 +311,34 @@ def test_mysql_set_variables(mysql_client, server_address):
 
 
 def test_python_client(server_address):
-    client = pymysql.connections.Connection(host=server_address, user='user_with_double_sha1', password='abacaba', database='default', port=server_port)
+    client = pymysql.connections.Connection(host=server_address, user='user_with_double_sha1', password='abacaba',
+                                            database='default', port=server_port)
 
     with pytest.raises(pymysql.InternalError) as exc_info:
         client.query('select name from tables')
 
-    assert exc_info.value.args[1][0:77] == "Code: 60, e.displayText() = DB::Exception: Table default.tables doesn't exist"
+    assert exc_info.value.args[1][
+           0:77] == "Code: 60, e.displayText() = DB::Exception: Table default.tables doesn't exist"
 
     cursor = client.cursor(pymysql.cursors.DictCursor)
     cursor.execute("select 1 as a, 'тест' as b")
     assert cursor.fetchall() == [{'a': 1, 'b': 'тест'}]
 
     with pytest.raises(pymysql.InternalError) as exc_info:
-        pymysql.connections.Connection(host=server_address, user='default', password='abacab', database='default', port=server_port)
+        pymysql.connections.Connection(host=server_address, user='default', password='abacab', database='default',
+                                       port=server_port)
 
-    assert exc_info.value.args == (516, 'default: Authentication failed: password is incorrect or there is no user with such name')
+    assert exc_info.value.args == (
+        516, 'default: Authentication failed: password is incorrect or there is no user with such name')
 
-    client = pymysql.connections.Connection(host=server_address, user='default', password='123', database='default', port=server_port)
+    client = pymysql.connections.Connection(host=server_address, user='default', password='123', database='default',
+                                            port=server_port)
 
     with pytest.raises(pymysql.InternalError) as exc_info:
         client.query('select name from tables')
 
-    assert exc_info.value.args[1][0:77] == "Code: 60, e.displayText() = DB::Exception: Table default.tables doesn't exist"
+    assert exc_info.value.args[1][
+           0:77] == "Code: 60, e.displayText() = DB::Exception: Table default.tables doesn't exist"
 
     cursor = client.cursor(pymysql.cursors.DictCursor)
     cursor.execute("select 1 as a, 'тест' as b")
@@ -347,58 +363,74 @@ def test_python_client(server_address):
 
 def test_golang_client(server_address, golang_container):
     # type: (str, Container) -> None
-    with open(os.path.join(SCRIPT_DIR, 'golang.reference')) as fp:
+    with open(os.path.join(SCRIPT_DIR, 'golang.reference'), 'rb') as fp:
         reference = fp.read()
 
-    code, (stdout, stderr) = golang_container.exec_run('./main --host {host} --port {port} --user default --password 123 --database '
-                                                       'abc'.format(host=server_address, port=server_port), demux=True)
+    code, (stdout, stderr) = golang_container.exec_run(
+        './main --host {host} --port {port} --user default --password 123 --database '
+        'abc'.format(host=server_address, port=server_port), demux=True)
 
     assert code == 1
-    assert stderr == "Error 81: Database abc doesn't exist\n"
+    assert stderr.decode() == "Error 81: Database abc doesn't exist\n"
 
-    code, (stdout, stderr) = golang_container.exec_run('./main --host {host} --port {port} --user default --password 123 --database '
-                                                       'default'.format(host=server_address, port=server_port), demux=True)
+    code, (stdout, stderr) = golang_container.exec_run(
+        './main --host {host} --port {port} --user default --password 123 --database '
+        'default'.format(host=server_address, port=server_port), demux=True)
 
     assert code == 0
     assert stdout == reference
 
-    code, (stdout, stderr) = golang_container.exec_run('./main --host {host} --port {port} --user user_with_double_sha1 --password abacaba --database '
-                                                       'default'.format(host=server_address, port=server_port), demux=True)
+    code, (stdout, stderr) = golang_container.exec_run(
+        './main --host {host} --port {port} --user user_with_double_sha1 --password abacaba --database '
+        'default'.format(host=server_address, port=server_port), demux=True)
     assert code == 0
     assert stdout == reference
 
 
 def test_php_client(server_address, php_container):
     # type: (str, Container) -> None
-    code, (stdout, stderr) = php_container.exec_run('php -f test.php {host} {port} default 123'.format(host=server_address, port=server_port), demux=True)
+    code, (stdout, stderr) = php_container.exec_run(
+        'php -f test.php {host} {port} default 123'.format(host=server_address, port=server_port), demux=True)
     assert code == 0
-    assert stdout == 'tables\n'
+    assert stdout.decode() == 'tables\n'
 
-    code, (stdout, stderr) = php_container.exec_run('php -f test_ssl.php {host} {port} default 123'.format(host=server_address, port=server_port), demux=True)
+    code, (stdout, stderr) = php_container.exec_run(
+        'php -f test_ssl.php {host} {port} default 123'.format(host=server_address, port=server_port), demux=True)
     assert code == 0
-    assert stdout == 'tables\n'
+    assert stdout.decode() == 'tables\n'
 
-    code, (stdout, stderr) = php_container.exec_run('php -f test.php {host} {port} user_with_double_sha1 abacaba'.format(host=server_address, port=server_port), demux=True)
+    code, (stdout, stderr) = php_container.exec_run(
+        'php -f test.php {host} {port} user_with_double_sha1 abacaba'.format(host=server_address, port=server_port),
+        demux=True)
     assert code == 0
-    assert stdout == 'tables\n'
+    assert stdout.decode() == 'tables\n'
 
-    code, (stdout, stderr) = php_container.exec_run('php -f test_ssl.php {host} {port} user_with_double_sha1 abacaba'.format(host=server_address, port=server_port), demux=True)
+    code, (stdout, stderr) = php_container.exec_run(
+        'php -f test_ssl.php {host} {port} user_with_double_sha1 abacaba'.format(host=server_address, port=server_port),
+        demux=True)
     assert code == 0
-    assert stdout == 'tables\n'
+    assert stdout.decode() == 'tables\n'
 
 
 def test_mysqljs_client(server_address, nodejs_container):
-    code, (_, stderr) = nodejs_container.exec_run('node test.js {host} {port} user_with_sha256 abacaba'.format(host=server_address, port=server_port), demux=True)
+    code, (_, stderr) = nodejs_container.exec_run(
+        'node test.js {host} {port} user_with_sha256 abacaba'.format(host=server_address, port=server_port), demux=True)
     assert code == 1
-    assert 'MySQL is requesting the sha256_password authentication method, which is not supported.' in stderr
+    assert 'MySQL is requesting the sha256_password authentication method, which is not supported.' in stderr.decode()
 
-    code, (_, stderr) = nodejs_container.exec_run('node test.js {host} {port} user_with_empty_password ""'.format(host=server_address, port=server_port), demux=True)
+    code, (_, stderr) = nodejs_container.exec_run(
+        'node test.js {host} {port} user_with_empty_password ""'.format(host=server_address, port=server_port),
+        demux=True)
     assert code == 0
 
-    code, (_, _) = nodejs_container.exec_run('node test.js {host} {port} user_with_double_sha1 abacaba'.format(host=server_address, port=server_port), demux=True)
+    code, (_, _) = nodejs_container.exec_run(
+        'node test.js {host} {port} user_with_double_sha1 abacaba'.format(host=server_address, port=server_port),
+        demux=True)
     assert code == 0
 
-    code, (_, _) = nodejs_container.exec_run('node test.js {host} {port} user_with_empty_password 123'.format(host=server_address, port=server_port), demux=True)
+    code, (_, _) = nodejs_container.exec_run(
+        'node test.js {host} {port} user_with_empty_password 123'.format(host=server_address, port=server_port),
+        demux=True)
     assert code == 1
 
 
@@ -408,31 +440,36 @@ def test_java_client(server_address, java_container):
         reference = fp.read()
 
     # database not exists exception.
-    code, (stdout, stderr) = java_container.exec_run('java JavaConnectorTest --host {host} --port {port} --user user_with_empty_password --database '
-                                                       'abc'.format(host=server_address, port=server_port), demux=True)
+    code, (stdout, stderr) = java_container.exec_run(
+        'java JavaConnectorTest --host {host} --port {port} --user user_with_empty_password --database '
+        'abc'.format(host=server_address, port=server_port), demux=True)
     assert code == 1
 
     # empty password passed.
-    code, (stdout, stderr) = java_container.exec_run('java JavaConnectorTest --host {host} --port {port} --user user_with_empty_password --database '
-                                                       'default'.format(host=server_address, port=server_port), demux=True)
+    code, (stdout, stderr) = java_container.exec_run(
+        'java JavaConnectorTest --host {host} --port {port} --user user_with_empty_password --database '
+        'default'.format(host=server_address, port=server_port), demux=True)
     assert code == 0
-    assert stdout == reference
+    assert stdout.decode() == reference
 
     # non-empty password passed.
-    code, (stdout, stderr) = java_container.exec_run('java JavaConnectorTest --host {host} --port {port} --user default --password 123 --database '
-                                                       'default'.format(host=server_address, port=server_port), demux=True)
+    code, (stdout, stderr) = java_container.exec_run(
+        'java JavaConnectorTest --host {host} --port {port} --user default --password 123 --database '
+        'default'.format(host=server_address, port=server_port), demux=True)
     assert code == 0
-    assert stdout == reference
+    assert stdout.decode() == reference
 
     # double-sha1 password passed.
-    code, (stdout, stderr) = java_container.exec_run('java JavaConnectorTest --host {host} --port {port} --user user_with_double_sha1 --password abacaba  --database '
-                                                       'default'.format(host=server_address, port=server_port), demux=True)
+    code, (stdout, stderr) = java_container.exec_run(
+        'java JavaConnectorTest --host {host} --port {port} --user user_with_double_sha1 --password abacaba  --database '
+        'default'.format(host=server_address, port=server_port), demux=True)
     assert code == 0
-    assert stdout == reference
+    assert stdout.decode() == reference
 
 
 def test_types(server_address):
-    client = pymysql.connections.Connection(host=server_address, user='default', password='123', database='default', port=server_port)
+    client = pymysql.connections.Connection(host=server_address, user='default', password='123', database='default',
+                                            port=server_port)
 
     cursor = client.cursor(pymysql.cursors.DictCursor)
     cursor.execute(

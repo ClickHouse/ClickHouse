@@ -28,7 +28,7 @@ TEST(CreateTableParser, SimpleCreate)
     EXPECT_EQ(ast->as<ASTCreateQuery>()->columns_list->as<ASTCreateDefines>()->columns->children.size(), 1);
     EXPECT_EQ(ast->as<ASTCreateQuery>()->columns_list->as<ASTCreateDefines>()->indices->children.size(), 1);
     EXPECT_EQ(ast->as<ASTCreateQuery>()->columns_list->as<ASTCreateDefines>()->constraints->children.size(), 1);
-    EXPECT_EQ(ast->as<ASTCreateQuery>()->table_options->as<ASTDeclareOptions>()->changes["engine"]->as<ASTIdentifier>()->name, "INNODB");
+    EXPECT_EQ(ast->as<ASTCreateQuery>()->table_options->as<ASTDeclareOptions>()->changes["engine"]->as<ASTIdentifier>()->name(), "INNODB");
     EXPECT_TRUE(ast->as<ASTCreateQuery>()->partition_options->as<ASTDeclarePartitionOptions>());
 }
 

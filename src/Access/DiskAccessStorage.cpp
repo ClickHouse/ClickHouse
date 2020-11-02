@@ -33,6 +33,9 @@
 #include <Interpreters/InterpreterShowGrantsQuery.h>
 #include <Common/quoteString.h>
 #include <Core/Defines.h>
+#include <Poco/JSON/JSON.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Stringifier.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
@@ -218,6 +221,16 @@ namespace
     }
 
 
+    /// Converts a path to an absolute path and append it with a separator.
+    String makeDirectoryPathCanonical(const String & directory_path)
+    {
+        auto canonical_directory_path = std::filesystem::weakly_canonical(directory_path);
+        if (canonical_directory_path.has_filename())
+            canonical_directory_path += std::filesystem::path::preferred_separator;
+        return canonical_directory_path;
+    }
+
+
     /// Calculates the path to a file named <id>.sql for saving an access entity.
     String getEntityFilePath(const String & directory_path, const UUID & id)
     {
@@ -298,22 +311,17 @@ DiskAccessStorage::DiskAccessStorage(const String & directory_path_, bool readon
 {
 }
 
-
 DiskAccessStorage::DiskAccessStorage(const String & storage_name_, const String & directory_path_, bool readonly_)
     : IAccessStorage(storage_name_)
 {
-    auto canonical_directory_path = std::filesystem::weakly_canonical(directory_path_);
-    if (canonical_directory_path.has_filename())
-        canonical_directory_path += std::filesystem::path::preferred_separator;
+    directory_path = makeDirectoryPathCanonical(directory_path_);
+    readonly = readonly_;
 
     std::error_code create_dir_error_code;
-    std::filesystem::create_directories(canonical_directory_path, create_dir_error_code);
+    std::filesystem::create_directories(directory_path, create_dir_error_code);
 
-    if (!std::filesystem::exists(canonical_directory_path) || !std::filesystem::is_directory(canonical_directory_path) || create_dir_error_code)
-        throw Exception("Couldn't create directory " + canonical_directory_path.string() + " reason: '" + create_dir_error_code.message() + "'", ErrorCodes::DIRECTORY_DOESNT_EXIST);
-
-    directory_path = canonical_directory_path;
-    readonly = readonly_;
+    if (!std::filesystem::exists(directory_path) || !std::filesystem::is_directory(directory_path) || create_dir_error_code)
+        throw Exception("Couldn't create directory " + directory_path + " reason: '" + create_dir_error_code.message() + "'", ErrorCodes::DIRECTORY_DOESNT_EXIST);
 
     bool should_rebuild_lists = std::filesystem::exists(getNeedRebuildListsMarkFilePath(directory_path));
     if (!should_rebuild_lists)
@@ -334,6 +342,25 @@ DiskAccessStorage::~DiskAccessStorage()
 {
     stopListsWritingThread();
     writeLists();
+}
+
+
+String DiskAccessStorage::getStorageParamsJSON() const
+{
+    std::lock_guard lock{mutex};
+    Poco::JSON::Object json;
+    json.set("path", directory_path);
+    if (readonly)
+        json.set("readonly", readonly.load());
+    std::ostringstream oss;
+    Poco::JSON::Stringifier::stringify(json, oss);
+    return oss.str();
+}
+
+
+bool DiskAccessStorage::isPathEqual(const String & directory_path_) const
+{
+    return getPath() == makeDirectoryPathCanonical(directory_path_);
 }
 
 
@@ -426,33 +453,41 @@ bool DiskAccessStorage::writeLists()
 void DiskAccessStorage::scheduleWriteLists(EntityType type)
 {
     if (failed_to_write_lists)
-        return;
+        return; /// We don't try to write list files after the first fail.
+                /// The next restart of the server will invoke rebuilding of the list files.
 
-    bool already_scheduled = !types_of_lists_to_write.empty();
     types_of_lists_to_write.insert(type);
 
-    if (already_scheduled)
-        return;
+    if (lists_writing_thread_is_waiting)
+        return; /// If the lists' writing thread is still waiting we can update `types_of_lists_to_write` easily,
+                /// without restarting that thread.
+
+    if (lists_writing_thread.joinable())
+        lists_writing_thread.join();
 
     /// Create the 'need_rebuild_lists.mark' file.
     /// This file will be used later to find out if writing lists is successful or not.
     std::ofstream{getNeedRebuildListsMarkFilePath(directory_path)};
 
-    startListsWritingThread();
+    lists_writing_thread = ThreadFromGlobalPool{&DiskAccessStorage::listsWritingThreadFunc, this};
+    lists_writing_thread_is_waiting = true;
 }
 
 
-void DiskAccessStorage::startListsWritingThread()
+void DiskAccessStorage::listsWritingThreadFunc()
 {
-    if (lists_writing_thread.joinable())
+    std::unique_lock lock{mutex};
+
     {
-        if (!lists_writing_thread_exited)
-            return;
-        lists_writing_thread.detach();
+        /// It's better not to write the lists files too often, that's why we need
+        /// the following timeout.
+        const auto timeout = std::chrono::minutes(1);
+        SCOPE_EXIT({ lists_writing_thread_is_waiting = false; });
+        if (lists_writing_thread_should_exit.wait_for(lock, timeout) != std::cv_status::timeout)
+            return; /// The destructor requires us to exit.
     }
 
-    lists_writing_thread_exited = false;
-    lists_writing_thread = ThreadFromGlobalPool{&DiskAccessStorage::listsWritingThreadFunc, this};
+    writeLists();
 }
 
 
@@ -463,21 +498,6 @@ void DiskAccessStorage::stopListsWritingThread()
         lists_writing_thread_should_exit.notify_one();
         lists_writing_thread.join();
     }
-}
-
-
-void DiskAccessStorage::listsWritingThreadFunc()
-{
-    std::unique_lock lock{mutex};
-    SCOPE_EXIT({ lists_writing_thread_exited = true; });
-
-    /// It's better not to write the lists files too often, that's why we need
-    /// the following timeout.
-    const auto timeout = std::chrono::minutes(1);
-    if (lists_writing_thread_should_exit.wait_for(lock, timeout) != std::cv_status::timeout)
-        return; /// The destructor requires us to exit.
-
-    writeLists();
 }
 
 

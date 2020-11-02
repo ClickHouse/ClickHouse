@@ -17,8 +17,12 @@ namespace
 void MergeTreeDataPartWriterOnDisk::Stream::finalize()
 {
     compressed.next();
-    plain_file->next();
+    /// 'compressed_buf' doesn't call next() on underlying buffer ('plain_hashing'). We should do it manually.
+    plain_hashing.next();
     marks.next();
+
+    plain_file->finalize();
+    marks_file->finalize();
 }
 
 void MergeTreeDataPartWriterOnDisk::Stream::sync() const
@@ -208,7 +212,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
      * And otherwise it will look like excessively growing memory consumption in context of query.
      *  (observed in long INSERT SELECTs)
      */
-    auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
+    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
 
     /// Write index. The index contains Primary Key value for each `index_granularity` row.
 
@@ -308,7 +312,8 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
     skip_index_data_mark = skip_index_current_data_mark;
 }
 
-void MergeTreeDataPartWriterOnDisk::finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums)
+void MergeTreeDataPartWriterOnDisk::finishPrimaryIndexSerialization(
+        MergeTreeData::DataPart::Checksums & checksums, bool sync)
 {
     bool write_final_mark = (with_final_mark && data_written);
     if (write_final_mark && compute_granularity)
@@ -330,12 +335,15 @@ void MergeTreeDataPartWriterOnDisk::finishPrimaryIndexSerialization(MergeTreeDat
         index_stream->next();
         checksums.files["primary.idx"].file_size = index_stream->count();
         checksums.files["primary.idx"].file_hash = index_stream->getHash();
+        index_file_stream->finalize();
+        if (sync)
+            index_file_stream->sync();
         index_stream = nullptr;
     }
 }
 
 void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(
-        MergeTreeData::DataPart::Checksums & checksums)
+        MergeTreeData::DataPart::Checksums & checksums, bool sync)
 {
     for (size_t i = 0; i < skip_indices.size(); ++i)
     {
@@ -348,6 +356,8 @@ void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(
     {
         stream->finalize();
         stream->addToChecksums(checksums);
+        if (sync)
+            stream->sync();
     }
 
     skip_indices_streams.clear();

@@ -2,7 +2,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <ext/bit_cast.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/ReadHelpers.h>

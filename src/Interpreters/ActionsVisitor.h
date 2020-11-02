@@ -16,11 +16,43 @@ struct ExpressionAction;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
- /// The case of an explicit enumeration of values.
+class ActionsDAG;
+using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
+
+class IFunctionOverloadResolver;
+using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
+
+/// The case of an explicit enumeration of values.
 SetPtr makeExplicitSet(
-    const ASTFunction * node, const Block & sample_block, bool create_ordered_set,
+    const ASTFunction * node, const ActionsDAG & actions, bool create_ordered_set,
     const Context & context, const SizeLimits & limits, PreparedSets & prepared_sets);
 
+/** Create a block for set from expression.
+  * 'set_element_types' - types of what are on the left hand side of IN.
+  * 'right_arg' - list of values: 1, 2, 3 or list of tuples: (1, 2), (3, 4), (5, 6).
+  *
+  *  We need special implementation for ASTFunction, because in case, when we interpret
+  *  large tuple or array as function, `evaluateConstantExpression` works extremely slow.
+  *
+  *  Note: this and following functions are used in third-party applications in Arcadia, so
+  *  they should be declared in header file.
+  *
+  */
+Block createBlockForSet(
+    const DataTypePtr & left_arg_type,
+    const std::shared_ptr<ASTFunction> & right_arg,
+    const DataTypes & set_element_types,
+    const Context & context);
+
+/** Create a block for set from literal.
+  * 'set_element_types' - types of what are on the left hand side of IN.
+  * 'right_arg' - Literal - Tuple or Array.
+  */
+Block createBlockForSet(
+    const DataTypePtr & left_arg_type,
+    const ASTPtr & right_arg,
+    const DataTypes & set_element_types,
+    const Context & context);
 
 /** For ActionsVisitor
   * A stack of ExpressionActions corresponding to nested lambda expressions.
@@ -33,8 +65,8 @@ struct ScopeStack
 {
     struct Level
     {
-        ExpressionActionsPtr actions;
-        NameSet new_columns;
+        ActionsDAGPtr actions;
+        NameSet inputs;
     };
 
     using Levels = std::vector<Level>;
@@ -43,19 +75,25 @@ struct ScopeStack
 
     const Context & context;
 
-    ScopeStack(const ExpressionActionsPtr & actions, const Context & context_);
+    ScopeStack(ActionsDAGPtr actions, const Context & context_);
 
     void pushLevel(const NamesAndTypesList & input_columns);
 
     size_t getColumnLevel(const std::string & name);
 
-    void addAction(const ExpressionAction & action);
-    /// For arrayJoin() to avoid double columns in the input.
-    void addActionNoInput(const ExpressionAction & action);
+    void addColumn(ColumnWithTypeAndName column);
+    void addAlias(const std::string & name, std::string alias);
+    void addArrayJoin(const std::string & source_name, std::string result_name, std::string unique_column_name);
+    void addFunction(
+            const FunctionOverloadResolverPtr & function,
+            const Names & argument_names,
+            std::string result_name,
+            bool compile_expressions);
 
-    ExpressionActionsPtr popLevel();
+    ActionsDAGPtr popLevel();
 
-    const Block & getSampleBlock() const;
+    const ActionsDAG & getLastActions() const;
+    std::string dumpNames() const;
 };
 
 class ASTIdentifier;
@@ -91,47 +129,38 @@ public:
         int next_unique_suffix;
 
         Data(const Context & context_, SizeLimits set_size_limit_, size_t subquery_depth_,
-                const NamesAndTypesList & source_columns_, const ExpressionActionsPtr & actions,
+                const NamesAndTypesList & source_columns_, ActionsDAGPtr actions,
                 PreparedSets & prepared_sets_, SubqueriesForSets & subqueries_for_sets_,
-                bool no_subqueries_, bool no_makeset_, bool only_consts_, bool no_storage_or_local_)
-        :   context(context_),
-            set_size_limit(set_size_limit_),
-            subquery_depth(subquery_depth_),
-            source_columns(source_columns_),
-            prepared_sets(prepared_sets_),
-            subqueries_for_sets(subqueries_for_sets_),
-            no_subqueries(no_subqueries_),
-            no_makeset(no_makeset_),
-            only_consts(only_consts_),
-            no_storage_or_local(no_storage_or_local_),
-            visit_depth(0),
-            actions_stack(actions, context),
-            next_unique_suffix(actions_stack.getSampleBlock().columns() + 1)
-        {}
-
-        void updateActions(ExpressionActionsPtr & actions)
-        {
-            actions = actions_stack.popLevel();
-        }
-
-        void addAction(const ExpressionAction & action)
-        {
-            actions_stack.addAction(action);
-        }
-        void addActionNoInput(const ExpressionAction & action)
-        {
-            actions_stack.addActionNoInput(action);
-        }
-
-        const Block & getSampleBlock() const
-        {
-            return actions_stack.getSampleBlock();
-        }
+                bool no_subqueries_, bool no_makeset_, bool only_consts_, bool no_storage_or_local_);
 
         /// Does result of the calculation already exists in the block.
-        bool hasColumn(const String & columnName) const
+        bool hasColumn(const String & column_name) const;
+        void addColumn(ColumnWithTypeAndName column)
         {
-            return actions_stack.getSampleBlock().has(columnName);
+            actions_stack.addColumn(std::move(column));
+        }
+
+        void addAlias(const std::string & name, std::string alias)
+        {
+            actions_stack.addAlias(name, std::move(alias));
+        }
+
+        void addArrayJoin(const std::string & source_name, std::string result_name)
+        {
+            actions_stack.addArrayJoin(source_name, std::move(result_name), getUniqueName("_array_join_" + source_name));
+        }
+
+        void addFunction(const FunctionOverloadResolverPtr & function,
+                         const Names & argument_names,
+                         std::string result_name)
+        {
+            actions_stack.addFunction(function, argument_names, std::move(result_name),
+                                      context.getSettingsRef().compile_expressions);
+        }
+
+        ActionsDAGPtr getActions()
+        {
+            return actions_stack.popLevel();
         }
 
         /*
@@ -140,12 +169,11 @@ public:
          */
         String getUniqueName(const String & prefix)
         {
-            const auto & block = getSampleBlock();
             auto result = prefix;
 
             // First, try the name without any suffix, because it is currently
             // used both as a display name and a column id.
-            while (block.has(result))
+            while (hasColumn(result))
             {
                 result = prefix + "_" + toString(next_unique_suffix);
                 ++next_unique_suffix;
@@ -163,8 +191,11 @@ private:
     static void visit(const ASTIdentifier & identifier, const ASTPtr & ast, Data & data);
     static void visit(const ASTFunction & node, const ASTPtr & ast, Data & data);
     static void visit(const ASTLiteral & literal, const ASTPtr & ast, Data & data);
+    static void visit(ASTExpressionList & expression_list, const ASTPtr & ast, Data & data);
 
     static SetPtr makeSet(const ASTFunction & node, Data & data, bool no_subqueries);
+    static ASTs doUntuple(const ASTFunction * function, ActionsMatcher::Data & data);
+    static std::optional<NameAndTypePair> getNameAndTypeFromAST(const ASTPtr & ast, Data & data);
 };
 
 using ActionsVisitor = ActionsMatcher::Visitor;

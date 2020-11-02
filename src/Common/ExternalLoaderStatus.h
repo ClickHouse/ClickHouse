@@ -3,7 +3,7 @@
 #include <vector>
 #include <utility>
 #include <ostream>
-#include <Core/Types.h>
+#include <common/types.h>
 
 namespace DB
 {

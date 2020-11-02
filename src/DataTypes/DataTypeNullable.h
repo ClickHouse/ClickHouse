@@ -103,6 +103,8 @@ public:
     /// If ReturnType is bool, check for NULL and deserialize value into non-nullable column (and return true) or insert default value of nested type (and return false)
     /// If ReturnType is void, deserialize Nullable(T)
     template <typename ReturnType = bool>
+    static ReturnType deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const DataTypePtr & nested);
+    template <typename ReturnType = bool>
     static ReturnType deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const DataTypePtr & nested);
     template <typename ReturnType = bool>
     static ReturnType deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &, const DataTypePtr & nested);

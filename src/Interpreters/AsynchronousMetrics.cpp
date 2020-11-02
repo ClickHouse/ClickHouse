@@ -233,8 +233,8 @@ void AsynchronousMetrics::update()
 
         for (const auto & db : databases)
         {
-            /// Lazy database can not contain MergeTree tables
-            if (db.second->getEngineName() == "Lazy")
+            /// Check if database can contain MergeTree tables
+            if (!db.second->canContainMergeTreeTables())
                 continue;
             for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
             {
@@ -332,7 +332,7 @@ void AsynchronousMetrics::update()
         ReadBufferFromFile buf("/proc/cpuinfo", 32768 /* buf_size */);
 
         // We need the following lines:
-        // core id : 4
+        // processor : 4
         // cpu MHz : 4052.941
         // They contain tabs and are interspersed with other info.
         int core_id = 0;
@@ -346,7 +346,7 @@ void AsynchronousMetrics::update()
             // It doesn't read the EOL itself.
             ++buf.position();
 
-            if (s.rfind("core id", 0) == 0)
+            if (s.rfind("processor", 0) == 0)
             {
                 if (auto colon = s.find_first_of(':'))
                 {

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Names.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Core/NamesAndTypes.h>
 #include <Parsers/IAST_fwd.h>
 

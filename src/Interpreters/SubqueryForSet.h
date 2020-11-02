@@ -13,12 +13,18 @@ namespace DB
 class InterpreterSelectWithUnionQuery;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+class QueryPlan;
 
 /// Information on what to do when executing a subquery in the [GLOBAL] IN/JOIN section.
 struct SubqueryForSet
 {
+    SubqueryForSet();
+    ~SubqueryForSet();
+    SubqueryForSet(SubqueryForSet &&);
+    SubqueryForSet & operator= (SubqueryForSet &&);
+
     /// The source is obtained using the InterpreterSelectQuery subquery.
-    BlockInputStreamPtr source;
+    std::unique_ptr<QueryPlan> source;
 
     /// If set, build it from result.
     SetPtr set;
@@ -37,7 +43,7 @@ struct SubqueryForSet
     void setJoinActions(ExpressionActionsPtr actions);
 
     bool insertJoinedBlock(Block & block);
-    void setTotals();
+    void setTotals(Block totals);
 
 private:
     NamesWithAliases joined_block_aliases; /// Rename column from joined block from this list.

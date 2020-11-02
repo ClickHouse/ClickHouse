@@ -24,7 +24,7 @@ cd ClickHouse
 
 以下教程是在 Ubuntu Linux 中进行编译的示例。
 通过适当的更改，它应该可以适用于任何其他的 Linux 发行版。
-仅支持具有 x86\_64、AArch64。 对 Power9 的支持是实验性的。
+仅支持具有 x86_64、AArch64。 对 Power9 的支持是实验性的。
 
 ## 安装 Git 和 CMake 和 Ninja {#an-zhuang-git-he-cmake-he-ninja}
 

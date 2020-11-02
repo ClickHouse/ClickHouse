@@ -5,6 +5,7 @@ PEERDIR(
     clickhouse/src/Common
 )
 
+
 SRCS(
     ITableFunction.cpp
     ITableFunctionFileLike.cpp
@@ -17,6 +18,7 @@ SRCS(
     TableFunctionInput.cpp
     TableFunctionMerge.cpp
     TableFunctionMySQL.cpp
+    TableFunctionNull.cpp
     TableFunctionNumbers.cpp
     TableFunctionRemote.cpp
     TableFunctionURL.cpp

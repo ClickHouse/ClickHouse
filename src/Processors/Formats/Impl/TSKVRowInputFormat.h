@@ -27,6 +27,7 @@ public:
 
     String getName() const override { return "TSKVRowInputFormat"; }
 
+    void readPrefix() override;
     bool readRow(MutableColumns & columns, RowReadExtension &) override;
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;

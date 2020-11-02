@@ -5,7 +5,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -13,16 +12,12 @@ template <typename A, typename B>
 struct DivideFloatingImpl
 {
     using ResultType = typename NumberTraits::ResultOfFloatingPointDivision<A, B>::Type;
-    static const constexpr bool allow_decimal = true;
     static const constexpr bool allow_fixed_string = false;
 
     template <typename Result = ResultType>
     static inline NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
     {
-        if constexpr (is_big_int_v<A> || is_big_int_v<B>)
-            throw Exception("DivideFloatingImpl are not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
-        else
-            return static_cast<Result>(a) / b;
+        return static_cast<Result>(a) / b;
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -38,7 +33,7 @@ struct DivideFloatingImpl
 };
 
 struct NameDivide { static constexpr auto name = "divide"; };
-using FunctionDivide = FunctionBinaryArithmetic<DivideFloatingImpl, NameDivide>;
+using FunctionDivide = BinaryArithmeticOverloadResolver<DivideFloatingImpl, NameDivide>;
 
 void registerFunctionDivide(FunctionFactory & factory)
 {

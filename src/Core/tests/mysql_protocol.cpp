@@ -260,6 +260,17 @@ int main(int argc, char ** argv)
              "10662d71-9d91-11ea-bbc2-0242ac110003:6-7",
              "20662d71-9d91-11ea-bbc2-0242ac110003:9",
              "10662d71-9d91-11ea-bbc2-0242ac110003:6-7,20662d71-9d91-11ea-bbc2-0242ac110003:9"},
+
+            {"shirnk-sequence",
+              "10662d71-9d91-11ea-bbc2-0242ac110003:1-3:4-5:7",
+             "10662d71-9d91-11ea-bbc2-0242ac110003:6",
+             "10662d71-9d91-11ea-bbc2-0242ac110003:1-7"},
+
+            {"shirnk-sequence",
+             "10662d71-9d91-11ea-bbc2-0242ac110003:1-3:4-5:10",
+             "10662d71-9d91-11ea-bbc2-0242ac110003:8",
+             "10662d71-9d91-11ea-bbc2-0242ac110003:1-5:8:10"
+            }
         };
 
         for (auto & tc : cases)
@@ -283,6 +294,7 @@ int main(int argc, char ** argv)
     }
 
     {
+        /// mysql_protocol --host=172.17.0.3 --user=root --password=123 --db=sbtest
         try
         {
             boost::program_options::options_description desc("Allowed options");
@@ -356,6 +368,10 @@ int main(int argc, char ** argv)
                         break;
                     }
                     default:
+                        if (event->header.type != MySQLReplication::EventType::HEARTBEAT_EVENT)
+                        {
+                            event->dump(std::cerr);
+                        }
                         break;
                 }
             }

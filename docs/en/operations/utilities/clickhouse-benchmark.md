@@ -38,7 +38,7 @@ clickhouse-benchmark [keys] < queries_file
 -   `-d N`, `--delay=N` — Interval in seconds between intermediate reports (set 0 to disable reports). Default value: 1.
 -   `-h WORD`, `--host=WORD` — Server host. Default value: `localhost`. For the [comparison mode](#clickhouse-benchmark-comparison-mode) you can use multiple `-h` keys.
 -   `-p N`, `--port=N` — Server port. Default value: 9000. For the [comparison mode](#clickhouse-benchmark-comparison-mode) you can use multiple `-p` keys.
--   `-i N`, `--iterations=N` — Total number of queries. Default value: 0.
+-   `-i N`, `--iterations=N` — Total number of queries. Default value: 0 (repeat forever).
 -   `-r`, `--randomize` — Random order of queries execution if there is more then one input query.
 -   `-s`, `--secure` — Using TLS connection.
 -   `-t N`, `--timelimit=N` — Time limit in seconds. `clickhouse-benchmark` stops sending queries when the specified time limit is reached. Default value: 0 (time limit disabled).

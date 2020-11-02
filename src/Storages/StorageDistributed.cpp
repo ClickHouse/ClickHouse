@@ -1,7 +1,5 @@
 #include <Storages/StorageDistributed.h>
 
-#include <DataStreams/OneBlockInputStream.h>
-
 #include <Databases/IDatabase.h>
 #include <Disks/StoragePolicy.h>
 #include <Disks/DiskLocal.h>
@@ -57,6 +55,7 @@
 #include <memory>
 #include <filesystem>
 #include <optional>
+#include <cassert>
 
 
 namespace
@@ -81,7 +80,6 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int TOO_MANY_ROWS;
     extern const int UNABLE_TO_SKIP_UNUSED_SHARDS;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace ActionLocks
@@ -99,6 +97,12 @@ ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, co
     auto modified_query_ast = query->clone();
 
     ASTSelectQuery & select_query = modified_query_ast->as<ASTSelectQuery &>();
+
+    // Get rid of the settings clause so we don't send them to remote. Thus newly non-important
+    // settings won't break any remote parser. It's also more reasonable since the query settings
+    // are written into the query context and will be sent by the query pipeline.
+    select_query.setExpression(ASTSelectQuery::Expression::SETTINGS, {});
+
     if (table_function_ptr)
         select_query.addTableFunction(table_function_ptr);
     else
@@ -266,7 +270,7 @@ std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const
             if (!id)
                 return false;
             /// TODO: if GROUP BY contains multiIf()/if() it should contain only columns from sharding_key
-            if (!sharding_key_block.has(id->name))
+            if (!sharding_key_block.has(id->name()))
                 return false;
         }
         return true;
@@ -355,12 +359,14 @@ StorageDistributed::StorageDistributed(
     const ASTPtr & sharding_key_,
     const String & storage_policy_name_,
     const String & relative_data_path_,
-    bool attach_)
+    bool attach_,
+    ClusterPtr owned_cluster_)
     : IStorage(id_)
     , remote_database(remote_database_)
     , remote_table(remote_table_)
     , global_context(std::make_unique<Context>(context_))
     , log(&Poco::Logger::get("StorageDistributed (" + id_.table_name + ")"))
+    , owned_cluster(std::move(owned_cluster_))
     , cluster_name(global_context->getMacros()->expand(cluster_name_))
     , has_sharding_key(sharding_key_)
     , relative_data_path(relative_data_path_)
@@ -380,8 +386,10 @@ StorageDistributed::StorageDistributed(
     if (!relative_data_path.empty())
     {
         storage_policy = global_context->getStoragePolicy(storage_policy_name_);
-        if (storage_policy->getVolumes().size() != 1)
-            throw Exception("Storage policy for Distributed table, should have exactly one volume", ErrorCodes::BAD_ARGUMENTS);
+        data_volume = storage_policy->getVolume(0);
+        if (storage_policy->getVolumes().size() > 1)
+            LOG_WARNING(log, "Storage policy for Distributed table has multiple volumes. "
+                             "Only {} volume will be used to store data. Other will be ignored.", data_volume->getName());
     }
 
     /// Sanity check. Skip check if the table is already created to allow the server to start.
@@ -404,37 +412,11 @@ StorageDistributed::StorageDistributed(
     const ASTPtr & sharding_key_,
     const String & storage_policy_name_,
     const String & relative_data_path_,
-    bool attach)
-    : StorageDistributed(id_, columns_, constraints_, String{}, String{}, cluster_name_, context_, sharding_key_, storage_policy_name_, relative_data_path_, attach)
+    bool attach,
+    ClusterPtr owned_cluster_)
+    : StorageDistributed(id_, columns_, constraints_, String{}, String{}, cluster_name_, context_, sharding_key_, storage_policy_name_, relative_data_path_, attach, std::move(owned_cluster_))
 {
     remote_table_function_ptr = std::move(remote_table_function_ptr_);
-}
-
-
-StoragePtr StorageDistributed::createWithOwnCluster(
-    const StorageID & table_id_,
-    const ColumnsDescription & columns_,
-    const String & remote_database_,       /// database on remote servers.
-    const String & remote_table_,          /// The name of the table on the remote servers.
-    ClusterPtr owned_cluster_,
-    const Context & context_)
-{
-    auto res = create(table_id_, columns_, ConstraintsDescription{}, remote_database_, remote_table_, String{}, context_, ASTPtr(), String(), String(), false);
-    res->owned_cluster = std::move(owned_cluster_);
-    return res;
-}
-
-
-StoragePtr StorageDistributed::createWithOwnCluster(
-    const StorageID & table_id_,
-    const ColumnsDescription & columns_,
-    ASTPtr & remote_table_function_ptr_,
-    ClusterPtr & owned_cluster_,
-    const Context & context_)
-{
-    auto res = create(table_id_, columns_, ConstraintsDescription{}, remote_table_function_ptr_, String{}, context_, ASTPtr(), String(), String(), false);
-    res->owned_cluster = owned_cluster_;
-    return res;
 }
 
 QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context &context, QueryProcessingStage::Enum to_stage, const ASTPtr & query_ptr) const
@@ -471,7 +453,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Con
     if (settings.optimize_skip_unused_shards &&
         settings.optimize_distributed_group_by_sharding_key &&
         has_sharding_key &&
-        sharding_key_is_deterministic)
+        (settings.allow_nondeterministic_optimize_skip_unused_shards || sharding_key_is_deterministic))
     {
         Block sharding_key_block = sharding_key_expr->getSampleBlock();
         auto stage = getOptimizedQueryProcessingStage(query_ptr, settings.extremes, sharding_key_block);
@@ -599,7 +581,7 @@ void StorageDistributed::startup()
     if (!storage_policy)
         return;
 
-    for (const DiskPtr & disk : storage_policy->getDisks())
+    for (const DiskPtr & disk : data_volume->getDisks())
         createDirectoryMonitors(disk->getPath());
 
     for (const String & path : getDataPaths())
@@ -617,15 +599,22 @@ void StorageDistributed::shutdown()
     monitors_blocker.cancelForever();
 
     std::lock_guard lock(cluster_nodes_mutex);
+
+    LOG_DEBUG(log, "Joining background threads for async INSERT");
     cluster_nodes_data.clear();
+    LOG_DEBUG(log, "Background threads for async INSERT joined");
 }
 void StorageDistributed::drop()
 {
-    // shutdown() should be already called
-    // and by the same reason we cannot use truncate() here, since
-    // cluster_nodes_data already cleaned
-    if (!cluster_nodes_data.empty())
-        throw Exception("drop called before shutdown", ErrorCodes::LOGICAL_ERROR);
+    // Some INSERT in-between shutdown() and drop() can call
+    // requireDirectoryMonitor() again, so call shutdown() to clear them, but
+    // when the drop() (this function) executed none of INSERT is allowed in
+    // parallel.
+    //
+    // And second time shutdown() should be fast, since none of
+    // DirectoryMonitor should do anything, because ActionBlocker is canceled
+    // (in shutdown()).
+    shutdown();
 
     // Distributed table w/o sharding_key does not allows INSERTs
     if (relative_data_path.empty())
@@ -633,7 +622,7 @@ void StorageDistributed::drop()
 
     LOG_DEBUG(log, "Removing pending blocks for async INSERT from filesystem on DROP TABLE");
 
-    auto disks = storage_policy->getDisks();
+    auto disks = data_volume->getDisks();
     for (const auto & disk : disks)
         disk->removeRecursive(relative_data_path);
 
@@ -647,7 +636,7 @@ Strings StorageDistributed::getDataPaths() const
     if (relative_data_path.empty())
         return paths;
 
-    for (const DiskPtr & disk : storage_policy->getDisks())
+    for (const DiskPtr & disk : data_volume->getDisks())
         paths.push_back(disk->getPath() + relative_data_path);
 
     return paths;
@@ -727,7 +716,9 @@ ClusterPtr StorageDistributed::getOptimizedCluster(const Context & context, cons
     ClusterPtr cluster = getCluster();
     const Settings & settings = context.getSettingsRef();
 
-    if (has_sharding_key && sharding_key_is_deterministic)
+    bool sharding_key_is_usable = settings.allow_nondeterministic_optimize_skip_unused_shards || sharding_key_is_deterministic;
+
+    if (has_sharding_key && sharding_key_is_usable)
     {
         ClusterPtr optimized = skipUnusedShards(cluster, query_ptr, metadata_snapshot, context);
         if (optimized)
@@ -740,7 +731,7 @@ ClusterPtr StorageDistributed::getOptimizedCluster(const Context & context, cons
         std::stringstream exception_message;
         if (!has_sharding_key)
             exception_message << "No sharding key";
-        else if (!sharding_key_is_deterministic)
+        else if (!sharding_key_is_usable)
             exception_message << "Sharding key is not deterministic";
         else
             exception_message << "Sharding key " << sharding_key_column_name << " is not used";
@@ -858,6 +849,7 @@ void StorageDistributed::flushClusterNodesAllData()
 
 void StorageDistributed::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
+    assert(relative_data_path != new_path_to_table_data);
     if (!relative_data_path.empty())
         renameOnDisk(new_path_to_table_data);
     renameInMemory(new_table_id);
@@ -866,12 +858,11 @@ void StorageDistributed::rename(const String & new_path_to_table_data, const Sto
 
 void StorageDistributed::renameOnDisk(const String & new_path_to_table_data)
 {
-    for (const DiskPtr & disk : storage_policy->getDisks())
+    for (const DiskPtr & disk : data_volume->getDisks())
     {
-        const String path(disk->getPath());
-        auto new_path = path + new_path_to_table_data;
-        Poco::File(path + relative_data_path).renameTo(new_path);
+        disk->moveDirectory(relative_data_path, new_path_to_table_data);
 
+        auto new_path = disk->getPath() + new_path_to_table_data;
         LOG_DEBUG(log, "Updating path to {}", new_path);
 
         std::lock_guard lock(cluster_nodes_mutex);

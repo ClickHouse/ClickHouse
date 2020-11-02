@@ -13,7 +13,7 @@
 # limitations under the License.
 import os
 import sys
-import httplib
+import http.client
 
 CURDIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, CURDIR)
@@ -21,7 +21,7 @@ sys.path.insert(0, CURDIR)
 import uexpect
 
 from threading import Thread, Event
-from Queue import Queue, Empty
+from queue import Queue, Empty
 
 class IO(uexpect.IO):
     def __init__(self, connection, response, queue, reader):
@@ -45,15 +45,15 @@ def reader(response, queue, kill_event):
         try:
             if kill_event.is_set():
                 break
-            data = response.read(1)
+            data = response.read(1).decode()
             queue.put(data)
-        except Exception, e:
+        except Exception as e:
             if kill_event.is_set():
                 break
             raise
 
 def spawn(connection, request):
-    connection = httplib.HTTPConnection(**connection)
+    connection = http.client.HTTPConnection(**connection)
     connection.request(**request)
     response = connection.getresponse()
 
@@ -66,8 +66,8 @@ def spawn(connection, request):
     return IO(connection, response, queue, reader={'thread':thread, 'kill_event':reader_kill_event})
 
 if __name__ == '__main__':
-    with http({'host':'localhost','port':8123},{'method':'GET', 'url':'?query=SELECT%201'}) as client:
+    with spawn({'host':'localhost','port':8123},{'method':'GET', 'url':'?query=SELECT%201'}) as client:
         client.logger(sys.stdout)
         client.timeout(2)
-        print client.response.status, client.response.reason
+        print(client.response.status, client.response.reason)
         client.expect('1\n')

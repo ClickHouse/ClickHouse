@@ -1,7 +1,7 @@
 #pragma once
 
 #include <tuple>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <common/DayNum.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 

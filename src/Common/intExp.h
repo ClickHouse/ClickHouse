@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <limits>
 
-#include <common/types.h>
+#include <common/extended_types.h>
 
 // Also defined in Core/Defines.h
 #if !defined(NO_SANITIZE_UNDEFINED)

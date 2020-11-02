@@ -13,7 +13,7 @@ static ITransformingStep::Traits getTraits(const ExpressionActionsPtr & expressi
     return ITransformingStep::Traits
     {
         {
-            .preserves_distinct_columns = !expression->hasJoinOrArrayJoin(), /// I suppose it actually never happens
+            .preserves_distinct_columns = !expression->hasArrayJoin(), /// I suppose it actually never happens
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
             .preserves_sorting = true,

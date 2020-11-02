@@ -47,7 +47,7 @@ A `Block` est un conteneur qui représente un sous-ensemble (morceau) d'une tabl
 
 Lorsque nous calculons une fonction sur des colonnes dans un bloc, nous ajoutons une autre colonne avec son résultat au bloc, et nous ne touchons pas les colonnes pour les arguments de la fonction car les opérations sont immuables. Plus tard, les colonnes inutiles peuvent être supprimées du bloc, mais pas modifiées. Il est pratique pour l'élimination des sous-expressions communes.
 
-Des blocs sont créés pour chaque bloc de données traité. Notez que pour le même type de calcul, les noms et les types de colonnes restent les mêmes pour différents blocs, et seules les données de colonne changent. Il est préférable de diviser les données de bloc de l'en-tête de bloc car les petites tailles de Bloc ont une surcharge élevée de chaînes temporaires pour copier shared\_ptrs et les noms de colonnes.
+Des blocs sont créés pour chaque bloc de données traité. Notez que pour le même type de calcul, les noms et les types de colonnes restent les mêmes pour différents blocs, et seules les données de colonne changent. Il est préférable de diviser les données de bloc de l'en-tête de bloc car les petites tailles de Bloc ont une surcharge élevée de chaînes temporaires pour copier shared_ptrs et les noms de colonnes.
 
 ## Bloquer Les Flux {#block-streams}
 

@@ -19,6 +19,7 @@
 
 #include <Storages/System/StorageSystemMacros.h>
 #include <Storages/System/StorageSystemMerges.h>
+#include <Storages/System/StorageSystemReplicatedFetches.h>
 #include <Storages/System/StorageSystemMetrics.h>
 #include <Storages/System/StorageSystemModels.h>
 #include <Storages/System/StorageSystemMutations.h>
@@ -82,7 +83,8 @@ void attachSystemTablesLocal(IDatabase & system_database)
     attach<StorageSystemFunctions>(system_database, "functions");
     attach<StorageSystemEvents>(system_database, "events");
     attach<StorageSystemSettings>(system_database, "settings");
-    attach<SystemMergeTreeSettings>(system_database, "merge_tree_settings");
+    attach<SystemMergeTreeSettings<false>>(system_database, "merge_tree_settings");
+    attach<SystemMergeTreeSettings<true>>(system_database, "replicated_merge_tree_settings");
     attach<StorageSystemBuildOptions>(system_database, "build_options");
     attach<StorageSystemFormats>(system_database, "formats");
     attach<StorageSystemTableFunctions>(system_database, "table_functions");
@@ -136,6 +138,7 @@ void attachSystemTablesServer(IDatabase & system_database, bool has_zookeeper)
     attach<StorageSystemClusters>(system_database, "clusters");
     attach<StorageSystemGraphite>(system_database, "graphite_retentions");
     attach<StorageSystemMacros>(system_database, "macros");
+    attach<StorageSystemReplicatedFetches>(system_database, "replicated_fetches");
 
     if (has_zookeeper)
         attach<StorageSystemZooKeeper>(system_database, "zookeeper");

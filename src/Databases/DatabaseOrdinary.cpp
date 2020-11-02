@@ -254,9 +254,12 @@ void DatabaseOrdinary::alterTable(const Context & context, const StorageID & tab
 
     auto & ast_create_query = ast->as<ASTCreateQuery &>();
 
-    if (ast_create_query.as_table_function)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot alter table {} because it was created AS table function", backQuote(table_name));
+    bool has_structure = ast_create_query.columns_list && ast_create_query.columns_list->columns;
+    if (ast_create_query.as_table_function && !has_structure)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot alter table {} because it was created AS table function"
+                                                     " and doesn't have structure in metadata", backQuote(table_name));
 
+    assert(has_structure);
     ASTPtr new_columns = InterpreterCreateQuery::formatColumns(metadata.columns);
     ASTPtr new_indices = InterpreterCreateQuery::formatIndices(metadata.secondary_indices);
     ASTPtr new_constraints = InterpreterCreateQuery::formatConstraints(metadata.constraints);
@@ -291,6 +294,8 @@ void DatabaseOrdinary::alterTable(const Context & context, const StorageID & tab
 
             if (metadata.table_ttl.definition_ast)
                 storage_ast.set(storage_ast.ttl_table, metadata.table_ttl.definition_ast);
+            else if (storage_ast.ttl_table != nullptr) /// TTL was removed
+                storage_ast.ttl_table = nullptr;
 
             if (metadata.settings_changes)
                 storage_ast.set(storage_ast.settings, metadata.settings_changes);

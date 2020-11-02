@@ -1,7 +1,7 @@
 #include <string.h>
 #include <IO/BitHelpers.h>
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <Common/BitHelpers.h>

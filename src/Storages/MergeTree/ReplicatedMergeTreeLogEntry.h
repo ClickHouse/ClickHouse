@@ -2,9 +2,10 @@
 
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/Types.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
+#include <Storages/MergeTree/MergeType.h>
 
 #include <mutex>
 #include <condition_variable>
@@ -79,6 +80,7 @@ struct ReplicatedMergeTreeLogEntryData
 
     Strings source_parts;
     bool deduplicate = false; /// Do deduplicate on merge
+    MergeType merge_type = MergeType::REGULAR;
     String column_name;
     String index_name;
 

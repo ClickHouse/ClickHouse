@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Access/LDAPParams.h>
-#include <Core/Types.h>
+#include <common/types.h>
 
 #include <map>
 #include <memory>
@@ -26,7 +26,7 @@ class ExternalAuthenticators
 {
 public:
     void reset();
-    void setConfig(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log);
+    void setConfiguration(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log);
 
     void setLDAPServerParams(const String & server, const LDAPServerParams & params);
     LDAPServerParams getLDAPServerParams(const String & server) const;

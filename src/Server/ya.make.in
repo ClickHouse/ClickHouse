@@ -5,6 +5,7 @@ PEERDIR(
     contrib/libs/poco/Util
 )
 
+
 SRCS(
 <? find . -name '*.cpp' | sed 's/^\.\//    /' | sort ?>
 )

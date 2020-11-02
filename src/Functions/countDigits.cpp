@@ -16,6 +16,9 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+namespace
+{
+
 /// Returns number of decimal digits you need to represent the value.
 /// For Decimal values takes in account their scales: calculates result over underlying int type which is (value * scale).
 /// countDigits(42) = 2, countDigits(42.000) = 5, countDigits(0.04200) = 4.
@@ -45,9 +48,9 @@ public:
         return std::make_shared<DataTypeUInt8>(); /// Up to 255 decimal digits.
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result_pos, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto & src_column = block.getByPosition(arguments[0]);
+        const auto & src_column = arguments[0];
         if (!src_column.column)
             throw Exception("Illegal column while execute function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -73,7 +76,7 @@ public:
             throw Exception("Wrong call for " + getName() + " with " + src_column.type->getName(),
                             ErrorCodes::ILLEGAL_COLUMN);
 
-        block.getByPosition(result_pos).column = std::move(result_column);
+        return result_column;
     }
 
 private:
@@ -136,6 +139,7 @@ private:
     }
 };
 
+}
 
 void registerFunctionCountDigits(FunctionFactory & factory)
 {

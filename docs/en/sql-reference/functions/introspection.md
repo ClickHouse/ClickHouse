@@ -14,11 +14,11 @@ For proper operation of introspection functions:
 
 -   Install the `clickhouse-common-static-dbg` package.
 
--   Set the [allow\_introspection\_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) setting to 1.
+-   Set the [allow_introspection_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) setting to 1.
 
         For security reasons introspection functions are disabled by default.
 
-ClickHouse saves profiler reports to the [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) system table. Make sure the table and profiler are configured properly.
+ClickHouse saves profiler reports to the [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) system table. Make sure the table and profiler are configured properly.
 
 ## addressToLine {#addresstoline}
 
@@ -98,7 +98,7 @@ LIMIT 1
 \G
 ```
 
-The [arrayMap](../../sql-reference/functions/higher-order-functions.md#higher_order_functions-array-map) function allows to process each individual element of the `trace` array by the `addressToLine` function. The result of this processing you see in the `trace_source_code_lines` column of output.
+The [arrayMap](../../sql-reference/functions/array-functions.md#array-map) function allows to process each individual element of the `trace` array by the `addressToLine` function. The result of this processing you see in the `trace_source_code_lines` column of output.
 
 ``` text
 Row 1:
@@ -184,7 +184,7 @@ LIMIT 1
 \G
 ```
 
-The [arrayMap](../../sql-reference/functions/higher-order-functions.md#higher_order_functions-array-map) function allows to process each individual element of the `trace` array by the `addressToSymbols` function. The result of this processing you see in the `trace_symbols` column of output.
+The [arrayMap](../../sql-reference/functions/array-functions.md#array-map) function allows to process each individual element of the `trace` array by the `addressToSymbols` function. The result of this processing you see in the `trace_symbols` column of output.
 
 ``` text
 Row 1:
@@ -281,7 +281,7 @@ LIMIT 1
 \G
 ```
 
-The [arrayMap](../../sql-reference/functions/higher-order-functions.md#higher_order_functions-array-map) function allows to process each individual element of the `trace` array by the `demangle` function. The result of this processing you see in the `trace_functions` column of output.
+The [arrayMap](../../sql-reference/functions/array-functions.md#array-map) function allows to process each individual element of the `trace` array by the `demangle` function. The result of this processing you see in the `trace_functions` column of output.
 
 ``` text
 Row 1:
