@@ -120,8 +120,6 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, co
     /// changes how many rows satisfy the predicates of the subsequent commands).
     /// But we can be sure that if count = 0, then no rows will be touched.
 
-    /// N.B.: This method is only called when for all commands there is a predicate.
-
     auto select = std::make_shared<ASTSelectQuery>();
 
     select->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
@@ -132,7 +130,10 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, co
 
     ASTs conditions;
     for (const MutationCommand & command : commands)
-        conditions.emplace_back(getPartitionAndPredicateExpressionForMutationCommand(command, storage, context));
+    {
+        if (ASTPtr condition = getPartitionAndPredicateExpressionForMutationCommand(command, storage, context))
+            conditions.push_back(std::move(condition));
+    }
 
     if (conditions.size() > 1)
     {
@@ -142,7 +143,7 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, co
     }
     else if (conditions.size() == 1)
     {
-        select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(conditions[0]));
+        select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(conditions.front()));
     }
 
     return select;
@@ -234,7 +235,7 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     const Context & context
 )
 {
-    ASTPtr result = command.predicate->clone();
+    ASTPtr partition_predicate_as_ast_func;
     if (command.partition)
     {
         String partition_id;
@@ -248,16 +249,16 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
         else
             throw Exception("ALTER UPDATE/DELETE ... IN PARTITION is not supported for non-MergeTree tables", ErrorCodes::NOT_IMPLEMENTED);
 
-        result = makeASTFunction("and",
-            makeASTFunction("equals",
+        partition_predicate_as_ast_func = makeASTFunction("equals",
                     std::make_shared<ASTIdentifier>("_partition_id"),
                     std::make_shared<ASTLiteral>(partition_id)
-            ),
-            std::move(result)
         );
     }
 
-    return result;
+    if (command.predicate && command.partition)
+        return makeASTFunction("and", command.predicate->clone(), std::move(partition_predicate_as_ast_func));
+    else
+        return command.predicate ? command.predicate->clone() : partition_predicate_as_ast_func;
 }
 
 
