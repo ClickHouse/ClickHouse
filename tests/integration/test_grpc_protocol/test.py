@@ -2,6 +2,7 @@ import os
 import pytest
 import subprocess
 import sys
+import time
 import grpc
 from helpers.cluster import ClickHouseCluster
 from threading import Thread
@@ -274,3 +275,29 @@ def test_simultaneous_queries_multiple_channels():
     finally:
         for thread in threads:
             thread.join()
+
+def test_cancel_while_processing_input():
+    query("CREATE TABLE t (a UInt8) ENGINE = Memory")
+    def send_query_info():
+        yield clickhouse_grpc_pb2.QueryInfo(query="INSERT INTO t FORMAT TabSeparated", input_data="1\n2\n3\n", next_query_info=True)
+        yield clickhouse_grpc_pb2.QueryInfo(input_data="4\n5\n6\n", next_query_info=True)
+        yield clickhouse_grpc_pb2.QueryInfo(cancel=True)
+    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
+    result = stub.ExecuteQueryWithStreamInput(send_query_info())
+    assert result.cancelled == True
+    assert result.progress.written_rows == 6
+    assert query("SELECT a FROM t ORDER BY a") == "1\n2\n3\n4\n5\n6\n"
+
+def test_cancel_while_generating_output():
+    def send_query_info():
+        yield clickhouse_grpc_pb2.QueryInfo(query="SELECT number, sleep(0.2) FROM numbers(10) SETTINGS max_block_size=2")
+        time.sleep(0.5)
+        yield clickhouse_grpc_pb2.QueryInfo(cancel=True)
+    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
+    results = list(stub.ExecuteQueryWithStreamIO(send_query_info()))
+    assert len(results) >= 1
+    assert results[-1].cancelled == True
+    output = ''
+    for result in results:
+        output += result.output
+    assert output == '0\t0\n1\t0\n2\t0\n3\t0\n'

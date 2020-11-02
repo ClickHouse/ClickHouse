@@ -16,7 +16,8 @@ message QueryInfo {
    string session_id = 11;
    bool session_check = 12;
    uint32 session_timeout = 13;
-   bool next_query_info = 14;
+   bool cancel = 14;
+   bool next_query_info = 15;
 }
 
 enum LogsLevel {
@@ -72,6 +73,7 @@ message Result {
    Progress progress = 5;
    Stats stats = 6;
    Exception exception = 7;
+   bool cancelled = 8;
 }
 
 service ClickHouse {
