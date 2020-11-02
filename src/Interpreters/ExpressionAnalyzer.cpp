@@ -970,6 +970,7 @@ ActionsDAGPtr ExpressionAnalyzer::getActionsDAG(bool add_aliases, bool project_r
 {
     auto actions_dag = std::make_shared<ActionsDAG>(aggregated_columns);
     NamesWithAliases result_columns;
+    Names result_names;
 
     ASTs asts;
 
@@ -987,6 +988,7 @@ ActionsDAGPtr ExpressionAnalyzer::getActionsDAG(bool add_aliases, bool project_r
         else
             alias = name;
         result_columns.emplace_back(name, alias);
+        result_names.push_back(alias);
         getRootActions(ast, false, actions_dag);
     }
 
@@ -997,8 +999,15 @@ ActionsDAGPtr ExpressionAnalyzer::getActionsDAG(bool add_aliases, bool project_r
         else
             actions_dag->addAliases(result_columns);
     }
-    else
-        actions_dag->finalize(result_columns, ActionsDAG::InputsPolicy::KEEP);
+
+    if (!(add_aliases && project_result))
+    {
+        /// We will not delete the original columns.
+        for (const auto & column_name_type : sourceColumns())
+            result_names.push_back(column_name_type.name);
+
+        actions_dag->finalize(result_names, ActionsDAG::InputsPolicy::DROP_UNUSED);
+    }
 
     return actions_dag;
 }
