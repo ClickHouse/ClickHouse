@@ -40,11 +40,22 @@ void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, F
         if (it != list_of_selects->children.begin())
             settings.ostr << settings.nl_or_ws << indent_str << (settings.hilite ? hilite_keyword : "") << "UNION "
                           << mode_to_str(union_modes[it - list_of_selects->children.begin() - 1]) << (settings.hilite ? hilite_none : "");
-        if (auto _ = (*it)->as<ASTSelectWithUnionQuery>())
+        if (auto node = (*it)->as<ASTSelectWithUnionQuery>())
         {
-            auto sub_query = std::make_shared<ASTSubquery>();
-            sub_query->children.push_back(*it);
-            sub_query->formatImpl(settings, state, frame);
+            // just one child in subquery, () is not need
+            if (node->list_of_selects->children.size() == 1)
+            {
+                if (it != list_of_selects->children.begin())
+                    settings.ostr << settings.nl_or_ws;
+                node->list_of_selects->children.at(0)->formatImpl(settings, state, frame);
+            }
+            // more than one child in subquery
+            else
+            {
+                auto sub_query = std::make_shared<ASTSubquery>();
+                sub_query->children.push_back(*it);
+                sub_query->formatImpl(settings, state, frame);
+            }
         }
         else
         {
