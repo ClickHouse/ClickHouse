@@ -205,6 +205,7 @@ private:
       * Should be called under state_mutex.
       */
     bool isNotCoveredByFuturePartsImpl(
+        const String & log_entry_name,
         const String & new_part_name, String & out_reason,
         std::lock_guard<std::mutex> & state_lock) const;
 

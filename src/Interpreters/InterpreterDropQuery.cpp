@@ -250,7 +250,7 @@ BlockIO InterpreterDropQuery::executeToDatabase(const ASTDropQuery & query)
     {
         if (query.no_delay)
         {
-            for (const auto table_uuid : tables_to_wait)
+            for (const auto & table_uuid : tables_to_wait)
                 waitForTableToBeActuallyDroppedOrDetached(query, database, table_uuid);
         }
         throw;
@@ -258,7 +258,7 @@ BlockIO InterpreterDropQuery::executeToDatabase(const ASTDropQuery & query)
 
     if (query.no_delay)
     {
-        for (const auto table_uuid : tables_to_wait)
+        for (const auto & table_uuid : tables_to_wait)
             waitForTableToBeActuallyDroppedOrDetached(query, database, table_uuid);
     }
     return res;

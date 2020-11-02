@@ -106,6 +106,7 @@ namespace detail
         std::vector<Poco::Net::HTTPCookie> cookies;
         HTTPHeaderEntries http_header_entries;
         RemoteHostFilter remote_host_filter;
+        std::function<void(size_t)> next_callback;
 
         std::istream * call(const Poco::URI uri_, Poco::Net::HTTPResponse & response)
         {
@@ -154,6 +155,7 @@ namespace detail
         }
 
     public:
+        using NextCallback = std::function<void(size_t)>;
         using OutStreamCallback = std::function<void(std::ostream &)>;
 
         explicit ReadWriteBufferFromHTTPBase(
@@ -204,6 +206,8 @@ namespace detail
 
         bool nextImpl() override
         {
+            if (next_callback)
+                next_callback(count());
             if (!impl->next())
                 return false;
             internal_buffer = impl->buffer();
@@ -217,6 +221,17 @@ namespace detail
                 if (cookie.getName() == name)
                     return cookie.getValue();
             return def;
+        }
+
+        /// Set function to call on each nextImpl, useful when you need to track
+        /// progress.
+        /// NOTE: parameter on each call is not incremental -- it's all bytes count
+        /// passed through the buffer
+        void setNextCallback(NextCallback next_callback_)
+        {
+            next_callback = next_callback_;
+            /// Some data maybe already read
+            next_callback(count());
         }
     };
 }
