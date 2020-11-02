@@ -42,6 +42,12 @@ public:
 
         void write(WriteBuffer & meta_out) const;
         void read(ReadBuffer & meta_in);
+
+    private:
+        static constexpr auto JSON_KEY_PART_UUID = "part_uuid";
+
+        String toJSON() const;
+        void fromJSON(const String & buf);
     };
 
     constexpr static UInt8 WAL_VERSION = 1;

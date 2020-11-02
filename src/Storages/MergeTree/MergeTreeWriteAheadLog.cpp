@@ -5,7 +5,10 @@
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/copyData.h>
-#include <Poco/File.h>
+#include <Poco/JSON/JSON.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Stringifier.h>
+#include <Poco/JSON/Parser.h>
 #include <sys/time.h>
 
 namespace DB
@@ -250,6 +253,29 @@ MergeTreeWriteAheadLog::tryParseMinMaxBlockNumber(const String & filename)
     return std::make_pair(min_block, max_block);
 }
 
+String MergeTreeWriteAheadLog::ActionMetadata::toJSON() const
+{
+    Poco::JSON::Object json;
+
+    if (part_uuid != UUIDHelpers::Nil)
+        json.set(JSON_KEY_PART_UUID, toString(part_uuid));
+
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    oss.exceptions(std::ios::failbit);
+    json.stringify(oss);
+
+    return oss.str();
+}
+
+void MergeTreeWriteAheadLog::ActionMetadata::fromJSON(const String & buf)
+{
+    Poco::JSON::Parser parser;
+    auto json = parser.parse(buf).extract<Poco::JSON::Object::Ptr>();
+
+    if (json->has(JSON_KEY_PART_UUID))
+        part_uuid = parseFromString<UUID>(json->getValue<std::string>(JSON_KEY_PART_UUID));
+}
+
 void MergeTreeWriteAheadLog::ActionMetadata::read(ReadBuffer & meta_in)
 {
     readIntBinary(min_compatible_version, meta_in);
@@ -260,29 +286,23 @@ void MergeTreeWriteAheadLog::ActionMetadata::read(ReadBuffer & meta_in)
     size_t metadata_size;
     readVarUInt(metadata_size, meta_in);
 
-    UInt32 metadata_start = meta_in.offset();
+    if (metadata_size == 0)
+        return;
 
-    if (meta_in.hasPendingData())
-        readUUIDText(part_uuid, meta_in);
+    String buf(metadata_size, ' ');
+    meta_in.readStrict(buf.data(), metadata_size);
 
-    /// Skip extra fields if any. If min_compatible_version is lower than WAL_VERSION it means
-    /// that the fields are not critical for the correctness.
-    meta_in.ignore(metadata_size - (meta_in.offset() - metadata_start));
+    fromJSON(buf);
 }
 
 void MergeTreeWriteAheadLog::ActionMetadata::write(WriteBuffer & meta_out) const
 {
     writeIntBinary(min_compatible_version, meta_out);
 
-    /// Write metadata to a temporary buffer first to compute the size.
-    MemoryWriteBuffer buf{};
+    String ser_meta = toJSON();
 
-    writeUUIDText(part_uuid, buf);
-
-    buf.finalize();
-    auto read_buf = buf.tryGetReadBuffer();
-
-    writeVarUInt(static_cast<UInt32>(read_buf->available()), meta_out);
-    copyData(*read_buf, meta_out);
+    writeVarUInt(static_cast<UInt32>(ser_meta.length()), meta_out);
+    writeString(ser_meta, meta_out);
 }
+
 }
