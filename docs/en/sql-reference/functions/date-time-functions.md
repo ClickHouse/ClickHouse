@@ -23,8 +23,6 @@ SELECT
 └─────────────────────┴────────────┴────────────┴─────────────────────┘
 ```
 
-Only time zones that differ from UTC by a whole number of hours are supported.
-
 ## toTimeZone {#totimezone}
 
 Convert time or date and time to the specified time zone.

@@ -154,3 +154,5 @@
 01526_complex_key_dict_direct_layout
 01509_dictionary_preallocate
 01526_max_untracked_memory
+01530_drop_database_atomic_sync
+01547_query_log_current_database

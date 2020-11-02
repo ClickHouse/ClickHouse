@@ -290,38 +290,38 @@ private:
 
 
 /// Apply target function by feeding it "batches" of N columns
-/// Combining 10 columns per pass is the fastest for large columns sizes.
-/// For small columns sizes - more columns is faster.
+/// Combining 8 columns per pass is the fastest method, because it's the maximum when clang vectorizes a loop.
 template <
-    typename Op, template <typename, size_t> typename OperationApplierImpl, size_t N = 10>
+    typename Op, template <typename, size_t> typename OperationApplierImpl, size_t N = 8>
 struct OperationApplier
 {
     template <typename Columns, typename ResultData>
     static void apply(Columns & in, ResultData & result_data, bool use_result_data_as_input = false)
     {
         if (!use_result_data_as_input)
-            doBatchedApply<false>(in, result_data);
+            doBatchedApply<false>(in, result_data.data(), result_data.size());
         while (!in.empty())
-            doBatchedApply<true>(in, result_data);
+            doBatchedApply<true>(in, result_data.data(), result_data.size());
     }
 
-    template <bool CarryResult, typename Columns, typename ResultData>
-    static void NO_INLINE doBatchedApply(Columns & in, ResultData & result_data)
+    template <bool CarryResult, typename Columns, typename Result>
+    static void NO_INLINE doBatchedApply(Columns & in, Result * __restrict result_data, size_t size)
     {
         if (N > in.size())
         {
             OperationApplier<Op, OperationApplierImpl, N - 1>
-                ::template doBatchedApply<CarryResult>(in, result_data);
+                ::template doBatchedApply<CarryResult>(in, result_data, size);
             return;
         }
 
         const OperationApplierImpl<Op, N> operation_applier_impl(in);
-        size_t i = 0;
-        for (auto & res : result_data)
+        for (size_t i = 0; i < size; ++i)
+        {
             if constexpr (CarryResult)
-                res = Op::apply(res, operation_applier_impl.apply(i++));
+                result_data[i] = Op::apply(result_data[i], operation_applier_impl.apply(i));
             else
-                res = operation_applier_impl.apply(i++);
+                result_data[i] = operation_applier_impl.apply(i);
+        }
 
         in.erase(in.end() - N, in.end());
     }
@@ -332,7 +332,7 @@ template <
 struct OperationApplier<Op, OperationApplierImpl, 0>
 {
     template <bool, typename Columns, typename Result>
-    static void NO_INLINE doBatchedApply(Columns &, Result &)
+    static void NO_INLINE doBatchedApply(Columns &, Result &, size_t)
     {
         throw Exception(
                 "OperationApplier<...>::apply(...): not enough arguments to run this method",

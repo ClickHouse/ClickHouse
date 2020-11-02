@@ -166,7 +166,7 @@ void ThreadStatus::initPerformanceCounters()
     memory_tracker.setDescription("(for thread)");
 
     // query_start_time_{microseconds, nanoseconds} are all constructed from the same time point
-    // to ensure that they are all equal upto the precision of a second.
+    // to ensure that they are all equal up to the precision of a second.
     const auto now = std::chrono::system_clock::now();
 
     query_start_time_nanoseconds = time_in_nanoseconds(now);
@@ -243,7 +243,7 @@ void ThreadStatus::finalizePerformanceCounters()
             const auto & settings = query_context->getSettingsRef();
             if (settings.log_queries && settings.log_query_threads)
                 if (auto thread_log = global_context->getQueryThreadLog())
-                    logToQueryThreadLog(*thread_log);
+                    logToQueryThreadLog(*thread_log, query_context->getCurrentDatabase());
         }
     }
     catch (...)
@@ -300,8 +300,8 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
     performance_counters.setParent(&ProfileEvents::global_counters);
     memory_tracker.reset();
 
-    /// Must reset pointer to thread_group's memory_tracker, because it will be destroyed two lines below.
-    memory_tracker.setParent(nullptr);
+    /// Must reset pointer to thread_group's memory_tracker, because it will be destroyed two lines below (will reset to its parent).
+    memory_tracker.setParent(thread_group->memory_tracker.getParent());
 
     query_id.clear();
     query_context = nullptr;
@@ -322,7 +322,7 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 #endif
 }
 
-void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
+void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String & current_database)
 {
     QueryThreadLogElement elem;
 
@@ -350,6 +350,7 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
     elem.thread_name = getThreadName();
     elem.thread_id = thread_id;
 
+    elem.current_database = current_database;
     if (thread_group)
     {
         {
