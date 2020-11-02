@@ -51,13 +51,12 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void executeImplDryRun(ColumnsWithTypeAndName & columns, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImplDryRun(ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto column = ColumnUInt64::create(input_rows_count);
-        columns[result].column = std::move(column);
+        return ColumnUInt64::create(input_rows_count);
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         size_t current_row_number = rows.fetch_add(input_rows_count);
 
@@ -67,7 +66,7 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
             data[i] = current_row_number + i;
 
-        columns[result].column = std::move(column);
+        return column;
     }
 };
 

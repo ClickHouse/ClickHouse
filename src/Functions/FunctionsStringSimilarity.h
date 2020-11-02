@@ -51,12 +51,12 @@ public:
         return std::make_shared<DataTypeNumber<typename Impl::ResultType>>();
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         using ResultType = typename Impl::ResultType;
 
-        const ColumnPtr & column_haystack = columns[arguments[0]].column;
-        const ColumnPtr & column_needle = columns[arguments[1]].column;
+        const ColumnPtr & column_haystack = arguments[0].column;
+        const ColumnPtr & column_needle = arguments[1].column;
 
         const ColumnConst * col_haystack_const = typeid_cast<const ColumnConst *>(&*column_haystack);
         const ColumnConst * col_needle_const = typeid_cast<const ColumnConst *>(&*column_needle);
@@ -73,9 +73,7 @@ public:
                     ErrorCodes::TOO_LARGE_STRING_SIZE);
             }
             Impl::constantConstant(col_haystack_const->getValue<String>(), needle, res);
-            columns[result].column
-                = columns[result].type->createColumnConst(col_haystack_const->size(), toField(res));
-            return;
+            return result_type->createColumnConst(col_haystack_const->size(), toField(res));
         }
 
         auto col_res = ColumnVector<ResultType>::create();
@@ -122,12 +120,12 @@ public:
         else
         {
             throw Exception(
-                "Illegal columns " + columns[arguments[0]].column->getName() + " and "
-                    + columns[arguments[1]].column->getName() + " of arguments of function " + getName(),
+                "Illegal columns " + arguments[0].column->getName() + " and "
+                    + arguments[1].column->getName() + " of arguments of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
         }
 
-        columns[result].column = std::move(col_res);
+        return col_res;
     }
 };
 
