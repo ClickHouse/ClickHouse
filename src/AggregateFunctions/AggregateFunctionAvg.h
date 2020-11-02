@@ -17,16 +17,8 @@ struct RationalFraction
     Float64 numerator{0};
     Denominator denominator{0};
 
-    Float64 NO_SANITIZE_UNDEFINED result() const
-    {
-        if constexpr (std::numeric_limits<Float64>::is_iec559)
-            return static_cast<Float64>(numerator) / denominator; /// allow division by zero
-
-        if (denominator == static_cast<Denominator>(0))
-            return static_cast<Float64>(0);
-
-        return static_cast<Float64>(numerator / denominator);
-    }
+    /// Allow division by zero as sometimes we need to return NaN.
+    Float64 NO_SANITIZE_UNDEFINED result() const { return numerator / denominator; }
 };
 
 /**
