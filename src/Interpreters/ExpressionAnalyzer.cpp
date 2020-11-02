@@ -418,6 +418,8 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions)
     for (const ASTFunction * node : aggregates())
     {
         AggregateDescription aggregate;
+        getRootActionsNoMakeSet(node->arguments, true, actions);
+
         aggregate.column_name = node->getColumnName();
 
         const ASTs & arguments = node->arguments->children;
@@ -427,7 +429,6 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions)
         const auto & index = actions->getIndex();
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            getRootActionsNoMakeSet(arguments[i], true, actions);
             const std::string & name = arguments[i]->getColumnName();
 
             auto it = index.find(name);
@@ -743,11 +744,11 @@ bool SelectQueryExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, 
 
     ExpressionActionsChain::Step & step = chain.lastStep(columns_after_join);
 
+    getRootActions(select_query->where(), only_types, step.actions());
+
     auto where_column_name = select_query->where()->getColumnName();
     step.required_output.push_back(where_column_name);
     step.can_remove_required_output = {true};
-
-    getRootActions(select_query->where(), only_types, step.actions());
 
     auto filter_type = step.actions()->getIndex().find(where_column_name)->second->result_type;
     if (!filter_type->canBeUsedInBooleanContext())
@@ -824,8 +825,8 @@ bool SelectQueryExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain,
 
     ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
 
-    step.required_output.push_back(select_query->having()->getColumnName());
     getRootActions(select_query->having(), only_types, step.actions());
+    step.required_output.push_back(select_query->having()->getColumnName());
 
     return true;
 }
