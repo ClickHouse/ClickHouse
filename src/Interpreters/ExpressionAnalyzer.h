@@ -103,7 +103,8 @@ public:
     ///     If also project_result, than only aliases remain in the output block.
     /// Otherwise, only temporary columns will be deleted from the block.
     ActionsDAGPtr getActionsDAG(bool add_aliases, bool project_result = true);
-    ExpressionActionsPtr getActions(bool add_aliases, bool project_result = true);
+    ExpressionActionsPtr getActions(bool add_aliases, bool project_result);
+    ExpressionActionsPtr getActions(bool project_result) { return getActions(project_result, true); }
 
     /// Actions that can be performed on an empty block: adding constants and applying functions that depend only on constants.
     /// Does not execute subqueries.
