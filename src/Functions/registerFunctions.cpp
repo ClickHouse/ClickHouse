@@ -10,6 +10,7 @@ namespace DB
 void registerFunctionsArithmetic(FunctionFactory &);
 void registerFunctionsArray(FunctionFactory &);
 void registerFunctionsTuple(FunctionFactory &);
+void registerFunctionsMap(FunctionFactory &);
 void registerFunctionsBitmap(FunctionFactory &);
 void registerFunctionsCoding(FunctionFactory &);
 void registerFunctionsComparison(FunctionFactory &);
@@ -64,6 +65,7 @@ void registerFunctions()
     registerFunctionsArithmetic(factory);
     registerFunctionsArray(factory);
     registerFunctionsTuple(factory);
+    registerFunctionsMap(factory);
 #if !defined(ARCADIA_BUILD)
     registerFunctionsBitmap(factory);
 #endif

@@ -3,6 +3,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTWithAlias.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTExpressionList.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/SipHash.h>
@@ -27,14 +28,14 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
         writeChar(')', ostr);
     }
 
-    writeChar('(', ostr);
+    writeChar(name == "map" ? '{' : '(', ostr);
     for (auto it = arguments->children.begin(); it != arguments->children.end(); ++it)
     {
         if (it != arguments->children.begin())
             writeCString(", ", ostr);
         (*it)->appendColumnName(ostr);
     }
-    writeChar(')', ostr);
+    writeChar(name == "map" ? '}' : ')', ostr);
 }
 
 /** Get the text that identifies this element. */
@@ -362,6 +363,19 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 arguments->children[i]->formatImpl(settings, state, nested_dont_need_parens);
             }
             settings.ostr << (settings.hilite ? hilite_operator : "") << ')' << (settings.hilite ? hilite_none : "");
+            written = true;
+        }
+
+        if (!written && 0 == strcmp(name.c_str(), "map"))
+        {
+            settings.ostr << (settings.hilite ? hilite_operator : "") << '{' << (settings.hilite ? hilite_none : "");
+            for (size_t i = 0; i < arguments->children.size(); ++i)
+            {
+                if (i != 0)
+                    settings.ostr << ", ";
+                arguments->children[i]->formatImpl(settings, state, nested_dont_need_parens);
+            }
+            settings.ostr << (settings.hilite ? hilite_operator : "") << '}' << (settings.hilite ? hilite_none : "");
             written = true;
         }
     }

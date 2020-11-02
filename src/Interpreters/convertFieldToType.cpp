@@ -259,8 +259,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             if (src_map_size % 2)
                 throw Exception("Bad size of map in In or VALUES section, Expected size must %2==0", ErrorCodes::BAD_ARGUMENTS);
             Map res(2);
-            const auto & key_type = *(type_map->getKeyType());
-            const auto & value_type = *(type_map->getValueType());
+            const auto & kv_type = type_map->getElements();
 
             Map keys(count);
             Map values(count);
@@ -271,8 +270,8 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                 values[i] = src_map[i * 2 + 1];
             }
 
-            res[0] = convertFieldToType(keys, key_type);
-            res[1] = convertFieldToType(values, value_type);
+            res[0] = convertFieldToType(keys, *kv_type[0].get());
+            res[1] = convertFieldToType(values, *kv_type[1].get());
 
             if (res[0].isNull())
                 throw Exception("Bad type of key", ErrorCodes::BAD_TYPE_OF_FIELD);

@@ -396,6 +396,13 @@ protected:
     }
 };
 
+/** A comma-separated list of map expressions, probably empty. */
+class ParserMapExpressionList : public IParserBase
+{
+protected:
+    const char * getName() const override { return "list of map expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
 
 /** A comma-separated list of expressions, probably empty. */
 class ParserExpressionList : public IParserBase

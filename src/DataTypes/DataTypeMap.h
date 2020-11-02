@@ -86,9 +86,8 @@ public:
     bool isParametric() const override { return true; }
     bool haveSubtypes() const override { return true; }
 
-    const DataTypePtr & getKeyType() const { return keys; }
-    const DataTypePtr & getValueType() const { return values; }
-    const DataTypePtr & getVType() const { return value_type; }
+    const DataTypePtr & getKeyType() const { return key_type; }
+    const DataTypePtr & getValueType() const { return value_type; }
     const DataTypes & getElements() const  {return kv; }
 };
 

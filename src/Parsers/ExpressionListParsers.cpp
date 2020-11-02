@@ -96,6 +96,7 @@ bool ParserList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     auto list = std::make_shared<ASTExpressionList>(result_separator);
     list->children = std::move(elements);
     node = list;
+
     return true;
 }
 
@@ -516,6 +517,50 @@ ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_
 {
 }
 
+bool ParserMapExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserPtr && separator_parser_ = std::make_unique<ParserToken>(TokenType::Comma);
+    ASTs elements;
+
+    auto parse_key_value = [&]
+    {
+        ASTPtr key, value;
+        ParserExpression key_parser, value_parser;
+
+        if (!key_parser.parse(pos, key, expected))
+            return false;
+        elements.push_back(key);
+
+        if (pos->type != TokenType::Colon)
+            return false;
+        ++pos;
+
+        if (!value_parser.parse(pos, value, expected))
+            return false;
+        elements.push_back(value);
+
+        return true;
+    };
+
+    Pos begin = pos;
+    if (!parse_key_value())
+        return false;
+
+    while (true)
+    {
+        begin = pos;
+        if (!separator_parser_->ignore(pos, expected) || !parse_key_value())
+        {
+            pos = begin;
+            break;
+        }
+    }
+
+    auto list = std::make_shared<ASTExpressionList>();
+    list->children = std::move(elements);
+    node = list;
+    return true;
+}
 
 bool ParserExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {

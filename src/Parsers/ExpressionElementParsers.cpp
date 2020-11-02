@@ -123,6 +123,36 @@ bool ParserParenthesisExpression::parseImpl(Pos & pos, ASTPtr & node, Expected &
     return true;
 }
 
+bool ParserMap::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ASTPtr contents_node;
+    ParserMapExpressionList contents;
+    if (pos->type != TokenType::OpeningCurlyBrace)
+        return false;
+    ++pos;
+
+    if (!contents.parse(pos, contents_node, expected))
+        return false;
+    if (pos->type != TokenType::ClosingCurlyBrace)
+        return false;
+    ++pos;
+
+    const auto & expr_list = contents_node->as<ASTExpressionList &>();
+
+    /// empty expression in parentheses is not allowed
+    if (expr_list.children.empty())
+    {
+        expected.add(pos, "non-empty curlyBraced list of expressions");
+        return false;
+    }
+
+    auto function_node = std::make_shared<ASTFunction>();
+    function_node->name = "map";
+    function_node->arguments = contents_node;
+    function_node->children.push_back(contents_node);
+    node = function_node;
+    return true;
+}
 
 bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -1478,6 +1508,7 @@ bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     return ParserSubquery().parse(pos, node, expected)
         || ParserTupleOfLiterals().parse(pos, node, expected)
         || ParserMapOfLiterals().parse(pos, node, expected)
+        || ParserMap().parse(pos, node, expected)
         || ParserParenthesisExpression().parse(pos, node, expected)
         || ParserArrayOfLiterals().parse(pos, node, expected)
         || ParserArray().parse(pos, node, expected)

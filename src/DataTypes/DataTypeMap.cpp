@@ -35,6 +35,7 @@ namespace ErrorCodes
 
 DataTypeMap::DataTypeMap(const DataTypes & elems_)
 {
+    assert(elems_.size() < 3);
     key_type = elems_.size() == 1 ? DataTypeFactory::instance().get("String") : elems_[0];
     value_type = elems_.size() == 1 ? elems_[0] : elems_[1];
 
@@ -47,8 +48,7 @@ DataTypeMap::DataTypeMap(const DataTypes & elems_)
 std::string DataTypeMap::doGetName() const
 {
     WriteBufferFromOwnString s;
-    s << "Map(" << (typeid_cast<const DataTypeArray *>(keys.get()))->getNestedType()->getName()
-        << "," << (typeid_cast<const DataTypeArray *>(values.get()))->getNestedType()->getName() << ")";
+    s << "Map(" << key_type->getName() << "," << value_type->getName() << ")";
 
     return s.str();
 }
@@ -217,20 +217,12 @@ void DataTypeMap::deserializeText(IColumn & column, ReadBuffer & istr, const For
 
 void DataTypeMap::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeChar('[', ostr);
-    keys->serializeAsTextJSON(extractElementColumn(column, 0), row_num, ostr, settings);
-    writeChar(',', ostr);
-    values->serializeAsTextJSON(extractElementColumn(column, 1), row_num, ostr, settings);
-    writeChar(']', ostr);
+    serializeText(column, row_num, ostr, settings);
 }
 
 void DataTypeMap::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    assertChar('[', istr);
-    keys->deserializeAsTextJSON(extractElementColumn(column, 0), istr, settings);
-    assertChar(',', istr);
-    values->deserializeAsTextJSON(extractElementColumn(column, 1), istr, settings);
-    assertChar(']', istr);
+    deserializeText(column, istr, settings);
 }
 
 void DataTypeMap::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -305,11 +297,12 @@ static DeserializeBinaryBulkStateMap * checkAndGetMapDeserializeState(IDataType:
 
 void DataTypeMap::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
 {
+    // path.push_back(Substream::ArraySizes);
     path.push_back(Substream::MapElement);
     path.back().map_element_name = "keys";
     keys->enumerateStreams(callback, path);
     path.back().map_element_name = "values";
-    keys->enumerateStreams(callback, path);
+    values->enumerateStreams(callback, path);
     path.pop_back();
 }
 
@@ -374,6 +367,7 @@ void DataTypeMap::serializeBinaryBulkWithMultipleStreams(
 
     const auto & keys_col = extractElementColumn(column, 0);
     settings.path.back().map_element_name = "keys";
+
     keys->serializeBinaryBulkWithMultipleStreams(keys_col, offset, limit, settings, map_state->states[0]);
     const auto & values_col = extractElementColumn(column, 1);
     settings.path.back().map_element_name = "values";
