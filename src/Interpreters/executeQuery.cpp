@@ -323,7 +323,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
     const Settings & settings = context.getSettingsRef();
 
-    ParserQuery parser(end, settings.enable_debug_queries);
+    ParserQuery parser(end);
     ASTPtr ast;
     const char * query_end;
 
