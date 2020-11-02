@@ -102,12 +102,11 @@ public:
     }
 
     Pipe alterPartition(
-            const ASTPtr & query,
             const StorageMetadataPtr & metadata_snapshot,
             const PartitionCommands & commands,
             const Context & context) override
     {
-        return getNested()->alterPartition(query, metadata_snapshot, commands, context);
+        return getNested()->alterPartition(metadata_snapshot, commands, context);
     }
 
     void checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const override
