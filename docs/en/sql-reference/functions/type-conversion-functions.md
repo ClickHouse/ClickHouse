@@ -779,6 +779,7 @@ Result:
                          │
 └──────────────────────────────────┘
 ```
+
 ## formatRowNoNewline {#formatrownonewline}
 
 Similar to [formatRow](../functions/type-conversion-functions.md#formatrow) but trims the last \n.
