@@ -40,7 +40,7 @@ Block::Block(const ColumnsWithTypeAndName & data_) : data{data_}
 void Block::initializeIndexByName()
 {
     for (size_t i = 0, size = data.size(); i < size; ++i)
-        index_by_name[data[i].name] = i;
+        index_by_name.emplace(data[i].name, i);
 }
 
 
