@@ -782,7 +782,7 @@ Result:
 
 ## formatRowNoNewline {#formatrownonewline}
 
-Similar to [formatRow](../functions/type-conversion-functions.md#formatrow) but trims the last \n.
+Converts arbitrary expressions into a string via given format. The function trims the last `\n` if any.
 
 **Syntax** 
 
