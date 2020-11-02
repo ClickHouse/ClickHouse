@@ -227,9 +227,12 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name,
         /** TODO: Materialization is needed, because formats can use the functions `IDataType`,
           *  which only work with full columns.
           */
-        auto formatter_creator = [output_getter, sample, callback, format_settings]
+
+        RowOutputFormatParams row_output_format_params{callback, ignore_no_row_delimiter};
+        
+        auto formatter_creator = [output_getter, sample, row_output_format_params, format_settings]
             (WriteBuffer & output) -> OutputFormatPtr
-            { return output_getter(output, sample, std::move(callback), format_settings);};
+            { return output_getter(output, sample, row_output_format_params, format_settings);}; ///FIXME 
 
         ParallelFormattingOutputFormat::Params params{buf, sample, formatter_creator, settings.max_threads};
         auto format = std::make_shared<ParallelFormattingOutputFormat>(params);
@@ -242,7 +245,7 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name,
     }
 
 
-    auto format = getOutputFormat(name, buf, sample, context, std::move(callback));
+    auto format = getOutputFormat(name, buf, sample, context, std::move(callback), ignore_no_row_delimiter);
     return std::make_shared<MaterializingBlockOutputStream>(std::make_shared<OutputStreamToOutputFormat>(format), sample);
 }
 
