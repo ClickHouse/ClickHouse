@@ -27,6 +27,13 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+class ParserMap : public IParserBase
+{
+protected:
+    const char * getName() const override { return "map curlybraced expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 
 /** The SELECT subquery is in parenthesis.
   */

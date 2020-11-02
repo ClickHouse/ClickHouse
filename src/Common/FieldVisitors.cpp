@@ -208,6 +208,78 @@ String FieldVisitorToString::operator() (const Map & x) const
     return wb.str();
 }
 
+
+void FieldVisitorWriteBinary::operator() (const Null &, WriteBuffer &) const { return ; }
+void FieldVisitorWriteBinary::operator() (const UInt64 & x, WriteBuffer & buf) const { DB::writeVarUInt(x, buf); }
+void FieldVisitorWriteBinary::operator() (const Int64 & x, WriteBuffer & buf) const { DB::writeVarInt(x, buf); }
+void FieldVisitorWriteBinary::operator() (const Float64 & x, WriteBuffer & buf) const { DB::writeFloatBinary(x, buf); }
+void FieldVisitorWriteBinary::operator() (const String & x, WriteBuffer & buf) const { DB::writeStringBinary(x, buf); }
+void FieldVisitorWriteBinary::operator() (const UInt128 & x, WriteBuffer & buf) const { DB::writeBinary(x, buf); }
+void FieldVisitorWriteBinary::operator() (const Int128 & x, WriteBuffer & buf) const { DB::writeVarInt(x, buf); }
+void FieldVisitorWriteBinary::operator() (const UInt256 & x, WriteBuffer & buf) const { DB::writeBinary(x, buf); }
+void FieldVisitorWriteBinary::operator() (const Int256 & x, WriteBuffer & buf) const { DB::writeBinary(x, buf); }
+void FieldVisitorWriteBinary::operator() (const DecimalField<Decimal32> & x, WriteBuffer & buf) const { DB::writeBinary(x.getValue(), buf); }
+void FieldVisitorWriteBinary::operator() (const DecimalField<Decimal64> & x, WriteBuffer & buf) const { DB::writeBinary(x.getValue(), buf); }
+void FieldVisitorWriteBinary::operator() (const DecimalField<Decimal128> & x, WriteBuffer & buf) const { DB::writeBinary(x.getValue(), buf); }
+void FieldVisitorWriteBinary::operator() (const DecimalField<Decimal256> & x, WriteBuffer & buf) const { DB::writeBinary(x.getValue(), buf); }
+void FieldVisitorWriteBinary::operator() (const AggregateFunctionStateData & x, WriteBuffer & buf) const
+{
+    DB::writeStringBinary(x.name, buf);
+    DB::writeStringBinary(x.data, buf);
+}
+
+void FieldVisitorWriteBinary::operator() (const Array & x, WriteBuffer & buf) const
+{
+    const size_t size = x.size();
+    DB::writeBinary(size, buf);
+
+    for (auto it = x.begin(); it != x.end(); ++it)
+    {
+        const UInt8 type = it->getType();
+        DB::writeBinary(type, buf);
+        Field::dispatch(
+            [&buf](const auto & value) {
+                DB::FieldVisitorWriteBinary()(value, buf);
+            },
+            *it);
+    }
+}
+
+void FieldVisitorWriteBinary::operator() (const Tuple & x, WriteBuffer & buf) const
+{
+    const size_t size = x.size();
+    DB::writeBinary(size, buf);
+
+    for (auto it = x.begin(); it != x.end(); ++it)
+    {
+        const UInt8 type = it->getType();
+        DB::writeBinary(type, buf);
+        Field::dispatch(
+            [&buf](const auto & value) {
+                DB::FieldVisitorWriteBinary()(value, buf);
+            },
+            *it);
+    }
+}
+
+
+void FieldVisitorWriteBinary::operator() (const Map & x, WriteBuffer & buf) const
+{
+    const size_t size = x.size();
+    DB::writeBinary(size, buf);
+    for (auto it = x.begin(); it != x.end(); ++it)
+    {
+        const UInt8 type = it->getType();
+        writeBinary(type, buf);
+        Field::dispatch(
+            [&buf](const auto & value) {
+                DB::FieldVisitorWriteBinary()(value, buf);
+            },
+            *it);
+    }
+}
+
+
 FieldVisitorHash::FieldVisitorHash(SipHash & hash_) : hash(hash_) {}
 
 void FieldVisitorHash::operator() (const Null &) const
