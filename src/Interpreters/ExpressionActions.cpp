@@ -351,6 +351,11 @@ std::string ExpressionActions::dumpActions() const
     for (const auto & output_column : output_columns)
         ss << output_column.name << " " << output_column.type->getName() << "\n";
 
+    ss << "\nproject input: " << project_input << "\noutput positions:";
+    for (auto pos : result_positions)
+        ss << " " << pos;
+    ss << "\n";
+
     return ss.str();
 }
 
