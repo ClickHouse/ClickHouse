@@ -234,7 +234,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     for (const auto & child : list.children)
     {
         parts.emplace_back(getIdentifierName(child));
-        if (parts.back() == "")
+        if (parts.back().empty())
             params.push_back(child->as<ASTIdentifier>()->getParam());
     }
 
