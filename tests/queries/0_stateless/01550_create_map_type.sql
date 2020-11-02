@@ -35,3 +35,5 @@ insert into table_map select {'k1' : [number, number + 2, number * 2]} from numb
 insert into table_map select map('k2' , [number, number + 2, number * 2]) from numbers(6);
 select a['k1'] as col1 from table_map order by col1;
 drop table if exists table_map;
+
+SELECT CAST(([1, 2, 3], ['1', '2', 'foo']), 'Map(UInt8, String)') AS map, map[1]
