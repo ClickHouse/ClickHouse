@@ -1,19 +1,24 @@
 #include <Columns/ColumnMap.h>
+
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/IColumnImpl.h>
+#include <Common/ArenaWithFreeLists.h>
+#include <Common/HashTable/HashMap.h>
+#include <Common/HashTable/StringHashMap.h>
+#include <Common/WeakHash.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
+#include <Core/Field.h>
 #include <DataStreams/ColumnGathererStream.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+
 #include <ext/map.h>
 #include <ext/range.h>
-#include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
-#include <Common/WeakHash.h>
-#include <Core/Field.h>
-
-#include <Common/HashTable/HashMap.h>
-#include <Common/UInt128.h>
 
 namespace DB
 {
@@ -29,83 +34,20 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
-//class ColumnMap::IIndex
-//{
-//public:
-//    virtual ~IIndex() {}
-
-//    virtual IColumn::Ptr findAll(const IColumn & needles, size_t rows_count) const = 0;
-
-//    // updates the index with N last rows of the key/value columns.
-//    virtual void afterAppend(size_t N) = 0;
-//    virtual void beforeRemove(size_t N) = 0;
-
-//    // Completely rebuilds an index.
-//    virtual void reset() = 0;
-//};
-
-struct MapKey
+class ColumnMap::IIndex
 {
-    size_t row = 0;
-    StringRef data = {};
+public:
+    virtual ~IIndex() {}
 
-    inline bool operator==(const MapKey & other) const
-    {
-        return row == other.row && data == other.data;
-    }
+    virtual IColumn::Ptr findAll(const IColumn & needles, size_t rows_count) const = 0;
+
+    // updates the index with N last rows of the key/value columns.
+    virtual void afterAppend(size_t N) = 0;
+    virtual void beforeRemove(size_t N) = 0;
+
+    // Completely rebuilds an index.
+    virtual void rebuild() = 0;
 };
-
-struct MapKeyHash
-{
-    inline size_t operator()(const MapKey & map_key) const
-    {
-//        return StringRefHash()(map_key.data);
-        return UInt128Hash()(UInt128{map_key.row, StringRefHash()(map_key.data)});
-    }
-};
-
-template <typename T>
-inline bool areEqual(const T & left, const T & right)
-{
-    return left == right;
-}
-
-template <typename Key, typename TMapped, typename Hash, typename TState = HashTableNoState, bool (*KeyEqualityOp)(const Key &, const Key &) = &areEqual>
-struct HashMapCellWithKeyEquality : public HashMapCell<Key, TMapped, Hash, TState>
-{
-    using Base = HashMapCell<Key, TMapped, Hash, TState>;
-    using Base::Base;
-
-    bool keyEquals(const Key & key_) const { return KeyEqualityOp(this->value.first, key_); }
-    bool keyEquals(const Key & key_, size_t /*hash_*/) const { return KeyEqualityOp(this->value.first, key_); }
-    bool keyEquals(const Key & key_, size_t hash_, const typename Base::State &) const { return keyEquals(key_, hash_); }
-};
-
-template <
-    typename Key,
-    typename Mapped,
-    typename Hash = DefaultHash<Key>,
-    typename Grower = HashTableGrower<>,
-    typename Allocator = HashTableAllocator>
-using HashMap2 = HashMapTable<Key, HashMapCellWithKeyEquality<Key, Mapped, Hash>, Hash, Grower, Allocator>;
-
-}
-
-
-namespace ZeroTraits
-{
-
-template <>
-inline bool check<DB::MapKey>(const DB::MapKey x)
-{
-    return x.data.data == nullptr;
-//    return x.row == 0 && x.data.data == nullptr;
-
-//    static const DB::MapKey zero_key;
-//    return memcmp(&x, &zero_key, sizeof(x)) == 0;
-}
-template <>
-inline void set<DB::MapKey>(DB::MapKey & x) { memset(&x, 0, sizeof(x)); }
 
 }
 
@@ -113,90 +55,139 @@ namespace
 {
 using namespace DB;
 
-//class ColumnMapIndexBase : public DB::ColumnMap::IIndex
-//{
-//protected:
-//    const ColumnArray & keys_column;
-//    const ColumnArray & values_column;
-
-//    ColumnMapIndexBase(const ColumnArray & keys_column_, const ColumnArray & values_column_)
-//        : keys_column(keys_column_),
-//          values_column(values_column_)
-//    {}
-
-
-//    void validateNeedlesType(const IColumn & needles) const
-//    {
-//    }
-//};
-
-//template <typename ColumnVectorType, typename KeyStorageType>
-//class ColumnVectorIndex : public DB::ColumnMap::IIndex
-//{
-//public:
-//    // Assert cast keys are of given ColumnVector<T> specialization, also make sure that T size is <= KeyStorageSize
-//    ColumnVectorIndex(const IColumn & keys, const IColumn & values)
-//    {
-
-//    }
-
-//    // updates the index with N last rows of the key/value columns.
-//    void afterAppend(size_t N) override;
-//    void beforeRemove(size_t N) override;
-
-//    // Completely rebuilds an index.
-//    void reset() override;
-//};
-}
-
-namespace DB
+struct SharedArenaWithFreeListsAllocator
 {
+    ArenaWithFreeLists * shared_allocator = nullptr;
 
-class ColumnMap::Index
-{
-    using MapIndex = HashMap2<MapKey, UInt64, MapKeyHash>;
-    const ColumnArray & keys_column;
-    const ColumnArray & values_column;
-    MapIndex index;
-
-public:
-    Index(const ColumnArray & keys_column_, const ColumnArray & values_column_)
-        : keys_column(keys_column_),
-          values_column(values_column_)
+    void * alloc(size_t size, size_t /*alignment*/ = 0)
     {
-        const auto & map_values_offsets = values_column.getOffsets();
-        const auto & map_keys_offsets = keys_column.getOffsets();
-        const auto & map_keys_data = keys_column.getData();
+//        std::cerr << "!!!!!!!!!!!! " << shared_allocator << "-" << this << " Allocating " << size << "..." << std::ends;
+        auto result = shared_allocator->alloc(size);
+//        std::cerr << " 0x" << static_cast<const void *>(result) << std::endl;
 
-        index.reserve(map_values_offsets.size());
-
-        // Build an index, store global key offset as mapped values since that greatly simplifies value extraction.
-        size_t starting_offset = 0;
-        for (size_t row = 0; row < keys_column.size(); ++row)
-        {
-            if (map_keys_offsets[row] != map_values_offsets[row])
-                throw Exception(
-                        fmt::format("Different number of elements in key ({}) and value ({}) arrays on row {}.",
-                                map_keys_offsets[row], map_values_offsets[row], row),
-                        ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
-
-            const size_t final_offset = map_keys_offsets[row];
-            for (size_t i = starting_offset; i < final_offset; ++i)
-            {
-                MapIndex::LookupResult it;
-                bool inserted;
-                const auto key_data = map_keys_data.getDataAt(i);
-
-                index.emplace(MapKey{row, key_data}, it, inserted);
-                if (inserted)
-                    new (&it->getMapped()) UInt64(i);
-            }
-            starting_offset = final_offset;
-        }
+        return result;
     }
 
-    inline IColumn::Ptr findAll(const IColumn & needles, size_t rows_count) const
+    /// Free memory range.
+    void free(void * buf, size_t size)
     {
+//        std::cerr << "!!!!!!!!!!!! " << shared_allocator << "-" << this << " Freeing 0x" << buf << " : " << size << "..." << std::ends;
+        shared_allocator->free(reinterpret_cast<char *>(buf), size);
+//        std::cerr << " Done " << std::endl;
+    }
+
+    void * realloc(void * buf, size_t old_size, size_t new_size, size_t alignment = 0)
+    {
+//        std::cerr << "!!!!!!!!!!!! " << shared_allocator << "-" << this << " Reallocating 0x" << buf << " : " << old_size << "=>" << new_size << "..." << std::ends;
+        auto result = shared_allocator->realloc(buf, old_size, new_size, alignment);
+//        std::cerr << " 0x" << static_cast<const void *>(result) << std::endl;
+
+        return result;
+    }
+};
+
+template <typename KeyColumnType, typename KeyStorageType>
+class ColumnMapIndex : public ColumnMap::IIndex
+{
+    template <typename KeyType, typename AllocatorType>
+    using HashMapTypeSelector = std::conditional_t<std::is_same_v<KeyType, StringRef>,
+        StringHashMap<UInt64, AllocatorType>,
+        HashMap<KeyStorageType, UInt64, DefaultHash<KeyStorageType>, HashTableGrower<>, AllocatorType>
+    >;
+
+    using HashMapType = HashMapTypeSelector<typename KeyColumnType::ValueType, SharedArenaWithFreeListsAllocator>;
+
+    const ColumnArray & keys_column;
+    const ColumnArray & values_column;
+    ArenaWithFreeLists arena;
+    std::vector<HashMapType> index;
+
+public:
+
+    ColumnMapIndex(const ColumnArray & keys_column_, const ColumnArray & values_column_)
+        : keys_column(keys_column_),
+          values_column(values_column_),
+          arena(keys_column.getData().size() * sizeof(typename HashMapType::cell_type))
+    {
+        std::cerr << "!!! Initialized arena with initial size of " << keys_column.getData().size() * sizeof(typename HashMapType::cell_type) << std::endl;
+        rebuild();
+    }
+
+    // updates the index with N last rows of the key/value columns.
+    void afterAppend(size_t N) override
+    {
+        rebuild(keys_column.size() - N, keys_column.size());
+    }
+
+    void beforeRemove(size_t N) override
+    {
+        index.erase(index.end() - N, index.end());
+    }
+
+    // Completely rebuilds an index.
+    void rebuild() override
+    {
+        rebuild(0, keys_column.size());
+    }
+
+    void rebuild(size_t start_row, size_t end_row)
+    {
+        const auto & keys_data = assert_cast<const KeyColumnType &>(keys_column.getData());
+        const auto & keys_offsets = keys_column.getOffsets();
+        const auto & values_offsets = values_column.getOffsets();
+
+        std::cerr << "!!! Rebuilding ColumnMapIndex of "
+                  << keys_data.getName() << " => " << values_column.getData().getName()
+                  << " : " << start_row << " to " << end_row << std::endl;
+
+        index.reserve(index.size() + end_row - start_row);
+
+        // Build an index, store global key offset as mapped values since that greatly simplifies value extraction.
+        size_t starting_offset = start_row == 0 ? 0 : keys_offsets[start_row - 1];
+        size_t total_items = 0;
+        for (size_t row = start_row; row < end_row; ++row)
+        {
+            if (keys_offsets[row] != values_offsets[row])
+                throw Exception(
+                        fmt::format("Different number of elements in key ({}) and value ({}) arrays on row {}.",
+                                keys_offsets[row], values_offsets[row], row),
+                        ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
+
+
+            const size_t final_offset = keys_offsets[row];
+
+//            std::cerr << "!!!!! map #" << row << " would have " << final_offset - starting_offset << " cells" << std::endl;
+            HashMapType map(SharedArenaWithFreeListsAllocator{&arena});
+
+            if constexpr (!std::is_same_v<KeyStorageType, StringRef>)
+            {
+                map.reserve(final_offset - starting_offset);
+            }
+
+            for (size_t i = starting_offset; i < final_offset; ++i)
+            {
+                typename HashMapType::LookupResult it;
+                bool inserted;
+                // Casting to allow narrower types like UInt8 and UInt16 to be matched against UInt64,
+                // i.e. UInt64(1) and UInt8(1) would have same hash.
+                map.emplace(static_cast<KeyStorageType>(keys_data.getElement(i)), it, inserted);
+                if (inserted)
+                    it->getMapped() = UInt64(i);
+            }
+            total_items += final_offset - starting_offset;
+//            std::cerr << "!!! " << row << " " << starting_offset << " : " << final_offset << std::endl;
+            starting_offset = final_offset;
+
+            index.emplace_back(std::move(map));
+        }
+
+        std::cerr << "!!! Rebuilt ColumnMapIndex with total " << total_items << " hash cell items" << std::endl;
+    }
+
+    IColumn::Ptr findAll(const IColumn & needles, size_t /*rows_count*/) const override
+    {
+        // TODO: cast needles down to concrete type, and then dispatch based on that type.
+
         {
             const IColumn & needle_type_column = isColumnConst(needles)
                     ? typeid_cast<const ColumnConst&>(needles).getDataColumn() : needles;
@@ -206,6 +197,10 @@ public:
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
+        if (index.size() < needles.size())
+            throw Exception(fmt::format("There are more needles ({}) that rows in index ({})", needles.size(), index.size()),
+                ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
         // TODO: make sure to convert needles-value to values-type to avoid
         // false negative when searching for UInt64(1) while Map is keyed in UInt32.
 
@@ -213,19 +208,170 @@ public:
         auto result = nested_values.cloneEmpty();
         result->reserve(needles.size());
 
-        for (size_t row = 0; row < rows_count; ++row)
-        {
-            const auto & key = MapKey{row, needles.getDataAt(row)};
-            const auto hash = MapKeyHash{}(key);
-            if (auto res = index.find(key, hash))
-                result->insertFrom(nested_values, res->getMapped());
-            else
-                result->insertDefault();
-        }
+//        for (size_t row = 0; row < rows_count; ++row)
+//        {
+////            const auto & key = needles.getDataAt(row);
+//            typename HashMapType::LookupResult p;
+//            if constexpr (std::is_same_v<KeyStorageType, StringRef>)
+//            {
+//                p = index[row].find(keys_data.getDataAt(i));
+//            }
+//            else
+//            {
+//                map.emplace(static_cast<KeyStorageType>(keys_data.getElement(i)), it, inserted);
+//            }
+
+//            if (auto res = index[row].find(key))
+//                result->insertFrom(nested_values, res->getMapped());
+//            else
+//                result->insertDefault();
+//        }
 
         return result;
     }
 };
+
+std::shared_ptr<ColumnMap::IIndex> makeIndex(const ColumnArray & keys_column, const ColumnArray & values_column)
+{
+    switch (keys_column.getData().getDataType())
+    {
+        case TypeIndex::UInt8:
+            return std::make_shared<ColumnMapIndex<ColumnVector<UInt8>, UInt64>>(keys_column, values_column);
+//        case TypeIndex::UInt16:
+//            return std::make_shared<ColumnMapIndex<ColumnVector<UInt16>, UInt64>>(keys_column, values_column);
+//        case TypeIndex::UInt32:
+//            return std::make_shared<ColumnMapIndex<ColumnVector<UInt32>, UInt64>>(keys_column, values_column);
+//        case TypeIndex::UInt64:
+//            return std::make_shared<ColumnMapIndex<ColumnVector<UInt64>, UInt64>>(keys_column, values_column);
+////        case TypeIndex::UInt128:
+////            return std::make_shared<ColumnMapIndex<ColumnVector<UInt128>, UInt128>>(keys_column, values_column);
+////        case TypeIndex::UInt256:
+//        case TypeIndex::Int8:
+//            return std::make_shared<ColumnMapIndex<ColumnVector<Int8>, Int64>>(keys_column, values_column);
+//        case TypeIndex::Int16:
+//            return std::make_shared<ColumnMapIndex<ColumnVector<Int16>, Int64>>(keys_column, values_column);
+//        case TypeIndex::Int32:
+//            return std::make_shared<ColumnMapIndex<ColumnVector<Int32>, Int64>>(keys_column, values_column);
+//        case TypeIndex::Int64:
+//            return std::make_shared<ColumnMapIndex<ColumnVector<Int64>, Int64>>(keys_column, values_column);
+////        case TypeIndex::Int128:
+////        case TypeIndex::Int256:
+//        case TypeIndex::Float32:
+//            return std::make_shared<ColumnMapIndex<ColumnVector<Float32>, Float64>>(keys_column, values_column);
+//        case TypeIndex::Float64:
+//            return std::make_shared<ColumnMapIndex<ColumnVector<Float64>, Float64>>(keys_column, values_column);
+////        case TypeIndex::Date:
+////        case TypeIndex::DateTime:
+////        case TypeIndex::DateTime64:
+        case TypeIndex::String:
+            return std::make_shared<ColumnMapIndex<ColumnString, StringRef>>(keys_column, values_column);
+        case TypeIndex::FixedString:
+            return std::make_shared<ColumnMapIndex<ColumnFixedString, StringRef>>(keys_column, values_column);
+////        case TypeIndex::Enum8:
+////        case TypeIndex::Enum16:
+////        case TypeIndex::Decimal32:
+////        case TypeIndex::Decimal64:
+////        case TypeIndex::Decimal128:
+////        case TypeIndex::Decimal256:
+////        case TypeIndex::UUID:
+    default:
+        throw Exception("Unsuported KEY column of Map " + keys_column.getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+}
+
+}
+
+namespace DB
+{
+
+//class ColumnMap::Index
+//{
+//    using MapIndex = HashMap2<StringRef, UInt64, StringRefHash>;
+//    const ColumnArray & keys_column;
+//    const ColumnArray & values_column;
+//    std::vector<MapIndex> index;
+
+//public:
+//    Index(const ColumnArray & keys_column_, const ColumnArray & values_column_)
+//        : keys_column(keys_column_),
+//          values_column(values_column_)
+//    {
+//        const auto & map_values_offsets = values_column.getOffsets();
+//        const auto & map_keys_offsets = keys_column.getOffsets();
+//        const auto & map_keys_data = keys_column.getData();
+
+//        std::cerr << "!!!!! Would need " << keys_column.size() << " hashtables " << std::endl;
+//        index.reserve(keys_column.size());
+
+//        // Build an index, store global key offset as mapped values since that greatly simplifies value extraction.
+//        size_t starting_offset = 0;
+//        for (size_t row = 0; row < keys_column.size(); ++row)
+//        {
+//            if (map_keys_offsets[row] != map_values_offsets[row])
+//                throw Exception(
+//                        fmt::format("Different number of elements in key ({}) and value ({}) arrays on row {}.",
+//                                map_keys_offsets[row], map_values_offsets[row], row),
+//                        ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
+
+
+//            const size_t final_offset = map_keys_offsets[row];
+
+//            std::cerr << "!!!!! map #" << row << " would have " << final_offset - starting_offset << " cells" << std::endl;
+//            MapIndex map;
+//            map.reserve(final_offset - starting_offset);
+
+//            for (size_t i = starting_offset; i < final_offset; ++i)
+//            {
+//                MapIndex::LookupResult it;
+//                bool inserted;
+//                const auto key_data = map_keys_data.getDataAt(i);
+
+//                map.emplace(key_data, it, inserted);
+//                if (inserted)
+//                    new (&it->getMapped()) UInt64(i);
+//            }
+//            std::cerr << "!!! " << row << " " << starting_offset << " : " << final_offset << std::endl;
+//            starting_offset = final_offset;
+
+//            index.emplace_back(std::move(map));
+//        }
+//    }
+
+//    inline IColumn::Ptr findAll(const IColumn & needles, size_t rows_count) const
+//    {
+//        {
+//            const IColumn & needle_type_column = isColumnConst(needles)
+//                    ? typeid_cast<const ColumnConst&>(needles).getDataColumn() : needles;
+
+//            if (!keys_column.getData().structureEquals(needle_type_column))
+//                throw Exception("Incompatitable needle column type " + needle_type_column.getName() + " expected " + keys_column.getName(),
+//                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+//        }
+
+//        if (index.size() < needles.size())
+//            throw Exception(fmt::format("There are more needles ({}) that rows in index ({})", needles.size(), index.size()),
+//                ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+//        // TODO: make sure to convert needles-value to values-type to avoid
+//        // false negative when searching for UInt64(1) while Map is keyed in UInt32.
+
+//        const auto & nested_values = values_column.getData();
+//        auto result = nested_values.cloneEmpty();
+//        result->reserve(needles.size());
+
+//        for (size_t row = 0; row < rows_count; ++row)
+//        {
+//            const auto & key = needles.getDataAt(row);
+////            const auto hash = MapKeyHash{}(key);
+//            if (auto res = index[row].find(key))
+//                result->insertFrom(nested_values, res->getMapped());
+//            else
+//                result->insertDefault();
+//        }
+
+//        return result;
+//    }
+//};
 
 
 std::string ColumnMap::getName() const
@@ -236,7 +382,7 @@ std::string ColumnMap::getName() const
 }
 
 ColumnMap::ColumnMap(MutableColumns && mutable_columns)
-    : key_index(std::make_shared<Index>(
+    : key_index(makeIndex(
         assert_cast<const ColumnArray &>(*mutable_columns[0]),
         assert_cast<const ColumnArray &>(*mutable_columns[1])))
 {
@@ -252,7 +398,7 @@ ColumnMap::ColumnMap(MutableColumns && mutable_columns)
 
 ColumnMap::ColumnMap(const ColumnMap & other)
     : columns(other.columns),
-      key_index(std::make_shared<Index>(
+      key_index(makeIndex(
             assert_cast<const ColumnArray &>(*columns[0]),
             assert_cast<const ColumnArray &>(*columns[1])))
 {}
@@ -616,16 +762,16 @@ ColumnPtr ColumnMap::findAll(const IColumn & keys, size_t rows_count) const
     if (unlikely(rows_count > columns[0]->size() || rows_count > keys.size()))
         throw Exception("Too many rows for ColumnMap", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-    if (key_index == nullptr)
-    {
-//        std::lock_guard<std::mutex> lock(key_index_mutex);
-        if (key_index == nullptr)
-        {
-            const ColumnArray & keys_array = assert_cast<const ColumnArray &>(*columns[0]);
-            const ColumnArray & values_array = assert_cast<const ColumnArray &>(*columns[1]);
-            std::make_shared<Index>(keys_array, values_array).swap(key_index);
-        }
-    }
+//    if (key_index == nullptr)
+//    {
+////        std::lock_guard<std::mutex> lock(key_index_mutex);
+//        if (key_index == nullptr)
+//        {
+//            const ColumnArray & keys_array = assert_cast<const ColumnArray &>(*columns[0]);
+//            const ColumnArray & values_array = assert_cast<const ColumnArray &>(*columns[1]);
+//            std::make_shared<Index>(keys_array, values_array).swap(key_index);
+//        }
+//    }
 
     return key_index->findAll(keys, rows_count);
 }

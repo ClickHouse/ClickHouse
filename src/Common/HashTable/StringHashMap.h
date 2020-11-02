@@ -75,6 +75,7 @@ struct StringHashMapCell<StringRef, TMapped> : public HashMapCellWithSavedHash<S
 template <typename TMapped, typename Allocator>
 struct StringHashMapSubMaps
 {
+    using AllocatorType = Allocator;
     using T0 = StringHashTableEmpty<StringHashMapCell<StringRef, TMapped>>;
     using T1 = HashMapTable<StringKey8, StringHashMapCell<StringKey8, TMapped>, StringHashTableHash, StringHashTableGrower<>, Allocator>;
     using T2 = HashMapTable<StringKey16, StringHashMapCell<StringKey16, TMapped>, StringHashTableHash, StringHashTableGrower<>, Allocator>;

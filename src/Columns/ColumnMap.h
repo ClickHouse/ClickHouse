@@ -15,24 +15,24 @@ namespace DB
   */
 class ColumnMap final : public COWHelper<IColumn, ColumnMap>
 {
+public:
+    class IIndex;
+
 private:
     friend class COWHelper<IColumn, ColumnMap>;
 
     template <bool positive>
     struct Less;
-    using MapColumns = std::vector<WrappedPtr>;
-    class Index;
 
+    using MapColumns = std::vector<WrappedPtr>;
 
     MapColumns columns;
-    mutable std::shared_ptr<Index> key_index = nullptr;
+    mutable std::shared_ptr<IIndex> key_index = nullptr;
 
     explicit ColumnMap(MutableColumns && columns);
     ColumnMap(const ColumnMap &);
 
 public:
-    class IIndex;
-
     ~ColumnMap() override;
 
     /** Create immutable column using immutable arguments. This arguments may be shared with other columns.

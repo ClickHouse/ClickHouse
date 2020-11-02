@@ -111,6 +111,13 @@ public:
     {
         return pool.size();
     }
+
+    // This could be posibly be made more efficient, when block returned to the user is of bigger size than requested and
+    // new size is <= block_size, but that would require some modifications to the alloc and free.
+    void * realloc(void * buf, size_t old_size, size_t new_size, size_t alignment = 0)
+    {
+        return Allocator::realloc(buf, old_size, new_size, alignment);
+    }
 };
 
 
