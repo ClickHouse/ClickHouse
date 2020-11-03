@@ -5,7 +5,7 @@ import pymysql.cursors
 import pytest
 from helpers.client import QueryRuntimeException
 
-def check_query(clickhouse_node, query, result_set, retry_count=3, interval_seconds=3):
+def check_query(clickhouse_node, query, result_set, retry_count=5, interval_seconds=30):
     lastest_result = ''
     for index in range(retry_count):
         lastest_result = clickhouse_node.query(query)
@@ -477,7 +477,6 @@ def err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, mysql_n
 
     # wait MaterializeMySQL read binlog events
     check_query(clickhouse_node, "SELECT count() FROM test_database.test_table_1 FORMAT TSV", "6\n", 30, 5)
-    print mysql result for test
     mysql_node.query("INSERT INTO test_database.test_table_1 VALUES(7);")
     check_query(clickhouse_node, "SELECT count() FROM test_database.test_table_1 FORMAT TSV", "7\n")
     clickhouse_node.query("DROP DATABASE test_database;")
