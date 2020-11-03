@@ -49,20 +49,20 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         size_t rows = input_rows_count;
         size_t num_args = arguments.size();
 
         DataTypePtr common_type = nullptr;
-        auto commonType = [&common_type, &columns, &arguments]()
+        auto commonType = [&common_type, &arguments]()
         {
             if (common_type == nullptr)
             {
                 DataTypes data_types;
                 data_types.reserve(arguments.size());
                 for (const auto & argument : arguments)
-                    data_types.push_back(columns[argument].type);
+                    data_types.push_back(argument.type);
 
                 common_type = getLeastSupertype(data_types);
             }
@@ -74,10 +74,10 @@ public:
 
         for (size_t i = 0; i < num_args; ++i)
         {
-            const auto & argument = columns[arguments[i]];
+            const auto & argument = arguments[i];
             ColumnPtr preprocessed_column = argument.column;
 
-            const auto argument_type = typeid_cast<const DataTypeArray *>(argument.type.get());
+            const auto * argument_type = typeid_cast<const DataTypeArray *>(argument.type.get());
             const auto & nested_type = argument_type->getNestedType();
 
             /// Converts Array(Nothing) or Array(Nullable(Nothing) to common type. Example: hasAll([Null, 1], [Null]) -> 1
@@ -93,23 +93,23 @@ public:
         {
             bool is_const = false;
 
-            if (auto argument_column_const = typeid_cast<const ColumnConst *>(argument_column.get()))
+            if (const auto * argument_column_const = typeid_cast<const ColumnConst *>(argument_column.get()))
             {
                 is_const = true;
                 argument_column = argument_column_const->getDataColumnPtr();
             }
 
-            if (auto argument_column_array = typeid_cast<const ColumnArray *>(argument_column.get()))
+            if (const auto * argument_column_array = typeid_cast<const ColumnArray *>(argument_column.get()))
                 sources.emplace_back(GatherUtils::createArraySource(*argument_column_array, is_const, rows));
             else
                 throw Exception{"Arguments for function " + getName() + " must be arrays.", ErrorCodes::LOGICAL_ERROR};
         }
 
         auto result_column = ColumnUInt8::create(rows);
-        auto result_column_ptr = typeid_cast<ColumnUInt8 *>(result_column.get());
+        auto * result_column_ptr = typeid_cast<ColumnUInt8 *>(result_column.get());
         GatherUtils::sliceHas(*sources[0], *sources[1], search_type, *result_column_ptr);
 
-        columns[result].column = std::move(result_column);
+        return result_column;
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

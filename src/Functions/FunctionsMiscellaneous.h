@@ -35,19 +35,19 @@ public:
 
     String getName() const override { return "FunctionExpression"; }
 
-    void execute(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) override
     {
         DB::Block expr_columns;
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            const auto & argument = columns[arguments[i]];
+            const auto & argument = arguments[i];
             /// Replace column name with value from argument_names.
             expr_columns.insert({argument.column, argument.type, signature->argument_names[i]});
         }
 
         expression_actions->execute(expr_columns);
 
-        columns[result].column = expr_columns.getByName(signature->return_name).column;
+         return expr_columns.getByName(signature->return_name).column;
     }
 
 bool useDefaultImplementationForNulls() const override { return false; }
@@ -79,9 +79,9 @@ public:
     bool isDeterministicInScopeOfQuery() const override { return true; }
 
     const DataTypes & getArgumentTypes() const override { return argument_types; }
-    const DataTypePtr & getReturnType() const override { return return_type; }
+    const DataTypePtr & getResultType() const override { return return_type; }
 
-    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &, const ColumnNumbers &, size_t) const override
+    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &) const override
     {
         return std::make_unique<ExecutableFunctionExpression>(expression_actions, signature);
     }
@@ -119,11 +119,8 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    void execute(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) override
     {
-        ColumnsWithTypeAndName columns_to_catpure;
-        columns_to_catpure.reserve(arguments.size());
-
         Names names;
         DataTypes types;
 
@@ -139,13 +136,10 @@ public:
             types.push_back(lambda_argument.type);
         }
 
-        for (const auto & argument : arguments)
-            columns_to_catpure.push_back(columns[argument]);
-
         auto function = std::make_unique<FunctionExpression>(expression_actions, types, names,
                                                              capture->return_type, capture->return_name);
         auto function_adaptor = std::make_shared<FunctionBaseAdaptor>(std::move(function));
-        columns[result].column = ColumnFunction::create(input_rows_count, std::move(function_adaptor), columns_to_catpure);
+        return ColumnFunction::create(input_rows_count, std::move(function_adaptor), arguments);
     }
 
 private:
@@ -177,9 +171,9 @@ public:
     bool isDeterministicInScopeOfQuery() const override { return true; }
 
     const DataTypes & getArgumentTypes() const override { return capture->captured_types; }
-    const DataTypePtr & getReturnType() const override { return return_type; }
+    const DataTypePtr & getResultType() const override { return return_type; }
 
-    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &, const ColumnNumbers &, size_t) const override
+    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &) const override
     {
         return std::make_unique<ExecutableFunctionCapture>(expression_actions, capture);
     }

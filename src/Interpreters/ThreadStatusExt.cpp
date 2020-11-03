@@ -30,11 +30,37 @@ namespace ErrorCodes
     extern const int CANNOT_SET_THREAD_PRIORITY;
 }
 
+void ThreadStatus::applyQuerySettings()
+{
+    const Settings & settings = query_context->getSettingsRef();
+
+    query_id = query_context->getCurrentQueryId();
+    initQueryProfiler();
+
+    untracked_memory_limit = settings.max_untracked_memory;
+    if (settings.memory_profiler_step && settings.memory_profiler_step < UInt64(untracked_memory_limit))
+        untracked_memory_limit = settings.memory_profiler_step;
+
+#if defined(OS_LINUX)
+    /// Set "nice" value if required.
+    Int32 new_os_thread_priority = settings.os_thread_priority;
+    if (new_os_thread_priority && hasLinuxCapability(CAP_SYS_NICE))
+    {
+        LOG_TRACE(log, "Setting nice to {}", new_os_thread_priority);
+
+        if (0 != setpriority(PRIO_PROCESS, thread_id, new_os_thread_priority))
+            throwFromErrno("Cannot 'setpriority'", ErrorCodes::CANNOT_SET_THREAD_PRIORITY);
+
+        os_thread_priority = new_os_thread_priority;
+    }
+#endif
+}
+
 
 void ThreadStatus::attachQueryContext(Context & query_context_)
 {
     query_context = &query_context_;
-    query_id = query_context->getCurrentQueryId();
+
     if (!global_context)
         global_context = &query_context->getGlobalContext();
 
@@ -47,7 +73,7 @@ void ThreadStatus::attachQueryContext(Context & query_context_)
             thread_group->global_context = global_context;
     }
 
-    initQueryProfiler();
+    applyQuerySettings();
 }
 
 void CurrentThread::defaultThreadDeleter()
@@ -82,30 +108,7 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
     }
 
     if (query_context)
-    {
-        query_id = query_context->getCurrentQueryId();
-        initQueryProfiler();
-
-        const Settings & settings = query_context->getSettingsRef();
-
-        untracked_memory_limit = settings.max_untracked_memory;
-        if (settings.memory_profiler_step && settings.memory_profiler_step < UInt64(untracked_memory_limit))
-            untracked_memory_limit = settings.memory_profiler_step;
-
-#if defined(OS_LINUX)
-        /// Set "nice" value if required.
-        Int32 new_os_thread_priority = settings.os_thread_priority;
-        if (new_os_thread_priority && hasLinuxCapability(CAP_SYS_NICE))
-        {
-            LOG_TRACE(log, "Setting nice to {}", new_os_thread_priority);
-
-            if (0 != setpriority(PRIO_PROCESS, thread_id, new_os_thread_priority))
-                throwFromErrno("Cannot 'setpriority'", ErrorCodes::CANNOT_SET_THREAD_PRIORITY);
-
-            os_thread_priority = new_os_thread_priority;
-        }
-#endif
-    }
+        applyQuerySettings();
 
     initPerformanceCounters();
 
@@ -163,7 +166,7 @@ void ThreadStatus::initPerformanceCounters()
     memory_tracker.setDescription("(for thread)");
 
     // query_start_time_{microseconds, nanoseconds} are all constructed from the same time point
-    // to ensure that they are all equal upto the precision of a second.
+    // to ensure that they are all equal up to the precision of a second.
     const auto now = std::chrono::system_clock::now();
 
     query_start_time_nanoseconds = time_in_nanoseconds(now);
@@ -240,7 +243,7 @@ void ThreadStatus::finalizePerformanceCounters()
             const auto & settings = query_context->getSettingsRef();
             if (settings.log_queries && settings.log_query_threads)
                 if (auto thread_log = global_context->getQueryThreadLog())
-                    logToQueryThreadLog(*thread_log);
+                    logToQueryThreadLog(*thread_log, query_context->getCurrentDatabase());
         }
     }
     catch (...)
@@ -297,8 +300,8 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
     performance_counters.setParent(&ProfileEvents::global_counters);
     memory_tracker.reset();
 
-    /// Must reset pointer to thread_group's memory_tracker, because it will be destroyed two lines below.
-    memory_tracker.setParent(nullptr);
+    /// Must reset pointer to thread_group's memory_tracker, because it will be destroyed two lines below (will reset to its parent).
+    memory_tracker.setParent(thread_group->memory_tracker.getParent());
 
     query_id.clear();
     query_context = nullptr;
@@ -319,7 +322,7 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 #endif
 }
 
-void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
+void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String & current_database)
 {
     QueryThreadLogElement elem;
 
@@ -333,7 +336,7 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
     elem.event_time_microseconds = current_time_microseconds;
     elem.query_start_time = query_start_time;
     elem.query_start_time_microseconds = query_start_time_microseconds;
-    elem.query_duration_ms = (getCurrentTimeNanoseconds() - query_start_time_nanoseconds) / 1000000U;
+    elem.query_duration_ms = (time_in_nanoseconds(now) - query_start_time_nanoseconds) / 1000000U;
 
     elem.read_rows = progress_in.read_rows.load(std::memory_order_relaxed);
     elem.read_bytes = progress_in.read_bytes.load(std::memory_order_relaxed);
@@ -347,6 +350,7 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
     elem.thread_name = getThreadName();
     elem.thread_id = thread_id;
 
+    elem.current_database = current_database;
     if (thread_group)
     {
         {
