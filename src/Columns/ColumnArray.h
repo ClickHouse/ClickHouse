@@ -183,6 +183,7 @@ private:
     template <typename Comparator>
     void updatePermutationImpl(size_t limit, Permutation & res, EqualRanges & equal_range, Comparator cmp) const;
 
+    template <bool positive>
     struct Cmp;
 };
 

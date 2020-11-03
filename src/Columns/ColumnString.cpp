@@ -284,18 +284,18 @@ void ColumnString::compareColumn(
                                          compare_results, direction, nan_direction_hint);
 }
 
+template <bool positive>
 struct ColumnString::Cmp
 {
     const ColumnString & parent;
-    bool reverse;
-    explicit Cmp(const ColumnString & parent_, bool reverse_=false) : parent(parent_), reverse(reverse_) {}
+    explicit Cmp(const ColumnString & parent_) : parent(parent_) {}
     int operator()(size_t lhs, size_t rhs) const
     {
         int res = memcmpSmallAllowOverflow15(
             parent.chars.data() + parent.offsetAt(lhs), parent.sizeAt(lhs) - 1,
             parent.chars.data() + parent.offsetAt(rhs), parent.sizeAt(rhs) - 1);
 
-        return reverse ? -res : res;
+        return positive ? res : -res;
     }
 };
 
@@ -393,22 +393,27 @@ void ColumnString::updatePermutationImpl(size_t limit, Permutation & res, EqualR
 
 void ColumnString::getPermutation(bool reverse, size_t limit, int /*nan_direction_hint*/, Permutation & res) const
 {
-    getPermutationImpl(limit, res, Cmp(*this, reverse));
+    if (reverse)
+        getPermutationImpl(limit, res, Cmp<false>(*this));
+    else
+        getPermutationImpl(limit, res, Cmp<true>(*this));
 }
 
 void ColumnString::updatePermutation(bool reverse, size_t limit, int /*nan_direction_hint*/, Permutation & res, EqualRanges & equal_ranges) const
 {
-    updatePermutationImpl(limit, res, equal_ranges, Cmp(*this, reverse));
+    if (reverse)
+        updatePermutationImpl(limit, res, equal_ranges, Cmp<false>(*this));
+    else
+        updatePermutationImpl(limit, res, equal_ranges, Cmp<true>(*this));
 }
 
+template <bool positive>
 struct ColumnString::CmpWithCollation
 {
     const ColumnString & parent;
     const Collator & collator;
-    bool reverse;
 
-    CmpWithCollation(const ColumnString & parent_, const Collator & collator_, bool reverse_ = false)
-        : parent(parent_), collator(collator_), reverse(reverse_) {}
+    CmpWithCollation(const ColumnString & parent_, const Collator & collator_) : parent(parent_), collator(collator_) {}
 
     int operator()(size_t lhs, size_t rhs) const
     {
@@ -416,18 +421,24 @@ struct ColumnString::CmpWithCollation
             reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(lhs)]), parent.sizeAt(lhs),
             reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(rhs)]), parent.sizeAt(rhs));
 
-        return reverse ? -res : res;
+        return positive ? res : -res;
     }
 };
 
 void ColumnString::getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int, Permutation & res) const
 {
-    getPermutationImpl(limit, res, CmpWithCollation(*this, collator, reverse));
+    if (reverse)
+        getPermutationImpl(limit, res, CmpWithCollation<false>(*this, collator));
+    else
+        getPermutationImpl(limit, res, CmpWithCollation<true>(*this, collator));
 }
 
 void ColumnString::updatePermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_ranges) const
 {
-    updatePermutationImpl(limit, res, equal_ranges, CmpWithCollation(*this, collator, reverse));
+    if (reverse)
+        updatePermutationImpl(limit, res, equal_ranges, CmpWithCollation<false>(*this, collator));
+    else
+        updatePermutationImpl(limit, res, equal_ranges, CmpWithCollation<true>(*this, collator));
 }
 
 ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
@@ -498,7 +509,7 @@ void ColumnString::getExtremes(Field & min, Field & max) const
     size_t min_idx = 0;
     size_t max_idx = 0;
 
-    Cmp cmp_op(*this);
+    Cmp<true> cmp_op(*this);
 
     for (size_t i = 1; i < col_size; ++i)
     {
