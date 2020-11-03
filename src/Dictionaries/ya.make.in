@@ -11,7 +11,6 @@ PEERDIR(
 
 NO_COMPILER_WARNINGS()
 
-CFLAGS(-g0)
 
 SRCS(
 <? find . -name '*.cpp' | grep -v -F tests | grep -v -F Trie | sed 's/^\.\//    /' | sort ?>

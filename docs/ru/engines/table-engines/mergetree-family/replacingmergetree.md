@@ -1,3 +1,8 @@
+---
+toc_priority: 33
+toc_title: ReplacingMergeTree
+---
+
 # ReplacingMergeTree {#replacingmergetree}
 
 Движок отличается от [MergeTree](mergetree.md#table_engines-mergetree) тем, что выполняет удаление дублирующихся записей с одинаковым значением [ключа сортировки](mergetree.md)).
