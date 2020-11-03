@@ -23,17 +23,37 @@ public:
 
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
+    void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return true; }
 
 private:
-    void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
-
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
     mutable LZ4::PerformanceStatistics lz4_stat;
     ASTPtr codec_desc;
+};
+
+
+class CompressionCodecLZ4F : public ICompressionCodec
+{
+public:
+    CompressionCodecLZ4F();
+
+    uint8_t getMethodByte() const override;
+
+    void updateHash(SipHash & hash) const override;
+
+protected:
+    UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
+    void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
+
+    bool isCompression() const override { return true; }
+    bool isGenericCompression() const override { return true; }
+
+private:
+    UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 };
 
 

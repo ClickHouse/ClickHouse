@@ -308,7 +308,6 @@ void CompressionCodecFactory::registerSimpleCompressionCodec(
 
 void registerCodecNone(CompressionCodecFactory & factory);
 void registerCodecLZ4(CompressionCodecFactory & factory);
-void registerCodecLZ4HC(CompressionCodecFactory & factory);
 void registerCodecZSTD(CompressionCodecFactory & factory);
 void registerCodecDelta(CompressionCodecFactory & factory);
 void registerCodecT64(CompressionCodecFactory & factory);
@@ -321,7 +320,6 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecLZ4(*this);
     registerCodecNone(*this);
     registerCodecZSTD(*this);
-    registerCodecLZ4HC(*this);
     registerCodecDelta(*this);
     registerCodecT64(*this);
     registerCodecDoubleDelta(*this);

@@ -1,6 +1,7 @@
 #include "CompressionCodecLZ4.h"
 
 #include <lz4.h>
+#include <lz4frame.h>
 #include <lz4hc.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
@@ -54,12 +55,46 @@ void CompressionCodecLZ4::doDecompressData(const char * source, UInt32 source_si
     LZ4::decompress(source, dest, source_size, uncompressed_size, lz4_stat);
 }
 
-void registerCodecLZ4(CompressionCodecFactory & factory)
+CompressionCodecLZ4F::CompressionCodecLZ4F()
 {
-    factory.registerSimpleCompressionCodec("LZ4", static_cast<UInt8>(CompressionMethodByte::LZ4), [&] ()
-    {
-        return std::make_shared<CompressionCodecLZ4>();
-    });
+    setCodecDescription("LZ4F");
+}
+
+uint8_t CompressionCodecLZ4F::getMethodByte() const
+{
+    return static_cast<uint8_t>(CompressionMethodByte::LZ4F);
+}
+
+void CompressionCodecLZ4F::updateHash(SipHash & hash) const
+{
+    getCodecDesc()->updateTreeHash(hash);
+}
+
+UInt32 CompressionCodecLZ4F::getMaxCompressedDataSize(UInt32 uncompressed_size) const
+{
+    return LZ4F_compressFrameBound(uncompressed_size, nullptr);
+}
+
+UInt32 CompressionCodecLZ4F::doCompressData(const char * source, UInt32 source_size, char * dest) const
+{
+    return LZ4F_compressFrame(dest, LZ4F_compressFrameBound(source_size, nullptr), source, source_size, nullptr);
+}
+
+void CompressionCodecLZ4F::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
+{
+    size_t d_size = uncompressed_size;
+    size_t s_size = source_size;
+    LZ4F_dctx * dctx;
+
+    LZ4F_createDecompressionContext(&dctx, LZ4F_VERSION);
+    LZ4F_decompress(dctx, dest, &d_size, source, &s_size, nullptr);
+    LZ4F_freeDecompressionContext(dctx);
+}
+
+CompressionCodecLZ4HC::CompressionCodecLZ4HC(int level_)
+    : level(level_)
+{
+    setCodecDescription("LZ4HC", {std::make_shared<ASTLiteral>(static_cast<UInt64>(level))});
 }
 
 UInt32 CompressionCodecLZ4HC::doCompressData(const char * source, UInt32 source_size, char * dest) const
@@ -72,8 +107,18 @@ UInt32 CompressionCodecLZ4HC::doCompressData(const char * source, UInt32 source_
     return success;
 }
 
-void registerCodecLZ4HC(CompressionCodecFactory & factory)
+void registerCodecLZ4(CompressionCodecFactory & factory)
 {
+    factory.registerSimpleCompressionCodec("LZ4", static_cast<UInt8>(CompressionMethodByte::LZ4), [&] ()
+    {
+        return std::make_shared<CompressionCodecLZ4>();
+    });
+
+    factory.registerSimpleCompressionCodec("LZ4F", static_cast<UInt8>(CompressionMethodByte::LZ4F), [&] ()
+    {
+        return std::make_shared<CompressionCodecLZ4F>();
+    });
+
     factory.registerCompressionCodec("LZ4HC", {}, [&](const ASTPtr & arguments) -> CompressionCodecPtr
     {
         int level = 0;
@@ -93,12 +138,6 @@ void registerCodecLZ4HC(CompressionCodecFactory & factory)
 
         return std::make_shared<CompressionCodecLZ4HC>(level);
     });
-}
-
-CompressionCodecLZ4HC::CompressionCodecLZ4HC(int level_)
-    : level(level_)
-{
-    setCodecDescription("LZ4HC", {std::make_shared<ASTLiteral>(static_cast<UInt64>(level))});
 }
 
 }
