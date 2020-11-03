@@ -27,17 +27,17 @@ static ITransformingStep::Traits getTraits(bool has_filter)
 TotalsHavingStep::TotalsHavingStep(
     const DataStream & input_stream_,
     bool overflow_row_,
-    const ExpressionActionsPtr & expression_,
+    const ActionsDAGPtr & actions_,
     const std::string & filter_column_,
     TotalsMode totals_mode_,
     double auto_include_threshold_,
     bool final_)
     : ITransformingStep(
             input_stream_,
-            TotalsHavingTransform::transformHeader(input_stream_.header, expression_, final_),
+            TotalsHavingTransform::transformHeader(input_stream_.header, (actions_ ? actions_->buildExpressions() : nullptr), final_),
             getTraits(!filter_column_.empty()))
     , overflow_row(overflow_row_)
-    , expression(expression_)
+    , actions(actions_)
     , filter_column_name(filter_column_)
     , totals_mode(totals_mode_)
     , auto_include_threshold(auto_include_threshold_)
@@ -48,7 +48,7 @@ TotalsHavingStep::TotalsHavingStep(
 void TotalsHavingStep::transformPipeline(QueryPipeline & pipeline)
 {
     auto totals_having = std::make_shared<TotalsHavingTransform>(
-            pipeline.getHeader(), overflow_row, expression,
+            pipeline.getHeader(), overflow_row, (actions ? actions->buildExpressions() : nullptr),
             filter_column_name, totals_mode, auto_include_threshold, final);
 
     pipeline.addTotalsHavingTransform(std::move(totals_having));
@@ -78,6 +78,7 @@ void TotalsHavingStep::describeActions(FormatSettings & settings) const
     settings.out << prefix << "Mode: " << totalsModeToString(totals_mode, auto_include_threshold) << '\n';
 
     bool first = true;
+    auto expression = actions->buildExpressions();
     for (const auto & action : expression->getActions())
     {
         settings.out << prefix << (first ? "Actions: "

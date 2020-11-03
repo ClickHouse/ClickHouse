@@ -260,9 +260,9 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     if (prewhere_info)
     {
         if (prewhere_info->alias_actions)
-            pre_column_names = prewhere_info->alias_actions->getRequiredColumns();
+            pre_column_names = prewhere_info->alias_actions->getRequiredColumns().getNames();
         else
-            pre_column_names = prewhere_info->prewhere_actions->getRequiredColumns();
+            pre_column_names = prewhere_info->prewhere_actions->getRequiredColumns().getNames();
 
         if (pre_column_names.empty())
             pre_column_names.push_back(column_names[0]);

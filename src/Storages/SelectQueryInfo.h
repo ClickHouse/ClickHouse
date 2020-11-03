@@ -12,27 +12,30 @@ namespace DB
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
+class ActionsDAG;
+using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
+
 struct PrewhereInfo
 {
     /// Actions which are executed in order to alias columns are used for prewhere actions.
-    ExpressionActionsPtr alias_actions;
+    ActionsDAGPtr alias_actions;
     /// Actions which are executed on block in order to get filter column for prewhere step.
-    ExpressionActionsPtr prewhere_actions;
+    ActionsDAGPtr prewhere_actions;
     /// Actions which are executed after reading from storage in order to remove unused columns.
-    ExpressionActionsPtr remove_columns_actions;
+    ActionsDAGPtr remove_columns_actions;
     String prewhere_column_name;
     bool remove_prewhere_column = false;
     bool need_filter = false;
 
     PrewhereInfo() = default;
-    explicit PrewhereInfo(ExpressionActionsPtr prewhere_actions_, String prewhere_column_name_)
+    explicit PrewhereInfo(ActionsDAGPtr prewhere_actions_, String prewhere_column_name_)
         : prewhere_actions(std::move(prewhere_actions_)), prewhere_column_name(std::move(prewhere_column_name_)) {}
 };
 
 /// Helper struct to store all the information about the filter expression.
 struct FilterInfo
 {
-    ExpressionActionsPtr actions;
+    ActionsDAGPtr actions;
     String column_name;
     bool do_remove_column = false;
 };

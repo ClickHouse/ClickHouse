@@ -569,7 +569,7 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
         return false;
 
     bool found_transformation = false;
-    for (const ExpressionAction & action : key_expr->getActions())
+    for (const auto & action : key_expr->getActions())
     {
         /** The key functional expression constraint may be inferred from a plain column in the expression.
           * For example, if the key contains `toStartOfHour(Timestamp)` and query contains `WHERE Timestamp >= now()`,
@@ -581,25 +581,25 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
           * Instead, we can qualify only functions that do not transform the range (for example rounding),
           * which while not strictly monotonic, are monotonic everywhere on the input range.
           */
-        const auto & argument_names = action.argument_names;
-        if (action.type == ExpressionAction::Type::APPLY_FUNCTION
-            && argument_names.size() == 1
-            && argument_names[0] == expr_name)
+        const auto & children = action.node->children;
+        if (action.node->type == ActionsDAG::Type::FUNCTION
+            && children.size() == 1
+            && children[0]->result_name == expr_name)
         {
-            if (!action.function_base->hasInformationAboutMonotonicity())
+            if (!action.node->function_base->hasInformationAboutMonotonicity())
                 return false;
 
             /// Range is irrelevant in this case.
-            IFunction::Monotonicity monotonicity = action.function_base->getMonotonicityForRange(*out_type, Field(), Field());
+            IFunction::Monotonicity monotonicity = action.node->function_base->getMonotonicityForRange(*out_type, Field(), Field());
             if (!monotonicity.is_always_monotonic)
                 return false;
 
             /// Apply the next transformation step.
             std::tie(out_value, out_type) = applyFunctionForFieldOfUnknownType(
-                action.function_builder,
+                action.node->function_builder,
                 out_type, out_value);
 
-            expr_name = action.result_name;
+            expr_name = action.node->result_name;
 
             /// Transformation results in a key expression, accept.
             auto it = key_columns.find(expr_name);

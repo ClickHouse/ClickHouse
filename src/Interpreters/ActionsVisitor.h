@@ -12,7 +12,6 @@ namespace DB
 class Context;
 class ASTFunction;
 
-struct ExpressionAction;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
@@ -83,12 +82,11 @@ struct ScopeStack
 
     void addColumn(ColumnWithTypeAndName column);
     void addAlias(const std::string & name, std::string alias);
-    void addArrayJoin(const std::string & source_name, std::string result_name, std::string unique_column_name);
+    void addArrayJoin(const std::string & source_name, std::string result_name);
     void addFunction(
             const FunctionOverloadResolverPtr & function,
             const Names & argument_names,
-            std::string result_name,
-            bool compile_expressions);
+            std::string result_name);
 
     ActionsDAGPtr popLevel();
 
@@ -147,15 +145,14 @@ public:
 
         void addArrayJoin(const std::string & source_name, std::string result_name)
         {
-            actions_stack.addArrayJoin(source_name, std::move(result_name), getUniqueName("_array_join_" + source_name));
+            actions_stack.addArrayJoin(source_name, std::move(result_name));
         }
 
         void addFunction(const FunctionOverloadResolverPtr & function,
                          const Names & argument_names,
                          std::string result_name)
         {
-            actions_stack.addFunction(function, argument_names, std::move(result_name),
-                                      context.getSettingsRef().compile_expressions);
+            actions_stack.addFunction(function, argument_names, std::move(result_name));
         }
 
         ActionsDAGPtr getActions()

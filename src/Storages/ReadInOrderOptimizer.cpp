@@ -72,7 +72,7 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(const StoragePtr & storage
             bool found_function = false;
             for (const auto & action : elements_actions[i]->getActions())
             {
-                if (action.type != ExpressionAction::APPLY_FUNCTION)
+                if (action.node->type != ActionsDAG::Type::FUNCTION)
                     continue;
 
                 if (found_function)
@@ -83,13 +83,13 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(const StoragePtr & storage
                 else
                     found_function = true;
 
-                if (action.argument_names.size() != 1 || action.argument_names.at(0) != sorting_key_columns[i])
+                if (action.node->children.size() != 1 || action.node->children.at(0)->result_name != sorting_key_columns[i])
                 {
                     current_direction = 0;
                     break;
                 }
 
-                const auto & func = *action.function_base;
+                const auto & func = *action.node->function_base;
                 if (!func.hasInformationAboutMonotonicity())
                 {
                     current_direction = 0;
