@@ -9,6 +9,8 @@ INSERT INTO mt VALUES (2);
 
 SELECT v FROM mt ORDER BY v;
 
+ALTER TABLE mt DETACH PART 'all_100_100_0'; -- { serverError 232 }
+
 ALTER TABLE mt DETACH PART 'all_2_2_0';
 
 SELECT v FROM mt ORDER BY v;

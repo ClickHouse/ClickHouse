@@ -10,6 +10,8 @@ INSERT INTO replica1 VALUES (0);
 INSERT INTO replica1 VALUES (1);
 INSERT INTO replica1 VALUES (2);
 
+ALTER TABLE replica1 DETACH PART 'all_100_100_0'; -- { serverError 232 }
+
 SELECT v FROM replica1 ORDER BY v;
 
 SYSTEM SYNC REPLICA replica2;
