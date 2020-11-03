@@ -42,6 +42,7 @@ namespace ErrorCodes
     extern const int CANNOT_ASSIGN_OPTIMIZE;
     extern const int TIMEOUT_EXCEEDED;
     extern const int UNKNOWN_POLICY;
+    extern const int NO_SUCH_DATA_PART;
 }
 
 namespace ActionLocks
@@ -1229,7 +1230,6 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, bool
 
         MergeTreeData::DataPartsVector parts_to_remove;
 
-        /// TODO: should we include PreComitted parts like in Replicated case?
         if (drop_part)
         {
             String part_name = partition->as<ASTLiteral &>().value.safeGet<String>();
@@ -1237,7 +1237,10 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, bool
 
             if (part)
                 parts_to_remove.push_back(part);
-        } else
+            else
+                throw Exception("Part " + part_name + " not found, won't try to drop it.", ErrorCodes::NO_SUCH_DATA_PART);
+        }
+        else
         {
             String partition_id = getPartitionIDFromQuery(partition, context);
             parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);

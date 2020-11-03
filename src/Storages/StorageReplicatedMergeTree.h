@@ -502,7 +502,11 @@ private:
     /// Deletes info from quorum/last_part node for particular partition_id.
     void cleanLastPartNode(const String & partition_id);
 
-    void updateLastPartNodeIfMatches(const String & partition_id, const String & old_part_name, const String & new_part_name);
+    /// Part name is stored in quorum/last_part for corresponding partition_id.
+    bool partIsLastQuorumPart(const MergeTreePartInfo & part_info) const;
+
+    /// Part currently inserting with quorum (node quorum/parallel/part_name exists)
+    bool partIsInsertingWithParallelQuorum(const MergeTreePartInfo & part_info) const;
 
     /// Creates new block number if block with such block_id does not exist
     std::optional<EphemeralLockInZooKeeper> allocateBlockNumber(
