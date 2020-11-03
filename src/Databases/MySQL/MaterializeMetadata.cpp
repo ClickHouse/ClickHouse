@@ -107,9 +107,10 @@ static Block getShowMasterLogHeader(const String & mysql_version)
     };
 }
 
-static bool rightSyncUserPrivImpl(mysqlxx::PoolWithFailover::Entry & connection, std::ostream & out)
+static bool checkSyncUserPrivImpl(mysqlxx::PoolWithFailover::Entry & connection, std::ostream & out)
 {
-    Block sync_user_privs_header{
+    Block sync_user_privs_header
+    {
         {std::make_shared<DataTypeString>(), "current_user_grants"}
     };
 
@@ -138,10 +139,10 @@ static bool rightSyncUserPrivImpl(mysqlxx::PoolWithFailover::Entry & connection,
     return false;
 }
 
-static void rightSyncUserPriv(mysqlxx::PoolWithFailover::Entry & connection)
+static void checkSyncUserPriv(mysqlxx::PoolWithFailover::Entry & connection)
 {
     std::stringstream out;
-    if (!rightSyncUserPrivImpl(connection, out))
+    if (!checkSyncUserPrivImpl(connection, out))
         throw Exception("MySQL SYNC USER ACCESS ERR: mysql sync user needs "
                         "at least GLOBAL PRIVILEGES:'RELOAD, REPLICATION SLAVE, REPLICATION CLIENT' "
                         "and SELECT PRIVILEGE on MySQL Database."
@@ -210,7 +211,7 @@ MaterializeMetadata::MaterializeMetadata(
     const String & database, bool & opened_transaction, const String & mysql_version)
     : persistent_path(path_)
 {
-    rightSyncUserPriv(connection);
+    checkSyncUserPriv(connection);
 
     if (Poco::File(persistent_path).exists())
     {

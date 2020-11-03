@@ -216,7 +216,8 @@ void MaterializeMySQLSyncThread::stopSynchronization()
 
 void MaterializeMySQLSyncThread::startSynchronization()
 {
-    try{
+    try
+    {
         const auto & mysql_server_version = checkVariableAndGetVersion(pool.get());
 
         background_thread_pool = std::make_unique<ThreadFromGlobalPool>(
