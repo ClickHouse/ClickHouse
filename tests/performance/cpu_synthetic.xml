@@ -1,4 +1,4 @@
-<test max_ignored_relative_change="0.3">
+<test>
     <preconditions>
         <table_exists>hits_100m_single</table_exists>
         <table_exists>hits_10m_single</table_exists>
@@ -67,7 +67,7 @@ PageCharset тоже почти всегда непуст, но его сред�
 <query>SELECT uniqCombined(17)(UserID) FROM hits_100m_single</query>
 <!-- 44. Разные алгоритмы вычисления кардинальности. -->
 <query>SELECT uniqExact(UserID) FROM hits_10m_single SETTINGS max_threads = 1</query>
-<query>SELECT uniqExact(UserID) FROM hits_10m_single</query>
+<query>SELECT uniqExact(UserID) FROM hits_100m_single</query>
 <!-- 45. Что-то чуть более похожее на реальный запрос. -->
 <query>SELECT RegionID, uniq(UserID) FROM hits_10m_single GROUP BY RegionID SETTINGS max_threads = 1</query>
 <query>SELECT RegionID, uniq(UserID) FROM hits_100m_single GROUP BY RegionID</query>

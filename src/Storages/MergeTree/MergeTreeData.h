@@ -35,7 +35,6 @@
 namespace DB
 {
 
-class MergeListEntry;
 class AlterCommands;
 class MergeTreePartsMover;
 class MutationCommands;
@@ -618,6 +617,7 @@ public:
     /// `additional_path` can be set if part is not located directly in table data path (e.g. 'detached/')
     std::optional<String> getFullRelativePathForPart(const String & part_name, const String & additional_path = "") const;
 
+    bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override;
 
     using PathsWithDisks = std::vector<PathWithDisk>;

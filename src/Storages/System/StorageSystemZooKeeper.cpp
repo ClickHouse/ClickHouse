@@ -74,7 +74,7 @@ static bool extractPathImpl(const IAST & elem, String & res, const Context & con
         else
             return false;
 
-        if (ident->name != "path")
+        if (ident->name() != "path")
             return false;
 
         auto evaluated = evaluateConstantExpressionAsLiteral(value, context);

@@ -23,6 +23,15 @@
 #    include "config_core.h"
 #endif
 
+#include <common/defines.h>
+
+#if defined(MEMORY_SANITIZER)
+    #include <sanitizer/msan_interface.h>
+#endif
+
+#if defined(ADDRESS_SANITIZER)
+    #include <sanitizer/asan_interface.h>
+#endif
 
 namespace ProfileEvents
 {
@@ -995,8 +1004,10 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         node.allow_constant_folding = node.allow_constant_folding && child.allow_constant_folding;
 
         ColumnWithTypeAndName argument;
+        argument.name = argument_names[i];
         argument.column = child.column;
         argument.type = child.result_type;
+        argument.name = child.result_name;
 
         if (!argument.column || !isColumnConst(*argument.column))
             all_const = false;
