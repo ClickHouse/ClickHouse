@@ -38,19 +38,17 @@ ReadFromStorageStep::ReadFromStorageStep(
         {
             if (query_info.prewhere_info->alias_actions)
             {
-                auto alias_actions = query_info.prewhere_info->alias_actions->buildExpressions();
                 pipe.addSimpleTransform([&](const Block & header)
                 {
-                    return std::make_shared<ExpressionTransform>(header, alias_actions);
+                    return std::make_shared<ExpressionTransform>(header, query_info.prewhere_info->alias_actions);
                 });
             }
 
-            auto prewhere_actions = query_info.prewhere_info->prewhere_actions->buildExpressions();
             pipe.addSimpleTransform([&](const Block & header)
             {
                 return std::make_shared<FilterTransform>(
                     header,
-                    prewhere_actions,
+                    query_info.prewhere_info->prewhere_actions,
                     query_info.prewhere_info->prewhere_column_name,
                     query_info.prewhere_info->remove_prewhere_column);
             });
@@ -61,10 +59,10 @@ ReadFromStorageStep::ReadFromStorageStep(
             // This leads to mismatched header in distributed table
             if (query_info.prewhere_info->remove_columns_actions)
             {
-                auto remove_actions = query_info.prewhere_info->remove_columns_actions->buildExpressions();
                 pipe.addSimpleTransform([&](const Block & header)
                 {
-                    return std::make_shared<ExpressionTransform>(header, remove_actions);
+                    return std::make_shared<ExpressionTransform>(
+                            header, query_info.prewhere_info->remove_columns_actions);
                 });
             }
         }
