@@ -43,7 +43,7 @@ Block getHeaderForProcessingStage(
             Block header = metadata_snapshot->getSampleBlockForColumns(column_names, storage.getVirtuals(), storage.getStorageID());
             if (query_info.prewhere_info)
             {
-                query_info.prewhere_info->prewhere_actions->buildExpressions()->execute(header);
+                query_info.prewhere_info->prewhere_actions->execute(header);
                 if (query_info.prewhere_info->remove_prewhere_column)
                     header.erase(query_info.prewhere_info->prewhere_column_name);
             }
