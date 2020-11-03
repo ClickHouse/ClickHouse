@@ -1108,7 +1108,7 @@ static StreamLocalLimits getLimitsForStorage(const Settings & settings, const Se
 
 void InterpreterSelectQuery::executeFetchColumns(
     QueryProcessingStage::Enum processing_stage, QueryPlan & query_plan,
-    const PrewhereInfoPtr & prewhere_info, const NameSet & columns_to_remove_after_prewhere)
+    const PrewhereDAGInfoPtr & prewhere_info, const NameSet & columns_to_remove_after_prewhere)
 {
     auto & query = getSelectQuery();
     const Settings & settings = context->getSettingsRef();
@@ -1430,7 +1430,21 @@ void InterpreterSelectQuery::executeFetchColumns(
         query_info.query = query_ptr;
         query_info.syntax_analyzer_result = syntax_analyzer_result;
         query_info.sets = query_analyzer->getPreparedSets();
-        query_info.prewhere_info = prewhere_info;
+
+        if (prewhere_info)
+        {
+            query_info.prewhere_info = std::make_shared<PrewhereInfo>(
+                    prewhere_info->prewhere_actions->buildExpressions(),
+                    prewhere_info->prewhere_column_name);
+
+            if (prewhere_info->alias_actions)
+                query_info.prewhere_info->alias_actions = prewhere_info->alias_actions->buildExpressions();
+            if (prewhere_info->remove_columns_actions)
+                query_info.prewhere_info->remove_columns_actions = prewhere_info->remove_columns_actions->buildExpressions();
+
+            query_info.prewhere_info->remove_prewhere_column = prewhere_info->remove_prewhere_column;
+            query_info.prewhere_info->need_filter = prewhere_info->need_filter;
+        }
 
         /// Create optimizer with prepared actions.
         /// Maybe we will need to calc input_order_info later, e.g. while reading from StorageMerge.

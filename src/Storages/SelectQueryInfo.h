@@ -18,18 +18,33 @@ using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
 struct PrewhereInfo
 {
     /// Actions which are executed in order to alias columns are used for prewhere actions.
-    ActionsDAGPtr alias_actions;
+    ExpressionActionsPtr alias_actions;
     /// Actions which are executed on block in order to get filter column for prewhere step.
-    ActionsDAGPtr prewhere_actions;
+    ExpressionActionsPtr prewhere_actions;
     /// Actions which are executed after reading from storage in order to remove unused columns.
-    ActionsDAGPtr remove_columns_actions;
+    ExpressionActionsPtr remove_columns_actions;
     String prewhere_column_name;
     bool remove_prewhere_column = false;
     bool need_filter = false;
 
     PrewhereInfo() = default;
-    explicit PrewhereInfo(ActionsDAGPtr prewhere_actions_, String prewhere_column_name_)
+    explicit PrewhereInfo(ExpressionActionsPtr prewhere_actions_, String prewhere_column_name_)
         : prewhere_actions(std::move(prewhere_actions_)), prewhere_column_name(std::move(prewhere_column_name_)) {}
+};
+
+/// Same as PrewhereInfo, but with ActionsDAG
+struct PrewhereDAGInfo
+{
+    ActionsDAGPtr alias_actions;
+    ActionsDAGPtr prewhere_actions;
+    ActionsDAGPtr remove_columns_actions;
+    String prewhere_column_name;
+    bool remove_prewhere_column = false;
+    bool need_filter = false;
+
+    PrewhereDAGInfo() = default;
+    explicit PrewhereDAGInfo(ActionsDAGPtr prewhere_actions_, String prewhere_column_name_)
+            : prewhere_actions(std::move(prewhere_actions_)), prewhere_column_name(std::move(prewhere_column_name_)) {}
 };
 
 /// Helper struct to store all the information about the filter expression.
@@ -57,6 +72,7 @@ struct InputOrderInfo
 };
 
 using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
+using PrewhereDAGInfoPtr = std::shared_ptr<PrewhereDAGInfo>;
 using FilterInfoPtr = std::shared_ptr<FilterInfo>;
 using InputOrderInfoPtr = std::shared_ptr<const InputOrderInfo>;
 

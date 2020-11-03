@@ -116,7 +116,7 @@ private:
     void executeFetchColumns(
         QueryProcessingStage::Enum processing_stage,
         QueryPlan & query_plan,
-        const PrewhereInfoPtr & prewhere_info,
+        const PrewhereDAGInfoPtr & prewhere_info,
         const NameSet & columns_to_remove_after_prewhere);
 
     void executeWhere(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool remove_filter);

@@ -24,11 +24,7 @@ public:
     MergeTreeRangeReader(
         IMergeTreeReader * merge_tree_reader_,
         MergeTreeRangeReader * prev_reader_,
-        ExpressionActionsPtr prewhere_alias_actions_,
-        ExpressionActionsPtr prewhere_actions_,
-        String prewhere_column_name_,
-        bool remove_prewhere_column_,
-        bool prewhere_need_filter_,
+        const PrewhereInfoPtr & prewhere_,
         bool last_reader_in_chain_);
 
     MergeTreeRangeReader() = default;
@@ -221,12 +217,7 @@ private:
     IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;
     MergeTreeRangeReader * prev_reader = nullptr; /// If not nullptr, read from prev_reader firstly.
-
-    ExpressionActionsPtr prewhere_alias_actions;
-    ExpressionActionsPtr prewhere_actions;
-    String prewhere_column_name;
-    bool remove_prewhere_column;
-    bool prewhere_need_filter;
+    PrewhereInfoPtr prewhere;
 
     Stream stream;
 

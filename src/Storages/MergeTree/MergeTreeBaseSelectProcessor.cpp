@@ -40,13 +40,6 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     , use_uncompressed_cache(use_uncompressed_cache_)
     , virt_column_names(virt_column_names_)
 {
-    if (prewhere_info)
-    {
-        if (prewhere_info->alias_actions)
-            prewhere_alias_actions = prewhere_info->alias_actions->buildExpressions();
-        prewhere_actions = prewhere_info->prewhere_actions->buildExpressions();
-    }
-
     header_without_virtual_columns = getPort().getHeader();
 
     for (auto it = virt_column_names.rbegin(); it != virt_column_names.rend(); ++it)
@@ -81,39 +74,23 @@ void MergeTreeBaseSelectProcessor::initializeRangeReaders(MergeTreeReadTask & cu
     {
         if (reader->getColumns().empty())
         {
-            current_task.range_reader = MergeTreeRangeReader(
-                    pre_reader.get(), nullptr,
-                    prewhere_alias_actions,
-                    prewhere_actions,
-                    prewhere_info->prewhere_column_name,
-                    prewhere_info->remove_prewhere_column,
-                    prewhere_info->need_filter,
-                    true);
+            current_task.range_reader = MergeTreeRangeReader(pre_reader.get(), nullptr, prewhere_info, true);
         }
         else
         {
             MergeTreeRangeReader * pre_reader_ptr = nullptr;
             if (pre_reader != nullptr)
             {
-                current_task.pre_range_reader = MergeTreeRangeReader(
-                        pre_reader.get(), nullptr,
-                        prewhere_alias_actions,
-                        prewhere_actions,
-                        prewhere_info->prewhere_column_name,
-                        prewhere_info->remove_prewhere_column,
-                        prewhere_info->need_filter,
-                        false);
+                current_task.pre_range_reader = MergeTreeRangeReader(pre_reader.get(), nullptr, prewhere_info, false);
                 pre_reader_ptr = &current_task.pre_range_reader;
             }
 
-            current_task.range_reader = MergeTreeRangeReader(
-                    reader.get(), pre_reader_ptr, nullptr, nullptr, {}, false, false, true);
+            current_task.range_reader = MergeTreeRangeReader(reader.get(), pre_reader_ptr, nullptr, true);
         }
     }
     else
     {
-        current_task.range_reader = MergeTreeRangeReader(
-                reader.get(), nullptr, nullptr, nullptr, {}, false, false, true);
+        current_task.range_reader = MergeTreeRangeReader(reader.get(), nullptr, nullptr, true);
     }
 }
 
@@ -337,9 +314,9 @@ void MergeTreeBaseSelectProcessor::executePrewhereActions(Block & block, const P
     if (prewhere_info)
     {
         if (prewhere_info->alias_actions)
-            prewhere_info->alias_actions->buildExpressions()->execute(block);
+            prewhere_info->alias_actions->execute(block);
 
-        prewhere_info->prewhere_actions->buildExpressions()->execute(block);
+        prewhere_info->prewhere_actions->execute(block);
         auto & prewhere_column = block.getByName(prewhere_info->prewhere_column_name);
 
         if (!prewhere_column.type->canBeUsedInBooleanContext())
