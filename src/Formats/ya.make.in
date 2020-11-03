@@ -6,7 +6,6 @@ PEERDIR(
     contrib/libs/protoc
 )
 
-CFLAGS(-g0)
 
 SRCS(
 <? find . -name '*.cpp' | grep -v -F tests | sed 's/^\.\//    /' | sort ?>

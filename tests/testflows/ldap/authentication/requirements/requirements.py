@@ -1,6 +1,6 @@
 # These requirements were auto generated
 # from software requirements specification (SRS)
-# document by TestFlows v1.6.201021.1163815.
+# document by TestFlows v1.6.201102.1235648.
 # Do not edit by hand but re-generate instead
 # using 'tfs requirements generate' command.
 from testflows.core import Specification
@@ -507,14 +507,14 @@ time user configuration contains any of the `<password*>` entries.
 #### RQ.SRS-007.LDAP.Configuration.User.LDAP.InvalidServerName.NotDefined
 version: 1.0
 
-[ClickHouse] SHALL throw an error during any authentification attempt
+[ClickHouse] SHALL throw an error during any authentication attempt
 if the name of the [LDAP] server used inside the `<ldap>` entry
 is not defined in the `<ldap_servers>` section.
 
 #### RQ.SRS-007.LDAP.Configuration.User.LDAP.InvalidServerName.Empty
 version: 1.0
 
-[ClickHouse] SHALL throw an error during any authentification attempt
+[ClickHouse] SHALL throw an error during any authentication attempt
 if the name of the [LDAP] server used inside the `<ldap>` entry
 is empty.
 
@@ -1444,7 +1444,7 @@ RQ_SRS_007_LDAP_Configuration_User_LDAP_InvalidServerName_NotDefined = Requireme
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL throw an error during any authentification attempt\n'
+        '[ClickHouse] SHALL throw an error during any authentication attempt\n'
         'if the name of the [LDAP] server used inside the `<ldap>` entry\n'
         'is not defined in the `<ldap_servers>` section.\n'
         '\n'
@@ -1459,7 +1459,7 @@ RQ_SRS_007_LDAP_Configuration_User_LDAP_InvalidServerName_Empty = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL throw an error during any authentification attempt\n'
+        '[ClickHouse] SHALL throw an error during any authentication attempt\n'
         'if the name of the [LDAP] server used inside the `<ldap>` entry\n'
         'is empty.\n'
         '\n'

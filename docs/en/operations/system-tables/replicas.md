@@ -53,9 +53,9 @@ Columns:
 -   `table` (`String`) - Table name
 -   `engine` (`String`) - Table engine name
 -   `is_leader` (`UInt8`) - Whether the replica is the leader.
-    Only one replica at a time can be the leader. The leader is responsible for selecting background merges to perform.
+    Multiple replicas can be leaders at the same time. A replica can be prevented from becoming a leader using the `merge_tree` setting `replicated_can_become_leader`. The leaders are responsible for scheduling background merges.
     Note that writes can be performed to any replica that is available and has a session in ZK, regardless of whether it is a leader.
--   `can_become_leader` (`UInt8`) - Whether the replica can be elected as a leader.
+-   `can_become_leader` (`UInt8`) - Whether the replica can be a leader.
 -   `is_readonly` (`UInt8`) - Whether the replica is in read-only mode.
     This mode is turned on if the config doesn’t have sections with ZooKeeper, if an unknown error occurred when reinitializing sessions in ZooKeeper, and during session reinitialization in ZooKeeper.
 -   `is_session_expired` (`UInt8`) - the session with ZooKeeper has expired. Basically the same as `is_readonly`.
