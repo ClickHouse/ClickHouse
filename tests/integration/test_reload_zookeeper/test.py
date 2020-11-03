@@ -45,8 +45,7 @@ def test_reload_zookeeper(start_cluster):
     node.query("INSERT INTO test_table(date, id) select today(), number FROM numbers(1000)")
 
     ## remove zoo2, zoo3 from configs
-    new_config =
-"""
+    new_config = """
 <yandex>
     <zookeeper>
         <node index="1">
@@ -73,8 +72,7 @@ def test_reload_zookeeper(start_cluster):
         node.query("SELECT COUNT() FROM test_table")
 
     ## set config to zoo2, server will be normal
-    new_config =
-"""
+    new_config = """
 <yandex>
     <zookeeper>
         <node index="1">
