@@ -442,7 +442,7 @@ struct LLVMModuleState
 };
 
 LLVMFunction::LLVMFunction(const ExpressionActions::Actions & actions, const DB::Block & sample_block)
-    : name(actions.back().result_name)
+    : name(actions.back().node->result_name)
     , module_state(std::make_unique<LLVMModuleState>())
 {
     LLVMContext context;
@@ -452,21 +452,21 @@ LLVMFunction::LLVMFunction(const ExpressionActions::Actions & actions, const DB:
             subexpressions[c.name] = subexpression(c.column, c.type);
     for (const auto & action : actions)
     {
-        const auto & names = action.argument_names;
-        const auto & types = action.function_base->getArgumentTypes();
+        const auto & children = action.node->children;
+        const auto & types = action.node->function_base->getArgumentTypes();
         std::vector<CompilableExpression> args;
-        for (size_t i = 0; i < names.size(); ++i)
+        for (size_t i = 0; i < children.size(); ++i)
         {
-            auto inserted = subexpressions.emplace(names[i], subexpression(arg_names.size()));
+            auto inserted = subexpressions.emplace(children[i]->result_name, subexpression(arg_names.size()));
             if (inserted.second)
             {
-                arg_names.push_back(names[i]);
+                arg_names.push_back(children[i]->result_name);
                 arg_types.push_back(types[i]);
             }
             args.push_back(inserted.first->second);
         }
-        subexpressions[action.result_name] = subexpression(*action.function_base, std::move(args));
-        originals.push_back(action.function_base);
+        subexpressions[action.node->result_name] = subexpression(*action.node->function_base, std::move(args));
+        originals.push_back(action.node->function_base);
     }
     compileFunctionToLLVMByteCode(context, *this);
     context.compileAllFunctionsToNativeCode();
@@ -555,155 +555,155 @@ LLVMFunction::Monotonicity LLVMFunction::getMonotonicityForRange(const IDataType
 }
 
 
-static bool isCompilable(const IFunctionBase & function)
-{
-    if (!canBeNativeType(*function.getResultType()))
-        return false;
-    for (const auto & type : function.getArgumentTypes())
-        if (!canBeNativeType(*type))
-            return false;
-    return function.isCompilable();
-}
+//static bool isCompilable(const IFunctionBase & function)
+//{
+//    if (!canBeNativeType(*function.getResultType()))
+//        return false;
+//    for (const auto & type : function.getArgumentTypes())
+//        if (!canBeNativeType(*type))
+//            return false;
+//    return function.isCompilable();
+//}
 
-static std::vector<std::unordered_set<std::optional<size_t>>> getActionsDependents(const ExpressionActions::Actions & actions, const Names & output_columns)
-{
-    /// an empty optional is a poisoned value prohibiting the column's producer from being removed
-    /// (which it could be, if it was inlined into every dependent function).
-    std::unordered_map<std::string, std::unordered_set<std::optional<size_t>>> current_dependents;
-    for (const auto & name : output_columns)
-        current_dependents[name].emplace();
-    /// a snapshot of each compilable function's dependents at the time of its execution.
-    std::vector<std::unordered_set<std::optional<size_t>>> dependents(actions.size());
-    for (size_t i = actions.size(); i--;)
-    {
-        switch (actions[i].type)
-        {
-            case ExpressionAction::REMOVE_COLUMN:
-                current_dependents.erase(actions[i].source_name);
-                /// poison every other column used after this point so that inlining chains do not cross it.
-                for (auto & dep : current_dependents)
-                    dep.second.emplace();
-                break;
-
-            case ExpressionAction::PROJECT:
-                current_dependents.clear();
-                for (const auto & proj : actions[i].projection)
-                    current_dependents[proj.first].emplace();
-                break;
-
-            case ExpressionAction::ADD_ALIASES:
-                for (const auto & proj : actions[i].projection)
-                    current_dependents[proj.first].emplace();
-                break;
-
-            case ExpressionAction::ADD_COLUMN:
-            case ExpressionAction::COPY_COLUMN:
-            case ExpressionAction::ARRAY_JOIN:
-            {
-                Names columns = actions[i].getNeededColumns();
-                for (const auto & column : columns)
-                    current_dependents[column].emplace();
-                break;
-            }
-
-            case ExpressionAction::APPLY_FUNCTION:
-            {
-                dependents[i] = current_dependents[actions[i].result_name];
-                const bool compilable = isCompilable(*actions[i].function_base);
-                for (const auto & name : actions[i].argument_names)
-                {
-                    if (compilable)
-                        current_dependents[name].emplace(i);
-                    else
-                        current_dependents[name].emplace();
-                }
-                break;
-            }
-        }
-    }
-    return dependents;
-}
-
-void compileFunctions(
-    ExpressionActions::Actions & actions,
-    const Names & output_columns,
-    const Block & sample_block,
-    std::shared_ptr<CompiledExpressionCache> compilation_cache,
-    size_t min_count_to_compile_expression)
-{
-    static std::unordered_map<UInt128, UInt32, UInt128Hash> counter;
-    static std::mutex mutex;
-
-    struct LLVMTargetInitializer
-    {
-        LLVMTargetInitializer()
-        {
-            llvm::InitializeNativeTarget();
-            llvm::InitializeNativeTargetAsmPrinter();
-            llvm::sys::DynamicLibrary::LoadLibraryPermanently(nullptr);
-        }
-    };
-
-    static LLVMTargetInitializer initializer;
-
-    auto dependents = getActionsDependents(actions, output_columns);
-    std::vector<ExpressionActions::Actions> fused(actions.size());
-    for (size_t i = 0; i < actions.size(); ++i)
-    {
-        if (actions[i].type != ExpressionAction::APPLY_FUNCTION || !isCompilable(*actions[i].function_base))
-            continue;
-
-        fused[i].push_back(actions[i]);
-        if (dependents[i].find({}) != dependents[i].end())
-        {
-            /// the result of compiling one function in isolation is pretty much the same as its `execute` method.
-            if (fused[i].size() == 1)
-                continue;
-
-            auto hash_key = ExpressionActions::ActionsHash{}(fused[i]);
-            {
-                std::lock_guard lock(mutex);
-                if (counter[hash_key]++ < min_count_to_compile_expression)
-                    continue;
-            }
-
-            FunctionBasePtr fn;
-            if (compilation_cache)
-            {
-                std::tie(fn, std::ignore) = compilation_cache->getOrSet(hash_key, [&inlined_func=std::as_const(fused[i]), &sample_block] ()
-                {
-                    Stopwatch watch;
-                    FunctionBasePtr result_fn;
-                    result_fn = std::make_shared<FunctionBaseAdaptor>(std::make_unique<LLVMFunction>(inlined_func, sample_block));
-                    ProfileEvents::increment(ProfileEvents::CompileExpressionsMicroseconds, watch.elapsedMicroseconds());
-                    return result_fn;
-                });
-            }
-            else
-            {
-                Stopwatch watch;
-                fn = std::make_shared<FunctionBaseAdaptor>(std::make_unique<LLVMFunction>(fused[i], sample_block));
-                ProfileEvents::increment(ProfileEvents::CompileExpressionsMicroseconds, watch.elapsedMicroseconds());
-            }
-
-            actions[i].function_base = fn;
-            actions[i].argument_names = typeid_cast<const LLVMFunction *>(typeid_cast<const FunctionBaseAdaptor *>(fn.get())->getImpl())->getArgumentNames();
-            actions[i].is_function_compiled = true;
-
-            continue;
-        }
-
-        /// TODO: determine whether it's profitable to inline the function if there's more than one dependent.
-        for (const auto & dep : dependents[i])
-            fused[*dep].insert(fused[*dep].end(), fused[i].begin(), fused[i].end());
-    }
-
-    for (auto & action : actions)
-    {
-        if (action.type == ExpressionAction::APPLY_FUNCTION && action.is_function_compiled)
-            action.function = action.function_base->prepare({}); /// Arguments are not used for LLVMFunction.
-    }
-}
+//static std::vector<std::unordered_set<std::optional<size_t>>> getActionsDependents(const ExpressionActions::Actions & actions, const Names & output_columns)
+//{
+//    /// an empty optional is a poisoned value prohibiting the column's producer from being removed
+//    /// (which it could be, if it was inlined into every dependent function).
+//    std::unordered_map<std::string, std::unordered_set<std::optional<size_t>>> current_dependents;
+//    for (const auto & name : output_columns)
+//        current_dependents[name].emplace();
+//    /// a snapshot of each compilable function's dependents at the time of its execution.
+//    std::vector<std::unordered_set<std::optional<size_t>>> dependents(actions.size());
+//    for (size_t i = actions.size(); i--;)
+//    {
+//        switch (actions[i].type)
+//        {
+//            case ExpressionAction::REMOVE_COLUMN:
+//                current_dependents.erase(actions[i].source_name);
+//                /// poison every other column used after this point so that inlining chains do not cross it.
+//                for (auto & dep : current_dependents)
+//                    dep.second.emplace();
+//                break;
+//
+//            case ExpressionAction::PROJECT:
+//                current_dependents.clear();
+//                for (const auto & proj : actions[i].projection)
+//                    current_dependents[proj.first].emplace();
+//                break;
+//
+//            case ExpressionAction::ADD_ALIASES:
+//                for (const auto & proj : actions[i].projection)
+//                    current_dependents[proj.first].emplace();
+//                break;
+//
+//            case ExpressionAction::ADD_COLUMN:
+//            case ExpressionAction::COPY_COLUMN:
+//            case ExpressionAction::ARRAY_JOIN:
+//            {
+//                Names columns = actions[i].getNeededColumns();
+//                for (const auto & column : columns)
+//                    current_dependents[column].emplace();
+//                break;
+//            }
+//
+//            case ExpressionAction::APPLY_FUNCTION:
+//            {
+//                dependents[i] = current_dependents[actions[i].result_name];
+//                const bool compilable = isCompilable(*actions[i].function_base);
+//                for (const auto & name : actions[i].argument_names)
+//                {
+//                    if (compilable)
+//                        current_dependents[name].emplace(i);
+//                    else
+//                        current_dependents[name].emplace();
+//                }
+//                break;
+//            }
+//        }
+//    }
+//    return dependents;
+//}
+//
+//void compileFunctions(
+//    ExpressionActions::Actions & actions,
+//    const Names & output_columns,
+//    const Block & sample_block,
+//    std::shared_ptr<CompiledExpressionCache> compilation_cache,
+//    size_t min_count_to_compile_expression)
+//{
+//    static std::unordered_map<UInt128, UInt32, UInt128Hash> counter;
+//    static std::mutex mutex;
+//
+//    struct LLVMTargetInitializer
+//    {
+//        LLVMTargetInitializer()
+//        {
+//            llvm::InitializeNativeTarget();
+//            llvm::InitializeNativeTargetAsmPrinter();
+//            llvm::sys::DynamicLibrary::LoadLibraryPermanently(nullptr);
+//        }
+//    };
+//
+//    static LLVMTargetInitializer initializer;
+//
+//    auto dependents = getActionsDependents(actions, output_columns);
+//    std::vector<ExpressionActions::Actions> fused(actions.size());
+//    for (size_t i = 0; i < actions.size(); ++i)
+//    {
+//        if (actions[i].type != ExpressionAction::APPLY_FUNCTION || !isCompilable(*actions[i].function_base))
+//            continue;
+//
+//        fused[i].push_back(actions[i]);
+//        if (dependents[i].find({}) != dependents[i].end())
+//        {
+//            /// the result of compiling one function in isolation is pretty much the same as its `execute` method.
+//            if (fused[i].size() == 1)
+//                continue;
+//
+//            auto hash_key = ExpressionActions::ActionsHash{}(fused[i]);
+//            {
+//                std::lock_guard lock(mutex);
+//                if (counter[hash_key]++ < min_count_to_compile_expression)
+//                    continue;
+//            }
+//
+//            FunctionBasePtr fn;
+//            if (compilation_cache)
+//            {
+//                std::tie(fn, std::ignore) = compilation_cache->getOrSet(hash_key, [&inlined_func=std::as_const(fused[i]), &sample_block] ()
+//                {
+//                    Stopwatch watch;
+//                    FunctionBasePtr result_fn;
+//                    result_fn = std::make_shared<FunctionBaseAdaptor>(std::make_unique<LLVMFunction>(inlined_func, sample_block));
+//                    ProfileEvents::increment(ProfileEvents::CompileExpressionsMicroseconds, watch.elapsedMicroseconds());
+//                    return result_fn;
+//                });
+//            }
+//            else
+//            {
+//                Stopwatch watch;
+//                fn = std::make_shared<FunctionBaseAdaptor>(std::make_unique<LLVMFunction>(fused[i], sample_block));
+//                ProfileEvents::increment(ProfileEvents::CompileExpressionsMicroseconds, watch.elapsedMicroseconds());
+//            }
+//
+//            actions[i].function_base = fn;
+//            actions[i].argument_names = typeid_cast<const LLVMFunction *>(typeid_cast<const FunctionBaseAdaptor *>(fn.get())->getImpl())->getArgumentNames();
+//            actions[i].is_function_compiled = true;
+//
+//            continue;
+//        }
+//
+//        /// TODO: determine whether it's profitable to inline the function if there's more than one dependent.
+//        for (const auto & dep : dependents[i])
+//            fused[*dep].insert(fused[*dep].end(), fused[i].begin(), fused[i].end());
+//    }
+//
+//    for (auto & action : actions)
+//    {
+//        if (action.type == ExpressionAction::APPLY_FUNCTION && action.is_function_compiled)
+//            action.function = action.function_base->prepare({}); /// Arguments are not used for LLVMFunction.
+//    }
+//}
 
 }
 

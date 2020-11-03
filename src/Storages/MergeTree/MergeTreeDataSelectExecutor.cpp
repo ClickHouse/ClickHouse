@@ -706,7 +706,7 @@ Pipe MergeTreeDataSelectExecutor::readFromParts(
     /// Projection, that needed to drop columns, which have appeared by execution
     /// of some extra expressions, and to allow execute the same expressions later.
     /// NOTE: It may lead to double computation of expressions.
-    ExpressionActionsPtr result_projection;
+    ActionsDAGPtr result_projection;
 
     if (select.final())
     {
@@ -784,9 +784,10 @@ Pipe MergeTreeDataSelectExecutor::readFromParts(
 
     if (result_projection)
     {
-        res.addSimpleTransform([&result_projection](const Block & header)
+        auto result_projection_actions = result_projection->buildExpressions();
+        res.addSimpleTransform([&result_projection_actions](const Block & header)
         {
-            return std::make_shared<ExpressionTransform>(header, result_projection);
+            return std::make_shared<ExpressionTransform>(header, result_projection_actions);
         });
     }
 
@@ -802,9 +803,10 @@ Pipe MergeTreeDataSelectExecutor::readFromParts(
 
     if (query_info.prewhere_info && query_info.prewhere_info->remove_columns_actions)
     {
-        res.addSimpleTransform([&query_info](const Block & header)
+        auto remove_actions = query_info.prewhere_info->remove_columns_actions->buildExpressions();
+        res.addSimpleTransform([&remove_actions](const Block & header)
         {
-            return std::make_shared<ExpressionTransform>(header, query_info.prewhere_info->remove_columns_actions);
+            return std::make_shared<ExpressionTransform>(header, remove_actions);
         });
     }
 
@@ -956,11 +958,12 @@ Pipe MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     }
 }
 
-static ExpressionActionsPtr createProjection(const Pipe & pipe, const MergeTreeData & data)
+static ActionsDAGPtr createProjection(const Pipe & pipe)
 {
     const auto & header = pipe.getHeader();
-    auto projection = std::make_shared<ExpressionActions>(header.getNamesAndTypesList(), data.global_context);
-    projection->add(ExpressionAction::project(header.getNames()));
+    auto projection = std::make_shared<ActionsDAG>(header.getNamesAndTypesList());
+    projection->removeUnusedActions(header.getNames());
+    projection->projectInput();
     return projection;
 }
 
@@ -976,7 +979,7 @@ Pipe MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
     const Names & virt_columns,
     const Settings & settings,
     const MergeTreeReaderSettings & reader_settings,
-    ExpressionActionsPtr & out_projection) const
+    ActionsDAGPtr & out_projection) const
 {
     size_t sum_marks = 0;
     const InputOrderInfoPtr & input_order_info = query_info.input_order_info;
@@ -1182,7 +1185,7 @@ Pipe MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
                                               input_order_info->direction, 1);
 
             /// Drop temporary columns, added by 'sorting_key_prefix_expr'
-            out_projection = createProjection(pipe, data);
+            out_projection = createProjection(pipe);
             pipe.addSimpleTransform([sorting_key_prefix_expr](const Block & header)
             {
                 return std::make_shared<ExpressionTransform>(header, sorting_key_prefix_expr);
@@ -1210,7 +1213,7 @@ Pipe MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
     const Names & virt_columns,
     const Settings & settings,
     const MergeTreeReaderSettings & reader_settings,
-    ExpressionActionsPtr & out_projection) const
+    ActionsDAGPtr & out_projection) const
 {
     const auto data_settings = data.getSettings();
     size_t sum_marks = 0;
@@ -1259,7 +1262,7 @@ Pipe MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
 
     /// Drop temporary columns, added by 'sorting_key_expr'
     if (!out_projection)
-        out_projection = createProjection(pipe, data);
+        out_projection = createProjection(pipe);
 
     pipe.addSimpleTransform([&metadata_snapshot](const Block & header)
     {

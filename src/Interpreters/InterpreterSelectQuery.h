@@ -117,14 +117,14 @@ private:
         QueryProcessingStage::Enum processing_stage,
         QueryPlan & query_plan,
         const PrewhereInfoPtr & prewhere_info,
-        const Names & columns_to_remove_after_prewhere);
+        const NameSet & columns_to_remove_after_prewhere);
 
-    void executeWhere(QueryPlan & query_plan, const ExpressionActionsPtr & expression, bool remove_filter);
-    void executeAggregation(QueryPlan & query_plan, const ExpressionActionsPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info);
+    void executeWhere(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool remove_filter);
+    void executeAggregation(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info);
     void executeMergeAggregated(QueryPlan & query_plan, bool overflow_row, bool final);
-    void executeTotalsAndHaving(QueryPlan & query_plan, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
-    void executeHaving(QueryPlan & query_plan, const ExpressionActionsPtr & expression);
-    static void executeExpression(QueryPlan & query_plan, const ExpressionActionsPtr & expression, const std::string & description);
+    void executeTotalsAndHaving(QueryPlan & query_plan, bool has_having, const ActionsDAGPtr & expression, bool overflow_row, bool final);
+    void executeHaving(QueryPlan & query_plan, const ActionsDAGPtr & expression);
+    static void executeExpression(QueryPlan & query_plan, const ActionsDAGPtr & expression, const std::string & description);
     void executeOrder(QueryPlan & query_plan, InputOrderInfoPtr sorting_info);
     void executeOrderOptimized(QueryPlan & query_plan, InputOrderInfoPtr sorting_info, UInt64 limit, SortDescription & output_order_descr);
     void executeWithFill(QueryPlan & query_plan);
@@ -133,14 +133,14 @@ private:
     void executeLimitBy(QueryPlan & query_plan);
     void executeLimit(QueryPlan & query_plan);
     void executeOffset(QueryPlan & query_plan);
-    static void executeProjection(QueryPlan & query_plan, const ExpressionActionsPtr & expression);
+    static void executeProjection(QueryPlan & query_plan, const ActionsDAGPtr & expression);
     void executeDistinct(QueryPlan & query_plan, bool before_order, Names columns, bool pre_distinct);
     void executeExtremes(QueryPlan & query_plan);
     void executeSubqueriesInSetsAndJoins(QueryPlan & query_plan, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
     void executeMergeSorted(QueryPlan & query_plan, const SortDescription & sort_description, UInt64 limit, const std::string & description);
 
     String generateFilterActions(
-        ExpressionActionsPtr & actions, const ASTPtr & row_policy_filter, const Names & prerequisite_columns = {}) const;
+            ActionsDAGPtr & actions, const ASTPtr & row_policy_filter, const Names & prerequisite_columns = {}) const;
 
     enum class Modificator
     {

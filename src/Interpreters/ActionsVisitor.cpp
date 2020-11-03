@@ -350,7 +350,7 @@ SetPtr makeExplicitSet(
     auto it = index.find(left_arg->getColumnName());
     if (it == index.end())
         throw Exception("Unknown identifier: '" + left_arg->getColumnName() + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
-    const DataTypePtr & left_arg_type = it->second->result_type;
+    const DataTypePtr & left_arg_type = (*it)->result_type;
 
     DataTypes set_element_types = {left_arg_type};
     const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(left_arg_type.get());
@@ -404,7 +404,7 @@ ActionsMatcher::Data::Data(
 
 bool ActionsMatcher::Data::hasColumn(const String & column_name) const
 {
-    return actions_stack.getLastActions().getIndex().count(column_name) != 0;
+    return actions_stack.getLastActions().getIndex().contains(column_name);
 }
 
 ScopeStack::ScopeStack(ActionsDAGPtr actions, const Context & context_)
@@ -413,9 +413,9 @@ ScopeStack::ScopeStack(ActionsDAGPtr actions, const Context & context_)
     auto & level = stack.emplace_back();
     level.actions = std::move(actions);
 
-    for (const auto & [name, node] : level.actions->getIndex())
+    for (const auto & node : level.actions->getIndex())
         if (node->type == ActionsDAG::Type::INPUT)
-            level.inputs.emplace(name);
+            level.inputs.emplace(node->result_name);
 }
 
 void ScopeStack::pushLevel(const NamesAndTypesList & input_columns)
@@ -432,9 +432,9 @@ void ScopeStack::pushLevel(const NamesAndTypesList & input_columns)
 
     const auto & index = level.actions->getIndex();
 
-    for (const auto & [name, node] : prev.actions->getIndex())
+    for (const auto & node : prev.actions->getIndex())
     {
-        if (index.count(name) == 0)
+        if (!index.contains(node->result_name))
             level.actions->addInput({node->column, node->result_type, node->result_name});
     }
 }
@@ -451,7 +451,7 @@ size_t ScopeStack::getColumnLevel(const std::string & name)
         const auto & index = stack[i].actions->getIndex();
         auto it = index.find(name);
 
-        if (it != index.end() && it->second->type != ActionsDAG::Type::INPUT)
+        if (it != index.end() && (*it)->type != ActionsDAG::Type::INPUT)
             return i;
     }
 
@@ -475,15 +475,15 @@ void ScopeStack::addAlias(const std::string & name, std::string alias)
         stack[j].actions->addInput({node.column, node.result_type, node.result_name});
 }
 
-void ScopeStack::addArrayJoin(const std::string & source_name, std::string result_name, std::string unique_column_name)
+void ScopeStack::addArrayJoin(const std::string & source_name, std::string result_name)
 {
     getColumnLevel(source_name);
 
-    if (stack.front().actions->getIndex().count(source_name) == 0)
+    if (!stack.front().actions->getIndex().contains(source_name))
         throw Exception("Expression with arrayJoin cannot depend on lambda argument: " + source_name,
                         ErrorCodes::BAD_ARGUMENTS);
 
-    const auto & node = stack.front().actions->addArrayJoin(source_name, std::move(result_name), std::move(unique_column_name));
+    const auto & node = stack.front().actions->addArrayJoin(source_name, std::move(result_name));
 
     for (size_t j = 1; j < stack.size(); ++j)
         stack[j].actions->addInput({node.column, node.result_type, node.result_name});
@@ -492,14 +492,13 @@ void ScopeStack::addArrayJoin(const std::string & source_name, std::string resul
 void ScopeStack::addFunction(
     const FunctionOverloadResolverPtr & function,
     const Names & argument_names,
-    std::string result_name,
-    bool compile_expressions)
+    std::string result_name)
 {
     size_t level = 0;
     for (const auto & argument : argument_names)
         level = std::max(level, getColumnLevel(argument));
 
-    const auto & node = stack[level].actions->addFunction(function, argument_names, std::move(result_name), compile_expressions);
+    const auto & node = stack[level].actions->addFunction(function, argument_names, std::move(result_name), context);
 
     for (size_t j = level + 1; j < stack.size(); ++j)
         stack[j].actions->addInput({node.column, node.result_type, node.result_name});
@@ -746,7 +745,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             auto it = index.find(child_column_name);
             if (it != index.end())
             {
-                argument_types.push_back(it->second->result_type);
+                argument_types.push_back((*it)->result_type);
                 argument_names.push_back(child_column_name);
             }
             else
@@ -792,10 +791,12 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 data.actions_stack.pushLevel(lambda_arguments);
                 visit(lambda->arguments->children.at(1), data);
                 auto lambda_dag = data.actions_stack.popLevel();
-                auto lambda_actions = lambda_dag->buildExpressions(data.context);
 
                 String result_name = lambda->arguments->children.at(1)->getColumnName();
-                lambda_actions->finalize(Names(1, result_name));
+                lambda_dag->removeUnusedActions(Names(1, result_name));
+
+                auto lambda_actions = lambda_dag->buildExpressions();
+
                 DataTypePtr result_type = lambda_actions->getSampleBlock().getByName(result_name).type;
 
                 Names captured;
@@ -853,7 +854,7 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
 
         auto it = index.find(default_name);
         if (it != index.end())
-            existing_column = it->second;
+            existing_column = *it;
 
         /*
          * To approximate CSE, bind all identical literals to a single temporary
@@ -964,7 +965,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
     {
         const auto & last_actions = data.actions_stack.getLastActions();
         const auto & index = last_actions.getIndex();
-        if (index.count(left_in_operand->getColumnName()) != 0)
+        if (index.contains(left_in_operand->getColumnName()))
             /// An explicit enumeration of values in parentheses.
             return makeExplicitSet(&node, last_actions, false, data.context, data.set_size_limit, data.prepared_sets);
         else
