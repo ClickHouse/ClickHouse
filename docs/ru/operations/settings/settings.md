@@ -1977,6 +1977,48 @@ SELECT range(number) FROM system.numbers LIMIT 5 FORMAT PrettyCompactNoEscapes;
 └───────────────┘
 ```
 
+## output_format_pretty_row_numbers {#output_format_pretty_row_numbers}
+
+Включает режим отображения номеров строк для запросов, выводимых в формате [Pretty](../../interfaces/formats.md#pretty).
+
+Возможные значения:
+
+-   0 — номера строк не выводятся.
+-   1 — номера строк выводятся.
+
+Значение по умолчанию: `0`.
+
+**Пример**
+
+Запрос:
+
+```sql
+SET output_format_pretty_row_numbers = 1;
+SELECT TOP 3 name, value FROM system.settings;
+```
+
+Результат:
+
+```text
+   ┌─name────────────────────┬─value───┐
+1. │ min_compress_block_size │ 65536   │
+2. │ max_compress_block_size │ 1048576 │
+3. │ max_block_size          │ 65505   │
+   └─────────────────────────┴─────────┘
+```
+
+## allow_experimental_bigint_types {#allow_experimental_bigint_types}
+
+Включает или отключает поддержку целочисленных значений, превышающих максимальное значение, допустимое для типа `int`.
+
+Возможные значения:
+
+-   1 — большие целочисленные значения поддерживаются.
+-   0 — большие целочисленные значения не поддерживаются.
+
+Значение по умолчанию: `0`.
+
+
 ## lock_acquire_timeout {#lock_acquire_timeout}
 
 Устанавливает, сколько секунд сервер ожидает возможности выполнить блокировку таблицы.

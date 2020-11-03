@@ -1502,7 +1502,7 @@ private:
 
     ASTPtr parseQuery(const char * & pos, const char * end, bool allow_multi_statements)
     {
-        ParserQuery parser(end, true);
+        ParserQuery parser(end);
         ASTPtr res;
 
         const auto & settings = context.getSettingsRef();

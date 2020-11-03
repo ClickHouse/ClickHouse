@@ -515,15 +515,16 @@
     M(546, NO_ROW_DELIMITER) \
     M(547, INVALID_RAID_TYPE) \
     M(548, UNKNOWN_VOLUME) \
+    M(549, DATA_TYPE_CANNOT_BE_USED_IN_KEY) \
+    M(550, CONDITIONAL_TREE_PARENT_NOT_FOUND) \
+    M(551, ILLEGAL_PROJECTION_MANIPULATOR) \
+    M(552, UNRECOGNIZED_ARGUMENTS) \
     \
     M(999, KEEPER_EXCEPTION) \
     M(1000, POCO_EXCEPTION) \
     M(1001, STD_EXCEPTION) \
     M(1002, UNKNOWN_EXCEPTION) \
-    \
-    M(2001, CONDITIONAL_TREE_PARENT_NOT_FOUND) \
-    M(2002, ILLEGAL_PROJECTION_MANIPULATOR) \
-    M(2003, UNRECOGNIZED_ARGUMENTS)
+
 /* See END */
 
 namespace DB
@@ -536,11 +537,11 @@ namespace ErrorCodes
     #undef M
 
     constexpr Value END = 3000;
-    std::atomic<Value> values[END+1] {};
+    std::atomic<Value> values[END + 1] {};
 
     struct ErrorCodesNames
     {
-        std::string_view names[END+1];
+        std::string_view names[END + 1];
         ErrorCodesNames()
         {
             #define M(VALUE, NAME) names[VALUE] = std::string_view(#NAME);
