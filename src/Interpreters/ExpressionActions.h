@@ -278,8 +278,8 @@ private:
     struct ExecutionContext
     {
         ColumnsWithTypeAndName & inputs;
-        ColumnsWithTypeAndName columns;
-        std::vector<ssize_t> inputs_pos;
+        ColumnsWithTypeAndName columns = {};
+        std::vector<ssize_t> inputs_pos = {};
         size_t num_rows;
     };
 
