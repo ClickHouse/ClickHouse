@@ -164,7 +164,7 @@ case "$stage" in
         # Lost connection to the server. This probably means that the server died
         # with abort.
         echo "failure" > status.txt
-        if ! grep -ao "Received signal.*\|Logical error.*\|Assertion.*failed" server.log > description.txt
+        if ! grep -ao "Received signal.*\|Logical error.*\|Assertion.*failed\|Failed assertion.*" server.log > description.txt
         then
             echo "Lost connection to server. See the logs" > description.txt
         fi

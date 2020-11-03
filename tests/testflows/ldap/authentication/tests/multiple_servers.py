@@ -14,6 +14,7 @@ def scenario(self, node="clickhouse1"):
     authenticate users.
     """
     self.context.node = self.context.cluster.node(node)
+
     servers = {
         "openldap1": {
             "host": "openldap1",
@@ -35,4 +36,6 @@ def scenario(self, node="clickhouse1"):
         {"server": "openldap1", "username": "user1", "password": "user1", "login": True},
         {"server": "openldap2", "username": "user2", "password": "user2", "login": True}
     ]
-    login(servers, *users)
+
+    with When("I add multiple LDAP servers and users that use different servers and try to login"):
+        login(servers, *users)
