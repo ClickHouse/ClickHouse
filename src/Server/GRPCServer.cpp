@@ -149,6 +149,29 @@ namespace
     };
 
 
+    /// Implementation of ReadBuffer, which just calls a callback.
+    class ReadBufferFromCallback : public ReadBuffer
+    {
+    public:
+        explicit ReadBufferFromCallback(const std::function<std::pair<const void *, size_t>(void)> & callback_)
+            : ReadBuffer(nullptr, 0), callback(callback_) {}
+
+    private:
+        bool nextImpl() override
+        {
+            const void * new_pos;
+            size_t new_size;
+            std::tie(new_pos, new_size) = callback();
+            if (!new_size)
+                return false;
+            BufferBase::set(static_cast<BufferBase::Position>(const_cast<void *>(new_pos)), new_size, 0);
+            return true;
+        }
+
+        std::function<std::pair<const void *, size_t>(void)> callback;
+    };
+
+
     /// Handles a connection after a responder is started (i.e. after getting a new call).
     class Call
     {
@@ -163,15 +186,19 @@ namespace
 
         void receiveQuery();
         void executeQuery();
+
         void processInput();
+        void initializeBlockInputStream(const Block & header);
+
         void generateOutput();
         void generateOutputWithProcessors();
+
         void finishQuery();
         void onException(const Exception & exception);
         void close();
 
         void readQueryInfo();
-        void addOutputToResult(const Block & block);
+
         void addProgressToResult();
         void addTotalsToResult(const Block & totals);
         void addExtremesToResult(const Block & extremes);
@@ -204,6 +231,13 @@ namespace
 
         bool finalize = false;
         bool responder_finished = false;
+
+        std::optional<ReadBufferFromCallback> read_buffer;
+        std::optional<WriteBufferFromString> write_buffer;
+        BlockInputStreamPtr block_input_stream;
+        BlockOutputStreamPtr block_output_stream;
+        bool need_input_data_from_insert_query = true;
+        bool need_input_data_from_query_info = true;
 
         Stopwatch query_time;
         UInt64 waited_for_client_reading = 0;
@@ -376,6 +410,8 @@ namespace
         if (!io.out)
             return;
 
+        initializeBlockInputStream(io.out->getHeader());
+
         bool has_data_to_insert = (insert_query && insert_query->data)
                                   || !query_info.input_data().empty() || query_info.next_query_info();
         if (!has_data_to_insert)
@@ -386,69 +422,77 @@ namespace
                 throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
         }
 
-        /// Prepare read buffer with data to insert.
-        ConcatReadBuffer::ReadBuffers buffers;
-        std::shared_ptr<ReadBufferFromMemory> insert_query_data_buffer;
-        std::shared_ptr<ReadBufferFromMemory> input_data_buffer;
-        if (insert_query && insert_query->data)
-        {
-            insert_query_data_buffer = std::make_shared<ReadBufferFromMemory>(insert_query->data, insert_query->end - insert_query->data);
-            buffers.push_back(insert_query_data_buffer.get());
-        }
-        if (!query_info.input_data().empty())
-        {
-            input_data_buffer = std::make_shared<ReadBufferFromMemory>(query_info.input_data().data(), query_info.input_data().size());
-            buffers.push_back(input_data_buffer.get());
-        }
-        auto input_buffer_contacenated = std::make_unique<ConcatReadBuffer>(buffers);
-        auto res_stream = query_context->getInputFormat(
-            input_format, *input_buffer_contacenated, io.out->getHeader(), query_context->getSettings().max_insert_block_size);
-
-        /// Add default values if necessary.
-        if (insert_query)
-        {
-            auto table_id = query_context->resolveStorageID(insert_query->table_id, Context::ResolveOrdinary);
-            if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields && table_id)
-            {
-                StoragePtr storage = DatabaseCatalog::instance().getTable(table_id, *query_context);
-                const auto & columns = storage->getInMemoryMetadataPtr()->getColumns();
-                if (!columns.empty())
-                    res_stream = std::make_shared<AddingDefaultsBlockInputStream>(res_stream, columns, *query_context);
-            }
-        }
-
-        /// Read input data.
+        block_input_stream->readPrefix();
         io.out->writePrefix();
 
-        while (auto block = res_stream->read())
+        while (auto block = block_input_stream->read())
             io.out->write(block);
 
-        while (query_info.next_query_info())
-        {
-            readQueryInfo();
-            if (!query_info.query().empty() || !query_info.query_id().empty() || query_info.settings_size()
-                || !query_info.database().empty() || !query_info.input_data_delimiter().empty() || !query_info.output_format().empty()
-                || !query_info.user_name().empty() || !query_info.password().empty() || !query_info.quota().empty())
-            {
-                throw Exception("Extra query infos can be used only to add more input data. "
-                                "Only the following fields can be set: input_data, next_query_info",
-                                ErrorCodes::INVALID_GRPC_QUERY_INFO);
-            }
-            LOG_DEBUG(log, "Received extra QueryInfo: input_data: {} bytes", query_info.input_data().size());
-            if (!query_info.input_data().empty())
-            {
-                const char * begin = query_info.input_data().data();
-                const char * end = begin + query_info.input_data().size();
-                ReadBufferFromMemory data_in(begin, end - begin);
-                res_stream = query_context->getInputFormat(
-                    input_format, data_in, io.out->getHeader(), query_context->getSettings().max_insert_block_size);
+        block_input_stream->readSuffix();
+        io.out->writeSuffix();
+    }
 
-                while (auto block = res_stream->read())
-                    io.out->write(block);
+    void Call::initializeBlockInputStream(const Block & header)
+    {
+        assert(!read_buffer);
+        read_buffer.emplace([this]() -> std::pair<const void *, size_t>
+        {
+            if (need_input_data_from_insert_query)
+            {
+                need_input_data_from_insert_query = false;
+                if (insert_query && insert_query->data && (insert_query->data != insert_query->end))
+                {
+                    return {insert_query->data, insert_query->end - insert_query->data};
+                }
+            }
+
+            while (true)
+            {
+                if (need_input_data_from_query_info)
+                {
+                    need_input_data_from_query_info = false;
+                    if (!query_info.input_data().empty())
+                        return {query_info.input_data().data(), query_info.input_data().size()};
+                }
+
+                if (!query_info.next_query_info())
+                    break;
+
+                readQueryInfo();
+                if (!query_info.query().empty() || !query_info.query_id().empty() || !query_info.settings().empty()
+                    || !query_info.database().empty() || !query_info.input_data_delimiter().empty() || !query_info.output_format().empty()
+                    || !query_info.user_name().empty() || !query_info.password().empty() || !query_info.quota().empty())
+                {
+                    throw Exception("Extra query infos can be used only to add more input data. "
+                                    "Only the following fields can be set: input_data, next_query_info",
+                                    ErrorCodes::INVALID_GRPC_QUERY_INFO);
+                }
+                LOG_DEBUG(log, "Received extra QueryInfo with input data: {} bytes", query_info.input_data().size());
+                need_input_data_from_query_info = true;
+            }
+
+            return {nullptr, 0}; /// no more input data
+        });
+
+        assert(!block_input_stream);
+        block_input_stream = query_context->getInputFormat(
+            input_format, *read_buffer, header, query_context->getSettings().max_insert_block_size);
+
+        /// Add default values if necessary.
+        if (ast)
+        {
+            if (insert_query)
+            {
+                auto table_id = query_context->resolveStorageID(insert_query->table_id, Context::ResolveOrdinary);
+                if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields && table_id)
+                {
+                    StoragePtr storage = DatabaseCatalog::instance().getTable(table_id, *query_context);
+                    const auto & columns = storage->getInMemoryMetadataPtr()->getColumns();
+                    if (!columns.empty())
+                        block_input_stream = std::make_shared<AddingDefaultsBlockInputStream>(block_input_stream, columns, *query_context);
+                }
             }
         }
-
-        io.out->writeSuffix();
     }
 
     void Call::generateOutput()
@@ -463,9 +507,13 @@ namespace
             return;
 
         AsynchronousBlockInputStream async_in(io.in);
+        write_buffer.emplace(*result.mutable_output());
+        block_output_stream = query_context->getOutputFormat(output_format, *write_buffer, async_in.getHeader());
         Stopwatch after_send_progress;
 
         async_in.readPrefix();
+        block_output_stream->writePrefix();
+
         while (true)
         {
             Block block;
@@ -479,7 +527,7 @@ namespace
             throwIfFailedToSendResult();
 
             if (block && !io.null_format)
-                addOutputToResult(block);
+                block_output_stream->write(block);
 
             if (after_send_progress.elapsedMicroseconds() >= interactive_delay)
             {
@@ -487,12 +535,15 @@ namespace
                 after_send_progress.restart();
             }
 
-            if (!result.output().empty() || result.has_progress())
+            bool has_output = write_buffer->offset();
+            if (has_output || result.has_progress())
                 sendResult();
 
             throwIfFailedToSendResult();
         }
+
         async_in.readSuffix();
+        block_output_stream->writeSuffix();
 
         addTotalsToResult(io.in->getTotals());
         addExtremesToResult(io.in->getExtremes());
@@ -504,6 +555,9 @@ namespace
             return;
 
         auto executor = std::make_shared<PullingAsyncPipelineExecutor>(io.pipeline);
+        write_buffer.emplace(*result.mutable_output());
+        block_output_stream = query_context->getOutputFormat(output_format, *write_buffer, executor->getHeader());
+        block_output_stream->writePrefix();
         Stopwatch after_send_progress;
 
         Block block;
@@ -512,7 +566,7 @@ namespace
             throwIfFailedToSendResult();
 
             if (block && !io.null_format)
-                addOutputToResult(block);
+                block_output_stream->write(block);
 
             if (after_send_progress.elapsedMicroseconds() >= interactive_delay)
             {
@@ -520,11 +574,14 @@ namespace
                 after_send_progress.restart();
             }
 
-            if (!result.output().empty() || result.has_progress())
+            bool has_output = write_buffer->offset();
+            if (has_output || result.has_progress())
                 sendResult();
 
             throwIfFailedToSendResult();
         }
+
+        block_output_stream->writeSuffix();
 
         addTotalsToResult(executor->getTotalsBlock());
         addExtremesToResult(executor->getExtremesBlock());
@@ -570,6 +627,10 @@ namespace
     void Call::close()
     {
         responder.reset();
+        block_input_stream.reset();
+        block_output_stream.reset();
+        read_buffer.reset();
+        write_buffer.reset();
         io = {};
         query_scope.reset();
         query_context.reset();
@@ -606,13 +667,6 @@ namespace
         ++query_info_index;
     }
 
-    void Call::addOutputToResult(const Block & block)
-    {
-        WriteBufferFromString buf{*result.mutable_output()};
-        auto stream = query_context->getOutputFormat(output_format, buf, block);
-        stream->write(block);
-    }
-
     void Call::addProgressToResult()
     {
         auto & grpc_progress = *result.mutable_progress();
@@ -631,7 +685,9 @@ namespace
 
         WriteBufferFromString buf{*result.mutable_totals()};
         auto stream = query_context->getOutputFormat(output_format, buf, totals);
+        stream->writePrefix();
         stream->write(totals);
+        stream->writeSuffix();
     }
 
     void Call::addExtremesToResult(const Block & extremes)
@@ -641,7 +697,9 @@ namespace
 
         WriteBufferFromString buf{*result.mutable_extremes()};
         auto stream = query_context->getOutputFormat(output_format, buf, extremes);
+        stream->writePrefix();
         stream->write(extremes);
+        stream->writeSuffix();
     }
 
     void Call::sendResult()
@@ -665,6 +723,9 @@ namespace
         bool send_final_message = finalize || result.has_exception();
         LOG_DEBUG(log, "Sending {} result to the client: {}", (send_final_message ? "final" : "intermediate"), getResultDescription(result));
 
+        if (write_buffer)
+            write_buffer->finalize();
+
         sending_result = true;
         auto callback = [this](bool ok)
         {
@@ -686,6 +747,8 @@ namespace
 
         /// gRPC has already retrieved all data from `result`, so we don't have to keep it.
         result.Clear();
+        if (write_buffer)
+            write_buffer->restart();
 
         if (send_final_message)
         {
