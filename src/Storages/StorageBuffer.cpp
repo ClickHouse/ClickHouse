@@ -278,7 +278,7 @@ Pipe StorageBuffer::read(
         pipe_from_buffers.addSimpleTransform([&](const Block & header)
         {
             return std::make_shared<FilterTransform>(
-                    header, query_info.prewhere_info->prewhere_actions->buildExpressions(),
+                    header, query_info.prewhere_info->prewhere_actions,
                     query_info.prewhere_info->prewhere_column_name, query_info.prewhere_info->remove_prewhere_column);
         });
 
@@ -286,7 +286,7 @@ Pipe StorageBuffer::read(
         {
             pipe_from_buffers.addSimpleTransform([&](const Block & header)
             {
-                return std::make_shared<ExpressionTransform>(header, query_info.prewhere_info->alias_actions->buildExpressions());
+                return std::make_shared<ExpressionTransform>(header, query_info.prewhere_info->alias_actions);
             });
         }
     }
