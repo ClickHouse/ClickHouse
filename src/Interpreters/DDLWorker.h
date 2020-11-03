@@ -1,11 +1,9 @@
 #pragma once
 
-#include <Interpreters/Cluster.h>
-#include <DataStreams/BlockIO.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
-#include <common/logger_useful.h>
-#include <Storages/IStorage.h>
+#include <Storages/IStorage_fwd.h>
+#include <Parsers/IAST_fwd.h>
 
 #include <atomic>
 #include <chrono>
@@ -18,21 +16,20 @@ namespace zkutil
     class ZooKeeper;
 }
 
+namespace Poco
+{
+    class Logger;
+    namespace Util { class AbstractConfiguration; }
+}
+
 namespace DB
 {
 
 class Context;
 class ASTAlterQuery;
-class AccessRightsElements;
 struct DDLLogEntry;
 struct DDLTask;
 using DDLTaskPtr = std::unique_ptr<DDLTask>;
-
-
-/// Pushes distributed DDL query to the queue
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context);
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context, const AccessRightsElements & query_requires_access, bool query_requires_grant_option = false);
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context, AccessRightsElements && query_requires_access, bool query_requires_grant_option = false);
 
 
 class DDLWorker
@@ -137,9 +134,6 @@ private:
     size_t max_tasks_in_queue = 1000;
 
     ThreadGroupStatusPtr thread_group;
-
-    friend class DDLQueryStatusInputStream;
-    friend struct DDLTask;
 };
 
 
