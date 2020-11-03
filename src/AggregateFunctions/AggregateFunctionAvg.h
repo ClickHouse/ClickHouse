@@ -21,6 +21,13 @@ struct RationalFraction
     Float64 NO_SANITIZE_UNDEFINED result() const { return numerator / denominator; }
 };
 
+template <class T> constexpr bool DecimalOrExtendedInt =
+    IsDecimalNumber<T>
+    || std::is_same_v<T, Int128>
+    || std::is_same_v<T, Int256>
+    || std::is_same_v<T, UInt128>
+    || std::is_same_v<T, UInt256>;
+
 /**
  * The discussion showed that the easiest (and simplest) way is to cast both the columns of numerator and denominator
  * to Float64. Another way would be to write some template magic that figures out the appropriate numerator
@@ -78,14 +85,22 @@ public:
     }
 };
 
-class AggregateFunctionAvg final : public AggregateFunctionAvgBase<UInt64, AggregateFunctionAvg>
+template <class T>
+class AggregateFunctionAvg final : public AggregateFunctionAvgBase<UInt64, AggregateFunctionAvg<T>>
 {
 public:
-    using AggregateFunctionAvgBase<UInt64, AggregateFunctionAvg>::AggregateFunctionAvgBase;
+    using AggregateFunctionAvgBase<UInt64, AggregateFunctionAvg<T>>::AggregateFunctionAvgBase;
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const final
     {
-        this->data(place).numerator += columns[0]->getFloat64(row_num);
+        if constexpr(IsDecimalNumber<T>)
+            this->data(place).numerator += columns[0]->getFloat64(row_num);
+        else if constexpr(DecimalOrExtendedInt<T>)
+            this->data(place).numerator += static_cast<Float64>(
+                static_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
+        else
+            this->data(place).numerator += static_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num];
+
         ++this->data(place).denominator;
     }
 
