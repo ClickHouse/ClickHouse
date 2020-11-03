@@ -7,6 +7,7 @@
 #include <Common/ZooKeeper/TestKeeperStorage.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromPocoSocket.h>
+#include <future>
 
 namespace DB
 {
@@ -32,6 +33,9 @@ private:
     std::shared_ptr<zkutil::TestKeeperStorage> test_keeper_storage;
     Poco::Timespan operation_timeout;
 
+    std::queue<zkutil::TestKeeperStorage::AsyncResponse> responses;
+
+
     /// Streams for reading/writing from/to client connection socket.
     std::shared_ptr<ReadBufferFromPocoSocket> in;
     std::shared_ptr<WriteBufferFromPocoSocket> out;
@@ -41,7 +45,7 @@ private:
     void sendHandshake();
     void receiveHandshake();
 
-    void receiveHeartbeatRequest();
+    bool receiveHeartbeatRequest();
     void sendHeartbeatResponse();
 
     void receiveCreateRequest();

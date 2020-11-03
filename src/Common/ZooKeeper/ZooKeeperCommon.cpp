@@ -3,6 +3,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
+#include <common/logger_useful.h>
 #include <array>
 
 
@@ -36,6 +37,8 @@ static void write(bool x, WriteBuffer & out)
 
 static void write(const String & s, WriteBuffer & out)
 {
+
+    LOG_DEBUG(&Poco::Logger::get("LOG"), "S SIZE {}", s.size());
     write(int32_t(s.size()), out);
     out.write(s.data(), s.size());
 }
@@ -170,6 +173,20 @@ static void read(ACL & acl, ReadBuffer & in)
     read(acl.id, in);
 }
 
+void ZooKeeperResponse::write(WriteBuffer & out) const
+{
+    /// Excessive copy to calculate length.
+    WriteBufferFromOwnString buf;
+    LOG_DEBUG(&Poco::Logger::get("LOG"), "WRITING {}", xid);
+    Coordination::write(xid, buf);
+    Coordination::write(zxid, buf);
+    Coordination::write(error, buf);
+    writeImpl(buf);
+    LOG_DEBUG(&Poco::Logger::get("LOG"), "BUFFER LENGTH {}", buf.str().length());
+    Coordination::write(buf.str(), out);
+    out.next();
+}
+
 void ZooKeeperRequest::write(WriteBuffer & out) const
 {
     /// Excessive copy to calculate length.
@@ -247,6 +264,7 @@ void ZooKeeperCreateResponse::readImpl(ReadBuffer & in)
 
 void ZooKeeperCreateResponse::writeImpl(WriteBuffer & out) const
 {
+    LOG_DEBUG(&Poco::Logger::get("LOG"), "WRITE IMPL ON: {}", path_created);
     Coordination::write(path_created, out);
 }
 
