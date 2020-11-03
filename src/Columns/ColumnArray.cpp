@@ -369,7 +369,8 @@ void ColumnArray::compareColumn(const IColumn & rhs, size_t rhs_row_num,
 }
 
 template <bool positive>
-struct ColumnArray::Cmp {
+struct ColumnArray::Cmp
+{
     const ColumnArray & parent;
     int nan_direction_hint;
     const Collator * collator;
