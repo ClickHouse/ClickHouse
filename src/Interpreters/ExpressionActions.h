@@ -213,7 +213,7 @@ public:
 
     void projectInput() { project_input = true; }
     void removeUnusedActions(const Names & required_names);
-    ExpressionActionsPtr buildExpressions();
+    ExpressionActionsPtr buildExpressions() const;
 
     /// Splits actions into two parts. Returned half may be swapped with ARRAY JOIN.
     /// Returns nullptr if no actions may be moved before ARRAY JOIN.
