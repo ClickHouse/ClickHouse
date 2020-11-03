@@ -35,9 +35,9 @@ public:
     static constexpr auto name = "fileInc";
     String getName() const override { return name; }
 
-    ColumnPtr execute(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t input_rows_count) override
+    ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) override
     {
-        const IColumn * arg_column = columns[arguments[0]].column.get();
+        const IColumn * arg_column = arguments[0].column.get();
         const ColumnString * arg_string = checkAndGetColumnConstData<ColumnString>(arg_column);
 
         Poco::Path file_path = Poco::Path(arg_string->getDataAt(0).toString());
