@@ -2196,8 +2196,8 @@ Reduces the I/O overhead when using the [Set](../../engines/table-engines/specia
 
 Possible values:
 
-- 1 - Enabled.
-- 0 - Disabled.
+- 1 — Enabled.
+- 0 — Disabled.
 
 Default value: `1`.
 
