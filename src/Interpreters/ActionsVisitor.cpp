@@ -1049,7 +1049,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
           * - in the addExternalStorage function, the IN (SELECT ...) subquery is replaced with IN _data1,
           *   in the subquery_for_set object, this subquery is set as source and the temporary table _data1 as the table.
           * - this function shows the expression IN_data1.
-          * 
+          *
           * In case that we have HAVING with IN subquery, we have to force creating set for it.
           * Also it doesn't make sence if it is GLOBAL IN or ordinary IN.
           */
