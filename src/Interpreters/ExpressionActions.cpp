@@ -1442,7 +1442,7 @@ ExpressionActionsPtr ActionsDAG::linearizeActions() const
     return expressions;
 }
 
-ExpressionActionsPtr ActionsDAG::buildExpressions()
+ExpressionActionsPtr ActionsDAG::buildExpressions() const
 {
     auto cloned = clone();
     auto expressions = cloned->linearizeActions();
