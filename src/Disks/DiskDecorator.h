@@ -53,7 +53,7 @@ public:
     void sync(int fd) const override;
     const String getType() const override { return delegate->getType(); }
     String getUniqueId(const String & path) const override { return delegate->getUniqueId(path); }
-    bool checkFile(const String & path) const override { return delegate->checkFile(path); }
+    bool checkUniqueId(const String & id) const override { return delegate->checkUniqueId(id); }
     Executor & getExecutor() override;
 
 protected:

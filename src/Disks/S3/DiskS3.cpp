@@ -577,7 +577,7 @@ String DiskS3::getUniqueId(const String & path) const
     Metadata metadata(s3_root_path, metadata_path, path);
     String id;
     if (!metadata.s3_objects.empty())
-        id = metadata.s3_objects[0].first;
+        id = metadata.s3_root_path + metadata.s3_objects[0].first;
     return id;
 }
 
@@ -846,30 +846,23 @@ void DiskS3::shutdown()
     client->DisableRequestProcessing();
 }
 
-bool DiskS3::checkFile(const String & path) const
+bool DiskS3::checkUniqueId(const String & id) const
 {
-    Metadata metadata(s3_root_path, metadata_path, path);
-
-    /// empty s3_objects list for empty file
-    if (metadata.s3_objects.empty())
-        return true;
-
-    String object = metadata.s3_root_path + metadata.s3_objects[0].first;
-
+    /// Check that we have right s3 and have access rights
+    /// Actually interprets id as s3 object name and checks if it exists
     Aws::S3::Model::ListObjectsRequest request;
     request.SetBucket(bucket);
-    request.SetPrefix(object);
+    request.SetPrefix(id);
     auto resp = client->ListObjects(request);
     throwIfError(resp);
     Aws::Vector<Aws::S3::Model::Object> object_list = resp.GetResult().GetContents();
 
-    /// Should be only one object with name equal to prefix
-    if (object_list.size() != 1)
+    if (object_list.size() < 1)
         return false;
-
-    if (object_list[0].GetKey() != object)
-        return false;
-    return true;
+    for (const auto & object : object_list)
+        if (object.GetKey() == id)
+            return true;
+    return false;
 }
 
 
