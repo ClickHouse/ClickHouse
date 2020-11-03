@@ -24,9 +24,9 @@ public:
 
         using WeightRet = std::conditional_t<DecimalOrExtendedInt<Weight>, Float64, Weight>;
         const WeightRet weight = [&columns, row_num]() -> WeightRet {
-            if constexpr(IsDecimalNumber<Weight>)
+            if constexpr(IsDecimalNumber<Weight>) /// Unable to cast to double -> use the virtual method
                 return columns[1]->getFloat64(row_num);
-            else if constexpr(DecimalOrExtendedInt<Weight>)
+            else if constexpr(DecimalOrExtendedInt<Weight>) /// Casting to double, otherwise += would be ambitious.
                 return static_cast<Float64>(static_cast<const ColumnVector<Weight>&>(*columns[1]).getData()[row_num]);
             else
                 return static_cast<const ColumnVector<Weight>&>(*columns[1]).getData()[row_num];
