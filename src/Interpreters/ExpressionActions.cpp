@@ -686,12 +686,16 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
 //        && is_function_compiled == other.is_function_compiled;
 //}
 
-void ExpressionActionsChain::addStep()
+void ExpressionActionsChain::addStep(NameSet non_constant_inputs)
 {
     if (steps.empty())
         throw Exception("Cannot add action to empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
 
     ColumnsWithTypeAndName columns = steps.back()->getResultColumns();
+    for (auto & column : columns)
+        if (column.column && isColumnConst(*column.column) && non_constant_inputs.count(column.name))
+            column.column = nullptr;
+
     steps.push_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ActionsDAG>(columns)));
 }
 

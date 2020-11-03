@@ -845,18 +845,24 @@ void SelectQueryExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain,
         step.required_output.push_back(child->getColumnName());
 }
 
-bool SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order,
+ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order,
                                                   ManyExpressionActions & order_by_elements_actions)
 {
     const auto * select_query = getSelectQuery();
 
     if (!select_query->orderBy())
-        return false;
+    {
+        auto actions = chain.getLastActions();
+        chain.addStep();
+        return actions;
+    }
 
     ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
 
     getRootActions(select_query->orderBy(), only_types, step.actions());
 
+    bool with_fill = false;
+    NameSet order_by_keys;
     for (auto & child : select_query->orderBy()->children)
     {
         const auto * ast = child->as<ASTOrderByElement>();
@@ -864,6 +870,9 @@ bool SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain
             throw Exception("Bad order expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
         ASTPtr order_expression = ast->children.at(0);
         step.required_output.push_back(order_expression->getColumnName());
+
+        if (ast->with_fill)
+            with_fill = true;
     }
 
     if (optimize_read_in_order)
@@ -875,7 +884,18 @@ bool SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain
             order_by_elements_actions.emplace_back(actions_dag->buildExpressions());
         }
     }
-    return true;
+
+    NameSet non_constant_inputs;
+    if (with_fill)
+    {
+        for (const auto & column : step.getResultColumns())
+            if (!order_by_keys.count(column.name))
+                non_constant_inputs.insert(column.name);
+    }
+
+    auto actions = chain.getLastActions();
+    chain.addStep(non_constant_inputs);
+    return actions;
 }
 
 bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain, bool only_types)
@@ -1193,10 +1213,12 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         /// If there is aggregation, we execute expressions in SELECT and ORDER BY on the initiating server, otherwise on the source servers.
         query_analyzer.appendSelect(chain, only_types || (need_aggregate ? !second_stage : !first_stage));
         selected_columns = chain.getLastStep().required_output;
-        has_order_by = query_analyzer.appendOrderBy(chain, only_types || (need_aggregate ? !second_stage : !first_stage),
-                                                    optimize_read_in_order, order_by_elements_actions);
-        before_order_and_select = chain.getLastActions();
-        chain.addStep();
+        has_order_by = query.orderBy() != nullptr;
+        before_order_and_select = query_analyzer.appendOrderBy(
+                chain,
+                only_types || (need_aggregate ? !second_stage : !first_stage),
+                optimize_read_in_order,
+                order_by_elements_actions);
 
         if (query_analyzer.appendLimitBy(chain, only_types || !second_stage))
         {

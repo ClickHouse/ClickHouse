@@ -463,7 +463,7 @@ struct ExpressionActionsChain
     const Context & context;
     Steps steps;
 
-    void addStep();
+    void addStep(NameSet non_constant_inputs = {});
 
     void finalize();
 
