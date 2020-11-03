@@ -82,6 +82,7 @@ public:
     void shutdown() override;
     void drop() override;
 
+    bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override;
 
     const ExpressionActionsPtr & getShardingKeyExpr() const { return sharding_key_expr; }

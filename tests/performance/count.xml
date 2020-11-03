@@ -1,4 +1,4 @@
-<test max_ignored_relative_change="0.5">
+<test>
     <create_query>CREATE TABLE data(k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k</create_query>
 
     <fill_query>INSERT INTO data SELECT number, 1 from numbers(10000000)</fill_query>

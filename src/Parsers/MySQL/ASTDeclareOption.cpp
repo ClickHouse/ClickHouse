@@ -4,6 +4,7 @@
 #include <IO/ReadHelpers.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ExpressionElementParsers.h>
 
 namespace DB
 {
@@ -94,41 +95,21 @@ bool ParserAlwaysFalse::parseImpl(IParser::Pos & /*pos*/, ASTPtr & node, Expecte
     return true;
 }
 
-bool ParserCharsetName::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected &)
+bool ParserCharsetOrCollateName::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
-    /// Identifier in backquotes or in double quotes
-    if (pos->type == TokenType::QuotedIdentifier)
-    {
-        ReadBufferFromMemory buf(pos->begin, pos->size());
-        String s;
+    ParserIdentifier p_identifier;
+    ParserStringLiteral p_string_literal;
 
-        if (*pos->begin == '`')
-            readBackQuotedStringWithSQLStyle(s, buf);
-        else
-            readDoubleQuotedStringWithSQLStyle(s, buf);
-
-        if (s.empty()) /// Identifiers "empty string" are not allowed.
-            return false;
-
-        node = std::make_shared<ASTIdentifier>(s);
-        ++pos;
+    if (p_identifier.parse(pos, node, expected))
         return true;
-    }
-    else if (pos->type == TokenType::BareWord)
+    else
     {
-        const char * begin = pos->begin;
-
-        while (true)
+        if (p_string_literal.parse(pos, node, expected))
         {
-            if (!isWhitespaceASCII(*pos->end) && pos->type != TokenType::EndOfStream)
-                ++pos;
-            else
-                break;
+            const auto & string_value = node->as<ASTLiteral>()->value.safeGet<String>();
+            node = std::make_shared<ASTIdentifier>(string_value);
+            return true;
         }
-
-        node = std::make_shared<ASTIdentifier>(String(begin, pos->end));
-        ++pos;
-        return true;
     }
 
     return false;
