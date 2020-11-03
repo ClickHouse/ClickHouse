@@ -1085,7 +1085,7 @@ function upload_results
     # Surprisingly, clickhouse-client doesn't understand --host 127.0.0.1:9000
     # so I have to do this instead. I tried to use Poco URI parser for this,
     # but it's also broken and can't parse host:port.
-    IFS=':' read host port <<<"${CHPC_DATABASE_URL}"
+    IFS=':' read -r host port <<<"${CHPC_DATABASE_URL}"
 
     upload_client=(clickhouse-client
         --host "${host}"
@@ -1096,14 +1096,14 @@ function upload_results
         --config "ch/tests/config/client_config.xml"
         --database perftest
         -m
-        --date_time_input_format=best_effort)
+        "--date_time_input_format=best_effort")
 
      set +x # Don't show password in the log
-     cat "report/all-query-metrics.tsv" | "${upload_client[@]}" --query "
+     "${upload_client[@]}" --query "
         insert into query_metrics_tmp
         select 
             toDate(event_time) event_date,
-            toDateTime('$(cd ch && git show -s --format=%ci "$SHA_TO_TEST" | cut -d' ' -f-2)') event_time,
+            toDateTime('$(cd right/ch && git show -s --format=%ci "$SHA_TO_TEST" | cut -d' ' -f-2)') event_time,
             $PR_TO_TEST pr_number,
             '$REF_SHA' old_sha,
             '$SHA_TO_TEST' new_sha,
@@ -1120,7 +1120,8 @@ function upload_results
                 test text, query_index int, query_display_name text')
         settings date_time_input_format='best_effort'
         format TSV
-        settings date_time_input_format='best_effort'"
+        settings date_time_input_format='best_effort'
+    " < "report/all-query-metrics.tsv"
     set -x
 }
 
