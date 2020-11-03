@@ -58,10 +58,10 @@ DROP TABLE IF EXISTS compression_codec_multiple;
 SET network_compression_method = 'lz4hc';
 
 CREATE TABLE compression_codec_multiple (
-    id UInt64 CODEC(LZ4, ZSTD, NONE, LZ4HC, Delta(4)),
-    data String CODEC(ZSTD(2), NONE, Delta(2), LZ4HC, LZ4, LZ4, Delta(8)),
-    ddd Date CODEC(NONE, NONE, NONE, Delta(1), LZ4, ZSTD, LZ4HC, LZ4HC),
-    somenum Float64 CODEC(Delta(4), LZ4, LZ4, ZSTD(2), LZ4HC(5), ZSTD(3), ZSTD)
+    id UInt64 CODEC(LZ4, ZSTD, NONE, LZ4HC, Delta(4), LZ4F),
+    data String CODEC(ZSTD(2), NONE, Delta(2), LZ4HC, LZ4, LZ4, Delta(8), LZ4F),
+    ddd Date CODEC(NONE, NONE, NONE, Delta(1), LZ4, ZSTD, LZ4F, LZ4HC, LZ4HC),
+    somenum Float64 CODEC(Delta(4), LZ4, LZ4, ZSTD(2), LZ4HC(5), LZ4F, ZSTD(3), ZSTD)
 ) ENGINE = MergeTree() ORDER BY tuple();
 
 INSERT INTO compression_codec_multiple VALUES (1, 'world', toDate('2018-10-05'), 1.1), (2, 'hello', toDate('2018-10-01'), 2.2), (3, 'buy', toDate('2018-10-11'), 3.3);
@@ -85,15 +85,15 @@ SELECT sum(cityHash64(*)) FROM compression_codec_multiple;
 DROP TABLE IF EXISTS compression_codec_multiple_more_types;
 
 CREATE TABLE compression_codec_multiple_more_types (
-    id Decimal128(13) CODEC(ZSTD, LZ4, ZSTD, ZSTD, Delta(2), Delta(4), Delta(1), LZ4HC),
-    data FixedString(12) CODEC(ZSTD, ZSTD, Delta, Delta, Delta, NONE, NONE, NONE, LZ4HC),
-    ddd Nested (age UInt8, Name String) CODEC(LZ4, LZ4HC, NONE, NONE, NONE, ZSTD, Delta(8))
+    id Decimal128(13) CODEC(ZSTD, LZ4, ZSTD, ZSTD, LZ4F, Delta(2), Delta(4), Delta(1), LZ4HC),
+    data FixedString(12) CODEC(ZSTD, ZSTD, Delta, Delta, Delta, NONE, NONE, NONE, LZ4HC, LZ4F),
+    ddd Nested (age UInt8, Name String) CODEC(LZ4, LZ4F, LZ4HC, NONE, NONE, NONE, ZSTD, Delta(8))
 ) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError 36 }
 
 CREATE TABLE compression_codec_multiple_more_types (
-    id Decimal128(13) CODEC(ZSTD, LZ4, ZSTD, ZSTD, Delta(2), Delta(4), Delta(1), LZ4HC),
-    data FixedString(12) CODEC(ZSTD, ZSTD, NONE, NONE, NONE, LZ4HC),
-    ddd Nested (age UInt8, Name String) CODEC(LZ4, LZ4HC, NONE, NONE, NONE, ZSTD, Delta(8))
+    id Decimal128(13) CODEC(ZSTD, LZ4, ZSTD, ZSTD, LZ4F, Delta(2), Delta(4), Delta(1), LZ4HC),
+    data FixedString(12) CODEC(ZSTD, ZSTD, NONE, NONE, NONE, LZ4HC, LZ4F),
+    ddd Nested (age UInt8, Name String) CODEC(LZ4, LZ4F, LZ4HC, NONE, NONE, NONE, ZSTD, Delta(8))
 ) ENGINE = MergeTree() ORDER BY tuple();
 
 SHOW CREATE TABLE compression_codec_multiple_more_types;
@@ -109,9 +109,9 @@ SET network_compression_method = 'zstd';
 SET network_zstd_compression_level = 5;
 
 CREATE TABLE compression_codec_multiple_with_key (
-    somedate Date CODEC(ZSTD, ZSTD, ZSTD(12), LZ4HC(12), Delta, Delta),
-    id UInt64 CODEC(LZ4, ZSTD, Delta, NONE, LZ4HC, Delta),
-    data String CODEC(ZSTD(2), Delta(1), LZ4HC, NONE, LZ4, LZ4)
+    somedate Date CODEC(LZ4F, ZSTD, ZSTD, ZSTD(12), LZ4HC(12), Delta, Delta),
+    id UInt64 CODEC(LZ4, ZSTD, LZ4F, Delta, NONE, LZ4HC, Delta),
+    data String CODEC(ZSTD(2), Delta(1), LZ4F, LZ4HC, NONE, LZ4, LZ4)
 ) ENGINE = MergeTree() PARTITION BY somedate ORDER BY id SETTINGS index_granularity = 2;
 
 
