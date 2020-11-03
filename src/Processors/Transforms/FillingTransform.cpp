@@ -18,7 +18,7 @@ Block FillingTransform::transformHeader(Block header, const SortDescription & so
 
     /// Columns which are not from sorting key may not be constant anymore.
     for (auto & column : header)
-        if (column.column && isColumnConst(*column.column) && sort_keys.count(column.name))
+        if (column.column && isColumnConst(*column.column) && !sort_keys.count(column.name))
             column.column = column.type->createColumn();
 
     return header;
