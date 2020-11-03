@@ -7,6 +7,7 @@
 #include <Common/SettingsChanges.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/executeQuery.h>
@@ -24,6 +25,7 @@
 #include <Poco/FileStream.h>
 #include <Poco/StreamCopier.h>
 #include <Poco/Util/LayeredConfiguration.h>
+#include <ext/range.h>
 #include <grpc++/security/server_credentials.h>
 #include <grpc++/server.h>
 #include <grpc++/server_builder.h>
@@ -161,6 +163,8 @@ namespace
             str.append(str.empty() ? "" : ", ").append("query_id: ").append(query_info.query_id());
         if (!query_info.input_data().empty())
             str.append(str.empty() ? "" : ", ").append("input_data: ").append(std::to_string(query_info.input_data().size())).append(" bytes");
+        if (query_info.external_tables_size())
+            str.append(str.empty() ? "" : ", ").append("external tables: ").append(std::to_string(query_info.external_tables_size()));
         return str;
     }
 
@@ -459,6 +463,7 @@ namespace
 
         void processInput();
         void initializeBlockInputStream(const Block & header);
+        void createExternalTables();
 
         void generateOutput();
         void generateOutputWithProcessors();
@@ -705,6 +710,14 @@ namespace
         if (output_format.empty())
             output_format = query_context->getDefaultFormat();
 
+        /// Set callback to create and fill external tables
+        query_context->setExternalTablesInitializer([this] (Context & context)
+        {
+            if (&context != &*query_context)
+                throw Exception("Unexpected context in external tables initializer", ErrorCodes::LOGICAL_ERROR);
+            createExternalTables();
+        });
+
         /// Set callbacks to execute function input().
         query_context->setInputInitializer([this] (Context & context, const StoragePtr & input_storage)
         {
@@ -803,8 +816,8 @@ namespace
                 readQueryInfo();
                 if (!query_info.query().empty() || !query_info.query_id().empty() || !query_info.settings().empty()
                     || !query_info.database().empty() || !query_info.input_data_delimiter().empty() || !query_info.output_format().empty()
-                    || !query_info.user_name().empty() || !query_info.password().empty() || !query_info.quota().empty()
-                    || !query_info.session_id().empty())
+                    || query_info.external_tables_size() || !query_info.user_name().empty() || !query_info.password().empty()
+                    || !query_info.quota().empty() || !query_info.session_id().empty())
                 {
                     throw Exception("Extra query infos can be used only to add more input data. "
                                     "Only the following fields can be set: input_data, next_query_info, cancel",
@@ -839,6 +852,103 @@ namespace
                         block_input_stream = std::make_shared<AddingDefaultsBlockInputStream>(block_input_stream, columns, *query_context);
                 }
             }
+        }
+    }
+
+    void Call::createExternalTables()
+    {
+        while (true)
+        {
+            for (const auto & external_table : query_info.external_tables())
+            {
+                String name = external_table.name();
+                if (name.empty())
+                    name = "_data";
+                auto temporary_id = StorageID::createEmpty();
+                temporary_id.table_name = name;
+
+                /// If such a table does not exist, create it.
+                StoragePtr storage;
+                if (auto resolved = query_context->tryResolveStorageID(temporary_id, Context::ResolveExternal))
+                {
+                    storage = DatabaseCatalog::instance().getTable(resolved, *query_context);
+                }
+                else
+                {
+                    NamesAndTypesList columns;
+                    for (size_t column_idx : ext::range(external_table.columns_size()))
+                    {
+                        const auto & name_and_type = external_table.columns(column_idx);
+                        NameAndTypePair column;
+                        column.name = name_and_type.name();
+                        if (column.name.empty())
+                            column.name = "_" + std::to_string(column_idx + 1);
+                        column.type = DataTypeFactory::instance().get(name_and_type.type());
+                        columns.emplace_back(std::move(column));
+                    }
+                    auto temporary_table = TemporaryTableHolder(*query_context, ColumnsDescription{columns}, {});
+                    storage = temporary_table.getTable();
+                    query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
+                }
+
+                if (!external_table.data().empty())
+                {
+                    /// The data will be written directly to the table.
+                    auto metadata_snapshot = storage->getInMemoryMetadataPtr();
+                    auto out_stream = storage->write(ASTPtr(), metadata_snapshot, *query_context);
+                    ReadBufferFromMemory data(external_table.data().data(), external_table.data().size());
+                    String format = external_table.format();
+                    if (format.empty())
+                        format = "TabSeparated";
+                    Context * external_table_context = &*query_context;
+                    std::optional<Context> temp_context;
+                    if (!external_table.settings().empty())
+                    {
+                        temp_context = *query_context;
+                        external_table_context = &*temp_context;
+                        SettingsChanges settings_changes;
+                        for (const auto & [key, value] : external_table.settings())
+                            settings_changes.push_back({key, value});
+                        external_table_context->checkSettingsConstraints(settings_changes);
+                        external_table_context->applySettingsChanges(settings_changes);
+                    }
+                    auto in_stream = external_table_context->getInputFormat(
+                        format, data, metadata_snapshot->getSampleBlock(), external_table_context->getSettings().max_insert_block_size);
+                    in_stream->readPrefix();
+                    out_stream->writePrefix();
+                    while (auto block = in_stream->read())
+                        out_stream->write(block);
+                    in_stream->readSuffix();
+                    out_stream->writeSuffix();
+                }
+            }
+
+            if (!query_info.input_data().empty())
+            {
+                /// External tables must be created before executing query,
+                /// so all external tables must be send no later sending any input data.
+                break;
+            }
+
+            if (!query_info.next_query_info())
+                break;
+
+            if (!isInputStreaming(call_type))
+                throw Exception("next_query_info is allowed to be set only for streaming input", ErrorCodes::INVALID_GRPC_QUERY_INFO);
+
+            readQueryInfo();
+            if (!query_info.query().empty() || !query_info.query_id().empty() || !query_info.settings().empty()
+                || !query_info.database().empty() || !query_info.input_data_delimiter().empty()
+                || !query_info.output_format().empty() || !query_info.user_name().empty() || !query_info.password().empty()
+                || !query_info.quota().empty() || !query_info.session_id().empty())
+            {
+                throw Exception("Extra query infos can be used only to add more data to input or more external tables. "
+                                "Only the following fields can be set: input_data, external_tables, next_query_info, cancel",
+                                ErrorCodes::INVALID_GRPC_QUERY_INFO);
+            }
+            if (isQueryCancelled())
+                break;
+            LOG_DEBUG(log, "Received extra QueryInfo: external tables: {}", query_info.external_tables_size());
         }
     }
 
