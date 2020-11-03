@@ -593,12 +593,7 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
             if (!copied_entries.empty())
             {
                 LOG_DEBUG(log, "Pulled {} entries to queue.", copied_entries.size());
-
-                /// to limit the number of zookeeper operations MergeStrategyPicker state is updated only
-                /// when new merges appear.
-                auto operations_in_queue = countMergesAndPartMutations();
-                if (operations_in_queue.merges > 0)
-                    merge_strategy_picker.refreshState();
+                merge_strategy_picker.refreshState();
             }
         }
 
@@ -1100,15 +1095,17 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             return false;
         }
 
-        auto replica_to_execute_merge = merge_strategy_picker.pickReplicaToExecuteMerge(entry);
-
-        if (replica_to_execute_merge && !merge_strategy_picker.isMergeFinishedByReplica(replica_to_execute_merge.value(), entry))
+        if (merge_strategy_picker.shouldMergeOnSingleReplica(entry))
         {
-            String reason = "Not executing merge for the part " + entry.new_part_name
-                +  ", waiting for " + replica_to_execute_merge.value() + " to execute merge.";
-            LOG_DEBUG(log, reason);
-            out_postpone_reason = reason;
-            return false;
+            auto replica_to_execute_merge = merge_strategy_picker.pickReplicaToExecuteMerge(entry);
+
+            if (replica_to_execute_merge && !merge_strategy_picker.isMergeFinishedByReplica(replica_to_execute_merge.value(), entry))
+            {
+                String reason = "Not executing merge for the part " + entry.new_part_name
+                    +  ", waiting for " + replica_to_execute_merge.value() + " to execute merge.";
+                out_postpone_reason = reason;
+                return false;
+            }
         }
 
         UInt64 max_source_parts_size = entry.type == LogEntry::MERGE_PARTS ? merger_mutator.getMaxSourcePartsSizeForMerge()

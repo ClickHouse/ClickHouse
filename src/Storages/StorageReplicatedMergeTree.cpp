@@ -1364,11 +1364,15 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     /// In some use cases merging can be more expensive than fetching
     /// and it may be better to spread merges tasks across the replicas
     /// instead of doing exactly the same merge cluster-wise
-    auto replica_to_execute_merge = merge_strategy_picker.pickReplicaToExecuteMerge(entry);
-    if (replica_to_execute_merge)
+    if (merge_strategy_picker.shouldMergeOnSingleReplica(entry))
     {
-        LOG_DEBUG(log, "Prefer fetching part {} from replica {} due execute_merges_on_single_replica_time_threshold", entry.new_part_name, replica_to_execute_merge.value());
-        return false;
+        auto replica_to_execute_merge = merge_strategy_picker.pickReplicaToExecuteMerge(entry);
+
+        if (replica_to_execute_merge)
+        {
+            LOG_DEBUG(log, "Prefer fetching part {} from replica {} due execute_merges_on_single_replica_time_threshold", entry.new_part_name, replica_to_execute_merge.value());
+            return false;
+        }
     }
 
     DataPartsVector parts;
