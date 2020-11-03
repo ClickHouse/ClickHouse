@@ -2,6 +2,19 @@ syntax = "proto3";
 
 package clickhouse.grpc;
 
+message NameAndType {
+   string name = 1;
+   string type = 2;
+}
+
+message ExternalTable {
+   string name = 1;
+   repeated NameAndType columns = 2;
+   string data = 3;
+   string format = 4;
+   map<string, string> settings = 5;
+}
+
 message QueryInfo {
    string query = 1;
    string query_id = 2;
@@ -10,14 +23,15 @@ message QueryInfo {
    string input_data = 5;
    string input_data_delimiter = 6;
    string output_format = 7;
-   string user_name = 8;
-   string password = 9;
-   string quota = 10;
-   string session_id = 11;
-   bool session_check = 12;
-   uint32 session_timeout = 13;
-   bool cancel = 14;
-   bool next_query_info = 15;
+   repeated ExternalTable external_tables = 8;
+   string user_name = 9;
+   string password = 10;
+   string quota = 11;
+   string session_id = 12;
+   bool session_check = 13;
+   uint32 session_timeout = 14;
+   bool cancel = 15;
+   bool next_query_info = 16;
 }
 
 enum LogsLevel {

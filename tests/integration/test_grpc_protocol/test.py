@@ -41,7 +41,7 @@ def create_channel():
         main_channel = channel
     return channel
 
-def query_common(query_text, settings={}, input_data=[], input_data_delimiter='', output_format='TabSeparated', query_id='123', session_id='', stream_output=False, channel=None):
+def query_common(query_text, settings={}, input_data=[], input_data_delimiter='', output_format='TabSeparated', external_tables=[], query_id='123', session_id='', stream_output=False, channel=None):
     if type(input_data) == str:
         input_data = [input_data]
     if not channel:
@@ -50,7 +50,8 @@ def query_common(query_text, settings={}, input_data=[], input_data_delimiter=''
     def query_info():
         input_data_part = input_data.pop(0) if input_data else ''
         return clickhouse_grpc_pb2.QueryInfo(query=query_text, settings=settings, input_data=input_data_part, input_data_delimiter=input_data_delimiter,
-                                             output_format=output_format, query_id=query_id, session_id=session_id, next_query_info=bool(input_data))
+                                             output_format=output_format, external_tables=external_tables, query_id=query_id, session_id=session_id,
+                                             next_query_info=bool(input_data))
     def send_query_info():
         yield query_info()
         while input_data:
@@ -262,6 +263,38 @@ def test_input_function():
     assert query("SELECT a FROM t ORDER BY a") == "20\n88\n120\n143\n"
     query("INSERT INTO t SELECT col1 * col2 FROM input('col1 UInt8, col2 UInt8') FORMAT CSV 20,10\n", input_data="15,15\n")
     assert query("SELECT a FROM t ORDER BY a") == "20\n88\n120\n143\n200\n225\n"
+
+def test_external_table():
+    columns = [clickhouse_grpc_pb2.NameAndType(name='UserID', type='UInt64'), clickhouse_grpc_pb2.NameAndType(name='UserName', type='String')]
+    ext1 = clickhouse_grpc_pb2.ExternalTable(name='ext1', columns=columns, data='1\tAlex\n2\tBen\n3\tCarl\n', format='TabSeparated')
+    assert query("SELECT * FROM ext1 ORDER BY UserID", external_tables=[ext1]) == "1\tAlex\n"\
+                                                                                  "2\tBen\n"\
+                                                                                  "3\tCarl\n"
+    ext2 = clickhouse_grpc_pb2.ExternalTable(name='ext2', columns=columns, data='4,Daniel\n5,Ethan\n', format='CSV')
+    assert query("SELECT * FROM (SELECT * FROM ext1 UNION ALL SELECT * FROM ext2) ORDER BY UserID", external_tables=[ext1, ext2]) == "1\tAlex\n"\
+                                                                                                                                     "2\tBen\n"\
+                                                                                                                                     "3\tCarl\n"\
+                                                                                                                                     "4\tDaniel\n"\
+                                                                                                                                     "5\tEthan\n"
+    unnamed_columns = [clickhouse_grpc_pb2.NameAndType(type='UInt64'), clickhouse_grpc_pb2.NameAndType(type='String')]
+    unnamed_table = clickhouse_grpc_pb2.ExternalTable(columns=unnamed_columns, data='6\tGeorge\n7\tFred\n')
+    assert query("SELECT * FROM _data ORDER BY _2", external_tables=[unnamed_table]) == "7\tFred\n"\
+                                                                                        "6\tGeorge\n"
+
+def test_external_table_streaming():
+    columns = [clickhouse_grpc_pb2.NameAndType(name='UserID', type='UInt64'), clickhouse_grpc_pb2.NameAndType(name='UserName', type='String')]
+    def send_query_info():
+        yield clickhouse_grpc_pb2.QueryInfo(query="SELECT * FROM exts ORDER BY UserID",
+                                            external_tables=[clickhouse_grpc_pb2.ExternalTable(name='exts', columns=columns, data='1\tAlex\n2\tBen\n3\tCarl\n')],
+                                            next_query_info=True)
+        yield clickhouse_grpc_pb2.QueryInfo(external_tables=[clickhouse_grpc_pb2.ExternalTable(name='exts', data='4\tDaniel\n5\tEthan\n')])
+    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
+    result = stub.ExecuteQueryWithStreamInput(send_query_info())
+    assert result.output == "1\tAlex\n"\
+                            "2\tBen\n"\
+                            "3\tCarl\n"\
+                            "4\tDaniel\n"\
+                            "5\tEthan\n"
 
 def test_simultaneous_queries_same_channel():
     threads=[]
