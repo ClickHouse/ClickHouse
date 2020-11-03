@@ -2084,7 +2084,7 @@ SELECT CAST(toNullable(toInt32(0)) AS Int32) as x, toTypeName(x);
 
 ## persistent {#persistent}
 
-Отключает перманентность для StorageSet и StorageJoin. 
+Отключает перманентность для 'Set и 'Join' движков таблиц. 
 
 Уменьшает расходы ввода/вывода при использовании [Set](../../engines/table-engines/special/set.md#set) и [Join](../../engines/table-engines/special/join.md#join) движков таблиц. Полезно для сценариев, нацеленных на производительность и не требующих пермаментности.
 
