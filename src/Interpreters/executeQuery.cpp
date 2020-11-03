@@ -17,6 +17,7 @@
 
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -336,6 +337,27 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     {
         /// TODO Parser should fail early when max_query_size limit is reached.
         ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+
+        /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
+        /// to allow settings to take effect.
+        if (const auto * select_query = ast->as<ASTSelectQuery>())
+        {
+            if (auto new_settings = select_query->settings())
+                InterpreterSetQuery(new_settings, context).executeForCurrentContext();
+        }
+        else if (const auto * select_with_union_query = ast->as<ASTSelectWithUnionQuery>())
+        {
+            if (!select_with_union_query->list_of_selects->children.empty())
+            {
+                if (auto new_settings = select_with_union_query->list_of_selects->children.back()->as<ASTSelectQuery>()->settings())
+                    InterpreterSetQuery(new_settings, context).executeForCurrentContext();
+            }
+        }
+        else if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
+        {
+            if (query_with_output->settings_ast)
+                InterpreterSetQuery(query_with_output->settings_ast, context).executeForCurrentContext();
+        }
 
         auto * insert_query = ast->as<ASTInsertQuery>();
 
@@ -802,12 +824,12 @@ BlockIO executeQuery(
 }
 
 BlockIO executeQuery(
-        const String & query,
-        Context & context,
-        bool internal,
-        QueryProcessingStage::Enum stage,
-        bool may_have_embedded_data,
-        bool allow_processors)
+    const String & query,
+    Context & context,
+    bool internal,
+    QueryProcessingStage::Enum stage,
+    bool may_have_embedded_data,
+    bool allow_processors)
 {
     BlockIO res = executeQuery(query, context, internal, stage, may_have_embedded_data);
 
@@ -876,7 +898,6 @@ void executeQuery(
         }
         else if (streams.in)
         {
-            /// FIXME: try to prettify this cast using `as<>()`
             const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
 
             WriteBuffer * out_buf = &ostr;
@@ -894,9 +915,6 @@ void executeQuery(
             String format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
                 ? getIdentifierName(ast_query_with_output->format)
                 : context.getDefaultFormat();
-
-            if (ast_query_with_output && ast_query_with_output->settings_ast)
-                InterpreterSetQuery(ast_query_with_output->settings_ast, context).executeForCurrentContext();
 
             BlockOutputStreamPtr out = context.getOutputFormat(format_name, *out_buf, streams.in->getHeader());
 
@@ -935,9 +953,6 @@ void executeQuery(
             String format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
                                  ? getIdentifierName(ast_query_with_output->format)
                                  : context.getDefaultFormat();
-
-            if (ast_query_with_output && ast_query_with_output->settings_ast)
-                InterpreterSetQuery(ast_query_with_output->settings_ast, context).executeForCurrentContext();
 
             if (!pipeline.isCompleted())
             {
