@@ -989,7 +989,7 @@ void HashJoin::joinBlockImpl(
             const auto & left_name = required_right_keys_sources[i];
 
             /// asof column is already in block.
-            if (is_any_join && right_key.name == key_names_right.back())
+            if (is_asof_join && right_key.name == key_names_right.back())
                 continue;
 
             const auto & col = block.getByName(left_name);
@@ -1012,7 +1012,7 @@ void HashJoin::joinBlockImpl(
             const auto & left_name = required_right_keys_sources[i];
 
             /// asof column is already in block.
-            if (is_any_join && right_key.name == key_names_right.back())
+            if (is_asof_join && right_key.name == key_names_right.back())
                 continue;
 
             const auto & col = block.getByName(left_name);
