@@ -1,7 +1,7 @@
 #include <Interpreters/InterpreterCreateRoleQuery.h>
 #include <Parsers/ASTCreateRoleQuery.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DDLWorker.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Access/AccessControlManager.h>
 #include <Access/Role.h>
 

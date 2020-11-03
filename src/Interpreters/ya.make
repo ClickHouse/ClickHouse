@@ -45,11 +45,13 @@ SRCS(
     CrossToInnerJoinVisitor.cpp
     DatabaseAndTableWithAlias.cpp
     DatabaseCatalog.cpp
+    DDLTask.cpp
     DDLWorker.cpp
     DictionaryReader.cpp
     DNSCacheUpdater.cpp
     EmbeddedDictionaries.cpp
     evaluateConstantExpression.cpp
+    executeDDLQueryOnCluster.cpp
     executeQuery.cpp
     ExecuteScalarSubqueriesVisitor.cpp
     ExpressionActions.cpp
