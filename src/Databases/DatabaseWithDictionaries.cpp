@@ -223,6 +223,10 @@ void DatabaseWithDictionaries::removeDictionary(const Context &, const String & 
         attachDictionary(dictionary_name, attach_info);
         throw;
     }
+
+    UUID dict_uuid = attach_info.create_query->as<ASTCreateQuery>()->uuid;
+    if (dict_uuid != UUIDHelpers::Nil)
+        DatabaseCatalog::instance().removeUUIDMappingFinally(dict_uuid);
 }
 
 DatabaseDictionariesIteratorPtr DatabaseWithDictionaries::getDictionariesIterator(const FilterByNameFunction & filter_by_dictionary_name)

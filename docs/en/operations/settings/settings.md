@@ -2148,6 +2148,35 @@ Result:
 └───────────────┘
 ```
 
+## output_format_pretty_row_numbers {#output_format_pretty_row_numbers}
+
+Adds row numbers to output in the [Pretty](../../interfaces/formats.md#pretty) format.
+
+Possible values:
+
+-   0 — Output without row numbers.
+-   1 — Output with row numbers.
+
+Default value: `0`.
+
+**Example**
+
+Query:
+
+```sql
+SET output_format_pretty_row_numbers = 1;
+SELECT TOP 3 name, value FROM system.settings;
+```
+
+Result:
+```text
+   ┌─name────────────────────┬─value───┐
+1. │ min_compress_block_size │ 65536   │
+2. │ max_compress_block_size │ 1048576 │
+3. │ max_block_size          │ 65505   │
+   └─────────────────────────┴─────────┘
+```
+
 ## allow_experimental_bigint_types {#allow_experimental_bigint_types}
 
 Enables or disables integer values exceeding the range that is supported by the int data type.
