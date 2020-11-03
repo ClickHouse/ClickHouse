@@ -34,7 +34,6 @@ struct TestKeeperStorageRequest
     TestKeeperStorageRequest(const Coordination::ZooKeeperRequestPtr & zk_request_)
         : zk_request(zk_request_)
     {}
-    virtual bool isMutable() const { return false; }
     virtual std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(TestKeeperStorage::Container & container, int64_t zxid) const = 0;
     virtual ~TestKeeperStorageRequest() {}
 };
