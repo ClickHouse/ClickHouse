@@ -25,11 +25,20 @@ AggregateFunctionPtr createAggregateFunctionAvg(const std::string & name, const 
     assertNoParameters(name, parameters);
     assertUnary(name, argument_types);
 
-    if (!allowType(argument_types[0]))
-        throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
+    const DataTypePtr& data_type = argument_types[0];
+
+    if (!allowType(data_type))
+        throw Exception("Illegal type " + data_type->getName() + " of argument for aggregate function " + name,
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    return std::make_shared<AggregateFunctionAvg>(argument_types);
+    AggregateFunctionPtr res;
+
+    if (isDecimal(data_type))
+        res.reset(createWithDecimalType<AggregateFunctionAvg>(*data_type, argument_types));
+    else
+        res.reset(createWithNumericType<AggregateFunctionAvg>(*data_type, argument_types));
+
+    return res;
 }
 }
 

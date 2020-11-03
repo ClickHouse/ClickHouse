@@ -1,3 +1,5 @@
+# Needed when securely connecting to an external server, e.g.
+# clickhouse-client --host ... --secure
 option(ENABLE_SSL "Enable ssl" ${ENABLE_LIBRARIES})
 
 if(NOT ENABLE_SSL)
