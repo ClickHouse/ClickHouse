@@ -10,6 +10,8 @@
             <values>
                 <value>NONE</value> <!-- as a baseline -->
                 <value>LZ4</value>
+                <value>LZ4F</value>
+                <value>LZ4HC</value>
                 <value>ZSTD</value>
                 <value>DoubleDelta</value>
                 <value>Gorilla</value>

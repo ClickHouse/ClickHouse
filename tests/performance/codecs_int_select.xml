@@ -9,6 +9,8 @@
             <values>
                 <value>NONE</value> <!-- as a baseline -->
                 <value>LZ4</value>
+                <value>LZ4F</value>
+                <value>LZ4HC</value>
                 <value>ZSTD</value>
                 <value>Delta</value>
                 <value>T64</value>

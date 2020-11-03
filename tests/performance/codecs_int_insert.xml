@@ -9,6 +9,8 @@
             <values>
                 <value>NONE</value> <!-- as a baseline -->
                 <value>LZ4</value>
+                <value>LZ4F</value>
+                <value>LZ4HC</value>
                 <value>ZSTD</value>
                 <value>Delta</value>
                 <value>T64</value>
@@ -38,7 +40,7 @@
         </substitution>
     </substitutions>
 
-    <create_query>CREATE TABLE IF NOT EXISTS codec_{seq_type}_{type}_{codec} (n {type} CODEC({codec})) 
+    <create_query>CREATE TABLE IF NOT EXISTS codec_{seq_type}_{type}_{codec} (n {type} CODEC({codec}))
         ENGINE = MergeTree PARTITION BY tuple() ORDER BY tuple()
         SETTINGS parts_to_delay_insert = 5000, parts_to_throw_insert = 5000;</create_query>
     <create_query>system stop merges</create_query>
