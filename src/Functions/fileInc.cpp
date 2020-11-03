@@ -35,7 +35,7 @@ public:
     static constexpr auto name = "fileInc";
     String getName() const override { return name; }
 
-    void execute(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    ColumnPtr execute(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t input_rows_count) override
     {
         const IColumn * arg_column = columns[arguments[0]].column.get();
         const ColumnString * arg_string = checkAndGetColumnConstData<ColumnString>(arg_column);
@@ -49,9 +49,7 @@ public:
 
         Poco::File(file_path.parent()).createDirectories();
 
-        auto increment = Increment(file_path.toString());
-
-        columns[result].column = DataTypeUInt64().createColumnConst(input_rows_count, increment.get(true));
+        return DataTypeUInt64().createColumnConst(input_rows_count, Increment(file_path.toString()).get(true));
     }
 
 private:
@@ -70,9 +68,9 @@ public:
     String getName() const override { return name; }
 
     const DataTypes & getArgumentTypes() const override { return argument_types; }
-    const DataTypePtr & getReturnType() const override { return return_type; }
+    const DataTypePtr & getResultType() const override { return return_type; }
 
-    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &, const ColumnNumbers &, size_t) const override
+    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &) const override
     {
         return std::make_unique<ExecutableFunctionFileInc>(user_files_path);
     }

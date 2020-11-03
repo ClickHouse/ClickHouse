@@ -32,7 +32,7 @@ public:
     static constexpr auto name = "fileExists";
     String getName() const override { return name; }
 
-    void execute(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    ColumnPtr execute(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t input_rows_count) override
     {
         const IColumn * arg_column = columns[arguments[0]].column.get();
         const ColumnString * arg_string = checkAndGetColumnConstData<ColumnString>(arg_column);
@@ -44,7 +44,7 @@ public:
         if (!startsWith(file_path.toString(), user_files_path))
             throw Exception("File path " + file_path.toString() + " is not inside " + user_files_path, ErrorCodes::PATH_ACCESS_DENIED);
 
-        columns[result].column = DataTypeUInt8().createColumnConst(input_rows_count, Poco::File(file_path).exists());
+        return DataTypeUInt8().createColumnConst(input_rows_count, Poco::File(file_path).exists());
     }
 
 private:
@@ -63,9 +63,9 @@ public:
     String getName() const override { return name; }
 
     const DataTypes & getArgumentTypes() const override { return argument_types; }
-    const DataTypePtr & getReturnType() const override { return return_type; }
+    const DataTypePtr & getResultType() const override { return return_type; }
 
-    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &, const ColumnNumbers &, size_t) const override
+    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &) const override
     {
         return std::make_unique<ExecutableFunctionFileExists>(user_files_path);
     }
