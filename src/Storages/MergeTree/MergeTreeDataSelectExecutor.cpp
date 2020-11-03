@@ -803,10 +803,9 @@ Pipe MergeTreeDataSelectExecutor::readFromParts(
 
     if (query_info.prewhere_info && query_info.prewhere_info->remove_columns_actions)
     {
-        auto remove_actions = query_info.prewhere_info->remove_columns_actions->buildExpressions();
-        res.addSimpleTransform([&remove_actions](const Block & header)
+        res.addSimpleTransform([&query_info](const Block & header)
         {
-            return std::make_shared<ExpressionTransform>(header, remove_actions);
+            return std::make_shared<ExpressionTransform>(header, query_info.prewhere_info->remove_columns_actions);
         });
     }
 
