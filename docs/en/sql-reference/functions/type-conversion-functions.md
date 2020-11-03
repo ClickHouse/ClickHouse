@@ -780,4 +780,42 @@ Result:
 └──────────────────────────────────┘
 ```
 
+## formatRowNoNewline {#formatrownonewline}
+
+Converts arbitrary expressions into a string via given format. The function trims the last `\n` if any.
+
+**Syntax** 
+
+``` sql
+formatRowNoNewline(format, x, y, ...)
+```
+
+**Parameters**
+
+-   `format` — Text format. For example, [CSV](../../interfaces/formats.md#csv), [TSV](../../interfaces/formats.md#tabseparated).
+-   `x`,`y`, ... — Expressions.
+
+**Returned value**
+
+-   A formatted string.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT formatRowNoNewline('CSV', number, 'good')
+FROM numbers(3)
+```
+
+Result:
+
+``` text
+┌─formatRowNoNewline('CSV', number, 'good')─┐
+│ 0,"good"                                  │
+│ 1,"good"                                  │
+│ 2,"good"                                  │
+└───────────────────────────────────────────┘
+```
+
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/type_conversion_functions/) <!--hide-->
