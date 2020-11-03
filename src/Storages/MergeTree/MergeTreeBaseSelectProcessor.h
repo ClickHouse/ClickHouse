@@ -58,8 +58,6 @@ protected:
     StorageMetadataPtr metadata_snapshot;
 
     PrewhereInfoPtr prewhere_info;
-    ExpressionActionsPtr prewhere_alias_actions;
-    ExpressionActionsPtr prewhere_actions;
 
     UInt64 max_block_size_rows;
     UInt64 preferred_block_size_bytes;
