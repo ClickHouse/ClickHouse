@@ -2192,7 +2192,7 @@ Default value: `0`.
 
 Disables persistency for StorageSet and StorageJoin. 
 
-Reduces the IO overhead when using StorageSet and StorageJoin. Suitable for scenarios that pursue performance and do not require persistence.
+Reduces the I/O overhead when using the [Set](../../engines/table-engines/special/set.md#set) and [Join](../../engines/table-engines/special/join.md#join) table engines. Suitable for scenarios that pursue performance and do not require persistence.
 
 Possible values:
 
