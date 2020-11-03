@@ -1,3 +1,8 @@
+---
+toc_priority: 31
+toc_title: "\u0420\u0435\u043f\u043b\u0438\u043a\u0430\u0446\u0438\u044f\u0020\u0434\u0430\u043d\u043d\u044b\u0445"
+---
+
 # Репликация данных {#table_engines-replication}
 
 Репликация поддерживается только для таблиц семейства MergeTree:
@@ -14,7 +19,7 @@
 
 Репликация не зависит от шардирования. На каждом шарде репликация работает независимо.
 
-Реплицируются сжатые данные запросов `INSERT`, `ALTER` (см. подробности в описании запроса [ALTER](../../../engines/table-engines/mergetree-family/replication.md#query_language_queries_alter)).
+Реплицируются сжатые данные запросов `INSERT`, `ALTER` (см. подробности в описании запроса [ALTER](../../../sql-reference/statements/alter/index.md#query_language_queries_alter)).
 
 Запросы `CREATE`, `DROP`, `ATTACH`, `DETACH` и `RENAME` выполняются на одном сервере и не реплицируются:
 
@@ -143,6 +148,31 @@ CREATE TABLE table_name
 Можно не использовать подстановки, а указать соответствующие параметры явно. Это может быть удобным для тестирования и при настройке маленьких кластеров. Однако в этом случае нельзя пользоваться распределенными DDL-запросами (`ON CLUSTER`).
 
 При работе с большими кластерами мы рекомендуем использовать подстановки, они уменьшают вероятность ошибки.
+
+Можно указать аргументы по умолчанию для движка реплицируемых таблиц в файле конфигурации сервера.
+
+```xml
+<default_replica_path>/clickhouse/tables/{shard}/{database}/{table}</default_replica_path>
+<default_replica_name>{replica}</default_replica_path>
+```
+
+В этом случае можно опустить аргументы при создании таблиц:
+
+``` sql
+CREATE TABLE table_name (
+	x UInt32
+) ENGINE = ReplicatedMergeTree 
+ORDER BY x;
+```
+
+Это будет эквивалентно следующему запросу:
+
+``` sql
+CREATE TABLE table_name (
+	x UInt32
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/{database}/table_name', '{replica}') 
+ORDER BY x;
+```
 
 Выполните запрос `CREATE TABLE` на каждой реплике. Запрос создаёт новую реплицируемую таблицу, или добавляет новую реплику к имеющимся.
 

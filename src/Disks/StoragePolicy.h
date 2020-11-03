@@ -91,6 +91,9 @@ public:
     /// Checks if storage policy can be replaced by another one.
     void checkCompatibleWith(const StoragePolicyPtr & new_storage_policy) const;
 
+    /// Check if we have any volume with stopped merges
+    bool hasAnyVolumeWithDisabledMerges() const;
+
 private:
     Volumes volumes;
     const String name;
