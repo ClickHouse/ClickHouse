@@ -117,7 +117,7 @@ def test_insert_query():
 
 def test_insert_query_streaming():
     query("CREATE TABLE t (a UInt8) ENGINE = Memory")
-    query("INSERT INTO t VALUES", input_data=["(1),(2),(3)", "(5),(4),(6)", "(8),(7),(9)"])
+    query("INSERT INTO t VALUES", input_data=["(1),(2),(3),", "(5),(4),(6),", "(7),(8),(9)"])
     assert query("SELECT a FROM t ORDER BY a") == "1\n2\n3\n4\n5\n6\n7\n8\n9\n"
 
 def test_insert_default_column():
@@ -128,6 +128,11 @@ def test_insert_default_column():
                                                   "2\t100\ty\n" \
                                                   "3\t100\tc\n" \
                                                   "4\t100\tc\n"
+
+def test_insert_splitted_row():
+    query("CREATE TABLE t (a UInt8) ENGINE = Memory")
+    query("INSERT INTO t VALUES", input_data=["(1),(2),(", "3),(5),(4),(6)"])
+    assert query("SELECT a FROM t ORDER BY a") == "1\n2\n3\n4\n5\n6\n"
 
 def test_output_format():
     query("CREATE TABLE t (a UInt8) ENGINE = Memory")
