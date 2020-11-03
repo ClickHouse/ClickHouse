@@ -24,6 +24,10 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
 
+#ifdef __SSSE3__
+#include <tmmintrin.h>
+#endif
+
 
 namespace DB
 {
@@ -105,7 +109,7 @@ struct AggregateFunctionUniqExactData
     static String getName() { return "uniqExact"; }
 };
 
-/// For rows, we put the SipHash values (128 bits) into the hash table.
+/// For strings, we put the SipHash values (128 bits) into the hash table.
 template <>
 struct AggregateFunctionUniqExactData<String>
 {
@@ -182,9 +186,65 @@ struct OneAdder
                 StringRef value = column.getDataAt(row_num);
 
                 UInt128 key;
-                SipHash hash;
-                hash.update(value.data, value.size);
-                hash.get128(key.low, key.high);
+
+#ifdef __SSSE3__
+                /// A trick for better performance: use last bit of key as a flag.
+                /// If string is not larger than 15 bytes, set the flag to zero and put the string itself into the key.
+                /// If it is larger - calculate it's cryptographic hash but set the last bit to one.
+
+                if (value.size <= 15)
+                {
+                    /// We will do memcpy of value up to its size and memset to zero of the rest bytes.
+                    /// It is possible to do it with a single "shuffle" instruction (and load, store).
+                    /// Columns have 15 bytes padding, that's why it is safe to read 16 bytes.
+
+                    static constexpr Int8 __attribute__((__aligned__(16))) masks[] =
+                    {
+                       -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+                        0, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+                        0,  1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+                        0,  1,  2, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+                        0,  1,  2,  3, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+                        0,  1,  2,  3,  4, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+                        0,  1,  2,  3,  4,  5, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+                        0,  1,  2,  3,  4,  5,  6, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+                        0,  1,  2,  3,  4,  5,  6,  7, -1, -1, -1, -1, -1, -1, -1, -1,
+                        0,  1,  2,  3,  4,  5,  6,  7,  8, -1, -1, -1, -1, -1, -1, -1,
+                        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, -1, -1, -1, -1, -1, -1,
+                        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, -1, -1, -1, -1, -1,
+                        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, -1, -1, -1, -1,
+                        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, -1, -1, -1,
+                        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, -1, -1,
+                        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, -1,
+                    };
+
+                    _mm_storeu_si128(reinterpret_cast<__m128i *>(&key),
+                        _mm_shuffle_epi8(
+                            _mm_loadu_si128(reinterpret_cast<const __m128i *>(value.data)),
+                            _mm_load_si128(reinterpret_cast<const __m128i *>(masks) + value.size)));
+
+                    /// Apply some very light bijective hashing.
+                    /// It is needed, because the hash table is using trivial hash (just key.low % table size).
+
+                    key.low ^= key.low >> 33;
+                    key.low *= 0xff51afd7ed558ccdULL;
+                    /// Very similar to murmur finalizer, the only difference is that we mix higher part of strings also.
+                    /// key.high remains untouched, that's why this step is also bijective.
+                    key.low ^= key.high;
+                    key.low ^= key.low >> 33;
+                    key.low *= 0xc4ceb9fe1a85ec53ULL;
+                    key.low ^= key.low >> 33;
+                }
+                else
+#endif
+                {
+                    SipHash hash;
+                    hash.update(value.data, value.size);
+                    hash.get128(key.low, key.high);
+#ifdef __SSSE3__
+                    key.high |= 0x8000000000000000ULL;  /// Assuming little endian.
+#endif
+                }
 
                 data.set.insert(key);
             }
