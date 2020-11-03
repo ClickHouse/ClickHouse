@@ -476,10 +476,7 @@ def err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, mysql_n
             service_name))
 
     # wait MaterializeMySQL read binlog events
-    time.sleep(90)
-
-    assert "test_table_1" in clickhouse_node.query("SHOW TABLES FROM test_database")
-    check_query(clickhouse_node, "SELECT count() FROM test_database.test_table_1 FORMAT TSV", "6\n", 5, 5)
+    check_query(clickhouse_node, "SELECT count() FROM test_database.test_table_1 FORMAT TSV", "6\n", 30, 5)
     mysql_node.query("INSERT INTO test_database.test_table_1 VALUES(7);")
     check_query(clickhouse_node, "SELECT count() FROM test_database.test_table_1 FORMAT TSV", "7\n")
     clickhouse_node.query("DROP DATABASE test_database;")
