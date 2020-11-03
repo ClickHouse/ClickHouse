@@ -254,6 +254,15 @@ def test_no_session():
     e = query_and_get_error("SET custom_x=1")
     assert "There is no session" in e.display_text
 
+def test_input_function():
+    query("CREATE TABLE t (a UInt8) ENGINE = Memory")
+    query("INSERT INTO t SELECT col1 * col2 FROM input('col1 UInt8, col2 UInt8') FORMAT CSV", input_data=["5,4\n", "8,11\n", "10,12\n"])
+    assert query("SELECT a FROM t ORDER BY a") == "20\n88\n120\n"
+    query("INSERT INTO t SELECT col1 * col2 FROM input('col1 UInt8, col2 UInt8') FORMAT CSV 11,13")
+    assert query("SELECT a FROM t ORDER BY a") == "20\n88\n120\n143\n"
+    query("INSERT INTO t SELECT col1 * col2 FROM input('col1 UInt8, col2 UInt8') FORMAT CSV 20,10\n", input_data="15,15\n")
+    assert query("SELECT a FROM t ORDER BY a") == "20\n88\n120\n143\n200\n225\n"
+
 def test_simultaneous_queries_same_channel():
     threads=[]
     try:
