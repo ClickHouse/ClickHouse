@@ -1,0 +1,31 @@
+<test>
+    <create_query>DROP TABLE IF EXISTS perf_avg</create_query>
+    <create_query>SET allow_experimental_bigint_types=1</create_query>
+
+    <create_query>CREATE TABLE perf_avg(
+        num UInt64,
+        num_u Decimal256(75) DEFAULT toDecimal256(num / 100000, 75),
+        num_f Float64 DEFAULT num
+        ) ENGINE = MergeTree() ORDER BY tuple()
+    </create_query>
+
+    <fill_query>
+        INSERT INTO perf_avg(num)
+        SELECT number / r
+        FROM system.numbers
+        ARRAY JOIN range(1, 1000000) AS r
+        LIMIT 500000000
+    </fill_query>
+
+    <query>SELECT avg(num) FROM perf_avg</query>
+    <query>SELECT avg(num_u) FROM perf_avg</query>
+    <query>SELECT avg(num_f) FROM perf_avg</query>
+    <query>SELECT avgWeighted(num_f, num) FROM perf_avg</query>
+    <query>SELECT avgWeighted(num_f, num_f) FROM perf_avg</query>
+    <query>SELECT avgWeighted(num_f, num_u) FROM perf_avg</query>
+    <query>SELECT avgWeighted(num_u, num_f) FROM perf_avg</query>
+    <query>SELECT avgWeighted(num_u, num) FROM perf_avg</query>
+    <query>SELECT avgWeighted(num_u, num_u) FROM perf_avg</query>
+
+    <drop_query>DROP TABLE IF EXISTS perf_avg</drop_query>
+</test>
