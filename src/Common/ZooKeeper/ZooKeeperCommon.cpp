@@ -181,7 +181,8 @@ void ZooKeeperResponse::write(WriteBuffer & out) const
     Coordination::write(xid, buf);
     Coordination::write(zxid, buf);
     Coordination::write(error, buf);
-    writeImpl(buf);
+    if (error == Error::ZOK)
+        writeImpl(buf);
     LOG_DEBUG(&Poco::Logger::get("LOG"), "BUFFER LENGTH {}", buf.str().length());
     Coordination::write(buf.str(), out);
     out.next();
