@@ -234,6 +234,7 @@ private:
     void dropTableFinally(const TableMarkedAsDropped & table);
 
     static constexpr size_t reschedule_time_ms = 100;
+    static constexpr time_t drop_error_cooldown_sec = 5;
 
 private:
     using UUIDToDatabaseMap = std::unordered_map<UUID, DatabasePtr>;
