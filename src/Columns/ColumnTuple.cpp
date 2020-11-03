@@ -309,15 +309,15 @@ int ColumnTuple::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs,
     return compareAtImpl(n, m, rhs, nan_direction_hint, &collator);
 }
 
+template <bool positive>
 struct ColumnTuple::Less
 {
     TupleColumns columns;
     int nan_direction_hint;
-    bool reverse;
     const Collator * collator;
 
-    Less(const TupleColumns & columns_, int nan_direction_hint_, bool reverse_=false, const Collator * collator_=nullptr)
-        : columns(columns_), nan_direction_hint(nan_direction_hint_), reverse(reverse_), collator(collator_)
+    Less(const TupleColumns & columns_, int nan_direction_hint_, const Collator * collator_=nullptr)
+        : columns(columns_), nan_direction_hint(nan_direction_hint_), collator(collator_)
     {
     }
 
@@ -331,9 +331,9 @@ struct ColumnTuple::Less
             else
                 res = column->compareAt(a, b, *column, nan_direction_hint);
             if (res < 0)
-                return !reverse;
+                return positive;
             else if (res > 0)
-                return reverse;
+                return !positive;
         }
         return false;
     }
@@ -382,7 +382,10 @@ void ColumnTuple::updatePermutationImpl(bool reverse, size_t limit, int nan_dire
 
 void ColumnTuple::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
 {
-    getPermutationImpl(limit, res, Less(columns, nan_direction_hint, reverse));
+    if (reverse)
+        getPermutationImpl(limit, res, Less<false>(columns, nan_direction_hint));
+    else
+        getPermutationImpl(limit, res, Less<true>(columns, nan_direction_hint));
 }
 
 void ColumnTuple::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
@@ -392,7 +395,10 @@ void ColumnTuple::updatePermutation(bool reverse, size_t limit, int nan_directio
 
 void ColumnTuple::getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
 {
-    getPermutationImpl(limit, res, Less(columns, nan_direction_hint, reverse, &collator));
+    if (reverse)
+        getPermutationImpl(limit, res, Less<false>(columns, nan_direction_hint, &collator));
+    else
+        getPermutationImpl(limit, res, Less<true>(columns, nan_direction_hint, &collator));
 }
 
 void ColumnTuple::updatePermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const

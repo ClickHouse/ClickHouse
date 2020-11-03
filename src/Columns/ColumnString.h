@@ -42,8 +42,10 @@ private:
     /// Size of i-th element, including terminating zero.
     size_t ALWAYS_INLINE sizeAt(ssize_t i) const { return offsets[i] - offsets[i - 1]; }
 
+    template <bool positive>
     struct Cmp;
 
+    template <bool positive>
     struct CmpWithCollation;
 
     ColumnString() = default;

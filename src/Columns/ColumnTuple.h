@@ -20,6 +20,7 @@ private:
     using TupleColumns = std::vector<WrappedPtr>;
     TupleColumns columns;
 
+    template <bool positive>
     struct Less;
 
     explicit ColumnTuple(MutableColumns && columns);

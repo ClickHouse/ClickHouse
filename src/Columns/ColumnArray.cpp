@@ -368,15 +368,14 @@ void ColumnArray::compareColumn(const IColumn & rhs, size_t rhs_row_num,
                                         compare_results, direction, nan_direction_hint);
 }
 
-struct ColumnArray::Cmp
-{
+template <bool positive>
+struct ColumnArray::Cmp {
     const ColumnArray & parent;
     int nan_direction_hint;
-    bool reverse;
     const Collator * collator;
 
-    Cmp(const ColumnArray & parent_, int nan_direction_hint_, bool reverse_ = false, const Collator * collator_ = nullptr)
-        : parent(parent_), nan_direction_hint(nan_direction_hint_), reverse(reverse_), collator(collator_) {}
+    Cmp(const ColumnArray & parent_, int nan_direction_hint_, const Collator * collator_=nullptr)
+        : parent(parent_), nan_direction_hint(nan_direction_hint_), collator(collator_) {}
 
     int operator()(size_t lhs, size_t rhs) const
     {
@@ -385,7 +384,7 @@ struct ColumnArray::Cmp
             res = parent.compareAtWithCollation(lhs, rhs, parent, nan_direction_hint, *collator);
         else
             res = parent.compareAt(lhs, rhs, parent, nan_direction_hint);
-        return reverse ? -res : res;
+        return positive ? res : -res;
     }
 };
 
@@ -866,22 +865,35 @@ void ColumnArray::updatePermutationImpl(size_t limit, Permutation & res, EqualRa
 
 void ColumnArray::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
 {
-    getPermutationImpl(limit, res, Cmp(*this, nan_direction_hint, reverse));
+    if (reverse)
+        getPermutationImpl(limit, res, Cmp<false>(*this, nan_direction_hint));
+    else
+        getPermutationImpl(limit, res, Cmp<true>(*this, nan_direction_hint));
+
 }
 
 void ColumnArray::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_range) const
 {
-    updatePermutationImpl(limit, res, equal_range, Cmp(*this, nan_direction_hint, reverse));
+    if (reverse)
+        updatePermutationImpl(limit, res, equal_range, Cmp<false>(*this, nan_direction_hint));
+    else
+        updatePermutationImpl(limit, res, equal_range, Cmp<true>(*this, nan_direction_hint));
 }
 
 void ColumnArray::getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
 {
-    getPermutationImpl(limit, res, Cmp(*this, nan_direction_hint, reverse, &collator));
+    if (reverse)
+        getPermutationImpl(limit, res, Cmp<false>(*this, nan_direction_hint, &collator));
+    else
+        getPermutationImpl(limit, res, Cmp<true>(*this, nan_direction_hint, &collator));
 }
 
 void ColumnArray::updatePermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_range) const
 {
-    updatePermutationImpl(limit, res, equal_range, Cmp(*this, nan_direction_hint, reverse, &collator));
+    if (reverse)
+        updatePermutationImpl(limit, res, equal_range, Cmp<false>(*this, nan_direction_hint, &collator));
+    else
+        updatePermutationImpl(limit, res, equal_range, Cmp<true>(*this, nan_direction_hint, &collator));
 }
 
 ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
