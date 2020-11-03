@@ -283,7 +283,9 @@ void ExpressionActions::executeAction(const Action & action, ExecutionContext & 
             if (pos < 0)
             {
                 if (!action.arguments.front().remove)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found column {} in block", action.node->result_name);
+                    throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
+                                    "Not found column {} in block",
+                                    action.node->result_name);
             }
             else
                 columns[action.result_position] = std::move(inputs[pos]);
