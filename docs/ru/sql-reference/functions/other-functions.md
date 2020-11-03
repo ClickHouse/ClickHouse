@@ -929,7 +929,7 @@ SELECT defaultValueOfArgumentType( CAST(1 AS Nullable(Int8) ) )
 
 ## defaultValueOfTypeName {#defaultvalueoftypename}
 
-Выводит значение по умолчанию для заданного типа имени.
+Выводит значение по умолчанию для указанного типа данных.
 
 Не включает значения по умолчанию для настраиваемых столбцов, установленных пользователем.
 
