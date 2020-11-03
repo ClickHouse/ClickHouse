@@ -10,9 +10,6 @@ from helpers.test_tools import assert_eq_with_retry
 cluster = ClickHouseCluster(__file__, zookeeper_config_path='configs/zookeeper.xml')
 node = cluster.add_instance('node', with_zookeeper=True)
 
-SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-ZK_CONFIG_PATH = os.path.join(SCRIPT_DIR, 'configs/zookeeper.xml')
-
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -28,7 +25,6 @@ def start_cluster():
 
         yield cluster
     finally:
-        config.close()
         cluster.shutdown()
 
 def test_reload_zookeeper(start_cluster):
