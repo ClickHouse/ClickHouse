@@ -497,6 +497,7 @@ namespace
         String output_format;
         uint64_t interactive_delay = 100000;
         bool send_exception_with_stacktrace = true;
+        bool input_function_is_used = false;
 
         BlockIO io;
         Progress progress;
@@ -704,6 +705,26 @@ namespace
         if (output_format.empty())
             output_format = query_context->getDefaultFormat();
 
+        /// Set callbacks to execute function input().
+        query_context->setInputInitializer([this] (Context & context, const StoragePtr & input_storage)
+        {
+            if (&context != &query_context.value())
+                throw Exception("Unexpected context in Input initializer", ErrorCodes::LOGICAL_ERROR);
+            input_function_is_used = true;
+            initializeBlockInputStream(input_storage->getInMemoryMetadataPtr()->getSampleBlock());
+            block_input_stream->readPrefix();
+        });
+
+        query_context->setInputBlocksReaderCallback([this](Context & context) -> Block
+        {
+            if (&context != &query_context.value())
+                throw Exception("Unexpected context in InputBlocksReader", ErrorCodes::LOGICAL_ERROR);
+            auto block = block_input_stream->read();
+            if (!block)
+                block_input_stream->readSuffix();
+            return block;
+        });
+
         /// Start executing the query.
         const auto * query_end = end;
         if (insert_query && insert_query->data)
@@ -837,8 +858,9 @@ namespace
         block_output_stream = query_context->getOutputFormat(output_format, *write_buffer, async_in.getHeader());
         Stopwatch after_send_progress;
 
-        /// We are not going to receive input data anymore.
-        check_query_info_contains_cancel_only = true;
+        /// Unless the input() function is used we are not going to receive input data anymore.
+        if (!input_function_is_used)
+            check_query_info_contains_cancel_only = true;
 
         auto check_for_cancel = [&]
         {
@@ -909,8 +931,9 @@ namespace
         block_output_stream->writePrefix();
         Stopwatch after_send_progress;
 
-        /// We are not going to receive input data anymore.
-        check_query_info_contains_cancel_only = true;
+        /// Unless the input() function is used we are not going to receive input data anymore.
+        if (!input_function_is_used)
+            check_query_info_contains_cancel_only = true;
 
         auto check_for_cancel = [&]
         {
