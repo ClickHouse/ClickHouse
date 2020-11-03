@@ -505,7 +505,7 @@ private:
 
     /// Creates new block number if block with such block_id does not exist
     std::optional<EphemeralLockInZooKeeper> allocateBlockNumber(
-        const String & partition_id, zkutil::ZooKeeperPtr & zookeeper,
+        const String & partition_id, const zkutil::ZooKeeperPtr & zookeeper,
         const String & zookeeper_block_id_path = "");
 
     /** Wait until all replicas, including this, execute the specified action from the log.
@@ -562,6 +562,9 @@ private:
     MutationCommands getFirtsAlterMutationCommandsForPart(const DataPartPtr & part) const override;
 
     void startBackgroundMovesIfNeeded() override;
+
+    template <typename T>
+    std::set<String> getPartitionIdsAffectedByCommands(const std::vector<T> & commands, const Context & query_context) const;
 
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.

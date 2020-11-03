@@ -3920,6 +3920,29 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
 }
 
 
+template <typename T>
+std::set<String> StorageReplicatedMergeTree::getPartitionIdsAffectedByCommands(
+        const std::vector<T> & commands, const Context & query_context) const
+{
+    std::set<String> affected_partition_ids;
+
+    for (const auto & command : commands)
+    {
+        if (!command.partition)
+        {
+            affected_partition_ids.clear();
+            break;
+        }
+
+        affected_partition_ids.insert(
+            getPartitionIDFromQuery(command.partition, query_context)
+        );
+    }
+
+    return affected_partition_ids;
+}
+
+
 void StorageReplicatedMergeTree::alter(
     const AlterCommands & commands, const Context & query_context, TableLockHolder & table_lock_holder)
 {
@@ -3947,7 +3970,7 @@ void StorageReplicatedMergeTree::alter(
         return queryToString(query);
     };
 
-    auto zookeeper = getZooKeeper();
+    const auto zookeeper = getZooKeeper();
 
     std::optional<ReplicatedMergeTreeLogEntryData> alter_entry;
     std::optional<String> mutation_znode;
@@ -4038,6 +4061,8 @@ void StorageReplicatedMergeTree::alter(
         {
             String mutations_path = zookeeper_path + "/mutations";
 
+            const auto mutation_affected_partition_ids = getPartitionIdsAffectedByCommands(maybe_mutation_commands, query_context);
+
             ReplicatedMergeTreeMutationEntry mutation_entry;
             mutation_entry.source_replica = replica_name;
             mutation_entry.commands = maybe_mutation_commands;
@@ -4045,19 +4070,33 @@ void StorageReplicatedMergeTree::alter(
             Coordination::Stat mutations_stat;
             zookeeper->get(mutations_path, &mutations_stat);
 
-            lock_holder.emplace(
-                zookeeper_path + "/block_numbers", "block-", zookeeper_path + "/temp", *zookeeper);
+            if (mutation_affected_partition_ids.size() == 1)
+            {
+                const auto & affected_partition_id = *mutation_affected_partition_ids.cbegin();
+                const auto block_number = allocateBlockNumber(affected_partition_id, zookeeper);
+                if (block_number)
+                    mutation_entry.block_numbers[affected_partition_id] = block_number->getNumber();
+            }
+            else
+            {
+                /// TODO: Implement optimal block number aqcuisition algorithm in multiple (but not all) partitions
+                lock_holder.emplace(
+                    zookeeper_path + "/block_numbers", "block-", zookeeper_path + "/temp", *zookeeper);
 
-            /// N.B.: None of mutation commands possible here can have scope "partition":
-            ///   See AlterCommand::tryConvertToMutationCommand(): MODIFY_COLUMN, DROP_COLUMN, DROP_INDEX, RENAME_COLUMN
-            for (const auto & lock : lock_holder->getLocks())
-                mutation_entry.block_numbers[lock.partition_id] = lock.number;
+                for (const auto & lock : lock_holder->getLocks())
+                {
+                    if (mutation_affected_partition_ids.empty() || mutation_affected_partition_ids.count(lock.partition_id))
+                        mutation_entry.block_numbers[lock.partition_id] = lock.number;
+                }
+            }
 
-            mutation_entry.create_time = time(nullptr);
-
-            ops.emplace_back(zkutil::makeSetRequest(mutations_path, String(), mutations_stat.version));
-            ops.emplace_back(
-                zkutil::makeCreateRequest(mutations_path + "/", mutation_entry.toString(), zkutil::CreateMode::PersistentSequential));
+            if (mutation_entry.block_numbers.size() > 0)
+            {
+                mutation_entry.create_time = time(nullptr);
+                ops.emplace_back(zkutil::makeSetRequest(mutations_path, String(), mutations_stat.version));
+                ops.emplace_back(
+                    zkutil::makeCreateRequest(mutations_path + "/", mutation_entry.toString(), zkutil::CreateMode::PersistentSequential));
+            }
         }
 
         Coordination::Responses results;
@@ -4407,7 +4446,7 @@ bool StorageReplicatedMergeTree::existsNodeCached(const std::string & path)
 
 std::optional<EphemeralLockInZooKeeper>
 StorageReplicatedMergeTree::allocateBlockNumber(
-    const String & partition_id, zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_block_id_path)
+    const String & partition_id, const zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_block_id_path)
 {
     /// Lets check for duplicates in advance, to avoid superfluous block numbers allocation
     Coordination::Requests deduplication_check_ops;
@@ -5054,52 +5093,39 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const
     entry.source_replica = replica_name;
     entry.commands = commands;
 
-    /// TODO: Currently partition-scoped mutations are implemented only for single partition
-    String scoped_mutation_partition_id;
-    for (const auto & command : entry.commands)
-    {
-        if (command.partition)
-        {
-            const auto partition_id = getPartitionIDFromQuery(command.partition, query_context);
-            if (scoped_mutation_partition_id.empty())
-            {
-                scoped_mutation_partition_id = partition_id;
-                continue;
-            }
-            if (scoped_mutation_partition_id == partition_id)
-                continue;
-        }
+    const auto mutation_affected_partition_ids = getPartitionIdsAffectedByCommands(entry.commands, query_context);
 
-        scoped_mutation_partition_id = {};
-        break;
-    }
-
-    String mutations_path = zookeeper_path + "/mutations";
+    const String mutations_path = zookeeper_path + "/mutations";
 
     /// Update the mutations_path node when creating the mutation and check its version to ensure that
     /// nodes for mutations are created in the same order as the corresponding block numbers.
     /// Should work well if the number of concurrent mutation requests is small.
 
-    auto zookeeper = getZooKeeper();
+    const auto zookeeper = getZooKeeper();
 
     while (true)
     {
         Coordination::Stat mutations_stat;
         zookeeper->get(mutations_path, &mutations_stat);
 
-        if (scoped_mutation_partition_id.empty())
+        if (mutation_affected_partition_ids.size() == 1)
         {
+            const auto & affected_partition_id = *mutation_affected_partition_ids.cbegin();
+            const auto block_number = allocateBlockNumber(affected_partition_id, zookeeper);
+            if (block_number)
+                entry.block_numbers[affected_partition_id] = block_number->getNumber();
+        }
+        else
+        {
+            /// TODO: Implement optimal block number aqcuisition algorithm in multiple (but not all) partitions
             EphemeralLocksInAllPartitions block_number_locks(
                 zookeeper_path + "/block_numbers", "block-", zookeeper_path + "/temp", *zookeeper);
 
             for (const auto & lock : block_number_locks.getLocks())
-                entry.block_numbers[lock.partition_id] = lock.number;
-        }
-        else
-        {
-            const auto block_number = allocateBlockNumber(scoped_mutation_partition_id, zookeeper);
-            if (block_number)
-                entry.block_numbers[scoped_mutation_partition_id] = block_number->getNumber();
+            {
+                if (mutation_affected_partition_ids.empty() || mutation_affected_partition_ids.count(lock.partition_id))
+                    entry.block_numbers[lock.partition_id] = lock.number;
+            }
         }
 
         entry.create_time = time(nullptr);
