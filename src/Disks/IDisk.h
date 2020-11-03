@@ -208,7 +208,7 @@ public:
     virtual String getUniqueId(const String & path) const { return path; }
 
     /// Check file, overrided for S3 only
-    virtual bool checkFile(const String & path) const { return exists(path); }
+    virtual bool checkUniqueId(const String & id) const { return exists(id); }
 
     /// Returns executor to perform asynchronous operations.
     virtual Executor & getExecutor() { return *executor; }

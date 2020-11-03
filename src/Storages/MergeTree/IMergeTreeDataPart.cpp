@@ -1095,17 +1095,24 @@ bool IMergeTreeDataPart::checkAllTTLCalculated(const StorageMetadataPtr & metada
     return true;
 }
 
-void IMergeTreeDataPart::lockSharedData(const String & zookeeper_path, const String & replica_name, zkutil::ZooKeeperPtr zookeeper) const
+String IMergeTreeDataPart::getUniqueId() const
 {
+    String id;
+
     auto disk = volume->getDisk();
 
-    if (disk->getType() != "s3")
-        return;
-
-    String id = disk->getUniqueId(getFullRelativePath() + "checksums.txt");
+    if (disk->getType() == "s3")
+        id = disk->getUniqueId(getFullRelativePath() + "checksums.txt");
 
     if (id.empty())
-        throw Exception("Can't lock part on S3 storage", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Can't get unique S3 object", ErrorCodes::LOGICAL_ERROR);
+
+    return id;
+}
+
+void IMergeTreeDataPart::lockSharedData(const String & zookeeper_path, const String & replica_name, zkutil::ZooKeeperPtr zookeeper) const
+{
+    String id = getUniqueId();
 
     String zookeeper_node = zookeeper_path + "/zero_copy_s3/shared/" + id + "/" + replica_name;
 
@@ -1117,15 +1124,7 @@ void IMergeTreeDataPart::lockSharedData(const String & zookeeper_path, const Str
 
 bool IMergeTreeDataPart::unlockSharedData(const String & zookeeper_path, const String & replica_name, zkutil::ZooKeeperPtr zookeeper) const
 {
-    auto disk = volume->getDisk();
-
-    if (disk->getType() != "s3")
-        return true;
-
-    String id = disk->getUniqueId(getFullRelativePath() + "checksums.txt");
-
-    if (id.empty())
-        return true;
+    String id = getUniqueId();
 
     String zookeeper_part_node = zookeeper_path + "/zero_copy_s3/shared/" + id;
     String zookeeper_node = zookeeper_part_node + "/" + replica_name;

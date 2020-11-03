@@ -241,6 +241,9 @@ void Service::sendPartS3Metadata(const MergeTreeData::DataPartPtr & part, WriteB
 
     part->lockSharedData(zookeeper_path, replica_name, zookeeper);
 
+    String part_id = part->getUniqueId();
+    writeStringBinary(part_id, out);
+
     writeBinary(checksums.files.size(), out);
     for (const auto & it : checksums.files)
     {
@@ -555,7 +558,22 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToS3(
     if (disks_s3.empty())
         throw Exception("No S3 disks anymore", ErrorCodes::LOGICAL_ERROR);
 
-    auto disk = disks_s3[0];
+    String part_id;
+    readStringBinary(part_id, in);
+
+    DiskPtr disk = disks_s3[0];
+
+    for (const auto & disk_ : disks_s3)
+    {
+        if (disk_->checkUniqueId(part_id))
+        {
+            disk = disk_;
+            break;
+        }
+    }
+
+    if (!disk)
+        throw Exception("Can't find S3 disk", ErrorCodes::S3_ERROR);
 
     static const String TMP_PREFIX = "tmp_fetch_";
     String tmp_prefix = tmp_prefix_.empty() ? TMP_PREFIX : tmp_prefix_;
@@ -610,50 +628,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToS3(
             {
                 throw Exception("Checksum mismatch for file " + metadata_file + " transferred from " + replica_path,
                     ErrorCodes::CHECKSUM_DOESNT_MATCH);
-            }
-        }
-
-        if (!i)
-        { /// Check access for first s3 object of first file
-            if (!disk->checkFile(data_path))
-            { /// Wrong S3 disk
-                Poco::File metadata(metadata_file);
-
-                size_t disk_id = 1;
-                while (true)
-                {
-                    if (disk_id >= disks_s3.size())
-                    { /// No more S3 disks
-                        disk->removeSharedRecursive(part_download_path, true);
-                        /// After catch this exception replication continues with full data copy
-                        throw Exception("Can't find S3 drive for shared data", ErrorCodes::S3_ERROR);
-                    }
-
-                    /// Try next S3 disk
-                    auto next_disk = disks_s3[disk_id];
-
-                    auto next_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, next_disk);
-                    MergeTreeData::MutableDataPartPtr next_new_data_part = data.createPart(part_name, next_volume, part_relative_path);
-
-                    next_disk->createDirectories(part_download_path);
-
-                    String next_data_path = next_new_data_part->getFullRelativePath() + file_name;
-                    String next_metadata_file = fullPath(next_disk, next_data_path);
-                    metadata.copyTo(next_metadata_file);
-                    if (next_disk->checkFile(next_data_path))
-                    { /// Right disk found
-                        disk->removeSharedRecursive(part_download_path, true);
-                        disk = next_disk;
-                        volume = next_volume;
-                        data_path = next_data_path;
-                        new_data_part = next_new_data_part;
-                        break;
-                    }
-
-                    /// Wrong disk again
-                    next_disk->removeSharedRecursive(part_download_path, true);
-                    ++disk_id;
-                }
             }
         }
     }

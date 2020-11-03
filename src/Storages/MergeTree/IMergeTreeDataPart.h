@@ -359,6 +359,8 @@ public:
     /// part creation (using alter query with materialize_ttl setting).
     bool checkAllTTLCalculated(const StorageMetadataPtr & metadata_snapshot) const;
 
+    String getUniqueId() const;
+
     /// Lock part in zookeeper for use common S3 data in several nodes
     void lockSharedData(const String & zookeeper_path, const String & replica_name, zkutil::ZooKeeperPtr zookeeper) const;
 
