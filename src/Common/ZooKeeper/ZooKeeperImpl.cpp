@@ -7,6 +7,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <common/logger_useful.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
@@ -750,9 +751,12 @@ void ZooKeeper::receiveEvent()
     Error err;
 
     read(length);
+    std::cerr << "RECEIVED LENGTH " << length << std::endl;
     size_t count_before_event = in->count();
     read(xid);
+    std::cerr << "RECEIVED XID " << xid << std::endl;
     read(zxid);
+    std::cerr << "RECEIVED ZXID " << zxid << std::endl;
     read(err);
 
     RequestInfo request_info;
@@ -806,7 +810,7 @@ void ZooKeeper::receiveEvent()
 
             auto it = operations.find(xid);
             if (it == operations.end())
-                throw Exception("Received response for unknown xid", Error::ZRUNTIMEINCONSISTENCY);
+                throw Exception("Received response for unknown xid " + toString(xid), Error::ZRUNTIMEINCONSISTENCY);
 
             /// After this point, we must invoke callback, that we've grabbed from 'operations'.
             /// Invariant: all callbacks are invoked either in case of success or in case of error.

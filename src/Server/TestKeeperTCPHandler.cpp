@@ -12,6 +12,7 @@
 #include <Common/NetException.h>
 #include <Common/setThreadName.h>
 #include <common/logger_useful.h>
+#include <chrono>
 
 namespace DB
 {
@@ -279,16 +280,23 @@ void TestKeeperTCPHandler::runImpl()
     while (true)
     {
         UInt64 max_wait = operation_timeout.totalMicroseconds();
+        using namespace std::chrono_literals;
+        if (!responses.empty() && responses.front().wait_for(100ms) == std::future_status::ready)
+        {
+            auto response = responses.front().get();
+            response->write(*out);
+            responses.pop();
+        }
+
         if (in->poll(max_wait))
         {
             receiveHeartbeatRequest();
-            sendHeartbeatResponse();
         }
     }
 }
 
 
-void TestKeeperTCPHandler::receiveHeartbeatRequest()
+bool TestKeeperTCPHandler::receiveHeartbeatRequest()
 {
     LOG_DEBUG(log, "Receiving heartbeat event");
     int32_t length;
@@ -301,12 +309,14 @@ void TestKeeperTCPHandler::receiveHeartbeatRequest()
 
     LOG_DEBUG(log, "Received xid {}", xid);
 
+    Coordination::ZooKeeperRequestPtr request;
     if (xid == -2)
     {
         int32_t opnum;
         read(opnum, *in);
         LOG_DEBUG(log, "RRECEIVED OP NUM {}", opnum);
-        auto request = std::make_shared<Coordination::ZooKeeperHeartbeatRequest>();
+        request = std::make_shared<Coordination::ZooKeeperHeartbeatRequest>();
+        request->xid = xid;
         request->readImpl(*in);
         int32_t readed = in->count() - total_count;
         if (readed != length)
@@ -314,10 +324,25 @@ void TestKeeperTCPHandler::receiveHeartbeatRequest()
     }
     else
     {
-        LOG_INFO(log, "UNKNOWN EVENT xid:{}", xid);
+        int32_t opnum;
+        read(opnum, *in);
+        LOG_DEBUG(log, "RRECEIVED OP NUM {}", opnum);
+        if (opnum == 1)
+            request = std::make_shared<Coordination::ZooKeeperCreateRequest>();
+        else if (opnum == 4)
+            request = std::make_shared<Coordination::ZooKeeperGetRequest>();
+        request->readImpl(*in);
+        request->xid = xid;
+        int32_t readed = in->count() - total_count;
+        if (readed != length)
+            LOG_DEBUG(log, "EXPECTED TO READ {}, BUT GOT {}", length, readed);
+        LOG_DEBUG(log, "REQUEST PUTTED TO STORAGE");
     }
 
+    responses.push(test_keeper_storage->putRequest(request));
+
     LOG_DEBUG(log, "Event received");
+    return false;
 }
 
 

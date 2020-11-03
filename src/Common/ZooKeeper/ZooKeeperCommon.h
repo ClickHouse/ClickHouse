@@ -27,9 +27,13 @@ using OpNum = int32_t;
 
 struct ZooKeeperResponse : virtual Response
 {
+    XID xid = 0;
+    int64_t zxid;
+
     virtual ~ZooKeeperResponse() override = default;
     virtual void readImpl(ReadBuffer &) = 0;
     virtual void writeImpl(WriteBuffer &) const = 0;
+    void write(WriteBuffer & out) const;
     virtual OpNum getOpNum() const = 0;
 };
 

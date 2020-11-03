@@ -4,19 +4,21 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <future>
 
 namespace zkutil
 {
 
 using namespace DB;
+struct TestKeeperStorageRequest;
+using TestKeeperStorageRequestPtr = std::shared_ptr<TestKeeperStorageRequest>;
 
 class TestKeeperStorage
 {
 
 public:
-    struct TestKeeperRequest;
-    using TestKeeperRequestPtr = std::shared_ptr<TestKeeperRequest>;
 
+    Poco::Timespan operation_timeout{10000};
     std::atomic<int64_t> session_id_counter{0};
 
     struct Node
@@ -39,6 +41,7 @@ public:
     String root_path;
 
     std::atomic<int64_t> zxid{0};
+    std::atomic<bool> shutdown{false};
 
     Watches watches;
     Watches list_watches;   /// Watches for 'list' request (watches on children).
@@ -47,15 +50,13 @@ public:
 
     struct RequestInfo
     {
-        TestKeeperRequestPtr request;
-        Coordination::ResponseCallback callback;
-        Coordination::WatchCallback watch;
+        TestKeeperStorageRequestPtr request;
+        std::function<void(const Coordination::ZooKeeperResponsePtr &)> response_callback;
         clock::time_point time;
     };
+    std::mutex push_request_mutex;
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
     RequestsQueue requests_queue{1};
-
-    void pushRequest(RequestInfo && request);
 
     void finalize();
 
@@ -63,10 +64,11 @@ public:
 
     void processingThread();
 
-    void writeResponse(const Coordination::ZooKeeperResponsePtr & response);
-
 public:
-    void putRequest(const Coordination::ZooKeeperRequestPtr & request, std::shared_ptr<WriteBuffer> response_out);
+    using AsyncResponse = std::future<Coordination::ZooKeeperResponsePtr>;
+    TestKeeperStorage();
+    ~TestKeeperStorage();
+    AsyncResponse putRequest(const Coordination::ZooKeeperRequestPtr & request);
 
     int64_t getSessionID()
     {
