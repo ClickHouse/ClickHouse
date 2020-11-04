@@ -104,21 +104,83 @@ You can define a `PRIMARY KEY` in column list when creating the table.
 Syntax:
 
 ``` sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1], PRIMARY KEY(name1)) ENGINE = engine ORDER BY (name1)
+CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1], PRIMARY KEY(name1)) ENGINE = engine ORDER BY (name1);
 ```
 
 ``` sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1]) ENGINE = engine ORDER BY (name1) PRIMARY KEY(name1)
+CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1]) ENGINE = engine ORDER BY (name1) PRIMARY KEY(name1);
 ```
 
 Both of these syntaxes are valid when creating a primary key with only one field.
+
+For example:
+
+``` sql
+CREATE TABLE testtable_1 (a Int16, PRIMARY KEY(a)) ENGINE = MergeTree ORDER BY (a);
+
+SHOW CREATE TABLE testtable_1;
+```
+
+```
+┌─statement───────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ CREATE TABLE default.testtable_1
+(
+    `a` Int16
+)
+ENGINE = MergeTree
+PRIMARY KEY a
+ORDER BY a
+SETTINGS index_granularity = 8192 │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+``` sql
+CREATE TABLE testtable_2 (a Int16) ENGINE = MergeTree ORDER BY (a) PRIMARY KEY(a);
+
+SHOW CREATE TABLE testtable_2;
+```
+
+```
+┌─statement───────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ CREATE TABLE default.testtable_2
+(
+    `a` Int16
+)
+ENGINE = MergeTree
+PRIMARY KEY a
+ORDER BY a
+SETTINGS index_granularity = 8192 │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
 
 You can also define a `PRIMARY KEY` constraint on multiple columns. 
 
 Syntax:
 
 ``` sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name(name1 [type1], name2 [type2]) ENGINE = engine ORDER BY (name1, name2) PRIMARY KEY(name1, name2)
+CREATE TABLE [IF NOT EXISTS] [db.]table_name(name1 [type1], name2 [type2]) ENGINE = engine ORDER BY (name1, name2) PRIMARY KEY(name1, name2);
+```
+
+For example:
+
+``` sql
+CREATE TABLE testtable_2pks (i Int16, j Int16) ENGINE = MergeTree ORDER BY (i, j) PRIMARY KEY (i, j);
+
+SHOW CREATE TABLE testtable_2pks;
+```
+
+```
+┌─statement────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ CREATE TABLE default.testtable_2pks
+(
+    `i` Int16,
+    `j` Int16
+)
+ENGINE = MergeTree
+PRIMARY KEY (i, j)
+ORDER BY (i, j)
+SETTINGS index_granularity = 8192 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 Along with columns descriptions constraints could be defined:
