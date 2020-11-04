@@ -18,7 +18,7 @@ void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, const Data & data)
         {
             for (auto & child : with->children)
             {
-                visit(child, new_data ? *new_data: data);
+                visit(child, new_data ? *new_data : data);
                 if (auto * ast_with_elem = child->as<ASTWithElement>())
                 {
                     if (!new_data)
