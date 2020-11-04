@@ -200,9 +200,6 @@ public:
     }
 
 private:
-    friend void qdigest_test(int normal_size, UInt64 value_limit, const std::vector<UInt64> & values, int queries_count, bool verbose);
-    friend void rs_perf_test();
-
     /// We allocate a little memory on the stack - to avoid allocations when there are many objects with a small number of elements.
     using Array = DB::PODArrayWithStackMemory<T, 64>;
 

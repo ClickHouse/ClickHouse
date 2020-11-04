@@ -46,6 +46,7 @@ public:
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
+    bool storesDataOnDisk() const override;
     Strings getDataPaths() const override;
 
     struct CommonArguments
