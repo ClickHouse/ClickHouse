@@ -21,7 +21,7 @@ private:
     Kind kind;
 
 public:
-    AggregateFunctionCombinatorOrFill(Kind kind_) : kind(kind_) {}
+    explicit AggregateFunctionCombinatorOrFill(Kind kind_) : kind(kind_) {}
 
     String getName() const override
     {
