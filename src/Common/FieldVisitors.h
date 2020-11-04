@@ -3,6 +3,7 @@
 #include <Core/DecimalFunctions.h>
 #include <Core/Field.h>
 #include <common/demangle.h>
+#include <Common/NaNUtils.h>
 
 
 class SipHash;
@@ -142,6 +143,10 @@ public:
 
     T operator() (const Float64 & x) const
     {
+        if constexpr (!std::is_floating_point_v<T>)
+            if (!isFinite(x))
+                throw Exception("Cannot convert infinite value to integer type", ErrorCodes::CANNOT_CONVERT_TYPE);
+
         if constexpr (std::is_same_v<Decimal256, T>)
             return Int256(x);
         else
