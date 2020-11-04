@@ -359,7 +359,7 @@ SRCS(
     registerFunctionsVisitParam.cpp
     reinterpretAsFixedString.cpp
     reinterpretAsString.cpp
-    reinterpretStringAs.cpp
+    reinterpretAs.cpp
     repeat.cpp
     replaceAll.cpp
     replaceOne.cpp
