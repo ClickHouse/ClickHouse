@@ -121,7 +121,7 @@ private:
     }
 
     template <typename KeyType, bool is_str_key, typename ValType>
-    void execute2(ColumnsWithTypeAndName & columns, const size_t result, size_t row_count, TupleMaps & args, const DataTypeTuple & res_type) const
+    ColumnPtr execute2(size_t row_count, TupleMaps & args, const DataTypeTuple & res_type) const
     {
         MutableColumnPtr res_tuple = res_type.createColumn();
 
@@ -199,18 +199,18 @@ private:
         // same offsets as in keys
         to_vals_arr.getOffsets().insert(to_keys_offset.begin(), to_keys_offset.end());
 
-        columns[result].column = std::move(res_tuple);
+        return res_tuple;
     }
 
     template <typename KeyType, bool is_str_key>
-    void execute1(ColumnsWithTypeAndName & columns, const size_t result, size_t row_count, const DataTypeTuple & res_type, TupleMaps & args) const
+    ColumnPtr execute1(size_t row_count, const DataTypeTuple & res_type, TupleMaps & args) const
     {
         const auto & promoted_type = (assert_cast<const DataTypeArray *>(res_type.getElements()[1].get()))->getNestedType();
 #define MATCH_EXECUTE(is_str) \
         switch (promoted_type->getTypeId()) { \
-            case TypeIndex::Int64: execute2<KeyType, is_str, Int64>(columns, result, row_count, args, res_type); break; \
-            case TypeIndex::UInt64: execute2<KeyType, is_str, UInt64>(columns, result, row_count, args, res_type); break; \
-            case TypeIndex::Float64: execute2<KeyType, is_str, Float64>(columns, result, row_count, args, res_type); break; \
+            case TypeIndex::Int64: return execute2<KeyType, is_str, Int64>(row_count, args, res_type); \
+            case TypeIndex::UInt64: return execute2<KeyType, is_str, UInt64>(row_count, args, res_type); \
+            case TypeIndex::Float64: return execute2<KeyType, is_str, Float64>(row_count, args, res_type); \
             default: \
                 throw Exception{"Illegal columns in arguments of function " + getName(), ErrorCodes::ILLEGAL_COLUMN}; \
         }
@@ -226,9 +226,9 @@ private:
 #undef MATCH_EXECUTE
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
-        const DataTypeTuple * tup_type = checkAndGetDataType<DataTypeTuple>((columns[arguments[0]]).type.get());
+        const DataTypeTuple * tup_type = checkAndGetDataType<DataTypeTuple>((arguments[0]).type.get());
         const DataTypeArray * key_array_type = checkAndGetDataType<DataTypeArray>(tup_type->getElements()[0].get());
         const DataTypeArray * val_array_type = checkAndGetDataType<DataTypeArray>(tup_type->getElements()[1].get());
 
@@ -241,9 +241,8 @@ private:
         args.reserve(arguments.size());
 
         //prepare columns, extract data columns for direct access and put them to the vector
-        for (auto arg : arguments)
+        for (const auto & col : arguments)
         {
-            auto & col = columns[arg];
             const ColumnTuple * tup;
             bool is_const = isColumnConst(*col.column);
             if (is_const)
@@ -274,46 +273,36 @@ private:
             args.push_back({key_column, val_column, key_offsets, val_offsets, is_const});
         }
 
-        size_t row_count = columns[arguments[0]].column->size();
+        size_t row_count = arguments[0].column->size();
         auto key_type_id = key_array_type->getNestedType()->getTypeId();
 
         switch (key_type_id)
         {
             case TypeIndex::Enum8:
             case TypeIndex::Int8:
-                execute1<Int8, false>(columns, result, row_count, res_type, args);
-                break;
+                return execute1<Int8, false>(row_count, res_type, args);
             case TypeIndex::Enum16:
             case TypeIndex::Int16:
-                execute1<Int16, false>(columns, result, row_count, res_type, args);
-                break;
+                return execute1<Int16, false>(row_count, res_type, args);
             case TypeIndex::Int32:
-                execute1<Int32, false>(columns, result, row_count, res_type, args);
-                break;
+                return execute1<Int32, false>(row_count, res_type, args);
             case TypeIndex::Int64:
-                execute1<Int64, false>(columns, result, row_count, res_type, args);
-                break;
+                return execute1<Int64, false>(row_count, res_type, args);
             case TypeIndex::UInt8:
-                execute1<UInt8, false>(columns, result, row_count, res_type, args);
-                break;
+                return execute1<UInt8, false>(row_count, res_type, args);
             case TypeIndex::Date:
             case TypeIndex::UInt16:
-                execute1<UInt16, false>(columns, result, row_count, res_type, args);
-                break;
+                return execute1<UInt16, false>(row_count, res_type, args);
             case TypeIndex::DateTime:
             case TypeIndex::UInt32:
-                execute1<UInt32, false>(columns, result, row_count, res_type, args);
-                break;
+                return execute1<UInt32, false>(row_count, res_type, args);
             case TypeIndex::UInt64:
-                execute1<UInt64, false>(columns, result, row_count, res_type, args);
-                break;
+                return execute1<UInt64, false>(row_count, res_type, args);
             case TypeIndex::UUID:
-                execute1<UInt128, false>(columns, result, row_count, res_type, args);
-                break;
+                return execute1<UInt128, false>(row_count, res_type, args);
             case TypeIndex::FixedString:
             case TypeIndex::String:
-                execute1<String, true>(columns, result, row_count, res_type, args);
-                break;
+                return execute1<String, true>(row_count, res_type, args);
             default:
                 throw Exception{"Illegal columns in arguments of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
         }

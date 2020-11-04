@@ -498,6 +498,24 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
             /// If we have no information about columns sizes, choose a column of minimum size of its data type.
             required.insert(ExpressionActions::getSmallestColumn(source_columns));
     }
+    else if (is_select && metadata_snapshot)
+    {
+        const auto & partition_desc = metadata_snapshot->getPartitionKey();
+        if (partition_desc.expression)
+        {
+            const auto & partition_source_columns = partition_desc.expression->getRequiredColumns();
+            optimize_trivial_count = true;
+            for (const auto & required_column : required)
+            {
+                if (std::find(partition_source_columns.begin(), partition_source_columns.end(), required_column)
+                    == partition_source_columns.end())
+                {
+                    optimize_trivial_count = false;
+                    break;
+                }
+            }
+        }
+    }
 
     NameSet unknown_required_source_columns = required;
 
@@ -640,7 +658,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
 
     if (result.optimize_trivial_count)
         result.optimize_trivial_count = settings.optimize_trivial_count_query &&
-            !select_query->where() && !select_query->prewhere() && !select_query->groupBy() && !select_query->having() &&
+            !select_query->groupBy() && !select_query->having() &&
             !select_query->sampleSize() && !select_query->sampleOffset() && !select_query->final() &&
             (tables_with_columns.size() < 2 || isLeft(result.analyzed_join->kind()));
 

@@ -17,7 +17,6 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <common/getFQDNOrHostName.h>
-#include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 #include <Common/SettingsChanges.h>
 #include <Disks/StoragePolicy.h>
@@ -96,6 +95,7 @@ namespace ErrorCodes
     extern const int WRONG_PASSWORD;
     extern const int REQUIRED_PASSWORD;
 
+    extern const int BAD_REQUEST_PARAMETER;
     extern const int INVALID_SESSION_TIMEOUT;
     extern const int HTTP_LENGTH_REQUIRED;
 }
@@ -236,7 +236,8 @@ void HTTPHandler::processQuery(
     Poco::Net::HTTPServerRequest & request,
     HTMLForm & params,
     Poco::Net::HTTPServerResponse & response,
-    Output & used_output)
+    Output & used_output,
+    std::optional<CurrentThread::QueryScope> & query_scope)
 {
     LOG_TRACE(log, "Request URI: {}", request.getURI());
 
@@ -279,9 +280,7 @@ void HTTPHandler::processQuery(
         }
     }
 
-    std::string query_id = params.get("query_id", "");
     context.setUser(user, password, request.clientAddress());
-    context.setCurrentQueryId(query_id);
     if (!quota_key.empty())
         context.setQuotaKey(quota_key);
 
@@ -310,6 +309,31 @@ void HTTPHandler::processQuery(
         if (session)
             session->release();
     });
+
+    // Parse the OpenTelemetry traceparent header.
+    // Disable in Arcadia -- it interferes with the
+    // test_clickhouse.TestTracing.test_tracing_via_http_proxy[traceparent] test.
+#if !defined(ARCADIA_BUILD)
+    if (request.has("traceparent"))
+    {
+        std::string opentelemetry_traceparent = request.get("traceparent");
+        std::string error;
+        if (!context.getClientInfo().parseTraceparentHeader(
+            opentelemetry_traceparent, error))
+        {
+            throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER,
+                "Failed to parse OpenTelemetry traceparent header '{}': {}",
+                opentelemetry_traceparent, error);
+        }
+
+        context.getClientInfo().opentelemetry_tracestate = request.get("tracestate", "");
+    }
+#endif
+
+    // Set the query id supplied by the user, if any, and also update the
+    // OpenTelemetry fields.
+    context.setCurrentQueryId(params.get("query_id",
+        request.get("X-ClickHouse-Query-Id", "")));
 
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
     String http_response_compression_methods = request.get("Accept-Encoding", "");
@@ -595,6 +619,8 @@ void HTTPHandler::processQuery(
 
     customizeContext(request, context);
 
+    query_scope.emplace(context);
+
     executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
         [&response] (const String & current_query_id, const String & content_type, const String & format, const String & timezone)
         {
@@ -694,7 +720,8 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
     /// Should be initialized before anything,
     /// For correct memory accounting.
     Context context = server.context();
-    CurrentThread::QueryScope query_scope(context);
+    /// Cannot be set here, since query_id is unknown.
+    std::optional<CurrentThread::QueryScope> query_scope;
 
     Output used_output;
 
@@ -719,7 +746,7 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
             throw Exception("The Transfer-Encoding is not chunked and there is no Content-Length header for POST request", ErrorCodes::HTTP_LENGTH_REQUIRED);
         }
 
-        processQuery(context, request, params, response, used_output);
+        processQuery(context, request, params, response, used_output, query_scope);
         LOG_DEBUG(log, "Done processing query");
     }
     catch (...)

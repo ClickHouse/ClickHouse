@@ -18,10 +18,13 @@ public:
     ASTPtr clone() const override
     {
         auto res = std::make_shared<ASTColumnsApplyTransformer>(*this);
+        if (parameters)
+            res->parameters = parameters->clone();
         return res;
     }
     void transform(ASTs & nodes) const override;
     String func_name;
+    ASTPtr parameters;
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;

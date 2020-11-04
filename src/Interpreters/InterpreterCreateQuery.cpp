@@ -6,6 +6,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/Macros.h>
+#include <Common/randomSeed.h>
 
 #include <Core/Defines.h>
 #include <Core/Settings.h>
@@ -362,7 +363,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             if (col_decl.type)
             {
                 const auto & final_column_name = col_decl.name;
-                const auto tmp_column_name = final_column_name + "_tmp";
+                const auto tmp_column_name = final_column_name + "_tmp_alter" + toString(randomSeed());
                 const auto * data_type_ptr = column_names_and_types.back().type.get();
 
                 default_expr_list->children.emplace_back(

@@ -45,9 +45,9 @@ public:
     /** convertToFullColumn needed because in distributed query processing,
       *    each server returns its own value.
       */
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        columns[result].column = columns[result].type->createColumnConst(
+        return result_type->createColumnConst(
             input_rows_count, DNSResolver::instance().getHostName())->convertToFullColumnIfConst();
     }
 };

@@ -32,7 +32,7 @@ AggregateFunctionPtr createAggregateFunctionRetention(const std::string & name, 
 
 void registerAggregateFunctionRetention(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("retention", createAggregateFunctionRetention, AggregateFunctionFactory::CaseInsensitive);
+    factory.registerFunction("retention", createAggregateFunctionRetention);
 }
 
 }

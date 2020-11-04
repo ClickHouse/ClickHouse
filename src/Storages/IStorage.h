@@ -449,6 +449,10 @@ public:
     /// We do not use mutex because it is not very important that the size could change during the operation.
     virtual void checkPartitionCanBeDropped(const ASTPtr & /*partition*/) {}
 
+    /// Returns true if Storage may store some data on disk.
+    /// NOTE: may not be equivalent to !getDataPaths().empty()
+    virtual bool storesDataOnDisk() const { return false; }
+
     /// Returns data paths if storage supports it, empty vector otherwise.
     virtual Strings getDataPaths() const { return {}; }
 
@@ -462,6 +466,9 @@ public:
     ///
     /// Does takes underlying Storage (if any) into account.
     virtual std::optional<UInt64> totalRows() const { return {}; }
+
+    /// Same as above but also take partition predicate into account.
+    virtual std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo &, const Context &) const { return {}; }
 
     /// If it is possible to quickly determine exact number of bytes for the table on storage:
     /// - memory (approximated, resident)
