@@ -74,9 +74,9 @@ It’s not necessarily to have unit tests if the code is already covered by func
 
 ## Performance Tests {#performance-tests}
 
-Performance tests allow to measure and compare performance of some isolated part of ClickHouse on synthetic queries. Tests are located at `tests/performance`. Each test is represented by `.xml` file with description of test case. Tests are run with `clickhouse performance-test` tool (that is embedded in `clickhouse` binary). See `--help` for invocation.
+Performance tests allow to measure and compare performance of some isolated part of ClickHouse on synthetic queries. Tests are located at `tests/performance`. Each test is represented by `.xml` file with description of test case. Tests are run with `docker/tests/performance-comparison` tool . See the readme file for invocation.
 
-Each test run one or multiple queries (possibly with combinations of parameters) in a loop with some conditions for stop (like “maximum execution speed is not changing in three seconds”) and measure some metrics about query performance (like “maximum execution speed”). Some tests can contain preconditions on preloaded test dataset.
+Each test run one or multiple queries (possibly with combinations of parameters) in a loop. Some tests can contain preconditions on preloaded test dataset.
 
 If you want to improve performance of ClickHouse in some scenario, and if improvements can be observed on simple queries, it is highly recommended to write a performance test. It always makes sense to use `perf top` or other perf tools during your tests.
 

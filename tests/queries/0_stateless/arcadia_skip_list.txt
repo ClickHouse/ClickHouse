@@ -159,5 +159,7 @@
 01533_collate_in_nullable
 01542_collate_in_array
 01543_collate_in_tuple
+01546_log_queries_min_query_duration_ms
 01547_query_log_current_database
 01548_query_log_query_execution_ms
+01552_dict_fixedstring
