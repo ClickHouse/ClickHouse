@@ -8,11 +8,12 @@ message QueryInfo {
    map<string, string> settings = 3;
    string database = 4;
    string input_data = 5;
-   string output_format = 6;
-   string user_name = 7;
-   string password = 8;
-   string quota = 9;
-   bool next_query_info = 10;
+   string input_data_delimiter = 6;
+   string output_format = 7;
+   string user_name = 8;
+   string password = 9;
+   string quota = 10;
+   bool next_query_info = 11;
 }
 
 message Progress {

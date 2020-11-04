@@ -39,7 +39,7 @@ def create_channel():
         main_channel = channel
     return channel
 
-def query_common(query_text, settings={}, input_data=[], output_format='TabSeparated', query_id='123', channel=None):
+def query_common(query_text, settings={}, input_data=[], input_data_delimiter='', output_format='TabSeparated', query_id='123', channel=None):
     if type(input_data) == str:
         input_data = [input_data]
     if not channel:
@@ -47,8 +47,8 @@ def query_common(query_text, settings={}, input_data=[], output_format='TabSepar
     stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(channel)
     def send_query_info():
         input_data_part = input_data.pop(0) if input_data else ''
-        yield clickhouse_grpc_pb2.QueryInfo(query=query_text, settings=settings, input_data=input_data_part, output_format=output_format,
-                                            query_id=query_id, next_query_info=bool(input_data))
+        yield clickhouse_grpc_pb2.QueryInfo(query=query_text, settings=settings, input_data=input_data_part, input_data_delimiter=input_data_delimiter,
+                                            output_format=output_format, query_id=query_id, next_query_info=bool(input_data))
         while input_data:
             input_data_part = input_data.pop(0)
             yield clickhouse_grpc_pb2.QueryInfo(input_data=input_data_part, next_query_info=bool(input_data))
@@ -119,6 +119,15 @@ def test_insert_query_streaming():
     query("CREATE TABLE t (a UInt8) ENGINE = Memory")
     query("INSERT INTO t VALUES", input_data=["(1),(2),(3),", "(5),(4),(6),", "(7),(8),(9)"])
     assert query("SELECT a FROM t ORDER BY a") == "1\n2\n3\n4\n5\n6\n7\n8\n9\n"
+
+def test_insert_query_delimiter():
+    query("CREATE TABLE t (a UInt8) ENGINE = Memory")
+    query("INSERT INTO t FORMAT CSV 1\n2", input_data=["3", "4\n5"], input_data_delimiter='\n')
+    assert query("SELECT a FROM t ORDER BY a") == "1\n2\n3\n4\n5\n"
+    query("DROP TABLE t")
+    query("CREATE TABLE t (a UInt8) ENGINE = Memory")
+    query("INSERT INTO t FORMAT CSV 1\n2", input_data=["3", "4\n5"])
+    assert query("SELECT a FROM t ORDER BY a") == "1\n5\n234\n"
 
 def test_insert_default_column():
     query("CREATE TABLE t (a UInt8, b Int32 DEFAULT 100, c String DEFAULT 'c') ENGINE = Memory")
