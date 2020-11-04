@@ -59,7 +59,8 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 -   [range_hashed](#range-hashed)
 -   [complex_key_hashed](#complex-key-hashed)
 -   [complex_key_cache](#complex-key-cache)
--   [ssd_complex_key_cache](#ssd-cache)
+-   [ssd_cache](#ssd-cache)
+-   [ssd_complex_key_cache](#complex-key-ssd-cache)
 -   [complex_key_direct](#complex-key-direct)
 -   [ip_trie](#ip-trie)
 
