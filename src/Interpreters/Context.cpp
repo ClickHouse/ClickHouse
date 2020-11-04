@@ -363,7 +363,7 @@ struct ContextShared
     /// Initialized on demand (on distributed storages initialization) since Settings should be initialized
     std::unique_ptr<Clusters> clusters;
     ConfigurationPtr clusters_config;                        /// Stores updated configs
-    ConfigurationPtr zookeeper_config;                        /// Stores zookeeperd configs
+    ConfigurationPtr zookeeper_config;                        /// Stores zookeeper configs
     mutable std::mutex clusters_mutex;                        /// Guards clusters and clusters_config
 
 #if USE_EMBEDDED_COMPILER
