@@ -155,6 +155,7 @@ SRCS(
     equals.cpp
     erfc.cpp
     erf.cpp
+    errorCodeToName.cpp
     evalMLMethod.cpp
     exp10.cpp
     exp2.cpp
