@@ -12,6 +12,7 @@
 #include <Storages/StorageLog.h>
 #include <Common/typeid_cast.h>
 #include <Common/tests/gtest_global_context.h>
+#include <Common/tests/gtest_global_register.h>
 
 #include <memory>
 #include <Processors/Executors/PipelineExecutingBlockInputStream.h>
@@ -126,6 +127,8 @@ std::string readData(DB::StoragePtr & table, const DB::Context & context)
         col.type = std::make_shared<DataTypeUInt64>();
         sample.insert(std::move(col));
     }
+
+    tryRegisterFormats();
 
     std::ostringstream ss;
     WriteBufferFromOStream out_buf(ss);
