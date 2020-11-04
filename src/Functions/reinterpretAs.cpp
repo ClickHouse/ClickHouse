@@ -40,8 +40,9 @@ class FunctionReinterpretAs : public IFunction
     template <typename From, typename To>
     static void reinterpretImpl(const PaddedPODArray<From> & from, PaddedPODArray<To> & to)
     {
-        to.resize(from.size());
-        for (size_t i = 0; i < from.size(); ++i)
+        size_t size = from.size();
+        to.resize(size);
+        for (size_t i = 0; i < size; ++i)
         {
             to[i] = unalignedLoad<To>(&(from.data()[i]));
         }
