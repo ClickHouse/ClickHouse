@@ -54,6 +54,8 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 -   [hashed](#dicts-external_dicts_dict_layout-hashed)
 -   [sparse_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
 -   [cache](#cache)
+-   [ssd_cache](#ssd-cache)
+-   [ssd_complex_key_cache](#complex-key-ssd-cache)
 -   [direct](#direct)
 -   [range_hashed](#range-hashed)
 -   [complex_key_hashed](#complex-key-hashed)
