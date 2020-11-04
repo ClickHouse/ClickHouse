@@ -76,7 +76,21 @@ AggregateFunctionPtr createAggregateFunctionAvgWeighted(const std::string & name
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     AggregateFunctionPtr ptr;
-    ptr.reset(create(*data_type, *data_type_weight, argument_types));
+
+    const bool left_decimal = isDecimal(data_type);
+    const bool right_decimal = isDecimal(data_type_weight);
+
+    if (left_decimal && right_decimal)
+        ptr.reset(create(*data_type, *data_type_weight,
+            getDecimalScale((sizeof(*data_type) > sizeof(*data_type_weight)) ? *data_type : *data_type_weight),
+            argument_types));
+    else if (left_decimal)
+        ptr.reset(create(*data_type, *data_type_weight, getDecimalScale(*data_type), argument_types));
+    else if (right_decimal)
+        ptr.reset(create(*data_type, *data_type_weight, getDecimalScale(*data_type_weight), argument_types));
+    else
+        ptr.reset(create(*data_type, *data_type_weight, argument_types));
+
     return ptr;
 }
 }

@@ -4,7 +4,7 @@
 
     <create_query>CREATE TABLE perf_avg(
         num UInt64,
-        num_u Decimal256(75) DEFAULT toDecimal256(num / 100000, 75),
+        num_u Decimal256(75) DEFAULT toDecimal256(num / 400000, 75),
         num_f Float64 DEFAULT num
         ) ENGINE = MergeTree() ORDER BY tuple()
     </create_query>
@@ -13,11 +13,12 @@
         INSERT INTO perf_avg(num)
         SELECT number / r
         FROM system.numbers
-        ARRAY JOIN range(1, 10000) AS r
-        LIMIT 5000000
+        ARRAY JOIN range(1, 400000) AS r
+        LIMIT 200000000
     </fill_query>
 
     <query>SELECT avg(num) FROM perf_avg</query>
+    <query>SELECT avg(2 * num) FROM perf_avg</query>
     <query>SELECT avg(num_u) FROM perf_avg</query>
     <query>SELECT avg(num_f) FROM perf_avg</query>
     <query>SELECT avgWeighted(num_f, num) FROM perf_avg</query>
