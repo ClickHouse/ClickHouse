@@ -45,10 +45,7 @@ private:
     void sendHandshake();
     void receiveHandshake();
 
-    bool receiveHeartbeatRequest();
-    void sendHeartbeatResponse();
-
-    void receiveCreateRequest();
+    void receiveRequest();
 };
 
 }

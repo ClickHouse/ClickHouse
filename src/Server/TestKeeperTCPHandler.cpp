@@ -289,19 +289,16 @@ void TestKeeperTCPHandler::runImpl()
         }
 
         if (in->poll(max_wait))
-        {
-            receiveHeartbeatRequest();
-        }
+            receiveRequest();
     }
 }
 
 
-bool TestKeeperTCPHandler::receiveHeartbeatRequest()
+void TestKeeperTCPHandler::receiveRequest()
 {
     LOG_DEBUG(log, "Receiving heartbeat event");
     int32_t length;
     read(length, *in);
-    int32_t total_count = in->count();
     LOG_DEBUG(log, "RECEIVED LENGTH {}", length);
     int32_t xid;
     LOG_DEBUG(log, "READING XID");
@@ -309,56 +306,15 @@ bool TestKeeperTCPHandler::receiveHeartbeatRequest()
 
     LOG_DEBUG(log, "Received xid {}", xid);
 
-    Coordination::ZooKeeperRequestPtr request;
-    if (xid == -2)
-    {
-        int32_t opnum;
-        read(opnum, *in);
-        LOG_DEBUG(log, "RRECEIVED OP NUM {}", opnum);
-        request = std::make_shared<Coordination::ZooKeeperHeartbeatRequest>();
-        request->xid = xid;
-        request->readImpl(*in);
-        int32_t readed = in->count() - total_count;
-        if (readed != length)
-            LOG_DEBUG(log, "EXPECTED TO READ {}, BUT GOT {}", length, readed);
-    }
-    else
-    {
-        int32_t opnum;
-        read(opnum, *in);
-        LOG_DEBUG(log, "RRECEIVED OP NUM {}", opnum);
-        if (opnum == 1)
-            request = std::make_shared<Coordination::ZooKeeperCreateRequest>();
-        else if (opnum == 4)
-            request = std::make_shared<Coordination::ZooKeeperGetRequest>();
-        request->readImpl(*in);
-        request->xid = xid;
-        int32_t readed = in->count() - total_count;
-        if (readed != length)
-            LOG_DEBUG(log, "EXPECTED TO READ {}, BUT GOT {}", length, readed);
-        LOG_DEBUG(log, "REQUEST PUTTED TO STORAGE");
-    }
-
+    int32_t opnum;
+    read(opnum, *in);
+    Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
+    request->xid = xid;
+    request->readImpl(*in);
     responses.push(test_keeper_storage->putRequest(request));
 
     LOG_DEBUG(log, "Event received");
-    return false;
 }
 
-
-void TestKeeperTCPHandler::sendHeartbeatResponse()
-{
-    LOG_DEBUG(log, "Sending heartbeat event");
-    int32_t length = sizeof(int32_t) + sizeof(int64_t) + sizeof(Coordination::Error);
-    write(length, *out);
-    int64_t zxid = test_keeper_storage->getZXID();
-    int32_t xid = -2;
-    write(xid, *out);
-    write(zxid, *out);
-    write(Coordination::Error::ZOK, *out);
-    auto response = std::make_shared<Coordination::ZooKeeperHeartbeatResponse>();
-    response->writeImpl(*out);
-    out->next();
-}
 
 }
