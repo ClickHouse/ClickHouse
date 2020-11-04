@@ -27,9 +27,9 @@ LzmaWriteBuffer::LzmaWriteBuffer(
 
 
     lzma_filter filters[] = {
-        {.id = LZMA_FILTER_X86, .options = NULL},
+        {.id = LZMA_FILTER_X86, .options = nullptr},
         {.id = LZMA_FILTER_LZMA2, .options = &opt_lzma2},
-        {.id = LZMA_VLI_UNKNOWN, .options = NULL},
+        {.id = LZMA_VLI_UNKNOWN, .options = nullptr},
     };
     lzma_ret ret = lzma_stream_encoder(&lstr, filters, LZMA_CHECK_CRC64);
 
