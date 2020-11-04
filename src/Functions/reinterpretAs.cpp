@@ -15,6 +15,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/memcpySmall.h>
 
+#include <common/unaligned.h>
 
 namespace DB
 {
@@ -39,11 +40,10 @@ class FunctionReinterpretAs : public IFunction
     template <typename From, typename To>
     static void reinterpretImpl(const PaddedPODArray<From> & from, PaddedPODArray<To> & to)
     {
-        const auto * from_reinterpret = reinterpret_cast<To *>(const_cast<From *>(from.data()));
         to.resize(from.size());
         for (size_t i = 0; i < from.size(); ++i)
         {
-            to[i] = from_reinterpret[i];
+            to[i] = unalignedLoad<To>(&(from.data()[i]));
         }
     }
 
@@ -133,7 +133,8 @@ public:
         else if constexpr (support_between_float_integer)
         {
             ColumnPtr res;
-            if (castType(arguments[0].type.get(), [&](const auto & type) {
+            if (castType(arguments[0].type.get(), [&](const auto & type)
+                {
                     using DataType = std::decay_t<decltype(type)>;
                     using T = typename DataType::FieldType;
 
