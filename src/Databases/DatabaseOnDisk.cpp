@@ -321,7 +321,7 @@ void DatabaseOnDisk::renameTable(
 
     /// Special case: usually no actions with symlinks are required when detaching/attaching table,
     /// but not when moving from Atomic database to Ordinary
-    if (from_atomic_to_ordinary)
+    if (from_atomic_to_ordinary && table->storesDataOnDisk())
     {
         auto & atomic_db = assert_cast<DatabaseAtomic &>(*this);
         atomic_db.tryRemoveSymlink(table_name);

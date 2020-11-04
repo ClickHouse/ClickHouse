@@ -64,6 +64,7 @@ void registerFunctionCountDigits(FunctionFactory &);
 void registerFunctionGlobalVariable(FunctionFactory &);
 void registerFunctionHasThreadFuzzer(FunctionFactory &);
 void registerFunctionInitializeAggregation(FunctionFactory &);
+void registerFunctionErrorCodeToName(FunctionFactory &);
 
 #if USE_ICU
 void registerFunctionConvertCharset(FunctionFactory &);
@@ -128,6 +129,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionGlobalVariable(factory);
     registerFunctionHasThreadFuzzer(factory);
     registerFunctionInitializeAggregation(factory);
+    registerFunctionErrorCodeToName(factory);
 
 #if USE_ICU
     registerFunctionConvertCharset(factory);

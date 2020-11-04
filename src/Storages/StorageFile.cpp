@@ -524,6 +524,11 @@ BlockOutputStreamPtr StorageFile::write(
         chooseCompressionMethod(path, compression_method), context);
 }
 
+bool StorageFile::storesDataOnDisk() const
+{
+    return is_db_table;
+}
+
 Strings StorageFile::getDataPaths() const
 {
     if (paths.empty())
