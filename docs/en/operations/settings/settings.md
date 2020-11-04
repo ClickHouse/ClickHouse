@@ -2190,9 +2190,9 @@ Default value: `0`.
 
 ## persistent {#persistent}
 
-Disables persistency for the `Set` and `Join`-engine tables. 
+Disables persistency for the [Set](../../engines/table-engines/special/set.md#set) and [Join](../../engines/table-engines/special/join.md#join) table engines. 
 
-Reduces the I/O overhead when using the [Set](../../engines/table-engines/special/set.md#set) and [Join](../../engines/table-engines/special/join.md#join) table engines. Suitable for scenarios that pursue performance and do not require persistence.
+Reduces the I/O overhead. Suitable for scenarios that pursue performance and do not require persistence.
 
 Possible values:
 
