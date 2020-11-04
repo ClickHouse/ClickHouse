@@ -69,19 +69,14 @@ public:
         return arguments[0];
     }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override
     {
-        const auto & return_type = columns[result].type;
-
         if (return_type->onlyNull())
-        {
-            columns[result].column = return_type->createColumnConstWithDefaultValue(input_rows_count);
-            return;
-        }
+            return return_type->createColumnConstWithDefaultValue(input_rows_count);
 
-        auto & array_column = columns[arguments[0]].column;
-        const auto & offset_column = columns[arguments[1]].column;
-        const auto & length_column = arguments.size() > 2 ? columns[arguments[2]].column : nullptr;
+        auto & array_column = arguments[0].column;
+        const auto & offset_column = arguments[1].column;
+        const auto & length_column = arguments.size() > 2 ? arguments[2].column : nullptr;
 
         std::unique_ptr<GatherUtils::IArraySource> source;
 
@@ -105,8 +100,7 @@ public:
         {
             if (!length_column || length_column->onlyNull())
             {
-                columns[result].column = array_column;
-                return;
+                return array_column;
             }
             else if (isColumnConst(*length_column))
                 sink = GatherUtils::sliceFromLeftConstantOffsetBounded(*source, 0, length_column->getInt(0));
@@ -146,7 +140,7 @@ public:
                 sink = GatherUtils::sliceDynamicOffsetBounded(*source, *offset_column, *length_column);
         }
 
-        columns[result].column = std::move(sink);
+        return sink;
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

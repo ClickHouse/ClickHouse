@@ -56,7 +56,7 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
 
 private:
     const Context & global_context;
@@ -85,12 +85,11 @@ DataTypePtr FunctionHasColumnInTable::getReturnTypeImpl(const ColumnsWithTypeAnd
 }
 
 
-void FunctionHasColumnInTable::executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
+ColumnPtr FunctionHasColumnInTable::executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
 {
-    auto get_string_from_columns = [&](size_t column_pos) -> String
+    auto get_string_from_columns = [&](ColumnWithTypeAndName & column) -> String
     {
-        ColumnPtr column = columns[column_pos].column;
-        const ColumnConst * const_column = checkAndGetColumnConst<ColumnString>(column.get());
+        const ColumnConst * const_column = checkAndGetColumnConst<ColumnString>(column.column.get());
         return const_column->getValue<String>();
     };
 
@@ -138,7 +137,7 @@ void FunctionHasColumnInTable::executeImpl(ColumnsWithTypeAndName & columns, con
         has_column = remote_columns.hasPhysical(column_name);
     }
 
-    columns[result].column = DataTypeUInt8().createColumnConst(input_rows_count, Field(has_column));
+    return DataTypeUInt8().createColumnConst(input_rows_count, Field(has_column));
 }
 
 }

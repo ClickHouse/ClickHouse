@@ -47,16 +47,16 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
-    void executeImpl(ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_str = ColumnString::create();
         ColumnString::Chars & vec = col_str->getChars();
         WriteBufferFromVector buffer(vec);
         ColumnString::Offsets & offsets = col_str->getOffsets();
         offsets.resize(input_rows_count);
-        DB::Block arg_columns;
+        Block arg_columns;
         for (auto i = 1u; i < arguments.size(); ++i)
-            arg_columns.insert(columns[arguments[i]]);
+            arg_columns.insert(arguments[i]);
         materializeBlockInplace(arg_columns);
         auto out = FormatFactory::instance().getOutputFormat(format_name, buffer, arg_columns, context, [&](const Columns &, size_t row)
         {
@@ -71,7 +71,7 @@ public:
             offsets[row] = buffer.count();
         });
         out->write(arg_columns);
-        columns[result].column = std::move(col_str);
+        return col_str;
     }
 
 private:
