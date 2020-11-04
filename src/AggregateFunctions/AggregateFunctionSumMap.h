@@ -256,6 +256,7 @@ public:
         // Final step does compaction of keys that have zero values, this mutates the state
         auto & merged_maps = this->data(place).merged_maps;
 
+        // Remove keys which are zeros or empty. This should be enabled only for sumMap.
         if constexpr (compact)
         {
             for (auto it = merged_maps.cbegin(); it != merged_maps.cend();)
