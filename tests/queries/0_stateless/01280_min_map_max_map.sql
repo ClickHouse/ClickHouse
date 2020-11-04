@@ -36,5 +36,5 @@ select maxMap(val, cnt) from values ('val Array(Enum16(\'a\'=1)), cnt Array(Int1
 select minMap(val, cnt) from values ('val Array(UInt64), cnt Array(UInt64)',  ([1], [0]), ([2], [0]));
 select maxMap(val, cnt) from values ('val Array(UInt64), cnt Array(UInt64)',  ([1], [0]), ([2], [0]));
 select minMap(val, cnt) from values ('val Array(String), cnt Array(String)',  (['A'], ['']), (['B'], ['']));
-select minMap(val, cnt) from values ('val Array(String), cnt Array(String)',  (['A'], ['']), (['B'], ['']));
+select maxMap(val, cnt) from values ('val Array(String), cnt Array(String)',  (['A'], ['']), (['B'], ['']));
 select sumMap(val, cnt) from values ('val Array(UInt64), cnt Array(UInt64)',  ([1], [0]), ([2], [0]));
