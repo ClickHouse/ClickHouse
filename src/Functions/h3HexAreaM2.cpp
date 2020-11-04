@@ -1,3 +1,9 @@
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
+
+#if USE_H3
+
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -76,3 +82,5 @@ void registerFunctionH3HexAreaM2(FunctionFactory & factory)
 }
 
 }
+
+#endif
