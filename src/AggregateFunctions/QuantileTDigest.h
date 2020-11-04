@@ -189,7 +189,7 @@ public:
                     }
                     ++r;
                 }
-                count = sum + l_count; // Update count, changed due inaccurancy
+                count = sum + l_count; // Update count, it might be different due to += inaccuracy
 
                 /// At the end of the loop, all values to the right of l were "eaten".
                 centroids.resize(l - centroids.begin() + 1);
@@ -204,7 +204,7 @@ public:
     void add(T x, UInt64 cnt = 1)
     {
         if (cnt == 0)
-            return; // Count 0 breaks compress() assumptions
+            return; // Count 0 breaks compress() assumptions, we treat it as no sample
         addCentroid(Centroid(Value(x), Count(cnt)));
     }
 
@@ -238,7 +238,7 @@ public:
             Centroid & c = centroids[i];
             if (c.count <= 0 || std::isnan(c.count) || std::isnan(c.mean)) // invalid count breaks compress(), invalid mean breaks sort()
             {
-                centroids.resize(i); // Exception safety, without this line we will end up with TDigest with invalid centroids
+                centroids.resize(i); // Exception safety, without this line caller will end up with TDigest object in broken invariant state
                 throw std::runtime_error("Invalid centroid " + std::to_string(c.count) + ":" + std::to_string(c.mean));
             }
             count += c.count;
