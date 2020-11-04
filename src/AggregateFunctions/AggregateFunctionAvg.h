@@ -37,7 +37,7 @@ struct AvgFraction
     {
         if constexpr (IsDecimalNumber<Numerator> && IsDecimalNumber<Denominator>)
         {
-            if constexpr(std::is_same_v<Numerator, Decimal256> && std::is_same_v<Denominator, Decimal128>)
+            if constexpr (std::is_same_v<Numerator, Decimal256> && std::is_same_v<Denominator, Decimal128>)
                 ///Special case as Decimal256 / Decimal128 = compile error (as Decimal128 is not parametrized by a wide
                 ///int), but an __int128 instead
                 return DecimalUtils::convertTo<Float64>(
@@ -139,10 +139,15 @@ private:
 };
 
 template <class T>
-class AggregateFunctionAvg final : public AggregateFunctionAvgBase<T, UInt64, AggregateFunctionAvg<T>>
+using AvgFieldType = std::conditional_t<IsDecimalNumber<T>,
+    std::conditional_t<std::is_same_v<T, Decimal256>, Decimal256, Decimal128>,
+    NearestFieldType<T>>;
+
+template <class T>
+class AggregateFunctionAvg final : public AggregateFunctionAvgBase<AvgFieldType<T>, UInt64, AggregateFunctionAvg<T>>
 {
 public:
-    using AggregateFunctionAvgBase<T, UInt64, AggregateFunctionAvg<T>>::AggregateFunctionAvgBase;
+    using AggregateFunctionAvgBase<AvgFieldType<T>, UInt64, AggregateFunctionAvg<T>>::AggregateFunctionAvgBase;
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const final
     {
