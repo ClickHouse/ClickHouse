@@ -87,22 +87,85 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 Синтаксис:
 
 ``` sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1], PRIMARY KEY(name1)) ENGINE = engine ORDER BY (name1)
+CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1], PRIMARY KEY(name1)) ENGINE = engine ORDER BY (name1);
 ```
 
 ``` sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1]) ENGINE = engine ORDER BY (name1) PRIMARY KEY(name1)
+CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1]) ENGINE = engine ORDER BY (name1) PRIMARY KEY(name1);
 ```
 
-Оба данных синтаксиса допустимы при создании первичного ключа для одного поля.
+И тот, и другой синтаксис допустимы при создании первичного ключа для одного поля.
+
+Пример:
+
+``` sql
+CREATE TABLE testtable (a Int16, PRIMARY KEY(a)) ENGINE = MergeTree ORDER BY (a);
+
+SHOW CREATE TABLE testtable;
+```
+
+```
+┌─statement───────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ CREATE TABLE default.testtable
+(
+    `a` Int16
+)
+ENGINE = MergeTree
+PRIMARY KEY a
+ORDER BY a
+SETTINGS index_granularity = 8192 │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+``` sql
+CREATE TABLE testtable_2 (a Int16) ENGINE = MergeTree ORDER BY (a) PRIMARY KEY(a);
+
+SHOW CREATE TABLE testtable_2;
+```
+
+```
+┌─statement───────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ CREATE TABLE default.testtable_2
+(
+    `a` Int16
+)
+ENGINE = MergeTree
+PRIMARY KEY a
+ORDER BY a
+SETTINGS index_granularity = 8192 │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
 
 Вы также можете определить ограничение в виде `PRIMARY KEY` для нескольких столбцов.
 
 Синтаксис:
 
 ``` sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name(name1 [type1], name2 [type2]) ENGINE = engine ORDER BY (name1, name2) PRIMARY KEY(name1, name2)
+CREATE TABLE [IF NOT EXISTS] [db.]table_name(name1 [type1], name2 [type2]) ENGINE = engine ORDER BY (name1, name2) PRIMARY KEY(name1, name2);
 ```
+
+Пример:
+
+``` sql
+CREATE TABLE testtable_2pks (i Int16, j Int16) ENGINE = MergeTree ORDER BY (i, j) PRIMARY KEY (i, j);
+
+SHOW CREATE TABLE testtable_2pks;
+```
+
+```
+┌─statement────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ CREATE TABLE default.testtable_2pks
+(
+    `i` Int16,
+    `j` Int16
+)
+ENGINE = MergeTree
+PRIMARY KEY (i, j)
+ORDER BY (i, j)
+SETTINGS index_granularity = 8192 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
 Наряду с объявлением столбцов можно объявить ограничения на значения в столбцах таблицы:
 
 ``` sql
