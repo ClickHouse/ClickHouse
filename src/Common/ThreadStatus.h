@@ -172,7 +172,7 @@ protected:
 
     void finalizeQueryProfiler();
 
-    void logToQueryThreadLog(QueryThreadLog & thread_log);
+    void logToQueryThreadLog(QueryThreadLog & thread_log, const String & current_database, std::chrono::time_point<std::chrono::system_clock> now);
 
     void assertState(const std::initializer_list<int> & permitted_states, const char * description = nullptr) const;
 

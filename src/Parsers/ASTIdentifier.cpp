@@ -16,26 +16,48 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
 }
 
-ASTIdentifier::ASTIdentifier(const String & short_name)
+ASTIdentifier::ASTIdentifier(const String & short_name, ASTPtr && name_param)
     : full_name(short_name), name_parts{short_name}, semantic(std::make_shared<IdentifierSemanticImpl>())
 {
-    assert(!full_name.empty());
+    if (name_param == nullptr)
+        assert(!full_name.empty());
+    else
+        children.push_back(std::move(name_param));
 }
 
-ASTIdentifier::ASTIdentifier(std::vector<String> && name_parts_, bool special)
+ASTIdentifier::ASTIdentifier(std::vector<String> && name_parts_, bool special, std::vector<ASTPtr> && name_params)
     : name_parts(name_parts_), semantic(std::make_shared<IdentifierSemanticImpl>())
 {
     assert(!name_parts.empty());
-    for (const auto & part [[maybe_unused]] : name_parts)
-        assert(!part.empty());
-
     semantic->special = special;
     semantic->legacy_compound = true;
+    if (!name_params.empty())
+    {
+        size_t params = 0;
+        for (const auto & part [[maybe_unused]] : name_parts)
+        {
+            if (part.empty())
+                ++params;
+        }
+        assert(params == name_params.size());
+        children = std::move(name_params);
+    }
+    else
+    {
+        for (const auto & part [[maybe_unused]] : name_parts)
+            assert(!part.empty());
 
-    if (!special && name_parts.size() >= 2)
-        semantic->table = name_parts.end()[-2];
+        if (!special && name_parts.size() >= 2)
+            semantic->table = name_parts.end()[-2];
 
-    resetFullName();
+        resetFullName();
+    }
+}
+
+ASTPtr ASTIdentifier::getParam() const
+{
+    assert(full_name.empty() && children.size() == 1);
+    return children.front()->clone();
 }
 
 ASTPtr ASTIdentifier::clone() const
@@ -64,13 +86,16 @@ void ASTIdentifier::setShortName(const String & new_name)
 
 const String & ASTIdentifier::name() const
 {
-    assert(!name_parts.empty());
-    assert(!full_name.empty());
+    if (children.empty())
+    {
+        assert(!name_parts.empty());
+        assert(!full_name.empty());
+    }
 
     return full_name;
 }
 
-void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     auto format_element = [&](const String & elem_name)
     {
@@ -82,17 +107,24 @@ void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, Form
     /// It could be compound but short
     if (!isShort())
     {
-        for (size_t i = 0, size = name_parts.size(); i < size; ++i)
+        for (size_t i = 0, j = 0, size = name_parts.size(); i < size; ++i)
         {
             if (i != 0)
                 settings.ostr << '.';
 
-            format_element(name_parts[i]);
+            if (name_parts[i].empty())
+                children[j++]->formatImpl(settings, state, frame);
+            else
+                format_element(name_parts[i]);
         }
     }
     else
     {
-        format_element(shortName());
+        const auto & name = shortName();
+        if (name.empty())
+            children.front()->formatImpl(settings, state, frame);
+        else
+            format_element(name);
     }
 }
 
