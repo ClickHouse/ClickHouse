@@ -1092,7 +1092,7 @@ function upload_results
         --secure \
         --user "${CHPC_DATABASE_USER}" \
         --password "${CHPC_DATABASE_PASSWORD}" \
-        --config "ch/tests/config/client_config.xml" \
+        --config "right/config/client_config.xml" \
         --database perftest \
         --date_time_input_format=best_effort \
         --query "
