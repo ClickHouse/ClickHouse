@@ -680,6 +680,21 @@ Example:
 log_queries=1
 ```
 
+## log_queries_min_query_duration_ms {#settings-log-queries-min-query-duration-ms}
+
+Minimal time for the query to run to get to the following tables:
+
+- `system.query_log`
+- `system.query_thread_log`
+
+Only the queries with the following type will get to the log:
+
+- `QUERY_FINISH`
+- `EXCEPTION_WHILE_PROCESSING`
+
+-   Type: milliseconds
+-   Default value: 0 (any query)
+
 ## log_queries_min_type {#settings-log-queries-min-type}
 
 `query_log` minimal type to log.
