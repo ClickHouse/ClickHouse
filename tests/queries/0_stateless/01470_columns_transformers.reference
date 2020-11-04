@@ -77,3 +77,9 @@ SELECT
     toFloat64(k),
     j
 FROM columns_transformers
+[110]	[9]	[173.5]
+SELECT
+    quantiles(0.5)(i),
+    quantiles(0.5)(j),
+    quantiles(0.5)(k)
+FROM columns_transformers

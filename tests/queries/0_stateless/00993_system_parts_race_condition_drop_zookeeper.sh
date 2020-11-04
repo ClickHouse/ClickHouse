@@ -97,4 +97,7 @@ timeout $TIMEOUT bash -c thread6 2>&1 | grep "was not completely removed from Zo
 
 wait
 
-for i in {0..9}; do $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS alter_table_$i"; done
+for i in {0..9}; do
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS alter_table_$i" &
+done
+wait
