@@ -36,4 +36,6 @@ INSERT INTO t SELECT * FROM numbers_mt(1000000000);
 DROP TABLE IF EXISTS t;
 ```
 
+See also: format **Null**.
+
 [Original article](https://clickhouse.tech/docs/en/sql-reference/table-functions/null/) <!--hide-->
