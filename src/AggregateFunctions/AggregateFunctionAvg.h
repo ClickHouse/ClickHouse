@@ -31,18 +31,26 @@ struct AvgFraction
     Numerator numerator{0};
     Denominator denominator{0};
 
-    static constexpr bool any_is_decimal = IsDecimalNumber<Numerator> || IsDecimalNumber<Denominator>;
-
     /// Allow division by zero as sometimes we need to return NaN.
     /// Invoked only is either Numerator or Denominator are Decimal.
-    std::enable_if_t<any_is_decimal, Float64> NO_SANITIZE_UNDEFINED divide(UInt32 scale) const
+    Float64 NO_SANITIZE_UNDEFINED divideIfAnyDecimal(UInt32 scale) const
     {
         if constexpr (IsDecimalNumber<Numerator> && IsDecimalNumber<Denominator>)
-            return DecimalUtils::convertTo<Float64>(numerator / denominator, scale);
+        {
+            if constexpr(std::is_same_v<Numerator, Decimal256> && std::is_same_v<Denominator, Decimal128>)
+                ///Special case as Decimal256 / Decimal128 = compile error (as Decimal128 is not parametrized by a wide
+                ///int), but an __int128 instead
+                return DecimalUtils::convertTo<Float64>(
+                    numerator / (denominator.template convertTo<Decimal256>()), scale);
+            else
+                return DecimalUtils::convertTo<Float64>(numerator / denominator, scale);
+        }
 
         /// Numerator is always casted to Float64 to divide correctly if the denominator is not Float64.
         const Float64 num_converted = [scale](Numerator n)
         {
+            (void) scale;
+
             if constexpr (IsDecimalNumber<Numerator>)
                 return DecimalUtils::convertTo<Float64>(n, scale);
             else
@@ -52,6 +60,8 @@ struct AvgFraction
         const auto denom_converted = [scale](Denominator d) ->
             std::conditional_t<DecimalOrExtendedInt<Denominator>, Float64, Denominator>
         {
+            (void) scale;
+
             if constexpr (IsDecimalNumber<Denominator>)
                 return DecimalUtils::convertTo<Float64>(d, scale);
             else if constexpr (DecimalOrExtendedInt<Denominator>)
@@ -64,7 +74,7 @@ struct AvgFraction
         return num_converted / denom_converted;
     }
 
-    std::enable_if_t<!any_is_decimal, Float64> NO_SANITIZE_UNDEFINED divide() const
+    Float64 NO_SANITIZE_UNDEFINED divide() const
     {
         if constexpr (DecimalOrExtendedInt<Denominator>) /// if extended int
             return static_cast<Float64>(numerator) / static_cast<Float64>(denominator);
@@ -86,12 +96,7 @@ public:
     using Fraction = AvgFraction<Numerator, Denominator>;
     using Base = IAggregateFunctionDataHelper<Fraction, Derived>;
 
-    /// ctor for native types
-    explicit AggregateFunctionAvgBase(const DataTypes & argument_types_)
-        : Base(argument_types_, {}), scale(0) {}
-
-    /// ctor for Decimals
-    AggregateFunctionAvgBase(UInt32 scale_, const DataTypes & argument_types_)
+    explicit AggregateFunctionAvgBase(const DataTypes & argument_types_, UInt32 scale_ = 0)
         : Base(argument_types_, {}), scale(scale_) {}
 
     DataTypePtr getReturnType() const final { return std::make_shared<DataTypeNumber<Float64>>(); }
@@ -125,7 +130,7 @@ public:
     void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         if constexpr (IsDecimalNumber<Numerator> || IsDecimalNumber<Denominator>)
-            static_cast<ColumnVector<Float64> &>(to).getData().push_back(this->data(place).divide(scale));
+            static_cast<ColumnVector<Float64> &>(to).getData().push_back(this->data(place).divideIfAnyDecimal(scale));
         else
             static_cast<ColumnVector<Float64> &>(to).getData().push_back(this->data(place).divide());
     }
