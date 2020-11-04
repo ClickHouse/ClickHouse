@@ -23,7 +23,7 @@ add_executable(clickhouse-odbc-bridge ${CLICKHOUSE_ODBC_BRIDGE_SOURCES})
 
 target_link_libraries(clickhouse-odbc-bridge PRIVATE
     daemon
-    clickhouse_common_io
+    dbms
     Poco::Data
     Poco::Data::ODBC
 )
