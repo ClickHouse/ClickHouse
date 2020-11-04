@@ -5,7 +5,7 @@ toc_title: null function
 
 # null {#null-function}
 
-Accepts an inserted data of the specified structure and immediately drops it away. The function is used for convenience writing tests and demos.
+Accepts an inserted data of the specified structure and immediately drops it away. The function is used for convenience writing tests and demonstrations.
 
 **Syntax** 
 
