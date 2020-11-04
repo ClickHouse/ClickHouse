@@ -216,6 +216,7 @@ namespace
         ASTPtr ast;
         ASTInsertQuery * insert_query = nullptr;
         String input_format;
+        String input_data_delimiter;
         String output_format;
         uint64_t interactive_delay = 100000;
         bool send_exception_with_stacktrace = true;
@@ -238,6 +239,7 @@ namespace
         BlockOutputStreamPtr block_output_stream;
         bool need_input_data_from_insert_query = true;
         bool need_input_data_from_query_info = true;
+        bool need_input_data_delimiter = false;
 
         Stopwatch query_time;
         UInt64 waited_for_client_reading = 0;
@@ -385,6 +387,8 @@ namespace
                 input_format = "Values";
         }
 
+        input_data_delimiter = query_info.input_data_delimiter();
+
         /// Choose output format.
         query_context->setDefaultFormat(query_info.output_format());
         if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
@@ -442,6 +446,7 @@ namespace
                 need_input_data_from_insert_query = false;
                 if (insert_query && insert_query->data && (insert_query->data != insert_query->end))
                 {
+                    need_input_data_delimiter = !input_data_delimiter.empty();
                     return {insert_query->data, insert_query->end - insert_query->data};
                 }
             }
@@ -450,9 +455,17 @@ namespace
             {
                 if (need_input_data_from_query_info)
                 {
+                    if (need_input_data_delimiter && !query_info.input_data().empty())
+                    {
+                        need_input_data_delimiter = false;
+                        return {input_data_delimiter.data(), input_data_delimiter.size()};
+                    }
                     need_input_data_from_query_info = false;
                     if (!query_info.input_data().empty())
+                    {
+                        need_input_data_delimiter = !input_data_delimiter.empty();
                         return {query_info.input_data().data(), query_info.input_data().size()};
+                    }
                 }
 
                 if (!query_info.next_query_info())
