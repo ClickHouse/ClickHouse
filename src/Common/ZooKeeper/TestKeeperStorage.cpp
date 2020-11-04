@@ -4,6 +4,7 @@
 #include <mutex>
 #include <functional>
 #include <common/logger_useful.h>
+#include <Common/StringUtils/StringUtils.h>
 
 namespace zkutil
 {
@@ -17,6 +18,11 @@ static String parentPath(const String & path)
     return "/";
 }
 
+static String baseName(const String & path)
+{
+    auto rslash_pos = path.rfind('/');
+    return path.substr(rslash_pos + 1);
+}
 
 TestKeeperStorage::TestKeeperStorage()
 {
@@ -152,6 +158,255 @@ struct TestKeeperStorageGetRequest final : public TestKeeperStorageRequest
     }
 };
 
+struct TestKeeperStorageRemoveRequest final : public TestKeeperStorageRequest
+{
+    using TestKeeperStorageRequest::TestKeeperStorageRequest;
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(TestKeeperStorage::Container & container, int64_t /*zxid*/) const override
+    {
+        Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
+        Coordination::ZooKeeperRemoveResponse & response = dynamic_cast<Coordination::ZooKeeperRemoveResponse &>(*response_ptr);
+        Coordination::ZooKeeperRemoveRequest & request = dynamic_cast<Coordination::ZooKeeperRemoveRequest &>(*zk_request);
+        Undo undo;
+
+        auto it = container.find(request.path);
+        if (it == container.end())
+        {
+            response.error = Coordination::Error::ZNONODE;
+        }
+        else if (request.version != -1 && request.version != it->second.stat.version)
+        {
+            response.error = Coordination::Error::ZBADVERSION;
+        }
+        else if (it->second.stat.numChildren)
+        {
+            response.error = Coordination::Error::ZNOTEMPTY;
+        }
+        else
+        {
+            auto prev_node = it->second;
+            container.erase(it);
+            auto & parent = container.at(parentPath(request.path));
+            --parent.stat.numChildren;
+            ++parent.stat.cversion;
+            response.error = Coordination::Error::ZOK;
+
+            undo = [prev_node, &container, path = request.path]
+            {
+                container.emplace(path, prev_node);
+                auto & undo_parent = container.at(parentPath(path));
+                ++undo_parent.stat.numChildren;
+                --undo_parent.stat.cversion;
+            };
+        }
+
+        return { response_ptr, undo };
+    }
+};
+
+struct TestKeeperStorageExistsRequest final : public TestKeeperStorageRequest
+{
+    using TestKeeperStorageRequest::TestKeeperStorageRequest;
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(TestKeeperStorage::Container & container, int64_t /*zxid*/) const override
+    {
+        Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
+        Coordination::ZooKeeperExistsResponse & response = dynamic_cast<Coordination::ZooKeeperExistsResponse &>(*response_ptr);
+        Coordination::ZooKeeperExistsRequest & request = dynamic_cast<Coordination::ZooKeeperExistsRequest &>(*zk_request);
+
+        auto it = container.find(request.path);
+        if (it != container.end())
+        {
+            response.stat = it->second.stat;
+            response.error = Coordination::Error::ZOK;
+        }
+        else
+        {
+            response.error = Coordination::Error::ZNONODE;
+        }
+
+        return { response_ptr, {} };
+    }
+};
+
+struct TestKeeperStorageSetRequest final : public TestKeeperStorageRequest
+{
+    using TestKeeperStorageRequest::TestKeeperStorageRequest;
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(TestKeeperStorage::Container & container, int64_t zxid) const override
+    {
+        Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
+        Coordination::ZooKeeperSetResponse & response = dynamic_cast<Coordination::ZooKeeperSetResponse &>(*response_ptr);
+        Coordination::ZooKeeperSetRequest & request = dynamic_cast<Coordination::ZooKeeperSetRequest &>(*zk_request);
+        Undo undo;
+
+        auto it = container.find(request.path);
+        if (it == container.end())
+        {
+            response.error = Coordination::Error::ZNONODE;
+        }
+        else if (request.version == -1 || request.version == it->second.stat.version)
+        {
+            auto prev_node = it->second;
+
+            it->second.data = request.data;
+            ++it->second.stat.version;
+            it->second.stat.mzxid = zxid;
+            it->second.stat.mtime = std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1);
+            it->second.data = request.data;
+            ++container.at(parentPath(request.path)).stat.cversion;
+            response.stat = it->second.stat;
+            response.error = Coordination::Error::ZOK;
+
+            undo = [prev_node, &container, path = request.path]
+            {
+                container.at(path) = prev_node;
+                --container.at(parentPath(path)).stat.cversion;
+            };
+        }
+        else
+        {
+            response.error = Coordination::Error::ZBADVERSION;
+        }
+
+        return { response_ptr, {} };
+    }
+};
+
+struct TestKeeperStorageListRequest final : public TestKeeperStorageRequest
+{
+    using TestKeeperStorageRequest::TestKeeperStorageRequest;
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(TestKeeperStorage::Container & container, int64_t /*zxid*/) const override
+    {
+        Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
+        Coordination::ZooKeeperListResponse & response = dynamic_cast<Coordination::ZooKeeperListResponse &>(*response_ptr);
+        Coordination::ZooKeeperListRequest & request = dynamic_cast<Coordination::ZooKeeperListRequest &>(*zk_request);
+        Undo undo;
+        auto it = container.find(request.path);
+        if (it == container.end())
+        {
+            response.error = Coordination::Error::ZNONODE;
+        }
+        else
+        {
+            auto path_prefix = request.path;
+            if (path_prefix.empty())
+                throw Coordination::Exception("Logical error: path cannot be empty", Coordination::Error::ZSESSIONEXPIRED);
+
+            if (path_prefix.back() != '/')
+                path_prefix += '/';
+
+            /// Fairly inefficient.
+            for (auto child_it = container.upper_bound(path_prefix);
+                 child_it != container.end() && startsWith(child_it->first, path_prefix);
+                ++child_it)
+            {
+                if (parentPath(child_it->first) == request.path)
+                    response.names.emplace_back(baseName(child_it->first));
+            }
+
+            response.stat = it->second.stat;
+            response.error = Coordination::Error::ZOK;
+        }
+
+        return { response_ptr, {} };
+    }
+};
+
+struct TestKeeperStorageCheckRequest final : public TestKeeperStorageRequest
+{
+    using TestKeeperStorageRequest::TestKeeperStorageRequest;
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(TestKeeperStorage::Container & container, int64_t /*zxid*/) const override
+    {
+        Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
+        Coordination::ZooKeeperCheckResponse & response = dynamic_cast<Coordination::ZooKeeperCheckResponse &>(*response_ptr);
+        Coordination::ZooKeeperCheckRequest & request = dynamic_cast<Coordination::ZooKeeperCheckRequest &>(*zk_request);
+        auto it = container.find(request.path);
+        if (it == container.end())
+        {
+            response.error = Coordination::Error::ZNONODE;
+        }
+        else if (request.version != -1 && request.version != it->second.stat.version)
+        {
+            response.error = Coordination::Error::ZBADVERSION;
+        }
+        else
+        {
+            response.error = Coordination::Error::ZOK;
+        }
+
+        return { response_ptr, {} };
+    }
+};
+
+struct TestKeeperStorageMultiRequest final : public TestKeeperStorageRequest
+{
+    std::vector<TestKeeperStorageRequestPtr> concrete_requests;
+    TestKeeperStorageMultiRequest(const Coordination::ZooKeeperRequestPtr & zk_request_)
+        : TestKeeperStorageRequest(zk_request_)
+    {
+        Coordination::ZooKeeperMultiRequest & request = dynamic_cast<Coordination::ZooKeeperMultiRequest &>(*zk_request);
+        concrete_requests.reserve(request.requests.size());
+
+        for (const auto & zk_request : request.requests)
+        {
+            if (const auto * concrete_request_create = dynamic_cast<const Coordination::ZooKeeperCreateRequest *>(zk_request.get()))
+            {
+                concrete_requests.push_back(std::make_shared<TestKeeperStorageCreateRequest>(dynamic_pointer_cast<Coordination::ZooKeeperCreateRequest>(zk_request)));
+            }
+            else if (const auto * concrete_request_remove = dynamic_cast<const Coordination::ZooKeeperRemoveRequest *>(zk_request.get()))
+            {
+                concrete_requests.push_back(std::make_shared<TestKeeperStorageRemoveRequest>(dynamic_pointer_cast<Coordination::ZooKeeperRemoveRequest>(zk_request)));
+            }
+            else if (const auto * concrete_request_set = dynamic_cast<const Coordination::ZooKeeperSetRequest *>(zk_request.get()))
+            {
+                concrete_requests.push_back(std::make_shared<TestKeeperStorageSetRequest>(dynamic_pointer_cast<Coordination::ZooKeeperSetRequest>(zk_request)));
+            }
+            else if (const auto * concrete_request_check = dynamic_cast<const Coordination::ZooKeeperCheckRequest *>(zk_request.get()))
+            {
+                concrete_requests.push_back(std::make_shared<TestKeeperStorageCheckRequest>(dynamic_pointer_cast<Coordination::ZooKeeperCheckRequest>(zk_request)));
+            }
+            else
+                throw Coordination::Exception("Illegal command as part of multi ZooKeeper request", Coordination::Error::ZBADARGUMENTS);
+        }
+    }
+
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(TestKeeperStorage::Container & container, int64_t zxid) const override
+    {
+        Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
+        Coordination::ZooKeeperMultiResponse & response = dynamic_cast<Coordination::ZooKeeperMultiResponse &>(*response_ptr);
+        std::vector<Undo> undo_actions;
+
+        try
+        {
+            for (const auto & concrete_request : concrete_requests)
+            {
+                auto [ cur_response, undo_action ] = concrete_request->process(container, zxid);
+                response.responses.emplace_back(cur_response);
+                if (cur_response->error != Coordination::Error::ZOK)
+                {
+                    response.error = cur_response->error;
+
+                    for (auto it = undo_actions.rbegin(); it != undo_actions.rend(); ++it)
+                        if (*it)
+                            (*it)();
+
+                    return { response_ptr, {} };
+                }
+                else
+                    undo_actions.emplace_back(std::move(undo_action));
+            }
+
+            response.error = Coordination::Error::ZOK;
+            return { response_ptr, {} };
+        }
+        catch (...)
+        {
+            for (auto it = undo_actions.rbegin(); it != undo_actions.rend(); ++it)
+                if (*it)
+                    (*it)();
+            throw;
+        }
+    }
+};
+
 void TestKeeperStorage::processingThread()
 {
     setThreadName("TestKeeperSProc");
@@ -174,24 +429,11 @@ void TestKeeperStorage::processingThread()
 
                 auto zk_request = info.request->zk_request;
                 LOG_DEBUG(&Poco::Logger::get("STORAGE"), "GOT REQUEST {}", zk_request->getOpNum());
-                Coordination::ZooKeeperResponsePtr response;
-                if (zk_request->xid == -2)
-                {
-                    response = std::make_shared<Coordination::ZooKeeperHeartbeatResponse>();
-                    response->xid = zk_request->xid;
-                    response->zxid = zxid;
-                }
-                else
-                {
-                    zk_request->addRootPath(root_path);
-                    LOG_DEBUG(&Poco::Logger::get("STORAGE"), "PROCESSING REQUEST");
-                    std::tie(response, std::ignore) = info.request->process(container, zxid);
-                    response->xid = zk_request->xid;
-                    LOG_DEBUG(&Poco::Logger::get("STORAGE"), "SENDING XID {}", response->xid);
-                    response->zxid = zxid;
 
-                    response->removeRootPath(root_path);
-                }
+                auto [response, _] = info.request->process(container, zxid);
+                response->xid = zk_request->xid;
+                response->zxid = zxid;
+                response->removeRootPath(root_path);
 
                 LOG_DEBUG(&Poco::Logger::get("STORAGE"), "SENDING RESPONSE");
                 info.response_callback(response);
@@ -237,23 +479,74 @@ void TestKeeperStorage::finalize()
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+}
 
+
+
+
+
+class TestKeeperWrapperFactory final : private boost::noncopyable
+{
+
+public:
+    using Creator = std::function<TestKeeperStorageRequestPtr(const Coordination::ZooKeeperRequestPtr &)>;
+    using OpNumToRequest = std::unordered_map<int32_t, Creator>;
+
+    static TestKeeperWrapperFactory & instance()
+    {
+        static TestKeeperWrapperFactory factory;
+        return factory;
+    }
+
+    TestKeeperStorageRequestPtr get(const Coordination::ZooKeeperRequestPtr & zk_request) const
+    {
+        auto it = op_num_to_request.find(zk_request->getOpNum());
+        if (it == op_num_to_request.end())
+            throw Coordination::Exception("Unknown operation type " + std::to_string(zk_request->getOpNum()), Coordination::Error::ZBADARGUMENTS);
+
+        return it->second(zk_request);
+    }
+
+    void registerRequest(int32_t op_num, Creator creator)
+    {
+        if (!op_num_to_request.try_emplace(op_num, creator).second)
+            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Request with op num {} already registered", op_num);
+    }
+
+private:
+    OpNumToRequest op_num_to_request;
+
+private:
+    TestKeeperWrapperFactory();
+};
+
+template<int32_t num, typename RequestT>
+void registerTestKeeperRequestWrapper(TestKeeperWrapperFactory & factory)
+{
+    factory.registerRequest(num, [] (const Coordination::ZooKeeperRequestPtr & zk_request) { return std::make_shared<RequestT>(zk_request); });
+}
+
+
+TestKeeperWrapperFactory::TestKeeperWrapperFactory()
+{
+    registerTestKeeperRequestWrapper<11, TestKeeperStorageHeartbeatRequest>(*this);
+    //registerTestKeeperRequestWrapper<100, TestKeeperStorageAuthRequest>(*this);
+    //registerTestKeeperRequestWrapper<-11, TestKeeperStorageCloseRequest>(*this);
+    registerTestKeeperRequestWrapper<1, TestKeeperStorageCreateRequest>(*this);
+    registerTestKeeperRequestWrapper<2, TestKeeperStorageRemoveRequest>(*this);
+    registerTestKeeperRequestWrapper<3, TestKeeperStorageExistsRequest>(*this);
+    registerTestKeeperRequestWrapper<4, TestKeeperStorageGetRequest>(*this);
+    registerTestKeeperRequestWrapper<5, TestKeeperStorageSetRequest>(*this);
+    registerTestKeeperRequestWrapper<12, TestKeeperStorageListRequest>(*this);
+    registerTestKeeperRequestWrapper<13, TestKeeperStorageCheckRequest>(*this);
+    registerTestKeeperRequestWrapper<14, TestKeeperStorageMultiRequest>(*this);
 }
 
 TestKeeperStorage::AsyncResponse TestKeeperStorage::putRequest(const Coordination::ZooKeeperRequestPtr & request)
 {
     auto promise = std::make_shared<std::promise<Coordination::ZooKeeperResponsePtr>>();
     auto future = promise->get_future();
-    TestKeeperStorageRequestPtr storage_request;
-    if (request->xid == -2)
-        storage_request = std::make_shared<TestKeeperStorageHeartbeatRequest>(request);
-    else if (request->getOpNum() == 1)
-        storage_request = std::make_shared<TestKeeperStorageCreateRequest>(request);
-    else if (request->getOpNum() == 4)
-        storage_request = std::make_shared<TestKeeperStorageGetRequest>(request);
-    else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "UNKNOWN EVENT WITH OPNUM {}", request->getOpNum())
-;
+    TestKeeperStorageRequestPtr storage_request = TestKeeperWrapperFactory::instance().get(request);
     RequestInfo request_info;
     request_info.time = clock::now();
     request_info.request = storage_request;
