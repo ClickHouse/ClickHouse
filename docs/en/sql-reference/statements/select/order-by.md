@@ -302,4 +302,4 @@ Result:
 └───┴───┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/sql-reference/statements/select/order-by/#select-order-by) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/sql-reference/statements/select/order-by/) <!--hide-->

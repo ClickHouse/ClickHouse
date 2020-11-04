@@ -1,5 +1,4 @@
 ---
-toc_priority: 44
 toc_title: ORDER BY
 ---
 
@@ -296,4 +295,4 @@ SELECT * FROM test_fetch ORDER BY a OFFSET 3 ROW FETCH FIRST 3 ROWS WITH TIES;
 └───┴───┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/select/order-by/#select-order-by) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/select/order-by/) <!--hide-->
