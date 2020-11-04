@@ -120,10 +120,12 @@ struct CustomizeAggregateFunctionsSuffixData
 
     void visit(ASTFunction & func, ASTPtr &)
     {
-        if (AggregateFunctionFactory::instance().isAggregateFunctionName(func.name)
-            && !endsWith(func.name, customized_func_suffix))
+        const auto & instance = AggregateFunctionFactory::instance();
+        if (instance.isAggregateFunctionName(func.name) && !endsWith(func.name, customized_func_suffix))
         {
-            func.name = func.name + customized_func_suffix;
+            auto properties = instance.tryGetProperties(func.name);
+            if (properties && !properties->returns_default_when_only_null)
+                func.name = func.name + customized_func_suffix;
         }
     }
 };
