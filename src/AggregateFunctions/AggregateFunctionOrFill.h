@@ -105,20 +105,26 @@ public:
 
     void addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const override
     {
-        nested_function->addBatchSinglePlace(batch_size, place, columns, arena);
-        place[size_of_data] = 1;
+        if (batch_size)
+        {
+            nested_function->addBatchSinglePlace(batch_size, place, columns, arena);
+            place[size_of_data] = 1;
+        }
     }
 
     void addBatchSinglePlaceNotNull(
         size_t batch_size, AggregateDataPtr place, const IColumn ** columns, const UInt8 * null_map, Arena * arena) const override
     {
-        nested_function->addBatchSinglePlaceNotNull(batch_size, place, columns, null_map, arena);
-        for (size_t i = 0; i < batch_size; ++i)
+        if (batch_size)
         {
-            if (!null_map[i])
+            nested_function->addBatchSinglePlaceNotNull(batch_size, place, columns, null_map, arena);
+            for (size_t i = 0; i < batch_size; ++i)
             {
-                place[size_of_data] = 1;
-                break;
+                if (!null_map[i])
+                {
+                    place[size_of_data] = 1;
+                    break;
+                }
             }
         }
     }
@@ -129,7 +135,6 @@ public:
         Arena * arena) const override
     {
         nested_function->merge(place, rhs, arena);
-
         place[size_of_data] |= rhs[size_of_data];
     }
 
