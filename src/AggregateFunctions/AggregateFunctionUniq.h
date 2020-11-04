@@ -24,7 +24,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
 
-#ifdef __SSSE3__
+#if defined(__SSSE3__)
 #include <tmmintrin.h>
 #endif
 
@@ -187,7 +187,7 @@ struct OneAdder
 
                 UInt128 key;
 
-#ifdef __SSSE3__
+#if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
                 /// A trick for better performance: use last bit of key as a flag.
                 /// If string is not larger than 15 bytes, set the flag to zero and put the string itself into the key.
                 /// If it is larger - calculate it's cryptographic hash but set the last bit to one.
@@ -197,6 +197,7 @@ struct OneAdder
                     /// We will do memcpy of value up to its size and memset to zero of the rest bytes.
                     /// It is possible to do it with a single "shuffle" instruction (and load, store).
                     /// Columns have 15 bytes padding, that's why it is safe to read 16 bytes.
+                    /// But we have to disable it under memory sanitizer.
 
                     static constexpr Int8 __attribute__((__aligned__(16))) masks[] =
                     {
@@ -241,7 +242,7 @@ struct OneAdder
                     SipHash hash;
                     hash.update(value.data, value.size);
                     hash.get128(key.low, key.high);
-#ifdef __SSSE3__
+#if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
                     key.high |= 0x8000000000000000ULL;  /// Assuming little endian.
 #endif
                 }
