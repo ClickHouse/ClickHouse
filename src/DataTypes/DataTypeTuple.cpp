@@ -5,6 +5,8 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeOneElementTuple.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTNameTypePair.h>
 #include <Common/typeid_cast.h>
@@ -538,11 +540,14 @@ DataTypePtr DataTypeTuple::tryGetSubcolumnType(const String & subcolumn_name) co
         if (startsWith(subcolumn_name, names[i]))
         {
             size_t name_length = names[i].size();
+            DataTypePtr subcolumn_type;
             if (subcolumn_name.size() == name_length)
-                return elems[i];
+                subcolumn_type = elems[i];
+            else if (subcolumn_name[name_length] == '.')
+                subcolumn_type = elems[i]->tryGetSubcolumnType(subcolumn_name.substr(name_length + 1));
 
-            if (subcolumn_name[name_length] == '.')
-                return elems[i]->tryGetSubcolumnType(subcolumn_name.substr(name_length + 1));
+            if (subcolumn_type)
+                return std::make_shared<DataTypeOneElementTuple>(std::move(subcolumn_type), names[i]);
         }
     }
 
@@ -604,15 +609,7 @@ static DataTypePtr create(const ASTPtr & arguments)
 void registerDataTypeTuple(DataTypeFactory & factory)
 {
     factory.registerDataType("Tuple", create);
-}
-
-void registerDataTypeNested(DataTypeFactory & factory)
-{
-    /// Nested(...) data type is just a sugar for Array(Tuple(...))
-    factory.registerDataType("Nested", [&factory](const ASTPtr & arguments)
-    {
-        return std::make_shared<DataTypeArray>(factory.get("Tuple", arguments));
-    });
+    // factory.registerDataTypeCustom(DATA_TYPE_ONE_ELEMENT_TUPLE_NAME, createOneElementTuple);
 }
 
 }

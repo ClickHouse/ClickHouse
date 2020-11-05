@@ -10,12 +10,12 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeOneElementTuple.h>
 
 #include <Parsers/IAST.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Common/escapeForFileName.h>
 #include <IO/ReadHelpers.h>
 
 #include <Core/NamesAndTypes.h>
@@ -32,8 +32,8 @@ namespace ErrorCodes
 }
 
 
-DataTypeArray::DataTypeArray(const DataTypePtr & nested_, size_t nested_level_)
-    : nested{nested_}, nested_level{nested_level_}
+DataTypeArray::DataTypeArray(const DataTypePtr & nested_)
+    : nested{nested_}
 {
 }
 
@@ -527,7 +527,7 @@ DataTypePtr DataTypeArray::tryGetSubcolumnType(const String & subcolumn_name) co
 DataTypePtr DataTypeArray::tryGetSubcolumnTypeImpl(const String & subcolumn_name, size_t level) const
 {
     if (subcolumn_name == "size" + std::to_string(level))
-        return std::make_shared<DataTypeUInt64>();
+        return std::make_shared<DataTypeOneElementTuple>(std::make_shared<DataTypeUInt64>(), subcolumn_name, false);
 
     DataTypePtr subcolumn;
     if (const auto * nested_array = typeid_cast<const DataTypeArray *>(nested.get()))
@@ -535,7 +535,7 @@ DataTypePtr DataTypeArray::tryGetSubcolumnTypeImpl(const String & subcolumn_name
     else
         subcolumn = nested->tryGetSubcolumnType(subcolumn_name);
 
-    return (subcolumn ? std::make_shared<DataTypeArray>(std::move(subcolumn), nested_level + 1) : subcolumn);
+    return (subcolumn ? std::make_shared<DataTypeArray>(std::move(subcolumn)) : subcolumn);
 }
 
 MutableColumnPtr DataTypeArray::getSubcolumn(const String & subcolumn_name, IColumn & column) const

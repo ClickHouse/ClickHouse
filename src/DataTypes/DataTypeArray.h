@@ -13,12 +13,10 @@ private:
     /// The type of array elements.
     DataTypePtr nested;
 
-    size_t nested_level = 0;
-
 public:
     static constexpr bool is_parametric = true;
 
-    DataTypeArray(const DataTypePtr & nested_, size_t nested_level_ = 0);
+    DataTypeArray(const DataTypePtr & nested_);
 
     TypeIndex getTypeId() const override { return TypeIndex::Array; }
 
@@ -36,8 +34,6 @@ public:
     {
         return false;
     }
-
-    size_t getNestedLevel() const override { return nested_level; }
 
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr) const override;

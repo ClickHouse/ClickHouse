@@ -27,9 +27,11 @@ SRCS(
     DataTypeInterval.cpp
     DataTypeLowCardinality.cpp
     DataTypeLowCardinalityHelpers.cpp
+    DataTypeNested.cpp
     DataTypeNothing.cpp
     DataTypeNullable.cpp
     DataTypeNumberBase.cpp
+    DataTypeOneElementTuple.cpp
     DataTypesDecimal.cpp
     DataTypesNumber.cpp
     DataTypeString.cpp

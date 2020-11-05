@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeOneElementTuple.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/Field.h>
 #include <Core/NamesAndTypes.h>
@@ -530,7 +531,7 @@ bool DataTypeNullable::equals(const IDataType & rhs) const
 DataTypePtr DataTypeNullable::tryGetSubcolumnType(const String & subcolumn_name) const
 {
     if (subcolumn_name == "null")
-        return std::make_shared<DataTypeUInt8>();
+        return std::make_shared<DataTypeOneElementTuple>(std::make_shared<DataTypeUInt8>(), subcolumn_name, false);
 
     return nested_data_type->tryGetSubcolumnType(subcolumn_name);
 }

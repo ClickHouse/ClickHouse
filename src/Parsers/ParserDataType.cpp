@@ -82,7 +82,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// Parse optional parameters
     ASTPtr expr_list_args;
 
-    ParserList args_parser_nested(std::make_unique<ParserNestedTable>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+    ParserList args_parser_nested(std::make_unique<ParserDataType>(), std::make_unique<ParserToken>(TokenType::Comma), false);
     if (args_parser_nested.parse(pos, expr_list_args, expected))
     {
         if (pos->type != TokenType::ClosingRoundBracket)
