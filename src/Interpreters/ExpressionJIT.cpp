@@ -885,6 +885,7 @@ void ActionsDAG::compileFunctions()
                     }
                 }
 
+                visited.insert(frame.node);
                 stack.pop();
             }
         }
