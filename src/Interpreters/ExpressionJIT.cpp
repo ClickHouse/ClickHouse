@@ -873,11 +873,6 @@ void ActionsDAG::compileFunctions()
                     {
                         std::vector<Node *> new_children;
                         auto dag = getCompilableDAG(frame.node, new_children, used_in_result);
-                        if (dag.size() != cur.num_inlineable_nodes)
-                            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                            "Unexpected number of nodes in compile expression DAG. "
-                                            "Expected {}, got {}. Chain: {}",
-                                            cur.num_inlineable_nodes, dag.size(), dag.dump());
 
                         if (auto fn = compile(dag, min_count_to_compile_expression, compilation_cache))
                         {
