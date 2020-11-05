@@ -57,7 +57,7 @@ public:
         UInt128 hash() const;
     };
 
-    LLVMFunction(const CompileDAG & dag);
+    explicit LLVMFunction(const CompileDAG & dag);
 
     bool isCompilable() const override { return true; }
 
