@@ -115,7 +115,7 @@ select (sum(abs(cosh(x) * cosh(x) - sinh(x) * sinh(x) - 1)) < 1e-9) / count() fr
 select asinh(0) = 0;
 select asinh(1) = -asinh(-1);
 select abs(asinh(1) - ln(1 + sqrt(2))) < 1e-9;
-select (asinh(sinh(1)) - 1) < 1e-9
+select (asinh(sinh(1)) - 1) < 1e-9;
 select sum(abs(asinh(sinh(x)) - x) < 1e-9) / count() from system.one array join range(1000) as x;
 
 select acosh(1) = 0;
@@ -127,7 +127,7 @@ select sum(abs(acosh(cosh(x)) - x) < 1e-9) / count() from system.one array join 
 select atanh(0) = 0;
 select atanh(0.5) = -asinh(-0.5);
 select abs(atanh(0.9) - 0.5 * ln(19)) < 1e-9;
-select (atanh(tanh(1)) - 1) < 1e-9
+select (atanh(tanh(1)) - 1) < 1e-9;
 select sum(abs(asinh(sinh(x)) - x) < 1e-9) / count() from system.one array join range(1000) as x;
 
 select erf(0) = 0;
