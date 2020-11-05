@@ -559,15 +559,7 @@ namespace ErrorCodes
         return error_codes_names.names[error_code];
     }
 
-<<<<<<< HEAD
-    extern const int CONDITIONAL_TREE_PARENT_NOT_FOUND = 2001;
-    extern const int ILLEGAL_PROJECTION_MANIPULATOR = 2002;
-    extern const int UNRECOGNIZED_ARGUMENTS = 2003;
-    extern const int UNKNOWN_UNION = 2004;
-    extern const int EXPECTED_ALL_OR_DISTINCT = 2005;
-=======
     ErrorCode end() { return END+1; }
->>>>>>> origin/master
 }
 
 }
