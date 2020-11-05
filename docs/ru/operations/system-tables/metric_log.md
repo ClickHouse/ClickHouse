@@ -1,6 +1,7 @@
 # system.metric_log {#system_tables-metric_log}
 
 Содержит историю значений метрик из таблиц `system.metrics` и `system.events`, периодически сбрасываемую на диск.
+
 Для включения сбора истории метрик в таблице `system.metric_log` создайте `/etc/clickhouse-server/config.d/metric_log.xml` следующего содержания:
 
 ``` xml
@@ -13,6 +14,11 @@
     </metric_log>
 </yandex>
 ```
+
+Столбцы:
+-   `event_date` ([Date](../../sql-reference/data-types/date.md)) — дата события.
+-   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — время события.
+-   `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — время события в микросекундах.
 
 **Пример**
 
