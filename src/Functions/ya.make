@@ -386,9 +386,9 @@ SRCS(
     registerFunctionsTuple.cpp
     registerFunctionsUnixTimestamp64.cpp
     registerFunctionsVisitParam.cpp
+    reinterpretAs.cpp
     reinterpretAsFixedString.cpp
     reinterpretAsString.cpp
-    reinterpretStringAs.cpp
     repeat.cpp
     replaceAll.cpp
     replaceOne.cpp
