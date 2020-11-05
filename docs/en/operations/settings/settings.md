@@ -2192,6 +2192,41 @@ Result:
    └─────────────────────────┴─────────┘
 ```
 
+## system_events_show_zero_values {system_events_show_zero_values}
+
+Description.
+
+I want to explain why this feature is required and which corner cases it covers
+
+system.metrics, system.events and system.asyncronous_metrics can be monitored via prometheus
+prometheus has a scraping interval
+when "system.events" doesn't contain data with some critical events, like DelayedInserts or RejectedInserts for example before the first increment this counters will occur then prometheus probably will scrape only X value, instead of sequence 0 and X value between two scraping interval
+so alerts which calculated as increase(DelayedInserts[1m]) will not triggered
+
+For the switch setting, use the typical phrase: “Enables or disables something …”.
+
+Possible values:
+
+*For switcher setting:*
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+*For another setting (typical phrases):*
+
+-   Positive integer.
+-   0 — Disabled or unlimited or something else.
+
+Default value: `value`.
+
+**Additional Info** (Optional)
+
+The name of an additional section can be any, for example, **Usage**.
+
+**See Also** (Optional)
+
+-   [link](#)
+
 ## allow_experimental_bigint_types {#allow_experimental_bigint_types}
 
 Enables or disables integer values exceeding the range that is supported by the int data type.
