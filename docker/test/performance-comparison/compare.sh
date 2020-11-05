@@ -1096,7 +1096,7 @@ function upload_results
         --database perftest \
         --date_time_input_format=best_effort \
         --query "
-            insert into query_metrics_tmp
+            insert into query_metrics_v1
             select
                 toDate(event_time) event_date,
                 toDateTime('$(cd right/ch && git show -s --format=%ci "$SHA_TO_TEST" | cut -d' ' -f-2)') event_time,
