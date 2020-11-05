@@ -166,6 +166,9 @@ BlockInputStreamPtr FormatFactory::getInput(
     // (segmentator + two parsers + reader).
     bool parallel_parsing = settings.input_format_parallel_parsing && file_segmentation_engine && settings.max_threads >= 4;
 
+    if (settings.min_chunk_bytes_for_parallel_parsing * settings.max_threads * 2 > settings.max_memory_usage)
+        parallel_parsing = false;
+
     if (parallel_parsing && name == "JSONEachRow")
     {
         /// FIXME ParallelParsingBlockInputStream doesn't support formats with non-trivial readPrefix() and readSuffix()
@@ -195,7 +198,7 @@ BlockInputStreamPtr FormatFactory::getInput(
         auto input_creator_params = ParallelParsingBlockInputStream::InputCreatorParams{sample, row_input_format_params, format_settings};
         ParallelParsingBlockInputStream::Params params{buf, input_getter,
             input_creator_params, file_segmentation_engine,
-            static_cast<int>(settings.max_threads),
+            settings.max_threads,
             settings.min_chunk_bytes_for_parallel_parsing};
         return std::make_shared<ParallelParsingBlockInputStream>(params);
     }
