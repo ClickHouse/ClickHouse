@@ -387,9 +387,6 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
             source.type = assert_cast<const DataTypeArray &>(*source.type).getNestedType();
             source.name = result_name;
 
-            if (source.type->getTypeId() == TypeIndex::Nothing)
-                throw Exception("ARRAY JOIN of empty array is not allowed", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
             block.insert(std::move(source));
 
             break;
