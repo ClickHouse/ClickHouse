@@ -855,7 +855,7 @@ void ActionsDAG::compileFunctions()
                     /// There is not reason to inline single node.
                     /// The result of compiling function in isolation is pretty much the same as its `execute` method.
                     if (cur.num_inlineable_nodes <= 1)
-                        should_compile = false;;
+                        should_compile = false;
 
                     if (should_compile)
                     {
