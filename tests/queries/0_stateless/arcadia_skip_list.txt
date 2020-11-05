@@ -159,3 +159,4 @@
 01547_query_log_current_database
 01548_query_log_query_execution_ms
 01552_dict_fixedstring
+01557_max_parallel_replicas_no_sample.sql
