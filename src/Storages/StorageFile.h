@@ -52,7 +52,7 @@ public:
     {
         StorageID table_id;
         std::string format_name;
-        FormatSettings format_settings;
+        std::optional<FormatSettings> format_settings;
         std::string compression_method;
         const ColumnsDescription & columns;
         const ConstraintsDescription & constraints;
@@ -80,7 +80,11 @@ private:
     explicit StorageFile(CommonArguments args);
 
     std::string format_name;
-    FormatSettings format_settings;
+    // We use format settings from global context + CREATE query for File table
+    // function -- in this case, format_settings is set.
+    // For `file` table function, we use format settings from current user context,
+    // in this case, format_settings is not set.
+    std::optional<FormatSettings> format_settings;
 
     int table_fd = -1;
     String compression_method;

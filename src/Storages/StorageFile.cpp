@@ -452,7 +452,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         const CompressionMethod compression_method,
         const Context & context,
-        const FormatSettings & format_settings)
+        std::optional<FormatSettings> format_settings)
         : storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
         , lock(storage.rwlock)
@@ -618,18 +618,21 @@ void registerStorageFile(StorageFactory & factory)
             engine_args_ast[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args_ast[0], factory_args.local_context);
             storage_args.format_name = engine_args_ast[0]->as<ASTLiteral &>().value.safeGet<String>();
 
+            // Use format settings from global server context + settings from
+            // the SETTINGS clause of the create query. Settings from current
+            // session and user are ignored.
             if (factory_args.storage_def->settings)
             {
-                Context local_context_copy = factory_args.local_context;
-                local_context_copy.applySettingsChanges(
+                Context global_context_copy = factory_args.context;
+                global_context_copy.applySettingsChanges(
                     factory_args.storage_def->settings->changes);
                 storage_args.format_settings = getFormatSettings(
-                    local_context_copy);
+                    global_context_copy);
             }
             else
             {
                 storage_args.format_settings = getFormatSettings(
-                    factory_args.local_context);
+                    factory_args.context);
             }
 
             if (engine_args_ast.size() == 1) /// Table in database
