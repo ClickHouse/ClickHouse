@@ -36,6 +36,7 @@ protected:
         const Context & context_,
         const StorageID & id_,
         const String & format_name_,
+        std::optional<FormatSettings> format_settings_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & compression_method_);
@@ -44,6 +45,11 @@ protected:
     const Context & context_global;
     String compression_method;
     String format_name;
+    // For URL engine, we use format settings from server context + `SETTINGS`
+    // clause of the `CREATE` query. In this case, format_settings is set.
+    // For `url` table function, we use settings from current query context.
+    // In this case, format_settings is not set.
+    std::optional<FormatSettings> format_settings;
 
 private:
     virtual std::string getReadMethod() const;
@@ -73,6 +79,7 @@ public:
     StorageURLBlockOutputStream(
         const Poco::URI & uri,
         const String & format,
+        std::optional<FormatSettings> format_settings,
         const Block & sample_block_,
         const Context & context,
         const ConnectionTimeouts & timeouts,
@@ -97,15 +104,16 @@ class StorageURL final : public ext::shared_ptr_helper<StorageURL>, public IStor
 {
     friend struct ext::shared_ptr_helper<StorageURL>;
 public:
-    StorageURL(
-        const Poco::URI & uri_,
-        const StorageID & table_id_,
-        const String & format_name_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        Context & context_,
-        const String & compression_method_)
-        : IStorageURLBase(uri_, context_, table_id_, format_name_, columns_, constraints_, compression_method_)
+    StorageURL(const Poco::URI & uri_,
+            const StorageID & table_id_,
+            const String & format_name_,
+            std::optional<FormatSettings> format_settings_,
+            const ColumnsDescription & columns_,
+            const ConstraintsDescription & constraints_,
+            Context & context_,
+            const String & compression_method_)
+        : IStorageURLBase(uri_, context_, table_id_, format_name_,
+            format_settings_, columns_, constraints_, compression_method_)
     {
     }
 

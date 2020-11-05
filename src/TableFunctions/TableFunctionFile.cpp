@@ -10,13 +10,16 @@
 
 namespace DB
 {
-StoragePtr TableFunctionFile::getStorage(
-    const String & source, const String & format_, const ColumnsDescription & columns, Context & global_context,
-    const std::string & table_name, const std::string & compression_method_) const
+StoragePtr TableFunctionFile::getStorage(const String & source,
+    const String & format_, const ColumnsDescription & columns,
+    Context & global_context, const std::string & table_name,
+    const std::string & compression_method_) const
 {
+    // For `file` table function, we are going to use format settings from the
+    // query context.
     StorageFile::CommonArguments args{StorageID(getDatabaseName(), table_name),
         format_,
-        getFormatSettings(global_context),
+        std::nullopt /*format settings*/,
         compression_method_,
         columns,
         ConstraintsDescription{},
