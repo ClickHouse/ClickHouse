@@ -1,0 +1,4 @@
+masked
+2,"default:*@localhost:9000"
+no masking
+1,"default@localhost:9000"
