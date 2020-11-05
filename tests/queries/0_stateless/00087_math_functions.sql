@@ -121,7 +121,7 @@ select sum(abs(asinh(sinh(x)) - x) < 1e-9) / count() from system.one array join 
 select acosh(1) = 0;
 select acosh(2) = acosh(-2);
 select abs(acosh(2) - ln(2 + sqrt(3))) < 1e-9;
-select (acosh(cosh(2)) - 2) < 1e-9
+select (acosh(cosh(2)) - 2) < 1e-9;
 select sum(abs(acosh(cosh(x)) - x) < 1e-9) / count() from system.one array join range(1, 1001) as x;
 
 select atanh(0) = 0;
