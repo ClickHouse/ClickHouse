@@ -872,7 +872,7 @@ void ActionsDAG::compileFunctions()
                     if (should_compile)
                     {
                         std::vector<Node *> new_children;
-                        auto dag = getCompilableDAG(frame.node, new_children);
+                        auto dag = getCompilableDAG(frame.node, new_children, used_in_result);
                         if (dag.size() != cur.num_inlineable_nodes)
                             throw Exception(ErrorCodes::LOGICAL_ERROR,
                                             "Unexpected number of nodes in compile expression DAG. "
