@@ -535,6 +535,11 @@ BlockOutputStreamPtr StorageFile::write(
         format_settings);
 }
 
+bool StorageFile::storesDataOnDisk() const
+{
+    return is_db_table;
+}
+
 Strings StorageFile::getDataPaths() const
 {
     if (paths.empty())
