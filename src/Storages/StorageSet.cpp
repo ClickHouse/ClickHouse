@@ -151,10 +151,8 @@ StorageSet::StorageSet(
 
 void StorageSet::insertBlock(const Block & block) { set->insertFromBlock(block); }
 void StorageSet::finishInsert() { set->finishInsert(); }
-
 size_t StorageSet::getSize() const { return set->getTotalRowCount(); }
-std::optional<UInt64> StorageSet::totalRows() const { return set->getTotalRowCount(); }
-std::optional<UInt64> StorageSet::totalBytes() const { return set->getTotalByteCount(); }
+
 
 void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &)
 {

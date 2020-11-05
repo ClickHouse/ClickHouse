@@ -26,7 +26,7 @@ class ExternalAuthenticators
 {
 public:
     void reset();
-    void setConfiguration(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log);
+    void setConfig(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log);
 
     void setLDAPServerParams(const String & server, const LDAPServerParams & params);
     LDAPServerParams getLDAPServerParams(const String & server) const;

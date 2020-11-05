@@ -5,6 +5,7 @@ PEERDIR(
     clickhouse/src/Common
 )
 
+CFLAGS(-g0)
 
 SRCS(
     AggregateFunctionAggThrow.cpp

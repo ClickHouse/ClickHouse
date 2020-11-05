@@ -105,7 +105,7 @@ Vérifier:
 
 -   Paramètres du point de terminaison.
 
-    Vérifier [listen_host](server-configuration-parameters/settings.md#server_configuration_parameters-listen_host) et [tcp_port](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) paramètre.
+    Vérifier [listen\_host](server-configuration-parameters/settings.md#server_configuration_parameters-listen_host) et [tcp\_port](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) paramètre.
 
     Clickhouse server accepte les connexions localhost uniquement par défaut.
 
@@ -117,7 +117,7 @@ Vérifier:
 
     Vérifier:
 
-    -   Le [tcp_port_secure](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) paramètre.
+    -   Le [tcp\_port\_secure](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) paramètre.
     -   Paramètres pour [SSL sertificates](server-configuration-parameters/settings.md#server_configuration_parameters-openssl).
 
     Utilisez les paramètres appropriés lors de la connexion. Par exemple, l'utilisation de la `port_secure` paramètre avec `clickhouse_client`.

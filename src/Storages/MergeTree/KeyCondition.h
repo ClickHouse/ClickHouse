@@ -232,9 +232,7 @@ public:
         const SelectQueryInfo & query_info,
         const Context & context,
         const Names & key_column_names,
-        const ExpressionActionsPtr & key_expr,
-        bool single_point_ = false,
-        bool strict_ = false);
+        const ExpressionActionsPtr & key_expr);
 
     /// Whether the condition and its negation are feasible in the direct product of single column ranges specified by `hyperrectangle`.
     BoolMask checkInHyperrectangle(
@@ -309,8 +307,7 @@ public:
     static std::optional<Range> applyMonotonicFunctionsChainToRange(
         Range key_range,
         const MonotonicFunctionsChain & functions,
-        DataTypePtr current_type,
-        bool single_point = false);
+        DataTypePtr current_type);
 
     bool matchesExactContinuousRange() const;
 
@@ -416,11 +413,6 @@ private:
     ColumnIndices key_columns;
     ExpressionActionsPtr key_expr;
     PreparedSets prepared_sets;
-
-    // If true, always allow key_expr to be wrapped by function
-    bool single_point;
-    // If true, do not use always_monotonic information to transform constants
-    bool strict;
 };
 
 }
