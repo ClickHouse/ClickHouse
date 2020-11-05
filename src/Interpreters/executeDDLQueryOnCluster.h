@@ -15,6 +15,9 @@ class AccessRightsElements;
 struct DDLLogEntry;
 
 
+/// Returns true if provided ALTER type can be executed ON CLUSTER
+bool isSupportedAlterType(int type);
+
 /// Pushes distributed DDL query to the queue.
 /// Returns DDLQueryStatusInputStream, which reads results of query execution on each host in the cluster.
 BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context);
@@ -25,7 +28,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & conte
 class DDLQueryStatusInputStream : public IBlockInputStream
 {
 public:
-    DDLQueryStatusInputStream(const String & zk_node_path, const DDLLogEntry & entry, const Context & context_);
+    DDLQueryStatusInputStream(const String & zk_node_path, const DDLLogEntry & entry, const Context & context_, const std::optional<Strings> & hosts_to_wait = {});
 
     String getName() const override { return "DDLQueryStatusInputStream"; }
 

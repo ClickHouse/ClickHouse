@@ -25,7 +25,7 @@ namespace ErrorCodes
     extern const int QUERY_IS_PROHIBITED;
 }
 
-static bool isSupportedAlterType(int type)
+bool isSupportedAlterType(int type)
 {
     static const std::unordered_set<int> unsupported_alter_types{
         ASTAlterCommand::ATTACH_PARTITION,
@@ -170,7 +170,8 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
 }
 
 
-DDLQueryStatusInputStream::DDLQueryStatusInputStream(const String & zk_node_path, const DDLLogEntry & entry, const Context & context_)
+DDLQueryStatusInputStream::DDLQueryStatusInputStream(const String & zk_node_path, const DDLLogEntry & entry, const Context & context_,
+                                                     const std::optional<Strings> & hosts_to_wait)
     : node_path(zk_node_path)
     , context(context_)
     , watch(CLOCK_MONOTONIC_COARSE)
@@ -185,10 +186,17 @@ DDLQueryStatusInputStream::DDLQueryStatusInputStream(const String & zk_node_path
         {std::make_shared<DataTypeUInt64>(),    "num_hosts_active"},
     };
 
-    for (const HostID & host: entry.hosts)
-        waiting_hosts.emplace(host.toString());
+    if (hosts_to_wait)
+    {
+        waiting_hosts = NameSet(hosts_to_wait->begin(), hosts_to_wait->end());
+    }
+    else
+    {
+        for (const HostID & host : entry.hosts)
+            waiting_hosts.emplace(host.toString());
+    }
 
-    addTotalRowsApprox(entry.hosts.size());
+    addTotalRowsApprox(waiting_hosts.size());
 
     timeout_seconds = context.getSettingsRef().distributed_ddl_task_timeout;
 }

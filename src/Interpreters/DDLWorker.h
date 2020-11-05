@@ -4,6 +4,7 @@
 #include <Common/ThreadPool.h>
 #include <Storages/IStorage_fwd.h>
 #include <Parsers/IAST_fwd.h>
+#include <Interpreters/Context.h>
 
 #include <atomic>
 #include <chrono>
@@ -35,7 +36,8 @@ using DDLTaskPtr = std::unique_ptr<DDLTask>;
 class DDLWorker
 {
 public:
-    DDLWorker(int pool_size_, const std::string & zk_root_dir, Context & context_, const Poco::Util::AbstractConfiguration * config, const String & prefix);
+    DDLWorker(int pool_size_, const std::string & zk_root_dir, Context & context_, const Poco::Util::AbstractConfiguration * config, const String & prefix,
+              bool is_replicated_db_ = false, const std::optional<String> & db_name_ = std::nullopt, const std::optional<String> & db_replica_name_ = std::nullopt, const std::optional<String> & db_shard_name_ = std::nullopt);
     ~DDLWorker();
 
     /// Pushes query into DDL queue, returns path to created node
@@ -101,8 +103,12 @@ private:
     void attachToThreadGroup();
 
 private:
+    bool is_replicated_db;
+    std::optional<String> db_name;
+    std::optional<String> db_replica_name;
+    std::optional<String> db_shard_name;
     std::atomic<bool> is_circular_replicated = false;
-    Context & context;
+    Context context;
     Poco::Logger * log;
 
     std::string host_fqdn;      /// current host domain name

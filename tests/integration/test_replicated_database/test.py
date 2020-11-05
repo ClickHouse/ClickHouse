@@ -24,8 +24,8 @@ def assert_create_query(nodes, table_name, expected):
 def started_cluster():
     try:
         cluster.start()
-        main_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'replica1');")
-        dummy_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'replica2');")
+        main_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica1');")
+        dummy_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica2');")
         yield cluster
 
     finally:
@@ -67,7 +67,7 @@ def test_simple_alter_table(started_cluster):
     assert_create_query([main_node, dummy_node], "alter_test", expected)
 
 def test_create_replica_after_delay(started_cluster):
-    competing_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'replica3');")
+    competing_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica3');")
 
     main_node.query("ALTER TABLE testdb.alter_test ADD COLUMN Added3 UInt32;")
     main_node.query("ALTER TABLE testdb.alter_test DROP COLUMN AddedNested1;")
@@ -128,15 +128,15 @@ def test_replica_restart(started_cluster):
 
 def test_snapshot_and_snapshot_recover(started_cluster):
     #FIXME bad test
-    snapshotting_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'replica4');")
+    snapshotting_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica4');")
     time.sleep(5)
-    snapshot_recovering_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'replica5');")
+    snapshot_recovering_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica5');")
     time.sleep(5)
     assert snapshotting_node.query("desc table testdb.alter_test") == snapshot_recovering_node.query("desc table testdb.alter_test")
 
 def test_drop_and_create_replica(started_cluster):
     main_node.query("DROP DATABASE testdb")
-    main_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'replica1');")
+    main_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica1');")
 
     expected = "CREATE TABLE testdb.concurrent_test\\n(\\n    `CounterID` UInt32,\\n    `StartDate` Date,\\n    `UserID` UInt32,\\n" \
                "    `VisitID` UInt32,\\n    `NestedColumn.A` Array(UInt8),\\n    `NestedColumn.S` Array(String),\\n    `ToDrop` UInt32\\n)\\n" \

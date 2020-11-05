@@ -75,9 +75,9 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             database_catalog.assertTableDoesntExist(StorageID(elem.to_database_name, elem.to_table_name), context);
 
         DatabasePtr database = database_catalog.getDatabase(elem.from_database_name);
-        if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY)
+        if (typeid_cast<DatabaseReplicated *>(database.get()) && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY)
         {
-            database->propose(query_ptr);
+            return typeid_cast<DatabaseReplicated *>(database.get())->propose(query_ptr);
         }
         else
         {
@@ -88,13 +88,6 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
                 elem.to_table_name,
                 rename.exchange,
                 rename.dictionary);
-        }
-
-        // TODO it can't work
-        if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY)
-        {
-            auto * database_replicated = typeid_cast<DatabaseReplicated *>(database.get());
-            return database_replicated->getFeedback();
         }
     }
 

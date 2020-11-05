@@ -101,8 +101,8 @@ BlockIO InterpreterDropQuery::executeToTable(const ASTDropQuery & query)
             if (database->getEngineName() != "Atomic" && database->getEngineName() != "Replicated")
                 table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
             /// Drop table from memory, don't touch data and metadata
-            if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY)
-                database->propose(query_ptr);
+            if (typeid_cast<DatabaseReplicated *>(database.get()) && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY)
+                return typeid_cast<DatabaseReplicated *>(database.get())->propose(query_ptr);
             else
                 database->detachTable(table_id.table_name);
         }
@@ -115,7 +115,7 @@ BlockIO InterpreterDropQuery::executeToTable(const ASTDropQuery & query)
             auto metadata_snapshot = table->getInMemoryMetadataPtr();
             /// Drop table data, don't touch metadata
             if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY)
-                database->propose(query_ptr);
+                return typeid_cast<DatabaseReplicated *>(database.get())->propose(query_ptr);
             else
                 table->truncate(query_ptr, metadata_snapshot, context, table_lock);
         }
@@ -131,8 +131,8 @@ BlockIO InterpreterDropQuery::executeToTable(const ASTDropQuery & query)
                 table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
             /// Prevents recursive drop from drop database query. The original query must specify a table.
-            if (!query_ptr->as<ASTDropQuery &>().table.empty() && database->getEngineName() == "Replicated" && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY)
-                database->propose(query_ptr);
+            if (typeid_cast<DatabaseReplicated *>(database.get()) && !query_ptr->as<ASTDropQuery &>().table.empty() && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY)
+                return typeid_cast<DatabaseReplicated *>(database.get())->propose(query_ptr);
             else
                 database->dropTable(context, table_id.table_name, query.no_delay);
         }
@@ -149,12 +149,6 @@ BlockIO InterpreterDropQuery::executeToTable(const ASTDropQuery & query)
             if (auto * atomic = typeid_cast<DatabaseAtomic *>(database.get()))
                 atomic->waitDetachedTableNotInUse(table_id.uuid);
         }
-    }
-
-    if (database && database->getEngineName() == "Replicated" && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY)
-    {
-        auto * database_replicated = typeid_cast<DatabaseReplicated *>(database.get());
-        return database_replicated->getFeedback();
     }
 
     return {};
