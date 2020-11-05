@@ -349,8 +349,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         {
             if (!select_with_union_query->list_of_selects->children.empty())
             {
-                if (auto new_settings = select_with_union_query->list_of_selects->children.back()->as<ASTSelectQuery>()->settings())
-                    InterpreterSetQuery(new_settings, context).executeForCurrentContext();
+                select_with_union_query->dumpTree(std::cerr);
+                // We might have an arbitrarily complex UNION tree, so just give
+                // up if the last first-order child is not a plain SELECT.
+                // It is flattened later, when we process UNION ALL/DISTINCT.
+                const auto * last_select = select_with_union_query->list_of_selects->children.back()->as<ASTSelectQuery>();
+                if (last_select && last_select->settings())
+                {
+                    InterpreterSetQuery(last_select->settings(), context).executeForCurrentContext();
+                }
             }
         }
         else if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
