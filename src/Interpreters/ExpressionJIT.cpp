@@ -483,8 +483,8 @@ LLVMFunction::LLVMFunction(const CompileDAG & dag)
             }
             case CompileNode::NodeType::INPUT:
             {
-                arg_types.push_back(node.result_type);
                 expressions.emplace_back(subexpression(arg_types.size()));
+                arg_types.push_back(node.result_type);
                 break;
             }
         }
@@ -795,7 +795,7 @@ void ActionsDAG::compileFunctions()
     struct Data
     {
         bool is_compilable = false;
-        bool all_parents_compilable = false;
+        bool all_parents_compilable = true;
         size_t num_inlineable_nodes = 0;
     };
 
