@@ -619,24 +619,7 @@ void MaterializeMySQLSyncThread::onEvent(Buffers & buffers, const BinlogEventPtr
     else if (receive_event->type() == MYSQL_QUERY_EVENT)
     {
         QueryEvent & query_event = static_cast<QueryEvent &>(*receive_event);
-        flushBuffersData(buffers, metadata);
-
-        try
-        {
-            Context query_context = createQueryContext(global_context);
-            String comment = "Materialize MySQL step 2: execute MySQL DDL for sync data";
-            String event_database = query_event.schema == mysql_database_name ? database_name : "";
-            tryToExecuteQuery(query_prefix + query_event.query, query_context, event_database, comment);
-        }
-        catch (Exception & exception)
-        {
-            tryLogCurrentException(log);
-
-            /// If some DDL query was not successfully parsed and executed
-            /// Then replication may fail on next binlog events anyway
-            if (exception.code() != ErrorCodes::SYNTAX_ERROR)
-                throw;
-        }
+        metadata.transaction(client.getPosition(),[&](){ executeDDLAtomic(buffers, query_event); });
     }
     else if (receive_event->header.type != HEARTBEAT_EVENT)
     {
@@ -648,6 +631,36 @@ void MaterializeMySQLSyncThread::onEvent(Buffers & buffers, const BinlogEventPtr
         };
 
         LOG_DEBUG(log, "Skip MySQL event: \n {}", dump_event_message());
+    }
+}
+
+void MaterializeMySQLSyncThread::executeDDLAtomic(Buffers & buffers, const QueryEvent & query_event)
+{
+    buffers.commit(global_context);
+
+    try
+    {
+        Context query_context = createQueryContext(global_context);
+        String comment = "Materialize MySQL step 2: execute MySQL DDL for sync data";
+        String event_database = query_event.schema == mysql_database_name ? database_name : "";
+        tryToExecuteQuery(query_prefix + query_event.query, query_context, event_database, comment);
+
+        const auto & position_message = [&]()
+        {
+            std::stringstream ss;
+            client.getPosition().dump(ss);
+            return ss.str();
+        };
+        LOG_INFO(log, "MySQL executed position: \n {}", position_message());
+    }
+    catch (Exception & exception)
+    {
+        tryLogCurrentException(log);
+
+        /// If some DDL query was not successfully parsed and executed
+        /// Then replication may fail on next binlog events anyway
+        if (exception.code() != ErrorCodes::SYNTAX_ERROR)
+            throw;
     }
 }
 
