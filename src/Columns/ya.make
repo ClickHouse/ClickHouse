@@ -13,7 +13,6 @@ PEERDIR(
     contrib/libs/pdqsort
 )
 
-
 SRCS(
     Collator.cpp
     ColumnAggregateFunction.cpp
@@ -24,13 +23,13 @@ SRCS(
     ColumnFunction.cpp
     ColumnLowCardinality.cpp
     ColumnNullable.cpp
-    ColumnsCommon.cpp
     ColumnString.cpp
     ColumnTuple.cpp
     ColumnVector.cpp
+    ColumnsCommon.cpp
     FilterDescription.cpp
-    getLeastSuperColumn.cpp
     IColumn.cpp
+    getLeastSuperColumn.cpp
 
 )
 
