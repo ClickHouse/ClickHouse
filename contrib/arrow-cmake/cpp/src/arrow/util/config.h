@@ -34,4 +34,6 @@
 
 #define ARROW_PACKAGE_KIND ""
 
+/* #undef ARROW_S3 */
+
 /* #undef GRPCPP_PP_INCLUDE */
