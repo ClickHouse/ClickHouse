@@ -92,7 +92,7 @@ select atan2(0, 1) = 0;
 select atan2(0, 2) = 0;
 select atan2(1, 0) = pi() / 2;
 select atan2(1, 1) = pi() / 4;
-select atan2(-1, -1) = -3 * pi() / 4);
+select atan2(-1, -1) = -3 * pi() / 4;
 
 select hypot(0, 1) = 1;
 select hypot(1, 0) = 1;
