@@ -617,7 +617,8 @@ static LLVMFunction::CompileDAG getCompilableDAG(
     {
         auto & frame = stack.top();
         bool is_const = isCompilableConstant(*frame.node);
-        bool is_compilable_function = !is_const && !used_in_result.count(frame.node) && isCompilableFunction(*frame.node);
+        bool can_inline = stack.size() == 1 || !used_in_result.count(frame.node);
+        bool is_compilable_function = !is_const && can_inline && isCompilableFunction(*frame.node);
 
         while (is_compilable_function && frame.next_child_to_visit < frame.node->children.size())
         {
