@@ -22,24 +22,49 @@ struct LLVMModuleState;
 class LLVMFunction : public IFunctionBaseImpl
 {
     std::string name;
-    Names arg_names;
     DataTypes arg_types;
 
     std::vector<FunctionBasePtr> originals;
-    std::unordered_map<StringRef, CompilableExpression> subexpressions;
+    CompilableExpression expression;
 
     std::unique_ptr<LLVMModuleState> module_state;
 
 public:
-    LLVMFunction(const ExpressionActions::Actions & actions, const DB::Block & sample_block);
+
+    struct CompileNode
+    {
+        enum class NodeType
+        {
+            INPUT = 0,
+            CONSTANT = 1,
+            FUNCTION = 2,
+        };
+
+        NodeType type;
+        DataTypePtr result_type;
+
+        /// For CONSTANT
+        ColumnPtr column;
+        llvm::Value * value = nullptr;
+
+        /// For FUNCTION
+        FunctionBasePtr function;
+        std::vector<size_t> arguments;
+    };
+
+    struct CompileDAG : public std::vector<CompileNode>
+    {
+        std::string dump() const;
+        UInt128 hash() const;
+    };
+
+    LLVMFunction(const CompileDAG & dag);
 
     bool isCompilable() const override { return true; }
 
     llvm::Value * compile(llvm::IRBuilderBase & builder, ValuePlaceholders values) const override;
 
     String getName() const override { return name; }
-
-    const Names & getArgumentNames() const { return arg_names; }
 
     const DataTypes & getArgumentTypes() const override { return arg_types; }
 
