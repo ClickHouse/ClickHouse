@@ -328,6 +328,9 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
 
         Context query_context = connection_context;
 
+        size_t affected_rows = 0;
+        query_context.setProgressCallback([&](const Progress & progress) { affected_rows += progress.written_rows; });
+
         executeQuery(should_replace ? replacement : payload, *out, true, query_context,
             [&with_output](const String &, const String &, const String &, const String &)
             {
@@ -336,7 +339,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
         );
 
         if (!with_output)
-            packet_endpoint->sendPacket(OKPacket(0x00, client_capability_flags, 0, 0, 0), true);
+            packet_endpoint->sendPacket(OKPacket(0x00, client_capability_flags, affected_rows, 0, 0), true);
     }
 }
 
