@@ -54,8 +54,10 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         for (size_t i = 0; i < columns_num; ++i, ++name_and_type)
         {
             auto column_from_part = getColumnFromPart(*name_and_type);
-            auto position = data_part->getColumnPosition(column_from_part);
+            if (duplicated_subcolumns.count(column_from_part.name))
+                continue;
 
+            auto position = data_part->getColumnPosition(column_from_part);
             if (!position && typeid_cast<const DataTypeArray *>(column_from_part.type.get()))
             {
                 /// If array of Nested column is missing in part,
@@ -148,11 +150,10 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
         {
             auto column_from_part = getColumnFromPart(*name_and_type);
 
-            if (!res_columns[pos] || duplicated_subcolumns.count(column_from_part.name))
+            if (!res_columns[pos])
                 continue;
 
             auto & column = mutable_columns[pos];
-
             try
             {
                 size_t column_size_before_reading = column->size();
@@ -160,7 +161,6 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
                 readData(column_from_part, *column, from_mark, *column_positions[pos], rows_to_read, read_only_offsets[pos]);
 
                 size_t read_rows_in_column = column->size() - column_size_before_reading;
-
                 if (read_rows_in_column < rows_to_read)
                     throw Exception("Cannot read all data in MergeTreeReaderCompact. Rows read: " + toString(read_rows_in_column) +
                         ". Rows expected: " + toString(rows_to_read) + ".", ErrorCodes::CANNOT_READ_ALL_DATA);

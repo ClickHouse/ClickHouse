@@ -4,6 +4,7 @@
 #include <Common/COW.h>
 #include <boost/noncopyable.hpp>
 #include <DataTypes/DataTypeCustom.h>
+#include <Core/Names.h>
 
 
 namespace DB
@@ -101,7 +102,7 @@ public:
         /// Index of tuple element, starting at 1.
         String tuple_element_name;
 
-        bool is_part_of_nested = false;
+        bool escape_tuple_delimiter = true;
 
         Substream(Type type_) : type(type_) {}
     };
@@ -120,7 +121,7 @@ public:
     virtual DataTypePtr tryGetSubcolumnType(const String & /* subcolumn_name */) const { return nullptr; }
     DataTypePtr getSubcolumnType(const String & subcolumn_name) const;
     virtual MutableColumnPtr getSubcolumn(const String & subcolumn_name, IColumn & column) const;
-    std::vector<String> getSubcolumnNames() const;
+    Names getSubcolumnNames() const;
 
     using OutputStreamGetter = std::function<WriteBuffer*(const SubstreamPath &)>;
     using InputStreamGetter = std::function<ReadBuffer*(const SubstreamPath &)>;
@@ -449,13 +450,11 @@ public:
     /// Strings, Numbers, Date, DateTime, Nullable
     virtual bool canBeInsideLowCardinality() const { return false; }
 
-    virtual size_t getNestedLevel() const { return 0; }
-
     /// Updates avg_value_size_hint for newly read column. Uses to optimize deserialization. Zero expected for first column.
     static void updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint);
 
     static String getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path);
-    static String getSubcolumnNameForStream(String stream_name, const SubstreamPath & path);
+    static String getSubcolumnNameForStream(const SubstreamPath & path);
 
     /// Substream path supports special compression methods like codec Delta.
     /// For all other substreams (like ArraySizes, NullMasks, etc.) we use only

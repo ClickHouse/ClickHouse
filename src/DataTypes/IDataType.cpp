@@ -108,28 +108,33 @@ MutableColumnPtr IDataType::getSubcolumn(const String & subcolumn_name, IColumn 
     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, getName());
 }
 
-std::vector<String> IDataType::getSubcolumnNames() const
+Names IDataType::getSubcolumnNames() const
 {
-    std::vector<String> res;
-    enumerateStreams([&res, this](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
+    NameSet res;
+    enumerateStreams([&res, this](const SubstreamPath & substream_path, const IDataType & /* substream_type */)
     {
-        auto subcolumn_name = IDataType::getSubcolumnNameForStream("", substream_path);
-        if (!subcolumn_name.empty())
+        SubstreamPath new_path;
+        /// Iterate over path to try to get intermediate subcolumns for complex nested types.
+        for (const auto & elem : substream_path)
         {
-            subcolumn_name = subcolumn_name.substr(1); // It starts with a dot.
-            /// Not all of substreams have its subcolumn.
-            if (tryGetSubcolumnType(subcolumn_name))
-                res.push_back(subcolumn_name);
+            new_path.push_back(elem);
+            auto subcolumn_name = getSubcolumnNameForStream(new_path);
+            if (!subcolumn_name.empty() && tryGetSubcolumnType(subcolumn_name))
+            {
+                /// Not all of substreams have its subcolumn.
+                if (tryGetSubcolumnType(subcolumn_name))
+                    res.insert(subcolumn_name);
+            }
         }
     });
 
-    return res;
+    return Names(std::make_move_iterator(res.begin()), std::make_move_iterator(res.end()));
 }
 
 static String getNameForSubstreamPath(
     String stream_name,
     const IDataType::SubstreamPath & path,
-    const String & tuple_element_delimeter = ".")
+    bool escape_tuple_delimiter)
 {
     size_t array_level = 0;
     for (const auto & elem : path)
@@ -140,80 +145,41 @@ static String getNameForSubstreamPath(
             stream_name += ".size" + toString(array_level);
         else if (elem.type == IDataType::Substream::ArrayElements)
             ++array_level;
-        else if (elem.type == IDataType::Substream::TupleElement)
-            stream_name += tuple_element_delimeter + escapeForFileName(elem.tuple_element_name);
         else if (elem.type == IDataType::Substream::DictionaryKeys)
             stream_name += ".dict";
+        else if (elem.type == IDataType::Substream::TupleElement)
+        {
+            /// For compatibility reasons, we use %2E (escaped dot) instead of dot.
+            /// Because nested data may be represented not by Array of Tuple,
+            ///  but by separate Array columns with names in a form of a.b,
+            ///  and name is encoded as a whole.
+            stream_name += (escape_tuple_delimiter && elem.escape_tuple_delimiter ?
+                escapeForFileName(".") : ".") + escapeForFileName(elem.tuple_element_name);
+        }
     }
 
     return stream_name;
 }
 
-static bool isOldStyleNestedSizes(const NameAndTypePair & column, const IDataType::SubstreamPath & path)
+String IDataType::getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path)
 {
     auto storage_name = column.getStorageName();
     auto nested_storage_name = Nested::extractTableName(column.getStorageName());
 
-    if (storage_name == nested_storage_name)
-        return false;
-
-    return (path.size() == 1 && path[0].type == IDataType::Substream::ArraySizes) || column.getSubcolumnName() == "size0";
-}
-
-static String getDelimiterForSubcolumnPart(const String & subcolumn_part)
-{
-    if (subcolumn_part == "null" || startsWith(subcolumn_part, "size"))
-        return ".";
-
-    return "%2E";
-}
-
-/// FIXME: rewrite it.
-String IDataType::getFileNameForStream(const NameAndTypePair & column, const IDataType::SubstreamPath & path)
-{
-    auto storage_name = column.getStorageName();
-    if (isOldStyleNestedSizes(column, path))
-        storage_name = Nested::extractTableName(storage_name);
+    if (storage_name != nested_storage_name && (path.size() == 1 && path[0].type == IDataType::Substream::ArraySizes))
+        storage_name = nested_storage_name;
 
     auto stream_name = escapeForFileName(storage_name);
-    auto subcolumn_name = column.getSubcolumnName();
-
-    if (!subcolumn_name.empty())
-    {
-        std::vector<String> subcolumn_parts;
-        boost::split(subcolumn_parts, subcolumn_name, [](char c) { return c == '.'; });
-
-        size_t current_nested_level = 0;
-        for (const auto & elem : path)
-        {
-            if (elem.type == Substream::ArrayElements && elem.is_part_of_nested)
-            {
-                ++current_nested_level;
-            }
-            else if (elem.type == Substream::ArraySizes)
-            {
-                size_t nested_level = column.type->getNestedLevel();
-                for (size_t i = 0; i < nested_level - current_nested_level; ++i)
-                {
-                    if (subcolumn_parts.empty())
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get substream name for column {}."
-                            " Not enough subcolumn parts. Needed: {}", column.name, nested_level - current_nested_level);
-
-                    subcolumn_parts.pop_back();
-                }
-            }
-        }
-
-        for (const auto & subcolumn_part : subcolumn_parts)
-            stream_name += getDelimiterForSubcolumnPart(subcolumn_part) + escapeForFileName(subcolumn_part);
-    }
-
-    return getNameForSubstreamPath(std::move(stream_name), path, "%2E");
+    return getNameForSubstreamPath(std::move(stream_name), path, true);
 }
 
-String IDataType::getSubcolumnNameForStream(String stream_name, const SubstreamPath & path)
+String IDataType::getSubcolumnNameForStream(const SubstreamPath & path)
 {
-    return getNameForSubstreamPath(std::move(stream_name), path);
+    auto subcolumn_name = getNameForSubstreamPath("", path, false);
+    if (!subcolumn_name.empty())
+        subcolumn_name = subcolumn_name.substr(1); // It starts with a dot.
+
+    return subcolumn_name;
 }
 
 bool IDataType::isSpecialCompressionAllowed(const SubstreamPath & path)

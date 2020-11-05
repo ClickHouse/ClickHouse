@@ -16,6 +16,8 @@ public:
     /// type
     ASTPtr type;
 
+    size_t level_of_nesting = 0;
+
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "NameTypePair" + (delim + name); }
     ASTPtr clone() const override;
