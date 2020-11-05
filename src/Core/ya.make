@@ -7,6 +7,7 @@ PEERDIR(
     contrib/restricted/boost/libs
 )
 
+CFLAGS(-g0)
 
 SRCS(
     BackgroundSchedulePool.cpp

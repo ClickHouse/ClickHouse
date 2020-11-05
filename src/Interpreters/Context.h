@@ -65,7 +65,6 @@ class InterserverIOHandler;
 class BackgroundProcessingPool;
 class BackgroundSchedulePool;
 class MergeList;
-class ReplicatedFetchList;
 class Cluster;
 class Compiler;
 class MarkCache;
@@ -82,7 +81,6 @@ class TextLog;
 class TraceLog;
 class MetricLog;
 class AsynchronousMetricLog;
-class OpenTelemetrySpanLog;
 struct MergeTreeSettings;
 class StorageS3Settings;
 class IDatabase;
@@ -479,9 +477,6 @@ public:
     MergeList & getMergeList();
     const MergeList & getMergeList() const;
 
-    ReplicatedFetchList & getReplicatedFetchList();
-    const ReplicatedFetchList & getReplicatedFetchList() const;
-
     /// If the current session is expired at the time of the call, synchronously creates and returns a new session with the startNewSession() call.
     /// If no ZooKeeper configured, throws an exception.
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
@@ -516,6 +511,7 @@ public:
     BackgroundProcessingPool & getBackgroundPool();
     BackgroundProcessingPool & getBackgroundMovePool();
     BackgroundSchedulePool & getSchedulePool();
+    BackgroundSchedulePool & getMessageBrokerSchedulePool();
     BackgroundSchedulePool & getDistributedSchedulePool();
 
     void setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker);
@@ -546,7 +542,6 @@ public:
     std::shared_ptr<TextLog> getTextLog();
     std::shared_ptr<MetricLog> getMetricLog();
     std::shared_ptr<AsynchronousMetricLog> getAsynchronousMetricLog();
-    std::shared_ptr<OpenTelemetrySpanLog> getOpenTelemetrySpanLog();
 
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.

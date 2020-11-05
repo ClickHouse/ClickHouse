@@ -111,9 +111,9 @@ protected:
     std::unique_ptr<WriteBufferFromFileBase> index_file_stream;
     std::unique_ptr<HashingWriteBuffer> index_stream;
     DataTypes index_types;
-    /// Index columns from the last block
+    /// Index columns values from the last row from the last block
     /// It's written to index file in the `writeSuffixAndFinalizePart` method
-    Columns last_block_index_columns;
+    Row last_index_row;
 
     bool data_written = false;
     bool primary_index_initialized = false;

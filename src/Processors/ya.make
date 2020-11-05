@@ -7,6 +7,7 @@ PEERDIR(
     contrib/libs/protobuf
 )
 
+CFLAGS(-g0)
 
 SRCS(
     Chunk.cpp

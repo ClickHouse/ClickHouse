@@ -250,7 +250,7 @@ YYYY-MM-DD
 YYYY-MM-DD hh:mm:ss
 ```
 
-As an exception, if converting from UInt32, Int32, UInt64, or Int64 numeric types to Date, and if the number is greater than or equal to 65536, the number is interpreted as a Unix timestamp (and not as the number of days) and is rounded to the date. This allows support for the common occurrence of writing ‘toDate(unix_timestamp)’, which otherwise would be an error and would require writing the more cumbersome ‘toDate(toDateTime(unix_timestamp))’.
+As an exception, if converting from UInt32, Int32, UInt64, or Int64 numeric types to Date, and if the number is greater than or equal to 65536, the number is interpreted as a Unix timestamp (and not as the number of days) and is rounded to the date. This allows support for the common occurrence of writing ‘toDate(unix\_timestamp)’, which otherwise would be an error and would require writing the more cumbersome ‘toDate(toDateTime(unix\_timestamp))’.
 
 Conversion between a date and date with time is performed the natural way: by adding a null time or dropping the time.
 
@@ -323,10 +323,6 @@ This function accepts a number or date or date with time, and returns a string c
 
 This function accepts a number or date or date with time, and returns a FixedString containing bytes representing the corresponding value in host order (little endian). Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a FixedString that is one byte long.
 
-## reinterpretAsUUID {#reinterpretasuuid}
-
-This function accepts FixedString, and returns UUID. Takes 16 bytes string. If the string isn't long enough, the functions work as if the string is padded with the necessary number of null bytes to the end. If the string longer than 16 bytes, the extra bytes at the end are ignored. 
-
 ## CAST(x, T) {#type_conversion_function-cast}
 
 Converts ‘x’ to the ‘t’ data type. The syntax CAST(x AS t) is also supported.
@@ -373,10 +369,6 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null
 │ Nullable(UInt16)                        │
 └─────────────────────────────────────────┘
 ```
-
-**See also**
-
--   [cast_keep_nullable](../../operations/settings/settings.md#cast_keep_nullable) setting
 
 ## toInterval(Year\|Quarter\|Month\|Week\|Day\|Hour\|Minute\|Second) {#function-tointerval}
 
@@ -782,44 +774,6 @@ Result:
 │ 2,"good"
                          │
 └──────────────────────────────────┘
-```
-
-## formatRowNoNewline {#formatrownonewline}
-
-Converts arbitrary expressions into a string via given format. The function trims the last `\n` if any.
-
-**Syntax** 
-
-``` sql
-formatRowNoNewline(format, x, y, ...)
-```
-
-**Parameters**
-
--   `format` — Text format. For example, [CSV](../../interfaces/formats.md#csv), [TSV](../../interfaces/formats.md#tabseparated).
--   `x`,`y`, ... — Expressions.
-
-**Returned value**
-
--   A formatted string.
-
-**Example**
-
-Query:
-
-``` sql
-SELECT formatRowNoNewline('CSV', number, 'good')
-FROM numbers(3)
-```
-
-Result:
-
-``` text
-┌─formatRowNoNewline('CSV', number, 'good')─┐
-│ 0,"good"                                  │
-│ 1,"good"                                  │
-│ 2,"good"                                  │
-└───────────────────────────────────────────┘
 ```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/type_conversion_functions/) <!--hide-->

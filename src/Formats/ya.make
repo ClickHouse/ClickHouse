@@ -7,6 +7,7 @@ PEERDIR(
     contrib/libs/protoc
 )
 
+CFLAGS(-g0)
 
 SRCS(
     FormatFactory.cpp

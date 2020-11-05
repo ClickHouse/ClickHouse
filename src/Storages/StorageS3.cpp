@@ -320,8 +320,6 @@ Pipe StorageS3::read(
             key));
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
-    // It's possible to have many buckets read from s3, resize(num_streams) might open too many handles at the same time.
-    // Using narrowPipe instead.
     narrowPipe(pipe, num_streams);
     return pipe;
 }

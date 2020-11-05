@@ -1,4 +1,3 @@
-#pragma once
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Core/QueryProcessingStage.h>
 #include <Storages/TableLockHolder.h>

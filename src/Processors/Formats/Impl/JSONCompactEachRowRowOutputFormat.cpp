@@ -10,11 +10,11 @@ namespace DB
 
 JSONCompactEachRowRowOutputFormat::JSONCompactEachRowRowOutputFormat(WriteBuffer & out_,
         const Block & header_,
-        const RowOutputFormatParams & params_,
+        FormatFactory::WriteCallback callback,
         const FormatSettings & settings_,
         bool with_names_,
         bool yield_strings_)
-        : IRowOutputFormat(header_, out_, params_), settings(settings_), with_names(with_names_), yield_strings(yield_strings_)
+        : IRowOutputFormat(header_, out_, callback), settings(settings_), with_names(with_names_), yield_strings(yield_strings_)
 {
             const auto & sample = getPort(PortKind::Main).getHeader();
             NamesAndTypesList columns(sample.getNamesAndTypesList());
@@ -103,37 +103,37 @@ void registerOutputFormatProcessorJSONCompactEachRow(FormatFactory & factory)
     factory.registerOutputFormatProcessor("JSONCompactEachRow", [](
             WriteBuffer & buf,
             const Block & sample,
-            const RowOutputFormatParams & params,
+            FormatFactory::WriteCallback callback,
             const FormatSettings & format_settings)
     {
-        return std::make_shared<JSONCompactEachRowRowOutputFormat>(buf, sample, params, format_settings, false, false);
+        return std::make_shared<JSONCompactEachRowRowOutputFormat>(buf, sample, callback, format_settings, false, false);
     });
 
     factory.registerOutputFormatProcessor("JSONCompactEachRowWithNamesAndTypes", [](
             WriteBuffer &buf,
             const Block &sample,
-            const RowOutputFormatParams & params,
+            FormatFactory::WriteCallback callback,
             const FormatSettings &format_settings)
     {
-        return std::make_shared<JSONCompactEachRowRowOutputFormat>(buf, sample, params, format_settings, true, false);
+        return std::make_shared<JSONCompactEachRowRowOutputFormat>(buf, sample, callback, format_settings, true, false);
     });
 
     factory.registerOutputFormatProcessor("JSONCompactStringsEachRow", [](
             WriteBuffer & buf,
             const Block & sample,
-            const RowOutputFormatParams & params,
+            FormatFactory::WriteCallback callback,
             const FormatSettings & format_settings)
     {
-        return std::make_shared<JSONCompactEachRowRowOutputFormat>(buf, sample, params, format_settings, false, true);
+        return std::make_shared<JSONCompactEachRowRowOutputFormat>(buf, sample, callback, format_settings, false, true);
     });
 
     factory.registerOutputFormatProcessor("JSONCompactStringsEachRowWithNamesAndTypes", [](
             WriteBuffer &buf,
             const Block &sample,
-            const RowOutputFormatParams & params,
+            FormatFactory::WriteCallback callback,
             const FormatSettings &format_settings)
     {
-        return std::make_shared<JSONCompactEachRowRowOutputFormat>(buf, sample, params, format_settings, true, true);
+        return std::make_shared<JSONCompactEachRowRowOutputFormat>(buf, sample, callback, format_settings, true, true);
     });
 }
 

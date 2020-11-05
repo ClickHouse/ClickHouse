@@ -13,6 +13,7 @@ PEERDIR(
     contrib/libs/pdqsort
 )
 
+CFLAGS(-g0)
 
 SRCS(
     Collator.cpp
