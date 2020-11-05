@@ -16,7 +16,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreePartCheckThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
-#include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Storages/MergeTree/DataPartsExchange.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <Storages/MergeTree/LeaderElection.h>
@@ -27,6 +26,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Processors/Pipe.h>
+#include <Storages/MergeTree/BackgroundJobsExecutor.h>
 
 
 namespace DB
@@ -139,6 +139,8 @@ public:
 
     ActionLock getActionLock(StorageActionBlockType action_type) override;
 
+    void onActionLockRemove(StorageActionBlockType action_type) override;
+
     /// Wait when replication queue size becomes less or equal than queue_size
     /// If timeout is exceeded returns false
     bool waitForShrinkingQueueSize(size_t queue_size = 0, UInt64 max_wait_milliseconds = 0);
@@ -195,6 +197,8 @@ public:
     /** Remove a specific replica from zookeeper.
      */
     static void dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica, Poco::Logger * logger);
+
+    std::optional<JobAndPool> getDataProcessingJob() override;
 
 private:
 
@@ -274,18 +278,14 @@ private:
     int metadata_version = 0;
     /// Threads.
 
+    BackgroundJobsExecutor background_executor;
+    BackgroundMovesExecutor background_moves_executor;
+
     /// A task that keeps track of the updates in the logs of all replicas and loads them into the queue.
     bool queue_update_in_progress = false;
     BackgroundSchedulePool::TaskHolder queue_updating_task;
 
     BackgroundSchedulePool::TaskHolder mutations_updating_task;
-
-    /// A task that performs actions from the queue.
-    BackgroundProcessingPool::TaskHandle queue_task_handle;
-
-    /// A task which move parts to another disks/volumes
-    /// Transparent for replication.
-    BackgroundProcessingPool::TaskHandle move_parts_task_handle;
 
     /// A task that selects parts to merge.
     BackgroundSchedulePool::TaskHolder merge_selecting_task;
@@ -417,14 +417,10 @@ private:
     /// Clone replica if it is lost.
     void cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zookeeper);
 
-    /** Performs actions from the queue.
-      */
-    BackgroundProcessingPoolTaskResult queueTask();
 
-    /// Perform moves of parts to another disks.
-    /// Local operation, doesn't interact with replicationg queue.
-    BackgroundProcessingPoolTaskResult movePartsTask();
+    ReplicatedMergeTreeQueue::SelectedEntryPtr selectQueueEntry();
 
+    bool processQueueEntry(ReplicatedMergeTreeQueue::SelectedEntryPtr entry);
 
     /// Postcondition:
     /// either leader_election is fully initialized (node in ZK is created and the watching thread is launched)
@@ -562,7 +558,6 @@ private:
     MutationCommands getFirtsAlterMutationCommandsForPart(const DataPartPtr & part) const override;
 
     void startBackgroundMovesIfNeeded() override;
-
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
       */
