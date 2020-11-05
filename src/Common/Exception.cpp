@@ -14,6 +14,7 @@
 #include <common/errnoToString.h>
 #include <Common/formatReadable.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/ErrorCodes.h>
 #include <filesystem>
 
 #if !defined(ARCADIA_BUILD)
@@ -46,6 +47,7 @@ Exception::Exception(const std::string & msg, int code)
         abort();
     }
 #endif
+    ErrorCodes::increment(code);
 }
 
 Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)

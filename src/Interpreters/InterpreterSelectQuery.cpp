@@ -1445,7 +1445,7 @@ void InterpreterSelectQuery::executeFetchColumns(
                     getSortDescriptionFromGroupBy(query),
                     query_info.syntax_analyzer_result);
 
-            query_info.input_order_info = query_info.order_optimizer->getInputOrder(storage, metadata_snapshot);
+            query_info.input_order_info = query_info.order_optimizer->getInputOrder(metadata_snapshot);
         }
 
         StreamLocalLimits limits;
