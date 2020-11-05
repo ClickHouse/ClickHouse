@@ -105,7 +105,7 @@ ${CLICKHOUSE_CLIENT} -q "system flush logs"
 ${CLICKHOUSE_CLIENT} -q "
     with count(*) as c
     -- expect 200 * 0.1 = 20 sampled events on average
-    select if(c > 5 and c < 35, 'OK', 'fail: ' || toString(c))
+    select if(c > 1 and c < 50, 'OK', 'fail: ' || toString(c))
     from system.opentelemetry_span_log
         array join attribute.names as name, attribute.values as value
     where name = 'clickhouse.query_id'
