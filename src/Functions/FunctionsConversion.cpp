@@ -11,6 +11,11 @@ FunctionOverloadResolverImplPtr CastOverloadResolver::create(const Context & con
     return createImpl(context.getSettingsRef().cast_keep_nullable);
 }
 
+FunctionOverloadResolverImplPtr AccurateCastOverloadResolver::create(const Context &)
+{
+    return std::make_unique<AccurateCastOverloadResolver>();
+}
+
 void registerFunctionFixedString(FunctionFactory & factory);
 
 void registerFunctionsConversion(FunctionFactory & factory)
@@ -45,6 +50,7 @@ void registerFunctionsConversion(FunctionFactory & factory)
 
     factory.registerFunction<FunctionToUnixTimestamp>();
     factory.registerFunction<CastOverloadResolver>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<AccurateCastOverloadResolver>();
 
     factory.registerFunction<FunctionToUInt8OrZero>();
     factory.registerFunction<FunctionToUInt16OrZero>();
