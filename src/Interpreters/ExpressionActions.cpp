@@ -375,8 +375,8 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
             auto source = block.getByName(source_name);
             block.erase(source_name);
             source.column = source.column->convertToFullColumnIfConst();
+            
             const ColumnArray * array = typeid_cast<const ColumnArray *>(source.column.get());
-
             if (!array)
                 throw Exception("ARRAY JOIN of not array: " + source_name, ErrorCodes::TYPE_MISMATCH);
 
