@@ -1,3 +1,9 @@
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
+
+#if USE_H3
+
 #include <vector>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
@@ -108,3 +114,5 @@ void registerFunctionH3KRing(FunctionFactory & factory)
 }
 
 }
+
+#endif
