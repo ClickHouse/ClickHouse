@@ -795,7 +795,6 @@ void ActionsDAG::compileFunctions()
     };
 
     std::unordered_map<const Node *, Data> data;
-    std::unordered_map<const Node *, llvm::Value *> constants;
 
     for (const auto & node : nodes)
         data[&node].is_compilable = isCompilableConstant(node) || isCompilableFunction(node);
@@ -847,41 +846,43 @@ void ActionsDAG::compileFunctions()
                         cur.num_inlineable_nodes += data[child].num_inlineable_nodes;
 
                     /// Check if we should inline current node.
+                    bool should_compile = true;
 
                     /// Inline parents instead of node is possible.
                     if (!cur.used_in_result && cur.all_parents_compilable)
-                        continue;
+                        should_compile = false;
 
                     /// There is not reason to inline single node.
                     /// The result of compiling function in isolation is pretty much the same as its `execute` method.
                     if (cur.num_inlineable_nodes <= 1)
-                        continue;
+                        should_compile = false;;
 
-                    /// Compile.
-                    std::vector<Node *> new_children;
-                    auto dag = getCompilableDAG(frame.node, new_children);
-                    if (dag.size() != cur.num_inlineable_nodes)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                        "Unexpected number of nodes in compile expression DAG. "
-                                        "Expected {}, got {}. Chain: {}",
-                                        cur.num_inlineable_nodes, dag.size(), dag.dump());
-
-                    if (auto fn = compile(dag, min_count_to_compile_expression, compilation_cache))
+                    if (should_compile)
                     {
-                        /// Replace current node to compilable function.
+                        std::vector<Node *> new_children;
+                        auto dag = getCompilableDAG(frame.node, new_children);
+                        if (dag.size() != cur.num_inlineable_nodes)
+                            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                            "Unexpected number of nodes in compile expression DAG. "
+                                            "Expected {}, got {}. Chain: {}",
+                                            cur.num_inlineable_nodes, dag.size(), dag.dump());
 
-                        ColumnsWithTypeAndName arguments;
-                        arguments.reserve(new_children.size());
-                        for (const auto * child : new_children)
-                            arguments.emplace_back(
-                                    ColumnWithTypeAndName{child->column, child->result_type, child->result_name});
+                        if (auto fn = compile(dag, min_count_to_compile_expression, compilation_cache))
+                        {
+                            /// Replace current node to compilable function.
 
-                        frame.node->type = ActionsDAG::Type::FUNCTION;
-                        frame.node->function_base = fn;
-                        frame.node->function = fn->prepare(arguments);
-                        frame.node->children.swap(new_children);
-                        frame.node->is_function_compiled = true;
-                        frame.node->column = nullptr; /// Just in case.
+                            ColumnsWithTypeAndName arguments;
+                            arguments.reserve(new_children.size());
+                            for (const auto * child : new_children)
+                                arguments.emplace_back(child->column, child->result_type, child->result_name);
+
+                            frame.node->type = ActionsDAG::Type::FUNCTION;
+                            frame.node->function_base = fn;
+                            frame.node->function = fn->prepare(arguments);
+                            frame.node->children.swap(new_children);
+                            frame.node->is_function_compiled = true;
+                            frame.node->column = nullptr; /// Just in case.
+                        }
                     }
                 }
 
