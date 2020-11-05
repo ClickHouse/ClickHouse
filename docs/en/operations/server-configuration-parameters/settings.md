@@ -471,7 +471,7 @@ On hosts with low RAM and swap, you possibly need setting `max_server_memory_usa
 
 ## max_concurrent_queries {#max-concurrent-queries}
 
-The maximum number of simultaneously processed queries.
+The maximum number of simultaneously processed requests.
 
 **Example**
 
@@ -483,18 +483,11 @@ The maximum number of simultaneously processed queries.
 
 Throw exception if the value of this setting is less or equal than the current number of simultaneously processed queries.
 
+Example: `max_concurrent_queries_for_all_users` can be set to 99 for all users and database administrator can set it to 100 for itself to run queries for investigation even when the server is overloaded.
+
 Modifying the setting for one query or user does not affect other queries.
 
-Possible values:
-
--   Positive integer.
--   0 — Unlimited.
-
-Default value: `0`.
-
-**Usage**
-
-`max_concurrent_queries_for_all_users` can be set to 99 for all users, and database administrator can set it to 100 or even 0 for himself to run queries for investigation even when the ClickHouse server is overloaded.
+Default value: `0` that means no limit.
 
 **Example**
 
