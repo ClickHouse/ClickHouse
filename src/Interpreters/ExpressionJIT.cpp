@@ -880,6 +880,8 @@ void ActionsDAG::compileFunctions()
                         frame.node->column = nullptr; /// Just in case.
                     }
                 }
+
+                stack.pop();
             }
         }
     }
