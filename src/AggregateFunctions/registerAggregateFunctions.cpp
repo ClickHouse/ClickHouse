@@ -94,6 +94,8 @@ void registerAggregateFunctions()
         registerAggregateFunctionCategoricalIV(factory);
         registerAggregateFunctionAggThrow(factory);
         registerAggregateFunctionRankCorrelation(factory);
+        registerAggregateFunctionWelchTTest(factory);
+        registerAggregateFunctionStudentTTest(factory);
     }
 
     {
