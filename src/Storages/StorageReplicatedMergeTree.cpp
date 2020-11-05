@@ -3282,12 +3282,15 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
     auto zookeeper = zookeeper_ ? zookeeper_ : getZooKeeper();
     const auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
 
-    if (auto part = getPartIfExists(part_info, {IMergeTreeDataPart::State::Outdated, IMergeTreeDataPart::State::Deleting}))
+    if (!to_detached)
     {
-        LOG_DEBUG(log, "Part {} should be deleted after previous attempt before fetch", part->name);
-        /// Force immediate parts cleanup to delete the part that was left from the previous fetch attempt.
-        cleanup_thread.wakeup();
-        return false;
+        if (auto part = getPartIfExists(part_info, {IMergeTreeDataPart::State::Outdated, IMergeTreeDataPart::State::Deleting}))
+        {
+            LOG_DEBUG(log, "Part {} should be deleted after previous attempt before fetch", part->name);
+            /// Force immediate parts cleanup to delete the part that was left from the previous fetch attempt.
+            cleanup_thread.wakeup();
+            return false;
+        }
     }
 
     {
