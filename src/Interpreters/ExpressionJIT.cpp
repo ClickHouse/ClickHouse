@@ -596,7 +596,10 @@ static bool isCompilableFunction(const ActionsDAG::Node & node)
     return node.type == ActionsDAG::Type::FUNCTION && isCompilable(*node.function_base);
 }
 
-static LLVMFunction::CompileDAG getCompilableDAG(ActionsDAG::Node * root, std::vector<ActionsDAG::Node *> & children)
+static LLVMFunction::CompileDAG getCompilableDAG(
+    ActionsDAG::Node * root,
+    std::vector<ActionsDAG::Node *> & children,
+    const std::unordered_set<const ActionsDAG::Node *> & used_in_result)
 {
     LLVMFunction::CompileDAG dag;
 
@@ -614,7 +617,7 @@ static LLVMFunction::CompileDAG getCompilableDAG(ActionsDAG::Node * root, std::v
     {
         auto & frame = stack.top();
         bool is_const = isCompilableConstant(*frame.node);
-        bool is_compilable_function = !is_const && isCompilableFunction(*frame.node);
+        bool is_compilable_function = !is_const && !used_in_result.count(frame.node) && isCompilableFunction(*frame.node);
 
         while (is_compilable_function && frame.next_child_to_visit < frame.node->children.size())
         {
@@ -623,7 +626,10 @@ static LLVMFunction::CompileDAG getCompilableDAG(ActionsDAG::Node * root, std::v
             if (positions.count(child))
                 ++frame.next_child_to_visit;
             else
+            {
                 stack.emplace(Frame{.node = child});
+                break;
+            }
         }
 
         if (!is_compilable_function || frame.next_child_to_visit == frame.node->children.size())
@@ -788,13 +794,13 @@ void ActionsDAG::compileFunctions()
 {
     struct Data
     {
-        bool used_in_result = false;
         bool is_compilable = false;
         bool all_parents_compilable = false;
         size_t num_inlineable_nodes = 0;
     };
 
     std::unordered_map<const Node *, Data> data;
+    std::unordered_set<const Node *> used_in_result;
 
     for (const auto & node : nodes)
         data[&node].is_compilable = isCompilableConstant(node) || isCompilableFunction(node);
@@ -805,7 +811,7 @@ void ActionsDAG::compileFunctions()
                 data[child].all_parents_compilable = false;
 
     for (const auto * node : index)
-        data[node].used_in_result = true;
+        used_in_result.insert(node);
 
     struct Frame
     {
@@ -833,7 +839,10 @@ void ActionsDAG::compileFunctions()
                 if (visited.count(child))
                     ++frame.next_child_to_visit;
                 else
+                {
                     stack.emplace(Frame{.node = child});
+                    break;
+                }
             }
 
             if (frame.next_child_to_visit == frame.node->children.size())
@@ -842,14 +851,17 @@ void ActionsDAG::compileFunctions()
                 if (cur.is_compilable)
                 {
                     cur.num_inlineable_nodes = 1;
-                    for (const auto * child : frame.node->children)
-                        cur.num_inlineable_nodes += data[child].num_inlineable_nodes;
+
+                    if (!isCompilableConstant(*frame.node))
+                        for (const auto * child : frame.node->children)
+                            if (!used_in_result.count(child))
+                                cur.num_inlineable_nodes += data[child].num_inlineable_nodes;
 
                     /// Check if we should inline current node.
                     bool should_compile = true;
 
                     /// Inline parents instead of node is possible.
-                    if (!cur.used_in_result && cur.all_parents_compilable)
+                    if (!used_in_result.count(frame.node) && cur.all_parents_compilable)
                         should_compile = false;
 
                     /// There is not reason to inline single node.
