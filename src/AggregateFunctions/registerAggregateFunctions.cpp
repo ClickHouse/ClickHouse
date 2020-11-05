@@ -39,10 +39,10 @@ void registerAggregateFunctionSimpleLinearRegression(AggregateFunctionFactory &)
 void registerAggregateFunctionMoving(AggregateFunctionFactory &);
 void registerAggregateFunctionCategoricalIV(AggregateFunctionFactory &);
 void registerAggregateFunctionAggThrow(AggregateFunctionFactory &);
-void registerAggregateFunctionWelchTTest(AggregateFunctionFactory &);
-void registerAggregateFunctionStudentTTest(AggregateFunctionFactory &);
 void registerAggregateFunctionRankCorrelation(AggregateFunctionFactory &);
 void registerAggregateFunctionMannWhitney(AggregateFunctionFactory &);
+void registerAggregateFunctionWelchTTest(AggregateFunctionFactory &);
+void registerAggregateFunctionStudentTTest(AggregateFunctionFactory &);
 
 class AggregateFunctionCombinatorFactory;
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory &);
@@ -96,6 +96,8 @@ void registerAggregateFunctions()
         registerAggregateFunctionAggThrow(factory);
         registerAggregateFunctionRankCorrelation(factory);
         registerAggregateFunctionMannWhitney(factory);
+        registerAggregateFunctionWelchTTest(factory);
+        registerAggregateFunctionStudentTTest(factory);
     }
 
     {
