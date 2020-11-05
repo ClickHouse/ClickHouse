@@ -6,10 +6,14 @@
 #include <DataStreams/BlockIO.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <Interpreters/Context.h>
+#include <DataStreams/BlockIO.h>
 
 
 namespace DB
 {
+
+class DDLWorker;
+
 /** DatabaseReplicated engine
   * supports replication of metadata
   * via DDL log being written to ZooKeeper
@@ -39,13 +43,15 @@ public:
                        const String & zookeeper_path_, const String & shard_name_, const String & replica_name_,
                        Context & context);
 
+    ~DatabaseReplicated() override;
+
     void drop(const Context & /*context*/) override;
 
     String getEngineName() const override { return "Replicated"; }
 
-    void propose(const ASTPtr & query) override;
+    BlockIO propose(const ASTPtr & query);
 
-    BlockIO getFeedback();
+    //BlockIO getFeedback();
 
 private:
     void createDatabaseZooKeeperNodes();
@@ -63,7 +69,7 @@ private:
     String shard_name;
     String replica_name;
 
-    std::unique_ptr<Context> current_context; // to run executeQuery
+    //std::unique_ptr<Context> current_context; // to run executeQuery
 
     std::mutex log_name_mutex;
     String log_name_to_exec_with_result;
@@ -73,7 +79,7 @@ private:
 
     String last_executed_log_entry = "";
 
-    BackgroundSchedulePool::TaskHolder background_log_executor;
+    //BackgroundSchedulePool::TaskHolder background_log_executor;
 
     zkutil::ZooKeeperPtr current_zookeeper;        /// Use only the methods below.
     mutable std::mutex current_zookeeper_mutex;    /// To recreate the session in the background thread.
@@ -81,6 +87,8 @@ private:
     zkutil::ZooKeeperPtr tryGetZooKeeper() const;
     zkutil::ZooKeeperPtr getZooKeeper() const;
     void setZooKeeper(zkutil::ZooKeeperPtr zookeeper);
+
+    std::unique_ptr<DDLWorker> ddl_worker;
 
 };
 

@@ -77,6 +77,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_SYNTAX_FOR_DATA_TYPE;
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_DATABASE;
 }
 
 namespace fs = std::filesystem;
@@ -720,14 +721,21 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         create.database = current_database;
     }
 
+    //TODO make code better if possible
+    bool need_add_to_database = !create.temporary;
+    if(need_add_to_database && database->getEngineName() == "Replicated")
+    {
+        auto guard = DatabaseCatalog::instance().getDDLGuard(create.database, create.table);
+        database = DatabaseCatalog::instance().getDatabase(create.database);
+        if (typeid_cast<DatabaseReplicated *>(database.get()) && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY)
+        {
+            assertOrSetUUID(create, database);
+            return typeid_cast<DatabaseReplicated *>(database.get())->propose(query_ptr);
+        }
+    }
+
     /// Actually creates table
     bool created = doCreateTable(create, properties);
-
-    if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY)
-    {
-        auto * database_replicated = typeid_cast<DatabaseReplicated *>(database.get());
-        return database_replicated->getFeedback();
-    }
 
     if (!created)   /// Table already exists
         return {};
@@ -753,6 +761,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         guard = DatabaseCatalog::instance().getDDLGuard(create.database, table_name);
 
         database = DatabaseCatalog::instance().getDatabase(create.database);
+        //TODO do we need it?
+        if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY)
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed");
         assertOrSetUUID(create, database);
 
         /// Table can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard.
@@ -787,12 +798,6 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
         auto temporary_table = TemporaryTableHolder(context, properties.columns, properties.constraints, query_ptr);
         context.getSessionContext().addExternalTable(table_name, std::move(temporary_table));
-        return true;
-    }
-
-    if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY)
-    {
-        database->propose(query_ptr);
         return true;
     }
 

@@ -13,7 +13,10 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-
+#include <Interpreters/DDLWorker.h>
+#include <Interpreters/DDLTask.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Parsers/ASTAlterQuery.h>
 
 namespace DB
 {
@@ -45,6 +48,7 @@ zkutil::ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
     return res;
 }
 
+DatabaseReplicated::~DatabaseReplicated() = default;
 
 DatabaseReplicated::DatabaseReplicated(
     const String & name_,
@@ -125,12 +129,15 @@ DatabaseReplicated::DatabaseReplicated(
     feedback_timeout = context_.getConfigRef().getInt("database_replicated_feedback_timeout", 0);
     LOG_DEBUG(log, "Snapshot period is set to {} log entries per one snapshot", snapshot_period);
 
-    //TODO do we need separate pool?
-    background_log_executor = context_.getReplicatedSchedulePool().createTask(
-        database_name + "(DatabaseReplicated::background_executor)", [this] { runBackgroundLogExecutor(); }
-    );
+    //FIXME use database UUID
+    ddl_worker = std::make_unique<DDLWorker>(1, zookeeper_path + "/log", context_, nullptr, String{}, true, database_name, replica_name, shard_name);
 
-    background_log_executor->scheduleAfter(500);
+    //TODO do we need separate pool?
+    //background_log_executor = context_.getReplicatedSchedulePool().createTask(
+    //    database_name + "(DatabaseReplicated::background_executor)", [this] { runBackgroundLogExecutor(); }
+    //);
+
+    //background_log_executor->scheduleAfter(500);
 }
 
 void DatabaseReplicated::createDatabaseZooKeeperNodes()
@@ -226,7 +233,7 @@ void DatabaseReplicated::runBackgroundLogExecutor()
         }
     }
 
-    background_log_executor->scheduleAfter(500);
+    //background_log_executor->scheduleAfter(500);
 }
 
 void DatabaseReplicated::writeLastExecutedToDiskAndZK()
@@ -244,94 +251,127 @@ void DatabaseReplicated::writeLastExecutedToDiskAndZK()
     out.close();
 }
 
-void DatabaseReplicated::executeLogName(const String & log_entry_name)
+void DatabaseReplicated::executeLogName(const String & /*log_entry_name*/)
 {
-    String path = zookeeper_path + "/log/" + log_entry_name;
-    current_zookeeper = getZooKeeper();
-    String query_to_execute = current_zookeeper->get(path, {}, nullptr);
-
-    try
-    {
-        current_context = std::make_unique<Context>(global_context);
-        current_context->getClientInfo().query_kind = ClientInfo::QueryKind::REPLICATED_LOG_QUERY;
-        current_context->setCurrentDatabase(database_name);
-        current_context->setCurrentQueryId(""); // generate random query_id
-        executeQuery(query_to_execute, *current_context);
-    }
-    catch (const Exception & e)
-    {
-        tryLogCurrentException(log, "Query from zookeeper " + query_to_execute + " wasn't finished successfully");
-        current_zookeeper->create(
-            zookeeper_path + "/replicas/" + replica_name + "/errors/" + log_entry_name, e.what(), zkutil::CreateMode::Persistent);
-    }
-
-    LOG_DEBUG(log, "Executed query: {}", query_to_execute);
+//    String path = zookeeper_path + "/log/" + log_entry_name;
+//    current_zookeeper = getZooKeeper();
+//    String query_to_execute = current_zookeeper->get(path, {}, nullptr);
+//
+//    try
+//    {
+//        current_context = std::make_unique<Context>(global_context);
+//        current_context->getClientInfo().query_kind = ClientInfo::QueryKind::REPLICATED_LOG_QUERY;
+//        current_context->setCurrentDatabase(database_name);
+//        current_context->setCurrentQueryId(""); // generate random query_id
+//        executeQuery(query_to_execute, *current_context);
+//    }
+//    catch (const Exception & e)
+//    {
+//        tryLogCurrentException(log, "Query from zookeeper " + query_to_execute + " wasn't finished successfully");
+//        current_zookeeper->create(
+//            zookeeper_path + "/replicas/" + replica_name + "/errors/" + log_entry_name, e.what(), zkutil::CreateMode::Persistent);
+//    }
+//
+//    LOG_DEBUG(log, "Executed query: {}", query_to_execute);
 }
 
-void DatabaseReplicated::propose(const ASTPtr & query)
+BlockIO DatabaseReplicated::propose(const ASTPtr & query)
 {
-    current_zookeeper = getZooKeeper();
+    //current_zookeeper = getZooKeeper();
 
-    LOG_DEBUG(log, "Proposing query: {}", queryToString(query));
 
+    if (const auto * query_alter = query->as<ASTAlterQuery>())
     {
-        std::lock_guard lock(log_name_mutex);
-        log_name_to_exec_with_result
-            = current_zookeeper->create(zookeeper_path + "/log/log-", queryToString(query), zkutil::CreateMode::PersistentSequential);
-    }
-
-    background_log_executor->schedule();
-}
-
-BlockIO DatabaseReplicated::getFeedback()
-{
-    BlockIO res;
-    if (feedback_timeout == 0)
-        return res;
-
-    Stopwatch watch;
-
-    NamesAndTypes block_structure =
-    {
-        {"replica_name", std::make_shared<DataTypeString>()},
-        {"execution_feedback", std::make_shared<DataTypeString>()},
-    };
-    auto replica_name_column = block_structure[0].type->createColumn();
-    auto feedback_column = block_structure[1].type->createColumn();
-
-    current_zookeeper = getZooKeeper();
-    Strings replica_states = current_zookeeper->getChildren(zookeeper_path + "/replicas");
-    auto replica_iter = replica_states.begin();
-
-    while (!replica_states.empty() && watch.elapsedSeconds() < feedback_timeout)
-    {
-        String last_executed = current_zookeeper->get(zookeeper_path + "/replicas/" + *replica_iter);
-        if (last_executed > log_name_to_exec_with_result)
+        for (const auto & command : query_alter->command_list->commands)
         {
-            replica_name_column->insert(*replica_iter);
-            String err_path = zookeeper_path + "/replicas/" + *replica_iter + "/errors/" + log_name_to_exec_with_result;
-            if (!current_zookeeper->exists(err_path))
-            {
-                feedback_column->insert("OK");
-            }
-            else
-            {
-                String feedback = current_zookeeper->get(err_path, {}, nullptr);
-                feedback_column->insert(feedback);
-            }
-            replica_states.erase(replica_iter);
-            replica_iter = replica_states.begin();
+            //FIXME allow all types of queries (maybe we should execute ATTACH an similar queries on leader)
+            if (!isSupportedAlterType(command->type))
+                throw Exception("Unsupported type of ALTER query", ErrorCodes::NOT_IMPLEMENTED);
         }
     }
 
-    Block block = Block({
-        {std::move(replica_name_column), block_structure[0].type, block_structure[0].name},
-        {std::move(feedback_column), block_structure[1].type, block_structure[1].name}
-    });
+    LOG_DEBUG(log, "Proposing query: {}", queryToString(query));
 
-    res.in = std::make_shared<OneBlockInputStream>(block);
-    return res;
+    DDLLogEntry entry;
+    entry.hosts = {};
+    entry.query = queryToString(query);
+    entry.initiator = ddl_worker->getCommonHostID();
+    String node_path = ddl_worker->enqueueQuery(entry);
+
+    BlockIO io;
+    //FIXME use query context
+    if (global_context.getSettingsRef().distributed_ddl_task_timeout == 0)
+        return io;
+
+    //FIXME need list of all replicas
+    Strings hosts_to_wait;
+    //TODO maybe it's better to use (shard_name + sep + replica_name) as host ID to allow use {replica} macro (may may have the same values across shards)
+    hosts_to_wait.emplace_back(replica_name);
+    auto stream = std::make_shared<DDLQueryStatusInputStream>(node_path, entry, global_context);
+    io.in = std::move(stream);
+    return io;
+
+    //executeDDLQueryOnCluster(query, global_context);
+
+
+    //{
+    //    std::lock_guard lock(log_name_mutex);
+    //    log_name_to_exec_with_result
+    //        = current_zookeeper->create(zookeeper_path + "/log/log-", queryToString(query), zkutil::CreateMode::PersistentSequential);
+    //}
+
+    //background_log_executor->schedule();
 }
+
+//BlockIO DatabaseReplicated::getFeedback()
+//{
+//    BlockIO res;
+//    if (feedback_timeout == 0)
+//        return res;
+//
+//    Stopwatch watch;
+//
+//    NamesAndTypes block_structure =
+//    {
+//        {"replica_name", std::make_shared<DataTypeString>()},
+//        {"execution_feedback", std::make_shared<DataTypeString>()},
+//    };
+//    auto replica_name_column = block_structure[0].type->createColumn();
+//    auto feedback_column = block_structure[1].type->createColumn();
+//
+//    current_zookeeper = getZooKeeper();
+//    Strings replica_states = current_zookeeper->getChildren(zookeeper_path + "/replicas");
+//    auto replica_iter = replica_states.begin();
+//
+//    while (!replica_states.empty() && watch.elapsedSeconds() < feedback_timeout)
+//    {
+//        String last_executed = current_zookeeper->get(zookeeper_path + "/replicas/" + *replica_iter);
+//        if (last_executed > log_name_to_exec_with_result)
+//        {
+//            replica_name_column->insert(*replica_iter);
+//            String err_path = zookeeper_path + "/replicas/" + *replica_iter + "/errors/" + log_name_to_exec_with_result;
+//            if (!current_zookeeper->exists(err_path))
+//            {
+//                feedback_column->insert("OK");
+//            }
+//            else
+//            {
+//                String feedback = current_zookeeper->get(err_path, {}, nullptr);
+//                feedback_column->insert(feedback);
+//            }
+//            replica_states.erase(replica_iter);
+//            replica_iter = replica_states.begin();
+//        }
+//    }
+//
+//    Block block = Block({
+//        {std::move(replica_name_column), block_structure[0].type, block_structure[0].name},
+//        {std::move(feedback_column), block_structure[1].type, block_structure[1].name}
+//    });
+//
+//    res.in = std::make_shared<OneBlockInputStream>(block);
+//    return res;
+//}
 
 void DatabaseReplicated::createSnapshot()
 {
@@ -389,7 +429,7 @@ void DatabaseReplicated::loadMetadataFromSnapshot()
 
         String query_to_execute = current_zookeeper->get(path, {}, nullptr);
 
-        current_context = std::make_unique<Context>(global_context);
+        auto current_context = std::make_unique<Context>(global_context);
         current_context->getClientInfo().query_kind = ClientInfo::QueryKind::REPLICATED_LOG_QUERY;
         current_context->setCurrentDatabase(database_name);
         current_context->setCurrentQueryId(""); // generate random query_id
