@@ -163,6 +163,8 @@ private:
 
     size_t max_temporary_columns = 0;
     size_t max_temporary_non_const_columns = 0;
+    size_t min_count_to_compile_expression = 0;
+    bool compile_expressions = false;
 
 #if USE_EMBEDDED_COMPILER
     std::shared_ptr<CompiledExpressionCache> compilation_cache;
@@ -234,6 +236,8 @@ private:
         auto actions = std::make_shared<ActionsDAG>();
         actions->max_temporary_columns = max_temporary_columns;
         actions->max_temporary_non_const_columns = max_temporary_non_const_columns;
+        actions->min_count_to_compile_expression = min_count_to_compile_expression;
+        actions->compile_expressions = compile_expressions;
 
 #if USE_EMBEDDED_COMPILER
         actions->compilation_cache = compilation_cache;
@@ -243,7 +247,10 @@ private:
 
     ExpressionActionsPtr linearizeActions() const;
     void removeUnusedActions(const std::vector<Node *> & required_nodes);
+    void removeUnusedActions();
     void addAliases(const NamesWithAliases & aliases, std::vector<Node *> & result_nodes);
+
+    void compileFunctions();
 };
 
 

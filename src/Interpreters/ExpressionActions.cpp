@@ -599,104 +599,6 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
     return false;
 }
 
-
-///// It is not important to calculate the hash of individual strings or their concatenation
-//UInt128 ExpressionAction::ActionHash::operator()(const ExpressionAction & action) const
-//{
-//    SipHash hash;
-//    hash.update(action.type);
-//    hash.update(action.is_function_compiled);
-//    switch (action.type)
-//    {
-//        case ADD_COLUMN:
-//            hash.update(action.result_name);
-//            if (action.result_type)
-//                hash.update(action.result_type->getName());
-//            if (action.added_column)
-//                hash.update(action.added_column->getName());
-//            break;
-//        case REMOVE_COLUMN:
-//            hash.update(action.source_name);
-//            break;
-//        case COPY_COLUMN:
-//            hash.update(action.result_name);
-//            hash.update(action.source_name);
-//            break;
-//        case APPLY_FUNCTION:
-//            hash.update(action.result_name);
-//            if (action.result_type)
-//                hash.update(action.result_type->getName());
-//            if (action.function_base)
-//            {
-//                hash.update(action.function_base->getName());
-//                for (const auto & arg_type : action.function_base->getArgumentTypes())
-//                    hash.update(arg_type->getName());
-//            }
-//            for (const auto & arg_name : action.argument_names)
-//                hash.update(arg_name);
-//            break;
-//        case ARRAY_JOIN:
-//            hash.update(action.result_name);
-//            hash.update(action.source_name);
-//            break;
-//        case PROJECT:
-//            for (const auto & pair_of_strs : action.projection)
-//            {
-//                hash.update(pair_of_strs.first);
-//                hash.update(pair_of_strs.second);
-//            }
-//            break;
-//        case ADD_ALIASES:
-//            break;
-//    }
-//    UInt128 result;
-//    hash.get128(result.low, result.high);
-//    return result;
-//}
-//
-//bool ExpressionAction::operator==(const ExpressionAction & other) const
-//{
-//    if (result_type != other.result_type)
-//    {
-//        if (result_type == nullptr || other.result_type == nullptr)
-//            return false;
-//        else if (!result_type->equals(*other.result_type))
-//            return false;
-//    }
-//
-//    if (function_base != other.function_base)
-//    {
-//        if (function_base == nullptr || other.function_base == nullptr)
-//            return false;
-//        else if (function_base->getName() != other.function_base->getName())
-//            return false;
-//
-//        const auto & my_arg_types = function_base->getArgumentTypes();
-//        const auto & other_arg_types = other.function_base->getArgumentTypes();
-//        if (my_arg_types.size() != other_arg_types.size())
-//            return false;
-//
-//        for (size_t i = 0; i < my_arg_types.size(); ++i)
-//            if (!my_arg_types[i]->equals(*other_arg_types[i]))
-//                return false;
-//    }
-//
-//    if (added_column != other.added_column)
-//    {
-//        if (added_column == nullptr || other.added_column == nullptr)
-//            return false;
-//        else if (added_column->getName() != other.added_column->getName())
-//            return false;
-//    }
-//
-//    return source_name == other.source_name
-//        && result_name == other.result_name
-//        && argument_names == other.argument_names
-//        && TableJoin::sameJoin(table_join.get(), other.table_join.get())
-//        && projection == other.projection
-//        && is_function_compiled == other.is_function_compiled;
-//}
-
 void ExpressionActionsChain::addStep(NameSet non_constant_inputs)
 {
     if (steps.empty())
@@ -979,9 +881,9 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     max_temporary_columns = settings.max_temporary_columns;
     max_temporary_non_const_columns = settings.max_temporary_non_const_columns;
 
-    bool do_compile_expressions = false;
 #if USE_EMBEDDED_COMPILER
-    do_compile_expressions = settings.compile_expressions;
+    compile_expressions = settings.compile_expressions;
+    min_count_to_compile_expression = settings.min_count_to_compile_expression;
 
     if (!compilation_cache)
         compilation_cache = context.getCompiledExpressionCache();
@@ -1004,7 +906,6 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         node.allow_constant_folding = node.allow_constant_folding && child.allow_constant_folding;
 
         ColumnWithTypeAndName argument;
-        argument.name = argument_names[i];
         argument.column = child.column;
         argument.type = child.result_type;
         argument.name = child.result_name;
@@ -1022,7 +923,7 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
     /// But if we compile expressions compiled version of this function maybe placed in cache,
     /// so we don't want to unfold non deterministic functions
-    if (all_const && node.function_base->isSuitableForConstantFolding() && (!do_compile_expressions || node.function_base->isDeterministic()))
+    if (all_const && node.function_base->isSuitableForConstantFolding() && (!compile_expressions || node.function_base->isDeterministic()))
     {
         size_t num_rows = arguments.empty() ? 0 : arguments.front().column->size();
         auto col = node.function->execute(arguments, node.result_type, num_rows, true);
@@ -1143,20 +1044,27 @@ void ActionsDAG::removeUnusedActions(const Names & required_names)
 
 void ActionsDAG::removeUnusedActions(const std::vector<Node *> & required_nodes)
 {
-    std::unordered_set<const Node *> visited_nodes;
-    std::stack<Node *> stack;
-
     {
         Index new_index;
 
         for (auto * node : required_nodes)
-        {
             new_index.insert(node);
-            visited_nodes.insert(node);
-            stack.push(node);
-        }
 
         index.swap(new_index);
+    }
+
+    removeUnusedActions();
+}
+
+void ActionsDAG::removeUnusedActions()
+{
+    std::unordered_set<const Node *> visited_nodes;
+    std::stack<Node *> stack;
+
+    for (auto * node : index)
+    {
+        visited_nodes.insert(node);
+        stack.push(node);
     }
 
     while (!stack.empty())
@@ -1445,8 +1353,16 @@ ExpressionActionsPtr ActionsDAG::linearizeActions() const
 ExpressionActionsPtr ActionsDAG::buildExpressions() const
 {
     auto cloned = clone();
-    auto expressions = cloned->linearizeActions();
 
+#if USE_EMBEDDED_COMPILER
+    if (compile_expressions)
+    {
+        cloned->compileFunctions();
+        cloned->removeUnusedActions();
+    }
+#endif
+
+    auto expressions = cloned->linearizeActions();
     expressions->nodes.swap(cloned->nodes);
 
     if (max_temporary_columns && expressions->num_columns > max_temporary_columns)
