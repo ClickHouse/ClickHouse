@@ -12,12 +12,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 /// PaddedPODArray extended by Decimal scale
 template <typename T>
 class DecimalPaddedPODArray : public PaddedPODArray<T>
@@ -68,6 +62,7 @@ private:
 public:
     using ValueType = T;
     using NativeT = typename T::NativeType;
+    using Container = DecimalPaddedPODArray<T>;
 
 private:
     ColumnDecimal(const size_t n, UInt32 scale_)
@@ -169,15 +164,15 @@ public:
 
 
     void insertValue(const T value) { data.push_back(value); }
-    DecimalPaddedPODArray<T> & getData() { return data; }
-    const DecimalPaddedPODArray<T> & getData() const { return data; }
+    Container & getData() { return data; }
+    const Container & getData() const { return data; }
     const T & getElement(size_t n) const { return data[n]; }
     T & getElement(size_t n) { return data[n]; }
 
     UInt32 getScale() const {return scale;}
 
 protected:
-    DecimalPaddedPODArray<T> data;
+    Container data;
     UInt32 scale;
 
     template <typename U>
