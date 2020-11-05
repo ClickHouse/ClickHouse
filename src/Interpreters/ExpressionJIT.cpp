@@ -635,8 +635,12 @@ static LLVMFunction::CompileDAG getCompilableDAG(ActionsDAG::Node * root, std::v
                                  : (is_compilable_function ? LLVMFunction::CompileNode::NodeType::FUNCTION
                                                            : LLVMFunction::CompileNode::NodeType::INPUT);
 
-            for (const auto * child : frame.node->children)
-                node.arguments.push_back(positions[child]);
+            if (node.type == LLVMFunction::CompileNode::NodeType::FUNCTION)
+                for (const auto * child : frame.node->children)
+                    node.arguments.push_back(positions[child]);
+
+            if (node.type == LLVMFunction::CompileNode::NodeType::CONSTANT)
+                node.column = frame.node->column;
 
             if (node.type == LLVMFunction::CompileNode::NodeType::INPUT)
                 children.emplace_back(frame.node);

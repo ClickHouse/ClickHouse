@@ -45,7 +45,6 @@ public:
 
         /// For CONSTANT
         ColumnPtr column;
-        llvm::Value * value = nullptr;
 
         /// For FUNCTION
         FunctionBasePtr function;
