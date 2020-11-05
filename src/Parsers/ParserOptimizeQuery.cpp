@@ -62,7 +62,8 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     tryGetIdentifierNameInto(table, query->table);
 
     query->cluster = cluster_str;
-    query->partition = partition;
+    if ((query->partition = partition))
+        query->children.push_back(partition);
     query->final = final;
     query->deduplicate = deduplicate;
 
