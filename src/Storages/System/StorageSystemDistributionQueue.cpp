@@ -10,6 +10,75 @@
 #include <Common/typeid_cast.h>
 #include <Databases/IDatabase.h>
 
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+}
+
+
+namespace
+{
+
+using namespace DB;
+
+/// Drop "password" from the path.
+///
+/// In case of use_compact_format_in_distributed_parts_names=0 the path format is:
+///
+///     user[:password]@host:port#default_database format
+///
+/// And password should be masked out.
+///
+/// See:
+/// - Cluster::Address::fromFullString()
+/// - Cluster::Address::toFullString()
+std::string maskDataPath(const std::string & path)
+{
+    std::string masked_path = path;
+
+    if (!masked_path.ends_with('/'))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid path format");
+
+    masked_path.pop_back();
+
+    size_t dir_name_pos = masked_path.rfind('/');
+    if (dir_name_pos == std::string::npos)
+    {
+        /// Do not include full path into the exception message since it may include password.
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid path format");
+    }
+    ++dir_name_pos;
+
+    size_t user_pw_end = masked_path.find('@', dir_name_pos);
+    if (user_pw_end == std::string::npos)
+    {
+        /// Likey new format (use_compact_format_in_distributed_parts_names=1)
+        return path;
+    }
+
+    size_t pw_start = masked_path.find(':', dir_name_pos);
+    if (pw_start > user_pw_end)
+    {
+        /// No password in path
+        return path;
+    }
+    ++pw_start;
+
+    size_t pw_length = user_pw_end - pw_start;
+    /// Replace with a single '*' to hide even the password length.
+    masked_path.replace(pw_start, pw_length, 1, '*');
+
+    masked_path.push_back('/');
+
+    return masked_path;
+}
+
+}
 
 namespace DB
 {
@@ -103,7 +172,7 @@ void StorageSystemDistributionQueue::fillData(MutableColumns & res_columns, cons
             size_t col_num = 0;
             res_columns[col_num++]->insert(database);
             res_columns[col_num++]->insert(table);
-            res_columns[col_num++]->insert(status.path);
+            res_columns[col_num++]->insert(maskDataPath(status.path));
             res_columns[col_num++]->insert(status.is_blocked);
             res_columns[col_num++]->insert(status.error_count);
             res_columns[col_num++]->insert(status.files_count);
