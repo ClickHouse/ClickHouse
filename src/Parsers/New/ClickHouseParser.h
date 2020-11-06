@@ -38,46 +38,46 @@ public:
     SYSTEM = 128, TABLE = 129, TABLES = 130, TEMPORARY = 131, THEN = 132, 
     TIES = 133, TIMESTAMP = 134, TO = 135, TOTALS = 136, TRAILING = 137, 
     TRIM = 138, TRUNCATE = 139, TTL = 140, TYPE = 141, UNION = 142, USE = 143, 
-    USING = 144, VALUES = 145, VIEW = 146, VOLUME = 147, WEEK = 148, WHEN = 149, 
-    WHERE = 150, WITH = 151, YEAR = 152, JSON_FALSE = 153, JSON_TRUE = 154, 
-    IDENTIFIER = 155, FLOATING_LITERAL = 156, OCTAL_LITERAL = 157, DECIMAL_LITERAL = 158, 
-    HEXADECIMAL_LITERAL = 159, STRING_LITERAL = 160, ARROW = 161, ASTERISK = 162, 
-    BACKQUOTE = 163, BACKSLASH = 164, COLON = 165, COMMA = 166, CONCAT = 167, 
-    DASH = 168, DOT = 169, EQ_DOUBLE = 170, EQ_SINGLE = 171, GE = 172, GT = 173, 
-    LBRACE = 174, LBRACKET = 175, LE = 176, LPAREN = 177, LT = 178, NOT_EQ = 179, 
-    PERCENT = 180, PLUS = 181, QUERY = 182, QUOTE_DOUBLE = 183, QUOTE_SINGLE = 184, 
-    RBRACE = 185, RBRACKET = 186, RPAREN = 187, SEMICOLON = 188, SLASH = 189, 
-    UNDERSCORE = 190, MULTI_LINE_COMMENT = 191, SINGLE_LINE_COMMENT = 192, 
-    WHITESPACE = 193
+    USING = 144, UUID = 145, VALUES = 146, VIEW = 147, VOLUME = 148, WEEK = 149, 
+    WHEN = 150, WHERE = 151, WITH = 152, YEAR = 153, JSON_FALSE = 154, JSON_TRUE = 155, 
+    IDENTIFIER = 156, FLOATING_LITERAL = 157, OCTAL_LITERAL = 158, DECIMAL_LITERAL = 159, 
+    HEXADECIMAL_LITERAL = 160, STRING_LITERAL = 161, ARROW = 162, ASTERISK = 163, 
+    BACKQUOTE = 164, BACKSLASH = 165, COLON = 166, COMMA = 167, CONCAT = 168, 
+    DASH = 169, DOT = 170, EQ_DOUBLE = 171, EQ_SINGLE = 172, GE = 173, GT = 174, 
+    LBRACE = 175, LBRACKET = 176, LE = 177, LPAREN = 178, LT = 179, NOT_EQ = 180, 
+    PERCENT = 181, PLUS = 182, QUERY = 183, QUOTE_DOUBLE = 184, QUOTE_SINGLE = 185, 
+    RBRACE = 186, RBRACKET = 187, RPAREN = 188, SEMICOLON = 189, SLASH = 190, 
+    UNDERSCORE = 191, MULTI_LINE_COMMENT = 192, SINGLE_LINE_COMMENT = 193, 
+    WHITESPACE = 194
   };
 
   enum {
     RuleQueryStmt = 0, RuleQuery = 1, RuleAlterStmt = 2, RuleAlterTableClause = 3, 
     RuleTableColumnPropertyType = 4, RulePartitionClause = 5, RuleCheckStmt = 6, 
-    RuleCreateStmt = 7, RuleDestinationClause = 8, RuleSubqueryClause = 9, 
-    RuleSchemaClause = 10, RuleEngineClause = 11, RulePartitionByClause = 12, 
-    RulePrimaryKeyClause = 13, RuleSampleByClause = 14, RuleTtlClause = 15, 
-    RuleEngineExpr = 16, RuleTableElementExpr = 17, RuleTableColumnDfnt = 18, 
-    RuleTableColumnPropertyExpr = 19, RuleCodecExpr = 20, RuleTtlExpr = 21, 
-    RuleDescribeStmt = 22, RuleDropStmt = 23, RuleExistsStmt = 24, RuleExplainStmt = 25, 
-    RuleInsertStmt = 26, RuleColumnsClause = 27, RuleDataClause = 28, RuleOptimizeStmt = 29, 
-    RuleRenameStmt = 30, RuleSelectUnionStmt = 31, RuleSelectStmtWithParens = 32, 
-    RuleSelectStmt = 33, RuleWithClause = 34, RuleFromClause = 35, RuleArrayJoinClause = 36, 
-    RulePrewhereClause = 37, RuleWhereClause = 38, RuleGroupByClause = 39, 
-    RuleHavingClause = 40, RuleOrderByClause = 41, RuleLimitByClause = 42, 
-    RuleLimitClause = 43, RuleSettingsClause = 44, RuleJoinExpr = 45, RuleJoinOp = 46, 
-    RuleJoinOpCross = 47, RuleJoinConstraintClause = 48, RuleSampleClause = 49, 
-    RuleLimitExpr = 50, RuleOrderExprList = 51, RuleOrderExpr = 52, RuleRatioExpr = 53, 
-    RuleSettingExprList = 54, RuleSettingExpr = 55, RuleSetStmt = 56, RuleShowStmt = 57, 
-    RuleSystemStmt = 58, RuleTruncateStmt = 59, RuleUseStmt = 60, RuleColumnTypeExpr = 61, 
-    RuleColumnExprList = 62, RuleColumnsExpr = 63, RuleColumnExpr = 64, 
-    RuleColumnArgList = 65, RuleColumnArgExpr = 66, RuleColumnLambdaExpr = 67, 
-    RuleColumnIdentifier = 68, RuleNestedIdentifier = 69, RuleTableExpr = 70, 
-    RuleTableFunctionExpr = 71, RuleTableIdentifier = 72, RuleTableArgList = 73, 
-    RuleTableArgExpr = 74, RuleDatabaseIdentifier = 75, RuleFloatingLiteral = 76, 
-    RuleNumberLiteral = 77, RuleLiteral = 78, RuleInterval = 79, RuleKeyword = 80, 
-    RuleKeywordForAlias = 81, RuleAlias = 82, RuleIdentifier = 83, RuleIdentifierOrNull = 84, 
-    RuleEnumValue = 85
+    RuleCreateStmt = 7, RuleUuidClause = 8, RuleDestinationClause = 9, RuleSubqueryClause = 10, 
+    RuleSchemaClause = 11, RuleEngineClause = 12, RulePartitionByClause = 13, 
+    RulePrimaryKeyClause = 14, RuleSampleByClause = 15, RuleTtlClause = 16, 
+    RuleEngineExpr = 17, RuleTableElementExpr = 18, RuleTableColumnDfnt = 19, 
+    RuleTableColumnPropertyExpr = 20, RuleCodecExpr = 21, RuleTtlExpr = 22, 
+    RuleDescribeStmt = 23, RuleDropStmt = 24, RuleExistsStmt = 25, RuleExplainStmt = 26, 
+    RuleInsertStmt = 27, RuleColumnsClause = 28, RuleDataClause = 29, RuleOptimizeStmt = 30, 
+    RuleRenameStmt = 31, RuleSelectUnionStmt = 32, RuleSelectStmtWithParens = 33, 
+    RuleSelectStmt = 34, RuleWithClause = 35, RuleFromClause = 36, RuleArrayJoinClause = 37, 
+    RulePrewhereClause = 38, RuleWhereClause = 39, RuleGroupByClause = 40, 
+    RuleHavingClause = 41, RuleOrderByClause = 42, RuleLimitByClause = 43, 
+    RuleLimitClause = 44, RuleSettingsClause = 45, RuleJoinExpr = 46, RuleJoinOp = 47, 
+    RuleJoinOpCross = 48, RuleJoinConstraintClause = 49, RuleSampleClause = 50, 
+    RuleLimitExpr = 51, RuleOrderExprList = 52, RuleOrderExpr = 53, RuleRatioExpr = 54, 
+    RuleSettingExprList = 55, RuleSettingExpr = 56, RuleSetStmt = 57, RuleShowStmt = 58, 
+    RuleSystemStmt = 59, RuleTruncateStmt = 60, RuleUseStmt = 61, RuleColumnTypeExpr = 62, 
+    RuleColumnExprList = 63, RuleColumnsExpr = 64, RuleColumnExpr = 65, 
+    RuleColumnArgList = 66, RuleColumnArgExpr = 67, RuleColumnLambdaExpr = 68, 
+    RuleColumnIdentifier = 69, RuleNestedIdentifier = 70, RuleTableExpr = 71, 
+    RuleTableFunctionExpr = 72, RuleTableIdentifier = 73, RuleTableArgList = 74, 
+    RuleTableArgExpr = 75, RuleDatabaseIdentifier = 76, RuleFloatingLiteral = 77, 
+    RuleNumberLiteral = 78, RuleLiteral = 79, RuleInterval = 80, RuleKeyword = 81, 
+    RuleKeywordForAlias = 82, RuleAlias = 83, RuleIdentifier = 84, RuleIdentifierOrNull = 85, 
+    RuleEnumValue = 86
   };
 
   ClickHouseParser(antlr4::TokenStream *input);
@@ -98,6 +98,7 @@ public:
   class PartitionClauseContext;
   class CheckStmtContext;
   class CreateStmtContext;
+  class UuidClauseContext;
   class DestinationClauseContext;
   class SubqueryClauseContext;
   class SchemaClauseContext;
@@ -304,17 +305,6 @@ public:
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
-  class  AlterTableClauseOrderByContext : public AlterTableClauseContext {
-  public:
-    AlterTableClauseOrderByContext(AlterTableClauseContext *ctx);
-
-    antlr4::tree::TerminalNode *MODIFY();
-    antlr4::tree::TerminalNode *ORDER();
-    antlr4::tree::TerminalNode *BY();
-    ColumnExprContext *columnExpr();
-    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
-  };
-
   class  AlterTableClauseModifyContext : public AlterTableClauseContext {
   public:
     AlterTableClauseModifyContext(AlterTableClauseContext *ctx);
@@ -327,12 +317,37 @@ public:
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
+  class  AlterTableClauseModifyOrderByContext : public AlterTableClauseContext {
+  public:
+    AlterTableClauseModifyOrderByContext(AlterTableClauseContext *ctx);
+
+    antlr4::tree::TerminalNode *MODIFY();
+    antlr4::tree::TerminalNode *ORDER();
+    antlr4::tree::TerminalNode *BY();
+    ColumnExprContext *columnExpr();
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
   class  AlterTableClauseRemoveTTLContext : public AlterTableClauseContext {
   public:
     AlterTableClauseRemoveTTLContext(AlterTableClauseContext *ctx);
 
     antlr4::tree::TerminalNode *REMOVE();
     antlr4::tree::TerminalNode *TTL();
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  AlterTableClauseModifyRemoveContext : public AlterTableClauseContext {
+  public:
+    AlterTableClauseModifyRemoveContext(AlterTableClauseContext *ctx);
+
+    antlr4::tree::TerminalNode *MODIFY();
+    antlr4::tree::TerminalNode *COLUMN();
+    NestedIdentifierContext *nestedIdentifier();
+    antlr4::tree::TerminalNode *REMOVE();
+    TableColumnPropertyTypeContext *tableColumnPropertyType();
+    antlr4::tree::TerminalNode *IF();
+    antlr4::tree::TerminalNode *EXISTS();
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
@@ -354,20 +369,6 @@ public:
     antlr4::tree::TerminalNode *COLUMN();
     NestedIdentifierContext *nestedIdentifier();
     antlr4::tree::TerminalNode *STRING_LITERAL();
-    antlr4::tree::TerminalNode *IF();
-    antlr4::tree::TerminalNode *EXISTS();
-    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
-  };
-
-  class  AlterTableClauseRemoveContext : public AlterTableClauseContext {
-  public:
-    AlterTableClauseRemoveContext(AlterTableClauseContext *ctx);
-
-    antlr4::tree::TerminalNode *MODIFY();
-    antlr4::tree::TerminalNode *COLUMN();
-    NestedIdentifierContext *nestedIdentifier();
-    antlr4::tree::TerminalNode *REMOVE();
-    TableColumnPropertyTypeContext *tableColumnPropertyType();
     antlr4::tree::TerminalNode *IF();
     antlr4::tree::TerminalNode *EXISTS();
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
@@ -428,9 +429,23 @@ public:
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
-  class  AlterTableClauseTTLContext : public AlterTableClauseContext {
+  class  AlterTableClauseModifyCommentContext : public AlterTableClauseContext {
   public:
-    AlterTableClauseTTLContext(AlterTableClauseContext *ctx);
+    AlterTableClauseModifyCommentContext(AlterTableClauseContext *ctx);
+
+    antlr4::tree::TerminalNode *MODIFY();
+    antlr4::tree::TerminalNode *COLUMN();
+    NestedIdentifierContext *nestedIdentifier();
+    antlr4::tree::TerminalNode *COMMENT();
+    antlr4::tree::TerminalNode *STRING_LITERAL();
+    antlr4::tree::TerminalNode *IF();
+    antlr4::tree::TerminalNode *EXISTS();
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  AlterTableClauseModifyTTLContext : public AlterTableClauseContext {
+  public:
+    AlterTableClauseModifyTTLContext(AlterTableClauseContext *ctx);
 
     antlr4::tree::TerminalNode *MODIFY();
     antlr4::tree::TerminalNode *TTL();
@@ -511,6 +526,7 @@ public:
     antlr4::tree::TerminalNode *IF();
     antlr4::tree::TerminalNode *NOT();
     antlr4::tree::TerminalNode *EXISTS();
+    UuidClauseContext *uuidClause();
     SchemaClauseContext *schemaClause();
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
@@ -545,6 +561,7 @@ public:
     antlr4::tree::TerminalNode *IF();
     antlr4::tree::TerminalNode *NOT();
     antlr4::tree::TerminalNode *EXISTS();
+    UuidClauseContext *uuidClause();
     SchemaClauseContext *schemaClause();
     antlr4::tree::TerminalNode *POPULATE();
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
@@ -562,6 +579,7 @@ public:
     antlr4::tree::TerminalNode *IF();
     antlr4::tree::TerminalNode *NOT();
     antlr4::tree::TerminalNode *EXISTS();
+    UuidClauseContext *uuidClause();
     SchemaClauseContext *schemaClause();
     EngineClauseContext *engineClause();
     SubqueryClauseContext *subqueryClause();
@@ -569,6 +587,19 @@ public:
   };
 
   CreateStmtContext* createStmt();
+
+  class  UuidClauseContext : public antlr4::ParserRuleContext {
+  public:
+    UuidClauseContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *UUID();
+    antlr4::tree::TerminalNode *STRING_LITERAL();
+
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  UuidClauseContext* uuidClause();
 
   class  DestinationClauseContext : public antlr4::ParserRuleContext {
   public:
@@ -1195,10 +1226,11 @@ public:
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *GROUP();
     antlr4::tree::TerminalNode *BY();
-    antlr4::tree::TerminalNode *ROLLUP();
     antlr4::tree::TerminalNode *LPAREN();
     ColumnExprListContext *columnExprList();
     antlr4::tree::TerminalNode *RPAREN();
+    antlr4::tree::TerminalNode *CUBE();
+    antlr4::tree::TerminalNode *ROLLUP();
 
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
    
@@ -2549,6 +2581,7 @@ public:
     antlr4::tree::TerminalNode *UNION();
     antlr4::tree::TerminalNode *USE();
     antlr4::tree::TerminalNode *USING();
+    antlr4::tree::TerminalNode *UUID();
     antlr4::tree::TerminalNode *VALUES();
     antlr4::tree::TerminalNode *VIEW();
     antlr4::tree::TerminalNode *VOLUME();
@@ -2568,6 +2601,8 @@ public:
   public:
     KeywordForAliasContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *DATE();
+    antlr4::tree::TerminalNode *FIRST();
     antlr4::tree::TerminalNode *ID();
     antlr4::tree::TerminalNode *KEY();
 
@@ -2582,6 +2617,7 @@ public:
     AliasContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *IDENTIFIER();
+    IntervalContext *interval();
     KeywordForAliasContext *keywordForAlias();
 
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;

@@ -10,23 +10,11 @@ namespace DB::AST
 
 using PartitionByClause = SimpleClause<ColumnExpr>;
 
-class PrimaryKeyClause : public INode
-{
-    public:
-        explicit PrimaryKeyClause(PtrTo<ColumnExpr> expr);
-};
+using PrimaryKeyClause = SimpleClause<ColumnExpr>;
 
-class SampleByClause : public INode
-{
-    public:
-        explicit SampleByClause(PtrTo<ColumnExpr> expr);
-};
+using SampleByClause = SimpleClause<ColumnExpr>;
 
-class TTLClause : public INode
-{
-    public:
-        explicit TTLClause(PtrTo<TTLExprList> list);
-};
+using TTLClause = SimpleClause<TTLExprList>;
 
 class EngineClause : public INode
 {

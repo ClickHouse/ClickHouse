@@ -294,7 +294,7 @@ antlrcpp::Any ParseTreeVisitor::visitSelectStmt(ClickHouseParser::SelectStmtCont
 {
     SelectStmt::ModifierType type = SelectStmt::ModifierType::NONE;
 
-    if (ctx->CUBE()) type = SelectStmt::ModifierType::CUBE;
+    if (ctx->CUBE() || (ctx->groupByClause() && ctx->groupByClause()->CUBE())) type = SelectStmt::ModifierType::CUBE;
     else if (ctx->ROLLUP() || (ctx->groupByClause() && ctx->groupByClause()->ROLLUP())) type = SelectStmt::ModifierType::ROLLUP;
 
     auto select_stmt = std::make_shared<SelectStmt>(!!ctx->DISTINCT(), type, !!ctx->TOTALS(), visit(ctx->columnExprList()));

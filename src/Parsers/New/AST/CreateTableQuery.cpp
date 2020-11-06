@@ -1,9 +1,11 @@
 #include <Parsers/New/AST/CreateTableQuery.h>
 
+#include <IO/ReadHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/New/AST/EngineExpr.h>
 #include <Parsers/New/AST/Identifier.h>
+#include <Parsers/New/AST/Literal.h>
 #include <Parsers/New/AST/SelectUnionQuery.h>
 #include <Parsers/New/AST/TableElementExpr.h>
 #include <Parsers/New/AST/TableExpr.h>
@@ -92,10 +94,11 @@ CreateTableQuery::CreateTableQuery(
     bool temporary_,
     bool if_not_exists_,
     PtrTo<TableIdentifier> identifier,
+    PtrTo<UUIDClause> uuid,
     PtrTo<SchemaClause> schema,
     PtrTo<EngineClause> engine,
     PtrTo<SelectUnionQuery> query)
-    : DDLQuery{identifier, schema, engine, query}, attach(attach_), temporary(temporary_), if_not_exists(if_not_exists_)
+    : DDLQuery{identifier, uuid, schema, engine, query}, attach(attach_), temporary(temporary_), if_not_exists(if_not_exists_)
 {
 }
 
@@ -107,7 +110,8 @@ ASTPtr CreateTableQuery::convertToOld() const
         auto table_id = getTableIdentifier(get(NAME)->convertToOld());
         query->database = table_id.database_name;
         query->table = table_id.table_name;
-        query->uuid = table_id.uuid;
+        query->uuid
+            = has(UUID) ? parseFromString<DB::UUID>(get(UUID)->convertToOld()->as<ASTLiteral>()->value.get<String>()) : table_id.uuid;
     }
 
     query->attach = attach;
@@ -166,11 +170,12 @@ using namespace AST;
 
 antlrcpp::Any ParseTreeVisitor::visitCreateTableStmt(ClickHouseParser::CreateTableStmtContext *ctx)
 {
+    auto uuid = ctx->uuidClause() ? visit(ctx->uuidClause()).as<PtrTo<UUIDClause>>() : nullptr;
     auto schema = ctx->schemaClause() ? visit(ctx->schemaClause()).as<PtrTo<SchemaClause>>() : nullptr;
     auto engine = ctx->engineClause() ? visit(ctx->engineClause()).as<PtrTo<EngineClause>>() : nullptr;
     auto query = ctx->subqueryClause() ? visit(ctx->subqueryClause()).as<PtrTo<SelectUnionQuery>>() : nullptr;
     return std::make_shared<CreateTableQuery>(
-        !!ctx->ATTACH(), !!ctx->TEMPORARY(), !!ctx->IF(), visit(ctx->tableIdentifier()), schema, engine, query);
+        !!ctx->ATTACH(), !!ctx->TEMPORARY(), !!ctx->IF(), visit(ctx->tableIdentifier()), uuid, schema, engine, query);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitSchemaDescriptionClause(ClickHouseParser::SchemaDescriptionClauseContext *ctx)
@@ -193,6 +198,11 @@ antlrcpp::Any ParseTreeVisitor::visitSchemaAsFunctionClause(ClickHouseParser::Sc
 antlrcpp::Any ParseTreeVisitor::visitSubqueryClause(ClickHouseParser::SubqueryClauseContext *ctx)
 {
     return visit(ctx->selectUnionStmt());
+}
+
+antlrcpp::Any ParseTreeVisitor::visitUuidClause(ClickHouseParser::UuidClauseContext *ctx)
+{
+    return std::make_shared<UUIDClause>(Literal::createString(ctx->STRING_LITERAL()));
 }
 
 }

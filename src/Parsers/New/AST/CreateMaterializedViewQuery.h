@@ -16,6 +16,7 @@ class CreateMaterializedViewQuery : public DDLQuery
             bool if_not_exists,
             bool populate,
             PtrTo<TableIdentifier> identifier,
+            PtrTo<UUIDClause> uuid,
             PtrTo<SchemaClause> schema,
             PtrTo<DestinationClause> destination,
             PtrTo<EngineClause> engine,
@@ -27,6 +28,7 @@ class CreateMaterializedViewQuery : public DDLQuery
         enum ChildIndex : UInt8
         {
             NAME = 0,     // TableIdentifier
+            UUID,         // UUIDClause (optional)
             SCHEMA,       // SchemaClause (optional)
             DESTINATION,  // DestinationClause (optional)
             ENGINE,       // EngineClause (optional)

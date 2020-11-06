@@ -9,18 +9,23 @@ namespace DB::AST
 {
 
 TruncateQuery::TruncateQuery(bool temporary_, bool if_exists_, PtrTo<TableIdentifier> identifier)
-    : temporary(temporary_), if_exists(if_exists_)
+    : DDLQuery{identifier}, temporary(temporary_), if_exists(if_exists_)
 {
-    push(identifier);
-
-    (void) temporary, (void) if_exists; // TODO
 }
 
 ASTPtr TruncateQuery::convertToOld() const
 {
     auto query = std::make_shared<ASTDropQuery>();
 
-    // TODO
+    query->kind = ASTDropQuery::Truncate;
+    query->if_exists = if_exists;
+    query->temporary = temporary;
+
+    query->table = get<TableIdentifier>(NAME)->getName();
+    if (auto database = get<TableIdentifier>(NAME)->getDatabase())
+        query->database = database->getName();
+
+    convertToOldPartially(query);
 
     return query;
 }

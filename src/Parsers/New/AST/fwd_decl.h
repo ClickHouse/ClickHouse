@@ -70,5 +70,6 @@ using TableElementList = List<TableElementExpr>;
 using TTLExprList = List<TTLExpr>;
 
 using OrderByClause = SimpleClause<OrderExprList>;
+using UUIDClause = SimpleClause<StringLiteral>;
 
 }

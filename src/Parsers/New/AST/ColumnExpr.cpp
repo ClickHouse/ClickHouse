@@ -13,6 +13,11 @@
 #include <Parsers/New/ParseTreeVisitor.h>
 
 
+namespace DB::ErrorCodes
+{
+    extern int SYNTAX_ERROR;
+}
+
 namespace DB::AST
 {
 
@@ -134,6 +139,16 @@ ASTPtr ColumnExpr::convertToOld() const
             subquery->children.push_back(get(SUBQUERY)->convertToOld());
             return subquery;
         }
+    }
+    __builtin_unreachable();
+}
+
+String ColumnExpr::toString() const
+{
+    switch(expr_type)
+    {
+        case ExprType::LITERAL: return get(LITERAL)->toString();
+        default: return {};
     }
     __builtin_unreachable();
 }
@@ -276,14 +291,24 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprDate(ClickHouseParser::ColumnExpr
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprExtract(ClickHouseParser::ColumnExprExtractContext *ctx)
 {
-    auto name = std::make_shared<Identifier>("extract");
+    String name;
     auto args = std::make_shared<ColumnExprList>();
-    auto params = std::make_shared<ColumnParamList>();
+
+    if (ctx->interval()->SECOND()) name = "toSecond";
+    else if (ctx->interval()->MINUTE()) name = "toMinute";
+    else if (ctx->interval()->HOUR()) name = "toHour";
+    else if (ctx->interval()->DAY()) name = "toDayOfMonth";
+    else if (ctx->interval()->WEEK())
+        throw Exception(
+            "The syntax 'EXTRACT(WEEK FROM date)' is not supported, cannot extract the number of a week", ErrorCodes::SYNTAX_ERROR);
+    else if (ctx->interval()->MONTH()) name = "toMonth";
+    else if (ctx->interval()->QUARTER()) name = "toQuarter";
+    else if (ctx->interval()->YEAR()) name = "toYear";
+    else __builtin_unreachable();
 
     args->push(visit(ctx->columnExpr()));
-    // TODO: params->append(Literal::createString(???));
 
-    return ColumnExpr::createFunction(name, params, args);
+    return ColumnExpr::createFunction(std::make_shared<Identifier>(name), nullptr, args);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprFunction(ClickHouseParser::ColumnExprFunctionContext *ctx)

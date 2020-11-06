@@ -24,12 +24,13 @@ public:
     antlrcpp::Any visitAlterTableClauseDropColumn(ClickHouseParser::AlterTableClauseDropColumnContext * ctx) override;
     antlrcpp::Any visitAlterTableClauseDropPartition(ClickHouseParser::AlterTableClauseDropPartitionContext * ctx) override;
     antlrcpp::Any visitAlterTableClauseModify(ClickHouseParser::AlterTableClauseModifyContext * ctx) override;
-    antlrcpp::Any visitAlterTableClauseOrderBy(ClickHouseParser::AlterTableClauseOrderByContext * ctx) override;
-    antlrcpp::Any visitAlterTableClauseRemove(ClickHouseParser::AlterTableClauseRemoveContext * ctx) override;
+    antlrcpp::Any visitAlterTableClauseModifyComment(ClickHouseParser::AlterTableClauseModifyCommentContext * ctx) override;
+    antlrcpp::Any visitAlterTableClauseModifyOrderBy(ClickHouseParser::AlterTableClauseModifyOrderByContext * ctx) override;
+    antlrcpp::Any visitAlterTableClauseModifyRemove(ClickHouseParser::AlterTableClauseModifyRemoveContext * ctx) override;
+    antlrcpp::Any visitAlterTableClauseModifyTTL(ClickHouseParser::AlterTableClauseModifyTTLContext * ctx) override;
     antlrcpp::Any visitAlterTableClauseRemoveTTL(ClickHouseParser::AlterTableClauseRemoveTTLContext * ctx) override;
     antlrcpp::Any visitAlterTableClauseRename(ClickHouseParser::AlterTableClauseRenameContext * ctx) override;
     antlrcpp::Any visitAlterTableClauseReplace(ClickHouseParser::AlterTableClauseReplaceContext * ctx) override;
-    antlrcpp::Any visitAlterTableClauseTTL(ClickHouseParser::AlterTableClauseTTLContext * ctx) override;
     antlrcpp::Any visitAlterTableStmt(ClickHouseParser::AlterTableStmtContext * ctx) override;
     antlrcpp::Any visitTableColumnPropertyType(ClickHouseParser::TableColumnPropertyTypeContext * ctx) override;
 
@@ -83,6 +84,7 @@ public:
 
     // CreateTableQuery
     antlrcpp::Any visitCreateTableStmt(ClickHouseParser::CreateTableStmtContext * ctx) override;
+    antlrcpp::Any visitUuidClause(ClickHouseParser::UuidClauseContext * ctx) override;
 
     // CreateViewQuery
     antlrcpp::Any visitCreateViewStmt(ClickHouseParser::CreateViewStmtContext * ctx) override;

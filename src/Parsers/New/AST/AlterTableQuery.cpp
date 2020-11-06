@@ -402,14 +402,24 @@ antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseModify(ClickHouseParser::Al
     return AlterTableClause::createModify(!!ctx->IF(), visit(ctx->tableColumnDfnt()));
 }
 
-antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseOrderBy(ClickHouseParser::AlterTableClauseOrderByContext * ctx)
+antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseModifyComment(ClickHouseParser::AlterTableClauseModifyCommentContext *ctx)
+{
+    return AlterTableClause::createComment(!!ctx->IF(), visit(ctx->nestedIdentifier()), Literal::createString(ctx->STRING_LITERAL()));
+}
+
+antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseModifyOrderBy(ClickHouseParser::AlterTableClauseModifyOrderByContext * ctx)
 {
     return AlterTableClause::createOrderBy(visit(ctx->columnExpr()));
 }
 
-antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseRemove(ClickHouseParser::AlterTableClauseRemoveContext *ctx)
+antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseModifyRemove(ClickHouseParser::AlterTableClauseModifyRemoveContext *ctx)
 {
     return AlterTableClause::createRemove(!!ctx->IF(), visit(ctx->nestedIdentifier()), visit(ctx->tableColumnPropertyType()));
+}
+
+antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseModifyTTL(ClickHouseParser::AlterTableClauseModifyTTLContext *ctx)
+{
+    return AlterTableClause::createTTL(visit(ctx->columnExpr()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseRemoveTTL(ClickHouseParser::AlterTableClauseRemoveTTLContext *)
@@ -425,11 +435,6 @@ antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseRename(ClickHouseParser::Al
 antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseReplace(ClickHouseParser::AlterTableClauseReplaceContext *ctx)
 {
     return AlterTableClause::createReplace(visit(ctx->partitionClause()), visit(ctx->tableIdentifier()));
-}
-
-antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseTTL(ClickHouseParser::AlterTableClauseTTLContext *ctx)
-{
-    return AlterTableClause::createTTL(visit(ctx->columnExpr()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitAlterTableStmt(ClickHouseParser::AlterTableStmtContext * ctx)

@@ -40,6 +40,7 @@ class ColumnExpr : public INode
         auto getLiteral() const { return static_pointer_cast<Literal>(get(LITERAL)); }
 
         ASTPtr convertToOld() const override;
+        String toString() const override;
 
     private:
         enum ChildIndex : UInt8

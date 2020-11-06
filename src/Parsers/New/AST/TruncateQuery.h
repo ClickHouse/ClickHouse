@@ -14,6 +14,11 @@ class TruncateQuery : public DDLQuery
         ASTPtr convertToOld() const override;
 
     private:
+        enum ChildIndex : UInt8
+        {
+            NAME = 0,  // TableIdentifier
+        };
+
         const bool temporary, if_exists;
 };
 

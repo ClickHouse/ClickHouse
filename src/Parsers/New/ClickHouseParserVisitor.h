@@ -44,11 +44,13 @@ public:
 
     virtual antlrcpp::Any visitAlterTableClauseModify(ClickHouseParser::AlterTableClauseModifyContext *context) = 0;
 
-    virtual antlrcpp::Any visitAlterTableClauseOrderBy(ClickHouseParser::AlterTableClauseOrderByContext *context) = 0;
+    virtual antlrcpp::Any visitAlterTableClauseModifyOrderBy(ClickHouseParser::AlterTableClauseModifyOrderByContext *context) = 0;
 
-    virtual antlrcpp::Any visitAlterTableClauseRemove(ClickHouseParser::AlterTableClauseRemoveContext *context) = 0;
+    virtual antlrcpp::Any visitAlterTableClauseModifyComment(ClickHouseParser::AlterTableClauseModifyCommentContext *context) = 0;
 
-    virtual antlrcpp::Any visitAlterTableClauseTTL(ClickHouseParser::AlterTableClauseTTLContext *context) = 0;
+    virtual antlrcpp::Any visitAlterTableClauseModifyRemove(ClickHouseParser::AlterTableClauseModifyRemoveContext *context) = 0;
+
+    virtual antlrcpp::Any visitAlterTableClauseModifyTTL(ClickHouseParser::AlterTableClauseModifyTTLContext *context) = 0;
 
     virtual antlrcpp::Any visitAlterTableClauseRemoveTTL(ClickHouseParser::AlterTableClauseRemoveTTLContext *context) = 0;
 
@@ -69,6 +71,8 @@ public:
     virtual antlrcpp::Any visitCreateTableStmt(ClickHouseParser::CreateTableStmtContext *context) = 0;
 
     virtual antlrcpp::Any visitCreateViewStmt(ClickHouseParser::CreateViewStmtContext *context) = 0;
+
+    virtual antlrcpp::Any visitUuidClause(ClickHouseParser::UuidClauseContext *context) = 0;
 
     virtual antlrcpp::Any visitDestinationClause(ClickHouseParser::DestinationClauseContext *context) = 0;
 

@@ -41,9 +41,10 @@ alterTableClause
     | DROP COLUMN (IF EXISTS)? nestedIdentifier                                    # AlterTableClauseDropColumn
     | DROP partitionClause                                                         # AlterTableClauseDropPartition
     | MODIFY COLUMN (IF EXISTS)? tableColumnDfnt                                   # AlterTableClauseModify
-    | MODIFY ORDER BY columnExpr                                                   # AlterTableClauseOrderBy
-    | MODIFY COLUMN (IF EXISTS)? nestedIdentifier REMOVE tableColumnPropertyType   # AlterTableClauseRemove
-    | MODIFY TTL columnExpr                                                        # AlterTableClauseTTL
+    | MODIFY ORDER BY columnExpr                                                   # AlterTableClauseModifyOrderBy
+    | MODIFY COLUMN (IF EXISTS)? nestedIdentifier COMMENT STRING_LITERAL           # AlterTableClauseModifyComment
+    | MODIFY COLUMN (IF EXISTS)? nestedIdentifier REMOVE tableColumnPropertyType   # AlterTableClauseModifyRemove
+    | MODIFY TTL columnExpr                                                        # AlterTableClauseModifyTTL
     | REMOVE TTL                                                                   # AlterTableClauseRemoveTTL
     | RENAME COLUMN (IF EXISTS)? nestedIdentifier TO nestedIdentifier              # AlterTableClauseRename
     | REPLACE partitionClause FROM tableIdentifier                                 # AlterTableClauseReplace
@@ -63,12 +64,13 @@ checkStmt: CHECK TABLE tableIdentifier;
 // CREATE statement
 
 createStmt
-    : (ATTACH | CREATE) DATABASE (IF NOT EXISTS)? databaseIdentifier engineExpr?                                                                      # CreateDatabaseStmt
-    | (ATTACH | CREATE) MATERIALIZED VIEW (IF NOT EXISTS)? tableIdentifier schemaClause? (destinationClause | engineClause POPULATE?) subqueryClause  # CreateMaterializedViewStmt
-    | (ATTACH | CREATE) TEMPORARY? TABLE (IF NOT EXISTS)? tableIdentifier schemaClause? engineClause? subqueryClause?                                 # CreateTableStmt
-    | (ATTACH | CREATE) VIEW (IF NOT EXISTS)? tableIdentifier schemaClause? subqueryClause                                                            # CreateViewStmt
+    : (ATTACH | CREATE) DATABASE (IF NOT EXISTS)? databaseIdentifier engineExpr?                                                                                  # CreateDatabaseStmt
+    | (ATTACH | CREATE) MATERIALIZED VIEW (IF NOT EXISTS)? tableIdentifier uuidClause? schemaClause? (destinationClause | engineClause POPULATE?) subqueryClause  # CreateMaterializedViewStmt
+    | (ATTACH | CREATE) TEMPORARY? TABLE (IF NOT EXISTS)? tableIdentifier uuidClause? schemaClause? engineClause? subqueryClause?                                 # CreateTableStmt
+    | (ATTACH | CREATE) VIEW (IF NOT EXISTS)? tableIdentifier uuidClause? schemaClause? subqueryClause                                                            # CreateViewStmt
     ;
 
+uuidClause: UUID STRING_LITERAL;
 destinationClause: TO tableIdentifier;
 subqueryClause: AS selectUnionStmt;
 schemaClause
@@ -168,7 +170,7 @@ fromClause: FROM joinExpr;
 arrayJoinClause: (LEFT | INNER)? ARRAY JOIN columnExprList;
 prewhereClause: PREWHERE columnExpr;
 whereClause: WHERE columnExpr;
-groupByClause: GROUP BY (ROLLUP LPAREN columnExprList RPAREN | columnExprList);
+groupByClause: GROUP BY ((CUBE | ROLLUP) LPAREN columnExprList RPAREN | columnExprList);
 havingClause: HAVING columnExpr;
 orderByClause: ORDER BY orderExprList;
 limitByClause: LIMIT limitExpr BY columnExprList;
@@ -361,12 +363,12 @@ keyword
     | ON | OPTIMIZE | OR | ORDER | OUTER | OUTFILE | PARTITION | POPULATE | PREWHERE | PRIMARY | QUARTER | REMOVE | RENAME | REPLACE
     | REPLICA | REPLICATED | RIGHT | ROLLUP | SAMPLE | SECOND | SELECT | SEMI | SENDS | SET | SETTINGS | SHOW | START | STOP | SUBSTRING
     | SYNC | SYNTAX | SYSTEM | TABLE | TABLES | TEMPORARY | THEN | TIES | TIMESTAMP | TOTALS | TRAILING | TRIM | TRUNCATE | TO | TTL | TYPE
-    | UNION | USE | USING | VALUES | VIEW | VOLUME | WEEK | WHEN | WHERE | WITH | YEAR
+    | UNION | USE | USING | UUID | VALUES | VIEW | VOLUME | WEEK | WHEN | WHERE | WITH | YEAR
     ;
 keywordForAlias
-    : ID | KEY
+    : DATE | FIRST | ID | KEY
     ;
-alias: IDENTIFIER | keywordForAlias;
+alias: IDENTIFIER | interval | keywordForAlias;
 identifier: IDENTIFIER | interval | keyword;
 identifierOrNull: identifier | NULL_SQL;  // NULL_SQL can be only 'Null' here.
 enumValue: STRING_LITERAL EQ_SINGLE numberLiteral;

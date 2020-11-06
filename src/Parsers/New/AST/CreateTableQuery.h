@@ -50,6 +50,7 @@ class CreateTableQuery : public DDLQuery
             bool temporary,
             bool if_not_exists,
             PtrTo<TableIdentifier> identifier,
+            PtrTo<UUIDClause> uuid,
             PtrTo<SchemaClause> schema,
             PtrTo<EngineClause> engine,
             PtrTo<SelectUnionQuery> query);
@@ -60,6 +61,7 @@ class CreateTableQuery : public DDLQuery
         enum ChildIndex : UInt8
         {
             NAME = 0,  // TableIdentifier
+            UUID,      // UUIDClause (optional)
             SCHEMA,    // SchemaClause
             ENGINE,    // EngineClause
             SUBQUERY,  // SelectUnionQuery

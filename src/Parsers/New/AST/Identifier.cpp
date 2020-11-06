@@ -104,25 +104,20 @@ using namespace AST;
 antlrcpp::Any ParseTreeVisitor::visitAlias(ClickHouseParser::AliasContext *ctx)
 {
     if (ctx->IDENTIFIER()) return std::make_shared<Identifier>(ctx->IDENTIFIER()->getText());
+    if (ctx->interval()) return std::make_shared<Identifier>(ctx->interval()->getText());
     if (ctx->keywordForAlias()) return std::make_shared<Identifier>(ctx->keywordForAlias()->getText());
     __builtin_unreachable();
-}
-
-antlrcpp::Any ParseTreeVisitor::visitDatabaseIdentifier(ClickHouseParser::DatabaseIdentifierContext *ctx)
-{
-    return std::make_shared<DatabaseIdentifier>(visit(ctx->identifier()).as<PtrTo<Identifier>>());
-}
-
-antlrcpp::Any ParseTreeVisitor::visitTableIdentifier(ClickHouseParser::TableIdentifierContext *ctx)
-{
-    auto database = ctx->databaseIdentifier() ? visit(ctx->databaseIdentifier()).as<PtrTo<DatabaseIdentifier>>() : nullptr;
-    return std::make_shared<TableIdentifier>(database, visit(ctx->identifier()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnIdentifier(ClickHouseParser::ColumnIdentifierContext *ctx)
 {
     auto table = ctx->tableIdentifier() ? visit(ctx->tableIdentifier()).as<PtrTo<TableIdentifier>>() : nullptr;
     return std::make_shared<ColumnIdentifier>(table, visit(ctx->nestedIdentifier()));
+}
+
+antlrcpp::Any ParseTreeVisitor::visitDatabaseIdentifier(ClickHouseParser::DatabaseIdentifierContext *ctx)
+{
+    return std::make_shared<DatabaseIdentifier>(visit(ctx->identifier()).as<PtrTo<Identifier>>());
 }
 
 antlrcpp::Any ParseTreeVisitor::visitIdentifier(ClickHouseParser::IdentifierContext *ctx)
@@ -170,6 +165,12 @@ antlrcpp::Any ParseTreeVisitor::visitNestedIdentifier(ClickHouseParser::NestedId
         return std::make_shared<Identifier>(name1, name2);
     }
     else return visit(ctx->identifier(0));
+}
+
+antlrcpp::Any ParseTreeVisitor::visitTableIdentifier(ClickHouseParser::TableIdentifierContext *ctx)
+{
+    auto database = ctx->databaseIdentifier() ? visit(ctx->databaseIdentifier()).as<PtrTo<DatabaseIdentifier>>() : nullptr;
+    return std::make_shared<TableIdentifier>(database, visit(ctx->identifier()));
 }
 
 }

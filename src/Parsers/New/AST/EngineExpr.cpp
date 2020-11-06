@@ -9,20 +9,13 @@
 #include <Parsers/New/ParseTreeVisitor.h>
 
 
+namespace DB::ErrorCodes
+{
+    extern const int UNEXPECTED_AST_STRUCTURE;
+}
+
 namespace DB::AST
 {
-
-PrimaryKeyClause::PrimaryKeyClause(PtrTo<ColumnExpr> expr) : INode{expr}
-{
-}
-
-SampleByClause::SampleByClause(PtrTo<ColumnExpr> expr) : INode{expr}
-{
-}
-
-TTLClause::TTLClause(PtrTo<TTLExprList> list) : INode{list}
-{
-}
 
 EngineClause::EngineClause(PtrTo<EngineExpr> expr) : INode(MAX_INDEX)
 {
@@ -68,22 +61,11 @@ ASTPtr EngineClause::convertToOld() const
     if (has(PRIMARY_KEY)) storage->set(storage->primary_key, get(PRIMARY_KEY)->convertToOld());
     if (has(ORDER_BY))
     {
-        auto tuple = std::make_shared<ASTFunction>();
-        tuple->name = "tuple";
-        tuple->arguments = std::make_shared<ASTExpressionList>();
-        tuple->children.push_back(tuple->arguments);
-
+        /// XXX: old parser used very strange grammar for this case, instead of using OrderByElement's.
         auto expr_list = get(ORDER_BY)->convertToOld();
-        for (const auto & child : expr_list->children)
-            tuple->arguments->children.push_back(child->children.back());
-
-        // special case for ORDER BY tuple()
-        if (tuple->arguments->children.size() == 1)
-            if (const auto * func = tuple->arguments->children.back()->as<ASTFunction>())
-                if ((!func->arguments || func->arguments->children.empty()) && func->name == "tuple")
-                    tuple->arguments->children.clear();
-
-        storage->set(storage->order_by, tuple);
+        if (expr_list->children.size() > 1)
+            throw DB::Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Cannot convert multiple ORDER expression to old AST");
+        storage->set(storage->order_by, expr_list->children[0]->children[0]);
     }
     if (has(SAMPLE_BY)) storage->set(storage->sample_by, get(SAMPLE_BY)->convertToOld());
     if (has(TTL)) storage->set(storage->ttl_table, get(TTL)->convertToOld());
