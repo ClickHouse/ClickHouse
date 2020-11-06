@@ -588,7 +588,7 @@ static bool isCompilable(const IFunctionBase & function)
 
 static bool isCompilableConstant(const ActionsDAG::Node & node)
 {
-    return node.column && isColumnConst(*node.column) && canBeNativeType(*node.result_type);
+    return node.column && isColumnConst(*node.column) && canBeNativeType(*node.result_type) && node.allow_constant_folding;
 }
 
 static bool isCompilableFunction(const ActionsDAG::Node & node)
