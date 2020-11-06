@@ -314,24 +314,30 @@ struct CorrMoments
 template <typename T>
 struct TTestMoments
 {
-    T m0{};
+    T nx{};
+    T ny{};
     T x1{};
     T y1{};
     T x2{};
     T y2{};
 
-    void add(T x, T y)
+    void add(T value, bool second_sample)
     {
-        ++m0;
-        x1 += x;
-        y1 += y;
-        x2 += x * x;
-        y2 += y * y;
+        if (second_sample) {
+            ++ny;
+            y1 += value;
+            y2 += value * value;
+        } else {
+            ++nx;
+            x1 += value;
+            x2 += value * value;
+        }
     }
 
     void merge(const TTestMoments & rhs)
     {
-        m0 += rhs.m0;
+        nx += rhs.nx;
+        ny += rhs.ny;
         x1 += rhs.x1;
         y1 += rhs.y1;
         x2 += rhs.x2;

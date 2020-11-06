@@ -30,12 +30,12 @@ struct StudentTTestData : public TTestMoments<Float64>
 
     std::pair<Float64, Float64> getResult() const
     {
-        Float64 mean_x = x1 / m0;
-        Float64 mean_y = y1 / m0;
+        Float64 mean_x = x1 / nx;
+        Float64 mean_y = y1 / ny;
 
         /// To estimate the variance we first estimate two means.
         /// That's why the number of degrees of freedom is the total number of values of both samples minus 2.
-        Float64 degrees_of_freedom = 2.0 * (m0 - 1);
+        Float64 degrees_of_freedom = nx + ny - 2;
 
         /// Calculate s^2
         /// The original formulae looks like
@@ -43,11 +43,11 @@ struct StudentTTestData : public TTestMoments<Float64>
         /// But we made some mathematical transformations not to store original sequences.
         /// Also we dropped sqrt, because later it will be squared later.
 
-        Float64 all_x = x2 + m0 * mean_x * mean_x - 2 * mean_x * m0;
-        Float64 all_y = y2 + m0 * mean_y * mean_y - 2 * mean_y * m0;
+        Float64 all_x = x2 + nx * mean_x * mean_x - 2 * mean_x * x1;
+        Float64 all_y = y2 + ny * mean_y * mean_y - 2 * mean_y * y1;
 
         Float64 s2 = (all_x + all_y) / degrees_of_freedom;
-        Float64 std_err2 = 2.0 * s2 / m0;
+        Float64 std_err2 = s2 * (1 / nx + 1 / ny);
 
         /// t-statistic
         Float64 t_stat = (mean_x - mean_y) / sqrt(std_err2);
@@ -71,7 +71,7 @@ AggregateFunctionPtr createAggregateFunctionStudentTTest(const std::string & nam
 
 void registerAggregateFunctionStudentTTest(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("studentTTest", createAggregateFunctionStudentTTest, AggregateFunctionFactory::CaseInsensitive);
+    factory.registerFunction("studentTTest", createAggregateFunctionStudentTTest);
 }
 
 }
