@@ -319,6 +319,19 @@ SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
 
 Функция принимает число или дату или дату-с-временем и возвращает строку, содержащую байты, представляющие соответствующее значение в host order (little endian). При этом, отбрасываются нулевые байты с конца. Например, значение 255 типа UInt32 будет строкой длины 1 байт.
 
+## reinterpretAsUUID {#reinterpretasuuid}
+
+Функция принимает шестнадцатибайтную big-endian строку типа [FixedString](../../sql-reference/data-types/fixedstring) и возвращает [UUID](../../sql-reference/data-types/uuid). Если строка имеет недостаточную длину, то функция работает так, как будто строка дополнена необходимым количетсвом нулевых байт с конца. Если строка длиннее, чем шестнадцать байт, то игнорируются лишние байты с конца.
+
+**Syntax**
+
+``` sql
+reinterpretAsUUID(fixed_string)
+```
+**Returned value**
+
+-   `UUID`.
+
 ## CAST(x, T) {#type_conversion_function-cast}
 
 Преобразует x в тип данных t.
