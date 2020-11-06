@@ -8,4 +8,7 @@ SET max_rows_to_read = 1;
 
 select * from xy where intHash64(x) % 100 = intHash64(1) % 100;
 
+-- This works too
+select * from xy where x = 1;
+
 drop table if exists xy;
