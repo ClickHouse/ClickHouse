@@ -764,7 +764,7 @@ bool FunctionArrayElement::executeMappedKeyStringConst(const ColumnArray * colum
 
 bool FunctionArrayElement::executeMappedKeyStringArgument(const ColumnArray * column, ColumnsWithTypeAndName & arguments, std::vector<int> &matched_idxs)
 {
-    auto index = checkAndGetColumn<ColumnString>(arguments[1].column.get());
+    const ColumnString * index = checkAndGetColumn<ColumnString>(arguments[1].column.get());
     if (!index)
         return false;
 
