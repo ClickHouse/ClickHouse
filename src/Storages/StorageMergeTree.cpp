@@ -197,7 +197,7 @@ std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const Sele
     Names partition_key_columns = partition_key.column_names;
     KeyCondition key_condition(
         query_info, context, partition_key_columns, partition_key.expression, true /* single_point */, true /* strict */);
-    if (key_condition.alwaysUnknownOrTrue())
+    if (key_condition.anyUnknownOrAlwaysTrue())
         return {};
     std::unordered_map<String, bool> partition_filter_map;
     size_t res = 0;
