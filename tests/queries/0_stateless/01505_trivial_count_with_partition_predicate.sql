@@ -1,4 +1,6 @@
 drop table if exists test1;
+drop table if exists test_tuple;
+drop table if exists test_two_args;
 
 create table test1(p DateTime, k int) engine MergeTree partition by toDate(p) order by k;
 insert into test1 values ('2020-09-01 00:01:02', 1), ('2020-09-01 20:01:03', 2), ('2020-09-02 00:01:03', 3);
