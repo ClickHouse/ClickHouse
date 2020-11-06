@@ -95,6 +95,7 @@ namespace ErrorCodes
     extern const int WRONG_PASSWORD;
     extern const int REQUIRED_PASSWORD;
 
+    extern const int BAD_REQUEST_PARAMETER;
     extern const int INVALID_SESSION_TIMEOUT;
     extern const int HTTP_LENGTH_REQUIRED;
 }
@@ -279,9 +280,7 @@ void HTTPHandler::processQuery(
         }
     }
 
-    std::string query_id = params.get("query_id", "");
     context.setUser(user, password, request.clientAddress());
-    context.setCurrentQueryId(query_id);
     if (!quota_key.empty())
         context.setQuotaKey(quota_key);
 
@@ -310,6 +309,31 @@ void HTTPHandler::processQuery(
         if (session)
             session->release();
     });
+
+    // Parse the OpenTelemetry traceparent header.
+    // Disable in Arcadia -- it interferes with the
+    // test_clickhouse.TestTracing.test_tracing_via_http_proxy[traceparent] test.
+#if !defined(ARCADIA_BUILD)
+    if (request.has("traceparent"))
+    {
+        std::string opentelemetry_traceparent = request.get("traceparent");
+        std::string error;
+        if (!context.getClientInfo().parseTraceparentHeader(
+            opentelemetry_traceparent, error))
+        {
+            throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER,
+                "Failed to parse OpenTelemetry traceparent header '{}': {}",
+                opentelemetry_traceparent, error);
+        }
+
+        context.getClientInfo().opentelemetry_tracestate = request.get("tracestate", "");
+    }
+#endif
+
+    // Set the query id supplied by the user, if any, and also update the
+    // OpenTelemetry fields.
+    context.setCurrentQueryId(params.get("query_id",
+        request.get("X-ClickHouse-Query-Id", "")));
 
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
     String http_response_compression_methods = request.get("Accept-Encoding", "");

@@ -25,7 +25,7 @@ class StorageDistributedDirectoryMonitor
 {
 public:
     StorageDistributedDirectoryMonitor(
-        StorageDistributed & storage_, std::string path_, ConnectionPoolPtr pool_, ActionBlocker & monitor_blocker_, BackgroundSchedulePool & bg_pool_);
+        StorageDistributed & storage_, std::string path_, ConnectionPoolPtr pool_, ActionBlocker & monitor_blocker_, BackgroundSchedulePool & bg_pool);
 
     ~StorageDistributedDirectoryMonitor();
 
@@ -95,7 +95,6 @@ private:
     Poco::Logger * log;
     ActionBlocker & monitor_blocker;
 
-    BackgroundSchedulePool & bg_pool;
     BackgroundSchedulePoolTaskHolder task_handle;
 
     CurrentMetrics::Increment metric_pending_files;

@@ -323,6 +323,10 @@ This function accepts a number or date or date with time, and returns a string c
 
 This function accepts a number or date or date with time, and returns a FixedString containing bytes representing the corresponding value in host order (little endian). Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a FixedString that is one byte long.
 
+## reinterpretAsUUID {#reinterpretasuuid}
+
+This function accepts FixedString, and returns UUID. Takes 16 bytes string. If the string isn't long enough, the functions work as if the string is padded with the necessary number of null bytes to the end. If the string longer than 16 bytes, the extra bytes at the end are ignored. 
+
 ## CAST(x, T) {#type_conversion_function-cast}
 
 Converts ‘x’ to the ‘t’ data type. The syntax CAST(x AS t) is also supported.
@@ -778,6 +782,44 @@ Result:
 │ 2,"good"
                          │
 └──────────────────────────────────┘
+```
+
+## formatRowNoNewline {#formatrownonewline}
+
+Converts arbitrary expressions into a string via given format. The function trims the last `\n` if any.
+
+**Syntax** 
+
+``` sql
+formatRowNoNewline(format, x, y, ...)
+```
+
+**Parameters**
+
+-   `format` — Text format. For example, [CSV](../../interfaces/formats.md#csv), [TSV](../../interfaces/formats.md#tabseparated).
+-   `x`,`y`, ... — Expressions.
+
+**Returned value**
+
+-   A formatted string.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT formatRowNoNewline('CSV', number, 'good')
+FROM numbers(3)
+```
+
+Result:
+
+``` text
+┌─formatRowNoNewline('CSV', number, 'good')─┐
+│ 0,"good"                                  │
+│ 1,"good"                                  │
+│ 2,"good"                                  │
+└───────────────────────────────────────────┘
 ```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/type_conversion_functions/) <!--hide-->

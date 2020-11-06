@@ -80,7 +80,6 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int TOO_MANY_ROWS;
     extern const int UNABLE_TO_SKIP_UNUSED_SHARDS;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace ActionLocks
@@ -271,7 +270,7 @@ std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const
             if (!id)
                 return false;
             /// TODO: if GROUP BY contains multiIf()/if() it should contain only columns from sharding_key
-            if (!sharding_key_block.has(id->name))
+            if (!sharding_key_block.has(id->name()))
                 return false;
         }
         return true;
@@ -615,15 +614,22 @@ void StorageDistributed::shutdown()
     monitors_blocker.cancelForever();
 
     std::lock_guard lock(cluster_nodes_mutex);
+
+    LOG_DEBUG(log, "Joining background threads for async INSERT");
     cluster_nodes_data.clear();
+    LOG_DEBUG(log, "Background threads for async INSERT joined");
 }
 void StorageDistributed::drop()
 {
-    // shutdown() should be already called
-    // and by the same reason we cannot use truncate() here, since
-    // cluster_nodes_data already cleaned
-    if (!cluster_nodes_data.empty())
-        throw Exception("drop called before shutdown", ErrorCodes::LOGICAL_ERROR);
+    // Some INSERT in-between shutdown() and drop() can call
+    // requireDirectoryMonitor() again, so call shutdown() to clear them, but
+    // when the drop() (this function) executed none of INSERT is allowed in
+    // parallel.
+    //
+    // And second time shutdown() should be fast, since none of
+    // DirectoryMonitor should do anything, because ActionBlocker is canceled
+    // (in shutdown()).
+    shutdown();
 
     // Distributed table w/o sharding_key does not allows INSERTs
     if (relative_data_path.empty())
@@ -679,8 +685,28 @@ void StorageDistributed::createDirectoryMonitors(const std::string & disk)
     std::filesystem::directory_iterator begin(path);
     std::filesystem::directory_iterator end;
     for (auto it = begin; it != end; ++it)
-        if (std::filesystem::is_directory(*it))
-            requireDirectoryMonitor(disk, it->path().filename().string());
+    {
+        const auto & dir_path = it->path();
+        if (std::filesystem::is_directory(dir_path))
+        {
+            const auto & tmp_path = dir_path / "tmp";
+
+            /// "tmp" created by DistributedBlockOutputStream
+            if (std::filesystem::is_directory(tmp_path) && std::filesystem::is_empty(tmp_path))
+                std::filesystem::remove(tmp_path);
+
+            if (std::filesystem::is_empty(dir_path))
+            {
+                LOG_DEBUG(log, "Removing {} (used for async INSERT into Distributed)", dir_path);
+                /// Will be created by DistributedBlockOutputStream on demand.
+                std::filesystem::remove(dir_path);
+            }
+            else
+            {
+                requireDirectoryMonitor(disk, dir_path.filename().string());
+            }
+        }
+    }
 }
 
 

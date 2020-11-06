@@ -2,8 +2,8 @@ from contextlib import contextmanager
 
 from testflows.core import *
 
+import rbac.helper.errors as errors
 from rbac.requirements import *
-import rbac.tests.errors as errors
 
 @contextmanager
 def setup(node):
@@ -59,7 +59,7 @@ def grant_privilege(self, privilege, on, allow_column, allow_introspection, node
                     node.query(f"GRANT {privilege} ON {on_} TO user1 WITH GRANT OPTION", settings=settings)
 
                 if allow_column and ('*' not in on_):
-                    #grant column specific for some column 'x'
+                    # Grant column specific for some column 'x'
                     with When("I grant privilege with columns"):
                         node.query(f"GRANT {privilege}(x) ON {on_} TO user0", settings=settings)
 
