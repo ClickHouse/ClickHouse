@@ -592,7 +592,15 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     if (!sample_block.has(expr_name))
         return false;
 
+    /// TODO Nullable index is not yet landed.
+    if (out_value.isNull())
+        return false;
+
     bool found_transformation = false;
+    auto input_column = sample_block.getByName(expr_name);
+    auto const_column = out_type->createColumnConst(1, out_value);
+    out_value = (*castColumn({const_column, out_type, "c"}, input_column.type))[0];
+    out_type = input_column.type;
     for (const ExpressionAction & action : key_expr->getActions())
     {
         /** The key functional expression constraint may be inferred from a plain column in the expression.
@@ -644,9 +652,16 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
 bool KeyCondition::canConstantBeWrappedByFunctions(
     const ASTPtr & node, size_t & out_key_column_num, DataTypePtr & out_key_column_type, Field & out_value, DataTypePtr & out_type)
 {
+    if (strict)
+        return false;
+
     String expr_name = node->getColumnName();
     const auto & sample_block = key_expr->getSampleBlock();
     if (!sample_block.has(expr_name))
+        return false;
+
+    /// TODO Nullable index is not yet landed.
+    if (out_value.isNull())
         return false;
 
     bool found_transformation = false;
@@ -950,11 +965,15 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & cont
             bool is_set_const = false;
             bool is_constant_transformed = false;
 
-            if (functionIsInOrGlobalInOperator(func_name)
-                && tryPrepareSetIndex(args, context, out, key_column_num))
+            if (functionIsInOrGlobalInOperator(func_name))
             {
-                key_arg_pos = 0;
-                is_set_const = true;
+                if (tryPrepareSetIndex(args, context, out, key_column_num))
+                {
+                    key_arg_pos = 0;
+                    is_set_const = true;
+                }
+                else
+                    return false;
             }
             else if (getConstant(args[1], block_with_constants, const_value, const_type))
             {
