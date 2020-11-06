@@ -321,7 +321,7 @@ SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
 
 ## reinterpretAsUUID {#reinterpretasuuid}
 
-Функция принимает шестнадцатибайтную big-endian строку типа [FixedString](../../sql-reference/data-types/fixedstring) и возвращает [UUID](../../sql-reference/data-types/uuid). Если строка имеет недостаточную длину, то функция работает так, как будто строка дополнена необходимым количетсвом нулевых байт с конца. Если строка длиннее, чем шестнадцать байт, то игнорируются лишние байты с конца.
+Функция принимает шестнадцатибайтную big-endian строку типа [FixedString](../../sql-reference/data-types/fixedstring.md#fixedstring) и возвращает [UUID](../../sql-reference/data-types/uuid.md#uuid). Если строка имеет недостаточную длину, то функция работает так, как будто строка дополнена необходимым количетсвом нулевых байт с конца. Если строка длиннее, чем шестнадцать байт, то игнорируются лишние байты с конца.
 
 **Syntax**
 
