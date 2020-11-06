@@ -135,13 +135,13 @@ ClickHouse utilise plusieurs bibliothèques externes pour la construction. Tous 
 
 # Compilateur C++  {#c-compiler}
 
-Les compilateurs GCC à partir de la version 9 et Clang version 8 ou supérieure sont pris en charge pour construire ClickHouse.
+Les compilateurs GCC à partir de la version 10 et Clang version 8 ou supérieure sont pris en charge pour construire ClickHouse.
 
 Les builds officiels de Yandex utilisent actuellement GCC car ils génèrent du code machine de performances légèrement meilleures (ce qui donne une différence allant jusqu'à plusieurs pour cent selon nos benchmarks). Et Clang est plus pratique pour le développement habituellement. Cependant, notre plate-forme d'intégration continue (CI) vérifie environ une douzaine de combinaisons de construction.
 
 Pour installer GCC sur Ubuntu Exécutez: `sudo apt install gcc g++`
 
-Vérifiez la version de gcc: `gcc --version`. Si elle est inférieure à 9, suivez les instructions ici: https://clickhouse.tech/docs/fr/development/build/#install-gcc-9.
+Vérifiez la version de gcc: `gcc --version`. Si elle est inférieure à 10, suivez les instructions ici: https://clickhouse.tech/docs/fr/development/build/#install-gcc-10.
 
 Mac OS X build est pris en charge uniquement pour Clang. Il suffit d'exécuter `brew install llvm`
 
@@ -156,11 +156,11 @@ Maintenant que vous êtes prêt à construire ClickHouse nous vous conseillons d
 
 Vous pouvez avoir plusieurs répertoires différents (build_release, build_debug, etc.) pour les différents types de construction.
 
-Tandis qu'à l'intérieur de la `build` répertoire, configurez votre build en exécutant CMake. Avant la première exécution, vous devez définir des variables d'environnement qui spécifient le compilateur (compilateur gcc version 9 dans cet exemple).
+Tandis qu'à l'intérieur de la `build` répertoire, configurez votre build en exécutant CMake. Avant la première exécution, vous devez définir des variables d'environnement qui spécifient le compilateur (compilateur gcc version 10 dans cet exemple).
 
 Linux:
 
-    export CC=gcc-9 CXX=g++-9
+    export CC=gcc-10 CXX=g++-10
     cmake ..
 
 Mac OS X:

@@ -1,5 +1,1 @@
-<yandex>
-    <macros>
-        <test>Hello, world!</test>
-    </macros>
-</yandex>
+../../../tests/config/config.d/macros.xml

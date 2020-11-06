@@ -100,7 +100,7 @@ namespace
             if (res & alter_table)
                 res |= alter_view;
 
-            /// CREATE TABLE (on any database/table) => CREATE_TEMPORARY_TABLE (global) 
+            /// CREATE TABLE (on any database/table) => CREATE_TEMPORARY_TABLE (global)
             static const AccessFlags create_temporary_table = AccessType::CREATE_TEMPORARY_TABLE;
             if ((level == 0) && (max_flags_with_children & create_table))
                 res |= create_temporary_table;

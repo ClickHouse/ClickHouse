@@ -1,3 +1,8 @@
+---
+toc_priority: 52
+toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u043a\u043e\u0434\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u044f"
+---
+
 # Функции кодирования {#funktsii-kodirovaniia}
 
 ## char {#char}

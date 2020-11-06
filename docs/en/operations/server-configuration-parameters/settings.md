@@ -479,6 +479,26 @@ The maximum number of simultaneously processed requests.
 <max_concurrent_queries>100</max_concurrent_queries>
 ```
 
+## max_concurrent_queries_for_all_users {#max-concurrent-queries-for-all-users}
+
+Throw exception if the value of this setting is less or equal than the current number of simultaneously processed queries.
+
+Example: `max_concurrent_queries_for_all_users` can be set to 99 for all users and database administrator can set it to 100 for itself to run queries for investigation even when the server is overloaded.
+
+Modifying the setting for one query or user does not affect other queries.
+
+Default value: `0` that means no limit.
+
+**Example**
+
+``` xml
+<max_concurrent_queries_for_all_users>99</max_concurrent_queries_for_all_users>
+```
+
+**See Also**
+
+-   [max_concurrent_queries](#max-concurrent-queries)
+
 ## max_connections {#max-connections}
 
 The maximum number of inbound connections.

@@ -117,7 +117,7 @@ public:
         bool no_subqueries;
         bool no_makeset;
         bool only_consts;
-        bool no_storage_or_local;
+        bool create_source_for_in;
         size_t visit_depth;
         ScopeStack actions_stack;
 
@@ -131,7 +131,7 @@ public:
         Data(const Context & context_, SizeLimits set_size_limit_, size_t subquery_depth_,
                 const NamesAndTypesList & source_columns_, ActionsDAGPtr actions,
                 PreparedSets & prepared_sets_, SubqueriesForSets & subqueries_for_sets_,
-                bool no_subqueries_, bool no_makeset_, bool only_consts_, bool no_storage_or_local_);
+                bool no_subqueries_, bool no_makeset_, bool only_consts_, bool create_source_for_in_);
 
         /// Does result of the calculation already exists in the block.
         bool hasColumn(const String & column_name) const;
@@ -191,8 +191,11 @@ private:
     static void visit(const ASTIdentifier & identifier, const ASTPtr & ast, Data & data);
     static void visit(const ASTFunction & node, const ASTPtr & ast, Data & data);
     static void visit(const ASTLiteral & literal, const ASTPtr & ast, Data & data);
+    static void visit(ASTExpressionList & expression_list, const ASTPtr & ast, Data & data);
 
     static SetPtr makeSet(const ASTFunction & node, Data & data, bool no_subqueries);
+    static ASTs doUntuple(const ASTFunction * function, ActionsMatcher::Data & data);
+    static std::optional<NameAndTypePair> getNameAndTypeFromAST(const ASTPtr & ast, Data & data);
 };
 
 using ActionsVisitor = ActionsMatcher::Visitor;

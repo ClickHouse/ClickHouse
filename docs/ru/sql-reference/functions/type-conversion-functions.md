@@ -1,3 +1,8 @@
+---
+toc_priority: 38
+toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u043f\u0440\u0435\u043e\u0431\u0440\u0430\u0437\u043e\u0432\u0430\u043d\u0438\u044f\u0020\u0442\u0438\u043f\u043e\u0432"
+---
+
 # Функции преобразования типов {#funktsii-preobrazovaniia-tipov}
 
 ## Общие проблемы преобразования чисел {#numeric-conversion-issues}
@@ -767,4 +772,43 @@ FROM numbers(3)
                          │
 └──────────────────────────────────┘
 ```
+
+## formatRowNoNewline {#formatrownonewline}
+
+Преобразует произвольные выражения в строку заданного формата. При этом удаляет лишние переводы строк `\n`, если они появились.
+
+**Синтаксис** 
+
+``` sql
+formatRowNoNewline(format, x, y, ...)
+```
+
+**Параметры**
+
+-   `format` — Текстовый формат. Например, [CSV](../../interfaces/formats.md#csv), [TSV](../../interfaces/formats.md#tabseparated).
+-   `x`,`y`, ... — Выражения.
+
+**Возвращаемое значение**
+
+-   Отформатированная строка (в текстовых форматах без завершающего перевода строки).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT formatRowNoNewline('CSV', number, 'good')
+FROM numbers(3)
+```
+
+Ответ:
+
+``` text
+┌─formatRowNoNewline('CSV', number, 'good')─┐
+│ 0,"good"                                  │
+│ 1,"good"                                  │
+│ 2,"good"                                  │
+└───────────────────────────────────────────┘
+```
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/type_conversion_functions/) <!--hide-->
