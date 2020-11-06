@@ -186,3 +186,7 @@
 	path = contrib/cyrus-sasl
 	url = https://github.com/cyrusimap/cyrus-sasl
 	branch = cyrus-sasl-2.1
+[submodule "contrib/croaring"]
+	path = contrib/croaring
+	url = https://github.com/RoaringBitmap/CRoaring
+	branch = v0.2.66

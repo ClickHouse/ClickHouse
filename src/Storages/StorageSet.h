@@ -24,6 +24,7 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
 
+    bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {path}; }
 
 protected:
@@ -71,6 +72,9 @@ public:
     SetPtr & getSet() { return set; }
 
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &) override;
+
+    std::optional<UInt64> totalRows() const override;
+    std::optional<UInt64> totalBytes() const override;
 
 private:
     SetPtr set;
