@@ -680,6 +680,21 @@ Example:
 log_queries=1
 ```
 
+## log_queries_min_query_duration_ms {#settings-log-queries-min-query-duration-ms}
+
+Minimal time for the query to run to get to the following tables:
+
+- `system.query_log`
+- `system.query_thread_log`
+
+Only the queries with the following type will get to the log:
+
+- `QUERY_FINISH`
+- `EXCEPTION_WHILE_PROCESSING`
+
+-   Type: milliseconds
+-   Default value: 0 (any query)
+
 ## log_queries_min_type {#settings-log-queries-min-type}
 
 `query_log` minimal type to log.
@@ -2187,5 +2202,18 @@ Possible values:
 -   0 — The bigint data type is disabled.
 
 Default value: `0`.
+
+## persistent {#persistent}
+
+Disables persistency for the [Set](../../engines/table-engines/special/set.md#set) and [Join](../../engines/table-engines/special/join.md#join) table engines. 
+
+Reduces the I/O overhead. Suitable for scenarios that pursue performance and do not require persistence.
+
+Possible values:
+
+- 1 — Enabled.
+- 0 — Disabled.
+
+Default value: `1`.
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

@@ -670,8 +670,28 @@ void StorageDistributed::createDirectoryMonitors(const std::string & disk)
     std::filesystem::directory_iterator begin(path);
     std::filesystem::directory_iterator end;
     for (auto it = begin; it != end; ++it)
-        if (std::filesystem::is_directory(*it))
-            requireDirectoryMonitor(disk, it->path().filename().string());
+    {
+        const auto & dir_path = it->path();
+        if (std::filesystem::is_directory(dir_path))
+        {
+            const auto & tmp_path = dir_path / "tmp";
+
+            /// "tmp" created by DistributedBlockOutputStream
+            if (std::filesystem::is_directory(tmp_path) && std::filesystem::is_empty(tmp_path))
+                std::filesystem::remove(tmp_path);
+
+            if (std::filesystem::is_empty(dir_path))
+            {
+                LOG_DEBUG(log, "Removing {} (used for async INSERT into Distributed)", dir_path);
+                /// Will be created by DistributedBlockOutputStream on demand.
+                std::filesystem::remove(dir_path);
+            }
+            else
+            {
+                requireDirectoryMonitor(disk, dir_path.filename().string());
+            }
+        }
+    }
 }
 
 

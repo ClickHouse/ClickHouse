@@ -129,7 +129,7 @@ Yandex官方当前使用GCC构建ClickHouse，因为它生成的机器代码性�
 
 在Ubuntu上安装GCC，请执行：`sudo apt install gcc g++`
 
-请使用`gcc --version`查看gcc的版本。如果gcc版本低于9，请参考此处的指示：https://clickhouse.tech/docs/zh/development/build/#an-zhuang-gcc-9 。
+请使用`gcc --version`查看gcc的版本。如果gcc版本低于9，请参考此处的指示：https://clickhouse.tech/docs/zh/development/build/#an-zhuang-gcc-10 。
 
 在Mac OS X上安装GCC，请执行：`brew install gcc`
 
@@ -146,7 +146,7 @@ Yandex官方当前使用GCC构建ClickHouse，因为它生成的机器代码性�
 
 在`build`目录下，通过运行CMake配置构建。 在第一次运行之前，请定义用于指定编译器的环境变量（本示例中为gcc 9 编译器）。
 
-    export CC=gcc-9 CXX=g++-9
+    export CC=gcc-10 CXX=g++-10
     cmake ..
 
 `CC`变量指代C的编译器（C Compiler的缩写），而`CXX`变量指代要使用哪个C++编译器进行编译。

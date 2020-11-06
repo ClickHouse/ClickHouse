@@ -17,7 +17,6 @@ SRCS(
     ExternalResultDescription.cpp
     ExternalTable.cpp
     Field.cpp
-    iostream_debug_helpers.cpp
     MySQL/Authentication.cpp
     MySQL/IMySQLReadPacket.cpp
     MySQL/IMySQLWritePacket.cpp
@@ -35,6 +34,7 @@ SRCS(
     SettingsEnums.cpp
     SettingsFields.cpp
     SortDescription.cpp
+    iostream_debug_helpers.cpp
 
 )
 
