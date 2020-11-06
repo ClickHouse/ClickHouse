@@ -32,9 +32,11 @@ std::string ColumnMap::getName() const
 
 ColumnMap::ColumnMap(MutableColumns && mutable_columns)
 {
-    columns.reserve(mutable_columns.size());
+    assert(2 == mutable_columns.size());
+    columns.reserve(2);
     for (auto & column : mutable_columns)
     {
+        assert(column->getDataType() == TypeIndex::Array);
         if (isColumnConst(*column))
             throw Exception{"ColumnMap cannot have ColumnConst as its element", ErrorCodes::ILLEGAL_COLUMN};
 

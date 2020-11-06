@@ -141,7 +141,7 @@ Resmi Yandex şu anda GCC'Yİ kullanıyor çünkü biraz daha iyi performansa sa
 
 Ubuntu run GCC yüklemek için: `sudo apt install gcc g++`
 
-Gcc sürümünü kontrol edin: `gcc --version`. 9'un altındaysa, buradaki talimatları izleyin: https://clickhouse.tech/docs/tr/development/build/#install-gcc-9.
+Gcc sürümünü kontrol edin: `gcc --version`. 10'un altındaysa, buradaki talimatları izleyin: https://clickhouse.tech/docs/tr/development/build/#install-gcc-10.
 
 Mac OS X build sadece Clang için desteklenir. Sadece koş `brew install llvm`
 
@@ -160,7 +160,7 @@ Birkaç farklı dizine (build_release, build_debug, vb.) sahip olabilirsiniz.) f
 
 Linux:
 
-    export CC=gcc-9 CXX=g++-9
+    export CC=gcc-10 CXX=g++-10
     cmake ..
 
 Mac OS X:

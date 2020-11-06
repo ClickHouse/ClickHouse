@@ -82,7 +82,7 @@ public:
     Field getDefault() const override;
 
     bool equals(const IDataType & rhs) const override;
-
+    bool isComparable() const override { return key_type->isComparable() && value_type->isComparable(); }
     bool isParametric() const override { return true; }
     bool haveSubtypes() const override { return true; }
 
