@@ -32,7 +32,6 @@ PEERDIR(
 )
 
 # "Arcadia" build is slightly deficient. It lacks many libraries that we need.
-CFLAGS(-g0)
 
 SRCS(
     abs.cpp
@@ -156,6 +155,7 @@ SRCS(
     equals.cpp
     erfc.cpp
     erf.cpp
+    errorCodeToName.cpp
     evalMLMethod.cpp
     exp10.cpp
     exp2.cpp

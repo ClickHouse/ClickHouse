@@ -38,8 +38,10 @@ namespace DB
 
 static const auto CONNECT_SLEEP = 200;
 static const auto RETRIES_MAX = 20;
-static const auto HEARTBEAT_RESCHEDULE_MS = 3000;
 static const uint32_t QUEUE_SIZE = 100000;
+static const auto MAX_FAILED_READ_ATTEMPTS = 10;
+static const auto RESCHEDULE_MS = 500;
+static const auto MAX_THREAD_WORK_DURATION_MS = 60000;
 
 namespace ErrorCodes
 {
@@ -50,6 +52,7 @@ namespace ErrorCodes
     extern const int CANNOT_BIND_RABBITMQ_EXCHANGE;
     extern const int CANNOT_DECLARE_RABBITMQ_EXCHANGE;
     extern const int CANNOT_REMOVE_RABBITMQ_EXCHANGE;
+    extern const int CANNOT_CREATE_RABBITMQ_QUEUE_BINDING;
 }
 
 namespace ExchangeType
@@ -121,9 +124,6 @@ StorageRabbitMQ::StorageRabbitMQ(
 
     streaming_task = global_context.getSchedulePool().createTask("RabbitMQStreamingTask", [this]{ streamingToViewsFunc(); });
     streaming_task->deactivate();
-
-    heartbeat_task = global_context.getSchedulePool().createTask("RabbitMQHeartbeatTask", [this]{ heartbeatFunc(); });
-    heartbeat_task->deactivate();
 
     if (queue_base.empty())
     {
@@ -207,16 +207,6 @@ Context StorageRabbitMQ::addSettings(Context context) const
         context.setSetting("format_schema", schema_name);
 
     return context;
-}
-
-
-void StorageRabbitMQ::heartbeatFunc()
-{
-    if (!stream_cancelled && event_handler->connectionRunning())
-    {
-        connection->heartbeat();
-        heartbeat_task->scheduleAfter(HEARTBEAT_RESCHEDULE_MS);
-    }
 }
 
 
@@ -396,17 +386,77 @@ void StorageRabbitMQ::bindExchange()
 }
 
 
+void StorageRabbitMQ::bindQueue(size_t queue_id)
+{
+    std::atomic<bool> binding_created = false;
+
+    auto success_callback = [&](const std::string &  queue_name, int msgcount, int /* consumercount */)
+    {
+        queues.emplace_back(queue_name);
+        LOG_DEBUG(log, "Queue {} is declared", queue_name);
+
+        if (msgcount)
+            LOG_INFO(log, "Queue {} is non-empty. Non-consumed messaged will also be delivered", queue_name);
+
+       /* Here we bind either to sharding exchange (consistent-hash) or to bridge exchange (fanout). All bindings to routing keys are
+        * done between client's exchange and local bridge exchange. Binding key must be a string integer in case of hash exchange, for
+        * fanout exchange it can be arbitrary
+        */
+        setup_channel->bindQueue(consumer_exchange, queue_name, std::to_string(queue_id))
+        .onSuccess([&] { binding_created = true; })
+        .onError([&](const char * message)
+        {
+            throw Exception(
+                ErrorCodes::CANNOT_CREATE_RABBITMQ_QUEUE_BINDING,
+                "Failed to create queue binding for exchange {}. Reason: {}", exchange_name, std::string(message));
+        });
+    };
+
+    auto error_callback([&](const char * message)
+    {
+        /* This error is most likely a result of an attempt to declare queue with different settings if it was declared before. So for a
+         * given queue name either deadletter_exchange parameter changed or queue_size changed, i.e. table was declared with different
+         * max_block_size parameter. Solution: client should specify a different queue_base parameter or manually delete previously
+         * declared queues via any of the various cli tools.
+         */
+        throw Exception("Failed to declare queue. Probably queue settings are conflicting: max_block_size, deadletter_exchange. Attempt \
+                specifying differently those settings or use a different queue_base or manually delete previously declared queues, \
+                which  were declared with the same names. ERROR reason: "
+                + std::string(message), ErrorCodes::BAD_ARGUMENTS);
+    });
+
+    AMQP::Table queue_settings;
+
+    queue_settings["x-max-length"] = queue_size;
+
+    if (!deadletter_exchange.empty())
+        queue_settings["x-dead-letter-exchange"] = deadletter_exchange;
+    else
+        queue_settings["x-overflow"] = "reject-publish";
+
+    /* The first option not just simplifies queue_name, but also implements the possibility to be able to resume reading from one
+     * specific queue when its name is specified in queue_base setting
+     */
+    const String queue_name = !hash_exchange ? queue_base : std::to_string(queue_id) + "_" + queue_base;
+    setup_channel->declareQueue(queue_name, AMQP::durable, queue_settings).onSuccess(success_callback).onError(error_callback);
+
+    while (!binding_created)
+    {
+        event_handler->iterateLoop();
+    }
+}
+
+
 bool StorageRabbitMQ::restoreConnection(bool reconnecting)
 {
     size_t cnt_retries = 0;
 
     if (reconnecting)
     {
-        deactivateTask(heartbeat_task, false, false);
         connection->close(); /// Connection might be unusable, but not closed
 
         /* Connection is not closed immediately (firstly, all pending operations are completed, and then
-         * an AMQP closing-handshake is  performed). But cannot open a new connection untill previous one is properly closed
+         * an AMQP closing-handshake is  performed). But cannot open a new connection until previous one is properly closed
          */
         while (!connection->closed() && ++cnt_retries != RETRIES_MAX)
             event_handler->iterateLoop();
@@ -452,11 +502,11 @@ void StorageRabbitMQ::unbindExchange()
      */
     std::call_once(flag, [&]()
     {
-        heartbeat_task->deactivate();
         streaming_task->deactivate();
         event_handler->updateLoopState(Loop::STOP);
         looping_task->deactivate();
 
+        setup_channel = std::make_shared<AMQP::TcpChannel>(connection.get());
         setup_channel->removeExchange(bridge_exchange)
         .onSuccess([&]()
         {
@@ -471,6 +521,8 @@ void StorageRabbitMQ::unbindExchange()
         {
             event_handler->iterateLoop();
         }
+
+        setup_channel->close();
     });
 }
 
@@ -499,8 +551,6 @@ Pipe StorageRabbitMQ::read(
             deactivateTask(looping_task, false, true);
 
         update_channels = restoreConnection(true);
-        if (update_channels)
-            heartbeat_task->scheduleAfter(HEARTBEAT_RESCHEDULE_MS);
     }
 
     Pipes pipes;
@@ -521,7 +571,6 @@ Pipe StorageRabbitMQ::read(
             if (event_handler->loopRunning())
             {
                 deactivateTask(looping_task, false, true);
-                deactivateTask(heartbeat_task, false, false);
             }
 
             rabbit_stream->updateChannel();
@@ -552,6 +601,13 @@ void StorageRabbitMQ::startup()
     initExchange();
     bindExchange();
 
+    for (size_t i = 1; i <= num_queues; ++i)
+    {
+        bindQueue(i);
+    }
+
+    setup_channel->close();
+
     for (size_t i = 0; i < num_consumers; ++i)
     {
         try
@@ -568,7 +624,6 @@ void StorageRabbitMQ::startup()
 
     event_handler->updateLoopState(Loop::RUN);
     streaming_task->activateAndSchedule();
-    heartbeat_task->activateAndSchedule();
 }
 
 
@@ -579,7 +634,6 @@ void StorageRabbitMQ::shutdown()
 
     deactivateTask(streaming_task, true, false);
     deactivateTask(looping_task, true, true);
-    deactivateTask(heartbeat_task, true, false);
 
     connection->close();
 
@@ -635,9 +689,8 @@ ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
     ChannelPtr consumer_channel = std::make_shared<AMQP::TcpChannel>(connection.get());
 
     return std::make_shared<ReadBufferFromRabbitMQConsumer>(
-        consumer_channel, setup_channel, event_handler, consumer_exchange, ++consumer_id,
-        unique_strbase, queue_base, log, row_delimiter, hash_exchange, num_queues,
-        deadletter_exchange, queue_size, stream_cancelled);
+        consumer_channel, event_handler, queues, ++consumer_id,
+        unique_strbase, log, row_delimiter, queue_size, stream_cancelled);
 }
 
 
@@ -683,11 +736,14 @@ void StorageRabbitMQ::streamingToViewsFunc()
     try
     {
         auto table_id = getStorageID();
+
         // Check if at least one direct dependency is attached
         size_t dependencies_count = DatabaseCatalog::instance().getDependencies(table_id).size();
 
         if (dependencies_count)
         {
+            auto start_time = std::chrono::steady_clock::now();
+
             // Keep streaming as long as there are attached views and streaming is not cancelled
             while (!stream_cancelled && num_created_consumers > 0)
             {
@@ -696,8 +752,17 @@ void StorageRabbitMQ::streamingToViewsFunc()
 
                 LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
 
-                if (!streamToViews())
+                if (streamToViews())
                     break;
+
+                auto end_time = std::chrono::steady_clock::now();
+                auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+                if (duration.count() > MAX_THREAD_WORK_DURATION_MS)
+                {
+                    event_handler->updateLoopState(Loop::STOP);
+                    LOG_TRACE(log, "Reschedule streaming. Thread work duration limit exceeded.");
+                    break;
+                }
             }
         }
     }
@@ -708,7 +773,7 @@ void StorageRabbitMQ::streamingToViewsFunc()
 
     /// Wait for attached views
     if (!stream_cancelled)
-        streaming_task->schedule();
+        streaming_task->scheduleAfter(RESCHEDULE_MS);
 }
 
 
@@ -730,13 +795,6 @@ bool StorageRabbitMQ::streamToViews()
     auto metadata_snapshot = getInMemoryMetadataPtr();
     auto column_names = block_io.out->getHeader().getNames();
     auto sample_block = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
-
-    /* event_handler->connectionRunning() does not guarantee that connnection is not closed in case loop was not running before, but
-     * need to anyway start the loop to activate error callbacks and update connection state, because even checking with
-     * connection->usable() will not give correct answer before callbacks are activated.
-     */
-    if (!event_handler->loopRunning() && event_handler->connectionRunning())
-        looping_task->activateAndSchedule();
 
     auto block_size = getMaxBlockSize();
 
@@ -770,34 +828,45 @@ bool StorageRabbitMQ::streamToViews()
         in = streams[0];
 
     std::atomic<bool> stub = {false};
+
+    if (!event_handler->loopRunning())
+    {
+        event_handler->updateLoopState(Loop::RUN);
+        looping_task->activateAndSchedule();
+    }
+
     copyData(*in, *block_io.out, &stub);
 
-    /* Need to stop loop even if connection is ok, because sending ack() with loop running in another thread will lead to a lot of data
-     * races inside the library, but only in case any error occurs or connection is lost while ack is being sent
+    /* Note: sending ack() with loop running in another thread will lead to a lot of data races inside the library, but only in case
+     * error occurs or connection is lost while ack is being sent
      */
-    if (event_handler->loopRunning())
-        deactivateTask(looping_task, false, true);
+    deactivateTask(looping_task, false, true);
+    size_t queue_empty = 0;
 
     if (!event_handler->connectionRunning())
     {
-        if (!stream_cancelled && restoreConnection(true))
+        if (stream_cancelled)
+            return true;
+
+        if (restoreConnection(true))
         {
             for (auto & stream : streams)
                 stream->as<RabbitMQBlockInputStream>()->updateChannel();
         }
         else
         {
-            /// Reschedule if unable to connect to rabbitmq or quit if cancelled
-            return false;
+            LOG_TRACE(log, "Reschedule streaming. Unable to restore connection.");
+            return true;
         }
     }
     else
     {
-        deactivateTask(heartbeat_task, false, false);
-
         /// Commit
         for (auto & stream : streams)
         {
+            if (stream->as<RabbitMQBlockInputStream>()->queueEmpty())
+                ++queue_empty;
+
             /* false is returned by the sendAck function in only two cases:
              * 1) if connection failed. In this case all channels will be closed and will be unable to send ack. Also ack is made based on
              *    delivery tags, which are unique to channels, so if channels fail, those delivery tags will become invalid and there is
@@ -828,19 +897,25 @@ bool StorageRabbitMQ::streamToViews()
                     break;
                 }
             }
+
+            event_handler->iterateLoop();
         }
     }
 
-    event_handler->updateLoopState(Loop::RUN);
-    looping_task->activateAndSchedule();
-    heartbeat_task->scheduleAfter(HEARTBEAT_RESCHEDULE_MS); /// It is also deactivated in restoreConnection(), so reschedule anyway
+    if ((queue_empty == num_created_consumers) && (++read_attempts == MAX_FAILED_READ_ATTEMPTS))
+    {
+        connection->heartbeat();
+        read_attempts = 0;
+        LOG_TRACE(log, "Reschedule streaming. Queues are empty.");
+        return true;
+    }
+    else
+    {
+        event_handler->updateLoopState(Loop::RUN);
+        looping_task->activateAndSchedule();
+    }
 
-    // Check whether the limits were applied during query execution
-    bool limits_applied = false;
-    const BlockStreamProfileInfo & info = in->getProfileInfo();
-    limits_applied = info.hasAppliedLimit();
-
-    return limits_applied;
+    return false;
 }
 
 
@@ -907,7 +982,8 @@ NamesAndTypesList StorageRabbitMQ::getVirtuals() const
             {"_channel_id", std::make_shared<DataTypeString>()},
             {"_delivery_tag", std::make_shared<DataTypeUInt64>()},
             {"_redelivered", std::make_shared<DataTypeUInt8>()},
-            {"_message_id", std::make_shared<DataTypeString>()}
+            {"_message_id", std::make_shared<DataTypeString>()},
+            {"_timestamp", std::make_shared<DataTypeUInt64>()}
     };
 }
 

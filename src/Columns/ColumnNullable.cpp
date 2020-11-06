@@ -344,7 +344,7 @@ void ColumnNullable::updatePermutation(bool reverse, size_t limit, int null_dire
         /// Shift all NULL values to the end.
         for (const auto & [first, last] : equal_ranges)
         {
-            /// Current interval is righter than limit. 
+            /// Current interval is righter than limit.
             if (limit && first > limit)
                 break;
 
