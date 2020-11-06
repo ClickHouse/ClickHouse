@@ -24,8 +24,8 @@ struct WelchTTestData : public TTestMoments<Float64>
 
     std::pair<Float64, Float64> getResult() const
     {
-        Float64 mean_x = x1 / m0;
-        Float64 mean_y = y1 / m0;
+        Float64 mean_x = x1 / nx;
+        Float64 mean_y = y1 / ny;
 
         /// s_x^2, s_y^2
 
@@ -33,19 +33,19 @@ struct WelchTTestData : public TTestMoments<Float64>
         /// But we made some mathematical transformations not to store original sequences.
         /// Also we dropped sqrt, because later it will be squared later.
 
-        Float64 sx2 = (x2 + m0 * mean_x * mean_x - 2 * mean_x * x1) / (m0 - 1);
-        Float64 sy2 = (y2 + m0 * mean_y * mean_y - 2 * mean_y * y1) / (m0 - 1);
+        Float64 sx2 = (x2 + nx * mean_x * mean_x - 2 * mean_x * x1) / (nx - 1);
+        Float64 sy2 = (y2 + ny * mean_y * mean_y - 2 * mean_y * y1) / (ny - 1);
 
         /// t-statistic
-        Float64 t_stat = (mean_x - mean_y) / sqrt(sx2 / m0 + sy2 / m0);
+        Float64 t_stat = (mean_x - mean_y) / sqrt(sx2 / nx + sy2 / ny);
 
         /// degrees of freedom
 
-        Float64 numerator_sqrt = sx2 / m0 + sy2 / m0;
+        Float64 numerator_sqrt = sx2 / nx + sy2 / ny;
         Float64 numerator = numerator_sqrt * numerator_sqrt;
 
-        Float64 denominator_x = sx2 * sx2 / (m0 * m0 * (m0 - 1));
-        Float64 denominator_y = sy2 * sy2 / (m0 * m0 * (m0 - 1));
+        Float64 denominator_x = sx2 * sx2 / (nx * nx * (nx - 1));
+        Float64 denominator_y = sy2 * sy2 / (ny * ny * (ny - 1));
 
         Float64 degrees_of_freedom = numerator / (denominator_x + denominator_y);
 
@@ -68,7 +68,7 @@ AggregateFunctionPtr createAggregateFunctionWelchTTest(const std::string & name,
 
 void registerAggregateFunctionWelchTTest(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("welchTTest", createAggregateFunctionWelchTTest, AggregateFunctionFactory::CaseInsensitive);
+    factory.registerFunction("welchTTest", createAggregateFunctionWelchTTest);
 }
 
 }

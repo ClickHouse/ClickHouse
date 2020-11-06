@@ -95,10 +95,10 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        Float64 x = columns[0]->getFloat64(row_num);
-        Float64 y = columns[1]->getFloat64(row_num);
+        Float64 value = columns[0]->getFloat64(row_num);
+        UInt8 is_second = columns[1]->getUInt(row_num);
 
-        this->data(place).add(x, y);
+        this->data(place).add(value, static_cast<bool>(is_second));
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
