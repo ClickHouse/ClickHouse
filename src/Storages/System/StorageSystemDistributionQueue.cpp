@@ -46,32 +46,34 @@ std::string maskDataPath(const std::string & path)
 
     masked_path.pop_back();
 
-    size_t dir_name_pos = masked_path.rfind('/');
-    if (dir_name_pos == std::string::npos)
+    size_t node_pos = masked_path.rfind('/');
+    /// Loop through each node, that separated with a comma
+    while (node_pos != std::string::npos)
     {
-        /// Do not include full path into the exception message since it may include password.
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid path format");
-    }
-    ++dir_name_pos;
+        ++node_pos;
 
-    size_t user_pw_end = masked_path.find('@', dir_name_pos);
-    if (user_pw_end == std::string::npos)
-    {
-        /// Likey new format (use_compact_format_in_distributed_parts_names=1)
-        return path;
-    }
+        size_t user_pw_end = masked_path.find('@', node_pos);
+        if (user_pw_end == std::string::npos)
+        {
+            /// Likey new format (use_compact_format_in_distributed_parts_names=1)
+            return path;
+        }
 
-    size_t pw_start = masked_path.find(':', dir_name_pos);
-    if (pw_start > user_pw_end)
-    {
-        /// No password in path
-        return path;
-    }
-    ++pw_start;
+        size_t pw_start = masked_path.find(':', node_pos);
+        if (pw_start > user_pw_end)
+        {
+            /// No password in path
+            return path;
+        }
+        ++pw_start;
 
-    size_t pw_length = user_pw_end - pw_start;
-    /// Replace with a single '*' to hide even the password length.
-    masked_path.replace(pw_start, pw_length, 1, '*');
+        size_t pw_length = user_pw_end - pw_start;
+        /// Replace with a single '*' to hide even the password length.
+        masked_path.replace(pw_start, pw_length, 1, '*');
+
+        /// "," cannot be in the node specification since it will be encoded in hex.
+        node_pos = masked_path.find(',', node_pos);
+    }
 
     masked_path.push_back('/');
 
