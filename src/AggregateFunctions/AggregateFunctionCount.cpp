@@ -8,7 +8,7 @@ namespace DB
 {
 
 AggregateFunctionPtr AggregateFunctionCount::getOwnNullAdapter(
-    const AggregateFunctionPtr &, const DataTypes & types, const Array & params, const AggregateFunctionProperties & /*properties*/) const
+    const AggregateFunctionPtr &, const DataTypes & types, const Array & params) const
 {
     return std::make_shared<AggregateFunctionCountNotNullUnary>(types[0], params);
 }
