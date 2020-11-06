@@ -78,7 +78,6 @@ public:
     void create(AggregateDataPtr place) const override
     {
         nested_function->create(place);
-
         place[size_of_data] = 0;
     }
 
@@ -94,8 +93,40 @@ public:
         Arena * arena) const override
     {
         nested_function->add(place, columns, row_num, arena);
-
         place[size_of_data] = 1;
+    }
+
+    void addBatch(size_t batch_size, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, Arena * arena) const override
+    {
+        nested_function->addBatch(batch_size, places, place_offset, columns, arena);
+        for (size_t i = 0; i < batch_size; ++i)
+            (places[i] + place_offset)[size_of_data] = 1;
+    }
+
+    void addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const override
+    {
+        if (batch_size)
+        {
+            nested_function->addBatchSinglePlace(batch_size, place, columns, arena);
+            place[size_of_data] = 1;
+        }
+    }
+
+    void addBatchSinglePlaceNotNull(
+        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, const UInt8 * null_map, Arena * arena) const override
+    {
+        if (batch_size)
+        {
+            nested_function->addBatchSinglePlaceNotNull(batch_size, place, columns, null_map, arena);
+            for (size_t i = 0; i < batch_size; ++i)
+            {
+                if (!null_map[i])
+                {
+                    place[size_of_data] = 1;
+                    break;
+                }
+            }
+        }
     }
 
     void merge(
@@ -104,7 +135,6 @@ public:
         Arena * arena) const override
     {
         nested_function->merge(place, rhs, arena);
-
         place[size_of_data] |= rhs[size_of_data];
     }
 
