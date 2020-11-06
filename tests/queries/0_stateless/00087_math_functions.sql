@@ -104,31 +104,31 @@ select sinh(0) = 0;
 select sinh(1) = -sinh(-1);
 select abs(sinh(1) - 0.5 * (e() - exp(-1))) < 1e-9;
 select abs(sinh(2) - 0.5 * (exp(2) - exp(-2))) < 1e-9;
-select (sum(abs(sinh(x) - 0.5 * (exp(x) - exp(-x)))) < 1e-9) / count() from system.one array join range(1000) as x;
+select (sum(abs(sinh(x) - 0.5 * (exp(x) - exp(-x)))) < 1e-9) / count() from system.one array join range(100) as x;
 
 select cosh(0) = 1;
 select cosh(1) = cosh(-1);
 select abs(cosh(1) - 0.5 * (e() + exp(-1))) < 1e-9;
 select abs(pow(cosh(1), 2) - pow(sinh(1), 2) - 1) < 1e-9;
-select (sum(abs(cosh(x) * cosh(x) - sinh(x) * sinh(x) - 1)) < 1e-9) / count() from system.one array join range(1000) as x;
+select (sum(abs(cosh(x) * cosh(x) - sinh(x) * sinh(x) - 1)) < 1e-9) / count() from system.one array join range(10) as x;
 
 select asinh(0) = 0;
 select asinh(1) = -asinh(-1);
 select abs(asinh(1) - ln(1 + sqrt(2))) < 1e-9;
 select (asinh(sinh(1)) - 1) < 1e-9;
-select sum(abs(asinh(sinh(x)) - x) < 1e-9) / count() from system.one array join range(1000) as x;
+select sum(abs(asinh(sinh(x)) - x) < 1e-9) / count() from system.one array join range(100) as x;
 
 select acosh(1) = 0;
 select acosh(2) = acosh(-2);
 select abs(acosh(2) - ln(2 + sqrt(3))) < 1e-9;
 select (acosh(cosh(2)) - 2) < 1e-9;
-select sum(abs(acosh(cosh(x)) - x) < 1e-9) / count() from system.one array join range(1, 1001) as x;
+select sum(abs(acosh(cosh(x)) - x) < 1e-9) / count() from system.one array join range(1, 101) as x;
 
 select atanh(0) = 0;
 select atanh(0.5) = -asinh(-0.5);
 select abs(atanh(0.9) - 0.5 * ln(19)) < 1e-9;
 select (atanh(tanh(1)) - 1) < 1e-9;
-select sum(abs(asinh(sinh(x)) - x) < 1e-9) / count() from system.one array join range(1000) as x;
+select sum(abs(atanh(tanh(x)) - x) < 1e-9) / count() from system.one array join range(10) as x;
 
 select erf(0) = 0;
 select erf(-10) = -1;
