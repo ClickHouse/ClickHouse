@@ -13,11 +13,9 @@ SELECT * FROM 01523_test;
 DROP TABLE 01523_test;" > 01523_client_local_queries_file_parameter_tmp.sql
 $CLICKHOUSE_CLIENT --queries-file=01523_client_local_queries_file_parameter_tmp.sql 2>&1
 
-$CLICKHOUSE_CLIENT --queries='t' --query='t' 2>&1
-
-echo "CREATE TABLE table (a Int64, b Int64) ENGINE = File(CSV, stdin);
-SELECT a, b FROM table;
-DROP TABLE table;" > 01523_client_local_queries_file_parameter_tmp.sql
+echo "CREATE TABLE 01523_test (a Int64, b Int64) ENGINE = File(CSV, stdin);
+SELECT a, b FROM 01523_test;
+DROP TABLE 01523_test;" > 01523_client_local_queries_file_parameter_tmp.sql
 
 echo -e "1,2\n3,4" | $CLICKHOUSE_LOCAL --queries-file=01523_client_local_queries_file_parameter_tmp.sql 2>&1
 
