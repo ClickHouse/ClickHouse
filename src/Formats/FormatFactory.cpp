@@ -415,7 +415,6 @@ FormatFactory::FormatFactory()
     registerFileSegmentationEngineJSONEachRow(*this);
     registerFileSegmentationEngineRegexp(*this);
     registerFileSegmentationEngineJSONAsString(*this);
-    registerFileSegmentationEngineLineAsString(*this);
 
     registerInputFormatNative(*this);
     registerOutputFormatNative(*this);
