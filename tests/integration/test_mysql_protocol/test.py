@@ -167,7 +167,7 @@ def test_mysql_affected_rows(mysql_client, server_address):
     '''.format(host=server_address, port=server_port), demux=True)
 
     assert code == 0
-    assert "1 rows affected" in stdout.decode()
+    assert "1 row affected" in stdout.decode()
 
     code, (stdout, stderr) = mysql_client.exec_run('''
         mysql -vvv --protocol tcp -h {host} -P {port} default -u default --password=123
