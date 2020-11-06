@@ -84,3 +84,9 @@ if (LINKER_NAME)
 
     message(STATUS "Using custom linker by name: ${LINKER_NAME}")
 endif ()
+
+if (ARCH_PPC64LE)
+    if (COMPILER_CLANG OR (COMPILER_GCC AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8))
+        message(FATAL_ERROR "Only gcc-8 or higher is supported for powerpc architecture")
+    endif ()
+endif ()

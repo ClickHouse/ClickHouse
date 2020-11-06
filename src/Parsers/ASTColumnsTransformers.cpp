@@ -31,18 +31,24 @@ void IASTColumnsTransformer::transform(const ASTPtr & transformer, ASTs & nodes)
     }
 }
 
-void ASTColumnsApplyTransformer::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTColumnsApplyTransformer::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     settings.ostr << (settings.hilite ? hilite_keyword : "") << "APPLY" << (settings.hilite ? hilite_none : "") << " ";
 
     if (!column_name_prefix.empty())
-        settings.ostr << "(" << func_name << ", '" << column_name_prefix << "')";
-    else
-        settings.ostr << func_name;
+        settings.ostr << "(";
+    settings.ostr << func_name;
+
+    if (parameters)
+        parameters->formatImpl(settings, state, frame);
+
+    if (!column_name_prefix.empty())
+	settings.ostr << ", '" << column_name_prefix << "')";
 }
 
 void ASTColumnsApplyTransformer::transform(ASTs & nodes) const
 {
+    std::cout << "\033[31m" << __FILE__ << ":"<<__LINE__ << "\033[39m" << std::endl;
     for (auto & column : nodes)
     {
         String name;
@@ -56,7 +62,9 @@ void ASTColumnsApplyTransformer::transform(ASTs & nodes) const
             else
                 name = column->getColumnName();
         }
-        column = makeASTFunction(func_name, column);
+        auto function = makeASTFunction(func_name, column);
+        function->parameters = parameters;
+        column = function;
         if (!column_name_prefix.empty())
             column->setAlias(column_name_prefix + name);
     }
@@ -94,9 +102,9 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
             {
                 if (const auto * id = node_child->as<ASTIdentifier>())
                 {
-                    for (int i = children.size() - 1; i >= 0; --i)
+                    for (int i = expected_columns.size() - 1; i >= 0; --i)
                     {
-                        if (children[i]->as<const ASTIdentifier &>().name() == id->shortName())
+                        if (expected_columns[i]->as<const ASTIdentifier &>().name() == id->shortName())
                         {
                             expected_columns.erase(expected_columns.begin() + i);
                             return true;

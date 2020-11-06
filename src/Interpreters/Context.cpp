@@ -20,6 +20,8 @@
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Storages/MergeTree/MergeList.h>
+#include <Storages/MergeTree/ReplicatedFetchList.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/CompressionCodecSelector.h>
 #include <Storages/StorageS3Settings.h>
@@ -328,6 +330,7 @@ struct ContextShared
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
     ProcessList process_list;                               /// Executing queries at the moment.
     MergeList merge_list;                                   /// The list of executable merge (for (Replicated)?MergeTree)
+    ReplicatedFetchList replicated_fetch_list;
     ConfigurationPtr users_config;                          /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
     std::optional<BackgroundSchedulePool> buffer_flush_schedule_pool; /// A thread pool that can do background flush for Buffer tables.
@@ -362,6 +365,7 @@ struct ContextShared
     /// Initialized on demand (on distributed storages initialization) since Settings should be initialized
     std::unique_ptr<Clusters> clusters;
     ConfigurationPtr clusters_config;                        /// Stores updated configs
+    ConfigurationPtr zookeeper_config;                        /// Stores zookeeper configs
     mutable std::mutex clusters_mutex;                        /// Guards clusters and clusters_config
 
 #if USE_EMBEDDED_COMPILER
@@ -505,6 +509,8 @@ ProcessList & Context::getProcessList() { return shared->process_list; }
 const ProcessList & Context::getProcessList() const { return shared->process_list; }
 MergeList & Context::getMergeList() { return shared->merge_list; }
 const MergeList & Context::getMergeList() const { return shared->merge_list; }
+ReplicatedFetchList & Context::getReplicatedFetchList() { return shared->replicated_fetch_list; }
+const ReplicatedFetchList & Context::getReplicatedFetchList() const { return shared->replicated_fetch_list; }
 
 
 void Context::enableNamedSessions()
@@ -1100,28 +1106,53 @@ void Context::setCurrentDatabase(const String & name)
 
 void Context::setCurrentQueryId(const String & query_id)
 {
-    String query_id_to_set = query_id;
+    /// Generate random UUID, but using lower quality RNG,
+    ///  because Poco::UUIDGenerator::generateRandom method is using /dev/random, that is very expensive.
+    /// NOTE: Actually we don't need to use UUIDs for query identifiers.
+    /// We could use any suitable string instead.
+    union
+    {
+        char bytes[16];
+        struct
+        {
+            UInt64 a;
+            UInt64 b;
+        } words;
+        __uint128_t uuid;
+    } random;
 
+    random.words.a = thread_local_rng(); //-V656
+    random.words.b = thread_local_rng(); //-V656
+
+    if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
+        && client_info.opentelemetry_trace_id == 0)
+    {
+        // If this is an initial query without any parent OpenTelemetry trace, we
+        // might start the trace ourselves, with some configurable probability.
+        std::bernoulli_distribution should_start_trace{
+            settings.opentelemetry_start_trace_probability};
+
+        if (should_start_trace(thread_local_rng))
+        {
+            // Use the randomly generated default query id as the new trace id.
+            client_info.opentelemetry_trace_id = random.uuid;
+            client_info.opentelemetry_parent_span_id = 0;
+            client_info.opentelemetry_span_id = thread_local_rng();
+            // Mark this trace as sampled in the flags.
+            client_info.opentelemetry_trace_flags = 1;
+        }
+    }
+    else
+    {
+        // The incoming request has an OpenTelemtry trace context. Its span id
+        // becomes our parent span id.
+        client_info.opentelemetry_parent_span_id = client_info.opentelemetry_span_id;
+        client_info.opentelemetry_span_id = thread_local_rng();
+    }
+
+    String query_id_to_set = query_id;
     if (query_id_to_set.empty())    /// If the user did not submit his query_id, then we generate it ourselves.
     {
-        /// Generate random UUID, but using lower quality RNG,
-        ///  because Poco::UUIDGenerator::generateRandom method is using /dev/random, that is very expensive.
-        /// NOTE: Actually we don't need to use UUIDs for query identifiers.
-        /// We could use any suitable string instead.
-
-        union
-        {
-            char bytes[16];
-            struct
-            {
-                UInt64 a;
-                UInt64 b;
-            } words;
-        } random;
-
-        random.words.a = thread_local_rng(); //-V656
-        random.words.b = thread_local_rng(); //-V656
-
         /// Use protected constructor.
         struct QueryUUID : Poco::UUID
         {
@@ -1459,8 +1490,9 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 {
     std::lock_guard lock(shared->zookeeper_mutex);
 
+    const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
     if (!shared->zookeeper)
-        shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(getConfigRef(), "zookeeper");
+        shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(config, "zookeeper");
     else if (shared->zookeeper->expired())
         shared->zookeeper = shared->zookeeper->startNewSession();
 
@@ -1494,6 +1526,8 @@ void Context::resetZooKeeper() const
 void Context::reloadZooKeeperIfChanged(const ConfigurationPtr & config) const
 {
     std::lock_guard lock(shared->zookeeper_mutex);
+    shared->zookeeper_config = config;
+
     if (!shared->zookeeper || shared->zookeeper->configChanged(*config, "zookeeper"))
     {
         shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(*config, "zookeeper");
@@ -1750,6 +1784,17 @@ std::shared_ptr<AsynchronousMetricLog> Context::getAsynchronousMetricLog()
         return {};
 
     return shared->system_logs->asynchronous_metric_log;
+}
+
+
+std::shared_ptr<OpenTelemetrySpanLog> Context::getOpenTelemetrySpanLog()
+{
+    auto lock = getLock();
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->opentelemetry_span_log;
 }
 
 
@@ -2016,10 +2061,15 @@ void Context::reloadConfig() const
 
 void Context::shutdown()
 {
-    for (auto & [disk_name, disk] : getDisksMap())
+    // Disk selector might not be initialized if there was some error during
+    // its initialization. Don't try to initialize it again on shutdown.
+    if (shared->merge_tree_disk_selector)
     {
-        LOG_INFO(shared->log, "Shutdown disk {}", disk_name);
-        disk->shutdown();
+        for (auto & [disk_name, disk] : getDisksMap())
+        {
+            LOG_INFO(shared->log, "Shutdown disk {}", disk_name);
+            disk->shutdown();
+        }
     }
 
     shared->shutdown();

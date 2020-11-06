@@ -52,12 +52,25 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.empty())
             throw Exception("Function " + getName() + " requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        return std::make_shared<DataTypeTuple>(arguments);
+        DataTypes types;
+        Strings names;
+
+        for (const auto & argument : arguments)
+        {
+            types.emplace_back(argument.type);
+            names.emplace_back(argument.name);
+        }
+
+        /// Create named tuple if possible.
+        if (DataTypeTuple::canBeCreatedWithNames(names))
+            return std::make_shared<DataTypeTuple>(types, names, false);
+
+        return std::make_shared<DataTypeTuple>(types);
     }
 
     ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override

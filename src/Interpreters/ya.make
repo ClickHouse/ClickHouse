@@ -14,7 +14,6 @@ PEERDIR(
 
 NO_COMPILER_WARNINGS()
 
-CFLAGS(-g0)
 
 SRCS(
     ActionLocksManager.cpp
@@ -119,6 +118,7 @@ SRCS(
     MutationsInterpreter.cpp
     MySQL/InterpretersMySQLDDLQuery.cpp
     NullableUtils.cpp
+    OpenTelemetrySpanLog.cpp
     OptimizeIfChains.cpp
     OptimizeIfWithConstantConditionVisitor.cpp
     PartLog.cpp
