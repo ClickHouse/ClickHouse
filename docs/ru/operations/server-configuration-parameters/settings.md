@@ -1,3 +1,8 @@
+---
+toc_priority: 57
+toc_title: "\u041a\u043e\u043d\u0444\u0438\u0433\u0443\u0440\u0430\u0446\u0438\u043e\u043d\u043d\u044b\u0435\u0020\u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b\u0020\u0441\u0435\u0440\u0432\u0435\u0440\u0430"
+---
+
 # Конфигурационные параметры сервера {#server-configuration-parameters-reference}
 
 ## builtin_dictionaries_reload_interval {#builtin-dictionaries-reload-interval}
@@ -461,6 +466,26 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 ``` xml
 <max_concurrent_queries>100</max_concurrent_queries>
 ```
+
+## max_concurrent_queries_for_all_users {#max-concurrent-queries-for-all-users}
+
+Если значение этой настройки меньше или равно текущему количеству одновременно обрабатываемых запросов, то будет сгенерировано исключение.
+
+Пример: `max_concurrent_queries_for_all_users` установлен на 99 для всех пользователей. Чтобы выполнять запросы даже когда сервер перегружен, администратор баз данных устанавливает для себя значение настройки на 100.
+
+Изменение настройки для одного запроса или пользователя не влияет на другие запросы.
+
+Значение по умолчанию: `0` — отсутствие ограничений.
+
+**Пример**
+
+``` xml
+<max_concurrent_queries_for_all_users>99</max_concurrent_queries_for_all_users>
+```
+
+**Смотрите также**
+
+-   [max_concurrent_queries](#max-concurrent-queries)
 
 ## max_connections {#max-connections}
 

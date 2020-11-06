@@ -16,7 +16,7 @@ By default `clickhouse-local` does not have access to data on the same host, but
 !!! warning "Warning"
     It is not recommended to load production server configuration into `clickhouse-local` because data can be damaged in case of human error.
 
-For temporary data an unique temporary data directory is created by default. If you want to override this behavior the data directory can be explicitly specified with the `-- --path` option.
+For temporary data, a unique temporary data directory is created by default. If you want to override this behavior, the data directory can be explicitly specified with the `-- --path` option.
 
 ## Usage {#usage}
 

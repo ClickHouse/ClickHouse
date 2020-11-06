@@ -814,6 +814,7 @@ services:
         tmpfs: {tmpfs}
         cap_add:
             - SYS_PTRACE
+            - NET_ADMIN
         depends_on: {depends_on}
         user: '{user}'
         env_file:

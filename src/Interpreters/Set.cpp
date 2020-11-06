@@ -87,8 +87,6 @@ void NO_INLINE Set::insertFromBlockImplCase(
         {
             if ((*null_map)[i])
             {
-                has_null = true;
-
                 if constexpr (build_filter)
                 {
                     (*out_filter)[i] = false;
@@ -140,7 +138,9 @@ void Set::setHeader(const Block & header)
 
     /// We will insert to the Set only keys, where all components are not NULL.
     ConstNullMapPtr null_map{};
-    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map, transform_null_in);
+    ColumnPtr null_map_holder;
+    if (!transform_null_in)
+        extractNestedColumnsAndNullMap(key_columns, null_map);
 
     if (fill_set_elements)
     {
@@ -180,7 +180,9 @@ bool Set::insertFromBlock(const Block & block)
 
     /// We will insert to the Set only keys, where all components are not NULL.
     ConstNullMapPtr null_map{};
-    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map, transform_null_in);
+    ColumnPtr null_map_holder;
+    if (!transform_null_in)
+         null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
     /// Filter to extract distinct values from the block.
     ColumnUInt8::MutablePtr filter;
@@ -259,8 +261,9 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 
     /// We will check existence in Set only for keys, where all components are not NULL.
     ConstNullMapPtr null_map{};
-
-    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map, transform_null_in);
+    ColumnPtr null_map_holder;
+    if (!transform_null_in)
+        null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
     executeOrdinary(key_columns, vec_res, negative, null_map);
 
@@ -303,10 +306,7 @@ void NO_INLINE Set::executeImplCase(
     {
         if (has_null_map && (*null_map)[i])
         {
-            if (transform_null_in && has_null)
-                vec_res[i] = !negative;
-            else
-                vec_res[i] = negative;
+            vec_res[i] = negative;
         }
         else
         {

@@ -30,16 +30,21 @@ void IASTColumnsTransformer::transform(const ASTPtr & transformer, ASTs & nodes)
     }
 }
 
-void ASTColumnsApplyTransformer::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTColumnsApplyTransformer::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "APPLY" << (settings.hilite ? hilite_none : "") << "(" << func_name << ")";
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "APPLY" << (settings.hilite ? hilite_none : "") << "(" << func_name;
+    if (parameters)
+        parameters->formatImpl(settings, state, frame);
+    settings.ostr << ")";
 }
 
 void ASTColumnsApplyTransformer::transform(ASTs & nodes) const
 {
     for (auto & column : nodes)
     {
-        column = makeASTFunction(func_name, column);
+        auto function = makeASTFunction(func_name, column);
+        function->parameters = parameters;
+        column = function;
     }
 }
 
@@ -71,7 +76,7 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
                 {
                     for (const auto & except_child : children)
                     {
-                        if (except_child->as<const ASTIdentifier &>().name == id->shortName())
+                        if (except_child->as<const ASTIdentifier &>().name() == id->shortName())
                             return true;
                     }
                 }

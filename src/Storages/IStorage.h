@@ -428,6 +428,9 @@ public:
         return {};
     }
 
+    /// Call when lock from previous method removed
+    virtual void onActionLockRemove(StorageActionBlockType /* action_type */) {}
+
     std::atomic<bool> is_dropped{false};
 
     /// Does table support index for IN sections
@@ -448,6 +451,10 @@ public:
     /// Otherwise - throws an exception with detailed information.
     /// We do not use mutex because it is not very important that the size could change during the operation.
     virtual void checkPartitionCanBeDropped(const ASTPtr & /*partition*/) {}
+
+    /// Returns true if Storage may store some data on disk.
+    /// NOTE: may not be equivalent to !getDataPaths().empty()
+    virtual bool storesDataOnDisk() const { return false; }
 
     /// Returns data paths if storage supports it, empty vector otherwise.
     virtual Strings getDataPaths() const { return {}; }
