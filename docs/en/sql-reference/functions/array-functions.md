@@ -89,7 +89,7 @@ If the index falls outside of the bounds of an array, it returns some default va
 ## has(arr, elem) {#hasarr-elem}
 
 Checks whether the ‘arr’ array has the ‘elem’ element.
-Returns 0 if the the element is not in the array, or 1 if it is.
+Returns 0 if the element is not in the array, or 1 if it is.
 
 `NULL` is processed as a value.
 

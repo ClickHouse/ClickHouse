@@ -378,74 +378,74 @@
         * 5.2.11.2.3 [RQ.SRS-006.RBAC.Privileges.Select.Revoke](#rqsrs-006rbacprivilegesselectrevoke)
         * 5.2.11.2.4 [RQ.SRS-006.RBAC.Privileges.Select.Column](#rqsrs-006rbacprivilegesselectcolumn)
         * 5.2.11.2.5 [RQ.SRS-006.RBAC.Privileges.Select.Cluster](#rqsrs-006rbacprivilegesselectcluster)
-        * 5.2.11.2.6 [RQ.SRS-006.RBAC.Privileges.Select.GrantOption](#rqsrs-006rbacprivilegesselectgrantoption)
-        * 5.2.11.2.7 [RQ.SRS-006.RBAC.Privileges.Select.GrantOption.Grant](#rqsrs-006rbacprivilegesselectgrantoptiongrant)
-        * 5.2.11.2.8 [RQ.SRS-006.RBAC.Privileges.Select.GrantOption.Revoke](#rqsrs-006rbacprivilegesselectgrantoptionrevoke)
-        * 5.2.11.2.9 [RQ.SRS-006.RBAC.Privileges.Select.TableEngines](#rqsrs-006rbacprivilegesselecttableengines)
+        * 5.2.11.2.6 [RQ.SRS-006.RBAC.Privileges.Select.TableEngines](#rqsrs-006rbacprivilegesselecttableengines)
       * 5.2.11.3 [Insert](#insert)
         * 5.2.11.3.1 [RQ.SRS-006.RBAC.Privileges.Insert](#rqsrs-006rbacprivilegesinsert)
         * 5.2.11.3.2 [RQ.SRS-006.RBAC.Privileges.Insert.Grant](#rqsrs-006rbacprivilegesinsertgrant)
         * 5.2.11.3.3 [RQ.SRS-006.RBAC.Privileges.Insert.Revoke](#rqsrs-006rbacprivilegesinsertrevoke)
         * 5.2.11.3.4 [RQ.SRS-006.RBAC.Privileges.Insert.Column](#rqsrs-006rbacprivilegesinsertcolumn)
         * 5.2.11.3.5 [RQ.SRS-006.RBAC.Privileges.Insert.Cluster](#rqsrs-006rbacprivilegesinsertcluster)
-        * 5.2.11.3.6 [RQ.SRS-006.RBAC.Privileges.Insert.GrantOption](#rqsrs-006rbacprivilegesinsertgrantoption)
-        * 5.2.11.3.7 [RQ.SRS-006.RBAC.Privileges.Insert.GrantOption.Grant](#rqsrs-006rbacprivilegesinsertgrantoptiongrant)
-        * 5.2.11.3.8 [RQ.SRS-006.RBAC.Privileges.Insert.GrantOption.Revoke](#rqsrs-006rbacprivilegesinsertgrantoptionrevoke)
-        * 5.2.11.3.9 [RQ.SRS-006.RBAC.Privileges.Insert.TableEngines](#rqsrs-006rbacprivilegesinserttableengines)
+        * 5.2.11.3.6 [RQ.SRS-006.RBAC.Privileges.Insert.TableEngines](#rqsrs-006rbacprivilegesinserttableengines)
       * 5.2.11.4 [AlterColumn](#altercolumn)
         * 5.2.11.4.1 [RQ.SRS-006.RBAC.Privileges.AlterColumn](#rqsrs-006rbacprivilegesaltercolumn)
         * 5.2.11.4.2 [RQ.SRS-006.RBAC.Privileges.AlterColumn.Grant](#rqsrs-006rbacprivilegesaltercolumngrant)
         * 5.2.11.4.3 [RQ.SRS-006.RBAC.Privileges.AlterColumn.Revoke](#rqsrs-006rbacprivilegesaltercolumnrevoke)
         * 5.2.11.4.4 [RQ.SRS-006.RBAC.Privileges.AlterColumn.Column](#rqsrs-006rbacprivilegesaltercolumncolumn)
         * 5.2.11.4.5 [RQ.SRS-006.RBAC.Privileges.AlterColumn.Cluster](#rqsrs-006rbacprivilegesaltercolumncluster)
-        * 5.2.11.4.6 [RQ.SRS-006.RBAC.Privileges.AlterColumn.GrantOption](#rqsrs-006rbacprivilegesaltercolumngrantoption)
-        * 5.2.11.4.7 [RQ.SRS-006.RBAC.Privileges.AlterColumn.GrantOption.Grant](#rqsrs-006rbacprivilegesaltercolumngrantoptiongrant)
-        * 5.2.11.4.8 [RQ.SRS-006.RBAC.Privileges.AlterColumn.GrantOption.Revoke](#rqsrs-006rbacprivilegesaltercolumngrantoptionrevoke)
-        * 5.2.11.4.9 [RQ.SRS-006.RBAC.Privileges.AlterColumn.TableEngines](#rqsrs-006rbacprivilegesaltercolumntableengines)
+        * 5.2.11.4.6 [RQ.SRS-006.RBAC.Privileges.AlterColumn.TableEngines](#rqsrs-006rbacprivilegesaltercolumntableengines)
       * 5.2.11.5 [AlterIndex](#alterindex)
         * 5.2.11.5.1 [RQ.SRS-006.RBAC.Privileges.AlterIndex](#rqsrs-006rbacprivilegesalterindex)
         * 5.2.11.5.2 [RQ.SRS-006.RBAC.Privileges.AlterIndex.Grant](#rqsrs-006rbacprivilegesalterindexgrant)
         * 5.2.11.5.3 [RQ.SRS-006.RBAC.Privileges.AlterIndex.Revoke](#rqsrs-006rbacprivilegesalterindexrevoke)
         * 5.2.11.5.4 [RQ.SRS-006.RBAC.Privileges.AlterIndex.Cluster](#rqsrs-006rbacprivilegesalterindexcluster)
-        * 5.2.11.5.5 [RQ.SRS-006.RBAC.Privileges.AlterIndex.GrantOption](#rqsrs-006rbacprivilegesalterindexgrantoption)
-        * 5.2.11.5.6 [RQ.SRS-006.RBAC.Privileges.AlterIndex.GrantOption.Grant](#rqsrs-006rbacprivilegesalterindexgrantoptiongrant)
-        * 5.2.11.5.7 [RQ.SRS-006.RBAC.Privileges.AlterIndex.GrantOption.Revoke](#rqsrs-006rbacprivilegesalterindexgrantoptionrevoke)
-        * 5.2.11.5.8 [RQ.SRS-006.RBAC.Privileges.AlterIndex.TableEngines](#rqsrs-006rbacprivilegesalterindextableengines)
+        * 5.2.11.5.5 [RQ.SRS-006.RBAC.Privileges.AlterIndex.TableEngines](#rqsrs-006rbacprivilegesalterindextableengines)
       * 5.2.11.6 [AlterConstraint](#alterconstraint)
         * 5.2.11.6.1 [RQ.SRS-006.RBAC.Privileges.AlterConstraint](#rqsrs-006rbacprivilegesalterconstraint)
         * 5.2.11.6.2 [RQ.SRS-006.RBAC.Privileges.AlterConstraint.Grant](#rqsrs-006rbacprivilegesalterconstraintgrant)
         * 5.2.11.6.3 [RQ.SRS-006.RBAC.Privileges.AlterConstraint.Revoke](#rqsrs-006rbacprivilegesalterconstraintrevoke)
         * 5.2.11.6.4 [RQ.SRS-006.RBAC.Privileges.AlterConstraint.Cluster](#rqsrs-006rbacprivilegesalterconstraintcluster)
-        * 5.2.11.6.5 [RQ.SRS-006.RBAC.Privileges.AlterConstraint.GrantOption](#rqsrs-006rbacprivilegesalterconstraintgrantoption)
-        * 5.2.11.6.6 [RQ.SRS-006.RBAC.Privileges.AlterConstraint.GrantOption.Grant](#rqsrs-006rbacprivilegesalterconstraintgrantoptiongrant)
-        * 5.2.11.6.7 [RQ.SRS-006.RBAC.Privileges.AlterConstraint.GrantOption.Revoke](#rqsrs-006rbacprivilegesalterconstraintgrantoptionrevoke)
-        * 5.2.11.6.8 [RQ.SRS-006.RBAC.Privileges.AlterConstraint.TableEngines](#rqsrs-006rbacprivilegesalterconstrainttableengines)
+        * 5.2.11.6.5 [RQ.SRS-006.RBAC.Privileges.AlterConstraint.TableEngines](#rqsrs-006rbacprivilegesalterconstrainttableengines)
       * 5.2.11.7 [AlterTTL](#alterttl)
         * 5.2.11.7.1 [RQ.SRS-006.RBAC.Privileges.AlterTTL](#rqsrs-006rbacprivilegesalterttl)
         * 5.2.11.7.2 [RQ.SRS-006.RBAC.Privileges.AlterTTL.Grant](#rqsrs-006rbacprivilegesalterttlgrant)
         * 5.2.11.7.3 [RQ.SRS-006.RBAC.Privileges.AlterTTL.Revoke](#rqsrs-006rbacprivilegesalterttlrevoke)
         * 5.2.11.7.4 [RQ.SRS-006.RBAC.Privileges.AlterTTL.Cluster](#rqsrs-006rbacprivilegesalterttlcluster)
-        * 5.2.11.7.5 [RQ.SRS-006.RBAC.Privileges.AlterTTL.GrantOption](#rqsrs-006rbacprivilegesalterttlgrantoption)
-        * 5.2.11.7.6 [RQ.SRS-006.RBAC.Privileges.AlterTTL.GrantOption.Grant](#rqsrs-006rbacprivilegesalterttlgrantoptiongrant)
-        * 5.2.11.7.7 [RQ.SRS-006.RBAC.Privileges.AlterTTL.GrantOption.Revoke](#rqsrs-006rbacprivilegesalterttlgrantoptionrevoke)
-        * 5.2.11.7.8 [RQ.SRS-006.RBAC.Privileges.AlterTTL.TableEngines](#rqsrs-006rbacprivilegesalterttltableengines)
+        * 5.2.11.7.5 [RQ.SRS-006.RBAC.Privileges.AlterTTL.TableEngines](#rqsrs-006rbacprivilegesalterttltableengines)
       * 5.2.11.8 [AlterSettings](#altersettings)
         * 5.2.11.8.1 [RQ.SRS-006.RBAC.Privileges.AlterSettings](#rqsrs-006rbacprivilegesaltersettings)
         * 5.2.11.8.2 [RQ.SRS-006.RBAC.Privileges.AlterSettings.Grant](#rqsrs-006rbacprivilegesaltersettingsgrant)
         * 5.2.11.8.3 [RQ.SRS-006.RBAC.Privileges.AlterSettings.Revoke](#rqsrs-006rbacprivilegesaltersettingsrevoke)
         * 5.2.11.8.4 [RQ.SRS-006.RBAC.Privileges.AlterSettings.Cluster](#rqsrs-006rbacprivilegesaltersettingscluster)
-        * 5.2.11.8.5 [RQ.SRS-006.RBAC.Privileges.AlterSettings.GrantOption](#rqsrs-006rbacprivilegesaltersettingsgrantoption)
-        * 5.2.11.8.6 [RQ.SRS-006.RBAC.Privileges.AlterSettings.GrantOption.Grant](#rqsrs-006rbacprivilegesaltersettingsgrantoptiongrant)
-        * 5.2.11.8.7 [RQ.SRS-006.RBAC.Privileges.AlterSettings.GrantOption.Revoke](#rqsrs-006rbacprivilegesaltersettingsgrantoptionrevoke)
-        * 5.2.11.8.8 [RQ.SRS-006.RBAC.Privileges.AlterSettings.TableEngines](#rqsrs-006rbacprivilegesaltersettingstableengines)
-      * 5.2.11.9 [RQ.SRS-006.RBAC.Privileges.Delete](#rqsrs-006rbacprivilegesdelete)
-      * 5.2.11.10 [RQ.SRS-006.RBAC.Privileges.Alter](#rqsrs-006rbacprivilegesalter)
-      * 5.2.11.11 [RQ.SRS-006.RBAC.Privileges.Create](#rqsrs-006rbacprivilegescreate)
-      * 5.2.11.12 [RQ.SRS-006.RBAC.Privileges.Drop](#rqsrs-006rbacprivilegesdrop)
-      * 5.2.11.13 [RQ.SRS-006.RBAC.Privileges.All](#rqsrs-006rbacprivilegesall)
-      * 5.2.11.14 [RQ.SRS-006.RBAC.Privileges.All.GrantRevoke](#rqsrs-006rbacprivilegesallgrantrevoke)
-      * 5.2.11.15 [RQ.SRS-006.RBAC.Privileges.GrantOption](#rqsrs-006rbacprivilegesgrantoption)
-      * 5.2.11.16 [RQ.SRS-006.RBAC.Privileges.AdminOption](#rqsrs-006rbacprivilegesadminoption)
+        * 5.2.11.8.5 [RQ.SRS-006.RBAC.Privileges.AlterSettings.TableEngines](#rqsrs-006rbacprivilegesaltersettingstableengines)
+      * 5.2.11.9 [Alter Update](#alter-update)
+        * 5.2.11.9.1 [RQ.SRS-006.RBAC.Privileges.AlterUpdate](#rqsrs-006rbacprivilegesalterupdate)
+        * 5.2.11.9.2 [RQ.SRS-006.RBAC.Privileges.AlterUpdate.Access](#rqsrs-006rbacprivilegesalterupdateaccess)
+        * 5.2.11.9.3 [RQ.SRS-006.RBAC.Privileges.AlterUpdate.TableEngines](#rqsrs-006rbacprivilegesalterupdatetableengines)
+      * 5.2.11.10 [Alter Delete](#alter-delete)
+        * 5.2.11.10.1 [RQ.SRS-006.RBAC.Privileges.AlterDelete](#rqsrs-006rbacprivilegesalterdelete)
+        * 5.2.11.10.2 [RQ.SRS-006.RBAC.Privileges.AlterDelete.Access](#rqsrs-006rbacprivilegesalterdeleteaccess)
+        * 5.2.11.10.3 [RQ.SRS-006.RBAC.Privileges.AlterDelete.TableEngines](#rqsrs-006rbacprivilegesalterdeletetableengines)
+      * 5.2.11.11 [Alter Freeze Partition](#alter-freeze-partition)
+        * 5.2.11.11.1 [RQ.SRS-006.RBAC.Privileges.AlterFreeze](#rqsrs-006rbacprivilegesalterfreeze)
+        * 5.2.11.11.2 [RQ.SRS-006.RBAC.Privileges.AlterFreeze.Access](#rqsrs-006rbacprivilegesalterfreezeaccess)
+        * 5.2.11.11.3 [RQ.SRS-006.RBAC.Privileges.AlterFreeze.TableEngines](#rqsrs-006rbacprivilegesalterfreezetableengines)
+      * 5.2.11.12 [Alter Fetch Partition](#alter-fetch-partition)
+        * 5.2.11.12.1 [RQ.SRS-006.RBAC.Privileges.AlterFetch](#rqsrs-006rbacprivilegesalterfetch)
+        * 5.2.11.12.2 [RQ.SRS-006.RBAC.Privileges.AlterFetch.Access](#rqsrs-006rbacprivilegesalterfetchaccess)
+        * 5.2.11.12.3 [RQ.SRS-006.RBAC.Privileges.AlterFetch.TableEngines](#rqsrs-006rbacprivilegesalterfetchtableengines)
+      * 5.2.11.13 [Alter Move Partition](#alter-move-partition)
+        * 5.2.11.13.1 [RQ.SRS-006.RBAC.Privileges.AlterMove](#rqsrs-006rbacprivilegesaltermove)
+        * 5.2.11.13.2 [RQ.SRS-006.RBAC.Privileges.AlterMove.Access](#rqsrs-006rbacprivilegesaltermoveaccess)
+        * 5.2.11.13.3 [RQ.SRS-006.RBAC.Privileges.AlterMove.TableEngines](#rqsrs-006rbacprivilegesaltermovetableengines)
+      * 5.2.11.14 [Grant Option](#grant-option)
+        * 5.2.11.14.1 [RQ.SRS-006.RBAC.Privileges.GrantOption](#rqsrs-006rbacprivilegesgrantoption)
+      * 5.2.11.15 [RQ.SRS-006.RBAC.Privileges.Delete](#rqsrs-006rbacprivilegesdelete)
+      * 5.2.11.16 [RQ.SRS-006.RBAC.Privileges.Alter](#rqsrs-006rbacprivilegesalter)
+      * 5.2.11.17 [RQ.SRS-006.RBAC.Privileges.Create](#rqsrs-006rbacprivilegescreate)
+      * 5.2.11.18 [RQ.SRS-006.RBAC.Privileges.Drop](#rqsrs-006rbacprivilegesdrop)
+      * 5.2.11.19 [RQ.SRS-006.RBAC.Privileges.All](#rqsrs-006rbacprivilegesall)
+      * 5.2.11.20 [RQ.SRS-006.RBAC.Privileges.All.GrantRevoke](#rqsrs-006rbacprivilegesallgrantrevoke)
+      * 5.2.11.21 [RQ.SRS-006.RBAC.Privileges.AdminOption](#rqsrs-006rbacprivilegesadminoption)
     * 5.2.12 [Required Privileges](#required-privileges)
       * 5.2.12.1 [RQ.SRS-006.RBAC.RequiredPrivileges.Create](#rqsrs-006rbacrequiredprivilegescreate)
       * 5.2.12.2 [RQ.SRS-006.RBAC.RequiredPrivileges.Alter](#rqsrs-006rbacrequiredprivilegesalter)
@@ -3042,33 +3042,6 @@ on a specified cluster to one or more **users** or **roles**.
 Any `SELECT INTO` statements SHALL succeed only on nodes where
 the table exists and privilege was granted.
 
-###### RQ.SRS-006.RBAC.Privileges.Select.GrantOption
-version: 1.0
-
-[ClickHouse] SHALL support granting **select** privilege
-for a database or a specific table to one or more **users** or **roles**
-with a `GRANT OPTION` clause. User with **grant option** privilege SHALL be able to
-change access to the **select** privilege by another user or role
-on the same or smaller scope that they have access to.
-
-###### RQ.SRS-006.RBAC.Privileges.Select.GrantOption.Grant
-version: 1.0
-
-[ClickHouse] SHALL support a user with **grant option** privilege
-granting **select** privilege to other **users** or **roles** on the same
-or smaller scope that they have access to. Any `SELECT INTO` statements SHALL succeed
-when done by a user with privilege granted by a user with `GRANT OPTION`,
-either directly or through an assigned role.
-
-###### RQ.SRS-006.RBAC.Privileges.Select.GrantOption.Revoke
-version: 1.0
-
-[ClickHouse] SHALL support a user with **grant option** privilege
-revoking **select** privilege from other **users** or **roles** on the same
-or smaller scope that they have access to. Any `SELECT INTO` statements SHALL fail
-when done by a user with privilege revoke by a user with `GRANT OPTION`,
-either directly or through an assigned role, unless they have access otherwise.
-
 ###### RQ.SRS-006.RBAC.Privileges.Select.TableEngines
 version: 1.0
 
@@ -3129,33 +3102,6 @@ version: 1.0
 on a specified cluster to one or more **users** or **roles**.
 Any `INSERT INTO` statements SHALL succeed only on nodes where
 the table exists and privilege was granted.
-
-###### RQ.SRS-006.RBAC.Privileges.Insert.GrantOption
-version: 1.0
-
-[ClickHouse] SHALL support granting **insert** privilege
-for a database or a specific table to one or more **users** or **roles**
-with a `GRANT OPTION` clause. User with **grant option** privilege SHALL be able to
-change access to the **insert** privilege by another user or role
-on the same or smaller scope that they have access to.
-
-###### RQ.SRS-006.RBAC.Privileges.Insert.GrantOption.Grant
-version: 1.0
-
-[ClickHouse] SHALL support a user with **grant option** privilege
-granting **insert** privilege to other **users** or **roles** on the same
-or smaller scope that they have access to. Any `INSERT INTO` statements SHALL succeed
-when done by a user with privilege granted by a user with `GRANT OPTION`,
-either directly or through an assigned role.
-
-###### RQ.SRS-006.RBAC.Privileges.Insert.GrantOption.Revoke
-version: 1.0
-
-[ClickHouse] SHALL support a user with **grant option** privilege
-revoking **insert** privilege from other **users** or **roles** on the same
-or smaller scope that they have access to. Any `INSERT INTO` statements SHALL fail
-when done by a user with privilege revoke by a user with `GRANT OPTION`,
-either directly or through an assigned role, unless they have access otherwise.
 
 ###### RQ.SRS-006.RBAC.Privileges.Insert.TableEngines
 version: 1.0
@@ -3219,34 +3165,6 @@ on a specified cluster to one or more **users** or **roles**.
 Any `ALTER TABLE ... ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN`
 statements SHALL succeed only on nodes where the table exists and privilege was granted.
 
-###### RQ.SRS-006.RBAC.Privileges.AlterColumn.GrantOption
-version: 1.0
-
-[ClickHouse] SHALL support granting **alter column** privilege
-for a database or a specific table to one or more **users** or **roles**
-with a `GRANT OPTION` clause. User with **grant option** privilege SHALL be able to
-change access to the **alter column** privilege by another user or role
-on the same or smaller scope that they have access to.
-
-###### RQ.SRS-006.RBAC.Privileges.AlterColumn.GrantOption.Grant
-version: 1.0
-
-[ClickHouse] SHALL support a user with **grant option** privilege
-granting **alter column** privilege to other **users** or **roles** on the same
-or smaller scope that they have access to.
-Any `ALTER TABLE ... ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN` statements SHALL
-succeed when done by a user with privilege granted by a user with
-`GRANT OPTION`, either directly or through an assigned role.
-
-###### RQ.SRS-006.RBAC.Privileges.AlterColumn.GrantOption.Revoke
-version: 1.0
-
-[ClickHouse] SHALL support a user with **grant option** privilege
-revoking **alter column** privilege from other **users** or **roles** on the same
-or smaller scope that they have access to. Any `ALTER TABLE ... ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN` statements SHALL fail
-when done by a user with privilege revoke by a user with `GRANT OPTION`,
-either directly or through an assigned role, unless they have access otherwise.
-
 ###### RQ.SRS-006.RBAC.Privileges.AlterColumn.TableEngines
 version: 1.0
 
@@ -3299,35 +3217,6 @@ version: 1.0
 on a specified cluster to one or more **users** or **roles**.
 Any `ALTER TABLE ... ORDER BY | ADD|DROP|MATERIALIZE|CLEAR INDEX`
 statements SHALL succeed only on nodes where the table exists and privilege was granted.
-
-###### RQ.SRS-006.RBAC.Privileges.AlterIndex.GrantOption
-version: 1.0
-
-[ClickHouse] SHALL support granting **alter index** privilege
-for a database or a specific table to one or more **users** or **roles**
-with a `GRANT OPTION` clause. User with **grant option** privilege SHALL be able to
-change access to the **alter index** privilege by another user or role
-on the same or smaller scope that they have access to.
-
-###### RQ.SRS-006.RBAC.Privileges.AlterIndex.GrantOption.Grant
-version: 1.0
-
-[ClickHouse] SHALL support a user with **grant option** privilege
-granting **alter index** privilege to other **users** or **roles** on the same
-or smaller scope that they have access to.
-Any `ALTER TABLE ... ORDER BY | ADD|DROP|MATERIALIZE|CLEAR INDEX` statements SHALL
-succeed when done by a user with privilege granted by a user with
-`GRANT OPTION`, either directly or through an assigned role.
-
-###### RQ.SRS-006.RBAC.Privileges.AlterIndex.GrantOption.Revoke
-version: 1.0
-
-[ClickHouse] SHALL support a user with **grant option** privilege
-revoking **alter index** privilege from other **users** or **roles** on the same
-or smaller scope that they have access to.
-Any `ALTER TABLE ... ORDER BY | ADD|DROP|MATERIALIZE|CLEAR INDEX` statements
-SHALL fail when done by a user with privilege revoke by a user with `GRANT OPTION`,
-either directly or through an assigned role, unless they have access otherwise.
 
 ###### RQ.SRS-006.RBAC.Privileges.AlterIndex.TableEngines
 version: 1.0
@@ -3382,35 +3271,6 @@ on a specified cluster to one or more **users** or **roles**.
 Any `ALTER TABLE ... ADD|DROP CONSTRAINT`
 statements SHALL succeed only on nodes where the table exists and privilege was granted.
 
-###### RQ.SRS-006.RBAC.Privileges.AlterConstraint.GrantOption
-version: 1.0
-
-[ClickHouse] SHALL support granting **alter constraint** privilege
-for a database or a specific table to one or more **users** or **roles**
-with a `GRANT OPTION` clause. User with **grant option** privilege SHALL be able to
-change access to the **alter constraint** privilege by another user or role
-on the same or smaller scope that they have access to.
-
-###### RQ.SRS-006.RBAC.Privileges.AlterConstraint.GrantOption.Grant
-version: 1.0
-
-[ClickHouse] SHALL support a user with **grant option** privilege
-granting **alter constraint** privilege to other **users** or **roles** on the same
-or smaller scope that they have access to.
-Any `ALTER TABLE ... ADD|DROP CONSTRAINT` statements SHALL
-succeed when done by a user with privilege granted by a user with
-`GRANT OPTION`, either directly or through an assigned role.
-
-###### RQ.SRS-006.RBAC.Privileges.AlterConstraint.GrantOption.Revoke
-version: 1.0
-
-[ClickHouse] SHALL support a user with **grant option** privilege
-revoking **alter constraint** privilege from other **users** or **roles** on the same
-or smaller scope that they have access to.
-Any `ALTER TABLE ... ADD|DROP CONSTRAINT` statements
-SHALL fail when done by a user with privilege revoke by a user with `GRANT OPTION`,
-either directly or through an assigned role, unless they have access otherwise.
-
 ###### RQ.SRS-006.RBAC.Privileges.AlterConstraint.TableEngines
 version: 1.0
 
@@ -3464,35 +3324,6 @@ on a specified cluster to one or more **users** or **roles**.
 Any `ALTER TABLE ... ALTER TTL | ALTER MATERIALIZE TTL`
 statements SHALL succeed only on nodes where the table exists and privilege was granted.
 
-###### RQ.SRS-006.RBAC.Privileges.AlterTTL.GrantOption
-version: 1.0
-
-[ClickHouse] SHALL support granting **alter ttl** or **alter materialize ttl** privilege
-for a database or a specific table to one or more **users** or **roles**
-with a `GRANT OPTION` clause. User with **grant option** privilege SHALL be able to
-change access to the **alter ttl** or **alter materialize ttl** privilege by another user or role
-on the same or smaller scope that they have access to.
-
-###### RQ.SRS-006.RBAC.Privileges.AlterTTL.GrantOption.Grant
-version: 1.0
-
-[ClickHouse] SHALL support a user with **grant option** privilege
-granting **alter ttl** or **alter materialize ttl** privilege to other **users** or **roles** on the same
-or smaller scope that they have access to.
-Any `ALTER TABLE ... ALTER TTL | ALTER MATERIALIZE TTL` statements SHALL
-succeed when done by a user with privilege granted by a user with
-`GRANT OPTION`, either directly or through an assigned role.
-
-###### RQ.SRS-006.RBAC.Privileges.AlterTTL.GrantOption.Revoke
-version: 1.0
-
-[ClickHouse] SHALL support a user with **grant option** privilege
-revoking **alter ttl** or **alter materialize ttl** privilege from other **users** or **roles** on the same
-or smaller scope that they have access to.
-Any `ALTER TABLE ... ALTER TTL | ALTER MATERIALIZE TTL` statements
-SHALL fail when done by a user with privilege revoke by a user with `GRANT OPTION`,
-either directly or through an assigned role, unless they have access otherwise.
-
 ###### RQ.SRS-006.RBAC.Privileges.AlterTTL.TableEngines
 version: 1.0
 
@@ -3534,35 +3365,6 @@ on a specified cluster to one or more **users** or **roles**.
 Any `ALTER TABLE ... MODIFY SETTING setting`
 statements SHALL succeed only on nodes where the table exists and privilege was granted.
 
-###### RQ.SRS-006.RBAC.Privileges.AlterSettings.GrantOption
-version: 1.0
-
-[ClickHouse] SHALL support granting **alter settings** privilege
-for a database or a specific table to one or more **users** or **roles**
-with a `GRANT OPTION` clause. User with **grant option** privilege SHALL be able to
-change access to the **alter settings** privilege by another user or role
-on the same or smaller scope that they have access to.
-
-###### RQ.SRS-006.RBAC.Privileges.AlterSettings.GrantOption.Grant
-version: 1.0
-
-[ClickHouse] SHALL support a user with **grant option** privilege
-granting **alter settings** privilege to other **users** or **roles** on the same
-or smaller scope that they have access to.
-Any `ALTER TABLE ... MODIFY SETTING setting` statements SHALL
-succeed when done by a user with privilege granted by a user with
-`GRANT OPTION`, either directly or through an assigned role.
-
-###### RQ.SRS-006.RBAC.Privileges.AlterSettings.GrantOption.Revoke
-version: 1.0
-
-[ClickHouse] SHALL support a user with **grant option** privilege
-revoking **alter settings** privilege from other **users** or **roles** on the same
-or smaller scope that they have access to.
-Any `ALTER TABLE ... MODIFY SETTING setting` statements
-SHALL fail when done by a user with privilege revoke by a user with `GRANT OPTION`,
-either directly or through an assigned role, unless they have access otherwise.
-
 ###### RQ.SRS-006.RBAC.Privileges.AlterSettings.TableEngines
 version: 1.0
 
@@ -3583,6 +3385,197 @@ on tables created using the following engines
 * ReplicatedCollapsingMergeTree
 * ReplicatedVersionedCollapsingMergeTree
 * ReplicatedGraphiteMergeTree
+
+##### Alter Update
+
+###### RQ.SRS-006.RBAC.Privileges.AlterUpdate
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `ALTER UPDATE` statement if and only if the user has **alter update** privilege for that column,
+either directly or through a role.
+
+###### RQ.SRS-006.RBAC.Privileges.AlterUpdate.Access
+version: 1.0
+
+[ClickHouse] SHALL support granting or revoking **alter update** privilege on a column level
+to one or more **users** or **roles**.
+
+###### RQ.SRS-006.RBAC.Privileges.AlterUpdate.TableEngines
+version: 1.0
+
+[ClickHouse] SHALL support controlling access to the **alter update** privilege
+on tables created using the following engines
+
+* MergeTree
+* ReplacingMergeTree
+* SummingMergeTree
+* AggregatingMergeTree
+* CollapsingMergeTree
+* VersionedCollapsingMergeTree
+* GraphiteMergeTree
+* ReplicatedMergeTree
+* ReplicatedSummingMergeTree
+* ReplicatedReplacingMergeTree
+* ReplicatedAggregatingMergeTree
+* ReplicatedCollapsingMergeTree
+* ReplicatedVersionedCollapsingMergeTree
+* ReplicatedGraphiteMergeTree
+
+##### Alter Delete
+
+###### RQ.SRS-006.RBAC.Privileges.AlterDelete
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `ALTER DELETE` statement if and only if the user has **alter delete** privilege for that table,
+either directly or through a role.
+
+###### RQ.SRS-006.RBAC.Privileges.AlterDelete.Access
+version: 1.0
+
+[ClickHouse] SHALL support granting or revoking **alter delete** privilege to one or more **users** or **roles**.
+
+###### RQ.SRS-006.RBAC.Privileges.AlterDelete.TableEngines
+version: 1.0
+
+[ClickHouse] SHALL support controlling access to the **alter delete** privilege
+on tables created using the following engines
+
+* MergeTree
+* ReplacingMergeTree
+* SummingMergeTree
+* AggregatingMergeTree
+* CollapsingMergeTree
+* VersionedCollapsingMergeTree
+* GraphiteMergeTree
+* ReplicatedMergeTree
+* ReplicatedSummingMergeTree
+* ReplicatedReplacingMergeTree
+* ReplicatedAggregatingMergeTree
+* ReplicatedCollapsingMergeTree
+* ReplicatedVersionedCollapsingMergeTree
+* ReplicatedGraphiteMergeTree
+
+##### Alter Freeze Partition
+
+###### RQ.SRS-006.RBAC.Privileges.AlterFreeze
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `ALTER FREEZE` statement if and only if the user has **alter freeze** privilege for that table,
+either directly or through a role.
+
+###### RQ.SRS-006.RBAC.Privileges.AlterFreeze.Access
+version: 1.0
+
+[ClickHouse] SHALL support granting or revoking **alter freeze** privilege to one or more **users** or **roles**.
+
+###### RQ.SRS-006.RBAC.Privileges.AlterFreeze.TableEngines
+version: 1.0
+
+[ClickHouse] SHALL support controlling access to the **alter freeze** privilege
+on tables created using the following engines
+
+* MergeTree
+* ReplacingMergeTree
+* SummingMergeTree
+* AggregatingMergeTree
+* CollapsingMergeTree
+* VersionedCollapsingMergeTree
+* GraphiteMergeTree
+* ReplicatedMergeTree
+* ReplicatedSummingMergeTree
+* ReplicatedReplacingMergeTree
+* ReplicatedAggregatingMergeTree
+* ReplicatedCollapsingMergeTree
+* ReplicatedVersionedCollapsingMergeTree
+* ReplicatedGraphiteMergeTree
+
+##### Alter Fetch Partition
+
+###### RQ.SRS-006.RBAC.Privileges.AlterFetch
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `ALTER FETCH` statement if and only if the user has **alter fetch** privilege for that table,
+either directly or through a role.
+
+###### RQ.SRS-006.RBAC.Privileges.AlterFetch.Access
+version: 1.0
+
+[ClickHouse] SHALL support granting or revoking **alter fetch** privilege to one or more **users** or **roles**.
+
+###### RQ.SRS-006.RBAC.Privileges.AlterFetch.TableEngines
+version: 1.0
+
+[ClickHouse] SHALL support controlling access to the **alter fetch** privilege
+on tables created using the following engines
+
+* ReplicatedMergeTree
+* ReplicatedSummingMergeTree
+* ReplicatedReplacingMergeTree
+* ReplicatedAggregatingMergeTree
+* ReplicatedCollapsingMergeTree
+* ReplicatedVersionedCollapsingMergeTree
+* ReplicatedGraphiteMergeTree
+
+##### Alter Move Partition
+
+###### RQ.SRS-006.RBAC.Privileges.AlterMove
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `ALTER MOVE` statement if and only if the user has **alter move**, **select**, and **alter delete** privilege on the source table
+and **insert** privilege on the target table, either directly or through a role.
+For example,
+```sql
+ALTER TABLE source_table MOVE PARTITION 1 TO target_table
+```
+
+###### RQ.SRS-006.RBAC.Privileges.AlterMove.Access
+version: 1.0
+
+[ClickHouse] SHALL support granting or revoking **alter move** privilege to one or more **users** or **roles**.
+
+###### RQ.SRS-006.RBAC.Privileges.AlterMove.TableEngines
+version: 1.0
+
+[ClickHouse] SHALL support controlling access to the **alter move** privilege
+on tables created using the following engines
+
+* MergeTree
+* ReplacingMergeTree
+* SummingMergeTree
+* AggregatingMergeTree
+* CollapsingMergeTree
+* VersionedCollapsingMergeTree
+* GraphiteMergeTree
+* ReplicatedMergeTree
+* ReplicatedSummingMergeTree
+* ReplicatedReplacingMergeTree
+* ReplicatedAggregatingMergeTree
+* ReplicatedCollapsingMergeTree
+* ReplicatedVersionedCollapsingMergeTree
+* ReplicatedGraphiteMergeTree
+
+##### Grant Option
+
+###### RQ.SRS-006.RBAC.Privileges.GrantOption
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `GRANT` or `REVOKE` privilege statements by a user if and only if
+the user has that privilege with `GRANT OPTION`, either directly or through a role.
+
+`GRANT OPTION` is supported by the following privileges
+
+* `ALTER MOVE PARTITION`
+* `ALTER FETCH PARTITION`
+* `ALTER FREEZE PARTITION`
+* `ALTER DELETE`
+* `ALTER UPDATE`
+* `ALTER SETTINGS`
+* `ALTER TTL`
+* `ALTER CONSTRAINT`
+* `ALTER COLUMN`
+* `ALTER INDEX`
+* `INSERT`
+* `SELECT`
 
 ##### RQ.SRS-006.RBAC.Privileges.Delete
 version: 1.0
@@ -3619,12 +3612,6 @@ as provided by **usage**, **select**, **select columns**,
 version: 1.0
 
 [ClickHouse] SHALL support granting or revoking **all** privileges
-for a database or a specific table to one or more **users** or **roles**.
-
-##### RQ.SRS-006.RBAC.Privileges.GrantOption
-version: 1.0
-
-[ClickHouse] SHALL support granting or revoking **grant option** privilege
 for a database or a specific table to one or more **users** or **roles**.
 
 ##### RQ.SRS-006.RBAC.Privileges.AdminOption
