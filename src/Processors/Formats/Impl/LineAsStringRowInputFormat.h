@@ -24,8 +24,6 @@ public:
 
 private:
     void readLineObject(IColumn & column);
-
-    PeekableReadBuffer buf;
 };
 
 }
