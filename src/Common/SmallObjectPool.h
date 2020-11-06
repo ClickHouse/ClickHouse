@@ -15,27 +15,12 @@ class SmallObjectPool
 private:
     const size_t object_size;
     Arena pool;
-    char * free_list{};
+    char * free_list = nullptr;
 
 public:
     SmallObjectPool(size_t object_size_)
         : object_size{std::max(object_size_, sizeof(char *))}
     {
-        if (pool.size() < object_size)
-            return;
-
-        const size_t num_objects = pool.size() / object_size;
-        free_list = pool.alloc(num_objects * object_size);
-        char * head = free_list;
-
-        for (size_t i = 0; i < num_objects - 1; ++i)
-        {
-            char * next = head + object_size;
-            unalignedStore<char *>(head, next);
-            head = next;
-        }
-
-        unalignedStore<char *>(head, nullptr);
     }
 
     char * alloc()
