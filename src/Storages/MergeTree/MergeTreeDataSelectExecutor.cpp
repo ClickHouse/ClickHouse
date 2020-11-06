@@ -231,7 +231,7 @@ Pipe MergeTreeDataSelectExecutor::readFromParts(
     if (data.minmax_idx_expr)
     {
         minmax_idx_condition.emplace(query_info, context, data.minmax_idx_columns, data.minmax_idx_expr);
-        partition_pruner.emplace(metadata_snapshot->getPartitionKey(), query_info, context);
+        partition_pruner.emplace(metadata_snapshot->getPartitionKey(), query_info, context, false /* strict */);
 
         if (settings.force_index_by_date && (minmax_idx_condition->alwaysUnknownOrTrue() && partition_pruner->isUseless()))
         {
