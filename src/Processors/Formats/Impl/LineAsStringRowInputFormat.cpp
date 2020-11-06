@@ -47,7 +47,7 @@ void LineAsStringRowInputFormat::readLineObject(IColumn & column)
     saveUpToPosition(in, object, pos);
     loadAtPosition(in, object, pos);
 
-    /// Last character is always \n. 
+    /// Last character is always \n.
     column.insertData(object.data(), object.size() - 1);
 }
 
@@ -72,5 +72,4 @@ void registerInputFormatProcessorLineAsString(FormatFactory & factory)
         return std::make_shared<LineAsStringRowInputFormat>(sample, buf, params);
     });
 }
-
 }
