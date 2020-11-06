@@ -325,7 +325,7 @@ This function accepts a number or date or date with time, and returns a FixedStr
 
 ## reinterpretAsUUID {#reinterpretasuuid}
 
-This function accepts big-endian [FixedString](../../sql-reference/data-types/fixedstring), and returns [UUID](../../sql-reference/data-types/uuid). Takes 16 bytes string. If the string isn't long enough, the functions work as if the string is padded with the necessary number of null bytes to the end. If the string longer than 16 bytes, the extra bytes at the end are ignored. 
+This function accepts big-endian [FixedString](../../sql-reference/data-types/fixedstring.md#fixedstring), and returns [UUID](../../sql-reference/data-types/uuid.md#uuid). Takes 16 bytes string. If the string isn't long enough, the functions work as if the string is padded with the necessary number of null bytes to the end. If the string longer than 16 bytes, the extra bytes at the end are ignored. 
 
 **Syntax**
 
