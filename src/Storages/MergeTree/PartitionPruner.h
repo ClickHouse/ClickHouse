@@ -25,7 +25,7 @@ public:
         : partition_key(partition_key_)
         , partition_condition(
               query_info, context, partition_key.column_names, partition_key.expression, true /* single_point */, strict)
-        , useless(partition_condition.alwaysUnknownOrTrue())
+        , useless(strict ? partition_condition.anyUnknownOrAlwaysTrue() : partition_condition.alwaysUnknownOrTrue())
     {
     }
 

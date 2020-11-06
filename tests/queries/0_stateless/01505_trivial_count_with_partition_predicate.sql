@@ -19,6 +19,8 @@ select count() FROM test1 where toDate(p) = '2020-09-01' and sipHash64(toString(
 select count() FROM test1 where toDate(p) = '2020-09-01' and k = 2; -- { serverError 158; }
 -- optimized
 select count() from test1 where toDate(p) > '2020-09-01';
+-- non-optimized
+select count() from test1 where toDate(p) >= '2020-09-01' and p <= '2020-09-01 00:00:00';
 
 create table test_tuple(p DateTime, i int, j int) engine MergeTree partition by (toDate(p), i) order by j;
 

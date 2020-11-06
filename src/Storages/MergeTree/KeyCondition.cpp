@@ -1675,12 +1675,28 @@ String KeyCondition::RPNElement::toString() const
 
 bool KeyCondition::alwaysUnknownOrTrue() const
 {
+    return unknownOrAlwaysTrue(false);
+}
+bool KeyCondition::anyUnknownOrAlwaysTrue() const
+{
+    return unknownOrAlwaysTrue(true);
+}
+bool KeyCondition::unknownOrAlwaysTrue(bool unknown_any) const
+{
     std::vector<UInt8> rpn_stack;
 
     for (const auto & element : rpn)
     {
-        if (element.function == RPNElement::FUNCTION_UNKNOWN
-            || element.function == RPNElement::ALWAYS_TRUE)
+        if (element.function == RPNElement::FUNCTION_UNKNOWN)
+        {
+            /// If unknown_any is true, return instantly,
+            /// to avoid processing it with FUNCTION_AND, and change the outcome.
+            if (unknown_any)
+                return true;
+            /// Otherwise, it may be AND'ed via FUNCTION_AND
+            rpn_stack.push_back(true);
+        }
+        else if (element.function == RPNElement::ALWAYS_TRUE)
         {
             rpn_stack.push_back(true);
         }
@@ -1718,7 +1734,7 @@ bool KeyCondition::alwaysUnknownOrTrue() const
     }
 
     if (rpn_stack.size() != 1)
-        throw Exception("Unexpected stack size in KeyCondition::alwaysUnknownOrTrue", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Unexpected stack size in KeyCondition::unknownOrAlwaysTrue", ErrorCodes::LOGICAL_ERROR);
 
     return rpn_stack[0];
 }
