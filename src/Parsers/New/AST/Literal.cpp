@@ -81,7 +81,7 @@ String Literal::toString() const
 {
     WriteBufferFromOwnString wb;
     writeEscapedString(token, wb);
-    return wb.str();
+    return type == LiteralType::STRING ? "'" + wb.str() + "'" : wb.str();
 }
 
 NumberLiteral::NumberLiteral(antlr4::tree::TerminalNode * literal) : Literal(LiteralType::NUMBER, literal->getSymbol()->getText())

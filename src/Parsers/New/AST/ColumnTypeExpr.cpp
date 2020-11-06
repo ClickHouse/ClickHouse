@@ -29,7 +29,7 @@ ASTPtr EnumValue::convertToOld() const
 
 String EnumValue::toString() const
 {
-    return fmt::format("'{}' = {}", get(NAME)->toString(), get(VALUE)->toString());
+    return fmt::format("{} = {}", get(NAME)->toString(), get(VALUE)->toString());
 }
 
 // static
