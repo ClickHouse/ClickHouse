@@ -120,28 +120,30 @@ Status MakeStringBatchSized(int length, std::shared_ptr<RecordBatch> * out, uint
     return Status::OK();
 }
 
-Status ExampleIntBatches(BatchVector * out)
+Result<BatchVector> ExampleIntBatches()
 {
+    BatchVector out;
     std::shared_ptr<RecordBatch> batch;
     for (int i = 0; i < 5; ++i)
     {
         // Make all different sizes, use different random seed
         RETURN_NOT_OK(MakeIntBatchSized(10 + i, &batch, i));
-        out->push_back(batch);
+        out.push_back(batch);
     }
-    return Status::OK();
+    return Result<BatchVector>(out);
 }
 
-Status ExampleStringBatches(BatchVector * out)
+Result<BatchVector> ExampleStringBatches()
 {
+    BatchVector out;
     std::shared_ptr<RecordBatch> batch;
     for (int i = 0; i < 5; ++i)
     {
         // Make all different sizes, use different random seed
         RETURN_NOT_OK(MakeStringBatchSized(10 + i, &batch, i));
-        out->push_back(batch);
+        out.push_back(batch);
     }
-    return Status::OK();
+    return Result<BatchVector>(out);
 }
 
 Status GetBatchForFlight(const flight::Ticket & ticket, std::shared_ptr<RecordBatchReader> * out)
@@ -224,11 +226,14 @@ std::vector<flight::FlightInfo> ExampleFlightInfo(const arrow::flight::Location 
     flight::FlightDescriptor descr1{flight::FlightDescriptor::PATH, "", {"examples", "ints"}};
     flight::FlightDescriptor descr2{flight::FlightDescriptor::CMD, "my_command", {}};
 
+    size_t num_records1 = ExampleIntBatches().ValueOrDie().size();
+    size_t num_records2 = ExampleStringBatches().ValueOrDie().size();
+
     auto schema1 = ExampleIntSchema();
     auto schema2 = ExampleStringSchema();
 
-    ARROW_TEST_EXPECT_OK(MakeFlightInfo(*schema1, descr1, {endpoint1, endpoint2}, 1000, 100000, &flight1));
-    ARROW_TEST_EXPECT_OK(MakeFlightInfo(*schema2, descr2, {endpoint3}, 1000, 100000, &flight2));
+    ARROW_TEST_EXPECT_OK(MakeFlightInfo(*schema1, descr1, {endpoint1, endpoint2}, num_records1, 0, &flight1));
+    ARROW_TEST_EXPECT_OK(MakeFlightInfo(*schema2, descr2, {endpoint3}, num_records2, 0, &flight2));
     return {flight::FlightInfo(flight1), flight::FlightInfo(flight2)};
 }
 

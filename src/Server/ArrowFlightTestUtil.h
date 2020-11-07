@@ -61,9 +61,9 @@ Status MakeIntBatchSized(int length, std::shared_ptr<RecordBatch> * out, uint32_
 
 Status MakeStringBatchSized(int length, std::shared_ptr<RecordBatch> * out, uint32_t seed);
 
-Status ExampleIntBatches(BatchVector * out);
+Result<BatchVector> ExampleIntBatches(BatchVector * out);
 
-Status ExampleStringBatches(BatchVector * out);
+Result<BatchVector> ExampleStringBatches(BatchVector * out);
 
 Status GetBatchForFlight(const flight::Ticket & ticket, std::shared_ptr<RecordBatchReader> * out);
 
