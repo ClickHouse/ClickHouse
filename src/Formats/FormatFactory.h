@@ -18,6 +18,7 @@ class Block;
 class Context;
 struct FormatSettings;
 struct Settings;
+struct FormatFactorySettings;
 
 class ReadBuffer;
 class WriteBuffer;
@@ -35,6 +36,10 @@ using InputFormatPtr = std::shared_ptr<IInputFormat>;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
 FormatSettings getFormatSettings(const Context & context);
+
+template <typename T>
+FormatSettings getFormatSettings(const Context & context,
+    const T & settings);
 
 /** Allows to create an IBlockInputStream or IBlockOutputStream by the name of the format.
   * Note: format and compression are independent things.
@@ -108,11 +113,11 @@ public:
         const Block & sample,
         const Context & context,
         UInt64 max_block_size,
-        std::optional<FormatSettings> format_settings = std::nullopt) const;
+        const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     BlockOutputStreamPtr getOutput(const String & name, WriteBuffer & buf,
         const Block & sample, const Context & context, WriteCallback callback = {},
-        std::optional<FormatSettings> format_settings = std::nullopt) const;
+        const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     InputFormatPtr getInputFormat(
         const String & name,
@@ -120,12 +125,12 @@ public:
         const Block & sample,
         const Context & context,
         UInt64 max_block_size,
-        std::optional<FormatSettings> format_settings = std::nullopt) const;
+        const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     OutputFormatPtr getOutputFormat(
         const String & name, WriteBuffer & buf, const Block & sample,
         const Context & context, WriteCallback callback = {},
-        std::optional<FormatSettings> format_settings = std::nullopt) const;
+        const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     /// Register format by its name.
     void registerInputFormat(const String & name, InputCreator input_creator);

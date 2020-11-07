@@ -33,7 +33,7 @@ IStorageURLBase::IStorageURLBase(
     const Context & context_,
     const StorageID & table_id_,
     const String & format_name_,
-    std::optional<FormatSettings> format_settings_,
+    const std::optional<FormatSettings> & format_settings_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & compression_method_)
@@ -61,7 +61,7 @@ namespace
             const std::string & method,
             std::function<void(std::ostream &)> callback,
             const String & format,
-            std::optional<FormatSettings> format_settings,
+            const std::optional<FormatSettings> & format_settings,
             String name_,
             const Block & sample_block,
             const Context & context,
@@ -140,7 +140,7 @@ namespace
 
 StorageURLBlockOutputStream::StorageURLBlockOutputStream(const Poco::URI & uri,
         const String & format,
-        std::optional<FormatSettings> format_settings,
+        const std::optional<FormatSettings> & format_settings,
         const Block & sample_block_,
         const Context & context,
         const ConnectionTimeouts & timeouts,
@@ -276,10 +276,24 @@ void registerStorageURL(StorageFactory & factory)
         FormatSettings format_settings;
         if (args.storage_def->settings)
         {
-            Context global_context_copy = args.context;
-            global_context_copy.applySettingsChanges(
-                args.storage_def->settings->changes);
-            format_settings = getFormatSettings(global_context_copy);
+            FormatFactorySettings user_format_settings;
+
+            // Apply changed settings from global context, but ignore the
+            // unknown ones, because we only have the format settings here.
+            const auto & changes = args.context.getSettingsRef().changes();
+            for (const auto & change : changes)
+            {
+                if (user_format_settings.has(change.name))
+                {
+                    user_format_settings.set(change.name, change.value);
+                }
+            }
+
+            // Apply changes from SETTINGS clause, with validation.
+            user_format_settings.applyChanges(args.storage_def->settings->changes);
+
+            format_settings = getFormatSettings(args.context,
+                user_format_settings);
         }
         else
         {
