@@ -134,6 +134,7 @@ void PrettyCompactBlockOutputFormat::writeBottom(const Widths & max_widths)
                                        ascii_grid_symbols;
     /// Create delimiters
     std::stringstream bottom_separator;
+    bottom_separator.exceptions(std::ios::failbit);
 
     bottom_separator << grid_symbols.left_bottom_corner;
     for (size_t i = 0; i < max_widths.size(); ++i)

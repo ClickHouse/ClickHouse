@@ -33,6 +33,7 @@ static const std::vector<String> supported_functions{"any", "anyLast", "min",
 String DataTypeCustomSimpleAggregateFunction::getName() const
 {
     std::stringstream stream;
+    stream.exceptions(std::ios::failbit);
     stream << "SimpleAggregateFunction(" << function->getName();
 
     if (!parameters.empty())

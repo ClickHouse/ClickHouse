@@ -20,6 +20,7 @@ namespace DB
 std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_globs)
 {
     std::ostringstream oss_for_escaping;
+    oss_for_escaping.exceptions(std::ios::failbit);
     /// Escaping only characters that not used in glob syntax
     for (const auto & letter : initial_str_with_globs)
     {
@@ -33,6 +34,7 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
     re2::StringPiece input(escaped_with_globs);
     re2::StringPiece matched;
     std::ostringstream oss_for_replacing;
+    oss_for_replacing.exceptions(std::ios::failbit);
     size_t current_index = 0;
     while (RE2::FindAndConsume(&input, enum_or_range, &matched))
     {
@@ -45,6 +47,7 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
             size_t range_end = 0;
             char point;
             std::istringstream iss_range(buffer);
+            iss_range.exceptions(std::ios::failbit);
             iss_range >> range_begin >> point >> point >> range_end;
             assert(!iss_range.fail());
             bool leading_zeros = buffer[0] == '0';
@@ -71,6 +74,7 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
     oss_for_replacing << escaped_with_globs.substr(current_index);
     std::string almost_res = oss_for_replacing.str();
     std::ostringstream oss_final_processing;
+    oss_final_processing.exceptions(std::ios::failbit);
     for (const auto & letter : almost_res)
     {
         if ((letter == '?') || (letter == '*'))

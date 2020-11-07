@@ -128,6 +128,7 @@ static String checkVariableAndGetVersion(const mysqlxx::Pool::Entry & connection
 
         bool first = true;
         std::stringstream error_message;
+        error_message.exceptions(std::ios::failbit);
         error_message << "Illegal MySQL variables, the MaterializeMySQL engine requires ";
         for (const auto & [variable_name, variable_error_message] : variables_error_message)
         {
@@ -239,6 +240,7 @@ static inline BlockOutputStreamPtr getTableOutput(const String & database_name, 
     const StoragePtr & storage = DatabaseCatalog::instance().getTable(StorageID(database_name, table_name), query_context);
 
     std::stringstream insert_columns_str;
+    insert_columns_str.exceptions(std::ios::failbit);
     const StorageInMemoryMetadata & storage_metadata = storage->getInMemoryMetadata();
     const ColumnsDescription & storage_columns = storage_metadata.getColumns();
     const NamesAndTypesList & insert_columns_names = insert_materialized ? storage_columns.getAllPhysical() : storage_columns.getOrdinary();
@@ -330,6 +332,7 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
                 const auto & position_message = [&]()
                 {
                     std::stringstream ss;
+                    ss.exceptions(std::ios::failbit);
                     position.dump(ss);
                     return ss.str();
                 };
@@ -372,6 +375,7 @@ void MaterializeMySQLSyncThread::flushBuffersData(Buffers & buffers, Materialize
     const auto & position_message = [&]()
     {
         std::stringstream ss;
+        ss.exceptions(std::ios::failbit);
         client.getPosition().dump(ss);
         return ss.str();
     };
@@ -643,6 +647,7 @@ void MaterializeMySQLSyncThread::onEvent(Buffers & buffers, const BinlogEventPtr
         const auto & dump_event_message = [&]()
         {
             std::stringstream ss;
+            ss.exceptions(std::ios::failbit);
             receive_event->dump(ss);
             return ss.str();
         };

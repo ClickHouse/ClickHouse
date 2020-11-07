@@ -176,6 +176,7 @@ UInt64 getMaximumFileNumber(const std::string & dir_path)
 std::string makeFormattedListOfShards(const ClusterPtr & cluster)
 {
     std::ostringstream os;
+    os.exceptions(std::ios::failbit);
 
     bool head = true;
     os << "[";
@@ -749,6 +750,7 @@ ClusterPtr StorageDistributed::getOptimizedCluster(const Context & context, cons
     if (force)
     {
         std::stringstream exception_message;
+        exception_message.exceptions(std::ios::failbit);
         if (!has_sharding_key)
             exception_message << "No sharding key";
         else if (!sharding_key_is_usable)

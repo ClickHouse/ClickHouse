@@ -19,6 +19,8 @@ TEST(Common, getMultipleValuesFromConfig)
     </first_level>
 </yandex>)END");
 
+    xml_isteam.exceptions(std::ios::failbit);
+
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(xml_isteam);
     std::vector<std::string> answer = getMultipleValuesFromConfig(*config, "first_level", "second_level");
     std::vector<std::string> right_answer = {"0", "1", "2", "3"};

@@ -415,6 +415,7 @@ std::vector<size_t> PerfEventsCounters::eventIndicesFromString(const std::string
     }
 
     std::istringstream iss(events_list);
+    iss.exceptions(std::ios::failbit);
     std::string event_name;
     while (std::getline(iss, event_name, ','))
     {

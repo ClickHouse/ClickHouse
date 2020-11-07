@@ -555,6 +555,7 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
         for (const MutationCommand & command : entry.commands)
         {
             std::stringstream ss;
+            ss.exceptions(std::ios::failbit);
             formatAST(*command.ast, ss, false, true);
             result.push_back(MergeTreeMutationStatus
             {
@@ -1030,6 +1031,7 @@ bool StorageMergeTree::optimize(
             if (!merge(true, partition_id, true, deduplicate, &disable_reason))
             {
                 std::stringstream message;
+                message.exceptions(std::ios::failbit);
                 message << "Cannot OPTIMIZE table";
                 if (!disable_reason.empty())
                     message << ": " << disable_reason;
@@ -1052,6 +1054,7 @@ bool StorageMergeTree::optimize(
         if (!merge(true, partition_id, final, deduplicate, &disable_reason))
         {
             std::stringstream message;
+            message.exceptions(std::ios::failbit);
             message << "Cannot OPTIMIZE table";
             if (!disable_reason.empty())
                 message << ": " << disable_reason;

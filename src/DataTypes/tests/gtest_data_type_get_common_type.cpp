@@ -27,6 +27,7 @@ static auto typeFromString(const std::string & str)
 static auto typesFromString(const std::string & str)
 {
     std::istringstream data_types_stream(str);
+    data_types_stream.exceptions(std::ios::failbit);
     DataTypes data_types;
     std::string data_type;
     while (data_types_stream >> data_type)
