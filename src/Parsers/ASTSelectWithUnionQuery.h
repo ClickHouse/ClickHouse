@@ -23,9 +23,9 @@ public:
         DISTINCT
     };
 
-    using Modes = std::vector<Mode>;
+    using UnionModes = std::vector<Mode>;
 
-    Modes union_modes;
+    Mode union_mode;
 
     ASTPtr list_of_selects;
 };

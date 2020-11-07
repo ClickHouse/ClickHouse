@@ -170,6 +170,7 @@ Block InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & query_ptr_,
     return cache[key] = InterpreterSelectWithUnionQuery(query_ptr_, context_, SelectQueryOptions().analyze()).getSampleBlock();
 }
 
+#if 0
 size_t InterpreterSelectWithUnionQuery::optimizeUnionList()
 {
     auto union_distinct_num = 0;
@@ -213,10 +214,11 @@ size_t InterpreterSelectWithUnionQuery::optimizeUnionList()
     }
     return union_distinct_num;
 }
+#endif
 
 void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
 {
-    auto num_distinct_union = optimizeUnionList();
+    // auto num_distinct_union = optimizeUnionList();
     size_t num_plans = nested_interpreters.size();
 
     /// Skip union for single interpreter.
@@ -227,8 +229,8 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
     }
 
     /// All UNION streams in the chain does not need to do DISTINCT transform
-    if (num_distinct_union == 0)
-    {
+    // if (num_distinct_union == 0)
+    // {
         std::vector<std::unique_ptr<QueryPlan>> plans(num_plans);
         DataStreams data_streams(num_plans);
 
@@ -243,9 +245,23 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
         auto union_step = std::make_unique<UnionStep>(std::move(data_streams), result_header, max_threads);
 
         query_plan.unitePlans(std::move(union_step), std::move(plans));
-    }
+
+        const auto & query = query_ptr->as<ASTSelectWithUnionQuery &>();
+        if (query.union_mode == ASTSelectWithUnionQuery::Mode::DISTINCT)
+        {
+            /// Add distinct transform
+            const Settings & settings = context->getSettingsRef();
+            SizeLimits limits(settings.max_rows_in_distinct, settings.max_bytes_in_distinct, settings.distinct_overflow_mode);
+
+            auto distinct_step
+                = std::make_unique<DistinctStep>(query_plan.getCurrentDataStream(), limits, 0, result_header.getNames(), false);
+
+            query_plan.addStep(std::move(distinct_step));
+        }
+    // }
 
     /// The first union_distinct_num UNION streams need to do a DISTINCT transform after unite
+#if 0
     else
     {
         QueryPlan distinct_query_plan;
@@ -298,6 +314,7 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
         auto final_union_step = std::make_unique<UnionStep>(std::move(final_data_streams), result_header, max_threads);
         query_plan.unitePlans(std::move(final_union_step), std::move(final_plans));
     }
+#endif
 }
 
 BlockIO InterpreterSelectWithUnionQuery::execute()

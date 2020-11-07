@@ -119,7 +119,7 @@ private:
     ParserPtr s_union_parser;
     ParserPtr s_all_parser;
     ParserPtr s_distinct_parser;
-    ASTSelectWithUnionQuery::Modes union_modes;
+    ASTSelectWithUnionQuery::UnionModes union_modes;
 };
 
 /** An expression with an infix binary left-associative operator.
