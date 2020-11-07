@@ -77,6 +77,7 @@ std::string dumpContents(const T& container,
 
 {
     std::stringstream sstr;
+    sstr.exceptions(std::ios::failbit);
     dumpBuffer(std::begin(container), std::end(container), &sstr, col_sep, row_sep, cols_in_row);
 
     return sstr.str();
