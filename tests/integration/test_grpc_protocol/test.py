@@ -204,4 +204,11 @@ def test_progress():
   read_bytes: 16
 }
 , output: "6\\t0\\n7\\t0\\n"
-, ]"""
+, stats {
+  rows: 8
+  blocks: 4
+  allocated_bytes: 324
+  applied_limit: true
+  rows_before_limit: 8
+}
+]"""
