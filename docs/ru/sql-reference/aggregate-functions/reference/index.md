@@ -55,6 +55,8 @@ toc_hidden: true
 -   [quantile](../../../sql-reference/aggregate-functions/reference/quantile.md)
 -   [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md)
 -   [quantileExact](../../../sql-reference/aggregate-functions/reference/quantileexact.md)
+-   [quantileExactLow](../../../sql-reference/aggregate-functions/reference/quantileexact.md#quantileexactlow)
+-   [quantileExactHigh](../../../sql-reference/aggregate-functions/reference/quantileexact.md#quantileexacthigh)
 -   [quantileExactWeighted](../../../sql-reference/aggregate-functions/reference/quantileexactweighted.md)
 -   [quantileTiming](../../../sql-reference/aggregate-functions/reference/quantiletiming.md)
 -   [quantileTimingWeighted](../../../sql-reference/aggregate-functions/reference/quantiletimingweighted.md)

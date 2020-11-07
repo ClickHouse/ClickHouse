@@ -589,8 +589,7 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
                 LOG_DEBUG(log, "Pulled {} entries to queue.", copied_entries.size());
         }
 
-        if (storage.queue_task_handle)
-            storage.queue_task_handle->signalReadyToRun();
+        storage.background_executor.triggerTask();
     }
 
     return stat.version;
@@ -673,8 +672,8 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
         }
     }
 
-    if (some_active_mutations_were_killed && storage.queue_task_handle)
-        storage.queue_task_handle->signalReadyToRun();
+    if (some_active_mutations_were_killed)
+        storage.background_executor.triggerTask();
 
     if (!entries_to_load.empty())
     {
@@ -797,8 +796,8 @@ ReplicatedMergeTreeMutationEntryPtr ReplicatedMergeTreeQueue::removeMutation(
         LOG_DEBUG(log, "Removed mutation {} from local state.", entry->znode_name);
     }
 
-    if (mutation_was_active && storage.queue_task_handle)
-        storage.queue_task_handle->signalReadyToRun();
+    if (mutation_was_active)
+        storage.background_executor.triggerTask();
 
     return entry;
 }
@@ -1281,7 +1280,7 @@ ReplicatedMergeTreeQueue::CurrentlyExecuting::~CurrentlyExecuting()
 }
 
 
-ReplicatedMergeTreeQueue::SelectedEntry ReplicatedMergeTreeQueue::selectEntryToProcess(MergeTreeDataMergerMutator & merger_mutator, MergeTreeData & data)
+ReplicatedMergeTreeQueue::SelectedEntryPtr ReplicatedMergeTreeQueue::selectEntryToProcess(MergeTreeDataMergerMutator & merger_mutator, MergeTreeData & data)
 {
     LogEntryPtr entry;
 
@@ -1308,7 +1307,7 @@ ReplicatedMergeTreeQueue::SelectedEntry ReplicatedMergeTreeQueue::selectEntryToP
     }
 
     if (entry)
-        return { entry, std::unique_ptr<CurrentlyExecuting>{ new CurrentlyExecuting(entry, *this) } };
+        return std::make_shared<SelectedEntry>(entry, std::unique_ptr<CurrentlyExecuting>{ new CurrentlyExecuting(entry, *this) });
     else
         return {};
 }
