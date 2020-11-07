@@ -1,1 +1,1 @@
-`element` Nullable(String), `b` Nullable(Int32)
+`a` Nullable(String), `b` Nullable(Int32)

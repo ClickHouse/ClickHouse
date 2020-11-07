@@ -1,1 +1,1 @@
-`id` Nullable(Int32), `number` Nullable(Int64), `kind` Nullable(String)
+`id` Nullable(Int32), `phoneNumbers` Tuple(Nullable(Int64), Nullable(String))
