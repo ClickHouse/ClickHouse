@@ -1071,7 +1071,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
         }
     }
 
-    if (query_analyzer->hasGlobalSubqueries() && !subqueries_for_sets.empty())
+    if (!subqueries_for_sets.empty() && (expressions.hasHaving() || query_analyzer->hasGlobalSubqueries()))
         executeSubqueriesInSetsAndJoins(query_plan, subqueries_for_sets);
 }
 

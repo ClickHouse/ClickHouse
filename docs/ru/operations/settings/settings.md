@@ -2082,4 +2082,17 @@ SELECT CAST(toNullable(toInt32(0)) AS Int32) as x, toTypeName(x);
 
 -   Функция [CAST](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) 
 
+## persistent {#persistent}
+
+Отключает перманентность для табличных движков [Set](../../engines/table-engines/special/set.md#set) и [Join](../../engines/table-engines/special/join.md#join).
+
+Уменьшает расходы на ввод/вывод. Может быть полезно, когда требуется высокая производительность, а перманентность не обязательна.
+
+Возможные значения:
+
+- 1 — включено.
+- 0 — отключено.
+
+Значение по умолчанию: `1`.
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->
