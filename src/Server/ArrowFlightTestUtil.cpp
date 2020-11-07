@@ -150,16 +150,16 @@ Status GetBatchForFlight(const flight::Ticket & ticket, std::shared_ptr<RecordBa
 {
     if (ticket.ticket == "ticket-ints-1" || ticket.ticket == "ticket-ints-2")
     {
-        BatchVector batches;
-        RETURN_NOT_OK(ExampleIntBatches(&batches));
-        *out = std::make_shared<BatchIterator>(batches[0]->schema(), batches);
+        auto batches = ExampleIntBatches();
+        RETURN_NOT_OK(batches.status());
+        *out = std::make_shared<BatchIterator>(batches.ValueUnsafe()[0]->schema(), batches.ValueUnsafe());
         return Status::OK();
     }
     else if (ticket.ticket == "ticket-cmd")
     {
-        BatchVector batches;
-        RETURN_NOT_OK(ExampleStringBatches(&batches));
-        *out = std::make_shared<BatchIterator>(batches[0]->schema(), batches);
+        auto batches = ExampleStringBatches();
+        RETURN_NOT_OK(batches.status());
+        *out = std::make_shared<BatchIterator>(batches.ValueUnsafe()[0]->schema(), batches.ValueUnsafe());
         return Status::OK();
     }
     else
