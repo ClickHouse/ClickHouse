@@ -419,7 +419,8 @@ StorageDistributed::StorageDistributed(
     remote_table_function_ptr = std::move(remote_table_function_ptr_);
 }
 
-QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context &context, QueryProcessingStage::Enum to_stage, SelectQueryInfo & query_info) const
+QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
+    const Context & context, QueryProcessingStage::Enum to_stage, SelectQueryInfo & query_info) const
 {
     const auto & settings = context.getSettingsRef();
     auto metadata_snapshot = getInMemoryMetadataPtr();
