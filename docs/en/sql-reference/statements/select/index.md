@@ -143,39 +143,41 @@ The `GROUP BY` and `ORDER BY` clauses do not support positional arguments. This 
 
 ## SELECT modifiers {#select-modifiers}
 
-You can modify the results returned from a `SELECT` query, as follows.
+You can use each modifier separately or you can combine them and use `EXCEPT` with `APPLY`, `REPLACE` with `APPLY`, `EXCEPT` with `REPLACE` or even `EXCEPT`, `REPLACE` and `APPLY` in one query. 
+
+**Syntax:**
+
+SELECT * REPLACE(name1 + ' ' AS name1) EXCEPT (name1) APPLY() from [db.]table
+
+**Example:**
+
+``` sql
+CREATE TABLE test_aertable (i Int64, j Int16, k Int64) ENGINE = MergeTree ORDER by (i);
+
+INSERT INTO test_apply VALUES (100, 10, 324), (120, 8, 23);
+
+SELECT * REPLACE(i + 1 AS i) EXCEPT (j) APPLY(sum) from test_aertable
+```
+
+```
+┌─sum(plus(i, 1))─┬─sum(k)─┐
+│             222 │    347 │
+└─────────────────┴────────┘
+```
 
 ### APPLY {#select-apply}
 
-The `APPLY` operator allows you to invoke a table-valued function for each columns returned by an outer table expression of a query.
+Allows you to invoke a table-valued function for each columns returned by an outer table expression of a query.
 
 **Syntax:**
 
 ``` sql
-SELECT * APPLY from [db.]table;
+SELECT * APPLY() from [db.]table
 ```
 
-You can use the `APPLY` operator to sum the results of each row across columns.
+**Examples:** 
 
-``` sql
-SELECT * APPLY(sum) from [db.]table;
-```
-
-You can also use `APPLY` to find average values of each row across columns.
-
-``` sql
-SELECT [db.]table.* APPLY(avg) from [db.]table;
-```
-
-The `APPLY` operator can also help to find out the maximum length of all string columns:
-
-``` sql
-SELECT COLUMNS('[name1name2]') APPLY(toString) APPLY(length) APPLY(max) from [db.]table;
-```
-
-**Examples:**
-
-Consider the table, where you need to sum the results of each row across columns:
+Consider the table, where you need to sum the results of each row across columns.
 
 ``` sql
 CREATE TABLE test_apply (i Int64, j Int16, k Int64) ENGINE = MergeTree ORDER by (i);
@@ -191,7 +193,7 @@ SELECT * APPLY(sum) from test_apply;
 └────────┴────────┴────────┘
 ```
 
-In the same table you can find average values of each row across columns. 
+In the same table you can also find average values of each row across columns.
 
 ``` sql
 SELECT test_apply.* APPLY(avg) from test_apply;
@@ -203,7 +205,7 @@ SELECT test_apply.* APPLY(avg) from test_apply;
 └────────┴────────┴────────┘
 ```
 
-And finally, use the `APPLY` operator to find out the maximum length of all string columns:
+And finally, you can find out the maximum length of all string columns:
 
 ``` sql
 SELECT COLUMNS('[jk]') APPLY(toString) APPLY(length) APPLY(max) from test_apply;
@@ -217,29 +219,23 @@ SELECT COLUMNS('[jk]') APPLY(toString) APPLY(length) APPLY(max) from test_apply;
 
 ### EXCEPT {#select_except}
 
-The `SELECT * EXCEPT` operator specifies the names of one or more columns to exclude from the result. All matching column names are omitted from the output.
+Specifies the names of one or more columns to exclude from the result. All matching column names are omitted from the output.
 
 **Syntax:**
 
 ``` sql
-SELECT * EXCEPT (name1) from [db.]table;
+SELECT * EXCEPT (name1) from [db.]table
 ```
 
-`SELECT * EXCEPT` can be also used with `APPLY`:
+ClickHouse database also supports `SELECT * EXCEPT (col1, col2, ...)` syntax. This would select all columns except for those declared within the `EXCEPT` keyword. 
 
 ``` sql
-SELECT * EXCEPT(name1) APPLY(sum) from [db.]table;
+SELECT * EXCEPT(name1, name2) from [db.]table
 ```
 
-ClickHouse database also supports `SELECT * EXCEPT (col1, col2, ...)` syntax. This would select all columns except for those declared within the `EXCEPT` keyword. This is specially useful for tables with many columns.
+**Example:**
 
-``` sql
-SELECT * EXCEPT(name1, name2) from [db.]table;
-```
-
-**Examples:**
-
-Use `SELECT * EXCEPT` to exclude one column from the result:
+Consider the table, where you need to exclude one column from the result:
 
 ``` sql
 CREATE TABLE test_except (i Int64, j Int16, k Int64) ENGINE = MergeTree ORDER by (i);
@@ -256,58 +252,27 @@ SELECT * EXCEPT (i) from test_except;
 └────┴─────┘
 ```
 
-You can exclude one column from the result and sum the results of each row across the remaining columns:
-
-``` sql
-SELECT * EXCEPT(i) APPLY(sum) from test_except;
-```
-
-```
-┌─sum(j)─┬─sum(k)─┐
-│     18 │    347 │
-└────────┴────────┘
-```
-
-And you can also exclude two or more columns from the result:
-
-``` sql
-SELECT * EXCEPT(i, j) from test_except;
-```
-
-```
-┌───k─┐
-│ 324 │
-│  23 │
-└─────┘
-```
-
 ### REPLACE {#select_replace}
 
-You can use `SELECT * REPLACE` to specify one or more expression [AS](../../../sql-reference/syntax.md/#syntax-expression_aliases) identifier clauses.  
-Each identifier must match a column name from the `SELECT * statement`. In the output column list, the column that matches the identifier in a `REPLACE` operator is replaced by the expression in that `REPLACE` operator.
-A `SELECT * REPLACE` operator does not change the names or order of columns. However, it can change the value and the value type.
+Specifies one or more expression [AS](../../../sql-reference/syntax.md/#syntax-expression_aliases) identifier clauses.  
+Each identifier must match a column name from the `SELECT * statement`. Each column that matches the identifier in a `REPLACE` modifier is replaced by the expression in that `REPLACE` modifier and returns in the output column list. 
+You can't change the names or order of columns, you can only change the value and the value type.
 
 **Syntax:**
 
 ``` sql
-SELECT * REPLACE(name1 + 1 AS name1) from [db.]table;
+SELECT * REPLACE(name1 + ' ' AS name1) from [db.]table
 ```
 
-`SELECT * REPLACE` can also be used with `APPLY`:
+ClickHouse database also supports `REPLACE` for two and more columns. You can choose as many columns as you need and change its values or value types.
 
 ``` sql
-SELECT * REPLACE(name1 + 1 AS name1) APPLY(sum) from [db.]table;
-```
-
-ClickHouse database also supports multiple `REPLACE` in a row. You can choose as many columns as you need and change its values or value types.
-
-``` sql
-SELECT [db]table.* REPLACE(name1 + 2 AS name1, name2 + 1 AS name2) APPLY(avg) from [db.]table;
+SELECT [db]table.* REPLACE(name1 + ' ' AS name1, name2 + ' ' AS name2) APPLY(avg) from [db.]table
 ```
 
 **Examples:**
 
-Use `SELECT * REPLACE` to change the value in one column:
+Consider the table, where you need to change the value in one column:
 
 ``` sql
 CREATE TABLE test_replace (i Int64, j Int16, k Int64) ENGINE = MergeTree ORDER by (i);
@@ -322,30 +287,6 @@ SELECT * REPLACE(i + 1 AS i) from test_replace;
 │ 101 │ 10 │ 324 │
 │ 121 │  8 │  23 │
 └─────┴────┴─────┘
-```
-
-Use `SELECT * REPLACE` with `APPLY` to change the value in one column and sum the results of each row across columns.
-
-``` sql
-SELECT * REPLACE(i + 1 AS i) APPLY(sum) from test_replace;
-```
-
-```
-┌─sum(plus(i, 1))─┬─sum(j)─┬─sum(k)─┐
-│             222 │     18 │    347 │
-└─────────────────┴────────┴────────┘
-```
-
-Use multuple `REPLACE` to change values in two or more columns:
-
-``` sql
-SELECT test_replace.* REPLACE(j + 2 AS j, i + 1 AS i) APPLY(avg) from test_replace;
-```
-
-```
-┌─avg(plus(i, 1))─┬─avg(plus(j, 2))─┬─avg(k)─┐
-│             111 │              11 │  173.5 │
-└─────────────────┴─────────────────┴────────┘
 ```
 
 ## Implementation Details {#implementation-details}
