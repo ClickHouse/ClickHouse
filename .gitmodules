@@ -53,7 +53,7 @@
 [submodule "contrib/arrow"]
 	path = contrib/arrow
 	url = https://github.com/ClickHouse-Extras/arrow
-	branch = clickhouse-fix-ipv6
+	branch = clickhouse-arrow-2.0.0
 [submodule "contrib/thrift"]
 	path = contrib/thrift
 	url = https://github.com/apache/thrift.git
