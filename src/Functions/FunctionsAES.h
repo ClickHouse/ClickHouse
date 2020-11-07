@@ -301,17 +301,12 @@ private:
         {
             const auto key_value = key_holder.setKey(key_size, key_column->getDataAt(r));
             auto iv_value = StringRef{};
-            if constexpr (!std::is_same_v<nullptr_t, std::decay_t<IvColumnType>>)
+            if constexpr (!std::is_same_v<std::nullptr_t, std::decay_t<IvColumnType>>)
             {
                 iv_value = iv_column->getDataAt(r);
             }
 
             const auto input_value = input_column->getDataAt(r);
-            auto aad_value = StringRef{};
-            if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM && !std::is_same_v<nullptr_t, std::decay_t<AadColumnType>>)
-            {
-                aad_value = aad_column->getDataAt(r);
-            }
 
             if constexpr (mode != CipherMode::MySQLCompatibility)
             {
@@ -348,7 +343,7 @@ private:
                         onError("Failed to set key and IV");
 
                     // 1.a.2 Set AAD
-                    if constexpr (!std::is_same_v<nullptr_t, std::decay_t<AadColumnType>>)
+                    if constexpr (!std::is_same_v<std::nullptr_t, std::decay_t<AadColumnType>>)
                     {
                         const auto aad_data = aad_column->getDataAt(r);
                         int tmp_len = 0;
@@ -574,7 +569,7 @@ private:
             // 0: prepare key if required
             auto key_value = key_holder.setKey(key_size, key_column->getDataAt(r));
             auto iv_value = StringRef{};
-            if constexpr (!std::is_same_v<nullptr_t, std::decay_t<IvColumnType>>)
+            if constexpr (!std::is_same_v<std::nullptr_t, std::decay_t<IvColumnType>>)
             {
                 iv_value = iv_column->getDataAt(r);
             }
@@ -582,7 +577,7 @@ private:
             auto input_value = input_column->getDataAt(r);
             if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
             {
-                // empty plaintext results in empty ciphertext + tag, means there should be atleast tag_size bytes.
+                // empty plaintext results in empty ciphertext + tag, means there should be at least tag_size bytes.
                 if (input_value.size < tag_size)
                     throw Exception(fmt::format("Encrypted data is too short: only {} bytes, "
                             "should contain at least {} bytes of a tag.",
@@ -626,7 +621,7 @@ private:
                         onError("Failed to set key and IV");
 
                     // 1.a.2: Set AAD if present
-                    if constexpr (!std::is_same_v<nullptr_t, std::decay_t<AadColumnType>>)
+                    if constexpr (!std::is_same_v<std::nullptr_t, std::decay_t<AadColumnType>>)
                     {
                         const auto aad_data = aad_column->getDataAt(r);
                         int tmp_len = 0;

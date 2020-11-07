@@ -368,8 +368,10 @@ KeyCondition::KeyCondition(
     const SelectQueryInfo & query_info,
     const Context & context,
     const Names & key_column_names,
-    const ExpressionActionsPtr & key_expr_)
-    : key_expr(key_expr_), prepared_sets(query_info.sets)
+    const ExpressionActionsPtr & key_expr_,
+    bool single_point_,
+    bool strict_)
+    : key_expr(key_expr_), prepared_sets(query_info.sets), single_point(single_point_), strict(strict_)
 {
     for (size_t i = 0, size = key_column_names.size(); i < size; ++i)
     {
@@ -549,6 +551,18 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     Field & out_value,
     DataTypePtr & out_type)
 {
+    /// We don't look for inversed key transformations when strict is true, which is required for trivial count().
+    /// Consider the following test case:
+    ///
+    /// create table test1(p DateTime, k int) engine MergeTree partition by toDate(p) order by k;
+    /// insert into test1 values ('2020-09-01 00:01:02', 1), ('2020-09-01 20:01:03', 2), ('2020-09-02 00:01:03', 3);
+    /// select count() from test1 where p > toDateTime('2020-09-01 10:00:00');
+    ///
+    /// toDate(DateTime) is always monotonic, but we cannot relaxing the predicates to be
+    /// >= toDate(toDateTime('2020-09-01 10:00:00')), which returns 3 instead of the right count: 2.
+    if (strict)
+        return false;
+
     String expr_name = node->getColumnName();
     const auto & sample_block = key_expr->getSampleBlock();
     if (!sample_block.has(expr_name))
@@ -732,7 +746,8 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
             arguments.push_back({ nullptr, key_column_type, "" });
         auto func = func_builder->build(arguments);
 
-        if (!func || !func->hasInformationAboutMonotonicity())
+        /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
+        if (!func || (!single_point && !func->hasInformationAboutMonotonicity()))
             return false;
 
         key_column_type = func->getResultType();
@@ -1161,13 +1176,16 @@ BoolMask KeyCondition::checkInRange(
 std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     Range key_range,
     const MonotonicFunctionsChain & functions,
-    DataTypePtr current_type)
+    DataTypePtr current_type,
+    bool single_point)
 {
     for (const auto & func : functions)
     {
         /// We check the monotonicity of each function on a specific range.
-        IFunction::Monotonicity monotonicity = func->getMonotonicityForRange(
-            *current_type.get(), key_range.left, key_range.right);
+        /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
+        IFunction::Monotonicity monotonicity = single_point
+            ? IFunction::Monotonicity{true}
+            : func->getMonotonicityForRange(*current_type.get(), key_range.left, key_range.right);
 
         if (!monotonicity.is_monotonic)
         {
@@ -1297,7 +1315,8 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
                     *key_range,
                     element.monotonic_functions_chain,
-                    data_types[element.key_column]
+                    data_types[element.key_column],
+                    single_point
                 );
 
                 if (!new_range)
