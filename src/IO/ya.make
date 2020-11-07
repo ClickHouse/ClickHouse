@@ -38,7 +38,6 @@ SRCS(
     ReadBufferFromMemory.cpp
     ReadBufferFromPocoSocket.cpp
     ReadHelpers.cpp
-    ReadWriteBufferFromHTTP.cpp
     SeekAvoidingReadBuffer.cpp
     UseSSL.cpp
     WriteBufferAIO.cpp
