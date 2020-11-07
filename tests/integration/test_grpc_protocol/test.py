@@ -41,7 +41,8 @@ def create_channel():
         main_channel = channel
     return channel
 
-def query_common(query_text, settings={}, input_data=[], input_data_delimiter='', output_format='TabSeparated', external_tables=[], query_id='123', session_id='', stream_output=False, channel=None):
+def query_common(query_text, settings={}, input_data=[], input_data_delimiter='', output_format='TabSeparated', external_tables=[],
+                 user_name='', password='', query_id='123', session_id='', stream_output=False, channel=None):
     if type(input_data) == str:
         input_data = [input_data]
     if not channel:
@@ -50,8 +51,8 @@ def query_common(query_text, settings={}, input_data=[], input_data_delimiter=''
     def query_info():
         input_data_part = input_data.pop(0) if input_data else ''
         return clickhouse_grpc_pb2.QueryInfo(query=query_text, settings=settings, input_data=input_data_part, input_data_delimiter=input_data_delimiter,
-                                             output_format=output_format, external_tables=external_tables, query_id=query_id, session_id=session_id,
-                                             next_query_info=bool(input_data))
+                                             output_format=output_format, external_tables=external_tables, user_name=user_name, password=password,
+                                             query_id=query_id, session_id=session_id, next_query_info=bool(input_data))
     def send_query_info():
         yield query_info()
         while input_data:
@@ -200,6 +201,10 @@ def test_errors_handling():
     query("CREATE TABLE t (a UInt8) ENGINE = Memory")
     e = query_and_get_error("CREATE TABLE t (a UInt8) ENGINE = Memory")
     assert "Table default.t already exists" in e.display_text
+
+def test_authentication():
+    query("CREATE USER john IDENTIFIED BY 'qwe123'")
+    assert query("SELECT currentUser()", user_name="john", password="qwe123") == "john\n"
 
 def test_logs():
     logs = query_and_get_logs("SELECT 1", settings={'send_logs_level':'debug'})
