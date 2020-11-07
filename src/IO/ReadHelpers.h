@@ -719,11 +719,7 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
     static constexpr auto DateTimeStringInputSize = 19;
     bool optimistic_path_for_date_time_input = s + DateTimeStringInputSize <= buf.buffer().end();
 
-    /// YYYY-MM-DD
-    static constexpr auto DateStringInputSize = 10;
-    bool optimistic_path_for_date_input = s + DateStringInputSize <= buf.buffer().end();
-
-    if (optimistic_path_for_date_time_input || optimistic_path_for_date_input)
+    if (optimistic_path_for_date_time_input)
     {
         if (s[4] < '0' || s[4] > '9')
         {
@@ -731,23 +727,16 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
             UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
             UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
 
-            UInt8 hour = 0;
-            UInt8 minute = 0;
-            UInt8 second = 0;
-
-            if (optimistic_path_for_date_time_input)
-            {
-                hour = (s[11] - '0') * 10 + (s[12] - '0');
-                minute = (s[14] - '0') * 10 + (s[15] - '0');
-                second = (s[17] - '0') * 10 + (s[18] - '0');
-            }
+            UInt8 hour = (s[11] - '0') * 10 + (s[12] - '0');
+            UInt8 minute = (s[14] - '0') * 10 + (s[15] - '0');
+            UInt8 second = (s[17] - '0') * 10 + (s[18] - '0');
 
             if (unlikely(year == 0))
                 datetime = 0;
             else
                 datetime = date_lut.makeDateTime(year, month, day, hour, minute, second);
 
-            buf.position() += optimistic_path_for_date_time_input ? DateTimeStringInputSize : DateStringInputSize;
+            buf.position() += DateTimeStringInputSize;
             return ReturnType(true);
         }
         else
