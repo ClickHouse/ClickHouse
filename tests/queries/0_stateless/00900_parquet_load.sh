@@ -5,8 +5,6 @@
 # TODO: Add more files.
 #
 
-# To regenerate data install perl JSON::XS module: sudo apt install libjson-xs-perl
-
 # Also 5 sample files from
 # wget https://github.com/Teradata/kylo/raw/master/samples/sample-data/parquet/userdata1.parquet
 # ...
