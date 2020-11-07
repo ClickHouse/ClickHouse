@@ -262,7 +262,7 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
         packet_endpoint->sendPacket(ERRPacket(exc.code(), "00000", exc.message()), true);
         throw;
     }
-    LOG_INFO(log, "Authentication for user {} succeeded.", user_name);
+    LOG_DEBUG(log, "Authentication for user {} succeeded.", user_name);
 }
 
 void MySQLHandler::comInitDB(ReadBuffer & payload)

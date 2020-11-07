@@ -42,6 +42,7 @@ struct LDAPServerParams
 
     enum class SASLMechanism
     {
+        UNKNOWN,
         SIMPLE
     };
 

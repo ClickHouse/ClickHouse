@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/SimpleMergeSelector.h>
+
 #include <Common/interpolate.h>
 
 #include <cmath>
@@ -96,12 +97,16 @@ bool allow(
     double min_age,
     double range_size,
     double partition_size,
+    double min_size_to_lower_base_log,
+    double max_size_to_lower_base_log,
     const SimpleMergeSelector::Settings & settings)
 {
 //    std::cerr << "sum_size: " << sum_size << "\n";
 
     /// Map size to 0..1 using logarithmic scale
-    double size_normalized = mapPiecewiseLinearToUnit(log1p(sum_size), log1p(settings.min_size_to_lower_base), log1p(settings.max_size_to_lower_base));
+    /// Use log(1 + x) instead of log1p(x) because our sum_size is always integer.
+    /// Also log1p seems to be slow and significantly affect performance of merges assignment.
+    double size_normalized = mapPiecewiseLinearToUnit(log(1 + sum_size), min_size_to_lower_base_log, max_size_to_lower_base_log);
 
 //    std::cerr << "size_normalized: " << size_normalized << "\n";
 
@@ -140,7 +145,9 @@ void selectWithinPartition(
     const SimpleMergeSelector::PartsRange & parts,
     const size_t max_total_size_to_merge,
     Estimator & estimator,
-    const SimpleMergeSelector::Settings & settings)
+    const SimpleMergeSelector::Settings & settings,
+    double min_size_to_lower_base_log,
+    double max_size_to_lower_base_log)
 {
     size_t parts_count = parts.size();
     if (parts_count <= 1)
@@ -152,6 +159,9 @@ void selectWithinPartition(
         if (begin > 1000)
             break;
 
+        if (!parts[begin].shall_participate_in_merges)
+            continue;
+
         size_t sum_size = parts[begin].size;
         size_t max_size = parts[begin].size;
         size_t min_age = parts[begin].age;
@@ -159,6 +169,9 @@ void selectWithinPartition(
         for (size_t end = begin + 2; end <= parts_count; ++end)
         {
             if (settings.max_parts_to_merge_at_once && end - begin > settings.max_parts_to_merge_at_once)
+                break;
+
+            if (!parts[end - 1].shall_participate_in_merges)
                 break;
 
             size_t cur_size = parts[end - 1].size;
@@ -171,7 +184,7 @@ void selectWithinPartition(
             if (max_total_size_to_merge && sum_size > max_total_size_to_merge)
                 break;
 
-            if (allow(sum_size, max_size, min_age, end - begin, parts_count, settings))
+            if (allow(sum_size, max_size, min_age, end - begin, parts_count, min_size_to_lower_base_log, max_size_to_lower_base_log, settings))
                 estimator.consider(
                     parts.begin() + begin,
                     parts.begin() + end,
@@ -191,8 +204,12 @@ SimpleMergeSelector::PartsRange SimpleMergeSelector::select(
 {
     Estimator estimator;
 
+    /// Precompute logarithm of settings boundaries, because log function is quite expensive in terms of performance
+    const double min_size_to_lower_base_log = log(1 + settings.min_size_to_lower_base);
+    const double max_size_to_lower_base_log = log(1 + settings.max_size_to_lower_base);
+
     for (const auto & part_range : parts_ranges)
-        selectWithinPartition(part_range, max_total_size_to_merge, estimator, settings);
+        selectWithinPartition(part_range, max_total_size_to_merge, estimator, settings, min_size_to_lower_base_log, max_size_to_lower_base_log);
 
     return estimator.getBest();
 }

@@ -27,6 +27,7 @@ class IInputFormat;
 class IOutputFormat;
 
 struct RowInputFormatParams;
+struct RowOutputFormatParams;
 
 using InputFormatPtr = std::shared_ptr<IInputFormat>;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
@@ -80,7 +81,7 @@ private:
     using OutputProcessorCreator = std::function<OutputFormatPtr(
             WriteBuffer & buf,
             const Block & sample,
-            WriteCallback callback,
+            const RowOutputFormatParams & params,
             const FormatSettings & settings)>;
 
     struct Creators
@@ -107,7 +108,7 @@ public:
         ReadCallback callback = {}) const;
 
     BlockOutputStreamPtr getOutput(const String & name, WriteBuffer & buf,
-        const Block & sample, const Context & context, WriteCallback callback = {}) const;
+        const Block & sample, const Context & context, WriteCallback callback = {}, const bool ignore_no_row_delimiter = false) const;
 
     InputFormatPtr getInputFormat(
         const String & name,
@@ -118,7 +119,7 @@ public:
         ReadCallback callback = {}) const;
 
     OutputFormatPtr getOutputFormat(
-        const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback = {}) const;
+        const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback = {}, const bool ignore_no_row_delimiter = false) const;
 
     /// Register format by its name.
     void registerInputFormat(const String & name, InputCreator input_creator);

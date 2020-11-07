@@ -57,9 +57,9 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 -   [Sistema abierto.](#dicts-external_dicts_dict_layout-sparse_hashed)
 -   [cache](#cache)
 -   [directo](#direct)
--   [range\_hashed](#range-hashed)
+-   [range_hashed](#range-hashed)
 -   [Método de codificación de datos:](#complex-key-hashed)
--   [complejo\_key\_cache](#complex-key-cache)
+-   [complejo_key_cache](#complex-key-cache)
 -   [Método de codificación de datos:](#ip-trie)
 
 ### plano {#flat}
@@ -138,7 +138,7 @@ Ejemplo de configuración:
 LAYOUT(COMPLEX_KEY_HASHED())
 ```
 
-### range\_hashed {#range-hashed}
+### range_hashed {#range-hashed}
 
 El diccionario se almacena en la memoria en forma de una tabla hash con una matriz ordenada de rangos y sus valores correspondientes.
 
@@ -293,7 +293,7 @@ Establezca un tamaño de caché lo suficientemente grande. Necesitas experimenta
 !!! warning "Advertencia"
     No use ClickHouse como fuente, ya que es lento procesar consultas con lecturas aleatorias.
 
-### complejo\_key\_cache {#complex-key-cache}
+### complejo_key_cache {#complex-key-cache}
 
 Este tipo de almacenamiento es para su uso con material compuesto [claves](external-dicts-dict-structure.md). Similar a `cache`.
 

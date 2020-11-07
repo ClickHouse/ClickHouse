@@ -28,8 +28,8 @@ namespace
 
 void registerAggregateFunctionTimeSeriesGroupSum(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("timeSeriesGroupSum", createAggregateFunctionTimeSeriesGroupSum<false>, AggregateFunctionFactory::CaseInsensitive);
-    factory.registerFunction("timeSeriesGroupRateSum", createAggregateFunctionTimeSeriesGroupSum<true>, AggregateFunctionFactory::CaseInsensitive);
+    factory.registerFunction("timeSeriesGroupSum", createAggregateFunctionTimeSeriesGroupSum<false>);
+    factory.registerFunction("timeSeriesGroupRateSum", createAggregateFunctionTimeSeriesGroupSum<true>);
 }
 
 }

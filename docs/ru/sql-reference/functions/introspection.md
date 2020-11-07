@@ -1,3 +1,8 @@
+---
+toc_priority: 65
+toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0438\u043d\u0442\u0440\u043e\u0441\u043f\u0435\u043a\u0446\u0438\u0438"
+---
+
 # Функции интроспекции {#introspection-functions}
 
 Функции из этого раздела могут использоваться для интроспекции [ELF](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format) и [DWARF](https://en.wikipedia.org/wiki/DWARF) в целях профилирования запросов.
@@ -9,7 +14,7 @@
 
 -   Установите пакет `clickhouse-common-static-dbg`.
 
--   Установите настройку [allow\_introspection\_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) в 1.
+-   Установите настройку [allow_introspection_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) в 1.
 
 Из соображений безопасности данные функции отключены по умолчанию.
 

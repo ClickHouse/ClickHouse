@@ -207,8 +207,22 @@ void AsynchronousMetrics::update()
         /// We must update the value of total_memory_tracker periodically.
         /// Otherwise it might be calculated incorrectly - it can include a "drift" of memory amount.
         /// See https://github.com/ClickHouse/ClickHouse/issues/10293
-        total_memory_tracker.set(data.resident);
-        CurrentMetrics::set(CurrentMetrics::MemoryTracking, data.resident);
+        {
+            Int64 amount = total_memory_tracker.get();
+            Int64 peak = total_memory_tracker.getPeak();
+            Int64 new_peak = data.resident;
+
+            LOG_DEBUG(&Poco::Logger::get("AsynchronousMetrics"),
+                "MemoryTracking: was {}, peak {}, will set to {} (RSS), difference: {}",
+                ReadableSize(amount),
+                ReadableSize(peak),
+                ReadableSize(new_peak),
+                ReadableSize(new_peak - peak)
+            );
+
+            total_memory_tracker.set(new_peak);
+            CurrentMetrics::set(CurrentMetrics::MemoryTracking, new_peak);
+        }
     }
 #endif
 
@@ -233,8 +247,8 @@ void AsynchronousMetrics::update()
 
         for (const auto & db : databases)
         {
-            /// Lazy database can not contain MergeTree tables
-            if (db.second->getEngineName() == "Lazy")
+            /// Check if database can contain MergeTree tables
+            if (!db.second->canContainMergeTreeTables())
                 continue;
             for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
             {

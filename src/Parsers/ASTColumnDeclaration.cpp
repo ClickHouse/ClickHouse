@@ -55,7 +55,11 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & settings, FormatSta
     if (type)
     {
         settings.ostr << ' ';
-        type->formatImpl(settings, state, frame);
+
+        FormatStateStacked type_frame = frame;
+        type_frame.indent = 0;
+
+        type->formatImpl(settings, state, type_frame);
     }
 
     if (null_modifier)

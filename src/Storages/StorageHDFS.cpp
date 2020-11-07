@@ -17,7 +17,6 @@
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
 #include <DataStreams/IBlockInputStream.h>
-#include <DataStreams/narrowBlockInputStreams.h>
 
 #include <Common/parseGlobs.h>
 #include <Poco/URI.h>

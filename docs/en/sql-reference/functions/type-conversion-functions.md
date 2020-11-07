@@ -11,7 +11,7 @@ When you convert a value from one to another data type, you should remember that
 
 ClickHouse has the [same behavior as C++ programs](https://en.cppreference.com/w/cpp/language/implicit_conversion).
 
-## toInt(8\|16\|32\|64\|128\|256) {#toint8163264}
+## toInt(8\|16\|32\|64\|128\|256) {#toint8163264128256}
 
 Converts an input value to the [Int](../../sql-reference/data-types/int-uint.md) data type. This function family includes:
 
@@ -62,7 +62,7 @@ select toInt64OrZero('123123'), toInt8OrZero('123qwe123')
 └─────────────────────────┴───────────────────────────┘
 ```
 
-## toInt(8\|16\|32\|64\|128\|256)OrNull {#toint8163264ornull}
+## toInt(8\|16\|32\|64\|128\|256)OrNull {#toint8163264128256ornull}
 
 It takes an argument of type String and tries to parse it into Int (8 \| 16 \| 32 \| 64 \| 128 \| 256). If failed, returns NULL.
 
@@ -78,7 +78,7 @@ select toInt64OrNull('123123'), toInt8OrNull('123qwe123')
 └─────────────────────────┴───────────────────────────┘
 ```
 
-## toUInt(8\|16\|32\|64\|256) {#touint8163264}
+## toUInt(8\|16\|32\|64\|256) {#touint8163264256}
 
 Converts an input value to the [UInt](../../sql-reference/data-types/int-uint.md) data type. This function family includes:
 
@@ -112,9 +112,9 @@ SELECT toUInt64(nan), toUInt32(-32), toUInt16('16'), toUInt8(8.8)
 └─────────────────────┴───────────────┴────────────────┴──────────────┘
 ```
 
-## toUInt(8\|16\|32\|64\|256)OrZero {#touint8163264orzero}
+## toUInt(8\|16\|32\|64\|256)OrZero {#touint8163264256orzero}
 
-## toUInt(8\|16\|32\|64\|256)OrNull {#touint8163264ornull}
+## toUInt(8\|16\|32\|64\|256)OrNull {#touint8163264256ornull}
 
 ## toFloat(32\|64) {#tofloat3264}
 
@@ -134,7 +134,7 @@ SELECT toUInt64(nan), toUInt32(-32), toUInt16('16'), toUInt8(8.8)
 
 ## toDateTimeOrNull {#todatetimeornull}
 
-## toDecimal(32\|64\|128\|256) {#todecimal3264128}
+## toDecimal(32\|64\|128\|256) {#todecimal3264128256}
 
 Converts `value` to the [Decimal](../../sql-reference/data-types/decimal.md) data type with precision of `S`. The `value` can be a number or a string. The `S` (scale) parameter specifies the number of decimal places.
 
@@ -143,7 +143,7 @@ Converts `value` to the [Decimal](../../sql-reference/data-types/decimal.md) dat
 -   `toDecimal128(value, S)`
 -   `toDecimal256(value, S)`
 
-## toDecimal(32\|64\|128\|256)OrNull {#todecimal3264128ornull}
+## toDecimal(32\|64\|128\|256)OrNull {#todecimal3264128256ornull}
 
 Converts an input string to a [Nullable(Decimal(P,S))](../../sql-reference/data-types/decimal.md) data type value. This family of functions include:
 
@@ -188,7 +188,7 @@ SELECT toDecimal32OrNull(toString(-1.111), 2) AS val, toTypeName(val)
 └──────┴────────────────────────────────────────────────────┘
 ```
 
-## toDecimal(32\|64\|128\|256)OrZero {#todecimal3264128orzero}
+## toDecimal(32\|64\|128\|256)OrZero {#todecimal3264128256orzero}
 
 Converts an input value to the [Decimal(P,S)](../../sql-reference/data-types/decimal.md) data type. This family of functions include:
 
@@ -250,7 +250,7 @@ YYYY-MM-DD
 YYYY-MM-DD hh:mm:ss
 ```
 
-As an exception, if converting from UInt32, Int32, UInt64, or Int64 numeric types to Date, and if the number is greater than or equal to 65536, the number is interpreted as a Unix timestamp (and not as the number of days) and is rounded to the date. This allows support for the common occurrence of writing ‘toDate(unix\_timestamp)’, which otherwise would be an error and would require writing the more cumbersome ‘toDate(toDateTime(unix\_timestamp))’.
+As an exception, if converting from UInt32, Int32, UInt64, or Int64 numeric types to Date, and if the number is greater than or equal to 65536, the number is interpreted as a Unix timestamp (and not as the number of days) and is rounded to the date. This allows support for the common occurrence of writing ‘toDate(unix_timestamp)’, which otherwise would be an error and would require writing the more cumbersome ‘toDate(toDateTime(unix_timestamp))’.
 
 Conversion between a date and date with time is performed the natural way: by adding a null time or dropping the time.
 
@@ -323,6 +323,10 @@ This function accepts a number or date or date with time, and returns a string c
 
 This function accepts a number or date or date with time, and returns a FixedString containing bytes representing the corresponding value in host order (little endian). Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a FixedString that is one byte long.
 
+## reinterpretAsUUID {#reinterpretasuuid}
+
+This function accepts FixedString, and returns UUID. Takes 16 bytes string. If the string isn't long enough, the functions work as if the string is padded with the necessary number of null bytes to the end. If the string longer than 16 bytes, the extra bytes at the end are ignored. 
+
 ## CAST(x, T) {#type_conversion_function-cast}
 
 Converts ‘x’ to the ‘t’ data type. The syntax CAST(x AS t) is also supported.
@@ -369,6 +373,10 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null
 │ Nullable(UInt16)                        │
 └─────────────────────────────────────────┘
 ```
+
+**See also**
+
+-   [cast_keep_nullable](../../operations/settings/settings.md#cast_keep_nullable) setting
 
 ## toInterval(Year\|Quarter\|Month\|Week\|Day\|Hour\|Minute\|Second) {#function-tointerval}
 
@@ -733,6 +741,85 @@ SELECT fromUnixTimestamp64Milli(i64, 'UTC')
 ┌─fromUnixTimestamp64Milli(i64, 'UTC')─┐
 │              2009-02-13 23:31:31.011 │
 └──────────────────────────────────────┘
+```
+
+## formatRow {#formatrow}
+
+Converts arbitrary expressions into a string via given format. 
+
+**Syntax** 
+
+``` sql
+formatRow(format, x, y, ...)
+```
+
+**Parameters**
+
+-   `format` — Text format. For example, [CSV](../../interfaces/formats.md#csv), [TSV](../../interfaces/formats.md#tabseparated).
+-   `x`,`y`, ... — Expressions.
+
+**Returned value**
+
+-   A formatted string (for text formats it's usually terminated with the new line character).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT formatRow('CSV', number, 'good')
+FROM numbers(3)
+```
+
+Result:
+
+``` text
+┌─formatRow('CSV', number, 'good')─┐
+│ 0,"good"
+                         │
+│ 1,"good"
+                         │
+│ 2,"good"
+                         │
+└──────────────────────────────────┘
+```
+
+## formatRowNoNewline {#formatrownonewline}
+
+Converts arbitrary expressions into a string via given format. The function trims the last `\n` if any.
+
+**Syntax** 
+
+``` sql
+formatRowNoNewline(format, x, y, ...)
+```
+
+**Parameters**
+
+-   `format` — Text format. For example, [CSV](../../interfaces/formats.md#csv), [TSV](../../interfaces/formats.md#tabseparated).
+-   `x`,`y`, ... — Expressions.
+
+**Returned value**
+
+-   A formatted string.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT formatRowNoNewline('CSV', number, 'good')
+FROM numbers(3)
+```
+
+Result:
+
+``` text
+┌─formatRowNoNewline('CSV', number, 'good')─┐
+│ 0,"good"                                  │
+│ 1,"good"                                  │
+│ 2,"good"                                  │
+└───────────────────────────────────────────┘
 ```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/type_conversion_functions/) <!--hide-->

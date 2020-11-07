@@ -4,7 +4,6 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
-#include <DataStreams/NullBlockInputStream.h>
 #include <DataStreams/NullBlockOutputStream.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Pipe.h>

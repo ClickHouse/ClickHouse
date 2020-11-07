@@ -2,6 +2,7 @@
 
 #include <string.h>
 #include <cxxabi.h>
+#include <cstdlib>
 #include <Poco/String.h>
 #include <common/logger_useful.h>
 #include <IO/WriteHelpers.h>
@@ -13,6 +14,7 @@
 #include <common/errnoToString.h>
 #include <Common/formatReadable.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/ErrorCodes.h>
 #include <filesystem>
 
 #if !defined(ARCADIA_BUILD)
@@ -36,15 +38,16 @@ namespace ErrorCodes
 Exception::Exception(const std::string & msg, int code)
     : Poco::Exception(msg, code)
 {
-    // In debug builds, treat LOGICAL_ERROR as an assertion failure.
+    // In debug builds and builds with sanitizers, treat LOGICAL_ERROR as an assertion failure.
     // Log the message before we fail.
-#ifndef NDEBUG
+#ifdef ABORT_ON_LOGICAL_ERROR
     if (code == ErrorCodes::LOGICAL_ERROR)
     {
-        LOG_ERROR(&Poco::Logger::root(), "Logical error: '{}'.", msg);
-        assert(false);
+        LOG_FATAL(&Poco::Logger::root(), "Logical error: '{}'.", msg);
+        abort();
     }
 #endif
+    ErrorCodes::increment(code);
 }
 
 Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)

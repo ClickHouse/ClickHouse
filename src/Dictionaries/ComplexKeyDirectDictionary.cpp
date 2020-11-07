@@ -593,7 +593,7 @@ void registerDictionaryComplexKeyDirect(DictionaryFactory & factory)
 
         return std::make_unique<ComplexKeyDirectDictionary>(dict_id, dict_struct, std::move(source_ptr));
     };
-    factory.registerLayout("complex_key_direct", create_layout, false);
+    factory.registerLayout("complex_key_direct", create_layout, true);
 }
 
 

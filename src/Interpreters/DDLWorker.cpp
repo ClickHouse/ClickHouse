@@ -787,12 +787,6 @@ void DDLWorker::processTask(DDLTask & task)
                     storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
                 }
 
-                /// For some reason we check consistency of cluster definition only
-                /// in case of ALTER query, but not in case of CREATE/DROP etc.
-                /// It's strange, but this behaviour exits for a long and we cannot change it.
-                if (storage && query_with_table->as<ASTAlterQuery>())
-                    checkShardConfig(query_with_table->table, task, storage);
-
                 if (storage && taskShouldBeExecutedOnLeader(rewritten_ast, storage)  && !is_circular_replicated)
                     tryExecuteQueryOnLeaderReplica(task, storage, rewritten_query, task.entry_path, zookeeper);
                 else
@@ -836,35 +830,6 @@ bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr ast_ddl, const Storage
 
     return storage->supportsReplication();
 }
-
-
-void DDLWorker::checkShardConfig(const String & table, const DDLTask & task, StoragePtr storage) const
-{
-    const auto & shard_info = task.cluster->getShardsInfo().at(task.host_shard_num);
-    bool config_is_replicated_shard = shard_info.hasInternalReplication();
-
-    if (dynamic_cast<const StorageDistributed *>(storage.get()))
-    {
-        LOG_TRACE(log, "Table {} is distributed, skip checking config.", backQuote(table));
-        return;
-    }
-
-    if (storage->supportsReplication() && !config_is_replicated_shard)
-    {
-        throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
-            "Table {} is replicated, but shard #{} isn't replicated according to its cluster definition. "
-            "Possibly <internal_replication>true</internal_replication> is forgotten in the cluster config.",
-            backQuote(table), task.host_shard_num + 1);
-    }
-
-    if (!storage->supportsReplication() && config_is_replicated_shard)
-    {
-        throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
-            "Table {} isn't replicated, but shard #{} is replicated according to its cluster definition",
-            backQuote(table), task.host_shard_num + 1);
-    }
-}
-
 
 bool DDLWorker::tryExecuteQueryOnLeaderReplica(
     DDLTask & task,
@@ -1280,7 +1245,6 @@ public:
             {
                 size_t num_unfinished_hosts = waiting_hosts.size() - num_hosts_finished;
                 size_t num_active_hosts = current_active_hosts.size();
-
 
                 throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
                     "Watching task {} is executing longer than distributed_ddl_task_timeout (={}) seconds. "

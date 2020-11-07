@@ -2,7 +2,6 @@
 
 #include <DataStreams/copyData.h>
 #include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <Storages/StorageMaterializedView.h>
 

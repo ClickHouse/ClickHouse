@@ -6,7 +6,7 @@ from helpers.hdfs_api import HDFSApi
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', with_hdfs=True, user_configs=[], main_configs=['configs/log_conf.xml'])
+node1 = cluster.add_instance('node1', with_hdfs=True, main_configs=['configs/log_conf.xml'])
 
 
 @pytest.fixture(scope="module")

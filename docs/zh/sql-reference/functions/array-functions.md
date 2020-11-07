@@ -652,11 +652,11 @@ SELECT
     │ []           │ [1]       │
     └──────────────┴───────────┘
 
-## arrayReduce(agg\_func, arr1, …) {#arrayreduceagg-func-arr1}
+## arrayReduce(agg_func, arr1, …) {#arrayreduceagg-func-arr1}
 
 将聚合函数应用于数组并返回其结果。如果聚合函数具有多个参数，则此函数可应用于相同大小的多个数组。
 
-arrayReduce（‘agg\_func’，arr1，…） - 将聚合函数`agg_func`应用于数组`arr1 ...`。如果传递了多个数组，则相应位置上的元素将作为多个参数传递给聚合函数。例如：SELECT arrayReduce（‘max’，\[1,2,3\]）= 3
+arrayReduce（‘agg_func’，arr1，…） - 将聚合函数`agg_func`应用于数组`arr1 ...`。如果传递了多个数组，则相应位置上的元素将作为多个参数传递给聚合函数。例如：SELECT arrayReduce（‘max’，\[1,2,3\]）= 3
 
 ## arrayReverse(arr) {#arrayreversearr}
 
