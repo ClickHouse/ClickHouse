@@ -340,7 +340,7 @@ endif ()
 
 if (USE_PARQUET)
     dbms_target_link_libraries(PRIVATE ${PARQUET_LIBRARY})
-    if (NOT USE_INTERNAL_PARQUET_LIBRARY OR USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
+    if (NOT USE_INTERNAL_PARQUET_LIBRARY)
         dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${PARQUET_INCLUDE_DIR} ${ARROW_INCLUDE_DIR})
         if (USE_STATIC_LIBRARIES)
             dbms_target_link_libraries(PRIVATE ${ARROW_LIBRARY})
