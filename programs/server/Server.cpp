@@ -1044,7 +1044,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto arrow_flight_server = std::make_unique<DB::ArrowFlightServer>(*this, address);
                 std::string location = arrow_flight_server->getLocation();
                 servers.emplace_back(std::move(arrow_flight_server));
-                LOG_INFO(log, "Listening for Arrow Flight compatibility protocol: ", location);
+                LOG_INFO(log, "Listening for Arrow Flight compatibility protocol: {}", location);
 //#else
 //                UNUSED(port);
 //                throw Exception{"Arrow Flight compatibility protocol is disabled because ClickHouse was built without Arrow support.",
