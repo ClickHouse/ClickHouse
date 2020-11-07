@@ -165,12 +165,12 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ASTPtr codec_expression;
     ASTPtr ttl_expression;
 
-    if (require_type ||
-        (  !s_default.checkWithoutMoving(pos, expected)
+    if (!s_default.checkWithoutMoving(pos, expected)
         && !s_materialized.checkWithoutMoving(pos, expected)
         && !s_alias.checkWithoutMoving(pos, expected)
-        && !s_comment.checkWithoutMoving(pos, expected)
-        && !s_codec.checkWithoutMoving(pos, expected)))
+        && (require_type
+            || (!s_comment.checkWithoutMoving(pos, expected)
+                && !s_codec.checkWithoutMoving(pos, expected))))
     {
         if (!type_parser.parse(pos, type, expected))
             return false;
