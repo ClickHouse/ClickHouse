@@ -46,6 +46,14 @@ message Progress {
    uint64 written_bytes = 5;
 }
 
+message Stats {
+   uint64 rows = 1;
+   uint64 blocks = 2;
+   uint64 allocated_bytes = 3;
+   bool applied_limit = 4;
+   uint64 rows_before_limit = 5;
+}
+
 message Exception {
    int32 code = 1;
    string name = 2;
@@ -59,7 +67,8 @@ message Result {
    string extremes = 3;
    repeated LogEntry logs = 4;
    Progress progress = 5;
-   Exception exception = 6;
+   Stats stats = 6;
+   Exception exception = 7;
 }
 
 service ClickHouse {

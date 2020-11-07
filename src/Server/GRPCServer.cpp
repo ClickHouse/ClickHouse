@@ -208,6 +208,7 @@ namespace
         void addProgressToResult();
         void addTotalsToResult(const Block & totals);
         void addExtremesToResult(const Block & extremes);
+        void addProfileInfoToResult(const BlockStreamProfileInfo & info);
         void addLogsToResult();
         void sendResult();
         void throwIfFailedToSendResult();
@@ -579,6 +580,7 @@ namespace
 
         addTotalsToResult(io.in->getTotals());
         addExtremesToResult(io.in->getExtremes());
+        addProfileInfoToResult(io.in->getProfileInfo());
     }
 
     void Call::generateOutputWithProcessors()
@@ -619,6 +621,7 @@ namespace
 
         addTotalsToResult(executor->getTotalsBlock());
         addExtremesToResult(executor->getExtremesBlock());
+        addProfileInfoToResult(executor->getProfileInfo());
     }
 
     void Call::finishQuery()
@@ -764,6 +767,16 @@ namespace
         stream->writePrefix();
         stream->write(extremes);
         stream->writeSuffix();
+    }
+
+    void Call::addProfileInfoToResult(const BlockStreamProfileInfo & info)
+    {
+        auto & stats = *result.mutable_stats();
+        stats.set_rows(info.rows);
+        stats.set_blocks(info.blocks);
+        stats.set_allocated_bytes(info.bytes);
+        stats.set_applied_limit(info.hasAppliedLimit());
+        stats.set_rows_before_limit(info.getRowsBeforeLimit());
     }
 
     void Call::addLogsToResult()
