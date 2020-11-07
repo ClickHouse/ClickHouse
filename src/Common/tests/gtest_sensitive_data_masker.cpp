@@ -135,8 +135,6 @@ TEST(Common, SensitiveDataMasker)
     </query_masking_rules>
 </clickhouse>)END");
 
-        xml_isteam.exceptions(std::ios::failbit);
-
         Poco::AutoPtr<Poco::Util::XMLConfiguration> xml_config = new Poco::Util::XMLConfiguration(xml_isteam);
         DB::SensitiveDataMasker masker_xml_based(*xml_config, "query_masking_rules");
         std::string top_secret = "The e-mail of IVAN PETROV is kotik1902@sdsdf.test, and the password is qwerty123";
@@ -168,7 +166,6 @@ TEST(Common, SensitiveDataMasker)
     </query_masking_rules>
 </clickhouse>)END");
 
-        xml_isteam_bad.exceptions(std::ios::failbit);
         Poco::AutoPtr<Poco::Util::XMLConfiguration> xml_config = new Poco::Util::XMLConfiguration(xml_isteam_bad);
         DB::SensitiveDataMasker masker_xml_based_exception_check(*xml_config, "query_masking_rules");
 
@@ -191,8 +188,6 @@ TEST(Common, SensitiveDataMasker)
     </query_masking_rules>
 </clickhouse>)END");
 
-        xml_isteam_bad.exceptions(std::ios::failbit);
-
         Poco::AutoPtr<Poco::Util::XMLConfiguration> xml_config = new Poco::Util::XMLConfiguration(xml_isteam_bad);
         DB::SensitiveDataMasker masker_xml_based_exception_check(*xml_config, "query_masking_rules");
 
@@ -214,8 +209,6 @@ TEST(Common, SensitiveDataMasker)
         <rule><name>test</name><regexp>())(</regexp></rule>
     </query_masking_rules>
 </clickhouse>)END");
-
-        xml_isteam_bad.exceptions(std::ios::failbit);
 
         Poco::AutoPtr<Poco::Util::XMLConfiguration> xml_config = new Poco::Util::XMLConfiguration(xml_isteam_bad);
         DB::SensitiveDataMasker masker_xml_based_exception_check(*xml_config, "query_masking_rules");
