@@ -242,8 +242,8 @@ std::vector<flight::FlightInfo> ExampleFlightInfo(const arrow::flight::Location 
     auto schema1 = ExampleIntSchema();
     auto schema2 = ExampleStringSchema();
 
-    ARROW_TEST_EXPECT_OK(MakeFlightInfo(*schema1, descr1, {endpoint1, endpoint2}, num_records1, 0, &flight1));
-    ARROW_TEST_EXPECT_OK(MakeFlightInfo(*schema2, descr2, {endpoint3}, num_records2, 0, &flight2));
+    ARROW_TEST_EXPECT_OK(MakeFlightInfo(*schema1, descr1, {endpoint1, endpoint2}, num_records1, -1, &flight1));
+    ARROW_TEST_EXPECT_OK(MakeFlightInfo(*schema2, descr2, {endpoint3}, num_records2, -1, &flight2));
     return {flight::FlightInfo(flight1), flight::FlightInfo(flight2)};
 }
 
