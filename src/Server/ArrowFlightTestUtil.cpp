@@ -120,46 +120,44 @@ Status MakeStringBatchSized(int length, std::shared_ptr<RecordBatch> * out, uint
     return Status::OK();
 }
 
-Result<BatchVector> ExampleIntBatches()
+Status ExampleIntBatches(BatchVector * out)
 {
-    BatchVector out;
     std::shared_ptr<RecordBatch> batch;
     for (int i = 0; i < 5; ++i)
     {
         // Make all different sizes, use different random seed
         RETURN_NOT_OK(MakeIntBatchSized(10 + i, &batch, i));
-        out.push_back(batch);
+        out->push_back(batch);
     }
-    return Result<BatchVector>(out);
+    return Status::OK();
 }
 
-Result<BatchVector> ExampleStringBatches()
+Status ExampleStringBatches(BatchVector * out)
 {
-    BatchVector out;
     std::shared_ptr<RecordBatch> batch;
     for (int i = 0; i < 5; ++i)
     {
         // Make all different sizes, use different random seed
         RETURN_NOT_OK(MakeStringBatchSized(10 + i, &batch, i));
-        out.push_back(batch);
+        out->push_back(batch);
     }
-    return Result<BatchVector>(out);
+    return Status::OK();
 }
 
 Status GetBatchForFlight(const flight::Ticket & ticket, std::shared_ptr<RecordBatchReader> * out)
 {
     if (ticket.ticket == "ticket-ints-1" || ticket.ticket == "ticket-ints-2")
     {
-        auto batches = ExampleIntBatches();
-        RETURN_NOT_OK(batches.status());
-        *out = std::make_shared<BatchIterator>(batches.ValueUnsafe()[0]->schema(), batches.ValueUnsafe());
+        BatchVector batches;
+        RETURN_NOT_OK(ExampleIntBatches(&batches));
+        *out = std::make_shared<BatchIterator>(batches[0]->schema(), batches);
         return Status::OK();
     }
     else if (ticket.ticket == "ticket-cmd")
     {
-        auto batches = ExampleStringBatches();
-        RETURN_NOT_OK(batches.status());
-        *out = std::make_shared<BatchIterator>(batches.ValueUnsafe()[0]->schema(), batches.ValueUnsafe());
+        BatchVector batches;
+        RETURN_NOT_OK(ExampleStringBatches(&batches));
+        *out = std::make_shared<BatchIterator>(batches[0]->schema(), batches);
         return Status::OK();
     }
     else
@@ -231,11 +229,15 @@ std::vector<flight::FlightInfo> ExampleFlightInfo(const arrow::flight::Location 
     flight::FlightEndpoint endpoint2({{"ticket-ints-2"}, {location}});
     flight::FlightEndpoint endpoint3({{"ticket-cmd"}, {location}});
 
-    flight::FlightDescriptor descr1{flight::FlightDescriptor::PATH, "", {"examples", "ints"}};
+    flight::FlightDescriptor descr1{flight::FlightDescriptor::PATH, "", {"ints"}};
     flight::FlightDescriptor descr2{flight::FlightDescriptor::CMD, "my_command", {}};
 
-    size_t num_records1 = TotalBatchSize(ExampleStringBatches().ValueOrDie());
-    size_t num_records2 = TotalBatchSize(ExampleStringBatches().ValueOrDie());
+    BatchVector batches1, batches2;
+    ARROW_TEST_EXPECT_OK(ExampleIntBatches(&batches1));
+    ARROW_TEST_EXPECT_OK(ExampleStringBatches(&batches2));
+
+    size_t num_records1 = TotalBatchSize(batches1);
+    size_t num_records2 = TotalBatchSize(batches2);
 
     auto schema1 = ExampleIntSchema();
     auto schema2 = ExampleStringSchema();
