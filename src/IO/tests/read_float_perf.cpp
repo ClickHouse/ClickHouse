@@ -13,6 +13,9 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <Compression/CompressedReadBuffer.h>
 
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 /** How to test:
 
@@ -38,6 +41,52 @@ $ for i in {1..10}; do echo $i; time ./read_float_perf 2 < numbers$i.tsv; done
 
 
 using namespace DB;
+
+#ifdef USE_FAST_FLOAT
+#include <fast_float/fast_float.h>
+
+template <typename T, typename ReturnType>
+ReturnType readFloatTextFastFloatImpl(T & x, ReadBuffer & in)
+{
+    static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for readFloatTextImpl must be float or double");
+    static_assert('a' > '.' && 'A' > '.' && '\n' < '.' && '\t' < '.' && '\'' < '.' && '"' < '.', "Layout of char is not like ASCII"); //-V590
+
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
+    String buff;
+    
+    /// TODO: Optimize 
+    /// Currently fast_float interface need begin and end
+    /// ReadBuffers current begin end can have only part of data
+    while (!in.eof() && isAlphaNumericASCII(*in.position()))  {
+        buff += *in.position();
+        ++in.position();
+    }
+
+    if (buff.empty())
+    {
+        
+        if constexpr (throw_exception)
+            throw Exception("Cannot read floating point value: no digits read", ErrorCodes::CANNOT_PARSE_NUMBER);
+        else
+            return ReturnType(false);
+  
+    }
+
+    auto res = fast_float::from_chars(buff.data(), buff.data() + buff.size(), x);
+
+    if (res.ec != std::errc())
+    {
+        if constexpr (throw_exception)
+            throw Exception("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
+        else
+            return ReturnType(false);
+    }
+
+    return ReturnType(true);
+}
+
+#endif
 
 
 template <typename T, void F(T&, ReadBuffer&)>
@@ -76,6 +125,9 @@ try
     if (method == 1) loop<T, readFloatTextPrecise>(in, out);
     if (method == 2) loop<T, readFloatTextFast>(in, out);
     if (method == 3) loop<T, readFloatTextSimple>(in, out);
+    #ifdef USE_FAST_FLOAT
+    if (method == 4) loop<T, readFloatTextFastFloatImpl>(in, out);
+    #endif
 
     return 0;
 }
