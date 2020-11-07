@@ -208,6 +208,14 @@ Status MakeFlightInfo(
     return SchemaToString(schema, &out->schema);
 }
 
+int64_t TotalBatchSize(const BatchVector & batchVector)
+{
+    int64_t result = 0;
+    for (const auto & batch : batchVector)
+        result += batch->num_rows();
+    return result;
+}
+
 #define ARROW_TEST_EXPECT_OK(expr)                                      \
   do {                                                                  \
     auto _res = (expr);                                                 \
@@ -226,8 +234,8 @@ std::vector<flight::FlightInfo> ExampleFlightInfo(const arrow::flight::Location 
     flight::FlightDescriptor descr1{flight::FlightDescriptor::PATH, "", {"examples", "ints"}};
     flight::FlightDescriptor descr2{flight::FlightDescriptor::CMD, "my_command", {}};
 
-    size_t num_records1 = ExampleIntBatches().ValueOrDie().size();
-    size_t num_records2 = ExampleStringBatches().ValueOrDie().size();
+    size_t num_records1 = TotalBatchSize(ExampleStringBatches().ValueOrDie());
+    size_t num_records2 = TotalBatchSize(ExampleStringBatches().ValueOrDie());
 
     auto schema1 = ExampleIntSchema();
     auto schema2 = ExampleStringSchema();
