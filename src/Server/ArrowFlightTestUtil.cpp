@@ -2,6 +2,7 @@
 
 #include <Common/Exception.h>
 
+#include <arrow/array/builder_binary.h>
 #include <arrow/util/bit_util.h>
 
 namespace DB::ErrorCodes
@@ -61,6 +62,22 @@ void GenerateBitmap(uint8_t * buffer, size_t n, uint32_t seed, double null_proba
         *null_count = count;
 }
 
+Status GenerateAsciiString(arrow::StringBuilder * builder, size_t n, uint32_t seed) {
+    static const std::string alphanum =
+        "0123456789"
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "abcdefghijklmnopqrstuvwxyz";
+
+    std::mt19937 rng(seed);
+    std::uniform_int_distribution<size_t> dist(0, alphanum.size());
+
+    std::string result;
+    for (size_t i = 0; i < n; ++i)
+        result += alphanum[dist(rng)];
+
+    return builder->Append(result);
+}
+
 Status MakeRandomInt32Array(int64_t length, bool include_nulls, std::shared_ptr<Array> * out, uint32_t seed)
 {
     const double null_probability = include_nulls ? 0.5 : 0.0;
@@ -70,18 +87,36 @@ Status MakeRandomInt32Array(int64_t length, bool include_nulls, std::shared_ptr<
     return Status::OK();
 }
 
+Status MakeRandomStringArray(int64_t length, std::shared_ptr<Array> * out, uint32_t seed) {
+    arrow::StringBuilder builder;
+    for (int i = 0; i < length; ++i)
+        RETURN_NOT_OK(GenerateAsciiString(&builder, i + 1, seed + i));
+    return builder.Finish(out);
+}
+
 Status MakeIntBatchSized(int length, std::shared_ptr<RecordBatch> * out, uint32_t seed)
 {
     // Make the schema
-    auto f0 = field("f0", arrow::int32());
-    auto f1 = field("f1", arrow::int32());
-    auto schema = ::arrow::schema({f0, f1});
+    auto schema = ExampleIntSchema();
 
     // Example data
     std::shared_ptr<Array> a0, a1;
     RETURN_NOT_OK(MakeRandomInt32Array(length, false, &a0, seed));
     RETURN_NOT_OK(MakeRandomInt32Array(length, true, &a1, seed + 1));
     *out = RecordBatch::Make(schema, length, {a0, a1});
+    return Status::OK();
+}
+
+Status MakeStringBatchSized(int length, std::shared_ptr<RecordBatch> * out, uint32_t seed)
+{
+    // Make the schema
+    auto schema = ExampleStringSchema();
+
+    // Example data
+    std::shared_ptr<Array> f0, f1;
+    RETURN_NOT_OK(MakeRandomStringArray(length, &f0, seed));
+    RETURN_NOT_OK(MakeRandomStringArray(length, &f1, seed + 1));
+    *out = RecordBatch::Make(schema, length, {f0, f1});
     return Status::OK();
 }
 
@@ -97,12 +132,31 @@ Status ExampleIntBatches(BatchVector * out)
     return Status::OK();
 }
 
+Status ExampleStringBatches(BatchVector * out)
+{
+    std::shared_ptr<RecordBatch> batch;
+    for (int i = 0; i < 5; ++i)
+    {
+        // Make all different sizes, use different random seed
+        RETURN_NOT_OK(MakeStringBatchSized(10 + i, &batch, i));
+        out->push_back(batch);
+    }
+    return Status::OK();
+}
+
 Status GetBatchForFlight(const flight::Ticket & ticket, std::shared_ptr<RecordBatchReader> * out)
 {
-    if (ticket.ticket == "ticket-ints-1")
+    if (ticket.ticket == "ticket-ints-1" || ticket.ticket == "ticket-ints-2")
     {
         BatchVector batches;
         RETURN_NOT_OK(ExampleIntBatches(&batches));
+        *out = std::make_shared<BatchIterator>(batches[0]->schema(), batches);
+        return Status::OK();
+    }
+    else if (ticket.ticket == "ticket-cmd")
+    {
+        BatchVector batches;
+        RETURN_NOT_OK(ExampleStringBatches(&batches));
         *out = std::make_shared<BatchIterator>(batches[0]->schema(), batches);
         return Status::OK();
     }
@@ -114,8 +168,8 @@ Status GetBatchForFlight(const flight::Ticket & ticket, std::shared_ptr<RecordBa
 
 std::shared_ptr<Schema> ExampleIntSchema()
 {
-    auto f0 = field("f0", int32());
-    auto f1 = field("f1", int32());
+    auto f0 = field("a0", int32());
+    auto f1 = field("a1", int32());
     return ::arrow::schema({f0, f1});
 }
 

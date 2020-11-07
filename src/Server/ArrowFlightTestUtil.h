@@ -51,11 +51,19 @@ GenerateNumericArray(int64_t size, uint32_t seed, double null_probability, uint3
     return std::make_shared<NumericArray<ArrowType>>(array_data);
 }
 
+Status GenerateAsciiString(arrow::StringBuilder * builder, size_t n, uint32_t seed);
+
 Status MakeRandomInt32Array(int64_t length, bool include_nulls, std::shared_ptr<Array> * out, uint32_t seed);
+
+Status MakeRandomStringArray(int64_t length, std::shared_ptr<Array> * out, uint32_t seed);
 
 Status MakeIntBatchSized(int length, std::shared_ptr<RecordBatch> * out, uint32_t seed);
 
+Status MakeStringBatchSized(int length, std::shared_ptr<RecordBatch> * out, uint32_t seed);
+
 Status ExampleIntBatches(BatchVector * out);
+
+Status ExampleStringBatches(BatchVector * out);
 
 Status GetBatchForFlight(const flight::Ticket & ticket, std::shared_ptr<RecordBatchReader> * out);
 
