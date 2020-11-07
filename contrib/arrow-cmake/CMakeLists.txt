@@ -197,6 +197,8 @@ set(ARROW_SRCS
         ${LIBRARY_DIR}/compute/registry.cc
 
         ${LIBRARY_DIR}/compute/kernels/aggregate_basic.cc
+        ${LIBRARY_DIR}/compute/kernels/aggregate_mode.cc
+        ${LIBRARY_DIR}/compute/kernels/aggregate_var_std.cc
         ${LIBRARY_DIR}/compute/kernels/codegen_internal.cc
         ${LIBRARY_DIR}/compute/kernels/scalar_arithmetic.cc
         ${LIBRARY_DIR}/compute/kernels/scalar_boolean.cc
@@ -253,6 +255,7 @@ set(ARROW_SRCS
         ${LIBRARY_DIR}/util/bitmap.cc
         ${LIBRARY_DIR}/util/bitmap_builders.cc
         ${LIBRARY_DIR}/util/bitmap_ops.cc
+        ${LIBRARY_DIR}/util/bpacking.cc
         ${LIBRARY_DIR}/util/compression.cc
         ${LIBRARY_DIR}/util/compression_lz4.cc
         ${LIBRARY_DIR}/util/compression_snappy.cc
@@ -373,6 +376,7 @@ set(PARQUET_SRCS
         ${LIBRARY_DIR}/internal_file_decryptor.cc
         ${LIBRARY_DIR}/internal_file_encryptor.cc
         ${LIBRARY_DIR}/level_conversion.cc
+        ${LIBRARY_DIR}/level_comparison.cc
         ${LIBRARY_DIR}/metadata.cc
         ${LIBRARY_DIR}/murmur3.cc
         ${LIBRARY_DIR}/platform.cc
