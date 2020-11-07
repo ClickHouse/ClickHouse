@@ -14,7 +14,7 @@ ASTPtr ASTSelectWithUnionQuery::clone() const
     res->list_of_selects = list_of_selects->clone();
     res->children.push_back(res->list_of_selects);
 
-    res->union_modes = union_modes;
+    res->union_mode = union_mode;
 
     cloneOutputOptions(*res);
     return res;
@@ -38,24 +38,15 @@ void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, F
     for (ASTs::const_iterator it = list_of_selects->children.begin(); it != list_of_selects->children.end(); ++it)
     {
         if (it != list_of_selects->children.begin())
-            settings.ostr << settings.nl_or_ws << indent_str << (settings.hilite ? hilite_keyword : "") << "UNION "
-                          << mode_to_str(union_modes[it - list_of_selects->children.begin() - 1]) << (settings.hilite ? hilite_none : "");
+            settings.ostr
+                << settings.nl_or_ws << indent_str << (settings.hilite ? hilite_keyword : "")
+                << "UNION "
+                << mode_to_str(union_mode) << (settings.hilite ? hilite_none : "");
         if (auto * node = (*it)->as<ASTSelectWithUnionQuery>())
         {
-            // just one child in subquery, () is not need
-            if (node->list_of_selects->children.size() == 1)
-            {
-                if (it != list_of_selects->children.begin())
-                    settings.ostr << settings.nl_or_ws;
-                node->list_of_selects->children.at(0)->formatImpl(settings, state, frame);
-            }
-            // more than one child in subquery
-            else
-            {
-                auto sub_query = std::make_shared<ASTSubquery>();
-                sub_query->children.push_back(*it);
-                sub_query->formatImpl(settings, state, frame);
-            }
+            auto sub_query = std::make_shared<ASTSubquery>();
+            sub_query->children.push_back(*it);
+            sub_query->formatImpl(settings, state, frame);
         }
         else
         {
