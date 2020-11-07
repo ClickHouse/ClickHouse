@@ -31,6 +31,7 @@
 #include <IO/WriteHelpers.h>
 #include <Storages/IStorage.h>
 
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 
 namespace DB
 {
@@ -109,6 +110,27 @@ struct CustomizeFunctionsSuffixData
 /// Swap 'if' and 'distinct' suffixes to make execution more optimal.
 char ifDistinct[] = "ifdistinct";
 using CustomizeIfDistinctVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeFunctionsSuffixData<ifDistinct>>, true>;
+
+/// Used to rewrite all aggregate functions to add -OrNull suffix to them if setting `aggregate_functions_null_for_empty` is set.
+struct CustomizeAggregateFunctionsSuffixData
+{
+    using TypeToVisit = ASTFunction;
+
+    const String & customized_func_suffix;
+
+    void visit(ASTFunction & func, ASTPtr &)
+    {
+        const auto & instance = AggregateFunctionFactory::instance();
+        if (instance.isAggregateFunctionName(func.name) && !endsWith(func.name, customized_func_suffix))
+        {
+            auto properties = instance.tryGetProperties(func.name);
+            if (properties && !properties->returns_default_when_only_null)
+                func.name = func.name + customized_func_suffix;
+        }
+    }
+};
+
+using CustomizeAggregateFunctionsOrNullVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeAggregateFunctionsSuffixData>, true>;
 
 /// Translate qualified names such as db.table.column, table.column, table_alias.column to names' normal form.
 /// Expand asterisks and qualified asterisks with column names.
@@ -708,6 +730,13 @@ void TreeRewriter::normalize(ASTPtr & query, Aliases & aliases, const Settings &
 
         CustomizeGlobalNotInVisitor::Data data_global_not_null_in{"globalNotNullIn"};
         CustomizeGlobalNotInVisitor(data_global_not_null_in).visit(query);
+    }
+
+    // Rewrite all aggregate functions to add -OrNull suffix to them
+    if (settings.aggregate_functions_null_for_empty)
+    {
+        CustomizeAggregateFunctionsOrNullVisitor::Data data_or_null{"OrNull"};
+        CustomizeAggregateFunctionsOrNullVisitor(data_or_null).visit(query);
     }
 
     /// Creates a dictionary `aliases`: alias -> ASTPtr
