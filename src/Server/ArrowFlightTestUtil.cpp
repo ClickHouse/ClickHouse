@@ -152,7 +152,7 @@ Status MakeFlightInfo(
     return SchemaToString(schema, &out->schema);
 }
 
-#define ARROW_TEST_EXPECT_OK(expr)                                           \
+#define ARROW_TEST_EXPECT_OK(expr)                                      \
   do {                                                                  \
     auto _res = (expr);                                                 \
     ::arrow::Status _st = ::arrow::internal::GenericToStatus(_res);     \
@@ -165,11 +165,11 @@ std::vector<flight::FlightInfo> ExampleFlightInfo()
     flight::Location location2;
     flight::Location location3;
 
-    ARROW_TEST_EXPECT_OK(flight::Location::ForGrpcTcp("foo1.bar.com", 12345, &location1));
-    ARROW_TEST_EXPECT_OK(flight::Location::ForGrpcTcp("foo2.bar.com", 12345, &location2));
-    ARROW_TEST_EXPECT_OK(flight::Location::ForGrpcTcp("foo3.bar.com", 12345, &location3));
+    ARROW_TEST_EXPECT_OK(flight::Location::ForGrpcTcp("localhost", 9993, &location1));
+    ARROW_TEST_EXPECT_OK(flight::Location::ForGrpcTcp("localhost", 9993, &location2));
+    ARROW_TEST_EXPECT_OK(flight::Location::ForGrpcTcp("localhost", 9993, &location3));
 
-    flight::FlightInfo::Data flight1, flight2, flight3;
+    flight::FlightInfo::Data flight1, flight2;
 
     flight::FlightEndpoint endpoint1({{"ticket-ints-1"}, {location1}});
     flight::FlightEndpoint endpoint2({{"ticket-ints-2"}, {location2}});
