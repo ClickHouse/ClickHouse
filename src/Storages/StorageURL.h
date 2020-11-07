@@ -36,7 +36,7 @@ protected:
         const Context & context_,
         const StorageID & id_,
         const String & format_name_,
-        std::optional<FormatSettings> format_settings_,
+        const std::optional<FormatSettings> & format_settings_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & compression_method_);
@@ -79,7 +79,7 @@ public:
     StorageURLBlockOutputStream(
         const Poco::URI & uri,
         const String & format,
-        std::optional<FormatSettings> format_settings,
+        const std::optional<FormatSettings> & format_settings,
         const Block & sample_block_,
         const Context & context,
         const ConnectionTimeouts & timeouts,
@@ -107,7 +107,7 @@ public:
     StorageURL(const Poco::URI & uri_,
             const StorageID & table_id_,
             const String & format_name_,
-            std::optional<FormatSettings> format_settings_,
+            const std::optional<FormatSettings> & format_settings_,
             const ColumnsDescription & columns_,
             const ConstraintsDescription & constraints_,
             Context & context_,

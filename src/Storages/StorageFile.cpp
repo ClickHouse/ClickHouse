@@ -452,7 +452,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         const CompressionMethod compression_method,
         const Context & context,
-        std::optional<FormatSettings> format_settings)
+        const std::optional<FormatSettings> & format_settings)
         : storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
         , lock(storage.rwlock)
@@ -628,11 +628,25 @@ void registerStorageFile(StorageFactory & factory)
             // session and user are ignored.
             if (factory_args.storage_def->settings)
             {
-                Context global_context_copy = factory_args.context;
-                global_context_copy.applySettingsChanges(
+                FormatFactorySettings user_format_settings;
+
+                // Apply changed settings from global context, but ignore the
+                // unknown ones, because we only have the format settings here.
+                const auto & changes = factory_args.context.getSettingsRef().changes();
+                for (const auto & change : changes)
+                {
+                    if (user_format_settings.has(change.name))
+                    {
+                        user_format_settings.set(change.name, change.value);
+                    }
+                }
+
+                // Apply changes from SETTINGS clause, with validation.
+                user_format_settings.applyChanges(
                     factory_args.storage_def->settings->changes);
+
                 storage_args.format_settings = getFormatSettings(
-                    global_context_copy);
+                    factory_args.context, user_format_settings);
             }
             else
             {
