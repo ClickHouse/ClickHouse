@@ -140,7 +140,7 @@ String convertToJson(const PODArray<String> & variant_names, const Variants & va
 {
     FormatSettings settings;
 
-    WriteBufferOwnString buf;
+    WriteBufferFromOwnString buf;
 
     writeCString("{\"data\":[", buf);
     for (size_t i = 0; i < variants.size(); ++i)
