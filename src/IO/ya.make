@@ -24,6 +24,8 @@ SRCS(
     HexWriteBuffer.cpp
     HTTPCommon.cpp
     LimitReadBuffer.cpp
+    LzmaReadBuffer.cpp
+    LzmaWriteBuffer.cpp
     MemoryReadWriteBuffer.cpp
     MMapReadBufferFromFile.cpp
     MMapReadBufferFromFileDescriptor.cpp
