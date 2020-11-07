@@ -58,20 +58,12 @@ ReturnType readFloatTextFastFloatImpl(T & x, ReadBuffer & in)
     /// TODO: Optimize 
     /// Currently fast_float interface need begin and end
     /// ReadBuffers current begin end can have only part of data
-    while (!in.eof() && isAlphaNumericASCII(*in.position()))  {
+    while (!in.eof() && (isAlphaNumericASCII(*in.position()) || (*in.position() == '.')))  {
         buff += *in.position();
         ++in.position();
     }
-
-    if (buff.empty())
-    {
-        
-        if constexpr (throw_exception)
-            throw Exception("Cannot read floating point value: no digits read", ErrorCodes::CANNOT_PARSE_NUMBER);
-        else
-            return ReturnType(false);
-  
-    }
+ 
+    std::cerr << buff << std::endl;
 
     auto res = fast_float::from_chars(buff.data(), buff.data() + buff.size(), x);
 
