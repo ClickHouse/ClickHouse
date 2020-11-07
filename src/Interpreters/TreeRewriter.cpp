@@ -125,7 +125,7 @@ struct CustomizeAggregateFunctionsSuffixData
         {
             auto properties = instance.tryGetProperties(func.name);
             if (properties && !properties->returns_default_when_only_null)
-                func.name = func.name + customized_func_suffix;
+                func.name = Poco::toLower(func.name) + customized_func_suffix;
         }
     }
 };
