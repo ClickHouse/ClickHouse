@@ -419,32 +419,6 @@ StorageDistributed::StorageDistributed(
     remote_table_function_ptr = std::move(remote_table_function_ptr_);
 }
 
-StoragePtr StorageDistributed::createWithOwnCluster(
-    const StorageID & table_id_,
-    const ColumnsDescription & columns_,
-    const String & remote_database_,       /// database on remote servers.
-    const String & remote_table_,          /// The name of the table on the remote servers.
-    ClusterPtr owned_cluster_,
-    const Context & context_)
-{
-    auto res = create(table_id_, columns_, ConstraintsDescription{}, remote_database_, remote_table_, String{}, context_, ASTPtr(), String(), String(), false);
-    res->owned_cluster = std::move(owned_cluster_);
-    return res;
-}
-
-
-StoragePtr StorageDistributed::createWithOwnCluster(
-    const StorageID & table_id_,
-    const ColumnsDescription & columns_,
-    ASTPtr & remote_table_function_ptr_,
-    ClusterPtr & owned_cluster_,
-    const Context & context_)
-{
-    auto res = create(table_id_, columns_, ConstraintsDescription{}, remote_table_function_ptr_, String{}, context_, ASTPtr(), String(), String(), false);
-    res->owned_cluster = owned_cluster_;
-    return res;
-}
-
 QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context &context, QueryProcessingStage::Enum to_stage, SelectQueryInfo & query_info) const
 {
     const auto & settings = context.getSettingsRef();
