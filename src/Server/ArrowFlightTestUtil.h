@@ -73,6 +73,6 @@ arrow::Status MakeFlightInfo(
     int64_t total_bytes,
     flight::FlightInfo::Data * out);
 
-std::vector<flight::FlightInfo> ExampleFlightInfo();
+std::vector<flight::FlightInfo> ExampleFlightInfo(const arrow::flight::Location & location);
 
 }

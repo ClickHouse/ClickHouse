@@ -19,7 +19,7 @@ namespace DB
 class ArrowFlightServer : public IRoutineServer, public arrow::flight::FlightServerBase
 {
 public:
-    ArrowFlightServer(IServer & server_, const Poco::Net::SocketAddress & address);
+    ArrowFlightServer(IServer & server_, const Poco::Net::SocketAddress & address_);
 
     std::string getLocation() const;
 

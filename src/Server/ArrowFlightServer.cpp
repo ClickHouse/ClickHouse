@@ -13,14 +13,14 @@ namespace ErrorCodes
 extern const int UNKNOWN_EXCEPTION;
 }
 
-ArrowFlightServer::ArrowFlightServer(IServer & server_, const Poco::Net::SocketAddress & address)
+ArrowFlightServer::ArrowFlightServer(IServer & server_, const Poco::Net::SocketAddress & address_)
     : server(server_)
 {
-    auto parse_location_status = arrow::flight::Location::ForGrpcTcp(getIpRepresentation(address.host()), address.port(), &location);
+    auto parse_location_status = arrow::flight::Location::ForGrpcTcp(getIpRepresentation(address_.host()), address_.port(), &location);
     if (!parse_location_status.ok())
         throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
                         "Invalid address {} for Arrow Flight Server: {}",
-                        address.toString(),
+                        address_.toString(),
                         parse_location_status.ToString());
 }
 
@@ -63,7 +63,7 @@ arrow::Status ArrowFlightServer::ListFlights(
     const arrow::flight::Criteria * criteria,
     std::unique_ptr<arrow::flight::FlightListing> * listings)
 {
-    std::vector<arrow::flight::FlightInfo> flights = arrow::ExampleFlightInfo();
+    std::vector<arrow::flight::FlightInfo> flights = arrow::ExampleFlightInfo(location);
     if (criteria && !criteria->expression.empty()) {
         // For test purposes, if we get criteria, return no results
         flights.clear();
@@ -83,7 +83,7 @@ arrow::Status ArrowFlightServer::GetFlightInfo(
         return arrow::Status::OutOfMemory("Sentinel");
     }
 
-    std::vector<arrow::flight::FlightInfo> flights = arrow::ExampleFlightInfo();
+    std::vector<arrow::flight::FlightInfo> flights = arrow::ExampleFlightInfo(location);
 
     for (const auto& info : flights) {
         if (info.descriptor().Equals(request)) {
@@ -99,7 +99,7 @@ arrow::Status ArrowFlightServer::GetSchema(
     const arrow::flight::FlightDescriptor & request,
     std::unique_ptr<arrow::flight::SchemaResult> * schema)
 {
-    std::vector<arrow::flight::FlightInfo> flights = arrow::ExampleFlightInfo();
+    std::vector<arrow::flight::FlightInfo> flights = arrow::ExampleFlightInfo(location);
 
     for (const auto& info : flights) {
         if (info.descriptor().Equals(request)) {

@@ -159,21 +159,13 @@ Status MakeFlightInfo(
     if (!_st.ok()) throw DB::Exception{DB::ErrorCodes::UNKNOWN_EXCEPTION, "'" ARROW_STRINGIFY(expr) "' failed with " + _st.ToString()}; \
   } while (false)
 
-std::vector<flight::FlightInfo> ExampleFlightInfo()
+std::vector<flight::FlightInfo> ExampleFlightInfo(const arrow::flight::Location & location)
 {
-    flight::Location location1;
-    flight::Location location2;
-    flight::Location location3;
-
-    ARROW_TEST_EXPECT_OK(flight::Location::ForGrpcTcp("localhost", 9993, &location1));
-    ARROW_TEST_EXPECT_OK(flight::Location::ForGrpcTcp("localhost", 9993, &location2));
-    ARROW_TEST_EXPECT_OK(flight::Location::ForGrpcTcp("localhost", 9993, &location3));
-
     flight::FlightInfo::Data flight1, flight2;
 
-    flight::FlightEndpoint endpoint1({{"ticket-ints-1"}, {location1}});
-    flight::FlightEndpoint endpoint2({{"ticket-ints-2"}, {location2}});
-    flight::FlightEndpoint endpoint3({{"ticket-cmd"}, {location3}});
+    flight::FlightEndpoint endpoint1({{"ticket-ints-1"}, {location}});
+    flight::FlightEndpoint endpoint2({{"ticket-ints-2"}, {location}});
+    flight::FlightEndpoint endpoint3({{"ticket-cmd"}, {location}});
 
     flight::FlightDescriptor descr1{flight::FlightDescriptor::PATH, "", {"examples", "ints"}};
     flight::FlightDescriptor descr2{flight::FlightDescriptor::CMD, "my_command", {}};
