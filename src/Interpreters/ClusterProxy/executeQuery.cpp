@@ -92,7 +92,7 @@ Pipe executeQuery(
 
     const std::string query = queryToString(query_ast);
 
-    Context new_context = updateSettingsForCluster(*cluster, context, settings, log);
+    Context new_context = updateSettingsForCluster(*query_info.cluster, context, settings, log);
 
     ThrottlerPtr user_level_throttler;
     if (auto * process_list_element = context.getProcessListElement())
