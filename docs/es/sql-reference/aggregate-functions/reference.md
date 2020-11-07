@@ -31,7 +31,7 @@ En ambos casos el tipo del valor devuelto es [UInt64](../../sql-reference/data-t
 
 **Detalles**
 
-ClickHouse soporta el `COUNT(DISTINCT ...)` sintaxis. El comportamiento de esta construcción depende del [count\_distinct\_implementation](../../operations/settings/settings.md#settings-count_distinct_implementation) configuración. Define cuál de las [uniq\*](#agg_function-uniq) se utiliza para realizar la operación. El valor predeterminado es el [uniqExact](#agg_function-uniqexact) función.
+ClickHouse soporta el `COUNT(DISTINCT ...)` sintaxis. El comportamiento de esta construcción depende del [count_distinct_implementation](../../operations/settings/settings.md#settings-count_distinct_implementation) configuración. Define cuál de las [uniq\*](#agg_function-uniq) se utiliza para realizar la operación. El valor predeterminado es el [uniqExact](#agg_function-uniqexact) función.
 
 El `SELECT count() FROM table` consulta no está optimizado, porque el número de entradas en la tabla no se almacena por separado. Elige una pequeña columna de la tabla y cuenta el número de valores en ella.
 

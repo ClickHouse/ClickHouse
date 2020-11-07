@@ -3,7 +3,7 @@ toc_priority: 42
 toc_title: Decimal
 ---
 
-# Decimal(P, S), Decimal32(S), Decimal64(S), Decimal128(S), Decimal256(S) {#decimalp-s-decimal32s-decimal64s-decimal128s}
+# Decimal(P, S), Decimal32(S), Decimal64(S), Decimal128(S), Decimal256(S) {#decimal}
 
 Signed fixed-point numbers that keep precision during add, subtract and multiply operations. For division least significant digits are discarded (not rounded).
 
@@ -106,5 +106,9 @@ SELECT toDecimal32(1, 8) < 100
 ``` text
 DB::Exception: Can't compare.
 ```
+
+**See also**
+-   [isDecimalOverflow](../../sql-reference/functions/other-functions.md#is-decimal-overflow)
+-   [countDigits](../../sql-reference/functions/other-functions.md#count-digits)
 
 [Original article](https://clickhouse.tech/docs/en/data_types/decimal/) <!--hide-->

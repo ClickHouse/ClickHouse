@@ -14,6 +14,7 @@
 
 #include <Access/AccessFlags.h>
 
+#include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -245,6 +246,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         source_header = input_pipe->getHeader();
     }
 
+    if (context->getSettingsRef().enable_global_with_statement)
+        ApplyWithAliasVisitor().visit(query_ptr);
     ApplyWithSubqueryVisitor().visit(query_ptr);
 
     JoinedTables joined_tables(getSubqueryContext(*context), getSelectQuery());
@@ -301,6 +304,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (storage)
         view = dynamic_cast<StorageView *>(storage.get());
 
+    SubqueriesForSets subquery_for_sets;
+
     auto analyze = [&] (bool try_move_to_prewhere)
     {
         /// Allow push down and other optimizations for VIEW: replace with subquery and rewrite it.
@@ -341,7 +346,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         query_analyzer = std::make_unique<SelectQueryExpressionAnalyzer>(
                 query_ptr, syntax_analyzer_result, *context, metadata_snapshot,
                 NameSet(required_result_column_names.begin(), required_result_column_names.end()),
-                !options.only_analyze, options);
+                !options.only_analyze, options, std::move(subquery_for_sets));
 
         if (!options.only_analyze)
         {
@@ -427,6 +432,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (need_analyze_again)
     {
+        subquery_for_sets = std::move(query_analyzer->getSubqueriesForSets());
         /// Do not try move conditions to PREWHERE for the second time.
         /// Otherwise, we won't be able to fallback from inefficient PREWHERE to WHERE later.
         analyze(/* try_move_to_prewhere = */ false);
@@ -1067,7 +1073,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
         }
     }
 
-    if (query_analyzer->hasGlobalSubqueries() && !subqueries_for_sets.empty())
+    if (!subqueries_for_sets.empty() && (expressions.hasHaving() || query_analyzer->hasGlobalSubqueries()))
         executeSubqueriesInSetsAndJoins(query_plan, subqueries_for_sets);
 }
 
@@ -1112,7 +1118,9 @@ void InterpreterSelectQuery::executeFetchColumns(
     /// Optimization for trivial query like SELECT count() FROM table.
     bool optimize_trivial_count =
         syntax_analyzer_result->optimize_trivial_count
+        && (settings.max_parallel_replicas <= 1)
         && storage
+        && storage->getName() != "MaterializeMySQL"
         && !filter_info
         && processing_stage == QueryProcessingStage::FetchColumns
         && query_analyzer->hasAggregation()
@@ -1123,7 +1131,17 @@ void InterpreterSelectQuery::executeFetchColumns(
     {
         const auto & desc = query_analyzer->aggregates()[0];
         const auto & func = desc.function;
-        std::optional<UInt64> num_rows = storage->totalRows();
+        std::optional<UInt64> num_rows{};
+        if (!query.prewhere() && !query.where())
+            num_rows = storage->totalRows();
+        else // It's possible to optimize count() given only partition predicates
+        {
+            SelectQueryInfo temp_query_info;
+            temp_query_info.query = query_ptr;
+            temp_query_info.syntax_analyzer_result = syntax_analyzer_result;
+            temp_query_info.sets = query_analyzer->getPreparedSets();
+            num_rows = storage->totalRowsByPartitionPredicate(temp_query_info, *context);
+        }
         if (num_rows)
         {
             AggregateFunctionCount & agg_count = static_cast<AggregateFunctionCount &>(*func);
@@ -1436,7 +1454,7 @@ void InterpreterSelectQuery::executeFetchColumns(
                     getSortDescriptionFromGroupBy(query),
                     query_info.syntax_analyzer_result);
 
-            query_info.input_order_info = query_info.order_optimizer->getInputOrder(storage, metadata_snapshot);
+            query_info.input_order_info = query_info.order_optimizer->getInputOrder(metadata_snapshot);
         }
 
         StreamLocalLimits limits;

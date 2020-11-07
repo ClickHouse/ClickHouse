@@ -36,13 +36,13 @@ struct FieldRef : public Field
     FieldRef(T && value) : Field(std::forward<T>(value)) {}
 
     /// Create as reference to field in block.
-    FieldRef(Block * block_, size_t row_idx_, size_t column_idx_)
-        : Field((*block_->getByPosition(column_idx_).column)[row_idx_]),
-        block(block_), row_idx(row_idx_), column_idx(column_idx_) {}
+    FieldRef(ColumnsWithTypeAndName * columns_, size_t row_idx_, size_t column_idx_)
+        : Field((*(*columns_)[column_idx_].column)[row_idx_]),
+          columns(columns_), row_idx(row_idx_), column_idx(column_idx_) {}
 
-    bool isExplicit() const { return block == nullptr; }
+    bool isExplicit() const { return columns == nullptr; }
 
-    Block * block = nullptr;
+    ColumnsWithTypeAndName * columns = nullptr;
     size_t row_idx = 0;
     size_t column_idx = 0;
 };
@@ -232,7 +232,9 @@ public:
         const SelectQueryInfo & query_info,
         const Context & context,
         const Names & key_column_names,
-        const ExpressionActionsPtr & key_expr);
+        const ExpressionActionsPtr & key_expr,
+        bool single_point_ = false,
+        bool strict_ = false);
 
     /// Whether the condition and its negation are feasible in the direct product of single column ranges specified by `hyperrectangle`.
     BoolMask checkInHyperrectangle(
@@ -307,7 +309,8 @@ public:
     static std::optional<Range> applyMonotonicFunctionsChainToRange(
         Range key_range,
         const MonotonicFunctionsChain & functions,
-        DataTypePtr current_type);
+        DataTypePtr current_type,
+        bool single_point = false);
 
     bool matchesExactContinuousRange() const;
 
@@ -413,6 +416,11 @@ private:
     ColumnIndices key_columns;
     ExpressionActionsPtr key_expr;
     PreparedSets prepared_sets;
+
+    // If true, always allow key_expr to be wrapped by function
+    bool single_point;
+    // If true, do not use always_monotonic information to transform constants
+    bool strict;
 };
 
 }

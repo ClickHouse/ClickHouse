@@ -22,7 +22,7 @@
 
 示例 2 ：
 
-我们假定你有一个旧表（WatchLog\_old），你想改变数据分区了，但又不想把旧数据转移到新表（WatchLog\_new）里，并且你需要同时能看到这两个表的数据。
+我们假定你有一个旧表（WatchLog_old），你想改变数据分区了，但又不想把旧数据转移到新表（WatchLog_new）里，并且你需要同时能看到这两个表的数据。
 
     CREATE TABLE WatchLog_old(date Date, UserId Int64, EventType String, Cnt UInt64)
     ENGINE=MergeTree(date, (UserId, EventType), 8192);

@@ -60,27 +60,17 @@ public:
     using ArrayA = typename ColVecA::Container;
     using ArrayB = typename ColVecB::Container;
 
-    DecimalComparison(Block & block, size_t result, const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right)
-    {
-        if (!apply(block, result, col_left, col_right))
-            throw Exception("Wrong decimal comparison with " + col_left.type->getName() + " and " + col_right.type->getName(),
-                            ErrorCodes::LOGICAL_ERROR);
-    }
-
-    static bool apply(Block & block, size_t result [[maybe_unused]],
-                      const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right)
+    static ColumnPtr apply(const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right)
     {
         if constexpr (_actual)
         {
             ColumnPtr c_res;
             Shift shift = getScales<A, B>(col_left.type, col_right.type);
 
-            c_res = applyWithScale(col_left.column, col_right.column, shift);
-            if (c_res)
-                block.getByPosition(result).column = std::move(c_res);
-            return true;
+            return applyWithScale(col_left.column, col_right.column, shift);
         }
-        return false;
+        else
+            return nullptr;
     }
 
     static bool compare(A a, B b, UInt32 scale_a, UInt32 scale_b)

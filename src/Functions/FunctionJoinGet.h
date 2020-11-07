@@ -1,6 +1,8 @@
+#pragma once
 #include <Functions/IFunctionImpl.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
+#include <Core/Block.h>
 
 namespace DB
 {
@@ -13,8 +15,8 @@ template <bool or_null>
 class ExecutableFunctionJoinGet final : public IExecutableFunctionImpl
 {
 public:
-    ExecutableFunctionJoinGet(HashJoinPtr join_, const Block & result_block_)
-        : join(std::move(join_)), result_block(result_block_) {}
+    ExecutableFunctionJoinGet(HashJoinPtr join_, const DB::Block & result_columns_)
+        : join(std::move(join_)), result_columns(result_columns_) {}
 
     static constexpr auto name = or_null ? "joinGetOrNull" : "joinGet";
 
@@ -22,13 +24,13 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
+    ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) override;
 
     String getName() const override { return name; }
 
 private:
     HashJoinPtr join;
-    Block result_block;
+    DB::Block result_columns;
 };
 
 template <bool or_null>
@@ -52,9 +54,9 @@ public:
     String getName() const override { return name; }
 
     const DataTypes & getArgumentTypes() const override { return argument_types; }
-    const DataTypePtr & getReturnType() const override { return return_type; }
+    const DataTypePtr & getResultType() const override { return return_type; }
 
-    ExecutableFunctionImplPtr prepare(const Block & sample_block, const ColumnNumbers & arguments, size_t result) const override;
+    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &) const override;
 
 private:
     TableLockHolder table_lock;

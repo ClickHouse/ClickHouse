@@ -93,7 +93,7 @@ public:
         const ASTPtr & query_,
         const TreeRewriterResultPtr & syntax_analyzer_result_,
         const Context & context_)
-    :   ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, 0, false)
+    :   ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, 0, false, {})
     {}
 
     void appendExpression(ExpressionActionsChain & chain, const ASTPtr & expr, bool only_types);
@@ -124,7 +124,8 @@ protected:
         const TreeRewriterResultPtr & syntax_analyzer_result_,
         const Context & context_,
         size_t subquery_depth_,
-        bool do_global_);
+        bool do_global_,
+        SubqueriesForSets subqueries_for_sets_);
 
     ASTPtr query;
     const Context & context;
@@ -149,6 +150,8 @@ protected:
       * prepared sets would not be applicable for MergeTree index optimization.
       */
     void getRootActionsNoMakeSet(const ASTPtr & ast, bool no_subqueries, ActionsDAGPtr & actions, bool only_consts = false);
+
+    void getRootActionsForHaving(const ASTPtr & ast, bool no_subqueries, ActionsDAGPtr & actions, bool only_consts = false);
 
     /** Add aggregation keys to aggregation_keys, aggregate functions to aggregate_descriptions,
       * Create a set of columns aggregated_columns resulting after the aggregation, if any,
@@ -244,8 +247,9 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         const NameSet & required_result_columns_ = {},
         bool do_global_ = false,
-        const SelectQueryOptions & options_ = {})
-        : ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, options_.subquery_depth, do_global_)
+        const SelectQueryOptions & options_ = {},
+        SubqueriesForSets subqueries_for_sets_ = {})
+        : ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, options_.subquery_depth, do_global_, std::move(subqueries_for_sets_))
         , metadata_snapshot(metadata_snapshot_)
         , required_result_columns(required_result_columns_)
         , query_options(options_)
