@@ -498,7 +498,6 @@ ReturnType readFloatTextWithFastFloatImpl(T & x, ReadBuffer & in)
 
     if (unlikely(!in.hasPendingData()))
     {
-        /// TODO: Optimize in readFloatTextPreciseImpl there is MAX_LENGTH and array with MAX_LEGNTH can be used
         String buffer;
 
         while (true)
@@ -644,17 +643,21 @@ ReturnType readFloatTextSimpleImpl(T & x, ReadBuffer & buf)
     return ReturnType(true);
 }
 
-
-template <typename T> void readFloatTextPrecise(T & x, ReadBuffer & in) { readFloatTextPreciseImpl<T, void>(x, in); }
-template <typename T> bool tryReadFloatTextPrecise(T & x, ReadBuffer & in) { return readFloatTextPreciseImpl<T, bool>(x, in); }
-
-template <typename T> void readFloatTextFast(T & x, ReadBuffer & in) { readFloatTextFastImpl<T, void>(x, in); }
-template <typename T> bool tryReadFloatTextFast(T & x, ReadBuffer & in) { return readFloatTextFastImpl<T, bool>(x, in); }
-
 #ifdef USE_FAST_FLOAT
 template <typename T> void readFloatTextWithFastFloat(T & x, ReadBuffer & in) { readFloatTextWithFastFloatImpl<T, void>(x, in); }
 template <typename T> bool tryReadFloatTextWithFastFloat(T & x, ReadBuffer & in) { return readFloatTextWithFastFloatImpl<T, bool>(x, in); }
 #endif
+
+#ifdef USE_FAST_FLOAT
+template <typename T> void readFloatTextPrecise(T & x, ReadBuffer & in) { readFloatTextWithFastFloat<T, void>(x, in); }
+template <typename T> bool tryReadFloatTextPrecise(T & x, ReadBuffer & in) { return tryReadFloatTextWithFastFloat<T, bool>(x, in); }
+#else
+template <typename T> void readFloatTextPrecise(T & x, ReadBuffer & in) { readFloatTextPreciseImpl<T, void>(x, in); }
+template <typename T> bool tryReadFloatTextPrecise(T & x, ReadBuffer & in) { return readFloatTextPreciseImpl<T, bool>(x, in); }
+#endif
+
+template <typename T> void readFloatTextFast(T & x, ReadBuffer & in) { readFloatTextFastImpl<T, void>(x, in); }
+template <typename T> bool tryReadFloatTextFast(T & x, ReadBuffer & in) { return readFloatTextFastImpl<T, bool>(x, in); }
 
 template <typename T> void readFloatTextSimple(T & x, ReadBuffer & in) { readFloatTextSimpleImpl<T, void>(x, in); }
 template <typename T> bool tryReadFloatTextSimple(T & x, ReadBuffer & in) { return readFloatTextSimpleImpl<T, bool>(x, in); }
@@ -662,12 +665,7 @@ template <typename T> bool tryReadFloatTextSimple(T & x, ReadBuffer & in) { retu
 
 /// Implementation that is selected as default.
 
-#ifdef USE_FAST_FLOAT
-template <typename T> void readFloatText(T & x, ReadBuffer & in) { readFloatTextWithFastFloat(x, in); }
-template <typename T> bool tryReadFloatText(T & x, ReadBuffer & in) { return tryReadFloatTextWithFastFloat(x, in); }
-#else
 template <typename T> void readFloatText(T & x, ReadBuffer & in) { readFloatTextFast(x, in); }
 template <typename T> bool tryReadFloatText(T & x, ReadBuffer & in) { return tryReadFloatTextFast(x, in); }
-#endif
 
 }
