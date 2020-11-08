@@ -369,6 +369,8 @@ static bool indexOfCanUseBloomFilter(const ASTPtr & parent)
             Field zero(0);
             return (function->name == "equals"  /// indexOf(...) = c, c != 0
                     && !applyVisitor(FieldVisitorAccurateEquals(), constant->value, zero))
+                || (function->name == "notEquals"  /// indexOf(...) != c, c = 0
+                    && applyVisitor(FieldVisitorAccurateEquals(), constant->value, zero))
                 || (function->name == (reversed ? "less" : "greater")   /// indexOf(...) > c, c >= 0
                     && !applyVisitor(FieldVisitorAccurateLess(), constant->value, zero))
                 || (function->name == (reversed ? "lessOrEquals" : "greaterOrEquals")   /// indexOf(...) >= c, c > 0
