@@ -1,1 +1,0 @@
-`id` Nullable(Int32), `phoneNumbers` Tuple(Nullable(Int64), Nullable(String))
