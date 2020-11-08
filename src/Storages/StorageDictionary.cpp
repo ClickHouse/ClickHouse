@@ -82,6 +82,7 @@ NamesAndTypesList StorageDictionary::getNamesAndTypes(const DictionaryStructure 
 String StorageDictionary::generateNamesAndTypesDescription(const NamesAndTypesList & list)
 {
     std::stringstream ss;
+    ss.exceptions(std::ios::failbit);
     bool first = true;
     for (const auto & name_and_type : list)
     {

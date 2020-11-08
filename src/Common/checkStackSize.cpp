@@ -81,6 +81,7 @@ __attribute__((__weak__)) void checkStackSize()
     if (stack_size * 2 > max_stack_size)
     {
         std::stringstream message;
+        message.exceptions(std::ios::failbit);
         message << "Stack size too large"
             << ". Stack address: " << stack_address
             << ", frame address: " << frame_address

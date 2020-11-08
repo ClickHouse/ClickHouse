@@ -360,6 +360,7 @@ Block IBlockInputStream::getExtremes()
 String IBlockInputStream::getTreeID() const
 {
     std::stringstream s;
+    s.exceptions(std::ios::failbit);
     s << getName();
 
     if (!children.empty())

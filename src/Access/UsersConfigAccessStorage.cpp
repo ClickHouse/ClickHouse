@@ -461,6 +461,7 @@ String UsersConfigAccessStorage::getStorageParamsJSON() const
     if (!path.empty())
         json.set("path", path);
     std::ostringstream oss;
+    oss.exceptions(std::ios::failbit);
     Poco::JSON::Stringifier::stringify(json, oss);
     return oss.str();
 }
