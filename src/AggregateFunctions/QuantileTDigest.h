@@ -65,21 +65,29 @@ class TDigest
 
     /** :param epsilon: value \delta from the article - error in the range
       *                    quantile 0.5 (default is 0.01, i.e. 1%)
+      *                    if you change epsilon, you must also change max_centroids
+      * :param max_centroids: depends on epsilon, the better accuracy, the more centroids you need
+      *                       to describe data with this accuracy. Read article before changing.
       * :param max_unmerged: when accumulating count of new points beyond this
       *                      value centroid compression is triggered
       *                      (default is 2048, the higher the value - the
       *                      more memory is required, but amortization of execution time increases)
+      *                      Change freely anytime.
       */
     struct Params
     {
         Value epsilon = 0.01;
+        size_t max_centroids = 2048;
         size_t max_unmerged = 2048;
     };
+    /** max_centroids_deserialize should be >= all max_centroids ever used in production.
+     *  This is security parameter, preventing allocation of too much centroids in deserialize, so can be relatively large.
+     */
+    static constexpr size_t max_centroids_deserialize = 65536;
 
-    Params params;
+    static constexpr Params params{};
 
-    /// The memory will be allocated to several elements at once, so that the state occupies 64 bytes.
-    static constexpr size_t bytes_in_arena = 128 - sizeof(PODArray<Centroid>) - sizeof(Count) - sizeof(UInt32);
+    static constexpr size_t bytes_in_arena = 128 - sizeof(PODArray<Centroid>) - sizeof(BetterFloat) - sizeof(size_t); // If alignment is imperfect, sizeof(TDigest) will be more than naively expected
     using Centroids = PODArrayWithStackMemory<Centroid, bytes_in_arena>;
 
     Centroids centroids;
@@ -112,8 +120,47 @@ class TDigest
         centroids.push_back(c);
         count += c.count;
         ++unmerged;
-        if (unmerged >= params.max_unmerged)
+        if (unmerged > params.max_unmerged)
             compress();
+    }
+    void compress_brute() {
+        if (centroids.size() <= params.max_centroids)
+            return;
+        const size_t batch_size = (centroids.size() + params.max_centroids - 1) / params.max_centroids; // at least 2
+
+        auto l = centroids.begin();
+        auto r = std::next(l);
+        BetterFloat sum = 0;
+        BetterFloat l_mean = l->mean; // We have high-precision temporaries for numeric stability
+        BetterFloat l_count = l->count;
+        size_t batch_pos = 0;
+        for (;r != centroids.end(); ++r)
+        {
+            if (batch_pos < batch_size - 1)
+            {
+                /// The left column "eats" the right. Middle of the batch
+                l_count += r->count;
+                l_mean += r->count * (r->mean - l_mean) / l_count; // Symmetric algo (M1*C1 + M2*C2)/(C1+C2) is numerically better, but slower
+                l->mean = l_mean;
+                l->count = l_count;
+                batch_pos += 1;
+            }
+            else
+            {
+                // End of the batch, start the next one
+                sum += l->count; // Not l_count, otherwise actual sum of elements will be different
+                ++l;
+
+                /// We skip all the values "eaten" earlier.
+                *l = *r;
+                l_mean = l->mean;
+                l_count = l->count;
+                batch_pos = 0;
+            }
+        }
+        count = sum + l_count; // Update count, it might be different due to += inaccuracy
+        centroids.resize(l - centroids.begin() + 1);
+        // Here centroids.size() <= params.max_centroids
     }
 
 public:
@@ -123,89 +170,89 @@ public:
       */
     void compress()
     {
-        if (unmerged > 0)
+        if (unmerged > 0 || centroids.size() > params.max_centroids)
         {
+            // unmerged > 0 implies centroids.size() > 0, hence *l is valid below
             RadixSort<RadixSortTraits>::executeLSD(centroids.data(), centroids.size());
 
-            if (centroids.size() > 3)
+            /// A pair of consecutive bars of the histogram.
+            auto l = centroids.begin();
+            auto r = std::next(l);
+
+            const BetterFloat count_epsilon_4 = count * params.epsilon * 4; // Compiler is unable to do this optimization
+            BetterFloat sum = 0;
+            BetterFloat l_mean = l->mean; // We have high-precision temporaries for numeric stability
+            BetterFloat l_count = l->count;
+            while (r != centroids.end())
             {
-                /// A pair of consecutive bars of the histogram.
-                auto l = centroids.begin();
-                auto r = std::next(l);
-
-                const BetterFloat count_epsilon_4 = count * params.epsilon * 4; // Compiler is unable to do this optimization
-                BetterFloat sum = 0;
-                BetterFloat l_mean = l->mean; // We have high-precision temporaries for numeric stability
-                BetterFloat l_count = l->count;
-                while (r != centroids.end())
+                if (l->mean == r->mean) // Perfect aggregation (fast). We compare l->mean, not l_mean, to avoid identical elements after compress
                 {
-                    if (l->mean == r->mean) // Perfect aggregation (fast). We compare l->mean, not l_mean, to avoid identical elements after compress
-                    {
-                        l_count += r->count;
-                        l->count = l_count;
-                        ++r;
-                        continue;
-                    }
-                    // we use quantile which gives us the smallest error
-
-                    /// The ratio of the part of the histogram to l, including the half l to the entire histogram. That is, what level quantile in position l.
-                    BetterFloat ql = (sum + l_count * 0.5) / count;
-                    BetterFloat err = ql * (1 - ql);
-
-                    /// The ratio of the portion of the histogram to l, including l and half r to the entire histogram. That is, what level is the quantile in position r.
-                    BetterFloat qr = (sum + l_count + r->count * 0.5) / count;
-                    BetterFloat err2 = qr * (1 - qr);
-
-                    if (err > err2)
-                        err = err2;
-
-                    BetterFloat k = count_epsilon_4 * err;
-
-                    /** The ratio of the weight of the glued column pair to all values is not greater,
-                      *  than epsilon multiply by a certain quadratic coefficient, which in the median is 1 (4 * 1/2 * 1/2),
-                      *  and at the edges decreases and is approximately equal to the distance to the edge * 4.
-                      */
-
-                    if (l_count + r->count <= k)
-                    {
-                        // it is possible to merge left and right
-                        /// The left column "eats" the right.
-                        l_count += r->count;
-                        l_mean += r->count * (r->mean - l_mean) / l_count; // Symmetric algo (M1*C1 + M2*C2)/(C1+C2) is numerically better, but slower
-                        l->mean = l_mean;
-                        l->count = l_count;
-                    }
-                    else
-                    {
-                        // not enough capacity, check the next pair
-                        sum += l->count; // Not l_count, otherwise actual sum of elements will be different
-                        ++l;
-
-                        /// We skip all the values "eaten" earlier.
-                        if (l != r)
-                            *l = *r;
-                        l_mean = l->mean;
-                        l_count = l->count;
-                    }
+                    l_count += r->count;
+                    l->count = l_count;
                     ++r;
+                    continue;
                 }
-                count = sum + l_count; // Update count, it might be different due to += inaccuracy
+                // we use quantile which gives us the smallest error
 
-                /// At the end of the loop, all values to the right of l were "eaten".
-                centroids.resize(l - centroids.begin() + 1);
+                /// The ratio of the part of the histogram to l, including the half l to the entire histogram. That is, what level quantile in position l.
+                BetterFloat ql = (sum + l_count * 0.5) / count;
+                BetterFloat err = ql * (1 - ql);
+
+                /// The ratio of the portion of the histogram to l, including l and half r to the entire histogram. That is, what level is the quantile in position r.
+                BetterFloat qr = (sum + l_count + r->count * 0.5) / count;
+                BetterFloat err2 = qr * (1 - qr);
+
+                if (err > err2)
+                    err = err2;
+
+                BetterFloat k = count_epsilon_4 * err;
+
+                /** The ratio of the weight of the glued column pair to all values is not greater,
+                  *  than epsilon multiply by a certain quadratic coefficient, which in the median is 1 (4 * 1/2 * 1/2),
+                  *  and at the edges decreases and is approximately equal to the distance to the edge * 4.
+                  */
+
+                if (l_count + r->count <= k)
+                {
+                    // it is possible to merge left and right
+                    /// The left column "eats" the right.
+                    l_count += r->count;
+                    l_mean += r->count * (r->mean - l_mean) / l_count; // Symmetric algo (M1*C1 + M2*C2)/(C1+C2) is numerically better, but slower
+                    l->mean = l_mean;
+                    l->count = l_count;
+                }
+                else
+                {
+                    // not enough capacity, check the next pair
+                    sum += l->count; // Not l_count, otherwise actual sum of elements will be different
+                    ++l;
+
+                    /// We skip all the values "eaten" earlier.
+                    if (l != r)
+                        *l = *r;
+                    l_mean = l->mean;
+                    l_count = l->count;
+                }
+                ++r;
             }
+            count = sum + l_count; // Update count, it might be different due to += inaccuracy
 
+            /// At the end of the loop, all values to the right of l were "eaten".
+            centroids.resize(l - centroids.begin() + 1);
             unmerged = 0;
         }
+        // Ensures centroids.size() < max_centroids, independent of unprovable floating point blackbox above
+        compress_brute();
     }
 
     /** Adds to the digest a change in `x` with a weight of `cnt` (default 1)
       */
     void add(T x, UInt64 cnt = 1)
     {
-        if (cnt == 0)
-            return; // Count 0 breaks compress() assumptions, we treat it as no sample
-        addCentroid(Centroid(Value(x), Count(cnt)));
+        auto vx = static_cast<Value>(x);
+        if (cnt == 0 || std::isnan(vx))
+            return; // Count 0 breaks compress() assumptions, Nan breaks sort(). We treat them as no sample.
+        addCentroid(Centroid{vx, static_cast<Count>(cnt)});
     }
 
     void merge(const TDigest & other)
@@ -226,23 +273,23 @@ public:
         size_t size = 0;
         readVarUInt(size, buf);
 
-        if (size > params.max_unmerged)
+        if (size > max_centroids_deserialize)
             throw Exception("Too large t-digest centroids size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
 
+        count = 0;
+        unmerged = 0;
+
         centroids.resize(size);
+        // From now, TDigest will be in invalid state if exception is thrown.
         buf.read(reinterpret_cast<char *>(centroids.data()), size * sizeof(centroids[0]));
 
-        count = 0;
-        for (size_t i = 0; i != centroids.size(); ++i)
+        for (const auto & c : centroids)
         {
-            Centroid & c = centroids[i];
             if (c.count <= 0 || std::isnan(c.count) || std::isnan(c.mean)) // invalid count breaks compress(), invalid mean breaks sort()
-            {
-                centroids.resize(i); // Exception safety, without this line caller will end up with TDigest object in broken invariant state
                 throw std::runtime_error("Invalid centroid " + std::to_string(c.count) + ":" + std::to_string(c.mean));
-            }
             count += c.count;
         }
+        compress(); // Allows reading/writing TDigests with different epsilon/max_centroids params
     }
 
     Count getCount()
@@ -269,14 +316,7 @@ class QuantileTDigest
     using Value = Float32;
     using Count = Float32;
 
-    /** We store two t-digests. When an amount of elements in sub_tdigest become more than merge_threshold
-     * we merge sub_tdigest in main_tdigest and reset sub_tdigest. This method is needed to decrease an amount of
-     * centroids in t-digest (experiments show that after merge_threshold the size of t-digest significantly grows,
-     * but merging two big t-digest decreases it).
-     */
     TDigest<T> main_tdigest;
-    TDigest<T> sub_tdigest;
-    size_t merge_threshold = 1e7;
 
     /** Linear interpolation at the point x on the line (x1, y1)..(x2, y2)
       */
@@ -286,36 +326,24 @@ class QuantileTDigest
         return y1 + k * (y2 - y1);
     }
 
-    void mergeTDigests()
-    {
-        main_tdigest.merge(sub_tdigest);
-        sub_tdigest.reset();
-    }
-
 public:
     void add(T x, UInt64 cnt = 1)
     {
-        if (sub_tdigest.getCount() >= merge_threshold)
-            mergeTDigests();
-        sub_tdigest.add(x, cnt);
+        main_tdigest.add(x, cnt);
     }
 
     void merge(const QuantileTDigest & other)
     {
-        mergeTDigests();
         main_tdigest.merge(other.main_tdigest);
-        main_tdigest.merge(other.sub_tdigest);
     }
 
     void serialize(WriteBuffer & buf)
     {
-        mergeTDigests();
         main_tdigest.serialize(buf);
     }
 
     void deserialize(ReadBuffer & buf)
     {
-        sub_tdigest.reset();
         main_tdigest.deserialize(buf);
     }
 
@@ -325,8 +353,6 @@ public:
     template <typename ResultType>
     ResultType getImpl(Float64 level)
     {
-        mergeTDigests();
-
         auto & centroids = main_tdigest.getCentroids();
         if (centroids.empty())
             return std::is_floating_point_v<ResultType> ? NAN : 0;
@@ -364,8 +390,6 @@ public:
     template <typename ResultType>
     void getManyImpl(const Float64 * levels, const size_t * levels_permutation, size_t size, ResultType * result)
     {
-        mergeTDigests();
-
         auto & centroids = main_tdigest.getCentroids();
         if (centroids.empty())
         {
