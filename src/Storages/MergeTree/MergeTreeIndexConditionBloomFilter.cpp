@@ -1,17 +1,17 @@
-#include <Storages/MergeTree/MergeTreeIndexConditionBloomFilter.h>
-#include <Interpreters/misc.h>
-#include <Interpreters/BloomFilterHash.h>
 #include <Common/HashTable/ClearableHashMap.h>
-#include <Storages/MergeTree/RPNBuilder.h>
-#include <Storages/MergeTree/MergeTreeIndexGranuleBloomFilter.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnConst.h>
-#include <ext/bit_cast.h>
+#include <Columns/ColumnTuple.h>
+#include <Storages/MergeTree/RPNBuilder.h>
+#include <Storages/MergeTree/MergeTreeIndexGranuleBloomFilter.h>
+#include <Storages/MergeTree/MergeTreeIndexConditionBloomFilter.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Columns/ColumnTuple.h>
+#include <Interpreters/misc.h>
+#include <Interpreters/BloomFilterHash.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 
@@ -106,11 +106,11 @@ bool MergeTreeIndexConditionBloomFilter::alwaysUnknownOrTrue() const
             rpn_stack.push_back(true);
         }
         else if (element.function == RPNElement::FUNCTION_EQUALS
-                 || element.function == RPNElement::FUNCTION_NOT_EQUALS
-                 || element.function == RPNElement::FUNCTION_HAS
-                 || element.function == RPNElement::FUNCTION_IN
-                 || element.function == RPNElement::FUNCTION_NOT_IN
-                 || element.function == RPNElement::ALWAYS_FALSE)
+            || element.function == RPNElement::FUNCTION_NOT_EQUALS
+            || element.function == RPNElement::FUNCTION_HAS
+            || element.function == RPNElement::FUNCTION_IN
+            || element.function == RPNElement::FUNCTION_NOT_IN
+            || element.function == RPNElement::ALWAYS_FALSE)
         {
             rpn_stack.push_back(false);
         }
@@ -338,7 +338,7 @@ static bool indexOfCanUseBloomFilter(const ASTPtr & parent)
         {
             return true;
         }
-        else if (function->name == "equals"
+        else if (function->name == "equals" /// notEquals is not applicable
             || function->name == "greater" || function->name == "greaterOrEquals"
             || function->name == "less" || function->name == "lessOrEquals")
         {
@@ -346,24 +346,33 @@ static bool indexOfCanUseBloomFilter(const ASTPtr & parent)
                 return false;
 
             /// We don't allow constant expressions like `indexOf(arr, x) = 1 + 0` but it's neglible.
+
+            /// We should return true when the corresponding expression implies that the array contains the element.
+            /// Example: when `indexOf(arr, x)` > 10 is written, it means that arr definitely should contain the element
+            /// (at least at 11th position but it does not matter).
+
+            bool reversed = false;
+            const ASTLiteral * constant = nullptr;
+
             if (const ASTLiteral * left = function->arguments->children[0]->as<ASTLiteral>())
             {
-                if (function->name == "equals" && left->value.get<Int64>() != 0)
-                    return true;
-                else if (function->name == "less" && left->value.get<Int64>() >= 0)
-                    return true;
-                else if (function->name == "lessOrEquals" && left->value.get<Int64>() > 0)
-                    return true;
+                constant = left;
+                reversed = true;
             }
             else if (const ASTLiteral * right = function->arguments->children[1]->as<ASTLiteral>())
             {
-                if (function->name == "equals" && right->value.get<Int64>() != 0)
-                    return true;
-                else if (function->name == "greater" && right->value.get<Int64>() >= 0)
-                    return true;
-                else if (function->name == "greaterOrEquals" && right->value.get<Int64>() > 0)
-                    return true;
+                constant = right;
             }
+            else
+                return false;
+
+            Field zero(0);
+            return (function->name == "equals"  /// indexOf(...) = c, c != 0
+                    && !applyVisitor(FieldVisitorAccurateEquals(), constant->value, zero))
+                || (function->name == (reversed ? "less" : "greater")   /// indexOf(...) > c, c >= 0
+                    && !applyVisitor(FieldVisitorAccurateLess(), constant->value, zero))
+                || (function->name == (reversed ? "lessOrEquals" : "greaterOrEquals")   /// indexOf(...) >= c, c > 0
+                    && applyVisitor(FieldVisitorAccurateLess(), zero, constant->value));
         }
     }
 
