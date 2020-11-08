@@ -272,7 +272,8 @@ Code: 70. DB::Ex---tion: The type "map" of an input column "a" is not supported 
 Code: 70. DB::Ex---tion: The type "struct" of an input column "b_struct" is not supported for conversion from a Parquet data format: data for INSERT was parsed from stdin
 
 === Try load data from repeated_no_annotation.parquet
-../contrib/arrow/cpp/src/arrow/array/array_nested.cc:193:  Check failed: self->list_type_->value_type()->Equals(data->child_data[0]->type) 
+Code: 349. DB::Ex---tion: Can not insert NULL data into non-nullable column "phoneNumbers": data for INSERT was parsed from stdin
+
 === Try load data from single_nan.parquet
 \N
 === Try load data from userdata1.parquet
