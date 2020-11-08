@@ -247,6 +247,7 @@ Names StorageKafka::parseTopics(String topic_list)
 String StorageKafka::getDefaultClientId(const StorageID & table_id_)
 {
     std::stringstream ss;
+    ss.exceptions(std::ios::failbit);
     ss << VERSION_NAME << "-" << getFQDNOrHostName() << "-" << table_id_.database_name << "-" << table_id_.table_name;
     return ss.str();
 }
@@ -255,7 +256,7 @@ String StorageKafka::getDefaultClientId(const StorageID & table_id_)
 Pipe StorageKafka::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    const SelectQueryInfo & /* query_info */,
+    SelectQueryInfo & /* query_info */,
     const Context & context,
     QueryProcessingStage::Enum /* processed_stage */,
     size_t /* max_block_size */,
@@ -400,6 +401,7 @@ ConsumerBufferPtr StorageKafka::createReadBuffer(const size_t consumer_number)
     if (num_consumers > 1)
     {
         std::stringstream ss;
+        ss.exceptions(std::ios::failbit);
         ss << client_id << "-" << consumer_number;
         conf.set("client.id", ss.str());
     }
