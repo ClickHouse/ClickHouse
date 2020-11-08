@@ -79,29 +79,26 @@ def build_for_lang(lang, args):
         }
 
         site_names = {
-            'en': 'ClickHouse %s Documentation',
-            'zh': 'ClickHouse文档 %s',
-            'es': 'Documentación de ClickHouse %s',
-            'fr': 'Documentation ClickHouse %s',
-            'ru': 'Документация ClickHouse %s',
-            'ja': 'ClickHouseドキュメント %s',
-            'tr': 'ClickHouse Belgeleri %s',
-            'fa': 'مستندات %sClickHouse'
+            'en': 'ClickHouse Documentation',
+            'zh': 'ClickHouse文档 ',
+            'es': 'Documentación de ClickHouse',
+            'fr': 'Documentation ClickHouse',
+            'ru': 'Документация ClickHouse',
+            'ja': 'ClickHouseドキュメント',
+            'tr': 'ClickHouse Belgeleri',
+            'fa': 'مستندات ClickHouse'
         }
 
         assert len(site_names) == len(languages)
 
-        if args.version_prefix:
-            site_dir = os.path.join(args.docs_output_dir, args.version_prefix, lang)
-        else:
-            site_dir = os.path.join(args.docs_output_dir, lang)
+        site_dir = os.path.join(args.docs_output_dir, lang)
 
         plugins = ['macros']
         if args.htmlproofer:
             plugins.append('htmlproofer')
 
         website_url = 'https://clickhouse.tech'
-        site_name = site_names.get(lang, site_names['en']) % args.version_prefix
+        site_name = site_names.get(lang, site_names['en'])
         site_name = site_name.replace('  ', ' ')
         raw_config = dict(
             site_name=site_name,
@@ -119,8 +116,6 @@ def build_for_lang(lang, args):
             plugins=plugins,
             extra=dict(
                 now=datetime.datetime.now().isoformat(),
-                stable_releases=args.stable_releases,
-                version_prefix=args.version_prefix,
                 single_page=False,
                 rev=args.rev,
                 rev_short=args.rev_short,
@@ -247,8 +242,7 @@ if __name__ == '__main__':
     args.docs_output_dir = os.path.join(os.path.abspath(args.output_dir), 'docs')
     args.blog_output_dir = os.path.join(os.path.abspath(args.output_dir), 'blog')
 
-    from github import choose_latest_releases, get_events
-    args.stable_releases = choose_latest_releases(args) if args.enable_stable_releases else []
+    from github import get_events
     args.rev = subprocess.check_output('git rev-parse HEAD', shell=True).decode('utf-8').strip()
     args.rev_short = subprocess.check_output('git rev-parse --short HEAD', shell=True).decode('utf-8').strip()
     args.rev_url = f'https://github.com/ClickHouse/ClickHouse/commit/{args.rev}'
