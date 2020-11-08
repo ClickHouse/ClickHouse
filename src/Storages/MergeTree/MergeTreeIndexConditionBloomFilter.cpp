@@ -324,14 +324,17 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTIn(
     return false;
 }
 
+
 static bool indexOfCanUseBloomFilter(const ASTPtr & parent)
 {
     if (!parent)
         return true;
 
+    /// `parent` is a function where `indexOf` is located.
+    /// Example: `indexOf(arr, x) = 1`, parent is a function named `equals`.
     if (const auto * function = parent->as<ASTFunction>())
     {
-        if (function->name == "arrayElement")
+        if (function->name == "and")
         {
             return true;
         }
@@ -342,29 +345,31 @@ static bool indexOfCanUseBloomFilter(const ASTPtr & parent)
             if (function->arguments->children.size() != 2)
                 return false;
 
+            /// We don't allow constant expressions like `indexOf(arr, x) = 1 + 0` but it's neglible.
             if (const ASTLiteral * left = function->arguments->children[0]->as<ASTLiteral>())
             {
-                    if (function->name == "equals" && left->value.get<Int64>() != 0)
-                        return true;
-                    else if (function->name == "less" && left->value.get<Int64>() >= 0)
-                        return true;
-                    else if (function->name == "lessOrEquals" && left->value.get<Int64>() > 0)
-                        return true;
+                if (function->name == "equals" && left->value.get<Int64>() != 0)
+                    return true;
+                else if (function->name == "less" && left->value.get<Int64>() >= 0)
+                    return true;
+                else if (function->name == "lessOrEquals" && left->value.get<Int64>() > 0)
+                    return true;
             }
             else if (const ASTLiteral * right = function->arguments->children[1]->as<ASTLiteral>())
             {
-                    if (function->name == "equals" && right->value.get<Int64>() != 0)
-                        return true;
-                    else if (function->name == "greater" && right->value.get<Int64>() >= 0)
-                        return true;
-                    else if (function->name == "greaterOrEquals" && right->value.get<Int64>() > 0)
-                        return true;
+                if (function->name == "equals" && right->value.get<Int64>() != 0)
+                    return true;
+                else if (function->name == "greater" && right->value.get<Int64>() >= 0)
+                    return true;
+                else if (function->name == "greaterOrEquals" && right->value.get<Int64>() > 0)
+                    return true;
             }
         }
     }
 
     return false;
 }
+
 
 bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
     const String & function_name, const ASTPtr & key_ast, const DataTypePtr & value_type, const Field & value_field, RPNElement & out, const ASTPtr & parent)
@@ -380,6 +385,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
             if (!array_type)
                 throw Exception("First argument for function " + function_name + " must be an array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
+            /// We can treat `indexOf` function similar to `has`.
+            /// But it is little more cumbersome, compare: `has(arr, elem)` and `indexOf(arr, elem) != 0`.
+            /// The `parent` in this context is expected to be function `!=` (`notEquals`).
             if (function_name == "has" || indexOfCanUseBloomFilter(parent))
             {
                 out.function = RPNElement::FUNCTION_HAS;
