@@ -55,7 +55,7 @@ void registerStorageRabbitMQ(StorageFactory & factory);
 #endif
 
 #if USE_ROCKSDB
-void registerStorageEmbeddedRocksdb(StorageFactory & factory);
+void registerStorageEmbeddedRocksDB(StorageFactory & factory);
 #endif
 
 void registerStorages();

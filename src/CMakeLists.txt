@@ -79,7 +79,7 @@ if (USE_AMQPCPP)
 endif()
 
 if (USE_ROCKSDB)
-    add_headers_and_sources(dbms Storages/Rocksdb)
+    add_headers_and_sources(dbms Storages/RocksDB)
 endif()
 
 if (USE_AWS_S3)

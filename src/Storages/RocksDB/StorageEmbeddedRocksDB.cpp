@@ -2,9 +2,9 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/Rocksdb/StorageEmbeddedRocksdb.h>
-#include <Storages/Rocksdb/EmbeddedRocksdbBlockOutputStream.h>
-#include <Storages/Rocksdb/EmbeddedRocksdbBlockInputStream.h>
+#include <Storages/RocksDB/StorageEmbeddedRocksDB.h>
+#include <Storages/RocksDB/EmbeddedRocksDBBlockOutputStream.h>
+#include <Storages/RocksDB/EmbeddedRocksDBBlockInputStream.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -153,11 +153,11 @@ static std::pair<FieldVector, bool> getFilterKeys(const String & primary_key, co
 }
 
 
-class EmbeddedRocksdbSource : public SourceWithProgress
+class EmbeddedRocksDBSource : public SourceWithProgress
 {
 public:
-    EmbeddedRocksdbSource(
-        const StorageEmbeddedRocksdb & storage_,
+    EmbeddedRocksDBSource(
+        const StorageEmbeddedRocksDB & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const FieldVector & keys_,
         const size_t start_,
@@ -226,7 +226,7 @@ public:
     }
 
 private:
-    const StorageEmbeddedRocksdb & storage;
+    const StorageEmbeddedRocksDB & storage;
 
     const StorageMetadataPtr metadata_snapshot;
     const size_t start;
@@ -238,7 +238,7 @@ private:
 };
 
 
-StorageEmbeddedRocksdb::StorageEmbeddedRocksdb(const StorageID & table_id_,
+StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
         const String & relative_data_path_,
         const StorageInMemoryMetadata & metadata_,
         bool attach,
@@ -255,7 +255,7 @@ StorageEmbeddedRocksdb::StorageEmbeddedRocksdb(const StorageID & table_id_,
     initDb();
 }
 
-void StorageEmbeddedRocksdb::truncate(const ASTPtr &, const StorageMetadataPtr & , const Context &, TableExclusiveLockHolder &)
+void StorageEmbeddedRocksDB::truncate(const ASTPtr &, const StorageMetadataPtr & , const Context &, TableExclusiveLockHolder &)
 {
     rocksdb_ptr->Close();
     Poco::File(rocksdb_dir).remove(true);
@@ -263,7 +263,7 @@ void StorageEmbeddedRocksdb::truncate(const ASTPtr &, const StorageMetadataPtr &
     initDb();
 }
 
-void StorageEmbeddedRocksdb::initDb()
+void StorageEmbeddedRocksDB::initDb()
 {
     rocksdb::Options options;
     rocksdb::DB * db;
@@ -276,10 +276,10 @@ void StorageEmbeddedRocksdb::initDb()
 }
 
 
-Pipe StorageEmbeddedRocksdb::read(
+Pipe StorageEmbeddedRocksDB::read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
-        const SelectQueryInfo & query_info,
+        SelectQueryInfo & query_info,
         const Context & /*context*/,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t max_block_size,
@@ -293,7 +293,7 @@ Pipe StorageEmbeddedRocksdb::read(
     std::tie(keys, all_scan) = getFilterKeys(primary_key, primary_key_data_type, query_info);
     if (all_scan)
     {
-        auto reader = std::make_shared<EmbeddedRocksdbBlockInputStream>(
+        auto reader = std::make_shared<EmbeddedRocksDBBlockInputStream>(
                 *this, metadata_snapshot, max_block_size);
         return Pipe(std::make_shared<SourceFromInputStream>(reader));
     }
@@ -322,22 +322,22 @@ Pipe StorageEmbeddedRocksdb::read(
                 end = start + batch_per_size > keys.size() ? keys.size() : start + batch_per_size;
 
             pipes.emplace_back(
-                std::make_shared<EmbeddedRocksdbSource>(*this, metadata_snapshot, keys, start, end, max_block_size));
+                std::make_shared<EmbeddedRocksDBSource>(*this, metadata_snapshot, keys, start, end, max_block_size));
             start += batch_per_size;
         }
         return Pipe::unitePipes(std::move(pipes));
     }
 }
 
-BlockOutputStreamPtr StorageEmbeddedRocksdb::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
+BlockOutputStreamPtr StorageEmbeddedRocksDB::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
 {
-    return std::make_shared<EmbeddedRocksdbBlockOutputStream>(*this, metadata_snapshot);
+    return std::make_shared<EmbeddedRocksDBBlockOutputStream>(*this, metadata_snapshot);
 }
 
 
 static StoragePtr create(const StorageFactory::Arguments & args)
 {
-    // TODO custom RocksdbSettings, table function
+    // TODO custom RocksDBSettings, table function
     if (!args.engine_args.empty())
         throw Exception(
             "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
@@ -348,25 +348,25 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     metadata.setConstraints(args.constraints);
 
     if (!args.storage_def->primary_key)
-        throw Exception("StorageEmbeddedRocksdb must require one primary key", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("StorageEmbeddedRocksDB must require one primary key", ErrorCodes::BAD_ARGUMENTS);
 
     metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.context);
     auto primary_key_names = metadata.getColumnsRequiredForPrimaryKey();
     if (primary_key_names.size() != 1)
     {
-        throw Exception("StorageEmbeddedRocksdb must require one primary key", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("StorageEmbeddedRocksDB must require one primary key", ErrorCodes::BAD_ARGUMENTS);
     }
-    return StorageEmbeddedRocksdb::create(args.table_id, args.relative_data_path, metadata, args.attach, args.context, primary_key_names[0]);
+    return StorageEmbeddedRocksDB::create(args.table_id, args.relative_data_path, metadata, args.attach, args.context, primary_key_names[0]);
 }
 
 
-void registerStorageEmbeddedRocksdb(StorageFactory & factory)
+void registerStorageEmbeddedRocksDB(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{
         .supports_sort_order = true,
     };
 
-    factory.registerStorage("EmbeddedRocksdb", create, features);
+    factory.registerStorage("EmbeddedRocksDB", create, features);
 }
 
 
