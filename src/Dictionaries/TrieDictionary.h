@@ -7,15 +7,13 @@
 #include <Columns/ColumnString.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/HashMap.h>
+#include <Poco/Net/IPAddress.h>
 #include <common/StringRef.h>
 #include <common/logger_useful.h>
 #include <ext/range.h>
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
 #include "IDictionarySource.h"
-
-struct btrie_s;
-typedef struct btrie_s btrie_t;
 
 namespace DB
 {
@@ -150,8 +148,21 @@ public:
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
 private:
+
     template <typename Value>
     using ContainerType = std::vector<Value>;
+
+    using IPAddress = Poco::Net::IPAddress;
+
+    struct IPRecord;
+    using IPRecordConstIt = ContainerType<IPRecord>::const_iterator;
+
+    struct IPRecord final
+    {
+        IPAddress addr;
+        UInt8 prefix;
+        size_t row;
+    };
 
     struct Attribute final
     {
@@ -212,11 +223,10 @@ private:
     void
     getItemsImpl(const Attribute & attribute, const Columns & key_columns, ValueSetter && set_value, DefaultGetter && get_default) const;
 
-
     template <typename T>
-    bool setAttributeValueImpl(Attribute & attribute, const StringRef key, const T value);
+    void setAttributeValueImpl(Attribute & attribute, const T value);
 
-    bool setAttributeValue(Attribute & attribute, const StringRef key, const Field & value);
+    void setAttributeValue(Attribute & attribute, const Field & value);
 
     const Attribute & getAttribute(const std::string & attribute_name) const;
 
@@ -225,14 +235,27 @@ private:
 
     Columns getKeyColumns() const;
 
+    /**
+     *  Compare ip addresses.
+     *
+     * @return negative value if ipaddr less than address in record
+     * @return zero if ipaddr in record subnet
+     * @return positive value if ipaddr greater than address in record
+     */
+    int matchIPAddrWithRecord(const IPAddress & ipaddr, const IPRecord & record) const;
+
+    IPRecordConstIt ipRecordNotFound() const;
+    IPRecordConstIt lookupIPRecord(const IPAddress & target) const;
+
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
     const bool require_nonempty;
     const std::string key_description{dict_struct.getKeyDescription()};
 
+    ContainerType<IPRecord> ip_records;
+    size_t total_ip_length;
 
-    btrie_t * trie = nullptr;
     std::map<std::string, size_t> attribute_index_by_name;
     std::vector<Attribute> attributes;
 

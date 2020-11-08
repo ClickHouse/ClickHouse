@@ -675,7 +675,7 @@
 
 
     <!-- Configuration of external dictionaries. See:
-         https://clickhouse.yandex/docs/en/dicts/external_dicts/
+         https://clickhouse.tech/docs/en/sql-reference/dictionaries/external-dictionaries/external-dicts
     -->
     <dictionaries_config>*_dictionary.xml</dictionaries_config>
 

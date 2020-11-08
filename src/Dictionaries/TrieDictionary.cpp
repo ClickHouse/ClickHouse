@@ -3,25 +3,17 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnVector.h>
 #include <Common/assert_cast.h>
+#include <Common/IPv6ToBinary.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/WriteIntText.h>
 #include <Poco/ByteOrder.h>
-#include <Poco/Net/IPAddress.h>
 #include <Common/formatIPv6.h>
 #include <common/itoa.h>
 #include <ext/map.h>
 #include <ext/range.h>
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
-
-#ifdef __clang__
-    #pragma clang diagnostic ignored "-Wold-style-cast"
-    #pragma clang diagnostic ignored "-Wnewline-eof"
-#endif
-
-#include <btrie.h>
-
 
 namespace DB
 {
@@ -31,7 +23,6 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int BAD_ARGUMENTS;
     extern const int DICTIONARY_IS_EMPTY;
-    extern const int NOT_IMPLEMENTED;
 }
 
 static void validateKeyTypes(const DataTypes & key_types)
@@ -45,6 +36,18 @@ static void validateKeyTypes(const DataTypes & key_types)
         throw Exception{"Key does not match, expected either UInt32 or FixedString(16)", ErrorCodes::TYPE_MISMATCH};
 }
 
+/// Create IPAddress from 16 byte array converting to ipv4 if possible
+static Poco::Net::IPAddress ip4or6fromBytes(const uint8_t * data)
+{
+    Poco::Net::IPAddress ipaddr(reinterpret_cast<const uint8_t *>(data), IPV6_BINARY_LENGTH);
+
+    // try to consider as ipv4
+    bool is_v4 = false;
+    if (auto addr_v4 = IPv4ToBinary(ipaddr, is_v4); is_v4)
+        return Poco::Net::IPAddress(reinterpret_cast<const uint8_t *>(&addr_v4), IPV4_BINARY_LENGTH);
+
+    return ipaddr;
+}
 
 TrieDictionary::TrieDictionary(
     const StorageID & dict_id_,
@@ -57,17 +60,16 @@ TrieDictionary::TrieDictionary(
     , source_ptr{std::move(source_ptr_)}
     , dict_lifetime(dict_lifetime_)
     , require_nonempty(require_nonempty_)
+    , total_ip_length(0)
     , logger(&Poco::Logger::get("TrieDictionary"))
 {
     createAttributes();
-    trie = btrie_create();
     loadData();
     calculateBytesAllocated();
 }
 
 TrieDictionary::~TrieDictionary()
 {
-    btrie_destroy(trie);
 }
 
 #define DECLARE(TYPE) \
@@ -305,7 +307,8 @@ void TrieDictionary::loadData()
 
     /// created upfront to avoid excess allocations
     const auto keys_size = dict_struct.key->size();
-    StringRefs keys(keys_size);
+
+    ip_records.reserve(keys_size);
 
     const auto attributes_size = attributes.size();
 
@@ -331,10 +334,41 @@ void TrieDictionary::loadData()
             {
                 const auto & attribute_column = *attribute_column_ptrs[attribute_idx];
                 auto & attribute = attributes[attribute_idx];
-                setAttributeValue(attribute, key_column->getDataAt(row_idx), attribute_column[row_idx]);
+
+                setAttributeValue(attribute, attribute_column[row_idx]);
             }
+
+            size_t row_number = ip_records.size();
+
+            std::string addr_str(key_column->getDataAt(row_idx).toString());
+            size_t pos = addr_str.find('/');
+            if (pos != std::string::npos)
+            {
+                IPAddress addr(addr_str.substr(0, pos));
+                UInt8 prefix = std::stoi(addr_str.substr(pos + 1), nullptr, 10);
+                addr = addr & IPAddress(prefix, addr.family());
+                ip_records.emplace_back(IPRecord{addr, prefix, row_number});
+            }
+            else
+            {
+                IPAddress addr(addr_str);
+                UInt8 prefix = addr.length() * 8;
+                ip_records.emplace_back(IPRecord{addr, prefix, row_number});
+            }
+            total_ip_length += ip_records.back().addr.length();
         }
     }
+
+    LOG_TRACE(logger, "{} ip records are read", ip_records.size());
+
+    std::sort(ip_records.begin(), ip_records.end(), [](const auto & a, const auto & b)
+    {
+        if (a.addr.family() != b.addr.family())
+            return a.addr.family() < b.addr.family();
+        if (a.addr == b.addr)
+            return a.prefix > b.prefix;
+        return a.addr < b.addr;
+    });
 
     stream->readSuffix();
 
@@ -352,6 +386,8 @@ void TrieDictionary::addAttributeSize(const Attribute & attribute)
 
 void TrieDictionary::calculateBytesAllocated()
 {
+    bytes_allocated += ip_records.size() * sizeof(ip_records.front());
+    bytes_allocated += total_ip_length;
     bytes_allocated += attributes.size() * sizeof(attributes.front());
 
     for (const auto & attribute : attributes)
@@ -411,8 +447,6 @@ void TrieDictionary::calculateBytesAllocated()
             }
         }
     }
-
-    bytes_allocated += btrie_allocated(trie);
 }
 
 
@@ -494,16 +528,15 @@ void TrieDictionary::getItemsImpl(
 
     const auto first_column = key_columns.front();
     const auto rows = first_column->size();
+
     if (first_column->isNumeric())
     {
         for (const auto i : ext::range(0, rows))
         {
-            auto addr = Int32(first_column->get64(i));
-            uintptr_t slot = btrie_find(trie, addr);
-#pragma GCC diagnostic push
-#pragma GCC diagnostic warning "-Wold-style-cast"
-            set_value(i, slot != BTRIE_NULL ? static_cast<OutputType>(vec[slot]) : get_default(i));
-#pragma GCC diagnostic pop
+            auto addr = Poco::ByteOrder::toNetwork(UInt32(first_column->get64(i)));
+            auto ipaddr = IPAddress(reinterpret_cast<const uint8_t *>(&addr), IPV4_BINARY_LENGTH);
+            auto found = lookupIPRecord(ipaddr);
+            set_value(i, (found != ipRecordNotFound()) ? static_cast<OutputType>(vec[found->row]) : get_default(i));
         }
     }
     else
@@ -511,107 +544,66 @@ void TrieDictionary::getItemsImpl(
         for (const auto i : ext::range(0, rows))
         {
             auto addr = first_column->getDataAt(i);
-            if (addr.size != 16)
+            if (addr.size != IPV6_BINARY_LENGTH)
                 throw Exception("Expected key to be FixedString(16)", ErrorCodes::LOGICAL_ERROR);
 
-            uintptr_t slot = btrie_find_a6(trie, reinterpret_cast<const uint8_t *>(addr.data));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic warning "-Wold-style-cast"
-            set_value(i, slot != BTRIE_NULL ? static_cast<OutputType>(vec[slot]) : get_default(i));
-#pragma GCC diagnostic pop
+            auto ipaddr = ip4or6fromBytes(reinterpret_cast<const uint8_t *>(addr.data));
+            auto found = lookupIPRecord(ipaddr);
+            set_value(i, (found != ipRecordNotFound()) ? static_cast<OutputType>(vec[found->row]) : get_default(i));
         }
     }
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
 }
 
-
 template <typename T>
-bool TrieDictionary::setAttributeValueImpl(Attribute & attribute, const StringRef key, const T value)
+void TrieDictionary::setAttributeValueImpl(Attribute & attribute, const T value)
 {
-    // Insert value into appropriate vector type
     auto & vec = std::get<ContainerType<T>>(attribute.maps);
-    size_t row = vec.size();
     vec.push_back(value);
-
-    // Parse IP address and subnet length from string (e.g. 2a02:6b8::3/64)
-    Poco::Net::IPAddress addr, mask;
-    std::string addr_str(key.toString());
-    size_t pos = addr_str.find('/');
-    if (pos != std::string::npos)
-    {
-        addr = Poco::Net::IPAddress(addr_str.substr(0, pos));
-        mask = Poco::Net::IPAddress(std::stoi(addr_str.substr(pos + 1), nullptr, 10), addr.family());
-    }
-    else
-    {
-        addr = Poco::Net::IPAddress(addr_str);
-        mask = Poco::Net::IPAddress(addr.length() * 8, addr.family());
-    }
-
-    /*
-     * Here we might overwrite the same key with the same slot as each key can map to multiple attributes.
-     * However, all columns have equal number of rows so it is okay to store only row number for each key
-     * instead of building a trie for each column. This comes at the cost of additional lookup in attribute
-     * vector on lookup time to return cell from row + column. The reason for this is to save space,
-     * and build only single trie instead of trie for each column.
-     */
-    if (addr.family() == Poco::Net::IPAddress::IPv4)
-    {
-        UInt32 addr_v4 = Poco::ByteOrder::toNetwork(*reinterpret_cast<const UInt32 *>(addr.addr()));
-        UInt32 mask_v4 = Poco::ByteOrder::toNetwork(*reinterpret_cast<const UInt32 *>(mask.addr()));
-        return btrie_insert(trie, addr_v4, mask_v4, row) == 0;
-    }
-
-    const uint8_t * addr_v6 = reinterpret_cast<const uint8_t *>(addr.addr());
-    const uint8_t * mask_v6 = reinterpret_cast<const uint8_t *>(mask.addr());
-    return btrie_insert_a6(trie, addr_v6, mask_v6, row) == 0;
 }
 
-bool TrieDictionary::setAttributeValue(Attribute & attribute, const StringRef key, const Field & value)
+void TrieDictionary::setAttributeValue(Attribute & attribute, const Field & value)
 {
     switch (attribute.type)
     {
         case AttributeUnderlyingType::utUInt8:
-            return setAttributeValueImpl<UInt8>(attribute, key, value.get<UInt64>());
+            return setAttributeValueImpl<UInt8>(attribute, value.get<UInt64>());
         case AttributeUnderlyingType::utUInt16:
-            return setAttributeValueImpl<UInt16>(attribute, key, value.get<UInt64>());
+            return setAttributeValueImpl<UInt16>(attribute, value.get<UInt64>());
         case AttributeUnderlyingType::utUInt32:
-            return setAttributeValueImpl<UInt32>(attribute, key, value.get<UInt64>());
+            return setAttributeValueImpl<UInt32>(attribute, value.get<UInt64>());
         case AttributeUnderlyingType::utUInt64:
-            return setAttributeValueImpl<UInt64>(attribute, key, value.get<UInt64>());
+            return setAttributeValueImpl<UInt64>(attribute, value.get<UInt64>());
         case AttributeUnderlyingType::utUInt128:
-            return setAttributeValueImpl<UInt128>(attribute, key, value.get<UInt128>());
+            return setAttributeValueImpl<UInt128>(attribute, value.get<UInt128>());
         case AttributeUnderlyingType::utInt8:
-            return setAttributeValueImpl<Int8>(attribute, key, value.get<Int64>());
+            return setAttributeValueImpl<Int8>(attribute, value.get<Int64>());
         case AttributeUnderlyingType::utInt16:
-            return setAttributeValueImpl<Int16>(attribute, key, value.get<Int64>());
+            return setAttributeValueImpl<Int16>(attribute, value.get<Int64>());
         case AttributeUnderlyingType::utInt32:
-            return setAttributeValueImpl<Int32>(attribute, key, value.get<Int64>());
+            return setAttributeValueImpl<Int32>(attribute, value.get<Int64>());
         case AttributeUnderlyingType::utInt64:
-            return setAttributeValueImpl<Int64>(attribute, key, value.get<Int64>());
+            return setAttributeValueImpl<Int64>(attribute, value.get<Int64>());
         case AttributeUnderlyingType::utFloat32:
-            return setAttributeValueImpl<Float32>(attribute, key, value.get<Float64>());
+            return setAttributeValueImpl<Float32>(attribute, value.get<Float64>());
         case AttributeUnderlyingType::utFloat64:
-            return setAttributeValueImpl<Float64>(attribute, key, value.get<Float64>());
+            return setAttributeValueImpl<Float64>(attribute, value.get<Float64>());
 
         case AttributeUnderlyingType::utDecimal32:
-            return setAttributeValueImpl<Decimal32>(attribute, key, value.get<Decimal32>());
+            return setAttributeValueImpl<Decimal32>(attribute, value.get<Decimal32>());
         case AttributeUnderlyingType::utDecimal64:
-            return setAttributeValueImpl<Decimal64>(attribute, key, value.get<Decimal64>());
+            return setAttributeValueImpl<Decimal64>(attribute, value.get<Decimal64>());
         case AttributeUnderlyingType::utDecimal128:
-            return setAttributeValueImpl<Decimal128>(attribute, key, value.get<Decimal128>());
+            return setAttributeValueImpl<Decimal128>(attribute, value.get<Decimal128>());
 
         case AttributeUnderlyingType::utString:
         {
             const auto & string = value.get<String>();
             const auto * string_in_arena = attribute.string_arena->insert(string.data(), string.size());
-            setAttributeValueImpl<StringRef>(attribute, key, StringRef{string_in_arena, string.size()});
-            return true;
+            return setAttributeValueImpl<StringRef>(attribute, StringRef{string_in_arena, string.size()});
         }
     }
-
-    return {};
 }
 
 const TrieDictionary::Attribute & TrieDictionary::getAttribute(const std::string & attribute_name) const
@@ -633,11 +625,9 @@ void TrieDictionary::has(const Attribute &, const Columns & key_columns, PaddedP
         for (const auto i : ext::range(0, rows))
         {
             auto addr = Int32(first_column->get64(i));
-            uintptr_t slot = btrie_find(trie, addr);
-#pragma GCC diagnostic push
-#pragma GCC diagnostic warning "-Wold-style-cast"
-            out[i] = (slot != BTRIE_NULL);
-#pragma GCC diagnostic pop
+            auto ipaddr = IPAddress(reinterpret_cast<const uint8_t *>(&addr), IPV4_BINARY_LENGTH);
+            auto found = lookupIPRecord(ipaddr);
+            out[i] = (found != ipRecordNotFound());
         }
     }
     else
@@ -648,56 +638,13 @@ void TrieDictionary::has(const Attribute &, const Columns & key_columns, PaddedP
             if (unlikely(addr.size != 16))
                 throw Exception("Expected key to be FixedString(16)", ErrorCodes::LOGICAL_ERROR);
 
-            uintptr_t slot = btrie_find_a6(trie, reinterpret_cast<const uint8_t *>(addr.data));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic warning "-Wold-style-cast"
-            out[i] = (slot != BTRIE_NULL);
-#pragma GCC diagnostic pop
+            auto ipaddr = ip4or6fromBytes(reinterpret_cast<const uint8_t *>(addr.data));
+            auto found = lookupIPRecord(ipaddr);
+            out[i] = (found != ipRecordNotFound());
         }
     }
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
-}
-
-template <typename Getter, typename KeyType>
-static void trieTraverse(const btrie_t * trie, Getter && getter)
-{
-    KeyType key = 0;
-    const KeyType high_bit = ~((~key) >> 1);
-
-    btrie_node_t * node;
-    node = trie->root;
-
-    std::stack<btrie_node_t *> stack;
-    while (node)
-    {
-        stack.push(node);
-        node = node->left;
-    }
-
-    auto get_bit = [&high_bit](size_t size) { return size ? (high_bit >> (size - 1)) : 0; };
-
-    while (!stack.empty())
-    {
-        node = stack.top();
-        stack.pop();
-#pragma GCC diagnostic push
-#pragma GCC diagnostic warning "-Wold-style-cast"
-        if (node && node->value != BTRIE_NULL)
-#pragma GCC diagnostic pop
-            getter(key, stack.size());
-
-        if (node && node->right)
-        {
-            stack.push(nullptr);
-            key |= get_bit(stack.size());
-            stack.push(node->right);
-            while (stack.top()->left)
-                stack.push(stack.top()->left);
-        }
-        else
-            key &= ~get_bit(stack.size());
-    }
 }
 
 Columns TrieDictionary::getKeyColumns() const
@@ -705,21 +652,13 @@ Columns TrieDictionary::getKeyColumns() const
     auto ip_column = ColumnFixedString::create(IPV6_BINARY_LENGTH);
     auto mask_column = ColumnVector<UInt8>::create();
 
-#if defined(__SIZEOF_INT128__)
-    auto getter = [&ip_column, &mask_column](__uint128_t ip, size_t mask)
+    for (const auto & record : ip_records)
     {
-        Poco::UInt64 * ip_array = reinterpret_cast<Poco::UInt64 *>(&ip); // Poco:: for old poco + macos
-        ip_array[0] = Poco::ByteOrder::fromNetwork(ip_array[0]);
-        ip_array[1] = Poco::ByteOrder::fromNetwork(ip_array[1]);
-        std::swap(ip_array[0], ip_array[1]);
-        ip_column->insertData(reinterpret_cast<const char *>(ip_array), IPV6_BINARY_LENGTH);
-        mask_column->insertValue(static_cast<UInt8>(mask));
-    };
+        auto ip_array = IPv6ToBinary(record.addr);
+        ip_column->insertData(ip_array.data(), IPV6_BINARY_LENGTH);
+        mask_column->insertValue(record.prefix);
+    }
 
-    trieTraverse<decltype(getter), __uint128_t>(trie, std::move(getter));
-#else
-    throw Exception("TrieDictionary::getKeyColumns is not implemented for 32bit arch", ErrorCodes::NOT_IMPLEMENTED);
-#endif
     return {std::move(ip_column), std::move(mask_column)};
 }
 
@@ -755,6 +694,45 @@ BlockInputStreamPtr TrieDictionary::getBlockInputStream(const Names & column_nam
         shared_from_this(), max_block_size, getKeyColumns(), column_names, std::move(get_keys), std::move(get_view));
 }
 
+int TrieDictionary::matchIPAddrWithRecord(const IPAddress & ipaddr, const IPRecord & record) const
+{
+    if (ipaddr.family() != record.addr.family())
+        return ipaddr.family() < record.addr.family() ? -1 : 1;
+
+    auto masked_ipaddr = ipaddr & IPAddress(record.prefix, record.addr.family());
+    if (masked_ipaddr < record.addr)
+        return -1;
+    if (masked_ipaddr == record.addr)
+        return 0;
+    return 1;
+}
+
+TrieDictionary::IPRecordConstIt TrieDictionary::ipRecordNotFound() const
+{
+    return ip_records.end();
+}
+
+TrieDictionary::IPRecordConstIt TrieDictionary::lookupIPRecord(const IPAddress & target) const
+{
+    if (ip_records.empty())
+        return ipRecordNotFound();
+
+    auto comp = [&](const IPAddress & needle, const IPRecord & record) -> bool
+    {
+        return matchIPAddrWithRecord(needle, record) < 0;
+    };
+
+    auto next_it = std::upper_bound(ip_records.begin(), ip_records.end(), target, comp);
+
+    if (next_it == ip_records.begin())
+        return ipRecordNotFound();
+
+    auto found = next_it - 1;
+    if (matchIPAddrWithRecord(target, *found) == 0)
+        return found;
+
+    return ipRecordNotFound();
+}
 
 void registerDictionaryTrie(DictionaryFactory & factory)
 {
