@@ -27,10 +27,15 @@ DATA_DIR=$CUR_DIR/data_parquet
 # To update:
 # cp $ROOT_DIR/contrib/arrow/cpp/submodules/parquet-testing/data/*.parquet $ROOT_DIR/contrib/arrow/python/pyarrow/tests/data/parquet/*.parquet $CUR_DIR/data_parquet/
 
+# ClickHouse Parquet reader doesn't support such complex types, so I didn't burrow into the issue.
 # There is failure due parsing nested arrays or nested maps with NULLs:
 # ../contrib/arrow/cpp/src/arrow/array/array_nested.cc:192:  Check failed: (self->list_type_->value_type()->id()) == (data->child_data[0]->type->id())
-# ../contrib/arrow/cpp/src/arrow/array/array_nested.cc:193:  Check failed: self->list_type_->value_type()->Equals(data->child_data[0]->type)
-# ClickHouse Parquet reader doesn't support such complex types, so I didn't burrow into the issue
+
+# Strange behaviour for repeated_no_annotation.parquet:
+# debug:
+#   ../contrib/arrow/cpp/src/arrow/array/array_nested.cc:193:  Check failed: self->list_type_->value_type()->Equals(data->child_data[0]->type)
+# release:
+#   Code: 349. DB::Ex---tion: Can not insert NULL data into non-nullable column "phoneNumbers": data for INSERT was parsed from stdin
 
 for NAME in $(find "$DATA_DIR"/*.parquet -print0 | xargs -0 -n 1 basename | LC_ALL=C sort); do
     echo === Try load data from "$NAME"
