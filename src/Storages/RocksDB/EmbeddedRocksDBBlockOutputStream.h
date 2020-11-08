@@ -1,11 +1,13 @@
 #pragma once
 
 #include <DataStreams/IBlockOutputStream.h>
-#include <Storages/RocksDB/StorageEmbeddedRocksDB.h>
 #include <Storages/StorageInMemoryMetadata.h>
+
 
 namespace DB
 {
+
+class StorageEmbeddedRocksDB;
 
 class EmbeddedRocksDBBlockOutputStream : public IBlockOutputStream
 {
