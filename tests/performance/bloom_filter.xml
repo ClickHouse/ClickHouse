@@ -9,7 +9,6 @@
 
     <query>SELECT count() FROM test_bf_indexOf WHERE indexOf(ary, '1') = 2</query>
     <query>SELECT count() FROM test_bf_indexOf WHERE indexOf(ary, '1') > 0</query>
-    <query>SELECT count() FROM test_bf_indexOf WHERE ary[indexOf(ary, '1')] = '1'</query>
 
     <drop_query>SYSTEM START MERGES</drop_query>
     <drop_query>DROP TABLE IF EXISTS test_bf_indexOf</drop_query>
