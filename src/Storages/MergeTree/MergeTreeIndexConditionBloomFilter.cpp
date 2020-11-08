@@ -324,6 +324,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTIn(
     return false;
 }
 
+
 static bool indexOfCanUseBloomFilter(const ASTPtr & parent)
 {
     if (!parent)
@@ -331,7 +332,7 @@ static bool indexOfCanUseBloomFilter(const ASTPtr & parent)
 
     if (const auto * function = parent->as<ASTFunction>())
     {
-        if (function->name == "arrayElement")
+        if (function->name == "and")
         {
             return true;
         }
@@ -344,27 +345,28 @@ static bool indexOfCanUseBloomFilter(const ASTPtr & parent)
 
             if (const ASTLiteral * left = function->arguments->children[0]->as<ASTLiteral>())
             {
-                    if (function->name == "equals" && left->value.get<Int64>() != 0)
-                        return true;
-                    else if (function->name == "less" && left->value.get<Int64>() >= 0)
-                        return true;
-                    else if (function->name == "lessOrEquals" && left->value.get<Int64>() > 0)
-                        return true;
+                if (function->name == "equals" && left->value.get<Int64>() != 0)
+                    return true;
+                else if (function->name == "less" && left->value.get<Int64>() >= 0)
+                    return true;
+                else if (function->name == "lessOrEquals" && left->value.get<Int64>() > 0)
+                    return true;
             }
             else if (const ASTLiteral * right = function->arguments->children[1]->as<ASTLiteral>())
             {
-                    if (function->name == "equals" && right->value.get<Int64>() != 0)
-                        return true;
-                    else if (function->name == "greater" && right->value.get<Int64>() >= 0)
-                        return true;
-                    else if (function->name == "greaterOrEquals" && right->value.get<Int64>() > 0)
-                        return true;
+                if (function->name == "equals" && right->value.get<Int64>() != 0)
+                    return true;
+                else if (function->name == "greater" && right->value.get<Int64>() >= 0)
+                    return true;
+                else if (function->name == "greaterOrEquals" && right->value.get<Int64>() > 0)
+                    return true;
             }
         }
     }
 
     return false;
 }
+
 
 bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
     const String & function_name, const ASTPtr & key_ast, const DataTypePtr & value_type, const Field & value_field, RPNElement & out, const ASTPtr & parent)
