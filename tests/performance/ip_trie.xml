@@ -1,0 +1,66 @@
+<test>
+    <create_query>
+        CREATE TABLE table_ip_trie
+        (
+            ip String,
+            val Float32
+        ) ENGINE = TinyLog
+    </create_query>
+
+    <create_query>
+        INSERT INTO table_ip_trie
+        SELECT
+            IPv4NumToString(ipv4) || '/' || toString(rand() % 32 + 1) as ip,
+            val
+        FROM generateRandom('ipv4 UInt32, val Float32', 0, 30, 30)
+        LIMIT 1000000
+    </create_query>
+
+    <create_query>
+        INSERT INTO table_ip_trie
+        SELECT
+            IPv6NumToString(ipv6) || '/' || toString(rand() % 128 + 1) as ip,
+            val
+        FROM generateRandom('ipv6 FixedString(16), val Float32', 0, 30, 30)
+        LIMIT 1000000
+    </create_query>
+
+    <create_query>
+        CREATE DICTIONARY dict_ip_trie
+        (
+            ip String,
+            val Float32
+        )
+        PRIMARY KEY ip
+        SOURCE(CLICKHOUSE(
+            HOST 'localhost'
+            PORT 9000
+            USER 'default'
+            DB 'default'
+            TABLE 'table_ip_trie'))
+        LAYOUT(IP_TRIE())
+        LIFETIME(300)
+    </create_query>
+
+    <query>
+        CREATE TABLE dict_ip_trie_table
+        (
+            `id` String,
+            `val` Float32
+        ) ENGINE = Dictionary(default.dict_ip_trie)
+    </query>
+
+    <query>
+        SELECT dictGetFloat32('default.dict_ip_trie', 'value', tuple(rand32()))
+        FROM numbers(500000)
+    </query>
+
+    <query>
+        SELECT dictGetFloat32('default.dict_ip_trie', 'value', tuple(randomFixedString(16)))
+        FROM numbers(500000)
+    </query>
+
+    <drop_query>DROP DICTIONARY IF EXISTS default.dict_ip_trie</drop_query>
+    <drop_query>DROP TABLE IF EXISTS table_ip_trie</drop_query>
+    <drop_query>DROP TABLE IF EXISTS dict_ip_trie_table</drop_query>
+</test>
