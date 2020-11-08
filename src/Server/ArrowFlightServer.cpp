@@ -125,8 +125,10 @@ arrow::Status ArrowFlightServer::DoGet(
 
     std::shared_ptr<arrow::RecordBatchReader> batch_reader;
     RETURN_NOT_OK(GetBatchForFlight(request, &batch_reader));
+    LOG_INFO(log, "GetBatchForFlight for ticket {}", request.ticket);
 
     *data_stream = std::unique_ptr<arrow::flight::FlightDataStream>(new arrow::flight::RecordBatchStream(batch_reader));
+    LOG_INFO(log, "FlightDataStream for ticket {} created", request.ticket);
     return arrow::Status::OK();
 }
 

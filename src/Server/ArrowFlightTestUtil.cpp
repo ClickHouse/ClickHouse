@@ -146,7 +146,7 @@ Status ExampleStringBatches(BatchVector * out)
 
 Status GetBatchForFlight(const flight::Ticket & ticket, std::shared_ptr<RecordBatchReader> * out)
 {
-    if (ticket.ticket == "ticket-ints-1" || ticket.ticket == "ticket-ints-2")
+    if (ticket.ticket == "ticket-ints-1")
     {
         BatchVector batches;
         RETURN_NOT_OK(ExampleIntBatches(&batches));
@@ -218,8 +218,7 @@ std::vector<flight::FlightInfo> ExampleFlightInfo(const arrow::flight::Location 
     flight::FlightInfo::Data flight1, flight2;
 
     flight::FlightEndpoint endpoint1({{"ticket-ints-1"}, {location}});
-    flight::FlightEndpoint endpoint2({{"ticket-ints-2"}, {location}});
-    flight::FlightEndpoint endpoint3({{"ticket-cmd"}, {location}});
+    flight::FlightEndpoint endpoint2({{"ticket-cmd"}, {location}});
 
     flight::FlightDescriptor descr1{flight::FlightDescriptor::PATH, "", {"ints"}};
     flight::FlightDescriptor descr2{flight::FlightDescriptor::CMD, "my_command", {}};
@@ -227,8 +226,8 @@ std::vector<flight::FlightInfo> ExampleFlightInfo(const arrow::flight::Location 
     auto schema1 = ExampleIntSchema();
     auto schema2 = ExampleStringSchema();
 
-    ARROW_TEST_EXPECT_OK(MakeFlightInfo(*schema1, descr1, {endpoint1, endpoint2}, -1, -1, &flight1));
-    ARROW_TEST_EXPECT_OK(MakeFlightInfo(*schema2, descr2, {endpoint3}, -1, -1, &flight2));
+    ARROW_TEST_EXPECT_OK(MakeFlightInfo(*schema1, descr1, {endpoint1}, -1, -1, &flight1));
+    ARROW_TEST_EXPECT_OK(MakeFlightInfo(*schema2, descr2, {endpoint2}, -1, -1, &flight2));
     return {flight::FlightInfo(flight1), flight::FlightInfo(flight2)};
 }
 
