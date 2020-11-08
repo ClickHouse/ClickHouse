@@ -5,7 +5,8 @@ toc_priority: 150
 ## initializeAggregation {#initializeaggregation}
 
 Initializes aggregation (on) some lines from input.
-Может быть полезно для тестов, а также для работы со столбцами типа AggregateFunction в AggregationgMergeTree. 
+Use it for tests or to process columns of types `AggregateFunction` and `AggregationgMergeTree`.
+
 Например можно вставлять в такие столбцы с помощью initializeAggregation или использовать ее в качестве значения по умолчанию.
 
 **Syntax** (without SELECT)
