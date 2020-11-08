@@ -405,7 +405,7 @@ endif()
 
 if (USE_FAST_FLOAT)
     target_link_libraries (clickhouse_common_io PRIVATE fast_float)
-    target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${FAST_FLOAT_INCLUDE_DIR})
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${FAST_FLOAT_INCLUDE_DIR})
 endif()
 
 if (USE_ORC)

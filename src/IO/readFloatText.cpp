@@ -57,6 +57,13 @@ template void readFloatTextFast<Float64>(Float64 &, ReadBuffer &);
 template bool tryReadFloatTextFast<Float32>(Float32 &, ReadBuffer &);
 template bool tryReadFloatTextFast<Float64>(Float64 &, ReadBuffer &);
 
+#ifdef USE_FAST_FLOAT
+template void readFloatTextWithFastFloat<Float32>(Float32 &, ReadBuffer &);
+template void readFloatTextWithFastFloat<Float64>(Float64 &, ReadBuffer &);
+template bool tryReadFloatTextWithFastFloat<Float32>(Float32 &, ReadBuffer &);
+template bool tryReadFloatTextWithFastFloat<Float64>(Float64 &, ReadBuffer &);
+#endif
+
 template void readFloatTextSimple<Float32>(Float32 &, ReadBuffer &);
 template void readFloatTextSimple<Float64>(Float64 &, ReadBuffer &);
 template bool tryReadFloatTextSimple<Float32>(Float32 &, ReadBuffer &);
