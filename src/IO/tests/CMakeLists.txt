@@ -7,11 +7,6 @@ target_link_libraries (read_buffer_perf PRIVATE clickhouse_common_io)
 add_executable (read_float_perf read_float_perf.cpp)
 target_link_libraries (read_float_perf PRIVATE clickhouse_common_io)
 
-if (USE_FAST_FLOAT)
-    target_link_libraries (read_float_perf PRIVATE fast_float)
-    target_include_directories (read_float_perf SYSTEM BEFORE PRIVATE ${FAST_FLOAT_INCLUDE_DIR})
-endif()
-
 add_executable (write_buffer write_buffer.cpp)
 target_link_libraries (write_buffer PRIVATE clickhouse_common_io)
 

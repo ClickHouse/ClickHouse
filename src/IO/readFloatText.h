@@ -6,6 +6,9 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <double-conversion/double-conversion.h>
 
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 /** Methods for reading floating point numbers from text with decimal representation.
   * There are "precise", "fast" and "simple" implementations.
@@ -474,6 +477,72 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
     return ReturnType(true);
 }
 
+#ifdef USE_FAST_FLOAT
+#include <fast_float/fast_float.h>
+
+template <typename T, typename ReturnType>
+ReturnType readFloatTextWithFastFloatImpl(T & x, ReadBuffer & in)
+{
+    static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for readFloatTextFastFloatImpl must be float or double");
+    static_assert('a' > '.' && 'A' > '.' && '\n' < '.' && '\t' < '.' && '\'' < '.' && '"' < '.', "Layout of char is not like ASCII"); //-V590
+
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
+    /// Fast path
+    
+    char *initial_position = in.position();
+    auto res = fast_float::from_chars(initial_position, in.buffer().end(), x);
+    in.position() += res.ptr - initial_position;
+
+    /// Slow path
+
+    if (unlikely(!in.hasPendingData()))
+    {
+        /// TODO: Optimize in readFloatTextPreciseImpl there is MAX_LENGTH and array with MAX_LEGNTH can be used
+        String buffer;
+
+        while (true)
+        {
+            if (!in.hasPendingData())
+            {
+                buffer.insert(buffer.end(), initial_position, in.position());
+
+                if (in.next())
+                {
+                    initial_position = in.buffer().begin();
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            if (isWhitespaceASCII(*in.position()))
+            {
+                buffer.insert(buffer.end(), initial_position, in.position());
+                break;
+            }
+            else
+            {
+                ++in.position();
+            }
+        }
+
+        res = fast_float::from_chars(buffer.data(), buffer.data() + buffer.size(), x);
+    }
+
+    if (unlikely(res.ec != std::errc()))
+    {
+        if constexpr (throw_exception)
+            throw Exception("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
+        else
+            return ReturnType(false);
+    }
+
+    return ReturnType(true);
+}
+
+#endif
 
 template <typename T, typename ReturnType>
 ReturnType readFloatTextSimpleImpl(T & x, ReadBuffer & buf)
@@ -582,14 +651,23 @@ template <typename T> bool tryReadFloatTextPrecise(T & x, ReadBuffer & in) { ret
 template <typename T> void readFloatTextFast(T & x, ReadBuffer & in) { readFloatTextFastImpl<T, void>(x, in); }
 template <typename T> bool tryReadFloatTextFast(T & x, ReadBuffer & in) { return readFloatTextFastImpl<T, bool>(x, in); }
 
+#ifdef USE_FAST_FLOAT
+template <typename T> void readFloatTextWithFastFloat(T & x, ReadBuffer & in) { readFloatTextWithFastFloatImpl<T, void>(x, in); }
+template <typename T> bool tryReadFloatTextWithFastFloat(T & x, ReadBuffer & in) { return readFloatTextWithFastFloatImpl<T, bool>(x, in); }
+#endif
+
 template <typename T> void readFloatTextSimple(T & x, ReadBuffer & in) { readFloatTextSimpleImpl<T, void>(x, in); }
 template <typename T> bool tryReadFloatTextSimple(T & x, ReadBuffer & in) { return readFloatTextSimpleImpl<T, bool>(x, in); }
 
 
 /// Implementation that is selected as default.
 
+#ifdef USE_FAST_FLOAT
+template <typename T> void readFloatText(T & x, ReadBuffer & in) { readFloatTextWithFastFloat(x, in); }
+template <typename T> bool tryReadFloatText(T & x, ReadBuffer & in) { return tryReadFloatTextWithFastFloat(x, in); }
+#else
 template <typename T> void readFloatText(T & x, ReadBuffer & in) { readFloatTextFast(x, in); }
 template <typename T> bool tryReadFloatText(T & x, ReadBuffer & in) { return tryReadFloatTextFast(x, in); }
-
+#endif
 
 }
