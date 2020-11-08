@@ -460,6 +460,7 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
     if (!inactive_replicas.empty())
     {
         std::stringstream exception_message;
+        exception_message.exceptions(std::ios::failbit);
         exception_message << "Mutation is not finished because";
 
         if (!inactive_replicas.empty())
@@ -1017,6 +1018,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
         parts_to_fetch_blocks += get_blocks_count_in_data_part(name);
 
     std::stringstream sanity_report;
+    sanity_report.exceptions(std::ios::failbit);
     sanity_report << "There are "
         << unexpected_parts.size() << " unexpected parts with " << unexpected_parts_rows << " rows ("
         << unexpected_parts_nonnew << " of them is not just-written with " << unexpected_parts_rows << " rows), "
@@ -1041,6 +1043,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     if (insane && !skip_sanity_checks)
     {
         std::stringstream why;
+        why.exceptions(std::ios::failbit);
         why << "The local set of parts of table " << getStorageID().getNameForLogs() << " doesn't look like the set of parts "
             << "in ZooKeeper: "
             << formatReadableQuantity(unexpected_parts_rows) << " rows of " << formatReadableQuantity(total_rows_on_filesystem)
@@ -1342,6 +1345,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     // Log source part names just in case
     {
         std::stringstream source_parts_msg;
+        source_parts_msg.exceptions(std::ios::failbit);
         for (auto i : ext::range(0, entry.source_parts.size()))
             source_parts_msg << (i != 0 ? ", " : "") << entry.source_parts[i];
 
@@ -3613,7 +3617,7 @@ ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock StorageReplicatedMerg
 Pipe StorageReplicatedMergeTree::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    const SelectQueryInfo & query_info,
+    SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
@@ -3824,6 +3828,7 @@ bool StorageReplicatedMergeTree::optimize(
                 if (!selected)
                 {
                     std::stringstream message;
+                    message.exceptions(std::ios::failbit);
                     message << "Cannot select parts for optimization";
                     if (!disable_reason.empty())
                         message << ": " << disable_reason;

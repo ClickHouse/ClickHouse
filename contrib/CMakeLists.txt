@@ -14,6 +14,11 @@ unset (_current_dir_name)
 set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
 
+if (SANITIZE STREQUAL "undefined")
+    # 3rd-party libraries usually not intended to work with UBSan.
+    add_compile_options(-fno-sanitize=undefined)
+endif()
+
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
 
 add_subdirectory (boost-cmake)
@@ -157,9 +162,6 @@ if(USE_INTERNAL_SNAPPY_LIBRARY)
     add_subdirectory(snappy)
 
     set (SNAPPY_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/snappy")
-    if(SANITIZE STREQUAL "undefined")
-        target_compile_options(${SNAPPY_LIBRARY} PRIVATE -fno-sanitize=undefined)
-    endif()
 endif()
 
 if (USE_INTERNAL_PARQUET_LIBRARY)
