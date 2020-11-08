@@ -467,6 +467,7 @@ namespace
         void close();
 
         void readQueryInfo();
+        void throwIfFailedToReadQueryInfo();
 
         void addProgressToResult();
         void addTotalsToResult(const Block & totals);
@@ -501,9 +502,7 @@ namespace
         GRPCQueryInfo query_info; /// We reuse the same messages multiple times.
         GRPCResult result;
 
-        /// 0 - no query info has been read, 1 - initial query info, 2 - next query info, ...
-        size_t query_info_index = 0;
-
+        bool initial_query_info_read = false;
         bool finalize = false;
         bool responder_finished = false;
 
@@ -519,7 +518,11 @@ namespace
         UInt64 waited_for_client_reading = 0;
         UInt64 waited_for_client_writing = 0;
 
-        std::atomic<bool> sending_result = false; /// atomic because it can be accessed both from call_thread and queue_thread
+        /// The following fields are accessed both from call_thread and queue_thread.
+        std::atomic<bool> reading_query_info = false;
+        std::atomic<bool> failed_to_read_query_info = false;
+        GRPCQueryInfo next_query_info_while_reading;
+        std::atomic<bool> sending_result = false;
         std::atomic<bool> failed_to_send_result = false;
 
         ThreadFromGlobalPool call_thread;
@@ -665,7 +668,7 @@ namespace
         query_context->setProgressCallback([this](const Progress & value) { return progress.incrementPiecewiseAtomically(value); });
 
         /// Parse the query.
-        query_text = std::move(*query_info.mutable_query());
+        query_text = std::move(*(query_info.mutable_query()));
         const char * begin = query_text.data();
         const char * end = begin + query_text.size();
         ParserQuery parser(end);
@@ -986,33 +989,64 @@ namespace
 
     void Call::readQueryInfo()
     {
-        bool ok = false;
-        Stopwatch client_writing_watch;
-
-        /// Start reading a query info.
-        bool reading_query_info = true;
-        responder->read(query_info, [&](bool ok_)
+        auto start_reading = [&]
         {
-            /// Called on queue_thread.
-            ok = ok_;
-            reading_query_info = false;
-            read_finished.notify_one();
-        });
+            assert(!reading_query_info);
+            reading_query_info = true;
+            responder->read(next_query_info_while_reading, [this](bool ok)
+            {
+                /// Called on queue_thread.
+                if (!ok)
+                {
+                    /// We cannot throw an exception right here because this code is executed
+                    /// on queue_thread.
+                    failed_to_read_query_info = true;
+                }
+                reading_query_info = false;
+                read_finished.notify_one();
+            });
+        };
 
-        /// Wait until the reading is finished.
-        std::unique_lock lock{dummy_mutex};
-        read_finished.wait(lock, [&] { return !reading_query_info; });
-        waited_for_client_writing += client_writing_watch.elapsedNanoseconds();
-
-        if (!ok)
+        auto finish_reading = [&]
         {
-            if (!query_info_index)
-                throw Exception("Failed to read initial QueryInfo", ErrorCodes::NETWORK_ERROR);
-            else
-                throw Exception("Failed to read extra QueryInfo", ErrorCodes::NETWORK_ERROR);
+            if (reading_query_info)
+            {
+                Stopwatch client_writing_watch;
+                std::unique_lock lock{dummy_mutex};
+                read_finished.wait(lock, [this] { return !reading_query_info; });
+                waited_for_client_writing += client_writing_watch.elapsedNanoseconds();
+            }
+            throwIfFailedToReadQueryInfo();
+            query_info = std::move(next_query_info_while_reading);
+            initial_query_info_read = true;
+        };
+
+        if (!initial_query_info_read)
+        {
+            /// Initial query info hasn't been read yet, so we're going to read it now.
+            start_reading();
         }
 
-        ++query_info_index;
+        /// Maybe it's reading a query info right now. Let it finish.
+        finish_reading();
+
+        if (isInputStreaming(call_type) && query_info.next_query_info())
+        {
+            /// Next query info can contain more input data. Now we start reading a next query info,
+            /// so another call of readQueryInfo() in the future will probably be able to take it.
+            start_reading();
+        }
+    }
+
+    void Call::throwIfFailedToReadQueryInfo()
+    {
+        if (failed_to_read_query_info)
+        {
+            if (initial_query_info_read)
+                throw Exception("Failed to read extra QueryInfo", ErrorCodes::NETWORK_ERROR);
+            else
+                throw Exception("Failed to read initial QueryInfo", ErrorCodes::NETWORK_ERROR);
+        }
     }
 
     void Call::addProgressToResult()
