@@ -1,14 +1,15 @@
 #pragma once
 
+#include <memory>
 #include <ext/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
-#include <Storages/TableLockHolder.h>
-#include <Disks/IDisk.h>
 
-#include <shared_mutex>
 
-#include "rocksdb/db.h"
-#include "rocksdb/table.h"
+namespace rocksdb
+{
+    class DB;
+}
+
 
 namespace DB
 {
@@ -38,7 +39,8 @@ public:
 
     bool supportsParallelInsert() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
-    bool mayBenefitFromIndexForIn(const ASTPtr & node, const Context & /*query_context*/, const StorageMetadataPtr & /*metadata_snapshot*/) const override
+    bool mayBenefitFromIndexForIn(
+        const ASTPtr & node, const Context & /*query_context*/, const StorageMetadataPtr & /*metadata_snapshot*/) const override
     {
         return node->getColumnName() == primary_key;
     }
