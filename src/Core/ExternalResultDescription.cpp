@@ -74,6 +74,8 @@ void ExternalResultDescription::init(const Block & sample_block_)
             types.emplace_back(ValueType::vtDecimal64, is_nullable);
         else if (typeid_cast<const DataTypeDecimal<Decimal128> *>(type))
             types.emplace_back(ValueType::vtDecimal128, is_nullable);
+        else if (typeid_cast<const DataTypeDecimal<Decimal256> *>(type))
+            types.emplace_back(ValueType::vtDecimal256, is_nullable);
         else
             throw Exception{"Unsupported type " + type->getName(), ErrorCodes::UNKNOWN_TYPE};
     }

@@ -25,13 +25,6 @@ uint8_t CompressionCodecZSTD::getMethodByte() const
     return static_cast<uint8_t>(CompressionMethodByte::ZSTD);
 }
 
-
-ASTPtr CompressionCodecZSTD::getCodecDesc() const
-{
-    auto literal = std::make_shared<ASTLiteral>(static_cast<UInt64>(level));
-    return makeASTFunction("ZSTD", literal);
-}
-
 void CompressionCodecZSTD::updateHash(SipHash & hash) const
 {
     getCodecDesc()->updateTreeHash(hash);
@@ -65,6 +58,7 @@ void CompressionCodecZSTD::doDecompressData(const char * source, UInt32 source_s
 CompressionCodecZSTD::CompressionCodecZSTD(int level_)
     : level(level_)
 {
+    setCodecDescription("ZSTD", {std::make_shared<ASTLiteral>(static_cast<UInt64>(level))});
 }
 
 void registerCodecZSTD(CompressionCodecFactory & factory)

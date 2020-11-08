@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Common/Exception.h>
@@ -243,6 +243,7 @@ template <typename AstArray>
 std::string IAST::formatForErrorMessage(const AstArray & array)
 {
     std::stringstream ss;
+    ss.exceptions(std::ios::failbit);
     for (size_t i = 0; i < array.size(); ++i)
     {
         if (i > 0)

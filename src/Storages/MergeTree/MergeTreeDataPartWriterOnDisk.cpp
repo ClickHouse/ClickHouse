@@ -17,8 +17,12 @@ namespace
 void MergeTreeDataPartWriterOnDisk::Stream::finalize()
 {
     compressed.next();
-    plain_file->next();
+    /// 'compressed_buf' doesn't call next() on underlying buffer ('plain_hashing'). We should do it manually.
+    plain_hashing.next();
     marks.next();
+
+    plain_file->finalize();
+    marks_file->finalize();
 }
 
 void MergeTreeDataPartWriterOnDisk::Stream::sync() const
@@ -197,7 +201,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
     {
         index_types = primary_index_block.getDataTypes();
         index_columns.resize(primary_columns_num);
-        last_index_row.resize(primary_columns_num);
+        last_block_index_columns.resize(primary_columns_num);
         for (size_t i = 0; i < primary_columns_num; ++i)
             index_columns[i] = primary_index_block.getByPosition(i).column->cloneEmpty();
     }
@@ -208,7 +212,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
      * And otherwise it will look like excessively growing memory consumption in context of query.
      *  (observed in long INSERT SELECTs)
      */
-    auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
+    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
 
     /// Write index. The index contains Primary Key value for each `index_granularity` row.
 
@@ -232,10 +236,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
 
     /// store last index row to write final mark at the end of column
     for (size_t j = 0; j < primary_columns_num; ++j)
-    {
-        const IColumn & primary_column = *primary_index_block.getByPosition(j).column.get();
-        primary_column.get(rows - 1, last_index_row[j]);
-    }
+        last_block_index_columns[j] = primary_index_block.getByPosition(j).column;
 }
 
 void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block & skip_indexes_block)
@@ -321,16 +322,18 @@ void MergeTreeDataPartWriterOnDisk::finishPrimaryIndexSerialization(
         {
             for (size_t j = 0; j < index_columns.size(); ++j)
             {
-                index_columns[j]->insert(last_index_row[j]);
-                index_types[j]->serializeBinary(last_index_row[j], *index_stream);
+                const auto & column = *last_block_index_columns[j];
+                size_t last_row_number = column.size() - 1;
+                index_columns[j]->insertFrom(column, last_row_number);
+                index_types[j]->serializeBinary(column, last_row_number, *index_stream);
             }
-
-            last_index_row.clear();
+            last_block_index_columns.clear();
         }
 
         index_stream->next();
         checksums.files["primary.idx"].file_size = index_stream->count();
         checksums.files["primary.idx"].file_hash = index_stream->getHash();
+        index_file_stream->finalize();
         if (sync)
             index_file_stream->sync();
         index_stream = nullptr;

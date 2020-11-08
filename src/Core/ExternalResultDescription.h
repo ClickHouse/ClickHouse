@@ -29,7 +29,8 @@ struct ExternalResultDescription
         vtDateTime64,
         vtDecimal32,
         vtDecimal64,
-        vtDecimal128
+        vtDecimal128,
+        vtDecimal256
     };
 
     Block sample_block;

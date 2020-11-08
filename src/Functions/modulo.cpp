@@ -22,7 +22,7 @@ namespace
 
 template <typename A, typename B>
 struct ModuloByConstantImpl
-    : BinaryOperationImplBase<A, B, ModuloImpl<A, B>>
+    : BinaryOperation<A, B, ModuloImpl<A, B>>
 {
     using ResultType = typename ModuloImpl<A, B>::ResultType;
     static const constexpr bool allow_fixed_string = false;
@@ -101,7 +101,7 @@ template <> struct BinaryOperationImpl<Int32, Int64, ModuloImpl<Int32, Int64>> :
 
 
 struct NameModulo { static constexpr auto name = "modulo"; };
-using FunctionModulo = FunctionBinaryArithmetic<ModuloImpl, NameModulo, false>;
+using FunctionModulo = BinaryArithmeticOverloadResolver<ModuloImpl, NameModulo, false>;
 
 void registerFunctionModulo(FunctionFactory & factory)
 {

@@ -2,6 +2,8 @@
 LIBRARY()
 
 ADDINCL(
+    contrib/libs/icu/common
+    contrib/libs/icu/i18n
     contrib/libs/pdqsort
 )
 
@@ -10,8 +12,6 @@ PEERDIR(
     contrib/libs/icu
     contrib/libs/pdqsort
 )
-
-CFLAGS(-g0)
 
 SRCS(
     Collator.cpp
@@ -23,13 +23,13 @@ SRCS(
     ColumnFunction.cpp
     ColumnLowCardinality.cpp
     ColumnNullable.cpp
-    ColumnsCommon.cpp
     ColumnString.cpp
     ColumnTuple.cpp
     ColumnVector.cpp
+    ColumnsCommon.cpp
     FilterDescription.cpp
-    getLeastSuperColumn.cpp
     IColumn.cpp
+    getLeastSuperColumn.cpp
 
 )
 

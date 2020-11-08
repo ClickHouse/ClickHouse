@@ -42,7 +42,7 @@ struct BitBoolMaskAndImpl
 };
 
 struct NameBitBoolMaskAnd { static constexpr auto name = "__bitBoolMaskAnd"; };
-using FunctionBitBoolMaskAnd = FunctionBinaryArithmetic<BitBoolMaskAndImpl, NameBitBoolMaskAnd>;
+using FunctionBitBoolMaskAnd = BinaryArithmeticOverloadResolver<BitBoolMaskAndImpl, NameBitBoolMaskAnd>;
 
 }
 

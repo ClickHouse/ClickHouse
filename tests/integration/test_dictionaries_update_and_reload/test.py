@@ -1,16 +1,18 @@
-import pytest
 import os
 import time
-from helpers.cluster import ClickHouseCluster
+
+import pytest
 from helpers.client import QueryTimeoutExceedException
+from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 ENABLE_DICT_CONFIG = ['configs/enable_dictionaries.xml']
-DICTIONARY_FILES = ['configs/dictionaries/cache_xypairs.xml', 'configs/dictionaries/executable.xml', 'configs/dictionaries/file.xml', 'configs/dictionaries/file.txt', 'configs/dictionaries/slow.xml']
+DICTIONARY_FILES = ['configs/dictionaries/cache_xypairs.xml', 'configs/dictionaries/executable.xml',
+                    'configs/dictionaries/file.xml', 'configs/dictionaries/file.txt', 'configs/dictionaries/slow.xml']
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance('instance', main_configs=ENABLE_DICT_CONFIG+DICTIONARY_FILES)
+instance = cluster.add_instance('instance', main_configs=ENABLE_DICT_CONFIG + DICTIONARY_FILES)
 
 
 @pytest.fixture(scope="module")
@@ -30,24 +32,31 @@ def get_status(dictionary_name):
 
 
 def get_last_exception(dictionary_name):
-    return instance.query("SELECT last_exception FROM system.dictionaries WHERE name='" + dictionary_name + "'").rstrip("\n").replace("\\'", "'")
+    return instance.query("SELECT last_exception FROM system.dictionaries WHERE name='" + dictionary_name + "'").rstrip(
+        "\n").replace("\\'", "'")
 
 
 def get_loading_start_time(dictionary_name):
-    s = instance.query("SELECT toTimeZone(loading_start_time, 'UTC') FROM system.dictionaries WHERE name='" + dictionary_name + "'").rstrip("\n")
+    s = instance.query(
+        "SELECT toTimeZone(loading_start_time, 'UTC') FROM system.dictionaries WHERE name='" + dictionary_name + "'").rstrip(
+        "\n")
     if s == "1970-01-01 00:00:00":
         return None
     return time.strptime(s, "%Y-%m-%d %H:%M:%S")
 
+
 def get_last_successful_update_time(dictionary_name):
-    s = instance.query("SELECT toTimeZone(last_successful_update_time, 'UTC') FROM system.dictionaries WHERE name='" + dictionary_name + "'").rstrip("\n")
+    s = instance.query(
+        "SELECT toTimeZone(last_successful_update_time, 'UTC') FROM system.dictionaries WHERE name='" + dictionary_name + "'").rstrip(
+        "\n")
     if s == "1970-01-01 00:00:00":
         return None
     return time.strptime(s, "%Y-%m-%d %H:%M:%S")
 
 
 def get_loading_duration(dictionary_name):
-    return float(instance.query("SELECT loading_duration FROM system.dictionaries WHERE name='" + dictionary_name + "'"))
+    return float(
+        instance.query("SELECT loading_duration FROM system.dictionaries WHERE name='" + dictionary_name + "'"))
 
 
 def replace_in_file_in_container(file_name, what, replace_with):
@@ -63,14 +72,14 @@ def test_reload_while_loading(started_cluster):
 
     # It's not possible to get a value from the dictionary within 0.5 second, so the following query fails by timeout.
     with pytest.raises(QueryTimeoutExceedException):
-        query("SELECT dictGetInt32('slow', 'a', toUInt64(5))", timeout = 0.5)
+        query("SELECT dictGetInt32('slow', 'a', toUInt64(5))", timeout=0.5)
 
     # The dictionary is now loading.
     assert get_status('slow') == "LOADING"
     start_time, duration = get_loading_start_time('slow'), get_loading_duration('slow')
     assert duration > 0
 
-    time.sleep(0.5) # Still loading.
+    time.sleep(0.5)  # Still loading.
     assert get_status('slow') == "LOADING"
     prev_start_time, prev_duration = start_time, duration
     start_time, duration = get_loading_start_time('slow'), get_loading_duration('slow')
@@ -79,14 +88,14 @@ def test_reload_while_loading(started_cluster):
 
     # SYSTEM RELOAD DICTIONARY should restart loading.
     with pytest.raises(QueryTimeoutExceedException):
-        query("SYSTEM RELOAD DICTIONARY 'slow'", timeout = 0.5)
+        query("SYSTEM RELOAD DICTIONARY 'slow'", timeout=0.5)
     assert get_status('slow') == "LOADING"
     prev_start_time, prev_duration = start_time, duration
     start_time, duration = get_loading_start_time('slow'), get_loading_duration('slow')
     assert start_time > prev_start_time
     assert duration < prev_duration
 
-    time.sleep(0.5) # Still loading.
+    time.sleep(0.5)  # Still loading.
     assert get_status('slow') == "LOADING"
     prev_start_time, prev_duration = start_time, duration
     start_time, duration = get_loading_start_time('slow'), get_loading_duration('slow')
@@ -95,7 +104,7 @@ def test_reload_while_loading(started_cluster):
 
     # Changing the configuration file should restart loading again.
     replace_in_file_in_container('/etc/clickhouse-server/config.d/slow.xml', 'sleep 100', 'sleep 0')
-    time.sleep(5) # Configuration files are reloaded once in 5 seconds.
+    time.sleep(5)  # Configuration files are reloaded once in 5 seconds.
 
     # This time loading should finish quickly.
     assert get_status('slow') == "LOADED"
@@ -129,7 +138,7 @@ def test_reload_after_loading(started_cluster):
     assert query("SELECT dictGetInt32('file', 'a', toUInt64(9))") == "101\n"
 
     # SYSTEM RELOAD DICTIONARIES reloads all loaded dictionaries.
-    time.sleep(1) # see the comment above
+    time.sleep(1)  # see the comment above
     replace_in_file_in_container('/etc/clickhouse-server/config.d/executable.xml', '81', '82')
     replace_in_file_in_container('/etc/clickhouse-server/config.d/file.txt', '101', '102')
     query("SYSTEM RELOAD DICTIONARIES")
@@ -138,7 +147,7 @@ def test_reload_after_loading(started_cluster):
 
     # Configuration files are reloaded and lifetimes are checked automatically once in 5 seconds.
     # Wait slightly more, to be sure it did reload.
-    time.sleep(1) # see the comment above
+    time.sleep(1)  # see the comment above
     replace_in_file_in_container('/etc/clickhouse-server/config.d/executable.xml', '82', '83')
     replace_in_file_in_container('/etc/clickhouse-server/config.d/file.txt', '102', '103')
     time.sleep(7)
@@ -163,7 +172,8 @@ def test_reload_after_fail_by_system_reload(started_cluster):
     assert get_status("no_file") == "FAILED"
 
     # Creating the file source makes the dictionary able to load.
-    instance.copy_file_to_container(os.path.join(SCRIPT_DIR, "configs/dictionaries/file.txt"), "/etc/clickhouse-server/config.d/no_file.txt")
+    instance.copy_file_to_container(os.path.join(SCRIPT_DIR, "configs/dictionaries/file.txt"),
+                                    "/etc/clickhouse-server/config.d/no_file.txt")
     query("SYSTEM RELOAD DICTIONARY 'no_file'")
     query("SELECT dictGetInt32('no_file', 'a', toUInt64(9))") == "10\n"
     assert get_status("no_file") == "LOADED"
@@ -192,7 +202,8 @@ def test_reload_after_fail_by_timer(started_cluster):
     assert get_status("no_file_2") == "FAILED"
 
     # Creating the file source makes the dictionary able to load.
-    instance.copy_file_to_container(os.path.join(SCRIPT_DIR, "configs/dictionaries/file.txt"), "/etc/clickhouse-server/config.d/no_file_2.txt")
+    instance.copy_file_to_container(os.path.join(SCRIPT_DIR, "configs/dictionaries/file.txt"),
+                                    "/etc/clickhouse-server/config.d/no_file_2.txt")
     time.sleep(6);
     query("SELECT dictGetInt32('no_file_2', 'a', toUInt64(9))") == "10\n"
     assert get_status("no_file_2") == "LOADED"

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Columns/IColumn.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <IO/BufferWithOwnMemory.h>
@@ -27,6 +27,7 @@ class IInputFormat;
 class IOutputFormat;
 
 struct RowInputFormatParams;
+struct RowOutputFormatParams;
 
 using InputFormatPtr = std::shared_ptr<IInputFormat>;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
@@ -80,7 +81,7 @@ private:
     using OutputProcessorCreator = std::function<OutputFormatPtr(
             WriteBuffer & buf,
             const Block & sample,
-            WriteCallback callback,
+            const RowOutputFormatParams & params,
             const FormatSettings & settings)>;
 
     struct Creators
@@ -95,7 +96,6 @@ private:
     using FormatsDictionary = std::unordered_map<String, Creators>;
 
 public:
-
     static FormatFactory & instance();
 
     BlockInputStreamPtr getInput(
@@ -107,7 +107,7 @@ public:
         ReadCallback callback = {}) const;
 
     BlockOutputStreamPtr getOutput(const String & name, WriteBuffer & buf,
-        const Block & sample, const Context & context, WriteCallback callback = {}) const;
+        const Block & sample, const Context & context, WriteCallback callback = {}, const bool ignore_no_row_delimiter = false) const;
 
     InputFormatPtr getInputFormat(
         const String & name,
@@ -118,7 +118,7 @@ public:
         ReadCallback callback = {}) const;
 
     OutputFormatPtr getOutputFormat(
-        const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback = {}) const;
+        const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback = {}, const bool ignore_no_row_delimiter = false) const;
 
     /// Register format by its name.
     void registerInputFormat(const String & name, InputCreator input_creator);
@@ -135,8 +135,6 @@ public:
 
 private:
     FormatsDictionary dict;
-
-    FormatFactory();
 
     const Creators & getCreators(const String & name) const;
 };

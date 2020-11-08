@@ -23,6 +23,7 @@ Block QueryThreadLogElement::createBlock()
     return {
         {std::make_shared<DataTypeDate>(),          "event_date"},
         {std::make_shared<DataTypeDateTime>(),      "event_time"},
+        {std::make_shared<DataTypeDateTime64>(6),   "event_time_microseconds"},
         {std::make_shared<DataTypeDateTime>(),      "query_start_time"},
         {std::make_shared<DataTypeDateTime64>(6),   "query_start_time_microseconds"},
         {std::make_shared<DataTypeUInt64>(),        "query_duration_ms"},
@@ -37,6 +38,7 @@ Block QueryThreadLogElement::createBlock()
         {std::make_shared<DataTypeString>(),        "thread_name"},
         {std::make_shared<DataTypeUInt64>(),        "thread_id"},
         {std::make_shared<DataTypeUInt64>(),        "master_thread_id"},
+        {std::make_shared<DataTypeString>(),        "current_database"},
         {std::make_shared<DataTypeString>(),        "query"},
 
         {std::make_shared<DataTypeUInt8>(),         "is_initial_query"},
@@ -73,6 +75,7 @@ void QueryThreadLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time));
     columns[i++]->insert(event_time);
+    columns[i++]->insert(event_time_microseconds);
     columns[i++]->insert(query_start_time);
     columns[i++]->insert(query_start_time_microseconds);
     columns[i++]->insert(query_duration_ms);
@@ -89,11 +92,12 @@ void QueryThreadLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(thread_id);
     columns[i++]->insert(master_thread_id);
 
+    columns[i++]->insertData(current_database.data(), current_database.size());
     columns[i++]->insertData(query.data(), query.size());
 
     QueryLogElement::appendClientInfo(client_info, columns, i);
 
-    columns[i++]->insert(ClickHouseRevision::get());
+    columns[i++]->insert(ClickHouseRevision::getVersionRevision());
 
     if (profile_counters)
     {

@@ -5,18 +5,36 @@
 #    include <cstdio>
 #    include <mntent.h>
 #endif
+#include <cerrno>
 #include <Poco/File.h>
 #include <Poco/Path.h>
 #include <Poco/Version.h>
 
+
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int SYSTEM_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int CANNOT_STATVFS;
 }
+
+
+struct statvfs getStatVFS(const String & path)
+{
+    struct statvfs fs;
+    while (statvfs(path.c_str(), &fs) != 0)
+    {
+        if (errno == EINTR)
+            continue;
+        throwFromErrnoWithPath("Could not calculate available disk space (statvfs)", path, ErrorCodes::CANNOT_STATVFS);
+    }
+    return fs;
+}
+
 
 bool enoughSpaceInDirectory(const std::string & path [[maybe_unused]], size_t data_size [[maybe_unused]])
 {
@@ -46,7 +64,7 @@ std::filesystem::path getMountPoint(std::filesystem::path absolute_path)
     const auto get_device_id = [](const std::filesystem::path & p)
     {
         struct stat st;
-        if (stat(p.c_str(), &st))
+        if (stat(p.c_str(), &st))   /// NOTE: man stat does not list EINTR as possible error
             throwFromErrnoWithPath("Cannot stat " + p.string(), p.string(), ErrorCodes::SYSTEM_ERROR);
         return st.st_dev;
     };

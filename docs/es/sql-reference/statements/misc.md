@@ -57,7 +57,7 @@ Para `MergeTree` motores familiares, el `CHECK TABLE` query muestra un estado de
 Si la tabla está dañada, puede copiar los datos no dañados a otra tabla. Para hacer esto:
 
 1.  Cree una nueva tabla con la misma estructura que la tabla dañada. Para ello, ejecute la consulta `CREATE TABLE <new_table_name> AS <damaged_table_name>`.
-2.  Establezca el [max\_threads](../../operations/settings/settings.md#settings-max_threads) valor a 1 para procesar la siguiente consulta en un único subproceso. Para ello, ejecute la consulta `SET max_threads = 1`.
+2.  Establezca el [max_threads](../../operations/settings/settings.md#settings-max_threads) valor a 1 para procesar la siguiente consulta en un único subproceso. Para ello, ejecute la consulta `SET max_threads = 1`.
 3.  Ejecutar la consulta `INSERT INTO <new_table_name> SELECT * FROM <damaged_table_name>`. Esta solicitud copia los datos no dañados de la tabla dañada a otra tabla. Solo se copiarán los datos anteriores a la parte dañada.
 4.  Reinicie el `clickhouse-client` para restablecer el `max_threads` valor.
 
@@ -253,7 +253,7 @@ El `OPTMIZE` consulta también es compatible con el [Método de codificación de
 
 Cuando `OPTIMIZE` se utiliza con el [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md) la familia de motores de tablas, ClickHouse crea una tarea para fusionar y espera la ejecución en todos los nodos (si `replication_alter_partitions_sync` está habilitada la configuración).
 
--   Si `OPTIMIZE` no realiza una fusión por ningún motivo, no notifica al cliente. Para habilitar las notificaciones, [Optize\_throw\_if\_noop](../../operations/settings/settings.md#setting-optimize_throw_if_noop) configuración.
+-   Si `OPTIMIZE` no realiza una fusión por ningún motivo, no notifica al cliente. Para habilitar las notificaciones, [Optize_throw_if_noop](../../operations/settings/settings.md#setting-optimize_throw_if_noop) configuración.
 -   Si especifica un `PARTITION`, sólo la partición especificada está optimizada. [Cómo establecer la expresión de partición](alter.md#alter-how-to-specify-part-expr).
 -   Si especifica `FINAL`, la optimización se realiza incluso cuando todos los datos ya están en una parte.
 -   Si especifica `DEDUPLICATE`, luego se deduplicarán filas completamente idénticas (se comparan todas las columnas), tiene sentido solo para el motor MergeTree.

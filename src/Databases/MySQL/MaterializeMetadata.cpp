@@ -145,7 +145,7 @@ void MaterializeMetadata::transaction(const MySQLReplication::Position & positio
     String persistent_tmp_path = persistent_path + ".tmp";
 
     {
-        WriteBufferFromFile out(persistent_tmp_path, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_TRUNC | O_CREAT | O_EXCL);
+        WriteBufferFromFile out(persistent_tmp_path, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_TRUNC | O_CREAT);
 
         /// TSV format metadata file.
         writeString("Version:\t" + toString(meta_version), out);

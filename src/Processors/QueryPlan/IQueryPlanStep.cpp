@@ -45,7 +45,7 @@ static void doDescribeHeader(const Block & header, size_t count, IQueryPlanStep:
             settings.out << prefix;
 
         first = false;
-        elem.dumpStructure(settings.out);
+        elem.dumpNameAndType(settings.out);
         settings.out << '\n';
     }
 }

@@ -5,7 +5,6 @@ PEERDIR(
     clickhouse/src/Common
 )
 
-CFLAGS(-g0)
 
 SRCS(
     ASTAlterQuery.cpp
@@ -20,8 +19,8 @@ SRCS(
     ASTCreateRowPolicyQuery.cpp
     ASTCreateSettingsProfileQuery.cpp
     ASTCreateUserQuery.cpp
-    ASTDictionaryAttributeDeclaration.cpp
     ASTDictionary.cpp
+    ASTDictionaryAttributeDeclaration.cpp
     ASTDropAccessEntityQuery.cpp
     ASTDropQuery.cpp
     ASTExpressionList.cpp
@@ -57,20 +56,17 @@ SRCS(
     ASTShowTablesQuery.cpp
     ASTSubquery.cpp
     ASTSystemQuery.cpp
-    ASTTablesInSelectQuery.cpp
     ASTTTLElement.cpp
+    ASTTablesInSelectQuery.cpp
     ASTUserNameWithHost.cpp
     ASTWithAlias.cpp
+    ASTWithElement.cpp
     CommonParsers.cpp
     ExpressionElementParsers.cpp
     ExpressionListParsers.cpp
-    formatAST.cpp
-    formatSettingName.cpp
     IAST.cpp
-    iostream_debug_helpers.cpp
     IParserBase.cpp
     Lexer.cpp
-    makeASTForLogicalFunction.cpp
     MySQL/ASTAlterCommand.cpp
     MySQL/ASTAlterQuery.cpp
     MySQL/ASTCreateDefines.cpp
@@ -84,10 +80,6 @@ SRCS(
     MySQL/ASTDeclareReference.cpp
     MySQL/ASTDeclareSubPartition.cpp
     MySQL/ASTDeclareTableOptions.cpp
-    parseDatabaseAndTableName.cpp
-    parseIdentifierOrStringLiteral.cpp
-    parseIntervalKind.cpp
-    parseQuery.cpp
     ParserAlterQuery.cpp
     ParserCase.cpp
     ParserCheckQuery.cpp
@@ -99,8 +91,8 @@ SRCS(
     ParserCreateUserQuery.cpp
     ParserDataType.cpp
     ParserDescribeTableQuery.cpp
-    ParserDictionaryAttributeDeclaration.cpp
     ParserDictionary.cpp
+    ParserDictionaryAttributeDeclaration.cpp
     ParserDropAccessEntityQuery.cpp
     ParserDropQuery.cpp
     ParserExplainQuery.cpp
@@ -133,10 +125,20 @@ SRCS(
     ParserUseQuery.cpp
     ParserUserNameWithHost.cpp
     ParserWatchQuery.cpp
-    parseUserName.cpp
-    queryToString.cpp
+    ParserWithElement.cpp
     QueryWithOutputSettingsPushDownVisitor.cpp
     TokenIterator.cpp
+    formatAST.cpp
+    formatSettingName.cpp
+    iostream_debug_helpers.cpp
+    makeASTForLogicalFunction.cpp
+    obfuscateQueries.cpp
+    parseDatabaseAndTableName.cpp
+    parseIdentifierOrStringLiteral.cpp
+    parseIntervalKind.cpp
+    parseQuery.cpp
+    parseUserName.cpp
+    queryToString.cpp
 
 )
 

@@ -22,7 +22,7 @@ namespace
 
 template <typename A, typename B>
 struct DivideIntegralByConstantImpl
-    : BinaryOperationImplBase<A, B, DivideIntegralImpl<A, B>>
+    : BinaryOperation<A, B, DivideIntegralImpl<A, B>>
 {
     using ResultType = typename DivideIntegralImpl<A, B>::ResultType;
     static const constexpr bool allow_fixed_string = false;
@@ -110,7 +110,7 @@ template <> struct BinaryOperationImpl<Int32, Int64, DivideIntegralImpl<Int32, I
 
 
 struct NameIntDiv { static constexpr auto name = "intDiv"; };
-using FunctionIntDiv = FunctionBinaryArithmetic<DivideIntegralImpl, NameIntDiv, false>;
+using FunctionIntDiv = BinaryArithmeticOverloadResolver<DivideIntegralImpl, NameIntDiv, false>;
 
 void registerFunctionIntDiv(FunctionFactory & factory)
 {

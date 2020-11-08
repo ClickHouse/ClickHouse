@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Defines.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Disks/Executor.h>
@@ -195,10 +195,10 @@ public:
     /// Invoked when Global Context is shutdown.
     virtual void shutdown() { }
 
-private:
     /// Returns executor to perform asynchronous operations.
-    Executor & getExecutor() { return *executor; }
+    virtual Executor & getExecutor() { return *executor; }
 
+private:
     std::unique_ptr<Executor> executor;
 };
 

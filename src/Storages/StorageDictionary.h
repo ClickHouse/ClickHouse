@@ -19,7 +19,7 @@ public:
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        const SelectQueryInfo & query_info,
+        SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
@@ -29,6 +29,7 @@ public:
     static String generateNamesAndTypesDescription(const NamesAndTypesList & list);
 
     const String & dictionaryName() const { return dictionary_name; }
+    String resolvedDictionaryName() const;
 
     /// Specifies where the table is located relative to the dictionary.
     enum class Location

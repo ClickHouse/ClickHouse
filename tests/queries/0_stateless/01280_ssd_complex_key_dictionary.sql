@@ -24,6 +24,8 @@ INSERT INTO database_for_dict.table_for_dict SELECT toString(number), number + 1
 
 DROP DICTIONARY IF EXISTS database_for_dict.ssd_dict;
 
+-- FIXME filesystem error: in create_directory: Permission denied [/var/lib/clickhouse]
+-- Probably we need rewrite it to integration test
 CREATE DICTIONARY database_for_dict.ssd_dict
 (
     k1 String,
@@ -59,6 +61,8 @@ SELECT dictGetString('database_for_dict.ssd_dict', 'c', tuple('5', toInt32(-3)))
 SELECT dictGetUInt64('database_for_dict.ssd_dict', 'a', tuple('10', toInt32(-20)));
 SELECT dictGetInt32('database_for_dict.ssd_dict', 'b', tuple('10', toInt32(-20)));
 SELECT dictGetString('database_for_dict.ssd_dict', 'c', tuple('10', toInt32(-20)));
+
+SELECT dictGetUInt64('database_for_dict.ssd_dict', 'a', tuple(toInt32(3))); --{serverError 53}
 
 DROP DICTIONARY database_for_dict.ssd_dict;
 

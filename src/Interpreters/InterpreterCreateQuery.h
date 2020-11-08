@@ -55,6 +55,8 @@ public:
     static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, const Context & context, bool sanity_check_compression_codecs);
     static ConstraintsDescription getConstraintsDescription(const ASTExpressionList * constraints);
 
+    static void prepareOnClusterQuery(ASTCreateQuery & create, const Context & context, const String & cluster_name);
+
 private:
     struct TableProperties
     {

@@ -40,6 +40,8 @@ static ConnectionPoolWithFailoverPtr createPool(
         db,
         user,
         password,
+        "", /* cluster */
+        "", /* cluster_secret */
         "ClickHouseDictionarySource",
         Protocol::Compression::Enable,
         secure ? Protocol::Secure::Enable : Protocol::Secure::Disable));

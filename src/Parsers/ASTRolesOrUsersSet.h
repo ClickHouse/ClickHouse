@@ -5,6 +5,9 @@
 
 namespace DB
 {
+
+using Strings = std::vector<String>;
+
 /// Represents a set of users/roles like
 /// {user_name | role_name | CURRENT_USER} [,...] | NONE | ALL | ALL EXCEPT {user_name | role_name | CURRENT_USER} [,...]
 class ASTRolesOrUsersSet : public IAST

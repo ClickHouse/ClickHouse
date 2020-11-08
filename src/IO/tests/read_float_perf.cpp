@@ -3,7 +3,7 @@
 #include <iostream>
 #include <fstream>
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <IO/readFloatText.h>

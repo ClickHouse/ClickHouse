@@ -13,7 +13,6 @@
 namespace DB
 {
 
-class MergeListEntry;
 class MergeProgressCallback;
 
 /// Auxiliary struct holding metainformation for the future merged or mutated part.
@@ -114,6 +113,7 @@ public:
         MergeListEntry & merge_entry,
         TableLockHolder & table_lock_holder,
         time_t time_of_merge,
+        const Context & context,
         const ReservationPtr & space_reservation,
         bool deduplicate);
 

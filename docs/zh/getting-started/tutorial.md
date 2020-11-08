@@ -80,7 +80,7 @@ clickhouse-client --query='INSERT INTO table FORMAT TabSeparated' < data.tsv
 
 ## 导入示例数据集 {#import-sample-dataset}
 
-现在是时候用一些示例数据填充我们的ClickHouse服务器。 在本教程中，我们将使用Yandex的匿名数据。Metrica，在成为开源之前以生产方式运行ClickHouse的第一个服务（更多关于这一点 [历史科](../introduction/history.md)). 有 [多种导入Yandex的方式。梅里卡数据集](example-datasets/metrica.md)，为了本教程，我们将使用最现实的一个。
+现在是时候用一些示例数据填充我们的ClickHouse服务端。 在本教程中，我们将使用Yandex.Metrica的匿名数据，它是在ClickHouse成为开源之前作为生产环境运行的第一个服务（关于这一点的更多内容请参阅[ClickHouse历史](../introduction/history.md))。有 [多种导入Yandex.Metrica数据集的的方法](example-datasets/metrica.md)，为了本教程，我们将使用最现实的一个。
 
 ### 下载并提取表数据 {#download-and-extract-table-data}
 
@@ -93,22 +93,22 @@ curl https://clickhouse-datasets.s3.yandex.net/visits/tsv/visits_v1.tsv.xz | unx
 
 ### 创建表 {#create-tables}
 
-与大多数数据库管理系统一样，ClickHouse在逻辑上将表分组为 “databases”. 有一个 `default` 数据库，但我们将创建一个名为新的 `tutorial`:
+与大多数数据库管理系统一样，ClickHouse在逻辑上将表分组为数据库。包含一个 `default` 数据库，但我们将创建一个新的数据库 `tutorial`:
 
 ``` bash
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS tutorial"
 ```
 
-与数据库相比，创建表的语法要复杂得多（请参阅 [参考资料](../sql-reference/statements/create.md). 一般 `CREATE TABLE` 声明必须指定三个关键的事情:
+与创建数据库相比，创建表的语法要复杂得多（请参阅 [参考资料](../sql-reference/statements/create.md). 一般 `CREATE TABLE` 声明必须指定三个关键的事情:
 
 1.  要创建的表的名称。
-2.  Table schema, i.e. list of columns and their [数据类型](../sql-reference/data-types/index.md).
-3.  [表引擎](../engines/table-engines/index.md) 及其设置，这决定了如何物理执行对此表的查询的所有细节。
+2.  表结构，例如：列名和对应的[数据类型](../sql-reference/data-types/index.md)。
+3.  [表引擎](../engines/table-engines/index.md) 及其设置，这决定了对此表的查询操作是如何在物理层面执行的所有细节。
 
-YandexMetrica是一个网络分析服务，样本数据集不包括其全部功能，因此只有两个表可以创建:
+Yandex.Metrica是一个网络分析服务，样本数据集不包括其全部功能，因此只有两个表可以创建:
 
--   `hits` 是一个表格，其中包含所有用户在服务所涵盖的所有网站上完成的每个操作。
--   `visits` 是一个包含预先构建的会话而不是单个操作的表。
+-   `hits` 表包含所有用户在服务所涵盖的所有网站上完成的每个操作。
+-   `visits` 表包含预先构建的会话，而不是单个操作。
 
 让我们看看并执行这些表的实际创建表查询:
 
@@ -453,9 +453,9 @@ SAMPLE BY intHash32(UserID)
 SETTINGS index_granularity = 8192
 ```
 
-您可以使用以下交互模式执行这些查询 `clickhouse-client` （只需在终端中启动它，而不需要提前指定查询）或尝试一些 [替代接口](../interfaces/index.md) 如果你愿意的话
+您可以使用`clickhouse-client`的交互模式执行这些查询（只需在终端中启动它，而不需要提前指定查询）。或者如果你愿意，可以尝试一些[替代接口](../interfaces/index.md)。
 
-正如我们所看到的, `hits_v1` 使用 [基本MergeTree引擎](../engines/table-engines/mergetree-family/mergetree.md)，而 `visits_v1` 使用 [崩溃](../engines/table-engines/mergetree-family/collapsingmergetree.md) 变体。
+正如我们所看到的, `hits_v1` 使用 [基本的MergeTree引擎](../engines/table-engines/mergetree-family/mergetree.md)，而 `visits_v1` 使用 [折叠树](../engines/table-engines/mergetree-family/collapsingmergetree.md) 变体。
 
 ### 导入数据 {#import-data}
 
@@ -468,7 +468,7 @@ clickhouse-client --query "INSERT INTO tutorial.hits_v1 FORMAT TSV" --max_insert
 clickhouse-client --query "INSERT INTO tutorial.visits_v1 FORMAT TSV" --max_insert_block_size=100000 < visits_v1.tsv
 ```
 
-ClickHouse有很多 [要调整的设置](../operations/settings/index.md) 在控制台客户端中指定它们的一种方法是通过参数，我们可以看到 `--max_insert_block_size`. 找出可用的设置，它们意味着什么以及默认值的最简单方法是查询 `system.settings` 表:
+ClickHouse有很多 [要调整的设置](../operations/settings/index.md) 在控制台客户端中指定它们的一种方法是通过参数，就像我们看到上面语句中的 `--max_insert_block_size`。找出可用的设置、含义及其默认值的最简单方法是查询 `system.settings` 表:
 
 ``` sql
 SELECT name, value, changed, description
@@ -479,7 +479,7 @@ FORMAT TSV
 max_insert_block_size    1048576    0    "The maximum block size for insertion, if we control the creation of blocks for insertion."
 ```
 
-您也可以 [OPTIMIZE](../sql-reference/statements/misc.md#misc_operations-optimize) 导入后的表。 使用MergeTree-family引擎配置的表总是在后台合并数据部分以优化数据存储（或至少检查是否有意义）。 这些查询强制表引擎立即进行存储优化，而不是稍后进行一段时间:
+您也可以 [OPTIMIZE](../sql-reference/statements/misc.md#misc_operations-optimize) 导入后的表。 使用MergeTree-family引擎配置的表总是在后台合并数据部分以优化数据存储（或至少检查是否有意义）。 这些查询强制表引擎立即进行存储优化，而不是稍后一段时间执行:
 
 ``` bash
 clickhouse-client --query "OPTIMIZE TABLE tutorial.hits_v1 FINAL"
@@ -521,14 +521,14 @@ WHERE (CounterID = 912887) AND (toYYYYMM(StartDate) = 201403) AND (domain(StartU
 
 ClickHouse集群是一个同质集群。 设置步骤:
 
-1.  在群集的所有计算机上安装ClickHouse服务器
+1.  在群集的所有机器上安装ClickHouse服务端
 2.  在配置文件中设置群集配置
 3.  在每个实例上创建本地表
 4.  创建一个 [分布式表](../engines/table-engines/special/distributed.md)
 
-[分布式表](../engines/table-engines/special/distributed.md) 实际上是一种 “view” 到ClickHouse集群的本地表。 从分布式表中选择查询使用集群所有分片的资源执行。 您可以为多个集群指定configs，并创建多个分布式表，为不同的集群提供视图。
+[分布式表](../engines/table-engines/special/distributed.md) 实际上是一种 “视图”，映射到ClickHouse集群的本地表。 从分布式表中执行 **SELECT** 查询会使用集群所有分片的资源。 您可以为多个集群指定configs，并创建多个分布式表，为不同的集群提供视图。
 
-具有三个分片的集群的示例配置，每个分片一个副本:
+具有三个分片，每个分片一个副本的集群的示例配置:
 
 ``` xml
 <remote_servers>
@@ -555,7 +555,7 @@ ClickHouse集群是一个同质集群。 设置步骤:
 </remote_servers>
 ```
 
-为了进一步演示，让我们创建一个新的本地表 `CREATE TABLE` 我们用于查询 `hits_v1`，但不同的表名:
+为了进一步演示，让我们使用和创建 `hits_v1` 表相同的 `CREATE TABLE` 语句创建一个新的本地表，但表名不同:
 
 ``` sql
 CREATE TABLE tutorial.hits_local (...) ENGINE = MergeTree() ...
@@ -570,14 +570,14 @@ ENGINE = Distributed(perftest_3shards_1replicas, tutorial, hits_local, rand());
 
 常见的做法是在集群的所有计算机上创建类似的分布式表。 它允许在群集的任何计算机上运行分布式查询。 还有一个替代选项可以使用以下方法为给定的SELECT查询创建临时分布式表 [远程](../sql-reference/table-functions/remote.md) 表功能。
 
-我们走吧 [INSERT SELECT](../sql-reference/statements/insert-into.md) 将该表传播到多个服务器。
+让我们运行 [INSERT SELECT](../sql-reference/statements/insert-into.md) 将该表传播到多个服务器。
 
 ``` sql
 INSERT INTO tutorial.hits_all SELECT * FROM tutorial.hits_v1;
 ```
 
-!!! warning "碌莽禄Notice:"
-    这种方法不适合大型表的分片。 有一个单独的工具 [ﾂ环板-ｮﾂ嘉ｯﾂ偲](../operations/utilities/clickhouse-copier.md) 这可以重新分片任意大表。
+!!! warning "注意:"
+    这种方法不适合大型表的分片。 有一个单独的工具 [clickhouse-copier](../operations/utilities/clickhouse-copier.md) 这可以重新分片任意大表。
 
 正如您所期望的那样，如果计算量大的查询使用3台服务器而不是一个，则运行速度快N倍。
 
@@ -609,10 +609,10 @@ INSERT INTO tutorial.hits_all SELECT * FROM tutorial.hits_v1;
 </remote_servers>
 ```
 
-启用本机复制 [动物园管理员](http://zookeeper.apache.org/) 是必需的。 ClickHouse负责所有副本的数据一致性，并在失败后自动运行恢复过程。 建议将ZooKeeper集群部署在单独的服务器上（其中没有其他进程，包括ClickHouse正在运行）。
+启用本机复制 [Zookeeper](http://zookeeper.apache.org/) 是必需的。 ClickHouse负责所有副本的数据一致性，并在失败后自动运行恢复过程。 建议将ZooKeeper集群部署在单独的服务器上（其中没有其他进程，包括运行的ClickHouse）。
 
 !!! note "注"
-    ZooKeeper不是一个严格的requirement：在某些简单的情况下，您可以通过将数据写入应用程序代码中的所有副本来复制数据。 这种方法是 **不** 建议，在这种情况下，ClickHouse将无法保证所有副本上的数据一致性。 因此，它成为您的应用程序的责任。
+    ZooKeeper不是一个严格的要求：在某些简单的情况下，您可以通过将数据写入应用程序代码中的所有副本来复制数据。 这种方法是 **不** 建议的，在这种情况下，ClickHouse将无法保证所有副本上的数据一致性。 因此需要由您的应用来保证这一点。
 
 ZooKeeper位置在配置文件中指定:
 

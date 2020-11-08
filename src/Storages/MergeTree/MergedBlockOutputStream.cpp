@@ -148,6 +148,7 @@ void MergedBlockOutputStream::finalizePartOnDisk(
         count_out_hashing.next();
         checksums.files["count.txt"].file_size = count_out_hashing.count();
         checksums.files["count.txt"].file_hash = count_out_hashing.getHash();
+        count_out->finalize();
         if (sync)
             count_out->sync();
     }
@@ -160,6 +161,7 @@ void MergedBlockOutputStream::finalizePartOnDisk(
         new_part->ttl_infos.write(out_hashing);
         checksums.files["ttl.txt"].file_size = out_hashing.count();
         checksums.files["ttl.txt"].file_hash = out_hashing.getHash();
+        out->finalize();
         if (sync)
             out->sync();
     }
@@ -170,6 +172,7 @@ void MergedBlockOutputStream::finalizePartOnDisk(
         /// Write a file with a description of columns.
         auto out = volume->getDisk()->writeFile(part_path + "columns.txt", 4096);
         part_columns.writeText(*out);
+        out->finalize();
         if (sync)
             out->sync();
     }
@@ -178,6 +181,7 @@ void MergedBlockOutputStream::finalizePartOnDisk(
     {
         auto out = volume->getDisk()->writeFile(part_path + IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096);
         DB::writeText(queryToString(default_codec->getFullCodecDesc()), *out);
+        out->finalize();
     }
     else
     {
@@ -189,6 +193,7 @@ void MergedBlockOutputStream::finalizePartOnDisk(
         /// Write file with checksums.
         auto out = volume->getDisk()->writeFile(part_path + "checksums.txt", 4096);
         checksums.write(*out);
+        out->finalize();
         if (sync)
             out->sync();
     }

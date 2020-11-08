@@ -41,42 +41,66 @@ BlockIO InterpreterDropQuery::execute()
     if (!drop.cluster.empty())
         return executeDDLQueryOnCluster(query_ptr, context, getRequiredAccessForDDLOnCluster());
 
+    if (context.getSettingsRef().database_atomic_wait_for_drop_and_detach_synchronously)
+        drop.no_delay = true;
+
     if (!drop.table.empty())
     {
         if (!drop.is_dictionary)
-            return executeToTable({drop.database, drop.table, drop.uuid}, drop);
+            return executeToTable(drop);
         else
             return executeToDictionary(drop.database, drop.table, drop.kind, drop.if_exists, drop.temporary, drop.no_ddl_lock);
     }
     else if (!drop.database.empty())
-        return executeToDatabase(drop.database, drop.kind, drop.if_exists);
+        return executeToDatabase(drop);
     else
         throw Exception("Nothing to drop, both names are empty", ErrorCodes::LOGICAL_ERROR);
 }
 
 
-BlockIO InterpreterDropQuery::executeToTable(
-    const StorageID & table_id_,
-    const ASTDropQuery & query)
+void InterpreterDropQuery::waitForTableToBeActuallyDroppedOrDetached(const ASTDropQuery & query, const DatabasePtr & db, const UUID & uuid_to_wait)
 {
-    if (query.temporary || table_id_.database_name.empty())
+    if (uuid_to_wait == UUIDHelpers::Nil)
+        return;
+
+    if (query.kind == ASTDropQuery::Kind::Drop)
+        DatabaseCatalog::instance().waitTableFinallyDropped(uuid_to_wait);
+    else if (query.kind == ASTDropQuery::Kind::Detach)
     {
-        if (context.tryResolveStorageID(table_id_, Context::ResolveExternal))
-            return executeToTemporaryTable(table_id_.getTableName(), query.kind);
+        if (auto * atomic = typeid_cast<DatabaseAtomic *>(db.get()))
+            atomic->waitDetachedTableNotInUse(uuid_to_wait);
+    }
+}
+
+BlockIO InterpreterDropQuery::executeToTable(const ASTDropQuery & query)
+{
+    DatabasePtr database;
+    UUID table_to_wait_on = UUIDHelpers::Nil;
+    auto res = executeToTableImpl(query, database, table_to_wait_on);
+    if (query.no_delay)
+        waitForTableToBeActuallyDroppedOrDetached(query, database, table_to_wait_on);
+    return res;
+}
+
+BlockIO InterpreterDropQuery::executeToTableImpl(const ASTDropQuery & query, DatabasePtr & db, UUID & uuid_to_wait)
+{
+    /// NOTE: it does not contain UUID, we will resolve it with locked DDLGuard
+    auto table_id = StorageID(query);
+    if (query.temporary || table_id.database_name.empty())
+    {
+        if (context.tryResolveStorageID(table_id, Context::ResolveExternal))
+            return executeToTemporaryTable(table_id.getTableName(), query.kind);
+        else
+            table_id.database_name = context.getCurrentDatabase();
     }
 
     if (query.temporary)
     {
         if (query.if_exists)
             return {};
-        throw Exception("Temporary table " + backQuoteIfNeed(table_id_.table_name) + " doesn't exist",
+        throw Exception("Temporary table " + backQuoteIfNeed(table_id.table_name) + " doesn't exist",
                         ErrorCodes::UNKNOWN_TABLE);
     }
-
-    auto table_id = query.if_exists ? context.tryResolveStorageID(table_id_, Context::ResolveOrdinary)
-                                    : context.resolveStorageID(table_id_, Context::ResolveOrdinary);
-    if (!table_id)
-        return {};
 
     auto ddl_guard = (!query.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name) : nullptr);
 
@@ -88,6 +112,9 @@ BlockIO InterpreterDropQuery::executeToTable(
     {
         if (query_ptr->as<ASTDropQuery &>().is_view && !table->isView())
             throw Exception("Table " + table_id.getNameForLogs() + " is not a View", ErrorCodes::LOGICAL_ERROR);
+
+        /// Now get UUID, so we can wait for table data to be finally dropped
+        table_id.uuid = database->tryGetTableUUID(table_id.table_name);
 
         if (query.kind == ASTDropQuery::Kind::Detach)
         {
@@ -122,6 +149,9 @@ BlockIO InterpreterDropQuery::executeToTable(
 
             database->dropTable(context, table_id.table_name, query.no_delay);
         }
+
+        db = database;
+        uuid_to_wait = table_id.uuid;
     }
 
     return {};
@@ -207,19 +237,48 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
 }
 
 
-BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, ASTDropQuery::Kind kind, bool if_exists)
+BlockIO InterpreterDropQuery::executeToDatabase(const ASTDropQuery & query)
 {
+    DatabasePtr database;
+    std::vector<UUID> tables_to_wait;
+    BlockIO res;
+    try
+    {
+        res = executeToDatabaseImpl(query, database, tables_to_wait);
+    }
+    catch (...)
+    {
+        if (query.no_delay)
+        {
+            for (const auto & table_uuid : tables_to_wait)
+                waitForTableToBeActuallyDroppedOrDetached(query, database, table_uuid);
+        }
+        throw;
+    }
+
+    if (query.no_delay)
+    {
+        for (const auto & table_uuid : tables_to_wait)
+            waitForTableToBeActuallyDroppedOrDetached(query, database, table_uuid);
+    }
+    return res;
+}
+
+BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, DatabasePtr & database, std::vector<UUID> & uuids_to_wait)
+{
+    const auto & database_name = query.database;
     auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
 
-    if (auto database = tryGetDatabase(database_name, if_exists))
+    database = tryGetDatabase(database_name, query.if_exists);
+    if (database)
     {
-        if (kind == ASTDropQuery::Kind::Truncate)
+        if (query.kind == ASTDropQuery::Kind::Truncate)
         {
             throw Exception("Unable to truncate database", ErrorCodes::SYNTAX_ERROR);
         }
-        else if (kind == ASTDropQuery::Kind::Detach || kind == ASTDropQuery::Kind::Drop)
+        else if (query.kind == ASTDropQuery::Kind::Detach || query.kind == ASTDropQuery::Kind::Drop)
         {
-            bool drop = kind == ASTDropQuery::Kind::Drop;
+            bool drop = query.kind == ASTDropQuery::Kind::Drop;
             context.checkAccess(AccessType::DROP_DATABASE, database_name);
 
             if (database->shouldBeEmptyOnDetach())
@@ -230,16 +289,22 @@ BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, AS
                 for (auto iterator = database->getDictionariesIterator(); iterator->isValid(); iterator->next())
                 {
                     String current_dictionary = iterator->name();
-                    executeToDictionary(database_name, current_dictionary, kind, false, false, false);
+                    executeToDictionary(database_name, current_dictionary, query.kind, false, false, false);
                 }
 
-                ASTDropQuery query;
-                query.kind = kind;
-                query.database = database_name;
+                ASTDropQuery query_for_table;
+                query_for_table.kind = query.kind;
+                query_for_table.if_exists = true;
+                query_for_table.database = database_name;
+                query_for_table.no_delay = query.no_delay;
+
                 for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
                 {
-                    query.table = iterator->name();
-                    executeToTable({query.database, query.table}, query);
+                    DatabasePtr db;
+                    UUID table_to_wait = UUIDHelpers::Nil;
+                    query_for_table.table = iterator->name();
+                    executeToTableImpl(query_for_table, db, table_to_wait);
+                    uuids_to_wait.push_back(table_to_wait);
                 }
             }
 

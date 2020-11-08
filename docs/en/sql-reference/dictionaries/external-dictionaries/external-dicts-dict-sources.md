@@ -246,7 +246,7 @@ Installing unixODBC and the ODBC driver for PostgreSQL:
 $ sudo apt-get install -y unixodbc odbcinst odbc-postgresql
 ```
 
-Configuring `/etc/odbc.ini` (or `~/.odbc.ini`):
+Configuring `/etc/odbc.ini` (or `~/.odbc.ini` if you signed in under a user that runs ClickHouse):
 
 ``` text
     [DEFAULT]
@@ -321,7 +321,7 @@ You may need to edit `odbc.ini` to specify the full path to the library with the
 
 Ubuntu OS.
 
-Installing the driver: :
+Installing the ODBC driver for connecting to MS SQL:
 
 ``` bash
 $ sudo apt-get install tdsodbc freetds-bin sqsh
@@ -329,7 +329,7 @@ $ sudo apt-get install tdsodbc freetds-bin sqsh
 
 Configuring the driver:
 
-``` bash
+```bash
     $ cat /etc/freetds/freetds.conf
     ...
 
@@ -339,8 +339,11 @@ Configuring the driver:
     tds version = 7.0
     client charset = UTF-8
 
+    # test TDS connection
+    $ sqsh -S MSSQL -D database -U user -P password
+
+
     $ cat /etc/odbcinst.ini
-    ...
 
     [FreeTDS]
     Description     = FreeTDS
@@ -349,8 +352,8 @@ Configuring the driver:
     FileUsage       = 1
     UsageCount      = 5
 
-    $ cat ~/.odbc.ini
-    ...
+    $ cat /etc/odbc.ini
+    # $ cat ~/.odbc.ini # if you signed in under a user that runs ClickHouse
 
     [MSSQL]
     Description     = FreeTDS
@@ -360,7 +363,14 @@ Configuring the driver:
     UID             = test
     PWD             = test
     Port            = 1433
+
+
+    # (optional) test ODBC connection (to use isql-tool install the [unixodbc](https://packages.debian.org/sid/unixodbc)-package)
+    $ isql -v MSSQL "user" "password"
 ```
+
+Remarks:
+- to determine the earliest TDS version that is supported by a particular SQL Server version, refer to the product documentation or look at [MS-TDS Product Behavior](https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/135d0ebe-5c4c-4a94-99bf-1811eccb9f4a)
 
 Configuring the dictionary in ClickHouse:
 
