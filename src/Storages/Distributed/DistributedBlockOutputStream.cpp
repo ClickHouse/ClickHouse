@@ -524,7 +524,14 @@ void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, const siz
             /// Prefer insert into current instance directly
             writeToLocal(block, shard_info.getLocalNodeCount());
         else
-            writeToShard(block, {shard_info.pathForInsert(settings.prefer_localhost_replica)});
+        {
+            const auto & path = shard_info.insertPathForInternalReplication(
+                settings.prefer_localhost_replica,
+                settings.use_compact_format_in_distributed_parts_names);
+            if (path.empty())
+                throw Exception("Directory name for async inserts is empty", ErrorCodes::LOGICAL_ERROR);
+            writeToShard(block, {path});
+        }
     }
     else
     {
