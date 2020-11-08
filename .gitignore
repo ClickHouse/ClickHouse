@@ -124,6 +124,3 @@ website/package-lock.json
 
 # Toolchains
 /cmake/toolchain/*
-
-# My changes
-/contrib/*
