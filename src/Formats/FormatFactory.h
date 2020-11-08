@@ -96,7 +96,6 @@ private:
     using FormatsDictionary = std::unordered_map<String, Creators>;
 
 public:
-
     static FormatFactory & instance();
 
     BlockInputStreamPtr getInput(
@@ -136,8 +135,6 @@ public:
 
 private:
     FormatsDictionary dict;
-
-    FormatFactory();
 
     const Creators & getCreators(const String & name) const;
 };
