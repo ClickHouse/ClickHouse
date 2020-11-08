@@ -1,6 +1,6 @@
 ---
 toc_priority: 53
-toc_title: 'null функция'
+toc_title: null функция
 ---
 
 # null {#null-function}

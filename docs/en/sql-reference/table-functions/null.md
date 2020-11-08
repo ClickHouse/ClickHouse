@@ -1,6 +1,6 @@
 ---
 toc_priority: 53
-toc_title: 'null function'
+toc_title: null function
 ---
 
 # null {#null-function}
