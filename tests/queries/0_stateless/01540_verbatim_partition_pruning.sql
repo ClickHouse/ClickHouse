@@ -1,25 +1,23 @@
 drop table if exists xy;
 
-create table xy(x int, y int) engine MergeTree partition by intHash64(x) % 100 order by y settings index_granularity = 1;
+create table xy(x int, y int) engine MergeTree partition by intHash64(x) % 2 order by y settings index_granularity = 1;
 
-insert into xy values (1, 2), (2, 3);
+-- intHash64(0) % 2 = 0
+-- intHash64(2) % 2 = 1
+-- intHash64(8) % 2 = 0
+-- intHash64(9) % 2 = 1
+insert into xy values (0, 2), (2, 3), (8, 4), (9, 5);
 
-SET max_rows_to_read = 1;
+-- Now we have two partitions: 0 and 1, each of which contains 2 values.
+-- minmax index for the first partition is 0 <= x <= 8
+-- minmax index for the second partition is 2 <= x <= 9
 
-select * from xy where intHash64(x) % 100 = intHash64(1) % 100;
+SET max_rows_to_read = 2;
 
--- This works too
-select * from xy where x = 1;
+select * from xy where intHash64(x) % 2 = intHash64(2) % 2;
 
---
--- Test for equality.
--- It is special operator that treated as an always monotonic 
---
-set max_rows_to_read=100;
-drop table if exists xy;
-create table xy(x int, y int) engine MergeTree partition by x % 100 order by y settings index_granularity = 4096;
--- insert enough data to make minmax index not enough for partition prunning
-insert into xy select number, number from numbers(10000);
-select * from xy where x = 1;
+-- Equality is another special operator that can be treated as an always monotonic indicator for deterministic functions.
+-- minmax index is not enough.
+select * from xy where x = 8;
 
 drop table if exists xy;
