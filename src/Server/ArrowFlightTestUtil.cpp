@@ -206,14 +206,6 @@ Status MakeFlightInfo(
     return SchemaToString(schema, &out->schema);
 }
 
-int64_t TotalBatchSize(const BatchVector & batchVector)
-{
-    int64_t result = 0;
-    for (const auto & batch : batchVector)
-        result += batch->num_rows();
-    return result;
-}
-
 #define ARROW_TEST_EXPECT_OK(expr)                                      \
   do {                                                                  \
     auto _res = (expr);                                                 \
@@ -232,18 +224,11 @@ std::vector<flight::FlightInfo> ExampleFlightInfo(const arrow::flight::Location 
     flight::FlightDescriptor descr1{flight::FlightDescriptor::PATH, "", {"ints"}};
     flight::FlightDescriptor descr2{flight::FlightDescriptor::CMD, "my_command", {}};
 
-    BatchVector batches1, batches2;
-    ARROW_TEST_EXPECT_OK(ExampleIntBatches(&batches1));
-    ARROW_TEST_EXPECT_OK(ExampleStringBatches(&batches2));
-
-    size_t num_records1 = TotalBatchSize(batches1);
-    size_t num_records2 = TotalBatchSize(batches2);
-
     auto schema1 = ExampleIntSchema();
     auto schema2 = ExampleStringSchema();
 
-    ARROW_TEST_EXPECT_OK(MakeFlightInfo(*schema1, descr1, {endpoint1, endpoint2}, num_records1, -1, &flight1));
-    ARROW_TEST_EXPECT_OK(MakeFlightInfo(*schema2, descr2, {endpoint3}, num_records2, -1, &flight2));
+    ARROW_TEST_EXPECT_OK(MakeFlightInfo(*schema1, descr1, {endpoint1, endpoint2}, -1, -1, &flight1));
+    ARROW_TEST_EXPECT_OK(MakeFlightInfo(*schema2, descr2, {endpoint3}, -1, -1, &flight2));
     return {flight::FlightInfo(flight1), flight::FlightInfo(flight2)};
 }
 

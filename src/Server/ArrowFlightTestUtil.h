@@ -81,8 +81,6 @@ arrow::Status MakeFlightInfo(
     int64_t total_bytes,
     flight::FlightInfo::Data * out);
 
-int64_t TotalBatchSize(const BatchVector & batchVector);
-
 std::vector<flight::FlightInfo> ExampleFlightInfo(const arrow::flight::Location & location);
 
 }
