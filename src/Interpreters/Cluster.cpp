@@ -387,14 +387,14 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                     {
                         /// use_compact_format=0
                         {
-                            auto dir_name = replica_addresses.back().toFullString(0 /* use_compact_format */);
+                            auto dir_name = replica_addresses.back().toFullString(false /* use_compact_format */);
                             if (!replica_addresses.back().is_local)
                                 concatInsertPath(insert_paths.prefer_localhost_replica, dir_name);
                             concatInsertPath(insert_paths.no_prefer_localhost_replica, dir_name);
                         }
                         /// use_compact_format=1
                         {
-                            auto dir_name = replica_addresses.back().toFullString(1 /* use_compact_format */);
+                            auto dir_name = replica_addresses.back().toFullString(true /* use_compact_format */);
                             if (!replica_addresses.back().is_local)
                                 concatInsertPath(insert_paths.prefer_localhost_replica_compact, dir_name);
                             concatInsertPath(insert_paths.no_prefer_localhost_replica_compact, dir_name);
@@ -620,7 +620,7 @@ const std::string & Cluster::ShardInfo::insertPathForInternalReplication(bool pr
     if (!has_internal_replication)
         throw Exception("internal_replication is not set", ErrorCodes::LOGICAL_ERROR);
 
-    auto & paths = insert_path_for_internal_replication;
+    const auto & paths = insert_path_for_internal_replication;
     if (!use_compact_format)
     {
         if (prefer_localhost_replica)
