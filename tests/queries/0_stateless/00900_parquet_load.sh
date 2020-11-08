@@ -32,7 +32,7 @@ DATA_DIR=$CUR_DIR/data_parquet
 # ../contrib/arrow/cpp/src/arrow/array/array_nested.cc:193:  Check failed: self->list_type_->value_type()->Equals(data->child_data[0]->type)
 # ClickHouse Parquet reader doesn't support such complex types, so I didn't burrow into the issue
 
-for NAME in $(find "$DATA_DIR"/*.parquet -print0 | xargs -0 -n 1 basename | sort); do
+for NAME in $(find "$DATA_DIR"/*.parquet -print0 | xargs -0 -n 1 basename | LC_ALL=C sort); do
     echo === Try load data from "$NAME"
 
     JSON=$DATA_DIR/$NAME.json
@@ -40,7 +40,7 @@ for NAME in $(find "$DATA_DIR"/*.parquet -print0 | xargs -0 -n 1 basename | sort
 
     # If you want change or add .parquet file - rm data_parquet/*.json data_parquet/*.columns
     [ -n "$PARQUET_READER" ] && [ ! -s "$COLUMNS_FILE" ] && [ ! -s "$JSON" ] && "$PARQUET_READER" --json "$DATA_DIR"/"$NAME" > "$JSON"
-    [ ! -s "$COLUMNS_FILE" ] && "$CUR_DIR"/00900_parquet_create_table_columns.py "$JSON" > "$COLUMNS_FILE"
+    [ ! -s "$COLUMNS_FILE" ] && "$CUR_DIR"/helpers/00900_parquet_create_table_columns.py "$JSON" > "$COLUMNS_FILE"
 
     # Debug only:
     # [ -n "$PARQUET_READER" ] && $PARQUET_READER $DATA_DIR/$NAME > $DATA_DIR/$NAME.dump
