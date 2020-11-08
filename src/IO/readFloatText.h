@@ -649,8 +649,8 @@ template <typename T> bool tryReadFloatTextWithFastFloat(T & x, ReadBuffer & in)
 #endif
 
 #ifdef USE_FAST_FLOAT
-template <typename T> void readFloatTextPrecise(T & x, ReadBuffer & in) { readFloatTextWithFastFloat<T, void>(x, in); }
-template <typename T> bool tryReadFloatTextPrecise(T & x, ReadBuffer & in) { return tryReadFloatTextWithFastFloat<T, bool>(x, in); }
+template <typename T> void readFloatTextPrecise(T & x, ReadBuffer & in) { readFloatTextWithFastFloat(x, in); }
+template <typename T> bool tryReadFloatTextPrecise(T & x, ReadBuffer & in) { return tryReadFloatTextWithFastFloat(x, in); }
 #else
 template <typename T> void readFloatTextPrecise(T & x, ReadBuffer & in) { readFloatTextPreciseImpl<T, void>(x, in); }
 template <typename T> bool tryReadFloatTextPrecise(T & x, ReadBuffer & in) { return readFloatTextPreciseImpl<T, bool>(x, in); }
