@@ -330,6 +330,8 @@ static bool indexOfCanUseBloomFilter(const ASTPtr & parent)
     if (!parent)
         return true;
 
+    /// `parent` is a function where `indexOf` is located.
+    /// Example: `indexOf(arr, x) = 1`, parent is a function named `equals`.
     if (const auto * function = parent->as<ASTFunction>())
     {
         if (function->name == "and")
@@ -343,6 +345,7 @@ static bool indexOfCanUseBloomFilter(const ASTPtr & parent)
             if (function->arguments->children.size() != 2)
                 return false;
 
+            /// We don't allow constant expressions like `indexOf(arr, x) = 1 + 0` but it's neglible.
             if (const ASTLiteral * left = function->arguments->children[0]->as<ASTLiteral>())
             {
                 if (function->name == "equals" && left->value.get<Int64>() != 0)
