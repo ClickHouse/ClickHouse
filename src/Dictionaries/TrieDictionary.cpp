@@ -365,8 +365,10 @@ void TrieDictionary::loadData()
     {
         if (a.addr.family() != b.addr.family())
             return a.addr.family() < b.addr.family();
+
+        // prefer IPs with more narrow subnet
         if (a.addr == b.addr)
-            return a.prefix > b.prefix;
+            return a.prefix < b.prefix;
         return a.addr < b.addr;
     });
 
