@@ -38,7 +38,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int SYSTEM_ERROR;
+    extern const int ROCKSDB_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -271,7 +271,7 @@ void StorageEmbeddedRocksDB::initDb()
     rocksdb::Status status = rocksdb::DB::Open(options, rocksdb_dir, &db);
 
     if (status != rocksdb::Status::OK())
-        throw Exception("Fail to open rocksdb path at: " +  rocksdb_dir, ErrorCodes::SYSTEM_ERROR);
+        throw Exception("Fail to open rocksdb path at: " +  rocksdb_dir + ": " + status.ToString(), ErrorCodes::ROCKSDB_ERROR);
     rocksdb_ptr = std::unique_ptr<rocksdb::DB>(db);
 }
 
