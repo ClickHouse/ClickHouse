@@ -1,5 +1,5 @@
 
-#include <Storages/Rocksdb/EmbeddedRocksdbBlockOutputStream.h>
+#include <Storages/RocksDB/EmbeddedRocksDBBlockOutputStream.h>
 #include <IO/WriteBufferFromString.h>
 
 namespace DB
@@ -10,12 +10,12 @@ namespace ErrorCodes
     extern const int SYSTEM_ERROR;
 }
 
-Block EmbeddedRocksdbBlockOutputStream::getHeader() const
+Block EmbeddedRocksDBBlockOutputStream::getHeader() const
 {
     return metadata_snapshot->getSampleBlock();
 }
 
-void EmbeddedRocksdbBlockOutputStream::write(const Block & block)
+void EmbeddedRocksDBBlockOutputStream::write(const Block & block)
 {
     metadata_snapshot->check(block, true);
     auto rows = block.rows();
@@ -44,7 +44,7 @@ void EmbeddedRocksdbBlockOutputStream::write(const Block & block)
     }
     auto status = storage.rocksdb_ptr->Write(rocksdb::WriteOptions(), &batch);
     if (!status.ok())
-        throw Exception("Rocksdb write error: " + status.ToString(), ErrorCodes::SYSTEM_ERROR);
+        throw Exception("RocksDB write error: " + status.ToString(), ErrorCodes::SYSTEM_ERROR);
 }
 
 }

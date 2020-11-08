@@ -1,7 +1,7 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/Context.h>
-#include <Storages/Rocksdb/StorageEmbeddedRocksdb.h>
-#include <Storages/Rocksdb/EmbeddedRocksdbBlockInputStream.h>
+#include <Storages/RocksDB/StorageEmbeddedRocksDB.h>
+#include <Storages/RocksDB/EmbeddedRocksDBBlockInputStream.h>
 
 #include <ext/enumerate.h>
 
@@ -14,8 +14,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-EmbeddedRocksdbBlockInputStream::EmbeddedRocksdbBlockInputStream(
-            StorageEmbeddedRocksdb & storage_,
+EmbeddedRocksDBBlockInputStream::EmbeddedRocksDBBlockInputStream(
+            StorageEmbeddedRocksDB & storage_,
             const StorageMetadataPtr & metadata_snapshot_,
             size_t max_block_size_)
             : storage(storage_)
@@ -26,7 +26,7 @@ EmbeddedRocksdbBlockInputStream::EmbeddedRocksdbBlockInputStream(
     primary_key_pos = sample_block.getPositionByName(storage.primary_key);
 }
 
-Block EmbeddedRocksdbBlockInputStream::readImpl()
+Block EmbeddedRocksDBBlockInputStream::readImpl()
 {
     if (finished)
         return {};
