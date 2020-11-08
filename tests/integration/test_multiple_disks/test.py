@@ -440,7 +440,7 @@ def test_jbod_overflow(start_cluster, name, engine):
             SETTINGS storage_policy='small_jbod_with_external'
         """.format(name=name, engine=engine))
 
-        node1.query("SYSTEM STOP MERGES")
+        node1.query(f"SYSTEM STOP MERGES {name}")
 
         # small jbod size is 40MB, so lets insert 5MB batch 7 times
         for i in range(7):
@@ -449,11 +449,8 @@ def test_jbod_overflow(start_cluster, name, engine):
                 data.append(get_random_string(1024 * 1024))  # 1MB row
             node1.query("INSERT INTO {} VALUES {}".format(name, ','.join(["('" + x + "')" for x in data])))
 
-        for p in ("/jbod1", "/jbod2", "/external"):
-            print(node1.exec_in_container([f"bash", "-c", f"find {p} | xargs -n1 du -sh"])) 
-
         used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {'jbod1'}
+        assert all(disk == 'jbod1' for disk in used_disks)
 
         # should go to the external disk (jbod is overflown)
         data = []  # 10MB in total
@@ -462,14 +459,11 @@ def test_jbod_overflow(start_cluster, name, engine):
 
         node1.query("INSERT INTO {} VALUES {}".format(name, ','.join(["('" + x + "')" for x in data])))
 
-        for p in ("/jbod1", "/jbod2", "/external"):
-            print(node1.exec_in_container([f"bash", "-c", f"find {p} | xargs -n1 du -sh"])) 
-
         used_disks = get_used_disks_for_table(node1, name)
 
         assert used_disks[-1] == 'external'
 
-        node1.query("SYSTEM START MERGES")
+        node1.query(f"SYSTEM START MERGES {name}")
         time.sleep(1)
 
         node1.query("OPTIMIZE TABLE {} FINAL".format(name))
@@ -499,7 +493,7 @@ def test_background_move(start_cluster, name, engine):
             SETTINGS storage_policy='moving_jbod_with_external'
         """.format(name=name, engine=engine))
 
-        node1.query(f"SYSTEM START MERGES {name}")
+        node1.query(f"SYSTEM STOP MERGES {name}")
 
         for i in range(5):
             data = []  # 5MB in total

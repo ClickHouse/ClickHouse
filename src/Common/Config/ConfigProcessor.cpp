@@ -538,6 +538,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
         *has_zk_includes = !contributing_zk_paths.empty();
 
     std::stringstream comment;
+    comment.exceptions(std::ios::failbit);
     comment <<     " This file was generated automatically.\n";
     comment << "     Do not edit it: it is likely to be discarded and generated again before it's read next time.\n";
     comment << "     Files used to generate this file:";
