@@ -12,7 +12,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int ROCKSDB_ERROR;
 }
 
 EmbeddedRocksDBBlockInputStream::EmbeddedRocksDBBlockInputStream(
@@ -39,15 +39,18 @@ Block EmbeddedRocksDBBlockInputStream::readImpl()
     }
 
     MutableColumns columns = sample_block.cloneEmptyColumns();
+
     size_t rows = 0;
     for (; iterator->Valid(); iterator->Next())
     {
         ReadBufferFromString key_buffer(iterator->key());
         ReadBufferFromString value_buffer(iterator->value());
 
-        for (const auto [idx, column_type] : ext::enumerate(sample_block.getColumnsWithTypeAndName()))
+        size_t idx = 0;
+        for (const auto & elem : sample_block)
         {
-            column_type.type->deserializeBinary(*columns[idx], idx == primary_key_pos? key_buffer: value_buffer);
+            elem.type->deserializeBinary(*columns[idx], idx == primary_key_pos ? key_buffer : value_buffer);
+            ++idx;
         }
         ++rows;
         if (rows >= max_block_size)
@@ -58,7 +61,7 @@ Block EmbeddedRocksDBBlockInputStream::readImpl()
     if (!iterator->status().ok())
     {
         throw Exception("Engine " + getName() + " got error while seeking key value datas: " + iterator->status().ToString(),
-            ErrorCodes::LOGICAL_ERROR);
+            ErrorCodes::ROCKSDB_ERROR);
     }
     return sample_block.cloneWithColumns(std::move(columns));
 }

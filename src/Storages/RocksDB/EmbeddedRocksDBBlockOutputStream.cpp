@@ -11,6 +11,21 @@ namespace ErrorCodes
     extern const int ROCKSDB_ERROR;
 }
 
+EmbeddedRocksDBBlockOutputStream::EmbeddedRocksDBBlockOutputStream(
+    StorageEmbeddedRocksDB & storage_,
+    const StorageMetadataPtr & metadata_snapshot_)
+    : storage(storage_)
+    , metadata_snapshot(metadata_snapshot_)
+{
+    Block sample_block = metadata_snapshot->getSampleBlock();
+    for (const auto & elem : sample_block)
+    {
+        if (elem.name == storage.primary_key)
+            break;
+        ++primary_key_pos;
+    }
+}
+
 Block EmbeddedRocksDBBlockOutputStream::getHeader() const
 {
     return metadata_snapshot->getSampleBlock();
@@ -25,24 +40,20 @@ void EmbeddedRocksDBBlockOutputStream::write(const Block & block)
     WriteBufferFromOwnString wb_value;
 
     rocksdb::WriteBatch batch;
-    auto columns = metadata_snapshot->getColumns();
-
     for (size_t i = 0; i < rows; i++)
     {
         wb_key.restart();
         wb_value.restart();
 
-        for (const auto & col : columns)
+        size_t idx = 0;
+        for (const auto & elem : block)
         {
-            const auto & type = block.getByName(col.name).type;
-            const auto & column = block.getByName(col.name).column;
-            if (col.name == storage.primary_key)
-                type->serializeBinary(*column, i, wb_key);
-            else
-                type->serializeBinary(*column, i, wb_value);
+            elem.type->serializeBinary(*elem.column, i, idx == primary_key_pos ? wb_key : wb_value);
+            ++idx;
         }
         batch.Put(wb_key.str(), wb_value.str());
     }
+
     auto status = storage.rocksdb_ptr->Write(rocksdb::WriteOptions(), &batch);
     if (!status.ok())
         throw Exception("RocksDB write error: " + status.ToString(), ErrorCodes::ROCKSDB_ERROR);
