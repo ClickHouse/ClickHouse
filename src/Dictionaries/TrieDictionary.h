@@ -243,6 +243,7 @@ private:
      * @return positive value if ipaddr greater than address in record
      */
     int matchIPAddrWithRecord(const IPAddress & ipaddr, const IPRecord & record) const;
+    bool lessIPRecords(const IPRecord & a, const IPRecord & b) const;
 
     IPRecordConstIt ipRecordNotFound() const;
     IPRecordConstIt lookupIPRecord(const IPAddress & target) const;

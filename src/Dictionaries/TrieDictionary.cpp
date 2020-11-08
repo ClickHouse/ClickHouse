@@ -4,6 +4,7 @@
 #include <Columns/ColumnVector.h>
 #include <Common/assert_cast.h>
 #include <Common/IPv6ToBinary.h>
+#include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/WriteIntText.h>
@@ -27,13 +28,23 @@ namespace ErrorCodes
 
 static void validateKeyTypes(const DataTypes & key_types)
 {
-    if (key_types.size() != 1)
-        throw Exception{"Expected a single IP address", ErrorCodes::TYPE_MISMATCH};
+    if (key_types.size() < 1 && 2 < key_types.size())
+        throw Exception{"Expected a single IP address or IP with mask",
+                        ErrorCodes::TYPE_MISMATCH};
 
-    const auto & actual_type = key_types[0]->getName();
+    if (key_types.size() == 1)
+    {
+        const auto & actual_type = key_types[0]->getName();
+        if (actual_type != "UInt32" && actual_type != "FixedString(16)")
+            throw Exception{"Key does not match, expected either UInt32 or FixedString(16)", ErrorCodes::TYPE_MISMATCH};
+        return;
+    }
 
-    if (actual_type != "UInt32" && actual_type != "FixedString(16)")
-        throw Exception{"Key does not match, expected either UInt32 or FixedString(16)", ErrorCodes::TYPE_MISMATCH};
+    const auto * ip_col_type = typeid_cast<const DataTypeFixedString *>(key_types[0].get());
+    const auto * mask_col_type = typeid_cast<const DataTypeUInt8 *>(key_types[1].get());
+    bool type_ok = ip_col_type && mask_col_type && ip_col_type->getN() == IPV6_BINARY_LENGTH;
+    if (!type_ok)
+        throw Exception{"Keys do not match, {FixedString(16), UInt8}", ErrorCodes::TYPE_MISMATCH};
 }
 
 /// Create IPAddress from 16 byte array converting to ipv4 if possible
@@ -361,16 +372,7 @@ void TrieDictionary::loadData()
 
     LOG_TRACE(logger, "{} ip records are read", ip_records.size());
 
-    std::sort(ip_records.begin(), ip_records.end(), [](const auto & a, const auto & b)
-    {
-        if (a.addr.family() != b.addr.family())
-            return a.addr.family() < b.addr.family();
-
-        // prefer IPs with more narrow subnet
-        if (a.addr == b.addr)
-            return a.prefix < b.prefix;
-        return a.addr < b.addr;
-    });
+    std::sort(ip_records.begin(), ip_records.end(), lessIPRecords);
 
     stream->readSuffix();
 
@@ -531,6 +533,39 @@ void TrieDictionary::getItemsImpl(
     const auto first_column = key_columns.front();
     const auto rows = first_column->size();
 
+    // special case for getBlockInputStream
+    if (unlikely(key_columns.size() == 2))
+    {
+        const auto & ip_column = assert_cast<const ColumnFixedString &>(*key_columns.front());
+        const auto & mask_column = assert_cast<const ColumnVector<UInt8> &>(*key_columns.back());
+
+        for (const auto i : ext::range(0, rows))
+        {
+            const auto second_column = key_columns.back();
+
+            auto addr_data = ip_column.getDataAt(i).data;
+            auto ipaddr = ip4or6fromBytes(reinterpret_cast<const uint8_t *>(addr_data));
+
+            UInt8 mask = mask_column.getElement(i);
+
+            auto target = IPRecord{ipaddr, mask, 0};
+            auto found_it = std::lower_bound(ip_records.begin(), ip_records.end(), target, lessIPRecords);
+
+            if (likely(found_it != ip_records.end() &&
+                found_it->addr == target.addr &&
+                found_it->prefix == target.prefix))
+            {
+                set_value(i, static_cast<OutputType>(vec[found_it->row]));
+            }
+            else
+            {
+                set_value(i, get_default(i));
+            }
+        }
+        query_count.fetch_add(rows, std::memory_order_relaxed);
+        return;
+    }
+
     if (first_column->isNumeric())
     {
         for (const auto i : ext::range(0, rows))
@@ -671,8 +706,10 @@ BlockInputStreamPtr TrieDictionary::getBlockInputStream(const Names & column_nam
     auto get_keys = [](const Columns & columns, const std::vector<DictionaryAttribute> & dict_attributes)
     {
         const auto & attr = dict_attributes.front();
-        return ColumnsWithTypeAndName(
-            {ColumnWithTypeAndName(columns.front(), std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH), attr.name)});
+        return ColumnsWithTypeAndName({
+            ColumnWithTypeAndName(columns.front(), std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH), attr.name),
+            ColumnWithTypeAndName(columns.back(), std::make_shared<DataTypeUInt8>(), attr.name + ".mask")
+        });
     };
     auto get_view = [](const Columns & columns, const std::vector<DictionaryAttribute> & dict_attributes)
     {
@@ -707,6 +744,17 @@ int TrieDictionary::matchIPAddrWithRecord(const IPAddress & ipaddr, const IPReco
     if (masked_ipaddr == record.addr)
         return 0;
     return 1;
+}
+
+bool TrieDictionary::lessIPRecords(const IPRecord & a, const IPRecord & b) const
+{
+    if (a.addr.family() != b.addr.family())
+        return a.addr.family() < b.addr.family();
+
+    // prefer IPs with more narrow subnet
+    if (a.addr == b.addr)
+        return a.prefix < b.prefix;
+    return a.addr < b.addr;
 }
 
 TrieDictionary::IPRecordConstIt TrieDictionary::ipRecordNotFound() const
