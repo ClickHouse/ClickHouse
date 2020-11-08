@@ -54,7 +54,7 @@ LAYOUT(POLYGON())
 
 When configuring the polygon dictionary, the key must have one of two types:
 -   A simple polygon. It is an array of points.
--   MultiPolygon. It is an array of polygons. Each polygon is a two-dimensional array of points. The first element of this array is the outer boundary of the polygon, and subsequent elements specify holes in from it.
+-   MultiPolygon. It is an array of polygons. Each polygon is a two-dimensional array of points. The first element of this array is the outer boundary of the polygon, and subsequent elements specify areas to be excluded from it.
 
 Points can be specified as an array or a tuple of their coordinates. In the current implementation, only two-dimensional points are supported.
 
