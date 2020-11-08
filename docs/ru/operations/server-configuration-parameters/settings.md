@@ -467,6 +467,26 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 <max_concurrent_queries>100</max_concurrent_queries>
 ```
 
+## max_concurrent_queries_for_all_users {#max-concurrent-queries-for-all-users}
+
+Если значение этой настройки меньше или равно текущему количеству одновременно обрабатываемых запросов, то будет сгенерировано исключение.
+
+Пример: `max_concurrent_queries_for_all_users` установлен на 99 для всех пользователей. Чтобы выполнять запросы даже когда сервер перегружен, администратор баз данных устанавливает для себя значение настройки на 100.
+
+Изменение настройки для одного запроса или пользователя не влияет на другие запросы.
+
+Значение по умолчанию: `0` — отсутствие ограничений.
+
+**Пример**
+
+``` xml
+<max_concurrent_queries_for_all_users>99</max_concurrent_queries_for_all_users>
+```
+
+**Смотрите также**
+
+-   [max_concurrent_queries](#max-concurrent-queries)
+
 ## max_connections {#max-connections}
 
 Максимальное количество входящих соединений.

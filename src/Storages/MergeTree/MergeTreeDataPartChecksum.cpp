@@ -443,6 +443,7 @@ void MinimalisticDataPartChecksums::checkEqualImpl(const MinimalisticDataPartChe
     if (num_compressed_files != rhs.num_compressed_files || num_uncompressed_files != rhs.num_uncompressed_files)
     {
         std::stringstream error_msg;
+        error_msg.exceptions(std::ios::failbit);
         error_msg << "Different number of files: " << rhs.num_compressed_files << " compressed (expected " << num_compressed_files << ")"
             << " and " << rhs.num_uncompressed_files << " uncompressed ones (expected " << num_uncompressed_files << ")";
 

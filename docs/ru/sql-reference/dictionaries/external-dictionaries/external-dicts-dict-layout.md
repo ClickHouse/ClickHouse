@@ -54,6 +54,8 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 -   [hashed](#dicts-external_dicts_dict_layout-hashed)
 -   [sparse_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
 -   [cache](#cache)
+-   [ssd_cache](#ssd-cache)
+-   [ssd_complex_key_cache](#complex-key-ssd-cache)
 -   [direct](#direct)
 -   [range_hashed](#range-hashed)
 -   [complex_key_hashed](#complex-key-hashed)
@@ -298,6 +300,40 @@ LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
 ### complex_key_cache {#complex-key-cache}
 
 Тип размещения предназначен для использования с составными [ключами](external-dicts-dict-structure.md). Аналогичен `cache`.
+
+### ssd_cache {#ssd-cache}
+
+Похож на `cache`, но хранит данные на SSD и индекс в оперативной памяти.
+
+``` xml
+<layout>
+    <ssd_cache>
+        <!-- Size of elementary read block in bytes. Recommended to be equal to SSD's page size. -->
+        <block_size>4096</block_size>
+        <!-- Max cache file size in bytes. -->
+        <file_size>16777216</file_size>
+        <!-- Size of RAM buffer in bytes for reading elements from SSD. -->
+        <read_buffer_size>131072</read_buffer_size>
+        <!-- Size of RAM buffer in bytes for aggregating elements before flushing to SSD. -->
+        <write_buffer_size>1048576</write_buffer_size>
+        <!-- Path where cache file will be stored. -->
+        <path>/var/lib/clickhouse/clickhouse_dictionaries/test_dict</path>
+        <!-- Max number on stored keys in the cache. Rounded up to a power of two. -->
+        <max_stored_keys>1048576</max_stored_keys>
+    </ssd_cache>
+</layout>
+```
+
+или
+
+``` sql
+LAYOUT(CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
+    PATH /var/lib/clickhouse/clickhouse_dictionaries/test_dict MAX_STORED_KEYS 1048576))
+```
+
+### complex_key_ssd_cache {#complex-key-ssd-cache}
+
+Тип размещения предназначен для использования с составными [ключами](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Похож на `ssd_cache`.
 
 ### direct {#direct}
 

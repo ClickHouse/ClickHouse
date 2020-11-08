@@ -21,6 +21,7 @@ namespace ErrorCodes
 static String wrongAliasMessage(const ASTPtr & ast, const ASTPtr & prev_ast, const String & alias)
 {
     std::stringstream message;
+    message.exceptions(std::ios::failbit);
     message << "Different expressions with the same alias " << backQuoteIfNeed(alias) << ":" << std::endl;
     formatAST(*ast, message, false, true);
     message << std::endl << "and" << std::endl;

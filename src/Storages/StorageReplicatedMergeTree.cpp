@@ -195,9 +195,11 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , replica_path(zookeeper_path + "/replicas/" + replica_name)
     , reader(*this)
     , writer(*this)
-    , merger_mutator(*this, global_context.getBackgroundPool().getNumberOfThreads())
+    , merger_mutator(*this, global_context.getSettingsRef().background_pool_size)
     , queue(*this)
     , fetcher(*this)
+    , background_executor(*this, global_context)
+    , background_moves_executor(*this, global_context)
     , cleanup_thread(*this)
     , part_check_thread(*this)
     , restarting_thread(*this)
@@ -458,6 +460,7 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
     if (!inactive_replicas.empty())
     {
         std::stringstream exception_message;
+        exception_message.exceptions(std::ios::failbit);
         exception_message << "Mutation is not finished because";
 
         if (!inactive_replicas.empty())
@@ -1015,6 +1018,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
         parts_to_fetch_blocks += get_blocks_count_in_data_part(name);
 
     std::stringstream sanity_report;
+    sanity_report.exceptions(std::ios::failbit);
     sanity_report << "There are "
         << unexpected_parts.size() << " unexpected parts with " << unexpected_parts_rows << " rows ("
         << unexpected_parts_nonnew << " of them is not just-written with " << unexpected_parts_rows << " rows), "
@@ -1039,6 +1043,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     if (insane && !skip_sanity_checks)
     {
         std::stringstream why;
+        why.exceptions(std::ios::failbit);
         why << "The local set of parts of table " << getStorageID().getNameForLogs() << " doesn't look like the set of parts "
             << "in ZooKeeper: "
             << formatReadableQuantity(unexpected_parts_rows) << " rows of " << formatReadableQuantity(total_rows_on_filesystem)
@@ -1340,6 +1345,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     // Log source part names just in case
     {
         std::stringstream source_parts_msg;
+        source_parts_msg.exceptions(std::ios::failbit);
         for (auto i : ext::range(0, entry.source_parts.size()))
             source_parts_msg << (i != 0 ? ", " : "") << entry.source_parts[i];
 
@@ -2538,18 +2544,10 @@ void StorageReplicatedMergeTree::mutationsUpdatingTask()
     }
 }
 
-
-BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::queueTask()
+ReplicatedMergeTreeQueue::SelectedEntryPtr StorageReplicatedMergeTree::selectQueueEntry()
 {
-    /// If replication queue is stopped exit immediately as we successfully executed the task
-    if (queue.actions_blocker.isCancelled())
-    {
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
-        return BackgroundProcessingPoolTaskResult::SUCCESS;
-    }
-
     /// This object will mark the element of the queue as running.
-    ReplicatedMergeTreeQueue::SelectedEntry selected;
+    ReplicatedMergeTreeQueue::SelectedEntryPtr selected;
 
     try
     {
@@ -2560,14 +2558,14 @@ BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::queueTask()
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
     }
 
-    LogEntryPtr & entry = selected.first;
+    return selected;
+}
 
-    if (!entry)
-        return BackgroundProcessingPoolTaskResult::NOTHING_TO_DO;
+bool StorageReplicatedMergeTree::processQueueEntry(ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry)
+{
 
-    time_t prev_attempt_time = entry->last_attempt_time;
-
-    bool res = queue.processEntry([this]{ return getZooKeeper(); }, entry, [&](LogEntryPtr & entry_to_process)
+    LogEntryPtr & entry = selected_entry->log_entry;
+    return queue.processEntry([this]{ return getZooKeeper(); }, entry, [&](LogEntryPtr & entry_to_process)
     {
         try
         {
@@ -2606,36 +2604,30 @@ BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::queueTask()
             throw;
         }
     });
-
-    /// We will go to sleep if the processing fails and if we have already processed this record recently.
-    bool need_sleep = !res && (entry->last_attempt_time - prev_attempt_time < 10);
-
-    /// If there was no exception, you do not need to sleep.
-    return need_sleep ? BackgroundProcessingPoolTaskResult::ERROR : BackgroundProcessingPoolTaskResult::SUCCESS;
 }
 
+std::optional<JobAndPool> StorageReplicatedMergeTree::getDataProcessingJob()
+{
+    /// If replication queue is stopped exit immediately as we successfully executed the task
+    if (queue.actions_blocker.isCancelled())
+        return {};
+
+    /// This object will mark the element of the queue as running.
+    ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry = selectQueueEntry();
+
+    if (!selected_entry)
+        return {};
+
+    return JobAndPool{[this, selected_entry] () mutable
+    {
+        processQueueEntry(selected_entry);
+    }, PoolType::MERGE_MUTATE};
+}
 
 bool StorageReplicatedMergeTree::partIsAssignedToBackgroundOperation(const DataPartPtr & part) const
 {
     return queue.isVirtualPart(part);
 }
-
-BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::movePartsTask()
-{
-    try
-    {
-        if (!selectPartsAndMove())
-            return BackgroundProcessingPoolTaskResult::NOTHING_TO_DO;
-
-        return BackgroundProcessingPoolTaskResult::SUCCESS;
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log);
-        return BackgroundProcessingPoolTaskResult::ERROR;
-    }
-}
-
 
 void StorageReplicatedMergeTree::mergeSelectingTask()
 {
@@ -3282,12 +3274,15 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
     auto zookeeper = zookeeper_ ? zookeeper_ : getZooKeeper();
     const auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
 
-    if (auto part = getPartIfExists(part_info, {IMergeTreeDataPart::State::Outdated, IMergeTreeDataPart::State::Deleting}))
+    if (!to_detached)
     {
-        LOG_DEBUG(log, "Part {} should be deleted after previous attempt before fetch", part->name);
-        /// Force immediate parts cleanup to delete the part that was left from the previous fetch attempt.
-        cleanup_thread.wakeup();
-        return false;
+        if (auto part = getPartIfExists(part_info, {IMergeTreeDataPart::State::Outdated, IMergeTreeDataPart::State::Deleting}))
+        {
+            LOG_DEBUG(log, "Part {} should be deleted after previous attempt before fetch", part->name);
+            /// Force immediate parts cleanup to delete the part that was left from the previous fetch attempt.
+            cleanup_thread.wakeup();
+            return false;
+        }
     }
 
     {
@@ -3494,13 +3489,7 @@ void StorageReplicatedMergeTree::startup()
 
         /// If we don't separate create/start steps, race condition will happen
         /// between the assignment of queue_task_handle and queueTask that use the queue_task_handle.
-        {
-            auto lock = queue.lockQueue();
-            auto & pool = global_context.getBackgroundPool();
-            queue_task_handle = pool.createTask([this] { return queueTask(); });
-            pool.startTask(queue_task_handle);
-        }
-
+        background_executor.start();
         startBackgroundMovesIfNeeded();
     }
     catch (...)
@@ -3531,25 +3520,16 @@ void StorageReplicatedMergeTree::shutdown()
     parts_mover.moves_blocker.cancelForever();
 
     restarting_thread.shutdown();
-
-    if (queue_task_handle)
-        global_context.getBackgroundPool().removeTask(queue_task_handle);
+    background_executor.finish();
 
     {
-        /// Queue can trigger queue_task_handle itself. So we ensure that all
-        /// queue processes finished and after that reset queue_task_handle.
         auto lock = queue.lockQueue();
-        queue_task_handle.reset();
-
         /// Cancel logs pulling after background task were cancelled. It's still
         /// required because we can trigger pullLogsToQueue during manual OPTIMIZE,
         /// MUTATE, etc. query.
         queue.pull_log_blocker.cancelForever();
     }
-
-    if (move_parts_task_handle)
-        global_context.getBackgroundMovePool().removeTask(move_parts_task_handle);
-    move_parts_task_handle.reset();
+    background_moves_executor.finish();
 
     auto data_parts_exchange_ptr = std::atomic_exchange(&data_parts_exchange_endpoint, InterserverIOEndpointPtr{});
     if (data_parts_exchange_ptr)
@@ -3637,7 +3617,7 @@ ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock StorageReplicatedMerg
 Pipe StorageReplicatedMergeTree::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    const SelectQueryInfo & query_info,
+    SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
@@ -3848,6 +3828,7 @@ bool StorageReplicatedMergeTree::optimize(
                 if (!selected)
                 {
                     std::stringstream message;
+                    message.exceptions(std::ios::failbit);
                     message << "Cannot select parts for optimization";
                     if (!disable_reason.empty())
                         message << ": " << disable_reason;
@@ -5916,6 +5897,15 @@ ActionLock StorageReplicatedMergeTree::getActionLock(StorageActionBlockType acti
     return {};
 }
 
+void StorageReplicatedMergeTree::onActionLockRemove(StorageActionBlockType action_type)
+{
+    if (action_type == ActionLocks::PartsMerge || action_type == ActionLocks::PartsTTLMerge
+        || action_type == ActionLocks::PartsFetch || action_type == ActionLocks::PartsSend
+        || action_type == ActionLocks::ReplicationQueue)
+        background_executor.triggerTask();
+    else if (action_type == ActionLocks::PartsMove)
+        background_moves_executor.triggerTask();
+}
 
 bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UInt64 max_wait_milliseconds)
 {
@@ -5924,15 +5914,9 @@ bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UI
     /// Let's fetch new log entries firstly
     queue.pullLogsToQueue(getZooKeeper());
 
-    {
-        auto lock = queue.lockQueue();
-        if (!queue_task_handle)
-            return false;
-
-        /// This is significant, because the execution of this task could be delayed at BackgroundPool.
-        /// And we force it to be executed.
-        queue_task_handle->signalReadyToRun();
-    }
+    /// This is significant, because the execution of this task could be delayed at BackgroundPool.
+    /// And we force it to be executed.
+    background_executor.triggerTask();
 
     Poco::Event target_size_event;
     auto callback = [&target_size_event, queue_size] (size_t new_queue_size)
@@ -6037,15 +6021,10 @@ MutationCommands StorageReplicatedMergeTree::getFirtsAlterMutationCommandsForPar
     return queue.getFirstAlterMutationCommandsForPart(part);
 }
 
-
 void StorageReplicatedMergeTree::startBackgroundMovesIfNeeded()
 {
-    if (areBackgroundMovesNeeded() && !move_parts_task_handle)
-    {
-        auto & pool = global_context.getBackgroundMovePool();
-        move_parts_task_handle = pool.createTask([this] { return movePartsTask(); });
-        pool.startTask(move_parts_task_handle);
-    }
+    if (areBackgroundMovesNeeded())
+        background_moves_executor.start();
 }
 
 }
