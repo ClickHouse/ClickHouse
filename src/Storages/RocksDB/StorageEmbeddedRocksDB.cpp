@@ -1,10 +1,10 @@
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <Storages/StorageFactory.h>
 #include <Storages/RocksDB/StorageEmbeddedRocksDB.h>
 #include <Storages/RocksDB/EmbeddedRocksDBBlockOutputStream.h>
 #include <Storages/RocksDB/EmbeddedRocksDBBlockInputStream.h>
+
+#include <DataTypes/DataTypesNumber.h>
+#include <Storages/StorageFactory.h>
+
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -12,27 +12,25 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <DataTypes/NestedUtils.h>
-#include <Common/typeid_cast.h>
-#include <Common/StringUtils/StringUtils.h>
 
 #include <IO/WriteBufferFromString.h>
-#include <DataStreams/IBlockOutputStream.h>
 
 #include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Pipe.h>
+
 #include <Interpreters/Context.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/TreeRewriter.h>
-#include <Columns/IColumn.h>
-#include <Columns/ColumnString.h>
-#include <Processors/Pipe.h>
-#include <ext/enumerate.h>
 
 #include <Poco/File.h>
 #include <Poco/Path.h>
 #include <Poco/Logger.h>
 #include <common/logger_useful.h>
+
+#include <rocksdb/db.h>
+#include <rocksdb/table.h>
+
 
 namespace DB
 {
@@ -213,9 +211,11 @@ public:
                 ReadBufferFromString key_buffer(slices_keys[i]);
                 ReadBufferFromString value_buffer(values[i]);
 
-                for (const auto [idx, column_type] : ext::enumerate(sample_block.getColumnsWithTypeAndName()))
+                size_t idx = 0;
+                for (const auto & elem : sample_block)
                 {
-                    column_type.type->deserializeBinary(*columns[idx], idx == primary_key_pos? key_buffer: value_buffer);
+                    elem.type->deserializeBinary(*columns[idx], idx == primary_key_pos ? key_buffer : value_buffer);
+                    ++idx;
                 }
             }
         }
