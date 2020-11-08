@@ -102,7 +102,6 @@ include(orc_check.cmake)
 configure_file("${ORC_INCLUDE_DIR}/orc/orc-config.hh.in" "${ORC_BUILD_INCLUDE_DIR}/orc/orc-config.hh")
 configure_file("${ORC_SOURCE_SRC_DIR}/Adaptor.hh.in" "${ORC_BUILD_INCLUDE_DIR}/Adaptor.hh")
 
-
 set(ORC_SRCS
         ${ARROW_SRC_DIR}/arrow/adapters/orc/adapter.cc
         ${ARROW_SRC_DIR}/arrow/adapters/orc/adapter_util.cc
@@ -132,7 +131,8 @@ set(ORC_SRCS
         ${ORC_SOURCE_SRC_DIR}/Writer.cc
         ${ORC_SOURCE_SRC_DIR}/io/InputStream.cc
         ${ORC_SOURCE_SRC_DIR}/io/OutputStream.cc
-        ${ORC_GENERATED_SRCS})
+        ${ORC_GENERATED_SRCS}
+        )
 
 # === arrow flight
 
@@ -149,6 +149,10 @@ protobuf_generate_grpc_cpp(ARROW_FLIGHT_GENERATED_SRCS ARROW_FLIGHT_GENERATED_IN
         PROTOC_OUT_DIR ${ARROW_FLIGHT_GENERATED_SRC_DIR}
         ${ARROW_PROTO_DIR}/Flight.proto)
 
+# NOTE: we do not compile the ${ARROW_FLIGHT_GENERATED_SRCS} directly, instead
+# compiling then via protocol_internal.cc which contains some gRPC template
+# overrides to enable Flight-specific optimizations. See comments in
+# protobuf-internal.cc
 set(ARROW_FLIGHT_SRCS
         ${ARROW_FLIGHT_SRC_DIR}/client.cc
         ${ARROW_FLIGHT_SRC_DIR}/internal.cc
@@ -157,7 +161,7 @@ set(ARROW_FLIGHT_SRCS
         ${ARROW_FLIGHT_SRC_DIR}/server.cc
         ${ARROW_FLIGHT_SRC_DIR}/server_auth.cc
         ${ARROW_FLIGHT_SRC_DIR}/types.cc
-        ${ARROW_FLIGHT_GENERATED_SRCS})
+        )
 
 # === arrow
 
@@ -274,7 +278,8 @@ set(ARROW_SRCS
         ${LIBRARY_DIR}/vendored/uriparser/UriShorten.c
 
         ${ORC_SRCS}
-        ${ARROW_FLIGHT_SRCS})
+        ${ARROW_FLIGHT_SRCS}
+        )
 
 set(ARROW_SRCS ${ARROW_SRCS}
         ${LIBRARY_DIR}/compute/context.cc
