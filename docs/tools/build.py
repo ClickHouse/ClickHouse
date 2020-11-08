@@ -105,7 +105,7 @@ def build_for_lang(lang, args):
             site_url=f'{website_url}/docs/{lang}/',
             docs_dir=os.path.join(args.docs_dir, lang),
             site_dir=site_dir,
-            strict=not args.version_prefix,
+            strict=True,
             theme=theme_cfg,
             copyright='©2016–2020 Yandex LLC',
             use_directory_urls=True,
