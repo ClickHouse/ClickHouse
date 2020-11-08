@@ -2,6 +2,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/RocksDB/StorageEmbeddedRocksDB.h>
 #include <Storages/RocksDB/EmbeddedRocksDBBlockInputStream.h>
+#include <rocksdb/db.h>
 
 #include <ext/enumerate.h>
 
