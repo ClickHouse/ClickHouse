@@ -55,7 +55,7 @@ void registerStorages()
     #endif
 
     #if USE_ROCKSDB
-    registerStorageEmbeddedRocksdb(factory);
+    registerStorageEmbeddedRocksDB(factory);
     #endif
 }
 

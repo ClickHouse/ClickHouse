@@ -1,15 +1,15 @@
 ---
 toc_priority: 6
-toc_title: EmbeddedRocksdb
+toc_title: EmbeddedRocksDB
 ---
 
-# EmbeddedRocksdb Engine {#EmbeddedRocksdb-engine}
+# EmbeddedRocksDB Engine {#EmbeddedRocksDB-engine}
 
 This engine allows integrating ClickHouse with [rocksdb](http://rocksdb.org/).
 
-`EmbeddedRocksdb` lets you:
+`EmbeddedRocksDB` lets you:
 
-## Creating a Table {#table_engine-EmbeddedRocksdb-creating-a-table}
+## Creating a Table {#table_engine-EmbeddedRocksDB-creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -17,7 +17,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
-) ENGINE = EmbeddedRocksdb PRIMARY KEY(primary_key_name)
+) ENGINE = EmbeddedRocksDB PRIMARY KEY(primary_key_name)
 ```
 
 Required parameters:
@@ -34,7 +34,7 @@ CREATE TABLE test
     `v2` String,
     `v3` Float32,
 )
-ENGINE = EmbeddedRocksdb
+ENGINE = EmbeddedRocksDB
 PRIMARY KEY key
 ```
 
