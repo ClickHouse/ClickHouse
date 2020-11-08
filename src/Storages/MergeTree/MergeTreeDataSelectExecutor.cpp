@@ -228,6 +228,7 @@ Pipe MergeTreeDataSelectExecutor::readFromParts(
     if (settings.force_primary_key && key_condition.alwaysUnknownOrTrue())
     {
         std::stringstream exception_message;
+        exception_message.exceptions(std::ios::failbit);
         exception_message << "Primary key (";
         for (size_t i = 0, size = primary_key_columns.size(); i < size; ++i)
             exception_message << (i == 0 ? "" : ", ") << primary_key_columns[i];

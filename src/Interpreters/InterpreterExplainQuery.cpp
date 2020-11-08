@@ -223,6 +223,7 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
 
     std::stringstream ss;
+    ss.exceptions(std::ios::failbit);
 
     if (ast.getKind() == ASTExplainQuery::ParsedAST)
     {

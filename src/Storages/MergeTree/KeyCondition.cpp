@@ -33,6 +33,7 @@ namespace ErrorCodes
 String Range::toString() const
 {
     std::stringstream str;
+    str.exceptions(std::ios::failbit);
 
     if (!left_bounded)
         str << "(-inf, ";
@@ -1443,6 +1444,7 @@ String KeyCondition::RPNElement::toString() const
     };
 
     std::ostringstream ss;
+    ss.exceptions(std::ios::failbit);
     switch (function)
     {
         case FUNCTION_AND:

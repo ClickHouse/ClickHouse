@@ -131,6 +131,7 @@ std::string readData(DB::StoragePtr & table, const DB::Context & context)
     }
 
     std::ostringstream ss;
+    ss.exceptions(std::ios::failbit);
     WriteBufferFromOStream out_buf(ss);
     BlockOutputStreamPtr output = FormatFactory::instance().getOutput("Values", out_buf, sample, context);
 
