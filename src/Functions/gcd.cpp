@@ -40,7 +40,7 @@ struct GCDImpl
 };
 
 struct NameGCD { static constexpr auto name = "gcd"; };
-using FunctionGCD = FunctionBinaryArithmetic<GCDImpl, NameGCD, false>;
+using FunctionGCD = BinaryArithmeticOverloadResolver<GCDImpl, NameGCD, false>;
 
 }
 

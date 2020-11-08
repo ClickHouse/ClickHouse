@@ -75,6 +75,7 @@
 #include <Common/InterruptListener.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <Formats/registerFormats.h>
 #include <Common/Config/configReadClient.h>
 #include <Storages/ColumnsDescription.h>
 #include <common/argsToConfig.h>
@@ -134,7 +135,6 @@ private:
     bool stdout_is_a_tty = false;        /// stdout is a terminal.
 
     std::unique_ptr<Connection> connection;    /// Connection to DB.
-    String query_id;                     /// Current query_id.
     String full_query; /// Current query as it was given to the client.
 
     // Current query as it will be sent to the server. It may differ from the
@@ -219,6 +219,11 @@ private:
     QueryFuzzer fuzzer;
     int query_fuzzer_runs = 0;
 
+    std::optional<Suggest> suggest;
+
+    /// We will format query_id in interactive mode in various ways, the default is just to print Query id: ...
+    std::vector<std::pair<String, String>> query_id_formats;
+
     void initialize(Poco::Util::Application & self) override
     {
         Poco::Util::Application::initialize(self);
@@ -243,6 +248,17 @@ private:
         /// Set path for format schema files
         if (config().has("format_schema_path"))
             context.setFormatSchemaPath(Poco::Path(config().getString("format_schema_path")).toString());
+
+        /// Initialize query_id_formats if any
+        if (config().has("query_id_formats"))
+        {
+            Poco::Util::AbstractConfiguration::Keys keys;
+            config().keys("query_id_formats", keys);
+            for (const auto & name : keys)
+                query_id_formats.emplace_back(name + ":", config().getString("query_id_formats." + name));
+        }
+        if (query_id_formats.empty())
+            query_id_formats.emplace_back("Query id:", " {query_id}\n");
     }
 
 
@@ -448,6 +464,7 @@ private:
     {
         UseSSL use_ssl;
 
+        registerFormats();
         registerFunctions();
         registerAggregateFunctions();
 
@@ -559,15 +576,16 @@ private:
 
         if (is_interactive)
         {
-            if (!query_id.empty())
+            if (config().has("query_id"))
                 throw Exception("query_id could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
             if (print_time_to_stderr)
                 throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
 
+            suggest.emplace();
             if (server_revision >= Suggest::MIN_SERVER_REVISION && !config().getBool("disable_suggestion", false))
             {
                 /// Load suggestion data from the server.
-                Suggest::instance().load(connection_parameters, config().getInt("suggestion_limit"));
+                suggest->load(connection_parameters, config().getInt("suggestion_limit"));
             }
 
             /// Load command history if present.
@@ -594,7 +612,7 @@ private:
                 highlight_callback = highlight;
 
             ReplxxLineReader lr(
-                Suggest::instance(),
+                *suggest,
                 history_file,
                 config().has("multiline"),
                 query_extenders,
@@ -602,7 +620,7 @@ private:
                 highlight_callback);
 
 #elif defined(USE_READLINE) && USE_READLINE
-            ReadlineLineReader lr(Suggest::instance(), history_file, config().has("multiline"), query_extenders, query_delimiters);
+            ReadlineLineReader lr(*suggest, history_file, config().has("multiline"), query_extenders, query_delimiters);
 #else
             LineReader lr(history_file, config().has("multiline"), query_extenders, query_delimiters);
 #endif
@@ -665,7 +683,9 @@ private:
         }
         else
         {
-            query_id = config().getString("query_id", "");
+            auto query_id = config().getString("query_id", "");
+            if (!query_id.empty())
+                context.setCurrentQueryId(query_id);
             if (query_fuzzer_runs)
             {
                 nonInteractiveWithFuzzing();
@@ -701,6 +721,8 @@ private:
             connection_parameters.default_database,
             connection_parameters.user,
             connection_parameters.password,
+            "", /* cluster */
+            "", /* cluster_secret */
             "client",
             connection_parameters.compression,
             connection_parameters.security);
@@ -958,7 +980,31 @@ private:
 
             // Try to parse the query.
             const char * this_query_end = this_query_begin;
-            parsed_query = parseQuery(this_query_end, all_queries_end, true);
+            try
+            {
+                parsed_query = parseQuery(this_query_end, all_queries_end, true);
+            }
+            catch (Exception & e)
+            {
+                if (!test_mode)
+                    throw;
+
+                /// Try find test hint for syntax error
+                const char * end_of_line = find_first_symbols<'\n'>(this_query_begin,all_queries_end);
+                TestHint hint(true, String(this_query_end, end_of_line - this_query_end));
+                if (hint.serverError()) /// Syntax errors are considered as client errors
+                    throw;
+                if (hint.clientError() != e.code())
+                {
+                    if (hint.clientError())
+                        e.addMessage("\nExpected clinet error: " + std::to_string(hint.clientError()));
+                    throw;
+                }
+
+                /// It's expected syntax error, skip the line
+                this_query_begin = end_of_line;
+                continue;
+            }
 
             if (!parsed_query)
             {
@@ -1141,6 +1187,9 @@ private:
                             dump_of_cloned_ast.str().c_str());
                         fprintf(stderr, "dump after fuzz:\n");
                         fuzz_base->dumpTree(std::cerr);
+
+                        fmt::print(stderr, "IAST::clone() is broken for some AST node. This is a bug. The original AST ('dump before fuzz') and its cloned copy ('dump of cloned AST') refer to the same nodes, which must never happen. This means that their parent node doesn't implement clone() correctly.");
+
                         assert(false);
                     }
 
@@ -1158,8 +1207,15 @@ private:
                 }
                 catch (...)
                 {
+                    // Some functions (e.g. protocol parsers) don't throw, but
+                    // set last_exception instead, so we'll also do it here for
+                    // uniformity.
                     last_exception_received_from_server = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
                     received_exception_from_server = true;
+                }
+
+                if (received_exception_from_server)
+                {
                     fmt::print(stderr, "Error on processing query '{}': {}\n",
                         ast_to_process->formatForErrorMessage(),
                         last_exception_received_from_server->message());
@@ -1169,29 +1225,30 @@ private:
                 {
                     // Probably the server is dead because we found an assertion
                     // failure. Fail fast.
+                    fmt::print(stderr, "Lost connection to the server\n");
                     return begin;
                 }
 
+                // The server is still alive so we're going to continue fuzzing.
+                // Determine what we're going to use as the starting AST.
                 if (received_exception_from_server)
                 {
-                    // Query completed with error, ignore it and fuzz again.
-                    fprintf(stderr, "Got error, will fuzz again\n");
-
+                    // Query completed with error, keep the previous starting AST.
+                    // Also discard the exception that we now know to be non-fatal,
+                    // so that it doesn't influence the exit code.
+                    last_exception_received_from_server.reset(nullptr);
                     received_exception_from_server = false;
-                    last_exception_received_from_server.reset();
-
-                    continue;
                 }
                 else if (ast_to_process->formatForErrorMessage().size() > 500)
                 {
                     // ast too long, start from original ast
-                    fprintf(stderr, "current ast too long, won't elaborate\n");
+                    fprintf(stderr, "Current AST is too long, discarding it and using the original AST as a start\n");
                     fuzz_base = orig_ast;
                 }
                 else
                 {
                     // fuzz starting from this successful query
-                    fprintf(stderr, "using this ast as etalon\n");
+                    fprintf(stderr, "Query succeeded, using this AST as a start\n");
                     fuzz_base = ast_to_process;
                 }
             }
@@ -1243,6 +1300,19 @@ private:
             writeString(full_query, std_out);
             writeChar('\n', std_out);
             std_out.next();
+        }
+
+        if (is_interactive)
+        {
+            // Generate a new query_id
+            context.setCurrentQueryId("");
+            for (const auto & query_id_format : query_id_formats)
+            {
+                writeString(query_id_format.first, std_out);
+                writeString(fmt::format(query_id_format.second, fmt::arg("query_id", context.getCurrentQueryId())), std_out);
+                writeChar('\n', std_out);
+                std_out.next();
+            }
         }
 
         watch.restart();
@@ -1370,7 +1440,7 @@ private:
                 connection->sendQuery(
                     connection_parameters.timeouts,
                     query_to_send,
-                    query_id,
+                    context.getCurrentQueryId(),
                     QueryProcessingStage::Complete,
                     &context.getSettingsRef(),
                     &context.getClientInfo(),
@@ -1411,7 +1481,7 @@ private:
         connection->sendQuery(
             connection_parameters.timeouts,
             query_to_send,
-            query_id,
+            context.getCurrentQueryId(),
             QueryProcessingStage::Complete,
             &context.getSettingsRef(),
             &context.getClientInfo(),
@@ -1434,7 +1504,7 @@ private:
 
     ASTPtr parseQuery(const char * & pos, const char * end, bool allow_multi_statements)
     {
-        ParserQuery parser(end, true);
+        ParserQuery parser(end);
         ASTPtr res;
 
         const auto & settings = context.getSettingsRef();
@@ -1478,7 +1548,18 @@ private:
         {
             /// Send data contained in the query.
             ReadBufferFromMemory data_in(parsed_insert_query->data, parsed_insert_query->end - parsed_insert_query->data);
-            sendDataFrom(data_in, sample, columns_description);
+            try
+            {
+                sendDataFrom(data_in, sample, columns_description);
+            }
+            catch (Exception & e)
+            {
+                /// The following query will use data from input
+                //      "INSERT INTO data FORMAT TSV\n " < data.csv
+                //  And may be pretty hard to debug, so add information about data source to make it easier.
+                e.addMessage("data for INSERT was parsed from query");
+                throw;
+            }
             // Remember where the data ended. We use this info later to determine
             // where the next query begins.
             parsed_insert_query->end = data_in.buffer().begin() + data_in.count();
@@ -1486,7 +1567,15 @@ private:
         else if (!is_interactive)
         {
             /// Send data read from stdin.
-            sendDataFrom(std_in, sample, columns_description);
+            try
+            {
+                sendDataFrom(std_in, sample, columns_description);
+            }
+            catch (Exception & e)
+            {
+                e.addMessage("data for INSERT was parsed from stdin");
+                throw;
+            }
         }
         else
             throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
@@ -1507,9 +1596,8 @@ private:
         BlockInputStreamPtr block_input = context.getInputFormat(
             current_format, buf, sample, insert_format_max_block_size);
 
-        const auto & column_defaults = columns_description.getDefaults();
-        if (!column_defaults.empty())
-            block_input = std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context);
+        if (columns_description.hasDefaults())
+            block_input = std::make_shared<AddingDefaultsBlockInputStream>(block_input, columns_description, context);
 
         BlockInputStreamPtr async_block_input = std::make_shared<AsynchronousBlockInputStream>(block_input);
 
@@ -1813,7 +1901,7 @@ private:
                     if (has_vertical_output_suffix)
                         throw Exception("Output format already specified", ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED);
                     const auto & id = query_with_output->format->as<ASTIdentifier &>();
-                    current_format = id.name;
+                    current_format = id.name();
                 }
             }
 
@@ -2241,6 +2329,8 @@ public:
             ("log-level", po::value<std::string>(), "client log level")
             ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
             ("query-fuzzer-runs", po::value<int>()->default_value(0), "query fuzzer runs")
+            ("opentelemetry-traceparent", po::value<std::string>(), "OpenTelemetry traceparent header as described by W3C Trace Context recommendation")
+            ("opentelemetry-tracestate", po::value<std::string>(), "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
         ;
 
         Settings cmd_settings;
@@ -2407,6 +2497,25 @@ public:
             // TODO stop using parseQuery.
             config().setBool("ignore-error", true);
             ignore_error = true;
+        }
+
+        if (options.count("opentelemetry-traceparent"))
+        {
+            std::string traceparent = options["opentelemetry-traceparent"].as<std::string>();
+            std::string error;
+            if (!context.getClientInfo().parseTraceparentHeader(
+                traceparent, error))
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot parse OpenTelemetry traceparent '{}': {}",
+                    traceparent, error);
+            }
+        }
+
+        if (options.count("opentelemetry-tracestate"))
+        {
+            context.getClientInfo().opentelemetry_tracestate =
+                options["opentelemetry-tracestate"].as<std::string>();
         }
 
         argsToConfig(common_arguments, config(), 100);

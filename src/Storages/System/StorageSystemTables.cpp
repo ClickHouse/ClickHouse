@@ -3,7 +3,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataStreams/OneBlockInputStream.h>
 #include <Storages/System/StorageSystemTables.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
@@ -344,6 +343,12 @@ protected:
                 {
                     ASTPtr ast = database->tryGetCreateTableQuery(table_name, context);
 
+                    if (ast && !context.getSettingsRef().show_table_uuid_in_table_create_query_if_not_nil)
+                    {
+                        auto & create = ast->as<ASTCreateQuery &>();
+                        create.uuid = UUIDHelpers::Nil;
+                    }
+
                     if (columns_mask[src_index++])
                         res_columns[res_index++]->insert(ast ? queryToString(ast) : "");
 
@@ -482,7 +487,7 @@ private:
 Pipe StorageSystemTables::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    const SelectQueryInfo & query_info,
+    SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,

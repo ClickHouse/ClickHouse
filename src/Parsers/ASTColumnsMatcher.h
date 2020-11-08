@@ -36,6 +36,8 @@ public:
     bool isColumnMatching(const String & column_name) const;
     void updateTreeHashImpl(SipHash & hash_state) const override;
 
+    ASTPtr column_list;
+
 protected:
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 

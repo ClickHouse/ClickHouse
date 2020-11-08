@@ -101,15 +101,15 @@ StorageMaterializedView::StorageMaterializedView(
         DatabaseCatalog::instance().addDependency(select.select_table_id, getStorageID());
 }
 
-QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, const ASTPtr & query_ptr) const
+QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, SelectQueryInfo & query_info) const
 {
-    return getTargetTable()->getQueryProcessingStage(context, to_stage, query_ptr);
+    return getTargetTable()->getQueryProcessingStage(context, to_stage, query_info);
 }
 
 Pipe StorageMaterializedView::read(
     const Names & column_names,
     const StorageMetadataPtr & /*metadata_snapshot*/,
-    const SelectQueryInfo & query_info,
+    SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
@@ -120,10 +120,11 @@ Pipe StorageMaterializedView::read(
     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
 
     if (query_info.order_optimizer)
-        query_info.input_order_info = query_info.order_optimizer->getInputOrder(storage, metadata_snapshot);
+        query_info.input_order_info = query_info.order_optimizer->getInputOrder(metadata_snapshot);
 
     Pipe pipe = storage->read(column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
     pipe.addTableLock(lock);
+    pipe.addStorageHolder(storage);
 
     return pipe;
 }
@@ -141,7 +142,7 @@ BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const 
 }
 
 
-static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, const StorageID & target_table_id)
+static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, const StorageID & target_table_id, bool no_delay)
 {
     if (DatabaseCatalog::instance().tryGetTable(target_table_id, global_context))
     {
@@ -150,7 +151,8 @@ static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, 
         drop_query->database = target_table_id.database_name;
         drop_query->table = target_table_id.table_name;
         drop_query->kind = kind;
-        drop_query->no_delay = true;
+        drop_query->no_delay = no_delay;
+        drop_query->if_exists = true;
         ASTPtr ast_drop_query = drop_query;
         InterpreterDropQuery drop_interpreter(ast_drop_query, global_context);
         drop_interpreter.execute();
@@ -165,14 +167,19 @@ void StorageMaterializedView::drop()
     if (!select_query.select_table_id.empty())
         DatabaseCatalog::instance().removeDependency(select_query.select_table_id, table_id);
 
+    dropInnerTable(true);
+}
+
+void StorageMaterializedView::dropInnerTable(bool no_delay)
+{
     if (has_inner_table && tryGetTargetTable())
-        executeDropQuery(ASTDropQuery::Kind::Drop, global_context, target_table_id);
+        executeDropQuery(ASTDropQuery::Kind::Drop, global_context, target_table_id, no_delay);
 }
 
 void StorageMaterializedView::truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &)
 {
     if (has_inner_table)
-        executeDropQuery(ASTDropQuery::Kind::Truncate, global_context, target_table_id);
+        executeDropQuery(ASTDropQuery::Kind::Truncate, global_context, target_table_id, true);
 }
 
 void StorageMaterializedView::checkStatementCanBeForwarded() const

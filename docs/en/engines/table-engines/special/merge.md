@@ -33,7 +33,7 @@ The typical way to use the `Merge` engine is for working with a large number of 
 
 Example 2:
 
-Let’s say you have a old table (WatchLog\_old) and decided to change partitioning without moving data to a new table (WatchLog\_new) and you need to see data from both tables.
+Let’s say you have a old table (WatchLog_old) and decided to change partitioning without moving data to a new table (WatchLog_new) and you need to see data from both tables.
 
 ``` sql
 CREATE TABLE WatchLog_old(date Date, UserId Int64, EventType String, Cnt UInt64)

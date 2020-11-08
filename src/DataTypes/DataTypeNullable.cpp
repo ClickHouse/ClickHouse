@@ -44,7 +44,7 @@ bool DataTypeNullable::onlyNull() const
 void DataTypeNullable::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
 {
     path.push_back(Substream::NullMap);
-    callback(path);
+    callback(path, *this);
     path.back() = Substream::NullableElements;
     nested_data_type->enumerateStreams(callback, path);
     path.pop_back();

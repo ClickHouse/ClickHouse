@@ -1,5 +1,5 @@
-from server import ClickHouseServer
-from client import ClickHouseClient
+from .server import ClickHouseServer
+from .client import ClickHouseClient
 from pandas import DataFrame
 import os
 import threading
@@ -40,7 +40,7 @@ class ClickHouseTable:
         column_types = list(self.df.dtypes)
         column_names = list(self.df)
         schema = ', '.join((name + ' ' + self._convert(str(t)) for name, t in zip(column_names, column_types)))
-        print 'schema:', schema
+        print('schema:', schema)
 
         create_query = 'create table test.{} (date Date DEFAULT today(), {}) engine = MergeTree(date, (date), 8192)'
         self.client.query(create_query.format(self.table_name, schema))
@@ -58,10 +58,10 @@ class ClickHouseTable:
         result = self.client.query(query.format(model_name, columns, self.table_name))
 
         def parse_row(row):
-            values = tuple(map(float, filter(len, map(str.strip, row.replace('(', '').replace(')', '').split(',')))))
+            values = tuple(map(float, list(filter(len, list(map(str.strip, row.replace('(', '').replace(')', '').split(',')))))))
             return values if len(values) != 1 else values[0]
 
-        return tuple(map(parse_row, filter(len, map(str.strip, result.split('\n')))))
+        return tuple(map(parse_row, list(filter(len, list(map(str.strip, result.split('\n')))))))
 
     def _drop_table(self):
         self.client.query('drop table test.{}'.format(self.table_name))

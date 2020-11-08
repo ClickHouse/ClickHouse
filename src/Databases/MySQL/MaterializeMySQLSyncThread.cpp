@@ -9,6 +9,7 @@
 #    include <cstdlib>
 #    include <random>
 #    include <Columns/ColumnTuple.h>
+#    include <Columns/ColumnDecimal.h>
 #    include <DataStreams/CountingBlockOutputStream.h>
 #    include <DataStreams/OneBlockInputStream.h>
 #    include <DataStreams/copyData.h>
@@ -127,6 +128,7 @@ static String checkVariableAndGetVersion(const mysqlxx::Pool::Entry & connection
 
         bool first = true;
         std::stringstream error_message;
+        error_message.exceptions(std::ios::failbit);
         error_message << "Illegal MySQL variables, the MaterializeMySQL engine requires ";
         for (const auto & [variable_name, variable_error_message] : variables_error_message)
         {
@@ -238,6 +240,7 @@ static inline BlockOutputStreamPtr getTableOutput(const String & database_name, 
     const StoragePtr & storage = DatabaseCatalog::instance().getTable(StorageID(database_name, table_name), query_context);
 
     std::stringstream insert_columns_str;
+    insert_columns_str.exceptions(std::ios::failbit);
     const StorageInMemoryMetadata & storage_metadata = storage->getInMemoryMetadata();
     const ColumnsDescription & storage_columns = storage_metadata.getColumns();
     const NamesAndTypesList & insert_columns_names = insert_materialized ? storage_columns.getAllPhysical() : storage_columns.getOrdinary();
@@ -329,6 +332,7 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
                 const auto & position_message = [&]()
                 {
                     std::stringstream ss;
+                    ss.exceptions(std::ios::failbit);
                     position.dump(ss);
                     return ss.str();
                 };
@@ -371,6 +375,7 @@ void MaterializeMySQLSyncThread::flushBuffersData(Buffers & buffers, Materialize
     const auto & position_message = [&]()
     {
         std::stringstream ss;
+        ss.exceptions(std::ios::failbit);
         client.getPosition().dump(ss);
         return ss.str();
     };
@@ -453,6 +458,14 @@ static void writeFieldsToColumn(
             write_data_to_column(casted_float32_column, Float64(), Float32());
         else if (ColumnFloat64 * casted_float64_column = typeid_cast<ColumnFloat64 *>(&column_to))
             write_data_to_column(casted_float64_column, Float64(), Float64());
+        else if (ColumnDecimal<Decimal32> * casted_decimal_32_column = typeid_cast<ColumnDecimal<Decimal32> *>(&column_to))
+            write_data_to_column(casted_decimal_32_column, Decimal32(), Decimal32());
+        else if (ColumnDecimal<Decimal64> * casted_decimal_64_column = typeid_cast<ColumnDecimal<Decimal64> *>(&column_to))
+            write_data_to_column(casted_decimal_64_column, Decimal64(), Decimal64());
+        else if (ColumnDecimal<Decimal128> * casted_decimal_128_column = typeid_cast<ColumnDecimal<Decimal128> *>(&column_to))
+            write_data_to_column(casted_decimal_128_column, Decimal128(), Decimal128());
+        else if (ColumnDecimal<Decimal256> * casted_decimal_256_column = typeid_cast<ColumnDecimal<Decimal256> *>(&column_to))
+            write_data_to_column(casted_decimal_256_column, Decimal256(), Decimal256());
         else if (ColumnInt32 * casted_int32_column = typeid_cast<ColumnInt32 *>(&column_to))
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
@@ -634,6 +647,7 @@ void MaterializeMySQLSyncThread::onEvent(Buffers & buffers, const BinlogEventPtr
         const auto & dump_event_message = [&]()
         {
             std::stringstream ss;
+            ss.exceptions(std::ios::failbit);
             receive_event->dump(ss);
             return ss.str();
         };

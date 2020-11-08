@@ -26,6 +26,8 @@ namespace ErrorCodes
 
 QueryPlan::QueryPlan() = default;
 QueryPlan::~QueryPlan() = default;
+QueryPlan::QueryPlan(QueryPlan &&) = default;
+QueryPlan & QueryPlan::operator=(QueryPlan &&) = default;
 
 void QueryPlan::checkInitialized() const
 {
@@ -51,7 +53,7 @@ const DataStream & QueryPlan::getCurrentDataStream() const
     return root->step->getOutputStream();
 }
 
-void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<QueryPlan> plans)
+void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<QueryPlan>> plans)
 {
     if (isInitialized())
         throw Exception("Cannot unite plans because current QueryPlan is already initialized",
@@ -70,7 +72,7 @@ void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<QueryPlan> plans)
     for (size_t i = 0; i < num_inputs; ++i)
     {
         const auto & step_header = inputs[i].header;
-        const auto & plan_header = plans[i].getCurrentDataStream().header;
+        const auto & plan_header = plans[i]->getCurrentDataStream().header;
         if (!blocksHaveEqualStructure(step_header, plan_header))
             throw Exception("Cannot unite QueryPlans using " + step->getName() + " because "
                             "it has incompatible header with plan " + root->step->getName() + " "
@@ -79,19 +81,19 @@ void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<QueryPlan> plans)
     }
 
     for (auto & plan : plans)
-        nodes.splice(nodes.end(), std::move(plan.nodes));
+        nodes.splice(nodes.end(), std::move(plan->nodes));
 
     nodes.emplace_back(Node{.step = std::move(step)});
     root = &nodes.back();
 
     for (auto & plan : plans)
-        root->children.emplace_back(plan.root);
+        root->children.emplace_back(plan->root);
 
     for (auto & plan : plans)
     {
-        max_threads = std::max(max_threads, plan.max_threads);
+        max_threads = std::max(max_threads, plan->max_threads);
         interpreter_context.insert(interpreter_context.end(),
-                                   plan.interpreter_context.begin(), plan.interpreter_context.end());
+                                   plan->interpreter_context.begin(), plan->interpreter_context.end());
     }
 }
 
@@ -223,7 +225,7 @@ static void explainStep(
                     settings.out << "\n" << prefix << "        ";
 
                 first = false;
-                elem.dumpStructure(settings.out);
+                elem.dumpNameAndType(settings.out);
             }
         }
 

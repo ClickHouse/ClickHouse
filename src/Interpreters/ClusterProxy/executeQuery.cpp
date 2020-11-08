@@ -4,9 +4,10 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/IInterpreter.h>
-#include <Parsers/queryToString.h>
 #include <Interpreters/ProcessList.h>
+#include <Parsers/queryToString.h>
 #include <Processors/Pipe.h>
+#include <Storages/SelectQueryInfo.h>
 
 
 namespace DB
@@ -15,18 +16,24 @@ namespace DB
 namespace ClusterProxy
 {
 
-Context removeUserRestrictionsFromSettings(const Context & context, const Settings & settings, Poco::Logger * log)
+Context updateSettingsForCluster(const Cluster & cluster, const Context & context, const Settings & settings, Poco::Logger * log)
 {
     Settings new_settings = settings;
     new_settings.queue_max_wait_ms = Cluster::saturate(new_settings.queue_max_wait_ms, settings.max_execution_time);
 
-    /// Does not matter on remote servers, because queries are sent under different user.
-    new_settings.max_concurrent_queries_for_user = 0;
-    new_settings.max_memory_usage_for_user = 0;
+    /// If "secret" (in remote_servers) is not in use,
+    /// user on the shard is not the same as the user on the initiator,
+    /// hence per-user limits should not be applied.
+    if (cluster.getSecret().empty())
+    {
+        /// Does not matter on remote servers, because queries are sent under different user.
+        new_settings.max_concurrent_queries_for_user = 0;
+        new_settings.max_memory_usage_for_user = 0;
 
-    /// Set as unchanged to avoid sending to remote server.
-    new_settings.max_concurrent_queries_for_user.changed = false;
-    new_settings.max_memory_usage_for_user.changed = false;
+        /// Set as unchanged to avoid sending to remote server.
+        new_settings.max_concurrent_queries_for_user.changed = false;
+        new_settings.max_memory_usage_for_user.changed = false;
+    }
 
     if (settings.force_optimize_skip_unused_shards_nesting && settings.force_optimize_skip_unused_shards)
     {
@@ -75,16 +82,17 @@ Context removeUserRestrictionsFromSettings(const Context & context, const Settin
 }
 
 Pipe executeQuery(
-    IStreamFactory & stream_factory, const ClusterPtr & cluster, Poco::Logger * log,
-    const ASTPtr & query_ast, const Context & context, const Settings & settings, const SelectQueryInfo & query_info)
+    IStreamFactory & stream_factory, Poco::Logger * log,
+    const ASTPtr & query_ast, const Context & context, const SelectQueryInfo & query_info)
 {
     assert(log);
 
     Pipes res;
+    const Settings & settings = context.getSettingsRef();
 
     const std::string query = queryToString(query_ast);
 
-    Context new_context = removeUserRestrictionsFromSettings(context, settings, log);
+    Context new_context = updateSettingsForCluster(*query_info.cluster, context, settings, log);
 
     ThrottlerPtr user_level_throttler;
     if (auto * process_list_element = context.getProcessListElement())
@@ -103,7 +111,7 @@ Pipe executeQuery(
     else
         throttler = user_level_throttler;
 
-    for (const auto & shard_info : cluster->getShardsInfo())
+    for (const auto & shard_info : query_info.cluster->getShardsInfo())
         stream_factory.createForShard(shard_info, query, query_ast, new_context, throttler, query_info, res);
 
     return Pipe::unitePipes(std::move(res));

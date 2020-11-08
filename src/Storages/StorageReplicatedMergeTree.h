@@ -16,7 +16,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreePartCheckThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
-#include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Storages/MergeTree/DataPartsExchange.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <Storages/MergeTree/LeaderElection.h>
@@ -27,6 +26,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Processors/Pipe.h>
+#include <Storages/MergeTree/BackgroundJobsExecutor.h>
 
 
 namespace DB
@@ -90,13 +90,14 @@ public:
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        const SelectQueryInfo & query_info,
+        SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
     std::optional<UInt64> totalRows() const override;
+    std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, const Context & context) const override;
     std::optional<UInt64> totalBytes() const override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
@@ -128,6 +129,8 @@ public:
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &) override;
 
+    void checkTableCanBeRenamed() const override;
+
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
     bool supportsIndexForIn() const override { return true; }
@@ -135,6 +138,8 @@ public:
     void checkTableCanBeDropped() const override;
 
     ActionLock getActionLock(StorageActionBlockType action_type) override;
+
+    void onActionLockRemove(StorageActionBlockType action_type) override;
 
     /// Wait when replication queue size becomes less or equal than queue_size
     /// If timeout is exceeded returns false
@@ -192,6 +197,8 @@ public:
     /** Remove a specific replica from zookeeper.
      */
     static void dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica, Poco::Logger * logger);
+
+    std::optional<JobAndPool> getDataProcessingJob() override;
 
 private:
 
@@ -271,18 +278,14 @@ private:
     int metadata_version = 0;
     /// Threads.
 
+    BackgroundJobsExecutor background_executor;
+    BackgroundMovesExecutor background_moves_executor;
+
     /// A task that keeps track of the updates in the logs of all replicas and loads them into the queue.
     bool queue_update_in_progress = false;
     BackgroundSchedulePool::TaskHolder queue_updating_task;
 
     BackgroundSchedulePool::TaskHolder mutations_updating_task;
-
-    /// A task that performs actions from the queue.
-    BackgroundProcessingPool::TaskHandle queue_task_handle;
-
-    /// A task which move parts to another disks/volumes
-    /// Transparent for replication.
-    BackgroundProcessingPool::TaskHandle move_parts_task_handle;
 
     /// A task that selects parts to merge.
     BackgroundSchedulePool::TaskHolder merge_selecting_task;
@@ -303,6 +306,9 @@ private:
 
     /// True if replica was created for existing table with fixed granularity
     bool other_replicas_fixed_granularity = false;
+
+    /// Do not allow RENAME TABLE if zookeeper_path contains {database} or {table} macro
+    const bool allow_renaming;
 
     template <class Func>
     void foreachCommittedParts(const Func & func) const;
@@ -411,14 +417,10 @@ private:
     /// Clone replica if it is lost.
     void cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zookeeper);
 
-    /** Performs actions from the queue.
-      */
-    BackgroundProcessingPoolTaskResult queueTask();
 
-    /// Perform moves of parts to another disks.
-    /// Local operation, doesn't interact with replicationg queue.
-    BackgroundProcessingPoolTaskResult movePartsTask();
+    ReplicatedMergeTreeQueue::SelectedEntryPtr selectQueueEntry();
 
+    bool processQueueEntry(ReplicatedMergeTreeQueue::SelectedEntryPtr entry);
 
     /// Postcondition:
     /// either leader_election is fully initialized (node in ZK is created and the watching thread is launched)
@@ -492,7 +494,7 @@ private:
 
 
     /// With the quorum being tracked, add a replica to the quorum for the part.
-    void updateQuorum(const String & part_name);
+    void updateQuorum(const String & part_name, bool is_parallel);
 
     /// Deletes info from quorum/last_part node for particular partition_id.
     void cleanLastPartNode(const String & partition_id);
@@ -521,7 +523,7 @@ private:
 
     /// Produce an imaginary part info covering all parts in the specified partition (at the call moment).
     /// Returns false if the partition doesn't exist yet.
-    bool getFakePartCoveringAllPartsInPartition(const String & partition_id, MergeTreePartInfo & part_info);
+    bool getFakePartCoveringAllPartsInPartition(const String & partition_id, MergeTreePartInfo & part_info, bool for_replace_partition = false);
 
     /// Check for a node in ZK. If it is, remember this information, and then immediately answer true.
     std::unordered_set<std::string> existing_nodes_cache;
@@ -556,7 +558,6 @@ private:
     MutationCommands getFirtsAlterMutationCommandsForPart(const DataPartPtr & part) const override;
 
     void startBackgroundMovesIfNeeded() override;
-
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
       */
@@ -571,7 +572,8 @@ protected:
         const String & date_column_name,
         const MergingParams & merging_params_,
         std::unique_ptr<MergeTreeSettings> settings_,
-        bool has_force_restore_data_flag);
+        bool has_force_restore_data_flag,
+        bool allow_renaming_);
 };
 
 

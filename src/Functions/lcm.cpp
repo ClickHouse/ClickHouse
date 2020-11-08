@@ -78,7 +78,7 @@ struct LCMImpl
 };
 
 struct NameLCM { static constexpr auto name = "lcm"; };
-using FunctionLCM = FunctionBinaryArithmetic<LCMImpl, NameLCM, false>;
+using FunctionLCM = BinaryArithmeticOverloadResolver<LCMImpl, NameLCM, false>;
 
 }
 

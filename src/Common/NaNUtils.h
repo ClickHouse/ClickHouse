@@ -4,7 +4,7 @@
 #include <limits>
 #include <type_traits>
 
-#include <common/types.h>
+#include <common/extended_types.h>
 
 
 /// To be sure, that this function is zero-cost for non-floating point types.

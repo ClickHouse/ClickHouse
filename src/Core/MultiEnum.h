@@ -83,13 +83,13 @@ struct MultiEnum
     template <typename ValueType, typename = std::enable_if_t<std::is_convertible_v<ValueType, StorageType>>>
     friend bool operator==(ValueType left, MultiEnum right)
     {
-        return right == left;
+        return right.operator==(left);
     }
 
-    template <typename L>
+    template <typename L, typename = typename std::enable_if<!std::is_same_v<L, MultiEnum>>::type>
     friend bool operator!=(L left, MultiEnum right)
     {
-        return !(right == left);
+        return !(right.operator==(left));
     }
 
 private:

@@ -36,7 +36,7 @@ struct BitOrImpl
 };
 
 struct NameBitOr { static constexpr auto name = "bitOr"; };
-using FunctionBitOr = FunctionBinaryArithmetic<BitOrImpl, NameBitOr, true>;
+using FunctionBitOr = BinaryArithmeticOverloadResolver<BitOrImpl, NameBitOr, true>;
 
 }
 

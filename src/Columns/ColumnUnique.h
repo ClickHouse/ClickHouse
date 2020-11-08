@@ -382,17 +382,20 @@ int ColumnUnique<ColumnType>::compareAt(size_t n, size_t m, const IColumn & rhs,
         }
     }
 
-    auto & column_unique = static_cast<const IColumnUnique &>(rhs);
+    const auto & column_unique = static_cast<const IColumnUnique &>(rhs);
     return getNestedColumn()->compareAt(n, m, *column_unique.getNestedColumn(), nan_direction_hint);
 }
 
 template <typename ColumnType>
-void ColumnUnique<ColumnType>::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_range) const
+void ColumnUnique<ColumnType>::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
+    if (equal_ranges.empty())
+        return;
+
     bool found_null_value_index = false;
-    for (size_t i = 0; i < equal_range.size() && !found_null_value_index; ++i)
+    for (size_t i = 0; i < equal_ranges.size() && !found_null_value_index; ++i)
     {
-        auto& [first, last] = equal_range[i];
+        auto & [first, last] = equal_ranges[i];
         for (auto j = first; j < last; ++j)
         {
             if (res[j] == getNullValueIndex())
@@ -409,14 +412,14 @@ void ColumnUnique<ColumnType>::updatePermutation(bool reverse, size_t limit, int
                 }
                 if (last - first <= 1)
                 {
-                    equal_range.erase(equal_range.begin() + i);
+                    equal_ranges.erase(equal_ranges.begin() + i);
                 }
                 found_null_value_index = true;
                 break;
             }
         }
     }
-    getNestedColumn()->updatePermutation(reverse, limit, nan_direction_hint, res, equal_range);
+    getNestedColumn()->updatePermutation(reverse, limit, nan_direction_hint, res, equal_ranges);
 }
 
 template <typename IndexType>

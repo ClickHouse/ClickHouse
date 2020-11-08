@@ -1,19 +1,14 @@
-import json
-import logging
 import io
-
-import pytest
-
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
-
-import helpers.client
+import logging
 
 import avro.schema
-from confluent.schemaregistry.client import CachedSchemaRegistryClient
-from confluent.schemaregistry.serializers import MessageSerializer
+import pytest
+from confluent_kafka.avro.serializer.message_serializer import MessageSerializer
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 
 logging.getLogger().setLevel(logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler())
+
 
 @pytest.fixture(scope="module")
 def cluster():
@@ -42,7 +37,6 @@ def run_query(instance, query, data=None, settings=None):
     return result
 
 
-
 def test_select(cluster):
     # type: (ClickHouseCluster) -> None
 
@@ -55,7 +49,7 @@ def test_select(cluster):
         'fields': [
             {
                 'name': 'value',
-                'type': 'long' 
+                'type': 'long'
             }
         ]
     })
@@ -73,7 +67,7 @@ def test_select(cluster):
         cluster.schema_registry_host,
         cluster.schema_registry_port
     )
-    
+
     run_query(instance, "create table avro_data(value Int64) engine = Memory()")
     settings = {'format_avro_schema_registry_url': schema_registry_url}
     run_query(instance, "insert into avro_data format AvroConfluent", data, settings)
