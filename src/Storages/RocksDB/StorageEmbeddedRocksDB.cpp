@@ -247,7 +247,7 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
     : IStorage(table_id_), primary_key{primary_key_}
 {
     setInMemoryMetadata(metadata_);
-    rocksdb_dir = context_.getPath() + relative_data_path_ + "/rocksdb";
+    rocksdb_dir = context_.getPath() + relative_data_path_;
     if (!attach)
     {
         Poco::File(rocksdb_dir).createDirectories();
