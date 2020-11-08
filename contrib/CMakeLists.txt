@@ -178,7 +178,6 @@ if (USE_INTERNAL_PARQUET_LIBRARY)
     # cd {BUILD_DIR}/contrib/arrow/cpp && mkdir -p build && cd build
     # cmake .. -DARROW_PARQUET=1 -DARROW_WITH_SNAPPY=1 -DPARQUET_BUILD_EXECUTABLES=1
     # make -j8
-    # cd contrib/arrow/cpp && mkdir -p build && cmake .. -DPARQUET_BUILD_EXECUTABLES=1 && make -j8
     # {BUILD_DIR}/contrib/arrow/cpp/build/release/parquet-reader some_file.parquet
 
     add_subdirectory(arrow-cmake)
