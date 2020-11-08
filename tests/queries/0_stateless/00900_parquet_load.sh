@@ -31,7 +31,7 @@ DATA_DIR=$CUR_DIR/data_parquet
 # There is failure due parsing nested arrays or nested maps with NULLs:
 # ../contrib/arrow/cpp/src/arrow/array/array_nested.cc:192:  Check failed: (self->list_type_->value_type()->id()) == (data->child_data[0]->type->id())
 
-# Strange behaviour for repeated_no_annotation.parquet:
+# Strange behaviour for repeated_no_annotation.parquet around __buitin_expect, so this file was disabled:
 # debug:
 #   ../contrib/arrow/cpp/src/arrow/array/array_nested.cc:193:  Check failed: self->list_type_->value_type()->Equals(data->child_data[0]->type)
 # release:
