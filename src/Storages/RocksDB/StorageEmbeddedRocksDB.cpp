@@ -348,13 +348,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     metadata.setConstraints(args.constraints);
 
     if (!args.storage_def->primary_key)
-        throw Exception("StorageEmbeddedRocksDB must require one primary key", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("StorageEmbeddedRocksDB must require one column in primary key", ErrorCodes::BAD_ARGUMENTS);
 
     metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.context);
     auto primary_key_names = metadata.getColumnsRequiredForPrimaryKey();
     if (primary_key_names.size() != 1)
     {
-        throw Exception("StorageEmbeddedRocksDB must require one primary key", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("StorageEmbeddedRocksDB must require one column in primary key", ErrorCodes::BAD_ARGUMENTS);
     }
     return StorageEmbeddedRocksDB::create(args.table_id, args.relative_data_path, metadata, args.attach, args.context, primary_key_names[0]);
 }
