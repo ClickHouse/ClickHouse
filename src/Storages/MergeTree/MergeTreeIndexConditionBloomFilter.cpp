@@ -380,6 +380,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
             if (!array_type)
                 throw Exception("First argument for function " + function_name + " must be an array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
+            /// We can treat `indexOf` function similar to `has`.
+            /// But it is little more cumbersome, compare: `has(arr, elem)` and `indexOf(arr, elem) != 0`.
+            /// The `parent` in this context is expected to be function `!=` (`notEquals`).
             if (function_name == "has" || indexOfCanUseBloomFilter(parent))
             {
                 out.function = RPNElement::FUNCTION_HAS;
