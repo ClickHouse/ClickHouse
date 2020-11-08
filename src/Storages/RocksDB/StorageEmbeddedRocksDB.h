@@ -15,19 +15,19 @@ namespace DB
 
 class Context;
 
-class StorageEmbeddedRocksdb final : public ext::shared_ptr_helper<StorageEmbeddedRocksdb>, public IStorage
+class StorageEmbeddedRocksDB final : public ext::shared_ptr_helper<StorageEmbeddedRocksDB>, public IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageEmbeddedRocksdb>;
-    friend class EmbeddedRocksdbSource;
-    friend class EmbeddedRocksdbBlockOutputStream;
-    friend class EmbeddedRocksdbBlockInputStream;
+    friend struct ext::shared_ptr_helper<StorageEmbeddedRocksDB>;
+    friend class EmbeddedRocksDBSource;
+    friend class EmbeddedRocksDBBlockOutputStream;
+    friend class EmbeddedRocksDBBlockInputStream;
 public:
-    std::string getName() const override { return "EmbeddedRocksdb"; }
+    std::string getName() const override { return "EmbeddedRocksDB"; }
 
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
-        const SelectQueryInfo & query_info,
+        SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
@@ -44,7 +44,7 @@ public:
     }
 
 protected:
-    StorageEmbeddedRocksdb(const StorageID & table_id_,
+    StorageEmbeddedRocksDB(const StorageID & table_id_,
         const String & relative_data_path_,
         const StorageInMemoryMetadata & metadata,
         bool attach,
@@ -53,8 +53,8 @@ protected:
 
 private:
     const String primary_key;
-    using RocksdbPtr = std::unique_ptr<rocksdb::DB>;
-    RocksdbPtr rocksdb_ptr;
+    using RocksDBPtr = std::unique_ptr<rocksdb::DB>;
+    RocksDBPtr rocksdb_ptr;
     String rocksdb_dir;
 
     void initDb();

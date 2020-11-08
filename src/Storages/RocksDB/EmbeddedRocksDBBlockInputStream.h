@@ -1,26 +1,26 @@
 #pragma once
 
 #include <DataStreams/IBlockInputStream.h>
-#include <Storages/Rocksdb/StorageEmbeddedRocksdb.h>
+#include <Storages/RocksDB/StorageEmbeddedRocksDB.h>
 
 #include <rocksdb/db.h>
 
 namespace DB
 {
 
-class EmbeddedRocksdbBlockInputStream : public IBlockInputStream
+class EmbeddedRocksDBBlockInputStream : public IBlockInputStream
 {
 
 public:
-    EmbeddedRocksdbBlockInputStream(
-        StorageEmbeddedRocksdb & storage_, const StorageMetadataPtr & metadata_snapshot_, size_t max_block_size_);
+    EmbeddedRocksDBBlockInputStream(
+        StorageEmbeddedRocksDB & storage_, const StorageMetadataPtr & metadata_snapshot_, size_t max_block_size_);
 
     String getName() const override { return storage.getName(); }
     Block getHeader() const override { return sample_block; }
     Block readImpl() override;
 
 private:
-    StorageEmbeddedRocksdb & storage;
+    StorageEmbeddedRocksDB & storage;
     StorageMetadataPtr metadata_snapshot;
     const size_t max_block_size;
 

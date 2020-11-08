@@ -1,5 +1,5 @@
 DROP TABLE IF EXISTS test;
-CREATE TABLE test (key String, value UInt32) Engine=EmbeddedRocksdb primary key(key);
+CREATE TABLE test (key String, value UInt32) Engine=EmbeddedRocksDB primary key(key);
 
 INSERT INTO test SELECT '1_1', number FROM numbers(10000);
 SELECT count(1) == 1 FROM test;
@@ -11,7 +11,7 @@ SELECT SUM(value) == 1 + 99 + 900 FROM test WHERE key in ('1_1', '99_1', '900_1'
 DROP TABLE IF EXISTS test;
 DROP TABLE IF EXISTS test_memory;
 
-CREATE TABLE test (k UInt32, value UInt64, dummy Tuple(UInt32, Float64), bm AggregateFunction(groupBitmap, UInt64)) Engine=EmbeddedRocksdb primary key(k);
+CREATE TABLE test (k UInt32, value UInt64, dummy Tuple(UInt32, Float64), bm AggregateFunction(groupBitmap, UInt64)) Engine=EmbeddedRocksDB primary key(k);
 CREATE TABLE test_memory AS test Engine = Memory;
 
 INSERT INTO test SELECT number % 77 AS k, SUM(number) AS value, (1, 1.2), bitmapBuild(groupArray(number)) FROM numbers(10000000) group by k;
