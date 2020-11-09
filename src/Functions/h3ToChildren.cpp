@@ -1,3 +1,9 @@
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
+
+#if USE_H3
+
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
@@ -111,3 +117,5 @@ void registerFunctionH3ToChildren(FunctionFactory & factory)
 }
 
 }
+
+#endif

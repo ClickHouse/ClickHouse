@@ -10,7 +10,7 @@
 #include <Databases/DatabaseMemory.h>
 #include <Storages/StorageMemory.h>
 #include <Common/tests/gtest_global_context.h>
-#include <Common/tests/gtest_global_register_functions.h>
+#include <Common/tests/gtest_global_register.h>
 
 
 using namespace DB;

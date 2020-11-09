@@ -231,6 +231,7 @@ std::string DictionaryStructure::getKeyDescription() const
         return "UInt64";
 
     std::ostringstream out;
+    out.exceptions(std::ios::failbit);
 
     out << '(';
 
