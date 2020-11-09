@@ -80,6 +80,7 @@ TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, cons
     return result;
 }
 
+
 Pipe IStorage::read(
         const Names & /*column_names*/,
         const StorageMetadataPtr & /*metadata_snapshot*/,
