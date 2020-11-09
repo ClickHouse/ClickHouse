@@ -527,7 +527,7 @@ bool tryReadJSONStringInto(Vector & s, ReadBuffer & buf)
 }
 
 /// This could be used as template parameter for functions above, if you want to just skip data.
-struct NullOutput
+struct NullSink
 {
     void append(const char *, size_t) {}
     void push_back(char) {}
@@ -619,11 +619,9 @@ inline bool tryReadDateText(DayNum & date, ReadBuffer & buf)
     return readDateTextImpl<bool>(date, buf);
 }
 
-template <typename ReturnType = void>
-inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
-{
-    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
+inline void readUUIDText(UUID & uuid, ReadBuffer & buf)
+{
     char s[36];
     size_t size = buf.read(s, 32);
 
@@ -636,47 +634,19 @@ inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
             if (size != 36)
             {
                 s[size] = 0;
-
-                if constexpr (throw_exception)
-                {
-                    throw Exception(std::string("Cannot parse uuid ") + s, ErrorCodes::CANNOT_PARSE_UUID);
-                }
-                else
-                {
-                    return ReturnType(false);
-                }
+                throw Exception(std::string("Cannot parse uuid ") + s, ErrorCodes::CANNOT_PARSE_UUID);
             }
 
             parseUUID(reinterpret_cast<const UInt8 *>(s), std::reverse_iterator<UInt8 *>(reinterpret_cast<UInt8 *>(&uuid) + 16));
         }
         else
             parseUUIDWithoutSeparator(reinterpret_cast<const UInt8 *>(s), std::reverse_iterator<UInt8 *>(reinterpret_cast<UInt8 *>(&uuid) + 16));
-
-        return ReturnType(true);
     }
     else
     {
         s[size] = 0;
-
-        if constexpr (throw_exception)
-        {
-            throw Exception(std::string("Cannot parse uuid ") + s, ErrorCodes::CANNOT_PARSE_UUID);
-        }
-        else
-        {
-            return ReturnType(false);
-        }
+        throw Exception(std::string("Cannot parse uuid ") + s, ErrorCodes::CANNOT_PARSE_UUID);
     }
-}
-
-inline void readUUIDText(UUID & uuid, ReadBuffer & buf)
-{
-    return readUUIDTextImpl<void>(uuid, buf);
-}
-
-inline bool tryReadUUIDText(UUID & uuid, ReadBuffer & buf)
-{
-    return readUUIDTextImpl<bool>(uuid, buf);
 }
 
 

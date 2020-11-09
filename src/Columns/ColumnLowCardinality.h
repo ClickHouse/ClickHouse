@@ -170,6 +170,7 @@ public:
     size_t sizeOfValueIfFixed() const override { return getDictionary().sizeOfValueIfFixed(); }
     bool isNumeric() const override { return getDictionary().isNumeric(); }
     bool lowCardinality() const override { return true; }
+    bool isNullable() const override { return isColumnNullable(*dictionary.getColumnUniquePtr()); }
 
     /**
      * Checks if the dictionary column is Nullable(T).

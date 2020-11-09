@@ -8,7 +8,6 @@ PEERDIR(
     contrib/libs/poco/NetSSL_OpenSSL
 )
 
-
 SRCS(
     AIOContextPool.cpp
     AIO.cpp
@@ -27,7 +26,6 @@ SRCS(
     MemoryReadWriteBuffer.cpp
     MMapReadBufferFromFile.cpp
     MMapReadBufferFromFileDescriptor.cpp
-    MySQLBinlogEventReadBuffer.cpp
     MySQLPacketPayloadReadBuffer.cpp
     MySQLPacketPayloadWriteBuffer.cpp
     NullWriteBuffer.cpp

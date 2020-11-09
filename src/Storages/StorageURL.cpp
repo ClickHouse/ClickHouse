@@ -67,22 +67,6 @@ namespace
             const CompressionMethod compression_method)
             : SourceWithProgress(sample_block), name(std::move(name_))
         {
-            ReadWriteBufferFromHTTP::HTTPHeaderEntries header;
-
-            // Propagate OpenTelemetry trace context, if any, downstream.
-            const auto & client_info = context.getClientInfo();
-            if (client_info.opentelemetry_trace_id)
-            {
-                header.emplace_back("traceparent",
-                    client_info.composeTraceparentHeader());
-
-                if (!client_info.opentelemetry_tracestate.empty())
-                {
-                    header.emplace_back("tracestate",
-                        client_info.opentelemetry_tracestate);
-                }
-            }
-
             read_buf = wrapReadBufferWithCompressionMethod(
                 std::make_unique<ReadWriteBufferFromHTTP>(
                     uri,
@@ -92,7 +76,7 @@ namespace
                     context.getSettingsRef().max_http_get_redirects,
                     Poco::Net::HTTPBasicCredentials{},
                     DBMS_DEFAULT_BUFFER_SIZE,
-                    header,
+                    ReadWriteBufferFromHTTP::HTTPHeaderEntries{},
                     context.getRemoteHostFilter()),
                 compression_method);
 

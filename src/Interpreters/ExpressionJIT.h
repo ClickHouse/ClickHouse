@@ -31,7 +31,7 @@ class LLVMFunction : public IFunctionBaseImpl
     std::unique_ptr<LLVMModuleState> module_state;
 
 public:
-    LLVMFunction(const ExpressionActions::Actions & actions, const DB::Block & sample_block);
+    LLVMFunction(const ExpressionActions::Actions & actions, const Block & sample_block);
 
     bool isCompilable() const override { return true; }
 
@@ -43,9 +43,9 @@ public:
 
     const DataTypes & getArgumentTypes() const override { return arg_types; }
 
-    const DataTypePtr & getResultType() const override { return originals.back()->getResultType(); }
+    const DataTypePtr & getReturnType() const override { return originals.back()->getReturnType(); }
 
-    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &) const override;
+    ExecutableFunctionImplPtr prepare(const Block &, const ColumnNumbers &, size_t) const override;
 
     bool isDeterministic() const override;
 
@@ -53,7 +53,7 @@ public:
 
     bool isSuitableForConstantFolding() const override;
 
-    bool isInjective(const ColumnsWithTypeAndName & sample_block) const override;
+    bool isInjective(const Block & sample_block) const override;
 
     bool hasInformationAboutMonotonicity() const override;
 

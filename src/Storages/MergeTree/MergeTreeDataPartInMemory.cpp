@@ -24,7 +24,6 @@ MergeTreeDataPartInMemory::MergeTreeDataPartInMemory(
         const std::optional<String> & relative_path_)
     : IMergeTreeDataPart(storage_, name_, volume_, relative_path_, Type::IN_MEMORY)
 {
-    default_codec = CompressionCodecFactory::instance().get("NONE", {});
 }
 
 MergeTreeDataPartInMemory::MergeTreeDataPartInMemory(
@@ -35,7 +34,6 @@ MergeTreeDataPartInMemory::MergeTreeDataPartInMemory(
         const std::optional<String> & relative_path_)
     : IMergeTreeDataPart(storage_, name_, info_, volume_, relative_path_, Type::IN_MEMORY)
 {
-    default_codec = CompressionCodecFactory::instance().get("NONE", {});
 }
 
 IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartInMemory::getReader(
@@ -131,4 +129,5 @@ DataPartInMemoryPtr asInMemoryPart(const MergeTreeDataPartPtr & part)
 {
     return std::dynamic_pointer_cast<const MergeTreeDataPartInMemory>(part);
 }
+
 }

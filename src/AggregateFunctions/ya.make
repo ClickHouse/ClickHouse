@@ -5,7 +5,6 @@ PEERDIR(
     clickhouse/src/Common
 )
 
-
 SRCS(
     AggregateFunctionAggThrow.cpp
     AggregateFunctionArray.cpp
@@ -33,7 +32,6 @@ SRCS(
     AggregateFunctionNull.cpp
     AggregateFunctionOrFill.cpp
     AggregateFunctionQuantile.cpp
-    AggregateFunctionRankCorrelation.cpp
     AggregateFunctionResample.cpp
     AggregateFunctionRetention.cpp
     AggregateFunctionSequenceMatch.cpp
