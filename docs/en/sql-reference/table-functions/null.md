@@ -5,7 +5,7 @@ toc_title: null function
 
 # null {#null-function}
 
-Creates a temporary table of the specified structure with the [Null table engine](../../engines/table-engines/special/null.md), and according to the Null-engine rules, the table data is ignored and the table itself is immediately droped right after the query execution. The function is used for convenience writing tests and demonstrations.
+Creates a temporary table of the specified structure with the [Null](../../engines/table-engines/special/null.md) table engine. According to the `Null`-engine properties, the table data is ignored and the table itself is immediately droped right after the query execution. The function is used for the convenience of test writing and demonstrations.
 
 **Syntax** 
 
