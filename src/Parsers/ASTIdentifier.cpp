@@ -5,6 +5,7 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/queryToString.h>
+#include <IO/Operators.h>
 
 
 namespace DB

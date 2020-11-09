@@ -54,6 +54,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/UseSSL.h>
+#include <IO/WriteBufferFromOStream.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 #include <DataStreams/InternalTextLogsRowOutputStream.h>
@@ -1529,7 +1530,8 @@ private:
         if (is_interactive)
         {
             std::cout << std::endl;
-            formatAST(*res, std::cout);
+            WriteBufferFromOStream res_buf(std::cout, 4096);
+            formatAST(*res, res_buf);
             std::cout << std::endl << std::endl;
         }
 

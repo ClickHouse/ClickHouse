@@ -271,6 +271,11 @@ inline void writeString(const StringRef & ref, WriteBuffer & buf)
     writeString(ref.data, ref.size, buf);
 }
 
+//inline void writeString(const std::string_view & view, WriteBuffer & buf)
+//{
+//    writeString(view.data(), view.size(), buf);
+//}
+
 
 /** Writes a C-string without creating a temporary object. If the string is a literal, then `strlen` is executed at the compilation stage.
   * Use when the string is a literal.

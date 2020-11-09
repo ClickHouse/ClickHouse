@@ -5,6 +5,7 @@
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Common/Exception.h>
 #include <Common/TypePromotion.h>
+#include <IO/WriteBufferFromString.h>
 
 #include <algorithm>
 #include <ostream>
@@ -161,7 +162,7 @@ public:
     /// Format settings.
     struct FormatSettings
     {
-        std::ostream & ostr;
+        WriteBuffer & ostr;
         bool hilite = false;
         bool one_line;
         bool always_quote_identifiers = false;
@@ -169,13 +170,13 @@ public:
 
         char nl_or_ws;
 
-        FormatSettings(std::ostream & ostr_, bool one_line_)
+        FormatSettings(WriteBuffer & ostr_, bool one_line_)
             : ostr(ostr_), one_line(one_line_)
         {
             nl_or_ws = one_line ? ' ' : '\n';
         }
 
-        FormatSettings(std::ostream & ostr_, const FormatSettings & other)
+        FormatSettings(WriteBuffer & ostr_, const FormatSettings & other)
             : ostr(ostr_), hilite(other.hilite), one_line(other.one_line),
             always_quote_identifiers(other.always_quote_identifiers), identifier_quoting_style(other.identifier_quoting_style)
         {
@@ -242,17 +243,17 @@ private:
 template <typename AstArray>
 std::string IAST::formatForErrorMessage(const AstArray & array)
 {
-    std::stringstream ss;
-    ss.exceptions(std::ios::failbit);
+    WriteBufferFromOwnString buf;
     for (size_t i = 0; i < array.size(); ++i)
     {
         if (i > 0)
         {
-            ss << ", ";
+            const char * delim = ", ";
+            buf.write(delim, strlen(delim));
         }
-        array[i]->format(IAST::FormatSettings(ss, true /* one line */));
+        array[i]->format(IAST::FormatSettings(buf, true /* one line */));
     }
-    return ss.str();
+    return buf.str();
 }
 
 }

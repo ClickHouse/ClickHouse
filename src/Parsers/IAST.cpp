@@ -89,10 +89,9 @@ size_t IAST::checkDepthImpl(size_t max_depth, size_t level) const
 
 std::string IAST::formatForErrorMessage() const
 {
-    std::stringstream ss;
-    ss.exceptions(std::ios::failbit);
-    format(FormatSettings(ss, true /* one line */));
-    return ss.str();
+    WriteBufferFromOwnString buf;
+    format(FormatSettings(buf, true /* one line */));
+    return buf.str();
 }
 
 void IAST::cloneChildren()
@@ -112,8 +111,6 @@ String IAST::getColumnName() const
 
 void IAST::FormatSettings::writeIdentifier(const String & name) const
 {
-    WriteBufferFromOStream out(ostr, 32);
-
     switch (identifier_quoting_style)
     {
         case IdentifierQuotingStyle::None:
@@ -121,36 +118,34 @@ void IAST::FormatSettings::writeIdentifier(const String & name) const
             if (always_quote_identifiers)
                 throw Exception("Incompatible arguments: always_quote_identifiers = true && identifier_quoting_style == IdentifierQuotingStyle::None",
                     ErrorCodes::BAD_ARGUMENTS);
-            writeString(name, out);
+            writeString(name, ostr);
             break;
         }
         case IdentifierQuotingStyle::Backticks:
         {
             if (always_quote_identifiers)
-                writeBackQuotedString(name, out);
+                writeBackQuotedString(name, ostr);
             else
-                writeProbablyBackQuotedString(name, out);
+                writeProbablyBackQuotedString(name, ostr);
             break;
         }
         case IdentifierQuotingStyle::DoubleQuotes:
         {
             if (always_quote_identifiers)
-                writeDoubleQuotedString(name, out);
+                writeDoubleQuotedString(name, ostr);
             else
-                writeProbablyDoubleQuotedString(name, out);
+                writeProbablyDoubleQuotedString(name, ostr);
             break;
         }
         case IdentifierQuotingStyle::BackticksMySQL:
         {
             if (always_quote_identifiers)
-                writeBackQuotedStringMySQL(name, out);
+                writeBackQuotedStringMySQL(name, ostr);
             else
-                writeProbablyBackQuotedStringMySQL(name, out);
+                writeProbablyBackQuotedStringMySQL(name, ostr);
             break;
         }
     }
-
-    out.next();
 }
 
 }
