@@ -556,7 +556,8 @@ void ZooKeeperMultiResponse::writeImpl(WriteBuffer & out) const
         Coordination::write(op_num, out);
         Coordination::write(done, out);
         Coordination::write(op_error, out);
-        zk_response.writeImpl(out);
+        if (op_error == Error::ZOK)
+            zk_response.writeImpl(out);
     }
 
     /// Footer.

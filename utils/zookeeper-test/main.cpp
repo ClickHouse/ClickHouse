@@ -107,6 +107,7 @@ void testMultiRequest(zkutil::ZooKeeper & zk)
 }
 
 int main(int argc, char *argv[]) {
+
     if (argc != 2)
     {
         std::cerr << "usage: " << argv[0] << " hosts" << std::endl;
@@ -118,12 +119,19 @@ int main(int argc, char *argv[]) {
 
     zkutil::ZooKeeper zk(argv[1]);
 
-    testCreateGetExistsNode(zk);
-    testCreateSetNode(zk);
-    testCreateList(zk);
-    testCreateSetVersionRequest(zk);
-    testMultiRequest(zk);
-
-    //zk.removeRecursive("/data");
+    try
+    {
+        zk.tryRemoveRecursive("/data");
+        testCreateGetExistsNode(zk);
+        testCreateSetNode(zk);
+        testCreateList(zk);
+        testCreateSetVersionRequest(zk);
+        testMultiRequest(zk);
+    }
+    catch(...)
+    {
+        zk.tryRemoveRecursive("/data");
+        throw;
+    }
     return 0;
 }
