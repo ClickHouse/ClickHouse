@@ -231,6 +231,7 @@ struct integer<Bits, Signed>::_impl
     {
         constexpr uint64_t max_uint = std::numeric_limits<uint64_t>::max();
         constexpr int64_t max_int = std::numeric_limits<int64_t>::max();
+        constexpr size_t max_sizet = std::numeric_limits<size_t>::max();
 
         if ((rhs > 0 && rhs < max_uint) ||
             (rhs < 0 && rhs > std::numeric_limits<int64_t>::min()))
@@ -244,8 +245,13 @@ struct integer<Bits, Signed>::_impl
         if (r < 0)
             r = -r;
 
+        const long double div = r / max_int;
+        size_t count = max_sizet;
+
         /// r / max_uint may not fit in size_t
-        size_t count = std::clamp(r / max_uint, std::numeric_limits<size_t>::max(), 0);
+        if (div <= static_cast<long double>(max_sizet))
+            count = div;
+
         self = count;
         self *= max_uint;
         long double to_diff = count;
