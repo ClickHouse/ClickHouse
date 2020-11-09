@@ -6,10 +6,16 @@
 namespace DB
 {
 
-/** Various tweaks for input/output formats.
-  * Text serialization/deserialization of data types also depend on some of these settings.
-  * NOTE Parameters for unrelated formats and unrelated data types
-  *  are collected in this struct - it prevents modularity, but they are difficult to separate.
+/**
+  * Various tweaks for input/output formats. Text serialization/deserialization
+  * of data types also depend on some of these settings. It is different from
+  * FormatFactorySettings in that it has all necessary user-provided settings
+  * combined with information from context etc, that we can use directly during
+  * serialization. In contrast, FormatFactorySettings' job is to reflect the
+  * changes made to user-visible format settings, such as when tweaking the
+  * the format for File engine.
+  * NOTE Parameters for unrelated formats and unrelated data types are collected
+  * in this struct - it prevents modularity, but they are difficult to separate.
   */
 struct FormatSettings
 {
@@ -83,9 +89,6 @@ struct FormatSettings
         bool quote_64bit_integers = true;
         bool quote_denormals = true;
         bool escape_forward_slashes = true;
-        bool write_metadata = false;
-        bool named_tuple_as_object = true;
-        bool array_of_rows = false;
         bool serialize_as_strings = false;
     } json;
 
@@ -116,13 +119,11 @@ struct FormatSettings
     {
         bool write_row_delimiters = true;
         /**
-         * Some buffers (kafka / rabbit) split the rows internally using callback
-         * so we can push there formats without framing / delimiters (like
-         * ProtobufSingle). In other cases you can't write more than single row
-         * in unframed format.
-         * Not sure we need this parameter at all, it only serves as an additional
-         * safety check in ProtobufSingle format, but exporting constant-size
-         * records w/o delimiters might be generally useful, not only for Kafka.
+         * Some buffers (kafka / rabbit) split the rows internally using callback,
+         * and always send one row per message, so we can push there formats
+         * without framing / delimiters (like ProtobufSingle). In other cases,
+         * we have to enforce exporting at most one row in the format output,
+         * because Protobuf without delimiters is not generally useful.
          */
         bool allow_many_rows_no_delimiters = false;
     } protobuf;

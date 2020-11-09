@@ -20,4 +20,8 @@ cat "$the_file"
 ${CLICKHOUSE_LOCAL} --query "
     create table t(a int, b int) engine File(CSV, '$the_file') settings format_csv_delimiter = '|';
     select * from t;
-"
+" 
+
+# Also check that the File engine emplicitly created by clickhouse-local
+# uses the modified settings.
+${CLICKHOUSE_LOCAL} --structure="a int, b int" --input-format=CSV --format_csv_delimiter="|" --query="select * from table" <<<"1|2"
