@@ -8,6 +8,7 @@
 #include <Core/Types.h>
 #include <IO/Operators.h>
 #include <IO/UseSSL.h>
+#include <IO/WriteBufferFromOStream.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -419,7 +420,8 @@ void QueryFuzzer::fuzzMain(ASTPtr & ast)
     fuzz(ast);
 
     std::cout << std::endl;
-    formatAST(*ast, std::cout, false /*highlight*/);
+    WriteBufferFromOStream ast_buf(std::cout, 4096);
+    formatAST(*ast, ast_buf, false /*highlight*/);
     std::cout << std::endl << std::endl;
 }
 
