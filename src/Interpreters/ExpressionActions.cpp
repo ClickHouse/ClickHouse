@@ -58,7 +58,7 @@ namespace ErrorCodes
 
 static std::ostream & operator << (std::ostream & out, const ExpressionActions::Argument & argument)
 {
-    return out << (argument.remove ? "*" : "") << argument.pos;
+    return out << (argument.needed_later ? ": " : ":: ") << argument.pos;
 }
 
 std::string ExpressionActions::Action::toString() const
@@ -97,7 +97,7 @@ std::string ExpressionActions::Action::toString() const
     }
 
     out << " -> " << node->result_name
-        << " " << (node->result_type ? node->result_type->getName() : "(no type)") << " " << result_position;
+        << " " << (node->result_type ? node->result_type->getName() : "(no type)") << " : " << result_position;
     return out.str();
 }
 
@@ -213,7 +213,7 @@ void ExpressionActions::executeAction(const Action & action, ExecutionContext & 
             ColumnsWithTypeAndName arguments(action.arguments.size());
             for (size_t i = 0; i < arguments.size(); ++i)
             {
-                if (action.arguments[i].remove)
+                if (!action.arguments[i].needed_later)
                     arguments[i] = std::move(columns[action.arguments[i].pos]);
                 else
                     arguments[i] = columns[action.arguments[i].pos];
@@ -233,7 +233,7 @@ void ExpressionActions::executeAction(const Action & action, ExecutionContext & 
             auto array_join_key = columns[array_join_key_pos];
 
             /// Remove array join argument in advance if it is not needed.
-            if (action.arguments.front().remove)
+            if (!action.arguments.front().needed_later)
                 columns[array_join_key_pos] = {};
 
             array_join_key.column = array_join_key.column->convertToFullColumnIfConst();
@@ -277,7 +277,7 @@ void ExpressionActions::executeAction(const Action & action, ExecutionContext & 
                 columns[action.result_position].column = columns[arg.pos].column;
                 columns[action.result_position].type = columns[arg.pos].type;
 
-                if (arg.remove)
+                if (!arg.needed_later)
                     columns[arg.pos] = {};
             }
 
@@ -291,7 +291,7 @@ void ExpressionActions::executeAction(const Action & action, ExecutionContext & 
             auto pos = execution_context.inputs_pos[action.arguments.front().pos];
             if (pos < 0)
             {
-                if (!action.arguments.front().remove)
+                if (action.arguments.front().needed_later)
                     throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
                                     "Not found column {} in block",
                                     action.node->result_name);
@@ -1300,9 +1300,9 @@ ExpressionActionsPtr ActionsDAG::linearizeActions() const
 
             ExpressionActions::Argument argument;
             argument.pos = arg.position;
-            argument.remove = !arg.used_in_result && arg.num_created_parents == arg.parents.size();
+            argument.needed_later = arg.used_in_result || arg.num_created_parents != arg.parents.size();
 
-            if (argument.remove)
+            if (!argument.needed_later)
                 free_positions.push(argument.pos);
 
             arguments.emplace_back(argument);
@@ -1313,7 +1313,7 @@ ExpressionActionsPtr ActionsDAG::linearizeActions() const
             /// Argument for input is special. It contains the position from required columns.
             ExpressionActions::Argument argument;
             argument.pos = expressions->required_columns.size();
-            argument.remove = cur.parents.empty();
+            argument.needed_later = !cur.parents.empty();
             arguments.emplace_back(argument);
 
             expressions->required_columns.push_back({node->result_name, node->result_type});

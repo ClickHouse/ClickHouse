@@ -102,8 +102,14 @@ public:
         bool allow_constant_folding = true;
     };
 
+    /// Index is a list of nodes + hash table: name -> list_elem.
+    /// List is ordered, may contain nodes with same names, or one node several times.
     class Index
     {
+    private:
+        std::list<Node *> list;
+        std::unordered_map<std::string_view, std::list<Node *>::iterator> map;
+
     public:
         Node *& operator[](std::string_view key)
         {
@@ -149,10 +155,6 @@ public:
             list.erase(it->second);
             map.erase(it);
         }
-
-    private:
-        std::list<Node *> list;
-        std::unordered_map<std::string_view, std::list<Node *>::iterator> map;
     };
 
     using Nodes = std::list<Node>;
@@ -222,8 +224,8 @@ public:
     ActionsDAGPtr splitActionsBeforeArrayJoin(const NameSet & array_joined_columns);
 
     bool hasArrayJoin() const;
-    bool empty() const;
-    bool projectedOutput() const { return projected_output; }
+    bool empty() const; /// If actions only contain inputs.
+    bool projectedOutput() const { return projected_output; } /// Remove all columns which are not in inputs from block.
 
     ActionsDAGPtr clone() const;
 
@@ -264,8 +266,11 @@ public:
 
     struct Argument
     {
+        /// Position in ExecutionContext::columns
         size_t pos;
-        bool remove;
+        /// True if there is another action which will use this column.
+        /// Otherwise column will be removed.
+        bool needed_later;
     };
 
     using Arguments = std::vector<Argument>;
@@ -317,21 +322,14 @@ public:
     /// Adds to the beginning the removal of all extra columns.
     void projectInput() { project_input = true; }
 
-    /// - Adds actions to delete all but the specified columns.
-    /// - Removes unused input columns.
-    /// - Can somehow optimize the expression.
-    /// - Does not reorder the columns.
-    /// - Does not remove "unexpected" columns (for example, added by functions).
-    /// - If output_columns is empty, leaves one arbitrary column (so that the number of rows in the block is not lost).
-    // void finalize(const Names & output_columns);
-
     /// Get a list of input columns.
     Names getRequiredColumns() const;
     const NamesAndTypesList & getRequiredColumnsWithTypes() const { return required_columns; }
 
     /// Execute the expression on the block. The block must contain all the columns returned by getRequiredColumns.
-    void execute(Block & block, bool dry_run = false) const;
     void execute(Block & block, size_t & num_rows, bool dry_run = false) const;
+    /// The same, but without `num_rows`. If result block is empty, adds `_dummy` column to keep block size.
+    void execute(Block & block, bool dry_run = false) const;
 
     bool hasArrayJoin() const;
 
