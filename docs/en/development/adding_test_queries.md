@@ -123,7 +123,7 @@ clickhouse-client -nmT < tests/queries/0_stateless/01521_dummy_test.sql | tee te
 - use `number` / `numbers_mt` / `zeros` / `zeros_mt` and similar for queries / to initialize data when appliable
 - clean up the created objects after test and before the test (DROP IF EXISTS) - in case of some dirty state 
 - prefer sync mode of operations (mutations, merges, etc.)
-- use other SQL files in the `0_stateless` folder as a reference
+- use other SQL files in the `0_stateless` folder as an example
 - ensure the feature / feature combination you want to tests is not covered yet with existsing tests
 
 #### Commit / push / create PR.
