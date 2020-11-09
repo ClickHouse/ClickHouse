@@ -299,7 +299,7 @@ void StorageStripeLog::rename(const String & new_path_to_table_data, const Stora
 Pipe StorageStripeLog::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    const SelectQueryInfo & /*query_info*/,
+    SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,

@@ -22,6 +22,7 @@ void IMySQLReadPacket::readPayload(ReadBuffer & in, uint8_t & sequence_id)
     if (!payload.eof())
     {
         std::stringstream tmp;
+        tmp.exceptions(std::ios::failbit);
         tmp << "Packet payload is not fully read. Stopped after " << payload.count() << " bytes, while " << payload.available() << " bytes are in buffer.";
         throw Exception(tmp.str(), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
     }

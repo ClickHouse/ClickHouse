@@ -75,6 +75,7 @@
 #include <Common/InterruptListener.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <Formats/registerFormats.h>
 #include <Common/Config/configReadClient.h>
 #include <Storages/ColumnsDescription.h>
 #include <common/argsToConfig.h>
@@ -463,6 +464,7 @@ private:
     {
         UseSSL use_ssl;
 
+        registerFormats();
         registerFunctions();
         registerAggregateFunctions();
 
@@ -1502,7 +1504,7 @@ private:
 
     ASTPtr parseQuery(const char * & pos, const char * end, bool allow_multi_statements)
     {
-        ParserQuery parser(end, true);
+        ParserQuery parser(end);
         ASTPtr res;
 
         const auto & settings = context.getSettingsRef();
@@ -2329,6 +2331,7 @@ public:
             ("query-fuzzer-runs", po::value<int>()->default_value(0), "query fuzzer runs")
             ("opentelemetry-traceparent", po::value<std::string>(), "OpenTelemetry traceparent header as described by W3C Trace Context recommendation")
             ("opentelemetry-tracestate", po::value<std::string>(), "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
+            ("history_file", po::value<std::string>(), "path to history file")
         ;
 
         Settings cmd_settings;
@@ -2485,6 +2488,8 @@ public:
             config().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
         if (options.count("highlight"))
             config().setBool("highlight", options["highlight"].as<bool>());
+        if (options.count("history_file"))
+            config().setString("history_file", options["history_file"].as<std::string>());
 
         if ((query_fuzzer_runs = options["query-fuzzer-runs"].as<int>()))
         {

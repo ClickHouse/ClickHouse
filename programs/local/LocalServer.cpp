@@ -33,6 +33,7 @@
 #include <Storages/registerStorages.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
+#include <Formats/registerFormats.h>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options.hpp>
 #include <common/argsToConfig.h>
@@ -224,6 +225,7 @@ try
     registerStorages();
     registerDictionaries();
     registerDisks();
+    registerFormats();
 
     /// Maybe useless
     if (config().has("macros"))

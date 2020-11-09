@@ -19,6 +19,7 @@ class PartitionManager:
 
     def __init__(self):
         self._iptables_rules = []
+        self._netem_delayed_instances = []
         _NetworkManager.get()
 
     def drop_instance_zk_connections(self, instance, action='DROP'):
@@ -46,10 +47,17 @@ class PartitionManager:
         self._add_rule(create_rule(left, right))
         self._add_rule(create_rule(right, left))
 
+    def add_network_delay(self, instance, delay_ms):
+        self._add_tc_netem_delay(instance, delay_ms)
+
     def heal_all(self):
         while self._iptables_rules:
             rule = self._iptables_rules.pop()
             _NetworkManager.get().delete_iptables_rule(**rule)
+
+        while self._netem_delayed_instances:
+            instance = self._netem_delayed_instances.pop()
+            instance.exec_in_container(["bash", "-c", "tc qdisc del dev eth0 root netem"], user="root")
 
     def pop_rules(self):
         res = self._iptables_rules[:]
@@ -72,6 +80,10 @@ class PartitionManager:
     def _delete_rule(self, rule):
         _NetworkManager.get().delete_iptables_rule(**rule)
         self._iptables_rules.remove(rule)
+
+    def _add_tc_netem_delay(self, instance, delay_ms):
+        instance.exec_in_container(["bash", "-c", "tc qdisc add dev eth0 root netem delay {}ms".format(delay_ms)], user="root")
+        self._netem_delayed_instances.append(instance)
 
     def __enter__(self):
         return self

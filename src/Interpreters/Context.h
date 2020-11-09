@@ -62,9 +62,9 @@ class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalModelsLoader;
 class InterserverIOHandler;
-class BackgroundProcessingPool;
 class BackgroundSchedulePool;
 class MergeList;
+class ReplicatedFetchList;
 class Cluster;
 class Compiler;
 class MarkCache;
@@ -114,6 +114,7 @@ using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
 struct NamedSession;
+struct BackgroundTaskSchedulingSettings;
 
 
 #if USE_EMBEDDED_COMPILER
@@ -484,6 +485,9 @@ public:
     MergeList & getMergeList();
     const MergeList & getMergeList() const;
 
+    ReplicatedFetchList & getReplicatedFetchList();
+    const ReplicatedFetchList & getReplicatedFetchList() const;
+
     /// If the current session is expired at the time of the call, synchronously creates and returns a new session with the startNewSession() call.
     /// If no ZooKeeper configured, throws an exception.
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
@@ -514,9 +518,11 @@ public:
       */
     void dropCaches() const;
 
+    /// Settings for MergeTree background tasks stored in config.xml
+    BackgroundTaskSchedulingSettings getBackgroundProcessingTaskSchedulingSettings() const;
+    BackgroundTaskSchedulingSettings getBackgroundMoveTaskSchedulingSettings() const;
+
     BackgroundSchedulePool & getBufferFlushSchedulePool();
-    BackgroundProcessingPool & getBackgroundPool();
-    BackgroundProcessingPool & getBackgroundMovePool();
     BackgroundSchedulePool & getSchedulePool();
     BackgroundSchedulePool & getDistributedSchedulePool();
 
