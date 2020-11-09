@@ -53,6 +53,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ARRAY_FROM_TEXT;
     extern const int CANNOT_PARSE_NUMBER;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int INCORRECT_DATA;
 }
 
 /// Helper functions for formatted input.
@@ -1227,5 +1228,24 @@ void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current);
   * And this function can fill the buffer with new data, so we will lose the data from previous buffer state.
   */
 bool loadAtPosition(ReadBuffer & in, Memory<> & memory, char * & current);
+
+
+struct PcgDeserializer
+{
+    static void deserializePcg32(const pcg32_fast & rng, ReadBuffer & buf)
+    {
+        decltype(rng.state_) multiplier, increment, state;
+        readText(multiplier, buf);
+        assertChar(' ', buf);
+        readText(increment, buf);
+        assertChar(' ', buf);
+        readText(state, buf);
+
+        if (multiplier != rng.multiplier())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect multiplier in pcg32: expected {}, got {}", rng.multiplier(), multiplier);
+        if (increment != rng.increment())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect increment in pcg32: expected {}, got {}", rng.increment(), increment);
+    }
+};
 
 }
