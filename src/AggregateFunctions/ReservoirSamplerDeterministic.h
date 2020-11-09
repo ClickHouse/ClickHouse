@@ -39,8 +39,8 @@ namespace ErrorCodes
 
 namespace detail
 {
-    const size_t DEFAULT_MAX_SAMPLE_SIZE = 8192;
-    const auto MAX_SKIP_DEGREE = sizeof(UInt32) * 8;
+const size_t DEFAULT_SAMPLE_COUNT = 8192;
+const auto MAX_SKIP_DEGREE = sizeof(UInt32) * 8;
 }
 
 /// What if there is not a single value - throw an exception, or return 0 or NaN in the case of double?
@@ -49,7 +49,6 @@ enum class ReservoirSamplerDeterministicOnEmpty
     THROW,
     RETURN_NAN_OR_ZERO,
 };
-
 
 template <typename T,
     ReservoirSamplerDeterministicOnEmpty OnEmpty = ReservoirSamplerDeterministicOnEmpty::THROW>
@@ -61,8 +60,8 @@ class ReservoirSamplerDeterministic
     }
 
 public:
-    ReservoirSamplerDeterministic(const size_t max_sample_size_ = detail::DEFAULT_MAX_SAMPLE_SIZE)
-        : max_sample_size{max_sample_size_}
+    ReservoirSamplerDeterministic(const size_t sample_count_ = DEFAULT_SAMPLE_COUNT)
+        : sample_count{sample_count_}
     {
     }
 
@@ -122,18 +121,18 @@ public:
         size_t left_index = static_cast<size_t>(index);
         size_t right_index = left_index + 1;
         if (right_index == samples.size())
-            return static_cast<double>(samples[left_index].first);
+            return samples[left_index].first;
 
         const double left_coef = right_index - index;
         const double right_coef = index - left_index;
 
-        return static_cast<double>(samples[left_index].first) * left_coef + static_cast<double>(samples[right_index].first) * right_coef;
+        return samples[left_index].first * left_coef + samples[right_index].first * right_coef;
     }
 
     void merge(const ReservoirSamplerDeterministic & b)
     {
-        if (max_sample_size != b.max_sample_size)
-            throw Poco::Exception("Cannot merge ReservoirSamplerDeterministic's with different max sample size");
+        if (sample_count != b.sample_count)
+            throw Poco::Exception("Cannot merge ReservoirSamplerDeterministic's with different sample_count");
         sorted = false;
 
         if (b.skip_degree > skip_degree)
@@ -151,16 +150,11 @@ public:
 
     void read(DB::ReadBuffer & buf)
     {
-        size_t size = 0;
-        DB::readIntBinary<size_t>(size, buf);
+        DB::readIntBinary<size_t>(sample_count, buf);
         DB::readIntBinary<size_t>(total_values, buf);
+        samples.resize(std::min(total_values, sample_count));
 
-        /// Compatibility with old versions.
-        if (size > total_values)
-            size = total_values;
-
-        samples.resize(size);
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < samples.size(); ++i)
             DB::readPODBinary(samples[i], buf);
 
         sorted = false;
@@ -168,11 +162,10 @@ public:
 
     void write(DB::WriteBuffer & buf) const
     {
-        size_t size = samples.size();
-        DB::writeIntBinary<size_t>(size, buf);
+        DB::writeIntBinary<size_t>(sample_count, buf);
         DB::writeIntBinary<size_t>(total_values, buf);
 
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < std::min(sample_count, total_values); ++i)
             DB::writePODBinary(samples[i], buf);
     }
 
@@ -181,19 +174,18 @@ private:
     using Element = std::pair<T, UInt32>;
     using Array = DB::PODArray<Element, 64>;
 
-    const size_t max_sample_size; /// Maximum amount of stored values.
-    size_t total_values = 0;   /// How many values were inserted (regardless if they remain in sample or not).
-    bool sorted = false;
+    size_t sample_count;
+    size_t total_values{};
+    bool sorted{};
     Array samples;
-    UInt8 skip_degree = 0;     /// The number N determining that we save only one per 2^N elements in average.
+    UInt8 skip_degree{};
 
     void insertImpl(const T & v, const UInt32 hash)
     {
-        /// Make a room for plus one element.
-        while (samples.size() >= max_sample_size)
+        /// @todo why + 1? I don't quite recall
+        while (samples.size() + 1 >= sample_count)
         {
-            ++skip_degree;
-            if (skip_degree > detail::MAX_SKIP_DEGREE)
+            if (++skip_degree > detail::MAX_SKIP_DEGREE)
                 throw DB::Exception{"skip_degree exceeds maximum value", DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED};
             thinOut();
         }
@@ -203,17 +195,35 @@ private:
 
     void thinOut()
     {
-        samples.resize(std::distance(samples.begin(),
-            std::remove_if(samples.begin(), samples.end(), [this](const auto & elem){ return !good(elem.second); })));
-        sorted = false;
+        auto size = samples.size();
+        for (size_t i = 0; i < size;)
+        {
+            if (!good(samples[i].second))
+            {
+                /// swap current element with the last one
+                std::swap(samples[size - 1], samples[i]);
+                --size;
+            }
+            else
+                ++i;
+        }
+
+        if (size != samples.size())
+        {
+            samples.resize(size);
+            sorted = false;
+        }
     }
 
     void sortIfNeeded()
     {
         if (sorted)
             return;
-        std::sort(samples.begin(), samples.end(), [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
         sorted = true;
+        std::sort(samples.begin(), samples.end(), [] (const std::pair<T, UInt32> & lhs, const std::pair<T, UInt32> & rhs)
+        {
+            return lhs.first < rhs.first;
+        });
     }
 
     template <typename ResultType>

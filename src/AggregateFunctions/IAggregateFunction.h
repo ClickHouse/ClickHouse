@@ -5,7 +5,7 @@
 #include <vector>
 #include <type_traits>
 
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Block.h>
 #include <Common/Exception.h>
@@ -78,7 +78,7 @@ public:
     /// Get `sizeof` of structure with data.
     virtual size_t sizeOfData() const = 0;
 
-    /// How the data structure should be aligned.
+    /// How the data structure should be aligned. NOTE: Currently not used (structures with aggregation state are put without alignment).
     virtual size_t alignOfData() const = 0;
 
     /** Adds a value into aggregation data on which place points to.
@@ -113,9 +113,10 @@ public:
     virtual void predictValues(
         ConstAggregateDataPtr /* place */,
         IColumn & /*to*/,
-        ColumnsWithTypeAndName & /*arguments*/,
+        Block & /*block*/,
         size_t /*offset*/,
         size_t /*limit*/,
+        const ColumnNumbers & /*arguments*/,
         const Context & /*context*/) const
     {
         throw Exception("Method predictValues is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
@@ -221,6 +222,24 @@ public:
             static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
     }
 
+    void addBatchLookupTable8(
+        size_t batch_size,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        std::function<void(AggregateDataPtr &)> init,
+        const UInt8 * key,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        for (size_t i = 0; i < batch_size; ++i)
+        {
+            AggregateDataPtr & place = places[key[i]];
+            if (unlikely(!place))
+                init(place);
+            static_cast<const Derived *>(this)->add(place + place_offset, columns, i, arena);
+        }
+    }
+
     void addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const override
     {
         for (size_t i = 0; i < batch_size; ++i)
@@ -253,45 +272,6 @@ public:
             for (size_t j = current_offset; j < next_offset; ++j)
                 static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, j, arena);
             current_offset = next_offset;
-        }
-    }
-
-    void addBatchLookupTable8(
-        size_t batch_size,
-        AggregateDataPtr * map,
-        size_t place_offset,
-        std::function<void(AggregateDataPtr &)> init,
-        const UInt8 * key,
-        const IColumn ** columns,
-        Arena * arena) const override
-    {
-        static constexpr size_t UNROLL_COUNT = 8;
-
-        size_t i = 0;
-
-        size_t batch_size_unrolled = batch_size / UNROLL_COUNT * UNROLL_COUNT;
-        for (; i < batch_size_unrolled; i += UNROLL_COUNT)
-        {
-            AggregateDataPtr places[UNROLL_COUNT];
-            for (size_t j = 0; j < UNROLL_COUNT; ++j)
-            {
-                AggregateDataPtr & place = map[key[i + j]];
-                if (unlikely(!place))
-                    init(place);
-
-                places[j] = place;
-            }
-
-            for (size_t j = 0; j < UNROLL_COUNT; ++j)
-                static_cast<const Derived *>(this)->add(places[j] + place_offset, columns, i + j, arena);
-        }
-
-        for (; i < batch_size; ++i)
-        {
-            AggregateDataPtr & place = map[key[i]];
-            if (unlikely(!place))
-                init(place);
-            static_cast<const Derived *>(this)->add(place + place_offset, columns, i, arena);
         }
     }
 };
@@ -331,6 +311,7 @@ public:
         return sizeof(Data);
     }
 
+    /// NOTE: Currently not used (structures with aggregation state are put without alignment).
     size_t alignOfData() const override
     {
         return alignof(Data);

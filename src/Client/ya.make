@@ -6,7 +6,6 @@ PEERDIR(
     contrib/libs/poco/NetSSL_OpenSSL
 )
 
-
 SRCS(
     Connection.cpp
     ConnectionPoolWithFailover.cpp

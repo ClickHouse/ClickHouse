@@ -31,16 +31,7 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
-    extern const int TOO_LARGE_ARRAY_SIZE;
 }
-
-/** Obtaining array as Field can be slow for large arrays and consume vast amount of memory.
-  * Just don't allow to do it.
-  * You can increase the limit if the following query:
-  *  SELECT range(10000000)
-  * will take less than 500ms on your machine.
-  */
-static constexpr size_t max_array_size_as_field = 1000000;
 
 
 ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && offsets_column)
@@ -51,12 +42,11 @@ ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && 
     if (!offsets_concrete)
         throw Exception("offsets_column must be a ColumnUInt64", ErrorCodes::LOGICAL_ERROR);
 
-    if (!offsets_concrete->empty() && nested_column)
+    size_t size = offsets_concrete->size();
+    if (size != 0 && nested_column)
     {
-        Offset last_offset = offsets_concrete->getData().back();
-
         /// This will also prevent possible overflow in offset.
-        if (nested_column->size() != last_offset)
+        if (nested_column->size() != offsets_concrete->getData()[size - 1])
             throw Exception("offsets_column has data inconsistent with nested_column", ErrorCodes::LOGICAL_ERROR);
     }
 
@@ -126,11 +116,6 @@ Field ColumnArray::operator[](size_t n) const
 {
     size_t offset = offsetAt(n);
     size_t size = sizeAt(n);
-
-    if (size > max_array_size_as_field)
-        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array of size {} is too large to be manipulated as single field, maximum size {}",
-            size, max_array_size_as_field);
-
     Array res(size);
 
     for (size_t i = 0; i < size; ++i)
@@ -144,11 +129,6 @@ void ColumnArray::get(size_t n, Field & res) const
 {
     size_t offset = offsetAt(n);
     size_t size = sizeAt(n);
-
-    if (size > max_array_size_as_field)
-        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array of size {} is too large to be manipulated as single field, maximum size {}",
-            size, max_array_size_as_field);
-
     res = Array(size);
     Array & res_arr = DB::get<Array &>(res);
 

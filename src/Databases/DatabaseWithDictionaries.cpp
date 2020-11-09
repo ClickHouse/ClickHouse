@@ -153,6 +153,7 @@ void DatabaseWithDictionaries::createDictionary(const Context & context, const S
     if (isTableExist(dictionary_name, global_context))
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {} already exists.", dict_id.getFullTableName());
 
+
     String dictionary_metadata_path = getObjectMetadataPath(dictionary_name);
     String dictionary_metadata_tmp_path = dictionary_metadata_path + ".tmp";
     String statement = getObjectDefinitionFromCreateQuery(query);
@@ -223,10 +224,6 @@ void DatabaseWithDictionaries::removeDictionary(const Context &, const String & 
         attachDictionary(dictionary_name, attach_info);
         throw;
     }
-
-    UUID dict_uuid = attach_info.create_query->as<ASTCreateQuery>()->uuid;
-    if (dict_uuid != UUIDHelpers::Nil)
-        DatabaseCatalog::instance().removeUUIDMappingFinally(dict_uuid);
 }
 
 DatabaseDictionariesIteratorPtr DatabaseWithDictionaries::getDictionariesIterator(const FilterByNameFunction & filter_by_dictionary_name)

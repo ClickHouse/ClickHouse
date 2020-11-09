@@ -333,7 +333,7 @@ private:
 
     /// This lock is used for the inner cache state update function lock it for
     /// write, when it need to update cache state all other functions just
-    /// readers. Surprisingly this lock is also used for last_exception pointer.
+    /// readers. Suprisingly this lock is also used for last_exception pointer.
     mutable std::shared_mutex rw_lock;
 
     /// Actual size will be increased to match power of 2
@@ -342,7 +342,7 @@ private:
     /// all bits to 1  mask (size - 1) (0b1000 - 1 = 0b111)
     const size_t size_overlap_mask;
 
-    /// Max tries to find cell, overlapped with mask: if size = 16 and start_cell=10: will try cells: 10,11,12,13,14,15,0,1,2,3
+    /// Max tries to find cell, overlaped with mask: if size = 16 and start_cell=10: will try cells: 10,11,12,13,14,15,0,1,2,3
     static constexpr size_t max_collision_length = 10;
 
     const size_t zero_cell_idx{getCellIdx(0)};
@@ -377,7 +377,7 @@ private:
      * they would be passed as a return value of get(), but for Unknown Reasons the dictionaries use a baroque
      * interface where get() accepts two callback, one that it calls for found values, and one for not found.
      *
-     * Now we make it even uglier by doing this from multiple threads. The missing values are retrieved from the
+     * Now we make it even uglier by doing this from multiple threads. The missing values are retreived from the
      * dictionary in a background thread, and this thread calls the provided callback. So if you provide the callbacks,
      * you MUST wait until the background update finishes, or god knows what happens. Unfortunately, we have no
      * way to check that you did this right, so good luck.
@@ -416,7 +416,7 @@ private:
         std::vector<Key> requested_ids;
 
         /// It might seem that it is a leak of performance.
-        /// But acquiring a mutex without contention is rather cheap.
+        /// But aquiring a mutex without contention is rather cheap.
         std::mutex callback_mutex;
         bool can_use_callback{true};
 

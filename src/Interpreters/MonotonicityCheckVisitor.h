@@ -86,7 +86,7 @@ public:
         if (data.isRejected())
             return;
 
-        /// TODO: monotonicity for functions of several arguments
+        /// TODO: monotonicity for fucntions of several arguments
         auto arguments = ast_function.arguments;
         if (arguments->children.size() != 1)
         {
@@ -125,7 +125,7 @@ public:
 
             if (!is_positive)
                 data.monotonicity.is_positive = !data.monotonicity.is_positive;
-            data.arg_data_type = function_base->getResultType();
+            data.arg_data_type = function_base->getReturnType();
         }
         else
             data.reject();

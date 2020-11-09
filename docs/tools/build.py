@@ -28,7 +28,6 @@ import test
 import util
 import website
 
-from cmake_in_clickhouse_generator import generate_cmake_flags_files
 
 class ClickHouseMarkdown(markdown.extensions.Extension):
     class ClickHousePreprocessor(markdown.util.Processor):
@@ -181,15 +180,12 @@ def build(args):
     if not args.skip_website:
         website.build_website(args)
 
-    if not args.skip_test_templates:
-        test.test_templates(args.website_dir)
+    test.test_templates(args.website_dir)
 
-    if not args.skip_docs:
-        generate_cmake_flags_files()
+    build_docs(args)
 
-        build_docs(args)
-        from github import build_releases
-        build_releases(args, build_docs)
+    from github import build_releases
+    build_releases(args, build_docs)
 
     if not args.skip_blog:
         blog.build_blog(args)
@@ -203,7 +199,6 @@ def build(args):
 if __name__ == '__main__':
     os.chdir(os.path.join(os.path.dirname(__file__), '..'))
     website_dir = os.path.join('..', 'website')
-
     arg_parser = argparse.ArgumentParser()
     arg_parser.add_argument('--lang', default='en,es,fr,ru,zh,ja,tr,fa')
     arg_parser.add_argument('--blog-lang', default='en,ru')
@@ -225,8 +220,6 @@ if __name__ == '__main__':
     arg_parser.add_argument('--skip-website', action='store_true')
     arg_parser.add_argument('--skip-blog', action='store_true')
     arg_parser.add_argument('--skip-git-log', action='store_true')
-    arg_parser.add_argument('--skip-docs', action='store_true')
-    arg_parser.add_argument('--skip-test-templates', action='store_true')
     arg_parser.add_argument('--test-only', action='store_true')
     arg_parser.add_argument('--minify', action='store_true')
     arg_parser.add_argument('--htmlproofer', action='store_true')

@@ -17,7 +17,6 @@
 #include <Core/Types.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/UUID.h>
-#include <Core/BigInt.h>
 
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -120,16 +119,6 @@ inline void readFloatBinary(T & x, ReadBuffer & buf)
     readPODBinary(x, buf);
 }
 
-template <typename T>
-void readBigIntBinary(T & x, ReadBuffer & buf)
-{
-    static const constexpr size_t bytesize = BigInt<T>::size;
-    char bytes[bytesize];
-
-    buf.readStrict(bytes, bytesize);
-
-    x = BigInt<T>::deserialize(bytes);
-}
 
 inline void readStringBinary(std::string & s, ReadBuffer & buf, size_t MAX_STRING_SIZE = DEFAULT_MAX_STRING_SIZE)
 {
@@ -268,13 +257,10 @@ enum class ReadIntTextCheckOverflow
 template <typename T, typename ReturnType = void, ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW>
 ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
 {
-    /// TODO: disabled for big ints cause of 127 vs 128 bit conversion
-    using UnsignedT = std::conditional_t<is_big_int_v<T>, T, make_unsigned_t<T>>;
-
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
     bool negative = false;
-    UnsignedT res = 0;
+    std::make_unsigned_t<T> res = 0;
     if (buf.eof())
     {
         if constexpr (throw_exception)
@@ -328,13 +314,8 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
                         if (common::mulOverflow<T>(signed_res, 10, signed_res)
                             || common::addOverflow<T>(signed_res, (*buf.position() - '0'), signed_res))
                             return ReturnType(false);
-
-                        /// Cannot assign signed to unsigned for big ints. Ignore fast path.
-                        if constexpr (!is_big_int_v<T>)
-                        {
-                            res = signed_res;
-                            break;
-                        }
+                        res = signed_res;
+                        break;
                     }
                 }
                 res *= 10;
@@ -348,18 +329,21 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
     }
 
 end:
-    x = res;
-    if constexpr (is_signed_v<T>)
+    if (!negative)
     {
-        if (negative)
+        x = res;
+    }
+    else
+    {
+        if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW)
         {
-            if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW)
-            {
-                if (common::mulOverflow<T>(x, -1, x))
-                    return ReturnType(false);
-            }
-            else
-                x = -res;
+            x = res;
+            if (common::mulOverflow<T>(x, -1, x))
+                return ReturnType(false);
+        }
+        else
+        {
+            x = -res;
         }
     }
 
@@ -394,7 +378,7 @@ template <typename T, bool throw_on_error = true>
 void readIntTextUnsafe(T & x, ReadBuffer & buf)
 {
     bool negative = false;
-    make_unsigned_t<T> res = 0;
+    std::make_unsigned_t<T> res = 0;
 
     auto on_error = []
     {
@@ -527,7 +511,7 @@ bool tryReadJSONStringInto(Vector & s, ReadBuffer & buf)
 }
 
 /// This could be used as template parameter for functions above, if you want to just skip data.
-struct NullOutput
+struct NullSink
 {
     void append(const char *, size_t) {}
     void push_back(char) {}
@@ -619,11 +603,9 @@ inline bool tryReadDateText(DayNum & date, ReadBuffer & buf)
     return readDateTextImpl<bool>(date, buf);
 }
 
-template <typename ReturnType = void>
-inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
-{
-    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
+inline void readUUIDText(UUID & uuid, ReadBuffer & buf)
+{
     char s[36];
     size_t size = buf.read(s, 32);
 
@@ -636,47 +618,19 @@ inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
             if (size != 36)
             {
                 s[size] = 0;
-
-                if constexpr (throw_exception)
-                {
-                    throw Exception(std::string("Cannot parse uuid ") + s, ErrorCodes::CANNOT_PARSE_UUID);
-                }
-                else
-                {
-                    return ReturnType(false);
-                }
+                throw Exception(std::string("Cannot parse uuid ") + s, ErrorCodes::CANNOT_PARSE_UUID);
             }
 
             parseUUID(reinterpret_cast<const UInt8 *>(s), std::reverse_iterator<UInt8 *>(reinterpret_cast<UInt8 *>(&uuid) + 16));
         }
         else
             parseUUIDWithoutSeparator(reinterpret_cast<const UInt8 *>(s), std::reverse_iterator<UInt8 *>(reinterpret_cast<UInt8 *>(&uuid) + 16));
-
-        return ReturnType(true);
     }
     else
     {
         s[size] = 0;
-
-        if constexpr (throw_exception)
-        {
-            throw Exception(std::string("Cannot parse uuid ") + s, ErrorCodes::CANNOT_PARSE_UUID);
-        }
-        else
-        {
-            return ReturnType(false);
-        }
+        throw Exception(std::string("Cannot parse uuid ") + s, ErrorCodes::CANNOT_PARSE_UUID);
     }
-}
-
-inline void readUUIDText(UUID & uuid, ReadBuffer & buf)
-{
-    return readUUIDTextImpl<void>(uuid, buf);
-}
-
-inline bool tryReadUUIDText(UUID & uuid, ReadBuffer & buf)
-{
-    return readUUIDTextImpl<bool>(uuid, buf);
 }
 
 
@@ -831,15 +785,12 @@ readBinary(T & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(String & x, ReadBuffer & buf) { readStringBinary(x, buf); }
 inline void readBinary(Int128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(UInt128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(DummyUInt256 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(UInt256 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Decimal32 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Decimal64 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Decimal128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(Decimal256 & x, ReadBuffer & buf) { readBigIntBinary(x.value, buf); }
 inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
-inline void readBinary(UInt256 & x, ReadBuffer & buf) { readBigIntBinary(x, buf); }
-inline void readBinary(Int256 & x, ReadBuffer & buf) { readBigIntBinary(x, buf); }
 
 template <typename T>
 inline std::enable_if_t<is_arithmetic_v<T> && (sizeof(T) <= 8), void>
@@ -860,11 +811,11 @@ readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian archi
 
 /// Generic methods to read value in text tab-separated format.
 template <typename T>
-inline std::enable_if_t<is_integer_v<T>, void>
+inline std::enable_if_t<is_integral_v<T>, void>
 readText(T & x, ReadBuffer & buf) { readIntText(x, buf); }
 
 template <typename T>
-inline std::enable_if_t<is_integer_v<T>, bool>
+inline std::enable_if_t<is_integral_v<T>, bool>
 tryReadText(T & x, ReadBuffer & buf) { return tryReadIntText(x, buf); }
 
 template <typename T>
@@ -973,8 +924,6 @@ inline void readCSV(UUID & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
      */
     throw Exception("UInt128 cannot be read as a text", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }
-inline void readCSV(UInt256 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
-inline void readCSV(Int256 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 
 template <typename T>
 void readBinary(std::vector<T> & x, ReadBuffer & buf)
@@ -1092,11 +1041,11 @@ inline bool tryParse(T & res, const char * data, size_t size)
 }
 
 template <typename T>
-inline std::enable_if_t<!is_integer_v<T>, void>
+inline std::enable_if_t<!is_integral_v<T>, void>
 readTextWithSizeSuffix(T & x, ReadBuffer & buf) { readText(x, buf); }
 
 template <typename T>
-inline std::enable_if_t<is_integer_v<T>, void>
+inline std::enable_if_t<is_integral_v<T>, void>
 readTextWithSizeSuffix(T & x, ReadBuffer & buf)
 {
     readIntText(x, buf);

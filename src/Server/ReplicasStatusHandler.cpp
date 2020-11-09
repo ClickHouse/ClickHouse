@@ -33,7 +33,7 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
         /// Even if lag is small, output detailed information about the lag.
         bool verbose = params.get("verbose", "") == "1";
 
-        const MergeTreeSettings & settings = context.getReplicatedMergeTreeSettings();
+        const MergeTreeSettings & settings = context.getMergeTreeSettings();
 
         bool ok = true;
         std::stringstream message;
@@ -43,8 +43,8 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
         /// Iterate through all the replicated tables.
         for (const auto & db : databases)
         {
-            /// Check if database can contain replicated tables
-            if (!db.second->canContainMergeTreeTables())
+            /// Lazy database can not contain replicated tables
+            if (db.second->getEngineName() == "Lazy")
                 continue;
 
             for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())

@@ -44,7 +44,7 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
 
     std::stringstream message;
 
-    /// TODO mess up of endianness in error message.
+    /// TODO mess up of endianess in error message.
     message << "Checksum doesn't match: corrupted data."
         " Reference: " + getHexUIntLowercase(expected_checksum.first) + getHexUIntLowercase(expected_checksum.second)
         + ". Actual: " + getHexUIntLowercase(calculated_checksum.first) + getHexUIntLowercase(calculated_checksum.second)
@@ -185,9 +185,9 @@ void CompressedReadBufferBase::decompress(char * to, size_t size_decompressed, s
         }
         else
         {
-            throw Exception("Data compressed with different methods, given method byte 0x"
+            throw Exception("Data compressed with different methods, given method byte "
                             + getHexUIntLowercase(method)
-                            + ", previous method byte 0x"
+                            + ", previous method byte "
                             + getHexUIntLowercase(codec->getMethodByte()),
                             ErrorCodes::CANNOT_DECOMPRESS);
         }

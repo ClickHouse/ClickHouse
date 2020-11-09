@@ -13,6 +13,7 @@
 #include <Formats/FormatFactory.h>
 
 #include <DataStreams/IBlockOutputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 
 #include <Poco/Net/HTTPRequest.h>
@@ -67,22 +68,6 @@ namespace
             const CompressionMethod compression_method)
             : SourceWithProgress(sample_block), name(std::move(name_))
         {
-            ReadWriteBufferFromHTTP::HTTPHeaderEntries header;
-
-            // Propagate OpenTelemetry trace context, if any, downstream.
-            const auto & client_info = context.getClientInfo();
-            if (client_info.opentelemetry_trace_id)
-            {
-                header.emplace_back("traceparent",
-                    client_info.composeTraceparentHeader());
-
-                if (!client_info.opentelemetry_tracestate.empty())
-                {
-                    header.emplace_back("tracestate",
-                        client_info.opentelemetry_tracestate);
-                }
-            }
-
             read_buf = wrapReadBufferWithCompressionMethod(
                 std::make_unique<ReadWriteBufferFromHTTP>(
                     uri,
@@ -92,7 +77,7 @@ namespace
                     context.getSettingsRef().max_http_get_redirects,
                     Poco::Net::HTTPBasicCredentials{},
                     DBMS_DEFAULT_BUFFER_SIZE,
-                    header,
+                    ReadWriteBufferFromHTTP::HTTPHeaderEntries{},
                     context.getRemoteHostFilter()),
                 compression_method);
 
@@ -193,7 +178,7 @@ std::function<void(std::ostream &)> IStorageURLBase::getReadPOSTDataCallback(
 }
 
 
-Pipe IStorageURLBase::read(
+Pipes IStorageURLBase::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
@@ -207,7 +192,8 @@ Pipe IStorageURLBase::read(
     for (const auto & [param, value] : params)
         request_uri.addQueryParameter(param, value);
 
-    return Pipe(std::make_shared<StorageURLSource>(
+    Pipes pipes;
+    pipes.emplace_back(std::make_shared<StorageURLSource>(
         request_uri,
         getReadMethod(),
         getReadPOSTDataCallback(
@@ -221,6 +207,8 @@ Pipe IStorageURLBase::read(
         max_block_size,
         ConnectionTimeouts::getHTTPTimeouts(context),
         chooseCompressionMethod(request_uri.getPath(), compression_method)));
+
+    return pipes;
 }
 
 BlockOutputStreamPtr IStorageURLBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)

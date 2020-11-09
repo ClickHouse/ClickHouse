@@ -32,8 +32,8 @@ static StorageSystemGraphite::Configs getConfigs(const Context & context)
 
     for (const auto & db : databases)
     {
-        /// Check if database can contain MergeTree tables
-        if (!db.second->canContainMergeTreeTables())
+        /// Lazy database can not contain MergeTree tables
+        if (db.second->getEngineName() == "Lazy")
             continue;
 
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())

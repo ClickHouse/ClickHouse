@@ -24,7 +24,7 @@ public:
       */
     using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 
-    Pipe read(
+    Pipes read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
@@ -33,7 +33,7 @@ public:
         unsigned num_streams,
         const PartitionIdToMaxBlock * max_block_numbers_to_read = nullptr) const;
 
-    Pipe readFromParts(
+    Pipes readFromParts(
         MergeTreeData::DataPartsVector parts,
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
@@ -48,7 +48,7 @@ private:
 
     Poco::Logger * log;
 
-    Pipe spreadMarkRangesAmongStreams(
+    Pipes spreadMarkRangesAmongStreams(
         RangesInDataParts && parts,
         size_t num_streams,
         const Names & column_names,
@@ -61,7 +61,7 @@ private:
         const MergeTreeReaderSettings & reader_settings) const;
 
     /// out_projection - save projection only with columns, requested to read
-    Pipe spreadMarkRangesAmongStreamsWithOrder(
+    Pipes spreadMarkRangesAmongStreamsWithOrder(
         RangesInDataParts && parts,
         size_t num_streams,
         const Names & column_names,
@@ -75,7 +75,7 @@ private:
         const MergeTreeReaderSettings & reader_settings,
         ExpressionActionsPtr & out_projection) const;
 
-    Pipe spreadMarkRangesAmongStreamsFinal(
+    Pipes spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts,
         size_t num_streams,
         const Names & column_names,

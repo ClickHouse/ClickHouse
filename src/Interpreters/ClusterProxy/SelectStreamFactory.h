@@ -39,7 +39,7 @@ public:
         const String & query, const ASTPtr & query_ast,
         const Context & context, const ThrottlerPtr & throttler,
         const SelectQueryInfo & query_info,
-        Pipes & pipes) override;
+        Pipes & res) override;
 
 private:
     const Block header;

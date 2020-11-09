@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataStreams/OneBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/ContextAccess.h>
@@ -83,9 +84,9 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
         MutableColumnPtr database_column_mut = ColumnString::create();
         for (const auto & database : databases)
         {
-            /// Checck if database can contain MergeTree tables,
-            /// if not it's unnecessary to load all tables of database just to filter all of them.
-            if (database.second->canContainMergeTreeTables())
+            /// Lazy database can not contain MergeTree tables
+            /// and it's unnecessary to load all tables of Lazy database just to filter all of them.
+            if (database.second->getEngineName() != "Lazy")
                 database_column_mut->insert(database.first);
         }
         block_to_filter.insert(ColumnWithTypeAndName(
@@ -222,7 +223,7 @@ StoragesInfo StoragesInfoStream::next()
     return {};
 }
 
-Pipe StorageSystemPartsBase::read(
+Pipes StorageSystemPartsBase::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
@@ -253,12 +254,15 @@ Pipe StorageSystemPartsBase::read(
     UInt64 num_rows = res_columns.at(0)->size();
     Chunk chunk(std::move(res_columns), num_rows);
 
-    return Pipe(std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk)));
+    Pipes pipes;
+    pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk)));
+
+    return pipes;
 }
 
 
-StorageSystemPartsBase::StorageSystemPartsBase(const StorageID & table_id_, NamesAndTypesList && columns_)
-    : IStorage(table_id_)
+StorageSystemPartsBase::StorageSystemPartsBase(std::string name_, NamesAndTypesList && columns_)
+    : IStorage(StorageID{"system", name_})
 {
     ColumnsDescription tmp_columns(std::move(columns_));
 

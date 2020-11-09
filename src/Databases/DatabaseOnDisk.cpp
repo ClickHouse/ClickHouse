@@ -54,12 +54,9 @@ std::pair<String, StoragePtr> createTableFromAST(
 
     if (ast_create_query.as_table_function)
     {
+        const auto & table_function = ast_create_query.as_table_function->as<ASTFunction &>();
         const auto & factory = TableFunctionFactory::instance();
-        auto table_function = factory.get(ast_create_query.as_table_function, context);
-        ColumnsDescription columns;
-        if (ast_create_query.columns_list && ast_create_query.columns_list->columns)
-            columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, false);
-        StoragePtr storage = table_function->execute(ast_create_query.as_table_function, context, ast_create_query.table, std::move(columns));
+        StoragePtr storage = factory.get(table_function.name, context)->execute(ast_create_query.as_table_function, context, ast_create_query.table);
         storage->renameInMemory(ast_create_query);
         return {ast_create_query.table, storage};
     }
@@ -224,11 +221,6 @@ void DatabaseOnDisk::dropTable(const Context & context, const String & table_nam
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Path is empty");
 
     StoragePtr table = detachTable(table_name);
-
-    /// This is possible for Lazy database.
-    if (!table)
-        return;
-
     bool renamed = false;
     try
     {
@@ -321,7 +313,7 @@ void DatabaseOnDisk::renameTable(
 
     /// Special case: usually no actions with symlinks are required when detaching/attaching table,
     /// but not when moving from Atomic database to Ordinary
-    if (from_atomic_to_ordinary && table->storesDataOnDisk())
+    if (from_atomic_to_ordinary)
     {
         auto & atomic_db = assert_cast<DatabaseAtomic &>(*this);
         atomic_db.tryRemoveSymlink(table_name);

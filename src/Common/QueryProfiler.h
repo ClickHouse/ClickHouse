@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <Core/Types.h>
 #include <signal.h>
 #include <time.h>
 
@@ -25,7 +25,7 @@ namespace DB
   *  2. collect thread's current stack trace
   *  3. write collected stack trace to trace_pipe for TraceCollector
   *
-  * Destructor tries to unset timer and restore previous signal handler.
+  * Desctructor tries to unset timer and restore previous signal handler.
   * Note that signal handler implementation is defined by template parameter. See QueryProfilerReal and QueryProfilerCpu.
   */
 template <typename ProfilerImpl>

@@ -14,8 +14,7 @@ ReadFromPreparedSource::ReadFromPreparedSource(Pipe pipe_, std::shared_ptr<Conte
 void ReadFromPreparedSource::initializePipeline(QueryPipeline & pipeline)
 {
     pipeline.init(std::move(pipe));
-    if (context)
-        pipeline.addInterpreterContext(std::move(context));
+    pipeline.addInterpreterContext(std::move(context));
 }
 
 }

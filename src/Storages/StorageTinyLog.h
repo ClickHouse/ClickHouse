@@ -24,7 +24,7 @@ class StorageTinyLog final : public ext::shared_ptr_helper<StorageTinyLog>, publ
 public:
     String getName() const override { return "TinyLog"; }
 
-    Pipe read(
+    Pipes read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
@@ -39,7 +39,6 @@ public:
 
     CheckResults checkData(const ASTPtr & /* query */, const Context & /* context */) override;
 
-    bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {DB::fullPath(disk, table_path)}; }
 
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &) override;

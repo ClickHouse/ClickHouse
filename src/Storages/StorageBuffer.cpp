@@ -146,7 +146,7 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(const Context 
 }
 
 
-Pipe StorageBuffer::read(
+Pipes StorageBuffer::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
@@ -155,7 +155,7 @@ Pipe StorageBuffer::read(
     size_t max_block_size,
     unsigned num_streams)
 {
-    Pipe pipe_from_dst;
+    Pipes pipes_from_dst;
 
     if (destination_id)
     {
@@ -179,10 +179,10 @@ Pipe StorageBuffer::read(
         if (dst_has_same_structure)
         {
             if (query_info.order_optimizer)
-                query_info.input_order_info = query_info.order_optimizer->getInputOrder(destination_metadata_snapshot);
+                query_info.input_order_info = query_info.order_optimizer->getInputOrder(destination, destination_metadata_snapshot);
 
             /// The destination table has the same structure of the requested columns and we can simply read blocks from there.
-            pipe_from_dst = destination->read(
+            pipes_from_dst = destination->read(
                 column_names, destination_metadata_snapshot, query_info,
                 context, processed_stage, max_block_size, num_streams);
         }
@@ -217,84 +217,72 @@ Pipe StorageBuffer::read(
             }
             else
             {
-                pipe_from_dst = destination->read(
+                pipes_from_dst = destination->read(
                     columns_intersection, destination_metadata_snapshot, query_info,
                     context, processed_stage, max_block_size, num_streams);
 
-                if (!pipe_from_dst.empty())
+                if (!pipes_from_dst.empty())
                 {
-                    pipe_from_dst.addSimpleTransform([&](const Block & stream_header)
+                    for (auto & pipe : pipes_from_dst)
                     {
-                        return std::make_shared<AddingMissedTransform>(stream_header, header_after_adding_defaults,
-                            metadata_snapshot->getColumns(), context);
-                    });
+                        pipe.addSimpleTransform(std::make_shared<AddingMissedTransform>(
+                                pipe.getHeader(), header_after_adding_defaults, metadata_snapshot->getColumns(), context));
 
-                    pipe_from_dst.addSimpleTransform([&](const Block & stream_header)
-                    {
-                        return std::make_shared<ConvertingTransform>(
-                            stream_header, header, ConvertingTransform::MatchColumnsMode::Name);
-                    });
+                        pipe.addSimpleTransform(std::make_shared<ConvertingTransform>(
+                                pipe.getHeader(), header, ConvertingTransform::MatchColumnsMode::Name));
+                    }
                 }
             }
         }
 
-        pipe_from_dst.addTableLock(destination_lock);
-        pipe_from_dst.addStorageHolder(destination);
+        for (auto & pipe : pipes_from_dst)
+        {
+            pipe.addTableLock(destination_lock);
+            pipe.addStorageHolder(destination);
+        }
     }
 
-    Pipe pipe_from_buffers;
-    {
-        Pipes pipes_from_buffers;
-        pipes_from_buffers.reserve(num_shards);
-        for (auto & buf : buffers)
-            pipes_from_buffers.emplace_back(std::make_shared<BufferSource>(column_names, buf, *this, metadata_snapshot));
-
-        pipe_from_buffers = Pipe::unitePipes(std::move(pipes_from_buffers));
-    }
+    Pipes pipes_from_buffers;
+    pipes_from_buffers.reserve(num_shards);
+    for (auto & buf : buffers)
+        pipes_from_buffers.emplace_back(std::make_shared<BufferSource>(column_names, buf, *this, metadata_snapshot));
 
     /// Convert pipes from table to structure from buffer.
-    if (!pipe_from_buffers.empty() && !pipe_from_dst.empty()
-        && !blocksHaveEqualStructure(pipe_from_buffers.getHeader(), pipe_from_dst.getHeader()))
+    if (!pipes_from_buffers.empty() && !pipes_from_dst.empty()
+        && !blocksHaveEqualStructure(pipes_from_buffers.front().getHeader(), pipes_from_dst.front().getHeader()))
     {
-        pipe_from_dst.addSimpleTransform([&](const Block & header)
-        {
-            return std::make_shared<ConvertingTransform>(
-                   header,
-                   pipe_from_buffers.getHeader(),
-                   ConvertingTransform::MatchColumnsMode::Name);
-        });
+        for (auto & pipe : pipes_from_dst)
+            pipe.addSimpleTransform(std::make_shared<ConvertingTransform>(
+                    pipe.getHeader(),
+                    pipes_from_buffers.front().getHeader(),
+                    ConvertingTransform::MatchColumnsMode::Name));
     }
 
     /** If the sources from the table were processed before some non-initial stage of query execution,
       * then sources from the buffers must also be wrapped in the processing pipeline before the same stage.
       */
     if (processed_stage > QueryProcessingStage::FetchColumns)
-        pipe_from_buffers = QueryPipeline::getPipe(
-                InterpreterSelectQuery(query_info.query, context, std::move(pipe_from_buffers),
-                                               SelectQueryOptions(processed_stage)).execute().pipeline);
+        for (auto & pipe : pipes_from_buffers)
+            pipe = InterpreterSelectQuery(query_info.query, context, std::move(pipe), SelectQueryOptions(processed_stage)).execute().pipeline.getPipe();
 
     if (query_info.prewhere_info)
     {
-        pipe_from_buffers.addSimpleTransform([&](const Block & header)
-        {
-            return std::make_shared<FilterTransform>(
-                    header, query_info.prewhere_info->prewhere_actions,
-                    query_info.prewhere_info->prewhere_column_name, query_info.prewhere_info->remove_prewhere_column);
-        });
+        for (auto & pipe : pipes_from_buffers)
+            pipe.addSimpleTransform(std::make_shared<FilterTransform>(pipe.getHeader(), query_info.prewhere_info->prewhere_actions,
+                    query_info.prewhere_info->prewhere_column_name, query_info.prewhere_info->remove_prewhere_column));
 
         if (query_info.prewhere_info->alias_actions)
         {
-            pipe_from_buffers.addSimpleTransform([&](const Block & header)
-            {
-                return std::make_shared<ExpressionTransform>(header, query_info.prewhere_info->alias_actions);
-            });
+            for (auto & pipe : pipes_from_buffers)
+                pipe.addSimpleTransform(std::make_shared<ExpressionTransform>(pipe.getHeader(), query_info.prewhere_info->alias_actions));
+
         }
     }
 
-    Pipes pipes;
-    pipes.emplace_back(std::move(pipe_from_dst));
-    pipes.emplace_back(std::move(pipe_from_buffers));
-    return Pipe::unitePipes(std::move(pipes));
+    for (auto & pipe : pipes_from_buffers)
+        pipes_from_dst.emplace_back(std::move(pipe));
+
+    return pipes_from_dst;
 }
 
 
@@ -316,7 +304,7 @@ static void appendBlock(const Block & from, Block & to)
 
     size_t old_rows = to.rows();
 
-    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
+    auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
     try
     {
@@ -694,7 +682,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     }
     auto destination_metadata_snapshot = table->getInMemoryMetadataPtr();
 
-    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
+    auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
     auto insert = std::make_shared<ASTInsertQuery>();
     insert->table_id = destination_id;

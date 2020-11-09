@@ -2,6 +2,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataStreams/IBlockInputStream.h>
+#include <DataStreams/LimitBlockInputStream.h>
 #include <Storages/System/StorageSystemNumbers.h>
 
 #include <Processors/Sources/SourceWithProgress.h>
@@ -122,7 +123,7 @@ StorageSystemNumbers::StorageSystemNumbers(const StorageID & table_id, bool mult
     setInMemoryMetadata(storage_metadata);
 }
 
-Pipe StorageSystemNumbers::read(
+Pipes StorageSystemNumbers::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo &,
@@ -142,7 +143,8 @@ Pipe StorageSystemNumbers::read(
     if (!multithreaded)
         num_streams = 1;
 
-    Pipe pipe;
+    Pipes res;
+    res.reserve(num_streams);
 
     if (num_streams > 1 && !even_distribution && *limit)
     {
@@ -150,9 +152,9 @@ Pipe StorageSystemNumbers::read(
         UInt64 max_counter = offset + *limit;
 
         for (size_t i = 0; i < num_streams; ++i)
-            pipe.addSource(std::make_shared<NumbersMultiThreadedSource>(state, max_block_size, max_counter));
+            res.emplace_back(std::make_shared<NumbersMultiThreadedSource>(state, max_block_size, max_counter));
 
-        return pipe;
+        return res;
     }
 
     for (size_t i = 0; i < num_streams; ++i)
@@ -162,22 +164,17 @@ Pipe StorageSystemNumbers::read(
         if (limit && i == 0)
             source->addTotalRowsApprox(*limit);
 
-        pipe.addSource(std::move(source));
-    }
+        res.emplace_back(std::move(source));
 
-    if (limit)
-    {
-        size_t i = 0;
-        /// This formula is how to split 'limit' elements to 'num_streams' chunks almost uniformly.
-        pipe.addSimpleTransform([&](const Block & header)
+        if (limit)
         {
-            ++i;
-            return std::make_shared<LimitTransform>(
-                header, *limit * i / num_streams - *limit * (i - 1) / num_streams, 0);
-        });
+            /// This formula is how to split 'limit' elements to 'num_streams' chunks almost uniformly.
+            res.back().addSimpleTransform(std::make_shared<LimitTransform>(
+                    res.back().getHeader(), *limit * (i + 1) / num_streams - *limit * i / num_streams, 0));
+        }
     }
 
-    return pipe;
+    return res;
 }
 
 }

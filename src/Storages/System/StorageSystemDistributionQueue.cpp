@@ -38,8 +38,8 @@ void StorageSystemDistributionQueue::fillData(MutableColumns & res_columns, cons
     std::map<String, std::map<String, StoragePtr>> tables;
     for (const auto & db : DatabaseCatalog::instance().getDatabases())
     {
-        /// Check if database can contain distributed tables
-        if (!db.second->canContainDistributedTables())
+        /// Lazy database can not contain distributed tables
+        if (db.second->getEngineName() == "Lazy")
             continue;
 
         const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, db.first);

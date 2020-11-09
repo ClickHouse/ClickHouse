@@ -24,7 +24,7 @@ class StorageLog final : public ext::shared_ptr_helper<StorageLog>, public IStor
 public:
     String getName() const override { return "Log"; }
 
-    Pipe read(
+    Pipes read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
@@ -41,7 +41,6 @@ public:
 
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &) override;
 
-    bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {DB::fullPath(disk, table_path)}; }
 
 protected:

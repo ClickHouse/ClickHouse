@@ -129,12 +129,12 @@ public:
         size_t left_index = static_cast<size_t>(index);
         size_t right_index = left_index + 1;
         if (right_index == samples.size())
-            return static_cast<double>(samples[left_index]);
+            return samples[left_index];
 
         double left_coef = right_index - index;
         double right_coef = index - left_index;
 
-        return static_cast<double>(samples[left_index]) * left_coef + static_cast<double>(samples[right_index]) * right_coef;
+        return samples[left_index] * left_coef + samples[right_index] * right_coef;
     }
 
     void merge(const ReservoirSampler<T, OnEmpty> & b)
@@ -158,25 +158,12 @@ public:
         }
         else
         {
-            /// Replace every element in our reservoir to the b's reservoir
-            /// with the probability of b.total_values / (a.total_values + b.total_values)
-            /// Do it more roughly than true random sampling to save performance.
-
+            randomShuffle(samples);
             total_values += b.total_values;
-
-            /// Will replace every frequency'th element in a to element from b.
-            double frequency = static_cast<double>(total_values) / b.total_values;
-
-            /// When frequency is too low, replace just one random element with the corresponding probability.
-            if (frequency * 2 >= sample_count)
+            for (size_t i = 0; i < sample_count; ++i)
             {
-                UInt64 rnd = genRandom(frequency);
-                if (rnd < sample_count)
-                    samples[rnd] = b.samples[rnd];
-            }
-            else
-            {
-                for (double i = 0; i < sample_count; i += frequency)
+                UInt64 rnd = genRandom(total_values);
+                if (rnd < b.total_values)
                     samples[i] = b.samples[i];
             }
         }
@@ -213,6 +200,9 @@ public:
     }
 
 private:
+    friend void qdigest_test(int normal_size, UInt64 value_limit, const std::vector<UInt64> & values, int queries_count, bool verbose);
+    friend void rs_perf_test();
+
     /// We allocate a little memory on the stack - to avoid allocations when there are many objects with a small number of elements.
     using Array = DB::PODArrayWithStackMemory<T, 64>;
 
@@ -230,6 +220,15 @@ private:
             return static_cast<UInt32>(rng()) % static_cast<UInt32>(lim);
         else
             return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(rng.max()) + 1ULL) + static_cast<UInt64>(rng())) % lim;
+    }
+
+    void randomShuffle(Array & v)
+    {
+        for (size_t i = 1; i < v.size(); ++i)
+        {
+            size_t j = genRandom(i + 1);
+            std::swap(v[i], v[j]);
+        }
     }
 
     void sortIfNeeded()

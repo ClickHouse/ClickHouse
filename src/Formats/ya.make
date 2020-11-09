@@ -7,7 +7,6 @@ PEERDIR(
     contrib/libs/protoc
 )
 
-
 SRCS(
     FormatFactory.cpp
     FormatSchemaInfo.cpp

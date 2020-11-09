@@ -20,16 +20,15 @@ Büyük / küçük harf duyarsız arama için işlevi kullanın [positionCaseİn
 **Sözdizimi**
 
 ``` sql
-position(haystack, needle[, start_pos])
+position(haystack, needle)
 ```
 
-Takma ad: `locate(haystack, needle[, start_pos])`.
+Takma ad: `locate(haystack, needle)`.
 
 **Parametre**
 
 -   `haystack` — string, in which substring will to be searched. [Dize](../syntax.md#syntax-string-literal).
 -   `needle` — substring to be searched. [Dize](../syntax.md#syntax-string-literal).
--   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Döndürülen değerler**
 
@@ -81,14 +80,13 @@ Dize, tek baytlık kodlanmış bir metni temsil eden bir bayt kümesi içerdiği
 **Sözdizimi**
 
 ``` sql
-positionCaseInsensitive(haystack, needle[, start_pos])
+positionCaseInsensitive(haystack, needle)
 ```
 
 **Parametre**
 
 -   `haystack` — string, in which substring will to be searched. [Dize](../syntax.md#syntax-string-literal).
 -   `needle` — substring to be searched. [Dize](../syntax.md#syntax-string-literal).
--   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Döndürülen değerler**
 
@@ -124,14 +122,13 @@ Büyük / küçük harf duyarsız arama için işlevi kullanın [positionCaseİn
 **Sözdizimi**
 
 ``` sql
-positionUTF8(haystack, needle[, start_pos])
+positionUTF8(haystack, needle)
 ```
 
 **Parametre**
 
 -   `haystack` — string, in which substring will to be searched. [Dize](../syntax.md#syntax-string-literal).
 -   `needle` — substring to be searched. [Dize](../syntax.md#syntax-string-literal).
--   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Döndürülen değerler**
 
@@ -197,14 +194,13 @@ Dizenin UTF-8 kodlanmış bir metni temsil eden bir bayt kümesi içerdiği vars
 **Sözdizimi**
 
 ``` sql
-positionCaseInsensitiveUTF8(haystack, needle[, start_pos])
+positionCaseInsensitiveUTF8(haystack, needle)
 ```
 
 **Parametre**
 
 -   `haystack` — string, in which substring will to be searched. [Dize](../syntax.md#syntax-string-literal).
 -   `needle` — substring to be searched. [Dize](../syntax.md#syntax-string-literal).
--   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Döndürülen değer**
 

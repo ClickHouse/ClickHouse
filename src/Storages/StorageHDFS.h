@@ -19,7 +19,7 @@ class StorageHDFS final : public ext::shared_ptr_helper<StorageHDFS>, public ISt
 public:
     String getName() const override { return "HDFS"; }
 
-    Pipe read(
+    Pipes read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,

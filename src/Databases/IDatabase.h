@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -147,13 +147,9 @@ public:
     /// Get name of database engine.
     virtual String getEngineName() const = 0;
 
-    virtual bool canContainMergeTreeTables() const { return true; }
-
-    virtual bool canContainDistributedTables() const { return true; }
-
     /// Load a set of existing tables.
     /// You can call only once, right after the object is created.
-    virtual void loadStoredObjects(Context & /*context*/, bool /*has_force_restore_data_flag*/, bool /*force_attach*/ = false) {}
+    virtual void loadStoredObjects(Context & /*context*/, bool /*has_force_restore_data_flag*/) {}
 
     /// Check the existence of the table.
     virtual bool isTableExist(const String & name, const Context & context) const = 0;

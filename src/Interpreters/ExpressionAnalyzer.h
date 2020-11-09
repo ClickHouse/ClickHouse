@@ -34,12 +34,6 @@ struct ASTTablesInSelectQueryElement;
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
-class ArrayJoinAction;
-using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
-
-class ActionsDAG;
-using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
-
 /// Create columns in block or return false if not possible
 bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column = false);
 
@@ -49,12 +43,9 @@ struct ExpressionAnalyzerData
     SubqueriesForSets subqueries_for_sets;
     PreparedSets prepared_sets;
 
-    /// Columns after ARRAY JOIN. It there is no ARRAY JOIN, it's source_columns.
-    NamesAndTypesList columns_after_array_join;
-    /// Columns after Columns after ARRAY JOIN and JOIN. If there is no JOIN, it's columns_after_array_join.
-    NamesAndTypesList columns_after_join;
     /// Columns after ARRAY JOIN, JOIN, and/or aggregation.
     NamesAndTypesList aggregated_columns;
+    NamesAndTypesList array_join_columns;
 
     bool has_aggregation = false;
     NamesAndTypesList aggregation_keys;
@@ -113,7 +104,7 @@ public:
       * That is, you need to call getSetsWithSubqueries after all calls of `append*` or `getActions`
       *  and create all the returned sets before performing the actions.
       */
-    SubqueriesForSets & getSubqueriesForSets() { return subqueries_for_sets; }
+    const SubqueriesForSets & getSubqueriesForSets() const { return subqueries_for_sets; }
 
     /// Get intermediates for tests
     const ExpressionAnalyzerData & getAnalyzedData() const { return *this; }
@@ -138,18 +129,22 @@ protected:
     const TableJoin & analyzedJoin() const { return *syntax->analyzed_join; }
     const NamesAndTypesList & sourceColumns() const { return syntax->required_source_columns; }
     const std::vector<const ASTFunction *> & aggregates() const { return syntax->aggregates; }
+    NamesAndTypesList sourceWithJoinedColumns() const;
+
     /// Find global subqueries in the GLOBAL IN/JOIN sections. Fills in external_tables.
     void initGlobalSubqueriesAndExternalTables(bool do_global);
 
-    ArrayJoinActionPtr addMultipleArrayJoinAction(ActionsDAGPtr & actions, bool is_left) const;
+    void addMultipleArrayJoinAction(ExpressionActionsPtr & actions, bool is_left) const;
 
-    void getRootActions(const ASTPtr & ast, bool no_subqueries, ActionsDAGPtr & actions, bool only_consts = false);
+    void addJoinAction(ExpressionActionsPtr & actions, JoinPtr = {}) const;
+
+    void getRootActions(const ASTPtr & ast, bool no_subqueries, ExpressionActionsPtr & actions, bool only_consts = false);
 
     /** Similar to getRootActions but do not make sets when analyzing IN functions. It's used in
       * analyzeAggregation which happens earlier than analyzing PREWHERE and WHERE. If we did, the
       * prepared sets would not be applicable for MergeTree index optimization.
       */
-    void getRootActionsNoMakeSet(const ASTPtr & ast, bool no_subqueries, ActionsDAGPtr & actions, bool only_consts = false);
+    void getRootActionsNoMakeSet(const ASTPtr & ast, bool no_subqueries, ExpressionActionsPtr & actions, bool only_consts = false);
 
     void getRootActionsForHaving(const ASTPtr & ast, bool no_subqueries, ActionsDAGPtr & actions, bool only_consts = false);
 
@@ -159,7 +154,7 @@ protected:
       * Set has_aggregation = true if there is GROUP BY or at least one aggregate function.
       */
     void analyzeAggregation();
-    bool makeAggregateDescriptions(ActionsDAGPtr & actions);
+    bool makeAggregateDescriptions(ExpressionActionsPtr & actions);
 
     const ASTSelectQuery * getSelectQuery() const;
 
@@ -184,10 +179,8 @@ struct ExpressionAnalysisResult
     bool optimize_aggregation_in_order = false;
     bool join_has_delayed_stream = false;
 
-    ExpressionActionsPtr before_array_join;
-    ArrayJoinActionPtr array_join;
     ExpressionActionsPtr before_join;
-    JoinPtr join;
+    ExpressionActionsPtr join;
     ExpressionActionsPtr before_where;
     ExpressionActionsPtr before_aggregation;
     ExpressionActionsPtr before_having;
@@ -274,7 +267,7 @@ public:
     /// These appends are public only for tests
     void appendSelect(ExpressionActionsChain & chain, bool only_types);
     /// Deletes all columns except mentioned by SELECT, arranges the remaining columns and renames them to aliases.
-    ExpressionActionsPtr appendProjectResult(ExpressionActionsChain & chain) const;
+    void appendProjectResult(ExpressionActionsChain & chain) const;
 
 private:
     StorageMetadataPtr metadata_snapshot;
@@ -317,14 +310,14 @@ private:
       */
 
     /// Before aggregation:
-    ArrayJoinActionPtr appendArrayJoin(ExpressionActionsChain & chain, ExpressionActionsPtr & before_array_join, bool only_types);
+    bool appendArrayJoin(ExpressionActionsChain & chain, bool only_types);
     bool appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types);
-    JoinPtr appendJoin(ExpressionActionsChain & chain);
+    bool appendJoin(ExpressionActionsChain & chain);
     /// Add preliminary rows filtration. Actions are created in other expression analyzer to prevent any possible alias injection.
     void appendPreliminaryFilter(ExpressionActionsChain & chain, ExpressionActionsPtr actions, String column_name);
     /// remove_filter is set in ExpressionActionsChain::finalize();
     /// Columns in `additional_required_columns` will not be removed (they can be used for e.g. sampling or FINAL modifier).
-    ExpressionActionsPtr appendPrewhere(ExpressionActionsChain & chain, bool only_types, const Names & additional_required_columns);
+    bool appendPrewhere(ExpressionActionsChain & chain, bool only_types, const Names & additional_required_columns);
     bool appendWhere(ExpressionActionsChain & chain, bool only_types);
     bool appendGroupBy(ExpressionActionsChain & chain, bool only_types, bool optimize_aggregation_in_order, ManyExpressionActions &);
     void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
