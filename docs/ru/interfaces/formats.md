@@ -1311,8 +1311,8 @@ SELECT * FROM imp_regex_table;
 
 ## Игнорирование ошибок {#skippingerrors}
 
-Некоторые форматы, такие как `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` и `Protobuf`, могут игнорировать строки, которые не соответствуют правилам и  разбор которых может вызвать ошибку. При этом обработка импортируемых данных продолжается со следующей строки. См. настройки [input_format_allow_errors_num](../operations/settings/settings.md#settings-input_format_allow_errors_num) и
-[input_format_allow_errors_ratio](../operations/settings/settings.md#settings-input_format_allow_errors_ratio).
+Некоторые форматы, такие как `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` и `Protobuf`, могут игнорировать строки, которые не соответствуют правилам и  разбор которых может вызвать ошибку. При этом обработка импортируемых данных продолжается со следующей строки. См. настройки [input_format_allow_errors_num](../operations/settings/settings.md#input_format_allow_errors_num) и
+[input_format_allow_errors_ratio](../operations/settings/settings.md#input_format_allow_errors_ratio).
 Ограничения:
 - В формате `JSONEachRow` в случае ошибки игнорируются все данные до конца текущей строки (или до конца файла). Поэтому строки должны быть разделены символом `\n`, чтобы ошибки обрабатывались корректно.
 - Форматы `Template` и `CustomSeparated` используют разделитель после последней колонки и разделитель между строками. Поэтому игнорирование ошибок работает только если хотя бы одна из строк не пустая.
