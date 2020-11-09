@@ -1,0 +1,140 @@
+language: cpp
+
+dist: bionic
+
+matrix:
+  include:
+    - os: linux
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - g++-8
+      env:
+        - COMPILER="CC=gcc-8 && CXX=g++-8"
+      compiler: gcc-8
+
+    - os: linux
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - g++-9
+      env:
+        - COMPILER="CC=gcc-9 && CXX=g++-9"
+      compiler: gcc-9
+
+    - os: linux
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - g++-10
+      env:
+        - COMPILER="CC=gcc-10 && CXX=g++-10"
+      compiler: gcc-10
+
+    - os: linux
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - g++-10
+      env:
+        - COMPILER="CC=gcc-10 && CXX=g++-10"
+        - SANITIZE="on"
+      compiler: gcc-10-sanitize
+
+    - os: linux
+      addons:
+        apt:
+          sources:
+            - llvm-toolchain-bionic-6.0
+          packages:
+            - clang-6.0
+      env:
+        - COMPILER="CC=clang-6.0 && CXX=clang++-6.0"
+      compiler: clang-6
+
+    - os: linux
+      addons:
+        apt:
+          sources:
+            - llvm-toolchain-bionic-7
+          packages:
+            - clang-7
+      env:
+        - COMPILER="CC=clang-7 && CXX=clang++-7"
+      compiler: clang-7
+
+    - os: linux
+      addons:
+        apt:
+          sources:
+            - llvm-toolchain-bionic-8
+          packages:
+            - clang-8
+      env:
+        - COMPILER="CC=clang-8 && CXX=clang++-8"
+      compiler: clang-8
+
+    - os: linux
+      addons:
+        apt:
+          sources:
+            - llvm-toolchain-bionic-9
+          packages:
+            - clang-9
+      env:
+        - COMPILER="CC=clang-9 && CXX=clang++-9"
+      compiler: clang-9
+
+    - os: linux
+      addons:
+        apt:
+          packages:
+            - clang-10
+          sources:
+            - ubuntu-toolchain-r-test
+            - sourceline: 'deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-10 main'
+              key_url: 'https://apt.llvm.org/llvm-snapshot.gpg.key'
+      env:
+        - COMPILER="CC=clang-10 && CXX=clang++-10"
+      compiler: clang-10
+
+    - os: linux
+      addons:
+        apt:
+          packages:
+            - clang-10
+          sources:
+            - ubuntu-toolchain-r-test
+            - sourceline: 'deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-10 main'
+              key_url: 'https://apt.llvm.org/llvm-snapshot.gpg.key'
+      env:
+        - COMPILER="CC=clang-10 && CXX=clang++-10"
+        - SANITIZE="on"
+      compiler: clang-10-sanitize
+
+before_install:
+  - eval "${COMPILER}"
+  - git clone https://github.com/google/benchmark.git
+  - git clone https://github.com/google/googletest.git benchmark/googletest
+
+install:
+  - export CMAKE_FLAGS="-DMINISELECT_TESTING=on -DCMAKE_BUILD_TYPE=RelWithDebInfo";
+  - if [[ "${SANITIZE}" == "on" ]]; then
+      export CMAKE_FLAGS="${CMAKE_FLAGS} -DMINISELECT_SANITIZE=on";
+    fi
+  - export CTEST_FLAGS="-j4 --output-on-failure -E checkperf"
+
+script:
+  - mkdir build
+  - cd build
+  - cmake $CMAKE_FLAGS ..
+  - cmake --build . -- -j2
+  - ctest $CTEST_FLAGS

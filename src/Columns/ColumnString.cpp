@@ -10,6 +10,7 @@
 
 #include <common/unaligned.h>
 #include <ext/scope_guard.h>
+#include <miniselect/floyd_rivest_select.h>
 
 namespace DB
 {
@@ -313,7 +314,7 @@ void ColumnString::getPermutationImpl(size_t limit, Permutation & res, Comparato
     auto less = [&cmp](size_t lhs, size_t rhs){ return cmp(lhs, rhs) < 0; };
 
     if (limit)
-        std::partial_sort(res.begin(), res.begin() + limit, res.end(), less);
+        miniselect::floyd_rivest_partial_sort(res.begin(), res.begin() + limit, res.end(), less);
     else
         std::sort(res.begin(), res.end(), less);
 }
@@ -365,7 +366,7 @@ void ColumnString::updatePermutationImpl(size_t limit, Permutation & res, EqualR
 
         /// Since then we are working inside the interval.
 
-        std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less);
+        miniselect::floyd_rivest_partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less);
 
         size_t new_first = first;
         for (size_t j = first + 1; j < limit; ++j)

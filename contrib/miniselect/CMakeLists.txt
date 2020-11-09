@@ -1,0 +1,52 @@
+cmake_minimum_required(VERSION 3.7)
+project(miniselect)
+
+option(MINISELECT_TESTING "Building the tests." OFF)
+option(MINISELECT_SANITIZE "Building the library with sanitizers." OFF)
+option(MINISELECT_BUILD_LIBCXX "Building the library with libcxx." OFF)
+option(MINISELECT_ENABLE_FUZZING "Building the library with fuzzing." OFF)
+
+include_directories(include)
+
+if (MINISELECT_TESTING)
+    enable_testing()
+    set(CMAKE_CXX_STANDARD 17)
+    if (NOT CMAKE_BUILD_TYPE)
+        message(STATUS "No build type selected, default to Release")
+        set(CMAKE_BUILD_TYPE "Release")
+    endif()
+    if (MINISELECT_SANITIZE)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -fno-omit-frame-pointer -fsanitize=undefined -fno-sanitize-recover=all")
+    endif()
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -Wall -Wextra -Wpedantic -Wno-gnu-zero-variadic-macro-arguments")
+
+    if (MINISELECT_BUILD_LIBCXX AND "${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+        message(STATUS "Using libcxx as a default standard C++ library")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
+    endif()
+
+    add_subdirectory(benchmark)
+    include_directories(testing)
+    include_directories(benches)
+
+    add_executable(benchmark_sort benches/benchmark_sort.cpp)
+    target_link_libraries(benchmark_sort benchmark::benchmark gtest)
+    add_executable(benchmark_select benches/benchmark_select.cpp)
+    target_link_libraries(benchmark_select benchmark::benchmark gtest)
+
+    set(TEST_SOURCES testing/test_select.cpp)
+    add_executable(test_select ${TEST_SOURCES})
+    target_link_libraries(test_select gtest gmock gtest_main)
+    add_test(NAME test_select COMMAND test_select)
+
+    set(TEST_SOURCES testing/test_sort.cpp)
+    add_executable(test_sort ${TEST_SOURCES})
+    target_link_libraries(test_sort gtest gmock gtest_main)
+    add_test(NAME test_sort COMMAND test_sort)
+endif()
+
+if(MINISELECT_ENABLE_FUZZING)
+    add_subdirectory(benchmark)
+    include_directories(testing)
+    add_subdirectory(fuzz)
+endif()
