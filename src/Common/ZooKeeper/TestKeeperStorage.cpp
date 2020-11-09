@@ -376,12 +376,14 @@ struct TestKeeperStorageMultiRequest final : public TestKeeperStorageRequest
 
         try
         {
+            size_t i = 0;
             for (const auto & concrete_request : concrete_requests)
             {
                 auto [ cur_response, undo_action ] = concrete_request->process(container, zxid);
-                response.responses.emplace_back(cur_response);
+                response.responses[i] = cur_response;
                 if (cur_response->error != Coordination::Error::ZOK)
                 {
+                    std::cerr << "GOT ERROR ON: " << i << " error" << static_cast<int32_t>(cur_response->error) << std::endl;
                     response.error = cur_response->error;
 
                     for (auto it = undo_actions.rbegin(); it != undo_actions.rend(); ++it)
@@ -392,6 +394,7 @@ struct TestKeeperStorageMultiRequest final : public TestKeeperStorageRequest
                 }
                 else
                     undo_actions.emplace_back(std::move(undo_action));
+                ++i;
             }
 
             response.error = Coordination::Error::ZOK;
@@ -480,9 +483,6 @@ void TestKeeperStorage::finalize()
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
-
-
-
 
 
 class TestKeeperWrapperFactory final : private boost::noncopyable

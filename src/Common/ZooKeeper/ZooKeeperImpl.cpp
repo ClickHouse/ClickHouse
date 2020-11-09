@@ -824,11 +824,15 @@ void ZooKeeper::receiveEvent()
 
     try
     {
+        std::cerr << "READING RESPONSE FOR REQUEST ID:" << request_info.request->getOpNum() << std::endl;
         if (!response)
             response = request_info.request->makeResponse();
 
         if (err != Error::ZOK)
+        {
+            std::cerr << "GOT ERROR:" << static_cast<int32_t>(err) << std::endl;
             response->error = err;
+        }
         else
         {
             response->readImpl(*in);

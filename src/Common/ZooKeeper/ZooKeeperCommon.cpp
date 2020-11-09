@@ -544,12 +544,14 @@ void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)
 
 void ZooKeeperMultiResponse::writeImpl(WriteBuffer & out) const
 {
+    std::cerr << "WRITING MULTIRESPONSE " << responses.size() << std::endl;
     for (auto & response : responses)
     {
         const ZooKeeperResponse & zk_response = dynamic_cast<const ZooKeeperResponse &>(*response);
         OpNum op_num = zk_response.getOpNum();
         bool done = false;
         Error op_error = zk_response.error;
+        std::cerr << "WRITING OP ERROR:" << static_cast<int32_t>(op_error) << std::endl;
 
         Coordination::write(op_num, out);
         Coordination::write(done, out);
