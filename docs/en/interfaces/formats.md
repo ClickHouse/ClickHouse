@@ -1368,7 +1368,7 @@ SELECT * FROM imp_regex_table;
 
 Result:
 
-```txt
+```text
 ┌─id─┬─array───┬─string─┬───────date─┐
 │  1 │ [1,2,3] │ str1   │ 2020-01-01 │
 │  2 │ [1,2,3] │ str2   │ 2020-01-02 │
