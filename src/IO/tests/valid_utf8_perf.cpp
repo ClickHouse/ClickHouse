@@ -2,7 +2,9 @@
 #include <IO/WriteBufferFromString.h>
 #include <Common/Stopwatch.h>
 #include <string>
+#include <streambuf>
 #include <iostream>
+#include <cstdio>
 
 int main(int argc, char ** argv)
 {
@@ -10,7 +12,7 @@ int main(int argc, char ** argv)
     {
         int repeats = 1;
         if (argc >= 2)
-            repeats = std::stol(argv[1]);
+            repeats = atoi(argv[1]);
 
         std::string text((std::istreambuf_iterator<char>(std::cin)),
                           std::istreambuf_iterator<char>());

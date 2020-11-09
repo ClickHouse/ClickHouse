@@ -1,8 +1,9 @@
+#include <memory>
 #include <city.h>
 #include <string.h>
 
 #include <common/unaligned.h>
-#include <common/types.h>
+#include <Core/Types.h>
 
 #include "CompressedWriteBuffer.h"
 #include <Compression/CompressionFactory.h>

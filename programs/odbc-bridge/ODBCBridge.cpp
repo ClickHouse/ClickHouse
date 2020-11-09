@@ -5,12 +5,6 @@
 #include <errno.h>
 #include <IO/ReadHelpers.h>
 #include <boost/program_options.hpp>
-
-#if USE_ODBC
-// It doesn't make much sense to build this bridge without ODBC, but we still do this.
-#    include <Poco/Data/ODBC/Connector.h>
-#endif
-
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/String.h>
@@ -48,7 +42,12 @@ namespace
 #endif
             )
             {
-                LOG_ERROR(log, "Cannot resolve listen_host ({}), error {}: {}. If it is an IPv6 address and your host has disabled IPv6, then consider to specify IPv4 address to listen in <listen_host> element of configuration file. Example: <listen_host>0.0.0.0</listen_host>", host, e.code(), e.message());
+                LOG_ERROR(log,
+                    "Cannot resolve listen_host (" << host << "), error " << e.code() << ": " << e.message()
+                                                   << ". "
+                                                      "If it is an IPv6 address and your host has disabled IPv6, then consider to "
+                                                      "specify IPv4 address to listen in <listen_host> element of configuration "
+                                                      "file. Example: <listen_host>0.0.0.0</listen_host>");
             }
 
             throw;
@@ -73,11 +72,11 @@ namespace
 
 void ODBCBridge::handleHelp(const std::string &, const std::string &)
 {
-    Poco::Util::HelpFormatter help_formatter(options());
-    help_formatter.setCommand(commandName());
-    help_formatter.setHeader("HTTP-proxy for odbc requests");
-    help_formatter.setUsage("--http-port <port>");
-    help_formatter.format(std::cerr);
+    Poco::Util::HelpFormatter helpFormatter(options());
+    helpFormatter.setCommand(commandName());
+    helpFormatter.setHeader("HTTP-proxy for odbc requests");
+    helpFormatter.setUsage("--http-port <port>");
+    helpFormatter.format(std::cerr);
 
     stopOptionsProcessing();
 }
@@ -112,7 +111,7 @@ void ODBCBridge::defineOptions(Poco::Util::OptionSet & options)
                           .binding("help")
                           .callback(Poco::Util::OptionCallback<Me>(this, &Me::handleHelp)));
 
-    ServerApplication::defineOptions(options); // NOLINT Don't need complex BaseDaemon's .xml config
+    ServerApplication::defineOptions(options); /// Don't need complex BaseDaemon's .xml config
 }
 
 void ODBCBridge::initialize(Application & self)
@@ -127,8 +126,6 @@ void ODBCBridge::initialize(Application & self)
 
     buildLoggers(config(), logger(), self.commandName());
 
-    BaseDaemon::logRevision();
-
     log = &logger();
     hostname = config().getString("listen-host", "localhost");
     port = config().getUInt("http-port");
@@ -141,13 +138,7 @@ void ODBCBridge::initialize(Application & self)
 
     initializeTerminationAndSignalProcessing();
 
-#if USE_ODBC
-    // It doesn't make much sense to build this bridge without ODBC, but we
-    // still do this.
-    Poco::Data::ODBC::Connector::registerConnector();
-#endif
-
-    ServerApplication::initialize(self); // NOLINT
+    ServerApplication::initialize(self);
 }
 
 void ODBCBridge::uninitialize()
@@ -170,9 +161,8 @@ int ODBCBridge::main(const std::vector<std::string> & /*args*/)
     http_params->setTimeout(http_timeout);
     http_params->setKeepAliveTimeout(keep_alive_timeout);
 
-    auto shared_context = Context::createShared();
-    Context context(Context::createGlobal(shared_context.get()));
-    context.makeGlobalContext();
+    context = std::make_shared<Context>(Context::createGlobal());
+    context->makeGlobalContext();
 
     if (config().has("query_masking_rules"))
     {
@@ -183,7 +173,7 @@ int ODBCBridge::main(const std::vector<std::string> & /*args*/)
         new HandlerFactory("ODBCRequestHandlerFactory-factory", keep_alive_timeout, context), server_pool, socket, http_params);
     server.start();
 
-    LOG_INFO(log, "Listening http://{}", address.toString());
+    LOG_INFO(log, "Listening http://" + address.toString());
 
     SCOPE_EXIT({
         LOG_DEBUG(log, "Received termination signal.");
@@ -193,7 +183,7 @@ int ODBCBridge::main(const std::vector<std::string> & /*args*/)
         {
             if (server.currentConnections() == 0)
                 break;
-            LOG_DEBUG(log, "Waiting for {} connections, try {}", server.currentConnections(), count);
+            LOG_DEBUG(log, "Waiting for " << server.currentConnections() << " connections, try " << count);
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         }
     });

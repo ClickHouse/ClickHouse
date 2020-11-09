@@ -68,11 +68,9 @@ private:
 
 #ifdef __SSE4_1__
     /// vectors filled with `l` and `u`, for determining leftmost position of the first symbol
-    __m128i patl;
-    __m128i patu;
+    __m128i patl, patu;
     /// lower and uppercase vectors of first 16 characters of `needle`
-    __m128i cachel = _mm_setzero_si128();
-    __m128i cacheu = _mm_setzero_si128();
+    __m128i cachel = _mm_setzero_si128(), cacheu = _mm_setzero_si128();
     int cachemask{};
     size_t cache_valid_len{};
     size_t cache_actual_len{};
@@ -86,8 +84,7 @@ public:
         if (0 == needle_size)
             return;
 
-        UTF8SequenceBuffer l_seq;
-        UTF8SequenceBuffer u_seq;
+        UTF8SequenceBuffer l_seq, u_seq;
 
         if (*needle < 0x80u)
         {
@@ -232,6 +229,7 @@ public:
         if (0 == needle_size)
             return haystack;
 
+
         while (haystack < haystack_end)
         {
 #ifdef __SSE4_1__
@@ -254,7 +252,7 @@ public:
                 const auto offset = __builtin_ctz(mask);
                 haystack += offset;
 
-                if (haystack + n <= haystack_end && pageSafe(haystack))
+                if (haystack < haystack_end && haystack + n <= haystack_end && pageSafe(haystack))
                 {
                     const auto v_haystack_offset = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
                     const auto v_against_l_offset = _mm_cmpeq_epi8(v_haystack_offset, cachel);
@@ -463,7 +461,7 @@ public:
                 const auto offset = __builtin_ctz(mask);
                 haystack += offset;
 
-                if (haystack + n <= haystack_end && pageSafe(haystack))
+                if (haystack < haystack_end && haystack + n <= haystack_end && pageSafe(haystack))
                 {
                     const auto v_haystack_offset = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
                     const auto v_against_l_offset = _mm_cmpeq_epi8(v_haystack_offset, cachel);
@@ -652,7 +650,7 @@ public:
                 const auto offset = __builtin_ctz(mask);
                 haystack += offset;
 
-                if (haystack + n <= haystack_end && pageSafe(haystack))
+                if (haystack < haystack_end && haystack + n <= haystack_end && pageSafe(haystack))
                 {
                     /// check for first 16 octets
                     const auto v_haystack_offset = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));

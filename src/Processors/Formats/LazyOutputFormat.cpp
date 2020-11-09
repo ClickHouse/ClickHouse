@@ -7,7 +7,7 @@ namespace DB
 
 WriteBuffer LazyOutputFormat::out(nullptr, 0);
 
-Chunk LazyOutputFormat::getChunk(UInt64 milliseconds)
+Block LazyOutputFormat::getBlock(UInt64 milliseconds)
 {
     if (finished_processing)
     {
@@ -19,20 +19,38 @@ Chunk LazyOutputFormat::getChunk(UInt64 milliseconds)
     if (!queue.tryPop(chunk, milliseconds))
         return {};
 
-    if (chunk)
-        info.update(chunk.getNumRows(), chunk.allocatedBytes());
+    if (!chunk)
+        return {};
 
-    return chunk;
+    auto block = getPort(PortKind::Main).getHeader().cloneWithColumns(chunk.detachColumns());
+    info.update(block);
+
+    if (auto chunk_info = chunk.getChunkInfo())
+    {
+        if (const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(chunk_info.get()))
+        {
+            block.info.bucket_num = agg_info->bucket_num;
+            block.info.is_overflows = agg_info->is_overflows;
+        }
+    }
+
+    return block;
 }
 
-Chunk LazyOutputFormat::getTotals()
+Block LazyOutputFormat::getTotals()
 {
-    return std::move(totals);
+    if (!totals)
+        return {};
+
+    return getPort(PortKind::Totals).getHeader().cloneWithColumns(totals.detachColumns());
 }
 
-Chunk LazyOutputFormat::getExtremes()
+Block LazyOutputFormat::getExtremes()
 {
-    return std::move(extremes);
+    if (!extremes)
+        return {};
+
+    return getPort(PortKind::Extremes).getHeader().cloneWithColumns(extremes.detachColumns());
 }
 
 void LazyOutputFormat::setRowsBeforeLimit(size_t rows_before_limit)

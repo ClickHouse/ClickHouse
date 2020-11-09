@@ -11,8 +11,6 @@ namespace DB
 
 struct BlockIO;
 class Context;
-struct StorageInMemoryMetadata;
-using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 /** Prepares an input stream which produce data containing in INSERT query
   * Head of inserting data could be stored in INSERT ast directly
@@ -21,8 +19,7 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 class InputStreamFromASTInsertQuery : public IBlockInputStream
 {
 public:
-    InputStreamFromASTInsertQuery(
-        const ASTPtr & ast,
+    InputStreamFromASTInsertQuery(const ASTPtr & ast,
         ReadBuffer * input_buffer_tail_part,
         const Block & header,
         const Context & context,

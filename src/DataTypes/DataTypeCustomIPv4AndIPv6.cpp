@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeCustomSimpleTextSerialization.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsCoding.h>
 
 namespace DB
@@ -23,7 +24,7 @@ class DataTypeCustomIPv4Serialization : public DataTypeCustomSimpleTextSerializa
 public:
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override
     {
-        const auto * col = checkAndGetColumn<ColumnUInt32>(&column);
+        const auto *const col = checkAndGetColumn<ColumnUInt32>(&column);
         if (!col)
         {
             throw Exception("IPv4 type can only serialize columns of type UInt32." + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
@@ -62,7 +63,7 @@ public:
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override
     {
-        const auto * col = checkAndGetColumn<ColumnFixedString>(&column);
+        const auto *const col = checkAndGetColumn<ColumnFixedString>(&column);
         if (!col)
         {
             throw Exception("IPv6 type domain can only serialize columns of type FixedString(16)." + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
@@ -111,10 +112,6 @@ void registerDataTypeDomainIPv4AndIPv6(DataTypeFactory & factory)
         return std::make_pair(DataTypeFactory::instance().get("FixedString(16)"),
                               std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeCustomFixedName>("IPv6"), std::make_unique<DataTypeCustomIPv6Serialization>()));
     });
-
-    /// MySQL, MariaDB
-    factory.registerAlias("INET4", "IPv4", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("INET6", "IPv6", DataTypeFactory::CaseInsensitive);
 }
 
 }

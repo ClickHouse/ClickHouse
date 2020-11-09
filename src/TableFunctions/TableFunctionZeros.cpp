@@ -3,8 +3,9 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Common/typeid_cast.h>
 #include <Storages/System/StorageSystemZeros.h>
-#include <DataTypes/DataTypesNumber.h>
+#include <Access/AccessFlags.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include "registerTableFunctions.h"
@@ -18,16 +19,8 @@ namespace ErrorCodes
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-
 template <bool multithreaded>
-ColumnsDescription TableFunctionZeros<multithreaded>::getActualTableStructure(const Context & /*context*/) const
-{
-    /// NOTE: https://bugs.llvm.org/show_bug.cgi?id=47418
-    return ColumnsDescription{{{"zero", std::make_shared<DataTypeUInt8>()}}};
-}
-
-template <bool multithreaded>
-StoragePtr TableFunctionZeros<multithreaded>::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+StoragePtr TableFunctionZeros<multithreaded>::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
 {
     if (const auto * function = ast_function->as<ASTFunction>())
     {
@@ -39,7 +32,9 @@ StoragePtr TableFunctionZeros<multithreaded>::executeImpl(const ASTPtr & ast_fun
 
         UInt64 length = evaluateArgument(context, arguments[0]);
 
-        auto res = StorageSystemZeros::create(StorageID(getDatabaseName(), table_name), multithreaded, length);
+        context.checkAccess(AccessType::zeros);
+
+        auto res = StorageSystemZeros::create(table_name, multithreaded, length);
         res->startup();
         return res;
     }

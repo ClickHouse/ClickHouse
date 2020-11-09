@@ -1,6 +1,6 @@
 -- check ALTER MODIFY COLUMN with partitions
 
-SET send_logs_level = 'fatal';
+SET send_logs_level = 'none';
 
 DROP TABLE IF EXISTS alter_column;
 

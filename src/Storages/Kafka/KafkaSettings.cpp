@@ -3,6 +3,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/Exception.h>
+#include <Core/SettingsCollectionImpl.h>
 
 
 namespace DB
@@ -10,10 +11,11 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_SETTING;
 }
 
-IMPLEMENT_SETTINGS_TRAITS(KafkaSettingsTraits, LIST_OF_KAFKA_SETTINGS)
+IMPLEMENT_SETTINGS_COLLECTION(KafkaSettings, LIST_OF_KAFKA_SETTINGS)
 
 void KafkaSettings::loadFromQuery(ASTStorage & storage_def)
 {
@@ -26,8 +28,9 @@ void KafkaSettings::loadFromQuery(ASTStorage & storage_def)
         catch (Exception & e)
         {
             if (e.code() == ErrorCodes::UNKNOWN_SETTING)
-                e.addMessage("for storage " + storage_def.engine->name);
-            throw;
+                throw Exception(e.message() + " for storage " + storage_def.engine->name, ErrorCodes::BAD_ARGUMENTS);
+            else
+                e.rethrow();
         }
     }
     else

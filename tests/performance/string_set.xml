@@ -1,5 +1,10 @@
-<test max_ignored_relative_change="0.2">
+<test>
 
+    <stop_conditions>
+        <any_of>
+            <iterations>10</iterations>
+        </any_of>
+    </stop_conditions>
 
 
     <preconditions>

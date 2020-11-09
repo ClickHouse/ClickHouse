@@ -1,18 +1,34 @@
 add_library (mysqlxx
-    Connection.cpp
-    Exception.cpp
-    Query.cpp
-    ResultBase.cpp
-    StoreQueryResult.cpp
-    UseQueryResult.cpp
-    Row.cpp
-    Value.cpp
-    Pool.cpp
-    PoolFactory.cpp
-    PoolWithFailover.cpp
+    src/Connection.cpp
+    src/Exception.cpp
+    src/Query.cpp
+    src/ResultBase.cpp
+    src/StoreQueryResult.cpp
+    src/UseQueryResult.cpp
+    src/Row.cpp
+    src/Value.cpp
+    src/Pool.cpp
+    src/PoolFactory.cpp
+    src/PoolWithFailover.cpp
+
+    include/mysqlxx/Connection.h
+    include/mysqlxx/Exception.h
+    include/mysqlxx/mysqlxx.h
+    include/mysqlxx/Null.h
+    include/mysqlxx/Pool.h
+    include/mysqlxx/PoolFactory.h
+    include/mysqlxx/PoolWithFailover.h
+    include/mysqlxx/Query.h
+    include/mysqlxx/ResultBase.h
+    include/mysqlxx/Row.h
+    include/mysqlxx/StoreQueryResult.h
+    include/mysqlxx/Transaction.h
+    include/mysqlxx/Types.h
+    include/mysqlxx/UseQueryResult.h
+    include/mysqlxx/Value.h
 )
 
-target_include_directories (mysqlxx PUBLIC ..)
+target_include_directories (mysqlxx PUBLIC include)
 
 if (USE_INTERNAL_MYSQL_LIBRARY)
     target_include_directories (mysqlxx PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/mariadb-connector-c/include)
@@ -32,32 +48,16 @@ else ()
     endif ()
 endif ()
 
-target_link_libraries (mysqlxx
-    PUBLIC
-        common
-    PRIVATE
-        ${MYSQLCLIENT_LIBRARIES}
-        ${ZLIB_LIBRARIES}
-)
-
+target_link_libraries(mysqlxx PUBLIC common ${Poco_Util_LIBRARY} ${Poco_Foundation_LIBRARY} PRIVATE ${MYSQLCLIENT_LIBRARIES} PUBLIC ${Boost_SYSTEM_LIBRARY} PRIVATE ${ZLIB_LIBRARIES})
 if(OPENSSL_LIBRARIES)
     target_link_libraries(mysqlxx PRIVATE ${OPENSSL_LIBRARIES})
 endif()
-
 target_link_libraries(mysqlxx PRIVATE ${PLATFORM_LIBRARIES})
 
 if (NOT USE_INTERNAL_MYSQL_LIBRARY AND OPENSSL_INCLUDE_DIR)
     target_include_directories (mysqlxx SYSTEM PRIVATE ${OPENSSL_INCLUDE_DIR})
 endif ()
 
-if (NOT USE_INTERNAL_MYSQL_LIBRARY AND USE_STATIC_LIBRARIES)
-   message(WARNING "Statically linking with system mysql/mariadb only works "
-           "if mysql client libraries are built with same openssl version as "
-           "we are going to use now. It wouldn't work if GnuTLS is used. "
-           "Try -D\"USE_INTERNAL_MYSQL_LIBRARY\"=ON or -D\"ENABLE_MYSQL\"=OFF or "
-           "-D\"USE_STATIC_LIBRARIES\"=OFF")
-endif ()
-
 if (ENABLE_TESTS)
-    add_subdirectory (tests)
+    add_subdirectory (src/tests)
 endif ()

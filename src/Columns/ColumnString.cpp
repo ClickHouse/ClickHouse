@@ -1,15 +1,14 @@
+#include <Core/Defines.h>
 #include <Common/Arena.h>
 #include <Common/memcmpSmall.h>
 #include <Common/assert_cast.h>
-#include <Common/WeakHash.h>
-#include <Common/HashTable/Hash.h>
 #include <Columns/Collator.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsCommon.h>
 #include <DataStreams/ColumnGathererStream.h>
 
 #include <common/unaligned.h>
-#include <ext/scope_guard.h>
+
 
 namespace DB
 {
@@ -18,23 +17,6 @@ namespace ErrorCodes
 {
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
-    extern const int LOGICAL_ERROR;
-}
-
-
-ColumnString::ColumnString(const ColumnString & src)
-    : COWHelper<IColumn, ColumnString>(src),
-    offsets(src.offsets.begin(), src.offsets.end()),
-    chars(src.chars.begin(), src.chars.end())
-{
-    if (!offsets.empty())
-    {
-        Offset last_offset = offsets.back();
-
-        /// This will also prevent possible overflow in offset.
-        if (chars.size() != last_offset)
-            throw Exception("String offsets has data inconsistent with chars array", ErrorCodes::LOGICAL_ERROR);
-    }
 }
 
 
@@ -79,30 +61,6 @@ MutableColumnPtr ColumnString::cloneResized(size_t to_size) const
     }
 
     return res;
-}
-
-void ColumnString::updateWeakHash32(WeakHash32 & hash) const
-{
-    auto s = offsets.size();
-
-    if (hash.getData().size() != s)
-        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
-                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
-
-    const UInt8 * pos = chars.data();
-    UInt32 * hash_data = hash.getData().data();
-    Offset prev_offset = 0;
-
-    for (const auto & offset : offsets)
-    {
-        auto str_size = offset - prev_offset;
-        /// Skip last zero byte.
-        *hash_data = ::updateWeakHash32(pos, str_size - 1, *hash_data);
-
-        pos += str_size;
-        prev_offset = offset;
-        ++hash_data;
-    }
 }
 
 
@@ -275,14 +233,6 @@ ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
     return res;
 }
 
-void ColumnString::compareColumn(
-    const IColumn & rhs, size_t rhs_row_num,
-    PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-    int direction, int nan_direction_hint) const
-{
-    return doCompareColumn<ColumnString>(assert_cast<const ColumnString &>(rhs), rhs_row_num, row_indexes,
-                                         compare_results, direction, nan_direction_hint);
-}
 
 template <bool positive>
 struct ColumnString::less
@@ -325,88 +275,6 @@ void ColumnString::getPermutation(bool reverse, size_t limit, int /*nan_directio
     }
 }
 
-void ColumnString::updatePermutation(bool reverse, size_t limit, int /*nan_direction_hint*/, Permutation & res, EqualRanges & equal_ranges) const
-{
-    if (equal_ranges.empty())
-        return;
-
-    if (limit >= size() || limit > equal_ranges.back().second)
-        limit = 0;
-
-    EqualRanges new_ranges;
-    SCOPE_EXIT({equal_ranges = std::move(new_ranges);});
-
-    size_t number_of_ranges = equal_ranges.size();
-    if (limit)
-        --number_of_ranges;
-
-    for (size_t i = 0; i < number_of_ranges; ++i)
-    {
-        const auto & [first, last] = equal_ranges[i];
-
-        if (reverse)
-            std::sort(res.begin() + first, res.begin() + last, less<false>(*this));
-        else
-            std::sort(res.begin() + first, res.begin() + last, less<true>(*this));
-
-        size_t new_first = first;
-        for (size_t j = first + 1; j < last; ++j)
-        {
-            if (memcmpSmallAllowOverflow15(
-                chars.data() + offsetAt(res[j]), sizeAt(res[j]) - 1,
-                chars.data() + offsetAt(res[new_first]), sizeAt(res[new_first]) - 1) != 0)
-            {
-                if (j - new_first > 1)
-                    new_ranges.emplace_back(new_first, j);
-
-                new_first = j;
-            }
-        }
-        if (last - new_first > 1)
-            new_ranges.emplace_back(new_first, last);
-    }
-
-    if (limit)
-    {
-        const auto & [first, last] = equal_ranges.back();
-
-        if (limit < first || limit > last)
-            return;
-
-        /// Since then we are working inside the interval.
-
-        if (reverse)
-            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less<false>(*this));
-        else
-            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less<true>(*this));
-
-        size_t new_first = first;
-        for (size_t j = first + 1; j < limit; ++j)
-        {
-            if (memcmpSmallAllowOverflow15(
-                chars.data() + offsetAt(res[j]), sizeAt(res[j]) - 1,
-                chars.data() + offsetAt(res[new_first]), sizeAt(res[new_first]) - 1) != 0)
-            {
-                if (j - new_first > 1)
-                    new_ranges.emplace_back(new_first, j);
-                new_first = j;
-            }
-        }
-        size_t new_last = limit;
-        for (size_t j = limit; j < last; ++j)
-        {
-            if (memcmpSmallAllowOverflow15(
-                chars.data() + offsetAt(res[j]), sizeAt(res[j]) - 1,
-                chars.data() + offsetAt(res[new_first]), sizeAt(res[new_first]) - 1) == 0)
-            {
-                std::swap(res[j], res[new_last]);
-                ++new_last;
-            }
-        }
-        if (new_last - new_first > 1)
-            new_ranges.emplace_back(new_first, new_last);
-    }
-}
 
 ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
 {
@@ -545,99 +413,11 @@ void ColumnString::getPermutationWithCollation(const Collator & collator, bool r
     }
 }
 
-void ColumnString::updatePermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_ranges) const
-{
-    if (equal_ranges.empty())
-        return;
-
-    if (limit >= size() || limit >= equal_ranges.back().second)
-        limit = 0;
-
-    size_t number_of_ranges = equal_ranges.size();
-    if (limit)
-        --number_of_ranges;
-
-    EqualRanges new_ranges;
-    SCOPE_EXIT({equal_ranges = std::move(new_ranges);});
-
-    for (size_t i = 0; i < number_of_ranges; ++i)
-    {
-        const auto& [first, last] = equal_ranges[i];
-
-        if (reverse)
-            std::sort(res.begin() + first, res.begin() + last, lessWithCollation<false>(*this, collator));
-        else
-            std::sort(res.begin() + first, res.begin() + last, lessWithCollation<true>(*this, collator));
-        auto new_first = first;
-        for (auto j = first + 1; j < last; ++j)
-        {
-            if (collator.compare(
-                    reinterpret_cast<const char *>(&chars[offsetAt(res[new_first])]), sizeAt(res[new_first]),
-                    reinterpret_cast<const char *>(&chars[offsetAt(res[j])]), sizeAt(res[j])) != 0)
-            {
-                if (j - new_first > 1)
-                    new_ranges.emplace_back(new_first, j);
-
-                new_first = j;
-            }
-        }
-        if (last - new_first > 1)
-            new_ranges.emplace_back(new_first, last);
-    }
-
-    if (limit)
-    {
-        const auto & [first, last] = equal_ranges.back();
-
-        if (limit < first || limit > last)
-            return;
-
-        /// Since then we are working inside the interval.
-
-        if (reverse)
-            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, lessWithCollation<false>(*this, collator));
-        else
-            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, lessWithCollation<true>(*this, collator));
-
-        auto new_first = first;
-        for (auto j = first + 1; j < limit; ++j)
-        {
-            if (collator.compare(
-                    reinterpret_cast<const char *>(&chars[offsetAt(res[new_first])]), sizeAt(res[new_first]),
-                    reinterpret_cast<const char *>(&chars[offsetAt(res[j])]), sizeAt(res[j])) != 0)
-            {
-                if (j - new_first > 1)
-                    new_ranges.emplace_back(new_first, j);
-
-                new_first = j;
-            }
-        }
-        auto new_last = limit;
-        for (auto j = limit; j < last; ++j)
-        {
-            if (collator.compare(
-                    reinterpret_cast<const char *>(&chars[offsetAt(res[new_first])]), sizeAt(res[new_first]),
-                    reinterpret_cast<const char *>(&chars[offsetAt(res[j])]), sizeAt(res[j])) == 0)
-            {
-                std::swap(res[new_last], res[j]);
-                ++new_last;
-            }
-        }
-        if (new_last - new_first > 1)
-            new_ranges.emplace_back(new_first, new_last);
-    }
-}
 
 void ColumnString::protect()
 {
     getChars().protect();
     getOffsets().protect();
-}
-
-void ColumnString::validate() const
-{
-    if (!offsets.empty() && offsets.back() != chars.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnString validation failed: size mismatch (internal logical error) {} != {}", offsets.back(), chars.size());
 }
 
 }

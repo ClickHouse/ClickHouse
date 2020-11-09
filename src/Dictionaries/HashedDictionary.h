@@ -26,13 +26,18 @@ class HashedDictionary final : public IDictionary
 {
 public:
     HashedDictionary(
-        const StorageID & dict_id_,
+        const std::string & database_,
+        const std::string & name_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
         const DictionaryLifetime dict_lifetime_,
         bool require_nonempty_,
         bool sparse_,
         BlockPtr saved_block_ = nullptr);
+
+    const std::string & getDatabase() const override { return database; }
+    const std::string & getName() const override { return name; }
+    const std::string & getFullName() const override { return full_name; }
 
     std::string getTypeName() const override { return sparse ? "SparseHashed" : "Hashed"; }
 
@@ -48,7 +53,7 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<HashedDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty, sparse, saved_block);
+        return std::make_shared<HashedDictionary>(database, name, dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty, sparse, saved_block);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
@@ -151,14 +156,8 @@ private:
     template <typename Value>
     using CollectionPtrType = std::unique_ptr<CollectionType<Value>>;
 
-#if !defined(ARCADIA_BUILD)
     template <typename Value>
     using SparseCollectionType = google::sparse_hash_map<UInt64, Value, DefaultHash<UInt64>>;
-#else
-    template <typename Value>
-    using SparseCollectionType = google::sparsehash::sparse_hash_map<UInt64, Value, DefaultHash<UInt64>>;
-#endif
-
     template <typename Value>
     using SparseCollectionPtrType = std::unique_ptr<SparseCollectionType<Value>>;
 
@@ -261,19 +260,14 @@ private:
 
     PaddedPODArray<Key> getIds() const;
 
-    /// Preallocates the hashtable based on query progress
-    /// (Only while loading all data).
-    ///
-    /// @see preallocate
-    template <typename T>
-    void resize(Attribute & attribute, size_t added_rows);
-    void resize(size_t added_rows);
-
     template <typename AttrType, typename ChildType, typename AncestorType>
     void isInAttrImpl(const AttrType & attr, const ChildType & child_ids, const AncestorType & ancestor_ids, PaddedPODArray<UInt8> & out) const;
     template <typename ChildType, typename AncestorType>
     void isInImpl(const ChildType & child_ids, const AncestorType & ancestor_ids, PaddedPODArray<UInt8> & out) const;
 
+    const std::string database;
+    const std::string name;
+    const std::string full_name;
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;

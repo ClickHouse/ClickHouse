@@ -13,8 +13,7 @@ class IMergedBlockOutputStream : public IBlockOutputStream
 {
 public:
     IMergedBlockOutputStream(
-        const MergeTreeDataPartPtr & data_part,
-        const StorageMetadataPtr & metadata_snapshot_);
+        const MergeTreeDataPartPtr & data_part);
 
     using WrittenOffsetColumns = std::set<std::string>;
 
@@ -26,20 +25,12 @@ public:
 protected:
     using SerializationState = IDataType::SerializeBinaryBulkStatePtr;
 
-    IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns);
-
-    /// Remove all columns marked expired in data_part. Also, clears checksums
-    /// and columns array. Return set of removed files names.
-    static NameSet removeEmptyColumnsFromPart(
-        const MergeTreeDataPartPtr & data_part,
-        NamesAndTypesList & columns,
-        MergeTreeData::DataPart::Checksums & checksums);
+    IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns, bool skip_offsets);
 
 protected:
     const MergeTreeData & storage;
-    StorageMetadataPtr metadata_snapshot;
 
-    VolumePtr volume;
+    DiskPtr disk;
     String part_path;
 
     static Block getBlockAndPermute(const Block & block, const Names & names, const IColumn::Permutation * permutation);

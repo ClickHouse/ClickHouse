@@ -16,10 +16,10 @@ namespace DB
   * All tables are created by calling code.
   * TODO: Maybe DatabaseRuntime is more suitable class name.
   */
-class DatabaseMemory final : public DatabaseWithOwnTablesBase
+class DatabaseMemory : public DatabaseWithOwnTablesBase
 {
 public:
-    DatabaseMemory(const String & name_, const Context & context);
+    DatabaseMemory(const String & name_);
 
     String getEngineName() const override { return "Memory"; }
 
@@ -29,13 +29,11 @@ public:
         const StoragePtr & table,
         const ASTPtr & query) override;
 
-    void dropTable(
+    void removeTable(
         const Context & context,
-        const String & table_name,
-        bool no_delay) override;
+        const String & table_name) override;
 
-    ASTPtr getCreateTableQueryImpl(const String & name, const Context & context, bool throw_on_error) const override;
-    ASTPtr getCreateDatabaseQuery() const override;
+    ASTPtr getCreateDatabaseQuery(const Context & /*context*/) const override;
 
     /// DatabaseMemory allows to create tables, which store data on disk.
     /// It's needed to create such tables in default database of clickhouse-local.
@@ -44,14 +42,8 @@ public:
     String getTableDataPath(const String & table_name) const override { return data_path + escapeForFileName(table_name) + "/"; }
     String getTableDataPath(const ASTCreateQuery & query) const override { return getTableDataPath(query.table); }
 
-    UUID tryGetTableUUID(const String & table_name) const override;
-
-    void drop(const Context & context) override;
-
 private:
     String data_path;
-    using NameToASTCreate = std::unordered_map<String, ASTPtr>;
-    NameToASTCreate create_queries;
 };
 
 }

@@ -12,16 +12,16 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int THERE_IS_NO_COLUMN;
-    extern const int ILLEGAL_COLUMN;
+    extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
 
 
-static ColumnPtr castColumnWithDiagnostic(const ColumnWithTypeAndName & src_elem, const ColumnWithTypeAndName & res_elem)
+static ColumnPtr castColumnWithDiagnostic(const ColumnWithTypeAndName & src_elem, const ColumnWithTypeAndName & res_elem, const Context & context)
 {
     try
     {
-        return castColumn(src_elem, res_elem.type);
+        return castColumn(src_elem, res_elem.type, context);
     }
     catch (Exception & e)
     {
@@ -32,10 +32,11 @@ static ColumnPtr castColumnWithDiagnostic(const ColumnWithTypeAndName & src_elem
 
 
 ConvertingBlockInputStream::ConvertingBlockInputStream(
+    const Context & context_,
     const BlockInputStreamPtr & input,
     const Block & result_header,
     MatchColumnsMode mode)
-    : header(result_header), conversion(header.columns())
+    : context(context_), header(result_header), conversion(header.columns())
 {
     children.emplace_back(input);
 
@@ -75,16 +76,16 @@ ConvertingBlockInputStream::ConvertingBlockInputStream(
             if (!isColumnConst(*src_elem.column))
                 throw Exception("Cannot convert column " + backQuoteIfNeed(res_elem.name)
                     + " because it is non constant in source stream but must be constant in result",
-                    ErrorCodes::ILLEGAL_COLUMN);
+                    ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
             else if (assert_cast<const ColumnConst &>(*src_elem.column).getField() != assert_cast<const ColumnConst &>(*res_elem.column).getField())
                 throw Exception("Cannot convert column " + backQuoteIfNeed(res_elem.name)
                     + " because it is constant but values of constants are different in source and result",
-                    ErrorCodes::ILLEGAL_COLUMN);
+                    ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
         }
 
         /// Check conversion by dry run CAST function.
 
-        castColumnWithDiagnostic(src_elem, res_elem);
+        castColumnWithDiagnostic(src_elem, res_elem, context);
     }
 }
 
@@ -106,7 +107,7 @@ Block ConvertingBlockInputStream::readImpl()
         const auto & src_elem = src.getByPosition(conversion[res_pos]);
         auto & res_elem = res.getByPosition(res_pos);
 
-        ColumnPtr converted = castColumnWithDiagnostic(src_elem, res_elem);
+        ColumnPtr converted = castColumnWithDiagnostic(src_elem, res_elem, context);
 
         if (isColumnConst(*src_elem.column) && !isColumnConst(*res_elem.column))
             converted = converted->convertToFullColumnIfConst();

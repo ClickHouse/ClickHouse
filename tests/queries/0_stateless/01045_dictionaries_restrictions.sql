@@ -1,6 +1,6 @@
 DROP DATABASE IF EXISTS dictdb;
 
-CREATE DATABASE dictdb;
+CREATE DATABASE dictdb ENGINE=Ordinary;
 
 CREATE DICTIONARY dictdb.restricted_dict (
   key UInt64,

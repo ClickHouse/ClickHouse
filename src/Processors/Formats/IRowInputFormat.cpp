@@ -14,7 +14,6 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_DATE;
     extern const int CANNOT_PARSE_DATETIME;
     extern const int CANNOT_READ_ARRAY_FROM_TEXT;
-    extern const int CANNOT_READ_ALL_DATA;
     extern const int CANNOT_PARSE_NUMBER;
     extern const int CANNOT_PARSE_UUID;
     extern const int TOO_LARGE_STRING_SIZE;
@@ -33,7 +32,6 @@ bool isParseError(int code)
         || code == ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT
         || code == ErrorCodes::CANNOT_PARSE_NUMBER
         || code == ErrorCodes::CANNOT_PARSE_UUID
-        || code == ErrorCodes::CANNOT_READ_ALL_DATA
         || code == ErrorCodes::TOO_LARGE_STRING_SIZE
         || code == ErrorCodes::ARGUMENT_OUT_OF_BOUND       /// For Decimals
         || code == ErrorCodes::INCORRECT_DATA;             /// For some ReadHelpers
@@ -55,14 +53,13 @@ Chunk IRowInputFormat::generate()
 
     try
     {
-        RowReadExtension info;
         for (size_t rows = 0; rows < params.max_block_size; ++rows)
         {
             try
             {
                 ++total_rows;
 
-                info.read_columns.clear();
+                RowReadExtension info;
                 if (!readRow(columns, info))
                     break;
                 if (params.callback)
@@ -149,10 +146,10 @@ Chunk IRowInputFormat::generate()
 
     if (columns.empty() || columns[0]->empty())
     {
-        if (num_errors && (params.allow_errors_num > 0 || params.allow_errors_ratio > 0))
+        if (params.allow_errors_num > 0 || params.allow_errors_ratio > 0)
         {
-            Poco::Logger * log = &Poco::Logger::get("IRowInputFormat");
-            LOG_TRACE(log, "Skipped {} rows with errors while reading the input stream", num_errors);
+            Logger * log = &Logger::get("IRowInputFormat");
+            LOG_TRACE(log, "Skipped " << num_errors << " rows with errors while reading the input stream");
         }
 
         readSuffix();

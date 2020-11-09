@@ -1,22 +1,21 @@
 #include <Columns/Collator.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 #if USE_ICU
-#    include <unicode/locid.h>
-#    include <unicode/ucnv.h>
-#    include <unicode/ucol.h>
-#    include <unicode/unistr.h>
+    #include <unicode/ucol.h>
+    #include <unicode/unistr.h>
+    #include <unicode/locid.h>
+    #include <unicode/ucnv.h>
 #else
-#    if defined(__clang__)
-#        pragma clang diagnostic ignored "-Wunused-private-field"
-#        pragma clang diagnostic ignored "-Wmissing-noreturn"
-#    endif
+    #ifdef __clang__
+        #pragma clang diagnostic ignored "-Wunused-private-field"
+        #pragma clang diagnostic ignored "-Wmissing-noreturn"
+    #endif
 #endif
 
 #include <Common/Exception.h>
+#include <IO/WriteHelpers.h>
 #include <Poco/String.h>
 #include <algorithm>
 

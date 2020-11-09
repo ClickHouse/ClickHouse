@@ -7,11 +7,9 @@
 
 namespace DB
 {
-class AccessControlManager;
 class Context;
-class AccessRightsElements;
+class ASTShowCreateAccessEntityQuery;
 struct IAccessEntity;
-using AccessEntityPtr = std::shared_ptr<const IAccessEntity>;
 
 
 /** Returns a single item containing a statement which could be used to create a specified role.
@@ -19,21 +17,19 @@ using AccessEntityPtr = std::shared_ptr<const IAccessEntity>;
 class InterpreterShowCreateAccessEntityQuery : public IInterpreter
 {
 public:
-    InterpreterShowCreateAccessEntityQuery(const ASTPtr & query_ptr_, const Context & context_);
+    InterpreterShowCreateAccessEntityQuery(const ASTPtr & query_ptr_, const Context & context_)
+        : query_ptr(query_ptr_), context(context_) {}
 
     BlockIO execute() override;
 
     bool ignoreQuota() const override { return true; }
     bool ignoreLimits() const override { return true; }
 
-    static ASTPtr getCreateQuery(const IAccessEntity & entity, const AccessControlManager & access_control);
     static ASTPtr getAttachQuery(const IAccessEntity & entity);
 
 private:
     BlockInputStreamPtr executeImpl();
-    std::vector<AccessEntityPtr> getEntities() const;
-    ASTs getCreateQueries() const;
-    AccessRightsElements getRequiredAccess() const;
+    ASTPtr getCreateQuery(const ASTShowCreateAccessEntityQuery & show_query) const;
 
     ASTPtr query_ptr;
     const Context & context;

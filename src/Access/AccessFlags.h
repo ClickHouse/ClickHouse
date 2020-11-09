@@ -1,23 +1,16 @@
 #pragma once
 
 #include <Access/AccessType.h>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Common/Exception.h>
 #include <ext/range.h>
 #include <ext/push_back.h>
-#include <boost/algorithm/string/split.hpp>
-#include <boost/algorithm/string/trim.hpp>
 #include <bitset>
 #include <unordered_map>
 
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 /// Represents a combination of access types which can be granted globally, on databases, tables, columns, etc.
 /// For example "SELECT, CREATE USER" is an access type.
 class AccessFlags
@@ -61,56 +54,24 @@ public:
 
     friend bool operator ==(const AccessFlags & left, const AccessFlags & right) { return left.flags == right.flags; }
     friend bool operator !=(const AccessFlags & left, const AccessFlags & right) { return !(left == right); }
-    friend bool operator <(const AccessFlags & left, const AccessFlags & right) { return memcmp(&left.flags, &right.flags, sizeof(Flags)) < 0; }
-    friend bool operator >(const AccessFlags & left, const AccessFlags & right) { return right < left; }
-    friend bool operator <=(const AccessFlags & left, const AccessFlags & right) { return !(right < left); }
-    friend bool operator >=(const AccessFlags & left, const AccessFlags & right) { return !(left < right); }
 
     void clear() { flags.reset(); }
 
     /// Returns a comma-separated list of keywords, like "SELECT, CREATE USER, UPDATE".
     String toString() const;
 
-    /// Returns a list of access types.
-    std::vector<AccessType> toAccessTypes() const;
-
     /// Returns a list of keywords.
     std::vector<std::string_view> toKeywords() const;
 
-    /// Returns all the flags.
-    /// These are the same as (allGlobalFlags() | allDatabaseFlags() | allTableFlags() | allColumnsFlags() | allDictionaryFlags()).
-    static AccessFlags allFlags();
+    /// Returns the access types which could be granted on the database level.
+    /// For example, SELECT can be granted on the database level, but CREATE_USER cannot.
+    static AccessFlags databaseLevel();
 
-    /// Returns all the global flags.
-    static AccessFlags allGlobalFlags();
+    /// Returns the access types which could be granted on the table/dictionary level.
+    static AccessFlags tableLevel();
 
-    /// Returns all the flags related to a database.
-    static AccessFlags allDatabaseFlags();
-
-    /// Returns all the flags related to a table.
-    static AccessFlags allTableFlags();
-
-    /// Returns all the flags related to a column.
-    static AccessFlags allColumnFlags();
-
-    /// Returns all the flags related to a dictionary.
-    static AccessFlags allDictionaryFlags();
-
-    /// Returns all the flags which could be granted on the global level.
-    /// The same as allFlags().
-    static AccessFlags allFlagsGrantableOnGlobalLevel();
-
-    /// Returns all the flags which could be granted on the database level.
-    /// Returns allDatabaseFlags() | allTableFlags() | allDictionaryFlags() | allColumnFlags().
-    static AccessFlags allFlagsGrantableOnDatabaseLevel();
-
-    /// Returns all the flags which could be granted on the table level.
-    /// Returns allTableFlags() | allDictionaryFlags() | allColumnFlags().
-    static AccessFlags allFlagsGrantableOnTableLevel();
-
-    /// Returns all the flags which could be granted on the global level.
-    /// The same as allColumnFlags().
-    static AccessFlags allFlagsGrantableOnColumnLevel();
+    /// Returns the access types which could be granted on the column/attribute level.
+    static AccessFlags columnLevel();
 
 private:
     static constexpr size_t NUM_FLAGS = 128;
@@ -174,27 +135,21 @@ public:
         return res;
     }
 
-    std::vector<AccessType> flagsToAccessTypes(const Flags & flags_) const
-    {
-        std::vector<AccessType> access_types;
-        flagsToAccessTypesRec(flags_, access_types, *all_node);
-        return access_types;
-    }
-
     std::vector<std::string_view> flagsToKeywords(const Flags & flags_) const
     {
         std::vector<std::string_view> keywords;
-        flagsToKeywordsRec(flags_, keywords, *all_node);
+        flagsToKeywordsRec(flags_, keywords, *flags_to_keyword_tree);
+
+        if (keywords.empty())
+            keywords.push_back("USAGE");
+
         return keywords;
     }
 
     String flagsToString(const Flags & flags_) const
     {
-        auto keywords = flagsToKeywords(flags_);
-        if (keywords.empty())
-            return "USAGE";
         String str;
-        for (const auto & keyword : keywords)
+        for (const auto & keyword : flagsToKeywords(flags_))
         {
             if (!str.empty())
                 str += ", ";
@@ -203,233 +158,59 @@ public:
         return str;
     }
 
-    const Flags & getAllFlags() const { return all_flags; }
-    const Flags & getGlobalFlags() const { return all_flags_for_target[GLOBAL]; }
-    const Flags & getDatabaseFlags() const { return all_flags_for_target[DATABASE]; }
-    const Flags & getTableFlags() const { return all_flags_for_target[TABLE]; }
-    const Flags & getColumnFlags() const { return all_flags_for_target[COLUMN]; }
-    const Flags & getDictionaryFlags() const { return all_flags_for_target[DICTIONARY]; }
-    const Flags & getAllFlagsGrantableOnGlobalLevel() const { return getAllFlags(); }
-    const Flags & getAllFlagsGrantableOnDatabaseLevel() const { return all_flags_grantable_on_database_level; }
-    const Flags & getAllFlagsGrantableOnTableLevel() const { return all_flags_grantable_on_table_level; }
-    const Flags & getAllFlagsGrantableOnColumnLevel() const { return getColumnFlags(); }
+    const Flags & getDatabaseLevelFlags() const { return all_grantable_on_level[DATABASE_LEVEL]; }
+    const Flags & getTableLevelFlags() const { return all_grantable_on_level[TABLE_LEVEL]; }
+    const Flags & getColumnLevelFlags() const { return all_grantable_on_level[COLUMN_LEVEL]; }
 
 private:
-    enum NodeType
+    enum Level
     {
-        UNKNOWN = -2,
-        GROUP = -1,
-        GLOBAL,
-        DATABASE,
-        TABLE,
-        VIEW = TABLE,
-        COLUMN,
-        DICTIONARY,
+        UNKNOWN_LEVEL = -1,
+        GLOBAL_LEVEL = 0,
+        DATABASE_LEVEL = 1,
+        TABLE_LEVEL = 2,
+        VIEW_LEVEL = 2,
+        DICTIONARY_LEVEL = 2,
+        COLUMN_LEVEL = 3,
     };
 
     struct Node;
     using NodePtr = std::unique_ptr<Node>;
+    using Nodes = std::vector<NodePtr>;
 
-    struct Node
+    template <typename... Args>
+    static Nodes nodes(Args&& ... args)
     {
-        const String keyword;
-        NodeType node_type;
-        AccessType access_type = AccessType::NONE;
-        Strings aliases;
-        Flags flags;
-        std::vector<NodePtr> children;
-
-        Node(String keyword_, NodeType node_type_ = UNKNOWN) : keyword(std::move(keyword_)), node_type(node_type_) {}
-
-        void setFlag(size_t flag) { flags.set(flag); }
-
-        void addChild(NodePtr child)
-        {
-            flags |= child->flags;
-            children.push_back(std::move(child));
-        }
-    };
-
-    static String replaceUnderscoreWithSpace(const std::string_view & str)
-    {
-        String res{str};
-        boost::replace_all(res, "_", " ");
+        Nodes res;
+        ext::push_back(res, std::move(args)...);
         return res;
     }
 
-    static Strings splitAliases(const std::string_view & str)
+    struct Node
     {
-        Strings aliases;
-        boost::split(aliases, str, boost::is_any_of(","));
-        for (auto & alias : aliases)
-            boost::trim(alias);
-        return aliases;
-    }
+        std::string_view keyword;
+        std::vector<String> aliases;
+        Flags flags;
+        Level level = UNKNOWN_LEVEL;
+        Nodes children;
 
-    static void makeNode(
-        AccessType access_type,
-        const std::string_view & name,
-        const std::string_view & aliases,
-        NodeType node_type,
-        const std::string_view & parent_group_name,
-        std::unordered_map<std::string_view, Node *> & nodes,
-        std::unordered_map<std::string_view, NodePtr> & owned_nodes,
-        size_t & next_flag)
-    {
-        NodePtr node;
-        auto keyword = replaceUnderscoreWithSpace(name);
-        auto it = owned_nodes.find(keyword);
-        if (it != owned_nodes.end())
+        Node(std::string_view keyword_, size_t flag_, Level level_)
+            : keyword(keyword_), level(level_)
         {
-            node = std::move(it->second);
-            owned_nodes.erase(it);
-        }
-        else
-        {
-            if (nodes.count(keyword))
-                throw Exception(keyword + " declared twice", ErrorCodes::LOGICAL_ERROR);
-            node = std::make_unique<Node>(keyword, node_type);
-            nodes[node->keyword] = node.get();
+            flags.set(flag_);
         }
 
-        node->access_type = access_type;
-        node->node_type = node_type;
-        node->aliases = splitAliases(aliases);
-        if (node_type != GROUP)
-            node->setFlag(next_flag++);
-
-        bool has_parent_group = (parent_group_name != std::string_view{"NONE"});
-        if (!has_parent_group)
+        Node(std::string_view keyword_, Nodes children_)
+            : keyword(keyword_), children(std::move(children_))
         {
-            std::string_view keyword_as_string_view = node->keyword;
-            owned_nodes[keyword_as_string_view] = std::move(node);
-            return;
+            for (const auto & child : children)
+                flags |= child->flags;
         }
 
-        auto parent_keyword = replaceUnderscoreWithSpace(parent_group_name);
-        auto it_parent = nodes.find(parent_keyword);
-        if (it_parent == nodes.end())
-        {
-            auto parent_node = std::make_unique<Node>(parent_keyword);
-            it_parent = nodes.emplace(parent_node->keyword, parent_node.get()).first;
-            assert(!owned_nodes.count(parent_node->keyword));
-            std::string_view parent_keyword_as_string_view = parent_node->keyword;
-            owned_nodes[parent_keyword_as_string_view] = std::move(parent_node);
-        }
-        it_parent->second->addChild(std::move(node));
-    }
-
-    void makeNodes()
-    {
-        std::unordered_map<std::string_view, NodePtr> owned_nodes;
-        std::unordered_map<std::string_view, Node *> nodes;
-        size_t next_flag = 0;
-
-#define MAKE_ACCESS_FLAGS_NODE(name, aliases, node_type, parent_group_name) \
-            makeNode(AccessType::name, #name, aliases, node_type, #parent_group_name, nodes, owned_nodes, next_flag);
-
-            APPLY_FOR_ACCESS_TYPES(MAKE_ACCESS_FLAGS_NODE)
-
-#undef MAKE_ACCESS_FLAGS_NODE
-
-        if (!owned_nodes.count("NONE"))
-            throw Exception("'NONE' not declared", ErrorCodes::LOGICAL_ERROR);
-        if (!owned_nodes.count("ALL"))
-            throw Exception("'ALL' not declared", ErrorCodes::LOGICAL_ERROR);
-
-        all_node = std::move(owned_nodes["ALL"]);
-        none_node = std::move(owned_nodes["NONE"]);
-        owned_nodes.erase("ALL");
-        owned_nodes.erase("NONE");
-
-        if (!owned_nodes.empty())
-        {
-            const auto & unused_node = *(owned_nodes.begin()->second);
-            if (unused_node.node_type == UNKNOWN)
-                throw Exception("Parent group '" + unused_node.keyword + "' not found", ErrorCodes::LOGICAL_ERROR);
-            else
-                throw Exception("Access type '" + unused_node.keyword + "' should have parent group", ErrorCodes::LOGICAL_ERROR);
-        }
-    }
-
-    void makeKeywordToFlagsMap(Node * start_node = nullptr)
-    {
-        if (!start_node)
-        {
-            makeKeywordToFlagsMap(none_node.get());
-            start_node = all_node.get();
-        }
-
-        start_node->aliases.emplace_back(start_node->keyword);
-        for (auto & alias : start_node->aliases)
-        {
-            boost::to_upper(alias);
-            keyword_to_flags_map[alias] = start_node->flags;
-        }
-
-        for (auto & child : start_node->children)
-            makeKeywordToFlagsMap(child.get());
-    }
-
-    void makeAccessTypeToFlagsMapping(Node * start_node = nullptr)
-    {
-        if (!start_node)
-        {
-            makeAccessTypeToFlagsMapping(none_node.get());
-            start_node = all_node.get();
-        }
-
-        size_t index = static_cast<size_t>(start_node->access_type);
-        access_type_to_flags_mapping.resize(std::max(index + 1, access_type_to_flags_mapping.size()));
-        access_type_to_flags_mapping[index] = start_node->flags;
-
-        for (auto & child : start_node->children)
-            makeAccessTypeToFlagsMapping(child.get());
-    }
-
-    void collectAllFlags(const Node * start_node = nullptr)
-    {
-        if (!start_node)
-        {
-            start_node = all_node.get();
-            all_flags = start_node->flags;
-        }
-        if (start_node->node_type != GROUP)
-        {
-            assert(static_cast<size_t>(start_node->node_type) < std::size(all_flags_for_target));
-            all_flags_for_target[start_node->node_type] |= start_node->flags;
-        }
-        for (const auto & child : start_node->children)
-            collectAllFlags(child.get());
-
-        all_flags_grantable_on_table_level = all_flags_for_target[TABLE] | all_flags_for_target[DICTIONARY] | all_flags_for_target[COLUMN];
-        all_flags_grantable_on_database_level = all_flags_for_target[DATABASE] | all_flags_grantable_on_table_level;
-    }
-
-    Impl()
-    {
-        makeNodes();
-        makeKeywordToFlagsMap();
-        makeAccessTypeToFlagsMapping();
-        collectAllFlags();
-    }
-
-    static void flagsToAccessTypesRec(const Flags & flags_, std::vector<AccessType> & access_types, const Node & start_node)
-    {
-        Flags matching_flags = (flags_ & start_node.flags);
-        if (matching_flags.any())
-        {
-            if (matching_flags == start_node.flags)
-            {
-                access_types.push_back(start_node.access_type);
-            }
-            else
-            {
-                for (const auto & child : start_node.children)
-                   flagsToAccessTypesRec(flags_, access_types, *child);
-            }
-        }
-    }
+        template <typename... Args>
+        Node(std::string_view keyword_, NodePtr first_child, Args &&... other_children)
+            : Node(keyword_, nodes(std::move(first_child), std::move(other_children)...)) {}
+    };
 
     static void flagsToKeywordsRec(const Flags & flags_, std::vector<std::string_view> & keywords, const Node & start_node)
     {
@@ -448,14 +229,255 @@ private:
         }
     }
 
-    NodePtr all_node;
-    NodePtr none_node;
+    static void makeFlagsToKeywordTree(NodePtr & flags_to_keyword_tree_)
+    {
+        size_t next_flag = 0;
+        Nodes all;
+
+        auto show = std::make_unique<Node>("SHOW", next_flag++, COLUMN_LEVEL);
+        auto exists = std::make_unique<Node>("EXISTS", next_flag++, COLUMN_LEVEL);
+        ext::push_back(all, std::move(show), std::move(exists));
+
+        auto select = std::make_unique<Node>("SELECT", next_flag++, COLUMN_LEVEL);
+        auto insert = std::make_unique<Node>("INSERT", next_flag++, COLUMN_LEVEL);
+        ext::push_back(all, std::move(select), std::move(insert));
+
+        auto update = std::make_unique<Node>("UPDATE", next_flag++, COLUMN_LEVEL);
+        ext::push_back(update->aliases, "ALTER UPDATE");
+        auto delet = std::make_unique<Node>("DELETE", next_flag++, TABLE_LEVEL);
+        ext::push_back(delet->aliases, "ALTER DELETE");
+
+        auto add_column = std::make_unique<Node>("ADD COLUMN", next_flag++, COLUMN_LEVEL);
+        add_column->aliases.push_back("ALTER ADD COLUMN");
+        auto modify_column = std::make_unique<Node>("MODIFY COLUMN", next_flag++, COLUMN_LEVEL);
+        modify_column->aliases.push_back("ALTER MODIFY COLUMN");
+        auto drop_column = std::make_unique<Node>("DROP COLUMN", next_flag++, COLUMN_LEVEL);
+        drop_column->aliases.push_back("ALTER DROP COLUMN");
+        auto comment_column = std::make_unique<Node>("COMMENT COLUMN", next_flag++, COLUMN_LEVEL);
+        comment_column->aliases.push_back("ALTER COMMENT COLUMN");
+        auto clear_column = std::make_unique<Node>("CLEAR COLUMN", next_flag++, COLUMN_LEVEL);
+        clear_column->aliases.push_back("ALTER CLEAR COLUMN");
+        auto alter_column = std::make_unique<Node>("ALTER COLUMN", std::move(add_column), std::move(modify_column), std::move(drop_column), std::move(comment_column), std::move(clear_column));
+
+        auto alter_order_by = std::make_unique<Node>("ALTER ORDER BY", next_flag++, TABLE_LEVEL);
+        alter_order_by->aliases.push_back("MODIFY ORDER BY");
+        alter_order_by->aliases.push_back("ALTER MODIFY ORDER BY");
+        auto add_index = std::make_unique<Node>("ADD INDEX", next_flag++, TABLE_LEVEL);
+        add_index->aliases.push_back("ALTER ADD INDEX");
+        auto drop_index = std::make_unique<Node>("DROP INDEX", next_flag++, TABLE_LEVEL);
+        drop_index->aliases.push_back("ALTER DROP INDEX");
+        auto materialize_index = std::make_unique<Node>("MATERIALIZE INDEX", next_flag++, TABLE_LEVEL);
+        materialize_index->aliases.push_back("ALTER MATERIALIZE INDEX");
+        auto clear_index = std::make_unique<Node>("CLEAR INDEX", next_flag++, TABLE_LEVEL);
+        clear_index->aliases.push_back("ALTER CLEAR INDEX");
+        auto index = std::make_unique<Node>("INDEX", std::move(alter_order_by), std::move(add_index), std::move(drop_index), std::move(materialize_index), std::move(clear_index));
+        index->aliases.push_back("ALTER INDEX");
+
+        auto add_constraint = std::make_unique<Node>("ADD CONSTRAINT", next_flag++, TABLE_LEVEL);
+        add_constraint->aliases.push_back("ALTER ADD CONSTRAINT");
+        auto drop_constraint = std::make_unique<Node>("DROP CONSTRAINT", next_flag++, TABLE_LEVEL);
+        drop_constraint->aliases.push_back("ALTER DROP CONSTRAINT");
+        auto alter_constraint = std::make_unique<Node>("CONSTRAINT", std::move(add_constraint), std::move(drop_constraint));
+        alter_constraint->aliases.push_back("ALTER CONSTRAINT");
+
+        auto modify_ttl = std::make_unique<Node>("MODIFY TTL", next_flag++, TABLE_LEVEL);
+        modify_ttl->aliases.push_back("ALTER MODIFY TTL");
+        auto materialize_ttl = std::make_unique<Node>("MATERIALIZE TTL", next_flag++, TABLE_LEVEL);
+        materialize_ttl->aliases.push_back("ALTER MATERIALIZE TTL");
+
+        auto modify_setting = std::make_unique<Node>("MODIFY SETTING", next_flag++, TABLE_LEVEL);
+        modify_setting->aliases.push_back("ALTER MODIFY SETTING");
+
+        auto move_partition = std::make_unique<Node>("MOVE PARTITION", next_flag++, TABLE_LEVEL);
+        ext::push_back(move_partition->aliases, "ALTER MOVE PARTITION", "MOVE PART", "ALTER MOVE PART");
+        auto fetch_partition = std::make_unique<Node>("FETCH PARTITION", next_flag++, TABLE_LEVEL);
+        ext::push_back(fetch_partition->aliases, "ALTER FETCH PARTITION");
+        auto freeze_partition = std::make_unique<Node>("FREEZE PARTITION", next_flag++, TABLE_LEVEL);
+        ext::push_back(freeze_partition->aliases, "ALTER FREEZE PARTITION");
+
+        auto alter_table = std::make_unique<Node>("ALTER TABLE", std::move(update), std::move(delet), std::move(alter_column), std::move(index), std::move(alter_constraint), std::move(modify_ttl), std::move(materialize_ttl), std::move(modify_setting), std::move(move_partition), std::move(fetch_partition), std::move(freeze_partition));
+
+        auto refresh_view = std::make_unique<Node>("REFRESH VIEW", next_flag++, VIEW_LEVEL);
+        ext::push_back(refresh_view->aliases, "ALTER LIVE VIEW REFRESH");
+        auto modify_view_query = std::make_unique<Node>("MODIFY VIEW QUERY", next_flag++, VIEW_LEVEL);
+        auto alter_view = std::make_unique<Node>("ALTER VIEW", std::move(refresh_view), std::move(modify_view_query));
+
+        auto alter = std::make_unique<Node>("ALTER", std::move(alter_table), std::move(alter_view));
+        ext::push_back(all, std::move(alter));
+
+        auto create_database = std::make_unique<Node>("CREATE DATABASE", next_flag++, DATABASE_LEVEL);
+        auto create_table = std::make_unique<Node>("CREATE TABLE", next_flag++, TABLE_LEVEL);
+        auto create_view = std::make_unique<Node>("CREATE VIEW", next_flag++, VIEW_LEVEL);
+        auto create_dictionary = std::make_unique<Node>("CREATE DICTIONARY", next_flag++, DICTIONARY_LEVEL);
+        auto create = std::make_unique<Node>("CREATE", std::move(create_database), std::move(create_table), std::move(create_view), std::move(create_dictionary));
+        ext::push_back(all, std::move(create));
+
+        auto create_temporary_table = std::make_unique<Node>("CREATE TEMPORARY TABLE", next_flag++, GLOBAL_LEVEL);
+        ext::push_back(all, std::move(create_temporary_table));
+
+        auto drop_database = std::make_unique<Node>("DROP DATABASE", next_flag++, DATABASE_LEVEL);
+        auto drop_table = std::make_unique<Node>("DROP TABLE", next_flag++, TABLE_LEVEL);
+        auto drop_view = std::make_unique<Node>("DROP VIEW", next_flag++, VIEW_LEVEL);
+        auto drop_dictionary = std::make_unique<Node>("DROP DICTIONARY", next_flag++, DICTIONARY_LEVEL);
+        auto drop = std::make_unique<Node>("DROP", std::move(drop_database), std::move(drop_table), std::move(drop_view), std::move(drop_dictionary));
+        ext::push_back(all, std::move(drop));
+
+        auto truncate_table = std::make_unique<Node>("TRUNCATE TABLE", next_flag++, TABLE_LEVEL);
+        auto truncate_view = std::make_unique<Node>("TRUNCATE VIEW", next_flag++, VIEW_LEVEL);
+        auto truncate = std::make_unique<Node>("TRUNCATE", std::move(truncate_table), std::move(truncate_view));
+        ext::push_back(all, std::move(truncate));
+
+        auto optimize = std::make_unique<Node>("OPTIMIZE", next_flag++, TABLE_LEVEL);
+        optimize->aliases.push_back("OPTIMIZE TABLE");
+        ext::push_back(all, std::move(optimize));
+
+        auto kill_query = std::make_unique<Node>("KILL QUERY", next_flag++, GLOBAL_LEVEL);
+        auto kill_mutation = std::make_unique<Node>("KILL MUTATION", next_flag++, TABLE_LEVEL);
+        auto kill = std::make_unique<Node>("KILL", std::move(kill_query), std::move(kill_mutation));
+        ext::push_back(all, std::move(kill));
+
+        auto create_user = std::make_unique<Node>("CREATE USER", next_flag++, GLOBAL_LEVEL);
+        auto alter_user = std::make_unique<Node>("ALTER USER", next_flag++, GLOBAL_LEVEL);
+        auto drop_user = std::make_unique<Node>("DROP USER", next_flag++, GLOBAL_LEVEL);
+        auto create_role = std::make_unique<Node>("CREATE ROLE", next_flag++, GLOBAL_LEVEL);
+        auto drop_role = std::make_unique<Node>("DROP ROLE", next_flag++, GLOBAL_LEVEL);
+        auto create_policy = std::make_unique<Node>("CREATE POLICY", next_flag++, GLOBAL_LEVEL);
+        auto alter_policy = std::make_unique<Node>("ALTER POLICY", next_flag++, GLOBAL_LEVEL);
+        auto drop_policy = std::make_unique<Node>("DROP POLICY", next_flag++, GLOBAL_LEVEL);
+        auto create_quota = std::make_unique<Node>("CREATE QUOTA", next_flag++, GLOBAL_LEVEL);
+        auto alter_quota = std::make_unique<Node>("ALTER QUOTA", next_flag++, GLOBAL_LEVEL);
+        auto drop_quota = std::make_unique<Node>("DROP QUOTA", next_flag++, GLOBAL_LEVEL);
+        auto role_admin = std::make_unique<Node>("ROLE ADMIN", next_flag++, GLOBAL_LEVEL);
+        ext::push_back(all, std::move(create_user), std::move(alter_user), std::move(drop_user), std::move(create_role), std::move(drop_role), std::move(create_policy), std::move(alter_policy), std::move(drop_policy), std::move(create_quota), std::move(alter_quota), std::move(drop_quota), std::move(role_admin));
+
+        auto shutdown = std::make_unique<Node>("SHUTDOWN", next_flag++, GLOBAL_LEVEL);
+        ext::push_back(shutdown->aliases, "SYSTEM SHUTDOWN", "SYSTEM KILL");
+        auto drop_cache = std::make_unique<Node>("DROP CACHE", next_flag++, GLOBAL_LEVEL);
+        ext::push_back(drop_cache->aliases, "SYSTEM DROP CACHE", "DROP DNS CACHE", "SYSTEM DROP DNS CACHE", "DROP MARK CACHE", "SYSTEM DROP MARK CACHE", "DROP UNCOMPRESSED CACHE", "SYSTEM DROP UNCOMPRESSED CACHE", "DROP COMPILED EXPRESSION CACHE", "SYSTEM DROP COMPILED EXPRESSION CACHE");
+        auto reload_config = std::make_unique<Node>("RELOAD CONFIG", next_flag++, GLOBAL_LEVEL);
+        ext::push_back(reload_config->aliases, "SYSTEM RELOAD CONFIG");
+        auto reload_dictionary = std::make_unique<Node>("RELOAD DICTIONARY", next_flag++, GLOBAL_LEVEL);
+        ext::push_back(reload_dictionary->aliases, "SYSTEM RELOAD DICTIONARY", "RELOAD DICTIONARIES", "SYSTEM RELOAD DICTIONARIES", "RELOAD EMBEDDED DICTIONARIES", "SYSTEM RELOAD EMBEDDED DICTIONARIES");
+        auto stop_merges = std::make_unique<Node>("STOP MERGES", next_flag++, TABLE_LEVEL);
+        ext::push_back(stop_merges->aliases, "SYSTEM STOP MERGES", "START MERGES", "SYSTEM START MERGES");
+        auto stop_ttl_merges = std::make_unique<Node>("STOP TTL MERGES", next_flag++, TABLE_LEVEL);
+        ext::push_back(stop_ttl_merges->aliases, "SYSTEM STOP TTL MERGES", "START TTL MERGES", "SYSTEM START TTL MERGES");
+        auto stop_fetches = std::make_unique<Node>("STOP FETCHES", next_flag++, TABLE_LEVEL);
+        ext::push_back(stop_fetches->aliases, "SYSTEM STOP FETCHES", "START FETCHES", "SYSTEM START FETCHES");
+        auto stop_moves = std::make_unique<Node>("STOP MOVES", next_flag++, TABLE_LEVEL);
+        ext::push_back(stop_moves->aliases, "SYSTEM STOP MOVES", "START MOVES", "SYSTEM START MOVES");
+        auto stop_distributed_sends = std::make_unique<Node>("STOP DISTRIBUTED SENDS", next_flag++, TABLE_LEVEL);
+        ext::push_back(stop_distributed_sends->aliases, "SYSTEM STOP DISTRIBUTED SENDS", "START DISTRIBUTED SENDS", "SYSTEM START DISTRIBUTED SENDS");
+        auto stop_replicated_sends = std::make_unique<Node>("STOP REPLICATED SENDS", next_flag++, TABLE_LEVEL);
+        ext::push_back(stop_replicated_sends->aliases, "SYSTEM STOP REPLICATED SENDS", "START REPLICATED SENDS", "SYSTEM START REPLICATED SENDS");
+        auto stop_replication_queues = std::make_unique<Node>("STOP REPLICATION QUEUES", next_flag++, TABLE_LEVEL);
+        ext::push_back(stop_replication_queues->aliases, "SYSTEM STOP REPLICATION QUEUES", "START REPLICATION QUEUES", "SYSTEM START REPLICATION QUEUES");
+        auto sync_replica = std::make_unique<Node>("SYNC REPLICA", next_flag++, TABLE_LEVEL);
+        ext::push_back(sync_replica->aliases, "SYSTEM SYNC REPLICA");
+        auto restart_replica = std::make_unique<Node>("RESTART REPLICA", next_flag++, TABLE_LEVEL);
+        ext::push_back(restart_replica->aliases, "SYSTEM RESTART REPLICA");
+        auto flush_distributed = std::make_unique<Node>("FLUSH DISTRIBUTED", next_flag++, TABLE_LEVEL);
+        ext::push_back(flush_distributed->aliases, "SYSTEM FLUSH DISTRIBUTED");
+        auto flush_logs = std::make_unique<Node>("FLUSH LOGS", next_flag++, GLOBAL_LEVEL);
+        ext::push_back(flush_logs->aliases, "SYSTEM FLUSH LOGS");
+        auto system = std::make_unique<Node>("SYSTEM", std::move(shutdown), std::move(drop_cache), std::move(reload_config), std::move(reload_dictionary), std::move(stop_merges), std::move(stop_ttl_merges), std::move(stop_fetches), std::move(stop_moves), std::move(stop_distributed_sends), std::move(stop_replicated_sends), std::move(stop_replication_queues), std::move(sync_replica), std::move(restart_replica), std::move(flush_distributed), std::move(flush_logs));
+        ext::push_back(all, std::move(system));
+
+        auto dict_get = std::make_unique<Node>("dictGet()", next_flag++, DICTIONARY_LEVEL);
+        dict_get->aliases.push_back("dictHas()");
+        dict_get->aliases.push_back("dictGetHierarchy()");
+        dict_get->aliases.push_back("dictIsIn()");
+        ext::push_back(all, std::move(dict_get));
+
+        auto address_to_line = std::make_unique<Node>("addressToLine()", next_flag++, GLOBAL_LEVEL);
+        auto address_to_symbol = std::make_unique<Node>("addressToSymbol()", next_flag++, GLOBAL_LEVEL);
+        auto demangle = std::make_unique<Node>("demangle()", next_flag++, GLOBAL_LEVEL);
+        auto introspection = std::make_unique<Node>("INTROSPECTION", std::move(address_to_line), std::move(address_to_symbol), std::move(demangle));
+        ext::push_back(introspection->aliases, "INTROSPECTION FUNCTIONS");
+        ext::push_back(all, std::move(introspection));
+
+        auto file = std::make_unique<Node>("file()", next_flag++, GLOBAL_LEVEL);
+        auto url = std::make_unique<Node>("url()", next_flag++, GLOBAL_LEVEL);
+        auto input = std::make_unique<Node>("input()", next_flag++, GLOBAL_LEVEL);
+        auto values = std::make_unique<Node>("values()", next_flag++, GLOBAL_LEVEL);
+        auto numbers = std::make_unique<Node>("numbers()", next_flag++, GLOBAL_LEVEL);
+        auto zeros = std::make_unique<Node>("zeros()", next_flag++, GLOBAL_LEVEL);
+        auto merge = std::make_unique<Node>("merge()", next_flag++, DATABASE_LEVEL);
+        auto remote = std::make_unique<Node>("remote()", next_flag++, GLOBAL_LEVEL);
+        ext::push_back(remote->aliases, "remoteSecure()", "cluster()");
+        auto mysql = std::make_unique<Node>("mysql()", next_flag++, GLOBAL_LEVEL);
+        auto odbc = std::make_unique<Node>("odbc()", next_flag++, GLOBAL_LEVEL);
+        auto jdbc = std::make_unique<Node>("jdbc()", next_flag++, GLOBAL_LEVEL);
+        auto hdfs = std::make_unique<Node>("hdfs()", next_flag++, GLOBAL_LEVEL);
+        auto s3 = std::make_unique<Node>("s3()", next_flag++, GLOBAL_LEVEL);
+        auto table_functions = std::make_unique<Node>("TABLE FUNCTIONS", std::move(file), std::move(url), std::move(input), std::move(values), std::move(numbers), std::move(zeros), std::move(merge), std::move(remote), std::move(mysql), std::move(odbc), std::move(jdbc), std::move(hdfs), std::move(s3));
+        ext::push_back(all, std::move(table_functions));
+
+        flags_to_keyword_tree_ = std::make_unique<Node>("ALL", std::move(all));
+        flags_to_keyword_tree_->aliases.push_back("ALL PRIVILEGES");
+    }
+
+    void makeKeywordToFlagsMap(std::unordered_map<std::string_view, Flags> & keyword_to_flags_map_, Node * start_node = nullptr)
+    {
+        if (!start_node)
+        {
+            start_node = flags_to_keyword_tree.get();
+            keyword_to_flags_map_["USAGE"] = {};
+            keyword_to_flags_map_["NONE"] = {};
+            keyword_to_flags_map_["NO PRIVILEGES"] = {};
+        }
+        start_node->aliases.emplace_back(start_node->keyword);
+        for (auto & alias : start_node->aliases)
+        {
+            boost::to_upper(alias);
+            keyword_to_flags_map_[alias] = start_node->flags;
+        }
+        for (auto & child : start_node->children)
+            makeKeywordToFlagsMap(keyword_to_flags_map_, child.get());
+    }
+
+    void makeAccessTypeToFlagsMapping(std::vector<Flags> & access_type_to_flags_mapping_)
+    {
+        access_type_to_flags_mapping_.resize(MAX_ACCESS_TYPE);
+        for (auto access_type : ext::range_with_static_cast<AccessType>(0, MAX_ACCESS_TYPE))
+        {
+            auto str = toKeyword(access_type);
+            auto it = keyword_to_flags_map.find(str);
+            if (it == keyword_to_flags_map.end())
+            {
+                String uppercased{str};
+                boost::to_upper(uppercased);
+                it = keyword_to_flags_map.find(uppercased);
+            }
+            access_type_to_flags_mapping_[static_cast<size_t>(access_type)] = it->second;
+        }
+    }
+
+    void collectAllGrantableOnLevel(std::vector<Flags> & all_grantable_on_level_, const Node * start_node = nullptr)
+    {
+        if (!start_node)
+        {
+            start_node = flags_to_keyword_tree.get();
+            all_grantable_on_level.resize(COLUMN_LEVEL + 1);
+        }
+        for (int i = 0; i <= start_node->level; ++i)
+            all_grantable_on_level_[i] |= start_node->flags;
+        for (const auto & child : start_node->children)
+            collectAllGrantableOnLevel(all_grantable_on_level_, child.get());
+    }
+
+    Impl()
+    {
+        makeFlagsToKeywordTree(flags_to_keyword_tree);
+        makeKeywordToFlagsMap(keyword_to_flags_map);
+        makeAccessTypeToFlagsMapping(access_type_to_flags_mapping);
+        collectAllGrantableOnLevel(all_grantable_on_level);
+    }
+
+    std::unique_ptr<Node> flags_to_keyword_tree;
     std::unordered_map<std::string_view, Flags> keyword_to_flags_map;
     std::vector<Flags> access_type_to_flags_mapping;
-    Flags all_flags;
-    Flags all_flags_for_target[static_cast<size_t>(DICTIONARY) + 1];
-    Flags all_flags_grantable_on_database_level;
-    Flags all_flags_grantable_on_table_level;
+    std::vector<Flags> all_grantable_on_level;
 };
 
 
@@ -464,18 +486,10 @@ inline AccessFlags::AccessFlags(const std::string_view & keyword) : flags(Impl<>
 inline AccessFlags::AccessFlags(const std::vector<std::string_view> & keywords) : flags(Impl<>::instance().keywordsToFlags(keywords)) {}
 inline AccessFlags::AccessFlags(const Strings & keywords) : flags(Impl<>::instance().keywordsToFlags(keywords)) {}
 inline String AccessFlags::toString() const { return Impl<>::instance().flagsToString(flags); }
-inline std::vector<AccessType> AccessFlags::toAccessTypes() const { return Impl<>::instance().flagsToAccessTypes(flags); }
 inline std::vector<std::string_view> AccessFlags::toKeywords() const { return Impl<>::instance().flagsToKeywords(flags); }
-inline AccessFlags AccessFlags::allFlags() { return Impl<>::instance().getAllFlags(); }
-inline AccessFlags AccessFlags::allGlobalFlags() { return Impl<>::instance().getGlobalFlags(); }
-inline AccessFlags AccessFlags::allDatabaseFlags() { return Impl<>::instance().getDatabaseFlags(); }
-inline AccessFlags AccessFlags::allTableFlags() { return Impl<>::instance().getTableFlags(); }
-inline AccessFlags AccessFlags::allColumnFlags() { return Impl<>::instance().getColumnFlags(); }
-inline AccessFlags AccessFlags::allDictionaryFlags() { return Impl<>::instance().getDictionaryFlags(); }
-inline AccessFlags AccessFlags::allFlagsGrantableOnGlobalLevel() { return Impl<>::instance().getAllFlagsGrantableOnGlobalLevel(); }
-inline AccessFlags AccessFlags::allFlagsGrantableOnDatabaseLevel() { return Impl<>::instance().getAllFlagsGrantableOnDatabaseLevel(); }
-inline AccessFlags AccessFlags::allFlagsGrantableOnTableLevel() { return Impl<>::instance().getAllFlagsGrantableOnTableLevel(); }
-inline AccessFlags AccessFlags::allFlagsGrantableOnColumnLevel() { return Impl<>::instance().getAllFlagsGrantableOnColumnLevel(); }
+inline AccessFlags AccessFlags::databaseLevel() { return Impl<>::instance().getDatabaseLevelFlags(); }
+inline AccessFlags AccessFlags::tableLevel() { return Impl<>::instance().getTableLevelFlags(); }
+inline AccessFlags AccessFlags::columnLevel() { return Impl<>::instance().getColumnLevelFlags(); }
 
 inline AccessFlags operator |(AccessType left, AccessType right) { return AccessFlags(left) | right; }
 inline AccessFlags operator &(AccessType left, AccessType right) { return AccessFlags(left) & right; }

@@ -74,7 +74,7 @@ public:
         /** The `Entry` object protects the resource from being used by another thread.
           * The following methods are forbidden for `rvalue`, so you can not write a similar to
           *
-          * auto q = pool.get()->query("SELECT .."); // Oops, after this line Entry was destroyed
+          * auto q = pool.Get()->query("SELECT .."); // Oops, after this line Entry was destroyed
           * q.execute (); // Someone else can use this Connection
           */
         Object * operator->() && = delete;
@@ -152,9 +152,9 @@ private:
 
 protected:
 
-    Poco::Logger * log;
+    Logger * log;
 
-    PoolBase(unsigned max_items_, Poco::Logger * log_)
+    PoolBase(unsigned max_items_, Logger * log_)
        : max_items(max_items_), log(log_)
     {
         items.reserve(max_items);

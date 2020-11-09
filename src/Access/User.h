@@ -1,12 +1,12 @@
 #pragma once
 
 #include <Access/IAccessEntity.h>
-#include <Access/AccessRights.h>
 #include <Access/Authentication.h>
 #include <Access/AllowedClientHosts.h>
-#include <Access/GrantedRoles.h>
-#include <Access/RolesOrUsersSet.h>
-#include <Access/SettingsProfileElement.h>
+#include <Access/AccessRights.h>
+#include <Access/GenericRoleSet.h>
+#include <Core/UUID.h>
+#include <boost/container/flat_set.hpp>
 
 
 namespace DB
@@ -18,14 +18,14 @@ struct User : public IAccessEntity
     Authentication authentication;
     AllowedClientHosts allowed_client_hosts = AllowedClientHosts::AnyHostTag{};
     AccessRights access;
-    GrantedRoles granted_roles;
-    RolesOrUsersSet default_roles = RolesOrUsersSet::AllTag{};
-    SettingsProfileElements settings;
+    AccessRights access_with_grant_option;
+    boost::container::flat_set<UUID> granted_roles;
+    boost::container::flat_set<UUID> granted_roles_with_admin_option;
+    GenericRoleSet default_roles = GenericRoleSet::AllTag{};
+    String profile;
 
     bool equal(const IAccessEntity & other) const override;
     std::shared_ptr<IAccessEntity> clone() const override { return cloneImpl<User>(); }
-    static constexpr const Type TYPE = Type::USER;
-    Type getType() const override { return TYPE; }
 };
 
 using UserPtr = std::shared_ptr<const User>;

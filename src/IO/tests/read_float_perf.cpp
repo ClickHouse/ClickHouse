@@ -3,7 +3,7 @@
 #include <iostream>
 #include <fstream>
 
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <IO/readFloatText.h>
@@ -56,8 +56,7 @@ void NO_INLINE loop(ReadBuffer & in, WriteBuffer & out)
     }
 
     watch.stop();
-    out << "Read in " << watch.elapsedSeconds() << " sec, "
-        << formatReadableSizeWithBinarySuffix(in.count() / watch.elapsedSeconds()) << "/sec, result = " << sum << "\n";
+    out << "Read in " << watch.elapsedSeconds() << " sec, " << formatReadableSizeWithBinarySuffix(in.count() / watch.elapsedSeconds()) << "/sec, result = " << sum << "\n";
 }
 
 

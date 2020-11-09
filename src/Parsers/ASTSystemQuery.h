@@ -1,11 +1,8 @@
 #pragma once
 
+#include "config_core.h"
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/IAST.h>
-
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
 
 
 namespace DB
@@ -30,7 +27,6 @@ public:
         START_LISTEN_QUERIES,
         RESTART_REPLICAS,
         RESTART_REPLICA,
-        DROP_REPLICA,
         SYNC_REPLICA,
         RELOAD_DICTIONARY,
         RELOAD_DICTIONARIES,
@@ -62,11 +58,6 @@ public:
     String target_dictionary;
     String database;
     String table;
-    String replica;
-    String replica_zk_path;
-    bool is_drop_whole_replica;
-    String storage_policy;
-    String volume;
 
     String getID(char) const override { return "SYSTEM query"; }
 

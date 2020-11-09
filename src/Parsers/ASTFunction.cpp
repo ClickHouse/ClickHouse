@@ -5,7 +5,6 @@
 #include <Parsers/ASTSubquery.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
-#include <Common/SipHash.h>
 
 
 namespace DB
@@ -55,15 +54,7 @@ ASTPtr ASTFunction::clone() const
 }
 
 
-void ASTFunction::updateTreeHashImpl(SipHash & hash_state) const
-{
-    hash_state.update(name.size());
-    hash_state.update(name);
-    IAST::updateTreeHashImpl(hash_state);
-}
-
-
-/** A special hack. If it's [I]LIKE or NOT [I]LIKE expression and the right hand side is a string literal,
+/** A special hack. If it's LIKE or NOT LIKE expression and the right hand side is a string literal,
   *  we will highlight unescaped metacharacters % and _ in string literal for convenience.
   * Motivation: most people are unaware that _ is a metacharacter and forgot to properly escape it with two backslashes.
   * With highlighting we make it clearly obvious.
@@ -111,36 +102,13 @@ static bool highlightStringLiteralWithMetacharacters(const ASTPtr & node, const 
 }
 
 
-ASTSelectWithUnionQuery * ASTFunction::tryGetQueryArgument() const
-{
-    if (arguments && arguments->children.size() == 1)
-    {
-        return arguments->children[0]->as<ASTSelectWithUnionQuery>();
-    }
-    return nullptr;
-}
-
-
 void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    frame.expression_list_prepend_whitespace = false;
     FormatStateStacked nested_need_parens = frame;
     FormatStateStacked nested_dont_need_parens = frame;
     nested_need_parens.need_parens = true;
     nested_dont_need_parens.need_parens = false;
 
-    if (auto * query = tryGetQueryArgument())
-    {
-        std::string nl_or_nothing = settings.one_line ? "" : "\n";
-        std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
-        settings.ostr << (settings.hilite ? hilite_function : "") << name << "(" << nl_or_nothing;
-        FormatStateStacked frame_nested = frame;
-        frame_nested.need_parens = false;
-        ++frame_nested.indent;
-        query->formatImpl(settings, state, frame_nested);
-        settings.ostr << nl_or_nothing << indent_str << ")";
-        return;
-    }
     /// Should this function to be written as operator?
     bool written = false;
     if (arguments && !parameters)
@@ -200,9 +168,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 "greater",         " > ",
                 "equals",          " = ",
                 "like",            " LIKE ",
-                "ilike",           " ILIKE ",
                 "notLike",         " NOT LIKE ",
-                "notILike",        " NOT ILIKE ",
                 "in",              " IN ",
                 "notIn",           " NOT IN ",
                 "globalIn",        " GLOBAL IN ",
@@ -220,7 +186,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                     settings.ostr << (settings.hilite ? hilite_operator : "") << func[1] << (settings.hilite ? hilite_none : "");
 
                     bool special_hilite = settings.hilite
-                        && (name == "like" || name == "notLike" || name == "ilike" || name == "notILike")
+                        && (name == "like" || name == "notLike")
                         && highlightStringLiteralWithMetacharacters(arguments->children[1], settings, "%_");
 
                     /// Format x IN 1 as x IN (1): put parens around rhs even if there is a single element in set.

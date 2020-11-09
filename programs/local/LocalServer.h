@@ -2,15 +2,14 @@
 
 #include <Core/Settings.h>
 #include <Poco/Util/Application.h>
-#include <filesystem>
 #include <memory>
-#include <optional>
 #include <loggers/Loggers.h>
-#include <Interpreters/Context.h>
 
 
 namespace DB
 {
+
+class Context;
 
 /// Lightweight Application for clickhouse-local
 /// No networking, no extra configs and working directories, no pid and status files, no dictionaries, no logging.
@@ -36,20 +35,20 @@ private:
     std::string getInitialCreateTableQuery();
 
     void tryInitPath();
-    void applyCmdOptions(Context & context);
-    void applyCmdSettings(Context & context);
+    void applyCmdOptions();
+    void applyCmdSettings();
+    void attachSystemTables();
     void processQueries();
     void setupUsers();
-    void cleanup();
+
+    std::string getHelpHeader() const;
+    std::string getHelpFooter() const;
 
 protected:
-    SharedContextHolder shared_context;
-    std::unique_ptr<Context> global_context;
+    std::unique_ptr<Context> context;
 
     /// Settings specified via command line args
     Settings cmd_settings;
-
-    std::optional<std::filesystem::path> temporary_directory_to_delete;
 };
 
 }

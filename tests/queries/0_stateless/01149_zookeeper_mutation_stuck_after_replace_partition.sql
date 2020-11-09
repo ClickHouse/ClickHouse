@@ -1,5 +1,5 @@
 drop table if exists mt;
-drop table if exists rmt sync;
+drop table if exists rmt;
 
 create table mt (n UInt64, s String) engine = MergeTree partition by intDiv(n, 10) order by n;
 insert into mt values (3, '3'), (4, '4');
@@ -23,7 +23,7 @@ alter table rmt drop column s;
 select mutation_id, command, parts_to_do_names, parts_to_do, is_done from system.mutations where database=currentDatabase() and table='rmt';
 select * from rmt;
 
-drop table rmt sync;
+drop table rmt;
 
 set replication_alter_partitions_sync=0;
 create table rmt (n UInt64, s String) engine = ReplicatedMergeTree('/clickhouse/test_01149/rmt', 'r1') partition by intDiv(n, 10) order by n;
@@ -36,4 +36,4 @@ set replication_alter_partitions_sync=1;
 alter table rmt drop column s;
 
 drop table mt;
-drop table rmt sync;
+drop table rmt;

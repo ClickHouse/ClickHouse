@@ -6,13 +6,11 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
-
-namespace
-{
 
 struct TrimModeLeft
 {
@@ -35,7 +33,7 @@ struct TrimModeBoth
     static constexpr bool trim_right = true;
 };
 
-template <typename Mode>
+template <typename mode>
 class FunctionTrimImpl
 {
 public:
@@ -69,7 +67,7 @@ public:
         }
     }
 
-    static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
+    static void vector_fixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
     {
         throw Exception("Functions trimLeft, trimRight and trimBoth cannot work with FixedString argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -80,15 +78,15 @@ private:
         const char * char_data = reinterpret_cast<const char *>(data);
         const char * char_end = char_data + size;
 
-        if constexpr (Mode::trim_left)
-        { // NOLINT
+        if constexpr (mode::trim_left)
+        {
             const char * found = find_first_not_symbols<' '>(char_data, char_end);
             size_t num_chars = found - char_data;
             char_data += num_chars;
         }
 
-        if constexpr (Mode::trim_right)
-        { // NOLINT
+        if constexpr (mode::trim_right)
+        {
             const char * found = find_last_not_symbols_or_null<' '>(char_data, char_end);
             if (found)
                 char_end = found + 1;
@@ -104,8 +102,6 @@ private:
 using FunctionTrimLeft = FunctionStringToString<FunctionTrimImpl<TrimModeLeft>, TrimModeLeft>;
 using FunctionTrimRight = FunctionStringToString<FunctionTrimImpl<TrimModeRight>, TrimModeRight>;
 using FunctionTrimBoth = FunctionStringToString<FunctionTrimImpl<TrimModeBoth>, TrimModeBoth>;
-
-}
 
 void registerFunctionTrim(FunctionFactory & factory)
 {

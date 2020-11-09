@@ -4,7 +4,7 @@
 #include <memory>
 #include <boost/noncopyable.hpp>
 #include <pcg_random.hpp>
-#include <common/types.h>
+#include <Core/Types.h>
 
 
 namespace Poco::Util
@@ -19,11 +19,10 @@ namespace DB
 /// Min and max lifetimes for a loadable object or it's entry
 struct ExternalLoadableLifetime
 {
-    UInt64 min_sec = 0;
-    UInt64 max_sec = 0;
+    UInt64 min_sec;
+    UInt64 max_sec;
 
     ExternalLoadableLifetime(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
-    ExternalLoadableLifetime() {}
 };
 
 /// Get delay before trying to load again after error.

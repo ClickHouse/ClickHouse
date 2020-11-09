@@ -1,11 +1,11 @@
+#if defined(__linux__)
+
+#include <boost/noncopyable.hpp>
+#include <Common/Exception.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+
 #include <IO/AIO.h>
-
-#if defined(OS_LINUX)
-
-#    include <Common/Exception.h>
-
-#    include <sys/syscall.h>
-#    include <unistd.h>
 
 
 /** Small wrappers for asynchronous I/O.
@@ -30,12 +30,12 @@ int io_destroy(aio_context_t ctx)
     return syscall(__NR_io_destroy, ctx);
 }
 
-int io_submit(aio_context_t ctx, long nr, struct iocb * iocbpp[]) // NOLINT
+int io_submit(aio_context_t ctx, long nr, struct iocb * iocbpp[])
 {
     return syscall(__NR_io_submit, ctx, nr, iocbpp);
 }
 
-int io_getevents(aio_context_t ctx, long min_nr, long max_nr, io_event * events, struct timespec * timeout) // NOLINT
+int io_getevents(aio_context_t ctx, long min_nr, long max_nr, io_event * events, struct timespec * timeout)
 {
     return syscall(__NR_io_getevents, ctx, min_nr, max_nr, events, timeout);
 }
@@ -53,9 +53,16 @@ AIOContext::~AIOContext()
     io_destroy(ctx);
 }
 
-#elif defined(OS_FREEBSD)
+#elif defined(__FreeBSD__)
 
+#    include <aio.h>
+#    include <boost/noncopyable.hpp>
+#    include <sys/event.h>
+#    include <sys/time.h>
+#    include <sys/types.h>
 #    include <Common/Exception.h>
+
+#    include <IO/AIO.h>
 
 
 /** Small wrappers for asynchronous I/O.
@@ -116,7 +123,7 @@ int io_submit(int ctx, long nr, struct iocb * iocbpp[])
 
 int io_getevents(int ctx, long, long max_nr, struct kevent * events, struct timespec * timeout)
 {
-    return kevent(ctx, nullptr, 0, events, max_nr, timeout);
+    return kevent(ctx, NULL, 0, events, max_nr, timeout);
 }
 
 

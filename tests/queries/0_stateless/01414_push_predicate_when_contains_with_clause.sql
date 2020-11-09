@@ -1,6 +1,8 @@
 DROP TABLE IF EXISTS numbers_indexed;
 DROP TABLE IF EXISTS squares;
 
+SET allow_push_predicate_when_subquery_contains_with = 1;
+
 CREATE TABLE numbers_indexed Engine=MergeTree ORDER BY number PARTITION BY bitShiftRight(number,8) SETTINGS index_granularity=8 AS SELECT * FROM numbers(16384);
 
 CREATE VIEW squares AS WITH number*2 AS square_number SELECT number, square_number FROM numbers_indexed;

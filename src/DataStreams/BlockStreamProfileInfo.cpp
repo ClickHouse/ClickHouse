@@ -63,14 +63,9 @@ bool BlockStreamProfileInfo::hasAppliedLimit() const
 
 void BlockStreamProfileInfo::update(Block & block)
 {
-    update(block.rows(), block.bytes());
-}
-
-void BlockStreamProfileInfo::update(size_t num_rows, size_t num_bytes)
-{
     ++blocks;
-    rows += num_rows;
-    bytes += num_bytes;
+    rows += block.rows();
+    bytes += block.bytes();
 }
 
 

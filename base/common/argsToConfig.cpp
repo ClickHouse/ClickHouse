@@ -1,5 +1,6 @@
-#include "argsToConfig.h"
+#include <common/argsToConfig.h>
 
+#include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Poco/Util/MapConfiguration.h>
 

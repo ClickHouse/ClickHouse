@@ -9,10 +9,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
-#include <Core/Defines.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <Parsers/queryToString.h>
-#include <common/logger_useful.h>
 
 
 namespace DB
@@ -24,7 +21,7 @@ namespace ErrorCodes
     extern const int MULTIPLE_ASSIGNMENTS_TO_COLUMN;
 }
 
-std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command, bool parse_alter_commands)
+std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command, bool from_zookeeper)
 {
     if (command->type == ASTAlterCommand::DELETE)
     {
@@ -57,10 +54,10 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.type = MATERIALIZE_INDEX;
         res.partition = command->partition;
         res.predicate = nullptr;
-        res.index_name = command->index->as<ASTIdentifier &>().name();
+        res.index_name = command->index->as<ASTIdentifier &>().name;
         return res;
     }
-    else if (parse_alter_commands && command->type == ASTAlterCommand::MODIFY_COLUMN)
+    else if (from_zookeeper && command->type == ASTAlterCommand::MODIFY_COLUMN)
     {
         MutationCommand res;
         res.ast = command->ptr();
@@ -70,46 +67,26 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.data_type = DataTypeFactory::instance().get(ast_col_decl.type);
         return res;
     }
-    else if (parse_alter_commands && command->type == ASTAlterCommand::DROP_COLUMN)
+    else if (from_zookeeper && command->type == ASTAlterCommand::DROP_COLUMN)
     {
         MutationCommand res;
         res.ast = command->ptr();
         res.type = MutationCommand::Type::DROP_COLUMN;
         res.column_name = getIdentifierName(command->column);
-        if (command->partition)
-            res.partition = command->partition;
-        if (command->clear_column)
-            res.clear = true;
-
         return res;
     }
-    else if (parse_alter_commands && command->type == ASTAlterCommand::DROP_INDEX)
+    else if (from_zookeeper && command->type == ASTAlterCommand::DROP_INDEX)
     {
         MutationCommand res;
         res.ast = command->ptr();
         res.type = MutationCommand::Type::DROP_INDEX;
-        res.column_name = command->index->as<ASTIdentifier &>().name();
-        if (command->partition)
-            res.partition = command->partition;
-        if (command->clear_index)
-            res.clear = true;
-        return res;
-    }
-    else if (parse_alter_commands && command->type == ASTAlterCommand::RENAME_COLUMN)
-    {
-        MutationCommand res;
-        res.ast = command->ptr();
-        res.type = MutationCommand::Type::RENAME_COLUMN;
-        res.column_name = command->column->as<ASTIdentifier &>().name();
-        res.rename_to = command->rename_to->as<ASTIdentifier &>().name();
-        return res;
+        res.column_name = command->index->as<ASTIdentifier &>().name;
     }
     else if (command->type == ASTAlterCommand::MATERIALIZE_TTL)
     {
         MutationCommand res;
         res.ast = command->ptr();
         res.type = MATERIALIZE_TTL;
-        res.partition = command->partition;
         return res;
     }
     return {};
@@ -138,7 +115,7 @@ void MutationCommands::readText(ReadBuffer & in)
 
     ParserAlterCommandList p_alter_commands;
     auto commands_ast = parseQuery(
-        p_alter_commands, commands_str.data(), commands_str.data() + commands_str.length(), "mutation commands list", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+        p_alter_commands, commands_str.data(), commands_str.data() + commands_str.length(), "mutation commands list", 0);
     for (ASTAlterCommand * command_ast : commands_ast->as<ASTAlterCommandList &>().commands)
     {
         auto command = MutationCommand::parse(command_ast, true);

@@ -50,7 +50,7 @@ struct PartLogElement
     static std::string name() { return "PartLog"; }
 
     static Block createBlock();
-    void appendToBlock(MutableColumns & columns) const;
+    void appendToBlock(Block & block) const;
 };
 
 class IMergeTreeDataPart;

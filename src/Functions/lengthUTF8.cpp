@@ -6,13 +6,12 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-namespace
-{
 
 /** If the string is UTF-8 encoded text, it returns the length of the text in code points.
   * (not in characters: the length of the text "ё" can be either 1 or 2, depending on the normalization)
@@ -35,11 +34,11 @@ struct LengthUTF8Impl
         }
     }
 
-    static void vectorFixedToConstant(const ColumnString::Chars & /*data*/, size_t /*n*/, UInt64 & /*res*/)
+    static void vector_fixed_to_constant(const ColumnString::Chars & /*data*/, size_t /*n*/, UInt64 & /*res*/)
     {
     }
 
-    static void vectorFixedToVector(const ColumnString::Chars & data, size_t n, PaddedPODArray<UInt64> & res)
+    static void vector_fixed_to_vector(const ColumnString::Chars & data, size_t n, PaddedPODArray<UInt64> & res)
     {
         size_t size = data.size() / n;
 
@@ -60,8 +59,6 @@ struct NameLengthUTF8
     static constexpr auto name = "lengthUTF8";
 };
 using FunctionLengthUTF8 = FunctionStringOrArrayToT<LengthUTF8Impl, NameLengthUTF8, UInt64>;
-
-}
 
 void registerFunctionLengthUTF8(FunctionFactory & factory)
 {

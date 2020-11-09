@@ -33,8 +33,6 @@ protected:
     size_t terminal_width = 0;
     bool suffix_written = false;
 
-    size_t row_number_width = 7; // "10000. "
-
     const FormatSettings format_settings;
 
     using Widths = PODArray<size_t>;
@@ -44,7 +42,7 @@ protected:
     virtual void writeSuffix();
 
 
-    virtual void writeSuffixIfNot()
+    void writeSuffixIfNot()
     {
         if (!suffix_written)
             writeSuffix();
@@ -54,7 +52,7 @@ protected:
 
     void calculateWidths(
         const Block & header, const Chunk & chunk,
-        WidthsPerColumn & widths, Widths & max_padded_widths, Widths & name_widths);
+        WidthsPerColumn & widths, Widths & max_widths, Widths & name_widths);
 
     void writeValueWithPadding(
         const IColumn & column, const IDataType & type, size_t row_num, size_t value_width, size_t pad_to_width);

@@ -10,7 +10,7 @@
 #define DBMS_HASH_MAP_COUNT_COLLISIONS
 #define DBMS_HASH_MAP_DEBUG_RESIZES
 
-#include <common/types.h>
+#include <Core/Types.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -57,10 +57,10 @@ struct STRUCT : public StringRef {}; \
 namespace ZeroTraits \
 { \
     template <> \
-    inline bool check<STRUCT>(STRUCT x) { return nullptr == x.data; } /* NOLINT */ \
+    inline bool check<STRUCT>(STRUCT x) { return nullptr == x.data; } \
  \
     template <> \
-    inline void set<STRUCT>(STRUCT & x) { x.data = nullptr; } /* NOLINT */ \
+    inline void set<STRUCT>(STRUCT & x) { x.data = nullptr; } \
 } \
  \
 template <> \
@@ -466,8 +466,8 @@ int main(int argc, char ** argv)
         return 1;
     }
 
-    size_t n = std::stol(argv[1]);
-    size_t m = std::stol(argv[2]);
+    size_t n = atoi(argv[1]);
+    size_t m = atoi(argv[2]);
 
     DB::Arena pool;
     std::vector<StringRef> data(n);

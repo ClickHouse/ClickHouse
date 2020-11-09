@@ -44,10 +44,8 @@ public:
 
     /** Allocates connection to work. */
     Entry get(const ConnectionTimeouts & timeouts,
-              const Settings * settings,
-              bool force_connected) override; /// From IConnectionPool
-
-    Int64 getPriority() const override; /// From IConnectionPool
+              const Settings * settings = nullptr,
+              bool force_connected = true) override; /// From IConnectionPool
 
     /** Allocates up to the specified number of connections to work.
       * Connections provide access to different replicas of one shard.
@@ -72,7 +70,7 @@ public:
 
     struct NestedPoolStatus
     {
-        const Base::NestedPoolPtr pool;
+        const IConnectionPool * pool;
         size_t error_count;
         std::chrono::seconds estimated_recovery_time;
     };
@@ -99,7 +97,6 @@ private:
 
 private:
     std::vector<size_t> hostname_differences; /// Distances from name of this host to the names of hosts of pools.
-    size_t last_used = 0; /// Last used for round_robin policy.
     LoadBalancing default_load_balancing;
 };
 

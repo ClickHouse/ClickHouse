@@ -14,8 +14,6 @@
 #include <Formats/ProtobufWriter.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Parsers/ASTFunction.h>
@@ -38,25 +36,25 @@ namespace ErrorCodes
 
 std::string DataTypeAggregateFunction::doGetName() const
 {
-    WriteBufferFromOwnString stream;
+    std::stringstream stream;
     stream << "AggregateFunction(" << function->getName();
 
     if (!parameters.empty())
     {
-        stream << '(';
+        stream << "(";
         for (size_t i = 0; i < parameters.size(); ++i)
         {
             if (i)
                 stream << ", ";
             stream << applyVisitor(DB::FieldVisitorToString(), parameters[i]);
         }
-        stream << ')';
+        stream << ")";
     }
 
     for (const auto & argument_type : argument_types)
         stream << ", " << argument_type->getName();
 
-    stream << ')';
+    stream << ")";
     return stream.str();
 }
 
@@ -392,8 +390,7 @@ static DataTypePtr create(const ASTPtr & arguments)
     if (function_name.empty())
         throw Exception("Logical error: empty name of aggregate function passed", ErrorCodes::LOGICAL_ERROR);
 
-    AggregateFunctionProperties properties;
-    function = AggregateFunctionFactory::instance().get(function_name, argument_types, params_row, properties);
+    function = AggregateFunctionFactory::instance().get(function_name, argument_types, params_row);
     return std::make_shared<DataTypeAggregateFunction>(function, argument_types, params_row);
 }
 

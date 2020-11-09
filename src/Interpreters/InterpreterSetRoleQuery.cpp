@@ -1,8 +1,8 @@
 #include <Interpreters/InterpreterSetRoleQuery.h>
 #include <Parsers/ASTSetRoleQuery.h>
-#include <Parsers/ASTRolesOrUsersSet.h>
+#include <Parsers/ASTGenericRoleSet.h>
 #include <Interpreters/Context.h>
-#include <Access/RolesOrUsersSet.h>
+#include <Access/GenericRoleSet.h>
 #include <Access/AccessControlManager.h>
 #include <Access/User.h>
 
@@ -38,21 +38,21 @@ void InterpreterSetRoleQuery::setRole(const ASTSetRoleQuery & query)
     }
     else
     {
-        RolesOrUsersSet roles_from_query{*query.roles, access_control};
-        boost::container::flat_set<UUID> new_current_roles;
+        GenericRoleSet roles_from_query{*query.roles, access_control};
+        std::vector<UUID> new_current_roles;
         if (roles_from_query.all)
         {
-            for (const auto & id : user->granted_roles.roles)
+            for (const auto & id : user->granted_roles)
                 if (roles_from_query.match(id))
-                    new_current_roles.emplace(id);
+                    new_current_roles.push_back(id);
         }
         else
         {
             for (const auto & id : roles_from_query.getMatchingIDs())
             {
-                if (!user->granted_roles.roles.count(id))
+                if (user->granted_roles.count(id) == 0)
                     throw Exception("Role should be granted to set current", ErrorCodes::SET_NON_GRANTED_ROLE);
-                new_current_roles.emplace(id);
+                new_current_roles.push_back(id);
             }
         }
         session_context.setCurrentRoles(new_current_roles);
@@ -62,11 +62,11 @@ void InterpreterSetRoleQuery::setRole(const ASTSetRoleQuery & query)
 
 void InterpreterSetRoleQuery::setDefaultRole(const ASTSetRoleQuery & query)
 {
-    context.checkAccess(AccessType::ALTER_USER);
+    context.checkAccess(AccessType::CREATE_USER | AccessType::DROP_USER);
 
     auto & access_control = context.getAccessControlManager();
-    std::vector<UUID> to_users = RolesOrUsersSet{*query.to_users, access_control, context.getUserID()}.getMatchingIDs(access_control);
-    RolesOrUsersSet roles_from_query{*query.roles, access_control};
+    std::vector<UUID> to_users = GenericRoleSet{*query.to_users, access_control, context.getUserID()}.getMatchingUsers(access_control);
+    GenericRoleSet roles_from_query{*query.roles, access_control};
 
     auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
     {
@@ -79,13 +79,13 @@ void InterpreterSetRoleQuery::setDefaultRole(const ASTSetRoleQuery & query)
 }
 
 
-void InterpreterSetRoleQuery::updateUserSetDefaultRoles(User & user, const RolesOrUsersSet & roles_from_query)
+void InterpreterSetRoleQuery::updateUserSetDefaultRoles(User & user, const GenericRoleSet & roles_from_query)
 {
     if (!roles_from_query.all)
     {
         for (const auto & id : roles_from_query.getMatchingIDs())
         {
-            if (!user.granted_roles.roles.count(id))
+            if (user.granted_roles.count(id) == 0)
                 throw Exception("Role should be granted to set default", ErrorCodes::SET_NON_GRANTED_ROLE);
         }
     }

@@ -45,9 +45,9 @@ struct SelectQueryOptions
         return out;
     }
 
-    SelectQueryOptions & analyze(bool dry_run = true)
+    SelectQueryOptions & analyze(bool value = true)
     {
-        only_analyze = dry_run;
+        only_analyze = value;
         return *this;
     }
 

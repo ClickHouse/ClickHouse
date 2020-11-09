@@ -2,14 +2,12 @@
 
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/BlockIO.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Storages/StorageInMemoryMetadata.h>
 
 namespace DB
 {
-
-class Context;
 
 
 /** Interprets the INSERT query.
@@ -31,11 +29,11 @@ public:
       */
     BlockIO execute() override;
 
-    StorageID getDatabaseTable() const;
+    std::pair<String, String> getDatabaseTable() const;
 
 private:
     StoragePtr getTable(ASTInsertQuery & query);
-    Block getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot) const;
+    Block getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table) const;
 
     ASTPtr query_ptr;
     const Context & context;

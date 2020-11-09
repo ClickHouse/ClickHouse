@@ -1,4 +1,4 @@
-SET join_algorithm = 'partial_merge';
+SET partial_merge_join = 1;
 
 SELECT count(1), uniqExact(1) FROM (
 SELECT materialize(1) as k FROM numbers(1) nums

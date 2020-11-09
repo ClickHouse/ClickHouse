@@ -46,15 +46,9 @@ private:
         }
     };
 
-    struct OperationsInQueue
-    {
-        size_t merges = 0;
-        size_t mutations = 0;
-        size_t merges_with_ttl = 0;
-    };
-
     /// To calculate min_unprocessed_insert_time, max_processed_insert_time, for which the replica lag is calculated.
     using InsertsByTime = std::set<LogEntryPtr, ByTime>;
+
 
     StorageReplicatedMergeTree & storage;
     MergeTreeDataFormatVersion format_version;
@@ -62,7 +56,7 @@ private:
     String zookeeper_path;
     String replica_path;
     String logger_name;
-    Poco::Logger * log = nullptr;
+    Logger * log = nullptr;
 
     /// Protects the queue, future_parts and other queue state variables.
     mutable std::mutex state_mutex;
@@ -127,7 +121,7 @@ private:
 
         /// Note that is_done is not equivalent to parts_to_do.size() == 0
         /// (even if parts_to_do.size() == 0 some relevant parts can still commit in the future).
-        /// Also we can jump over mutation when we download mutated part from other replica.
+        /// Also we can jump over mutation when we dowload mutated part from other replica.
         bool is_done = false;
 
         String latest_failed_part;
@@ -175,8 +169,7 @@ private:
     void notifySubscribers(size_t new_queue_size);
 
     /// Check that entry_ptr is REPLACE_RANGE entry and can be removed from queue because current entry covers it
-    bool checkReplaceRangeCanBeRemoved(
-        const MergeTreePartInfo & part_info, const LogEntryPtr entry_ptr, const ReplicatedMergeTreeLogEntryData & current) const;
+    bool checkReplaceRangeCanBeRemoved(const MergeTreePartInfo & part_info, const LogEntryPtr entry_ptr, const ReplicatedMergeTreeLogEntryData & current) const;
 
     /// Ensures that only one thread is simultaneously updating mutations.
     std::mutex update_mutations_mutex;
@@ -205,7 +198,6 @@ private:
       * Should be called under state_mutex.
       */
     bool isNotCoveredByFuturePartsImpl(
-        const String & log_entry_name,
         const String & new_part_name, String & out_reason,
         std::lock_guard<std::mutex> & state_lock) const;
 
@@ -260,25 +252,14 @@ private:
         ~CurrentlyExecuting();
     };
 
-    /// ZK contains a limit on the number or total size of operations in a multi-request.
-    /// If the limit is exceeded, the connection is simply closed.
-    /// The constant is selected with a margin. The default limit in ZK is 1 MB of data in total.
-    /// The average size of the node value in this case is less than 10 kilobytes.
-    static constexpr size_t MAX_MULTI_OPS = 100;
-
-    /// Very large queue entries may appear occasionally.
-    /// We cannot process MAX_MULTI_OPS at once because it will fail.
-    /// But we have to process more than one entry at once because otherwise lagged replicas keep up slowly.
-    /// Let's start with one entry per transaction and icrease it exponentially towards MAX_MULTI_OPS.
-    /// It will allow to make some progress before failing and remain operational even in extreme cases.
-    size_t current_multi_batch_size = 1;
-
 public:
     ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_);
+
     ~ReplicatedMergeTreeQueue();
 
 
-    void initialize(const MergeTreeData::DataParts & parts);
+    void initialize(const String & zookeeper_path_, const String & replica_path_, const String & logger_name_,
+        const MergeTreeData::DataParts & parts);
 
     /** Inserts an action to the end of the queue.
       * To restore broken parts during operation.
@@ -303,9 +284,8 @@ public:
       * If watch_callback is not empty, will call it when new entries appear in the log.
       * If there were new entries, notifies storage.queue_task_handle.
       * Additionally loads mutations (so that the set of mutations is always more recent than the queue).
-      * Return the version of "logs" node (that is updated for every merge/mutation/... added to the log)
       */
-    int32_t pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback = {});
+    void pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback = {});
 
     /// Load new mutation entries. If something new is loaded, schedule storage.merge_selecting_task.
     /// If watch_callback is not empty, will call it when new mutations appear in ZK.
@@ -345,7 +325,7 @@ public:
     bool processEntry(std::function<zkutil::ZooKeeperPtr()> get_zookeeper, LogEntryPtr & entry, const std::function<bool(LogEntryPtr &)> func);
 
     /// Count the number of merges and mutations of single parts in the queue.
-    OperationsInQueue countMergesAndPartMutations() const;
+    std::pair<size_t, size_t> countMergesAndPartMutations() const;
 
     /// Count the total number of active mutations.
     size_t countMutations() const;
@@ -364,11 +344,6 @@ public:
 
     MutationCommands getMutationCommands(const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version) const;
 
-    /// Return mutation commands for part with smallest mutation version bigger
-    /// than data part version. Used when we apply alter commands on fly,
-    /// without actual data modification on disk.
-    MutationCommands getFirstAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const;
-
     /// Mark finished mutations as done. If the function needs to be called again at some later time
     /// (because some mutations are probably done but we are not sure yet), returns true.
     bool tryFinalizeMutations(zkutil::ZooKeeperPtr zookeeper);
@@ -379,7 +354,7 @@ public:
     /// Part maybe fake (look at ReplicatedMergeTreeMergePredicate).
     void disableMergesInBlockRange(const String & part_name);
 
-    /// Checks that part is already in virtual parts
+    /// Cheks that part is already in virtual parts
     bool isVirtualPart(const MergeTreeData::DataPartPtr & data_part) const;
 
     /// Check that part isn't in currently generating parts and isn't covered by them and add it to future_parts.
@@ -421,15 +396,6 @@ public:
 
     /// Get information about the insertion times.
     void getInsertTimes(time_t & out_min_unprocessed_insert_time, time_t & out_max_processed_insert_time) const;
-
-
-    /// Return empty optional if mutation was killed. Otherwise return partially
-    /// filled mutation status with information about error (latest_fail*) and
-    /// is_done. mutation_ids filled with all mutations with same errors,
-    /// because they may be executed simultaneously as one mutation. Order is
-    /// important for better readability of exception message. If mutation was
-    /// killed doesn't return any ids.
-    std::optional<MergeTreeMutationStatus> getIncompleteMutationsStatus(const String & znode_name, std::set<String> * mutation_ids = nullptr) const;
 
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const;
 
@@ -476,9 +442,6 @@ public:
 
     bool isMutationFinished(const ReplicatedMergeTreeMutationEntry & mutation) const;
 
-    /// The version of "log" node that is used to check that no new merges have appeared.
-    int32_t getVersion() const { return merges_version; }
-
 private:
     const ReplicatedMergeTreeQueue & queue;
 
@@ -490,8 +453,6 @@ private:
 
     /// Quorum state taken at some later time than prev_virtual_parts.
     String inprogress_quorum_part;
-
-    int32_t merges_version = -1;
 };
 
 

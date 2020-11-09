@@ -17,7 +17,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-std::vector<String> RequiredSourceColumnsMatcher::extractNamesFromLambda(const ASTFunction & node)
+static std::vector<String> extractNamesFromLambda(const ASTFunction & node)
 {
     if (node.arguments->children.size() != 2)
         throw Exception("lambda requires two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -34,7 +34,7 @@ std::vector<String> RequiredSourceColumnsMatcher::extractNamesFromLambda(const A
         if (!identifier)
             throw Exception("lambda argument declarations must be identifiers", ErrorCodes::TYPE_MISMATCH);
 
-        names.push_back(identifier->name());
+        names.push_back(identifier->name);
     }
 
     return names;
@@ -91,12 +91,14 @@ void RequiredSourceColumnsMatcher::visit(const ASTPtr & ast, Data & data)
 
     if (auto * t = ast->as<ASTSelectQuery>())
     {
+        data.addTableAliasIfAny(*ast);
         visit(*t, ast, data);
         return;
     }
 
     if (ast->as<ASTSubquery>())
     {
+        data.addTableAliasIfAny(*ast);
         return;
     }
 
@@ -132,11 +134,10 @@ void RequiredSourceColumnsMatcher::visit(const ASTSelectQuery & select, const AS
 
 void RequiredSourceColumnsMatcher::visit(const ASTIdentifier & node, const ASTPtr &, Data & data)
 {
-    // FIXME(ilezhankin): shouldn't ever encounter
-    if (node.name().empty())
+    if (node.name.empty())
         throw Exception("Expected not empty name", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    if (!data.private_aliases.count(node.name()))
+    if (!data.private_aliases.count(node.name))
         data.addColumnIdentifier(node);
 }
 
@@ -160,14 +161,33 @@ void RequiredSourceColumnsMatcher::visit(const ASTFunction & node, const ASTPtr 
 
 void RequiredSourceColumnsMatcher::visit(const ASTTablesInSelectQueryElement & node, const ASTPtr &, Data & data)
 {
+    ASTTableExpression * expr = nullptr;
+    ASTTableJoin * join = nullptr;
+
     for (const auto & child : node.children)
-        if (child->as<ASTTableJoin>())
-            data.has_table_join = true;
+    {
+        if (auto * e = child->as<ASTTableExpression>())
+            expr = e;
+        if (auto * j = child->as<ASTTableJoin>())
+            join = j;
+    }
+
+    if (join)
+        data.has_table_join = true;
+    data.tables.emplace_back(ColumnNamesContext::JoinedTable{expr, join});
 }
 
 /// ASTIdentifiers here are tables. Do not visit them as generic ones.
-void RequiredSourceColumnsMatcher::visit(const ASTTableExpression &, const ASTPtr &, Data &)
+void RequiredSourceColumnsMatcher::visit(const ASTTableExpression & node, const ASTPtr &, Data & data)
 {
+    if (node.database_and_table_name)
+        data.addTableAliasIfAny(*node.database_and_table_name);
+
+    if (node.table_function)
+        data.addTableAliasIfAny(*node.table_function);
+
+    if (node.subquery)
+        data.addTableAliasIfAny(*node.subquery);
 }
 
 void RequiredSourceColumnsMatcher::visit(const ASTArrayJoin & node, const ASTPtr &, Data & data)

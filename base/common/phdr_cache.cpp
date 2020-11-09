@@ -1,26 +1,35 @@
 /// This code was based on the code by Fedor Korotkiy (prime@yandex-team.ru) for YT product in Yandex.
 
-#include <common/defines.h>
+#if defined(__has_feature)
+    #if __has_feature(address_sanitizer)
+        #define ADDRESS_SANITIZER 1
+    #endif
+    #if __has_feature(thread_sanitizer)
+        #define THREAD_SANITIZER 1
+    #endif
+#else
+    #if defined(__SANITIZE_ADDRESS__)
+        #define ADDRESS_SANITIZER 1
+    #endif
+    #if defined(__SANITIZE_THREAD__)
+        #define THREAD_SANITIZER 1
+    #endif
+#endif
 
 #if defined(__linux__) && !defined(THREAD_SANITIZER)
     #define USE_PHDR_CACHE 1
 #endif
 
-/// Thread Sanitizer uses dl_iterate_phdr function on initialization and fails if we provide our own.
-#ifdef USE_PHDR_CACHE
-
-#if defined(__clang__)
-#   pragma clang diagnostic ignored "-Wreserved-id-macro"
-#   pragma clang diagnostic ignored "-Wunused-macros"
-#endif
-
-#define __msan_unpoison(X, Y) // NOLINT
+#define __msan_unpoison(X, Y)
 #if defined(__has_feature)
 #   if __has_feature(memory_sanitizer)
 #       undef __msan_unpoison
 #       include <sanitizer/msan_interface.h>
 #   endif
 #endif
+
+/// Thread Sanitizer uses dl_iterate_phdr function on initialization and fails if we provide our own.
+#ifdef USE_PHDR_CACHE
 
 #include <link.h>
 #include <dlfcn.h>
@@ -84,7 +93,7 @@ extern "C"
 #ifdef ADDRESS_SANITIZER
 void __lsan_ignore_object(const void *);
 #else
-void __lsan_ignore_object(const void *) {} // NOLINT
+void __lsan_ignore_object(const void *) {}
 #endif
 }
 

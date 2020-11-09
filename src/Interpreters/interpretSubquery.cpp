@@ -12,7 +12,6 @@
 
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -85,20 +84,21 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         const auto select_expression_list = select_query->select();
 
         NamesAndTypesList columns;
+
         /// get columns list for target table
         if (function)
         {
-            auto * query_context = const_cast<Context *>(&context.getQueryContext());
+            auto *query_context = const_cast<Context *>(&context.getQueryContext());
             const auto & storage = query_context->executeTableFunction(table_expression);
-            columns = storage->getInMemoryMetadataPtr()->getColumns().getOrdinary();
+            columns = storage->getColumns().getOrdinary();
             select_query->addTableFunction(*const_cast<ASTPtr *>(&table_expression)); // XXX: const_cast should be avoided!
         }
         else
         {
-            auto table_id = context.resolveStorageID(table_expression);
-            const auto & storage = DatabaseCatalog::instance().getTable(table_id, context);
-            columns = storage->getInMemoryMetadataPtr()->getColumns().getOrdinary();
-            select_query->replaceDatabaseAndTable(table_id);
+            DatabaseAndTableWithAlias database_table(*table);
+            const auto & storage = context.getTable(database_table.database, database_table.table);
+            columns = storage->getColumns().getOrdinary();
+            select_query->replaceDatabaseAndTable(database_table.database, database_table.table);
         }
 
         select_expression_list->children.reserve(columns.size());

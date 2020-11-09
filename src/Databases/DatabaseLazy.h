@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Databases/DatabaseOnDisk.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 
 
@@ -9,26 +10,21 @@ namespace DB
 
 
 class DatabaseLazyIterator;
-class Context;
 
 /** Lazy engine of databases.
   * Works like DatabaseOrdinary, but stores in memory only cache.
   * Can be used only with *Log engines.
   */
-class DatabaseLazy final : public DatabaseOnDisk
+class DatabaseLazy : public DatabaseOnDisk
 {
 public:
     DatabaseLazy(const String & name_, const String & metadata_path_, time_t expiration_time_, const Context & context_);
 
     String getEngineName() const override { return "Lazy"; }
 
-    bool canContainMergeTreeTables() const override { return false; }
-
-    bool canContainDistributedTables() const override { return false; }
-
     void loadStoredObjects(
         Context & context,
-        bool has_force_restore_data_flag, bool force_attach) override;
+        bool has_force_restore_data_flag) override;
 
     void createTable(
         const Context & context,
@@ -36,37 +32,37 @@ public:
         const StoragePtr & table,
         const ASTPtr & query) override;
 
-    void dropTable(
+    void removeTable(
         const Context & context,
-        const String & table_name,
-        bool no_delay) override;
+        const String & table_name) override;
 
     void renameTable(
         const Context & context,
         const String & table_name,
         IDatabase & to_database,
         const String & to_table_name,
-        bool exchange,
-        bool dictionary) override;
+        TableStructureWriteLockHolder &) override;
 
     void alterTable(
         const Context & context,
-        const StorageID & table_id,
+        const String & name,
         const StorageInMemoryMetadata & metadata) override;
 
     time_t getObjectMetadataModificationTime(const String & table_name) const override;
 
-    bool isTableExist(const String & table_name, const Context &) const override { return isTableExist(table_name); }
-    bool isTableExist(const String & table_name) const;
+    bool isTableExist(
+        const Context & context,
+        const String & table_name) const override;
 
-    StoragePtr tryGetTable(const String & table_name, const Context &) const override { return tryGetTable(table_name); }
-    StoragePtr tryGetTable(const String & table_name) const;
+    StoragePtr tryGetTable(
+        const Context & context,
+        const String & table_name) const override;
 
-    bool empty() const override;
+    bool empty(const Context & context) const override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name) override;
+    DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name = {}) override;
 
-    void attachTable(const String & table_name, const StoragePtr & table, const String & relative_table_path) override;
+    void attachTable(const String & table_name, const StoragePtr & table) override;
 
     StoragePtr detachTable(const String & table_name) override;
 
@@ -94,7 +90,7 @@ private:
         time_t metadata_modification_time;
         CacheExpirationQueue::iterator expiration_iterator;
 
-        CachedTable() = delete;
+        CachedTable() {}
         CachedTable(const StoragePtr & table_, time_t last_touched_, time_t metadata_modification_time_)
             : table(table_), last_touched(last_touched_), metadata_modification_time(metadata_modification_time_) {}
     };
@@ -107,7 +103,7 @@ private:
     mutable TablesCache tables_cache;
     mutable CacheExpirationQueue cache_expiration_queue;
 
-    StoragePtr loadTable(const String & table_name) const;
+    StoragePtr loadTable(const Context & context, const String & table_name) const;
 
     void clearExpiredTables() const;
 
@@ -120,6 +116,7 @@ class DatabaseLazyIterator final : public IDatabaseTablesIterator
 public:
     DatabaseLazyIterator(
         DatabaseLazy & database_,
+        const Context & context_,
         Strings && table_names_);
 
     void next() override;
@@ -130,6 +127,7 @@ public:
 private:
     const DatabaseLazy & database;
     const Strings table_names;
+    const Context context;
     Strings::const_iterator iterator;
     mutable StoragePtr current_storage;
 };

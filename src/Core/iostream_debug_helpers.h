@@ -22,6 +22,9 @@ std::ostream & operator<<(std::ostream & stream, const IDataType & what);
 class IStorage;
 std::ostream & operator<<(std::ostream & stream, const IStorage & what);
 
+class TableStructureReadLock;
+std::ostream & operator<<(std::ostream & stream, const TableStructureReadLock & what);
+
 class IFunctionOverloadResolver;
 std::ostream & operator<<(std::ostream & stream, const IFunctionOverloadResolver & what);
 
@@ -46,8 +49,8 @@ std::ostream & operator<<(std::ostream & stream, const ExpressionAction & what);
 class ExpressionActions;
 std::ostream & operator<<(std::ostream & stream, const ExpressionActions & what);
 
-struct TreeRewriterResult;
-std::ostream & operator<<(std::ostream & stream, const TreeRewriterResult & what);
+struct SyntaxAnalyzerResult;
+std::ostream & operator<<(std::ostream & stream, const SyntaxAnalyzerResult & what);
 }
 
 /// some operator<< should be declared before operator<<(... std::shared_ptr<>)

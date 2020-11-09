@@ -1,5 +1,6 @@
 #include "configReadClient.h"
 
+#include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Poco/File.h>
 #include "ConfigProcessor.h"

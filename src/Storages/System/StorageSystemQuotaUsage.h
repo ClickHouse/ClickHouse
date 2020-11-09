@@ -6,21 +6,18 @@
 
 namespace DB
 {
+
 class Context;
-struct QuotaUsage;
 
 
-/** Implements the `quota_usage` system table, which allows you to get information about
-  * how the current user uses the quota.
+/** Implements the `quota_usage` system tables, which allows you to get information about
+  * how the quotas are used by all users.
   */
-class StorageSystemQuotaUsage final : public ext::shared_ptr_helper<StorageSystemQuotaUsage>, public IStorageSystemOneBlock<StorageSystemQuotaUsage>
+class StorageSystemQuotaUsage : public ext::shared_ptr_helper<StorageSystemQuotaUsage>, public IStorageSystemOneBlock<StorageSystemQuotaUsage>
 {
 public:
     std::string getName() const override { return "SystemQuotaUsage"; }
     static NamesAndTypesList getNamesAndTypes();
-
-    static NamesAndTypesList getNamesAndTypesImpl(bool add_column_is_current);
-    static void fillDataImpl(MutableColumns & res_columns, const Context & context, bool add_column_is_current, const std::vector<QuotaUsage> & quotas_usage);
 
 protected:
     friend struct ext::shared_ptr_helper<StorageSystemQuotaUsage>;

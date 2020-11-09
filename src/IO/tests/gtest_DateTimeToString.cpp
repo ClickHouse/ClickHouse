@@ -86,7 +86,7 @@ template <typename ValueType>
 class DateTimeToStringParamTestBase : public ::testing::TestWithParam<DateTimeToStringParamTestCase<ValueType>>
 {
 public:
-    void test(const DateTimeToStringParamTestCase<ValueType> & param)
+    void Test(const DateTimeToStringParamTestCase<ValueType> & param)
     {
         [[maybe_unused]] const auto & [description, input, expected, timezone_name] = param;
 
@@ -119,7 +119,7 @@ class DateTimeToStringParamTestDayNum : public DateTimeToStringParamTestBase<Day
 
 TEST_P(DateTimeToStringParamTestDayNum, writeDateText)
 {
-    ASSERT_NO_FATAL_FAILURE(test(GetParam()));
+    ASSERT_NO_FATAL_FAILURE(Test(GetParam()));
 }
 
 class DateTimeToStringParamTestTimeT : public DateTimeToStringParamTestBase<time_t>
@@ -127,7 +127,7 @@ class DateTimeToStringParamTestTimeT : public DateTimeToStringParamTestBase<time
 
 TEST_P(DateTimeToStringParamTestTimeT, writeDateText)
 {
-    ASSERT_NO_FATAL_FAILURE(test(GetParam()));
+    ASSERT_NO_FATAL_FAILURE(Test(GetParam()));
 }
 
 class DateTimeToStringParamTestDateTime64 : public DateTimeToStringParamTestBase<DateTime64WithScale>
@@ -135,18 +135,18 @@ class DateTimeToStringParamTestDateTime64 : public DateTimeToStringParamTestBase
 
 TEST_P(DateTimeToStringParamTestDateTime64, writeDateText)
 {
-    ASSERT_NO_FATAL_FAILURE(test(GetParam()));
+    ASSERT_NO_FATAL_FAILURE(Test(GetParam()));
 }
 
-static const Int32 NON_ZERO_TIME_T = 10 * 365 * 3600 * 24 + 123456; /// NOTE This arithmetic is obviously wrong but it's ok for test.
+static const Int32 NON_ZERO_TIME_T = 10 * 365 * 3600 * 24 + 123456;
 
 INSTANTIATE_TEST_SUITE_P(DateTimeToString, DateTimeToStringParamTestDayNum,
     ::testing::ValuesIn(std::initializer_list<DateTimeToStringParamTestCase<DayNum>>
     {
         {
-            "Zero DayNum pointing to 1970-01-01",
+            "Zero DayNum has special representation of all zeroes despite pointing to 1970-01-01",
             DayNum(0),
-            "1970-01-01"
+            "0000-00-00"
         },
         {
             "Non-Zero DayNum",
@@ -170,9 +170,9 @@ INSTANTIATE_TEST_SUITE_P(DateTimeToString, DateTimeToStringParamTestTimeT,
     ::testing::ValuesIn(std::initializer_list<DateTimeToStringParamTestCase<time_t>>
     {
         {
-            "Zero time_t pointing to 1970-01-01 00:00:00 in UTC",
+            "Zero time_t has special representation of all-zeroes despite pointing to 1970-01-01 00:00:00",
             time_t(0),
-            "1970-01-01 00:00:00"
+            "0000-00-00 00:00:00"
         },
         {
             "Non-Zero time_t is a valid date/time",
@@ -196,12 +196,12 @@ INSTANTIATE_TEST_SUITE_P(DateTimeToString, DateTimeToStringParamTestDateTime64,
         {
             "Zero DateTime64 with scale 0 string representation matches one of zero time_t",
             DateTime64WithScale{0, 0},
-            "1970-01-01 00:00:00"
+            "0000-00-00 00:00:00"
         },
         {
             "Zero DateTime64 with scale 3 string representation matches one of zero time_t with subsecond part",
             DateTime64WithScale{0, 3},
-            "1970-01-01 00:00:00.000"
+            "0000-00-00 00:00:00.000"
         },
         {
             "Non-Zero DateTime64 with scale 0",

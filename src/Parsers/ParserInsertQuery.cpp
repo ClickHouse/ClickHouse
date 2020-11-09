@@ -6,7 +6,6 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
-#include <Parsers/ParserWatchQuery.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Common/typeid_cast.h>
@@ -31,12 +30,11 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_format("FORMAT");
     ParserKeyword s_settings("SETTINGS");
     ParserKeyword s_select("SELECT");
-    ParserKeyword s_watch("WATCH");
     ParserKeyword s_with("WITH");
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ParserIdentifier name_p;
-    ParserList columns_p(std::make_unique<ParserInsertElement>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+    ParserList columns_p(std::make_unique<ParserCompoundIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
     ParserFunction table_function_p{false};
 
     ASTPtr database;
@@ -44,7 +42,6 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr columns;
     ASTPtr format;
     ASTPtr select;
-    ASTPtr watch;
     ASTPtr table_function;
     ASTPtr settings_ast;
     /// Insertion data
@@ -83,7 +80,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-    Pos before_values = pos;
+    Pos before_select = pos;
 
     /// VALUES or FORMAT or SELECT
     if (s_values.ignore(pos, expected))
@@ -97,19 +94,9 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else if (s_select.ignore(pos, expected) || s_with.ignore(pos,expected))
     {
-        pos = before_values;
+        pos = before_select;
         ParserSelectWithUnionQuery select_p;
         select_p.parse(pos, select, expected);
-
-        /// FORMAT section is expected if we have input() in SELECT part
-        if (s_format.ignore(pos, expected) && !name_p.parse(pos, format, expected))
-            return false;
-    }
-    else if (s_watch.ignore(pos, expected))
-    {
-        pos = before_values;
-        ParserWatchQuery watch_p;
-        watch_p.parse(pos, watch, expected);
 
         /// FORMAT section is expected if we have input() in SELECT part
         if (s_format.ignore(pos, expected) && !name_p.parse(pos, format, expected))
@@ -164,15 +151,14 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else
     {
-        tryGetIdentifierNameInto(database, query->table_id.database_name);
-        tryGetIdentifierNameInto(table, query->table_id.table_name);
+        tryGetIdentifierNameInto(database, query->database);
+        tryGetIdentifierNameInto(table, query->table);
     }
 
     tryGetIdentifierNameInto(format, query->format);
 
     query->columns = columns;
     query->select = select;
-    query->watch = watch;
     query->settings_ast = settings_ast;
     query->data = data != end ? data : nullptr;
     query->end = end;
@@ -181,20 +167,11 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         query->children.push_back(columns);
     if (select)
         query->children.push_back(select);
-    if (watch)
-        query->children.push_back(watch);
     if (settings_ast)
         query->children.push_back(settings_ast);
 
     return true;
 }
 
-bool ParserInsertElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    return ParserColumnsMatcher().parse(pos, node, expected)
-        || ParserQualifiedAsterisk().parse(pos, node, expected)
-        || ParserAsterisk().parse(pos, node, expected)
-        || ParserCompoundIdentifier().parse(pos, node, expected);
-}
 
 }

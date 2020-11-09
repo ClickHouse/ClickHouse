@@ -51,7 +51,6 @@ struct ArraySumImpl
 
         const ColVecType * column = checkAndGetColumn<ColVecType>(&*mapped);
 
-        /// Constant case.
         if (!column)
         {
             const ColumnConst * column_const = checkAndGetColumnConst<ColVecType>(&*mapped);
@@ -59,7 +58,7 @@ struct ArraySumImpl
             if (!column_const)
                 return false;
 
-            const Result x = column_const->template getValue<Element>(); // NOLINT
+            const Element x = column_const->template getValue<Element>();
 
             typename ColVecResult::MutablePtr res_column;
             if constexpr (IsDecimalNumber<Element>)
@@ -76,7 +75,6 @@ struct ArraySumImpl
             size_t pos = 0;
             for (size_t i = 0; i < offsets.size(); ++i)
             {
-                /// Just multiply the value by array size.
                 res[i] = x * (offsets[i] - pos);
                 pos = offsets[i];
             }

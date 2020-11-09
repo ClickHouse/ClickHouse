@@ -10,7 +10,6 @@
 #include <Common/UInt128.h>
 #include <Core/Types.h>
 #include <Core/Defines.h>
-#include <Core/DecimalFunctions.h>
 #include <Core/UUID.h>
 #include <common/DayNum.h>
 #include <common/strong_typedef.h>
@@ -92,22 +91,18 @@ template <typename T> bool decimalEqual(T x, T y, UInt32 x_scale, UInt32 y_scale
 template <typename T> bool decimalLess(T x, T y, UInt32 x_scale, UInt32 y_scale);
 template <typename T> bool decimalLessOrEqual(T x, T y, UInt32 x_scale, UInt32 y_scale);
 
-#if !__clang__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
 template <typename T>
 class DecimalField
 {
 public:
-    DecimalField(T value = {}, UInt32 scale_ = 0)
+    DecimalField(T value, UInt32 scale_)
     :   dec(value),
         scale(scale_)
     {}
 
     operator T() const { return dec; }
     T getValue() const { return dec; }
-    T getScaleMultiplier() const { return DecimalUtils::scaleMultiplier<T>(scale); }
+    T getScaleMultiplier() const { return T::getScaleMultiplier(scale); }
     UInt32 getScale() const { return scale; }
 
     template <typename U>
@@ -155,9 +150,6 @@ private:
     T dec;
     UInt32 scale;
 };
-#if !__clang__
-#pragma GCC diagnostic pop
-#endif
 
 /// char may be signed or unsigned, and behave identically to signed char or unsigned char,
 ///  but they are always three different types.
@@ -165,9 +157,7 @@ private:
 template <> struct NearestFieldTypeImpl<char> { using Type = std::conditional_t<is_signed_v<char>, Int64, UInt64>; };
 template <> struct NearestFieldTypeImpl<signed char> { using Type = Int64; };
 template <> struct NearestFieldTypeImpl<unsigned char> { using Type = UInt64; };
-#if __cplusplus > 201703L
 template <> struct NearestFieldTypeImpl<char8_t> { using Type = UInt64; };
-#endif
 
 template <> struct NearestFieldTypeImpl<UInt16> { using Type = UInt64; };
 template <> struct NearestFieldTypeImpl<UInt32> { using Type = UInt64; };
@@ -185,22 +175,16 @@ template <> struct NearestFieldTypeImpl<long long> { using Type = Int64; };
 template <> struct NearestFieldTypeImpl<unsigned long> { using Type = UInt64; };
 template <> struct NearestFieldTypeImpl<unsigned long long> { using Type = UInt64; };
 
-template <> struct NearestFieldTypeImpl<UInt256> { using Type = UInt256; };
-template <> struct NearestFieldTypeImpl<Int256> { using Type = Int256; };
-
 template <> struct NearestFieldTypeImpl<Int128> { using Type = Int128; };
 template <> struct NearestFieldTypeImpl<Decimal32> { using Type = DecimalField<Decimal32>; };
 template <> struct NearestFieldTypeImpl<Decimal64> { using Type = DecimalField<Decimal64>; };
 template <> struct NearestFieldTypeImpl<Decimal128> { using Type = DecimalField<Decimal128>; };
-template <> struct NearestFieldTypeImpl<Decimal256> { using Type = DecimalField<Decimal256>; };
 template <> struct NearestFieldTypeImpl<DecimalField<Decimal32>> { using Type = DecimalField<Decimal32>; };
 template <> struct NearestFieldTypeImpl<DecimalField<Decimal64>> { using Type = DecimalField<Decimal64>; };
 template <> struct NearestFieldTypeImpl<DecimalField<Decimal128>> { using Type = DecimalField<Decimal128>; };
-template <> struct NearestFieldTypeImpl<DecimalField<Decimal256>> { using Type = DecimalField<Decimal256>; };
 template <> struct NearestFieldTypeImpl<Float32> { using Type = Float64; };
 template <> struct NearestFieldTypeImpl<Float64> { using Type = Float64; };
 template <> struct NearestFieldTypeImpl<const char *> { using Type = String; };
-template <> struct NearestFieldTypeImpl<std::string_view> { using Type = String; };
 template <> struct NearestFieldTypeImpl<String> { using Type = String; };
 template <> struct NearestFieldTypeImpl<Array> { using Type = Array; };
 template <> struct NearestFieldTypeImpl<Tuple> { using Type = Tuple; };
@@ -254,9 +238,6 @@ public:
             Decimal64  = 20,
             Decimal128 = 21,
             AggregateFunctionState = 22,
-            Decimal256 = 23,
-            UInt256 = 24,
-            Int256  = 25,
         };
 
         static const int MIN_NON_POD = 16;
@@ -277,10 +258,7 @@ public:
                 case Decimal32:  return "Decimal32";
                 case Decimal64:  return "Decimal64";
                 case Decimal128: return "Decimal128";
-                case Decimal256: return "Decimal256";
                 case AggregateFunctionState: return "AggregateFunctionState";
-                case UInt256: return "UInt256";
-                case Int256:  return "Int256";
             }
 
             throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -292,14 +270,7 @@ public:
     template <typename T> struct TypeToEnum;
     template <Types::Which which> struct EnumToType;
 
-    static bool IsDecimal(Types::Which which)
-    {
-        return (which >= Types::Decimal32 && which <= Types::Decimal128) || which == Types::Decimal256;
-    }
-
-    /// Templates to avoid ambiguity.
-    template <typename T, typename Z = void *>
-    using enable_if_not_field_or_stringlike_t = std::enable_if_t<!std::is_same_v<std::decay_t<T>, Field> && !std::is_same_v<NearestFieldType<std::decay_t<T>>, String>, Z>;
+    static bool IsDecimal(Types::Which which) { return which >= Types::Decimal32 && which <= Types::Decimal128; }
 
     Field()
         : which(Types::Null)
@@ -320,17 +291,20 @@ public:
     }
 
     template <typename T>
-    Field(T && rhs, enable_if_not_field_or_stringlike_t<T> = nullptr);
+    Field(T && rhs, std::enable_if_t<!std::is_same_v<std::decay_t<T>, Field>, void *> = nullptr);
 
     /// Create a string inplace.
-    Field(const std::string_view & str) { create(str.data(), str.size()); }
-    Field(const String & str) { create(std::string_view{str}); }
-    Field(String && str) { create(std::move(str)); }
-    Field(const char * str) { create(std::string_view{str}); }
-
     template <typename CharT>
     Field(const CharT * data, size_t size)
     {
+        create(data, size);
+    }
+
+    /// NOTE In case when field already has string type, more direct assign is possible.
+    template <typename CharT>
+    void assignString(const CharT * data, size_t size)
+    {
+        destroy();
         create(data, size);
     }
 
@@ -364,19 +338,9 @@ public:
         return *this;
     }
 
-    /// Allows expressions like
-    /// Field f = 1;
-    /// Things to note:
-    /// 1. float <--> int needs explicit cast
-    /// 2. customized types needs explicit cast
     template <typename T>
-    enable_if_not_field_or_stringlike_t<T, Field> &
-    operator=(T && rhs);
-
-    Field & operator =(const std::string_view & str);
-    Field & operator =(const String & str) { return *this = std::string_view{str}; }
-    Field & operator =(String && str);
-    Field & operator =(const char * str) { return *this = std::string_view{str}; }
+    std::enable_if_t<!std::is_same_v<std::decay_t<T>, Field>, Field &>
+    operator= (T && rhs);
 
     ~Field()
     {
@@ -444,6 +408,7 @@ public:
         return get<T>();
     }
 
+
     bool operator< (const Field & rhs) const
     {
         if (which < rhs.which)
@@ -465,10 +430,7 @@ public:
             case Types::Decimal32:  return get<DecimalField<Decimal32>>()  < rhs.get<DecimalField<Decimal32>>();
             case Types::Decimal64:  return get<DecimalField<Decimal64>>()  < rhs.get<DecimalField<Decimal64>>();
             case Types::Decimal128: return get<DecimalField<Decimal128>>() < rhs.get<DecimalField<Decimal128>>();
-            case Types::Decimal256: return get<DecimalField<Decimal256>>() < rhs.get<DecimalField<Decimal256>>();
             case Types::AggregateFunctionState:  return get<AggregateFunctionStateData>() < rhs.get<AggregateFunctionStateData>();
-            case Types::UInt256: return get<UInt256>() < rhs.get<UInt256>();
-            case Types::Int256: return get<Int256>() < rhs.get<Int256>();
         }
 
         throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -500,10 +462,7 @@ public:
             case Types::Decimal32:  return get<DecimalField<Decimal32>>()  <= rhs.get<DecimalField<Decimal32>>();
             case Types::Decimal64:  return get<DecimalField<Decimal64>>()  <= rhs.get<DecimalField<Decimal64>>();
             case Types::Decimal128: return get<DecimalField<Decimal128>>() <= rhs.get<DecimalField<Decimal128>>();
-            case Types::Decimal256: return get<DecimalField<Decimal256>>() <= rhs.get<DecimalField<Decimal256>>();
             case Types::AggregateFunctionState:  return get<AggregateFunctionStateData>() <= rhs.get<AggregateFunctionStateData>();
-            case Types::UInt256: return get<UInt256>() <= rhs.get<UInt256>();
-            case Types::Int256: return get<Int256>() <= rhs.get<Int256>();
         }
 
         throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -539,10 +498,7 @@ public:
             case Types::Decimal32:  return get<DecimalField<Decimal32>>()  == rhs.get<DecimalField<Decimal32>>();
             case Types::Decimal64:  return get<DecimalField<Decimal64>>()  == rhs.get<DecimalField<Decimal64>>();
             case Types::Decimal128: return get<DecimalField<Decimal128>>() == rhs.get<DecimalField<Decimal128>>();
-            case Types::Decimal256: return get<DecimalField<Decimal256>>() == rhs.get<DecimalField<Decimal256>>();
             case Types::AggregateFunctionState:  return get<AggregateFunctionStateData>() == rhs.get<AggregateFunctionStateData>();
-            case Types::UInt256: return get<UInt256>() == rhs.get<UInt256>();
-            case Types::Int256:  return get<Int256>()  == rhs.get<Int256>();
         }
 
         throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -573,17 +529,20 @@ public:
             case Types::String:  return f(field.template get<String>());
             case Types::Array:   return f(field.template get<Array>());
             case Types::Tuple:   return f(field.template get<Tuple>());
-            case Types::Decimal32:  return f(field.template get<DecimalField<Decimal32>>());
-            case Types::Decimal64:  return f(field.template get<DecimalField<Decimal64>>());
-            case Types::Decimal128: return f(field.template get<DecimalField<Decimal128>>());
-            case Types::Decimal256: return f(field.template get<DecimalField<Decimal256>>());
-            case Types::AggregateFunctionState: return f(field.template get<AggregateFunctionStateData>());
-            case Types::Int128: return f(field.template get<Int128>());
-            case Types::UInt256: return f(field.template get<UInt256>());
-            case Types::Int256: return f(field.template get<Int256>());
 #if !__clang__
 #pragma GCC diagnostic pop
 #endif
+            case Types::Decimal32:  return f(field.template get<DecimalField<Decimal32>>());
+            case Types::Decimal64:  return f(field.template get<DecimalField<Decimal64>>());
+            case Types::Decimal128: return f(field.template get<DecimalField<Decimal128>>());
+            case Types::AggregateFunctionState: return f(field.template get<AggregateFunctionStateData>());
+            case Types::Int128:
+                // TODO: investigate where we need Int128 Fields. There are no
+                // field visitors that support them, and they only arise indirectly
+                // in some functions that use Decimal columns: they get the
+                // underlying Field value with get<Int128>(). Probably should be
+                // switched to DecimalField, but this is a whole endeavor in itself.
+                throw Exception("Unexpected Int128 in Field::dispatch()", ErrorCodes::LOGICAL_ERROR);
         }
 
         // GCC 9 complains that control reaches the end, despite that we handle
@@ -593,15 +552,11 @@ public:
         return f(null);
     }
 
-    String dump() const;
-    static Field restoreFromDump(const std::string_view & dump_);
 
 private:
     std::aligned_union_t<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
         Null, UInt64, UInt128, Int64, Int128, Float64, String, Array, Tuple,
-        DecimalField<Decimal32>, DecimalField<Decimal64>, DecimalField<Decimal128>, DecimalField<Decimal256>,
-        AggregateFunctionStateData,
-        UInt256, Int256
+        DecimalField<Decimal32>, DecimalField<Decimal64>, DecimalField<Decimal128>, AggregateFunctionStateData
         > storage;
 
     Types::Which which;
@@ -633,20 +588,6 @@ private:
         *ptr = std::forward<T>(x);
     }
 
-    template <typename CharT>
-    std::enable_if_t<sizeof(CharT) == 1> assignString(const CharT * data, size_t size)
-    {
-        assert(which == Types::String);
-        String * ptr = reinterpret_cast<String *>(&storage);
-        ptr->assign(reinterpret_cast<const char *>(data), size);
-    }
-
-    void assignString(String && str)
-    {
-        assert(which == Types::String);
-        String * ptr = reinterpret_cast<String *>(&storage);
-        ptr->assign(std::move(str));
-    }
 
     void create(const Field & x)
     {
@@ -672,12 +613,6 @@ private:
     std::enable_if_t<sizeof(CharT) == 1> create(const CharT * data, size_t size)
     {
         new (&storage) String(reinterpret_cast<const char *>(data), size);
-        which = Types::String;
-    }
-
-    void create(String && str)
-    {
-        new (&storage) String(std::move(str));
         which = Types::String;
     }
 
@@ -730,10 +665,7 @@ template <> struct Field::TypeToEnum<Tuple>   { static const Types::Which value 
 template <> struct Field::TypeToEnum<DecimalField<Decimal32>>{ static const Types::Which value = Types::Decimal32; };
 template <> struct Field::TypeToEnum<DecimalField<Decimal64>>{ static const Types::Which value = Types::Decimal64; };
 template <> struct Field::TypeToEnum<DecimalField<Decimal128>>{ static const Types::Which value = Types::Decimal128; };
-template <> struct Field::TypeToEnum<DecimalField<Decimal256>>{ static const Types::Which value = Types::Decimal256; };
 template <> struct Field::TypeToEnum<AggregateFunctionStateData>{ static const Types::Which value = Types::AggregateFunctionState; };
-template <> struct Field::TypeToEnum<UInt256> { static const Types::Which value = Types::UInt256; };
-template <> struct Field::TypeToEnum<Int256> { static const Types::Which value = Types::Int256; };
 
 template <> struct Field::EnumToType<Field::Types::Null>    { using Type = Null; };
 template <> struct Field::EnumToType<Field::Types::UInt64>  { using Type = UInt64; };
@@ -747,10 +679,7 @@ template <> struct Field::EnumToType<Field::Types::Tuple>   { using Type = Tuple
 template <> struct Field::EnumToType<Field::Types::Decimal32> { using Type = DecimalField<Decimal32>; };
 template <> struct Field::EnumToType<Field::Types::Decimal64> { using Type = DecimalField<Decimal64>; };
 template <> struct Field::EnumToType<Field::Types::Decimal128> { using Type = DecimalField<Decimal128>; };
-template <> struct Field::EnumToType<Field::Types::Decimal256> { using Type = DecimalField<Decimal256>; };
 template <> struct Field::EnumToType<Field::Types::AggregateFunctionState> { using Type = DecimalField<AggregateFunctionStateData>; };
-template <> struct Field::EnumToType<Field::Types::UInt256> { using Type = UInt256; };
-template <> struct Field::EnumToType<Field::Types::Int256>  { using Type = Int256; };
 
 inline constexpr bool isInt64FieldType(Field::Types::Which t)
 {
@@ -767,9 +696,8 @@ T & Field::get()
 #ifndef NDEBUG
     // Disregard signedness when converting between int64 types.
     constexpr Field::Types::Which target = TypeToEnum<NearestFieldType<ValueType>>::value;
-    if (target != which
-           && (!isInt64FieldType(target) || !isInt64FieldType(which)))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid Field get from type {} to type {}", Types::toString(which), Types::toString(target));
+    assert(target == which
+           || (isInt64FieldType(target) && isInt64FieldType(which)));
 #endif
 
     ValueType * MAY_ALIAS ptr = reinterpret_cast<ValueType *>(&storage);
@@ -823,16 +751,23 @@ decltype(auto) castToNearestFieldType(T && x)
         return U(x);
 }
 
+/// This (rather tricky) code is to avoid ambiguity in expressions like
+/// Field f = 1;
+/// instead of
+/// Field f = Int64(1);
+/// Things to note:
+/// 1. float <--> int needs explicit cast
+/// 2. customized types needs explicit cast
 template <typename T>
-Field::Field(T && rhs, enable_if_not_field_or_stringlike_t<T>)
+Field::Field(T && rhs, std::enable_if_t<!std::is_same_v<std::decay_t<T>, Field>, void *>)
 {
     auto && val = castToNearestFieldType(std::forward<T>(rhs));
     createConcrete(std::forward<decltype(val)>(val));
 }
 
 template <typename T>
-Field::enable_if_not_field_or_stringlike_t<T, Field> &
-Field::operator=(T && rhs)
+std::enable_if_t<!std::is_same_v<std::decay_t<T>, Field>, Field &>
+Field::operator= (T && rhs)
 {
     auto && val = castToNearestFieldType(std::forward<T>(rhs));
     using U = decltype(val);
@@ -843,33 +778,10 @@ Field::operator=(T && rhs)
     }
     else
         assignConcrete(std::forward<U>(val));
+
     return *this;
 }
 
-
-inline Field & Field::operator=(const std::string_view & str)
-{
-    if (which != Types::String)
-    {
-        destroy();
-        create(str.data(), str.size());
-    }
-    else
-        assignString(str.data(), str.size());
-    return *this;
-}
-
-inline Field & Field::operator=(String && str)
-{
-    if (which != Types::String)
-    {
-        destroy();
-        create(std::move(str));
-    }
-    else
-        assignString(std::move(str));
-    return *this;
-}
 
 class ReadBuffer;
 class WriteBuffer;
@@ -897,27 +809,7 @@ void writeBinary(const Tuple & x, WriteBuffer & buf);
 
 void writeText(const Tuple & x, WriteBuffer & buf);
 
-
-__attribute__ ((noreturn)) inline void writeText(const AggregateFunctionStateData &, WriteBuffer &)
-{
-    // This probably doesn't make any sense, but we have to have it for
-    // completeness, so that we can use toString(field_value) in field visitors.
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot convert a Field of type AggregateFunctionStateData to human-readable text");
-}
-
-template <typename T>
-inline void writeText(const DecimalField<T> & value, WriteBuffer & buf)
-{
-    writeText(value.getValue(), value.getScale(), buf);
-}
-
-template <typename T>
-void readQuoted(DecimalField<T> & x, ReadBuffer & buf);
-
 void writeFieldText(const Field & x, WriteBuffer & buf);
 
 [[noreturn]] inline void writeQuoted(const Tuple &, WriteBuffer &) { throw Exception("Cannot write Tuple quoted.", ErrorCodes::NOT_IMPLEMENTED); }
-
-String toString(const Field & x);
-
 }

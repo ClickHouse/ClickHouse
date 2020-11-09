@@ -3,7 +3,7 @@ CREATE TABLE test Engine = MergeTree ORDER BY number AS SELECT number, toString(
 
 SELECT count() FROM test;
 
-ALTER TABLE test DETACH PARTITION tuple();
+ALTER TABLE test detach partition tuple();
 
 SELECT count() FROM test;
 

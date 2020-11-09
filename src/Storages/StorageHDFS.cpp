@@ -15,8 +15,10 @@
 #include <Formats/FormatFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataStreams/IBlockOutputStream.h>
+#include <DataStreams/UnionBlockInputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
 #include <DataStreams/IBlockInputStream.h>
+#include <DataStreams/narrowBlockInputStreams.h>
 
 #include <Common/parseGlobs.h>
 #include <Poco/URI.h>
@@ -25,7 +27,6 @@
 #include <hdfs/hdfs.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
-
 
 namespace DB
 {
@@ -41,18 +42,22 @@ StorageHDFS::StorageHDFS(const String & uri_,
     const ConstraintsDescription & constraints_,
     Context & context_,
     const String & compression_method_ = "")
-    : IStorage(table_id_)
+    : IStorage(table_id_,
+               ColumnsDescription({
+                                          {"_path", std::make_shared<DataTypeString>()},
+                                          {"_file", std::make_shared<DataTypeString>()}
+                                  },
+                                  true    /// all_virtuals
+                                 )
+              )
     , uri(uri_)
     , format_name(format_name_)
     , context(context_)
     , compression_method(compression_method_)
 {
     context.getRemoteHostFilter().checkURL(Poco::URI(uri));
-
-    StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_);
-    storage_metadata.setConstraints(constraints_);
-    setInMemoryMetadata(storage_metadata);
+    setColumns(columns_);
+    setConstraints(constraints_);
 }
 
 namespace
@@ -261,12 +266,11 @@ Strings LSWithRegexpMatching(const String & path_for_ls, const HDFSFSPtr & fs, c
 }
 
 
-Pipe StorageHDFS::read(
+Pipes StorageHDFS::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
     const Context & context_,
-    QueryProcessingStage::Enum /*processed_stage*/,
+    QueryProcessingStage::Enum  /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)
 {
@@ -295,16 +299,16 @@ Pipe StorageHDFS::read(
 
     for (size_t i = 0; i < num_streams; ++i)
         pipes.emplace_back(std::make_shared<HDFSSource>(
-                sources_info, uri_without_path, format_name, compression_method, metadata_snapshot->getSampleBlock(), context_, max_block_size));
+                sources_info, uri_without_path, format_name, compression_method, getSampleBlock(), context_, max_block_size));
 
-    return Pipe::unitePipes(std::move(pipes));
+    return pipes;
 }
 
-BlockOutputStreamPtr StorageHDFS::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
+BlockOutputStreamPtr StorageHDFS::write(const ASTPtr & /*query*/, const Context & /*context*/)
 {
     return std::make_shared<HDFSBlockOutputStream>(uri,
         format_name,
-        metadata_snapshot->getSampleBlock(),
+        getSampleBlock(),
         context,
         chooseCompressionMethod(uri, compression_method));
 }
@@ -335,19 +339,9 @@ void registerStorageHDFS(StorageFactory & factory)
         } else compression_method = "auto";
 
         return StorageHDFS::create(url, args.table_id, format_name, args.columns, args.constraints, args.context, compression_method);
-    },
-    {
-        .source_access_type = AccessType::HDFS,
     });
 }
 
-NamesAndTypesList StorageHDFS::getVirtuals() const
-{
-    return NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeString>()},
-        {"_file", std::make_shared<DataTypeString>()}
-    };
-}
 }
 
 #endif

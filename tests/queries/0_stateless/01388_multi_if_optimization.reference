@@ -1,4 +1,0 @@
-SELECT if(number = 1, \'hello\', if(number = 2, \'world\', \'xyz\'))
-FROM numbers(10)
-SELECT multiIf(number = 1, \'hello\', number = 2, \'world\', \'xyz\')
-FROM numbers(10)

@@ -8,7 +8,6 @@ namespace DB
 {
 
 struct ASTTablesInSelectQueryElement;
-struct StorageID;
 
 
 /** SELECT query
@@ -78,17 +77,15 @@ public:
     }
 
     /// Compatibility with old parser of tables list. TODO remove
-    ASTPtr sampleSize() const;
-    ASTPtr sampleOffset() const;
-    ASTPtr arrayJoinExpressionList(bool & is_left) const;
-    ASTPtr arrayJoinExpressionList() const;
+    ASTPtr sample_size() const;
+    ASTPtr sample_offset() const;
+    ASTPtr array_join_expression_list(bool & is_left) const;
+    ASTPtr array_join_expression_list() const;
     const ASTTablesInSelectQueryElement * join() const;
     bool final() const;
     bool withFill() const;
     void replaceDatabaseAndTable(const String & database_name, const String & table_name);
-    void replaceDatabaseAndTable(const StorageID & table_id);
     void addTableFunction(ASTPtr & table_function_ptr);
-    void updateTreeHashImpl(SipHash & hash_state) const override;
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

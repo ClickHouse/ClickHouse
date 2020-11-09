@@ -11,7 +11,7 @@ namespace DB
 {
 
 /// Provides information about Graphite configuration.
-class StorageSystemGraphite final : public ext::shared_ptr_helper<StorageSystemGraphite>, public IStorageSystemOneBlock<StorageSystemGraphite>
+class StorageSystemGraphite : public ext::shared_ptr_helper<StorageSystemGraphite>, public IStorageSystemOneBlock<StorageSystemGraphite>
 {
     friend struct ext::shared_ptr_helper<StorageSystemGraphite>;
 public:
@@ -33,6 +33,7 @@ protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
     void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const override;
+    static StorageSystemGraphite::Configs getConfigs(const Context & context) ;
 };
 
 }

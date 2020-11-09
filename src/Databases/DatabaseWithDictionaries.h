@@ -1,21 +1,16 @@
-#pragma once
 #include <Databases/DatabaseOnDisk.h>
-#include <boost/smart_ptr/atomic_shared_ptr.hpp>
 #include <ext/scope_guard.h>
 
 namespace DB
 {
 
-class Context;
-class ExternalDictionariesLoader;
-
 
 class DatabaseWithDictionaries : public DatabaseOnDisk
 {
 public:
-    void attachDictionary(const String & dictionary_name, const DictionaryAttachInfo & attach_info) override;
+    void attachDictionary(const String & name, const Context & context) override;
 
-    void detachDictionary(const String & dictionary_name) override;
+    void detachDictionary(const String & name, const Context & context) override;
 
     void createDictionary(const Context & context,
                           const String & dictionary_name,
@@ -23,33 +18,33 @@ public:
 
     void removeDictionary(const Context & context, const String & dictionary_name) override;
 
-    bool isDictionaryExist(const String & dictionary_name) const override;
+    StoragePtr tryGetTable(const Context & context, const String & table_name) const override;
 
-    DatabaseDictionariesIteratorPtr getDictionariesIterator(const FilterByNameFunction & filter_by_dictionary_name) override;
+    DatabaseTablesIteratorPtr getTablesWithDictionaryTablesIterator(const Context & context, const FilterByNameFunction & filter_by_dictionary_name = {}) override;
 
-    Poco::AutoPtr<Poco::Util::AbstractConfiguration> getDictionaryConfiguration(const String & /*name*/) const override;
+    DatabaseDictionariesIteratorPtr getDictionariesIterator(const Context & context, const FilterByNameFunction & filter_by_dictionary_name = {}) override;
 
-    time_t getObjectMetadataModificationTime(const String & object_name) const override;
-
-    bool empty() const override;
+    bool isDictionaryExist(const Context & context, const String & dictionary_name) const override;
 
     void shutdown() override;
 
     ~DatabaseWithDictionaries() override;
 
 protected:
-    DatabaseWithDictionaries(const String & name, const String & metadata_path_, const String & data_path_, const String & logger, const Context & context);
+    DatabaseWithDictionaries(const String & name, const String & metadata_path_, const String & logger)
+        : DatabaseOnDisk(name, metadata_path_, logger) {}
 
-    ASTPtr getCreateDictionaryQueryImpl(const String & dictionary_name, bool throw_on_error) const override;
+    void attachToExternalDictionariesLoader(Context & context);
+    void detachFromExternalDictionariesLoader();
 
-    std::unordered_map<String, DictionaryAttachInfo> dictionaries;
-    const ExternalDictionariesLoader & external_loader;
+    StoragePtr getDictionaryStorage(const Context & context, const String & table_name) const;
+
+    ASTPtr getCreateDictionaryQueryImpl(const Context & context,
+                                        const String & dictionary_name,
+                                        bool throw_on_error) const override;
 
 private:
-    void detachDictionaryImpl(const String & dictionary_name, DictionaryAttachInfo & attach_info);
-    void reloadDictionaryConfig(const String & full_name);
-
-    boost::atomic_shared_ptr<ext::scope_guard> database_as_config_repo_for_external_loader;
+    ext::scope_guard database_as_config_repo_for_external_loader;
 };
 
 }

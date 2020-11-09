@@ -1,4 +1,5 @@
 SET output_format_write_statistics = 0;
+SET experimental_use_processors = 0;
 
 select 
     sum(cnt) > 0 as total,
@@ -13,6 +14,6 @@ select
         limit 1000000
     ) 
 group by k with totals 
-order by k[2]
+order by total desc 
 SETTINGS max_threads = 100, max_execution_time = 120 
 format JSON;

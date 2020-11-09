@@ -15,7 +15,7 @@ namespace DB
 /** Implements a table engine that is suitable for small chunks of the log.
   * It differs from StorageLog in the absence of mark files.
   */
-class StorageTinyLog final : public ext::shared_ptr_helper<StorageTinyLog>, public IStorage
+class StorageTinyLog : public ext::shared_ptr_helper<StorageTinyLog>, public IStorage
 {
     friend class TinyLogSource;
     friend class TinyLogBlockOutputStream;
@@ -24,27 +24,29 @@ class StorageTinyLog final : public ext::shared_ptr_helper<StorageTinyLog>, publ
 public:
     String getName() const override { return "TinyLog"; }
 
-    Pipe read(
+    Pipes read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
-    void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
+    void rename(
+        const String & new_path_to_table_data,
+        const String & new_database_name,
+        const String & new_table_name,
+        TableStructureWriteLockHolder &) override;
 
     CheckResults checkData(const ASTPtr & /* query */, const Context & /* context */) override;
 
-    bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {DB::fullPath(disk, table_path)}; }
 
-    void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &) override;
+    void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
-    void drop() override;
+    void drop(TableStructureWriteLockHolder &) override;
 
 protected:
     StorageTinyLog(
@@ -73,7 +75,7 @@ private:
     FileChecker file_checker;
     mutable std::shared_mutex rwlock;
 
-    Poco::Logger * log;
+    Logger * log;
 
     void addFiles(const String & column_name, const IDataType & type);
 };

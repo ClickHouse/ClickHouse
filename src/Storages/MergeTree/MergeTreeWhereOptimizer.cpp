@@ -31,18 +31,16 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     SelectQueryInfo & query_info,
     const Context & context,
     const MergeTreeData & data,
-    const StorageMetadataPtr & metadata_snapshot,
     const Names & queried_columns_,
-    Poco::Logger * log_)
-    : table_columns{ext::map<std::unordered_set>(
-        metadata_snapshot->getColumns().getAllPhysical(), [](const NameAndTypePair & col) { return col.name; })}
-    , queried_columns{queried_columns_}
-    , block_with_constants{KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context)}
-    , log{log_}
+    Logger * log_)
+        : table_columns{ext::map<std::unordered_set>(data.getColumns().getAllPhysical(),
+            [] (const NameAndTypePair & col) { return col.name; })},
+        queried_columns{queried_columns_},
+        block_with_constants{KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context)},
+        log{log_}
 {
-    const auto & primary_key = metadata_snapshot->getPrimaryKey();
-    if (!primary_key.column_names.empty())
-        first_primary_key_column = primary_key.column_names[0];
+    if (!data.primary_key_columns.empty())
+        first_primary_key_column = data.primary_key_columns[0];
 
     calculateColumnSizes(data, queried_columns);
     determineArrayJoinedNames(query_info.query->as<ASTSelectQuery &>());
@@ -72,55 +70,6 @@ static void collectIdentifiersNoSubqueries(const ASTPtr & ast, NameSet & set)
     for (const auto & child : ast->children)
         collectIdentifiersNoSubqueries(child, set);
 }
-
-static bool isConditionGood(const ASTPtr & condition)
-{
-    const auto * function = condition->as<ASTFunction>();
-    if (!function)
-        return false;
-
-    /** we are only considering conditions of form `equals(one, another)` or `one = another`,
-        * especially if either `one` or `another` is ASTIdentifier */
-    if (function->name != "equals")
-        return false;
-
-    auto * left_arg = function->arguments->children.front().get();
-    auto * right_arg = function->arguments->children.back().get();
-
-    /// try to ensure left_arg points to ASTIdentifier
-    if (!left_arg->as<ASTIdentifier>() && right_arg->as<ASTIdentifier>())
-        std::swap(left_arg, right_arg);
-
-    if (left_arg->as<ASTIdentifier>())
-    {
-        /// condition may be "good" if only right_arg is a constant and its value is outside the threshold
-        if (const auto * literal = right_arg->as<ASTLiteral>())
-        {
-            const auto & field = literal->value;
-            const auto type = field.getType();
-
-            /// check the value with respect to threshold
-            if (type == Field::Types::UInt64)
-            {
-                const auto value = field.get<UInt64>();
-                return value > threshold;
-            }
-            else if (type == Field::Types::Int64)
-            {
-                const auto value = field.get<Int64>();
-                return value < -threshold || threshold < value;
-            }
-            else if (type == Field::Types::Float64)
-            {
-                const auto value = field.get<Float64>();
-                return value < threshold || threshold < value;
-            }
-        }
-    }
-
-    return false;
-}
-
 
 void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node) const
 {
@@ -167,7 +116,7 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const ASTPt
 }
 
 /// Transform Conditions list to WHERE or PREWHERE expression.
-ASTPtr MergeTreeWhereOptimizer::reconstruct(const Conditions & conditions)
+ASTPtr MergeTreeWhereOptimizer::reconstruct(const Conditions & conditions) 
 {
     if (conditions.empty())
         return {};
@@ -240,7 +189,7 @@ void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const
     select.setExpression(ASTSelectQuery::Expression::WHERE, reconstruct(where_conditions));
     select.setExpression(ASTSelectQuery::Expression::PREWHERE, reconstruct(prewhere_conditions));
 
-    LOG_DEBUG(log, "MergeTreeWhereOptimizer: condition \"{}\" moved to PREWHERE", select.prewhere());
+    LOG_DEBUG(log, "MergeTreeWhereOptimizer: condition \"" << select.prewhere() << "\" moved to PREWHERE");
 }
 
 
@@ -253,6 +202,55 @@ UInt64 MergeTreeWhereOptimizer::getIdentifiersColumnSize(const NameSet & identif
             size += column_sizes.at(identifier);
 
     return size;
+}
+
+
+bool MergeTreeWhereOptimizer::isConditionGood(const ASTPtr & condition) 
+{
+    const auto * function = condition->as<ASTFunction>();
+    if (!function)
+        return false;
+
+    /** we are only considering conditions of form `equals(one, another)` or `one = another`,
+        * especially if either `one` or `another` is ASTIdentifier */
+    if (function->name != "equals")
+        return false;
+
+    auto *left_arg = function->arguments->children.front().get();
+    auto *right_arg = function->arguments->children.back().get();
+
+    /// try to ensure left_arg points to ASTIdentifier
+    if (!left_arg->as<ASTIdentifier>() && right_arg->as<ASTIdentifier>())
+        std::swap(left_arg, right_arg);
+
+    if (left_arg->as<ASTIdentifier>())
+    {
+        /// condition may be "good" if only right_arg is a constant and its value is outside the threshold
+        if (const auto * literal = right_arg->as<ASTLiteral>())
+        {
+            const auto & field = literal->value;
+            const auto type = field.getType();
+
+            /// check the value with respect to threshold
+            if (type == Field::Types::UInt64)
+            {
+                const auto value = field.get<UInt64>();
+                return value > threshold;
+            }
+            else if (type == Field::Types::Int64)
+            {
+                const auto value = field.get<Int64>();
+                return value < -threshold || threshold < value;
+            }
+            else if (type == Field::Types::Float64)
+            {
+                const auto value = field.get<Float64>();
+                return value < threshold || threshold < value;
+            }
+        }
+    }
+
+    return false;
 }
 
 
@@ -350,7 +348,7 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr) const
 
 void MergeTreeWhereOptimizer::determineArrayJoinedNames(ASTSelectQuery & select)
 {
-    auto array_join_expression_list = select.arrayJoinExpressionList();
+    auto array_join_expression_list = select.array_join_expression_list();
 
     /// much simplified code from ExpressionAnalyzer::getArrayJoinedColumns()
     if (!array_join_expression_list)

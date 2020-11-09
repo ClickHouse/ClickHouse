@@ -169,9 +169,9 @@ public:
     }
 
     void insertResultInto(
-        AggregateDataPtr place,
-        IColumn & to,
-        Arena *) const override
+        ConstAggregateDataPtr place,
+        IColumn & to
+    ) const override
     {
         Ret k = this->data(place).getK();
         Ret b = this->data(place).getB(k);

@@ -137,12 +137,8 @@ NamesAndTypesList NamesAndTypesList::filter(const Names & names) const
 
 NamesAndTypesList NamesAndTypesList::addTypes(const Names & names) const
 {
-    /// NOTE: It's better to make a map in `IStorage` than to create it here every time again.
-#if !defined(ARCADIA_BUILD)
-    google::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash> types;
-#else
-    google::sparsehash::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash> types;
-#endif
+    /// NOTE It's better to make a map in `IStorage` than to create it here every time again.
+    ::google::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash> types;
     types.set_empty_key(StringRef());
 
     for (const NameAndTypePair & column : *this)

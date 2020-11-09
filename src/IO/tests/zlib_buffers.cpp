@@ -3,6 +3,7 @@
 #include <iostream>
 #include <iomanip>
 
+#include <Core/Types.h>
 #include <Common/Stopwatch.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>

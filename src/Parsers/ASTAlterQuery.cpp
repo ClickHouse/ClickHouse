@@ -56,11 +56,6 @@ ASTPtr ASTAlterCommand::clone() const
         res->values = values->clone();
         res->children.push_back(res->values);
     }
-    if (rename_to)
-    {
-        res->rename_to = rename_to->clone();
-        res->children.push_back(res->rename_to);
-    }
 
     return res;
 }
@@ -75,9 +70,8 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ADD COLUMN " << (if_not_exists ? "IF NOT EXISTS " : "") << (settings.hilite ? hilite_none : "");
         col_decl->formatImpl(settings, state, frame);
 
-        if (first)
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " FIRST " << (settings.hilite ? hilite_none : "");
-        else if (column)    /// AFTER
+        /// AFTER
+        if (column)
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " AFTER " << (settings.hilite ? hilite_none : "");
             column->formatImpl(settings, state, frame);
@@ -98,21 +92,6 @@ void ASTAlterCommand::formatImpl(
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY COLUMN " << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
         col_decl->formatImpl(settings, state, frame);
-
-        if (!remove_property.empty())
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " REMOVE " << remove_property;
-        }
-        else
-        {
-            if (first)
-                settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " FIRST " << (settings.hilite ? hilite_none : "");
-            else if (column)    /// AFTER
-            {
-                settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " AFTER " << (settings.hilite ? hilite_none : "");
-                column->formatImpl(settings, state, frame);
-            }
-        }
     }
     else if (type == ASTAlterCommand::COMMENT_COLUMN)
     {
@@ -125,11 +104,6 @@ void ASTAlterCommand::formatImpl(
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY ORDER BY " << (settings.hilite ? hilite_none : "");
         order_by->formatImpl(settings, state, frame);
-    }
-    else if (type == ASTAlterCommand::MODIFY_SAMPLE_BY)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY SAMPLE BY " << (settings.hilite ? hilite_none : "");
-        sample_by->formatImpl(settings, state, frame);
     }
     else if (type == ASTAlterCommand::ADD_INDEX)
     {
@@ -167,7 +141,7 @@ void ASTAlterCommand::formatImpl(
     }
     else if (type == ASTAlterCommand::ADD_CONSTRAINT)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ADD CONSTRAINT " << (if_not_exists ? "IF NOT EXISTS " : "") << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ADD CONSTRAINT" << (if_not_exists ? "IF NOT EXISTS " : "") << (settings.hilite ? hilite_none : "");
         constraint_decl->formatImpl(settings, state, frame);
     }
     else if (type == ASTAlterCommand::DROP_CONSTRAINT)
@@ -202,13 +176,13 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << " TO ";
         switch (move_destination_type)
         {
-            case DataDestinationType::DISK:
+            case PartDestinationType::DISK:
                 settings.ostr << "DISK ";
                 break;
-            case DataDestinationType::VOLUME:
+            case PartDestinationType::VOLUME:
                 settings.ostr << "VOLUME ";
                 break;
-            case DataDestinationType::TABLE:
+            case PartDestinationType::TABLE:
                 settings.ostr << "TABLE ";
                 if (!to_database.empty())
                 {
@@ -222,7 +196,7 @@ void ASTAlterCommand::formatImpl(
             default:
                 break;
         }
-        if (move_destination_type != DataDestinationType::TABLE)
+        if (move_destination_type != PartDestinationType::TABLE)
         {
             settings.ostr << quoteString(move_destination_name);
         }
@@ -287,19 +261,10 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY TTL " << (settings.hilite ? hilite_none : "");
         ttl->formatImpl(settings, state, frame);
     }
-    else if (type == ASTAlterCommand::REMOVE_TTL)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "REMOVE TTL" << (settings.hilite ? hilite_none : "");
-    }
     else if (type == ASTAlterCommand::MATERIALIZE_TTL)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MATERIALIZE TTL"
                       << (settings.hilite ? hilite_none : "");
-        if (partition)
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str<< " IN PARTITION " << (settings.hilite ? hilite_none : "");
-            partition->formatImpl(settings, state, frame);
-        }
     }
     else if (type == ASTAlterCommand::MODIFY_SETTING)
     {
@@ -314,15 +279,6 @@ void ASTAlterCommand::formatImpl(
     else if (type == ASTAlterCommand::LIVE_VIEW_REFRESH)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "REFRESH " << (settings.hilite ? hilite_none : "");
-    }
-    else if (type == ASTAlterCommand::RENAME_COLUMN)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "RENAME COLUMN " << (if_exists ? "IF EXISTS " : "")
-                      << (settings.hilite ? hilite_none : "");
-        column->formatImpl(settings, state, frame);
-
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " TO ";
-        rename_to->formatImpl(settings, state, frame);
     }
     else
         throw Exception("Unexpected type of ALTER", ErrorCodes::UNEXPECTED_AST_STRUCTURE);

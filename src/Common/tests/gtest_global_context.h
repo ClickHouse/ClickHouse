@@ -2,24 +2,16 @@
 
 #include <Interpreters/Context.h>
 
-struct ContextHolder
+inline DB::Context createContext()
 {
-    DB::SharedContextHolder shared_context;
-    DB::Context context;
+    auto context = DB::Context::createGlobal();
+    context.makeGlobalContext();
+    context.setPath("./");
+    return context;
+}
 
-    ContextHolder()
-        : shared_context(DB::Context::createShared())
-        , context(DB::Context::createGlobal(shared_context.get()))
-    {
-        context.makeGlobalContext();
-        context.setPath("./");
-    }
-
-    ContextHolder(ContextHolder &&) = default;
-};
-
-inline const ContextHolder & getContext()
+inline const DB::Context & getContext()
 {
-    static ContextHolder holder;
-    return holder;
+    static DB::Context global_context = createContext();
+    return global_context;
 }

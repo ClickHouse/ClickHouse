@@ -29,7 +29,6 @@ private:
 
 public:
     const char * getFamilyName() const override { return "Function"; }
-    TypeIndex getDataType() const override { return TypeIndex::Function; }
 
     MutableColumnPtr cloneResized(size_t size) const override;
 
@@ -102,16 +101,6 @@ public:
         throw Exception("updateHashWithValue is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void updateWeakHash32(WeakHash32 &) const override
-    {
-        throw Exception("updateWeakHash32 is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    void updateHashFast(SipHash &) const override
-    {
-        throw Exception("updateHashFast is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
     void popBack(size_t) override
     {
         throw Exception("popBack is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
@@ -122,19 +111,9 @@ public:
         throw Exception("compareAt is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
-    {
-        throw Exception("compareColumn is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
     void getPermutation(bool, size_t, int, Permutation &) const override
     {
         throw Exception("getPermutation is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    void updatePermutation(bool, size_t, int, Permutation &, EqualRanges &) const override
-    {
-        throw Exception("updatePermutation is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     void gather(ColumnGathererStream &) override

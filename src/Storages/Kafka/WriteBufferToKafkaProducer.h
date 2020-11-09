@@ -25,7 +25,7 @@ public:
         const Block & header);
     ~WriteBufferToKafkaProducer() override;
 
-    void countRow(const Columns & columns, size_t row);
+    void count_row(const Columns & columns, size_t row);
     void flush();
 
 private:

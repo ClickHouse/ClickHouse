@@ -6,11 +6,13 @@
 
 namespace DB
 {
+
 class Context;
+
 
 /** Implements the `quotas` system tables, which allows you to get information about quotas.
   */
-class StorageSystemQuotas final : public ext::shared_ptr_helper<StorageSystemQuotas>, public IStorageSystemOneBlock<StorageSystemQuotas>
+class StorageSystemQuotas : public ext::shared_ptr_helper<StorageSystemQuotas>, public IStorageSystemOneBlock<StorageSystemQuotas>
 {
 public:
     std::string getName() const override { return "SystemQuotas"; }

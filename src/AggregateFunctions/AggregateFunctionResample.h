@@ -4,7 +4,6 @@
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Common/assert_cast.h>
-#include <common/arithmeticOverflow.h>
 
 
 namespace DB
@@ -19,8 +18,7 @@ template <typename Key>
 class AggregateFunctionResample final : public IAggregateFunctionHelper<AggregateFunctionResample<Key>>
 {
 private:
-    /// Sanity threshold to avoid creation of too large arrays. The choice of this number is arbitrary.
-    const size_t MAX_ELEMENTS = 1048576;
+    const size_t MAX_ELEMENTS = 4096;
 
     AggregateFunctionPtr nested_function;
 
@@ -61,18 +59,7 @@ public:
         if (end < begin)
             total = 0;
         else
-        {
-            Key dif;
-            size_t sum;
-            if (common::subOverflow(end, begin, dif)
-                || common::addOverflow(static_cast<size_t>(dif), step, sum))
-            {
-                throw Exception("Overflow in internal computations in function " + getName()
-                    + ". Too large arguments", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-            }
-
-            total = (sum - 1) / step; // total = (end - begin + step - 1) / step
-        }
+            total = (end - begin + step - 1) / step;
 
         if (total > MAX_ELEMENTS)
             throw Exception("The range given in function "
@@ -186,15 +173,14 @@ public:
     }
 
     void insertResultInto(
-        AggregateDataPtr place,
-        IColumn & to,
-        Arena * arena) const override
+        ConstAggregateDataPtr place,
+        IColumn & to) const override
     {
         auto & col = assert_cast<ColumnArray &>(to);
         auto & col_offsets = assert_cast<ColumnArray::ColumnOffsets &>(col.getOffsetsColumn());
 
         for (size_t i = 0; i < total; ++i)
-            nested_function->insertResultInto(place + i * size_of_data, col.getData(), arena);
+            nested_function->insertResultInto(place + i * size_of_data, col.getData());
 
         col_offsets.getData().push_back(col.getData().size());
     }

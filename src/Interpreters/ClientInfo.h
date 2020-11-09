@@ -1,8 +1,7 @@
 #pragma once
 
 #include <Poco/Net/SocketAddress.h>
-#include <Common/UInt128.h>
-#include <common/types.h>
+#include <Core/Types.h>
 
 
 namespace DB
@@ -48,27 +47,13 @@ public:
     String current_user;
     String current_query_id;
     Poco::Net::SocketAddress current_address;
-
-#if defined(ARCADIA_BUILD)
-    /// This field is only used in foreign "Arcadia" build.
+    /// Use current user and password when sending query to replica leader
     String current_password;
-#endif
 
     /// When query_kind == INITIAL_QUERY, these values are equal to current.
     String initial_user;
     String initial_query_id;
     Poco::Net::SocketAddress initial_address;
-
-    // OpenTelemetry trace information.
-    __uint128_t opentelemetry_trace_id = 0;
-    // The span id we get the in the incoming client info becomes our parent span
-    // id, and the span id we send becomes downstream parent span id.
-    UInt64 opentelemetry_span_id = 0;
-    UInt64 opentelemetry_parent_span_id = 0;
-    // The incoming tracestate header and the trace flags, we just pass them downstream.
-    // They are described at https://www.w3.org/TR/trace-context/
-    String opentelemetry_tracestate;
-    UInt8 opentelemetry_trace_flags = 0;
 
     /// All below are parameters related to initial query.
 
@@ -81,7 +66,7 @@ public:
     UInt64 client_version_major = 0;
     UInt64 client_version_minor = 0;
     UInt64 client_version_patch = 0;
-    unsigned client_tcp_protocol_version = 0;
+    unsigned client_revision = 0;
 
     /// For http
     HTTPMethod http_method = HTTPMethod::UNKNOWN;
@@ -99,20 +84,6 @@ public:
     void write(WriteBuffer & out, const UInt64 server_protocol_revision) const;
     void read(ReadBuffer & in, const UInt64 client_protocol_revision);
 
-    /// Initialize parameters on client initiating query.
-    void setInitialQuery();
-
-    // Parse/compose OpenTelemetry traceparent header.
-    // Note that these functions use span_id field, not parent_span_id, same as
-    // in native protocol. The incoming traceparent corresponds to the upstream
-    // trace span, and the outgoing traceparent corresponds to our current span.
-    // We use the same ClientInfo structure first for incoming span, and then
-    // for our span: when we switch, we use old span_id as parent_span_id, and
-    // generate a new span_id (currently this happens in Context::setQueryId()).
-    bool parseTraceparentHeader(const std::string & traceparent, std::string & error);
-    std::string composeTraceparentHeader() const;
-
-private:
     void fillOSUserHostNameAndVersionInfo();
 };
 

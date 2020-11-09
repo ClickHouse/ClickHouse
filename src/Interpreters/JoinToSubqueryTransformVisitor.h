@@ -1,8 +1,6 @@
 #pragma once
 
 #include <Interpreters/InDepthNodeVisitor.h>
-#include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Interpreters/Aliases.h>
 
 namespace DB
 {
@@ -11,15 +9,14 @@ class ASTSelectQuery;
 class Context;
 
 /// AST transformer. It replaces multiple joins to (subselect + join) track.
-/// 'select * from t1 join t2 on ... join t3 on ... join t4 on ...' would be rewritten with
+/// 'select * from t1 join t2 on ... join t3 on ... join t4 on ...' would be rewriten with
 /// 'select * from (select * from t1 join t2 on ...) join t3 on ...) join t4 on ...'
 class JoinToSubqueryTransformMatcher
 {
 public:
     struct Data
     {
-        const std::vector<TableWithColumnNamesAndTypes> & tables;
-        const Aliases & aliases;
+        const Context & context;
         bool done = false;
     };
 
@@ -45,7 +42,7 @@ private:
     static void visit(ASTSelectQuery & select, ASTPtr & ast, Data & data);
 
     /// @return combined TablesInSelectQueryElement or nullptr if cannot rewrite
-    static ASTPtr replaceJoin(ASTPtr left, ASTPtr right, ASTPtr subquery_template);
+    static ASTPtr replaceJoin(ASTPtr left, ASTPtr right);
 };
 
 using JoinToSubqueryTransformVisitor = InDepthNodeVisitor<JoinToSubqueryTransformMatcher, true>;

@@ -28,9 +28,6 @@ public:
         return std::static_pointer_cast<const IDictionaryBase>(tryLoad(name));
     }
 
-    static DictionaryStructure getDictionaryStructure(const Poco::Util::AbstractConfiguration & config, const std::string & key_in_config = "dictionary");
-    static DictionaryStructure getDictionaryStructure(const ObjectConfig & config);
-
     static void resetAll();
 
 protected:

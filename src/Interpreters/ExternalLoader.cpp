@@ -8,18 +8,11 @@
 #include <Common/ThreadPool.h>
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
-#include <Common/StatusInfo.h>
 #include <ext/chrono_io.h>
 #include <ext/scope_guard.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <unordered_set>
-
-
-namespace CurrentStatusInfo
-{
-    extern const Status DictionaryStatus;
-}
 
 
 namespace DB
@@ -28,7 +21,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int DICTIONARIES_WAS_NOT_LOADED;
 }
 
 
@@ -95,13 +87,22 @@ namespace
     };
 }
 
+struct ExternalLoader::ObjectConfig
+{
+    Poco::AutoPtr<Poco::Util::AbstractConfiguration> config;
+    String key_in_config;
+    String repository_name;
+    bool from_temp_repository = false;
+    String path;
+};
+
 
 /** Reads configurations from configuration repository and parses it.
   */
 class ExternalLoader::LoadablesConfigReader : private boost::noncopyable
 {
 public:
-    LoadablesConfigReader(const String & type_name_, Poco::Logger * log_)
+    LoadablesConfigReader(const String & type_name_, Logger * log_)
         : type_name(type_name_), log(log_)
     {
     }
@@ -133,7 +134,7 @@ public:
         settings = settings_;
     }
 
-    using ObjectConfigsPtr = std::shared_ptr<const std::unordered_map<String /* object's name */, std::shared_ptr<const ObjectConfig>>>;
+    using ObjectConfigsPtr = std::shared_ptr<const std::unordered_map<String /* object's name */, ObjectConfig>>;
 
     /// Reads all repositories.
     ObjectConfigsPtr read()
@@ -168,9 +169,8 @@ private:
     struct FileInfo
     {
         Poco::Timestamp last_update_time = 0;
+        std::vector<std::pair<String, ObjectConfig>> objects; // Parsed contents of the file.
         bool in_use = true; // Whether the `FileInfo` should be destroyed because the correspondent file is deleted.
-        Poco::AutoPtr<Poco::Util::AbstractConfiguration> file_contents; // Parsed contents of the file.
-        std::unordered_map<String /* object name */, String /* key in file_contents */> objects;
     };
 
     struct RepositoryInfo
@@ -251,72 +251,53 @@ private:
         {
             if (path.empty() || !repository.exists(path))
             {
-                LOG_WARNING(log, "Config file '{}' does not exist", path);
+                LOG_WARNING(log, "Config file '" + path + "' does not exist");
                 return false;
             }
 
             auto update_time_from_repository = repository.getUpdateTime(path);
 
-            // We can't count on that the mtime increases or that it has
-            // a particular relation to system time, so just check for strict
-            // equality.
-            // Note that on 1.x versions on Poco, the granularity of update
-            // time is one second, so the window where we can miss the changes
-            // is that wide (i.e. when we read the file and after that it
-            // is updated, but in the same second).
-            // The solution to this is probably switching to std::filesystem
-            // -- the work is underway to do so.
-            if (update_time_from_repository == file_info.last_update_time)
+            /// Actually it can't be less, but for sure we check less or equal
+            if (update_time_from_repository <= file_info.last_update_time)
             {
                 file_info.in_use = true;
                 return false;
             }
 
-            LOG_TRACE(log, "Loading config file '{}'.", path);
-            file_info.file_contents = repository.load(path);
-            auto & file_contents = *file_info.file_contents;
+            auto file_contents = repository.load(path);
 
             /// get all objects' definitions
             Poco::Util::AbstractConfiguration::Keys keys;
-            file_contents.keys(keys);
+            file_contents->keys(keys);
 
             /// for each object defined in repositories
-            std::unordered_map<String, String> objects;
+            std::vector<std::pair<String, ObjectConfig>> object_configs_from_file;
             for (const auto & key : keys)
             {
                 if (!startsWith(key, settings.external_config))
                 {
                     if (!startsWith(key, "comment") && !startsWith(key, "include_from"))
-                        LOG_WARNING(log, "{}: file contains unknown node '{}', expected '{}'", path, key, settings.external_config);
+                        LOG_WARNING(log, path << ": file contains unknown node '" << key << "', expected '" << settings.external_config << "'");
                     continue;
                 }
 
-                /// Use uuid as name if possible
-                String object_uuid = file_contents.getString(key + "." + settings.external_uuid, "");
-                String object_name;
-                if (object_uuid.empty())
-                    object_name = file_contents.getString(key + "." + settings.external_name);
-                else
-                    object_name = object_uuid;
+                String object_name = file_contents->getString(key + "." + settings.external_name);
                 if (object_name.empty())
                 {
-                    LOG_WARNING(log, "{}: node '{}' defines {} with an empty name. It's not allowed", path, key, type_name);
+                    LOG_WARNING(log, path << ": node '" << key << "' defines " << type_name << " with an empty name. It's not allowed");
                     continue;
                 }
 
-                if (object_uuid.empty())
-                {
-                    String database;
-                    if (!settings.external_database.empty())
-                        database = file_contents.getString(key + "." + settings.external_database, "");
-                    if (!database.empty())
-                        object_name = database + "." + object_name;
-                }
+                String database;
+                if (!settings.external_database.empty())
+                    database = file_contents->getString(key + "." + settings.external_database, "");
+                if (!database.empty())
+                    object_name = database + "." + object_name;
 
-                objects.emplace(object_name, key);
+                object_configs_from_file.emplace_back(object_name, ObjectConfig{file_contents, key, {}, {}, {}});
             }
 
-            file_info.objects = std::move(objects);
+            file_info.objects = std::move(object_configs_from_file);
             file_info.last_update_time = update_time_from_repository;
             file_info.in_use = true;
             return true;
@@ -336,36 +317,33 @@ private:
         need_collect_object_configs = false;
 
         // Generate new result.
-        auto new_configs = std::make_shared<std::unordered_map<String /* object's name */, std::shared_ptr<const ObjectConfig>>>();
+        auto new_configs = std::make_shared<std::unordered_map<String /* object's name */, ObjectConfig>>();
 
         for (const auto & [repository, repository_info] : repositories)
         {
             for (const auto & [path, file_info] : repository_info.files)
             {
-                for (const auto & [object_name, key_in_config] : file_info.objects)
+                for (const auto & [object_name, object_config] : file_info.objects)
                 {
                     auto already_added_it = new_configs->find(object_name);
                     if (already_added_it == new_configs->end())
                     {
-                        auto new_config = std::make_shared<ObjectConfig>();
-                        new_config->config = file_info.file_contents;
-                        new_config->key_in_config = key_in_config;
-                        new_config->repository_name = repository->getName();
-                        new_config->from_temp_repository = repository->isTemporary();
-                        new_config->path = path;
-                        new_configs->emplace(object_name, std::move(new_config));
+                        auto & new_config = new_configs->emplace(object_name, object_config).first->second;
+                        new_config.from_temp_repository = repository->isTemporary();
+                        new_config.repository_name = repository->getName();
+                        new_config.path = path;
                     }
                     else
                     {
                         const auto & already_added = already_added_it->second;
-                        if (!already_added->from_temp_repository && !repository->isTemporary())
+                        if (!already_added.from_temp_repository && !repository->isTemporary())
                         {
-                            if (path == already_added->path && repository->getName() == already_added->repository_name)
-                                LOG_WARNING(log, "{} '{}' is found twice in the same file '{}'",
-                                    type_name, object_name, path);
-                            else
-                                LOG_WARNING(log, "{} '{}' is found both in file '{}' and '{}'",
-                                    type_name, object_name, already_added->path, path);
+                            LOG_WARNING(
+                                log,
+                                type_name << " '" << object_name << "' is found "
+                                          << (((path == already_added.path) && (repository->getName() == already_added.repository_name))
+                                                  ? ("twice in the same file '" + path + "'")
+                                                  : ("both in file '" + already_added.path + "' and '" + path + "'")));
                         }
                     }
                 }
@@ -376,7 +354,7 @@ private:
     }
 
     const String type_name;
-    Poco::Logger * log;
+    Logger * log;
 
     std::mutex mutex;
     ExternalLoaderConfigSettings settings;
@@ -399,7 +377,7 @@ public:
     LoadingDispatcher(
         const CreateObjectFunction & create_object_function_,
         const String & type_name_,
-        Poco::Logger * log_)
+        Logger * log_)
         : create_object(create_object_function_)
         , type_name(type_name_)
         , log(log_)
@@ -440,21 +418,21 @@ public:
         {
             auto new_config_it = new_configs->find(name);
             if (new_config_it == new_configs->end())
-            {
                 removed_names.emplace_back(name);
-            }
             else
             {
                 const auto & new_config = new_config_it->second;
-                bool config_is_same = isSameConfiguration(*info.config->config, info.config->key_in_config, *new_config->config, new_config->key_in_config);
-                info.config = new_config;
+                bool config_is_same = isSameConfiguration(*info.object_config.config, info.object_config.key_in_config, *new_config.config, new_config.key_in_config);
+                info.object_config = new_config;
                 if (!config_is_same)
                 {
+                    /// Configuration has been changed.
+                    info.object_config = new_config;
+
                     if (info.triedToLoad())
                     {
                         /// The object has been tried to load before, so it is currently in use or was in use
                         /// and we should try to reload it with the new config.
-                        LOG_TRACE(log, "Will reload '{}' because its configuration has been changed and there were attempts to load it before", name);
                         startLoading(info, true);
                     }
                 }
@@ -468,24 +446,13 @@ public:
             {
                 Info & info = infos.emplace(name, Info{name, config}).first->second;
                 if (always_load_everything)
-                {
-                    LOG_TRACE(log, "Will load '{}' because always_load_everything flag is set.", name);
                     startLoading(info);
-                }
             }
         }
 
         /// Remove from the map those objects which were removed from the configuration.
         for (const String & name : removed_names)
-        {
-            if (auto it = infos.find(name); it != infos.end())
-            {
-                const auto & info = it->second;
-                if (info.loaded() || info.isLoading())
-                    LOG_TRACE(log, "Unloading '{}' because its configuration has been removed or detached", name);
-                infos.erase(it);
-            }
-        }
+            infos.erase(name);
 
         /// Maybe we have just added new objects which require to be loaded
         /// or maybe we have just removed object which were been loaded,
@@ -531,7 +498,7 @@ public:
 
     /// Returns the load result of the object.
     template <typename ReturnType>
-    ReturnType getLoadResult(const String & name) const
+    ReturnType getCurrentLoadResult(const String & name) const
     {
         std::lock_guard lock{mutex};
         const Info * info = getInfo(name);
@@ -543,13 +510,13 @@ public:
     /// Returns all the load results as a map.
     /// The function doesn't load anything, it just returns the current load results as is.
     template <typename ReturnType>
-    ReturnType getLoadResults(const FilterByNameFunction & filter) const
+    ReturnType getCurrentLoadResults(const FilterByNameFunction & filter) const
     {
         std::lock_guard lock{mutex};
         return collectLoadResults<ReturnType>(filter);
     }
 
-    size_t getNumberOfLoadedObjects() const
+    size_t getNumberOfCurrentlyLoadedObjects() const
     {
         std::lock_guard lock{mutex};
         size_t count = 0;
@@ -562,7 +529,7 @@ public:
         return count;
     }
 
-    bool hasLoadedObjects() const
+    bool hasCurrentlyLoadedObjects() const
     {
         std::lock_guard lock{mutex};
         for (const auto & name_info : infos)
@@ -579,12 +546,6 @@ public:
             if (info.triedToLoad())
                 names.push_back(name);
         return names;
-    }
-
-    size_t getNumberOfObjects() const
-    {
-        std::lock_guard lock{mutex};
-        return infos.size();
     }
 
     /// Tries to load a specified object during the timeout.
@@ -637,7 +598,7 @@ public:
             for (const auto & name_and_info : infos)
             {
                 const auto & info = name_and_info.second;
-                if ((now >= info.next_update_time) && !info.isLoading() && info.loaded())
+                if ((now >= info.next_update_time) && !info.is_loading() && info.loaded())
                     should_update_map.emplace(info.object, info.failedToReload());
             }
         }
@@ -667,7 +628,7 @@ public:
             TimePoint now = std::chrono::system_clock::now();
             for (auto & [name, info] : infos)
             {
-                if ((now >= info.next_update_time) && !info.isLoading())
+                if ((now >= info.next_update_time) && !info.is_loading())
                 {
                     if (info.loaded())
                     {
@@ -679,7 +640,6 @@ public:
                         if (!should_update_flag)
                         {
                             info.next_update_time = calculateNextUpdateTime(info.object, info.error_count);
-                            LOG_TRACE(log, "Object '{}' not modified, will not reload. Next update at {}", info.name, ext::to_string(info.next_update_time));
                             continue;
                         }
 
@@ -691,7 +651,6 @@ public:
                         /// Object was never loaded successfully and should be reloaded.
                         startLoading(info);
                     }
-                    LOG_TRACE(log, "Object '{}' is neither loaded nor failed, so it will not be reloaded as outdated.", info.name);
                 }
             }
         }
@@ -700,28 +659,28 @@ public:
 private:
     struct Info
     {
-        Info(const String & name_, const std::shared_ptr<const ObjectConfig> & config_) : name(name_), config(config_) {}
+        Info(const String & name_, const ObjectConfig & object_config_) : name(name_), object_config(object_config_) {}
 
         bool loaded() const { return object != nullptr; }
         bool failed() const { return !object && exception; }
         bool loadedOrFailed() const { return loaded() || failed(); }
-        bool triedToLoad() const { return loaded() || failed() || isLoading(); }
+        bool triedToLoad() const { return loaded() || failed() || is_loading(); }
         bool failedToReload() const { return loaded() && exception != nullptr; }
-        bool isLoading() const { return loading_id > state_id; }
+        bool is_loading() const { return loading_id > state_id; }
 
         Status status() const
         {
             if (object)
-                return isLoading() ? Status::LOADED_AND_RELOADING : Status::LOADED;
+                return is_loading() ? Status::LOADED_AND_RELOADING : Status::LOADED;
             else if (exception)
-                return isLoading() ? Status::FAILED_AND_RELOADING : Status::FAILED;
+                return is_loading() ? Status::FAILED_AND_RELOADING : Status::FAILED;
             else
-                return isLoading() ? Status::LOADING : Status::NOT_LOADED;
+                return is_loading() ? Status::LOADING : Status::NOT_LOADED;
         }
 
         Duration loadingDuration() const
         {
-            if (isLoading())
+            if (is_loading())
                 return std::chrono::duration_cast<Duration>(std::chrono::system_clock::now() - loading_start_time);
             return std::chrono::duration_cast<Duration>(loading_end_time - loading_start_time);
         }
@@ -739,7 +698,8 @@ private:
                 result.loading_start_time = loading_start_time;
                 result.last_successful_update_time = last_successful_update_time;
                 result.loading_duration = loadingDuration();
-                result.config = config;
+                result.origin = object_config.path;
+                result.repository_name = object_config.repository_name;
                 return result;
             }
             else
@@ -751,7 +711,7 @@ private:
 
         String name;
         LoadablePtr object;
-        std::shared_ptr<const ObjectConfig> config;
+        ObjectConfig object_config;
         TimePoint loading_start_time;
         TimePoint loading_end_time;
         TimePoint last_successful_update_time;
@@ -785,7 +745,7 @@ private:
         results.reserve(infos.size());
         for (const auto & [name, info] : infos)
         {
-            if (!filter || filter(name))
+            if (filter(name))
             {
                 auto result = info.template getLoadResult<typename ReturnType::value_type>();
                 if constexpr (std::is_same_v<typename ReturnType::value_type, LoadablePtr>)
@@ -839,7 +799,7 @@ private:
             bool all_ready = true;
             for (auto & [name, info] : infos)
             {
-                if (filter && !filter(name))
+                if (!filter(name))
                     continue;
 
                 if (info.state_id >= min_id)
@@ -882,27 +842,18 @@ private:
 
     void startLoading(Info & info, bool forced_to_reload = false, size_t min_id_to_finish_loading_dependencies_ = 1)
     {
-        if (info.isLoading())
+        if (info.is_loading())
         {
-            LOG_TRACE(log, "The object '{}' is already being loaded, force = {}.", info.name, forced_to_reload);
-
             if (!forced_to_reload)
-            {
                 return;
-            }
-
             cancelLoading(info);
         }
-
-        putBackFinishedThreadsToPool();
 
         /// All loadings have unique loading IDs.
         size_t loading_id = next_id_counter++;
         info.loading_id = loading_id;
         info.loading_start_time = std::chrono::system_clock::now();
         info.loading_end_time = TimePoint{};
-
-        LOG_TRACE(log, "Will load the object '{}' {}, force = {}, loading_id = {}", info.name, (enable_async_loading ? std::string("in background") : "immediately"), forced_to_reload, info.loading_id);
 
         if (enable_async_loading)
         {
@@ -917,24 +868,9 @@ private:
         }
     }
 
-    void putBackFinishedThreadsToPool()
-    {
-        for (auto loading_id : recently_finished_loadings)
-        {
-            auto it = loading_threads.find(loading_id);
-            if (it != loading_threads.end())
-            {
-                auto thread = std::move(it->second);
-                loading_threads.erase(it);
-                thread.join(); /// It's very likely that `thread` has already finished.
-            }
-        }
-        recently_finished_loadings.clear();
-    }
-
     static void cancelLoading(Info & info)
     {
-        if (!info.isLoading())
+        if (!info.is_loading())
             return;
 
         /// In fact we cannot actually CANCEL the loading (because it's possibly already being performed in another thread).
@@ -946,7 +882,6 @@ private:
     /// Does the loading, possibly in the separate thread.
     void doLoading(const String & name, size_t loading_id, bool forced_to_reload, size_t min_id_to_finish_loading_dependencies_, bool async)
     {
-        LOG_TRACE(log, "Start loading object '{}'", name);
         try
         {
             /// Prepare for loading.
@@ -955,10 +890,7 @@ private:
                 LoadingGuardForAsyncLoad lock(async, mutex);
                 info = prepareToLoadSingleObject(name, loading_id, min_id_to_finish_loading_dependencies_, lock);
                 if (!info)
-                {
-                    LOG_TRACE(log, "Could not lock object '{}' for loading", name);
                     return;
-                }
             }
 
             /// Previous version can be used as the base for new loading, enabling loading only part of data.
@@ -967,7 +899,7 @@ private:
                 previous_version_as_base_for_loading = nullptr; /// Need complete reloading, cannot use the previous version.
 
             /// Loading.
-            auto [new_object, new_exception] = loadSingleObject(name, *info->config, previous_version_as_base_for_loading);
+            auto [new_object, new_exception] = loadSingleObject(name, info->object_config, previous_version_as_base_for_loading);
             if (!new_object && !new_exception)
                 throw Exception("No object created and no exception raised for " + type_name, ErrorCodes::LOGICAL_ERROR);
 
@@ -994,7 +926,7 @@ private:
         Info * info = getInfo(name);
         /// We check here if this is exactly the same loading as we planned to perform.
         /// This check is necessary because the object could be removed or load with another config before this thread even starts.
-        if (!info || !info->isLoading() || (info->loading_id != loading_id))
+        if (!info || !info->is_loading() || (info->loading_id != loading_id))
             return {};
 
         min_id_to_finish_loading_dependencies[std::this_thread::get_id()] = min_id_to_finish_loading_dependencies_;
@@ -1057,21 +989,8 @@ private:
 
         /// We should check if this is still the same loading as we were doing.
         /// This is necessary because the object could be removed or load with another config while the `mutex` was unlocked.
-        if (!info)
-        {
-            LOG_TRACE(log, "Next update time for '{}' will not be set because this object was not found.", name);
+        if (!info || !info->is_loading() || (info->loading_id != loading_id))
             return;
-        }
-        if (!info->isLoading())
-        {
-            LOG_TRACE(log, "Next update time for '{}' will not be set because this object is not currently loading.", name);
-            return;
-        }
-        if (info->loading_id != loading_id)
-        {
-            LOG_TRACE(log, "Next update time for '{}' will not be set because this object's current loading_id {} is different from the specified {}.", name, info->loading_id, loading_id);
-            return;
-        }
 
         if (new_exception)
         {
@@ -1099,7 +1018,6 @@ private:
             info->last_successful_update_time = current_time;
         info->state_id = info->loading_id;
         info->next_update_time = next_update_time;
-        LOG_TRACE(log, "Next update time for '{}' was set to {}", info->name, ext::to_string(next_update_time));
     }
 
     /// Removes the references to the loading thread from the maps.
@@ -1107,17 +1025,16 @@ private:
     {
         Info * info = getInfo(name);
         if (info && (info->loading_id == loading_id))
-        {
             info->loading_id = info->state_id;
-            CurrentStatusInfo::set(CurrentStatusInfo::DictionaryStatus, name, static_cast<Int8>(info->status()));
-        }
+
         min_id_to_finish_loading_dependencies.erase(std::this_thread::get_id());
 
-        /// Add `loading_id` to the list of recently finished loadings.
-        /// This list is used to later put the threads which finished loading back to the thread pool.
-        /// (We can't put the loading thread back to the thread pool immediately here because at this point
-        /// the loading thread is about to finish but it's not finished yet right now.)
-        recently_finished_loadings.push_back(loading_id);
+        auto it = loading_threads.find(loading_id);
+        if (it != loading_threads.end())
+        {
+            it->second.detach();
+            loading_threads.erase(it);
+        }
     }
 
     /// Calculate next update time for loaded_object. Can be called without mutex locking,
@@ -1129,44 +1046,26 @@ private:
         if (loaded_object)
         {
             if (!loaded_object->supportUpdates())
-            {
-                LOG_TRACE(log, "Supposed update time for '{}' is never (loaded, does not support updates)", loaded_object->getLoadableName());
-
                 return never;
-            }
 
             /// do not update loadable objects with zero as lifetime
             const auto & lifetime = loaded_object->getLifetime();
             if (lifetime.min_sec == 0 && lifetime.max_sec == 0)
-            {
-                LOG_TRACE(log, "Supposed update time for '{}' is never (loaded, lifetime 0)", loaded_object->getLoadableName());
                 return never;
-            }
 
             if (!error_count)
             {
                 std::uniform_int_distribution<UInt64> distribution{lifetime.min_sec, lifetime.max_sec};
-                auto result = std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
-                LOG_TRACE(log, "Supposed update time for '{}' is {} (loaded, lifetime [{}, {}], no errors)",
-                    loaded_object->getLoadableName(), ext::to_string(result), lifetime.min_sec, lifetime.max_sec);
-                return result;
+                return std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
             }
+        }
 
-            auto result = std::chrono::system_clock::now() + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
-            LOG_TRACE(log, "Supposed update time for '{}' is {} (backoff, {} errors)", loaded_object->getLoadableName(), ext::to_string(result), error_count);
-            return result;
-        }
-        else
-        {
-            auto result = std::chrono::system_clock::now() + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
-            LOG_TRACE(log, "Supposed update time for unspecified object is {} (backoff, {} errors.", ext::to_string(result), error_count);
-            return result;
-        }
+        return std::chrono::system_clock::now() + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
     }
 
     const CreateObjectFunction create_object;
     const String type_name;
-    Poco::Logger * log;
+    Logger * log;
 
     mutable std::mutex mutex;
     std::condition_variable event;
@@ -1175,7 +1074,6 @@ private:
     bool always_load_everything = false;
     std::atomic<bool> enable_async_loading = false;
     std::unordered_map<size_t, ThreadFromGlobalPool> loading_threads;
-    std::vector<size_t> recently_finished_loadings;
     std::unordered_map<std::thread::id, size_t> min_id_to_finish_loading_dependencies;
     size_t next_id_counter = 1; /// should always be > 0
     mutable pcg64 rnd_engine{randomSeed()};
@@ -1247,10 +1145,10 @@ private:
 };
 
 
-ExternalLoader::ExternalLoader(const String & type_name_, Poco::Logger * log_)
+ExternalLoader::ExternalLoader(const String & type_name_, Logger * log_)
     : config_files_reader(std::make_unique<LoadablesConfigReader>(type_name_, log_))
     , loading_dispatcher(std::make_unique<LoadingDispatcher>(
-          [this](auto && a, auto && b, auto && c) { return createObject(a, b, c); },
+          [this] (auto && a, auto && b, auto && c) { return createObject(a, b, c); },
           type_name_,
           log_))
     , periodic_updater(std::make_unique<PeriodicUpdater>(*config_files_reader, *loading_dispatcher))
@@ -1261,7 +1159,7 @@ ExternalLoader::ExternalLoader(const String & type_name_, Poco::Logger * log_)
 
 ExternalLoader::~ExternalLoader() = default;
 
-ext::scope_guard ExternalLoader::addConfigRepository(std::unique_ptr<IExternalLoaderConfigRepository> repository) const
+ext::scope_guard ExternalLoader::addConfigRepository(std::unique_ptr<IExternalLoaderConfigRepository> repository)
 {
     auto * ptr = repository.get();
     String name = ptr->getName();
@@ -1295,9 +1193,9 @@ void ExternalLoader::enablePeriodicUpdates(bool enable_)
     periodic_updater->enable(enable_);
 }
 
-bool ExternalLoader::hasLoadedObjects() const
+bool ExternalLoader::hasCurrentlyLoadedObjects() const
 {
-    return loading_dispatcher->hasLoadedObjects();
+    return loading_dispatcher->hasCurrentlyLoadedObjects();
 }
 
 ExternalLoader::Status ExternalLoader::getCurrentStatus(const String & name) const
@@ -1306,35 +1204,30 @@ ExternalLoader::Status ExternalLoader::getCurrentStatus(const String & name) con
 }
 
 template <typename ReturnType, typename>
-ReturnType ExternalLoader::getLoadResult(const String & name) const
+ReturnType ExternalLoader::getCurrentLoadResult(const String & name) const
 {
-    return loading_dispatcher->getLoadResult<ReturnType>(name);
+    return loading_dispatcher->getCurrentLoadResult<ReturnType>(name);
 }
 
 template <typename ReturnType, typename>
-ReturnType ExternalLoader::getLoadResults(const FilterByNameFunction & filter) const
+ReturnType ExternalLoader::getCurrentLoadResults(const FilterByNameFunction & filter) const
 {
-    return loading_dispatcher->getLoadResults<ReturnType>(filter);
+    return loading_dispatcher->getCurrentLoadResults<ReturnType>(filter);
 }
 
-ExternalLoader::Loadables ExternalLoader::getLoadedObjects() const
+ExternalLoader::Loadables ExternalLoader::getCurrentlyLoadedObjects() const
 {
-    return getLoadResults<Loadables>();
+    return getCurrentLoadResults<Loadables>();
 }
 
-ExternalLoader::Loadables ExternalLoader::getLoadedObjects(const FilterByNameFunction & filter) const
+ExternalLoader::Loadables ExternalLoader::getCurrentlyLoadedObjects(const FilterByNameFunction & filter) const
 {
-    return getLoadResults<Loadables>(filter);
+    return getCurrentLoadResults<Loadables>(filter);
 }
 
-size_t ExternalLoader::getNumberOfLoadedObjects() const
+size_t ExternalLoader::getNumberOfCurrentlyLoadedObjects() const
 {
-    return loading_dispatcher->getNumberOfLoadedObjects();
-}
-
-size_t ExternalLoader::getNumberOfObjects() const
-{
-    return loading_dispatcher->getNumberOfObjects();
+    return loading_dispatcher->getNumberOfCurrentlyLoadedObjects();
 }
 
 template <typename ReturnType, typename>
@@ -1405,29 +1298,7 @@ void ExternalLoader::checkLoaded(const ExternalLoader::LoadResult & result,
     if (result.status == ExternalLoader::Status::LOADING)
         throw Exception(type_name + " '" + result.name + "' is still loading", ErrorCodes::BAD_ARGUMENTS);
     if (result.exception)
-    {
-        // Exception is shared for multiple threads.
-        // Don't just rethrow it, because sharing the same exception object
-        // between multiple threads can lead to weird effects if they decide to
-        // modify it, for example, by adding some error context.
-        try
-        {
-            std::rethrow_exception(result.exception);
-        }
-        catch (const Poco::Exception & e)
-        {
-            /// This will create a copy for Poco::Exception and DB::Exception
-            e.rethrow();
-        }
-        catch (...)
-        {
-            throw DB::Exception(ErrorCodes::DICTIONARIES_WAS_NOT_LOADED,
-                                "Failed to load dictionary '{}': {}",
-                                result.name,
-                                getCurrentExceptionMessage(true /*with stack trace*/,
-                                                           true /*check embedded stack trace*/));
-        }
-    }
+        std::rethrow_exception(result.exception);
     if (result.status == ExternalLoader::Status::NOT_EXIST)
         throw Exception(type_name + " '" + result.name + "' not found", ErrorCodes::BAD_ARGUMENTS);
     if (result.status == ExternalLoader::Status::NOT_LOADED)
@@ -1482,10 +1353,47 @@ ExternalLoader::LoadablePtr ExternalLoader::createObject(
     return create(name, *config.config, config.key_in_config, config.repository_name);
 }
 
-template ExternalLoader::LoadablePtr ExternalLoader::getLoadResult<ExternalLoader::LoadablePtr>(const String &) const;
-template ExternalLoader::LoadResult ExternalLoader::getLoadResult<ExternalLoader::LoadResult>(const String &) const;
-template ExternalLoader::Loadables ExternalLoader::getLoadResults<ExternalLoader::Loadables>(const FilterByNameFunction &) const;
-template ExternalLoader::LoadResults ExternalLoader::getLoadResults<ExternalLoader::LoadResults>(const FilterByNameFunction &) const;
+std::vector<std::pair<String, Int8>> ExternalLoader::getStatusEnumAllPossibleValues()
+{
+    return std::vector<std::pair<String, Int8>>{
+        {toString(Status::NOT_LOADED), static_cast<Int8>(Status::NOT_LOADED)},
+        {toString(Status::LOADED), static_cast<Int8>(Status::LOADED)},
+        {toString(Status::FAILED), static_cast<Int8>(Status::FAILED)},
+        {toString(Status::LOADING), static_cast<Int8>(Status::LOADING)},
+        {toString(Status::LOADED_AND_RELOADING), static_cast<Int8>(Status::LOADED_AND_RELOADING)},
+        {toString(Status::FAILED_AND_RELOADING), static_cast<Int8>(Status::FAILED_AND_RELOADING)},
+        {toString(Status::NOT_EXIST), static_cast<Int8>(Status::NOT_EXIST)},
+    };
+}
+
+
+String toString(ExternalLoader::Status status)
+{
+    using Status = ExternalLoader::Status;
+    switch (status)
+    {
+        case Status::NOT_LOADED: return "NOT_LOADED";
+        case Status::LOADED: return "LOADED";
+        case Status::FAILED: return "FAILED";
+        case Status::LOADING: return "LOADING";
+        case Status::FAILED_AND_RELOADING: return "FAILED_AND_RELOADING";
+        case Status::LOADED_AND_RELOADING: return "LOADED_AND_RELOADING";
+        case Status::NOT_EXIST: return "NOT_EXIST";
+    }
+    __builtin_unreachable();
+}
+
+
+std::ostream & operator<<(std::ostream & out, ExternalLoader::Status status)
+{
+    return out << toString(status);
+}
+
+
+template ExternalLoader::LoadablePtr ExternalLoader::getCurrentLoadResult<ExternalLoader::LoadablePtr>(const String &) const;
+template ExternalLoader::LoadResult ExternalLoader::getCurrentLoadResult<ExternalLoader::LoadResult>(const String &) const;
+template ExternalLoader::Loadables ExternalLoader::getCurrentLoadResults<ExternalLoader::Loadables>(const FilterByNameFunction &) const;
+template ExternalLoader::LoadResults ExternalLoader::getCurrentLoadResults<ExternalLoader::LoadResults>(const FilterByNameFunction &) const;
 
 template ExternalLoader::LoadablePtr ExternalLoader::tryLoad<ExternalLoader::LoadablePtr>(const String &, Duration) const;
 template ExternalLoader::LoadResult ExternalLoader::tryLoad<ExternalLoader::LoadResult>(const String &, Duration) const;

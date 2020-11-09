@@ -25,7 +25,6 @@ private:
 
 public:
     const char * getFamilyName() const override { return "Set"; }
-    TypeIndex getDataType() const override { return TypeIndex::Set; }
     MutableColumnPtr cloneDummy(size_t s_) const override { return ColumnSet::create(s_, data); }
 
     ConstSetPtr getData() const { return data; }

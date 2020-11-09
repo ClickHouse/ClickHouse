@@ -36,8 +36,6 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
                 out << s << '\n';
             out << "into\n" << new_part_name;
             out << "\ndeduplicate: " << deduplicate;
-            if (merge_type != MergeType::REGULAR)
-                out <<"\nmerge_type: " << static_cast<UInt64>(merge_type);
             break;
 
         case DROP_RANGE:
@@ -48,7 +46,6 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
             out << new_part_name;
             break;
 
-        /// NOTE: Deprecated.
         case CLEAR_COLUMN:
             out << "clear_column\n"
                 << escape << column_name
@@ -56,7 +53,6 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
                 << new_part_name;
             break;
 
-        /// NOTE: Deprecated.
         case CLEAR_INDEX:
             out << "clear_index\n"
                 << escape << index_name
@@ -150,22 +146,8 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
             source_parts.push_back(s);
         }
         in >> new_part_name;
-
         if (format_version >= 4)
-        {
             in >> "\ndeduplicate: " >> deduplicate;
-
-            /// Trying to be more backward compatible
-            in >> "\n";
-            if (checkString("merge_type: ", in))
-            {
-                UInt64 value;
-                in >> value;
-                merge_type = checkAndGetMergeType(value);
-            }
-            else
-                trailing_newline_found = true;
-        }
     }
     else if (type_str == "drop" || type_str == "detach")
     {
@@ -173,12 +155,12 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
         detach = type_str == "detach";
         in >> new_part_name;
     }
-    else if (type_str == "clear_column") /// NOTE: Deprecated.
+    else if (type_str == "clear_column")
     {
         type = CLEAR_COLUMN;
         in >> escape >> column_name >> "\nfrom\n" >> new_part_name;
     }
-    else if (type_str == "clear_index") /// NOTE: Deprecated.
+    else if (type_str == "clear_index")
     {
         type = CLEAR_INDEX;
         in >> escape >> index_name >> "\nfrom\n" >> new_part_name;

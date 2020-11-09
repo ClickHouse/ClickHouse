@@ -1,8 +1,9 @@
 #include <string>
 
 #include <iostream>
+#include <fstream>
 
-#include <common/types.h>
+#include <Core/Types.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
 

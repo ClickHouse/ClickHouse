@@ -1,8 +1,4 @@
 #include "ClusterCopierApp.h"
-#include <Common/StatusFile.h>
-#include <Common/TerminalSize.h>
-#include <unistd.h>
-
 
 namespace DB
 {
@@ -21,14 +17,7 @@ void ClusterCopierApp::initialize(Poco::Util::Application & self)
     is_safe_mode = config().has("safe-mode");
     if (config().has("copy-fault-probability"))
         copy_fault_probability = std::max(std::min(config().getDouble("copy-fault-probability"), 1.0), 0.0);
-    if (config().has("move-fault-probability"))
-        move_fault_probability = std::max(std::min(config().getDouble("move-fault-probability"), 1.0), 0.0);
     base_dir = (config().has("base-dir")) ? config().getString("base-dir") : Poco::Path::current();
-
-
-    if (config().has("experimental-use-sample-offset"))
-        experimental_use_sample_offset = config().getBool("experimental-use-sample-offset");
-
     // process_id is '<hostname>#<start_timestamp>_<pid>'
     time_t timestamp = Poco::Timestamp().epochTime();
     auto curr_pid = Poco::Process::id();
@@ -54,17 +43,11 @@ void ClusterCopierApp::initialize(Poco::Util::Application & self)
 
 void ClusterCopierApp::handleHelp(const std::string &, const std::string &)
 {
-    uint16_t terminal_width = 0;
-    if (isatty(STDIN_FILENO))
-        terminal_width = getTerminalWidth();
-
-    Poco::Util::HelpFormatter help_formatter(options());
-    if (terminal_width)
-        help_formatter.setWidth(terminal_width);
-    help_formatter.setCommand(commandName());
-    help_formatter.setHeader("Copies tables from one cluster to another");
-    help_formatter.setUsage("--config-file <config-file> --task-path <task-path>");
-    help_formatter.format(std::cerr);
+    Poco::Util::HelpFormatter helpFormatter(options());
+    helpFormatter.setCommand(commandName());
+    helpFormatter.setHeader("Copies tables from one cluster to another");
+    helpFormatter.setUsage("--config-file <config-file> --task-path <task-path>");
+    helpFormatter.format(std::cerr);
 
     stopOptionsProcessing();
 }
@@ -75,46 +58,45 @@ void ClusterCopierApp::defineOptions(Poco::Util::OptionSet & options)
     Base::defineOptions(options);
 
     options.addOption(Poco::Util::Option("task-path", "", "path to task in ZooKeeper")
-                          .argument("task-path").binding("task-path"));
+                              .argument("task-path").binding("task-path"));
     options.addOption(Poco::Util::Option("task-file", "", "path to task file for uploading in ZooKeeper to task-path")
-                          .argument("task-file").binding("task-file"));
+                              .argument("task-file").binding("task-file"));
     options.addOption(Poco::Util::Option("task-upload-force", "", "Force upload task-file even node already exists")
-                          .argument("task-upload-force").binding("task-upload-force"));
+                              .argument("task-upload-force").binding("task-upload-force"));
     options.addOption(Poco::Util::Option("safe-mode", "", "disables ALTER DROP PARTITION in case of errors")
-                          .binding("safe-mode"));
+                              .binding("safe-mode"));
     options.addOption(Poco::Util::Option("copy-fault-probability", "", "the copying fails with specified probability (used to test partition state recovering)")
-                          .argument("copy-fault-probability").binding("copy-fault-probability"));
-    options.addOption(Poco::Util::Option("move-fault-probability", "", "the moving fails with specified probability (used to test partition state recovering)")
-                              .argument("move-fault-probability").binding("move-fault-probability"));
+                              .argument("copy-fault-probability").binding("copy-fault-probability"));
     options.addOption(Poco::Util::Option("log-level", "", "sets log level")
-                          .argument("log-level").binding("log-level"));
+                              .argument("log-level").binding("log-level"));
     options.addOption(Poco::Util::Option("base-dir", "", "base directory for copiers, consecutive copier launches will populate /base-dir/launch_id/* directories")
-                          .argument("base-dir").binding("base-dir"));
-    options.addOption(Poco::Util::Option("experimental-use-sample-offset", "", "Use SAMPLE OFFSET query instead of cityHash64(PRIMARY KEY) % n == k")
-                          .argument("experimental-use-sample-offset").binding("experimental-use-sample-offset"));
+                              .argument("base-dir").binding("base-dir"));
 
     using Me = std::decay_t<decltype(*this)>;
     options.addOption(Poco::Util::Option("help", "", "produce this help message").binding("help")
-                          .callback(Poco::Util::OptionCallback<Me>(this, &Me::handleHelp)));
+                              .callback(Poco::Util::OptionCallback<Me>(this, &Me::handleHelp)));
 }
 
 
 void ClusterCopierApp::mainImpl()
 {
-    StatusFile status_file(process_path + "/status", StatusFile::write_full_info);
+    StatusFile status_file(process_path + "/status");
     ThreadStatus thread_status;
 
-    auto * log = &logger();
-    LOG_INFO(log, "Starting clickhouse-copier (id {}, host_id {}, path {}, revision {})", process_id, host_id, process_path, ClickHouseRevision::getVersionRevision());
+    auto log = &logger();
+    LOG_INFO(log, "Starting clickhouse-copier ("
+            << "id " << process_id << ", "
+            << "host_id " << host_id << ", "
+            << "path " << process_path << ", "
+            << "revision " << ClickHouseRevision::get() << ")");
 
-    SharedContextHolder shared_context = Context::createShared();
-    auto context = std::make_unique<Context>(Context::createGlobal(shared_context.get()));
+    auto context = std::make_unique<Context>(Context::createGlobal());
     context->makeGlobalContext();
     SCOPE_EXIT(context->shutdown());
 
     context->setConfig(loaded_config.configuration);
     context->setApplicationType(Context::ApplicationType::LOCAL);
-    context->setPath(process_path + "/");
+    context->setPath(process_path);
 
     registerFunctions();
     registerAggregateFunctions();
@@ -124,7 +106,7 @@ void ClusterCopierApp::mainImpl()
     registerDisks();
 
     static const std::string default_database = "_local";
-    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, *context));
+    context->addDatabase(default_database, std::make_shared<DatabaseMemory>(default_database));
     context->setCurrentDatabase(default_database);
 
     /// Initialize query scope just in case.
@@ -133,9 +115,6 @@ void ClusterCopierApp::mainImpl()
     auto copier = std::make_unique<ClusterCopier>(task_path, host_id, default_database, *context);
     copier->setSafeMode(is_safe_mode);
     copier->setCopyFaultProbability(copy_fault_probability);
-    copier->setMoveFaultProbability(move_fault_probability);
-
-    copier->setExperimentalUseSampleOffset(experimental_use_sample_offset);
 
     auto task_file = config().getString("task-file", "");
     if (!task_file.empty())

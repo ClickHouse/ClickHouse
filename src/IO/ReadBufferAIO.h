@@ -1,6 +1,6 @@
 #pragma once
 
-#if defined(OS_LINUX) || defined(__FreeBSD__)
+#if defined(__linux__) || defined(__FreeBSD__)
 
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBuffer.h>
@@ -25,7 +25,7 @@ namespace DB
 
 /** Class for asynchronous data reading.
   */
-class ReadBufferAIO final : public ReadBufferFromFileBase
+class ReadBufferAIO : public ReadBufferFromFileBase
 {
 public:
     ReadBufferAIO(const std::string & filename_, size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE, int flags_ = -1,

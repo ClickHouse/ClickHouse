@@ -56,28 +56,26 @@ class ServerThread(threading.Thread):
 
         while retries:
             self._choose_ports_and_args()
-            print('Start clickhouse-server with args:', self._args)
+            print 'Start clickhouse-server with args:', self._args
             self._proc = subprocess.Popen([self._bin] + self._args, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
             while self._proc.poll() is None:
                 try:
                     time.sleep(ServerThread.DEFAULT_SERVER_DELAY)
                     s = socket.create_connection(('localhost', self.tcp_port), ServerThread.DEFAULT_CONNECTION_TIMEOUT)
-                    s.sendall(b'G')  # trigger expected "bad" HELLO response
-                    print('Successful server response:', s.recv(1024))  # FIXME: read whole buffered response
+                    s.sendall('G')  # trigger expected "bad" HELLO response
+                    print 'Successful server response:', s.recv(1024)  # FIXME: read whole buffered response
                     s.shutdown(socket.SHUT_RDWR)
                     s.close()
                 except Exception as e:
-                    print('Failed to connect to server:', e, file=sys.stderr)
+                    print >> sys.stderr, 'Failed to connect to server:', e
                     continue
                 else:
                     break
 
             # If process has died then try to fetch output before releasing lock
             if self._proc.returncode is not None:
-                stdout, stderr = self._proc.communicate()
-                print(stdout.decode('utf-8'), file=sys.stderr)
-                print(stderr.decode('utf-8'), file=sys.stderr)
+                self._proc.communicate()
 
             if self._proc.returncode == 70:  # Address already in use
                 retries -= 1
@@ -101,7 +99,7 @@ class ServerThread(threading.Thread):
         if self._proc.returncode is None:
             self._proc.terminate()
         self.join()
-        print('Stop clickhouse-server')
+        print 'Stop clickhouse-server'
 
 
 ServerThread.DEFAULT_SERVER_CONFIG = \
@@ -120,11 +118,10 @@ ServerThread.DEFAULT_SERVER_CONFIG = \
 
     <path>{tmp_dir}/data/</path>
     <tmp_path>{tmp_dir}/tmp/</tmp_path>
-    <access_control_path>{tmp_dir}/data/access/</access_control_path>
     <users_config>users.xml</users_config>
     <mark_cache_size>5368709120</mark_cache_size>
 
-    <timezone>Europe/Moscow</timezone>
+    <timezone>UTC</timezone>
 
     <remote_servers>
         <test_shard_localhost>
@@ -137,34 +134,19 @@ ServerThread.DEFAULT_SERVER_CONFIG = \
         </test_shard_localhost>
 
         <test_cluster_two_shards_localhost>
-            <shard>
-                <replica>
-                    <host>localhost</host>
-                    <port>{tcp_port}</port>
-                </replica>
-            </shard>
-            <shard>
-                <replica>
-                    <host>localhost</host>
-                    <port>{tcp_port}</port>
-                </replica>
-            </shard>
-        </test_cluster_two_shards_localhost>
-
-        <test_cluster_two_shards>
-            <shard>
-                <replica>
-                    <host>127.0.0.1</host>
-                    <port>{tcp_port}</port>
-                </replica>
-            </shard>
-            <shard>
-                <replica>
-                    <host>127.0.0.2</host>
-                    <port>{tcp_port}</port>
-                </replica>
-            </shard>
-        </test_cluster_two_shards>
+             <shard>
+                 <replica>
+                     <host>localhost</host>
+                     <port>{tcp_port}</port>
+                 </replica>
+             </shard>
+             <shard>
+                 <replica>
+                     <host>localhost</host>
+                     <port>{tcp_port}</port>
+                 </replica>
+             </shard>
+         </test_cluster_two_shards_localhost>
 
         <test_unavailable_shard>
             <shard>
@@ -211,8 +193,6 @@ ServerThread.DEFAULT_USERS_CONFIG = \
             <profile>default</profile>
 
             <quota>default</quota>
-
-            <access_management>1</access_management>
         </default>
 
         <readonly>

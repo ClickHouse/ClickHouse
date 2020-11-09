@@ -7,24 +7,25 @@ namespace DB
 {
 /** Parses queries like
   * CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name
-  *      [KEYED BY {none | user_name | ip_address | client_key | client_key, user_name | client_key, ip_address} | NOT KEYED]
-  *      [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
-  *       {MAX {{queries | errors | result_rows | result_bytes | read_rows | read_bytes | execution_time} = number} [,...] |
-  *        NO LIMITS | TRACKING ONLY} [,...]]
+  *      [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
+  *      [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}
+  *       {[SET] MAX {{QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = {number | ANY} } [,...] |
+  *        [SET] TRACKING} [,...]]
   *      [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
   *
   * ALTER QUOTA [IF EXISTS] name
   *      [RENAME TO new_name]
-  *      [KEYED BY {none | user_name | ip_address | client_key | client_key, user_name | client_key, ip_address} | NOT KEYED]
-  *      [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
-  *       {MAX {{queries | errors | result_rows | result_bytes | read_rows | read_bytes | execution_time} = number} [,...] |
-  *        NO LIMITS | TRACKING ONLY} [,...]]
+  *      [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
+  *      [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}
+  *       {[SET] MAX {{QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = {number | ANY} } [,...] |
+  *        [SET] TRACKING |
+  *        UNSET TRACKING} [,...]]
   *      [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
   */
 class ParserCreateQuotaQuery : public IParserBase
 {
 public:
-    void useAttachMode(bool attach_mode_ = true) { attach_mode = attach_mode_; }
+    ParserCreateQuotaQuery & enableAttachMode(bool enable_) { attach_mode = enable_; return *this; }
 
 protected:
     const char * getName() const override { return "CREATE QUOTA or ALTER QUOTA query"; }

@@ -2,9 +2,12 @@
 
 #include <string.h>
 #include <iostream>
+#include <random>
+#include <algorithm>
 #include <Core/Defines.h>
 #include <Common/Stopwatch.h>
-#include <common/types.h>
+#include <common/likely.h>
+#include <common/Types.h>
 #include <common/unaligned.h>
 
 #ifdef __SSE2__

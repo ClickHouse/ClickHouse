@@ -13,9 +13,6 @@ ASTPtr ASTExpressionList::clone() const
 
 void ASTExpressionList::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    if (frame.expression_list_prepend_whitespace)
-        settings.ostr << ' ';
-
     for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
     {
         if (it != children.begin())
@@ -33,12 +30,6 @@ void ASTExpressionList::formatImplMultiline(const FormatSettings & settings, For
 {
     std::string indent_str = "\n" + std::string(4 * (frame.indent + 1), ' ');
 
-    if (frame.expression_list_prepend_whitespace)
-    {
-        if (!(children.size() > 1 || frame.expression_list_always_start_on_new_line))
-            settings.ostr << ' ';
-    }
-
     ++frame.indent;
     for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
     {
@@ -46,14 +37,14 @@ void ASTExpressionList::formatImplMultiline(const FormatSettings & settings, For
         {
             if (separator)
                 settings.ostr << separator;
+            settings.ostr << ' ';
         }
 
-        if (children.size() > 1 || frame.expression_list_always_start_on_new_line)
+
+        if (children.size() > 1)
             settings.ostr << indent_str;
 
-        FormatStateStacked frame_nested = frame;
-        frame_nested.expression_list_always_start_on_new_line = false;
-        (*it)->formatImpl(settings, state, frame_nested);
+        (*it)->formatImpl(settings, state, frame);
     }
 }
 

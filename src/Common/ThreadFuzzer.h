@@ -1,4 +1,3 @@
-#pragma once
 #include <cstdint>
 
 
@@ -32,16 +31,10 @@ namespace DB
   *
   * Notes:
   * - it can be also implemented with instrumentation (example: LLVM Xray) instead of signals.
+  * - it's also reasonable to insert glitches around interesting functions (example: mutex lock/unlock, starting of threads, etc.),
+  *   it is doable with wrapping these functions (todo).
   * - we should also make the sleep time random.
-  * - sleep and migration obviously helps, but the effect of yield is unclear.
-  *
-  * In addition, we allow to inject glitches around thread synchronization functions.
-  * Example:
-  *
-  * THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY=0.001
-  * THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US=10000
-  * THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY=0.001
-  * THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US=10000
+  * - sleep obviously helps, but the effect of yield and migration is unclear.
   */
 class ThreadFuzzer
 {
@@ -52,14 +45,23 @@ public:
         return res;
     }
 
-    bool isEffective() const;
+    bool isEffective() const
+    {
+        return cpu_time_period_us != 0
+            && (yield_probability > 0
+                || migrate_probability > 0
+                || (sleep_probability > 0 && chaos_sleep_time_us > 0));
+    }
 
 private:
     uint64_t cpu_time_period_us = 0;
     double yield_probability = 0;
     double migrate_probability = 0;
     double sleep_probability = 0;
-    double sleep_time_us = 0;
+    double chaos_sleep_time_us = 0;
+
+    int num_cpus = 0;
+
 
     ThreadFuzzer();
 

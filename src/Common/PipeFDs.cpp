@@ -3,7 +3,6 @@
 #include <Common/formatReadable.h>
 
 #include <common/logger_useful.h>
-#include <common/errnoToString.h>
 
 #include <unistd.h>
 #include <fcntl.h>
@@ -91,7 +90,7 @@ void LazyPipeFDs::tryIncreaseSize(int desired_size)
     {
         if (errno == EINVAL)
         {
-            LOG_INFO(log, "Cannot get pipe capacity, {}. Very old Linux kernels have no support for this fcntl.", errnoToString(ErrorCodes::CANNOT_FCNTL));
+            LOG_INFO(log, "Cannot get pipe capacity, " << errnoToString(ErrorCodes::CANNOT_FCNTL) << ". Very old Linux kernels have no support for this fcntl.");
             /// It will work nevertheless.
         }
         else
@@ -103,7 +102,7 @@ void LazyPipeFDs::tryIncreaseSize(int desired_size)
             if (-1 == fcntl(fds_rw[1], F_SETPIPE_SZ, pipe_size * 2) && errno != EPERM)
                 throwFromErrno("Cannot increase pipe capacity to " + std::to_string(pipe_size * 2), ErrorCodes::CANNOT_FCNTL);
 
-        LOG_TRACE(log, "Pipe capacity is {}", ReadableSize(std::min(pipe_size, desired_size)));
+        LOG_TRACE(log, "Pipe capacity is " << formatReadableSizeWithBinarySuffix(std::min(pipe_size, desired_size)));
     }
 #else
     (void)desired_size;

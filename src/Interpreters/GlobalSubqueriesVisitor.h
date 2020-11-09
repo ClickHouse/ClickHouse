@@ -2,11 +2,11 @@
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/interpretSubquery.h>
 #include <Common/typeid_cast.h>
 #include <Core/Block.h>
@@ -16,13 +16,12 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/IdentifierSemantic.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int WRONG_GLOBAL_SUBQUERY;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -35,12 +34,12 @@ public:
         size_t subquery_depth;
         bool is_remote;
         size_t external_table_id;
-        TemporaryTablesMapping & external_tables;
+        Tables & external_tables;
         SubqueriesForSets & subqueries_for_sets;
         bool & has_global_subqueries;
 
         Data(const Context & context_, size_t subquery_depth_, bool is_remote_,
-             TemporaryTablesMapping & tables, SubqueriesForSets & subqueries_for_sets_, bool & has_global_subqueries_)
+             Tables & tables, SubqueriesForSets & subqueries_for_sets_, bool & has_global_subqueries_)
         :   context(context_),
             subquery_depth(subquery_depth_),
             is_remote(is_remote_),
@@ -73,15 +72,13 @@ public:
                 is_table = true;
 
             if (!subquery_or_table_name)
-                throw Exception("Global subquery requires subquery or table name", ErrorCodes::WRONG_GLOBAL_SUBQUERY);
+                throw Exception("Logical error: unknown AST element passed to ExpressionAnalyzer::addExternalStorage method",
+                                ErrorCodes::LOGICAL_ERROR);
 
             if (is_table)
             {
                 /// If this is already an external table, you do not need to add anything. Just remember its presence.
-                auto temporary_table_name = getIdentifierName(subquery_or_table_name);
-                bool exists_in_local_map = external_tables.end() != external_tables.find(temporary_table_name);
-                bool exists_in_context = context.tryResolveStorageID(StorageID("", temporary_table_name), Context::ResolveExternal);
-                if (exists_in_local_map || exists_in_context)
+                if (external_tables.end() != external_tables.find(getIdentifierName(subquery_or_table_name)))
                     return;
             }
 
@@ -102,10 +99,8 @@ public:
             Block sample = interpreter->getSampleBlock();
             NamesAndTypesList columns = sample.getNamesAndTypesList();
 
-            auto external_storage_holder = std::make_shared<TemporaryTableHolder>(
-                    context, ColumnsDescription{columns}, ConstraintsDescription{}, nullptr,
-                    /*create_for_global_subquery*/ true);
-            StoragePtr external_storage = external_storage_holder->getTable();
+            StoragePtr external_storage = StorageMemory::create(StorageID("_external", external_table_name), ColumnsDescription{columns}, ConstraintsDescription{});
+            external_storage->startup();
 
             /** We replace the subquery with the name of the temporary table.
                 * It is in this form, the request will go to the remote server.
@@ -134,9 +129,8 @@ public:
             else
                 ast = database_and_table_name;
 
-            external_tables[external_table_name] = external_storage_holder;
-            subqueries_for_sets[external_table_name].source = std::make_unique<QueryPlan>();
-            interpreter->buildQueryPlan(*subqueries_for_sets[external_table_name].source);
+            external_tables[external_table_name] = external_storage;
+            subqueries_for_sets[external_table_name].source = interpreter->execute().in;
             subqueries_for_sets[external_table_name].table = external_storage;
 
             /** NOTE If it was written IN tmp_table - the existing temporary (but not external) table,
@@ -169,19 +163,7 @@ private:
     {
         if (func.name == "globalIn" || func.name == "globalNotIn")
         {
-            ASTPtr & ast = func.arguments->children[1];
-
-            /// Literal can use regular IN
-            if (ast->as<ASTLiteral>())
-            {
-                if (func.name == "globalIn")
-                    func.name = "in";
-                else
-                    func.name = "notIn";
-                return;
-            }
-
-            data.addExternalStorage(ast);
+            data.addExternalStorage(func.arguments->children[1]);
             data.has_global_subqueries = true;
         }
     }

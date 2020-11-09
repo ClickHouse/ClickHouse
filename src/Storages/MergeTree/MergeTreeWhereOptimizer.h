@@ -16,8 +16,6 @@ namespace DB
 class ASTSelectQuery;
 class ASTFunction;
 class MergeTreeData;
-struct StorageInMemoryMetadata;
-using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 /** Identifies WHERE expressions that can be placed in PREWHERE by calculating respective
  *  sizes of columns used in particular expression and identifying "good" conditions of
@@ -33,7 +31,6 @@ public:
         SelectQueryInfo & query_info,
         const Context & context,
         const MergeTreeData & data,
-        const StorageMetadataPtr & metadata_snapshot,
         const Names & queried_columns_,
         Poco::Logger * log_);
 
@@ -68,7 +65,7 @@ private:
     Conditions analyze(const ASTPtr & expression) const;
 
     /// Transform Conditions list to WHERE or PREWHERE expression.
-    static ASTPtr reconstruct(const Conditions & conditions);
+    static ASTPtr reconstruct(const Conditions & conditions) ;
 
     void calculateColumnSizes(const MergeTreeData & data, const Names & column_names);
 
@@ -77,6 +74,8 @@ private:
     void optimizeArbitrary(ASTSelectQuery & select) const;
 
     UInt64 getIdentifiersColumnSize(const NameSet & identifiers) const;
+
+    static bool isConditionGood(const ASTPtr & condition) ;
 
     bool hasPrimaryKeyAtoms(const ASTPtr & ast) const;
 

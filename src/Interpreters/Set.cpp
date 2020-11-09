@@ -23,7 +23,6 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/NullableUtils.h>
 #include <Interpreters/sortBlock.h>
-#include <Interpreters/Context.h>
 
 #include <Storages/MergeTree/KeyCondition.h>
 
@@ -87,8 +86,6 @@ void NO_INLINE Set::insertFromBlockImplCase(
         {
             if ((*null_map)[i])
             {
-                has_null = true;
-
                 if constexpr (build_filter)
                 {
                     (*out_filter)[i] = false;
@@ -140,7 +137,7 @@ void Set::setHeader(const Block & header)
 
     /// We will insert to the Set only keys, where all components are not NULL.
     ConstNullMapPtr null_map{};
-    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map, transform_null_in);
+    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
     if (fill_set_elements)
     {
@@ -180,7 +177,7 @@ bool Set::insertFromBlock(const Block & block)
 
     /// We will insert to the Set only keys, where all components are not NULL.
     ConstNullMapPtr null_map{};
-    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map, transform_null_in);
+    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
     /// Filter to extract distinct values from the block.
     ColumnUInt8::MutablePtr filter;
@@ -259,8 +256,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 
     /// We will check existence in Set only for keys, where all components are not NULL.
     ConstNullMapPtr null_map{};
-
-    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map, transform_null_in);
+    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
     executeOrdinary(key_columns, vec_res, negative, null_map);
 
@@ -302,12 +298,7 @@ void NO_INLINE Set::executeImplCase(
     for (size_t i = 0; i < rows; ++i)
     {
         if (has_null_map && (*null_map)[i])
-        {
-            if (transform_null_in && has_null)
-                vec_res[i] = !negative;
-            else
-                vec_res[i] = negative;
-        }
+            vec_res[i] = negative;
         else
         {
             auto find_result = state.findKey(method.data, i, pool);
@@ -381,8 +372,17 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
     size_t tuple_size = indexes_mapping.size();
     ordered_set.resize(tuple_size);
 
+    /// Create columns for points here to avoid extra allocations at 'checkInRange'.
+    left_point.reserve(tuple_size);
+    right_point.reserve(tuple_size);
+
     for (size_t i = 0; i < tuple_size; ++i)
+    {
         ordered_set[i] = set_elements[indexes_mapping[i].tuple_index];
+
+        left_point.emplace_back(ordered_set[i]->cloneEmpty());
+        right_point.emplace_back(ordered_set[i]->cloneEmpty());
+    }
 
     Block block_to_sort;
     SortDescription sort_description;
@@ -403,20 +403,9 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
   * 1: the intersection of the set and the range is non-empty
   * 2: the range contains elements not in the set
   */
-BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types) const
+BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types)
 {
     size_t tuple_size = indexes_mapping.size();
-
-    ColumnsWithInfinity left_point;
-    ColumnsWithInfinity right_point;
-    left_point.reserve(tuple_size);
-    right_point.reserve(tuple_size);
-
-    for (size_t i = 0; i < tuple_size; ++i)
-    {
-        left_point.emplace_back(ordered_set[i]->cloneEmpty());
-        right_point.emplace_back(ordered_set[i]->cloneEmpty());
-    }
 
     bool invert_left_infinities = false;
     bool invert_right_infinities = false;
@@ -495,7 +484,7 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
     };
 
     /** Because each hyperrectangle maps to a contiguous sequence of elements
-     * laid out in the lexicographically increasing order, the set intersects the range
+     * layed out in the lexicographically increasing order, the set intersects the range
      * if and only if either bound coincides with an element or at least one element
      * is between the lower bounds
      */
@@ -512,14 +501,6 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
     };
 }
 
-bool MergeTreeSetIndex::hasMonotonicFunctionsChain() const
-{
-    for (const auto & mapping : indexes_mapping)
-        if (!mapping.functions.empty())
-            return true;
-    return false;
-}
-
 void ValueWithInfinity::update(const Field & x)
 {
     /// Keep at most one element in column.
@@ -531,11 +512,8 @@ void ValueWithInfinity::update(const Field & x)
 
 const IColumn & ValueWithInfinity::getColumnIfFinite() const
 {
-#ifndef NDEBUG
     if (type != NORMAL)
         throw Exception("Trying to get column of infinite type", ErrorCodes::LOGICAL_ERROR);
-#endif
-
     return *column;
 }
 

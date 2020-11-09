@@ -2,7 +2,7 @@
 
 #include <DataStreams/IBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <common/types.h>
+#include <Core/Types.h>
 
 
 namespace Poco { class Logger; }
@@ -22,13 +22,8 @@ class StorageReplicatedMergeTree;
 class ReplicatedMergeTreeBlockOutputStream : public IBlockOutputStream
 {
 public:
-    ReplicatedMergeTreeBlockOutputStream(
-        StorageReplicatedMergeTree & storage_,
-        const StorageMetadataPtr & metadata_snapshot_,
-        size_t quorum_,
-        size_t quorum_timeout_ms_,
-        size_t max_parts_per_block_,
-        bool quorum_parallel_,
+    ReplicatedMergeTreeBlockOutputStream(StorageReplicatedMergeTree & storage_,
+        size_t quorum_, size_t quorum_timeout_ms_, size_t max_parts_per_block_,
         bool deduplicate_);
 
     Block getHeader() const override;
@@ -60,17 +55,15 @@ private:
     void commitPart(zkutil::ZooKeeperPtr & zookeeper, MergeTreeData::MutableDataPartPtr & part, const String & block_id);
 
     StorageReplicatedMergeTree & storage;
-    StorageMetadataPtr metadata_snapshot;
     size_t quorum;
     size_t quorum_timeout_ms;
     size_t max_parts_per_block;
 
-    bool quorum_parallel = false;
     bool deduplicate = true;
     bool last_block_is_duplicate = false;
 
     using Logger = Poco::Logger;
-    Poco::Logger * log;
+    Logger * log;
 };
 
 }

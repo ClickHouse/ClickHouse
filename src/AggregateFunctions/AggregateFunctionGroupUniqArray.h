@@ -16,7 +16,6 @@
 #include <Common/assert_cast.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <AggregateFunctions/KeyHolderHelpers.h>
 
 #define AGGREGATE_FUNCTION_GROUP_ARRAY_UNIQ_MAX_SIZE 0xFFFFFF
 
@@ -29,7 +28,12 @@ template <typename T>
 struct AggregateFunctionGroupUniqArrayData
 {
     /// When creating, the hash table must be small.
-    using Set = HashSetWithStackMemory<T, DefaultHash<T>, 4>;
+    using Set = HashSet<
+        T,
+        DefaultHash<T>,
+        HashTableGrower<4>,
+        HashTableAllocatorWithStackMemory<sizeof(T) * (1 << 4)>
+    >;
 
     Set value;
 };
@@ -98,7 +102,7 @@ public:
         this->data(place).value.read(buf);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
         ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
@@ -122,10 +126,9 @@ public:
 /// Generic implementation, it uses serialized representation as object descriptor.
 struct AggregateFunctionGroupUniqArrayGenericData
 {
-    static constexpr size_t INITIAL_SIZE_DEGREE = 3; /// adjustable
-
-    using Set = HashSetWithSavedHashWithStackMemory<StringRef, StringRefHash,
-        INITIAL_SIZE_DEGREE>;
+    static constexpr size_t INIT_ELEMS = 2; /// adjustable
+    static constexpr size_t ELEM_SIZE = sizeof(HashSetCellWithSavedHash<StringRef, StringRefHash>);
+    using Set = HashSetWithSavedHash<StringRef, StringRefHash, HashTableGrower<INIT_ELEMS>, HashTableAllocatorWithStackMemory<INIT_ELEMS * ELEM_SIZE>>;
 
     Set value;
 };
@@ -147,6 +150,26 @@ class AggregateFunctionGroupUniqArrayGeneric
     UInt64 max_elems;
 
     using State = AggregateFunctionGroupUniqArrayGenericData;
+
+    static auto getKeyHolder(const IColumn & column, size_t row_num, Arena & arena)
+    {
+        if constexpr (is_plain_column)
+        {
+            return ArenaKeyHolder{column.getDataAt(row_num), arena};
+        }
+        else
+        {
+            const char * begin = nullptr;
+            StringRef serialized = column.serializeValueIntoArena(row_num, arena, begin);
+            assert(serialized.data != nullptr);
+            return SerializedKeyHolder{serialized, arena};
+        }
+    }
+
+    static void deserializeAndInsert(StringRef str, IColumn & data_to)
+    {
+        return deserializeAndInsertImpl<is_plain_column>(str, data_to);
+    }
 
 public:
     AggregateFunctionGroupUniqArrayGeneric(const DataTypePtr & input_data_type_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
@@ -196,7 +219,7 @@ public:
 
         bool inserted;
         State::Set::LookupResult it;
-        auto key_holder = getKeyHolder<is_plain_column>(*columns[0], row_num, *arena);
+        auto key_holder = getKeyHolder(*columns[0], row_num, *arena);
         set.emplace(key_holder, it, inserted);
     }
 
@@ -218,7 +241,7 @@ public:
         }
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
         ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
@@ -228,9 +251,21 @@ public:
         offsets_to.push_back(offsets_to.back() + set.size());
 
         for (auto & elem : set)
-            deserializeAndInsert<is_plain_column>(elem.getValue(), data_to);
+            deserializeAndInsert(elem.getValue(), data_to);
     }
 };
+
+template <>
+inline void deserializeAndInsertImpl<false>(StringRef str, IColumn & data_to)
+{
+    data_to.deserializeAndInsertFromArena(str.data);
+}
+
+template <>
+inline void deserializeAndInsertImpl<true>(StringRef str, IColumn & data_to)
+{
+    data_to.insertData(str.data, str.size);
+}
 
 #undef AGGREGATE_FUNCTION_GROUP_ARRAY_UNIQ_MAX_SIZE
 

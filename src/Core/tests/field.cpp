@@ -1,10 +1,12 @@
 #include <iostream>
 #include <iomanip>
+#include <sstream>
 
 #include <Core/Field.h>
 #include <Common/FieldVisitors.h>
 
 #include <Common/Stopwatch.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
 #include <DataTypes/DataTypeString.h>
 

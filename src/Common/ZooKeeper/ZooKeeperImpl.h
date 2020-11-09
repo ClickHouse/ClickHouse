@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool.h>
@@ -93,23 +93,17 @@ struct ZooKeeperRequest;
 class ZooKeeper : public IKeeper
 {
 public:
-    struct Node
-    {
-        Poco::Net::SocketAddress address;
-        bool secure;
-    };
-
-    using Nodes = std::vector<Node>;
+    using Addresses = std::vector<Poco::Net::SocketAddress>;
 
     using XID = int32_t;
     using OpNum = int32_t;
 
-    /** Connection to nodes is performed in order. If you want, shuffle them manually.
+    /** Connection to addresses is performed in order. If you want, shuffle them manually.
       * Operation timeout couldn't be greater than session timeout.
       * Operation timeout applies independently for network read, network write, waiting for events and synchronization.
       */
     ZooKeeper(
-        const Nodes & nodes,
+        const Addresses & addresses,
         const String & root_path,
         const String & auth_scheme,
         const String & auth_data,
@@ -219,7 +213,7 @@ private:
     ThreadFromGlobalPool receive_thread;
 
     void connect(
-        const Nodes & node,
+        const Addresses & addresses,
         Poco::Timespan connection_timeout);
 
     void sendHandshake();
@@ -260,7 +254,7 @@ struct ZooKeeperRequest : virtual Request
 
     ZooKeeperRequest() = default;
     ZooKeeperRequest(const ZooKeeperRequest &) = default;
-    virtual ~ZooKeeperRequest() override = default;
+    virtual ~ZooKeeperRequest() = default;
 
     virtual ZooKeeper::OpNum getOpNum() const = 0;
 

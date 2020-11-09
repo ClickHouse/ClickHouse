@@ -8,7 +8,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <IO/WriteBufferFromString.h>
 #include <Storages/transformQueryForExternalDatabase.h>
@@ -26,8 +26,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// Everything except numbers is put as string literal.
-class ReplacingConstantExpressionsMatcherNumOrStr
+class ReplacingConstantExpressionsMatcher
 {
 public:
     using Data = Block;
@@ -91,10 +90,10 @@ public:
 
 void replaceConstantExpressions(ASTPtr & node, const Context & context, const NamesAndTypesList & all_columns)
 {
-    auto syntax_result = TreeRewriter(context).analyze(node, all_columns);
+    auto syntax_result = SyntaxAnalyzer(context).analyze(node, all_columns);
     Block block_with_constants = KeyCondition::getBlockWithConstants(node, syntax_result, context);
 
-    InDepthNodeVisitor<ReplacingConstantExpressionsMatcherNumOrStr, true> visitor(block_with_constants);
+    InDepthNodeVisitor<ReplacingConstantExpressionsMatcher, true> visitor(block_with_constants);
     visitor.visit(node);
 }
 

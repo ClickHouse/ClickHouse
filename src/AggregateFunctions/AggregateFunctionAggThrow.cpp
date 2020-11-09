@@ -93,7 +93,7 @@ public:
         buf.read(c);
     }
 
-    void insertResultInto(AggregateDataPtr, IColumn & to, Arena *) const override
+    void insertResultInto(ConstAggregateDataPtr, IColumn & to) const override
     {
         to.insertDefault();
     }

@@ -24,13 +24,11 @@ public:
 
     ODBCHandler(std::shared_ptr<PoolMap> pool_map_,
         size_t keep_alive_timeout_,
-        Context & context_,
-        const String & mode_)
+        std::shared_ptr<Context> context_)
         : log(&Poco::Logger::get("ODBCHandler"))
         , pool_map(pool_map_)
         , keep_alive_timeout(keep_alive_timeout_)
         , context(context_)
-        , mode(mode_)
     {
     }
 
@@ -41,13 +39,11 @@ private:
 
     std::shared_ptr<PoolMap> pool_map;
     size_t keep_alive_timeout;
-    Context & context;
-    String mode;
+    std::shared_ptr<Context> context;
 
     static inline std::mutex mutex;
 
     PoolPtr getPool(const std::string & connection_str);
-    void processError(Poco::Net::HTTPServerResponse & response, const std::string & message);
 };
 
 }

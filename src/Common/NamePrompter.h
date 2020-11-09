@@ -1,7 +1,6 @@
 #pragma once
 
-#include <common/types.h>
-#include <Common/PODArray.h>
+#include <Core/Types.h>
 
 #include <algorithm>
 #include <cctype>
@@ -33,7 +32,15 @@ private:
         size_t m = lhs.size();
         size_t n = rhs.size();
 
-        PODArrayWithStackMemory<size_t, 64> row(n + 1);
+        static constexpr size_t small_buffer_size = 64;
+        size_t small_buffer[small_buffer_size];
+        std::unique_ptr<size_t[]> alloc_buffer;
+        size_t * row = small_buffer;
+        if (n + 1 > small_buffer_size)
+        {
+            row = new size_t[n + 1];
+            alloc_buffer.reset(row);
+        }
 
         for (size_t i = 1; i <= n; ++i)
             row[i] = i;
@@ -77,16 +84,16 @@ private:
 
     static std::vector<String> release(DistanceIndexQueue & queue, const std::vector<String> & prompting_strings)
     {
-        std::vector<String> answer;
-        answer.reserve(queue.size());
+        std::vector<String> ans;
+        ans.reserve(queue.size());
         while (!queue.empty())
         {
             auto top = queue.top();
             queue.pop();
-            answer.push_back(prompting_strings[top.second]);
+            ans.push_back(prompting_strings[top.second]);
         }
-        std::reverse(answer.begin(), answer.end());
-        return answer;
+        std::reverse(ans.begin(), ans.end());
+        return ans;
     }
 };
 

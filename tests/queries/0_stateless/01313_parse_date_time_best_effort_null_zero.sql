@@ -1,12 +1,12 @@
-SELECT parseDateTimeBestEffort('<Empty>'); -- { serverError 41 }
+SELECT parseDateTimeBestEffort('<Empty>'); -- { serverError 6 }
 SELECT parseDateTimeBestEffortOrNull('<Empty>');
-SELECT parseDateTimeBestEffortOrZero('<Empty>', 'UTC');
+SELECT parseDateTimeBestEffortOrZero('<Empty>');
 
-SELECT parseDateTime64BestEffort('<Empty>'); -- { serverError 41 }
+SELECT parseDateTime64BestEffort('<Empty>'); -- { serverError 6 }
 SELECT parseDateTime64BestEffortOrNull('<Empty>');
-SELECT parseDateTime64BestEffortOrZero('<Empty>', 0, 'UTC');
+SELECT parseDateTime64BestEffortOrZero('<Empty>');
 
 SET date_time_input_format = 'best_effort';
 SELECT toDateTime('<Empty>'); -- { serverError 41 }
 SELECT toDateTimeOrNull('<Empty>');
-SELECT toDateTimeOrZero('<Empty>', 'UTC');
+SELECT toDateTimeOrZero('<Empty>');

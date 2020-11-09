@@ -14,6 +14,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/parseColumnsListForTableFunction.h>
 
+#include <Access/AccessFlags.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
@@ -25,7 +26,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
@@ -62,10 +62,8 @@ static void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args
     }
 }
 
-void TableFunctionValues::parseArguments(const ASTPtr & ast_function, const Context & /*context*/)
+StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
 {
-
-
     ASTs & args_func = ast_function->children;
 
     if (args_func.size() != 1)
@@ -77,34 +75,18 @@ void TableFunctionValues::parseArguments(const ASTPtr & ast_function, const Cont
         throw Exception("Table function '" + getName() + "' requires 2 or more arguments: structure and values.",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
+    context.checkAccess(AccessType::values);
+
     /// Parsing first argument as table structure and creating a sample block
-    if (!args[0]->as<const ASTLiteral>())
-    {
-        throw Exception(fmt::format(
-            "The first argument of table function '{}' must be a literal. "
-            "Got '{}' instead", getName(), args[0]->formatForErrorMessage()),
-            ErrorCodes::BAD_ARGUMENTS);
-    }
+    std::string structure = args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
-    structure = args[0]->as<ASTLiteral &>().value.safeGet<String>();
-}
-
-ColumnsDescription TableFunctionValues::getActualTableStructure(const Context & context) const
-{
-    return parseColumnsListFromString(structure, context);
-}
-
-StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
-{
-    auto columns = getActualTableStructure(context);
+    ColumnsDescription columns = parseColumnsListFromString(structure, context);
 
     Block sample_block;
     for (const auto & name_type : columns.getOrdinary())
         sample_block.insert({ name_type.type->createColumn(), name_type.type, name_type.name });
 
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
-
-    ASTs & args = ast_function->children.at(0)->children;
 
     /// Parsing other arguments as values and inserting them into columns
     parseAndInsertValues(res_columns, args, sample_block, context);

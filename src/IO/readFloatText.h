@@ -1,8 +1,8 @@
-#pragma once
 #include <type_traits>
 #include <IO/ReadHelpers.h>
 #include <Core/Defines.h>
 #include <common/shift10.h>
+#include <common/likely.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <double-conversion/double-conversion.h>
 
@@ -157,9 +157,6 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
     {
         switch (*buf.position())
         {
-            case '+':
-                continue;
-
             case '-':
             {
                 negative = true;
@@ -339,7 +336,6 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
         ++in.position();
     }
 
-
     auto count_after_sign = in.count();
 
     constexpr int significant_digits = std::numeric_limits<UInt64>::digits10;
@@ -385,7 +381,7 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
         if (in.eof())
         {
             if constexpr (throw_exception)
-                throw Exception("Cannot read floating point value: nothing after exponent", ErrorCodes::CANNOT_PARSE_NUMBER);
+                throw Exception("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
             else
                 return false;
         }
@@ -423,28 +419,9 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
         if (in.eof())
         {
             if constexpr (throw_exception)
-                throw Exception("Cannot read floating point value: no digits read", ErrorCodes::CANNOT_PARSE_NUMBER);
+                throw Exception("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
             else
                 return false;
-        }
-
-        if (*in.position() == '+')
-        {
-            ++in.position();
-            if (in.eof())
-            {
-                if constexpr (throw_exception)
-                    throw Exception("Cannot read floating point value: nothing after plus sign", ErrorCodes::CANNOT_PARSE_NUMBER);
-                else
-                    return false;
-            }
-            else if (negative)
-            {
-                if constexpr (throw_exception)
-                    throw Exception("Cannot read floating point value: plus after minus sign", ErrorCodes::CANNOT_PARSE_NUMBER);
-                else
-                    return false;
-            }
         }
 
         if (*in.position() == 'i' || *in.position() == 'I')

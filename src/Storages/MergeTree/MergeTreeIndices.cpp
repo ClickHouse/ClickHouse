@@ -18,27 +18,31 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
 }
 
-void MergeTreeIndexFactory::registerCreator(const std::string & index_type, Creator creator)
+void MergeTreeIndexFactory::registerIndex(const std::string & name, Creator creator)
 {
-    if (!creators.emplace(index_type, std::move(creator)).second)
-        throw Exception("MergeTreeIndexFactory: the Index creator name '" + index_type + "' is not unique",
+    if (!indexes.emplace(name, std::move(creator)).second)
+        throw Exception("MergeTreeIndexFactory: the Index creator name '" + name + "' is not unique",
                         ErrorCodes::LOGICAL_ERROR);
 }
-void MergeTreeIndexFactory::registerValidator(const std::string & index_type, Validator validator)
-{
-    if (!validators.emplace(index_type, std::move(validator)).second)
-        throw Exception("MergeTreeIndexFactory: the Index validator name '" + index_type + "' is not unique", ErrorCodes::LOGICAL_ERROR);
-}
 
-
-MergeTreeIndexPtr MergeTreeIndexFactory::get(
-    const IndexDescription & index) const
+std::unique_ptr<IMergeTreeIndex> MergeTreeIndexFactory::get(
+    const NamesAndTypesList & columns,
+    std::shared_ptr<ASTIndexDeclaration> node,
+    const Context & context,
+    bool attach) const
 {
-    auto it = creators.find(index.type);
-    if (it == creators.end())
+    if (!node->type)
+        throw Exception("TYPE is required for index", ErrorCodes::INCORRECT_QUERY);
+
+    if (node->type->parameters && !node->type->parameters->children.empty())
+        throw Exception("Index type cannot have parameters", ErrorCodes::INCORRECT_QUERY);
+
+    boost::algorithm::to_lower(node->type->name);
+    auto it = indexes.find(node->type->name);
+    if (it == indexes.end())
         throw Exception(
-                "Unknown Index type '" + index.type + "'. Available index types: " +
-                std::accumulate(creators.cbegin(), creators.cend(), std::string{},
+                "Unknown Index type '" + node->type->name + "'. Available index types: " +
+                std::accumulate(indexes.cbegin(), indexes.cend(), std::string{},
                         [] (auto && left, const auto & right) -> std::string
                         {
                             if (left.empty())
@@ -48,56 +52,16 @@ MergeTreeIndexPtr MergeTreeIndexFactory::get(
                         }),
                 ErrorCodes::INCORRECT_QUERY);
 
-    return it->second(index);
-}
-
-
-MergeTreeIndices MergeTreeIndexFactory::getMany(const std::vector<IndexDescription> & indices) const
-{
-    MergeTreeIndices result;
-    for (const auto & index : indices)
-        result.emplace_back(get(index));
-    return result;
-}
-
-void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach) const
-{
-    auto it = validators.find(index.type);
-    if (it == validators.end())
-        throw Exception(
-            "Unknown Index type '" + index.type + "'. Available index types: "
-                + std::accumulate(
-                    validators.cbegin(),
-                    validators.cend(),
-                    std::string{},
-                    [](auto && left, const auto & right) -> std::string
-                    {
-                        if (left.empty())
-                            return right.first;
-                        else
-                            return left + ", " + right.first;
-                    }),
-            ErrorCodes::INCORRECT_QUERY);
-
-    it->second(index, attach);
+    return it->second(columns, node, context, attach);
 }
 
 MergeTreeIndexFactory::MergeTreeIndexFactory()
 {
-    registerCreator("minmax", minmaxIndexCreator);
-    registerValidator("minmax", minmaxIndexValidator);
-
-    registerCreator("set", setIndexCreator);
-    registerValidator("set", setIndexValidator);
-
-    registerCreator("ngrambf_v1", bloomFilterIndexCreator);
-    registerValidator("ngrambf_v1", bloomFilterIndexValidator);
-
-    registerCreator("tokenbf_v1", bloomFilterIndexCreator);
-    registerValidator("tokenbf_v1", bloomFilterIndexValidator);
-
-    registerCreator("bloom_filter", bloomFilterIndexCreatorNew);
-    registerValidator("bloom_filter", bloomFilterIndexValidatorNew);
+    registerIndex("minmax", minmaxIndexCreator);
+    registerIndex("set", setIndexCreator);
+    registerIndex("ngrambf_v1", bloomFilterIndexCreator);
+    registerIndex("tokenbf_v1", bloomFilterIndexCreator);
+    registerIndex("bloom_filter", bloomFilterIndexCreatorNew);
 }
 
 MergeTreeIndexFactory & MergeTreeIndexFactory::instance()

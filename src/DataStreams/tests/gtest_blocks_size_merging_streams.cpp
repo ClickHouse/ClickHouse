@@ -1,14 +1,10 @@
 #include <gtest/gtest.h>
 #include <Core/Block.h>
 #include <Columns/ColumnVector.h>
+#include <DataStreams/MergingSortedBlockInputStream.h>
 #include <DataStreams/BlocksListBlockInputStream.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
-#include <Processors/Pipe.h>
-#include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/Merges/MergingSortedTransform.h>
-#include <Processors/Executors/PipelineExecutingBlockInputStream.h>
-#include <Processors/QueryPipeline.h>
 
 using namespace DB;
 
@@ -31,25 +27,25 @@ static Block getBlockWithSize(const std::vector<std::string> & columns, size_t r
 }
 
 
-static Pipe getInputStreams(const std::vector<std::string> & column_names, const std::vector<std::tuple<size_t, size_t, size_t>> & block_sizes)
+static BlockInputStreams getInputStreams(const std::vector<std::string> & column_names, const std::vector<std::tuple<size_t, size_t, size_t>> & block_sizes)
 {
-    Pipes pipes;
+    BlockInputStreams result;
     for (auto [block_size_in_bytes, blocks_count, stride] : block_sizes)
     {
         BlocksList blocks;
         size_t start = stride;
         while (blocks_count--)
             blocks.push_back(getBlockWithSize(column_names, block_size_in_bytes, stride, start));
-        pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::make_shared<BlocksListBlockInputStream>(std::move(blocks))));
+        result.push_back(std::make_shared<BlocksListBlockInputStream>(std::move(blocks)));
     }
-    return Pipe::unitePipes(std::move(pipes));
+    return result;
 
 }
 
 
-static Pipe getInputStreamsEqualStride(const std::vector<std::string> & column_names, const std::vector<std::tuple<size_t, size_t, size_t>> & block_sizes)
+static BlockInputStreams getInputStreamsEqualStride(const std::vector<std::string> & column_names, const std::vector<std::tuple<size_t, size_t, size_t>> & block_sizes)
 {
-    Pipes pipes;
+    BlockInputStreams result;
     size_t i = 0;
     for (auto [block_size_in_bytes, blocks_count, stride] : block_sizes)
     {
@@ -57,10 +53,10 @@ static Pipe getInputStreamsEqualStride(const std::vector<std::string> & column_n
         size_t start = i;
         while (blocks_count--)
             blocks.push_back(getBlockWithSize(column_names, block_size_in_bytes, stride, start));
-        pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::make_shared<BlocksListBlockInputStream>(std::move(blocks))));
+        result.push_back(std::make_shared<BlocksListBlockInputStream>(std::move(blocks)));
         i++;
     }
-    return Pipe::unitePipes(std::move(pipes));
+    return result;
 
 }
 
@@ -79,26 +75,18 @@ TEST(MergingSortedTest, SimpleBlockSizeTest)
 {
     std::vector<std::string> key_columns{"K1", "K2", "K3"};
     auto sort_description = getSortDescription(key_columns);
-    auto pipe = getInputStreams(key_columns, {{5, 1, 1}, {10, 1, 2}, {21, 1, 3}});
+    auto streams = getInputStreams(key_columns, {{5, 1, 1}, {10, 1, 2}, {21, 1, 3}});
 
-    EXPECT_EQ(pipe.numOutputPorts(), 3);
+    EXPECT_EQ(streams.size(), 3);
 
-    auto transform = std::make_shared<MergingSortedTransform>(pipe.getHeader(), pipe.numOutputPorts(), sort_description,
-            DEFAULT_MERGE_BLOCK_SIZE, 0, nullptr, false, true);
-
-    pipe.addTransform(std::move(transform));
-
-    QueryPipeline pipeline;
-    pipeline.init(std::move(pipe));
-    pipeline.setMaxThreads(1);
-    auto stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
+    MergingSortedBlockInputStream stream(streams, sort_description, DEFAULT_MERGE_BLOCK_SIZE, 0, nullptr, false, true);
 
     size_t total_rows = 0;
-    auto block1 = stream->read();
-    auto block2 = stream->read();
-    auto block3 = stream->read();
+    auto block1 = stream.read();
+    auto block2 = stream.read();
+    auto block3 = stream.read();
 
-    EXPECT_EQ(stream->read(), Block());
+    EXPECT_EQ(stream.read(), Block());
 
     for (const auto & block : {block1, block2, block3})
         total_rows += block.rows();
@@ -124,25 +112,17 @@ TEST(MergingSortedTest, MoreInterestingBlockSizes)
 {
     std::vector<std::string> key_columns{"K1", "K2", "K3"};
     auto sort_description = getSortDescription(key_columns);
-    auto pipe = getInputStreamsEqualStride(key_columns, {{1000, 1, 3}, {1500, 1, 3}, {1400, 1, 3}});
+    auto streams = getInputStreamsEqualStride(key_columns, {{1000, 1, 3}, {1500, 1, 3}, {1400, 1, 3}});
 
-    EXPECT_EQ(pipe.numOutputPorts(), 3);
+    EXPECT_EQ(streams.size(), 3);
 
-    auto transform = std::make_shared<MergingSortedTransform>(pipe.getHeader(), pipe.numOutputPorts(), sort_description,
-            DEFAULT_MERGE_BLOCK_SIZE, 0, nullptr, false, true);
+    MergingSortedBlockInputStream stream(streams, sort_description, DEFAULT_MERGE_BLOCK_SIZE, 0, nullptr, false, true);
 
-    pipe.addTransform(std::move(transform));
+    auto block1 = stream.read();
+    auto block2 = stream.read();
+    auto block3 = stream.read();
 
-    QueryPipeline pipeline;
-    pipeline.init(std::move(pipe));
-    pipeline.setMaxThreads(1);
-    auto stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
-
-    auto block1 = stream->read();
-    auto block2 = stream->read();
-    auto block3 = stream->read();
-
-    EXPECT_EQ(stream->read(), Block());
+    EXPECT_EQ(stream.read(), Block());
 
     EXPECT_EQ(block1.rows(), (1000 + 1500 + 1400) / 3);
     EXPECT_EQ(block2.rows(), (1000 + 1500 + 1400) / 3);

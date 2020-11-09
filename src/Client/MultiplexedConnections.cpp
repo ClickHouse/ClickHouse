@@ -1,7 +1,5 @@
 #include <Client/MultiplexedConnections.h>
 #include <IO/ConnectionTimeouts.h>
-#include <Common/thread_local_rng.h>
-
 
 namespace DB
 {
@@ -94,7 +92,7 @@ void MultiplexedConnections::sendQuery(
     const String & query,
     const String & query_id,
     UInt64 stage,
-    const ClientInfo & client_info,
+    const ClientInfo * client_info,
     bool with_pending_data)
 {
     std::lock_guard lock(cancel_mutex);
@@ -126,14 +124,14 @@ void MultiplexedConnections::sendQuery(
         {
             modified_settings.parallel_replica_offset = i;
             replica_states[i].connection->sendQuery(timeouts, query, query_id,
-                stage, &modified_settings, &client_info, with_pending_data);
+                                                    stage, &modified_settings, client_info, with_pending_data);
         }
     }
     else
     {
         /// Use single replica.
-        replica_states[0].connection->sendQuery(timeouts, query, query_id,
-                stage, &modified_settings, &client_info, with_pending_data);
+        replica_states[0].connection->sendQuery(timeouts, query, query_id, stage,
+                                                &modified_settings, client_info, with_pending_data);
     }
 
     sent_query = true;
@@ -310,10 +308,10 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
             throw Exception("Timeout exceeded while reading from " + dumpAddressesUnlocked(), ErrorCodes::TIMEOUT_EXCEEDED);
     }
 
-    /// TODO Absolutely wrong code: read_list could be empty; motivation of rand is unclear.
+    /// TODO Absolutely wrong code: read_list could be empty; rand() is not thread safe and has low quality; motivation of rand is unclear.
     /// This code path is disabled by default.
 
-    auto & socket = read_list[thread_local_rng() % read_list.size()];
+    auto & socket = read_list[rand() % read_list.size()];
     if (fd_to_replica_state_idx.empty())
     {
         fd_to_replica_state_idx.reserve(replica_states.size());

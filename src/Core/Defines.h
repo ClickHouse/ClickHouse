@@ -1,7 +1,5 @@
 #pragma once
 
-#include <common/defines.h>
-
 #define DBMS_DEFAULT_HOST "localhost"
 #define DBMS_DEFAULT_PORT 9000
 #define DBMS_DEFAULT_SECURE_PORT 9440
@@ -21,14 +19,14 @@
 /** Which blocks by default read the data (by number of rows).
   * Smaller values give better cache locality, less consumption of RAM, but more overhead to process the query.
   */
-#define DEFAULT_BLOCK_SIZE 65505    /// 65536 minus 16 + 15 bytes padding that we usually have in arrays
+#define DEFAULT_BLOCK_SIZE 65536
 
 /** Which blocks should be formed for insertion into the table, if we control the formation of blocks.
   * (Sometimes the blocks are inserted exactly such blocks that have been read / transmitted from the outside, and this parameter does not affect their size.)
   * More than DEFAULT_BLOCK_SIZE, because in some tables a block of data on the disk is created for each block (quite a big thing),
   *  and if the parts were small, then it would be costly then to combine them.
   */
-#define DEFAULT_INSERT_BLOCK_SIZE 1048545   /// 1048576 minus 16 + 15 bytes padding that we usually have in arrays
+#define DEFAULT_INSERT_BLOCK_SIZE 1048576
 
 /** The same, but for merge operations. Less DEFAULT_BLOCK_SIZE for saving RAM (since all the columns are read).
   * Significantly less, since there are 10-way mergers.
@@ -64,17 +62,11 @@
 #define DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE 54405
 #define DBMS_MIN_REVISION_WITH_CLIENT_WRITE_INFO 54420
 
-/// Minimum revision supporting SettingsBinaryFormat::STRINGS.
+/// Mininum revision supporting SettingsBinaryFormat::STRINGS.
 #define DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS 54429
 
-/// Minimum revision supporting OpenTelemetry
-#define DBMS_MIN_REVISION_WITH_OPENTELEMETRY 54442
-
-/// Mininum revision supporting interserver secret.
-#define DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET 54441
-
-/// Version of ClickHouse TCP protocol. Increment it manually when you change the protocol.
-#define DBMS_TCP_PROTOCOL_VERSION 54442
+/// Version of ClickHouse TCP protocol. Set to git tag with latest protocol change.
+#define DBMS_TCP_PROTOCOL_VERSION 54226
 
 /// The boundary on which the blocks for asynchronous file operations should be aligned.
 #define DEFAULT_AIO_FILE_BLOCK_SIZE 4096
@@ -89,21 +81,85 @@
 
 // more aliases: https://mailman.videolan.org/pipermail/x264-devel/2014-May/010660.html
 
+#if defined(_MSC_VER)
+    #define ALWAYS_INLINE __forceinline
+    #define NO_INLINE static __declspec(noinline)
+    #define MAY_ALIAS
+#else
+    #define ALWAYS_INLINE __attribute__((__always_inline__))
+    #define NO_INLINE __attribute__((__noinline__))
+    #define MAY_ALIAS __attribute__((__may_alias__))
+#endif
+
+
+#define PLATFORM_NOT_SUPPORTED "The only supported platforms are x86_64 and AArch64, PowerPC (work in progress)"
+
+#if !defined(__x86_64__) && !defined(__aarch64__) && !defined(__PPC__)
+    #error PLATFORM_NOT_SUPPORTED
+#endif
+
+/// Check for presence of address sanitizer
+#if !defined(ADDRESS_SANITIZER)
+#if defined(__has_feature)
+    #if __has_feature(address_sanitizer)
+        #define ADDRESS_SANITIZER 1
+    #endif
+#elif defined(__SANITIZE_ADDRESS__)
+    #define ADDRESS_SANITIZER 1
+#endif
+#endif
+
+#if !defined(THREAD_SANITIZER)
+#if defined(__has_feature)
+    #if __has_feature(thread_sanitizer)
+        #define THREAD_SANITIZER 1
+    #endif
+#elif defined(__SANITIZE_THREAD__)
+    #define THREAD_SANITIZER 1
+#endif
+#endif
+
+#if !defined(MEMORY_SANITIZER)
+#if defined(__has_feature)
+    #if __has_feature(memory_sanitizer)
+        #define MEMORY_SANITIZER 1
+    #endif
+#elif defined(__MEMORY_SANITIZER__)
+    #define MEMORY_SANITIZER 1
+#endif
+#endif
+
+/// TODO Strange enough, there is no way to detect UB sanitizer.
+
+/// Explicitly allow undefined behaviour for certain functions. Use it as a function attribute.
+/// It is useful in case when compiler cannot see (and exploit) it, but UBSan can.
+/// Example: multiplication of signed integers with possibility of overflow when both sides are from user input.
+#if defined(__clang__)
+    #define NO_SANITIZE_UNDEFINED __attribute__((__no_sanitize__("undefined")))
+    #define NO_SANITIZE_ADDRESS __attribute__((__no_sanitize__("address")))
+    #define NO_SANITIZE_THREAD __attribute__((__no_sanitize__("thread")))
+#else
+    /// It does not work in GCC. GCC 7 cannot recognize this attribute and GCC 8 simply ignores it.
+    #define NO_SANITIZE_UNDEFINED
+    #define NO_SANITIZE_ADDRESS
+    #define NO_SANITIZE_THREAD
+#endif
+
+#if defined __GNUC__ && !defined __clang__
+    #define OPTIMIZE(x) __attribute__((__optimize__(x)))
+#else
+    #define OPTIMIZE(x)
+#endif
+
 /// Marks that extra information is sent to a shard. It could be any magic numbers.
 #define DBMS_DISTRIBUTED_SIGNATURE_HEADER 0xCAFEDACEull
 #define DBMS_DISTRIBUTED_SIGNATURE_HEADER_OLD_FORMAT 0xCAFECABEull
 
-#if !__has_include(<sanitizer/asan_interface.h>) || !defined(ADDRESS_SANITIZER)
+#if !__has_include(<sanitizer/asan_interface.h>)
 #   define ASAN_UNPOISON_MEMORY_REGION(a, b)
 #   define ASAN_POISON_MEMORY_REGION(a, b)
 #endif
 
-/// Actually, there may be multiple acquisitions of different locks for a given table within one query.
-/// Check with IStorage class for the list of possible locks
-#define DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC 120
-
-/// Default limit on recursion depth of recursive descend parser.
-#define DBMS_DEFAULT_MAX_PARSER_DEPTH 1000
-
-/// Max depth of hierarchical dictionary
-#define DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH 1000
+/// A macro for suppressing warnings about unused variables or function results.
+/// Useful for structured bindings which have no standard way to declare this.
+#define UNUSED(...) (void)(__VA_ARGS__)

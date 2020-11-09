@@ -10,15 +10,13 @@ namespace DB
 
 struct IdentifierSemanticImpl
 {
-    bool special = false;              /// for now it's 'not a column': tables, subselects and some special stuff like FORMAT
-    bool can_be_alias = true;          /// if it's a cropped name it could not be an alias
-    bool covered = false;              /// real (compound) name is hidden by an alias (short name)
-    std::optional<size_t> membership;  /// table position in join
-    String table = {};                 /// store table name for columns just to support legacy logic.
-    bool legacy_compound = false;      /// true if identifier supposed to be comply for legacy |compound()| behavior
+    bool special = false;       /// for now it's 'not a column': tables, subselects and some special stuff like FORMAT
+    bool can_be_alias = true;   /// if it's a cropped name it could not be an alias
+    bool covered = false;       /// real (compound) name is hidden by an alias (short name)
+    std::optional<size_t> membership; /// table position in join
 };
 
-/// Static class to manipulate IdentifierSemanticImpl via ASTIdentifier
+/// Static calss to manipulate IdentifierSemanticImpl via ASTIdentifier
 struct IdentifierSemantic
 {
     enum class ColumnMatch
@@ -39,11 +37,12 @@ struct IdentifierSemantic
     /// @returns name for 'not a column' identifiers
     static std::optional<String> getTableName(const ASTIdentifier & node);
     static std::optional<String> getTableName(const ASTPtr & ast);
-    static StorageID extractDatabaseAndTable(const ASTIdentifier & identifier);
+    static std::pair<String, String> extractDatabaseAndTable(const ASTIdentifier & identifier);
     static std::optional<String> extractNestedName(const ASTIdentifier & identifier, const String & table_name);
 
     static ColumnMatch canReferColumnToTable(const ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table);
-    static ColumnMatch canReferColumnToTable(const ASTIdentifier & identifier, const TableWithColumnNamesAndTypes & table_with_columns);
+    static ColumnMatch canReferColumnToTable(const ASTIdentifier & identifier, const TableWithColumnNames & db_and_table);
+    static ColumnMatch canReferColumnToTable(const ASTIdentifier & identifier, const TableWithColumnNamesAndTypes & db_and_table);
 
     static void setColumnShortName(ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table);
     static void setColumnLongName(ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table);
@@ -54,9 +53,9 @@ struct IdentifierSemantic
     static std::optional<size_t> getMembership(const ASTIdentifier & identifier);
     static std::optional<size_t> chooseTable(const ASTIdentifier &, const std::vector<DatabaseAndTableWithAlias> & tables,
                             bool allow_ambiguous = false);
-    static std::optional<size_t> chooseTable(const ASTIdentifier &, const TablesWithColumns & tables,
+    static std::optional<size_t> chooseTable(const ASTIdentifier &, const std::vector<TableWithColumnNames> & tables,
                             bool allow_ambiguous = false);
-    static std::optional<size_t> chooseTableColumnMatch(const ASTIdentifier &, const TablesWithColumns & tables,
+    static std::optional<size_t> chooseTable(const ASTIdentifier &, const std::vector<TableWithColumnNamesAndTypes> & tables,
                             bool allow_ambiguous = false);
 
 private:

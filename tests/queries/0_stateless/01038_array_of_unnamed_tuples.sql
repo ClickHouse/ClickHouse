@@ -1,4 +1,4 @@
-SET send_logs_level = 'fatal';
+SET send_logs_level = 'none';
 
 DROP TABLE IF EXISTS array_of_tuples;
 

@@ -1,8 +1,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 
-#if defined(__SSE2__)
-#    define LIBDIVIDE_SSE2 1
+#ifdef __SSE2__
+    #define LIBDIVIDE_USE_SSE2 1
 #endif
 
 #include <libdivide.h>
@@ -10,24 +10,22 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_DIVISION;
 }
 
-namespace
-{
-
 /// Optimizations for integer modulo by a constant.
 
 template <typename A, typename B>
 struct ModuloByConstantImpl
-    : BinaryOperation<A, B, ModuloImpl<A, B>>
+    : BinaryOperationImplBase<A, B, ModuloImpl<A, B>>
 {
     using ResultType = typename ModuloImpl<A, B>::ResultType;
     static const constexpr bool allow_fixed_string = false;
 
-    static NO_INLINE void vectorConstant(const A * __restrict src, B b, ResultType * __restrict dst, size_t size)
+    static NO_INLINE void vector_constant(const A * __restrict src, B b, ResultType * __restrict dst, size_t size)
     {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsign-compare"
@@ -73,8 +71,6 @@ struct ModuloByConstantImpl
     }
 };
 
-}
-
 /** Specializations are specified for dividing numbers of the type UInt64 and UInt32 by the numbers of the same sign.
   * Can be expanded to all possible combinations, but more code is needed.
   */
@@ -101,12 +97,11 @@ template <> struct BinaryOperationImpl<Int32, Int64, ModuloImpl<Int32, Int64>> :
 
 
 struct NameModulo { static constexpr auto name = "modulo"; };
-using FunctionModulo = BinaryArithmeticOverloadResolver<ModuloImpl, NameModulo, false>;
+using FunctionModulo = FunctionBinaryArithmetic<ModuloImpl, NameModulo, false>;
 
 void registerFunctionModulo(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionModulo>();
-    factory.registerAlias("mod", "modulo", FunctionFactory::CaseInsensitive);
 }
 
 }

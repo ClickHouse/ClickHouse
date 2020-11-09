@@ -24,7 +24,6 @@ try
             while (true)
             {
                 std::vector<std::future<Coordination::GetResponse>> futures;
-                futures.reserve(nodes.size());
                 for (auto & node : nodes)
                     futures.push_back(zookeeper.asyncGet("/tmp/" + node));
 

@@ -196,15 +196,15 @@ TEST(ColumnVector, CorrectnessOfReplicate)
     column->insertValue(1);
 
     const auto empty_column = column->replicate({0, 0, 0});
-    const auto * empty_column_ptr = typeid_cast<const ColumnUInt8 *>(empty_column.get());
+    const auto *const empty_column_ptr = typeid_cast<const ColumnUInt8 *>(empty_column.get());
     EXPECT_NE(empty_column_ptr, nullptr);
     EXPECT_EQ(empty_column_ptr->size(), 0);
 
     const auto new_column = column->replicate({1, 1, 5});
-    const auto * new_column_ptr = typeid_cast<const ColumnUInt8 *>(new_column.get());
+    const auto *const new_column_ptr = typeid_cast<const ColumnUInt8 *>(new_column.get());
     EXPECT_NE(new_column_ptr, nullptr);
     EXPECT_EQ(new_column_ptr->size(), 5);
-    const auto * it = new_column_ptr->getData().cbegin();
+    const auto *it = new_column_ptr->getData().cbegin();
     for (const auto num : {3, 1, 1, 1, 1})
     {
         EXPECT_EQ(*it, num);

@@ -4,6 +4,14 @@
         <table_exists>hits_100m_single</table_exists>
     </preconditions>
 
+    <stop_conditions>
+        <all_of>
+            <total_time_ms>10000</total_time_ms>
+        </all_of>
+        <any_of>
+            <total_time_ms>20000</total_time_ms>
+        </any_of>
+    </stop_conditions>
 
 
     <substitutions>
@@ -20,5 +28,5 @@
        </substitution>
     </substitutions>
 
-    <query>SELECT ignore({func}URL)) FROM hits_100m_single LIMIT 50000000 FORMAT Null</query>
+    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore({func}URL))</query>
 </test>

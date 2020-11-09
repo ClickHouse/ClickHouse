@@ -4,6 +4,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/GatherUtils/Algorithms.h>
+#include <Functions/GatherUtils/GatherUtils.h>
 #include <Functions/GatherUtils/Sinks.h>
 #include <Functions/GatherUtils/Slices.h>
 #include <Functions/GatherUtils/Sources.h>
@@ -25,15 +26,13 @@ namespace ErrorCodes
 
 using namespace GatherUtils;
 
-namespace
-{
 
 template <typename Name, bool is_injective>
 class ConcatImpl : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    explicit ConcatImpl(const Context & context_) : context(context_) {}
+    ConcatImpl(const Context & context_) : context(context_) {}
     static FunctionPtr create(const Context & context) { return std::make_shared<ConcatImpl>(context); }
 
     String getName() const override { return name; }
@@ -42,7 +41,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return is_injective; }
+    bool isInjective(const Block &) override { return is_injective; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -62,7 +61,7 @@ public:
 
         for (const auto arg_idx : ext::range(0, arguments.size()))
         {
-            const auto * arg = arguments[arg_idx].get();
+            const auto *const arg = arguments[arg_idx].get();
             if (!isStringOrFixedString(arg))
                 throw Exception{"Illegal type " + arg->getName() + " of argument " + std::to_string(arg_idx + 1) + " of function "
                                     + getName(),
@@ -72,25 +71,25 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         /// Format function is not proven to be faster for two arguments.
         /// Actually there is overhead of 2 to 5 extra instructions for each string for checking empty strings in FormatImpl.
         /// Though, benchmarks are really close, for most examples we saw executeBinary is slightly faster (0-3%).
         /// For 3 and more arguments FormatImpl is much faster (up to 50-60%).
         if (arguments.size() == 2)
-            return executeBinary(arguments, input_rows_count);
+            executeBinary(block, arguments, result, input_rows_count);
         else
-            return executeFormatImpl(arguments, input_rows_count);
+            executeFormatImpl(block, arguments, result, input_rows_count);
     }
 
 private:
     const Context & context;
 
-    ColumnPtr executeBinary(ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    void executeBinary(Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
     {
-        const IColumn * c0 = arguments[0].column.get();
-        const IColumn * c1 = arguments[1].column.get();
+        const IColumn * c0 = block.getByPosition(arguments[0]).column.get();
+        const IColumn * c1 = block.getByPosition(arguments[1]).column.get();
 
         const ColumnString * c0_string = checkAndGetColumn<ColumnString>(c0);
         const ColumnString * c1_string = checkAndGetColumn<ColumnString>(c1);
@@ -108,27 +107,25 @@ private:
         else
         {
             /// Fallback: use generic implementation for not very important cases.
-            return executeFormatImpl(arguments, input_rows_count);
+            executeFormatImpl(block, arguments, result, input_rows_count);
+            return;
         }
 
-        return c_res;
+        block.getByPosition(result).column = std::move(c_res);
     }
 
-    ColumnPtr executeFormatImpl(ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    void executeFormatImpl(Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
     {
-        const size_t num_arguments = arguments.size();
-        assert(num_arguments >= 2);
-
         auto c_res = ColumnString::create();
-        std::vector<const ColumnString::Chars *> data(num_arguments);
-        std::vector<const ColumnString::Offsets *> offsets(num_arguments);
-        std::vector<size_t> fixed_string_sizes(num_arguments);
-        std::vector<String> constant_strings(num_arguments);
+        std::vector<const ColumnString::Chars *> data(arguments.size());
+        std::vector<const ColumnString::Offsets *> offsets(arguments.size());
+        std::vector<size_t> fixed_string_N(arguments.size());
+        std::vector<String> constant_strings(arguments.size());
         bool has_column_string = false;
         bool has_column_fixed_string = false;
-        for (size_t i = 0; i < num_arguments; ++i)
+        for (size_t i = 0; i < arguments.size(); ++i)
         {
-            const ColumnPtr & column = arguments[i].column;
+            const ColumnPtr & column = block.getByPosition(arguments[i]).column;
             if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
             {
                 has_column_string = true;
@@ -139,7 +136,7 @@ private:
             {
                 has_column_fixed_string = true;
                 data[i] = &fixed_col->getChars();
-                fixed_string_sizes[i] = fixed_col->getN();
+                fixed_string_N[i] = fixed_col->getN();
             }
             else if (const ColumnConst * const_col = checkAndGetColumnConstStringOrFixedString(column.get()))
             {
@@ -151,9 +148,9 @@ private:
         }
 
         String pattern;
-        pattern.reserve(2 * num_arguments);
+        pattern.reserve(2 * arguments.size());
 
-        for (size_t i = 0; i < num_arguments; ++i)
+        for (size_t i = 0; i < arguments.size(); ++i)
             pattern += "{}";
 
         FormatImpl::formatExecute(
@@ -162,13 +159,13 @@ private:
             std::move(pattern),
             data,
             offsets,
-            fixed_string_sizes,
+            fixed_string_N,
             constant_strings,
             c_res->getChars(),
             c_res->getOffsets(),
             input_rows_count);
 
-        return c_res;
+        block.getByPosition(result).column = std::move(c_res);
     }
 };
 
@@ -226,7 +223,6 @@ private:
     const Context & context;
 };
 
-}
 
 void registerFunctionsConcat(FunctionFactory & factory)
 {

@@ -1,41 +1,64 @@
 #pragma once
 
+#include <memory>
 #include <shared_mutex>
 
 #include <Common/LRUCache.h>
+#include <Common/filesystemHelpers.h>
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/IJoin.h>
-#include <Interpreters/SortedBlocksWriter.h>
 #include <DataStreams/SizeLimits.h>
 
 namespace DB
 {
 
-class TableJoin;
+class AnalyzedJoin;
 class MergeJoinCursor;
 struct MergeJoinEqualRange;
-class RowBitmaps;
+
+class Volume;
+using VolumePtr = std::shared_ptr<Volume>;
+
+struct MiniLSM
+{
+    using SortedFiles = std::vector<std::unique_ptr<TemporaryFile>>;
+
+    VolumePtr volume;
+    const Block & sample_block;
+    const SortDescription & sort_description;
+    const size_t rows_in_block;
+    const size_t max_size;
+    std::vector<SortedFiles> sorted_files;
+
+    MiniLSM(VolumePtr volume_, const Block & sample_block_, const SortDescription & description,
+            size_t rows_in_block_, size_t max_size_ = 16)
+        : volume(volume_)
+        , sample_block(sample_block_)
+        , sort_description(description)
+        , rows_in_block(rows_in_block_)
+        , max_size(max_size_)
+    {}
+
+    void insert(const BlocksList & blocks);
+    void merge(std::function<void(const Block &)> callback = [](const Block &){});
+};
 
 
 class MergeJoin : public IJoin
 {
 public:
-    MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block);
+    MergeJoin(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample_block);
 
-    bool addJoinedBlock(const Block & block, bool check_limits) override;
+    bool addJoinedBlock(const Block & block, bool check_limits = true) override;
     void joinBlock(Block &, ExtraBlockPtr & not_processed) override;
     void joinTotals(Block &) const override;
     void setTotals(const Block &) override;
     bool hasTotals() const override { return totals; }
-    size_t getTotalRowCount() const override { return right_blocks.row_count; }
-    size_t getTotalByteCount() const override { return right_blocks.bytes; }
-
-    BlockInputStreamPtr createStreamWithNonJoinedRows(const Block & result_sample_block, UInt64 max_block_size) const override;
+    size_t getTotalRowCount() const override { return right_blocks_row_count; }
+    size_t getTotalByteCount() const override { return right_blocks_bytes; }
 
 private:
-    friend class NonMergeJoinedBlockInputStream;
-
     struct NotProcessed : public ExtraBlock
     {
         size_t left_position;
@@ -43,21 +66,8 @@ private:
         size_t right_block;
     };
 
-    struct RightBlockInfo
-    {
-        std::shared_ptr<Block> block;
-        size_t block_number;
-        size_t & skip;
-        RowBitmaps * bitmaps;
-        std::unique_ptr<std::vector<bool>> used_bitmap;
-
-        RightBlockInfo(std::shared_ptr<Block> block_, size_t block_number, size_t & skip_, RowBitmaps * bitmaps);
-        ~RightBlockInfo(); /// apply used bitmap
-        void setUsed(size_t start, size_t length);
-    };
-
     /// There're two size limits for right-hand table: max_rows_in_join, max_bytes_in_join.
-    /// max_bytes is preferred. If it isn't set we approximate it as (max_rows * bytes/row).
+    /// max_bytes is prefered. If it isn't set we approximate it as (max_rows * bytes/row).
     struct BlockByteWeight
     {
         size_t operator()(const Block & block) const { return block.bytes(); }
@@ -66,7 +76,7 @@ private:
     using Cache = LRUCache<size_t, Block, std::hash<size_t>, BlockByteWeight>;
 
     mutable std::shared_mutex rwlock;
-    std::shared_ptr<TableJoin> table_join;
+    std::shared_ptr<AnalyzedJoin> table_join;
     SizeLimits size_limits;
     SortDescription left_sort_description;
     SortDescription right_sort_description;
@@ -75,29 +85,25 @@ private:
     Block right_sample_block;
     Block right_table_keys;
     Block right_columns_to_add;
-    SortedBlocksWriter::Blocks right_blocks;
+    BlocksList right_blocks;
     Blocks min_max_right_blocks;
-    std::shared_ptr<SortedBlocksBuffer> left_blocks_buffer;
-    std::shared_ptr<RowBitmaps> used_rows_bitmap;
-    mutable std::unique_ptr<Cache> cached_right_blocks;
+    std::unique_ptr<Cache> cached_right_blocks;
     std::vector<std::shared_ptr<Block>> loaded_right_blocks;
-    std::unique_ptr<SortedBlocksWriter> disk_writer;
-    SortedBlocksWriter::SortedFiles flushed_right_blocks;
+    std::unique_ptr<MiniLSM> lsm;
+    MiniLSM::SortedFiles flushed_right_blocks;
     Block totals;
-    std::atomic<bool> is_in_memory{true};
+    size_t right_blocks_row_count = 0;
+    size_t right_blocks_bytes = 0;
+    bool is_in_memory = true;
     const bool nullable_right_side;
-    const bool nullable_left_side;
     const bool is_any_join;
     const bool is_all_join;
     const bool is_semi_join;
     const bool is_inner;
     const bool is_left;
-    const bool is_right;
-    const bool is_full;
-    static constexpr const bool skip_not_intersected = true; /// skip index for right blocks
+    const bool skip_not_intersected;
     const size_t max_joined_block_rows;
     const size_t max_rows_in_right_block;
-    const size_t max_files_to_merge;
 
     void changeLeftColumns(Block & block, MutableColumns && columns) const;
     void addRightColumns(Block & block, MutableColumns && columns);
@@ -109,41 +115,38 @@ private:
     void mergeRightBlocks();
 
     template <bool in_memory>
-    size_t rightBlocksCount() const;
+    size_t rightBlocksCount();
     template <bool in_memory, bool is_all>
     void joinSortedBlock(Block & block, ExtraBlockPtr & not_processed);
     template <bool in_memory>
-    std::shared_ptr<Block> loadRightBlock(size_t pos) const;
-
-    std::shared_ptr<Block> getRightBlock(size_t pos) const
-    {
-        if (is_in_memory)
-            return loadRightBlock<true>(pos);
-        return loadRightBlock<false>(pos);
-    }
-
-    size_t getRightBlocksCount() const
-    {
-        if (is_in_memory)
-            return rightBlocksCount<true>();
-        return rightBlocksCount<false>();
-    }
+    std::shared_ptr<Block> loadRightBlock(size_t pos);
 
     template <bool is_all> /// ALL or ANY
-    bool leftJoin(MergeJoinCursor & left_cursor, const Block & left_block, RightBlockInfo & right_block_info,
-                  MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail);
-    bool semiLeftJoin(MergeJoinCursor & left_cursor, const Block & left_block, const RightBlockInfo & right_block_info,
+    bool leftJoin(MergeJoinCursor & left_cursor, const Block & left_block, const Block & right_block,
+                  MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & skip_right);
+    bool semiLeftJoin(MergeJoinCursor & left_cursor, const Block & left_block, const Block & right_block,
                   MutableColumns & left_columns, MutableColumns & right_columns);
-    bool allInnerJoin(MergeJoinCursor & left_cursor, const Block & left_block, RightBlockInfo & right_block_info,
-                  MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail);
+    bool allInnerJoin(MergeJoinCursor & left_cursor, const Block & left_block, const Block & right_block,
+                  MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & skip_right);
 
-    Block modifyRightBlock(const Block & src_block) const;
     bool saveRightBlock(Block && block);
+    void flushRightBlocks();
 
     void mergeInMemoryRightBlocks();
     void mergeFlushedRightBlocks();
 
-    void initRightTableWriter();
+    void clearRightBlocksList()
+    {
+        right_blocks.clear();
+        right_blocks_row_count = 0;
+        right_blocks_bytes = 0;
+    }
+
+    void countBlockSize(const Block & block)
+    {
+        right_blocks_row_count += block.rows();
+        right_blocks_bytes += block.bytes();
+    }
 };
 
 }

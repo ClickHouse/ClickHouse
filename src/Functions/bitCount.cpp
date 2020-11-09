@@ -6,9 +6,6 @@
 namespace DB
 {
 
-namespace
-{
-
 template <typename A>
 struct BitCountImpl
 {
@@ -29,7 +26,7 @@ struct BitCountImpl
         if constexpr (std::is_same_v<A, Int8>)
             return __builtin_popcount(static_cast<UInt8>(a));
         else
-            return __builtin_popcountll(ext::bit_cast<uint64_t>(a));
+            return __builtin_popcountll(ext::bit_cast<unsigned long long>(a));
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -39,8 +36,6 @@ struct BitCountImpl
 
 struct NameBitCount { static constexpr auto name = "bitCount"; };
 using FunctionBitCount = FunctionUnaryArithmetic<BitCountImpl, NameBitCount, false /* is injective */>;
-
-}
 
 /// The function has no ranges of monotonicity.
 template <> struct FunctionUnaryArithmeticMonotonicity<NameBitCount>

@@ -50,7 +50,8 @@ class CacheDictionary final : public IDictionary
 {
 public:
     CacheDictionary(
-        const StorageID & dict_id_,
+        const std::string & database_,
+        const std::string & name_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
         DictionaryLifetime dict_lifetime_,
@@ -63,6 +64,10 @@ public:
         size_t max_threads_for_updates);
 
     ~CacheDictionary() override;
+
+    const std::string & getDatabase() const override { return database; }
+    const std::string & getName() const override { return name; }
+    const std::string & getFullName() const override { return full_name; }
 
     std::string getTypeName() const override { return "Cache"; }
 
@@ -84,7 +89,8 @@ public:
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
         return std::make_shared<CacheDictionary>(
-                getDictionaryID(),
+                database,
+                name,
                 dict_struct,
                 getSourceAndUpdateIfNeeded()->clone(),
                 dict_lifetime,
@@ -315,6 +321,9 @@ private:
     template <typename AncestorType>
     void isInImpl(const PaddedPODArray<Key> & child_ids, const AncestorType & ancestor_ids, PaddedPODArray<UInt8> & out) const;
 
+    const std::string database;
+    const std::string name;
+    const std::string full_name;
     const DictionaryStructure dict_struct;
 
     /// Dictionary source should be used with mutex
@@ -329,11 +338,11 @@ private:
     const size_t query_wait_timeout_milliseconds;
     const size_t max_threads_for_updates;
 
-    Poco::Logger * log;
+    Logger * const log;
 
     /// This lock is used for the inner cache state update function lock it for
     /// write, when it need to update cache state all other functions just
-    /// readers. Surprisingly this lock is also used for last_exception pointer.
+    /// readers. Suprisingly this lock is also used for last_exception pointer.
     mutable std::shared_mutex rw_lock;
 
     /// Actual size will be increased to match power of 2
@@ -342,7 +351,7 @@ private:
     /// all bits to 1  mask (size - 1) (0b1000 - 1 = 0b111)
     const size_t size_overlap_mask;
 
-    /// Max tries to find cell, overlapped with mask: if size = 16 and start_cell=10: will try cells: 10,11,12,13,14,15,0,1,2,3
+    /// Max tries to find cell, overlaped with mask: if size = 16 and start_cell=10: will try cells: 10,11,12,13,14,15,0,1,2,3
     static constexpr size_t max_collision_length = 10;
 
     const size_t zero_cell_idx{getCellIdx(0)};
@@ -374,10 +383,10 @@ private:
      * How the update goes: we basically have a method like get(keys)->values. Values are cached, so sometimes we
      * can return them from the cache. For values not in cache, we query them from the dictionary, and add to the
      * cache. The cache is lossy, so we can't expect it to store all the keys, and we store them separately. Normally,
-     * they would be passed as a return value of get(), but for Unknown Reasons the dictionaries use a baroque
+     * they would be passed as a return value of get(), but for Unknown Reasons the dictionaries use a baroque 
      * interface where get() accepts two callback, one that it calls for found values, and one for not found.
      *
-     * Now we make it even uglier by doing this from multiple threads. The missing values are retrieved from the
+     * Now we make it even uglier by doing this from multiple threads. The missing values are retreived from the
      * dictionary in a background thread, and this thread calls the provided callback. So if you provide the callbacks,
      * you MUST wait until the background update finishes, or god knows what happens. Unfortunately, we have no
      * way to check that you did this right, so good luck.
@@ -416,7 +425,7 @@ private:
         std::vector<Key> requested_ids;
 
         /// It might seem that it is a leak of performance.
-        /// But acquiring a mutex without contention is rather cheap.
+        /// But aquiring a mutex without contention is rather cheap.
         std::mutex callback_mutex;
         bool can_use_callback{true};
 

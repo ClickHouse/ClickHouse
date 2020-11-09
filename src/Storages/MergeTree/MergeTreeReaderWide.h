@@ -15,15 +15,14 @@ class MergeTreeReaderWide : public IMergeTreeReader
 {
 public:
     MergeTreeReaderWide(
-        DataPartWidePtr data_part_,
-        NamesAndTypesList columns_,
-        const StorageMetadataPtr & metadata_snapshot_,
+        const DataPartWidePtr & data_part_,
+        const NamesAndTypesList & columns_,
         UncompressedCache * uncompressed_cache_,
         MarkCache * mark_cache_,
-        MarkRanges mark_ranges_,
-        MergeTreeReaderSettings settings_,
-        ValueSizeMap avg_value_size_hints_ = {},
-        const ReadBufferFromFileBase::ProfileCallback & profile_callback_ = {},
+        const MarkRanges & mark_ranges_,
+        const MergeTreeReaderSettings & settings_,
+        const ValueSizeMap & avg_value_size_hints_ = ValueSizeMap{},
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback_ = ReadBufferFromFileBase::ProfileCallback{},
         clockid_t clock_type_ = CLOCK_MONOTONIC_COARSE);
 
     /// Return the number of rows has been read or zero if there is no columns to read.

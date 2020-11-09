@@ -1,17 +1,18 @@
 #include <Storages/PartitionCommands.h>
 #include <Storages/IStorage.h>
-#include <Storages/DataDestinationType.h>
+#include <Storages/MergeTree/PartDestinationType.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Core/ColumnWithTypeAndName.h>
-#include <DataTypes/DataTypeString.h>
-#include <Processors/Chunk.h>
-#include <Processors/Pipe.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
+}
 
 std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * command_ast)
 {
@@ -47,13 +48,13 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
         res.part = command_ast->part;
         switch (command_ast->move_destination_type)
         {
-            case DataDestinationType::DISK:
+            case PartDestinationType::DISK:
                 res.move_destination_type = PartitionCommand::MoveDestinationType::DISK;
                 break;
-            case DataDestinationType::VOLUME:
+            case PartDestinationType::VOLUME:
                 res.move_destination_type = PartitionCommand::MoveDestinationType::VOLUME;
                 break;
-            case DataDestinationType::TABLE:
+            case PartDestinationType::TABLE:
                 res.move_destination_type = PartitionCommand::MoveDestinationType::TABLE;
                 res.to_database = command_ast->to_database;
                 res.to_table = command_ast->to_table;
@@ -91,6 +92,28 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
         res.with_name = command_ast->with_name;
         return res;
     }
+    else if (command_ast->type == ASTAlterCommand::DROP_COLUMN && command_ast->partition)
+    {
+        if (!command_ast->clear_column)
+            throw Exception("Can't DROP COLUMN from partition. It is possible only to CLEAR COLUMN in partition", ErrorCodes::BAD_ARGUMENTS);
+
+        PartitionCommand res;
+        res.type = CLEAR_COLUMN;
+        res.partition = command_ast->partition;
+        res.column_name = getIdentifierName(command_ast->column);
+        return res;
+    }
+    else if (command_ast->type == ASTAlterCommand::DROP_INDEX && command_ast->partition)
+    {
+        if (!command_ast->clear_index)
+            throw Exception("Can't DROP INDEX from partition. It is possible only to CLEAR INDEX in partition", ErrorCodes::BAD_ARGUMENTS);
+
+        PartitionCommand res;
+        res.type = CLEAR_INDEX;
+        res.partition = command_ast->partition;
+        res.index_name = getIdentifierName(command_ast->index);
+        return res;
+    }
     else if (command_ast->type == ASTAlterCommand::FREEZE_ALL)
     {
         PartitionCommand command;
@@ -102,92 +125,31 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
         return {};
 }
 
-std::string PartitionCommand::typeToString() const
+void PartitionCommands::validate(const IStorage & table)
 {
-    switch (type)
+    for (const PartitionCommand & command : *this)
     {
-    case PartitionCommand::Type::ATTACH_PARTITION:
-        if (part)
-            return "ATTACH PART";
-        else
-            return "ATTACH PARTITION";
-    case PartitionCommand::Type::MOVE_PARTITION:
-        return "MOVE PARTITION";
-    case PartitionCommand::Type::DROP_PARTITION:
-        if (detach)
-            return "DETACH PARTITION";
-        else
-            return "DROP PARTITION";
-    case PartitionCommand::Type::DROP_DETACHED_PARTITION:
-        if (part)
-            return "DROP DETACHED PART";
-        else
-            return "DROP DETACHED PARTITION";
-    case PartitionCommand::Type::FETCH_PARTITION:
-        return "FETCH PARTITION";
-    case PartitionCommand::Type::FREEZE_ALL_PARTITIONS:
-        return "FREEZE ALL";
-    case PartitionCommand::Type::FREEZE_PARTITION:
-        return "FREEZE PARTITION";
-    case PartitionCommand::Type::REPLACE_PARTITION:
-        return "REPLACE PARTITION";
-    }
-    __builtin_unreachable();
-}
-
-Pipe convertCommandsResultToSource(const PartitionCommandsResultInfo & commands_result)
-{
-    Block header {
-         ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "command_type"),
-         ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "partition_id"),
-         ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "part_name"),
-    };
-
-    for (const auto & command_result : commands_result)
-    {
-        if (!command_result.old_part_name.empty() && !header.has("old_part_name"))
-            header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "old_part_name"));
-
-        if (!command_result.backup_name.empty() && !header.has("backup_name"))
-            header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "backup_name"));
-
-        if (!command_result.backup_path.empty() && !header.has("backup_path"))
-            header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "backup_path"));
-        if (!command_result.backup_path.empty() && !header.has("part_backup_path"))
-            header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "part_backup_path"));
-    }
-
-    MutableColumns res_columns = header.cloneEmptyColumns();
-
-    for (const auto & command_result : commands_result)
-    {
-        res_columns[0]->insert(command_result.command_type);
-        res_columns[1]->insert(command_result.partition_id);
-        res_columns[2]->insert(command_result.part_name);
-        if (header.has("old_part_name"))
+        if (command.type == PartitionCommand::CLEAR_COLUMN)
         {
-            size_t pos = header.getPositionByName("old_part_name");
-            res_columns[pos]->insert(command_result.old_part_name);
+            String column_name = command.column_name.safeGet<String>();
+
+            if (!table.getColumns().hasPhysical(column_name))
+            {
+                throw Exception("Wrong column name. Cannot find column " + column_name + " to clear it from partition",
+                    DB::ErrorCodes::ILLEGAL_COLUMN);
+            }
         }
-        if (header.has("backup_name"))
+        else if (command.type == PartitionCommand::CLEAR_INDEX)
         {
-            size_t pos = header.getPositionByName("backup_name");
-            res_columns[pos]->insert(command_result.backup_name);
-        }
-        if (header.has("backup_path"))
-        {
-            size_t pos = header.getPositionByName("backup_path");
-            res_columns[pos]->insert(command_result.backup_path);
-        }
-        if (header.has("part_backup_path"))
-        {
-            size_t pos = header.getPositionByName("part_backup_path");
-            res_columns[pos]->insert(command_result.part_backup_path);
+            String index_name = command.index_name.safeGet<String>();
+
+            if (!table.getIndices().has(index_name))
+            {
+                throw Exception("Wrong index name. Cannot find index " + index_name + " to clear it from partition",
+                                DB::ErrorCodes::BAD_ARGUMENTS);
+            }
         }
     }
-
-    Chunk chunk(std::move(res_columns), commands_result.size());
-    return Pipe(std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk)));
 }
 
 }

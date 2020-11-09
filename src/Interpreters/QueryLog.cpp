@@ -1,23 +1,21 @@
-#include <array>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/ProfileEventsExt.h>
-#include <Interpreters/QueryLog.h>
-#include <Poco/Net/IPAddress.h>
-#include <Common/ClickHouseRevision.h>
-#include <Common/IPv6ToBinary.h>
 #include <Common/ProfileEvents.h>
+#include <Common/IPv6ToBinary.h>
+#include <Common/ClickHouseRevision.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnArray.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <Interpreters/QueryLog.h>
+#include <Interpreters/ProfileEventsExt.h>
+#include <Poco/Net/IPAddress.h>
+#include <array>
 
 
 namespace DB
@@ -39,9 +37,7 @@ Block QueryLogElement::createBlock()
         {std::move(query_status_datatype),                                    "type"},
         {std::make_shared<DataTypeDate>(),                                    "event_date"},
         {std::make_shared<DataTypeDateTime>(),                                "event_time"},
-        {std::make_shared<DataTypeDateTime64>(6),                             "event_time_microseconds"},
         {std::make_shared<DataTypeDateTime>(),                                "query_start_time"},
-        {std::make_shared<DataTypeDateTime64>(6),                             "query_start_time_microseconds"},
         {std::make_shared<DataTypeUInt64>(),                                  "query_duration_ms"},
 
         {std::make_shared<DataTypeUInt64>(),                                  "read_rows"},
@@ -52,7 +48,6 @@ Block QueryLogElement::createBlock()
         {std::make_shared<DataTypeUInt64>(),                                  "result_bytes"},
         {std::make_shared<DataTypeUInt64>(),                                  "memory_usage"},
 
-        {std::make_shared<DataTypeString>(),                                  "current_database"},
         {std::make_shared<DataTypeString>(),                                  "query"},
         {std::make_shared<DataTypeInt32>(),                                   "exception_code"},
         {std::make_shared<DataTypeString>(),                                  "exception"},
@@ -87,20 +82,19 @@ Block QueryLogElement::createBlock()
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Settings.Names"},
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Settings.Values"}
     };
-
 }
 
 
-void QueryLogElement::appendToBlock(MutableColumns & columns) const
+void QueryLogElement::appendToBlock(Block & block) const
 {
+    MutableColumns columns = block.mutateColumns();
+
     size_t i = 0;
 
     columns[i++]->insert(type);
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time));
     columns[i++]->insert(event_time);
-    columns[i++]->insert(event_time_microseconds);
     columns[i++]->insert(query_start_time);
-    columns[i++]->insert(query_start_time_microseconds);
     columns[i++]->insert(query_duration_ms);
 
     columns[i++]->insert(read_rows);
@@ -112,7 +106,6 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[i++]->insert(memory_usage);
 
-    columns[i++]->insertData(current_database.data(), current_database.size());
     columns[i++]->insertData(query.data(), query.size());
     columns[i++]->insert(exception_code);
     columns[i++]->insertData(exception.data(), exception.size());
@@ -120,7 +113,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
 
     appendClientInfo(client_info, columns, i);
 
-    columns[i++]->insert(ClickHouseRevision::getVersionRevision());
+    columns[i++]->insert(ClickHouseRevision::get());
 
     {
         Array threads_array;
@@ -132,8 +125,8 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
 
     if (profile_counters)
     {
-        auto * column_names = columns[i++].get();
-        auto * column_values = columns[i++].get();
+        auto *column_names = columns[i++].get();
+        auto *column_values = columns[i++].get();
         ProfileEvents::dumpToArrayColumns(*profile_counters, column_names, column_values, true);
     }
     else
@@ -144,8 +137,8 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
 
     if (query_settings)
     {
-        auto * column_names = columns[i++].get();
-        auto * column_values = columns[i++].get();
+        auto *column_names = columns[i++].get();
+        auto *column_values = columns[i++].get();
         query_settings->dumpToArrayColumns(column_names, column_values, true);
     }
     else
@@ -153,6 +146,8 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         columns[i++]->insertDefault();
         columns[i++]->insertDefault();
     }
+
+    block.setColumns(std::move(columns));
 }
 
 void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i)
@@ -174,7 +169,7 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
     columns[i++]->insert(client_info.os_user);
     columns[i++]->insert(client_info.client_hostname);
     columns[i++]->insert(client_info.client_name);
-    columns[i++]->insert(client_info.client_tcp_protocol_version);
+    columns[i++]->insert(client_info.client_revision);
     columns[i++]->insert(client_info.client_version_major);
     columns[i++]->insert(client_info.client_version_minor);
     columns[i++]->insert(client_info.client_version_patch);

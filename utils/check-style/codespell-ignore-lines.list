@@ -1,6 +1,0 @@
-/// https://groups.google.com/forum/#!searchin/kona-dev/variadic$20macro%7Csort:date/kona-dev/XMA-lDOqtlI/GCzdfZsD41sJ
-Jo-Philipp Wich
-The TRE regular expression implementation (src/regex/reg* and
-src/regex/tre*) is Copyright © 2001-2008 Ville Laurikari and licensed
-                pullRequests(first: {min_page_size} baseRefName: "{base}" headRefName: "{head}") {{
-    uint64_t time_to_wait = nanoseconds * timebase_info.denom / timebase_info.numer;

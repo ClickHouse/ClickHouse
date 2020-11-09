@@ -28,7 +28,7 @@ namespace DB
 
 
 /// Simplified version of the StorageDistributed class.
-class StorageDistributedFake final : public ext::shared_ptr_helper<StorageDistributedFake>, public DB::IStorage
+class StorageDistributedFake : public ext::shared_ptr_helper<StorageDistributedFake>, public DB::IStorage
 {
     friend struct ext::shared_ptr_helper<StorageDistributedFake>;
 public:
@@ -1156,8 +1156,7 @@ static bool run()
 
 TestResult check(const TestEntry & entry)
 {
-    static DB::SharedContextHolder shared_context = DB::Context::createShared();
-    static DB::Context context = DB::Context::createGlobal(shared_context.get());
+    static DB::Context context = DB::Context::createGlobal();
     context.makeGlobalContext();
 
     try
@@ -1167,11 +1166,13 @@ TestResult check(const TestEntry & entry)
         auto storage_distributed_hits = StorageDistributedFake::create("distant_db", "distant_hits", entry.shard_count);
 
         DB::DatabasePtr database = std::make_shared<DB::DatabaseOrdinary>("test", "./metadata/test/", context);
-        DB::DatabaseCatalog::instance().attachDatabase("test", database);
+        context.addDatabase("test", database);
         database->attachTable("visits_all", storage_distributed_visits);
         database->attachTable("hits_all", storage_distributed_hits);
         context.setCurrentDatabase("test");
-        context.setSetting("distributed_product_mode", entry.mode);
+
+        auto & settings = context.getSettingsRef();
+        settings.distributed_product_mode = entry.mode;
 
         /// Parse and process the incoming query.
         DB::ASTPtr ast_input;
@@ -1209,12 +1210,12 @@ TestResult check(const TestEntry & entry)
         bool res = equals(ast_input, ast_expected);
         std::string output = DB::queryToString(ast_input);
 
-        DB::DatabaseCatalog::instance().detachDatabase("test");
+        context.detachDatabase("test");
         return TestResult(res, output);
     }
     catch (DB::Exception & e)
     {
-        DB::DatabaseCatalog::instance().detachDatabase("test");
+        context.detachDatabase("test");
         return TestResult(false, e.displayText());
     }
 }
@@ -1223,9 +1224,9 @@ bool parse(DB::ASTPtr & ast, const std::string & query)
 {
     DB::ParserSelectQuery parser;
     std::string message;
-    const auto * begin = query.data();
-    const auto * end = begin + query.size();
-    ast = DB::tryParseQuery(parser, begin, end, message, false, "", false, 0, 0);
+    const auto *begin = query.data();
+    const auto *end = begin + query.size();
+    ast = DB::tryParseQuery(parser, begin, end, message, false, "", false, 0);
     return ast != nullptr;
 }
 

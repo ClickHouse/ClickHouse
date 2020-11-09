@@ -4,13 +4,14 @@
 
 #include <math.h>
 
-#include <new>
 #include <utility>
 
 #include <boost/noncopyable.hpp>
 
+#include <common/likely.h>
+
 #include <Core/Defines.h>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Common/Exception.h>
 
 #include <IO/WriteBuffer.h>
@@ -228,7 +229,6 @@ struct HashTableGrower
     /// The state of this structure is enough to get the buffer size of the hash table.
 
     UInt8 size_degree = initial_size_degree;
-    static constexpr auto initial_count = 1ULL << initial_size_degree;
 
     /// The size of the hash table in the cells.
     size_t bufSize() const               { return 1ULL << size_degree; }
@@ -276,7 +276,6 @@ struct HashTableGrower
 template <size_t key_bits>
 struct HashTableFixedGrower
 {
-    static constexpr auto initial_count = 1ULL << key_bits;
     size_t bufSize() const               { return 1ULL << key_bits; }
     size_t place(size_t x) const         { return x; }
     /// You could write __builtin_unreachable(), but the compiler does not optimize everything, and it turns out less efficiently.
@@ -315,8 +314,8 @@ public:
         zeroValue()->~Cell();
     }
 
-    Cell * zeroValue()             { return std::launder(reinterpret_cast<Cell*>(&zero_value_storage)); }
-    const Cell * zeroValue() const { return std::launder(reinterpret_cast<const Cell*>(&zero_value_storage)); }
+    Cell * zeroValue()             { return reinterpret_cast<Cell*>(&zero_value_storage); }
+    const Cell * zeroValue() const { return reinterpret_cast<const Cell*>(&zero_value_storage); }
 };
 
 template <typename Cell>
@@ -331,7 +330,6 @@ struct ZeroValueStorage<false, Cell>
 };
 
 
-// The HashTable
 template
 <
     typename Key,
@@ -347,14 +345,6 @@ class HashTable :
     protected Cell::State,
     protected ZeroValueStorage<Cell::need_zero_value_storage, Cell>     /// empty base optimization
 {
-public:
-    // If we use an allocator with inline memory, check that the initial
-    // size of the hash table is in sync with the amount of this memory.
-    static constexpr size_t initial_buffer_bytes
-        = Grower::initial_count * sizeof(Cell);
-    static_assert(allocatorInitialBytes<Allocator> == 0
-        || allocatorInitialBytes<Allocator> == initial_buffer_bytes);
-
 protected:
     friend class const_iterator;
     friend class iterator;
@@ -725,7 +715,7 @@ public:
 
     const_iterator cbegin() const { return begin(); }
 
-    iterator begin()
+    __attribute__((__no_sanitize__("undefined"))) iterator begin()
     {
         if (!buf)
             return end();
@@ -851,11 +841,6 @@ protected:
 
 
 public:
-    void reserve(size_t num_elements)
-    {
-        resize(num_elements);
-    }
-
     /// Insert a value. In the case of any more complex values, it is better to use the `emplace` function.
     std::pair<LookupResult, bool> ALWAYS_INLINE insert(const value_type & x)
     {

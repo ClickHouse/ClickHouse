@@ -12,17 +12,18 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int THERE_IS_NO_COLUMN;
-    extern const int ILLEGAL_COLUMN;
+    extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
 
 static ColumnPtr castColumnWithDiagnostic(
     const ColumnWithTypeAndName & src_elem,
-    const ColumnWithTypeAndName & res_elem)
+    const ColumnWithTypeAndName & res_elem,
+    const Context & context)
 {
     try
     {
-        return castColumn(src_elem, res_elem.type);
+        return castColumn(src_elem, res_elem.type, context);
     }
     catch (Exception & e)
     {
@@ -36,10 +37,10 @@ ConvertingTransform::ConvertingTransform(
     Block source_header_,
     Block result_header_,
     MatchColumnsMode mode_,
-    bool ignore_constant_values_)
+    const Context & context_)
     : ISimpleTransform(std::move(source_header_), std::move(result_header_), false)
+    , context(context_)
     , conversion(getOutputPort().getHeader().columns())
-    , ignore_constant_values(ignore_constant_values_)
 {
     const auto & source = getInputPort().getHeader();
     const auto & result = getOutputPort().getHeader();
@@ -61,11 +62,7 @@ ConvertingTransform::ConvertingTransform(
                 break;
 
             case MatchColumnsMode::Name:
-                /// It may seem strange, but sometimes block may have columns with the same name.
-                /// For this specific case, try to get column from the same position if it has correct name first.
-                if (result_col_num < source.columns() && source.getByPosition(result_col_num).name == res_elem.name)
-                    conversion[result_col_num] = result_col_num;
-                else if (source.has(res_elem.name))
+                if (source.has(res_elem.name))
                     conversion[result_col_num] = source.getPositionByName(res_elem.name);
                 else
                     throw Exception("Cannot find column " + backQuoteIfNeed(res_elem.name) + " in source stream",
@@ -81,20 +78,20 @@ ConvertingTransform::ConvertingTransform(
         {
             if (const auto * src_const = typeid_cast<const ColumnConst *>(src_elem.column.get()))
             {
-                if (!ignore_constant_values && res_const->getField() != src_const->getField())
+                if (res_const->getField() != src_const->getField())
                     throw Exception("Cannot convert column " + backQuoteIfNeed(res_elem.name) + " because "
                                     "it is constant but values of constants are different in source and result",
-                                    ErrorCodes::ILLEGAL_COLUMN);
+                                    ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
             }
             else
                 throw Exception("Cannot convert column " + backQuoteIfNeed(res_elem.name) + " because "
                                 "it is non constant in source stream but must be constant in result",
-                                ErrorCodes::ILLEGAL_COLUMN);
+                                ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
         }
 
         /// Check conversion by dry run CAST function.
 
-        castColumnWithDiagnostic(src_elem, res_elem);
+        castColumnWithDiagnostic(src_elem, res_elem, context);
     }
 }
 
@@ -117,13 +114,7 @@ void ConvertingTransform::transform(Chunk & chunk)
         src_elem.column = src_columns[conversion[res_pos]];
         auto res_elem = result.getByPosition(res_pos);
 
-        if (ignore_constant_values && isColumnConst(*res_elem.column))
-        {
-            res_columns.emplace_back(res_elem.column->cloneResized(num_rows));
-            continue;
-        }
-
-        ColumnPtr converted = castColumnWithDiagnostic(src_elem, res_elem);
+        ColumnPtr converted = castColumnWithDiagnostic(src_elem, res_elem, context);
 
         if (!isColumnConst(*res_elem.column))
             converted = converted->convertToFullColumnIfConst();

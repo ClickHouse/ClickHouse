@@ -37,7 +37,6 @@ inline bool allowDecimalComparison(const DataTypePtr & left_type, const DataType
 template <size_t > struct ConstructDecInt { using Type = Int32; };
 template <> struct ConstructDecInt<8> { using Type = Int64; };
 template <> struct ConstructDecInt<16> { using Type = Int128; };
-template <> struct ConstructDecInt<48> { using Type = Int256; };
 
 template <typename T, typename U>
 struct DecCompareInt
@@ -60,30 +59,40 @@ public:
     using ArrayA = typename ColVecA::Container;
     using ArrayB = typename ColVecB::Container;
 
-    static ColumnPtr apply(const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right)
+    DecimalComparison(Block & block, size_t result, const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right)
+    {
+        if (!apply(block, result, col_left, col_right))
+            throw Exception("Wrong decimal comparison with " + col_left.type->getName() + " and " + col_right.type->getName(),
+                            ErrorCodes::LOGICAL_ERROR);
+    }
+
+    static bool apply(Block & block, size_t result [[maybe_unused]],
+                      const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right)
     {
         if constexpr (_actual)
         {
             ColumnPtr c_res;
             Shift shift = getScales<A, B>(col_left.type, col_right.type);
 
-            return applyWithScale(col_left.column, col_right.column, shift);
+            c_res = applyWithScale(col_left.column, col_right.column, shift);
+            if (c_res)
+                block.getByPosition(result).column = std::move(c_res);
+            return true;
         }
-        else
-            return nullptr;
+        return false;
     }
 
     static bool compare(A a, B b, UInt32 scale_a, UInt32 scale_b)
     {
-        static const UInt32 max_scale = DecimalUtils::maxPrecision<Decimal256>();
+        static const UInt32 max_scale = DecimalUtils::maxPrecision<Decimal128>();
         if (scale_a > max_scale || scale_b > max_scale)
             throw Exception("Bad scale of decimal field", ErrorCodes::DECIMAL_OVERFLOW);
 
         Shift shift;
         if (scale_a < scale_b)
-            shift.a = static_cast<CompareInt>(DecimalUtils::scaleMultiplier<B>(scale_b - scale_a));
+            shift.a = B::getScaleMultiplier(scale_b - scale_a);
         if (scale_a > scale_b)
-            shift.b = static_cast<CompareInt>(DecimalUtils::scaleMultiplier<A>(scale_a - scale_b));
+            shift.b = A::getScaleMultiplier(scale_a - scale_b);
 
         return applyWithScale(a, b, shift);
     }
@@ -119,14 +128,14 @@ private:
         Shift shift;
         if (decimal0 && decimal1)
         {
-            auto result_type = decimalResultType<false, false>(*decimal0, *decimal1);
-            shift.a = static_cast<CompareInt>(result_type.scaleFactorFor(*decimal0, false).value);
-            shift.b = static_cast<CompareInt>(result_type.scaleFactorFor(*decimal1, false).value);
+            auto result_type = decimalResultType(*decimal0, *decimal1, false, false);
+            shift.a = result_type.scaleFactorFor(*decimal0, false);
+            shift.b = result_type.scaleFactorFor(*decimal1, false);
         }
         else if (decimal0)
-            shift.b = static_cast<CompareInt>(decimal0->getScaleMultiplier().value);
+            shift.b = decimal0->getScaleMultiplier();
         else if (decimal1)
-            shift.a = static_cast<CompareInt>(decimal1->getScaleMultiplier().value);
+            shift.a = decimal1->getScaleMultiplier();
 
         return shift;
     }
@@ -138,7 +147,7 @@ private:
         Shift shift;
         const DataTypeDecimal<T> * decimal0 = checkDecimal<T>(*left_type);
         if (decimal0)
-            shift.b = static_cast<CompareInt>(decimal0->getScaleMultiplier().value);
+            shift.b = decimal0->getScaleMultiplier();
         return shift;
     }
 
@@ -149,7 +158,7 @@ private:
         Shift shift;
         const DataTypeDecimal<U> * decimal1 = checkDecimal<U>(*right_type);
         if (decimal1)
-            shift.a = static_cast<CompareInt>(decimal1->getScaleMultiplier().value);
+            shift.a = decimal1->getScaleMultiplier();
         return shift;
     }
 
@@ -182,7 +191,7 @@ private:
                 const ColumnConst * c0_const = checkAndGetColumnConst<ColVecA>(c0.get());
                 A a = c0_const->template getValue<A>();
                 if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
-                    constantVector<scale_left, scale_right>(a, c1_vec->getData(), vec_res, scale);
+                    constant_vector<scale_left, scale_right>(a, c1_vec->getData(), vec_res, scale);
                 else
                     throw Exception("Wrong column in Decimal comparison", ErrorCodes::LOGICAL_ERROR);
             }
@@ -191,7 +200,7 @@ private:
                 const ColumnConst * c1_const = checkAndGetColumnConst<ColVecB>(c1.get());
                 B b = c1_const->template getValue<B>();
                 if (const ColVecA * c0_vec = checkAndGetColumn<ColVecA>(c0.get()))
-                    vectorConstant<scale_left, scale_right>(c0_vec->getData(), b, vec_res, scale);
+                    vector_constant<scale_left, scale_right>(c0_vec->getData(), b, vec_res, scale);
                 else
                     throw Exception("Wrong column in Decimal comparison", ErrorCodes::LOGICAL_ERROR);
             }
@@ -200,7 +209,7 @@ private:
                 if (const ColVecA * c0_vec = checkAndGetColumn<ColVecA>(c0.get()))
                 {
                     if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
-                        vectorVector<scale_left, scale_right>(c0_vec->getData(), c1_vec->getData(), vec_res, scale);
+                        vector_vector<scale_left, scale_right>(c0_vec->getData(), c1_vec->getData(), vec_res, scale);
                     else
                         throw Exception("Wrong column in Decimal comparison", ErrorCodes::LOGICAL_ERROR);
                 }
@@ -215,26 +224,17 @@ private:
     template <bool scale_left, bool scale_right>
     static NO_INLINE UInt8 apply(A a, B b, CompareInt scale [[maybe_unused]])
     {
-        CompareInt x;
-        if constexpr (IsDecimalNumber<A>)
-            x = a.value;
-        else
-            x = a;
-
-        CompareInt y;
-        if constexpr (IsDecimalNumber<B>)
-            y = b.value;
-        else
-            y = b;
+        CompareInt x = a;
+        CompareInt y = b;
 
         if constexpr (_check_overflow)
         {
             bool overflow = false;
 
             if constexpr (sizeof(A) > sizeof(CompareInt))
-                overflow |= (bigint_cast<A>(x) != a);
+                overflow |= (A(x) != a);
             if constexpr (sizeof(B) > sizeof(CompareInt))
-                overflow |= (bigint_cast<B>(y) != b);
+                overflow |= (B(y) != b);
             if constexpr (is_unsigned_v<A>)
                 overflow |= (x < 0);
             if constexpr (is_unsigned_v<B>)
@@ -260,7 +260,7 @@ private:
     }
 
     template <bool scale_left, bool scale_right>
-    static void NO_INLINE vectorVector(const ArrayA & a, const ArrayB & b, PaddedPODArray<UInt8> & c,
+    static void NO_INLINE vector_vector(const ArrayA & a, const ArrayB & b, PaddedPODArray<UInt8> & c,
                                         CompareInt scale)
     {
         size_t size = a.size();
@@ -279,7 +279,7 @@ private:
     }
 
     template <bool scale_left, bool scale_right>
-    static void NO_INLINE vectorConstant(const ArrayA & a, B b, PaddedPODArray<UInt8> & c, CompareInt scale)
+    static void NO_INLINE vector_constant(const ArrayA & a, B b, PaddedPODArray<UInt8> & c, CompareInt scale)
     {
         size_t size = a.size();
         const A * a_pos = a.data();
@@ -295,7 +295,7 @@ private:
     }
 
     template <bool scale_left, bool scale_right>
-    static void NO_INLINE constantVector(A a, const ArrayB & b, PaddedPODArray<UInt8> & c, CompareInt scale)
+    static void NO_INLINE constant_vector(A a, const ArrayB & b, PaddedPODArray<UInt8> & c, CompareInt scale)
     {
         size_t size = b.size();
         const B * b_pos = b.data();

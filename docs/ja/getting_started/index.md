@@ -1,0 +1,1 @@
+../../en/getting_started/index.md

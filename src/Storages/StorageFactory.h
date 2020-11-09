@@ -6,7 +6,6 @@
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/registerStorages.h>
-#include <Access/AccessType.h>
 #include <unordered_map>
 
 
@@ -55,7 +54,6 @@ public:
         bool supports_ttl = false;
         bool supports_replication = false;
         bool supports_deduplication = false;
-        AccessType source_access_type = AccessType::NONE;
     };
 
     using CreatorFn = std::function<StoragePtr(const Arguments & arguments)>;
@@ -85,7 +83,6 @@ public:
         .supports_ttl = false,
         .supports_replication = false,
         .supports_deduplication = false,
-        .source_access_type = AccessType::NONE,
     });
 
     const Storages & getAllStorages() const
@@ -111,7 +108,6 @@ public:
         return result;
     }
 
-    AccessType getSourceAccessType(const String & table_engine) const;
 
 private:
     Storages storages;

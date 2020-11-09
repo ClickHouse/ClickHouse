@@ -54,7 +54,7 @@ void DataTypeLowCardinality::enumerateStreams(const StreamCallback & callback, S
     path.push_back(Substream::DictionaryKeys);
     dictionary_type->enumerateStreams(callback, path);
     path.back() = Substream::DictionaryIndexes;
-    callback(path, *this);
+    callback(path);
     path.pop_back();
 }
 
@@ -77,7 +77,7 @@ struct KeysSerializationVersion
             throw Exception("Invalid version for DataTypeLowCardinality key column.", ErrorCodes::LOGICAL_ERROR);
     }
 
-    explicit KeysSerializationVersion(UInt64 version) : value(static_cast<Value>(version)) { checkVersion(version); }
+    KeysSerializationVersion(UInt64 version) : value(static_cast<Value>(version)) { checkVersion(version); }
 };
 
 /// Version is stored at the start of each granule. It's used to store indexes type and flags.
@@ -604,7 +604,7 @@ void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreams(
     auto * low_cardinality_state = checkAndGetLowCardinalityDeserializeState(state);
     KeysSerializationVersion::checkVersion(low_cardinality_state->key_version.value);
 
-    auto read_dictionary = [this, low_cardinality_state, keys_stream]()
+    auto readDictionary = [this, low_cardinality_state, keys_stream]()
     {
         UInt64 num_keys;
         readIntBinary(num_keys, *keys_stream);
@@ -617,7 +617,7 @@ void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreams(
         low_cardinality_state->global_dictionary = std::move(column_unique);
     };
 
-    auto read_additional_keys = [this, low_cardinality_state, indexes_stream]()
+    auto readAdditionalKeys = [this, low_cardinality_state, indexes_stream]()
     {
         UInt64 num_keys;
         readIntBinary(num_keys, *indexes_stream);
@@ -636,7 +636,7 @@ void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreams(
         }
     };
 
-    auto read_indexes = [this, low_cardinality_state, indexes_stream, &low_cardinality_column](UInt64 num_rows)
+    auto readIndexes = [this, low_cardinality_state, indexes_stream, &low_cardinality_column](UInt64 num_rows)
     {
         auto indexes_type = low_cardinality_state->index_type.getDataType();
         MutableColumnPtr indexes_column = indexes_type->createColumn();
@@ -672,7 +672,7 @@ void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreams(
             ColumnLowCardinality::Index(indexes_column->getPtr()).check(
                     maps.dictionary_map->size() + maps.additional_keys_map->size());
 
-            auto used_keys = IColumn::mutate(global_dictionary->getNestedColumn()->index(*maps.dictionary_map, 0));
+            auto used_keys = (*std::move(global_dictionary->getNestedColumn()->index(*maps.dictionary_map, 0))).mutate();
 
             if (!maps.additional_keys_map->empty())
             {
@@ -715,12 +715,12 @@ void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreams(
                 !global_dictionary || index_type.need_update_dictionary || low_cardinality_state->need_update_dictionary;
             if (index_type.need_global_dictionary && need_update_dictionary)
             {
-                read_dictionary();
+                readDictionary();
                 low_cardinality_state->need_update_dictionary = false;
             }
 
             if (low_cardinality_state->index_type.has_additional_keys)
-                read_additional_keys();
+                readAdditionalKeys();
             else
                 low_cardinality_state->additional_keys = nullptr;
 
@@ -728,7 +728,7 @@ void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreams(
         }
 
         size_t num_rows_to_read = std::min<UInt64>(limit, low_cardinality_state->num_pending_rows);
-        read_indexes(num_rows_to_read);
+        readIndexes(num_rows_to_read);
         limit -= num_rows_to_read;
         low_cardinality_state->num_pending_rows -= num_rows_to_read;
     }
@@ -774,7 +774,7 @@ void DataTypeLowCardinality::deserializeTextQuoted(IColumn & column, ReadBuffer 
 
 void DataTypeLowCardinality::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    deserializeImpl(column, &IDataType::deserializeAsWholeText, istr, settings);
+    deserializeImpl(column, &IDataType::deserializeAsTextEscaped, istr, settings);
 }
 
 void DataTypeLowCardinality::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const

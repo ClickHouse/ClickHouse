@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/ClickHouseRevision.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
@@ -22,7 +23,7 @@ struct TemporaryFileStream
     TemporaryFileStream(const std::string & path)
         : file_in(path)
         , compressed_in(file_in)
-        , block_in(std::make_shared<NativeBlockInputStream>(compressed_in, DBMS_TCP_PROTOCOL_VERSION))
+        , block_in(std::make_shared<NativeBlockInputStream>(compressed_in, ClickHouseRevision::get()))
     {}
 
     TemporaryFileStream(const std::string & path, const Block & header_)
@@ -32,11 +33,10 @@ struct TemporaryFileStream
     {}
 
     /// Flush data from input stream into file for future reading
-    static void write(const std::string & path, const Block & header, IBlockInputStream & input,
-                      std::atomic<bool> * is_cancelled, const std::string & codec)
+    static void write(const std::string & path, const Block & header, IBlockInputStream & input, std::atomic<bool> * is_cancelled = nullptr)
     {
         WriteBufferFromFile file_buf(path);
-        CompressedWriteBuffer compressed_buf(file_buf, CompressionCodecFactory::instance().get(codec, {}));
+        CompressedWriteBuffer compressed_buf(file_buf);
         NativeBlockOutputStream output(compressed_buf, 0, header);
         copyData(input, output, is_cancelled);
     }
@@ -58,26 +58,19 @@ public:
 protected:
     Block readImpl() override
     {
-        if (done)
-            return {};
-
-        if (!stream)
-            stream = std::make_unique<TemporaryFileStream>(path, header);
-
-        auto block = stream->block_in->read();
-        if (!block)
+        if (!done)
         {
             done = true;
-            stream.reset();
+            TemporaryFileStream stream(path, header);
+            return stream.block_in->read();
         }
-        return block;
+        return {};
     }
 
 private:
     const std::string path;
     Block header;
     bool done;
-    std::unique_ptr<TemporaryFileStream> stream;
 };
 
 }

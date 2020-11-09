@@ -157,8 +157,11 @@ public:
 
     bool is_clean() const
     {
-        return !is_stale()
-            && (!discovery_zxid.hasHappened() || (clean_state_zxid.hasHappened() && discovery_zxid <= clean_state_zxid));
+        return
+                !is_stale()
+                && (
+                        !discovery_zxid.hasHappened()
+                        || (clean_state_zxid.hasHappened() && discovery_zxid <= clean_state_zxid));
     }
 
     bool is_stale() const
@@ -178,16 +181,16 @@ public:
                 [stale = stale] (const Coordination::WatchResponse & rsp)
                 {
                     auto logger = &Poco::Logger::get("ClusterCopier");
-                    if (rsp.error == Coordination::Error::ZOK)
+                    if (rsp.error == Coordination::ZOK)
                     {
                         switch (rsp.type)
                         {
                             case Coordination::CREATED:
-                                LOG_DEBUG(logger, "CleanStateClock change: CREATED, at {}", rsp.path);
+                                LOG_DEBUG(logger, "CleanStateClock change: CREATED, at " << rsp.path);
                                 stale->store(true);
                                 break;
                             case Coordination::CHANGED:
-                                LOG_DEBUG(logger, "CleanStateClock change: CHANGED, at {}", rsp.path);
+                                LOG_DEBUG(logger, "CleanStateClock change: CHANGED, at" << rsp.path);
                                 stale->store(true);
                         }
                     }

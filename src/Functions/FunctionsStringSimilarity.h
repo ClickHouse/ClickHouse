@@ -51,12 +51,12 @@ public:
         return std::make_shared<DataTypeNumber<typename Impl::ResultType>>();
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         using ResultType = typename Impl::ResultType;
 
-        const ColumnPtr & column_haystack = arguments[0].column;
-        const ColumnPtr & column_needle = arguments[1].column;
+        const ColumnPtr & column_haystack = block.getByPosition(arguments[0]).column;
+        const ColumnPtr & column_needle = block.getByPosition(arguments[1]).column;
 
         const ColumnConst * col_haystack_const = typeid_cast<const ColumnConst *>(&*column_haystack);
         const ColumnConst * col_needle_const = typeid_cast<const ColumnConst *>(&*column_needle);
@@ -72,8 +72,10 @@ public:
                         + std::to_string(Impl::max_string_size),
                     ErrorCodes::TOO_LARGE_STRING_SIZE);
             }
-            Impl::constantConstant(col_haystack_const->getValue<String>(), needle, res);
-            return result_type->createColumnConst(col_haystack_const->size(), toField(res));
+            Impl::constant_constant(col_haystack_const->getValue<String>(), needle, res);
+            block.getByPosition(result).column
+                = block.getByPosition(result).type->createColumnConst(col_haystack_const->size(), toField(res));
+            return;
         }
 
         auto col_res = ColumnVector<ResultType>::create();
@@ -94,11 +96,11 @@ public:
                         + std::to_string(Impl::max_string_size),
                     ErrorCodes::TOO_LARGE_STRING_SIZE);
             }
-            Impl::vectorConstant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), needle, vec_res);
+            Impl::vector_constant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), needle, vec_res);
         }
         else if (col_haystack_vector && col_needle_vector)
         {
-            Impl::vectorVector(
+            Impl::vector_vector(
                 col_haystack_vector->getChars(),
                 col_haystack_vector->getOffsets(),
                 col_needle_vector->getChars(),
@@ -115,17 +117,17 @@ public:
                         + std::to_string(Impl::max_string_size),
                     ErrorCodes::TOO_LARGE_STRING_SIZE);
             }
-            Impl::constantVector(haystack, col_needle_vector->getChars(), col_needle_vector->getOffsets(), vec_res);
+            Impl::constant_vector(haystack, col_needle_vector->getChars(), col_needle_vector->getOffsets(), vec_res);
         }
         else
         {
             throw Exception(
-                "Illegal columns " + arguments[0].column->getName() + " and "
-                    + arguments[1].column->getName() + " of arguments of function " + getName(),
+                "Illegal columns " + block.getByPosition(arguments[0]).column->getName() + " and "
+                    + block.getByPosition(arguments[1]).column->getName() + " of arguments of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
         }
 
-        return col_res;
+        block.getByPosition(result).column = std::move(col_res);
     }
 };
 

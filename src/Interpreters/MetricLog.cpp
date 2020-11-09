@@ -2,7 +2,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeDateTime64.h>
 
 
 namespace DB
@@ -12,10 +11,9 @@ Block MetricLogElement::createBlock()
 {
     ColumnsWithTypeAndName columns_with_type_and_name;
 
-    columns_with_type_and_name.emplace_back(std::make_shared<DataTypeDate>(),           "event_date");
-    columns_with_type_and_name.emplace_back(std::make_shared<DataTypeDateTime>(),       "event_time");
-    columns_with_type_and_name.emplace_back(std::make_shared<DataTypeDateTime64>(6),    "event_time_microseconds");
-    columns_with_type_and_name.emplace_back(std::make_shared<DataTypeUInt64>(),         "milliseconds");
+    columns_with_type_and_name.emplace_back(std::make_shared<DataTypeDate>(),     "event_date");
+    columns_with_type_and_name.emplace_back(std::make_shared<DataTypeDateTime>(), "event_time");
+    columns_with_type_and_name.emplace_back(std::make_shared<DataTypeUInt64>(),   "milliseconds");
 
     for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
     {
@@ -29,7 +27,7 @@ Block MetricLogElement::createBlock()
     {
         std::string name;
         name += "CurrentMetric_";
-        name += CurrentMetrics::getName(CurrentMetrics::Metric(i));
+        name += CurrentMetrics::getName(ProfileEvents::Event(i));
         columns_with_type_and_name.emplace_back(std::make_shared<DataTypeInt64>(), std::move(name));
     }
 
@@ -37,13 +35,14 @@ Block MetricLogElement::createBlock()
 }
 
 
-void MetricLogElement::appendToBlock(MutableColumns & columns) const
+void MetricLogElement::appendToBlock(Block & block) const
 {
+    MutableColumns columns = block.mutateColumns();
+
     size_t column_idx = 0;
 
     columns[column_idx++]->insert(DateLUT::instance().toDayNum(event_time));
     columns[column_idx++]->insert(event_time);
-    columns[column_idx++]->insert(event_time_microseconds);
     columns[column_idx++]->insert(milliseconds);
 
     for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
@@ -71,22 +70,11 @@ void MetricLog::stopCollectMetric()
 }
 
 
-void MetricLog::shutdown()
-{
-    stopCollectMetric();
-    stopFlushThread();
-}
-
-
 inline UInt64 time_in_milliseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
 {
     return std::chrono::duration_cast<std::chrono::milliseconds>(timepoint.time_since_epoch()).count();
 }
 
-inline UInt64 time_in_microseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
-{
-    return std::chrono::duration_cast<std::chrono::microseconds>(timepoint.time_since_epoch()).count();
-}
 
 inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
 {
@@ -109,7 +97,6 @@ void MetricLog::metricThreadFunction()
 
             MetricLogElement elem;
             elem.event_time = std::chrono::system_clock::to_time_t(current_time);
-            elem.event_time_microseconds = time_in_microseconds(current_time);
             elem.milliseconds = time_in_milliseconds(current_time) - time_in_seconds(current_time) * 1000;
 
             elem.profile_events.resize(ProfileEvents::end());

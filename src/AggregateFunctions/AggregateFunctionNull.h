@@ -4,7 +4,6 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnNullable.h>
 #include <Common/assert_cast.h>
-#include <Columns/ColumnsCommon.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -28,10 +27,7 @@ namespace ErrorCodes
 /// If all rows had NULL, the behaviour is determined by "result_is_nullable" template parameter.
 ///  true - return NULL; false - return value from empty aggregation state of nested function.
 
-/// When serialize_flag is set to true, the flag about presence of values is serialized
-///  regardless to the "result_is_nullable" even if it's unneeded - for protocol compatibility.
-
-template <bool result_is_nullable, bool serialize_flag, typename Derived>
+template <bool result_is_nullable, typename Derived>
 class AggregateFunctionNullBase : public IAggregateFunctionHelper<Derived>
 {
 protected:
@@ -57,13 +53,13 @@ protected:
 
     static void initFlag(AggregateDataPtr place) noexcept
     {
-        if constexpr (result_is_nullable)
+        if (result_is_nullable)
             place[0] = 0;
     }
 
     static void setFlag(AggregateDataPtr place) noexcept
     {
-        if constexpr (result_is_nullable)
+        if (result_is_nullable)
             place[0] = 1;
     }
 
@@ -76,7 +72,7 @@ public:
     AggregateFunctionNullBase(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
         : IAggregateFunctionHelper<Derived>(arguments, params), nested_function{nested_function_}
     {
-        if constexpr (result_is_nullable)
+        if (result_is_nullable)
             prefix_size = nested_function->alignOfData();
         else
             prefix_size = 0;
@@ -132,7 +128,7 @@ public:
     void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
     {
         bool flag = getFlag(place);
-        if constexpr (serialize_flag)
+        if (result_is_nullable)
             writeBinary(flag, buf);
         if (flag)
             nested_function->serialize(nestedPlace(place), buf);
@@ -141,7 +137,7 @@ public:
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
     {
         bool flag = 1;
-        if constexpr (serialize_flag)
+        if (result_is_nullable)
             readBinary(flag, buf);
         if (flag)
         {
@@ -150,14 +146,14 @@ public:
         }
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena * arena) const override
+    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        if constexpr (result_is_nullable)
+        if (result_is_nullable)
         {
             ColumnNullable & to_concrete = assert_cast<ColumnNullable &>(to);
             if (getFlag(place))
             {
-                nested_function->insertResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
+                nested_function->insertResultInto(nestedPlace(place), to_concrete.getNestedColumn());
                 to_concrete.getNullMapData().push_back(0);
             }
             else
@@ -167,7 +163,7 @@ public:
         }
         else
         {
-            nested_function->insertResultInto(nestedPlace(place), to, arena);
+            nested_function->insertResultInto(nestedPlace(place), to);
         }
     }
 
@@ -186,53 +182,34 @@ public:
 /** There are two cases: for single argument and variadic.
   * Code for single argument is much more efficient.
   */
-template <bool result_is_nullable, bool serialize_flag>
-class AggregateFunctionNullUnary final
-    : public AggregateFunctionNullBase<result_is_nullable, serialize_flag,
-        AggregateFunctionNullUnary<result_is_nullable, serialize_flag>>
+template <bool result_is_nullable>
+class AggregateFunctionNullUnary final : public AggregateFunctionNullBase<result_is_nullable, AggregateFunctionNullUnary<result_is_nullable>>
 {
 public:
     AggregateFunctionNullUnary(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
-        : AggregateFunctionNullBase<result_is_nullable, serialize_flag,
-            AggregateFunctionNullUnary<result_is_nullable, serialize_flag>>(std::move(nested_function_), arguments, params)
+        : AggregateFunctionNullBase<result_is_nullable, AggregateFunctionNullUnary<result_is_nullable>>(std::move(nested_function_), arguments, params)
     {
     }
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
-        const IColumn * nested_column = &column->getNestedColumn();
         if (!column->isNullAt(row_num))
         {
             this->setFlag(place);
+            const IColumn * nested_column = &column->getNestedColumn();
             this->nested_function->add(this->nestedPlace(place), &nested_column, row_num, arena);
         }
-    }
-
-    void addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const override
-    {
-        const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
-        const IColumn * nested_column = &column->getNestedColumn();
-        const UInt8 * null_map = column->getNullMapData().data();
-
-        this->nested_function->addBatchSinglePlaceNotNull(batch_size, this->nestedPlace(place), &nested_column, null_map, arena);
-
-        if constexpr (result_is_nullable)
-            if (!memoryIsByte(null_map, batch_size, 1))
-                this->setFlag(place);
     }
 };
 
 
-template <bool result_is_nullable, bool serialize_flag, bool null_is_skipped>
-class AggregateFunctionNullVariadic final
-    : public AggregateFunctionNullBase<result_is_nullable, serialize_flag,
-        AggregateFunctionNullVariadic<result_is_nullable, serialize_flag, null_is_skipped>>
+template <bool result_is_nullable>
+class AggregateFunctionNullVariadic final : public AggregateFunctionNullBase<result_is_nullable, AggregateFunctionNullVariadic<result_is_nullable>>
 {
 public:
     AggregateFunctionNullVariadic(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
-        : AggregateFunctionNullBase<result_is_nullable, serialize_flag,
-            AggregateFunctionNullVariadic<result_is_nullable, serialize_flag, null_is_skipped>>(std::move(nested_function_), arguments, params),
+        : AggregateFunctionNullBase<result_is_nullable, AggregateFunctionNullVariadic<result_is_nullable>>(std::move(nested_function_), arguments, params),
         number_of_arguments(arguments.size())
     {
         if (number_of_arguments == 1)
@@ -256,7 +233,7 @@ public:
             if (is_nullable[i])
             {
                 const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(*columns[i]);
-                if (null_is_skipped && nullable_col.isNullAt(row_num))
+                if (nullable_col.isNullAt(row_num))
                 {
                     /// If at least one column has a null value in the current row,
                     /// we don't process this row.
@@ -270,6 +247,11 @@ public:
 
         this->setFlag(place);
         this->nested_function->add(this->nestedPlace(place), nested_columns, row_num, arena);
+    }
+
+    bool allocatesMemoryInArena() const override
+    {
+        return this->nested_function->allocatesMemoryInArena();
     }
 
 private:

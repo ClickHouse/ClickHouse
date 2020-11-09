@@ -1,46 +1,73 @@
 #include <Parsers/parseUserName.h>
-#include <Parsers/ParserUserNameWithHost.h>
-#include <Parsers/ASTUserNameWithHost.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/CommonParsers.h>
-
+#include <boost/algorithm/string.hpp>
 
 namespace DB
 {
+namespace
+{
+    bool parseUserNameImpl(IParser::Pos & pos, Expected & expected, String & user_name, String * host_like_pattern)
+    {
+        String name;
+        if (!parseIdentifierOrStringLiteral(pos, expected, name))
+            return false;
+
+        boost::algorithm::trim(name);
+
+        String pattern = "@";
+
+        if (ParserToken{TokenType::At}.ignore(pos, expected))
+        {
+            if (!parseIdentifierOrStringLiteral(pos, expected, pattern))
+                return false;
+
+            boost::algorithm::trim(pattern);
+        }
+
+        if (pattern != "@")
+            name += '@' + pattern;
+
+        user_name = std::move(name);
+        if (host_like_pattern)
+            *host_like_pattern = std::move(pattern);
+        return true;
+    }
+}
+
 
 bool parseUserName(IParser::Pos & pos, Expected & expected, String & user_name)
 {
-    ASTPtr ast;
-    if (!ParserUserNameWithHost{}.parse(pos, ast, expected))
-        return false;
-    user_name = ast->as<const ASTUserNameWithHost &>().toString();
-    return true;
+    return parseUserNameImpl(pos, expected, user_name, nullptr);
 }
 
 
-bool parseUserNames(IParser::Pos & pos, Expected & expected, Strings & user_names)
+bool parseUserName(IParser::Pos & pos, Expected & expected, String & user_name, String & host_like_pattern)
 {
-    ASTPtr ast;
-    if (!ParserUserNamesWithHost{}.parse(pos, ast, expected))
-        return false;
-    user_names = ast->as<const ASTUserNamesWithHost &>().toStrings();
-    return true;
+    return parseUserNameImpl(pos, expected, user_name, &host_like_pattern);
 }
 
 
-bool parseCurrentUserTag(IParser::Pos & pos, Expected & expected)
+bool parseUserNameOrCurrentUserTag(IParser::Pos & pos, Expected & expected, String & user_name, bool & current_user)
 {
-    return IParserBase::wrapParseImpl(pos, [&]
+    if (ParserKeyword{"CURRENT_USER"}.ignore(pos, expected) || ParserKeyword{"currentUser"}.ignore(pos, expected))
     {
-        if (!ParserKeyword{"CURRENT_USER"}.ignore(pos, expected) && !ParserKeyword{"currentUser"}.ignore(pos, expected))
-            return false;
-
         if (ParserToken{TokenType::OpeningRoundBracket}.ignore(pos, expected))
         {
             if (!ParserToken{TokenType::ClosingRoundBracket}.ignore(pos, expected))
                 return false;
         }
+        current_user = true;
         return true;
-    });
+    }
+
+    if (parseUserName(pos, expected, user_name))
+    {
+        current_user = false;
+        return true;
+    }
+
+    return false;
 }
 
 }

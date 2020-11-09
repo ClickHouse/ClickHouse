@@ -4,6 +4,7 @@
 #include <Interpreters/CrossToInnerJoinVisitor.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/misc.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -30,7 +31,7 @@ namespace
 
 struct JoinedElement
 {
-    explicit JoinedElement(const ASTTablesInSelectQueryElement & table_element)
+    JoinedElement(const ASTTablesInSelectQueryElement & table_element)
         : element(table_element)
     {
         if (element.table_join)
@@ -98,7 +99,7 @@ public:
 
     CheckExpressionVisitorData(const std::vector<JoinedElement> & tables_,
                                const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns,
-                               const Aliases & aliases_)
+                               Aliases && aliases_)
         : joined_tables(tables_)
         , tables(tables_with_columns)
         , aliases(aliases_)
@@ -132,7 +133,7 @@ public:
         {
             /// leave other comparisons as is
         }
-        else if (functionIsLikeOperator(node.name) || /// LIKE, NOT LIKE, ILIKE, NOT ILIKE
+        else if (functionIsLikeOperator(node.name) || /// LIKE, NOT LIKE
                  functionIsInOperator(node.name))  /// IN, NOT IN
         {
             /// leave as is. It's not possible to make push down here cause of unknown aliases and not implemented JOIN predicates.
@@ -171,7 +172,7 @@ private:
     const std::vector<JoinedElement> & joined_tables;
     const std::vector<TableWithColumnNamesAndTypes> & tables;
     std::map<size_t, std::vector<ASTPtr>> asts_to_join_on;
-    const Aliases & aliases;
+    Aliases aliases;
     bool ands_only;
 
     size_t canMoveEqualsToJoinOn(const ASTFunction & node)
@@ -202,11 +203,11 @@ private:
     {
         std::optional<size_t> left_table_pos = IdentifierSemantic::getMembership(left);
         if (!left_table_pos)
-            left_table_pos = IdentifierSemantic::chooseTableColumnMatch(left, tables);
+            left_table_pos = IdentifierSemantic::chooseTable(left, tables);
 
         std::optional<size_t> right_table_pos = IdentifierSemantic::getMembership(right);
         if (!right_table_pos)
-            right_table_pos = IdentifierSemantic::chooseTableColumnMatch(right, tables);
+            right_table_pos = IdentifierSemantic::chooseTable(right, tables);
 
         if (left_table_pos && right_table_pos && (*left_table_pos != *right_table_pos))
         {
@@ -218,7 +219,7 @@ private:
     }
 };
 
-using CheckExpressionMatcher = ConstOneTypeMatcher<CheckExpressionVisitorData, NeedChild::none>;
+using CheckExpressionMatcher = ConstOneTypeMatcher<CheckExpressionVisitorData, false>;
 using CheckExpressionVisitor = ConstInDepthNodeVisitor<CheckExpressionMatcher, true>;
 
 
@@ -332,7 +333,13 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
     if (!select.where())
         return;
 
-    CheckExpressionVisitor::Data visitor_data{joined_tables, data.tables_with_columns, data.aliases};
+    Aliases aliases;
+    QueryAliasesVisitor::Data query_aliases_data{aliases};
+    if (ASTPtr with = select.with())
+        QueryAliasesVisitor(query_aliases_data).visit(with);
+    QueryAliasesVisitor(query_aliases_data).visit(select.select());
+
+    CheckExpressionVisitor::Data visitor_data{joined_tables, data.tables_with_columns, std::move(aliases)};
     CheckExpressionVisitor(visitor_data).visit(select.where());
 
     if (visitor_data.complex())

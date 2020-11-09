@@ -1,61 +1,40 @@
----
-toc_priority: 21
-toc_title: "\u0424\u043e\u0440\u043c\u0430\u0442\u044b\u0020\u0432\u0445\u043e\u0434\u043d\u044b\u0445\u0020\u0438\u0020\u0432\u044b\u0445\u043e\u0434\u043d\u044b\u0445\u0020\u0434\u0430\u043d\u043d\u044b\u0445"
----
-
 # Форматы входных и выходных данных {#formats}
 
 ClickHouse может принимать (`INSERT`) и отдавать (`SELECT`) данные в различных форматах.
 
 Поддерживаемые форматы и возможность использовать их в запросах `INSERT` и `SELECT` перечислены в таблице ниже.
 
-| Формат                                                                                  | INSERT | SELECT |
-|-----------------------------------------------------------------------------------------|--------|--------|
-| [TabSeparated](#tabseparated)                                                           | ✔     | ✔      |
-| [TabSeparatedRaw](#tabseparatedraw)                                                     | ✔     | ✔      |
-| [TabSeparatedWithNames](#tabseparatedwithnames)                                         | ✔     | ✔      |
-| [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes)                         | ✔     | ✔      |
-| [Template](#format-template)                                                            | ✔     | ✔      |
-| [TemplateIgnoreSpaces](#templateignorespaces)                                           | ✔     | ✗      |
-| [CSV](#csv)                                                                             | ✔     | ✔      |
-| [CSVWithNames](#csvwithnames)                                                           | ✔     | ✔      |
-| [CustomSeparated](#format-customseparated)                                              | ✔     | ✔      |
-| [Values](#data-format-values)                                                           | ✔     | ✔      |
-| [Vertical](#vertical)                                                                   | ✗     | ✔      |
-| [VerticalRaw](#verticalraw)                                                             | ✗     | ✔      |
-| [JSON](#json)                                                                           | ✗     | ✔      |
-| [JSONString](#jsonstring)                                                               | ✗     | ✔      |
-| [JSONCompact](#jsoncompact)                                                             | ✗     | ✔      |
-| [JSONCompactString](#jsoncompactstring)                                                 | ✗     | ✔      |
-| [JSONEachRow](#jsoneachrow)                                                             | ✔     | ✔      |
-| [JSONEachRowWithProgress](#jsoneachrowwithprogress)                                     | ✗     | ✔      |
-| [JSONStringEachRow](#jsonstringeachrow)                                                 | ✔     | ✔      |
-| [JSONStringEachRowWithProgress](#jsonstringeachrowwithprogress)                         | ✗     | ✔      |
-| [JSONCompactEachRow](#jsoncompacteachrow)                                               | ✔     | ✔      |
-| [JSONCompactEachRowWithNamesAndTypes](#jsoncompacteachrowwithnamesandtypes)             | ✔     | ✔      |
-| [JSONCompactStringEachRow](#jsoncompactstringeachrow)                                   | ✔     | ✔      |
-| [JSONCompactStringEachRowWithNamesAndTypes](#jsoncompactstringeachrowwithnamesandtypes) | ✔     | ✔      |
-| [TSKV](#tskv)                                                                           | ✔     | ✔      |
-| [Pretty](#pretty)                                                                       | ✗     | ✔      |
-| [PrettyCompact](#prettycompact)                                                         | ✗     | ✔      |
-| [PrettyCompactMonoBlock](#prettycompactmonoblock)                                       | ✗     | ✔      |
-| [PrettyNoEscapes](#prettynoescapes)                                                     | ✗     | ✔      |
-| [PrettySpace](#prettyspace)                                                             | ✗     | ✔      |
-| [Protobuf](#protobuf)                                                                   | ✔     | ✔      |
-| [ProtobufSingle](#protobufsingle)                                                       | ✔     | ✔      |
-| [Avro](#data-format-avro)                                                               | ✔     | ✔      |
-| [AvroConfluent](#data-format-avro-confluent)                                            | ✔     | ✗      |
-| [Parquet](#data-format-parquet)                                                         | ✔     | ✔      |
-| [Arrow](#data-format-arrow)                                                             | ✔     | ✔      |
-| [ArrowStream](#data-format-arrow-stream)                                                | ✔     | ✔      |
-| [ORC](#data-format-orc)                                                                 | ✔     | ✗      |
-| [RowBinary](#rowbinary)                                                                 | ✔     | ✔      |
-| [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                               | ✔     | ✔      |
-| [Native](#native)                                                                       | ✔     | ✔      |
-| [Null](#null)                                                                           | ✗     | ✔      |
-| [XML](#xml)                                                                             | ✗     | ✔      |
-| [CapnProto](#capnproto)                                                                 | ✔     | ✗      |
-| [LineAsString](#lineasstring)                                                           | ✔     | ✗      |
+| Формат | INSERT | SELECT |
+| ------- | -------- | -------- |
+| [TabSeparated](#tabseparated) | ✔ | ✔ |
+| [TabSeparatedRaw](#tabseparatedraw) | ✗ | ✔ |
+| [TabSeparatedWithNames](#tabseparatedwithnames) | ✔ | ✔ |
+| [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes) | ✔ | ✔ |
+| [Template](#format-template) | ✔ | ✔ |
+| [TemplateIgnoreSpaces](#templateignorespaces) | ✔ | ✗ |
+| [CSV](#csv) | ✔ | ✔ |
+| [CSVWithNames](#csvwithnames) | ✔ | ✔ |
+| [CustomSeparated](#format-customseparated) | ✔ | ✔ |
+| [Values](#data-format-values) | ✔ | ✔ |
+| [Vertical](#vertical) | ✗ | ✔ |
+| [JSON](#json) | ✗ | ✔ |
+| [JSONCompact](#jsoncompact) | ✗ | ✔ |
+| [JSONEachRow](#jsoneachrow) | ✔ | ✔ |
+| [TSKV](#tskv) | ✔ | ✔ |
+| [Pretty](#pretty) | ✗ | ✔ |
+| [PrettyCompact](#prettycompact) | ✗ | ✔ |
+| [PrettyCompactMonoBlock](#prettycompactmonoblock) | ✗ | ✔ |
+| [PrettyNoEscapes](#prettynoescapes) | ✗ | ✔ |
+| [PrettySpace](#prettyspace) | ✗ | ✔ |
+| [Protobuf](#protobuf) | ✔ | ✔ |
+| [Parquet](#data-format-parquet) | ✔ | ✔ |
+| [ORC](#data-format-orc) | ✔ | ✗ |
+| [RowBinary](#rowbinary) | ✔ | ✔ |
+| [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes) | ✔ | ✔ |
+| [Native](#native) | ✔ | ✔ |
+| [Null](#null) | ✗ | ✔ |
+| [XML](#xml) | ✗ | ✔ |
+| [CapnProto](#capnproto) | ✔ | ✗ |
 
 Вы можете регулировать некоторые параметры работы с форматами с помощью настроек ClickHouse. За дополнительной информацией обращайтесь к разделу [Настройки](../operations/settings/settings.md).
 
@@ -69,11 +48,11 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 
 Формат `TabSeparated` поддерживает вывод тотальных значений (при использовании WITH TOTALS) и экстремальных значений (при настройке extremes выставленной в 1). В этих случаях, после основных данных выводятся тотальные значения, и экстремальные значения. Основной результат, тотальные значения и экстремальные значения, отделяются друг от друга пустой строкой. Пример:
 
-``` sql
+```sql
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated``
 ```
 
-``` text
+```text
 2014-03-17      1406958
 2014-03-18      1383658
 2014-03-19      1405797
@@ -82,15 +61,15 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 2014-03-22      1031592
 2014-03-23      1046491
 
-1970-01-01      8873898
+0000-00-00      8873898
 
 2014-03-17      1031592
 2014-03-23      1406958
 ```
 
-### Форматирование данных {#formatirovanie-dannykh}
+### Форматирование данных
 
-Целые числа пишутся в десятичной форме. Числа могут содержать лишний символ «+» в начале (игнорируется при парсинге, а при форматировании не пишется). Неотрицательные числа не могут содержать знак отрицания. При чтении допустим парсинг пустой строки, как числа ноль, или (для знаковых типов) строки, состоящей из одного минуса, как числа ноль. Числа, не помещающиеся в соответствующий тип данных, могут парсится, как некоторое другое число, без сообщения об ошибке.
+Целые числа пишутся в десятичной форме. Числа могут содержать лишний символ "+" в начале (игнорируется при парсинге, а при форматировании не пишется). Неотрицательные числа не могут содержать знак отрицания. При чтении допустим парсинг пустой строки, как числа ноль, или (для знаковых типов) строки, состоящей из одного минуса, как числа ноль. Числа, не помещающиеся в соответствующий тип данных, могут парсится, как некоторое другое число, без сообщения об ошибке.
 
 Числа с плавающей запятой пишутся в десятичной форме. При этом, десятичный разделитель - точка. Поддерживается экспоненциальная запись, а также inf, +inf, -inf, nan. Запись числа с плавающей запятой может начинаться или заканчиваться на десятичную точку.
 При форматировании возможна потеря точности чисел с плавающей запятой.
@@ -105,7 +84,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 
 Строки выводятся с экранированием спецсимволов с помощью обратного слеша. При выводе, используются следующие escape-последовательности: `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\'`, `\\`. Парсер также поддерживает последовательности `\a`, `\v`, и `\xHH` (последовательности hex escape) и любые последовательности вида `\c`, где `c` — любой символ (такие последовательности преобразуются в `c`). Таким образом, при чтении поддерживаются форматы, где перевод строки может быть записан как `\n` и как `\` и перевод строки. Например, строка `Hello world`, где между словами вместо пробела стоит перевод строки, может быть считана в любом из следующих вариантов:
 
-``` text
+```text
 Hello\nworld
 
 Hello\
@@ -120,40 +99,38 @@ world
 
 Массивы форматируются в виде списка значений через запятую в квадратных скобках. Элементы массива - числа форматируются как обычно, а даты, даты-с-временем и строки - в одинарных кавычках с такими же правилами экранирования, как указано выше.
 
-[NULL](../sql-reference/syntax.md) форматируется как `\N`.
+[NULL](../query_language/syntax.md) форматируется как `\N`.
 
-Каждый элемент структуры типа [Nested](../sql-reference/data-types/nested-data-structures/nested.md) представляется как отдельный массив.
+Каждый элемент структуры типа [Nested](../data_types/nested_data_structures/nested.md) представляется как отдельный массив.
 
 Например:
 
-``` sql
+```sql
 CREATE TABLE nestedt
 (
-    `id` UInt8,
+    `id` UInt8, 
     `aux` Nested(
-        a UInt8,
+        a UInt8, 
         b String
     )
 )
 ENGINE = TinyLog
 ```
-
-``` sql
+```sql
 INSERT INTO nestedt Values ( 1, [1], ['a'])
 ```
-
-``` sql
+```sql
 SELECT * FROM nestedt FORMAT TSV
 ```
-
-``` text
-1 [1] ['a']
+```text
+1	[1]	['a']
 ```
+
 
 ## TabSeparatedRaw {#tabseparatedraw}
 
 Отличается от формата `TabSeparated` тем, что строки выводятся без экранирования.
-Используя этот формат, следите, чтобы в полях не было символов табуляции или разрыва строки.
+Этот формат подходит только для вывода результата выполнения запроса, но не для парсинга (приёма данных для вставки в таблицу).
 
 Этот формат также доступен под именем `TSVRaw`.
 
@@ -180,77 +157,74 @@ SELECT * FROM nestedt FORMAT TSV
 
 Настройка `format_template_row` задаёт путь к файлу, содержащему форматную строку для строк таблицы, которая должна иметь вид:
 
-`delimiter_1${column_1:serializeAs_1}delimiter_2${column_2:serializeAs_2} ... delimiter_N`,
+ `delimiter_1${column_1:serializeAs_1}delimiter_2${column_2:serializeAs_2} ... delimiter_N`,
 
-    где `delimiter_i` - разделители между значениями (символ `$` в разделителе экранируется как `$$`),
-    `column_i` - имена или номера столбцов, значения которых должны быть выведены или считаны (если имя не указано - столбец пропускается),
-    `serializeAs_i` - тип экранирования для значений соответствующего столбца. Поддерживаются следующие типы экранирования:
+  где `delimiter_i` - разделители между значениями (символ `$` в разделителе экранируется как `$$`),
+  `column_i` - имена или номера столбцов, значения которых должны быть выведены или считаны (если имя не указано - столбец пропускается),
+  `serializeAs_i` - тип экранирования для значений соответствующего столбца. Поддерживаются следующие типы экранирования:
 
-    - `CSV`, `JSON`, `XML` (как в одноимённых форматах)
-    - `Escaped` (как в `TSV`)
-    - `Quoted` (как в `Values`)
-    - `Raw` (без экранирования, как в `TSVRaw`)
-    - `None` (тип экранирования отсутствует, см. далее)
+  - `CSV`, `JSON`, `XML` (как в одноимённых форматах)
+  - `Escaped` (как в `TSV`)
+  - `Quoted` (как в `Values`)
+  - `Raw` (без экранирования, как в `TSVRaw`)
+  - `None` (тип экранирования отсутствует, см. далее)
 
-    Если для столбца не указан тип экранирования, используется `None`. `XML` и `Raw` поддерживаются только для вывода.
+  Если для столбца не указан тип экранирования, используется `None`. `XML` и `Raw` поддерживаются только для вывода.
 
-    Так, в форматной строке
+  Так, в форматной строке
 
-    `Search phrase: ${SearchPhrase:Quoted}, count: ${c:Escaped}, ad price: $$${price:JSON};`
+  `Search phrase: ${SearchPhrase:Quoted}, count: ${c:Escaped}, ad price: $$${price:JSON};`
 
-    между разделителями `Search phrase: `, `, count: `, `, ad price: $` и `;` при выводе будут подставлены (при вводе - будут ожидаться) значения столбцов `SearchPhrase`, `c` и `price`, сериализованные как `Quoted`, `Escaped` и `JSON` соответственно, например:
+  между разделителями `Search phrase: `, `, count: `, `, ad price: $` и `;` при выводе будут подставлены (при вводе - будут ожидаться) значения столбцов `SearchPhrase`, `c` и `price`, сериализованные как `Quoted`, `Escaped` и `JSON` соответственно, например:
 
-    `Search phrase: 'bathroom interior design', count: 2166, ad price: $3;`
+  `Search phrase: 'bathroom interior design', count: 2166, ad price: $3;`
 
-Настройка `format_template_rows_between_delimiter` задаёт разделитель между строками, который выводится (или ожмдается при вводе) после каждой строки, кроме последней. По умолчанию `\n`.
+ Настройка `format_template_rows_between_delimiter` задаёт разделитель между строками, который выводится (или ожмдается при вводе) после каждой строки, кроме последней. По умолчанию `\n`.
 
 Настройка `format_template_resultset` задаёт путь к файлу, содержащему форматную строку для результата. Форматная строка для результата имеет синтаксис аналогичный форматной строке для строк таблицы и позволяет указать префикс, суффикс и способ вывода дополнительной информации. Вместо имён столбцов в ней указываются следующие имена подстановок:
 
--   `data` - строки с данными в формате `format_template_row`, разделённые `format_template_rows_between_delimiter`. Эта подстановка должна быть первой подстановкой в форматной строке.
--   `totals` - строка с тотальными значениями в формате `format_template_row` (при использовании WITH TOTALS)
--   `min` - строка с минимальными значениями в формате `format_template_row` (при настройке extremes, выставленной в 1)
--   `max` - строка с максимальными значениями в формате `format_template_row` (при настройке extremes, выставленной в 1)
--   `rows` - общее количество выведенных стрчек
--   `rows_before_limit` - не менее скольких строчек получилось бы, если бы не было LIMIT-а. Выводится только если запрос содержит LIMIT. В случае, если запрос содержит GROUP BY, `rows_before_limit` - точное число строк, которое получилось бы, если бы не было LIMIT-а.
--   `time` - время выполнения запроса в секундах
--   `rows_read` - сколько строк было прочитано при выполнении запроса
--   `bytes_read` - сколько байт (несжатых) было прочитано при выполнении запроса
+ - `data` - строки с данными в формате `format_template_row`, разделённые `format_template_rows_between_delimiter`. Эта подстановка должна быть первой подстановкой в форматной строке.
+ - `totals` - строка с тотальными значениями в формате `format_template_row` (при использовании WITH TOTALS)
+ - `min` - строка с минимальными значениями в формате `format_template_row` (при настройке extremes, выставленной в 1)
+ - `max` - строка с максимальными значениями в формате `format_template_row` (при настройке extremes, выставленной в 1)
+ - `rows` - общее количество выведенных стрчек
+ - `rows_before_limit` - не менее скольких строчек получилось бы, если бы не было LIMIT-а. Выводится только если запрос содержит LIMIT. В случае, если запрос содержит GROUP BY, `rows_before_limit` - точное число строк, которое получилось бы, если бы не было LIMIT-а.
+ - `time` - время выполнения запроса в секундах
+ - `rows_read` - сколько строк было прочитано при выполнении запроса
+ - `bytes_read` - сколько байт (несжатых) было прочитано при выполнении запроса
 
-У подстановок `data`, `totals`, `min` и `max` не должны быть указаны типы экранирования (или должен быть указан `None`). Остальные подстановки - это отдельные значения, для них может быть указан любой тип экранирования.
-Если строка `format_template_resultset` пустая, то по-умолчанию используется `${data}`.
-Из всех перечисленных подстановок форматная строка `format_template_resultset` для ввода может содержать только `data`.
-Также при вводе формат поддерживает пропуск значений столбцов и пропуск значений в префиксе и суффиксе (см. пример).
+ У подстановок `data`, `totals`, `min` и `max` не должны быть указаны типы экранирования (или должен быть указан `None`). Остальные подстановки - это отдельные значения, для них может быть указан любой тип экранирования.
+ Если строка `format_template_resultset` пустая, то по-умолчанию используется `${data}`.
+ Из всех перечисленных подстановок форматная строка `format_template_resultset` для ввода может содержать только `data`.
+ Также при вводе формат поддерживает пропуск значений столбцов и пропуск значений в префиксе и суффиксе (см. пример).
 
-Пример вывода:
-
-``` sql
+ Пример вывода:
+```sql
 SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase ORDER BY c DESC LIMIT 5 FORMAT Template SETTINGS
 format_template_resultset = '/some/path/resultset.format', format_template_row = '/some/path/row.format', format_template_rows_between_delimiter = '\n    '
 ```
-
 `/some/path/resultset.format`:
-
-    <!DOCTYPE HTML>
-    <html> <head> <title>Search phrases</title> </head>
-     <body>
-      <table border="1"> <caption>Search phrases</caption>
-        <tr> <th>Search phrase</th> <th>Count</th> </tr>
-        ${data}
-      </table>
-      <table border="1"> <caption>Max</caption>
-        ${max}
-      </table>
-      <b>Processed ${rows_read:XML} rows in ${time:XML} sec</b>
-     </body>
-    </html>
-
+```
+<!DOCTYPE HTML>
+<html> <head> <title>Search phrases</title> </head>
+ <body>
+  <table border="1"> <caption>Search phrases</caption>
+    <tr> <th>Search phrase</th> <th>Count</th> </tr>
+    ${data}
+  </table>
+  <table border="1"> <caption>Max</caption>
+    ${max}
+  </table>
+  <b>Processed ${rows_read:XML} rows in ${time:XML} sec</b>
+ </body>
+</html>
+```
 `/some/path/row.format`:
-
-    <tr> <td>${0:XML}</td> <td>${1:XML}</td> </tr>
-
+```
+<tr> <td>${0:XML}</td> <td>${1:XML}</td> </tr>
+```
 Резутьтат:
-
-``` html
+```html
 <!DOCTYPE HTML>
 <html> <head> <title>Search phrases</title> </head>
  <body>
@@ -271,35 +245,31 @@ format_template_resultset = '/some/path/resultset.format', format_template_row =
 ```
 
 Пример ввода:
-
-``` text
+```text
 Some header
 Page views: 5, User id: 4324182021466249494, Useless field: hello, Duration: 146, Sign: -1
 Page views: 6, User id: 4324182021466249494, Useless field: world, Duration: 185, Sign: 1
 Total rows: 2
 ```
-
-``` sql
+```sql
 INSERT INTO UserActivity FORMAT Template SETTINGS
 format_template_resultset = '/some/path/resultset.format', format_template_row = '/some/path/row.format'
 ```
-
 `/some/path/resultset.format`:
-
-    Some header\n${data}\nTotal rows: ${:CSV}\n
-
+```
+Some header\n${data}\nTotal rows: ${:CSV}\n
+```
 `/some/path/row.format`:
-
-    Page views: ${PageViews:CSV}, User id: ${UserID:CSV}, Useless field: ${:CSV}, Duration: ${Duration:CSV}, Sign: ${Sign:CSV}
-
-`PageViews`, `UserID`, `Duration` и `Sign` внутри подстановок - имена столбцов в таблице, в которую вставляются данные. Значения после `Useless field` в строках и значение после `\nTotal rows:` в суффиксе будут проигнорированы.
+```
+Page views: ${PageViews:CSV}, User id: ${UserID:CSV}, Useless field: ${:CSV}, Duration: ${Duration:CSV}, Sign: ${Sign:CSV}
+```
+`PageViews`, `UserID`, `Duration` и `Sign` внутри подстановок - имена столбцов в таблице, в которую вставляются данные. Значения после `Useless field` в строках и значение после `\nTotal rows: ` в суффиксе будут проигнорированы.
 Все разделители во входных данных должны строго соответствовать разделителям в форматных строках.
 
 ## TemplateIgnoreSpaces {#templateignorespaces}
 
 Подходит только для ввода. Отличается от формата `Template` тем, что пропускает пробельные символы между разделителями и значениями во входном потоке. Также в этом формате можно указать пустые подстановки с типом экранирования `None` (`${}` или `${:None}`), чтобы разбить разделители на несколько частей, пробелы между которыми должны игнорироваться. Такие подстановки используются только для пропуска пробелов. С помощью этого формата можно считывать `JSON`, если значения столбцов в нём всегда идут в одном порядке в каждой строке. Например, для вставки данных из примера вывода формата [JSON](#json) в таблицу со столбцами `phrase` и `cnt` можно использовать следующий запрос:
-
-``` sql
+```sql
 INSERT INTO table_name FORMAT TemplateIgnoreSpaces SETTINGS
 format_schema = '{${}"meta"${}:${:JSON},${}"data"${}:${}[${data}]${},${}"totals"${}:${:JSON},${}"extremes"${}:${:JSON},${}"rows"${}:${:JSON},${}"rows_before_limit_at_least"${}:${:JSON}${}}',
 format_schema_rows = '{${}"SearchPhrase"${}:${}${phrase:JSON}${},${}"c"${}:${}${cnt:JSON}${}}',
@@ -310,7 +280,7 @@ format_schema_rows_between_delimiter = ','
 
 Похож на TabSeparated, но выводит значения в формате name=value. Имена экранируются так же, как строки в формате TabSeparated и, дополнительно, экранируется также символ =.
 
-``` text
+```text
 SearchPhrase=   count()=8267016
 SearchPhrase=интерьер ванной комнаты    count()=2166
 SearchPhrase=яндекс     count()=1655
@@ -323,14 +293,14 @@ SearchPhrase=дизайн штор        count()=1064
 SearchPhrase=баку       count()=1000
 ```
 
-[NULL](../sql-reference/syntax.md) форматируется как `\N`.
+[NULL](../query_language/syntax.md) форматируется как `\N`.
 
-``` sql
+```sql
 SELECT * FROM t_null FORMAT TSKV
 ```
 
-``` text
-x=1 y=\N
+```text
+x=1	y=\N
 ```
 
 При большом количестве маленьких столбцов, этот формат существенно неэффективен, и обычно нет причин его использовать. Впрочем, он не хуже формата JSONEachRow по производительности.
@@ -343,13 +313,13 @@ x=1 y=\N
 
 Формат Comma Separated Values ([RFC](https://tools.ietf.org/html/rfc4180)).
 
-При форматировании, строки выводятся в двойных кавычках. Двойная кавычка внутри строки выводится как две двойные кавычки подряд. Других правил экранирования нет. Даты и даты-с-временем выводятся в двойных кавычках. Числа выводятся без кавычек. Значения разделяются символом-разделителем, по умолчанию — `,`. Символ-разделитель определяется настройкой [format_csv_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter). Строки разделяются unix переводом строки (LF). Массивы сериализуются в CSV следующим образом: сначала массив сериализуется в строку, как в формате TabSeparated, а затем полученная строка выводится в CSV в двойных кавычках. Кортежи в формате CSV сериализуются, как отдельные столбцы (то есть, теряется их вложенность в кортеж).
+При форматировании, строки выводятся в двойных кавычках. Двойная кавычка внутри строки выводится как две двойные кавычки подряд. Других правил экранирования нет. Даты и даты-с-временем выводятся в двойных кавычках. Числа выводятся без кавычек. Значения разделяются символом-разделителем, по умолчанию  — `,`. Символ-разделитель определяется настройкой [format_csv_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter). Строки разделяются unix переводом строки (LF). Массивы сериализуются в CSV следующим образом: сначала массив сериализуется в строку, как в формате TabSeparated, а затем полученная строка выводится в CSV в двойных кавычках. Кортежи в формате CSV сериализуются, как отдельные столбцы (то есть, теряется их вложенность в кортеж).
 
-``` bash
+```bash
 $ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMAT CSV" < data.csv
 ```
 
-\*По умолчанию — `,`. См. настройку [format_csv_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter) для дополнительной информации.
+&ast;По умолчанию — `,`. См. настройку [format_csv_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter) для дополнительной информации.
 
 При парсинге, все значения могут парситься как в кавычках, так и без кавычек. Поддерживаются как двойные, так и одинарные кавычки. Строки также могут быть без кавычек. В этом случае они парсятся до символа-разделителя или перевода строки (CR или LF). В нарушение RFC, в случае парсинга строк не в кавычках, начальные и конечные пробелы и табы игнорируются. В качестве перевода строки, поддерживаются как Unix (LF), так и Windows (CR LF) и Mac OS Classic (LF CR) варианты.
 
@@ -359,7 +329,7 @@ $ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FOR
 
 Формат CSV поддерживает вывод totals и extremes аналогично `TabSeparated`.
 
-## CSVWithNames {#csvwithnames}
+## CSVWithNames
 
 Выводит также заголовок, аналогично `TabSeparatedWithNames`.
 
@@ -372,50 +342,71 @@ $ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FOR
 
 Выводит данные в формате JSON. Кроме таблицы с данными, также выводятся имена и типы столбцов, и некоторая дополнительная информация - общее количество выведенных строк, а также количество строк, которое могло бы быть выведено, если бы не было LIMIT-а. Пример:
 
-``` sql
+```sql
 SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTALS ORDER BY c DESC LIMIT 5 FORMAT JSON
 ```
 
-``` json
+```json
 {
         "meta":
         [
                 {
-                        "name": "'hello'",
+                        "name": "SearchPhrase",
                         "type": "String"
                 },
                 {
-                        "name": "multiply(42, number)",
+                        "name": "c",
                         "type": "UInt64"
-				},
-                {
-                        "name": "range(5)",
-                        "type": "Array(UInt8)"
                 }
         ],
 
         "data":
         [
                 {
-                        "'hello'": "hello",
-                        "multiply(42, number)": "0",
-                        "range(5)": [0,1,2,3,4]
+                        "SearchPhrase": "",
+                        "c": "8267016"
                 },
                 {
-                        "'hello'": "hello",
-                        "multiply(42, number)": "42",
-                        "range(5)": [0,1,2,3,4]
+                        "SearchPhrase": "bathroom interior design",
+                        "c": "2166"
                 },
                 {
-                        "'hello'": "hello",
-                        "multiply(42, number)": "84",
-                        "range(5)": [0,1,2,3,4]
+                        "SearchPhrase": "yandex",
+                        "c": "1655"
+                },
+                {
+                        "SearchPhrase": "spring 2014 fashion",
+                        "c": "1549"
+                },
+                {
+                        "SearchPhrase": "freeform photos",
+                        "c": "1480"
                 }
         ],
 
-        "rows": 3,
+        "totals":
+        {
+                "SearchPhrase": "",
+                "c": "8873898"
+        },
 
-        "rows_before_limit_at_least": 3
+        "extremes":
+        {
+                "min":
+                {
+                        "SearchPhrase": "",
+                        "c": "1480"
+                },
+                "max":
+                {
+                        "SearchPhrase": "",
+                        "c": "8267016"
+                }
+        },
+
+        "rows": 5,
+
+        "rows_before_limit_at_least": 141137
 }
 ```
 
@@ -432,190 +423,90 @@ JSON совместим с JavaScript. Для этого, дополнитель
 
 Этот формат подходит только для вывода результата выполнения запроса, но не для парсинга (приёма данных для вставки в таблицу).
 
-ClickHouse поддерживает [NULL](../sql-reference/syntax.md), который при выводе JSON будет отображен как `null`. Чтобы включить отображение в результате значений  `+nan`, `-nan`, `+inf`, `-inf`, установите параметр [output_format_json_quote_denormals](../operations/settings/settings.md#settings-output_format_json_quote_denormals) равным 1.
+ClickHouse поддерживает [NULL](../query_language/syntax.md), который при выводе JSON будет отображен как `null`.
 
-Смотрите также формат [JSONEachRow](#jsoneachrow).
-
-## JSONString {#jsonstring}
-
-Отличается от JSON только тем, что поля данных выводятся в строках, а не в типизированных значениях JSON.
-
-Пример:
-
-```json
-{
-        "meta":
-        [
-                {
-                        "name": "'hello'",
-                        "type": "String"
-                },
-                {
-                        "name": "multiply(42, number)",
-                        "type": "UInt64"
-                },
-                {
-                        "name": "range(5)",
-                        "type": "Array(UInt8)"
-                }
-        ],
-
-        "data":
-        [
-                {
-                        "'hello'": "hello",
-                        "multiply(42, number)": "0",
-                        "range(5)": "[0,1,2,3,4]"
-                },
-                {
-                        "'hello'": "hello",
-                        "multiply(42, number)": "42",
-                        "range(5)": "[0,1,2,3,4]"
-                },
-                {
-                        "'hello'": "hello",
-                        "multiply(42, number)": "84",
-                        "range(5)": "[0,1,2,3,4]"
-                }
-        ],
-
-        "rows": 3,
-
-        "rows_before_limit_at_least": 3
-}
-```
+Смотрите также формат [JSONEachRow](#jsoneachrow) .
 
 ## JSONCompact {#jsoncompact}
-## JSONCompactString {#jsoncompactstring}
 
 Отличается от JSON только тем, что строчки данных выводятся в массивах, а не в object-ах.
 
 Пример:
 
-``` json
-// JSONCompact
-{
-        "meta":
-        [
-                {
-                        "name": "'hello'",
-                        "type": "String"
-                },
-                {
-                        "name": "multiply(42, number)",
-                        "type": "UInt64"
-				},
-                {
-                        "name": "range(5)",
-                        "type": "Array(UInt8)"
-                }
-        ],
-
-        "data":
-        [
-                ["hello", "0", [0,1,2,3,4]],
-                ["hello", "42", [0,1,2,3,4]],
-                ["hello", "84", [0,1,2,3,4]]
-        ],
-
-        "rows": 3,
-
-        "rows_before_limit_at_least": 3
-}
-```
-
 ```json
-// JSONCompactString
 {
         "meta":
         [
                 {
-                        "name": "'hello'",
+                        "name": "SearchPhrase",
                         "type": "String"
                 },
                 {
-                        "name": "multiply(42, number)",
+                        "name": "c",
                         "type": "UInt64"
-                },
-                {
-                        "name": "range(5)",
-                        "type": "Array(UInt8)"
                 }
         ],
 
         "data":
         [
-                ["hello", "0", "[0,1,2,3,4]"],
-                ["hello", "42", "[0,1,2,3,4]"],
-                ["hello", "84", "[0,1,2,3,4]"]
+                ["", "8267016"],
+                ["интерьер ванной комнаты", "2166"],
+                ["яндекс", "1655"],
+                ["весна 2014 мода", "1549"],
+                ["фриформ фото", "1480"]
         ],
 
-        "rows": 3,
+        "totals": ["","8873898"],
 
-        "rows_before_limit_at_least": 3
+        "extremes":
+        {
+                "min": ["","1480"],
+                "max": ["","8267016"]
+        },
+
+        "rows": 5,
+
+        "rows_before_limit_at_least": 141137
 }
 ```
+
+Этот формат подходит только для вывода результата выполнения запроса, но не для парсинга (приёма данных для вставки в таблицу).
+Смотрите также формат `JSONEachRow`.
 
 ## JSONEachRow {#jsoneachrow}
-## JSONStringEachRow {#jsonstringeachrow}
-## JSONCompactEachRow {#jsoncompacteachrow}
-## JSONCompactStringEachRow {#jsoncompactstringeachrow}
 
-При использовании этих форматов ClickHouse выводит каждую запись как значения JSON (каждое значение отдельной строкой), при этом данные в целом — невалидный JSON.
-
-``` json
-{"some_int":42,"some_str":"hello","some_tuple":[1,"a"]} // JSONEachRow
-[42,"hello",[1,"a"]] // JSONCompactEachRow
-["42","hello","(2,'a')"] // JSONCompactStringsEachRow
-```
-
-При вставке данных вы должны предоставить отдельное значение JSON для каждой строки.
-
-## JSONEachRowWithProgress {#jsoneachrowwithprogress}
-## JSONStringEachRowWithProgress {#jsonstringeachrowwithprogress}
-
-Отличается от `JSONEachRow`/`JSONStringEachRow` тем, что ClickHouse будет выдавать информацию о ходе выполнения в виде значений JSON.
+При использовании этого формата, ClickHouse выводит каждую запись как объект JSON (каждый объект отдельной строкой), при этом данные в целом — невалидный JSON.
 
 ```json
-{"row":{"'hello'":"hello","multiply(42, number)":"0","range(5)":[0,1,2,3,4]}}
-{"row":{"'hello'":"hello","multiply(42, number)":"42","range(5)":[0,1,2,3,4]}}
-{"row":{"'hello'":"hello","multiply(42, number)":"84","range(5)":[0,1,2,3,4]}}
-{"progress":{"read_rows":"3","read_bytes":"24","written_rows":"0","written_bytes":"0","total_rows_to_read":"3"}}
+{"SearchPhrase":"дизайн штор","count()":"1064"}
+{"SearchPhrase":"баку","count()":"1000"}
+{"SearchPhrase":"","count":"8267016"}
 ```
 
-## JSONCompactEachRowWithNamesAndTypes {#jsoncompacteachrowwithnamesandtypes}
-## JSONCompactStringEachRowWithNamesAndTypes {#jsoncompactstringeachrowwithnamesandtypes}
+При вставке данных необходимо каждую запись передавать как отдельный объект JSON.
 
-Отличается от `JSONCompactEachRow`/`JSONCompactStringEachRow` тем, что имена и типы столбцов записываются как первые две строки.
+### Вставка данных
 
-```json
-["'hello'", "multiply(42, number)", "range(5)"]
-["String", "UInt64", "Array(UInt8)"]
-["hello", "0", [0,1,2,3,4]]
-["hello", "42", [0,1,2,3,4]]
-["hello", "84", [0,1,2,3,4]]
 ```
-
-### Вставка данных {#vstavka-dannykh}
-
-    INSERT INTO UserActivity FORMAT JSONEachRow {"PageViews":5, "UserID":"4324182021466249494", "Duration":146,"Sign":-1} {"UserID":"4324182021466249494","PageViews":6,"Duration":185,"Sign":1}
+INSERT INTO UserActivity FORMAT JSONEachRow {"PageViews":5, "UserID":"4324182021466249494", "Duration":146,"Sign":-1} {"UserID":"4324182021466249494","PageViews":6,"Duration":185,"Sign":1}
+```
 
 ClickHouse допускает:
 
--   Любой порядок пар ключ-значение в объекте.
--   Пропуск отдельных значений.
+- Любой порядок пар ключ-значение в объекте.
+- Пропуск отдельных значений.
 
 ClickHouse игнорирует пробелы между элементами и запятые после объектов. Вы можете передать все объекты одной строкой. Вам не нужно разделять их переносами строк.
 
 **Обработка пропущенных значений**
 
-ClickHouse заменяет опущенные значения значениями по умолчанию для соответствующих [data types](../sql-reference/data-types/index.md).
+ClickHouse заменяет опущенные значения значениями по умолчанию для соответствующих [data types](../data_types/index.md).
 
 Если указано `DEFAULT expr`, то ClickHouse использует различные правила подстановки в зависимости от настройки [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields).
 
 Рассмотрим следующую таблицу:
 
-``` sql
+```sql
 CREATE TABLE IF NOT EXISTS example_table
 (
     x UInt32,
@@ -623,17 +514,17 @@ CREATE TABLE IF NOT EXISTS example_table
 ) ENGINE = Memory;
 ```
 
--   Если `input_format_defaults_for_omitted_fields = 0`, то значение по умолчанию для `x` и `a` равняется `0` (поскольку это значение по умолчанию для типа данных `UInt32`.)
--   Если `input_format_defaults_for_omitted_fields = 1`, то значение по умолчанию для `x` равно `0`, а значение по умолчанию `a` равно `x * 2`.
+- Если `input_format_defaults_for_omitted_fields = 0`, то значение по умолчанию для `x` и `a` равняется `0` (поскольку это значение по умолчанию для типа данных `UInt32`.)
+- Если `input_format_defaults_for_omitted_fields = 1`, то значение по умолчанию для `x` равно `0`, а значение по умолчанию `a` равно `x * 2`.
 
 !!! note "Предупреждение"
-    Если `input_format_defaults_for_omitted_fields = 1`, то при обработке запросов ClickHouse потребляет больше вычислительных ресурсов, чем если `input_format_defaults_for_omitted_fields = 0`.
+    Если `insert_sample_with_metadata = 1`, то при обработке запросов ClickHouse потребляет больше вычислительных ресурсов, чем если `insert_sample_with_metadata = 0`.
 
-### Выборка данных {#vyborka-dannykh}
+### Выборка данных
 
 Рассмотрим в качестве примера таблицу `UserActivity`:
 
-``` text
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         5 │      146 │   -1 │
 │ 4324182021466249494 │         6 │      185 │    1 │
@@ -642,7 +533,7 @@ CREATE TABLE IF NOT EXISTS example_table
 
 Запрос `SELECT * FROM UserActivity FORMAT JSONEachRow` возвращает:
 
-``` text
+```text
 {"UserID":"4324182021466249494","PageViews":5,"Duration":146,"Sign":-1}
 {"UserID":"4324182021466249494","PageViews":6,"Duration":185,"Sign":1}
 ```
@@ -654,23 +545,23 @@ CREATE TABLE IF NOT EXISTS example_table
 
 ### Использование вложенных структур {#jsoneachrow-nested}
 
-Если у вас есть таблица со столбцами типа [Nested](../sql-reference/data-types/nested-data-structures/nested.md), то в неё можно вставить данные из JSON-документа с такой же структурой. Функциональность включается настройкой [input_format_import_nested_json](../operations/settings/settings.md#settings-input_format_import_nested_json).
+Если у вас есть таблица со столбцами типа [Nested](../data_types/nested_data_structures/nested.md), то в неё можно вставить данные из JSON-документа с такой же структурой. Функциональность включается настройкой [input_format_import_nested_json](../operations/settings/settings.md#settings-input_format_import_nested_json).
 
 Например, рассмотрим следующую таблицу:
 
-``` sql
+```sql
 CREATE TABLE json_each_row_nested (n Nested (s String, i Int32) ) ENGINE = Memory
 ```
 
 Из описания типа данных `Nested` видно, что ClickHouse трактует каждый компонент вложенной структуры как отдельный столбец (для нашей таблицы `n.s` и `n.i`). Можно вставить данные следующим образом:
 
-``` sql
+```sql
 INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n.s": ["abc", "def"], "n.i": [1, 23]}
 ```
 
 Чтобы вставить данные как иерархический объект JSON, установите [input_format_import_nested_json=1](../operations/settings/settings.md#settings-input_format_import_nested_json).
 
-``` json
+```json
 {
     "n": {
         "s": ["abc", "def"],
@@ -681,31 +572,31 @@ INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n.s": ["abc", "def"], "n.i
 
 Без этой настройки ClickHouse сгенерирует исключение.
 
-``` sql
+```sql
 SELECT name, value FROM system.settings WHERE name = 'input_format_import_nested_json'
 ```
 
-``` text
+```text
 ┌─name────────────────────────────┬─value─┐
 │ input_format_import_nested_json │ 0     │
 └─────────────────────────────────┴───────┘
 ```
 
-``` sql
+```sql
 INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n": {"s": ["abc", "def"], "i": [1, 23]}}
 ```
 
-``` text
+```text
 Code: 117. DB::Exception: Unknown field found while parsing JSONEachRow format: n: (at row 1)
 ```
 
-``` sql
+```sql
 SET input_format_import_nested_json=1
 INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n": {"s": ["abc", "def"], "i": [1, 23]}}
 SELECT * FROM json_each_row_nested
 ```
 
-``` text
+```text
 ┌─n.s───────────┬─n.i────┐
 │ ['abc','def'] │ [1,23] │
 └───────────────┴────────┘
@@ -713,7 +604,7 @@ SELECT * FROM json_each_row_nested
 
 ## Native {#native}
 
-Самый эффективный формат. Данные пишутся и читаются блоками в бинарном виде. Для каждого блока пишется количество строк, количество столбцов, имена и типы столбцов, а затем кусочки столбцов этого блока, один за другим. То есть, этот формат является «столбцовым» - не преобразует столбцы в строки. Именно этот формат используется в родном интерфейсе - при межсерверном взаимодействии, при использовании клиента командной строки, при работе клиентов, написанных на C++.
+Самый эффективный формат. Данные пишутся и читаются блоками в бинарном виде. Для каждого блока пишется количество строк, количество столбцов, имена и типы столбцов, а затем кусочки столбцов этого блока, один за другим. То есть, этот формат является "столбцовым" - не преобразует столбцы в строки. Именно этот формат используется в родном интерфейсе - при межсерверном взаимодействии, при использовании клиента командной строки, при работе клиентов, написанных на C++.
 
 Вы можете использовать этот формат для быстрой генерации дампов, которые могут быть прочитаны только СУБД ClickHouse. Вряд ли имеет смысл работать с этим форматом самостоятельно.
 
@@ -728,13 +619,12 @@ SELECT * FROM json_each_row_nested
 Рисуется полная сетка таблицы и, таким образом, каждая строчка занимает две строки в терминале.
 Каждый блок результата выводится в виде отдельной таблицы. Это нужно, чтобы можно было выводить блоки без буферизации результата (буферизация потребовалась бы, чтобы заранее вычислить видимую ширину всех значений.)
 
-[NULL](../sql-reference/syntax.md) выводится как `ᴺᵁᴸᴸ`.
+[NULL](../query_language/syntax.md) выводится как `ᴺᵁᴸᴸ`.
 
-``` sql
+```sql
 SELECT * FROM t_null
 ```
-
-``` text
+```text
 ┌─x─┬────y─┐
 │ 1 │ ᴺᵁᴸᴸ │
 └───┴──────┘
@@ -742,26 +632,26 @@ SELECT * FROM t_null
 
 В форматах `Pretty*` строки выводятся без экранирования. Ниже приведен пример для формата [PrettyCompact](#prettycompact):
 
-``` sql
+```sql
 SELECT 'String with \'quotes\' and \t character' AS Escaping_test
 ```
 
-``` text
+```text
 ┌─Escaping_test────────────────────────┐
-│ String with 'quotes' and   character │
+│ String with 'quotes' and 	 character │
 └──────────────────────────────────────┘
 ```
 
-Для защиты от вываливания слишком большого количества данных в терминал, выводится только первые 10 000 строк. Если строк больше или равно 10 000, то будет написано «Showed first 10 000.»
+Для защиты от вываливания слишком большого количества данных в терминал, выводится только первые 10 000 строк. Если строк больше или равно 10 000, то будет написано "Showed first 10 000."
 Этот формат подходит только для вывода результата выполнения запроса, но не для парсинга (приёма данных для вставки в таблицу).
 
 Формат `Pretty` поддерживает вывод тотальных значений (при использовании WITH TOTALS) и экстремальных значений (при настройке extremes выставленной в 1). В этих случаях, после основных данных выводятся тотальные значения, и экстремальные значения, в отдельных табличках. Пример (показан для формата [PrettyCompact](#prettycompact)):
 
-``` sql
+```sql
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT PrettyCompact
 ```
 
-``` text
+```text
 ┌──EventDate─┬───────c─┐
 │ 2014-03-17 │ 1406958 │
 │ 2014-03-18 │ 1383658 │
@@ -774,7 +664,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 
 Totals:
 ┌──EventDate─┬───────c─┐
-│ 1970-01-01 │ 8873898 │
+│ 0000-00-00 │ 8873898 │
 └────────────┴─────────┘
 
 Extremes:
@@ -799,17 +689,17 @@ Extremes:
 
 Пример:
 
-``` bash
+```bash
 $ watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events FORMAT PrettyCompactNoEscapes'"
 ```
 
 Для отображения в браузере, вы можете использовать HTTP интерфейс.
 
-### PrettyCompactNoEscapes {#prettycompactnoescapes}
+### PrettyCompactNoEscapes
 
 Аналогично.
 
-### PrettySpaceNoEscapes {#prettyspacenoescapes}
+### PrettySpaceNoEscapes
 
 Аналогично.
 
@@ -830,19 +720,19 @@ FixedString представлены просто как последовате�
 
 Array представлены как длина в формате varint (unsigned [LEB128](https://en.wikipedia.org/wiki/LEB128)), а затем элементы массива, подряд.
 
-Для поддержки [NULL](../sql-reference/syntax.md#null-literal) перед каждым значением типа [Nullable](../sql-reference/data-types/nullable.md) следует байт содержащий 1 или 0. Если байт 1, то значение равно NULL, и этот байт интерпретируется как отдельное значение (т.е. после него следует значение следующего поля). Если байт 0, то после байта следует значение поля (не равно NULL).
+Для поддержки [NULL](../query_language/syntax.md#null-literal) перед каждым значением типа [Nullable](../data_types/nullable.md) следует байт содержащий 1 или 0. Если байт 1, то значение равно NULL, и этот байт интерпретируется как отдельное значение (т.е. после него следует значение следующего поля). Если байт 0, то после байта следует значение поля (не равно NULL).
 
 ## RowBinaryWithNamesAndTypes {#rowbinarywithnamesandtypes}
 
 То же самое что [RowBinary](#rowbinary), но добавляется заголовок:
 
--   Количество колонок - N, закодированное [LEB128](https://en.wikipedia.org/wiki/LEB128),
--   N строк (`String`) с именами колонок,
--   N строк (`String`) с типами колонок.
+ * Количество колонок - N, закодированное [LEB128](https://en.wikipedia.org/wiki/LEB128),
+ * N строк (`String`) с именами колонок,
+ * N строк (`String`) с типами колонок.
 
 ## Values {#data-format-values}
 
-Выводит каждую строку в скобках. Строки разделены запятыми. После последней строки запятой нет. Значения внутри скобок также разделены запятыми. Числа выводятся в десятичном виде без кавычек. Массивы выводятся в квадратных скобках. Строки, даты, даты-с-временем выводятся в кавычках. Правила экранирования и особенности парсинга аналогичны формату [TabSeparated](#tabseparated). При форматировании, лишние пробелы не ставятся, а при парсинге - допустимы и пропускаются (за исключением пробелов внутри значений типа массив, которые недопустимы). [NULL](../sql-reference/syntax.md) представляется как `NULL`.
+Выводит каждую строку в скобках. Строки разделены запятыми. После последней строки запятой нет. Значения внутри скобок также разделены запятыми. Числа выводятся в десятичном виде без кавычек. Массивы выводятся в квадратных скобках. Строки, даты, даты-с-временем выводятся в кавычках. Правила экранирования и особенности парсинга аналогичны формату [TabSeparated](#tabseparated). При форматировании, лишние пробелы не ставятся, а при парсинге - допустимы и пропускаются (за исключением пробелов внутри значений типа массив, которые недопустимы). [NULL](../query_language/syntax.md) представляется как `NULL`.
 
 Минимальный набор символов, которых вам необходимо экранировать при передаче в Values формате: одинарная кавычка и обратный слеш.
 
@@ -852,15 +742,14 @@ Array представлены как длина в формате varint (unsig
 
 Выводит каждое значение на отдельной строке, с указанием имени столбца. Формат удобно использовать для вывода одной-нескольких строк, если каждая строка состоит из большого количества столбцов.
 
-[NULL](../sql-reference/syntax.md) выводится как `ᴺᵁᴸᴸ`.
+[NULL](../query_language/syntax.md) выводится как `ᴺᵁᴸᴸ`.
 
 Пример:
 
-``` sql
+```sql
 SELECT * FROM t_null FORMAT Vertical
 ```
-
-``` text
+```text
 Row 1:
 ──────
 x: 1
@@ -869,28 +758,24 @@ y: ᴺᵁᴸᴸ
 
 В формате `Vertical` строки выводятся без экранирования. Например:
 
-``` sql
+```sql
 SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical
 ```
 
-``` text
+```text
 Row 1:
 ──────
-test: string with 'quotes' and   with some special
+test: string with 'quotes' and 	 with some special
  characters
 ```
 
 Этот формат подходит только для вывода результата выполнения запроса, но не для парсинга (приёма данных для вставки в таблицу).
 
-## VerticalRaw {#verticalraw}
-
-Аналогичен [Vertical](#vertical), но с отключенным выходом. Этот формат подходит только для вывода результата выполнения запроса, но не для парсинга (приёма данных для вставки в таблицу).
-
 ## XML {#xml}
 
 Формат XML подходит только для вывода данных, не для парсинга. Пример:
 
-``` xml
+```xml
 <?xml version='1.0' encoding='UTF-8' ?>
 <result>
         <meta>
@@ -962,17 +847,17 @@ test: string with 'quotes' and   with some special
 
 ## CapnProto {#capnproto}
 
-Cap’n Proto - формат бинарных сообщений, похож на Protocol Buffers и Thrift, но не похож на JSON или MessagePack.
+Cap'n Proto - формат бинарных сообщений, похож на Protocol Buffers и Thrift, но не похож на JSON или MessagePack.
 
-Сообщения Cap’n Proto строго типизированы и не самоописывающиеся, т.е. нуждаются во внешнем описании схемы. Схема применяется «на лету» и кешируется между запросами.
+Сообщения Cap'n Proto строго типизированы и не самоописывающиеся, т.е. нуждаются во внешнем описании схемы. Схема применяется "на лету" и кешируется между запросами.
 
-``` bash
+```bash
 $ cat capnproto_messages.bin | clickhouse-client --query "INSERT INTO test.hits FORMAT CapnProto SETTINGS format_schema='schema:Message'"
 ```
 
 Где `schema.capnp` выглядит следующим образом:
 
-``` capnp
+```capnp
 struct Message {
   SearchPhrase @0 :Text;
   c @1 :Uint64;
@@ -992,19 +877,19 @@ ClickHouse поддерживает как синтаксис `proto2`, так �
 
 Пример использования формата:
 
-``` sql
+```sql
 SELECT * FROM test.table FORMAT Protobuf SETTINGS format_schema = 'schemafile:MessageType'
 ```
 
 или
 
-``` bash
+```bash
 $ cat protobuf_messages.bin | clickhouse-client --query "INSERT INTO test.table FORMAT Protobuf SETTINGS format_schema='schemafile:MessageType'"
 ```
 
 Где файл `schemafile.proto` может выглядеть так:
 
-``` capnp
+```capnp
 syntax = "proto3";
 
 message MessageType {
@@ -1021,7 +906,7 @@ message MessageType {
 
 Вложенные сообщения поддерживаются, например, для поля `z` в таком сообщении
 
-``` capnp
+```capnp
 message MessageType {
   message XType {
     message YType {
@@ -1034,11 +919,11 @@ message MessageType {
 ```
 
 ClickHouse попытается найти столбец с именем `x.y.z` (или `x_y_z`, или `X.y_Z` и т.п.).
-Вложенные сообщения удобно использовать в качестве соответствия для [вложенной структуры данных](../sql-reference/data-types/nested-data-structures/nested.md).
+Вложенные сообщения удобно использовать в качестве соответствия для [вложенной структуры данных](../data_types/nested_data_structures/nested.md).
 
 Значения по умолчанию, определённые в схеме `proto2`, например,
 
-``` capnp
+```capnp
 syntax = "proto2";
 
 message MessageType {
@@ -1046,95 +931,36 @@ message MessageType {
 }
 ```
 
-не применяются; вместо них используются определенные в таблице [значения по умолчанию](../sql-reference/statements/create/table.md#create-default-values).
+не применяются; вместо них используются определенные в таблице [значения по умолчанию](../query_language/create.md#create-default-values).
 
 ClickHouse пишет и читает сообщения `Protocol Buffers` в формате `length-delimited`. Это означает, что перед каждым сообщением пишется его длина
 в формате [varint](https://developers.google.com/protocol-buffers/docs/encoding#varints). См. также [как читать и записывать сообщения Protocol Buffers в формате length-delimited в различных языках программирования](https://cwiki.apache.org/confluence/display/GEODE/Delimiting+Protobuf+Messages).
 
-## ProtobufSingle {#protobufsingle}
-
-То же, что [Protobuf](#protobuf), но без разделителей. Позволяет записать / прочитать не более одного сообщения за раз.
-
-## Avro {#data-format-avro}
-
-[Apache Avro](https://avro.apache.org/) — это ориентированный на строки фреймворк для сериализации данных. Разработан в рамках проекта Apache Hadoop.
-
-В ClickHouse формат Avro поддерживает чтение и запись [файлов данных Avro](https://avro.apache.org/docs/current/spec.html#Object+Container+Files).
-
-[Логические типы Avro](https://avro.apache.org/docs/current/spec.html#Logical+Types)
-
-## AvroConfluent {#data-format-avro-confluent}
-
-Для формата `AvroConfluent` ClickHouse поддерживает декодирование сообщений `Avro` с одним объектом. Такие сообщения используются с [Kafka] (http://kafka.apache.org/) и  реестром схем [Confluent](https://docs.confluent.io/current/schema-registry/index.html).
-
-Каждое сообщение `Avro` содержит идентификатор схемы, который может быть разрешен для фактической схемы с помощью реестра схем.
-
-Схемы кэшируются после разрешения.
-
-URL-адрес реестра схем настраивается с помощью [format_avro_schema_registry_url](../operations/settings/settings.md#format_avro_schema_registry_url).
-
-### Соответствие типов данных {#sootvetstvie-tipov-dannykh-0}
-
-Такое же, как в [Avro](#data-format-avro).
-
-### Использование {#ispolzovanie}
-
-Чтобы быстро проверить разрешение схемы, используйте [kafkacat](https://github.com/edenhill/kafkacat) с языком запросов [clickhouse-local](../operations/utilities/clickhouse-local.md):
-
-``` bash
-$ kafkacat -b kafka-broker  -C -t topic1 -o beginning -f '%s' -c 3 | clickhouse-local   --input-format AvroConfluent --format_avro_schema_registry_url 'http://schema-registry' -S "field1 Int64, field2 String"  -q 'select *  from table'
-1 a
-2 b
-3 c
-```
-
-Чтобы использовать `AvroConfluent` с [Kafka](../engines/table-engines/integrations/kafka.md):
-
-``` sql
-CREATE TABLE topic1_stream
-(
-    field1 String,
-    field2 String
-)
-ENGINE = Kafka()
-SETTINGS
-kafka_broker_list = 'kafka-broker',
-kafka_topic_list = 'topic1',
-kafka_group_name = 'group1',
-kafka_format = 'AvroConfluent';
-
-SET format_avro_schema_registry_url = 'http://schema-registry';
-
-SELECT * FROM topic1_stream;
-```
-!!! note "Внимание"
-    `format_avro_schema_registry_url` необходимо настроить в `users.xml`, чтобы сохранить значение после перезапуска. Также можно использовать настройку `format_avro_schema_registry_url` табличного движка `Kafka`.
-
 ## Parquet {#data-format-parquet}
 
-[Apache Parquet](https://parquet.apache.org/) — формат поколоночного хранения данных, который распространён в экосистеме Hadoop. Для формата `Parquet` ClickHouse поддерживает операции чтения и записи.
+[Apache Parquet](http://parquet.apache.org/) — формат поколоночного хранения данных, который распространён в экосистеме Hadoop. Для формата `Parquet` ClickHouse поддерживает операции чтения и записи.
 
-### Соответствие типов данных {#sootvetstvie-tipov-dannykh}
+### Соответствие типов данных
 
-Таблица ниже содержит поддерживаемые типы данных и их соответствие [типам данных](../sql-reference/data-types/index.md) ClickHouse для запросов `INSERT` и `SELECT`.
+Таблица ниже содержит поддерживаемые типы данных и их соответствие [типам данных](../data_types/index.md) ClickHouse для запросов `INSERT` и `SELECT`.
 
-| Тип данных Parquet (`INSERT`) | Тип данных ClickHouse                                     | Тип данных Parquet (`SELECT`) |
-|-------------------------------|-----------------------------------------------------------|-------------------------------|
-| `UINT8`, `BOOL`               | [UInt8](../sql-reference/data-types/int-uint.md)          | `UINT8`                       |
-| `INT8`                        | [Int8](../sql-reference/data-types/int-uint.md)           | `INT8`                        |
-| `UINT16`                      | [UInt16](../sql-reference/data-types/int-uint.md)         | `UINT16`                      |
-| `INT16`                       | [Int16](../sql-reference/data-types/int-uint.md)          | `INT16`                       |
-| `UINT32`                      | [UInt32](../sql-reference/data-types/int-uint.md)         | `UINT32`                      |
-| `INT32`                       | [Int32](../sql-reference/data-types/int-uint.md)          | `INT32`                       |
-| `UINT64`                      | [UInt64](../sql-reference/data-types/int-uint.md)         | `UINT64`                      |
-| `INT64`                       | [Int64](../sql-reference/data-types/int-uint.md)          | `INT64`                       |
-| `FLOAT`, `HALF_FLOAT`         | [Float32](../sql-reference/data-types/float.md)           | `FLOAT`                       |
-| `DOUBLE`                      | [Float64](../sql-reference/data-types/float.md)           | `DOUBLE`                      |
-| `DATE32`                      | [Date](../sql-reference/data-types/date.md)               | `UINT16`                      |
-| `DATE64`, `TIMESTAMP`         | [DateTime](../sql-reference/data-types/datetime.md)       | `UINT32`                      |
-| `STRING`, `BINARY`            | [String](../sql-reference/data-types/string.md)           | `STRING`                      |
-| —                             | [FixedString](../sql-reference/data-types/fixedstring.md) | `STRING`                      |
-| `DECIMAL`                     | [Decimal](../sql-reference/data-types/decimal.md)         | `DECIMAL`                     |
+| Тип данных Parquet (`INSERT`) | Тип данных ClickHouse | Тип данных Parquet (`SELECT`) |
+| -------------------- | ------------------ | ---- |
+| `UINT8`, `BOOL` | [UInt8](../data_types/int_uint.md) | `UINT8` |
+| `INT8` | [Int8](../data_types/int_uint.md) | `INT8` |
+| `UINT16` | [UInt16](../data_types/int_uint.md) | `UINT16` |
+| `INT16` | [Int16](../data_types/int_uint.md) | `INT16` |
+| `UINT32` | [UInt32](../data_types/int_uint.md) | `UINT32` |
+| `INT32` | [Int32](../data_types/int_uint.md) | `INT32` |
+| `UINT64` | [UInt64](../data_types/int_uint.md) | `UINT64` |
+| `INT64` | [Int64](../data_types/int_uint.md) | `INT64` |
+| `FLOAT`, `HALF_FLOAT` | [Float32](../data_types/float.md) | `FLOAT` |
+| `DOUBLE` | [Float64](../data_types/float.md) | `DOUBLE` |
+| `DATE32` | [Date](../data_types/date.md) | `UINT16` |
+| `DATE64`, `TIMESTAMP` | [DateTime](../data_types/datetime.md) | `UINT32` |
+| `STRING`, `BINARY` | [String](../data_types/string.md) | `STRING` |
+| — | [FixedString](../data_types/fixedstring.md) | `STRING` |
+| `DECIMAL` | [Decimal](../data_types/decimal.md) | `DECIMAL` |
 
 ClickHouse поддерживает настраиваемую точность для формата `Decimal`. При обработке запроса `INSERT`, ClickHouse обрабатывает тип данных Parquet `DECIMAL` как `Decimal128`.
 
@@ -1142,56 +968,47 @@ ClickHouse поддерживает настраиваемую точность 
 
 Типы данных столбцов в ClickHouse могут отличаться от типов данных соответствующих полей файла в формате Parquet. При вставке данных, ClickHouse интерпретирует типы данных в соответствии с таблицей выше, а затем [приводит](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) данные к тому типу, который установлен для столбца таблицы.
 
-### Вставка и выборка данных {#vstavka-i-vyborka-dannykh}
+### Вставка и выборка данных
 
 Чтобы вставить в ClickHouse данные из файла в формате Parquet, выполните команду следующего вида:
 
-``` bash
+```bash
 $ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Parquet"
 ```
 
 Чтобы получить данные из таблицы ClickHouse и сохранить их в файл формата Parquet, используйте команду следующего вида:
 
-``` bash
+```bash
 $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
 ```
 
-Для обмена данными с экосистемой Hadoop можно использовать движки таблиц [HDFS](../engines/table-engines/integrations/hdfs.md).
+Для обмена данными с экосистемой Hadoop можно использовать движки таблиц [HDFS](../operations/table_engines/hdfs.md).
 
-## Arrow {#data-format-arrow}
-
-[Apache Arrow](https://arrow.apache.org/) поставляется с двумя встроенными поколоночнами форматами хранения. ClickHouse поддерживает операции чтения и записи для этих форматов.
-
-`Arrow` — это Apache Arrow's "file mode" формат. Он предназначен для произвольного доступа в памяти.
-
-## ArrowStream {#data-format-arrow-stream}
-
-`ArrowStream` — это Apache Arrow's "stream mode" формат. Он предназначен для обработки потоков в памяти.
 
 ## ORC {#data-format-orc}
 
 [Apache ORC](https://orc.apache.org/) - это column-oriented формат данных, распространённый в экосистеме Hadoop. Вы можете только вставлять данные этого формата в ClickHouse.
 
-### Соответствие типов данных {#sootvetstvie-tipov-dannykh-1}
+### Соответствие типов данных
 
-Таблица показывает поддержанные типы данных и их соответствие [типам данных](../sql-reference/data-types/index.md) ClickHouse для запросов `INSERT`.
+Таблица показывает поддержанные типы данных и их соответствие [типам данных](../data_types/index.md) ClickHouse для запросов `INSERT`.
 
-| Тип данных ORC (`INSERT`) | Тип данных ClickHouse                               |
-|---------------------------|-----------------------------------------------------|
-| `UINT8`, `BOOL`           | [UInt8](../sql-reference/data-types/int-uint.md)    |
-| `INT8`                    | [Int8](../sql-reference/data-types/int-uint.md)     |
-| `UINT16`                  | [UInt16](../sql-reference/data-types/int-uint.md)   |
-| `INT16`                   | [Int16](../sql-reference/data-types/int-uint.md)    |
-| `UINT32`                  | [UInt32](../sql-reference/data-types/int-uint.md)   |
-| `INT32`                   | [Int32](../sql-reference/data-types/int-uint.md)    |
-| `UINT64`                  | [UInt64](../sql-reference/data-types/int-uint.md)   |
-| `INT64`                   | [Int64](../sql-reference/data-types/int-uint.md)    |
-| `FLOAT`, `HALF_FLOAT`     | [Float32](../sql-reference/data-types/float.md)     |
-| `DOUBLE`                  | [Float64](../sql-reference/data-types/float.md)     |
-| `DATE32`                  | [Date](../sql-reference/data-types/date.md)         |
-| `DATE64`, `TIMESTAMP`     | [DateTime](../sql-reference/data-types/datetime.md) |
-| `STRING`, `BINARY`        | [String](../sql-reference/data-types/string.md)     |
-| `DECIMAL`                 | [Decimal](../sql-reference/data-types/decimal.md)   |
+| Тип данных ORC (`INSERT`) | Тип данных ClickHouse |
+| -------------------- | ------------------ |
+| `UINT8`, `BOOL` | [UInt8](../data_types/int_uint.md) |
+| `INT8` | [Int8](../data_types/int_uint.md) |
+| `UINT16` | [UInt16](../data_types/int_uint.md) |
+| `INT16` | [Int16](../data_types/int_uint.md) |
+| `UINT32` | [UInt32](../data_types/int_uint.md) |
+| `INT32` | [Int32](../data_types/int_uint.md) |
+| `UINT64` | [UInt64](../data_types/int_uint.md) |
+| `INT64` | [Int64](../data_types/int_uint.md) |
+| `FLOAT`, `HALF_FLOAT` | [Float32](../data_types/float.md) |
+| `DOUBLE` | [Float64](../data_types/float.md) |
+| `DATE32` | [Date](../data_types/date.md) |
+| `DATE64`, `TIMESTAMP` | [DateTime](../data_types/datetime.md) |
+| `STRING`, `BINARY` | [String](../data_types/string.md) |
+| `DECIMAL` | [Decimal](../data_types/decimal.md) |
 
 ClickHouse поддерживает настраиваемую точность для формата `Decimal`. При обработке запроса `INSERT`, ClickHouse обрабатывает тип данных Parquet `DECIMAL` как `Decimal128`.
 
@@ -1199,15 +1016,15 @@ ClickHouse поддерживает настраиваемую точность 
 
 Типы данных столбцов в таблицах ClickHouse могут отличаться от типов данных для соответствующих полей ORC. При вставке данных, ClickHouse интерпретирует типы данных ORC согласно таблице соответствия, а затем [приводит](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) данные к типу, установленному для столбца таблицы ClickHouse.
 
-### Вставка данных {#vstavka-dannykh-1}
+### Вставка данных
 
 Данные ORC можно вставить в таблицу ClickHouse командой:
 
-``` bash
+```bash
 $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT ORC"
 ```
 
-Для обмена данных с Hadoop можно использовать [движок таблиц HDFS](../engines/table-engines/integrations/hdfs.md).
+Для обмена данных с Hadoop можно использовать [движок таблиц HDFS](../operations/table_engines/hdfs.md).
 
 ## Схема формата {#formatschema}
 
@@ -1220,29 +1037,6 @@ $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT OR
 относительно текущей директории на клиенте. Если клиент используется в [batch режиме](../interfaces/cli.md#cli_usage), то в записи схемы допускается только относительный путь, из соображений безопасности.
 
 Если для ввода/вывода данных используется [HTTP-интерфейс](../interfaces/http.md), то файл со схемой должен располагаться на сервере в каталоге,
-указанном в параметре [format_schema_path](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path) конфигурации сервера.
-
-## LineAsString {#lineasstring}
-
- В этом формате последовательность строковых объектов, разделенных символом новой строки, интерпретируется как одно значение. Парситься может только таблица с единственным полем типа [String](../sql-reference/data-types/string.md). Остальные столбцы должны быть заданы как [DEFAULT](../sql-reference/statements/create/table.md#create-default-values) или [MATERIALIZED](../sql-reference/statements/create/table.md#create-default-values), либо отсутствовать.
-
-**Пример**
-
-Запрос:
-
-``` sql
-DROP TABLE IF EXISTS line_as_string;
-CREATE TABLE line_as_string (field String) ENGINE = Memory;
-INSERT INTO line_as_string FORMAT LineAsString "I love apple", "I love banana", "I love orange";
-SELECT * FROM line_as_string;
-```
-
-Результат:
-
-``` text
-┌─field─────────────────────────────────────────────┐
-│ "I love apple", "I love banana", "I love orange"; │
-└───────────────────────────────────────────────────┘
-```
+указанном в параметре [format_schema_path](../operations/server_settings/settings.md#server_settings-format_schema_path) конфигурации сервера.
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/formats/) <!--hide-->

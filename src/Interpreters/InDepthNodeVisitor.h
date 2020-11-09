@@ -29,15 +29,7 @@ public:
         if constexpr (!_top_to_bottom)
             visitChildren(ast);
 
-        try
-        {
-            Matcher::visit(ast, data);
-        }
-        catch (Exception & e)
-        {
-            e.addMessage("While processing {}", ast->formatForErrorMessage());
-            throw;
-        }
+        Matcher::visit(ast, data);
 
         if constexpr (_top_to_bottom)
             visitChildren(ast);
@@ -59,23 +51,21 @@ private:
 template <typename Matcher, bool top_to_bottom>
 using ConstInDepthNodeVisitor = InDepthNodeVisitor<Matcher, top_to_bottom, const ASTPtr>;
 
-struct NeedChild
-{
-    using Condition = bool (*)(const ASTPtr & node, const ASTPtr & child);
-
-    static bool all(const ASTPtr &, const ASTPtr &) { return true; }
-    static bool none(const ASTPtr &, const ASTPtr &) { return false; }
-};
-
-/// Simple matcher for one node type. Use need_child function for complex traversal logic.
-template <typename Data_, NeedChild::Condition need_child = NeedChild::all, typename T = ASTPtr>
+/// Simple matcher for one node type without complex traversal logic.
+template <typename Data_, bool visit_children = true, typename T = ASTPtr>
 class OneTypeMatcher
 {
 public:
     using Data = Data_;
     using TypeToVisit = typename Data::TypeToVisit;
 
-    static bool needChildVisit(const ASTPtr & node, const ASTPtr & child) { return need_child(node, child); }
+    static bool needChildVisit(const ASTPtr & node, const ASTPtr &)
+    {
+        if (node && node->as<TypeToVisit>())
+            return visit_children;
+
+        return true;
+    }
 
     static void visit(T & ast, Data & data)
     {
@@ -84,7 +74,7 @@ public:
     }
 };
 
-template <typename Data, NeedChild::Condition need_child = NeedChild::all>
-using ConstOneTypeMatcher = OneTypeMatcher<Data, need_child, const ASTPtr>;
+template <typename Data, bool visit_children = true>
+using ConstOneTypeMatcher = OneTypeMatcher<Data, visit_children, const ASTPtr>;
 
 }

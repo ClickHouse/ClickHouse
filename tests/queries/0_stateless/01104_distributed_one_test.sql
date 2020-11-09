@@ -16,6 +16,3 @@ SELECT 'distributed_0', _shard_num, toUInt8(1) AS dummy FROM d_one AS o WHERE o.
 SELECT 'distributed_1', _shard_num, toUInt8(1) AS dummy FROM d_one AS o WHERE o.dummy = 1 ORDER BY _shard_num;
 
 DROP TABLE d_one;
-
-SELECT 'remote_0', toUInt8(1) AS dummy FROM remote('127.0.0.2', system, one) AS o WHERE o.dummy = 0;
-SELECT 'remote_1', toUInt8(1) AS dummy FROM remote('127.0.0.2', system, one) AS o WHERE o.dummy = 1;

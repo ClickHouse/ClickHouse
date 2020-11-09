@@ -77,7 +77,7 @@ namespace
         if (!data)
             throw Exception("LibraryDictionarySource: No data returned", ErrorCodes::EXTERNAL_LIBRARY_ERROR);
 
-        const auto * columns_received = static_cast<const ClickHouseLibrary::Table *>(data);
+        const auto *columns_received = static_cast<const ClickHouseLibrary::Table *>(data);
         if (columns_received->error_code)
             throw Exception(
                 "LibraryDictionarySource: Returned error: " + std::to_string(columns_received->error_code) + " "
@@ -125,7 +125,7 @@ LibraryDictionarySource::LibraryDictionarySource(
     Block & sample_block_,
     const Context & context,
     bool check_config)
-    : log(&Poco::Logger::get("LibraryDictionarySource"))
+    : log(&Logger::get("LibraryDictionarySource"))
     , dict_struct{dict_struct_}
     , config_prefix{config_prefix_}
     , path{config.getString(config_prefix + ".path", "")}
@@ -136,7 +136,7 @@ LibraryDictionarySource::LibraryDictionarySource(
     {
         const String dictionaries_lib_path = context.getDictionariesLibPath();
         if (!startsWith(path, dictionaries_lib_path))
-            throw Exception("LibraryDictionarySource: Library path " + path + " is not inside " + dictionaries_lib_path, ErrorCodes::PATH_ACCESS_DENIED);
+            throw Exception("LibraryDictionarySource: Library path " + dictionaries_lib_path + " is not inside " + dictionaries_lib_path, ErrorCodes::PATH_ACCESS_DENIED);
     }
 
     if (!Poco::File(path).exists())
@@ -151,13 +151,13 @@ LibraryDictionarySource::LibraryDictionarySource(
 #endif
     );
     settings = std::make_shared<CStringsHolder>(getLibSettings(config, config_prefix + lib_config_settings));
-    if (auto lib_new = library->tryGet<decltype(lib_data) (*)(decltype(&settings->strings), decltype(&ClickHouseLibrary::log))>(
+    if (auto libNew = library->tryGet<decltype(lib_data) (*)(decltype(&settings->strings), decltype(&ClickHouseLibrary::log))>(
             "ClickHouseDictionary_v3_libNew"))
-        lib_data = lib_new(&settings->strings, ClickHouseLibrary::log);
+        lib_data = libNew(&settings->strings, ClickHouseLibrary::log);
 }
 
 LibraryDictionarySource::LibraryDictionarySource(const LibraryDictionarySource & other)
-    : log(&Poco::Logger::get("LibraryDictionarySource"))
+    : log(&Logger::get("LibraryDictionarySource"))
     , dict_struct{other.dict_struct}
     , config_prefix{other.config_prefix}
     , path{other.path}
@@ -166,23 +166,23 @@ LibraryDictionarySource::LibraryDictionarySource(const LibraryDictionarySource &
     , description{other.description}
     , settings{other.settings}
 {
-    if (auto lib_clone = library->tryGet<decltype(lib_data) (*)(decltype(other.lib_data))>("ClickHouseDictionary_v3_libClone"))
-        lib_data = lib_clone(other.lib_data);
+    if (auto libClone = library->tryGet<decltype(lib_data) (*)(decltype(other.lib_data))>("ClickHouseDictionary_v3_libClone"))
+        lib_data = libClone(other.lib_data);
     else if (
-        auto lib_new = library->tryGet<decltype(lib_data) (*)(decltype(&settings->strings), decltype(&ClickHouseLibrary::log))>(
+        auto libNew = library->tryGet<decltype(lib_data) (*)(decltype(&settings->strings), decltype(&ClickHouseLibrary::log))>(
             "ClickHouseDictionary_v3_libNew"))
-        lib_data = lib_new(&settings->strings, ClickHouseLibrary::log);
+        lib_data = libNew(&settings->strings, ClickHouseLibrary::log);
 }
 
 LibraryDictionarySource::~LibraryDictionarySource()
 {
-    if (auto lib_delete = library->tryGet<void (*)(decltype(lib_data))>("ClickHouseDictionary_v3_libDelete"))
-        lib_delete(lib_data);
+    if (auto libDelete = library->tryGet<void (*)(decltype(lib_data))>("ClickHouseDictionary_v3_libDelete"))
+        libDelete(lib_data);
 }
 
 BlockInputStreamPtr LibraryDictionarySource::loadAll()
 {
-    LOG_TRACE(log, "loadAll {}", toString());
+    LOG_TRACE(log, "loadAll " + toString());
 
     auto columns_holder = std::make_unique<ClickHouseLibrary::CString[]>(dict_struct.attributes.size());
     ClickHouseLibrary::CStrings columns{static_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()),
@@ -196,10 +196,10 @@ BlockInputStreamPtr LibraryDictionarySource::loadAll()
     void * data_ptr = nullptr;
 
     /// Get function pointer before dataNew call because library->get may throw.
-    auto func_load_all
+    auto func_loadAll
         = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&columns))>("ClickHouseDictionary_v3_loadAll");
     data_ptr = library->get<decltype(data_ptr) (*)(decltype(lib_data))>("ClickHouseDictionary_v3_dataNew")(lib_data);
-    auto * data = func_load_all(data_ptr, &settings->strings, &columns);
+    auto *data = func_loadAll(data_ptr, &settings->strings, &columns);
     auto block = dataToBlock(description.sample_block, data);
     SCOPE_EXIT(library->get<void (*)(decltype(lib_data), decltype(data_ptr))>("ClickHouseDictionary_v3_dataDelete")(lib_data, data_ptr));
     return std::make_shared<OneBlockInputStream>(block);
@@ -207,7 +207,7 @@ BlockInputStreamPtr LibraryDictionarySource::loadAll()
 
 BlockInputStreamPtr LibraryDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
-    LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
+    LOG_TRACE(log, "loadIds " << toString() << " size = " << ids.size());
 
     const ClickHouseLibrary::VectorUInt64 ids_data{ext::bit_cast<decltype(ClickHouseLibrary::VectorUInt64::data)>(ids.data()), ids.size()};
     auto columns_holder = std::make_unique<ClickHouseLibrary::CString[]>(dict_struct.attributes.size());
@@ -222,11 +222,11 @@ BlockInputStreamPtr LibraryDictionarySource::loadIds(const std::vector<UInt64> &
     void * data_ptr = nullptr;
 
     /// Get function pointer before dataNew call because library->get may throw.
-    auto func_load_ids
+    auto func_loadIds
         = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&columns_pass), decltype(&ids_data))>(
             "ClickHouseDictionary_v3_loadIds");
     data_ptr = library->get<decltype(data_ptr) (*)(decltype(lib_data))>("ClickHouseDictionary_v3_dataNew")(lib_data);
-    auto * data = func_load_ids(data_ptr, &settings->strings, &columns_pass, &ids_data);
+    auto *data = func_loadIds(data_ptr, &settings->strings, &columns_pass, &ids_data);
     auto block = dataToBlock(description.sample_block, data);
     SCOPE_EXIT(library->get<void (*)(decltype(lib_data), decltype(data_ptr))>("ClickHouseDictionary_v3_dataDelete")(lib_data, data_ptr));
     return std::make_shared<OneBlockInputStream>(block);
@@ -234,7 +234,7 @@ BlockInputStreamPtr LibraryDictionarySource::loadIds(const std::vector<UInt64> &
 
 BlockInputStreamPtr LibraryDictionarySource::loadKeys(const Columns & key_columns, const std::vector<std::size_t> & requested_rows)
 {
-    LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
+    LOG_TRACE(log, "loadKeys " << toString() << " size = " << requested_rows.size());
 
     auto holder = std::make_unique<ClickHouseLibrary::Row[]>(key_columns.size());
     std::vector<std::unique_ptr<ClickHouseLibrary::Field[]>> column_data_holders;
@@ -256,10 +256,10 @@ BlockInputStreamPtr LibraryDictionarySource::loadKeys(const Columns & key_column
 
     void * data_ptr = nullptr;
     /// Get function pointer before dataNew call because library->get may throw.
-    auto func_load_keys = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&request_cols))>(
+    auto func_loadKeys = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&request_cols))>(
         "ClickHouseDictionary_v3_loadKeys");
     data_ptr = library->get<decltype(data_ptr) (*)(decltype(lib_data))>("ClickHouseDictionary_v3_dataNew")(lib_data);
-    auto * data = func_load_keys(data_ptr, &settings->strings, &request_cols);
+    auto *data = func_loadKeys(data_ptr, &settings->strings, &request_cols);
     auto block = dataToBlock(description.sample_block, data);
     SCOPE_EXIT(library->get<void (*)(decltype(lib_data), decltype(data_ptr))>("ClickHouseDictionary_v3_dataDelete")(lib_data, data_ptr));
     return std::make_shared<OneBlockInputStream>(block);
@@ -267,17 +267,17 @@ BlockInputStreamPtr LibraryDictionarySource::loadKeys(const Columns & key_column
 
 bool LibraryDictionarySource::isModified() const
 {
-    if (auto func_is_modified
+    if (auto func_isModified
         = library->tryGet<bool (*)(decltype(lib_data), decltype(&settings->strings))>("ClickHouseDictionary_v3_isModified"))
-        return func_is_modified(lib_data, &settings->strings);
+        return func_isModified(lib_data, &settings->strings);
     return true;
 }
 
 bool LibraryDictionarySource::supportsSelectiveLoad() const
 {
-    if (auto func_supports_selective_load
+    if (auto func_supportsSelectiveLoad
         = library->tryGet<bool (*)(decltype(lib_data), decltype(&settings->strings))>("ClickHouseDictionary_v3_supportsSelectiveLoad"))
-        return func_supports_selective_load(lib_data, &settings->strings);
+        return func_supportsSelectiveLoad(lib_data, &settings->strings);
     return true;
 }
 
@@ -293,17 +293,16 @@ std::string LibraryDictionarySource::toString() const
 
 void registerDictionarySourceLibrary(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=](const DictionaryStructure & dict_struct,
+    auto createTableSource = [=](const DictionaryStructure & dict_struct,
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
                                  const Context & context,
-                                 const std::string & /* default_database */,
                                  bool check_config) -> DictionarySourcePtr
     {
         return std::make_unique<LibraryDictionarySource>(dict_struct, config, config_prefix + ".library", sample_block, context, check_config);
     };
-    factory.registerSource("library", create_table_source);
+    factory.registerSource("library", createTableSource);
 }
 
 }

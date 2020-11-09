@@ -3,7 +3,7 @@
 #include <Poco/Timestamp.h>
 #include "IDictionarySource.h"
 #include <Core/Block.h>
-#include <Interpreters/Context.h>
+
 
 namespace DB
 {
@@ -11,6 +11,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
 }
+class Context;
 
 /// Allows loading dictionaries from a file with given format, does not support "random access"
 class FileDictionarySource final : public IDictionarySource
@@ -38,14 +39,7 @@ public:
         throw Exception{"Method loadKeys is unsupported for FileDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
     }
 
-    bool isModified() const override
-    {
-        // We can't count on that the mtime increases or that it has
-        // a particular relation to system time, so just check for strict
-        // equality.
-        return getLastModification() != last_modification;
-    }
-
+    bool isModified() const override { return getLastModification() > last_modification; }
     bool supportsSelectiveLoad() const override { return false; }
 
     ///Not supported for FileDictionarySource
@@ -61,7 +55,7 @@ private:
     const std::string filepath;
     const std::string format;
     Block sample_block;
-    const Context context;
+    const Context & context;
     Poco::Timestamp last_modification;
 };
 

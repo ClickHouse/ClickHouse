@@ -7,7 +7,6 @@
 namespace DB
 {
 
-//TODO replace with StorageID
 struct QualifiedTableName
 {
     std::string database;

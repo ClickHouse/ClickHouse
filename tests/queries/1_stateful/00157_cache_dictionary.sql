@@ -6,7 +6,7 @@ CREATE DICTIONARY db_dict.cache_hits
 PRIMARY KEY WatchID 
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'hits' PASSWORD '' DB 'test')) 
 LIFETIME(MIN 1 MAX 10) 
-LAYOUT(CACHE(SIZE_IN_CELLS 1 QUERY_WAIT_TIMEOUT_MILLISECONDS 60000));
+LAYOUT(CACHE(SIZE_IN_CELLS 1 ));
 
 SELECT count() FROM (SELECT WatchID, arrayDistinct(groupArray(dictGetUInt64( 'db_dict.cache_hits', 'UserID', toUInt64(WatchID)))) as arr 
 FROM test.hits PREWHERE WatchID % 5 == 0 GROUP BY  WatchID order by length(arr) desc) WHERE arr = [0];

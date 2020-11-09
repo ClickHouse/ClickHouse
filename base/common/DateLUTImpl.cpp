@@ -1,17 +1,25 @@
-#include "DateLUTImpl.h"
+#if __has_include(<cctz/civil_time.h>)
+#include <cctz/civil_time.h> // bundled, debian
+#else
+#include <civil_time.h> // freebsd
+#endif
 
-#include <cctz/civil_time.h>
+#if __has_include(<cctz/time_zone.h>)
 #include <cctz/time_zone.h>
-#include <cctz/zone_info_source.h>
-#include <common/getResource.h>
+#else
+#include <time_zone.h>
+#endif
+
+#include <common/DateLUTImpl.h>
 #include <Poco/Exception.h>
 
-#include <algorithm>
-#include <cassert>
+#include <memory>
 #include <chrono>
 #include <cstring>
+#include <cassert>
 #include <iostream>
-#include <memory>
+
+#define DATE_LUT_MIN 0
 
 
 namespace
@@ -29,8 +37,9 @@ UInt8 getDayOfWeek(const cctz::civil_day & date)
         case cctz::weekday::friday:     return 5;
         case cctz::weekday::saturday:   return 6;
         case cctz::weekday::sunday:     return 7;
+        default:
+            throw Poco::Exception("Logical error: incorrect week day.");
     }
-    __builtin_unreachable();
 }
 
 }
@@ -47,7 +56,7 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
         assert(inside_main);
 
     size_t i = 0;
-    time_t start_of_day = 0;
+    time_t start_of_day = DATE_LUT_MIN;
 
     cctz::time_zone cctz_time_zone;
     if (!cctz::load_time_zone(time_zone, &cctz_time_zone))
@@ -71,11 +80,6 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
         values.day_of_month = date.day();
         values.day_of_week = getDayOfWeek(date);
         values.date = start_of_day;
-
-        assert(values.year >= DATE_LUT_MIN_YEAR && values.year <= DATE_LUT_MAX_YEAR);
-        assert(values.month >= 1 && values.month <= 12);
-        assert(values.day_of_month >= 1 && values.day_of_month <= 31);
-        assert(values.day_of_week >= 1 && values.day_of_week <= 7);
 
         if (values.day_of_month == 1)
         {
@@ -162,64 +166,3 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
         years_months_lut[year_months_lut_index] = first_day_of_last_month;
     }
 }
-
-
-#if !defined(ARCADIA_BUILD) /// Arcadia's variant of CCTZ already has the same implementation.
-
-/// Prefer to load timezones from blobs linked to the binary.
-/// The blobs are provided by "tzdata" library.
-/// This allows to avoid dependency on system tzdata.
-namespace cctz_extension
-{
-    namespace
-    {
-        class Source : public cctz::ZoneInfoSource
-        {
-        public:
-            Source(const char * data_, size_t size_) : data(data_), size(size_) {}
-
-            size_t Read(void * buf, size_t bytes) override
-            {
-                if (bytes > size)
-                    bytes = size;
-                memcpy(buf, data, bytes);
-                data += bytes;
-                size -= bytes;
-                return bytes;
-            }
-
-            int Skip(size_t offset) override
-            {
-                if (offset <= size)
-                {
-                    data += offset;
-                    size -= offset;
-                    return 0;
-                }
-                else
-                {
-                    errno = EINVAL;
-                    return -1;
-                }
-            }
-        private:
-            const char * data;
-            size_t size;
-        };
-
-        std::unique_ptr<cctz::ZoneInfoSource> custom_factory(
-            const std::string & name,
-            const std::function<std::unique_ptr<cctz::ZoneInfoSource>(const std::string & name)> & fallback)
-        {
-            std::string_view resource = getResource(name);
-            if (!resource.empty())
-                return std::make_unique<Source>(resource.data(), resource.size());
-
-            return fallback(name);
-        }
-    }
-
-    ZoneInfoSourceFactory zone_info_source_factory = custom_factory;
-}
-
-#endif

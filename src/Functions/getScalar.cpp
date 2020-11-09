@@ -10,13 +10,11 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
-
-namespace
-{
 
 /** Get scalar value of sub queries from query context via IAST::Hash.
   */
@@ -29,7 +27,7 @@ public:
         return std::make_shared<FunctionGetScalar>(context);
     }
 
-    explicit FunctionGetScalar(const Context & context_) : context(context_) {}
+    FunctionGetScalar(const Context & context_) : context(context_) {}
 
     String getName() const override
     {
@@ -45,15 +43,14 @@ public:
     {
         if (arguments.size() != 1 || !isString(arguments[0].type) || !arguments[0].column || !isColumnConst(*arguments[0].column))
             throw Exception("Function " + getName() + " accepts one const string argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        auto scalar_name = assert_cast<const ColumnConst &>(*arguments[0].column).getValue<String>();
-        const Context & query_context = context.hasQueryContext() ? context.getQueryContext() : context;
-        scalar = query_context.getScalar(scalar_name).getByPosition(0);
+        auto scalar_name = assert_cast<const ColumnConst &>(*arguments[0].column).getField().get<String>();
+        scalar = context.getScalar(scalar_name).getByPosition(0);
         return scalar.type;
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
-        return ColumnConst::create(scalar.column, input_rows_count);
+        block.getByPosition(result).column = ColumnConst::create(scalar.column, input_rows_count);
     }
 
 private:
@@ -61,7 +58,6 @@ private:
     const Context & context;
 };
 
-}
 
 void registerFunctionGetScalar(FunctionFactory & factory)
 {

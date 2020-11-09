@@ -3,16 +3,15 @@
 #include <ext/shared_ptr_helper.h>
 
 #include <Storages/StorageSet.h>
-#include <Storages/JoinSettings.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 
 namespace DB
 {
 
-class TableJoin;
-class HashJoin;
-using HashJoinPtr = std::shared_ptr<HashJoin>;
+class AnalyzedJoin;
+class Join;
+using HashJoinPtr = std::shared_ptr<Join>;
 
 
 /** Allows you save the state for later use on the right side of the JOIN.
@@ -22,32 +21,28 @@ using HashJoinPtr = std::shared_ptr<HashJoin>;
   *
   * When using, JOIN must be of the appropriate type (ANY|ALL LEFT|INNER ...).
   */
-class StorageJoin final : public ext::shared_ptr_helper<StorageJoin>, public StorageSetOrJoinBase
+class StorageJoin : public ext::shared_ptr_helper<StorageJoin>, public StorageSetOrJoinBase
 {
     friend struct ext::shared_ptr_helper<StorageJoin>;
 public:
     String getName() const override { return "Join"; }
 
-    void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &) override;
+    void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
     /// Access the innards.
     HashJoinPtr & getJoin() { return join; }
-    HashJoinPtr getJoin(std::shared_ptr<TableJoin> analyzed_join) const;
+    HashJoinPtr getJoin(std::shared_ptr<AnalyzedJoin> analyzed_join) const;
 
     /// Verify that the data structure is suitable for implementing this type of JOIN.
     void assertCompatible(ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_) const;
 
-    Pipe read(
+    Pipes read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
-
-    std::optional<UInt64> totalRows() const override;
-    std::optional<UInt64> totalBytes() const override;
 
 private:
     Block sample_block;
@@ -58,7 +53,7 @@ private:
     ASTTableJoin::Strictness strictness;        /// ANY | ALL
     bool overwrite;
 
-    std::shared_ptr<TableJoin> table_join;
+    std::shared_ptr<AnalyzedJoin> table_join;
     HashJoinPtr join;
 
     void insertBlock(const Block & block) override;
@@ -76,8 +71,7 @@ protected:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         bool overwrite,
-        const Context & context_,
-        bool persistent_);
+        const Context & context_);
 };
 
 }

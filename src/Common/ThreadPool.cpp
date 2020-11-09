@@ -1,19 +1,14 @@
 #include <Common/ThreadPool.h>
 #include <Common/Exception.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
 
-#include <cassert>
 #include <type_traits>
 
-#include <Poco/Util/Application.h>
-#include <Poco/Util/LayeredConfiguration.h>
 
 namespace DB
 {
     namespace ErrorCodes
     {
         extern const int CANNOT_SCHEDULE_TASK;
-        extern const int LOGICAL_ERROR;
     }
 }
 
@@ -23,13 +18,6 @@ namespace CurrentMetrics
     extern const Metric GlobalThreadActive;
     extern const Metric LocalThread;
     extern const Metric LocalThreadActive;
-}
-
-
-template <typename Thread>
-ThreadPoolImpl<Thread>::ThreadPoolImpl()
-    : ThreadPoolImpl(getNumberOfPhysicalCPUCores())
-{
 }
 
 
@@ -234,16 +222,9 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
                     std::is_same_v<Thread, std::thread> ? CurrentMetrics::GlobalThreadActive : CurrentMetrics::LocalThreadActive);
 
                 job();
-                /// job should be reset before decrementing scheduled_jobs to
-                /// ensure that the Job destroyed before wait() returns.
-                job = {};
             }
             catch (...)
             {
-                /// job should be reset before decrementing scheduled_jobs to
-                /// ensure that the Job destroyed before wait() returns.
-                job = {};
-
                 {
                     std::unique_lock lock(mutex);
                     if (!first_exception)
@@ -280,29 +261,39 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 template class ThreadPoolImpl<std::thread>;
 template class ThreadPoolImpl<ThreadFromGlobalPool>;
 
-std::unique_ptr<GlobalThreadPool> GlobalThreadPool::the_instance;
 
-void GlobalThreadPool::initialize(size_t max_threads)
+void ExceptionHandler::setException(std::exception_ptr exception)
 {
-    if (the_instance)
-    {
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR,
-            "The global thread pool is initialized twice");
-    }
+    std::unique_lock lock(mutex);
+    if (!first_exception)
+        first_exception = std::move(exception); // NOLINT
+}
 
-    the_instance.reset(new GlobalThreadPool(max_threads,
-        1000 /*max_free_threads*/, 10000 /*max_queue_size*/,
-        false /*shutdown_on_exception*/));
+void ExceptionHandler::throwIfException()
+{
+    std::unique_lock lock(mutex);
+    if (first_exception)
+        std::rethrow_exception(first_exception);
+}
+
+
+ThreadPool::Job createExceptionHandledJob(ThreadPool::Job job, ExceptionHandler & handler)
+{
+    return [job{std::move(job)}, &handler] ()
+    {
+        try
+        {
+            job();
+        }
+        catch (...)
+        {
+            handler.setException(std::current_exception());
+        }
+    };
 }
 
 GlobalThreadPool & GlobalThreadPool::instance()
 {
-    if (!the_instance)
-    {
-        // Allow implicit initialization. This is needed for old code that is
-        // impractical to redo now, especially Arcadia users and unit tests.
-        initialize();
-    }
-
-    return *the_instance;
+    static GlobalThreadPool ret;
+    return ret;
 }

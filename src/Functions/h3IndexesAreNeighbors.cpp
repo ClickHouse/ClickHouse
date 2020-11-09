@@ -1,17 +1,13 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
-
+#include "config_functions.h"
 #if USE_H3
+#    include <Columns/ColumnsNumber.h>
+#    include <DataTypes/DataTypesNumber.h>
+#    include <Functions/FunctionFactory.h>
+#    include <Functions/IFunction.h>
+#    include <Common/typeid_cast.h>
+#    include <ext/range.h>
 
-#include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/IFunction.h>
-#include <Common/typeid_cast.h>
-#include <ext/range.h>
-
-#include <h3api.h>
+#    include <h3api.h>
 
 
 namespace DB
@@ -20,10 +16,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
-
-namespace
-{
-
 class FunctionH3IndexesAreNeighbors : public IFunction
 {
 public:
@@ -38,7 +30,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const auto * arg = arguments[0].get();
+        const auto *arg = arguments[0].get();
         if (!WhichDataType(arg).isUInt64())
             throw Exception(
                 "Illegal type " + arg->getName() + " of argument " + std::to_string(1) + " of function " + getName() + ". Must be UInt64",
@@ -53,10 +45,10 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        const auto * col_hindex_origin = arguments[0].column.get();
-        const auto * col_hindex_dest = arguments[1].column.get();
+        const auto *const col_hindex_origin = block.getByPosition(arguments[0]).column.get();
+        const auto *const col_hindex_dest = block.getByPosition(arguments[1]).column.get();
 
         auto dst = ColumnVector<UInt8>::create();
         auto & dst_data = dst->getData();
@@ -72,11 +64,10 @@ public:
             dst_data[row] = res;
         }
 
-        return dst;
+        block.getByPosition(result).column = std::move(dst);
     }
 };
 
-}
 
 void registerFunctionH3IndexesAreNeighbors(FunctionFactory & factory)
 {
@@ -84,5 +75,4 @@ void registerFunctionH3IndexesAreNeighbors(FunctionFactory & factory)
 }
 
 }
-
 #endif

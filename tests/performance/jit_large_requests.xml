@@ -1,4 +1,11 @@
 <test>
+    
+    <stop_conditions>
+        <any_of>
+            <iterations>100</iterations>
+        </any_of>
+    </stop_conditions>
+
     <create_query>
         CREATE TABLE jit_test (
             a UInt64,
@@ -29,7 +36,7 @@
                 number
             FROM
                 system.numbers
-            LIMIT 100000000
+            LIMIT 10000000
     </fill_query>
     <query>
         SELECT
@@ -41,7 +48,7 @@
         SETTINGS
             compile_expressions = 0;
     </query>
-    <query short="1">
+    <query>
         SELECT
             COUNT()
         FROM
@@ -50,7 +57,7 @@
             NOT ignore(a / b + c / d + e / f + g / h + i / j)
         SETTINGS
             compile_expressions = 1,
-            min_count_to_compile_expression = 1
+            min_count_to_compile = 1
     </query>
     <drop_query>DROP TABLE IF EXISTS jit_test</drop_query>
 </test>

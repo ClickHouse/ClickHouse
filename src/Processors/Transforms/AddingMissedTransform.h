@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Processors/ISimpleTransform.h>
-#include <Storages/ColumnsDescription.h>
+#include <Storages/ColumnDefault.h>
 
 
 namespace DB
@@ -20,7 +20,7 @@ public:
     AddingMissedTransform(
         Block header_,
         Block result_header_,
-        const ColumnsDescription & columns_,
+        const ColumnDefaults & column_defaults_,
         const Context & context_);
 
     String getName() const override { return "AddingMissed"; }
@@ -28,7 +28,7 @@ public:
 private:
     void transform(Chunk &) override;
 
-    const ColumnsDescription columns;
+    const ColumnDefaults column_defaults;
     const Context & context;
 };
 

@@ -6,7 +6,7 @@
 
 struct DecomposedFloat64
 {
-    explicit DecomposedFloat64(double x)
+    DecomposedFloat64(double x)
     {
         memcpy(&x_uint, &x, sizeof(x));
     }
@@ -23,7 +23,7 @@ struct DecomposedFloat64
         return (x_uint >> 52) & 0x7FF;
     }
 
-    int16_t normalizedExponent() const
+    int16_t normalized_exponent() const
     {
         return int16_t(exponent()) - 1023;
     }
@@ -33,17 +33,17 @@ struct DecomposedFloat64
         return x_uint & 0x5affffffffffffful;
     }
 
-    bool isInsideInt64() const
+    bool is_inside_int64() const
     {
         return x_uint == 0
-            || (normalizedExponent() >= 0 && normalizedExponent() <= 52
-                && ((mantissa() & ((1ULL << (52 - normalizedExponent())) - 1)) == 0));
+            || (normalized_exponent() >= 0 && normalized_exponent() <= 52
+                && ((mantissa() & ((1ULL << (52 - normalized_exponent())) - 1)) == 0));
     }
 };
 
 struct DecomposedFloat32
 {
-    explicit DecomposedFloat32(float x)
+    DecomposedFloat32(float x)
     {
         memcpy(&x_uint, &x, sizeof(x));
     }
@@ -60,7 +60,7 @@ struct DecomposedFloat32
         return (x_uint >> 23) & 0xFF;
     }
 
-    int16_t normalizedExponent() const
+    int16_t normalized_exponent() const
     {
         return int16_t(exponent()) - 127;
     }
@@ -70,11 +70,11 @@ struct DecomposedFloat32
         return x_uint & 0x7fffff;
     }
 
-    bool isInsideInt32() const
+    bool is_inside_int32() const
     {
         return x_uint == 0
-            || (normalizedExponent() >= 0 && normalizedExponent() <= 23
-                && ((mantissa() & ((1ULL << (23 - normalizedExponent())) - 1)) == 0));
+            || (normalized_exponent() >= 0 && normalized_exponent() <= 23
+                && ((mantissa() & ((1ULL << (23 - normalized_exponent())) - 1)) == 0));
     }
 };
 
@@ -87,7 +87,7 @@ int main(int argc, char ** argv)
     d2s_buffered(x, buf);
     std::cout << buf << "\n";
 
-    std::cout << DecomposedFloat64(x).isInsideInt64() << "\n";
+    std::cout << DecomposedFloat64(x).is_inside_int64() << "\n";
 
     return 0;
 }

@@ -1,21 +1,23 @@
 #include "RedisBlockInputStream.h"
 
-#include <string>
-#include <vector>
+#if USE_POCO_REDIS
 
-#include <Poco/Redis/Array.h>
-#include <Poco/Redis/Client.h>
-#include <Poco/Redis/Command.h>
-#include <Poco/Redis/Type.h>
+#    include <string>
+#    include <vector>
 
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <ext/range.h>
+#    include <Poco/Redis/Array.h>
+#    include <Poco/Redis/Client.h>
+#    include <Poco/Redis/Command.h>
+#    include <Poco/Redis/Type.h>
 
-#include "DictionaryStructure.h"
+#    include <Columns/ColumnNullable.h>
+#    include <Columns/ColumnString.h>
+#    include <Columns/ColumnsNumber.h>
+#    include <IO/ReadHelpers.h>
+#    include <IO/WriteHelpers.h>
+#    include <ext/range.h>
+
+#    include "DictionaryStructure.h"
 
 
 namespace DB
@@ -26,7 +28,6 @@ namespace DB
         extern const int LOGICAL_ERROR;
         extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
         extern const int INTERNAL_REDIS_ERROR;
-        extern const int UNKNOWN_TYPE;
     }
 
 
@@ -49,9 +50,9 @@ namespace DB
         using ValueType = ExternalResultDescription::ValueType;
 
         template <typename T>
-        inline void insert(IColumn & column, const String & string_value)
+        inline void insert(IColumn & column, const String & stringValue)
         {
-            assert_cast<ColumnVector<T> &>(column).insertValue(parse<T>(string_value));
+            assert_cast<ColumnVector<T> &>(column).insertValue(parse<T>(stringValue));
         }
 
         void insertValue(IColumn & column, const ValueType type, const Poco::Redis::BulkString & bulk_string)
@@ -59,53 +60,51 @@ namespace DB
             if (bulk_string.isNull())
                 throw Exception{"Type mismatch, expected not Null String", ErrorCodes::TYPE_MISMATCH};
 
-            const String & string_value = bulk_string.value();
+            String stringValue = bulk_string.value();
             switch (type)
             {
                 case ValueType::vtUInt8:
-                    insert<UInt8>(column, string_value);
+                    insert<UInt8>(column, stringValue);
                     break;
                 case ValueType::vtUInt16:
-                    insert<UInt16>(column, string_value);
+                    insert<UInt16>(column, stringValue);
                     break;
                 case ValueType::vtUInt32:
-                    insert<UInt32>(column, string_value);
+                    insert<UInt32>(column, stringValue);
                     break;
                 case ValueType::vtUInt64:
-                    insert<UInt64>(column, string_value);
+                    insert<UInt64>(column, stringValue);
                     break;
                 case ValueType::vtInt8:
-                    insert<Int8>(column, string_value);
+                    insert<Int8>(column, stringValue);
                     break;
                 case ValueType::vtInt16:
-                    insert<Int16>(column, string_value);
+                    insert<Int16>(column, stringValue);
                     break;
                 case ValueType::vtInt32:
-                    insert<Int32>(column, string_value);
+                    insert<Int32>(column, stringValue);
                     break;
                 case ValueType::vtInt64:
-                    insert<Int64>(column, string_value);
+                    insert<Int64>(column, stringValue);
                     break;
                 case ValueType::vtFloat32:
-                    insert<Float32>(column, string_value);
+                    insert<Float32>(column, stringValue);
                     break;
                 case ValueType::vtFloat64:
-                    insert<Float64>(column, string_value);
+                    insert<Float64>(column, stringValue);
                     break;
                 case ValueType::vtString:
-                    assert_cast<ColumnString &>(column).insert(parse<String>(string_value));
+                    assert_cast<ColumnString &>(column).insert(parse<String>(stringValue));
                     break;
                 case ValueType::vtDate:
-                    assert_cast<ColumnUInt16 &>(column).insertValue(parse<LocalDate>(string_value).getDayNum());
+                    assert_cast<ColumnUInt16 &>(column).insertValue(parse<LocalDate>(stringValue).getDayNum());
                     break;
                 case ValueType::vtDateTime:
-                    assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(parse<LocalDateTime>(string_value)));
+                    assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(parse<LocalDateTime>(stringValue)));
                     break;
                 case ValueType::vtUUID:
-                    assert_cast<ColumnUInt128 &>(column).insertValue(parse<UUID>(string_value));
+                    assert_cast<ColumnUInt128 &>(column).insertValue(parse<UUID>(stringValue));
                     break;
-                default:
-                    throw Exception("Value of unsupported type:" + column.getName(), ErrorCodes::UNKNOWN_TYPE);
             }
         }
     }
@@ -125,7 +124,7 @@ namespace DB
         for (const auto i : ext::range(0, size))
             columns[i] = description.sample_block.getByPosition(i).column->cloneEmpty();
 
-        const auto insert_value_by_idx = [this, &columns](size_t idx, const auto & value)
+        const auto insertValueByIdx = [this, &columns](size_t idx, const auto & value)
         {
             if (description.types[idx].second)
             {
@@ -171,9 +170,9 @@ namespace DB
                     /// null string means 'no value for requested key'
                     if (!value.isNull())
                     {
-                        insert_value_by_idx(0, primary_key);
-                        insert_value_by_idx(1, secondary_key);
-                        insert_value_by_idx(2, value);
+                        insertValueByIdx(0, primary_key);
+                        insertValueByIdx(1, secondary_key);
+                        insertValueByIdx(2, value);
                         ++num_rows;
                     }
                 }
@@ -199,8 +198,8 @@ namespace DB
                 /// Null string means 'no value for requested key'
                 if (!value.isNull())
                 {
-                    insert_value_by_idx(0, key);
-                    insert_value_by_idx(1, value);
+                    insertValueByIdx(0, key);
+                    insertValueByIdx(1, value);
                 }
             }
             cursor += need_values;
@@ -209,3 +208,5 @@ namespace DB
         return description.sample_block.cloneWithColumns(std::move(columns));
     }
 }
+
+#endif

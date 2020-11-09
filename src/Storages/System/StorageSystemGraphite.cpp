@@ -25,22 +25,20 @@ NamesAndTypesList StorageSystemGraphite::getNamesAndTypes()
 /*
  * Looking for (Replicated)*GraphiteMergeTree and get all configuration parameters for them
  */
-static StorageSystemGraphite::Configs getConfigs(const Context & context)
+StorageSystemGraphite::Configs StorageSystemGraphite::getConfigs(const Context & context) 
 {
-    const Databases databases = DatabaseCatalog::instance().getDatabases();
-    StorageSystemGraphite::Configs graphite_configs;
+    const Databases databases = context.getDatabases();
+    Configs graphite_configs;
 
     for (const auto & db : databases)
     {
-        /// Check if database can contain MergeTree tables
-        if (!db.second->canContainMergeTreeTables())
+        /// Lazy database can not contain MergeTree tables
+        if (db.second->getEngineName() == "Lazy")
             continue;
 
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
             const auto & table = iterator->table();
-            if (!table)
-                continue;
 
             const MergeTreeData * table_data = dynamic_cast<const MergeTreeData *>(table.get());
             if (!table_data)
@@ -53,7 +51,7 @@ static StorageSystemGraphite::Configs getConfigs(const Context & context)
                 auto table_id = table_data->getStorageID();
                 if (!graphite_configs.count(config_name))
                 {
-                    StorageSystemGraphite::Config new_config =
+                    Config new_config =
                     {
                         table_data->merging_params.graphite_params,
                         { table_id.database_name },
@@ -75,7 +73,7 @@ static StorageSystemGraphite::Configs getConfigs(const Context & context)
 
 void StorageSystemGraphite::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
-    Configs graphite_configs = getConfigs(context);
+    Configs graphite_configs = StorageSystemGraphite::getConfigs(context);
 
     for (const auto & config : graphite_configs)
     {

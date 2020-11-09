@@ -46,7 +46,8 @@ String getExceptionMessagePrefix(const DataTypes & types)
 
 DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_nothing, bool force_support_conversion)
 {
-    auto get_nothing_or_throw = [throw_if_result_is_nothing, & types](const std::string & reason)
+
+    auto getNothingOrThrow = [throw_if_result_is_nothing, & types](const std::string & reason)
     {
         if (throw_if_result_is_nothing)
             throw Exception(getExceptionMessagePrefix(types) + reason, ErrorCodes::NO_COMMON_TYPE);
@@ -91,7 +92,7 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
     {
         for (const auto & type : types)
             if (typeid_cast<const DataTypeNothing *>(type.get()))
-                return get_nothing_or_throw(" because some of them are Nothing");
+                return getNothingOrThrow(" because some of them are Nothing");
     }
 
     /// For Arrays
@@ -104,7 +105,7 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
 
         for (const auto & type : types)
         {
-            if (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()))
+            if (const auto *const type_array = typeid_cast<const DataTypeArray *>(type.get()))
             {
                 have_array = true;
                 nested_types.emplace_back(type_array->getNestedType());
@@ -116,7 +117,7 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
         if (have_array)
         {
             if (!all_arrays)
-                return get_nothing_or_throw(" because some of them are Array and some of them are not");
+                return getNothingOrThrow(" because some of them are Array and some of them are not");
 
             return std::make_shared<DataTypeArray>(getMostSubtype(nested_types, false, force_support_conversion));
         }
@@ -132,7 +133,7 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
 
         for (const auto & type : types)
         {
-            if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+            if (const auto *const type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
             {
                 if (!have_tuple)
                 {
@@ -142,7 +143,7 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
                         nested_types[elem_idx].reserve(types.size());
                 }
                 else if (tuple_size != type_tuple->getElements().size())
-                    return get_nothing_or_throw(" because Tuples have different sizes");
+                    return getNothingOrThrow(" because Tuples have different sizes");
 
                 have_tuple = true;
 
@@ -156,7 +157,7 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
         if (have_tuple)
         {
             if (!all_tuples)
-                return get_nothing_or_throw(" because some of them are Tuple and some of them are not");
+                return getNothingOrThrow(" because some of them are Tuple and some of them are not");
 
             DataTypes common_tuple_types(tuple_size);
             for (size_t elem_idx = 0; elem_idx < tuple_size; ++elem_idx)
@@ -177,7 +178,7 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
 
         for (const auto & type : types)
         {
-            if (const auto * type_nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+            if (const auto *const type_nullable = typeid_cast<const DataTypeNullable *>(type.get()))
             {
                 have_nullable = true;
                 nested_types.emplace_back(type_nullable->getNestedType());
@@ -217,7 +218,7 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
                 if (!fixed_string_type)
                     fixed_string_type = type;
                 else if (!type->equals(*fixed_string_type))
-                    return get_nothing_or_throw(" because some of them are FixedStrings with different length");
+                    return getNothingOrThrow(" because some of them are FixedStrings with different length");
             }
             else if (isString(type))
                 have_string = true;
@@ -228,7 +229,7 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
         if (have_string)
         {
             if (!all_strings)
-                return get_nothing_or_throw(" because some of them are String/FixedString and some of them are not");
+                return getNothingOrThrow(" because some of them are String/FixedString and some of them are not");
 
             return fixed_string_type ? fixed_string_type : std::make_shared<DataTypeString>();
         }
@@ -250,7 +251,7 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
         if (have_date_or_datetime)
         {
             if (!all_date_or_datetime)
-                return get_nothing_or_throw(" because some of them are Date/DateTime and some of them are not");
+                return getNothingOrThrow(" because some of them are Date/DateTime and some of them are not");
 
             return std::make_shared<DataTypeDate>();
         }
@@ -299,7 +300,7 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
         if (min_bits_of_signed_integer || min_bits_of_unsigned_integer || min_mantissa_bits_of_floating)
         {
             if (!all_numbers)
-                return get_nothing_or_throw(" because some of them are numbers and some of them are not");
+                return getNothingOrThrow(" because some of them are numbers and some of them are not");
 
             /// If the result must be floating.
             if (!min_bits_of_signed_integer && !min_bits_of_unsigned_integer)
@@ -348,7 +349,7 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
     }
 
     /// All other data types (UUID, AggregateFunction, Enum...) are compatible only if they are the same (checked in trivial cases).
-    return get_nothing_or_throw("");
+    return getNothingOrThrow("");
 }
 
 }

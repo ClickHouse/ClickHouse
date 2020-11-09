@@ -8,6 +8,7 @@
 #include <Formats/ProtobufWriter.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/readDecimalText.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/IAST.h>
@@ -101,6 +102,5 @@ T DataTypeDecimalBase<T>::getScaleMultiplier(UInt32 scale_)
 template class DataTypeDecimalBase<Decimal32>;
 template class DataTypeDecimalBase<Decimal64>;
 template class DataTypeDecimalBase<Decimal128>;
-template class DataTypeDecimalBase<Decimal256>;
 
 }

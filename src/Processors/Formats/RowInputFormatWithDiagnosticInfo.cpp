@@ -12,19 +12,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static String alignedName(const String & name, size_t max_length)
-{
-    size_t spaces_count = max_length >= name.size() ? max_length - name.size() : 0;
-    return name + ", " + std::string(spaces_count, ' ');
-}
-
-
-RowInputFormatWithDiagnosticInfo::RowInputFormatWithDiagnosticInfo(const Block & header_, ReadBuffer & in_, const Params & params_)
+DB::RowInputFormatWithDiagnosticInfo::RowInputFormatWithDiagnosticInfo(const Block & header_, ReadBuffer & in_, const Params & params_)
     : IRowInputFormat(header_, in_, params_)
 {
 }
 
-void RowInputFormatWithDiagnosticInfo::updateDiagnosticInfo()
+void DB::RowInputFormatWithDiagnosticInfo::updateDiagnosticInfo()
 {
     ++row_num;
 
@@ -35,7 +28,7 @@ void RowInputFormatWithDiagnosticInfo::updateDiagnosticInfo()
     offset_of_current_row = in.offset();
 }
 
-String RowInputFormatWithDiagnosticInfo::getDiagnosticInfo()
+String DB::RowInputFormatWithDiagnosticInfo::getDiagnosticInfo()
 {
     if (in.eof())
         return "Buffer has gone, cannot extract information about what has been parsed.";
@@ -140,8 +133,6 @@ bool RowInputFormatWithDiagnosticInfo::deserializeFieldAndPrintDiagnosticInfo(co
             out << "ERROR: Date must be in YYYY-MM-DD format.\n";
         else
             out << "ERROR\n";
-        // Print exception message
-        out << getExceptionMessage(exception, false) << '\n';
         return false;
     }
 
@@ -165,6 +156,12 @@ bool RowInputFormatWithDiagnosticInfo::deserializeFieldAndPrintDiagnosticInfo(co
     }
 
     return true;
+}
+
+String RowInputFormatWithDiagnosticInfo::alignedName(const String & name, size_t max_length) 
+{
+    size_t spaces_count = max_length >= name.size() ? max_length - name.size() : 0;
+    return name + ", " + std::string(spaces_count, ' ');
 }
 
 void RowInputFormatWithDiagnosticInfo::resetParser()

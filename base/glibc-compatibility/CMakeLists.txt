@@ -1,5 +1,5 @@
 if (GLIBC_COMPATIBILITY)
-    set (ENABLE_FASTMEMCPY ON)
+    set (USE_INTERNAL_MEMCPY ON)
 
     enable_language(ASM)
     include(CheckIncludeFile)
@@ -26,10 +26,6 @@ if (GLIBC_COMPATIBILITY)
     if(HAVE_SYS_RANDOM_H)
         list(APPEND glibc_compatibility_sources musl/getentropy.c)
     endif()
-
-    add_library (clickhouse_memcpy OBJECT
-        ${ClickHouse_SOURCE_DIR}/contrib/FastMemcpy/memcpy_wrapper.c
-    )
 
     # Need to omit frame pointers to match the performance of glibc
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fomit-frame-pointer")

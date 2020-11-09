@@ -1,25 +1,17 @@
----
-toc_priority: 20
-toc_title: "\u004d\u0079\u0053\u0051\u004c\u002d\u0438\u043d\u0442\u0435\u0440\u0444\u0435\u0439\u0441"
----
+# MySQL-интерфейс {#mysql_interface}
 
-# MySQL-интерфейс {#mysql-interface}
-
-ClickHouse поддерживает взаимодействие по протоколу MySQL. Данная функция включается настройкой [mysql_port](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-mysql_port) в конфигурационном файле:
-
-``` xml
+ClickHouse поддерживает взаимодействие по протоколу MySQL. Данная функция включается настройкой [mysql_port](../operations/server_settings/settings.md#server_settings-mysql_port) в конфигурационном файле:
+```xml
 <mysql_port>9004</mysql_port>
 ```
 
 Пример подключения с помощью стандартного клиента mysql:
-
-``` bash
+```bash
 $ mysql --protocol tcp -u default -P 9004
 ```
 
 Вывод в случае успешного подключения:
-
-``` text
+```text
 Welcome to the MySQL monitor.  Commands end with ; or \g.
 Your MySQL connection id is 4
 Server version: 20.2.1.1-ClickHouse
@@ -32,14 +24,14 @@ owners.
 
 Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
 
-mysql>
+mysql> 
 ```
 
-Для совместимости со всеми клиентами рекомендуется задавать пароль пользователя в конфигурационном файле с помощью двойного хэша [SHA1](../operations/settings/settings-users.md#password_double_sha1_hex).
-В случае указания пароля с помощью [SHA256](../operations/settings/settings-users.md#password_sha256_hex) некоторые клиенты не смогут пройти аутентификацию (mysqljs и старые версии стандартного клиента mysql).
+Для совместимости со всеми клиентами рекомендуется задавать пароль пользователя в конфигурационном файле с помощью двойного хэша [SHA1](../operations/settings/settings_users.md#password_double_sha1_hex).
+В случае указания пароля с помощью [SHA256](../operations/settings/settings_users.md#password_sha256_hex) некоторые клиенты не смогут пройти аутентификацию (mysqljs и старые версии стандартного клиента mysql).
 
 Ограничения:
 
--   не поддерживаются подготовленные запросы
+- не поддерживаются подготовленные запросы
 
--   некоторые типы данных отправляются как строки
+- некоторые типы данных отправляются как строки

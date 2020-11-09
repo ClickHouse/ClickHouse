@@ -1,12 +1,10 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_formats.h"
-#endif
-
+#include "config_formats.h"
 #if USE_PROTOBUF
-#    include <Formats/FormatSchemaInfo.h>
-#    include <Formats/ProtobufSchemas.h>
-#    include <google/protobuf/compiler/importer.h>
-#    include <Common/Exception.h>
+
+#include <Formats/FormatSchemaInfo.h>
+#include <Formats/ProtobufSchemas.h>
+#include <google/protobuf/compiler/importer.h>
+#include <Common/Exception.h>
 
 
 namespace DB
@@ -26,7 +24,7 @@ ProtobufSchemas & ProtobufSchemas::instance()
 class ProtobufSchemas::ImporterWithSourceTree : public google::protobuf::compiler::MultiFileErrorCollector
 {
 public:
-    explicit ImporterWithSourceTree(const String & schema_directory) : importer(&disk_source_tree, this)
+    ImporterWithSourceTree(const String & schema_directory) : importer(&disk_source_tree, this)
     {
         disk_source_tree.MapPath("", schema_directory);
     }

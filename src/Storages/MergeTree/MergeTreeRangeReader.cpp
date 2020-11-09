@@ -15,25 +15,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-
-static void filterColumns(Columns & columns, const IColumn::Filter & filter)
-{
-    for (auto & column : columns)
-    {
-        if (column)
-        {
-            column = column->filter(filter, -1);
-
-            if (column->empty())
-            {
-                columns.clear();
-                return;
-            }
-        }
-    }
-}
-
-
 MergeTreeRangeReader::DelayedStream::DelayedStream(
         size_t from_mark, IMergeTreeReader * merge_tree_reader_)
         : current_mark(from_mark), current_offset(0), num_delayed_rows(0)
@@ -370,7 +351,7 @@ size_t MergeTreeRangeReader::ReadResult::countZeroTails(const IColumn::Filter & 
     zero_tails.resize(0);
     zero_tails.reserve(rows_per_granule.size());
 
-    const auto * filter_data = filter_vec.data();
+    const auto *filter_data = filter_vec.data();
 
     size_t total_zero_rows_in_tails = 0;
 
@@ -390,8 +371,8 @@ size_t MergeTreeRangeReader::ReadResult::countZeroTails(const IColumn::Filter & 
 
 void MergeTreeRangeReader::ReadResult::collapseZeroTails(const IColumn::Filter & filter_vec, IColumn::Filter & new_filter_vec)
 {
-    const auto * filter_data = filter_vec.data();
-    auto * new_filter_data = new_filter_vec.data();
+    const auto *filter_data = filter_vec.data();
+    auto *new_filter_data = new_filter_vec.data();
 
     for (auto i : ext::range(0, rows_per_granule.size()))
     {
@@ -412,7 +393,7 @@ size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, con
     while (end - begin >= 64)
     {
         end -= 64;
-        const auto * pos = end;
+        const auto *pos = end;
         UInt64 val =
                 static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
                         _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos)),
@@ -506,6 +487,7 @@ MergeTreeRangeReader::MergeTreeRangeReader(
         if (prewhere->alias_actions)
             prewhere->alias_actions->execute(sample_block, true);
 
+        sample_block_before_prewhere = sample_block;
         if (prewhere->prewhere_actions)
             prewhere->prewhere_actions->execute(sample_block, true);
 
@@ -700,6 +682,22 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
     return read_result;
 }
 
+void MergeTreeRangeReader::filterColumns(Columns & columns, const IColumn::Filter & filter) 
+{
+    for (auto & column : columns)
+    {
+        if (column)
+        {
+            column = column->filter(filter, -1);
+
+            if (column->empty())
+            {
+                columns.clear();
+                return;
+            }
+        }
+    }
+}
 
 MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t max_rows, MarkRanges & ranges)
 {
@@ -825,7 +823,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         for (auto name_and_type = header.begin(); pos < num_columns; ++pos, ++name_and_type)
             block.insert({result.columns[pos], name_and_type->type, name_and_type->name});
 
-        if (prewhere->alias_actions)
+        if (prewhere && prewhere->alias_actions)
             prewhere->alias_actions->execute(block);
 
         /// Columns might be projected out. We need to store them here so that default columns can be evaluated later.
@@ -865,7 +863,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         /// If there is a filter and without optimized
         if (result.getFilter() && last_reader_in_chain)
         {
-            const auto * result_filter = result.getFilter();
+            const auto *result_filter = result.getFilter();
             /// optimize is not called, need to check const 1 and const 0
             size_t bytes_in_filter = result.countBytesInResultFilter(result_filter->getData());
             if (bytes_in_filter == 0)
@@ -877,8 +875,8 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         /// If there is still a filter, do the filtering now
         if (result.getFilter())
         {
-            /// filter might be shrunk while columns not
-            const auto * result_filter = result.getFilterOriginal();
+            /// filter might be shrinked while columns not
+            const auto *result_filter = result.getFilterOriginal();
             filterColumns(result.columns, result_filter->getData());
             result.need_filter = true;
 

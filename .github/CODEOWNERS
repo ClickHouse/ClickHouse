@@ -1,3 +1,2 @@
 docs/* @ClickHouse/docs
 docs/zh/* @ClickHouse/docs-zh
-website/* @ClickHouse/docs

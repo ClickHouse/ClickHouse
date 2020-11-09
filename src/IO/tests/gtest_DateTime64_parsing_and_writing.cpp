@@ -37,7 +37,7 @@ TEST_P(DateTime64StringParseTest, readDateTime64Text)
     const auto & param = GetParam();
     ReadBufferFromMemory read_buffer(param.string.data(), param.string.size());
 
-    DateTime64 actual{};
+    DateTime64 actual;
     EXPECT_TRUE(tryReadDateTime64Text(actual, param.scale, read_buffer, param.timezone));
 
     EXPECT_EQ(param.dt64, actual);
@@ -104,7 +104,7 @@ INSTANTIATE_TEST_SUITE_P(Basic,
             DateLUT::instance("Europe/Minsk")
         },
         {
-            "When scale is 0, subsecond part is 0 despite being present in string.",
+            "When scale is 0, subsecond part is 0 despite beeing present in string.",
             "2019-09-16 19:20:17.123",
             1568650817ULL,
             0,

@@ -26,8 +26,6 @@ void Suggest::load(const ConnectionParameters & connection_parameters, size_t su
                     connection_parameters.default_database,
                     connection_parameters.user,
                     connection_parameters.password,
-                    "" /* cluster */,
-                    "" /* cluster_secret */,
                     "client",
                     connection_parameters.compression,
                     connection_parameters.security);
@@ -52,15 +50,16 @@ void Suggest::load(const ConnectionParameters & connection_parameters, size_t su
 
         /// Note that keyword suggestions are available even if we cannot load data from server.
 
-        std::sort(words.begin(), words.end());
-        words_no_case = words;
-        std::sort(words_no_case.begin(), words_no_case.end(), [](const std::string & str1, const std::string & str2)
-        {
-            return std::lexicographical_compare(begin(str1), end(str1), begin(str2), end(str2), [](const char char1, const char char2)
+        if (case_insensitive)
+            std::sort(words.begin(), words.end(), [](const std::string & str1, const std::string & str2)
             {
-                return std::tolower(char1) < std::tolower(char2);
+                return std::lexicographical_compare(begin(str1), end(str1), begin(str2), end(str2), [](const char char1, const char char2)
+                {
+                    return std::tolower(char1) < std::tolower(char2);
+                });
             });
-        });
+        else
+            std::sort(words.begin(), words.end());
 
         ready = true;
     });
@@ -69,19 +68,16 @@ void Suggest::load(const ConnectionParameters & connection_parameters, size_t su
 Suggest::Suggest()
 {
     /// Keywords may be not up to date with ClickHouse parser.
-    words = {"CREATE",       "DATABASE", "IF",     "NOT",       "EXISTS",   "TEMPORARY",   "TABLE",    "ON",          "CLUSTER", "DEFAULT",
-             "MATERIALIZED", "ALIAS",    "ENGINE", "AS",        "VIEW",     "POPULATE",    "SETTINGS", "ATTACH",      "DETACH",  "DROP",
-             "RENAME",       "TO",       "ALTER",  "ADD",       "MODIFY",   "CLEAR",       "COLUMN",   "AFTER",       "COPY",    "PROJECT",
-             "PRIMARY",      "KEY",      "CHECK",  "PARTITION", "PART",     "FREEZE",      "FETCH",    "FROM",        "SHOW",    "INTO",
-             "OUTFILE",      "FORMAT",   "TABLES", "DATABASES", "LIKE",     "PROCESSLIST", "CASE",     "WHEN",        "THEN",    "ELSE",
-             "END",          "DESCRIBE", "DESC",   "USE",       "SET",      "OPTIMIZE",    "FINAL",    "DEDUPLICATE", "INSERT",  "VALUES",
-             "SELECT",       "DISTINCT", "SAMPLE", "ARRAY",     "JOIN",     "GLOBAL",      "LOCAL",    "ANY",         "ALL",     "INNER",
-             "LEFT",         "RIGHT",    "FULL",   "OUTER",     "CROSS",    "USING",       "PREWHERE", "WHERE",       "GROUP",   "BY",
-             "WITH",         "TOTALS",   "HAVING", "ORDER",     "COLLATE",  "LIMIT",       "UNION",    "AND",         "OR",      "ASC",
-             "IN",           "KILL",     "QUERY",  "SYNC",      "ASYNC",    "TEST",        "BETWEEN",  "TRUNCATE",    "USER",    "ROLE",
-             "PROFILE",      "QUOTA",    "POLICY", "ROW",       "GRANT",    "REVOKE",      "OPTION",   "ADMIN",       "EXCEPT",  "REPLACE",
-             "IDENTIFIED",   "HOST",     "NAME",   "READONLY",  "WRITABLE", "PERMISSIVE",  "FOR",      "RESTRICTIVE", "RANDOMIZED",
-             "INTERVAL",     "LIMITS",   "ONLY",   "TRACKING",  "IP",       "REGEXP",      "ILIKE"};
+    words = {"CREATE",       "DATABASE", "IF",     "NOT",       "EXISTS",  "TEMPORARY",   "TABLE",    "ON",          "CLUSTER", "DEFAULT",
+             "MATERIALIZED", "ALIAS",    "ENGINE", "AS",        "VIEW",    "POPULATE",    "SETTINGS", "ATTACH",      "DETACH",  "DROP",
+             "RENAME",       "TO",       "ALTER",  "ADD",       "MODIFY",  "CLEAR",       "COLUMN",   "AFTER",       "COPY",    "PROJECT",
+             "PRIMARY",      "KEY",      "CHECK",  "PARTITION", "PART",    "FREEZE",      "FETCH",    "FROM",        "SHOW",    "INTO",
+             "OUTFILE",      "FORMAT",   "TABLES", "DATABASES", "LIKE",    "PROCESSLIST", "CASE",     "WHEN",        "THEN",    "ELSE",
+             "END",          "DESCRIBE", "DESC",   "USE",       "SET",     "OPTIMIZE",    "FINAL",    "DEDUPLICATE", "INSERT",  "VALUES",
+             "SELECT",       "DISTINCT", "SAMPLE", "ARRAY",     "JOIN",    "GLOBAL",      "LOCAL",    "ANY",         "ALL",     "INNER",
+             "LEFT",         "RIGHT",    "FULL",   "OUTER",     "CROSS",   "USING",       "PREWHERE", "WHERE",       "GROUP",   "BY",
+             "WITH",         "TOTALS",   "HAVING", "ORDER",     "COLLATE", "LIMIT",       "UNION",    "AND",         "OR",      "ASC",
+             "IN",           "KILL",     "QUERY",  "SYNC",      "ASYNC",   "TEST",        "BETWEEN",  "TRUNCATE"};
 }
 
 void Suggest::loadImpl(Connection & connection, const ConnectionTimeouts & timeouts, size_t suggestion_limit)
@@ -115,8 +111,6 @@ void Suggest::loadImpl(Connection & connection, const ConnectionTimeouts & timeo
             "SELECT name FROM system.databases LIMIT " << limit_str
             << " UNION ALL "
             "SELECT DISTINCT name FROM system.tables LIMIT " << limit_str
-            << " UNION ALL "
-            "SELECT DISTINCT name FROM system.dictionaries LIMIT " << limit_str
             << " UNION ALL "
             "SELECT DISTINCT name FROM system.columns LIMIT " << limit_str;
     }
@@ -158,8 +152,7 @@ void Suggest::fetch(Connection & connection, const ConnectionTimeouts & timeouts
                 return;
 
             default:
-                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}",
-                    packet.type, connection.getDescription());
+                throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
         }
     }
 }

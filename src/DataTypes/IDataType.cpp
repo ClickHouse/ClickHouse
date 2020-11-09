@@ -4,6 +4,8 @@
 #include <Common/Exception.h>
 #include <Common/escapeForFileName.h>
 
+#include <Core/Defines.h>
+
 #include <IO/WriteHelpers.h>
 
 #include <DataTypes/IDataType.h>
@@ -129,18 +131,6 @@ String IDataType::getFileNameForStream(const String & column_name, const IDataTy
     return stream_name;
 }
 
-
-bool IDataType::isSpecialCompressionAllowed(const SubstreamPath & path)
-{
-    for (const Substream & elem : path)
-    {
-        if (elem.type == Substream::NullMap
-            || elem.type == Substream::ArraySizes
-            || elem.type == Substream::DictionaryIndexes)
-            return false;
-    }
-    return true;
-}
 
 void IDataType::insertDefaultInto(IColumn & column) const
 {

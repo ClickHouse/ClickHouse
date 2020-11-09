@@ -1,4 +1,5 @@
 #include <IO/MemoryReadWriteBuffer.h>
+#include <common/likely.h>
 #include <boost/noncopyable.hpp>
 
 

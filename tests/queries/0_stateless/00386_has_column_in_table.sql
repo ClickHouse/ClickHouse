@@ -22,7 +22,7 @@ SELECT hasColumnInTable('system', 'one', '');
 
 /* bad queries */
 SELECT hasColumnInTable('', '', '');  -- { serverError 60; }
-SELECT hasColumnInTable('', 't', 'c');  -- { serverError 81; }
+SELECT hasColumnInTable('', 't', 'c');  -- { serverError 60; }
 SELECT hasColumnInTable(currentDatabase(), '', 'c'); -- { serverError 60; }
 SELECT hasColumnInTable('d', 't', 's');  -- { serverError 81; }
 SELECT hasColumnInTable(currentDatabase(), 't', 's');  -- { serverError 60; }

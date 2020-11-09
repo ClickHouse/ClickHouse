@@ -29,14 +29,11 @@ public:
         DROP_COLUMN,
         MODIFY_COLUMN,
         COMMENT_COLUMN,
-        RENAME_COLUMN,
         MODIFY_ORDER_BY,
-        MODIFY_SAMPLE_BY,
         MODIFY_TTL,
         MATERIALIZE_TTL,
         MODIFY_SETTING,
         MODIFY_QUERY,
-        REMOVE_TTL,
 
         ADD_INDEX,
         DROP_INDEX,
@@ -70,19 +67,14 @@ public:
      */
     ASTPtr col_decl;
 
-    /** The ADD COLUMN and MODIFY COLUMN query here optionally stores the name of the column following AFTER
+    /** The ADD COLUMN query here optionally stores the name of the column following AFTER
      * The DROP query stores the column name for deletion here
-     * Also used for RENAME COLUMN.
      */
     ASTPtr column;
 
     /** For MODIFY ORDER BY
      */
     ASTPtr order_by;
-
-    /** For MODIFY SAMPLE BY
-     */
-    ASTPtr sample_by;
 
     /** The ADD INDEX query stores the IndexDeclaration there.
      */
@@ -142,9 +134,7 @@ public:
 
     bool if_exists = false;     /// option for DROP_COLUMN, MODIFY_COLUMN, COMMENT_COLUMN
 
-    bool first = false;         /// option for ADD_COLUMN, MODIFY_COLUMN
-
-    DataDestinationType move_destination_type; /// option for MOVE PART/PARTITION
+    PartDestinationType move_destination_type; /// option for MOVE PART/PARTITION
 
     String move_destination_name;             /// option for MOVE PART/PARTITION
 
@@ -164,12 +154,6 @@ public:
     /// MOVE PARTITION partition TO TABLE db.table
     String to_database;
     String to_table;
-
-    /// Target column name
-    ASTPtr rename_to;
-
-    /// Which property user want to remove
-    String remove_property;
 
     String getID(char delim) const override { return "AlterCommand" + (delim + std::to_string(static_cast<int>(type))); }
 

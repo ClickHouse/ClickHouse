@@ -5,7 +5,6 @@
 #include <Client/Connection.h>
 #include <IO/ConnectionTimeouts.h>
 #include <common/LineReader.h>
-#include <thread>
 
 
 namespace DB
@@ -18,12 +17,14 @@ namespace ErrorCodes
 class Suggest : public LineReader::Suggest, boost::noncopyable
 {
 public:
-    Suggest();
-    ~Suggest()
+    static Suggest & instance()
     {
-        if (loading_thread.joinable())
-            loading_thread.join();
+        static Suggest instance;
+        return instance;
     }
+
+    /// Need to set before load
+    void setCaseInsensitive() { case_insensitive = true; }
 
     void load(const ConnectionParameters & connection_parameters, size_t suggestion_limit);
 
@@ -31,6 +32,12 @@ public:
     static constexpr int MIN_SERVER_REVISION = 54406;
 
 private:
+    Suggest();
+    ~Suggest()
+    {
+        if (loading_thread.joinable())
+            loading_thread.join();
+    }
 
     void loadImpl(Connection & connection, const ConnectionTimeouts & timeouts, size_t suggestion_limit);
     void fetch(Connection & connection, const ConnectionTimeouts & timeouts, const std::string & query);

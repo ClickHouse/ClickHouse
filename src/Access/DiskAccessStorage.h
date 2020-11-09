@@ -11,24 +11,14 @@ namespace DB
 class DiskAccessStorage : public IAccessStorage
 {
 public:
-    static constexpr char STORAGE_TYPE[] = "local directory";
-
-    DiskAccessStorage(const String & storage_name_, const String & directory_path_, bool readonly_ = false);
-    DiskAccessStorage(const String & directory_path_, bool readonly_ = false);
+    DiskAccessStorage();
     ~DiskAccessStorage() override;
 
-    const char * getStorageType() const override { return STORAGE_TYPE; }
-    String getStorageParamsJSON() const override;
-
-    String getPath() const { return directory_path; }
-    bool isPathEqual(const String & directory_path_) const;
-
-    void setReadOnly(bool readonly_) { readonly = readonly_; }
-    bool isReadOnly() const { return readonly; }
+    void setDirectory(const String & directory_path_);
 
 private:
-    std::optional<UUID> findImpl(EntityType type, const String & name) const override;
-    std::vector<UUID> findAllImpl(EntityType type) const override;
+    std::optional<UUID> findImpl(std::type_index type, const String & name) const override;
+    std::vector<UUID> findAllImpl(std::type_index type) const override;
     bool existsImpl(const UUID & id) const override;
     AccessEntityPtr readImpl(const UUID & id) const override;
     String readNameImpl(const UUID & id) const override;
@@ -37,18 +27,19 @@ private:
     void removeImpl(const UUID & id) override;
     void updateImpl(const UUID & id, const UpdateFunc & update_func) override;
     ext::scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;
-    ext::scope_guard subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const override;
+    ext::scope_guard subscribeForChangesImpl(std::type_index type, const OnChangedHandler & handler) const override;
     bool hasSubscriptionImpl(const UUID & id) const override;
-    bool hasSubscriptionImpl(EntityType type) const override;
+    bool hasSubscriptionImpl(std::type_index type) const override;
 
-    void clear();
+    void initialize(const String & directory_path_, Notifications & notifications);
     bool readLists();
-    bool writeLists();
-    void scheduleWriteLists(EntityType type);
-    bool rebuildLists();
+    void writeLists();
+    void scheduleWriteLists(std::type_index type);
+    void rebuildLists();
 
-    void listsWritingThreadFunc();
+    void startListsWritingThread();
     void stopListsWritingThread();
+    void listsWritingThreadFunc();
 
     void insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, Notifications & notifications);
     void removeNoLock(const UUID & id, Notifications & notifications);
@@ -61,9 +52,9 @@ private:
     using NameToIDMap = std::unordered_map<String, UUID>;
     struct Entry
     {
-        UUID id;
-        String name;
-        EntityType type;
+        Entry(const std::string_view & name_, std::type_index type_) : name(name_), type(type_) {}
+        std::string_view name;          /// view points to a string in `name_to_id_maps`.
+        std::type_index type;
         mutable AccessEntityPtr entity; /// may be nullptr, if the entity hasn't been loaded yet.
         mutable std::list<OnChangedHandler> handlers_by_id;
     };
@@ -71,15 +62,15 @@ private:
     void prepareNotifications(const UUID & id, const Entry & entry, bool remove, Notifications & notifications) const;
 
     String directory_path;
-    std::atomic<bool> readonly;
-    std::unordered_map<UUID, Entry> entries_by_id;
-    std::unordered_map<std::string_view, Entry *> entries_by_name_and_type[static_cast<size_t>(EntityType::MAX)];
-    boost::container::flat_set<EntityType> types_of_lists_to_write;
+    bool initialized = false;
+    std::unordered_map<std::type_index, NameToIDMap> name_to_id_maps;
+    std::unordered_map<UUID, Entry> id_to_entry_map;
+    boost::container::flat_set<std::type_index> types_of_lists_to_write;
     bool failed_to_write_lists = false;                          /// Whether writing of the list files has been failed since the recent restart of the server.
     ThreadFromGlobalPool lists_writing_thread;                   /// List files are written in a separate thread.
     std::condition_variable lists_writing_thread_should_exit;    /// Signals `lists_writing_thread` to exit.
-    bool lists_writing_thread_is_waiting = false;
-    mutable std::list<OnChangedHandler> handlers_by_type[static_cast<size_t>(EntityType::MAX)];
+    std::atomic<bool> lists_writing_thread_exited = false;
+    mutable std::unordered_multimap<std::type_index, OnChangedHandler> handlers_by_type;
     mutable std::mutex mutex;
 };
 }

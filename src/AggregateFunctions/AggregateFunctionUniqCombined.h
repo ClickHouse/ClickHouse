@@ -31,10 +31,7 @@ namespace detail
     {
         static Ret hash(T x)
         {
-            if constexpr (sizeof(T) > sizeof(UInt64))
-                return static_cast<Ret>(DefaultHash64<T>(x));
-            else
-                return static_cast<Ret>(intHash64(x));
+            return static_cast<Ret>(intHash64(x));
         }
     };
 
@@ -170,7 +167,7 @@ public:
         this->data(place).set.read(buf);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
     }
@@ -232,7 +229,7 @@ public:
         this->data(place).set.read(buf);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
     }

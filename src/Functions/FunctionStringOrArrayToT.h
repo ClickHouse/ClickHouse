@@ -1,4 +1,3 @@
-#pragma once
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunctionImpl.h>
@@ -50,9 +49,9 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
-        const ColumnPtr column = arguments[0].column;
+        const ColumnPtr column = block.getByPosition(arguments[0]).column;
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
             auto col_res = ColumnVector<ResultType>::create();
@@ -61,16 +60,16 @@ public:
             vec_res.resize(col->size());
             Impl::vector(col->getChars(), col->getOffsets(), vec_res);
 
-            return col_res;
+            block.getByPosition(result).column = std::move(col_res);
         }
         else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
             if (Impl::is_fixed_to_constant)
             {
                 ResultType res = 0;
-                Impl::vectorFixedToConstant(col_fixed->getChars(), col_fixed->getN(), res);
+                Impl::vector_fixed_to_constant(col_fixed->getChars(), col_fixed->getN(), res);
 
-                return result_type->createColumnConst(col_fixed->size(), toField(res));
+                block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(col_fixed->size(), toField(res));
             }
             else
             {
@@ -78,9 +77,9 @@ public:
 
                 typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
                 vec_res.resize(col_fixed->size());
-                Impl::vectorFixedToVector(col_fixed->getChars(), col_fixed->getN(), vec_res);
+                Impl::vector_fixed_to_vector(col_fixed->getChars(), col_fixed->getN(), vec_res);
 
-                return col_res;
+                block.getByPosition(result).column = std::move(col_res);
             }
         }
         else if (const ColumnArray * col_arr = checkAndGetColumn<ColumnArray>(column.get()))
@@ -91,10 +90,10 @@ public:
             vec_res.resize(col_arr->size());
             Impl::array(col_arr->getOffsets(), vec_res);
 
-            return col_res;
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
-            throw Exception("Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(),
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
 };

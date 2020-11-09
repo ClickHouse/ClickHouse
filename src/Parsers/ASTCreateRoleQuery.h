@@ -1,22 +1,16 @@
 #pragma once
 
 #include <Parsers/IAST.h>
-#include <Parsers/ASTQueryWithOnCluster.h>
 
 
 namespace DB
 {
-class ASTSettingsProfileElements;
-
-
 /** CREATE ROLE [IF NOT EXISTS | OR REPLACE] name
-  *     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
   *
   * ALTER ROLE [IF EXISTS] name
-  *     [RENAME TO new_name]
-  *     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+  *      [RENAME TO new_name]
   */
-class ASTCreateRoleQuery : public IAST, public ASTQueryWithOnCluster
+class ASTCreateRoleQuery : public IAST
 {
 public:
     bool alter = false;
@@ -26,14 +20,11 @@ public:
     bool if_not_exists = false;
     bool or_replace = false;
 
-    Strings names;
+    String name;
     String new_name;
-
-    std::shared_ptr<ASTSettingsProfileElements> settings;
 
     String getID(char) const override;
     ASTPtr clone() const override;
-    void formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const override;
-    ASTPtr getRewrittenASTWithoutOnCluster(const std::string &) const override { return removeOnCluster<ASTCreateRoleQuery>(clone()); }
+    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
 }

@@ -1,9 +1,8 @@
 #pragma once
 
+#include "Types.h"
 #include "DayNum.h"
-#include "defines.h"
-#include "types.h"
-
+#include "likely.h"
 #include <ctime>
 #include <string>
 
@@ -37,19 +36,14 @@ using YearWeek = std::pair<UInt16, UInt8>;
 class DateLUTImpl
 {
 public:
-    explicit DateLUTImpl(const std::string & time_zone);
-
-    DateLUTImpl(const DateLUTImpl &) = delete;
-    DateLUTImpl & operator=(const DateLUTImpl &) = delete;
-    DateLUTImpl(const DateLUTImpl &&) = delete;
-    DateLUTImpl & operator=(const DateLUTImpl &&) = delete;
+    DateLUTImpl(const std::string & time_zone);
 
 public:
     /// The order of fields matters for alignment and sizeof.
     struct Values
     {
         /// Least significat 32 bits from time_t at beginning of the day.
-        /// If the unix timestamp of beginning of the day is negative (example: 1970-01-01 MSK, where time_t == -10800), then value will overflow.
+        /// If the unix timestamp of beginning of the day is negative (example: 1970-01-01 MSK, where time_t == -10800), then value is zero.
         /// Change to time_t; change constants above; and recompile the sources if you need to support time after 2105 year.
         UInt32 date;
 
@@ -404,7 +398,7 @@ public:
         a date at start of january) In this case one can get 53 for the
         first week of next year.  This flag ensures that the week is
         relevant for the given year. Note that this flag is only
-        relevant if WeekModeFlag::JANUARY is not set.
+        releveant if WeekModeFlag::JANUARY is not set.
 
                   If set Week is in range 1-53.
 
@@ -686,17 +680,12 @@ public:
     inline time_t makeDateTime(UInt16 year, UInt8 month, UInt8 day_of_month, UInt8 hour, UInt8 minute, UInt8 second) const
     {
         size_t index = makeDayNum(year, month, day_of_month);
-        UInt32 time_offset = hour * 3600 + minute * 60 + second;
+        time_t time_offset = hour * 3600 + minute * 60 + second;
 
         if (time_offset >= lut[index].time_at_offset_change)
             time_offset -= lut[index].amount_of_offset_change;
 
-        UInt32 res = lut[index].date + time_offset;
-
-        if (unlikely(res > DATE_LUT_MAX))
-            return 0;
-
-        return res;
+        return lut[index].date + time_offset;
     }
 
     inline const Values & getValues(DayNum d) const { return lut[d]; }

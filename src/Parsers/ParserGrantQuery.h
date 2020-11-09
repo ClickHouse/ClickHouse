@@ -12,7 +12,7 @@ namespace DB
 class ParserGrantQuery : public IParserBase
 {
 public:
-    ParserGrantQuery & useAttachMode(bool attach_mode_ = true) { attach_mode = attach_mode_; return *this; }
+    ParserGrantQuery & enableAttachMode(bool enable) { attach_mode = enable; return *this; }
 
 protected:
     const char * getName() const override { return "GRANT or REVOKE query"; }

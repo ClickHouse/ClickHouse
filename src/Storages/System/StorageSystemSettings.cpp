@@ -17,8 +17,7 @@ NamesAndTypesList StorageSystemSettings::getNamesAndTypes()
         {"description", std::make_shared<DataTypeString>()},
         {"min", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
         {"max", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"readonly", std::make_shared<DataTypeUInt8>()},
-        {"type", std::make_shared<DataTypeString>()},
+        {"readonly", std::make_shared<DataTypeUInt8>()}
     };
 }
 
@@ -30,13 +29,13 @@ void StorageSystemSettings::fillData(MutableColumns & res_columns, const Context
 {
     const Settings & settings = context.getSettingsRef();
     auto settings_constraints = context.getSettingsConstraints();
-    for (const auto & setting : settings.all())
+    for (const auto & setting : settings)
     {
-        const auto & setting_name = setting.getName();
-        res_columns[0]->insert(setting_name);
-        res_columns[1]->insert(setting.getValueString());
-        res_columns[2]->insert(setting.isValueChanged());
-        res_columns[3]->insert(setting.getDescription());
+        StringRef setting_name = setting.getName();
+        res_columns[0]->insert(setting_name.toString());
+        res_columns[1]->insert(setting.getValueAsString());
+        res_columns[2]->insert(setting.isChanged());
+        res_columns[3]->insert(setting.getDescription().toString());
 
         Field min, max;
         bool read_only = false;
@@ -45,9 +44,9 @@ void StorageSystemSettings::fillData(MutableColumns & res_columns, const Context
 
         /// These two columns can accept strings only.
         if (!min.isNull())
-            min = Settings::valueToStringUtil(setting_name, min);
+            min = Settings::valueToString(setting_name, min);
         if (!max.isNull())
-            max = Settings::valueToStringUtil(setting_name, max);
+            max = Settings::valueToString(setting_name, max);
 
         if (!read_only)
         {
@@ -60,7 +59,6 @@ void StorageSystemSettings::fillData(MutableColumns & res_columns, const Context
         res_columns[4]->insert(min);
         res_columns[5]->insert(max);
         res_columns[6]->insert(read_only);
-        res_columns[7]->insert(setting.getTypeName());
     }
 }
 

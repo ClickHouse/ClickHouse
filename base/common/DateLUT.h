@@ -1,15 +1,20 @@
 #pragma once
 
 #include "DateLUTImpl.h"
-
-#include "defines.h"
-
+#include <unordered_map>
+#include <atomic>
+#include <mutex>
+#include <memory>
 #include <boost/noncopyable.hpp>
 
-#include <atomic>
-#include <memory>
-#include <mutex>
-#include <unordered_map>
+// Also defined in Core/Defines.h
+#if !defined(ALWAYS_INLINE)
+#if defined(_MSC_VER)
+    #define ALWAYS_INLINE __forceinline
+#else
+    #define ALWAYS_INLINE __attribute__((__always_inline__))
+#endif
+#endif
 
 
 /// This class provides lazy initialization and lookup of singleton DateLUTImpl objects for a given timezone.

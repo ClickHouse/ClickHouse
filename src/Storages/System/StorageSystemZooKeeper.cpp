@@ -8,7 +8,6 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/evaluateConstantExpression.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/typeid_cast.h>
 
@@ -43,7 +42,7 @@ NamesAndTypesList StorageSystemZooKeeper::getNamesAndTypes()
 }
 
 
-static bool extractPathImpl(const IAST & elem, String & res, const Context & context)
+static bool extractPathImpl(const IAST & elem, String & res)
 {
     const auto * function = elem.as<ASTFunction>();
     if (!function)
@@ -52,7 +51,7 @@ static bool extractPathImpl(const IAST & elem, String & res, const Context & con
     if (function->name == "and")
     {
         for (const auto & child : function->arguments->children)
-            if (extractPathImpl(*child, res, context))
+            if (extractPathImpl(*child, res))
                 return true;
 
         return false;
@@ -61,24 +60,23 @@ static bool extractPathImpl(const IAST & elem, String & res, const Context & con
     if (function->name == "equals")
     {
         const auto & args = function->arguments->as<ASTExpressionList &>();
-        ASTPtr value;
+        const IAST * value;
 
         if (args.children.size() != 2)
             return false;
 
         const ASTIdentifier * ident;
         if ((ident = args.children.at(0)->as<ASTIdentifier>()))
-            value = args.children.at(1);
+            value = args.children.at(1).get();
         else if ((ident = args.children.at(1)->as<ASTIdentifier>()))
-            value = args.children.at(0);
+            value = args.children.at(0).get();
         else
             return false;
 
-        if (ident->name() != "path")
+        if (ident->name != "path")
             return false;
 
-        auto evaluated = evaluateConstantExpressionAsLiteral(value, context);
-        const auto * literal = evaluated->as<ASTLiteral>();
+        const auto * literal = value->as<ASTLiteral>();
         if (!literal)
             return false;
 
@@ -95,32 +93,27 @@ static bool extractPathImpl(const IAST & elem, String & res, const Context & con
 
 /** Retrieve from the query a condition of the form `path = 'path'`, from conjunctions in the WHERE clause.
   */
-static String extractPath(const ASTPtr & query, const Context & context)
+static String extractPath(const ASTPtr & query)
 {
     const auto & select = query->as<ASTSelectQuery &>();
     if (!select.where())
         return "";
 
     String res;
-    return extractPathImpl(*select.where(), res, context) ? res : "";
+    return extractPathImpl(*select.where(), res) ? res : "";
 }
 
 
 void StorageSystemZooKeeper::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const
 {
-    String path = extractPath(query_info.query, context);
+    String path = extractPath(query_info.query);
     if (path.empty())
         throw Exception("SELECT from system.zookeeper table must contain condition like path = 'path' in WHERE clause.", ErrorCodes::BAD_ARGUMENTS);
 
     zkutil::ZooKeeperPtr zookeeper = context.getZooKeeper();
 
-    String path_corrected;
-    /// path should starts with '/', otherwise ZBADARGUMENTS will be thrown in
-    /// ZooKeeper::sendThread and the session will fail.
-    if (path[0] != '/')
-        path_corrected = '/';
-    path_corrected += path;
     /// In all cases except the root, path must not end with a slash.
+    String path_corrected = path;
     if (path_corrected != "/" && path_corrected.back() == '/')
         path_corrected.resize(path_corrected.size() - 1);
 
@@ -138,7 +131,7 @@ void StorageSystemZooKeeper::fillData(MutableColumns & res_columns, const Contex
     for (size_t i = 0, size = nodes.size(); i < size; ++i)
     {
         auto res = futures[i].get();
-        if (res.error == Coordination::Error::ZNONODE)
+        if (res.error == Coordination::ZNONODE)
             continue;   /// Node was deleted meanwhile.
 
         const Coordination::Stat & stat = res.stat;

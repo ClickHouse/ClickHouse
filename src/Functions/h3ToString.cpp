@@ -1,18 +1,14 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
-
+#include "config_functions.h"
 #if USE_H3
+#    include <Columns/ColumnString.h>
+#    include <DataTypes/DataTypeString.h>
+#    include <Functions/FunctionFactory.h>
+#    include <Functions/IFunction.h>
+#    include <Common/typeid_cast.h>
 
-#include <Columns/ColumnString.h>
-#include <DataTypes/DataTypeString.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/IFunction.h>
-#include <Common/typeid_cast.h>
+#    include <h3api.h>
 
-#include <h3api.h>
-
-#define H3_INDEX_STRING_LENGTH 17 // includes \0 terminator
+#    define H3_INDEX_STRING_LENGTH 17 // includes \0 terminator
 
 namespace DB
 {
@@ -20,10 +16,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
-
-namespace
-{
-
 class FunctionH3ToString : public IFunction
 {
 public:
@@ -39,7 +31,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const auto * arg = arguments[0].get();
+        const auto *arg = arguments[0].get();
         if (!WhichDataType(arg).isUInt64())
             throw Exception(
                 "Illegal type " + arg->getName() + " of argument " + std::to_string(1) + " of function " + getName() + ". Must be UInt64",
@@ -48,9 +40,9 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        const auto * col_hindex = arguments[0].column.get();
+        const auto *const col_hindex = block.getByPosition(arguments[0]).column.get();
 
         auto col_res = ColumnString::create();
         auto & vec_res = col_res->getChars();
@@ -80,11 +72,10 @@ public:
             vec_offsets[i] = ++pos - begin;
         }
         vec_res.resize(pos - begin);
-        return col_res;
+        block.getByPosition(result).column = std::move(col_res);
     }
 };
 
-}
 
 void registerFunctionH3ToString(FunctionFactory & factory)
 {
@@ -92,5 +83,4 @@ void registerFunctionH3ToString(FunctionFactory & factory)
 }
 
 }
-
 #endif

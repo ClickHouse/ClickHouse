@@ -1,25 +1,23 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
-
+#include "config_core.h"
 #if USE_EMBEDDED_COMPILER
-#    include <DataTypes/DataTypeDate.h>
-#    include <DataTypes/DataTypeDateTime.h>
-#    include <DataTypes/DataTypeFixedString.h>
-#    include <DataTypes/DataTypeInterval.h>
-#    include <DataTypes/DataTypeNullable.h>
-#    include <DataTypes/DataTypeUUID.h>
-#    include <DataTypes/DataTypesNumber.h>
-#    include <Common/typeid_cast.h>
 
-#    pragma GCC diagnostic push
-#    pragma GCC diagnostic ignored "-Wunused-parameter"
+#include <Common/typeid_cast.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeUUID.h>
 
-#    include <llvm/IR/IRBuilder.h>
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 
-#    pragma GCC diagnostic pop
+#include <llvm/IR/IRBuilder.h>
+
+#pragma GCC diagnostic pop
 
 
 namespace DB

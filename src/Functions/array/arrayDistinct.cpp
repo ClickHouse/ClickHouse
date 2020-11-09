@@ -55,14 +55,14 @@ public:
         return std::make_shared<DataTypeArray>(nested_type);
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 
 private:
     /// Initially allocate a piece of memory for 512 elements. NOTE: This is just a guess.
     static constexpr size_t INITIAL_SIZE_DEGREE = 9;
 
     template <typename T>
-    static bool executeNumber(
+    bool executeNumber(
         const IColumn & src_data,
         const ColumnArray::Offsets & src_offsets,
         IColumn & res_data_col,
@@ -85,12 +85,12 @@ private:
 };
 
 
-ColumnPtr FunctionArrayDistinct::executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const
+void FunctionArrayDistinct::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
 {
-    ColumnPtr array_ptr = arguments[0].column;
+    ColumnPtr array_ptr = block.getByPosition(arguments[0]).column;
     const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
 
-    const auto & return_type = result_type;
+    const auto & return_type = block.getByPosition(result).type;
 
     auto res_ptr = return_type->createColumn();
     ColumnArray & res = assert_cast<ColumnArray &>(*res_ptr);
@@ -127,7 +127,7 @@ ColumnPtr FunctionArrayDistinct::executeImpl(ColumnsWithTypeAndName & arguments,
         || executeString(*inner_col, offsets, res_data, res_offsets, nullable_col)))
         executeHashed(*inner_col, offsets, res_data, res_offsets, nullable_col);
 
-    return res_ptr;
+    block.getByPosition(result).column = std::move(res_ptr);
 }
 
 template <typename T>
@@ -153,8 +153,10 @@ bool FunctionArrayDistinct::executeNumber(
     if (nullable_col)
         src_null_map = &nullable_col->getNullMapData();
 
-    using Set = ClearableHashSetWithStackMemory<T, DefaultHash<T>,
-        INITIAL_SIZE_DEGREE>;
+    using Set = ClearableHashSet<T,
+        DefaultHash<T>,
+        HashTableGrower<INITIAL_SIZE_DEGREE>,
+        HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(T)>>;
 
     Set set;
 
@@ -199,8 +201,10 @@ bool FunctionArrayDistinct::executeString(
 
     ColumnString & res_data_column_string = typeid_cast<ColumnString &>(res_data_col);
 
-    using Set = ClearableHashSetWithStackMemory<StringRef, StringRefHash,
-        INITIAL_SIZE_DEGREE>;
+    using Set = ClearableHashSet<StringRef,
+        StringRefHash,
+        HashTableGrower<INITIAL_SIZE_DEGREE>,
+        HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(StringRef)>>;
 
     const PaddedPODArray<UInt8> * src_null_map = nullptr;
 
@@ -245,8 +249,8 @@ void FunctionArrayDistinct::executeHashed(
     ColumnArray::Offsets & res_offsets,
     const ColumnNullable * nullable_col)
 {
-    using Set = ClearableHashSetWithStackMemory<UInt128, UInt128TrivialHash,
-        INITIAL_SIZE_DEGREE>;
+    using Set = ClearableHashSet<UInt128, UInt128TrivialHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
+        HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
 
     const PaddedPODArray<UInt8> * src_null_map = nullptr;
 

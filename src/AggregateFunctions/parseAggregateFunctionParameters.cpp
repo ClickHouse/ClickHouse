@@ -2,7 +2,6 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Common/typeid_cast.h>
-#include <Core/Defines.h>
 
 
 namespace DB
@@ -70,7 +69,7 @@ void getAggregateFunctionNameAndParametersArray(
     ParserExpressionList params_parser(false);
     ASTPtr args_ast = parseQuery(params_parser,
         parameters_str.data(), parameters_str.data() + parameters_str.size(),
-        "parameters of aggregate function in " + error_context, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+        "parameters of aggregate function in " + error_context, 0);
 
     if (args_ast->children.empty())
         throw Exception("Incorrect list of parameters to aggregate function "

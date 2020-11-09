@@ -2,7 +2,6 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/quoteString.h>
-#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -26,7 +25,7 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
     }
     else
         settings.ostr << (settings.hilite ? hilite_none : "")
-                      << (!table_id.database_name.empty() ? backQuoteIfNeed(table_id.database_name) + "." : "") << backQuoteIfNeed(table_id.table_name);
+                      << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
 
     if (columns)
     {
@@ -39,11 +38,6 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
     {
         settings.ostr << " ";
         select->formatImpl(settings, state, frame);
-    }
-    else if (watch)
-    {
-        settings.ostr << " ";
-        watch->formatImpl(settings, state, frame);
     }
     else
     {

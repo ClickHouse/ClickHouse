@@ -1,10 +1,9 @@
 #pragma once
 
-#include <common/types.h>
+#include <common/Types.h>
 
 #include <atomic>
 #include <vector>
-#include <optional>
 
 class LineReader
 {
@@ -15,11 +14,13 @@ public:
         using WordsRange = std::pair<Words::const_iterator, Words::const_iterator>;
 
         Words words;
-        Words words_no_case;
         std::atomic<bool> ready{false};
 
         /// Get iterators for the matched range of words if any.
-        std::optional<WordsRange> getCompletions(const String & prefix, size_t prefix_length) const;
+        WordsRange getCompletions(const String & prefix, size_t prefix_length) const;
+
+        /// case sensitive suggestion
+        bool case_insensitive = false;
     };
 
     using Patterns = std::vector<const char *>;
@@ -49,7 +50,7 @@ protected:
     };
 
     const String history_file_path;
-    static constexpr char word_break_characters[] = " \t\v\f\a\b\r\n`~!@#$%^&*()-=+[{]}\\|;:'\",<.>/?";
+    static constexpr char word_break_characters[] = " \t\n\r\"\\'`@$><=;|&{(.";
 
     String input;
 
