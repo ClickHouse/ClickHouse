@@ -384,7 +384,6 @@ SetPtr makeExplicitSet(
     return set;
 }
 
-
 ScopeStack::ScopeStack(const ExpressionActionsPtr & actions, const Context & context_)
     : context(context_)
 {
