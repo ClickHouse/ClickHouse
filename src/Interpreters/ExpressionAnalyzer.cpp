@@ -809,11 +809,8 @@ bool SelectQueryExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain,
 
     ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
 
-
-    getRootActionsForHaving(select_query->having(), only_types, step.actions());
-
     step.required_output.push_back(select_query->having()->getColumnName());
-    getRootActions(select_query->having(), only_types, step.actions());
+    getRootActionsForHaving(select_query->having(), only_types, step.actions());
 
     return true;
 }
