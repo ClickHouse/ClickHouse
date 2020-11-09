@@ -19,21 +19,17 @@ SRCS(
     CheckSortedBlockInputStream.cpp
     ColumnGathererStream.cpp
     ConvertingBlockInputStream.cpp
-    copyData.cpp
     CountingBlockOutputStream.cpp
     DistinctSortedBlockInputStream.cpp
     ExecutionSpeedLimits.cpp
     ExpressionBlockInputStream.cpp
-    finalizeBlock.cpp
     IBlockInputStream.cpp
     InputStreamFromASTInsertQuery.cpp
     InternalTextLogsRowOutputStream.cpp
     LimitBlockInputStream.cpp
-    materializeBlock.cpp
     MaterializingBlockInputStream.cpp
     MergingSortedBlockInputStream.cpp
     MongoDBBlockInputStream.cpp
-    narrowBlockInputStreams.cpp
     NativeBlockInputStream.cpp
     NativeBlockOutputStream.cpp
     ParallelParsingBlockInputStream.cpp
@@ -46,6 +42,10 @@ SRCS(
     SquashingBlockOutputStream.cpp
     SquashingTransform.cpp
     TTLBlockInputStream.cpp
+    copyData.cpp
+    finalizeBlock.cpp
+    materializeBlock.cpp
+    narrowBlockInputStreams.cpp
 
 )
 

@@ -153,15 +153,18 @@ A fast, decent-quality non-cryptographic hash function for a string obtained fro
 `URLHash(s, N)` – Calculates a hash from a string up to the N level in the URL hierarchy, without one of the trailing symbols `/`,`?` or `#` at the end, if present.
 Levels are the same as in URLHierarchy. This function is specific to Yandex.Metrica.
 
+## farmFingerprint64 {#farmfingerprint64}
+
 ## farmHash64 {#farmhash64}
 
-Produces a 64-bit [FarmHash](https://github.com/google/farmhash) hash value.
+Produces a 64-bit [FarmHash](https://github.com/google/farmhash) or Fingerprint value. Prefer `farmFingerprint64` for a stable and portable value.
 
 ``` sql
+farmFingerprint64(par1, ...)
 farmHash64(par1, ...)
 ```
 
-The function uses the `Hash64` method from all [available methods](https://github.com/google/farmhash/blob/master/src/farmhash.h).
+These functions use the `Fingerprint64` and `Hash64` method respectively from all [available methods](https://github.com/google/farmhash/blob/master/src/farmhash.h).
 
 **Parameters**
 

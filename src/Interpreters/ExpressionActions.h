@@ -53,6 +53,7 @@ using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
   */
 struct ExpressionAction
 {
+    friend class KeyCondition;
 private:
     using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 public:

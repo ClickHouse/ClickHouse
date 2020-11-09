@@ -119,6 +119,7 @@ BlockInputStreamPtr InterpreterShowGrantsQuery::executeImpl()
     /// Build the result column.
     MutableColumnPtr column = ColumnString::create();
     std::stringstream grant_ss;
+    grant_ss.exceptions(std::ios::failbit);
     for (const auto & grant_query : grant_queries)
     {
         grant_ss.str("");
@@ -128,6 +129,7 @@ BlockInputStreamPtr InterpreterShowGrantsQuery::executeImpl()
 
     /// Prepare description of the result column.
     std::stringstream desc_ss;
+    desc_ss.exceptions(std::ios::failbit);
     const auto & show_query = query_ptr->as<const ASTShowGrantsQuery &>();
     formatAST(show_query, desc_ss, false, true);
     String desc = desc_ss.str();
