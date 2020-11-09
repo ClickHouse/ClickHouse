@@ -700,6 +700,9 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
                         next_node = arg;
                     }
 
+                    if (!next_node)
+                        is_valid_chain = false;
+
                     cur_node = next_node;
                 }
                 else if (cur_node->type == ActionsDAG::Type::ALIAS)
