@@ -1765,6 +1765,23 @@ Default value: `0`.
 
 -   [Distributed Table Engine](../../engines/table-engines/special/distributed.md#distributed)
 -   [Managing Distributed Tables](../../sql-reference/statements/system.md#query-language-system-distributed)
+
+
+## use_compact_format_in_distributed_parts_names {#use_compact_format_in_distributed_parts_names}
+
+Uses compact format for storing blocks for async (`insert_distributed_sync`) INSERT into tables with `Distributed` engine.
+
+Possible values:
+
+-   0 — Uses `user[:password]@host:port#default_database` directory format.
+-   1 — Uses `[shard{shard_index}[_replica{replica_index}]]` directory format.
+
+Default value: `1`.
+
+!!! note "Note"
+    - with `use_compact_format_in_distributed_parts_names=0` changes from cluster definition will not be applied for async INSERT.
+    - with `use_compact_format_in_distributed_parts_names=1` changing the order of the nodes in the cluster definition, will change the `shard_index`/`replica_index` so be aware.
+
 ## background_buffer_flush_schedule_pool_size {#background_buffer_flush_schedule_pool_size}
 
 Sets the number of threads performing background flush in [Buffer](../../engines/table-engines/special/buffer.md)-engine tables. This setting is applied at the ClickHouse server start and can’t be changed in a user session.

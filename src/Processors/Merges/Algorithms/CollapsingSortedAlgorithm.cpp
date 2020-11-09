@@ -42,6 +42,7 @@ void CollapsingSortedAlgorithm::reportIncorrectData()
         return;
 
     std::stringstream s;
+    s.exceptions(std::ios::failbit);
     auto & sort_columns = *last_row.sort_columns;
     for (size_t i = 0, size = sort_columns.size(); i < size; ++i)
     {
