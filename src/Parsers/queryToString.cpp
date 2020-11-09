@@ -12,6 +12,7 @@ namespace DB
     String queryToString(const IAST & query)
     {
         std::ostringstream out;
+        out.exceptions(std::ios::failbit);
         formatAST(query, out, false, true);
         return out.str();
     }

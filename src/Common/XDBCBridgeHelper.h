@@ -308,6 +308,7 @@ struct ODBCBridgeMixin
         path.setFileName("clickhouse-odbc-bridge");
 
         std::stringstream command;
+        command.exceptions(std::ios::failbit);
 
 #if !CLICKHOUSE_SPLIT_BINARY
         cmd_args.push_back("odbc-bridge");

@@ -1,6 +1,7 @@
 #include "ClusterCopierApp.h"
 #include <Common/StatusFile.h>
 #include <Common/TerminalSize.h>
+#include <Formats/registerFormats.h>
 #include <unistd.h>
 
 
@@ -122,6 +123,7 @@ void ClusterCopierApp::mainImpl()
     registerStorages();
     registerDictionaries();
     registerDisks();
+    registerFormats();
 
     static const std::string default_database = "_local";
     DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, *context));

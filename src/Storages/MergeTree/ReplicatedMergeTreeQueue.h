@@ -260,6 +260,7 @@ private:
         ~CurrentlyExecuting();
     };
 
+    using CurrentlyExecutingPtr = std::unique_ptr<CurrentlyExecuting>;
     /// ZK contains a limit on the number or total size of operations in a multi-request.
     /// If the limit is exceeded, the connection is simply closed.
     /// The constant is selected with a margin. The default limit in ZK is 1 MB of data in total.
@@ -333,8 +334,19 @@ public:
     /** Select the next action to process.
       * merger_mutator is used only to check if the merges are not suspended.
       */
-    using SelectedEntry = std::pair<ReplicatedMergeTreeQueue::LogEntryPtr, std::unique_ptr<CurrentlyExecuting>>;
-    SelectedEntry selectEntryToProcess(MergeTreeDataMergerMutator & merger_mutator, MergeTreeData & data);
+    struct SelectedEntry
+    {
+        ReplicatedMergeTreeQueue::LogEntryPtr log_entry;
+        CurrentlyExecutingPtr currently_executing_holder;
+
+        SelectedEntry(const ReplicatedMergeTreeQueue::LogEntryPtr & log_entry_, CurrentlyExecutingPtr && currently_executing_holder_)
+            : log_entry(log_entry_)
+            , currently_executing_holder(std::move(currently_executing_holder_))
+        {}
+    };
+
+    using SelectedEntryPtr = std::shared_ptr<SelectedEntry>;
+    SelectedEntryPtr selectEntryToProcess(MergeTreeDataMergerMutator & merger_mutator, MergeTreeData & data);
 
     /** Execute `func` function to handle the action.
       * In this case, at runtime, mark the queue element as running
