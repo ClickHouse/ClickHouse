@@ -4,6 +4,7 @@ import pymysql.cursors
 
 import pytest
 from helpers.client import QueryRuntimeException
+from helpers.network import PartitionManager
 
 def check_query(clickhouse_node, query, result_set, retry_count=60, interval_seconds=3):
     lastest_result = ''
@@ -24,7 +25,6 @@ def dml_with_materialize_mysql_database(clickhouse_node, mysql_node, service_nam
     clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
     mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
     # existed before the mapping was created
-
     mysql_node.query("CREATE TABLE test_database.test_table_1 ("
                      "`key` INT NOT NULL PRIMARY KEY, "
                      "unsigned_tiny_int TINYINT UNSIGNED, tiny_int TINYINT, "
@@ -556,3 +556,30 @@ def err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, mysql_n
 
     mysql_node.query("DROP DATABASE priv_err_db;")
     mysql_node.grant_min_priv_for_user("test")
+
+
+def network_partition_test(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("CREATE DATABASE test_database;")
+    mysql_node.query("CREATE TABLE test_database.test_table ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;")
+
+    with PartitionManager() as pm:
+        clickhouse_node.query(
+            "CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'root', 'clickhouse')".format(service_name))
+
+        pm._check_instance(clickhouse_node)
+        pm._add_rule({'source': clickhouse_node.ip_address, 'destination_port': 3306, 'action': 'DROP'})
+        pm._add_rule({'destination': clickhouse_node.ip_address, 'source_port': 3306, 'action': 'DROP'})
+        time.sleep(5)
+
+        mysql_node.query('INSERT INTO test_database.test_table VALUES(1)')
+        check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table\n")
+        check_query(clickhouse_node, "SELECT * FROM test_database.test_table FORMAT TSV", '')
+        clickhouse_node.query("DETACH DATABASE test_database")
+
+        pm._delete_rule({'source': clickhouse_node.ip_address, 'destination_port': 3306, 'action': 'DROP'})
+        pm._delete_rule({'destination': clickhouse_node.ip_address, 'source_port': 3306, 'action': 'DROP'})
+        time.sleep(5)
+
+        clickhouse_node.query("ATTACH DATABASE test_database")
+        check_query(clickhouse_node, "SELECT * FROM test_database.test_table FORMAT TSV", '1\n')
+
