@@ -905,7 +905,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
           * Also it doesn't make sence if it is GLOBAL IN or ordinary IN.
           */
 
-        if (subquery_for_set.source.empty() && data.no_storage_or_local)
+        if (subquery_for_set.source.empty() && data.create_source_for_in)
         {
             auto interpreter = interpretSubquery(right_in_operand, data.context, data.subquery_depth, {});
             subquery_for_set.source = QueryPipeline::getPipe(interpreter->execute().pipeline);
