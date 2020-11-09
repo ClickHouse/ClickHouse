@@ -14,6 +14,7 @@
 #include <common/errnoToString.h>
 #include <Common/formatReadable.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/ErrorCodes.h>
 #include <filesystem>
 
 #if !defined(ARCADIA_BUILD)
@@ -46,6 +47,7 @@ Exception::Exception(const std::string & msg, int code)
         abort();
     }
 #endif
+    ErrorCodes::increment(code);
 }
 
 Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
@@ -244,6 +246,7 @@ static std::string getExtraExceptionInfo(const std::exception & e)
 std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded_stacktrace /*= false*/, bool with_extra_info /*= true*/)
 {
     std::stringstream stream;
+    stream.exceptions(std::ios::failbit);
 
     try
     {
@@ -363,6 +366,7 @@ void tryLogException(std::exception_ptr e, Poco::Logger * logger, const std::str
 std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace)
 {
     std::stringstream stream;
+    stream.exceptions(std::ios::failbit);
 
     try
     {

@@ -39,12 +39,16 @@ protected:
 
 
 /** An identifier, for example, x_yz123 or `something special`
+  * If allow_query_parameter_ = true, also parses substitutions in form {name:Identifier}
   */
 class ParserIdentifier : public IParserBase
 {
+public:
+    ParserIdentifier(bool allow_query_parameter_ = false) : allow_query_parameter(allow_query_parameter_) {}
 protected:
     const char * getName() const override { return "identifier"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool allow_query_parameter;
 };
 
 
@@ -54,12 +58,16 @@ protected:
 class ParserCompoundIdentifier : public IParserBase
 {
 public:
-    ParserCompoundIdentifier(bool table_name_with_optional_uuid_ = false)
-    : table_name_with_optional_uuid(table_name_with_optional_uuid_) {}
+    ParserCompoundIdentifier(bool table_name_with_optional_uuid_ = false, bool allow_query_parameter_ = false)
+        : table_name_with_optional_uuid(table_name_with_optional_uuid_), allow_query_parameter(allow_query_parameter_)
+    {
+    }
+
 protected:
     const char * getName() const override { return "compound identifier"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
     bool table_name_with_optional_uuid;
+    bool allow_query_parameter;
 };
 
 /// Just *
@@ -295,6 +303,17 @@ private:
     bool allow_alias_without_as_keyword;
 
     const char * getName() const override { return "alias"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
+/** Prepared statements.
+  * Parse query with parameter expression {name:type}.
+  */
+class ParserIdentifierOrSubstitution : public IParserBase
+{
+protected:
+    const char * getName() const override { return "identifier or substitution"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

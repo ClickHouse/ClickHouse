@@ -927,6 +927,48 @@ SELECT defaultValueOfArgumentType( CAST(1 AS Nullable(Int8) ) )
 └───────────────────────────────────────────────────────┘
 ```
 
+## defaultValueOfTypeName {#defaultvalueoftypename}
+
+Выводит значение по умолчанию для указанного типа данных.
+
+Не включает значения по умолчанию для настраиваемых столбцов, установленных пользователем.
+
+``` sql
+defaultValueOfTypeName(type)
+```
+
+**Параметры:**
+
+-   `type` — тип данных.
+
+**Возвращаемое значение**
+
+-   `0` для чисел;
+-   Пустая строка для строк;
+-   `ᴺᵁᴸᴸ` для [Nullable](../../sql-reference/data-types/nullable.md).
+
+**Пример**
+
+``` sql
+SELECT defaultValueOfTypeName('Int8')
+```
+
+``` text
+┌─defaultValueOfTypeName('Int8')─┐
+│                              0 │
+└────────────────────────────────┘
+```
+
+``` sql
+SELECT defaultValueOfTypeName('Nullable(Int8)')
+```
+
+``` text
+┌─defaultValueOfTypeName('Nullable(Int8)')─┐
+│                                     ᴺᵁᴸᴸ │
+└──────────────────────────────────────────┘
+```
+
 ## replicate {#other-functions-replicate}
 
 Создает массив, заполненный одним значением.

@@ -165,6 +165,7 @@ TEST(Common, SensitiveDataMasker)
         </rule>
     </query_masking_rules>
 </clickhouse>)END");
+
         Poco::AutoPtr<Poco::Util::XMLConfiguration> xml_config = new Poco::Util::XMLConfiguration(xml_isteam_bad);
         DB::SensitiveDataMasker masker_xml_based_exception_check(*xml_config, "query_masking_rules");
 

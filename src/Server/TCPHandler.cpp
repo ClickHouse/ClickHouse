@@ -437,6 +437,7 @@ bool TCPHandler::readDataNext(const size_t & poll_interval, const int & receive_
         if (elapsed > receive_timeout)
         {
             std::stringstream ss;
+            ss.exceptions(std::ios::failbit);
             ss << "Timeout exceeded while receiving data from client.";
             ss << " Waited for " << static_cast<size_t>(elapsed) << " seconds,";
             ss << " timeout is " << receive_timeout << " seconds.";
