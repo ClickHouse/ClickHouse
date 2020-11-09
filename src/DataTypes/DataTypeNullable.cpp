@@ -5,7 +5,6 @@
 #include <DataTypes/DataTypeOneElementTuple.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/Field.h>
-#include <Core/NamesAndTypes.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
@@ -15,7 +14,6 @@
 #include <Parsers/IAST.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Common/escapeForFileName.h>
 
 
 namespace DB

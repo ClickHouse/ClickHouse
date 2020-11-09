@@ -12,7 +12,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
-#include <Common/escapeForFileName.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -620,7 +619,6 @@ static DataTypePtr create(const ASTPtr & arguments)
 void registerDataTypeTuple(DataTypeFactory & factory)
 {
     factory.registerDataType("Tuple", create);
-    // factory.registerDataTypeCustom(DATA_TYPE_ONE_ELEMENT_TUPLE_NAME, createOneElementTuple);
 }
 
 }

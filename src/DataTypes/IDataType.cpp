@@ -9,7 +9,6 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/NestedUtils.h>
-#include <boost/algorithm/string/split.hpp>
 
 namespace DB
 {
