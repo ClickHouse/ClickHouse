@@ -333,8 +333,6 @@ SELECT * FROM table_with_enum_column_for_tsv_insert;
 ```sql
 SET input_format_tsv_enum_as_number = 0;
 INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
-INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 103	1;
-SELECT * FROM table_with_enum_column_for_tsv_insert;
 ```
 
 сгенерирует исключение.
@@ -1217,7 +1215,6 @@ SELECT * FROM table_with_enum_column_for_csv_insert;
 ```sql
 SET input_format_csv_enum_as_number = 0;
 INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2;
-SELECT * FROM table_with_enum_column_for_csv_insert;
 ```
 
 сгенерирует исключение.
