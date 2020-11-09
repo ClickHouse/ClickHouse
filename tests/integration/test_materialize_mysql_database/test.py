@@ -32,6 +32,9 @@ class MySQLNodeInstance:
         self.password = password
         self.mysql_connection = None  # lazy init
 
+    def getPort(self):
+        if self.port is not None:
+            return self.port
 
     def alloc_connection(self):
         if self.mysql_connection is None:
