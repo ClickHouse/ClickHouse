@@ -336,6 +336,13 @@ if (LZMA_LIBRARY)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${LZMA_INCLUDE_DIR})
 endif()
 
+set (FAST_LZMA_LIBRARY fast-lzma2)
+set (FAST_LZMA_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/fast-lzma2/)
+if (FAST_LZMA_LIBRARY)
+    target_link_libraries (clickhouse_common_io PUBLIC ${FAST_LZMA_LIBRARY})
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${FAST_LZMA_INCLUDE_DIR})
+endif()
+
 if (USE_ICU)
     dbms_target_link_libraries (PRIVATE ${ICU_LIBRARIES})
     dbms_target_include_directories (SYSTEM PRIVATE ${ICU_INCLUDE_DIRS})

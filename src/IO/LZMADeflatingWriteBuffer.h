@@ -4,14 +4,15 @@
 #include <IO/WriteBuffer.h>
 
 #include <lzma.h>
+#include <fast-lzma2.h>
 
 namespace DB
 {
 /// Performs compression using lzma library and writes compressed data to out_ WriteBuffer.
-class LzmaWriteBuffer : public BufferWithOwnMemory<WriteBuffer>
+class LZMADeflatingWriteBuffer : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
-    LzmaWriteBuffer(
+    LZMADeflatingWriteBuffer(
         std::unique_ptr<WriteBuffer> out_,
         int compression_level,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
@@ -20,13 +21,13 @@ public:
 
     void finish();
 
-    ~LzmaWriteBuffer() override;
+    ~LZMADeflatingWriteBuffer() override;
 
 private:
     void nextImpl() override;
 
     std::unique_ptr<WriteBuffer> out;
-    lzma_stream lstr;
+    FL2_CStream * lstr;
     bool finished = false;
 };
 }

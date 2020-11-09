@@ -1,13 +1,13 @@
-#include <iostream>
 #include <iomanip>
+#include <iostream>
 
-#include <Common/Stopwatch.h>
-#include <IO/WriteBufferFromFile.h>
+#include <IO/LZMADeflatingWriteBuffer.h>
+#include <IO/LZMAInflatingReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/LzmaReadBuffer.h>
-#include <IO/LzmaWriteBuffer.h>
-#include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/WriteHelpers.h>
+#include <Common/Stopwatch.h>
 
 int main(int, char **)
 try
@@ -18,8 +18,9 @@ try
     Stopwatch stopwatch;
 
     {
-        auto buf = std::make_unique<DB::WriteBufferFromFile>("test_lzma_buffers.xz", DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_CREAT | O_TRUNC);
-        DB::LzmaWriteBuffer lzma_buf(std::move(buf), /*compression level*/ 3);
+        auto buf
+            = std::make_unique<DB::WriteBufferFromFile>("test_lzma_buffers.xz", DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_CREAT | O_TRUNC);
+        DB::LZMADeflatingWriteBuffer lzma_buf(std::move(buf), /*compression level*/ 3);
 
         stopwatch.restart();
         for (size_t i = 0; i < n; ++i)
@@ -32,13 +33,12 @@ try
         stopwatch.stop();
 
         std::cout << "Writing done. Elapsed: " << stopwatch.elapsedSeconds() << " s."
-            << ", " << (lzma_buf.count() / stopwatch.elapsedSeconds() / 1000000) << " MB/s"
-            << std::endl;
+                  << ", " << (lzma_buf.count() / stopwatch.elapsedSeconds() / 1000000) << " MB/s" << std::endl;
     }
 
     {
         auto buf = std::make_unique<DB::ReadBufferFromFile>("test_lzma_buffers.xz");
-        DB::LzmaReadBuffer lzma_buf(std::move(buf));
+        DB::LZMAInflatingReadBuffer lzma_buf(std::move(buf));
 
         stopwatch.restart();
         for (size_t i = 0; i < n; ++i)
@@ -52,9 +52,7 @@ try
         }
         stopwatch.stop();
         std::cout << "Reading done. Elapsed: " << stopwatch.elapsedSeconds() << " s."
-            << ", " << (lzma_buf.count() / stopwatch.elapsedSeconds() / 1000000) << " MB/s"
-            << std::endl;
-
+                  << ", " << (lzma_buf.count() / stopwatch.elapsedSeconds() / 1000000) << " MB/s" << std::endl;
     }
 
     return 0;

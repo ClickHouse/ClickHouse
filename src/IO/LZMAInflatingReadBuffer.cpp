@@ -1,4 +1,4 @@
-#include <IO/LzmaReadBuffer.h>
+#include <IO/LZMAInflatingReadBuffer.h>
 
 namespace DB
 {
@@ -6,9 +6,13 @@ namespace ErrorCodes
 {
     extern const int LZMA_STREAM_DECODER_FAILED;
 }
-LzmaReadBuffer::LzmaReadBuffer(std::unique_ptr<ReadBuffer> in_, size_t buf_size, char * existing_memory, size_t alignment)
+LZMAInflatingReadBuffer::LZMAInflatingReadBuffer(std::unique_ptr<ReadBuffer> in_, size_t buf_size, char * existing_memory, size_t alignment)
     : BufferWithOwnMemory<ReadBuffer>(buf_size, existing_memory, alignment), in(std::move(in_)), eof(false)
 {
+    // FL2_createDStreamMt(number of threads)
+    lstr = FL2_createDStreamMt(2);
+    /* size_t res = */ FL2_initDStream(lstr);
+    /*
     lstr = LZMA_STREAM_INIT;
     lstr.allocator = nullptr;
     lstr.next_in = nullptr;
@@ -26,15 +30,17 @@ LzmaReadBuffer::LzmaReadBuffer(std::unique_ptr<ReadBuffer> in_, size_t buf_size,
             std::string("lzma_stream_decoder initialization failed: error code: ") + std::to_string(ret)
                 + "; lzma version: " + LZMA_VERSION_STRING,
             ErrorCodes::LZMA_STREAM_DECODER_FAILED);
+            */
 }
 
-LzmaReadBuffer::~LzmaReadBuffer()
+LZMAInflatingReadBuffer::~LZMAInflatingReadBuffer()
 {
-    lzma_end(&lstr);
+    //lzma_end(&lstr);
 }
 
-bool LzmaReadBuffer::nextImpl()
+bool LZMAInflatingReadBuffer::nextImpl()
 {
+    /*
     if (eof)
         return false;
 
@@ -76,6 +82,8 @@ bool LzmaReadBuffer::nextImpl()
             ret,
             LZMA_VERSION_STRING);
 
+    return true;
+    */
     return true;
 }
 }
