@@ -128,7 +128,7 @@ bool ParserUnionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             }
             // SELECT ... UNION SELECT ...
             else
-                union_modes.push_back(ASTSelectWithUnionQuery::Mode::DISTINCT);
+                union_modes.push_back(ASTSelectWithUnionQuery::Mode::Unspecified);
             return true;
         }
         return false;
