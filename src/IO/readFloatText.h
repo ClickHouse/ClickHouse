@@ -285,7 +285,6 @@ inline bool is_made_of_eight_digits_fast(const char * chars) noexcept
 template <size_t N, typename T>
 static inline void readUIntTextUpToNSignificantDigits(T & x, ReadBuffer & buf)
 {
-    
     /// In optimistic case we can skip bound checking for first loop.
     if (buf.position() + N <= buf.buffer().end())
     {
