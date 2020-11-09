@@ -107,8 +107,8 @@ private:
 
     // Used and maintained only for LDAP.
     String server_name;
-    mutable std::size_t last_successful_password_check_params_hash = 0;
-    mutable std::chrono::steady_clock::time_point last_successful_password_check_timestamp;
+    mutable std::size_t ldap_last_successful_password_check_params_hash = 0;
+    mutable std::chrono::steady_clock::time_point ldap_last_successful_password_check_timestamp;
 };
 
 

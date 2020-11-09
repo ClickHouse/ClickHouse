@@ -87,18 +87,18 @@ bool Authentication::isCorrectPassword(const String & password_, const String & 
             ldap_server_params.password = password_;
 
             const auto current_params_hash = ldap_server_params.getCoreHash();
-            const auto last_check_period = std::chrono::steady_clock::now() - last_successful_password_check_timestamp;
+            const auto last_check_period = std::chrono::steady_clock::now() - ldap_last_successful_password_check_timestamp;
 
             if (
                 // Forbid the initial values explicitly.
-                last_successful_password_check_params_hash != 0 &&
-                last_successful_password_check_timestamp != std::chrono::steady_clock::time_point{} &&
+                ldap_last_successful_password_check_params_hash != 0 &&
+                ldap_last_successful_password_check_timestamp != std::chrono::steady_clock::time_point{} &&
 
                 // Check if the caching is enabled at all.
                 ldap_server_params.verification_cooldown > std::chrono::seconds{0} &&
 
                 // Check if we can "reuse" the result of the previous successful password verification.
-                current_params_hash == last_successful_password_check_params_hash &&
+                current_params_hash == ldap_last_successful_password_check_params_hash &&
                 last_check_period >= std::chrono::seconds{0} &&
                 last_check_period <= ldap_server_params.verification_cooldown
             )
@@ -111,13 +111,13 @@ bool Authentication::isCorrectPassword(const String & password_, const String & 
 
             if (result)
             {
-                last_successful_password_check_params_hash = current_params_hash;
-                last_successful_password_check_timestamp = std::chrono::steady_clock::now();
+                ldap_last_successful_password_check_params_hash = current_params_hash;
+                ldap_last_successful_password_check_timestamp = std::chrono::steady_clock::now();
             }
             else
             {
-                last_successful_password_check_params_hash = 0;
-                last_successful_password_check_timestamp = std::chrono::steady_clock::time_point{};
+                ldap_last_successful_password_check_params_hash = 0;
+                ldap_last_successful_password_check_timestamp = std::chrono::steady_clock::time_point{};
             }
 
             return result;
