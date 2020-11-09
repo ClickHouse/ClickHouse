@@ -25,7 +25,7 @@ Why/when you should add a test case into ClickHouse code:
 
 I assume you run some Linux machine (you can use docker / virtual machines on other OS) and any modern browser / internet connection, and you have some basic Linux & SQL skills. 
 
-Any highly specialized knowledge are not needed (so you don't need to know C++ or know something about how ClickHouse CI works).
+Any highly specialized knowledge is not needed (so you don't need to know C++ or know something about how ClickHouse CI works).
 
 
 #### Preparation 
