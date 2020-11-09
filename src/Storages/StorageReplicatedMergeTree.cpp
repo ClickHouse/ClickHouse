@@ -2626,6 +2626,7 @@ std::optional<JobAndPool> StorageReplicatedMergeTree::getDataProcessingJob()
 
     PoolType pool_type;
 
+    /// Depending on entry type execute in fetches (small) pool or big merge_mutate pool
     if (selected_entry->log_entry->type == LogEntry::GET_PART)
         pool_type = PoolType::FETCH;
     else

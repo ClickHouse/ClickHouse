@@ -1040,6 +1040,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         }
     }
 
+    /// Check that fetches pool is not overloaded
     if (entry.type == LogEntry::GET_PART)
     {
         if (!storage.canExecuteFetch(entry, out_postpone_reason))
