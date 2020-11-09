@@ -160,8 +160,6 @@ public:
         bool position_independent_encoding = true;
         /// If not zero, may be used to avoid reallocations while reading column of String type.
         double avg_value_size_hint = 0;
-
-        std::vector<MutableColumnPtr> temporary_column_holders;
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
