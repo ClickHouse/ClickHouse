@@ -4090,13 +4090,11 @@ void StorageReplicatedMergeTree::alter(
                 }
             }
 
-            if (!mutation_entry.block_numbers.empty())
-            {
-                mutation_entry.create_time = time(nullptr);
-                ops.emplace_back(zkutil::makeSetRequest(mutations_path, String(), mutations_stat.version));
-                ops.emplace_back(
-                    zkutil::makeCreateRequest(mutations_path + "/", mutation_entry.toString(), zkutil::CreateMode::PersistentSequential));
-            }
+            mutation_entry.create_time = time(nullptr);
+
+            ops.emplace_back(zkutil::makeSetRequest(mutations_path, String(), mutations_stat.version));
+            ops.emplace_back(
+                zkutil::makeCreateRequest(mutations_path + "/", mutation_entry.toString(), zkutil::CreateMode::PersistentSequential));
         }
 
         Coordination::Responses results;
