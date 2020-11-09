@@ -331,11 +331,11 @@ reinterpretAsUUID(fixed_string)
 
 **Параметры**
 
--   `fixed_string` — Строка с big-endian порядком байтов. [FixedString](../../sql-reference/data-types/fixedstring.md#fixedstring).
+-   `fixed_string` — cтрока с big-endian порядком байтов. [FixedString](../../sql-reference/data-types/fixedstring.md#fixedstring).
 
 **Возвращаемое значение**
 
--   Значение типа UUID. [UUID](../../sql-reference/data-types/uuid.md#uuid-data-type).
+-   Значение типа [UUID](../../sql-reference/data-types/uuid.md#uuid-data-type).
 
 **Примеры**
 
