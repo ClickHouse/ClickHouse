@@ -3206,6 +3206,7 @@ void MergeTreeData::Transaction::rollbackPartsToTemporaryState()
     if (!isEmpty())
     {
         std::stringstream ss;
+        ss.exceptions(std::ios::failbit);
         ss << " Rollbacking parts state to temporary and removing from working set:";
         for (const auto & part : precommitted_parts)
             ss << " " << part->relative_path;
@@ -3224,6 +3225,7 @@ void MergeTreeData::Transaction::rollback()
     if (!isEmpty())
     {
         std::stringstream ss;
+        ss.exceptions(std::ios::failbit);
         ss << " Removing parts:";
         for (const auto & part : precommitted_parts)
             ss << " " << part->relative_path;
@@ -3759,6 +3761,7 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
             || settings.min_rows_for_compact_part != 0 || settings.min_bytes_for_compact_part != 0))
         {
             std::ostringstream message;
+            message.exceptions(std::ios::failbit);
             message << "Table can't create parts with adaptive granularity, but settings"
                     << " min_rows_for_wide_part = " << settings.min_rows_for_wide_part
                     << ", min_bytes_for_wide_part = " << settings.min_bytes_for_wide_part

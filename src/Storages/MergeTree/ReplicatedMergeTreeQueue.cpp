@@ -942,6 +942,7 @@ size_t ReplicatedMergeTreeQueue::getConflictsCountForRange(
     if (out_description)
     {
         std::stringstream ss;
+        ss.exceptions(std::ios::failbit);
         ss << "Can't execute command for range " << range.getPartName() << " (entry " << entry.znode_name << "). ";
         ss << "There are " << conflicts.size() << " currently executing entries blocking it: ";
         for (const auto & conflict : conflicts)
@@ -1702,6 +1703,7 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
         for (const MutationCommand & command : entry.commands)
         {
             std::stringstream ss;
+            ss.exceptions(std::ios::failbit);
             formatAST(*command.ast, ss, false, true);
             result.push_back(MergeTreeMutationStatus
             {

@@ -3,7 +3,7 @@ machine_translated: true
 machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
 ---
 
-# 系统。query_log {#system_tables-query_log}
+# system.query_log {#system_tables-query_log}
 
 包含有关已执行查询的信息，例如，开始时间、处理持续时间、错误消息。
 
@@ -140,4 +140,4 @@ Settings.Values:      ['0','random','1','10000000000']
 
 **另请参阅**
 
--   [系统。query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — This table contains information about each query execution thread.
+-   [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — This table contains information about each query execution thread.

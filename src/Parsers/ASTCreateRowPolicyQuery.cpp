@@ -63,6 +63,7 @@ namespace
     {
         std::vector<std::pair<ConditionType, String>> conditions_as_strings;
         std::stringstream temp_sstream;
+        temp_sstream.exceptions(std::ios::failbit);
         IAST::FormatSettings temp_settings(temp_sstream, settings);
         for (const auto & [condition_type, condition] : conditions)
         {

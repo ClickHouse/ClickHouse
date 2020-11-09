@@ -127,6 +127,7 @@ std::shared_ptr<ASTAlterCommandList> MutationCommands::ast() const
 void MutationCommands::writeText(WriteBuffer & out) const
 {
     std::stringstream commands_ss;
+    commands_ss.exceptions(std::ios::failbit);
     formatAST(*ast(), commands_ss, /* hilite = */ false, /* one_line = */ true);
     out << escape << commands_ss.str();
 }

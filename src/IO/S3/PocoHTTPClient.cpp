@@ -248,6 +248,7 @@ void PocoHTTPClient::makeRequestInternal(
             response->SetContentType(poco_response.getContentType());
 
             std::stringstream headers_ss;
+            headers_ss.exceptions(std::ios::failbit);
             for (const auto & [header_name, header_value] : poco_response)
             {
                 response->AddHeader(header_name, header_value);

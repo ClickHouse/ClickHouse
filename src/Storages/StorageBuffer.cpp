@@ -130,7 +130,7 @@ private:
 };
 
 
-QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, const ASTPtr & query_ptr) const
+QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, SelectQueryInfo & query_info) const
 {
     if (destination_id)
     {
@@ -139,7 +139,7 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(const Context 
         if (destination.get() == this)
             throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
-        return destination->getQueryProcessingStage(context, to_stage, query_ptr);
+        return destination->getQueryProcessingStage(context, to_stage, query_info);
     }
 
     return QueryProcessingStage::FetchColumns;
@@ -149,7 +149,7 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(const Context 
 Pipe StorageBuffer::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    const SelectQueryInfo & query_info,
+    SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
@@ -179,7 +179,7 @@ Pipe StorageBuffer::read(
         if (dst_has_same_structure)
         {
             if (query_info.order_optimizer)
-                query_info.input_order_info = query_info.order_optimizer->getInputOrder(destination, destination_metadata_snapshot);
+                query_info.input_order_info = query_info.order_optimizer->getInputOrder(destination_metadata_snapshot);
 
             /// The destination table has the same structure of the requested columns and we can simply read blocks from there.
             pipe_from_dst = destination->read(
