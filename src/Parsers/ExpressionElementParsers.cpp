@@ -1317,7 +1317,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
             if (pos->type != TokenType::ClosingRoundBracket)
                 return false;
             ++pos;
-	}
+        }
 
         auto res = std::make_shared<ASTColumnsApplyTransformer>();
         res->func_name = getIdentifierName(func_name);

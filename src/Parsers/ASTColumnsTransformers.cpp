@@ -43,7 +43,7 @@ void ASTColumnsApplyTransformer::formatImpl(const FormatSettings & settings, For
         parameters->formatImpl(settings, state, frame);
 
     if (!column_name_prefix.empty())
-	settings.ostr << ", '" << column_name_prefix << "')";
+        settings.ostr << ", '" << column_name_prefix << "')";
 }
 
 void ASTColumnsApplyTransformer::transform(ASTs & nodes) const
@@ -214,12 +214,12 @@ void ASTColumnsReplaceTransformer::transform(ASTs & nodes) const
 
     if (is_strict && !replace_map.empty())
     {
-        String expected_columns = "";
-        for (auto it = replace_map.begin(); it != replace_map.end(); ++it)
+        String expected_columns;
+        for (auto & elem: replace_map)
         {
-            if (expected_columns != "")
+            if (!expected_columns.empty())
                 expected_columns += ", ";
-            expected_columns += it->first;
+            expected_columns += elem.first;
         }
         throw Exception(
             "Columns transformer REPLACE expects following column(s) : " + expected_columns,
