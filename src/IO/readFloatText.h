@@ -489,8 +489,8 @@ ReturnType readFloatTextWithFastFloatImpl(T & x, ReadBuffer & in)
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
     /// Fast path
-    
-    char *initial_position = in.position();
+
+    char * initial_position = in.position();
     auto res = fast_float::from_chars(initial_position, in.buffer().end(), x);
     in.position() += res.ptr - initial_position;
 
