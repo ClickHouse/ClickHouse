@@ -37,8 +37,6 @@ static void write(bool x, WriteBuffer & out)
 
 static void write(const String & s, WriteBuffer & out)
 {
-
-    LOG_DEBUG(&Poco::Logger::get("LOG"), "S SIZE {}", s.size());
     write(int32_t(s.size()), out);
     out.write(s.data(), s.size());
 }
