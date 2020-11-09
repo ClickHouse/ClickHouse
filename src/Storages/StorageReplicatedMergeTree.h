@@ -198,8 +198,11 @@ public:
      */
     static void dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica, Poco::Logger * logger);
 
+    /// Get job to execute in background pool (merge, mutate, drop range and so on)
     std::optional<JobAndPool> getDataProcessingJob() override;
 
+    /// Checks that fetches are not disabled with action blocker and pool for fetches
+    /// is not overloaded
     bool canExecuteFetch(const ReplicatedMergeTreeLogEntry & entry, String & disable_reason) const;
 
 private:
