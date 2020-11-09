@@ -82,6 +82,7 @@ NamesAndTypesList StorageDictionary::getNamesAndTypes(const DictionaryStructure 
 String StorageDictionary::generateNamesAndTypesDescription(const NamesAndTypesList & list)
 {
     std::stringstream ss;
+    ss.exceptions(std::ios::failbit);
     bool first = true;
     for (const auto & name_and_type : list)
     {
@@ -132,7 +133,7 @@ void StorageDictionary::checkTableCanBeDropped() const
 Pipe StorageDictionary::read(
     const Names & column_names,
     const StorageMetadataPtr & /*metadata_snapshot*/,
-    const SelectQueryInfo & /*query_info*/,
+    SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,

@@ -71,6 +71,7 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric DelayedInserts;
+    extern const Metric BackgroundMovePoolTask;
 }
 
 
@@ -3216,6 +3217,7 @@ void MergeTreeData::Transaction::rollbackPartsToTemporaryState()
     if (!isEmpty())
     {
         std::stringstream ss;
+        ss.exceptions(std::ios::failbit);
         ss << " Rollbacking parts state to temporary and removing from working set:";
         for (const auto & part : precommitted_parts)
             ss << " " << part->relative_path;
@@ -3234,6 +3236,7 @@ void MergeTreeData::Transaction::rollback()
     if (!isEmpty())
     {
         std::stringstream ss;
+        ss.exceptions(std::ios::failbit);
         ss << " Removing parts:";
         for (const auto & part : precommitted_parts)
             ss << " " << part->relative_path;
@@ -3625,10 +3628,25 @@ bool MergeTreeData::selectPartsAndMove()
         return false;
 
     auto moving_tagger = selectPartsForMove();
-    if (moving_tagger.parts_to_move.empty())
+    if (moving_tagger->parts_to_move.empty())
         return false;
 
     return moveParts(std::move(moving_tagger));
+}
+
+std::optional<JobAndPool> MergeTreeData::getDataMovingJob()
+{
+    if (parts_mover.moves_blocker.isCancelled())
+        return {};
+
+    auto moving_tagger = selectPartsForMove();
+    if (moving_tagger->parts_to_move.empty())
+        return {};
+
+    return JobAndPool{[this, moving_tagger] () mutable
+    {
+        moveParts(moving_tagger);
+    }, PoolType::MOVE};
 }
 
 bool MergeTreeData::areBackgroundMovesNeeded() const
@@ -3647,13 +3665,13 @@ bool MergeTreeData::movePartsToSpace(const DataPartsVector & parts, SpacePtr spa
         return false;
 
     auto moving_tagger = checkPartsForMove(parts, space);
-    if (moving_tagger.parts_to_move.empty())
+    if (moving_tagger->parts_to_move.empty())
         return false;
 
-    return moveParts(std::move(moving_tagger));
+    return moveParts(moving_tagger);
 }
 
-MergeTreeData::CurrentlyMovingPartsTagger MergeTreeData::selectPartsForMove()
+MergeTreeData::CurrentlyMovingPartsTaggerPtr MergeTreeData::selectPartsForMove()
 {
     MergeTreeMovingParts parts_to_move;
 
@@ -3676,10 +3694,10 @@ MergeTreeData::CurrentlyMovingPartsTagger MergeTreeData::selectPartsForMove()
     std::lock_guard moving_lock(moving_parts_mutex);
 
     parts_mover.selectPartsForMove(parts_to_move, can_move, moving_lock);
-    return CurrentlyMovingPartsTagger(std::move(parts_to_move), *this);
+    return std::make_shared<CurrentlyMovingPartsTagger>(std::move(parts_to_move), *this);
 }
 
-MergeTreeData::CurrentlyMovingPartsTagger MergeTreeData::checkPartsForMove(const DataPartsVector & parts, SpacePtr space)
+MergeTreeData::CurrentlyMovingPartsTaggerPtr MergeTreeData::checkPartsForMove(const DataPartsVector & parts, SpacePtr space)
 {
     std::lock_guard moving_lock(moving_parts_mutex);
 
@@ -3704,14 +3722,14 @@ MergeTreeData::CurrentlyMovingPartsTagger MergeTreeData::checkPartsForMove(const
 
         parts_to_move.emplace_back(part, std::move(reservation));
     }
-    return CurrentlyMovingPartsTagger(std::move(parts_to_move), *this);
+    return std::make_shared<CurrentlyMovingPartsTagger>(std::move(parts_to_move), *this);
 }
 
-bool MergeTreeData::moveParts(CurrentlyMovingPartsTagger && moving_tagger)
+bool MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagger)
 {
-    LOG_INFO(log, "Got {} parts to move.", moving_tagger.parts_to_move.size());
+    LOG_INFO(log, "Got {} parts to move.", moving_tagger->parts_to_move.size());
 
-    for (const auto & moving_part : moving_tagger.parts_to_move)
+    for (const auto & moving_part : moving_tagger->parts_to_move)
     {
         Stopwatch stopwatch;
         DataPartPtr cloned_part;
@@ -3754,6 +3772,7 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
             || settings.min_rows_for_compact_part != 0 || settings.min_bytes_for_compact_part != 0))
         {
             std::ostringstream message;
+            message.exceptions(std::ios::failbit);
             message << "Table can't create parts with adaptive granularity, but settings"
                     << " min_rows_for_wide_part = " << settings.min_rows_for_wide_part
                     << ", min_bytes_for_wide_part = " << settings.min_bytes_for_wide_part

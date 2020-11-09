@@ -6,6 +6,7 @@
 #include <Poco/File.h>
 
 #include <Common/FieldVisitors.h>
+#include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeReverseSelectProcessor.h>
@@ -82,6 +83,17 @@ static Block getBlockWithPartColumn(const MergeTreeData::DataPartsVector & parts
     return Block{ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "_part")};
 }
 
+/// Check if ORDER BY clause of the query has some expression.
+static bool sortingDescriptionHasExpressions(const SortDescription & sort_description, const StorageMetadataPtr & metadata_snapshot)
+{
+    auto all_columns = metadata_snapshot->getColumns();
+    for (const auto & sort_column : sort_description)
+    {
+        if (!all_columns.has(sort_column.column_name))
+            return true;
+    }
+    return false;
+}
 
 size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
     const MergeTreeData::DataPartsVector & parts,
@@ -217,6 +229,7 @@ Pipe MergeTreeDataSelectExecutor::readFromParts(
     if (settings.force_primary_key && key_condition.alwaysUnknownOrTrue())
     {
         std::stringstream exception_message;
+        exception_message.exceptions(std::ios::failbit);
         exception_message << "Primary key (";
         for (size_t i = 0, size = primary_key_columns.size(); i < size; ++i)
             exception_message << (i == 0 ? "" : ", ") << primary_key_columns[i];
@@ -226,13 +239,15 @@ Pipe MergeTreeDataSelectExecutor::readFromParts(
     }
 
     std::optional<KeyCondition> minmax_idx_condition;
+    std::optional<PartitionPruner> partition_pruner;
     if (data.minmax_idx_expr)
     {
         minmax_idx_condition.emplace(query_info, context, data.minmax_idx_columns, data.minmax_idx_expr);
+        partition_pruner.emplace(metadata_snapshot->getPartitionKey(), query_info, context, false /* strict */);
 
-        if (settings.force_index_by_date && minmax_idx_condition->alwaysUnknownOrTrue())
+        if (settings.force_index_by_date && (minmax_idx_condition->alwaysUnknownOrTrue() && partition_pruner->isUseless()))
         {
-            String msg = "MinMax index by columns (";
+            String msg = "Neither MinMax index by columns (";
             bool first = true;
             for (const String & col : data.minmax_idx_columns)
             {
@@ -242,7 +257,7 @@ Pipe MergeTreeDataSelectExecutor::readFromParts(
                     msg += ", ";
                 msg += col;
             }
-            msg += ") is not used and setting 'force_index_by_date' is set";
+            msg += ") nor partition expr is used and setting 'force_index_by_date' is set";
 
             throw Exception(msg, ErrorCodes::INDEX_NOT_USED);
         }
@@ -265,6 +280,12 @@ Pipe MergeTreeDataSelectExecutor::readFromParts(
             if (minmax_idx_condition && !minmax_idx_condition->checkInHyperrectangle(
                     part->minmax_idx.hyperrectangle, data.minmax_idx_column_types).can_be_true)
                 continue;
+
+            if (partition_pruner)
+            {
+                if (partition_pruner->canBePruned(part))
+                    continue;
+            }
 
             if (max_block_numbers_to_read)
             {
@@ -365,6 +386,15 @@ Pipe MergeTreeDataSelectExecutor::readFromParts(
       * It is very important that the intervals for different `parallel_replica_offset` cover the entire range without gaps and overlaps.
       * It is also important that the entire universe can be covered using SAMPLE 0.1 OFFSET 0, ... OFFSET 0.9 and similar decimals.
       */
+
+    /// Parallel replicas has been requested but there is no way to sample data.
+    /// Select all data from first replica and no data from other replicas.
+    if (settings.parallel_replicas_count > 1 && !data.supportsSampling() && settings.parallel_replica_offset > 0)
+    {
+        LOG_DEBUG(log, "Will use no data on this replica because parallel replicas processing has been requested"
+            " (the setting 'max_parallel_replicas') but the table does not support sampling and this replica is not the first.");
+        return {};
+    }
 
     bool use_sampling = relative_sample_size > 0 || (settings.parallel_replicas_count > 1 && data.supportsSampling());
     bool no_data = false;   /// There is nothing left after sampling.
@@ -1065,6 +1095,7 @@ Pipe MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
 
     const size_t min_marks_per_stream = (sum_marks - 1) / num_streams + 1;
     bool need_preliminary_merge = (parts.size() > settings.read_in_order_two_level_merge_threshold);
+    size_t max_output_ports = 0;
 
     for (size_t i = 0; i < num_streams && !parts.empty(); ++i)
     {
@@ -1174,25 +1205,43 @@ Pipe MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
             });
         }
 
-        if (pipe.numOutputPorts() > 1 && need_preliminary_merge)
+        max_output_ports = std::max(pipe.numOutputPorts(), max_output_ports);
+        res.emplace_back(std::move(pipe));
+    }
+
+    if (need_preliminary_merge)
+    {
+        /// If ORDER BY clause of the query contains some expression,
+        /// then those new columns should be added for the merge step,
+        /// and this should be done always, if there is at least one pipe that
+        /// has multiple output ports.
+        bool sorting_key_has_expression = sortingDescriptionHasExpressions(input_order_info->order_key_prefix_descr, metadata_snapshot);
+        bool force_sorting_key_transform = res.size() > 1 && max_output_ports > 1 && sorting_key_has_expression;
+
+        for (auto & pipe : res)
         {
             SortDescription sort_description;
-            for (size_t j = 0; j < input_order_info->order_key_prefix_descr.size(); ++j)
-                sort_description.emplace_back(metadata_snapshot->getSortingKey().column_names[j],
-                                              input_order_info->direction, 1);
 
-            /// Drop temporary columns, added by 'sorting_key_prefix_expr'
-            out_projection = createProjection(pipe, data);
-            pipe.addSimpleTransform([sorting_key_prefix_expr](const Block & header)
+            if (pipe.numOutputPorts() > 1 || force_sorting_key_transform)
             {
-                return std::make_shared<ExpressionTransform>(header, sorting_key_prefix_expr);
-            });
+                for (size_t j = 0; j < input_order_info->order_key_prefix_descr.size(); ++j)
+                    sort_description.emplace_back(metadata_snapshot->getSortingKey().column_names[j],
+                                                  input_order_info->direction, 1);
 
-            pipe.addTransform(std::make_shared<MergingSortedTransform>(
-                    pipe.getHeader(), pipe.numOutputPorts(), sort_description, max_block_size));
+                /// Drop temporary columns, added by 'sorting_key_prefix_expr'
+                out_projection = createProjection(pipe, data);
+                pipe.addSimpleTransform([sorting_key_prefix_expr](const Block & header)
+                {
+                    return std::make_shared<ExpressionTransform>(header, sorting_key_prefix_expr);
+                });
+            }
+
+            if (pipe.numOutputPorts() > 1)
+            {
+                pipe.addTransform(std::make_shared<MergingSortedTransform>(
+                        pipe.getHeader(), pipe.numOutputPorts(), sort_description, max_block_size));
+            }
         }
-
-        res.emplace_back(std::move(pipe));
     }
 
     return Pipe::unitePipes(std::move(res));
