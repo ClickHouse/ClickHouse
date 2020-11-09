@@ -195,7 +195,7 @@ AggregateFunctionPtr AggregateFunctionIf::getOwnNullAdapter(
             if (serialize_flag)
                 return std::make_shared<AggregateFunctionIfNullVariadic<false, true, true>>(nested_function, arguments, params);
             else
-                return std::make_shared<AggregateFunctionIfNullVariadic<false, true, false>>(nested_function, arguments, params);
+                return std::make_shared<AggregateFunctionIfNullVariadic<false, false, true>>(nested_function, arguments, params);
         }
     }
 }
