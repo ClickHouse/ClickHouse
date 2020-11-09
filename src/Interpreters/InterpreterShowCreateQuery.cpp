@@ -79,6 +79,7 @@ BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
     }
 
     std::stringstream stream;
+    stream.exceptions(std::ios::failbit);
     formatAST(*create_query, stream, false, false);
     String res = stream.str();
 

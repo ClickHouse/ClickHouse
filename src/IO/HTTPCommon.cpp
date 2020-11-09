@@ -240,6 +240,7 @@ void assertResponseIsOk(const Poco::Net::HTTPRequest & request, Poco::Net::HTTPR
     if (!(status == Poco::Net::HTTPResponse::HTTP_OK || (isRedirect(status) && allow_redirects)))
     {
         std::stringstream error_message;
+        error_message.exceptions(std::ios::failbit);
         error_message << "Received error from remote server " << request.getURI() << ". HTTP status code: " << status << " "
                       << response.getReason() << ", body: " << istr.rdbuf();
 

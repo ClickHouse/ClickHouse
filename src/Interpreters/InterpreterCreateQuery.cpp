@@ -136,6 +136,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     {
         /// Currently, there are no database engines, that support any arguments.
         std::stringstream ostr;
+        ostr.exceptions(std::ios::failbit);
         formatAST(*create.storage, ostr, false, false);
         throw Exception("Unknown database engine: " + ostr.str(), ErrorCodes::UNKNOWN_DATABASE_ENGINE);
     }
@@ -182,6 +183,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         create.if_not_exists = false;
 
         std::ostringstream statement_stream;
+        statement_stream.exceptions(std::ios::failbit);
         formatAST(create, statement_stream, false);
         statement_stream << '\n';
         String statement = statement_stream.str();
