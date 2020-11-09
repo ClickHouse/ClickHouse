@@ -312,6 +312,7 @@ public:
     ExpressionActions & operator=(const ExpressionActions &) = delete;
 
     const Actions & getActions() const { return actions; }
+    const std::list<Node> & getNodes() const { return nodes; }
 
     /// Adds to the beginning the removal of all extra columns.
     void projectInput() { project_input = true; }

@@ -19,6 +19,7 @@
 #include <Parsers/ASTIdentifier.h>
 
 #include <cassert>
+#include <stack>
 
 
 namespace DB
@@ -651,12 +652,12 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
 
 /// Looking for possible transformation of `column = constant` into `partition_expr = function(constant)`
 bool KeyCondition::canConstantBeWrappedByFunctions(
-    const ASTPtr & node, size_t & out_key_column_num, DataTypePtr & out_key_column_type, Field & out_value, DataTypePtr & out_type)
+    const ASTPtr & ast, size_t & out_key_column_num, DataTypePtr & out_key_column_type, Field & out_value, DataTypePtr & out_type)
 {
     if (strict)
         return false;
 
-    String expr_name = node->getColumnName();
+    String expr_name = ast->getColumnName();
     const auto & sample_block = key_expr->getSampleBlock();
     if (!sample_block.has(expr_name))
         return false;
@@ -665,58 +666,98 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
     if (out_value.isNull())
         return false;
 
-    bool found_transformation = false;
-    auto input_column = sample_block.getByName(expr_name);
-    auto const_column = out_type->createColumnConst(1, out_value);
-    out_value = (*castColumn({const_column, out_type, "c"}, input_column.type))[0];
-    out_type = input_column.type;
-    Block transform({{input_column.type->createColumn(), input_column.type, input_column.name}});
-    for (const auto & action : key_expr->getActions())
+    for (const auto & node : key_expr->getNodes())
     {
-        if (action.node->type == ActionsDAG::Type::FUNCTION)
+        auto it = key_columns.find(node.result_name);
+        if (it != key_columns.end())
         {
-            if (!action.node->function_base->isDeterministic())
-                return false;
-            if (action.node->children.size() == 1 && action.node->children[0]->result_name == expr_name)
+            std::stack<const ActionsDAG::Node *> chain;
+
+            const auto * cur_node = &node;
+            bool is_valid_chain = true;
+
+            while (is_valid_chain)
             {
-                std::tie(out_value, out_type) = applyFunctionForFieldOfUnknownType(action.node->function_builder, out_type, out_value);
-            }
-            else if (action.node->children.size() == 2)
-            {
-                if (!transform.has(action.node->children[0]->result_name) || !transform.has(action.node->children[1]->result_name))
-                    return false;
-                auto left = transform.getByName(action.node->children[0]->result_name);
-                auto right = transform.getByName(action.node->children[1]->result_name);
-                if (isColumnConst(*left.column))
+                if (cur_node->result_name == expr_name)
+                    break;
+
+                chain.push(cur_node);
+
+                if (cur_node->type == ActionsDAG::Type::FUNCTION && cur_node->children.size() <= 2)
                 {
-                    auto left_arg_type = left.type;
-                    auto left_arg_value = (*left.column)[0];
-                    std::tie(out_value, out_type) = applyBinaryFunctionForFieldOfUnknownType(
-                            action.node->function_builder, left_arg_type, left_arg_value, out_type, out_value);
+                    if (!cur_node->function_base->isDeterministic())
+                        is_valid_chain = false;
+
+                    const ActionsDAG::Node * next_node = nullptr;
+                    for (const auto * arg : cur_node->children)
+                    {
+                        if (arg->column && isColumnConst(*arg->column))
+                            continue;
+
+                        if (next_node)
+                            is_valid_chain = false;
+
+                        next_node = arg;
+                    }
+
+                    cur_node = next_node;
                 }
-                else if (isColumnConst(*right.column))
-                {
-                    auto right_arg_type = right.type;
-                    auto right_arg_value = (*right.column)[0];
-                    std::tie(out_value, out_type) = applyBinaryFunctionForFieldOfUnknownType(
-                            action.node->function_builder, out_type, out_value, right_arg_type, right_arg_value);
-                }
+                else if (cur_node->type == ActionsDAG::Type::ALIAS)
+                    cur_node = cur_node->children.front();
+                else
+                    is_valid_chain = false;
             }
 
-            expr_name = action.node->result_name;
-            auto it = key_columns.find(expr_name);
-            if (key_columns.end() != it)
+            if (is_valid_chain)
             {
+                {
+                    auto input_column = sample_block.getByName(expr_name);
+                    auto const_column = out_type->createColumnConst(1, out_value);
+                    out_value = (*castColumn({const_column, out_type, "c"}, input_column.type))[0];
+                    out_type = input_column.type;
+                }
+
+                while (!chain.empty())
+                {
+                    const auto * func = chain.top();
+                    chain.pop();
+
+                    if (func->type != ActionsDAG::Type::FUNCTION)
+                        continue;
+
+                    if (func->children.size() == 1)
+                    {
+                        std::tie(out_value, out_type) = applyFunctionForFieldOfUnknownType(func->function_builder, out_type, out_value);
+                    }
+                    else if (func->children.size() == 2)
+                    {
+                        const auto * left = func->children[0];
+                        const auto * right = func->children[1];
+                        if (left->column && isColumnConst(*left->column))
+                        {
+                            auto left_arg_type = left->result_type;
+                            auto left_arg_value = (*left->column)[0];
+                            std::tie(out_value, out_type) = applyBinaryFunctionForFieldOfUnknownType(
+                                    func->function_builder, left_arg_type, left_arg_value, out_type, out_value);
+                        }
+                        else
+                        {
+                            auto right_arg_type = right->result_type;
+                            auto right_arg_value = (*right->column)[0];
+                            std::tie(out_value, out_type) = applyBinaryFunctionForFieldOfUnknownType(
+                                    func->function_builder, out_type, out_value, right_arg_type, right_arg_value);
+                        }
+                    }
+                }
+
                 out_key_column_num = it->second;
                 out_key_column_type = sample_block.getByName(it->first).type;
-                found_transformation = true;
-                break;
+                return true;
             }
         }
-        action.execute(transform, true);
     }
 
-    return found_transformation;
+    return false;
 }
 
 bool KeyCondition::tryPrepareSetIndex(
