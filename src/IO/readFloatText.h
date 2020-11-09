@@ -269,9 +269,23 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
 }
 
 
+// credit: https://johnnylee-sde.github.io/Fast-numeric-string-to-int/
+inline bool is_made_of_eight_digits_fast(uint64_t val) noexcept
+{
+    return (((val & 0xF0F0F0F0F0F0F0F0) | (((val + 0x0606060606060606) & 0xF0F0F0F0F0F0F0F0) >> 4)) == 0x3333333333333333);
+}
+
+inline bool is_made_of_eight_digits_fast(const char * chars) noexcept
+{
+    uint64_t val;
+    ::memcpy(&val, chars, 8);
+    return is_made_of_eight_digits_fast(val);
+}
+
 template <size_t N, typename T>
 static inline void readUIntTextUpToNSignificantDigits(T & x, ReadBuffer & buf)
 {
+    
     /// In optimistic case we can skip bound checking for first loop.
     if (buf.position() + N <= buf.buffer().end())
     {
@@ -286,9 +300,6 @@ static inline void readUIntTextUpToNSignificantDigits(T & x, ReadBuffer & buf)
             else
                 return;
         }
-
-        while (!buf.eof() && isNumericASCII(*buf.position()))
-            ++buf.position();
     }
     else
     {
@@ -303,10 +314,16 @@ static inline void readUIntTextUpToNSignificantDigits(T & x, ReadBuffer & buf)
             else
                 return;
         }
-
-        while (!buf.eof() && isNumericASCII(*buf.position()))
-            ++buf.position();
     }
+
+    while (!buf.eof() && (buf.position() + 8 <= buf.buffer().end()) &&
+         is_made_of_eight_digits_fast(buf.position()))
+    {
+        buf.position() += 8;
+    }
+
+    while (!buf.eof() && isNumericASCII(*buf.position()))
+        ++buf.position();
 }
 
 
