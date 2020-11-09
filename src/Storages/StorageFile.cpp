@@ -167,20 +167,6 @@ StorageFile::StorageFile(int table_fd_, CommonArguments args)
 StorageFile::StorageFile(const std::string & table_path_, const std::string & user_files_path, CommonArguments args)
     : StorageFile(args)
 {
-//    fmt::print(stderr, "Create storage File '{}' from file at \n{}\n",
-//        args.table_id.getNameForLogs(), StackTrace().toString());
-//
-//    const auto & changes = args.context.getSettings().changes();
-//    for (const auto & change : changes)
-//    {
-//        fmt::print(stderr, "Changed setting '{}' to '{}'\n",
-//            change.name, toString(change.value));
-//    }
-//
-//    fmt::print(stderr, "delimiter = '{}'\n",
-//        toString(args.context.getSettings().get("format_csv_delimiter")));
-
-
     is_db_table = false;
     paths = getPathsList(table_path_, user_files_path, args.context);
 
@@ -204,9 +190,6 @@ StorageFile::StorageFile(const std::string & table_path_, const std::string & us
 StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArguments args)
     : StorageFile(args)
 {
-//    fmt::print(stderr, "Create storage File '{}' from database at \n{}\n",
-//        args.table_id.getNameForLogs(), StackTrace().toString());
-
     if (relative_table_dir_path.empty())
         throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
     if (args.format_name == "Distributed")
@@ -262,12 +245,12 @@ public:
     }
 
     StorageFileSource(
-            std::shared_ptr<StorageFile> storage_,
-            const StorageMetadataPtr & metadata_snapshot_,
-            const Context & context_,
-            UInt64 max_block_size_,
-            FilesInfoPtr files_info_,
-            ColumnsDescription columns_description_)
+        std::shared_ptr<StorageFile> storage_,
+        const StorageMetadataPtr & metadata_snapshot_,
+        const Context & context_,
+        UInt64 max_block_size_,
+        FilesInfoPtr files_info_,
+        ColumnsDescription columns_description_)
         : SourceWithProgress(getHeader(metadata_snapshot_, files_info_->need_path_column, files_info_->need_file_column))
         , storage(std::move(storage_))
         , metadata_snapshot(metadata_snapshot_)
@@ -469,7 +452,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         const CompressionMethod compression_method,
         const Context & context,
-        const FormatSettings & format_settings)
+        const std::optional<FormatSettings> & format_settings)
         : storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
         , lock(storage.rwlock)
@@ -640,18 +623,35 @@ void registerStorageFile(StorageFactory & factory)
             engine_args_ast[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args_ast[0], factory_args.local_context);
             storage_args.format_name = engine_args_ast[0]->as<ASTLiteral &>().value.safeGet<String>();
 
+            // Use format settings from global server context + settings from
+            // the SETTINGS clause of the create query. Settings from current
+            // session and user are ignored.
             if (factory_args.storage_def->settings)
             {
-                Context local_context_copy = factory_args.local_context;
-                local_context_copy.applySettingsChanges(
+                FormatFactorySettings user_format_settings;
+
+                // Apply changed settings from global context, but ignore the
+                // unknown ones, because we only have the format settings here.
+                const auto & changes = factory_args.context.getSettingsRef().changes();
+                for (const auto & change : changes)
+                {
+                    if (user_format_settings.has(change.name))
+                    {
+                        user_format_settings.set(change.name, change.value);
+                    }
+                }
+
+                // Apply changes from SETTINGS clause, with validation.
+                user_format_settings.applyChanges(
                     factory_args.storage_def->settings->changes);
+
                 storage_args.format_settings = getFormatSettings(
-                    local_context_copy);
+                    factory_args.context, user_format_settings);
             }
             else
             {
                 storage_args.format_settings = getFormatSettings(
-                    factory_args.local_context);
+                    factory_args.context);
             }
 
             if (engine_args_ast.size() == 1) /// Table in database
