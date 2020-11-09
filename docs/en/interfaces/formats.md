@@ -1293,7 +1293,7 @@ To exchange data with Hadoop, you can use [HDFS table engine](../engines/table-e
 
 ## LineAsString {#lineasstring}
 
-In this format, a sequence of string objects separated by a newline character is interpreted as a single value. This format can only be parsed for table with a single field of type [String](../sql-reference/data-types/string.md). The remaining columns must be set to  [DEFAULT](../sql-reference/statements/create/table.md#default) or [MATERIALIZED](../sql-reference/statements/create/table.md#materialized), or omitted.
+In this format, every line of input data is interpreted as a single string value. This format can only be parsed for table with a single field of type [String](../sql-reference/data-types/string.md). The remaining columns must be set to [DEFAULT](../sql-reference/statements/create/table.md#default) or [MATERIALIZED](../sql-reference/statements/create/table.md#materialized), or omitted.
 
 **Example**
 
@@ -1315,6 +1315,8 @@ Result:
 ```
 
 ## Regexp {#data-format-regexp}
+
+Each line of imported data is parsed according to the regular expression.
 
 When working with the `Regexp` format, you can use the following settings:
 
