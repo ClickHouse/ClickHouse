@@ -16,7 +16,7 @@ $ /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/inst
 ## Install Required Compilers, Tools, and Libraries {#install-required-compilers-tools-and-libraries}
 
 ``` bash
-$ brew install cmake ninja libtool gettext
+$ brew install cmake ninja libtool gettext llvm
 ```
 
 ## Checkout ClickHouse Sources {#checkout-clickhouse-sources}
@@ -38,7 +38,11 @@ $ cd ClickHouse
 ``` bash
 $ mkdir build
 $ cd build
-$ cmake .. -DCMAKE_CXX_COMPILER=`which clang++` -DCMAKE_C_COMPILER=`which clang`
+$ export PATH=/usr/local/opt/llvm/bin:$PATH
+$ export LDFLAGS="-L/usr/local/opt/llvm/lib"
+$ export CPPFLAGS="-I/usr/local/opt/llvm/include"
+$ LDFLAGS="-L/usr/local/opt/llvm/lib -Wl,-rpath,/usr/local/opt/llvm/lib"
+$ cmake .. -DCMAKE_CXX_COMPILER=/usr/local/opt/llvm/bin/clang -DCMAKE_C_COMPILER=/usr/local/opt/llvm/bin/clang
 $ ninja
 $ cd ..
 ```
