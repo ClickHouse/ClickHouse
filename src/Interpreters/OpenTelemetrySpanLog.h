@@ -11,8 +11,8 @@ struct OpenTelemetrySpan
     UInt64 span_id;
     UInt64 parent_span_id;
     std::string operation_name;
-    UInt64 start_time_us;
-    UInt64 finish_time_us;
+    Decimal64 start_time_us;
+    Decimal64 finish_time_us;
     UInt64 duration_ns;
     Array attribute_names;
     Array attribute_values;

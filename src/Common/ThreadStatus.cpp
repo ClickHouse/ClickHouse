@@ -80,6 +80,7 @@ void ThreadStatus::assertState(const std::initializer_list<int> & permitted_stat
     }
 
     std::stringstream ss;
+    ss.exceptions(std::ios::failbit);
     ss << "Unexpected thread state " << getCurrentState();
     if (description)
         ss << ": " << description;

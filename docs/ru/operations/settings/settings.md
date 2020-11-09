@@ -1977,6 +1977,48 @@ SELECT range(number) FROM system.numbers LIMIT 5 FORMAT PrettyCompactNoEscapes;
 └───────────────┘
 ```
 
+## output_format_pretty_row_numbers {#output_format_pretty_row_numbers}
+
+Включает режим отображения номеров строк для запросов, выводимых в формате [Pretty](../../interfaces/formats.md#pretty).
+
+Возможные значения:
+
+-   0 — номера строк не выводятся.
+-   1 — номера строк выводятся.
+
+Значение по умолчанию: `0`.
+
+**Пример**
+
+Запрос:
+
+```sql
+SET output_format_pretty_row_numbers = 1;
+SELECT TOP 3 name, value FROM system.settings;
+```
+
+Результат:
+
+```text
+   ┌─name────────────────────┬─value───┐
+1. │ min_compress_block_size │ 65536   │
+2. │ max_compress_block_size │ 1048576 │
+3. │ max_block_size          │ 65505   │
+   └─────────────────────────┴─────────┘
+```
+
+## allow_experimental_bigint_types {#allow_experimental_bigint_types}
+
+Включает или отключает поддержку целочисленных значений, превышающих максимальное значение, допустимое для типа `int`.
+
+Возможные значения:
+
+-   1 — большие целочисленные значения поддерживаются.
+-   0 — большие целочисленные значения не поддерживаются.
+
+Значение по умолчанию: `0`.
+
+
 ## lock_acquire_timeout {#lock_acquire_timeout}
 
 Устанавливает, сколько секунд сервер ожидает возможности выполнить блокировку таблицы.
@@ -2039,5 +2081,18 @@ SELECT CAST(toNullable(toInt32(0)) AS Int32) as x, toTypeName(x);
 **См. также** 
 
 -   Функция [CAST](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) 
+
+## persistent {#persistent}
+
+Отключает перманентность для табличных движков [Set](../../engines/table-engines/special/set.md#set) и [Join](../../engines/table-engines/special/join.md#join).
+
+Уменьшает расходы на ввод/вывод. Может быть полезно, когда требуется высокая производительность, а перманентность не обязательна.
+
+Возможные значения:
+
+- 1 — включено.
+- 0 — отключено.
+
+Значение по умолчанию: `1`.
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->

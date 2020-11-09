@@ -416,7 +416,7 @@ private:
 Pipe StorageFile::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    const SelectQueryInfo & /*query_info*/,
+    SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
@@ -550,6 +550,11 @@ BlockOutputStreamPtr StorageFile::write(
     return std::make_shared<StorageFileBlockOutputStream>(*this, metadata_snapshot,
         chooseCompressionMethod(path, compression_method), context,
         format_settings);
+}
+
+bool StorageFile::storesDataOnDisk() const
+{
+    return is_db_table;
 }
 
 Strings StorageFile::getDataPaths() const

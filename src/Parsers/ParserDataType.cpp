@@ -10,6 +10,29 @@
 namespace DB
 {
 
+namespace
+{
+
+/// Wrapper to allow mixed lists of nested and normal types.
+class ParserNestedTableOrExpression : public IParserBase
+{
+    private:
+        const char * getName() const override { return "data type or expression"; }
+        bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+        {
+            ParserNestedTable parser1;
+
+            if (parser1.parse(pos, node, expected))
+                return true;
+
+            ParserExpression parser2;
+
+            return parser2.parse(pos, node, expected);
+        }
+};
+
+}
+
 bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserNestedTable nested;
@@ -80,6 +103,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ++pos;
 
     /// Parse optional parameters
+    ParserList args_parser(std::make_unique<ParserNestedTableOrExpression>(), std::make_unique<ParserToken>(TokenType::Comma));
     ASTPtr expr_list_args;
 
     ParserList args_parser_nested(std::make_unique<ParserNestedTable>(), std::make_unique<ParserToken>(TokenType::Comma), false);

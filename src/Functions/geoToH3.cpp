@@ -1,3 +1,9 @@
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
+
+#if USE_H3
+
 #include <array>
 #include <math.h>
 #include <Columns/ColumnsNumber.h>
@@ -94,3 +100,5 @@ void registerFunctionGeoToH3(FunctionFactory & factory)
 }
 
 }
+
+#endif
