@@ -66,6 +66,7 @@
 #include <Interpreters/InterpreterUseQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
 #include <Interpreters/InterpreterExternalDDLQuery.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 
 #include <Parsers/ASTSystemQuery.h>
 
@@ -93,6 +94,8 @@ namespace ErrorCodes
 
 std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & context, QueryProcessingStage::Enum stage)
 {
+    OpenTelemetrySpanHolder span(__FUNCTION__);
+
     ProfileEvents::increment(ProfileEvents::Query);
 
     if (query->as<ASTSelectQuery>())

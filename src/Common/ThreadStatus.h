@@ -31,6 +31,7 @@ class ThreadStatus;
 class QueryProfilerReal;
 class QueryProfilerCpu;
 class QueryThreadLog;
+struct OpenTelemetrySpanHolder;
 class TasksStatsCounters;
 struct RUsageCounters;
 struct PerfEventsCounters;
@@ -86,9 +87,6 @@ extern thread_local ThreadStatus * current_thread;
 class ThreadStatus : public boost::noncopyable
 {
 public:
-    ThreadStatus();
-    ~ThreadStatus();
-
     /// Linux's PID (or TGID) (the same id is shown by ps util)
     const UInt64 thread_id = 0;
     /// Also called "nice" value. If it was changed to non-zero (when attaching query) - will be reset to zero when query is detached.
@@ -109,6 +107,50 @@ public:
 
     using Deleter = std::function<void()>;
     Deleter deleter;
+
+    __uint128_t opentelemetry_trace_id;
+    UInt64 opentelemetry_current_span_id;
+    std::unique_ptr<OpenTelemetrySpanHolder> opentelemetry_thread_span;
+
+protected:
+    ThreadGroupStatusPtr thread_group;
+
+    std::atomic<int> thread_state{ThreadState::DetachedFromQuery};
+
+    /// Is set once
+    Context * global_context = nullptr;
+    /// Use it only from current thread
+    Context * query_context = nullptr;
+
+    String query_id;
+
+    /// A logs queue used by TCPHandler to pass logs to a client
+    InternalTextLogsQueueWeakPtr logs_queue_ptr;
+
+    bool performance_counters_finalized = false;
+    UInt64 query_start_time_nanoseconds = 0;
+    UInt64 query_start_time_microseconds = 0;
+    time_t query_start_time = 0;
+    size_t queries_started = 0;
+
+    // CPU and Real time query profilers
+    std::unique_ptr<QueryProfilerReal> query_profiler_real;
+    std::unique_ptr<QueryProfilerCpu> query_profiler_cpu;
+
+    Poco::Logger * log = nullptr;
+
+    friend class CurrentThread;
+
+    /// Use ptr not to add extra dependencies in the header
+    std::unique_ptr<RUsageCounters> last_rusage;
+    std::unique_ptr<TasksStatsCounters> taskstats;
+
+    /// Is used to send logs from logs_queue to client in case of fatal errors.
+    std::function<void()> fatal_error_callback;
+
+public:
+    ThreadStatus();
+    ~ThreadStatus();
 
     ThreadGroupStatusPtr getThreadGroup() const
     {
@@ -176,40 +218,6 @@ protected:
 
     void assertState(const std::initializer_list<int> & permitted_states, const char * description = nullptr) const;
 
-    ThreadGroupStatusPtr thread_group;
-
-    std::atomic<int> thread_state{ThreadState::DetachedFromQuery};
-
-    /// Is set once
-    Context * global_context = nullptr;
-    /// Use it only from current thread
-    Context * query_context = nullptr;
-
-    String query_id;
-
-    /// A logs queue used by TCPHandler to pass logs to a client
-    InternalTextLogsQueueWeakPtr logs_queue_ptr;
-
-    bool performance_counters_finalized = false;
-    UInt64 query_start_time_nanoseconds = 0;
-    UInt64 query_start_time_microseconds = 0;
-    time_t query_start_time = 0;
-    size_t queries_started = 0;
-
-    // CPU and Real time query profilers
-    std::unique_ptr<QueryProfilerReal> query_profiler_real;
-    std::unique_ptr<QueryProfilerCpu> query_profiler_cpu;
-
-    Poco::Logger * log = nullptr;
-
-    friend class CurrentThread;
-
-    /// Use ptr not to add extra dependencies in the header
-    std::unique_ptr<RUsageCounters> last_rusage;
-    std::unique_ptr<TasksStatsCounters> taskstats;
-
-    /// Is used to send logs from logs_queue to client in case of fatal errors.
-    std::function<void()> fatal_error_callback;
 
 private:
     void setupState(const ThreadGroupStatusPtr & thread_group_);

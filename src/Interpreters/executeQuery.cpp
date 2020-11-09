@@ -479,7 +479,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             limits.size_limits = SizeLimits(settings.max_result_rows, settings.max_result_bytes, settings.result_overflow_mode);
         }
 
-        res = interpreter->execute();
+        {
+            OpenTelemetrySpanHolder span("execute interpreter");
+            res = interpreter->execute();
+        }
+
         QueryPipeline & pipeline = res.pipeline;
         bool use_processors = pipeline.initialized();
 
