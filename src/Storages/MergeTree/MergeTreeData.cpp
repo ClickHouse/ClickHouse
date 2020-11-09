@@ -2643,6 +2643,17 @@ void MergeTreeData::checkPartitionCanBeDropped(const ASTPtr & partition)
     global_context.checkPartitionCanBeDropped(table_id.database_name, table_id.table_name, partition_size);
 }
 
+void MergeTreeData::checkPartCanBeDropped(const ASTPtr & part_ast)
+{
+    String part_name = part_ast->as<ASTLiteral &>().value.safeGet<String>();
+    auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Committed});
+    if (!part)
+        throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No part {} in commited state", part_name);
+
+    auto table_id = getStorageID();
+    global_context.checkPartitionCanBeDropped(table_id.database_name, table_id.table_name, part->getBytesOnDisk());
+}
+
 void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String & name, bool moving_part, const Context & context)
 {
     String partition_id;
@@ -3206,6 +3217,7 @@ void MergeTreeData::Transaction::rollbackPartsToTemporaryState()
     if (!isEmpty())
     {
         std::stringstream ss;
+        ss.exceptions(std::ios::failbit);
         ss << " Rollbacking parts state to temporary and removing from working set:";
         for (const auto & part : precommitted_parts)
             ss << " " << part->relative_path;
@@ -3224,6 +3236,7 @@ void MergeTreeData::Transaction::rollback()
     if (!isEmpty())
     {
         std::stringstream ss;
+        ss.exceptions(std::ios::failbit);
         ss << " Removing parts:";
         for (const auto & part : precommitted_parts)
             ss << " " << part->relative_path;
@@ -3759,6 +3772,7 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
             || settings.min_rows_for_compact_part != 0 || settings.min_bytes_for_compact_part != 0))
         {
             std::ostringstream message;
+            message.exceptions(std::ios::failbit);
             message << "Table can't create parts with adaptive granularity, but settings"
                     << " min_rows_for_wide_part = " << settings.min_rows_for_wide_part
                     << ", min_bytes_for_wide_part = " << settings.min_bytes_for_wide_part

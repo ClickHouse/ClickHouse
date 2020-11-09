@@ -1966,6 +1966,7 @@ void Context::checkCanBeDropped(const String & database, const String & table, c
     String size_str = formatReadableSizeWithDecimalSuffix(size);
     String max_size_to_drop_str = formatReadableSizeWithDecimalSuffix(max_size_to_drop);
     std::stringstream ostr;
+    ostr.exceptions(std::ios::failbit);
 
     ostr << "Table or Partition in " << backQuoteIfNeed(database) << "." << backQuoteIfNeed(table) << " was not dropped.\n"
          << "Reason:\n"
