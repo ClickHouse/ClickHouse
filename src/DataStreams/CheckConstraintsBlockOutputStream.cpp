@@ -60,6 +60,7 @@ void CheckConstraintsBlockOutputStream::write(const Block & block)
                 if (!value)
                 {
                     std::stringstream exception_message;
+                    exception_message.exceptions(std::ios::failbit);
 
                     exception_message << "Constraint " << backQuote(constraint_ptr->name)
                         << " for table " << table_id.getNameForLogs()
@@ -87,6 +88,7 @@ void CheckConstraintsBlockOutputStream::write(const Block & block)
                     Names related_columns = constraint_expr->getRequiredColumns();
 
                     std::stringstream exception_message;
+                    exception_message.exceptions(std::ios::failbit);
 
                     exception_message << "Constraint " << backQuote(constraint_ptr->name)
                         << " for table " << table_id.getNameForLogs()

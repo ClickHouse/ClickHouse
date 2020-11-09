@@ -348,6 +348,7 @@ std::string ExpressionActions::getSmallestColumn(const NamesAndTypesList & colum
 std::string ExpressionActions::dumpActions() const
 {
     std::stringstream ss;
+    ss.exceptions(std::ios::failbit);
 
     ss << "input:\n";
     for (const auto & input_column : required_columns)
@@ -657,6 +658,7 @@ void ExpressionActionsChain::finalize()
 std::string ExpressionActionsChain::dumpChain() const
 {
     std::stringstream ss;
+    ss.exceptions(std::ios::failbit);
 
     for (size_t i = 0; i < steps.size(); ++i)
     {

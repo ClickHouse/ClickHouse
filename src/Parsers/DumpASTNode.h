@@ -95,6 +95,7 @@ public:
     DebugASTLog()
         : log(nullptr)
     {
+        ss.exceptions(std::ios::failbit);
         if constexpr (_enable)
             log = &Poco::Logger::get("AST");
     }
