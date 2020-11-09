@@ -9,6 +9,35 @@ from testflows.core import *
 
 from rbac.helper.tables import table_types
 
+@TestStep(Given)
+def instrument_clickhouse_server_log(self, node=None, clickhouse_server_log="/var/log/clickhouse-server/clickhouse-server.log"):
+    """Instrument clickhouse-server.log for the current test
+    by adding start and end messages that include
+    current test name to the clickhouse-server.log of the specified node and
+    if the test fails then dump the messages from
+    the clickhouse-server.log for this test.
+    """
+    if node is None:
+        node = self.context.node
+
+    with By("getting current log size"):
+        cmd =  node.command(f"stat --format=%s {clickhouse_server_log}")
+        logsize = cmd.output.split(" ")[0].strip()
+
+    try:
+        with And("adding test name start message to the clickhouse-server.log"):
+            node.command(f"echo -e \"\\n-- start: {current().name} --\\n\" >> {clickhouse_server_log}")
+        yield
+
+    finally:
+        with Finally("adding test name end message to the clickhouse-server.log", flags=TE):
+           node.command(f"echo -e \"\\n-- end: {current().name} --\\n\" >> {clickhouse_server_log}")
+
+        with And("checking if test has failing result"):
+            if not self.parent.result:
+                with Then("dumping clickhouse-server.log for this test"):
+                    node.command(f"tail -c +{logsize} {clickhouse_server_log}")
+
 def join(tasks):
     """Join all parallel tests.
     """

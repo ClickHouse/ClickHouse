@@ -35,25 +35,25 @@ PEERDIR(
 CFLAGS(-g0)
 
 SRCS(
-    argsToConfig.cpp
-    coverage.cpp
     DateLUT.cpp
     DateLUTImpl.cpp
+    JSON.cpp
+    LineReader.cpp
+    StringRef.cpp
+    argsToConfig.cpp
+    coverage.cpp
     demangle.cpp
     errnoToString.cpp
     getFQDNOrHostName.cpp
     getMemoryAmount.cpp
     getResource.cpp
     getThreadId.cpp
-    JSON.cpp
-    LineReader.cpp
     mremap.cpp
     phdr_cache.cpp
     preciseExp10.cpp
     setTerminalEcho.cpp
     shift10.cpp
     sleep.cpp
-    StringRef.cpp
     terminalColors.cpp
 
 )
