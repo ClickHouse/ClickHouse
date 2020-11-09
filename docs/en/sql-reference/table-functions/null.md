@@ -19,7 +19,7 @@ null('structure')
 
 **Returned value**
 
-A temporary Null-engine table with the specified structure.
+A temporary `Null`-engine table with the specified structure.
 
 **Example**
 
