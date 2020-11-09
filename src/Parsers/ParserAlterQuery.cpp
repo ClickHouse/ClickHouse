@@ -52,13 +52,15 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_modify("MODIFY");
 
     ParserKeyword s_attach_partition("ATTACH PARTITION");
+    ParserKeyword s_attach_part("ATTACH PART");
     ParserKeyword s_detach_partition("DETACH PARTITION");
+    ParserKeyword s_detach_part("DETACH PART");
     ParserKeyword s_drop_partition("DROP PARTITION");
+    ParserKeyword s_drop_part("DROP PART");
     ParserKeyword s_move_partition("MOVE PARTITION");
+    ParserKeyword s_move_part("MOVE PART");
     ParserKeyword s_drop_detached_partition("DROP DETACHED PARTITION");
     ParserKeyword s_drop_detached_part("DROP DETACHED PART");
-    ParserKeyword s_attach_part("ATTACH PART");
-    ParserKeyword s_move_part("MOVE PART");
     ParserKeyword s_fetch_partition("FETCH PARTITION");
     ParserKeyword s_replace_partition("REPLACE PARTITION");
     ParserKeyword s_freeze("FREEZE");
@@ -160,6 +162,14 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 return false;
 
             command->type = ASTAlterCommand::DROP_PARTITION;
+        }
+        else if (s_drop_part.ignore(pos, expected))
+        {
+            if (!parser_string_literal.parse(pos, command->partition, expected))
+                return false;
+
+            command->type = ASTAlterCommand::DROP_PARTITION;
+            command->part = true;
         }
         else if (s_drop_detached_partition.ignore(pos, expected))
         {
@@ -352,6 +362,15 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 return false;
 
             command->type = ASTAlterCommand::DROP_PARTITION;
+            command->detach = true;
+        }
+        else if (s_detach_part.ignore(pos, expected))
+        {
+            if (!parser_string_literal.parse(pos, command->partition, expected))
+                return false;
+
+            command->type = ASTAlterCommand::DROP_PARTITION;
+            command->part = true;
             command->detach = true;
         }
         else if (s_attach_partition.ignore(pos, expected))

@@ -17,6 +17,7 @@ int main(int, char **)
         DB::String d = "'xyz\\";
 
         std::stringstream s;
+        s.exceptions(std::ios::failbit);
 
         {
             DB::WriteBufferFromOStream out(s);

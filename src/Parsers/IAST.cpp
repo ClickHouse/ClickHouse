@@ -90,6 +90,7 @@ size_t IAST::checkDepthImpl(size_t max_depth, size_t level) const
 std::string IAST::formatForErrorMessage() const
 {
     std::stringstream ss;
+    ss.exceptions(std::ios::failbit);
     format(FormatSettings(ss, true /* one line */));
     return ss.str();
 }

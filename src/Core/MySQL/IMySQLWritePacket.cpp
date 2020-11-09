@@ -16,6 +16,7 @@ void IMySQLWritePacket::writePayload(WriteBuffer & buffer, uint8_t & sequence_id
     if (buf.remainingPayloadSize())
     {
         std::stringstream ss;
+        ss.exceptions(std::ios::failbit);
         ss << "Incomplete payload. Written " << getPayloadSize() - buf.remainingPayloadSize() << " bytes, expected " << getPayloadSize() << " bytes.";
         throw Exception(ss.str(), 0);
     }

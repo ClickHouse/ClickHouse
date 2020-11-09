@@ -187,6 +187,7 @@ AMQP::ExchangeType StorageRabbitMQ::defineExchangeType(String exchange_type_)
 String StorageRabbitMQ::getTableBasedName(String name, const StorageID & table_id)
 {
     std::stringstream ss;
+    ss.exceptions(std::ios::failbit);
 
     if (name.empty())
         ss << table_id.database_name << "_" << table_id.table_name;
@@ -530,7 +531,7 @@ void StorageRabbitMQ::unbindExchange()
 Pipe StorageRabbitMQ::read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
-        const SelectQueryInfo & /* query_info */,
+        SelectQueryInfo & /* query_info */,
         const Context & context,
         QueryProcessingStage::Enum /* processed_stage */,
         size_t /* max_block_size */,
