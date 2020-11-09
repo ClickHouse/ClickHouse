@@ -6,6 +6,7 @@
 
 #include "throwError.h"
 #include <cfloat>
+#include <limits>
 
 namespace wide
 {
@@ -232,17 +233,19 @@ struct integer<Bits, Signed>::_impl
         constexpr int64_t max_int = std::numeric_limits<int64_t>::max();
 
         if ((rhs > 0 && rhs < max_uint) ||
-            (rhs < 0 && rhs > std::numeric_limits<int64_t>::min())) {
+            (rhs < 0 && rhs > std::numeric_limits<int64_t>::min()))
+        {
             self = to_Integral(rhs);
             return;
         }
 
         long double r = rhs;
-        if (r < 0) {
-            r = -r;
-        }
 
-        size_t count = r / max_uint;
+        if (r < 0)
+            r = -r;
+
+        /// r / max_uint may not fit in size_t
+        size_t count = std::clamp(r / max_uint, std::numeric_limits<size_t>::max(), 0);
         self = count;
         self *= max_uint;
         long double to_diff = count;
@@ -267,9 +270,8 @@ struct integer<Bits, Signed>::_impl
         else
             self += to_Integral(r - to_diff);
 
-        if (rhs < 0) {
+        if (rhs < 0)
             self = -self;
-        }
     }
 
     template <size_t Bits2, typename Signed2>
