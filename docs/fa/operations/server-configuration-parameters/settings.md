@@ -110,7 +110,7 @@ toc_title: "\u062A\u0646\u0638\u06CC\u0645\u0627\u062A \u06A9\u0627\u0631\u06AF\
 <dictionaries_config>*_dictionary.xml</dictionaries_config>
 ```
 
-## _بارگیری کامل {#server_configuration_parameters-dictionaries_lazy_load}
+## \_بارگیری کامل {#server_configuration_parameters-dictionaries_lazy_load}
 
 بارگذاری تنبل از لغت نامه.
 
@@ -126,7 +126,7 @@ toc_title: "\u062A\u0646\u0638\u06CC\u0645\u0627\u062A \u06A9\u0627\u0631\u06AF\
 <dictionaries_lazy_load>true</dictionaries_lazy_load>
 ```
 
-## قالب_شکلمات شیمی {#server_configuration_parameters-format_schema_path}
+## قالب\_شکلمات شیمی {#server_configuration_parameters-format_schema_path}
 
 مسیر به دایرکتوری با طرح برای داده های ورودی, مانند طرحواره برای [کاپپروتو](../../interfaces/formats.md#capnproto) قالب.
 
@@ -147,11 +147,11 @@ toc_title: "\u062A\u0646\u0638\u06CC\u0645\u0627\u062A \u06A9\u0627\u0631\u06AF\
 -   port – The port on the Graphite server.
 -   interval – The interval for sending, in seconds.
 -   timeout – The timeout for sending data, in seconds.
--   root_path – Prefix for keys.
+-   root\_path – Prefix for keys.
 -   metrics – Sending data from the [سیستم.متریک](../../operations/system-tables.md#system_tables-metrics) جدول
 -   events – Sending deltas data accumulated for the time period from the [سیستم.رویدادها](../../operations/system-tables.md#system_tables-events) جدول
--   events_cumulative – Sending cumulative data from the [سیستم.رویدادها](../../operations/system-tables.md#system_tables-events) جدول
--   asynchronous_metrics – Sending data from the [سیستم._نامهنویسی ناهمزمان](../../operations/system-tables.md#system_tables-asynchronous_metrics) جدول
+-   events\_cumulative – Sending cumulative data from the [سیستم.رویدادها](../../operations/system-tables.md#system_tables-events) جدول
+-   asynchronous\_metrics – Sending data from the [سیستم.\_نامهنویسی ناهمزمان](../../operations/system-tables.md#system_tables-asynchronous_metrics) جدول
 
 شما می توانید چند پیکربندی کنید `<graphite>` بند. برای مثال شما می توانید از این برای ارسال داده های مختلف در فواصل مختلف استفاده کنید.
 
@@ -171,7 +171,7 @@ toc_title: "\u062A\u0646\u0638\u06CC\u0645\u0627\u062A \u06A9\u0627\u0631\u06AF\
 </graphite>
 ```
 
-## لغزش _ نمودار {#server_configuration_parameters-graphite-rollup}
+## لغزش \_ نمودار {#server_configuration_parameters-graphite-rollup}
 
 تنظیمات برای نازک شدن داده ها برای گرافیت.
 
@@ -199,7 +199,7 @@ toc_title: "\u062A\u0646\u0638\u06CC\u0645\u0627\u062A \u06A9\u0627\u0631\u06AF\
 </graphite_rollup_example>
 ```
 
-## _وارد کردن/پشتیبانی {#http-porthttps-port}
+## \_وارد کردن/پشتیبانی {#http-porthttps-port}
 
 درگاه برای اتصال به کارساز بالای صفحه) ها (.
 
@@ -228,7 +228,7 @@ toc_title: "\u062A\u0646\u0638\u06CC\u0645\u0627\u062A \u06A9\u0627\u0631\u06AF\
 </http_server_default_response>
 ```
 
-## شامل _فروم {#server_configuration_parameters-include_from}
+## شامل \_فروم {#server_configuration_parameters-include_from}
 
 مسیر به فایل با تعویض.
 
@@ -240,7 +240,7 @@ toc_title: "\u062A\u0646\u0638\u06CC\u0645\u0627\u062A \u06A9\u0627\u0631\u06AF\
 <include_from>/etc/metrica.xml</include_from>
 ```
 
-## _صادر کردن {#interserver-http-port}
+## \_صادر کردن {#interserver-http-port}
 
 پورت برای تبادل اطلاعات بین سرور های فاحشه خانه.
 
@@ -293,7 +293,7 @@ toc_title: "\u062A\u0646\u0638\u06CC\u0645\u0627\u062A \u06A9\u0627\u0631\u06AF\
 <keep_alive_timeout>3</keep_alive_timeout>
 ```
 
-## _نوست فهرست {#server_configuration_parameters-listen_host}
+## \_نوست فهرست {#server_configuration_parameters-listen_host}
 
 محدودیت در میزبان که درخواست می توانید از. اگر می خواهید سرور برای پاسخ به همه انها مشخص شود `::`.
 
@@ -344,10 +344,10 @@ toc_title: "\u062A\u0646\u0638\u06CC\u0645\u0627\u062A \u06A9\u0627\u0631\u06AF\
 
 کلید:
 
--   use_syslog — Required setting if you want to write to the syslog.
+-   use\_syslog — Required setting if you want to write to the syslog.
 -   address — The host\[:port\] of syslogd. If omitted, the local daemon is used.
 -   hostname — Optional. The name of the host that logs are sent from.
--   facility — [کلمه کلیدی تسهیلات سیسلوگ](https://en.wikipedia.org/wiki/Syslog#Facility) در حروف بزرگ با “LOG_” پیشوند: (`LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3`, و به همین ترتیب).
+-   facility — [کلمه کلیدی تسهیلات سیسلوگ](https://en.wikipedia.org/wiki/Syslog#Facility) در حروف بزرگ با “LOG\_” پیشوند: (`LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3`, و به همین ترتیب).
     مقدار پیشفرض: `LOG_USER` اگر `address` مشخص شده است, `LOG_DAEMON otherwise.`
 -   format – Message format. Possible values: `bsd` و `syslog.`
 
@@ -365,7 +365,7 @@ toc_title: "\u062A\u0646\u0638\u06CC\u0645\u0627\u062A \u06A9\u0627\u0631\u06AF\
 <macros incl="macros" optional="true" />
 ```
 
-## نشاندار کردن _چ_سیز {#server-mark-cache-size}
+## نشاندار کردن \_چ\_سیز {#server-mark-cache-size}
 
 اندازه تقریبی (به بایت) کش علامت های استفاده شده توسط موتورهای جدول [ادغام](../../engines/table-engines/mergetree-family/mergetree.md) خانواده
 
@@ -377,7 +377,7 @@ toc_title: "\u062A\u0646\u0638\u06CC\u0645\u0627\u062A \u06A9\u0627\u0631\u06AF\
 <mark_cache_size>5368709120</mark_cache_size>
 ```
 
-## م_قیاس تصویر {#max-concurrent-queries}
+## م\_قیاس تصویر {#max-concurrent-queries}
 
 حداکثر تعداد درخواست به طور همزمان پردازش.
 
@@ -387,7 +387,7 @@ toc_title: "\u062A\u0646\u0638\u06CC\u0645\u0627\u062A \u06A9\u0627\u0631\u06AF\
 <max_concurrent_queries>100</max_concurrent_queries>
 ```
 
-## _تنامههای بیشینه {#max-connections}
+## \_تنامههای بیشینه {#max-connections}
 
 حداکثر تعداد اتصالات ورودی.
 
@@ -397,7 +397,7 @@ toc_title: "\u062A\u0646\u0638\u06CC\u0645\u0627\u062A \u06A9\u0627\u0631\u06AF\
 <max_connections>4096</max_connections>
 ```
 
-## _موضوعات بیشینه {#max-open-files}
+## \_موضوعات بیشینه {#max-open-files}
 
 حداکثر تعداد فایل های باز.
 
@@ -411,7 +411,7 @@ toc_title: "\u062A\u0646\u0638\u06CC\u0645\u0627\u062A \u06A9\u0627\u0631\u06AF\
 <max_open_files>262144</max_open_files>
 ```
 
-## حداکثر_طب_ضز_توقف {#max-table-size-to-drop}
+## حداکثر\_طب\_ضز\_توقف {#max-table-size-to-drop}
 
 محدودیت در حذف جداول.
 
@@ -464,7 +464,7 @@ SSL client/server configuration.
 -   sessionTimeout – Time for caching the session on the server.
 -   extendedVerification – Automatically extended verification of certificates after the session ends. Acceptable values: `true`, `false`.
 -   requireTLSv1 – Require a TLSv1 connection. Acceptable values: `true`, `false`.
--   requireTLSv1_1 – Require a TLSv1.1 connection. Acceptable values: `true`, `false`.
+-   requireTLSv1\_1 – Require a TLSv1.1 connection. Acceptable values: `true`, `false`.
 -   requireTLSv1 – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
 -   fips – Activates OpenSSL FIPS mode. Supported if the library's OpenSSL version supports FIPS.
 -   privateKeyPassphraseHandler – Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.
@@ -502,11 +502,11 @@ SSL client/server configuration.
 </openSSL>
 ```
 
-## _خروج {#server_configuration_parameters-part-log}
+## \_خروج {#server_configuration_parameters-part-log}
 
 وقایع ورود به سیستم که با مرتبط [ادغام](../../engines/table-engines/mergetree-family/mergetree.md). برای مثال, اضافه کردن یا ادغام داده ها. شما می توانید ورود به سیستم برای شبیه سازی الگوریتم های ادغام و مقایسه ویژگی های خود استفاده کنید. شما می توانید روند ادغام تجسم.
 
-نمایش داده شد در سیستم وارد [سیستم._خروج](../../operations/system-tables.md#system_tables-part-log) جدول, نه در یک فایل جداگانه. شما می توانید نام این جدول را در پیکربندی `table` پارامتر (پایین را ببینید).
+نمایش داده شد در سیستم وارد [سیستم.\_خروج](../../operations/system-tables.md#system_tables-part-log) جدول, نه در یک فایل جداگانه. شما می توانید نام این جدول را در پیکربندی `table` پارامتر (پایین را ببینید).
 
 از پارامترهای زیر برای پیکربندی ورود استفاده کنید:
 
@@ -549,7 +549,7 @@ SSL client/server configuration.
 -   `port` – Port for `endpoint`.
 -   `metrics` – Flag that sets to expose metrics from the [سیستم.متریک](../system-tables.md#system_tables-metrics) جدول
 -   `events` – Flag that sets to expose metrics from the [سیستم.رویدادها](../system-tables.md#system_tables-events) جدول
--   `asynchronous_metrics` – Flag that sets to expose current metrics values from the [سیستم._نامهنویسی ناهمزمان](../system-tables.md#system_tables-asynchronous_metrics) جدول
+-   `asynchronous_metrics` – Flag that sets to expose current metrics values from the [سیستم.\_نامهنویسی ناهمزمان](../system-tables.md#system_tables-asynchronous_metrics) جدول
 
 **مثال**
 
@@ -563,11 +563,11 @@ SSL client/server configuration.
     </prometheus>
 ```
 
-## _خروج {#server_configuration_parameters-query-log}
+## \_خروج {#server_configuration_parameters-query-log}
 
-تنظیم برای ورود به سیستم نمایش داده شد با دریافت [_ترکیب = 1](../settings/settings.md) تنظیمات.
+تنظیم برای ورود به سیستم نمایش داده شد با دریافت [\_ترکیب = 1](../settings/settings.md) تنظیمات.
 
-نمایش داده شد در سیستم وارد [سیستم._خروج](../../operations/system-tables.md#system_tables-query_log) جدول, نه در یک فایل جداگانه. شما می توانید نام جدول را در `table` پارامتر (پایین را ببینید).
+نمایش داده شد در سیستم وارد [سیستم.\_خروج](../../operations/system-tables.md#system_tables-query_log) جدول, نه در یک فایل جداگانه. شما می توانید نام جدول را در `table` پارامتر (پایین را ببینید).
 
 از پارامترهای زیر برای پیکربندی ورود استفاده کنید:
 
@@ -589,11 +589,11 @@ SSL client/server configuration.
 </query_log>
 ```
 
-## _ر_خروج {#server_configuration_parameters-query-thread-log}
+## \_ر\_خروج {#server_configuration_parameters-query-thread-log}
 
 تنظیم برای ورود به سیستم موضوعات نمایش داده شد دریافت شده با [& پایین: 1](../settings/settings.md#settings-log-query-threads) تنظیمات.
 
-نمایش داده شد در سیستم وارد [سیستم._ر_خروج](../../operations/system-tables.md#system_tables-query-thread-log) جدول, نه در یک فایل جداگانه. شما می توانید نام جدول را در `table` پارامتر (پایین را ببینید).
+نمایش داده شد در سیستم وارد [سیستم.\_ر\_خروج](../../operations/system-tables.md#system_tables-query-thread-log) جدول, نه در یک فایل جداگانه. شما می توانید نام جدول را در `table` پارامتر (پایین را ببینید).
 
 از پارامترهای زیر برای پیکربندی ورود استفاده کنید:
 
@@ -615,9 +615,9 @@ SSL client/server configuration.
 </query_thread_log>
 ```
 
-## _قطع {#server_configuration_parameters-trace_log}
+## \_قطع {#server_configuration_parameters-trace_log}
 
-تنظیمات برای [_قطع](../../operations/system-tables.md#system_tables-trace_log) عملیات جدول سیستم.
+تنظیمات برای [\_قطع](../../operations/system-tables.md#system_tables-trace_log) عملیات جدول سیستم.
 
 پارامترها:
 
@@ -637,7 +637,7 @@ SSL client/server configuration.
 </trace_log>
 ```
 
-## _منبع {#query-masking-rules}
+## \_منبع {#query-masking-rules}
 
 قوانین مبتنی بر عبارت منظم, خواهد شد که به نمایش داده شد و همچنین تمام پیام های ورود به سیستم قبل از ذخیره سازی در سیاهههای مربوط به سرور اعمال,
 `system.query_log`, `system.text_log`, `system.processes` جدول, و در سیاهههای مربوط به مشتری ارسال. که اجازه می دهد تا جلوگیری از
@@ -698,7 +698,7 @@ SSL client/server configuration.
 <timezone>Europe/Moscow</timezone>
 ```
 
-## _صادر کردن {#server_configuration_parameters-tcp_port}
+## \_صادر کردن {#server_configuration_parameters-tcp_port}
 
 پورت برای برقراری ارتباط با مشتریان بیش از پروتکل تی سی پی.
 
@@ -708,7 +708,7 @@ SSL client/server configuration.
 <tcp_port>9000</tcp_port>
 ```
 
-## _شروع مجدد {#server_configuration_parameters-tcp_port_secure}
+## \_شروع مجدد {#server_configuration_parameters-tcp_port_secure}
 
 پورت تی سی پی برای برقراری ارتباط امن با مشتریان. با استفاده از [OpenSSL](#server_configuration_parameters-openssl) تنظیمات.
 
@@ -722,7 +722,7 @@ SSL client/server configuration.
 <tcp_port_secure>9440</tcp_port_secure>
 ```
 
-## _وارد کردن {#server_configuration_parameters-mysql_port}
+## \_وارد کردن {#server_configuration_parameters-mysql_port}
 
 پورت برای برقراری ارتباط با مشتریان بیش از پروتکل خروجی زیر.
 
@@ -736,7 +736,7 @@ SSL client/server configuration.
 <mysql_port>9004</mysql_port>
 ```
 
-## _مخفی کردن {#server-settings-tmp_path}
+## \_مخفی کردن {#server-settings-tmp_path}
 
 مسیر به داده های موقت برای پردازش نمایش داده شد بزرگ است.
 
@@ -760,7 +760,7 @@ SSL client/server configuration.
 - `max_data_part_size_bytes` نادیده گرفته شده است
 - شما باید دقیقا یک جلد در این سیاست داشته باشید
 
-## _بالا {#server-settings-uncompressed_cache_size}
+## \_بالا {#server-settings-uncompressed_cache_size}
 
 اندازه کش (به بایت) برای داده های غیر فشرده استفاده شده توسط موتورهای جدول از [ادغام](../../engines/table-engines/mergetree-family/mergetree.md).
 
@@ -774,7 +774,7 @@ SSL client/server configuration.
 <uncompressed_cache_size>8589934592</uncompressed_cache_size>
 ```
 
-## _مخفی کردن _صفحه {#server_configuration_parameters-user_files_path}
+## \_مخفی کردن \_صفحه {#server_configuration_parameters-user_files_path}
 
 دایرکتوری با فایل های کاربر. مورد استفاده در تابع جدول [پرونده()](../../sql-reference/table-functions/file.md).
 
@@ -784,7 +784,7 @@ SSL client/server configuration.
 <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 ```
 
-## _تنفورد {#users-config}
+## \_تنفورد {#users-config}
 
 مسیر پروندهی شامل:
 
@@ -894,7 +894,7 @@ SSL client/server configuration.
 
 **مقدار پیشفرض**: 15.
 
-## _پوشه دستیابی {#access_control_path}
+## \_پوشه دستیابی {#access_control_path}
 
 مسیر را به یک پوشه که یک سرور کلیک ذخیره کاربر و نقش تنظیمات ایجاد شده توسط دستورات گذاشتن.
 

@@ -1,8 +1,3 @@
----
-toc_priority: 45
-toc_title: FixedString(N)
----
-
 # FixedString {#fixedstring}
 
 Строка фиксированной длины `N` байт (не символов, не кодовых точек).
@@ -20,7 +15,7 @@ toc_title: FixedString(N)
 Примеры значений, которые можно эффективно хранить в столбцах типа `FixedString`:
 
 -   Двоичное представление IP-адреса (`FixedString(16)` для IPv6).
--   Коды языков (ru_RU, en_US … ).
+-   Коды языков (ru\_RU, en\_US … ).
 -   Коды валют (USD, RUB … ).
 -   Двоичное представление хэшей (`FixedString(16)` для MD5, `FixedString(32)` для SHA256).
 

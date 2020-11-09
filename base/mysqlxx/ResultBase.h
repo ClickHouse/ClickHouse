@@ -1,6 +1,8 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <mysqlxx/Types.h>
+
 
 namespace mysqlxx
 {
@@ -19,11 +21,6 @@ class ResultBase
 {
 public:
     ResultBase(MYSQL_RES * res_, Connection * conn_, const Query * query_);
-
-    ResultBase(const ResultBase &) = delete;
-    ResultBase & operator=(const ResultBase &) = delete;
-    ResultBase(ResultBase &&) = default;
-    ResultBase & operator=(ResultBase &&) = default;
 
     Connection * getConnection() { return conn; }
     MYSQL_FIELDS getFields() { return fields; }
