@@ -397,6 +397,16 @@ void ExpressionAnalyzer::getRootActionsNoMakeSet(const ASTPtr & ast, bool no_sub
     visitor_data.updateActions(actions);
 }
 
+void ExpressionAnalyzer::getRootActionsForHaving(const ASTPtr & ast, bool no_subqueries, ExpressionActionsPtr & actions, bool only_consts)
+{
+    LogAST log;
+    ActionsVisitor::Data visitor_data(context, settings.size_limits_for_set, subquery_depth,
+                                   sourceColumns(), actions, prepared_sets, subqueries_for_sets,
+                                   no_subqueries, false, only_consts, true);
+    ActionsVisitor(visitor_data, log.stream()).visit(ast);
+    visitor_data.updateActions(actions);
+}
+
 
 bool ExpressionAnalyzer::makeAggregateDescriptions(ExpressionActionsPtr & actions)
 {
@@ -800,7 +810,7 @@ bool SelectQueryExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain,
     ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
 
     step.required_output.push_back(select_query->having()->getColumnName());
-    getRootActions(select_query->having(), only_types, step.actions());
+    getRootActionsForHaving(select_query->having(), only_types, step.actions());
 
     return true;
 }
