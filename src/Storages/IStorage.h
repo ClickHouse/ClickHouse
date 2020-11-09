@@ -48,13 +48,9 @@ using ProcessorPtr = std::shared_ptr<IProcessor>;
 using Processors = std::vector<ProcessorPtr>;
 
 class Pipe;
-class QueryPlan;
 
 class StoragePolicy;
 using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
-
-struct StreamLocalLimits;
-class EnabledQuota;
 
 struct ColumnSize
 {
@@ -284,22 +280,6 @@ public:
         size_t /*max_block_size*/,
         unsigned /*num_streams*/);
 
-    /// Other version of read which adds reading step to query plan.
-    /// Default implementation creates ReadFromStorageStep and uses usual read.
-    virtual void read(
-        QueryPlan & query_plan,
-        TableLockHolder table_lock,
-        StorageMetadataPtr metadata_snapshot,
-        StreamLocalLimits & limits,
-        SizeLimits & leaf_limits,
-        std::shared_ptr<const EnabledQuota> quota,
-        const Names & column_names,
-        const SelectQueryInfo & query_info,
-        std::shared_ptr<Context> context,
-        QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size,
-        unsigned num_streams);
-
     /** Writes the data to a table.
       * Receives a description of the query, which can contain information about the data write method.
       * Returns an object by which you can write data sequentially.
@@ -336,8 +316,6 @@ public:
     {
         throw Exception("Truncate is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
-
-    virtual void checkTableCanBeRenamed() const {}
 
     /** Rename the table.
       * Renaming a name in a file with metadata, the name in the list of tables in the RAM, is done separately.
@@ -428,9 +406,6 @@ public:
         return {};
     }
 
-    /// Call when lock from previous method removed
-    virtual void onActionLockRemove(StorageActionBlockType /* action_type */) {}
-
     std::atomic<bool> is_dropped{false};
 
     /// Does table support index for IN sections
@@ -452,10 +427,6 @@ public:
     /// We do not use mutex because it is not very important that the size could change during the operation.
     virtual void checkPartitionCanBeDropped(const ASTPtr & /*partition*/) {}
 
-    /// Returns true if Storage may store some data on disk.
-    /// NOTE: may not be equivalent to !getDataPaths().empty()
-    virtual bool storesDataOnDisk() const { return false; }
-
     /// Returns data paths if storage supports it, empty vector otherwise.
     virtual Strings getDataPaths() const { return {}; }
 
@@ -469,9 +440,6 @@ public:
     ///
     /// Does takes underlying Storage (if any) into account.
     virtual std::optional<UInt64> totalRows() const { return {}; }
-
-    /// Same as above but also take partition predicate into account.
-    virtual std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo &, const Context &) const { return {}; }
 
     /// If it is possible to quickly determine exact number of bytes for the table on storage:
     /// - memory (approximated, resident)

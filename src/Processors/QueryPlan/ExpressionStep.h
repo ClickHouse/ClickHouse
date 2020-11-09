@@ -7,11 +7,8 @@ namespace DB
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
-class IJoin;
-using JoinPtr = std::shared_ptr<IJoin>;
-
 class ExpressionTransform;
-class JoiningTransform;
+class InflatingExpressionTransform;
 
 /// Calculates specified expression. See ExpressionTransform.
 class ExpressionStep : public ITransformingStep
@@ -35,18 +32,20 @@ private:
 };
 
 /// TODO: add separate step for join.
-class JoinStep : public ITransformingStep
+class InflatingExpressionStep : public ITransformingStep
 {
 public:
-    using Transform = JoiningTransform;
+    using Transform = InflatingExpressionTransform;
 
-    explicit JoinStep(const DataStream & input_stream_, JoinPtr join_);
-    String getName() const override { return "Join"; }
+    explicit InflatingExpressionStep(const DataStream & input_stream_, ExpressionActionsPtr expression_);
+    String getName() const override { return "InflatingExpression"; }
 
     void transformPipeline(QueryPipeline & pipeline) override;
 
+    void describeActions(FormatSettings & settings) const override;
+
 private:
-    JoinPtr join;
+    ExpressionActionsPtr expression;
 };
 
 }

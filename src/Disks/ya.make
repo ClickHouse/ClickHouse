@@ -5,8 +5,8 @@ PEERDIR(
     clickhouse/src/Common
 )
 
-
 SRCS(
+    createVolume.cpp
     DiskCacheWrapper.cpp
     DiskDecorator.cpp
     DiskFactory.cpp
@@ -15,12 +15,11 @@ SRCS(
     DiskSelector.cpp
     IDisk.cpp
     IVolume.cpp
+    registerDisks.cpp
     SingleDiskVolume.cpp
     StoragePolicy.cpp
     VolumeJBOD.cpp
     VolumeRAID1.cpp
-    createVolume.cpp
-    registerDisks.cpp
 
 )
 

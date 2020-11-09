@@ -104,13 +104,7 @@ void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_
     ASTTableExpression * table_expression = getFirstTableExpression(outer_query);
 
     if (!table_expression->database_and_table_name)
-    {
-        // If it's a view table function, add a fake db.table name.
-        if (table_expression->table_function && table_expression->table_function->as<ASTFunction>()->name == "view")
-            table_expression->database_and_table_name = std::make_shared<ASTIdentifier>("__view");
-        else
-            throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
-    }
+        throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
 
     DatabaseAndTableWithAlias db_table(table_expression->database_and_table_name);
     String alias = db_table.alias.empty() ? db_table.table : db_table.alias;

@@ -130,10 +130,22 @@ struct VarMoments
 };
 
 template <typename T, size_t _level>
-class VarMomentsDecimal
+struct VarMomentsDecimal
 {
-public:
     using NativeType = typename T::NativeType;
+
+    UInt64 m0{};
+    NativeType m[_level]{};
+
+    NativeType & getM(size_t i)
+    {
+        return m[i - 1];
+    }
+
+    const NativeType & getM(size_t i) const
+    {
+        return m[i - 1];
+    }
 
     void add(NativeType x)
     {
@@ -141,14 +153,14 @@ public:
         getM(1) += x;
 
         NativeType tmp;
-        bool overflow = common::mulOverflow(x, x, tmp) || common::addOverflow(getM(2), tmp, getM(2));
-        if constexpr (_level >= 3)
-            overflow = overflow || common::mulOverflow(tmp, x, tmp) || common::addOverflow(getM(3), tmp, getM(3));
-        if constexpr (_level >= 4)
-            overflow = overflow || common::mulOverflow(tmp, x, tmp) || common::addOverflow(getM(4), tmp, getM(4));
-
-        if (overflow)
+        if (common::mulOverflow(x, x, tmp) || common::addOverflow(getM(2), tmp, getM(2)))
             throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+        if constexpr (_level >= 3)
+            if (common::mulOverflow(tmp, x, tmp) || common::addOverflow(getM(3), tmp, getM(3)))
+                throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+        if constexpr (_level >= 4)
+            if (common::mulOverflow(tmp, x, tmp) || common::addOverflow(getM(4), tmp, getM(4)))
+                throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
     }
 
     void merge(const VarMomentsDecimal & rhs)
@@ -156,14 +168,14 @@ public:
         m0 += rhs.m0;
         getM(1) += rhs.getM(1);
 
-        bool overflow = common::addOverflow(getM(2), rhs.getM(2), getM(2));
-        if constexpr (_level >= 3)
-            overflow = overflow || common::addOverflow(getM(3), rhs.getM(3), getM(3));
-        if constexpr (_level >= 4)
-            overflow = overflow || common::addOverflow(getM(4), rhs.getM(4), getM(4));
-
-        if (overflow)
+        if (common::addOverflow(getM(2), rhs.getM(2), getM(2)))
             throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+        if constexpr (_level >= 3)
+            if (common::addOverflow(getM(3), rhs.getM(3), getM(3)))
+                throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+        if constexpr (_level >= 4)
+            if (common::addOverflow(getM(4), rhs.getM(4), getM(4)))
+                throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
     }
 
     void write(WriteBuffer & buf) const { writePODBinary(*this, buf); }
@@ -178,7 +190,7 @@ public:
         if (common::mulOverflow(getM(1), getM(1), tmp) ||
             common::subOverflow(getM(2), NativeType(tmp / m0), tmp))
             throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
-        return std::max(Float64{}, DecimalUtils::convertTo<Float64>(T(tmp / m0), scale));
+        return std::max(Float64{}, convertFromDecimal<DataTypeDecimal<T>, DataTypeNumber<Float64>>(tmp / m0, scale));
     }
 
     Float64 getSample(UInt32 scale) const
@@ -192,7 +204,7 @@ public:
         if (common::mulOverflow(getM(1), getM(1), tmp) ||
             common::subOverflow(getM(2), NativeType(tmp / m0), tmp))
             throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
-        return std::max(Float64{}, DecimalUtils::convertTo<Float64>(T(tmp / (m0 - 1)), scale));
+        return std::max(Float64{}, convertFromDecimal<DataTypeDecimal<T>, DataTypeNumber<Float64>>(tmp / (m0 - 1), scale));
     }
 
     Float64 getMoment3(UInt32 scale) const
@@ -206,7 +218,7 @@ public:
             common::mulOverflow(tmp, getM(1), tmp) ||
             common::subOverflow(getM(3), NativeType(tmp / m0), tmp))
             throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
-        return DecimalUtils::convertTo<Float64>(T(tmp / m0), scale);
+        return convertFromDecimal<DataTypeDecimal<T>, DataTypeNumber<Float64>>(tmp / m0, scale);
     }
 
     Float64 getMoment4(UInt32 scale) const
@@ -222,15 +234,8 @@ public:
             common::mulOverflow(tmp, getM(1), tmp) ||
             common::subOverflow(getM(4), NativeType(tmp / m0), tmp))
             throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
-        return DecimalUtils::convertTo<Float64>(T(tmp / m0), scale);
+        return convertFromDecimal<DataTypeDecimal<T>, DataTypeNumber<Float64>>(tmp / m0, scale);
     }
-
-private:
-    UInt64 m0{};
-    NativeType m[_level]{};
-
-    NativeType & getM(size_t i) { return m[i - 1]; }
-    const NativeType & getM(size_t i) const { return m[i - 1]; }
 };
 
 /**

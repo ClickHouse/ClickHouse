@@ -7,7 +7,6 @@ PEERDIR(
     contrib/libs/protobuf
 )
 
-
 SRCS(
     Chunk.cpp
     ConcatProcessor.cpp
@@ -19,14 +18,11 @@ SRCS(
     Executors/PullingPipelineExecutor.cpp
     ForkProcessor.cpp
     Formats/IInputFormat.cpp
-    Formats/IOutputFormat.cpp
-    Formats/IRowInputFormat.cpp
-    Formats/IRowOutputFormat.cpp
     Formats/Impl/BinaryRowInputFormat.cpp
     Formats/Impl/BinaryRowOutputFormat.cpp
+    Formats/Impl/ConstantExpressionTemplate.cpp
     Formats/Impl/CSVRowInputFormat.cpp
     Formats/Impl/CSVRowOutputFormat.cpp
-    Formats/Impl/ConstantExpressionTemplate.cpp
     Formats/Impl/JSONAsStringRowInputFormat.cpp
     Formats/Impl/JSONCompactEachRowRowInputFormat.cpp
     Formats/Impl/JSONCompactEachRowRowOutputFormat.cpp
@@ -35,7 +31,6 @@ SRCS(
     Formats/Impl/JSONEachRowRowOutputFormat.cpp
     Formats/Impl/JSONEachRowWithProgressRowOutputFormat.cpp
     Formats/Impl/JSONRowOutputFormat.cpp
-    Formats/Impl/LineAsStringRowInputFormat.cpp
     Formats/Impl/MarkdownRowOutputFormat.cpp
     Formats/Impl/MsgPackRowInputFormat.cpp
     Formats/Impl/MsgPackRowOutputFormat.cpp
@@ -49,19 +44,20 @@ SRCS(
     Formats/Impl/PrettySpaceBlockOutputFormat.cpp
     Formats/Impl/ProtobufRowInputFormat.cpp
     Formats/Impl/ProtobufRowOutputFormat.cpp
-    Formats/Impl/RawBLOBRowInputFormat.cpp
-    Formats/Impl/RawBLOBRowOutputFormat.cpp
     Formats/Impl/RegexpRowInputFormat.cpp
-    Formats/Impl/TSKVRowInputFormat.cpp
-    Formats/Impl/TSKVRowOutputFormat.cpp
     Formats/Impl/TabSeparatedRowInputFormat.cpp
     Formats/Impl/TabSeparatedRowOutputFormat.cpp
     Formats/Impl/TemplateBlockOutputFormat.cpp
     Formats/Impl/TemplateRowInputFormat.cpp
+    Formats/Impl/TSKVRowInputFormat.cpp
+    Formats/Impl/TSKVRowOutputFormat.cpp
     Formats/Impl/ValuesBlockInputFormat.cpp
     Formats/Impl/ValuesRowOutputFormat.cpp
     Formats/Impl/VerticalRowOutputFormat.cpp
     Formats/Impl/XMLRowOutputFormat.cpp
+    Formats/IOutputFormat.cpp
+    Formats/IRowInputFormat.cpp
+    Formats/IRowOutputFormat.cpp
     Formats/LazyOutputFormat.cpp
     Formats/OutputStreamToOutputFormat.cpp
     Formats/PullingOutputFormat.cpp
@@ -87,6 +83,7 @@ SRCS(
     OffsetTransform.cpp
     Pipe.cpp
     Port.cpp
+    printPipeline.cpp
     QueryPipeline.cpp
     QueryPlan/AddingDelayedSourceStep.cpp
     QueryPlan/AggregatingStep.cpp
@@ -138,7 +135,7 @@ SRCS(
     Transforms/FillingTransform.cpp
     Transforms/FilterTransform.cpp
     Transforms/FinishSortingTransform.cpp
-    Transforms/JoiningTransform.cpp
+    Transforms/InflatingExpressionTransform.cpp
     Transforms/LimitByTransform.cpp
     Transforms/LimitsCheckingTransform.cpp
     Transforms/MaterializingTransform.cpp
@@ -150,7 +147,6 @@ SRCS(
     Transforms/RollupTransform.cpp
     Transforms/SortingTransform.cpp
     Transforms/TotalsHavingTransform.cpp
-    printPipeline.cpp
 
 )
 

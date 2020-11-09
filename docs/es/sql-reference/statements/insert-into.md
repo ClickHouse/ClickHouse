@@ -20,7 +20,7 @@ La consulta puede especificar una lista de columnas para insertar `[(c1, c2, c3)
 -   Los valores calculados a partir del `DEFAULT` expresiones especificadas en la definición de la tabla.
 -   Ceros y cadenas vacías, si `DEFAULT` expresiones no están definidas.
 
-Si [strict_insert_defaults=1](../../operations/settings/settings.md), columnas que no tienen `DEFAULT` definido debe figurar en la consulta.
+Si [strict\_insert\_defaults=1](../../operations/settings/settings.md), columnas que no tienen `DEFAULT` definido debe figurar en la consulta.
 
 Los datos se pueden pasar al INSERT en cualquier [formato](../../interfaces/formats.md#formats) con el apoyo de ClickHouse. El formato debe especificarse explícitamente en la consulta:
 

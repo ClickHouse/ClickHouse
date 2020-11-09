@@ -70,6 +70,17 @@ std::pair<std::string, std::string> splitName(const std::string & name)
     return {{ begin, first_end }, { second_begin, end }};
 }
 
+std::string createCommaSeparatedStringFrom(const Names & names)
+{
+    std::ostringstream ss;
+    if (!names.empty())
+    {
+        std::copy(names.begin(), std::prev(names.end()), std::ostream_iterator<std::string>(ss, ", "));
+        ss << names.back();
+    }
+    return ss.str();
+}
+
 
 std::string extractTableName(const std::string & nested_name)
 {

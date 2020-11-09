@@ -1,10 +1,6 @@
 # docker build -t yandex/clickhouse-unbundled-builder .
 FROM yandex/clickhouse-deb-builder
 
-RUN export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
-    && wget -nv -O /tmp/arrow-keyring.deb "https://apache.bintray.com/arrow/ubuntu/apache-arrow-archive-keyring-latest-${CODENAME}.deb" \
-    && dpkg -i /tmp/arrow-keyring.deb
-
 # Libraries from OS are only needed to test the "unbundled" build (that is not used in production).
 RUN apt-get update \
     && apt-get install \
@@ -55,7 +51,6 @@ RUN apt-get update \
         protobuf-compiler \
         libprotoc-dev \
         libgrpc++-dev \
-        protobuf-compiler-grpc \
         rapidjson-dev \
         libsnappy-dev \
         libparquet-dev \
