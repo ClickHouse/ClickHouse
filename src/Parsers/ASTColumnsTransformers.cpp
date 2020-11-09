@@ -71,10 +71,10 @@ void ASTColumnsApplyTransformer::transform(ASTs & nodes) const
 
 void ASTColumnsExceptTransformer::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "EXCEPT" << (is_strict ? " STRICT " : "") << (settings.hilite ? hilite_none : "");
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "EXCEPT" << (is_strict ? " STRICT " : " ") << (settings.hilite ? hilite_none : "");
 
     if (children.size() > 1)
-        settings.ostr << " (";
+        settings.ostr << "(";
 
     for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
     {
@@ -93,26 +93,25 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
 {
     ASTs expected_columns(children);
 
-    nodes.erase(
-        std::remove_if(
-            nodes.begin(),
-            nodes.end(),
-            [&](const ASTPtr & node_child)
+    for (auto it = nodes.begin(); it != nodes.end();)
+    {
+        bool removed = false;
+        if (const auto * id = it->get()->as<ASTIdentifier>())
+        {
+            for (int i = expected_columns.size() - 1; i >= 0; --i)
             {
-                if (const auto * id = node_child->as<ASTIdentifier>())
+                if (expected_columns[i]->as<const ASTIdentifier &>().name() == id->shortName())
                 {
-                    for (int i = expected_columns.size() - 1; i >= 0; --i)
-                    {
-                        if (expected_columns[i]->as<const ASTIdentifier &>().name() == id->shortName())
-                        {
-                            expected_columns.erase(expected_columns.begin() + i);
-                            return true;
-                        }
-                    }
+                    removed = true;
+                    expected_columns.erase(expected_columns.begin() + i);
+                    it = nodes.erase(it);
                 }
-                return false;
-            }),
-        nodes.end());
+            }
+        }
+
+        if (!removed)
+            ++it;
+    }
 
     if (is_strict && !expected_columns.empty())
     {
@@ -139,10 +138,10 @@ void ASTColumnsReplaceTransformer::Replacement::formatImpl(
 
 void ASTColumnsReplaceTransformer::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "REPLACE" << (is_strict ? " STRICT " : "") << (settings.hilite ? hilite_none : "");
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "REPLACE" << (is_strict ? " STRICT " : " ") << (settings.hilite ? hilite_none : "");
 
     if (children.size() > 1)
-        settings.ostr << " (";
+        settings.ostr << "(";
 
     for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
     {
