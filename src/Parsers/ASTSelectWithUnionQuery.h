@@ -27,6 +27,10 @@ public:
 
     Mode union_mode;
 
+    UnionModes list_of_modes;
+
+    bool is_normalized = false;
+
     ASTPtr list_of_selects;
 };
 
