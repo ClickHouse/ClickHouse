@@ -384,7 +384,6 @@ struct TestKeeperStorageMultiRequest final : public TestKeeperStorageRequest
                 if (cur_response->error != Coordination::Error::ZOK)
                 {
                     std::cerr << "GOT ERROR ON: " << i << " error" << static_cast<int32_t>(cur_response->error) << std::endl;
-                    response.error = cur_response->error;
 
                     for (auto it = undo_actions.rbegin(); it != undo_actions.rend(); ++it)
                         if (*it)

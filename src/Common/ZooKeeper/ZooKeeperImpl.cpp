@@ -835,6 +835,7 @@ void ZooKeeper::receiveEvent()
         }
         else
         {
+            std::cerr << "NO ERROR RECEIVED\n";
             response->readImpl(*in);
             response->removeRootPath(root_path);
         }
