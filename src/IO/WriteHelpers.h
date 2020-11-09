@@ -1110,4 +1110,6 @@ struct PcgSerializer
     }
 };
 
+void writePointerHex(const void * ptr, WriteBuffer & buf);
+
 }

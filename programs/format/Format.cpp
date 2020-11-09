@@ -132,6 +132,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                 {
                     WriteBufferFromOStream res_buf(std::cout, 4096);
                     formatAST(*res, res_buf, hilite, oneline);
+                    res_buf.next();
                     if (multiple)
                         std::cout << "\n;\n";
                     std::cout << std::endl;

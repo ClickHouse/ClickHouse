@@ -3205,13 +3205,12 @@ void MergeTreeData::Transaction::rollbackPartsToTemporaryState()
 {
     if (!isEmpty())
     {
-        std::stringstream ss;
-        ss.exceptions(std::ios::failbit);
-        ss << " Rollbacking parts state to temporary and removing from working set:";
+        WriteBufferFromOwnString buf;
+        buf << " Rollbacking parts state to temporary and removing from working set:";
         for (const auto & part : precommitted_parts)
-            ss << " " << part->relative_path;
-        ss << ".";
-        LOG_DEBUG(data.log, "Undoing transaction.{}", ss.str());
+            buf << " " << part->relative_path;
+        buf << ".";
+        LOG_DEBUG(data.log, "Undoing transaction.{}", buf.str());
 
         data.removePartsFromWorkingSetImmediatelyAndSetTemporaryState(
             DataPartsVector(precommitted_parts.begin(), precommitted_parts.end()));
@@ -3224,13 +3223,12 @@ void MergeTreeData::Transaction::rollback()
 {
     if (!isEmpty())
     {
-        std::stringstream ss;
-        ss.exceptions(std::ios::failbit);
-        ss << " Removing parts:";
+        WriteBufferFromOwnString buf;
+        buf << " Removing parts:";
         for (const auto & part : precommitted_parts)
-            ss << " " << part->relative_path;
-        ss << ".";
-        LOG_DEBUG(data.log, "Undoing transaction.{}", ss.str());
+            buf << " " << part->relative_path;
+        buf << ".";
+        LOG_DEBUG(data.log, "Undoing transaction.{}", buf.str());
 
         data.removePartsFromWorkingSet(
             DataPartsVector(precommitted_parts.begin(), precommitted_parts.end()),
@@ -3760,15 +3758,15 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
         if (out_reason && (settings.min_rows_for_wide_part != 0 || settings.min_bytes_for_wide_part != 0
             || settings.min_rows_for_compact_part != 0 || settings.min_bytes_for_compact_part != 0))
         {
-            std::ostringstream message;
-            message.exceptions(std::ios::failbit);
-            message << "Table can't create parts with adaptive granularity, but settings"
-                    << " min_rows_for_wide_part = " << settings.min_rows_for_wide_part
-                    << ", min_bytes_for_wide_part = " << settings.min_bytes_for_wide_part
-                    << ", min_rows_for_compact_part = " << settings.min_rows_for_compact_part
-                    << ", min_bytes_for_compact_part = " << settings.min_bytes_for_compact_part
-                    << ". Parts with non-adaptive granularity can be stored only in Wide (default) format.";
-            *out_reason = message.str();
+            *out_reason = fmt::format(
+                    "Table can't create parts with adaptive granularity, but settings"
+                    " min_rows_for_wide_part = {}"
+                    ", min_bytes_for_wide_part = {}"
+                    ", min_rows_for_compact_part = {}"
+                    ", min_bytes_for_compact_part = {}"
+                    ". Parts with non-adaptive granularity can be stored only in Wide (default) format.",
+                    settings.min_rows_for_wide_part,    settings.min_bytes_for_wide_part,
+                    settings.min_rows_for_compact_part, settings.min_bytes_for_compact_part);
         }
 
         return false;

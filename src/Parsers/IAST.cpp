@@ -148,4 +148,14 @@ void IAST::FormatSettings::writeIdentifier(const String & name) const
     }
 }
 
+void IAST::dumpTree(WriteBuffer & ostr, size_t indent) const
+{
+    String indent_str(indent, '-');
+    ostr << indent_str << getID() << ", ";
+    writePointerHex(this, ostr);
+    writeChar('\n', ostr);
+    for (const auto & child : children)
+        child->dumpTree(ostr, indent + 1);
+}
+
 }
