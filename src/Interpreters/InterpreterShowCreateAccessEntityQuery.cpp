@@ -239,6 +239,7 @@ BlockInputStreamPtr InterpreterShowCreateAccessEntityQuery::executeImpl()
     /// Build the result column.
     MutableColumnPtr column = ColumnString::create();
     std::stringstream create_query_ss;
+    create_query_ss.exceptions(std::ios::failbit);
     for (const auto & create_query : create_queries)
     {
         formatAST(*create_query, create_query_ss, false, true);
@@ -248,6 +249,7 @@ BlockInputStreamPtr InterpreterShowCreateAccessEntityQuery::executeImpl()
 
     /// Prepare description of the result column.
     std::stringstream desc_ss;
+    desc_ss.exceptions(std::ios::failbit);
     const auto & show_query = query_ptr->as<const ASTShowCreateAccessEntityQuery &>();
     formatAST(show_query, desc_ss, false, true);
     String desc = desc_ss.str();

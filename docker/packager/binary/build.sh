@@ -63,7 +63,7 @@ then
     mkdir -p /output/config
     cp ../programs/server/config.xml /output/config
     cp ../programs/server/users.xml /output/config
-    cp -r ../programs/server/config.d /output/config
+    cp -r --dereference ../programs/server/config.d /output/config
     tar -czvf "$COMBINED_OUTPUT.tgz" /output
     rm -r /output/*
     mv "$COMBINED_OUTPUT.tgz" /output

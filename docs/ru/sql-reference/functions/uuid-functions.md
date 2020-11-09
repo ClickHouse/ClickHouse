@@ -59,6 +59,54 @@ SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
 └──────────────────────────────────────┘
 ```
 
+## toUUIDOrNull (x) {#touuidornull-x}
+
+Принимает строку, и пытается преобразовать в тип UUID. При неудаче возвращает NULL.
+
+``` sql
+toUUIDOrNull(String)
+```
+
+**Возвращаемое значение**
+
+Значение типа Nullable(UUID).
+
+**Пример использования**
+
+``` sql
+SELECT toUUIDOrNull('61f0c404-5cb3-11e7-907b-a6006ad3dba0T') AS uuid
+```
+
+``` text
+┌─uuid─┐
+│ ᴺᵁᴸᴸ │
+└──────┘
+```
+
+## toUUIDOrZero (x) {#touuidorzero-x}
+
+Принимает строку, и пытается преобразовать в тип UUID. При неудаче возвращает нулевой UUID.
+
+``` sql
+toUUIDOrZero(String)
+```
+
+**Возвращаемое значение**
+
+Значение типа UUID.
+
+**Пример использования**
+
+``` sql
+SELECT toUUIDOrZero('61f0c404-5cb3-11e7-907b-a6006ad3dba0T') AS uuid
+```
+
+``` text
+┌─────────────────────────────────uuid─┐
+│ 00000000-0000-0000-0000-000000000000 │
+└──────────────────────────────────────┘
+```
+
 ## UUIDStringToNum {#uuidstringtonum}
 
 Принимает строку, содержащую 36 символов в формате `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, и возвращает в виде набора байт в [FixedString(16)](../../sql-reference/functions/uuid-functions.md).

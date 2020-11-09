@@ -6,6 +6,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/Macros.h>
+#include <Common/randomSeed.h>
 
 #include <Core/Defines.h>
 #include <Core/Settings.h>
@@ -135,6 +136,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     {
         /// Currently, there are no database engines, that support any arguments.
         std::stringstream ostr;
+        ostr.exceptions(std::ios::failbit);
         formatAST(*create.storage, ostr, false, false);
         throw Exception("Unknown database engine: " + ostr.str(), ErrorCodes::UNKNOWN_DATABASE_ENGINE);
     }
@@ -181,6 +183,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         create.if_not_exists = false;
 
         std::ostringstream statement_stream;
+        statement_stream.exceptions(std::ios::failbit);
         formatAST(create, statement_stream, false);
         statement_stream << '\n';
         String statement = statement_stream.str();
@@ -362,7 +365,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             if (col_decl.type)
             {
                 const auto & final_column_name = col_decl.name;
-                const auto tmp_column_name = final_column_name + "_tmp";
+                const auto tmp_column_name = final_column_name + "_tmp_alter" + toString(randomSeed());
                 const auto * data_type_ptr = column_names_and_types.back().type.get();
 
                 default_expr_list->children.emplace_back(

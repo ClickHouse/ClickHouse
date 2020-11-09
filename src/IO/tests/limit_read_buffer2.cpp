@@ -21,6 +21,7 @@ try
     using namespace DB;
 
     std::stringstream s;
+    s.exceptions(std::ios::failbit);
 
     {
         std::string src = "1";
