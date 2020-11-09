@@ -714,6 +714,13 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
                 break;
             }
         }
+
+        // Check if we have enough columns to fulfill the action.
+        for (const auto & name : action.getNeededColumns())
+        {
+            if (!transform.has(name))
+                return false;
+        }
         action.execute(transform, true);
     }
 
