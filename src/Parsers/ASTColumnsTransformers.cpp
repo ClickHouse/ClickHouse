@@ -48,7 +48,6 @@ void ASTColumnsApplyTransformer::formatImpl(const FormatSettings & settings, For
 
 void ASTColumnsApplyTransformer::transform(ASTs & nodes) const
 {
-    std::cout << "\033[31m" << __FILE__ << ":"<<__LINE__ << "\033[39m" << std::endl;
     for (auto & column : nodes)
     {
         String name;
