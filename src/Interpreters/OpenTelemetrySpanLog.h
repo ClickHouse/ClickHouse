@@ -23,6 +23,10 @@ struct OpenTelemetrySpan
 
 struct OpenTelemetrySpanLogElement : public OpenTelemetrySpan
 {
+    OpenTelemetrySpanLogElement() = default;
+    OpenTelemetrySpanLogElement(const OpenTelemetrySpan & span)
+        : OpenTelemetrySpan(span) {}
+
     static std::string name() { return "OpenTelemetrySpanLog"; }
     static Block createBlock();
     void appendToBlock(MutableColumns & columns) const;
@@ -34,6 +38,12 @@ class OpenTelemetrySpanLog : public SystemLog<OpenTelemetrySpanLogElement>
 {
 public:
     using SystemLog<OpenTelemetrySpanLogElement>::SystemLog;
+};
+
+struct OpenTelemetrySpanHolder : public OpenTelemetrySpan
+{
+    OpenTelemetrySpanHolder(const std::string & _operation_name);
+    ~OpenTelemetrySpanHolder();
 };
 
 }

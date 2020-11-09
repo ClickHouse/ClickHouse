@@ -517,7 +517,7 @@ struct Settings : public BaseSettings<SettingsTraits>
 };
 
 /*
- * User-specified file format settings for File and ULR engines.
+ * User-specified file format settings for File and URL engines.
  */
 DECLARE_SETTINGS_TRAITS(FormatFactorySettingsTraits, FORMAT_FACTORY_SETTINGS)
 

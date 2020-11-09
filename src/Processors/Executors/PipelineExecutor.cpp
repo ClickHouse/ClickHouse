@@ -8,6 +8,7 @@
 #include <Processors/ISource.h>
 #include <Common/setThreadName.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 
 #ifndef NDEBUG
     #include <Common/Stopwatch.h>
@@ -75,6 +76,7 @@ static void executeJob(IProcessor * processor)
 {
     try
     {
+        OpenTelemetrySpanHolder span(demangle(typeid(*processor).name()));
         processor->work();
     }
     catch (Exception & exception)

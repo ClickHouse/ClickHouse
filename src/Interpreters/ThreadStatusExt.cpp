@@ -2,6 +2,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
@@ -108,7 +109,25 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
     }
 
     if (query_context)
+    {
         applyQuerySettings();
+
+        opentelemetry_trace_id = query_context->getClientInfo().opentelemetry_trace_id;
+        opentelemetry_current_span_id = query_context->getClientInfo().opentelemetry_span_id;
+
+        if (opentelemetry_trace_id)
+        {
+            // Register the span for our thread. We might not know the name yet
+            // -- there are no strong constraints on when it is set relative to
+            // attaching the thread to query. Will set the name when the span ends.
+            opentelemetry_thread_span.reset(new OpenTelemetrySpanHolder(""));
+        }
+    }
+    else
+    {
+        opentelemetry_trace_id = 0;
+        opentelemetry_current_span_id = 0;
+    }
 
     initPerformanceCounters();
 
@@ -300,6 +319,13 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 
     assertState({ThreadState::AttachedToQuery}, __PRETTY_FUNCTION__);
 
+    if (opentelemetry_thread_span)
+    {
+        opentelemetry_thread_span->operation_name = getThreadName();
+        opentelemetry_thread_span->attribute_names.push_back("clickhouse.thread_id");
+        opentelemetry_thread_span->attribute_values.push_back(thread_id);
+    }
+
     finalizeQueryProfiler();
     finalizePerformanceCounters();
 
@@ -312,6 +338,9 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 
     query_id.clear();
     query_context = nullptr;
+    opentelemetry_thread_span = nullptr;
+    opentelemetry_trace_id = 0;
+    opentelemetry_current_span_id = 0;
     thread_group.reset();
 
     thread_state = thread_exits ? ThreadState::Died : ThreadState::DetachedFromQuery;

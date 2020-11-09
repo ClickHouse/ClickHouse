@@ -20,6 +20,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/InternalTextLogsQueue.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Core/ExternalTable.h>
@@ -521,6 +522,8 @@ void TCPHandler::processInsertQuery(const Settings & connection_settings)
 
 void TCPHandler::processOrdinaryQuery()
 {
+    OpenTelemetrySpanHolder span(__FUNCTION__);
+
     /// Pull query execution result, if exists, and send it to network.
     if (state.io.in)
     {
