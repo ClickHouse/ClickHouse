@@ -198,6 +198,7 @@ namespace
 
         /// Serialize the list of ATTACH queries to a string.
         std::stringstream ss;
+        ss.exceptions(std::ios::failbit);
         for (const ASTPtr & query : queries)
             ss << *query << ";\n";
         String file_contents = std::move(ss).str();
@@ -353,6 +354,7 @@ String DiskAccessStorage::getStorageParamsJSON() const
     if (readonly)
         json.set("readonly", readonly.load());
     std::ostringstream oss;
+    oss.exceptions(std::ios::failbit);
     Poco::JSON::Stringifier::stringify(json, oss);
     return oss.str();
 }

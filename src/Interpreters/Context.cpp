@@ -65,6 +65,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
 
+
 namespace ProfileEvents
 {
     extern const Event ContextLock;
@@ -153,7 +154,7 @@ public:
         }
         else if (it->second->key.first != context.client_info.current_user)
         {
-            throw Exception("Session belongs to a different user", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Session belongs to a different user", ErrorCodes::SESSION_IS_LOCKED);
         }
 
         /// Use existing session.
@@ -363,6 +364,7 @@ struct ContextShared
     /// Initialized on demand (on distributed storages initialization) since Settings should be initialized
     std::unique_ptr<Clusters> clusters;
     ConfigurationPtr clusters_config;                        /// Stores updated configs
+    ConfigurationPtr zookeeper_config;                        /// Stores zookeeper configs
     mutable std::mutex clusters_mutex;                        /// Guards clusters and clusters_config
 
 #if USE_EMBEDDED_COMPILER
@@ -595,7 +597,8 @@ VolumePtr Context::setTemporaryStorage(const String & path, const String & polic
     {
         StoragePolicyPtr tmp_policy = getStoragePolicySelector(lock)->get(policy_name);
         if (tmp_policy->getVolumes().size() != 1)
-             throw Exception("Policy " + policy_name + " is used temporary files, such policy should have exactly one volume", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+             throw Exception("Policy " + policy_name + " is used temporary files, such policy should have exactly one volume",
+                             ErrorCodes::NO_ELEMENTS_IN_CONFIG);
         shared->tmp_volume = tmp_policy->getVolume(0);
     }
 
@@ -1082,11 +1085,13 @@ String Context::getInitialQueryId() const
 void Context::setCurrentDatabaseNameInGlobalContext(const String & name)
 {
     if (global_context != this)
-        throw Exception("Cannot set current database for non global context, this method should be used during server initialization", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Cannot set current database for non global context, this method should be used during server initialization",
+                        ErrorCodes::LOGICAL_ERROR);
     auto lock = getLock();
 
     if (!current_database.empty())
-        throw Exception("Default database name cannot be changed in global context without server restart", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Default database name cannot be changed in global context without server restart",
+                        ErrorCodes::LOGICAL_ERROR);
 
     current_database = name;
 }
@@ -1469,7 +1474,7 @@ DDLWorker & Context::getDDLWorker() const
 {
     auto lock = getLock();
     if (!shared->ddl_worker)
-        throw Exception("DDL background thread is not initialized.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("DDL background thread is not initialized.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
     return *shared->ddl_worker;
 }
 
@@ -1477,8 +1482,9 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 {
     std::lock_guard lock(shared->zookeeper_mutex);
 
+    const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
     if (!shared->zookeeper)
-        shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(getConfigRef(), "zookeeper");
+        shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(config, "zookeeper");
     else if (shared->zookeeper->expired())
         shared->zookeeper = shared->zookeeper->startNewSession();
 
@@ -1512,6 +1518,8 @@ void Context::resetZooKeeper() const
 void Context::reloadZooKeeperIfChanged(const ConfigurationPtr & config) const
 {
     std::lock_guard lock(shared->zookeeper_mutex);
+    shared->zookeeper_config = config;
+
     if (!shared->zookeeper || shared->zookeeper->configChanged(*config, "zookeeper"))
     {
         shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(*config, "zookeeper");
@@ -1958,6 +1966,7 @@ void Context::checkCanBeDropped(const String & database, const String & table, c
     String size_str = formatReadableSizeWithDecimalSuffix(size);
     String max_size_to_drop_str = formatReadableSizeWithDecimalSuffix(max_size_to_drop);
     std::stringstream ostr;
+    ostr.exceptions(std::ios::failbit);
 
     ostr << "Table or Partition in " << backQuoteIfNeed(database) << "." << backQuoteIfNeed(table) << " was not dropped.\n"
          << "Reason:\n"

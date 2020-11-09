@@ -59,4 +59,4 @@ def show_tables_general(self, grant_target_name, user_name, node=None):
 def feature(self, node="clickhouse1"):
     self.context.node = self.context.cluster.node(node)
 
-    Scenario(run=show_tables, flags=TE)
+    Scenario(run=show_tables, setup=instrument_clickhouse_server_log, flags=TE)
