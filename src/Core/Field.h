@@ -768,8 +768,7 @@ T & Field::get()
     // Disregard signedness when converting between int64 types.
     constexpr Field::Types::Which target = TypeToEnum<NearestFieldType<ValueType>>::value;
     if (target != which
-           && (!isInt64FieldType(target) || !isInt64FieldType(which))
-        && target != Field::Types::Decimal64 /* DateTime64 fields */)
+           && (!isInt64FieldType(target) || !isInt64FieldType(which)))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid Field get from type {} to type {}", Types::toString(which), Types::toString(target));
 #endif
 

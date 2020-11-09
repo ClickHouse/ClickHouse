@@ -589,8 +589,7 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
                 LOG_DEBUG(log, "Pulled {} entries to queue.", copied_entries.size());
         }
 
-        if (storage.queue_task_handle)
-            storage.queue_task_handle->signalReadyToRun();
+        storage.background_executor.triggerTask();
     }
 
     return stat.version;
@@ -673,8 +672,8 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
         }
     }
 
-    if (some_active_mutations_were_killed && storage.queue_task_handle)
-        storage.queue_task_handle->signalReadyToRun();
+    if (some_active_mutations_were_killed)
+        storage.background_executor.triggerTask();
 
     if (!entries_to_load.empty())
     {
@@ -797,8 +796,8 @@ ReplicatedMergeTreeMutationEntryPtr ReplicatedMergeTreeQueue::removeMutation(
         LOG_DEBUG(log, "Removed mutation {} from local state.", entry->znode_name);
     }
 
-    if (mutation_was_active && storage.queue_task_handle)
-        storage.queue_task_handle->signalReadyToRun();
+    if (mutation_was_active)
+        storage.background_executor.triggerTask();
 
     return entry;
 }
@@ -943,6 +942,7 @@ size_t ReplicatedMergeTreeQueue::getConflictsCountForRange(
     if (out_description)
     {
         std::stringstream ss;
+        ss.exceptions(std::ios::failbit);
         ss << "Can't execute command for range " << range.getPartName() << " (entry " << entry.znode_name << "). ";
         ss << "There are " << conflicts.size() << " currently executing entries blocking it: ";
         for (const auto & conflict : conflicts)
@@ -1281,7 +1281,7 @@ ReplicatedMergeTreeQueue::CurrentlyExecuting::~CurrentlyExecuting()
 }
 
 
-ReplicatedMergeTreeQueue::SelectedEntry ReplicatedMergeTreeQueue::selectEntryToProcess(MergeTreeDataMergerMutator & merger_mutator, MergeTreeData & data)
+ReplicatedMergeTreeQueue::SelectedEntryPtr ReplicatedMergeTreeQueue::selectEntryToProcess(MergeTreeDataMergerMutator & merger_mutator, MergeTreeData & data)
 {
     LogEntryPtr entry;
 
@@ -1308,7 +1308,7 @@ ReplicatedMergeTreeQueue::SelectedEntry ReplicatedMergeTreeQueue::selectEntryToP
     }
 
     if (entry)
-        return { entry, std::unique_ptr<CurrentlyExecuting>{ new CurrentlyExecuting(entry, *this) } };
+        return std::make_shared<SelectedEntry>(entry, std::unique_ptr<CurrentlyExecuting>{ new CurrentlyExecuting(entry, *this) });
     else
         return {};
 }
@@ -1694,6 +1694,7 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
         for (const MutationCommand & command : entry.commands)
         {
             std::stringstream ss;
+            ss.exceptions(std::ios::failbit);
             formatAST(*command.ast, ss, false, true);
             result.push_back(MergeTreeMutationStatus
             {

@@ -223,6 +223,7 @@ std::string MultiplexedConnections::dumpAddressesUnlocked() const
 {
     bool is_first = true;
     std::ostringstream os;
+    os.exceptions(std::ios::failbit);
     for (const ReplicaState & state : replica_states)
     {
         const Connection * connection = state.connection;

@@ -219,6 +219,7 @@ std::pair<ResponsePtr, Undo> TestKeeperCreateRequest::process(TestKeeper::Contai
                 ++it->second.seq_num;
 
                 std::stringstream seq_num_str;
+                seq_num_str.exceptions(std::ios::failbit);
                 seq_num_str << std::setw(10) << std::setfill('0') << seq_num;
 
                 path_created += seq_num_str.str();
