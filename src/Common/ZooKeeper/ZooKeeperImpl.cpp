@@ -751,12 +751,9 @@ void ZooKeeper::receiveEvent()
     Error err;
 
     read(length);
-    std::cerr << "RECEIVED LENGTH " << length << std::endl;
     size_t count_before_event = in->count();
     read(xid);
-    std::cerr << "RECEIVED XID " << xid << std::endl;
     read(zxid);
-    std::cerr << "RECEIVED ZXID " << zxid << std::endl;
     read(err);
 
     RequestInfo request_info;
