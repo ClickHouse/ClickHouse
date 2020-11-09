@@ -88,7 +88,7 @@ struct QuantileExact : QuantileExactBase<Value, QuantileExact<Value>>
         {
             size_t n = level < 1 ? level * array.size() : (array.size() - 1);
 
-            miniselect::floyd_rivest_partial_select(array.begin(), array.begin() + n, array.end()); /// NOTE You can think of the radix-select algorithm.
+            miniselect::floyd_rivest_select(array.begin(), array.begin() + n, array.end()); /// NOTE You can think of the radix-select algorithm.
             return array[n];
         }
 
