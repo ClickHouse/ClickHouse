@@ -1159,13 +1159,13 @@ private:
                 ASTPtr ast_to_process;
                 try
                 {
-                    std::stringstream dump_before_fuzz;
+                    WriteBufferFromOwnString dump_before_fuzz;
                     fuzz_base->dumpTree(dump_before_fuzz);
                     auto base_before_fuzz = fuzz_base->formatForErrorMessage();
 
                     ast_to_process = fuzz_base->clone();
 
-                    std::stringstream dump_of_cloned_ast;
+                    WriteBufferFromOwnString dump_of_cloned_ast;
                     ast_to_process->dumpTree(dump_of_cloned_ast);
 
                     // Run the original query as well.
@@ -1187,7 +1187,8 @@ private:
                         fprintf(stderr, "dump of cloned ast:\n%s\n",
                             dump_of_cloned_ast.str().c_str());
                         fprintf(stderr, "dump after fuzz:\n");
-                        fuzz_base->dumpTree(std::cerr);
+                        WriteBufferFromOStream cerr_buf(std::cerr, 4096);
+                        fuzz_base->dumpTree(cerr_buf);
 
                         fmt::print(stderr, "IAST::clone() is broken for some AST node. This is a bug. The original AST ('dump before fuzz') and its cloned copy ('dump of cloned AST') refer to the same nodes, which must never happen. This means that their parent node doesn't implement clone() correctly.");
 

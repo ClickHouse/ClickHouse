@@ -78,13 +78,7 @@ public:
     void updateTreeHash(SipHash & hash_state) const;
     virtual void updateTreeHashImpl(SipHash & hash_state) const;
 
-    void dumpTree(std::ostream & ostr, size_t indent = 0) const
-    {
-        String indent_str(indent, '-');
-        ostr << indent_str << getID() << ", " << this << std::endl;
-        for (const auto & child : children)
-            child->dumpTree(ostr, indent + 1);
-    }
+    void dumpTree(WriteBuffer & ostr, size_t indent = 0) const;
 
     /** Check the depth of the tree.
       * If max_depth is specified and the depth is greater - throw an exception.
