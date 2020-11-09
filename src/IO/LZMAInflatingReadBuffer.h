@@ -1,10 +1,10 @@
 #pragma once
 
 #include <IO/BufferWithOwnMemory.h>
-#include <IO/CompressionMethod.h>
 #include <IO/ReadBuffer.h>
 
 #include <lzma.h>
+#include <fast-lzma2.h>
 
 namespace DB
 {
@@ -12,22 +12,23 @@ namespace ErrorCodes
 {
 }
 
-class LzmaReadBuffer : public BufferWithOwnMemory<ReadBuffer>
+class LZMAInflatingReadBuffer : public BufferWithOwnMemory<ReadBuffer>
 {
 public:
-    LzmaReadBuffer(
+    LZMAInflatingReadBuffer(
         std::unique_ptr<ReadBuffer> in_,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         char * existing_memory = nullptr,
         size_t alignment = 0);
 
-    ~LzmaReadBuffer() override;
+    ~LZMAInflatingReadBuffer() override;
 
 private:
     bool nextImpl() override;
 
     std::unique_ptr<ReadBuffer> in;
-    lzma_stream lstr;
+    FL2_DStream * lstr;
+
     bool eof;
 };
 }
