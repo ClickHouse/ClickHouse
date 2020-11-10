@@ -431,6 +431,7 @@ namespace
     String listOfColumns(const NamesAndTypesList & available_columns)
     {
         std::stringstream ss;
+        ss.exceptions(std::ios::failbit);
         for (auto it = available_columns.begin(); it != available_columns.end(); ++it)
         {
             if (it != available_columns.begin())

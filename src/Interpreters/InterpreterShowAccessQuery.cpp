@@ -35,6 +35,7 @@ BlockInputStreamPtr InterpreterShowAccessQuery::executeImpl() const
     /// Build the result column.
     MutableColumnPtr column = ColumnString::create();
     std::stringstream ss;
+    ss.exceptions(std::ios::failbit);
     for (const auto & query : queries)
     {
         ss.str("");

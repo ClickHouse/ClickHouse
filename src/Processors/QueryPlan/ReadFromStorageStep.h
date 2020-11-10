@@ -31,7 +31,7 @@ public:
         std::shared_ptr<const EnabledQuota> quota,
         StoragePtr storage,
         const Names & required_columns,
-        const SelectQueryInfo & query_info,
+        SelectQueryInfo & query_info,
         std::shared_ptr<Context> context,
         QueryProcessingStage::Enum processing_stage,
         size_t max_block_size,
