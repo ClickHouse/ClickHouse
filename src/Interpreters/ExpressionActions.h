@@ -175,21 +175,25 @@ public:
 
     using Nodes = std::list<Node>;
 
+    struct ActionsSettings
+    {
+        size_t max_temporary_columns = 0;
+        size_t max_temporary_non_const_columns = 0;
+        size_t min_count_to_compile_expression = 0;
+        bool compile_expressions = false;
+        bool project_input = false;
+        bool projected_output = false;
+    };
+
 private:
     Nodes nodes;
     Index index;
 
-    size_t max_temporary_columns = 0;
-    size_t max_temporary_non_const_columns = 0;
-    size_t min_count_to_compile_expression = 0;
-    bool compile_expressions = false;
+    ActionsSettings settings;
 
 #if USE_EMBEDDED_COMPILER
     std::shared_ptr<CompiledExpressionCache> compilation_cache;
 #endif
-
-    bool project_input = false;
-    bool projected_output = false;
 
 public:
     ActionsDAG() = default;
@@ -207,7 +211,6 @@ public:
 
     Names getNames() const;
     std::string dumpNames() const;
-    std::string dump() const;
     std::string dumpDAG() const;
 
     const Node & addInput(std::string name, DataTypePtr type);
@@ -231,9 +234,8 @@ public:
     /// If column is not in index, try to find it in nodes and insert back into index.
     bool tryRestoreColumn(const std::string & column_name);
 
-    void projectInput() { project_input = true; }
+    void projectInput() { settings.project_input = true; }
     void removeUnusedActions(const Names & required_names);
-    ExpressionActionsPtr buildExpressions() const;
 
     /// Splits actions into two parts. Returned half may be swapped with ARRAY JOIN.
     /// Returns nullptr if no actions may be moved before ARRAY JOIN.
@@ -241,7 +243,10 @@ public:
 
     bool hasArrayJoin() const;
     bool empty() const; /// If actions only contain inputs.
-    bool projectedOutput() const { return projected_output; } /// Remove all columns which are not in inputs from block.
+
+    const ActionsSettings & getSettings() const { return settings; }
+
+    void compileExpressions();
 
     ActionsDAGPtr clone() const;
 
@@ -252,10 +257,7 @@ private:
     ActionsDAGPtr cloneEmpty() const
     {
         auto actions = std::make_shared<ActionsDAG>();
-        actions->max_temporary_columns = max_temporary_columns;
-        actions->max_temporary_non_const_columns = max_temporary_non_const_columns;
-        actions->min_count_to_compile_expression = min_count_to_compile_expression;
-        actions->compile_expressions = compile_expressions;
+        actions->settings = settings;
 
 #if USE_EMBEDDED_COMPILER
         actions->compilation_cache = compilation_cache;
@@ -263,7 +265,6 @@ private:
         return actions;
     }
 
-    ExpressionActionsPtr linearizeActions() const;
     void removeUnusedActions(const std::vector<Node *> & required_nodes);
     void removeUnusedActions();
     void addAliases(const NamesWithAliases & aliases, std::vector<Node *> & result_nodes);
@@ -311,7 +312,7 @@ private:
         size_t num_rows;
     };
 
-    std::list<Node> nodes;
+    ActionsDAGPtr actions_dag;
     Actions actions;
     size_t num_columns;
 
@@ -328,12 +329,13 @@ private:
 
 public:
     ~ExpressionActions();
-    ExpressionActions() = default;
-    ExpressionActions(const ExpressionActions &) = delete;
-    ExpressionActions & operator=(const ExpressionActions &) = delete;
+    explicit ExpressionActions(ActionsDAGPtr actions_dag_);
+    ExpressionActions(const ExpressionActions &) = default;
+    ExpressionActions & operator=(const ExpressionActions &) = default;
 
     const Actions & getActions() const { return actions; }
-    const std::list<Node> & getNodes() const { return nodes; }
+    const std::list<Node> & getNodes() const { return actions_dag->getNodes(); }
+    const ActionsDAG & getActionsDAG() const { return *actions_dag; }
 
     /// Adds to the beginning the removal of all extra columns.
     void projectInput() { project_input = true; }
@@ -363,10 +365,13 @@ public:
     ExpressionActionsPtr clone() const;
 
 private:
+    ExpressionActions() = default;
 
     void checkLimits(ExecutionContext & execution_context) const;
 
     static void executeAction(const Action & action, ExecutionContext & execution_context, bool dry_run);
+
+    void linearizeActions();
 };
 
 
@@ -433,7 +438,7 @@ struct ExpressionActionsChain
 
         void finalize(const Names & required_output_) override
         {
-            if (!actions->projectedOutput())
+            if (!actions->getSettings().projected_output)
                 actions->removeUnusedActions(required_output_);
         }
 
@@ -444,7 +449,7 @@ struct ExpressionActionsChain
 
         std::string dump() const override
         {
-            return actions->dump();
+            return actions->dumpDAG();
         }
     };
 

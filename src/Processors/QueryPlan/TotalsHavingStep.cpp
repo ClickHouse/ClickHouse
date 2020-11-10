@@ -34,7 +34,10 @@ TotalsHavingStep::TotalsHavingStep(
     bool final_)
     : ITransformingStep(
             input_stream_,
-            TotalsHavingTransform::transformHeader(input_stream_.header, (actions_ ? actions_->buildExpressions() : nullptr), final_),
+            TotalsHavingTransform::transformHeader(
+                    input_stream_.header,
+                    (actions_ ? std::make_shared<ExpressionActions>(actions_) : nullptr),
+                    final_),
             getTraits(!filter_column_.empty()))
     , overflow_row(overflow_row_)
     , actions(actions_)
@@ -48,7 +51,7 @@ TotalsHavingStep::TotalsHavingStep(
 void TotalsHavingStep::transformPipeline(QueryPipeline & pipeline)
 {
     auto totals_having = std::make_shared<TotalsHavingTransform>(
-            pipeline.getHeader(), overflow_row, (actions ? actions->buildExpressions() : nullptr),
+            pipeline.getHeader(), overflow_row, (actions ? std::make_shared<ExpressionActions>(actions) : nullptr),
             filter_column_name, totals_mode, auto_include_threshold, final);
 
     pipeline.addTotalsHavingTransform(std::move(totals_having));
@@ -78,7 +81,7 @@ void TotalsHavingStep::describeActions(FormatSettings & settings) const
     settings.out << prefix << "Mode: " << totalsModeToString(totals_mode, auto_include_threshold) << '\n';
 
     bool first = true;
-    auto expression = actions->buildExpressions();
+    auto expression = std::make_shared<ExpressionActions>(actions);
     for (const auto & action : expression->getActions())
     {
         settings.out << prefix << (first ? "Actions: "

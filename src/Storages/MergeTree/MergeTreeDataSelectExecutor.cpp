@@ -814,7 +814,7 @@ Pipe MergeTreeDataSelectExecutor::readFromParts(
 
     if (result_projection)
     {
-        auto result_projection_actions = result_projection->buildExpressions();
+        auto result_projection_actions = std::make_shared<ExpressionActions>(result_projection);
         res.addSimpleTransform([&result_projection_actions](const Block & header)
         {
             return std::make_shared<ExpressionTransform>(header, result_projection_actions);
