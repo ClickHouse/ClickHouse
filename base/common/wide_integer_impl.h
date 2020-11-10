@@ -277,7 +277,7 @@ struct integer<Bits, Signed>::_impl
         const long double rhs_mod_max_int = rhs_long_double - rhs_div_max_int;
 
         assert(rhs_mod_max_int < max_int_long_double);
-        assert(rhs_mod_max_int > min_int_long_double);
+        assert(rhs_mod_max_int > static_cast<long double>(min_int));
 
         self += static_cast<int64_t>(rhs_mod_max_int);
 
