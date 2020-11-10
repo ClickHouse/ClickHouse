@@ -7,29 +7,15 @@ toc_title: Encryption
 
 ## encrypt {#encrypt}
 
-Supported encryption modes are listed <details markdown="1"> <summary>here</summary> 
-    -   aes-128-ecb
-    -   aes-192-ecb
-    -   aes-256-ecb
-    -   aes-128-cbc
-    -   aes-192-cbc
-    -   aes-256-cbc
-    -   aes-128-cfb1
-    -   aes-192-cfb1
-    -   aes-256-cfb1
-    -   aes-128-cfb8
-    -   aes-192-cfb8
-    -   aes-256-cfb8
-    -   aes-128-cfb128
-    -   aes-192-cfb128
-    -   aes-256-cfb128
-    -   aes-128-ofb
-    -   aes-192-ofb
-    -   aes-256-ofb
-    -   aes-128-gcm
-    -   aes-192-gcm
-    -   aes-256-gcm
-</details>`.
+Supported encryption modes:
+
+    -   aes-128-ecb, aes-192-ecb, aes-256-ecb
+    -   aes-128-cbc, aes-192-cbc, aes-256-cbc
+    -   aes-128-cfb1, aes-192-cfb1, aes-256-cfb1
+    -   aes-128-cfb8, aes-192-cfb8, aes-256-cfb8
+    -   aes-128-cfb128, aes-192-cfb128, aes-256-cfb128
+    -   aes-128-ofb, aes-192-ofb, aes-256-ofb
+    -   aes-128-gcm, aes-192-gcm, aes-256-gcm
 
 **Syntax**
 
@@ -39,8 +25,8 @@ encrypt(mode, plaintext, key, [iv, aad])
 
 **Parameters**
 
--   `mode` —
--   `plaintext` —
+-   `mode` — Encryption mode. 
+-   `plaintext` — Text that need to be 
 -   `key` —
 -   `iv` —
 -   `add` —
@@ -49,26 +35,14 @@ encrypt(mode, plaintext, key, [iv, aad])
 
 Function implements encryption of data with AES (Advanced Encryption Standard) algorithm. 
 
-Supported encryption modes are listed <details markdown="1"> <summary>here</summary> 
-    -   aes-128-ecb
-    -   aes-192-ecb
-    -   aes-256-ecb
-    -   aes-128-cbc
-    -   aes-192-cbc
-    -   aes-256-cbc
-    -   aes-128-cfb1
-    -   aes-192-cfb1
-    -   aes-256-cfb1
-    -   aes-128-cfb8
-    -   aes-192-cfb8
-    -   aes-256-cfb8
-    -   aes-128-cfb128
-    -   aes-192-cfb128
-    -   aes-256-cfb128
-    -   aes-128-ofb
-    -   aes-192-ofb
-    -   aes-256-ofb
-</details>`.
+Supported encryption modes:
+
+    -   aes-128-ecb, aes-192-ecb, aes-256-ecb
+    -   aes-128-cbc, aes-192-cbc, aes-256-cbc
+    -   aes-128-cfb1, aes-192-cfb1, aes-256-cfb1
+    -   aes-128-cfb8, aes-192-cfb8, aes-256-cfb8
+    -   aes-128-cfb128, aes-192-cfb128, aes-256-cfb128
+    -   aes-128-ofb, aes-192-ofb, aes-256-ofb
 
 **Syntax**
 
@@ -78,36 +52,22 @@ aes_encrypt_mysql(mode, plaintext, key, [iv])
 
 **Parameters**
 
--   `mode` —
+-   `mode` — Encryption mode. 
 -   `plaintext` —
 -   `key` —
 -   `iv` —
 
 ## decrypt {#decrypt}
 
-Supported decryption modes are listed <details markdown="1"> <summary>here</summary> 
-    -   aes-128-ecb
-    -   aes-192-ecb
-    -   aes-256-ecb
-    -   aes-128-cbc
-    -   aes-192-cbc
-    -   aes-256-cbc
-    -   aes-128-cfb1
-    -   aes-192-cfb1
-    -   aes-256-cfb1
-    -   aes-128-cfb8
-    -   aes-192-cfb8
-    -   aes-256-cfb8
-    -   aes-128-cfb128
-    -   aes-192-cfb128
-    -   aes-256-cfb128
-    -   aes-128-ofb
-    -   aes-192-ofb
-    -   aes-256-ofb
-    -   aes-128-gcm
-    -   aes-192-gcm
-    -   aes-256-gcm
-</details>`.
+Supported decryption modes:
+
+    -   aes-128-ecb, aes-192-ecb, aes-256-ecb
+    -   aes-128-cbc, aes-192-cbc, aes-256-cbc
+    -   aes-128-cfb1, aes-192-cfb1, aes-256-cfb1
+    -   aes-128-cfb8, aes-192-cfb8, aes-256-cfb8
+    -   aes-128-cfb128, aes-192-cfb128, aes-256-cfb128
+    -   aes-128-ofb, aes-192-ofb, aes-256-ofb
+    -   aes-128-gcm, aes-192-gcm, aes-256-gcm
 
 **Syntax**
 
@@ -117,8 +77,8 @@ decrypt(mode, ciphertext, key, [iv, aad])
 
 **Parameters**
 
--   `mode` —
--   `plaintext` —
+-   `mode` — Decryption mode.
+-   `ciphertext` —
 -   `key` —
 -   `iv` —
 -   `add` —
@@ -126,26 +86,14 @@ decrypt(mode, ciphertext, key, [iv, aad])
 
 Function implements decryption of data with AES (Advanced Encryption Standard) algorithm. 
 
-Supported decryption modes are listed <details markdown="1"> <summary>here</summary> 
-    -   aes-128-ecb
-    -   aes-192-ecb
-    -   aes-256-ecb
-    -   aes-128-cbc
-    -   aes-192-cbc
-    -   aes-256-cbc
-    -   aes-128-cfb1
-    -   aes-192-cfb1
-    -   aes-256-cfb1
-    -   aes-128-cfb8
-    -   aes-192-cfb8
-    -   aes-256-cfb8
-    -   aes-128-cfb128
-    -   aes-192-cfb128
-    -   aes-256-cfb128
-    -   aes-128-ofb
-    -   aes-192-ofb
-    -   aes-256-ofb
-</details>`.
+Supported decryption modes:
+
+    -   aes-128-ecb, aes-192-ecb, aes-256-ecb
+    -   aes-128-cbc, aes-192-cbc, aes-256-cbc
+    -   aes-128-cfb1, aes-192-cfb1, aes-256-cfb1
+    -   aes-128-cfb8, aes-192-cfb8, aes-256-cfb8
+    -   aes-128-cfb128, aes-192-cfb128, aes-256-cfb128
+    -   aes-128-ofb, aes-192-ofb, aes-256-ofb
 
 **Syntax**
 
@@ -155,8 +103,8 @@ aes_decrypt_mysql(mode, ciphertext, key, [iv])
 
 **Parameters**
 
--   `mode` —
--   `plaintext` —
+-   `mode` — Decryption mode.
+-   `ciphertext` —
 -   `key` —
 -   `iv` —
 
