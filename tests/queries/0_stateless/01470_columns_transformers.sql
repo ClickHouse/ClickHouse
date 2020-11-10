@@ -15,6 +15,7 @@ SELECT columns_transformers.* EXCEPT(j) APPLY(avg) from columns_transformers;
 SELECT a.* APPLY(toDate) EXCEPT(i, j) APPLY(any) from columns_transformers a;
 
 SELECT * EXCEPT STRICT i from columns_transformers;
+SELECT * EXCEPT STRICT (i, j) from columns_transformers;
 SELECT * EXCEPT STRICT i, j1 from columns_transformers; -- { serverError 47 }
 SELECT * EXCEPT STRICT(i, j1) from columns_transformers; -- { serverError 16 }
 SELECT * REPLACE STRICT i + 1 AS i from columns_transformers;
