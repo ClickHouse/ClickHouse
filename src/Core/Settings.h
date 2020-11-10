@@ -514,4 +514,13 @@ struct Settings : public BaseSettings<SettingsTraits>
     static void checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path);
 };
 
+/*
+ * User-specified file format settings for File and ULR engines.
+ */
+DECLARE_SETTINGS_TRAITS(FormatFactorySettingsTraits, FORMAT_FACTORY_SETTINGS)
+
+struct FormatFactorySettings : public BaseSettings<FormatFactorySettingsTraits>
+{
+};
+
 }
