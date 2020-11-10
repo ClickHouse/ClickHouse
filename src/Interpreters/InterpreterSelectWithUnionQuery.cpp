@@ -44,7 +44,7 @@ struct CustomizeASTSelectWithUnionQueryNormalize
         selects.push_back(std::move(ast_select));
     }
 
-    void visit(ASTSelectWithUnionQuery & ast, ASTPtr &)
+    void visit(ASTSelectWithUnionQuery & ast, ASTPtr &) const
     {
         auto & union_modes = ast.list_of_modes;
         ASTs selects;
