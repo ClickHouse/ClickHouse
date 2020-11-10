@@ -91,21 +91,21 @@ void ASTColumnsExceptTransformer::formatImpl(const FormatSettings & settings, Fo
 
 void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
 {
-    ASTs expected_columns(children);
+    std::set<String> expected_columns;
+    for (size_t i = 0; i < children.size(); ++i)
+        expected_columns.insert(children[i]->as<const ASTIdentifier &>().name());
 
     for (auto it = nodes.begin(); it != nodes.end();)
     {
         bool removed = false;
         if (const auto * id = it->get()->as<ASTIdentifier>())
         {
-            for (int i = expected_columns.size() - 1; i >= 0; --i)
+            auto expected_column = expected_columns.find(id->shortName());
+            if (expected_column != expected_columns.end())
             {
-                if (expected_columns[i]->as<const ASTIdentifier &>().name() == id->shortName())
-                {
-                    removed = true;
-                    expected_columns.erase(expected_columns.begin() + i);
-                    it = nodes.erase(it);
-                }
+                removed = true;
+                expected_columns.erase(expected_column);
+                it = nodes.erase(it);
             }
         }
 
@@ -116,15 +116,11 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
     if (is_strict && !expected_columns.empty())
     {
         String expected_columns_str;
-        for (size_t i = 0; i < expected_columns.size(); ++i)
-        {
-            if (i > 0)
-                expected_columns_str += ", ";
-            expected_columns_str += expected_columns[i]->as<const ASTIdentifier &>().name();
-        }
+        std::for_each(expected_columns.begin(), expected_columns.end(),
+            [&](String x) { expected_columns_str += (" " + x) ; });
 
         throw Exception(
-            "Columns transformer EXCEPT expects following column(s) : " + expected_columns_str,
+            "Columns transformer EXCEPT expects following column(s) :" + expected_columns_str,
             ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
     }
 }
