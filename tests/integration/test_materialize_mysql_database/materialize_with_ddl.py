@@ -5,6 +5,8 @@ import pymysql.cursors
 import pytest
 from helpers.client import QueryRuntimeException
 from helpers.network import PartitionManager
+import pytest
+from helpers.client import QueryRuntimeException
 
 def check_query(clickhouse_node, query, result_set, retry_count=60, interval_seconds=3):
     lastest_result = ''
