@@ -261,15 +261,16 @@ struct integer<Bits, Signed>::_impl
 
         const long double rhs_max_int_count = rhs_long_double / max_int;
 
-        // Won't fit only if long double can hold values >= 2^(64 * 3).
-        const uint64_t rhs_max_int_count_max_int_count = rhs_max_int_count / max_int;
-
+        // We can't just get the number of iterations like rhs_max_int_count / max_int as it may not fit it int64_t.
         long double rhs_max_int_count_acc = rhs_max_int_count;
 
         self = 0;
 
-        for (uint64_t i = 0; i < rhs_max_int_count_max_int_count; ++i)
+        while (rhs_max_int_count_acc > max_int_long_double)
+        {
             self += max_int;
+            rhs_max_int_count_acc -= max_int_long_double;
+        }
 
         self *= max_int;
 
