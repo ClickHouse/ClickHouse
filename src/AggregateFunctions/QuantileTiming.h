@@ -7,7 +7,9 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <miniselect/floyd_rivest_select.h>
+#if !defined(ARCADIA_BUILD)
+    #include <miniselect/floyd_rivest_select.h>
+#endif
 
 namespace DB
 {
@@ -180,7 +182,11 @@ namespace detail
 
                 /// Sorting an array will not be considered a violation of constancy.
                 auto & array = elems;
+#if !defined(ARCADIA_BUILD)
                 miniselect::floyd_rivest_select(array.begin(), array.begin() + n, array.end());
+#else
+                std::nth_element(array.begin(), array.begin() + n, array.end());
+#endif
                 quantile = array[n];
             }
 
@@ -201,7 +207,11 @@ namespace detail
                     ? level * elems.size()
                     : (elems.size() - 1);
 
+#if !defined(ARCADIA_BUILD)
                 miniselect::floyd_rivest_select(array.begin() + prev_n, array.begin() + n, array.end());
+#else
+                std::nth_element(array.begin() + prev_n, array.begin() + n, array.end());
+#endif
 
                 result[level_index] = array[n];
                 prev_n = n;

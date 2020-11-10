@@ -9,7 +9,10 @@
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
 #include <Core/Field.h>
-#include <miniselect/floyd_rivest_select.h>
+#if !defined(ARCADIA_BUILD)
+    #include <miniselect/floyd_rivest_select.h>
+#endif
+
 
 namespace DB
 {
@@ -352,7 +355,11 @@ void ColumnTuple::getPermutationImpl(size_t limit, Permutation & res, LessOperat
 
     if (limit)
     {
+#if !defined(ARCADIA_BUILD)
         miniselect::floyd_rivest_partial_sort(res.begin(), res.begin() + limit, res.end(), less);
+#else
+        std::partial_sort(res.begin(), res.begin() + limit, res.end(), less);
+#endif
     }
     else
     {

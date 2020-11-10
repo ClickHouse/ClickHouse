@@ -10,7 +10,9 @@
 #include <Common/HashTable/Hash.h>
 
 #include <ext/scope_guard.h>
-#include <miniselect/floyd_rivest_select.h>
+#if !defined(ARCADIA_BUILD)
+    #include <miniselect/floyd_rivest_select.h>
+#endif
 
 #include <DataStreams/ColumnGathererStream.h>
 
@@ -158,9 +160,17 @@ void ColumnFixedString::getPermutation(bool reverse, size_t limit, int /*nan_dir
     if (limit)
     {
         if (reverse)
+#if !defined(ARCADIA_BUILD)
             miniselect::floyd_rivest_partial_sort(res.begin(), res.begin() + limit, res.end(), less<false>(*this));
+#else
+            std::partial_sort(res.begin(), res.begin() + limit, res.end(), less<false>(*this));
+#endif
         else
+#if !defined(ARCADIA_BUILD)
             miniselect::floyd_rivest_partial_sort(res.begin(), res.begin() + limit, res.end(), less<true>(*this));
+#else
+            std::partial_sort(res.begin(), res.begin() + limit, res.end(), less<true>(*this));
+#endif
     }
     else
     {
@@ -218,9 +228,17 @@ void ColumnFixedString::updatePermutation(bool reverse, size_t limit, int, Permu
         /// Since then we are working inside the interval.
 
         if (reverse)
+#if !defined(ARCADIA_BUILD)
             miniselect::floyd_rivest_partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less<false>(*this));
+#else
+            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less<false>(*this));
+#endif
         else
+#if !defined(ARCADIA_BUILD)
             miniselect::floyd_rivest_partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less<true>(*this));
+#else
+            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less<true>(*this));
+#endif
 
         auto new_first = first;
         for (auto j = first + 1; j < limit; ++j)
