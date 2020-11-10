@@ -57,6 +57,11 @@ class MySQLNodeInstance:
             if result is not None:
                 print(cursor.fetchall())
 
+    def query_and_get_data(self, executio_query):
+        with self.alloc_connection().cursor() as cursor:
+            cursor.execute(executio_query)
+            return cursor.fetchall()
+
     def close(self):
         if self.mysql_connection is not None:
             self.mysql_connection.close()
@@ -204,4 +209,10 @@ def test_network_partition_5_7(started_cluster, started_mysql_5_7):
 
 def test_network_partition_8_0(started_cluster, started_mysql_8_0):
     materialize_with_ddl.network_partition_test(clickhouse_node, started_mysql_8_0, "mysql8_0")
+
+def test_mysql_kill_sync_thread_restore_5_7(started_cluster, started_mysql_5_7):
+    materialize_with_ddl.mysql_kill_sync_thread_restore_test(clickhouse_node, started_mysql_5_7, "mysql1")
+
+def test_mysql_kill_sync_thread_restore_8_0(started_cluster, started_mysql_8_0):
+    materialize_with_ddl.mysql_kill_sync_thread_restore_test(clickhouse_node, started_mysql_8_0, "mysql8_0")
 
