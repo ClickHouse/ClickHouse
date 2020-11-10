@@ -1114,6 +1114,7 @@ void ZooKeeper::sendThread()
                     info.request->probably_sent = true;
                     info.request->write(*out);
 
+                    /// We sent close request, exit
                     if (info.request->xid == close_xid)
                         break;
                 }
@@ -1342,13 +1343,8 @@ void ZooKeeper::receiveEvent()
 
 void ZooKeeper::finalize(bool error_send, bool error_receive)
 {
-    {
-        std::lock_guard lock(push_request_mutex);
-
-        if (expired)
-            return;
-        expired = true;
-    }
+    if (expired)
+        return;
 
     active_session_metric_increment.destroy();
 
@@ -1356,7 +1352,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
     {
         if (!error_send)
         {
-            /// Send close event. This also signals sending thread to wakeup and then stop.
+            /// Send close event. This also signals sending thread to stop.
             try
             {
                 close();
@@ -1364,10 +1360,20 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
             catch (...)
             {
                 /// This happens for example, when "Cannot push request to queue within operation timeout".
+                /// Just mark session expired in case of error on close request.
+                std::lock_guard lock(push_request_mutex);
+                expired = true;
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
 
+            /// Send thread will exit after sending close request or on expired flag
             send_thread.join();
+        }
+
+        /// Set expired flag after we sent close event
+        {
+            std::lock_guard lock(push_request_mutex);
+            expired = true;
         }
 
         try
