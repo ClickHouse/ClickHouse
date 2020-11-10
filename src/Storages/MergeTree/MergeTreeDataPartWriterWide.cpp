@@ -103,30 +103,29 @@ void MergeTreeDataPartWriterWide::write(const Block & block,
     for (size_t i = 0; i < columns_list.size(); ++i, ++it)
     {
         const ColumnWithTypeAndName & column = block.getByName(it->name);
-        auto name_and_type = NameAndTypePair(column.name, column.type);
 
         if (permutation)
         {
             if (primary_key_block.has(it->name))
             {
                 const auto & primary_column = *primary_key_block.getByName(it->name).column;
-                writeColumn(name_and_type, primary_column, offset_columns);
+                writeColumn(*it, primary_column, offset_columns);
             }
             else if (skip_indexes_block.has(it->name))
             {
                 const auto & index_column = *skip_indexes_block.getByName(it->name).column;
-                writeColumn(name_and_type, index_column, offset_columns);
+                writeColumn(*it, index_column, offset_columns);
             }
             else
             {
                 /// We rearrange the columns that are not included in the primary key here; Then the result is released - to save RAM.
                 ColumnPtr permuted_column = column.column->permute(*permutation, 0);
-                writeColumn(name_and_type, *permuted_column, offset_columns);
+                writeColumn(*it, *permuted_column, offset_columns);
             }
         }
         else
         {
-            writeColumn(name_and_type, *column.column, offset_columns);
+            writeColumn(*it, *column.column, offset_columns);
         }
     }
 }

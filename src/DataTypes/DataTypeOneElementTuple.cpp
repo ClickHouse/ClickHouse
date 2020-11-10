@@ -5,6 +5,7 @@
 #include <IO/Operators.h>
 #include <Common/quoteString.h>
 #include <Parsers/ASTNameTypePair.h>
+#include <Columns/IColumn.h>
 
 
 namespace DB
@@ -73,13 +74,14 @@ public:
     }
 
     void deserializeBinaryBulkWithMultipleStreams(
-        IColumn & column,
+        ColumnPtr & column,
         size_t limit,
         IDataType::DeserializeBinaryBulkSettings & settings,
-        IDataType::DeserializeBinaryBulkStatePtr & state) const override
+        IDataType::DeserializeBinaryBulkStatePtr & state,
+        IDataType::SubstreamsCache * cache) const override
     {
         addToPath(settings.path);
-        nested->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, state);
+        nested->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, state, cache);
         settings.path.pop_back();
     }
 
@@ -97,11 +99,15 @@ private:
 DataTypePtr createOneElementTuple(const DataTypePtr & type, const String & name, bool escape_delimiter)
 {
     auto custom_desc = std::make_unique<DataTypeCustomDesc>(
-        std::make_unique<DataTypeCustomFixedName>(type->getName()),
-        nullptr,
+        std::make_unique<DataTypeCustomFixedName>(type->getName()), nullptr,
         std::make_unique<DataTypeOneElementTupleStreams>(type, name, escape_delimiter));
 
     return DataTypeFactory::instance().getCustom(std::move(custom_desc));
+}
+
+bool isOneElementTuple(const DataTypePtr & type)
+{
+    return typeid_cast<const DataTypeOneElementTupleStreams *>(type->getCustomStreams()) != nullptr;
 }
 
 }

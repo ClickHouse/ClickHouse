@@ -6,5 +6,6 @@ namespace DB
 {
 
 DataTypePtr createOneElementTuple(const DataTypePtr & type, const String & name, bool escape_delimiter = true);
+bool isOneElementTuple(const DataTypePtr & type);
 
 }

@@ -54,8 +54,6 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         for (size_t i = 0; i < columns_num; ++i, ++name_and_type)
         {
             auto column_from_part = getColumnFromPart(*name_and_type);
-            if (duplicated_subcolumns.count(column_from_part.name))
-                continue;
 
             auto position = data_part->getColumnPosition(column_from_part);
             if (!position && typeid_cast<const DataTypeArray *>(column_from_part.type.get()))
@@ -135,30 +133,29 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
         if (!column_positions[i])
             continue;
 
-        bool append = res_columns[i] != nullptr;
-        if (!append)
+        if (res_columns[i] == nullptr)
             res_columns[i] = getColumnFromPart(*column_it).type->createColumn();
-        mutable_columns[i] = res_columns[i]->assumeMutable();
     }
 
     while (read_rows < max_rows_to_read)
     {
         size_t rows_to_read = data_part->index_granularity.getMarkRows(from_mark);
+        std::unordered_map<String, IDataType::SubstreamsCache> caches;
 
         auto name_and_type = columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
         {
             auto column_from_part = getColumnFromPart(*name_and_type);
-
             if (!res_columns[pos])
                 continue;
 
-            auto & column = mutable_columns[pos];
             try
             {
+                auto & column = res_columns[pos];
                 size_t column_size_before_reading = column->size();
 
-                readData(column_from_part, *column, from_mark, *column_positions[pos], rows_to_read, read_only_offsets[pos]);
+                readData(column_from_part, column, from_mark, *column_positions[pos],
+                    rows_to_read, read_only_offsets[pos], caches[column_from_part.getStorageName()]);
 
                 size_t read_rows_in_column = column->size() - column_size_before_reading;
                 if (read_rows_in_column < rows_to_read)
@@ -185,23 +182,15 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
         read_rows += rows_to_read;
     }
 
-    for (size_t i = 0; i < num_columns; ++i)
-    {
-        auto & column = mutable_columns[i];
-        if (column && !column->empty())
-            res_columns[i] = std::move(column);
-        else
-            res_columns[i] = nullptr;
-    }
-
     next_mark = from_mark;
 
     return read_rows;
 }
 
 void MergeTreeReaderCompact::readData(
-    const NameAndTypePair & name_and_type, IColumn & column,
-    size_t from_mark, size_t column_position, size_t rows_to_read, bool only_offsets)
+    const NameAndTypePair & name_and_type, ColumnPtr & column,
+    size_t from_mark, size_t column_position, size_t rows_to_read,
+    bool only_offsets, IDataType::SubstreamsCache & cache)
 {
     const auto & [name, type] = name_and_type;
 
@@ -210,6 +199,9 @@ void MergeTreeReaderCompact::readData(
 
     auto buffer_getter = [&](const IDataType::SubstreamPath & substream_path) -> ReadBuffer *
     {
+        // if (cache.count(IDataType::getSubcolumnNameForStream(substream_path)))
+        //     return nullptr;
+
         if (only_offsets && (substream_path.size() != 1 || substream_path[0].type != IDataType::Substream::ArraySizes))
             return nullptr;
 
@@ -220,25 +212,23 @@ void MergeTreeReaderCompact::readData(
     IDataType::DeserializeBinaryBulkSettings deserialize_settings;
     deserialize_settings.getter = buffer_getter;
     deserialize_settings.avg_value_size_hint = avg_value_size_hints[name];
-    deserialize_settings.position_independent_encoding = true;
 
     if (name_and_type.isSubcolumn())
     {
         const auto & storage_type = name_and_type.getStorageType();
-        auto temp_column = storage_type->createColumn();
+        ColumnPtr temp_column = storage_type->createColumn();
 
         storage_type->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
-        storage_type->deserializeBinaryBulkWithMultipleStreams(*temp_column, rows_to_read, deserialize_settings, state);
-
-        auto subcolumn = storage_type->getSubcolumn(name_and_type.getSubcolumnName(), *temp_column);
-        column.insertRangeFrom(*subcolumn, 0, subcolumn->size());
+        storage_type->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, state);
+        column = storage_type->getSubcolumn(name_and_type.getSubcolumnName(), *temp_column->assumeMutable());
     }
     else
     {
-        deserialize_settings.position_independent_encoding = true;
         type->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
         type->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, state);
     }
+
+    UNUSED(cache);
 
     /// The buffer is left in inconsistent state after reading single offsets
     if (only_offsets)

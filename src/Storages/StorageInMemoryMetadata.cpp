@@ -272,7 +272,7 @@ Block StorageInMemoryMetadata::getSampleBlockForColumns(
 
     std::unordered_map<String, DataTypePtr> columns_map;
 
-    NamesAndTypesList all_columns = getColumns().getAllWithSubcolumns();
+    auto all_columns = getColumns().getAllWithSubcolumns();
     for (const auto & elem : all_columns)
         columns_map.emplace(elem.name, elem.type);
 

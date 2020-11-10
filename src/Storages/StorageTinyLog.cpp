@@ -49,7 +49,6 @@ namespace ErrorCodes
     extern const int DUPLICATE_COLUMN;
     extern const int INCORRECT_FILE_NAME;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -64,7 +63,7 @@ public:
         for (const auto & name_type : columns)
             res.insert({ name_type.type->createColumn(), name_type.type, name_type.name });
 
-        return Nested::flatten(res);
+        return res;
     }
 
     TinyLogSource(size_t block_size_, const NamesAndTypesList & columns_, StorageTinyLog & storage_, size_t max_read_buffer_size_)
@@ -104,7 +103,7 @@ private:
     using DeserializeStates = std::map<String, DeserializeState>;
     DeserializeStates deserialize_states;
 
-    void readData(const NameAndTypePair & name_and_type, IColumn & column, UInt64 limit);
+    void readData(const NameAndTypePair & name_and_type, ColumnPtr & column, UInt64 limit, IDataType::SubstreamsCache & cache);
 };
 
 
@@ -195,26 +194,19 @@ Chunk TinyLogSource::generate()
     if (storage.disk->isDirectoryEmpty(storage.table_path))
         return {};
 
+    std::unordered_map<String, IDataType::SubstreamsCache> caches;
     for (const auto & name_type : columns)
     {
-        MutableColumnPtr column;
-        if (name_type.isSubcolumn() && res.has(name_type.getStorageName()))
+        ColumnPtr column;
+        try
         {
-            auto column_in_block = res.getByName(name_type.getStorageName()).column;
-            column = name_type.getStorageType()->getSubcolumn(name_type.getSubcolumnName(), *column_in_block->assumeMutable());
+            column = name_type.type->createColumn();
+            readData(name_type, column, block_size, caches[name_type.getStorageName()]);
         }
-        else
+        catch (Exception & e)
         {
-            try
-            {
-                column = name_type.type->createColumn();
-                readData(name_type, *column, block_size);
-            }
-            catch (Exception & e)
-            {
-                e.addMessage("while reading column " + name_type.name + " at " + fullPath(storage.disk, storage.table_path));
-                throw;
-            }
+            e.addMessage("while reading column " + name_type.name + " at " + fullPath(storage.disk, storage.table_path));
+            throw;
         }
 
         if (!column->empty())
@@ -227,12 +219,13 @@ Chunk TinyLogSource::generate()
         streams.clear();
     }
 
-    auto flatten = Nested::flatten(res);
-    return Chunk(flatten.getColumns(), flatten.rows());
+    // auto flatten = Nested::flatten(res);
+    return Chunk(res.getColumns(), res.rows());
 }
 
 
-void TinyLogSource::readData(const NameAndTypePair & name_and_type, IColumn & column, UInt64 limit)
+void TinyLogSource::readData(const NameAndTypePair & name_and_type,
+    ColumnPtr & column, UInt64 limit, IDataType::SubstreamsCache & cache)
 {
     IDataType::DeserializeBinaryBulkSettings settings; /// TODO Use avg_value_size_hint.
     const auto & [name, type] = name_and_type;
@@ -250,7 +243,7 @@ void TinyLogSource::readData(const NameAndTypePair & name_and_type, IColumn & co
     if (deserialize_states.count(name) == 0)
          type->deserializeBinaryBulkStatePrefix(settings, deserialize_states[name]);
 
-    type->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, deserialize_states[name]);
+    type->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, deserialize_states[name], &cache);
 }
 
 
@@ -448,17 +441,10 @@ Pipe StorageTinyLog::read(
 {
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
-    auto all_columns = metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(column_names);
-
-    /// TODO: implement DataType Nested and support them
-    for (const auto & column : all_columns)
-        if (column.isSubcolumn() && startsWith(column.getSubcolumnName(), "size"))
-            throw Exception("Subcolumns of arrays are not supported in StorageLog", ErrorCodes::NOT_IMPLEMENTED);
-
     // When reading, we lock the entire storage, because we only have one file
     // per column and can't modify it concurrently.
     return Pipe(std::make_shared<TinyLogSource>(
-        max_block_size, Nested::collect(all_columns),
+        max_block_size, metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(column_names),
         *this, context.getSettingsRef().max_read_buffer_size));
 }
 

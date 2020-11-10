@@ -22,10 +22,12 @@ public:
     String getName() const override;
 };
 
+DataTypePtr createNested(const DataTypes & types, const Names & names);
+
 template <typename DataType>
 inline bool isNested(const DataType & data_type)
 {
-    return isArray(data_type) && typeid_cast<const DataTypeNestedCustomName *>(data_type->getCustomName());
+    return typeid_cast<const DataTypeNestedCustomName *>(data_type->getCustomName()) != nullptr;
 }
 
 }

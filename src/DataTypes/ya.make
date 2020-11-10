@@ -30,8 +30,6 @@ SRCS(
     DataTypeNullable.cpp
     DataTypeNumberBase.cpp
     DataTypeOneElementTuple.cpp
-    DataTypesDecimal.cpp
-    DataTypesNumber.cpp
     DataTypeString.cpp
     DataTypeTuple.cpp
     DataTypeUUID.cpp

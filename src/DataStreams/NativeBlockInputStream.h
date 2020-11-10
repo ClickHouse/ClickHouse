@@ -74,7 +74,7 @@ public:
 
     String getName() const override { return "Native"; }
 
-    static void readData(const IDataType & type, IColumn & column, ReadBuffer & istr, size_t rows, double avg_value_size_hint);
+    static void readData(const IDataType & type, ColumnPtr & column, ReadBuffer & istr, size_t rows, double avg_value_size_hint);
 
     Block getHeader() const override;
 

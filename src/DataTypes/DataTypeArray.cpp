@@ -259,17 +259,25 @@ void DataTypeArray::deserializeBinaryBulkWithMultipleStreamsImpl(
     IColumn & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state) const
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsCache * cache) const
 {
     ColumnArray & column_array = typeid_cast<ColumnArray &>(column);
 
     settings.path.push_back(Substream::ArraySizes);
-    if (auto * stream = settings.getter(settings.path))
+
+    if (auto cached_column = getFromSubstreamsCache(cache, settings.path))
+    {
+        column_array.getOffsetsPtr() = cached_column;
+    }
+    else if (auto * stream = settings.getter(settings.path))
     {
         if (settings.position_independent_encoding)
             deserializeArraySizesPositionIndependent(column, *stream, limit);
         else
             DataTypeNumber<ColumnArray::Offset>().deserializeBinaryBulk(column_array.getOffsetsColumn(), *stream, limit, 0);
+
+        addToSubstreamsCache(cache, settings.path, column_array.getOffsetsPtr());
     }
 
     settings.path.back() = Substream::ArrayElements;
@@ -286,7 +294,8 @@ void DataTypeArray::deserializeBinaryBulkWithMultipleStreamsImpl(
     /// Adjust value size hint. Divide it to the average array size.
     settings.avg_value_size_hint = nested_limit ? settings.avg_value_size_hint / nested_limit * offset_values.size() : 0;
 
-    nested->deserializeBinaryBulkWithMultipleStreams(nested_column, nested_limit, settings, state);
+    nested->deserializeBinaryBulkWithMultipleStreams(column_array.getDataPtr(), nested_limit, settings, state, cache);
+
     settings.path.pop_back();
 
     /// Check consistency between offsets and elements subcolumns.

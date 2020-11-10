@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/DataTypeNested.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
@@ -84,7 +85,8 @@ Block flatten(const Block & block)
 
     for (const auto & elem : block)
     {
-        if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(elem.type.get()))
+        const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(elem.type.get());
+        if (!isNested(elem.type) && type_arr)
         {
             const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(type_arr->getNestedType().get());
             if (type_tuple && type_tuple->haveExplicitNames())
@@ -131,29 +133,36 @@ Block flatten(const Block & block)
 
 NamesAndTypesList collect(const NamesAndTypesList & names_and_types)
 {
-    NamesAndTypesList res;
+    NamesAndTypesList res = names_and_types;
 
     std::map<std::string, NamesAndTypesList> nested;
     for (const auto & name_type : names_and_types)
     {
-        bool collected = false;
-        if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(name_type.type.get()))
+        const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(name_type.type.get());
+
+        /// Ignore true Nested type, but try to unite flatten arrays to Nested type.
+        if (!isNested(name_type.type) && type_arr)
         {
             auto split = splitName(name_type.name);
             if (!split.second.empty())
-            {
                 nested[split.first].emplace_back(split.second, type_arr->getNestedType());
-                collected = true;
-            }
         }
-
-        if (!collected)
-            res.push_back(name_type);
     }
 
-    for (const auto & name_elems : nested)
-        res.emplace_back(name_elems.first, std::make_shared<DataTypeArray>(
-            std::make_shared<DataTypeTuple>(name_elems.second.getTypes(), name_elems.second.getNames())));
+    std::unordered_map<String, DataTypePtr> nested_types;
+    for (const auto & [name, elems] : nested)
+        nested_types.emplace(name, createNested(elems.getTypes(), elems.getNames()));
+
+    for (auto & name_type : res)
+    {
+        auto split = splitName(name_type.name);
+        if (name_type.isSubcolumn() || split.second.empty())
+            continue;
+
+        auto it = nested_types.find(split.first);
+        if (it != nested_types.end())
+            name_type = NameAndTypePair{split.first, split.second, it->second, it->second->getSubcolumnType(split.second)};
+    }
 
     return res;
 }
