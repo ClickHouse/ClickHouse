@@ -76,7 +76,7 @@ ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_)
 
 ExpressionActionsPtr ExpressionActions::clone() const
 {
-    auto expressions = std::make_shared<ExpressionActions>(*this);
+    return std::make_shared<ExpressionActions>(*this);
 }
 
 void ExpressionActions::linearizeActions()
