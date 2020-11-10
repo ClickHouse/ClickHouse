@@ -42,7 +42,7 @@ bool DataTypeNullable::onlyNull() const
 }
 
 
-void DataTypeNullable::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
+void DataTypeNullable::enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const
 {
     path.push_back(Substream::NullMap);
     callback(path, *this);
@@ -52,7 +52,7 @@ void DataTypeNullable::enumerateStreams(const StreamCallback & callback, Substre
 }
 
 
-void DataTypeNullable::serializeBinaryBulkStatePrefix(
+void DataTypeNullable::serializeBinaryBulkStatePrefixImpl(
         SerializeBinaryBulkSettings & settings,
         SerializeBinaryBulkStatePtr & state) const
 {
@@ -62,7 +62,7 @@ void DataTypeNullable::serializeBinaryBulkStatePrefix(
 }
 
 
-void DataTypeNullable::serializeBinaryBulkStateSuffix(
+void DataTypeNullable::serializeBinaryBulkStateSuffixImpl(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
@@ -72,7 +72,7 @@ void DataTypeNullable::serializeBinaryBulkStateSuffix(
 }
 
 
-void DataTypeNullable::deserializeBinaryBulkStatePrefix(
+void DataTypeNullable::deserializeBinaryBulkStatePrefixImpl(
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state) const
 {
@@ -82,7 +82,7 @@ void DataTypeNullable::deserializeBinaryBulkStatePrefix(
 }
 
 
-void DataTypeNullable::serializeBinaryBulkWithMultipleStreams(
+void DataTypeNullable::serializeBinaryBulkWithMultipleStreamsImpl(
     const IColumn & column,
     size_t offset,
     size_t limit,
@@ -104,7 +104,7 @@ void DataTypeNullable::serializeBinaryBulkWithMultipleStreams(
 }
 
 
-void DataTypeNullable::deserializeBinaryBulkWithMultipleStreams(
+void DataTypeNullable::deserializeBinaryBulkWithMultipleStreamsImpl(
     IColumn & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
@@ -529,7 +529,7 @@ bool DataTypeNullable::equals(const IDataType & rhs) const
 DataTypePtr DataTypeNullable::tryGetSubcolumnType(const String & subcolumn_name) const
 {
     if (subcolumn_name == "null")
-        return std::make_shared<DataTypeOneElementTuple>(std::make_shared<DataTypeUInt8>(), subcolumn_name, false);
+        return createOneElementTuple(std::make_shared<DataTypeUInt8>(), subcolumn_name, false);
 
     return nested_data_type->tryGetSubcolumnType(subcolumn_name);
 }

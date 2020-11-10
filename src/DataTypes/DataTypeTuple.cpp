@@ -289,7 +289,7 @@ void DataTypeTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr, cons
     });
 }
 
-void DataTypeTuple::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
+void DataTypeTuple::enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const
 {
     path.push_back(Substream::TupleElement);
     for (const auto i : ext::range(0, ext::size(elems)))
@@ -344,7 +344,7 @@ static DeserializeBinaryBulkStateTuple * checkAndGetTupleDeserializeState(IDataT
     return tuple_state;
 }
 
-void DataTypeTuple::serializeBinaryBulkStatePrefix(
+void DataTypeTuple::serializeBinaryBulkStatePrefixImpl(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
@@ -362,7 +362,7 @@ void DataTypeTuple::serializeBinaryBulkStatePrefix(
     state = std::move(tuple_state);
 }
 
-void DataTypeTuple::serializeBinaryBulkStateSuffix(
+void DataTypeTuple::serializeBinaryBulkStateSuffixImpl(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
@@ -377,7 +377,7 @@ void DataTypeTuple::serializeBinaryBulkStateSuffix(
     settings.path.pop_back();
 }
 
-void DataTypeTuple::deserializeBinaryBulkStatePrefix(
+void DataTypeTuple::deserializeBinaryBulkStatePrefixImpl(
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state) const
 {
@@ -395,7 +395,7 @@ void DataTypeTuple::deserializeBinaryBulkStatePrefix(
     state = std::move(tuple_state);
 }
 
-void DataTypeTuple::serializeBinaryBulkWithMultipleStreams(
+void DataTypeTuple::serializeBinaryBulkWithMultipleStreamsImpl(
     const IColumn & column,
     size_t offset,
     size_t limit,
@@ -414,7 +414,7 @@ void DataTypeTuple::serializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 }
 
-void DataTypeTuple::deserializeBinaryBulkWithMultipleStreams(
+void DataTypeTuple::deserializeBinaryBulkWithMultipleStreamsImpl(
     IColumn & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,

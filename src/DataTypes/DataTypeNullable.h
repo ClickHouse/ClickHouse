@@ -18,28 +18,28 @@ public:
     const char * getFamilyName() const override { return "Nullable"; }
     TypeIndex getTypeId() const override { return TypeIndex::Nullable; }
 
-    void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const override;
+    void enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const override;
 
-    void serializeBinaryBulkStatePrefix(
+    void serializeBinaryBulkStatePrefixImpl(
             SerializeBinaryBulkSettings & settings,
             SerializeBinaryBulkStatePtr & state) const override;
 
-    void serializeBinaryBulkStateSuffix(
+    void serializeBinaryBulkStateSuffixImpl(
             SerializeBinaryBulkSettings & settings,
             SerializeBinaryBulkStatePtr & state) const override;
 
-    void deserializeBinaryBulkStatePrefix(
+    void deserializeBinaryBulkStatePrefixImpl(
             DeserializeBinaryBulkSettings & settings,
             DeserializeBinaryBulkStatePtr & state) const override;
 
-    void serializeBinaryBulkWithMultipleStreams(
+    void serializeBinaryBulkWithMultipleStreamsImpl(
             const IColumn & column,
             size_t offset,
             size_t limit,
             SerializeBinaryBulkSettings & settings,
             SerializeBinaryBulkStatePtr & state) const override;
 
-    void deserializeBinaryBulkWithMultipleStreams(
+    void deserializeBinaryBulkWithMultipleStreamsImpl(
             IColumn & column,
             size_t limit,
             DeserializeBinaryBulkSettings & settings,

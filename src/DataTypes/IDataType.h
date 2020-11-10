@@ -3,8 +3,9 @@
 #include <memory>
 #include <Common/COW.h>
 #include <boost/noncopyable.hpp>
-#include <DataTypes/DataTypeCustom.h>
 #include <Core/Names.h>
+#include <Core/Types.h>
+#include <DataTypes/DataTypeCustom_fwd.h>
 
 
 namespace DB
@@ -111,10 +112,7 @@ public:
 
     using StreamCallback = std::function<void(const SubstreamPath &, const IDataType &)>;
 
-    virtual void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
-    {
-        callback(path, *this);
-    }
+    void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const;
     void enumerateStreams(const StreamCallback & callback, SubstreamPath && path) const { enumerateStreams(callback, path); }
     void enumerateStreams(const StreamCallback & callback) const { enumerateStreams(callback, {}); }
 
@@ -163,19 +161,19 @@ public:
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
-    virtual void serializeBinaryBulkStatePrefix(
-            SerializeBinaryBulkSettings & /*settings*/,
-            SerializeBinaryBulkStatePtr & /*state*/) const {}
+    void serializeBinaryBulkStatePrefix(
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state) const;
 
     /// Call after serializeBinaryBulkWithMultipleStreams chain to finish serialization.
-    virtual void serializeBinaryBulkStateSuffix(
-        SerializeBinaryBulkSettings & /*settings*/,
-        SerializeBinaryBulkStatePtr & /*state*/) const {}
+    void serializeBinaryBulkStateSuffix(
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state) const;
 
     /// Call before before deserializeBinaryBulkWithMultipleStreams chain to get DeserializeBinaryBulkStatePtr.
-    virtual void deserializeBinaryBulkStatePrefix(
-        DeserializeBinaryBulkSettings & /*settings*/,
-        DeserializeBinaryBulkStatePtr & /*state*/) const {}
+    void deserializeBinaryBulkStatePrefix(
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & state) const;
 
     /** 'offset' and 'limit' are used to specify range.
       * limit = 0 - means no limit.
@@ -183,27 +181,19 @@ public:
       * offset + limit could be greater than size of column
       *  - in that case, column is serialized till the end.
       */
-    virtual void serializeBinaryBulkWithMultipleStreams(
+    void serializeBinaryBulkWithMultipleStreams(
         const IColumn & column,
         size_t offset,
         size_t limit,
         SerializeBinaryBulkSettings & settings,
-        SerializeBinaryBulkStatePtr & /*state*/) const
-    {
-        if (WriteBuffer * stream = settings.getter(settings.path))
-            serializeBinaryBulk(column, *stream, offset, limit);
-    }
+        SerializeBinaryBulkStatePtr & state) const;
 
     /// Read no more than limit values and append them into column.
-    virtual void deserializeBinaryBulkWithMultipleStreams(
+    void deserializeBinaryBulkWithMultipleStreams(
         IColumn & column,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & /*state*/) const
-    {
-        if (ReadBuffer * stream = settings.getter(settings.path))
-            deserializeBinaryBulk(column, *stream, limit, settings.avg_value_size_hint);
-    }
+        DeserializeBinaryBulkStatePtr & state) const;
 
     /** Override these methods for data types that require just single stream (most of data types).
       */
@@ -275,6 +265,44 @@ public:
 
 protected:
     virtual String doGetName() const;
+
+    virtual void enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const
+    {
+        callback(path, *this);
+    }
+
+    virtual void serializeBinaryBulkStatePrefixImpl(
+            SerializeBinaryBulkSettings & /*settings*/,
+            SerializeBinaryBulkStatePtr & /*state*/) const {}
+
+    virtual void serializeBinaryBulkStateSuffixImpl(
+        SerializeBinaryBulkSettings & /*settings*/,
+        SerializeBinaryBulkStatePtr & /*state*/) const {}
+
+    virtual void deserializeBinaryBulkStatePrefixImpl(
+        DeserializeBinaryBulkSettings & /*settings*/,
+        DeserializeBinaryBulkStatePtr & /*state*/) const {}
+
+    virtual void serializeBinaryBulkWithMultipleStreamsImpl(
+        const IColumn & column,
+        size_t offset,
+        size_t limit,
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & /*state*/) const
+    {
+        if (WriteBuffer * stream = settings.getter(settings.path))
+            serializeBinaryBulk(column, *stream, offset, limit);
+    }
+
+    virtual void deserializeBinaryBulkWithMultipleStreamsImpl(
+        IColumn & column,
+        size_t limit,
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & /*state*/) const
+    {
+        if (ReadBuffer * stream = settings.getter(settings.path))
+            deserializeBinaryBulk(column, *stream, limit, settings.avg_value_size_hint);
+    }
 
     /// Default implementations of text serialization in case of 'custom_text_serialization' is not set.
 
@@ -466,9 +494,11 @@ private:
     /// This is mutable to allow setting custom name and serialization on `const IDataType` post construction.
     mutable DataTypeCustomNamePtr custom_name;
     mutable DataTypeCustomTextSerializationPtr custom_text_serialization;
+    mutable DataTypeCustomStreamsPtr custom_streams;
 
 public:
     const IDataTypeCustomName * getCustomName() const { return custom_name.get(); }
+    const IDataTypeCustomStreams * getCustomStreams() const { return custom_streams.get(); }
 };
 
 

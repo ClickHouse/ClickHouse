@@ -9,6 +9,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/DataTypeCustom.h>
 
 namespace DB
 {
@@ -198,6 +199,69 @@ void IDataType::insertDefaultInto(IColumn & column) const
     column.insertDefault();
 }
 
+void IDataType::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
+{
+    if (custom_streams)
+        custom_streams->enumerateStreams(callback, path);
+    else
+        enumerateStreamsImpl(callback, path);
+}
+
+void IDataType::serializeBinaryBulkStatePrefix(
+    SerializeBinaryBulkSettings & settings,
+    SerializeBinaryBulkStatePtr & state) const
+{
+    if (custom_streams)
+        custom_streams->serializeBinaryBulkStatePrefix(settings, state);
+    else
+        serializeBinaryBulkStatePrefixImpl(settings, state);
+}
+
+void IDataType::serializeBinaryBulkStateSuffix(
+    SerializeBinaryBulkSettings & settings,
+    SerializeBinaryBulkStatePtr & state) const
+{
+    if (custom_streams)
+        custom_streams->serializeBinaryBulkStateSuffix(settings, state);
+    else
+        serializeBinaryBulkStateSuffixImpl(settings, state);
+}
+
+void IDataType::deserializeBinaryBulkStatePrefix(
+    DeserializeBinaryBulkSettings & settings,
+    DeserializeBinaryBulkStatePtr & state) const
+{
+    if (custom_streams)
+        custom_streams->deserializeBinaryBulkStatePrefix(settings, state);
+    else
+        deserializeBinaryBulkStatePrefixImpl(settings, state);
+}
+
+void IDataType::serializeBinaryBulkWithMultipleStreams(
+    const IColumn & column,
+    size_t offset,
+    size_t limit,
+    SerializeBinaryBulkSettings & settings,
+    SerializeBinaryBulkStatePtr & state) const
+{
+    if (custom_streams)
+        custom_streams->serializeBinaryBulkWithMultipleStreams(column, offset, limit, settings, state);
+    else
+        serializeBinaryBulkWithMultipleStreamsImpl(column, offset, limit, settings, state);
+}
+
+void IDataType::deserializeBinaryBulkWithMultipleStreams(
+    IColumn & column,
+    size_t limit,
+    DeserializeBinaryBulkSettings & settings,
+    DeserializeBinaryBulkStatePtr & state) const
+{
+    if (custom_streams)
+        custom_streams->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, state);
+    else
+        deserializeBinaryBulkWithMultipleStreamsImpl(column, limit, settings, state);
+}
+
 void IDataType::serializeAsTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     if (custom_text_serialization)
@@ -294,6 +358,9 @@ void IDataType::setCustomization(DataTypeCustomDescPtr custom_desc_) const
 
     if (custom_desc_->text_serialization)
         custom_text_serialization = std::move(custom_desc_->text_serialization);
+
+    if (custom_desc_->streams)
+        custom_streams = std::move(custom_desc_->streams);
 }
 
 }
