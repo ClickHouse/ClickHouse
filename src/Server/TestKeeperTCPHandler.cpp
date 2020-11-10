@@ -289,31 +289,45 @@ void TestKeeperTCPHandler::runImpl()
         }
 
         if (in->poll(max_wait))
-            receiveRequest();
+        {
+            bool close_received = receiveRequest();
+            if (close_received)
+            {
+                LOG_DEBUG(log, "Received close request");
+                break;
+            }
+        }
     }
 }
 
 
-void TestKeeperTCPHandler::receiveRequest()
+bool TestKeeperTCPHandler::receiveRequest()
 {
-    LOG_DEBUG(log, "Receiving heartbeat event");
+    LOG_DEBUG(log, "Receiving event");
     int32_t length;
     read(length, *in);
-    LOG_DEBUG(log, "RECEIVED LENGTH {}", length);
+    //LOG_DEBUG(log, "RECEIVED LENGTH {}", length);
     int32_t xid;
-    LOG_DEBUG(log, "READING XID");
+    //LOG_DEBUG(log, "READING XID");
     read(xid, *in);
 
-    LOG_DEBUG(log, "Received xid {}", xid);
+    //LOG_DEBUG(log, "Received xid {}", xid);
 
     int32_t opnum;
     read(opnum, *in);
+    if (opnum == -11)
+        return true;
+
     Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
     request->xid = xid;
     request->readImpl(*in);
-    responses.push(test_keeper_storage->putRequest(request));
+    auto request_future_responses = test_keeper_storage->putRequest(request);
+    responses.push(std::move(request_future_responses.response));
+    if (request_future_responses.watch_response)
+        responses.push(std::move(*request_future_responses.watch_response));
 
-    LOG_DEBUG(log, "Event received");
+    return false;
+    //LOG_DEBUG(log, "Event received");
 }
 
 

@@ -12,6 +12,7 @@ namespace zkutil
 using namespace DB;
 struct TestKeeperStorageRequest;
 using TestKeeperStorageRequestPtr = std::shared_ptr<TestKeeperStorageRequest>;
+using ResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr &)>;
 
 class TestKeeperStorage
 {
@@ -33,7 +34,7 @@ public:
 
     using Container = std::map<std::string, Node>;
 
-    using WatchCallbacks = std::vector<Coordination::WatchCallback>;
+    using WatchCallbacks = std::vector<ResponseCallback>;
     using Watches = std::map<String /* path, relative of root_path */, WatchCallbacks>;
 
     Container container;
@@ -51,7 +52,8 @@ public:
     struct RequestInfo
     {
         TestKeeperStorageRequestPtr request;
-        std::function<void(const Coordination::ZooKeeperResponsePtr &)> response_callback;
+        ResponseCallback response_callback;
+        ResponseCallback watch_callback;
         clock::time_point time;
     };
     std::mutex push_request_mutex;
@@ -68,7 +70,12 @@ public:
     using AsyncResponse = std::future<Coordination::ZooKeeperResponsePtr>;
     TestKeeperStorage();
     ~TestKeeperStorage();
-    AsyncResponse putRequest(const Coordination::ZooKeeperRequestPtr & request);
+    struct ResponsePair
+    {
+        AsyncResponse response;
+        std::optional<AsyncResponse> watch_response;
+    };
+    ResponsePair putRequest(const Coordination::ZooKeeperRequestPtr & request);
 
     int64_t getSessionID()
     {

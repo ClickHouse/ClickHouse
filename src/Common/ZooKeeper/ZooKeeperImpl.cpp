@@ -654,11 +654,14 @@ void ZooKeeper::sendThread()
                     }
 
                     if (expired)
+                    {
                         break;
+                    }
 
                     info.request->addRootPath(root_path);
 
                     info.request->probably_sent = true;
+                    std::cerr << "SENDING GENERAL REQUEST\n";
                     info.request->write(*out);
 
                     if (info.request->xid == close_xid)
@@ -899,7 +902,6 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
 
         if (expired)
             return;
-        expired = true;
     }
 
     active_session_metric_increment.destroy();
@@ -920,6 +922,11 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
             }
 
             send_thread.join();
+        }
+
+        {
+            std::lock_guard lock(push_request_mutex);
+            expired = true;
         }
 
         try
