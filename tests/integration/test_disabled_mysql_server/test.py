@@ -33,7 +33,7 @@ def test_disabled_mysql_server(started_cluster):
             pm._add_rule({'source': clickhouse_node.ip_address, 'destination_port': 3306, 'action': 'DROP'})
             clickhouse_node.query("CREATE DATABASE test_db ENGINE = MySQL('mysql1:3306', 'test_db', 'root', 'clickhouse')")
 
-        assert "Can't connect to MySQL server." in str(exception.value)
+        assert "MySQL database server is unavailable" in str(exception.value)
         pm._delete_rule({'source': clickhouse_node.ip_address, 'destination_port': 3306, 'action': 'DROP'})
 
         clickhouse_node.query("CREATE DATABASE test_db ENGINE = MySQL('mysql1:3306', 'test_db', 'root', 'clickhouse')")
@@ -43,7 +43,7 @@ def test_disabled_mysql_server(started_cluster):
         clickhouse_node.restart_clickhouse()  # successfully
         with pytest.raises(QueryRuntimeException) as exception:
             clickhouse_node.query("SHOW TABLES FORM test_db")
-        assert "Can't connect to local MySQL server" in str(exception.value)
+        assert "MySQL database server is unavailable" in str(exception.value)
 
         clickhouse_node.query("SELECT * FROM system.parts")
         clickhouse_node.query("SELECT * FROM system.mutations")

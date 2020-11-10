@@ -42,15 +42,15 @@ mysqlxx::Pool::Entry DatabaseWithMySQLConnection::getMySQLConnection() const
         if (!pool.has_value())  /// It seems impossible
             throw Exception("LOGICAL_ERROR: it is a bug.", ErrorCodes::LOGICAL_ERROR);
 
+        /// TODO: Maybe should test for allocated connection(eg. SELECT 1)
         return pool->get();
     }
-    catch (...)
+    catch (const mysqlxx::Exception & e)
     {
-        const auto & exception_message = getCurrentExceptionMessage(true);
         throw Exception(
             "MySQL database server is unavailable(hostname:" + backQuoteIfNeed(connection_args.hostname) +
             ", port:" + toString(connection_args.port) + ", database:" + backQuoteIfNeed(connection_args.database_name) + ", user:" +
-            backQuoteIfNeed(connection_args.username) + "), exception message:" + exception_message + ".", ErrorCodes::ILLEGAL_DATABASE_STATUS);
+            backQuoteIfNeed(connection_args.username) + "): " + e.displayText(), ErrorCodes::ILLEGAL_DATABASE_STATUS);
     }
 }
 

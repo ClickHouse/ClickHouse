@@ -167,6 +167,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
                         "Enable allow_experimental_database_materialize_mysql to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
     }
 
+    bool exists_metadata_dir = fs::exists(metadata_path / "");
     DatabasePtr database = DatabaseFactory::get(create, metadata_path / "", context);
 
     if (create.uuid != UUIDHelpers::Nil)
@@ -220,6 +221,13 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             [[maybe_unused]] bool removed = fs::remove(metadata_file_path);
             assert(removed);
         }
+
+        if (!exists_metadata_dir && fs::exists(metadata_path / ""))
+        {
+            bool removed = fs::remove(metadata_path / "");
+            assert(removed);
+        }
+
         if (added)
             DatabaseCatalog::instance().detachDatabase(database_name, false, false);
 

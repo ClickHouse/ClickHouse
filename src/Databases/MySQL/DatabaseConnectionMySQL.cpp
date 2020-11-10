@@ -404,11 +404,15 @@ void DatabaseConnectionMySQL::loadStoredObjects(Context & context, bool has_forc
     catch (...)
     {
         tryLogCurrentException(&Poco::Logger::get("DatabaseConnectionMySQL(" + database_name + ")"),
-            "Cannot load MySQL database stored objects.");
+            "Cannot load MySQL database stored objects:");
 
         if (!force_attach)
         {
-            const auto & exception_message = getCurrentExceptionMessage(true);
+            /// For better exception message.
+            if (Poco::Exception * exception = exception_cast<Poco::Exception *>(std::current_exception()))
+                throw Exception("Cannot create MySQL database, because " + exception->displayText(), ErrorCodes::CANNOT_CREATE_DATABASE);
+
+            const auto & exception_message = getCurrentExceptionMessage(true, true);
             throw Exception("Cannot create MySQL database, because " + exception_message, ErrorCodes::CANNOT_CREATE_DATABASE);
         }
     }
