@@ -286,7 +286,7 @@ public:
         for (const auto & c : centroids)
         {
             if (c.count <= 0 || std::isnan(c.count) || std::isnan(c.mean)) // invalid count breaks compress(), invalid mean breaks sort()
-                throw std::runtime_error("Invalid centroid " + std::to_string(c.count) + ":" + std::to_string(c.mean));
+                throw Exception("Invalid centroid " + std::to_string(c.count) + ":" + std::to_string(c.mean), ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
             count += c.count;
         }
         compress(); // Allows reading/writing TDigests with different epsilon/max_centroids params
