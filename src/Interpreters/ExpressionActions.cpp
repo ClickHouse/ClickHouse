@@ -53,8 +53,164 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
 }
 
-/// Read comment near usage
-/// static constexpr auto DUMMY_COLUMN_NAME = "_dummy";
+ExpressionActions::~ExpressionActions() = default;
+
+ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_)
+{
+    actions_dag = actions_dag_->clone();
+
+    actions_dag->compileExpressions();
+
+    linearizeActions();
+
+    const auto & settings = actions_dag->getSettings();
+
+    if (settings.max_temporary_columns && num_columns > settings.max_temporary_columns)
+        throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,
+                        "Too many temporary columns: {}. Maximum: {}",
+                        actions_dag->dumpNames(), std::to_string(settings.max_temporary_columns));
+
+    max_temporary_non_const_columns = settings.max_temporary_non_const_columns;
+    project_input = settings.project_input;
+}
+
+ExpressionActionsPtr ExpressionActions::clone() const
+{
+    auto expressions = std::make_shared<ExpressionActions>(*this);
+}
+
+void ExpressionActions::linearizeActions()
+{
+    struct Data
+    {
+        const Node * node = nullptr;
+        size_t num_created_children = 0;
+        std::vector<const Node *> parents;
+
+        ssize_t position = -1;
+        size_t num_created_parents = 0;
+        bool used_in_result = false;
+    };
+
+    const auto & nodes = getNodes();
+    const auto & index = actions_dag->getIndex();
+
+    std::vector<Data> data(nodes.size());
+    std::unordered_map<const Node *, size_t> reverse_index;
+
+    for (const auto & node : nodes)
+    {
+        size_t id = reverse_index.size();
+        data[id].node = &node;
+        reverse_index[&node] = id;
+    }
+
+    std::queue<const Node *> ready_nodes;
+    std::queue<const Node *> ready_array_joins;
+
+    for (const auto * node : index)
+        data[reverse_index[node]].used_in_result = true;
+
+    for (const auto & node : nodes)
+    {
+        for (const auto & child : node.children)
+            data[reverse_index[child]].parents.emplace_back(&node);
+    }
+
+    for (const auto & node : nodes)
+    {
+        if (node.children.empty())
+            ready_nodes.emplace(&node);
+    }
+
+    std::stack<size_t> free_positions;
+
+    while (!ready_nodes.empty() || !ready_array_joins.empty())
+    {
+        auto & stack = ready_nodes.empty() ? ready_array_joins : ready_nodes;
+        const Node * node = stack.front();
+        stack.pop();
+
+        Names argument_names;
+        for (const auto & child : node->children)
+            argument_names.emplace_back(child->result_name);
+
+        auto & cur = data[reverse_index[node]];
+
+        size_t free_position = num_columns;
+        if (free_positions.empty())
+            ++num_columns;
+        else
+        {
+            free_position = free_positions.top();
+            free_positions.pop();
+        }
+
+        cur.position = free_position;
+
+        ExpressionActions::Arguments arguments;
+        arguments.reserve(cur.node->children.size());
+        for (auto * child : cur.node->children)
+        {
+            auto & arg = data[reverse_index[child]];
+
+            if (arg.position < 0)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Argument was not calculated for {}", child->result_name);
+
+            ++arg.num_created_parents;
+
+            ExpressionActions::Argument argument;
+            argument.pos = arg.position;
+            argument.needed_later = arg.used_in_result || arg.num_created_parents != arg.parents.size();
+
+            if (!argument.needed_later)
+                free_positions.push(argument.pos);
+
+            arguments.emplace_back(argument);
+        }
+
+        if (node->type == ActionsDAG::ActionType::INPUT)
+        {
+            /// Argument for input is special. It contains the position from required columns.
+            ExpressionActions::Argument argument;
+            argument.pos = required_columns.size();
+            argument.needed_later = !cur.parents.empty();
+            arguments.emplace_back(argument);
+
+            required_columns.push_back({node->result_name, node->result_type});
+        }
+
+        actions.push_back({node, arguments, free_position});
+
+        for (const auto & parent : cur.parents)
+        {
+            auto & parent_data = data[reverse_index[parent]];
+            ++parent_data.num_created_children;
+
+            if (parent_data.num_created_children == parent->children.size())
+            {
+                auto & push_stack = parent->type == ActionsDAG::ActionType::ARRAY_JOIN ? ready_array_joins : ready_nodes;
+                push_stack.push(parent);
+            }
+        }
+    }
+
+    result_positions.reserve(index.size());
+
+    for (const auto & node : index)
+    {
+        auto pos = data[reverse_index[node]].position;
+
+        if (pos < 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Action for {} was not calculated", node->result_name);
+
+        result_positions.push_back(pos);
+
+        ColumnWithTypeAndName col{node->column, node->result_type, node->result_name};
+        sample_block.insert(std::move(col));
+    }
+}
+
 
 static std::ostream & operator << (std::ostream & out, const ExpressionActions::Argument & argument)
 {
@@ -100,8 +256,6 @@ std::string ExpressionActions::Action::toString() const
         << " " << (node->result_type ? node->result_type->getName() : "(no type)") << " : " << result_position;
     return out.str();
 }
-
-ExpressionActions::~ExpressionActions() = default;
 
 void ExpressionActions::checkLimits(ExecutionContext & execution_context) const
 {
@@ -371,19 +525,6 @@ std::string ExpressionActions::dumpActions() const
     return ss.str();
 }
 
-//static std::string getUniqueNameForIndex(ActionsDAG::Index & index, std::string name)
-//{
-//    if (index.contains(name))
-//        return name;
-//
-//    size_t next_id = 0;
-//    std::string res;
-//    do
-//        res = name + "_" + std::to_string(next_id);
-//    while (index.contains(res));
-//
-//    return res;
-//}
 
 bool ActionsDAG::hasArrayJoin() const
 {
@@ -879,13 +1020,13 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     std::string result_name,
     const Context & context [[maybe_unused]])
 {
-    const auto & settings = context.getSettingsRef();
-    max_temporary_columns = settings.max_temporary_columns;
-    max_temporary_non_const_columns = settings.max_temporary_non_const_columns;
+    const auto & all_settings = context.getSettingsRef();
+    settings.max_temporary_columns = all_settings.max_temporary_columns;
+    settings.max_temporary_non_const_columns = all_settings.max_temporary_non_const_columns;
 
 #if USE_EMBEDDED_COMPILER
-    compile_expressions = settings.compile_expressions;
-    min_count_to_compile_expression = settings.min_count_to_compile_expression;
+    settings.compile_expressions = settings.compile_expressions;
+    settings.min_count_to_compile_expression = settings.min_count_to_compile_expression;
 
     if (!compilation_cache)
         compilation_cache = context.getCompiledExpressionCache();
@@ -925,7 +1066,8 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
     /// But if we compile expressions compiled version of this function maybe placed in cache,
     /// so we don't want to unfold non deterministic functions
-    if (all_const && node.function_base->isSuitableForConstantFolding() && (!compile_expressions || node.function_base->isDeterministic()))
+    if (all_const && node.function_base->isSuitableForConstantFolding()
+        && (!settings.compile_expressions || node.function_base->isDeterministic()))
     {
         size_t num_rows = arguments.empty() ? 0 : arguments.front().column->size();
         auto col = node.function->execute(arguments, node.result_type, num_rows, true);
@@ -1141,7 +1283,7 @@ void ActionsDAG::project(const NamesWithAliases & projection)
     addAliases(projection, result_nodes);
     removeUnusedActions(result_nodes);
     projectInput();
-    projected_output = true;
+    settings.projected_output = true;
 }
 
 void ActionsDAG::removeColumn(const std::string & column_name)
@@ -1190,197 +1332,15 @@ ActionsDAGPtr ActionsDAG::clone() const
     return actions;
 }
 
-ExpressionActionsPtr ExpressionActions::clone() const
+void ActionsDAG::compileExpressions()
 {
-    auto expressions = std::make_shared<ExpressionActions>();
-
-    expressions->actions = actions;
-    expressions->num_columns = num_columns;
-    expressions->required_columns = required_columns;
-    expressions->result_positions = result_positions;
-    expressions->sample_block = sample_block;
-    expressions->project_input = project_input;
-    expressions->max_temporary_non_const_columns = max_temporary_non_const_columns;
-
-    std::unordered_map<const Node *, Node *> copy_map;
-    for (const auto & node : nodes)
-    {
-        auto & copy_node = expressions->nodes.emplace_back(node);
-        copy_map[&node] = &copy_node;
-    }
-
-    for (auto & node : expressions->nodes)
-        for (auto & child : node.children)
-            child = copy_map[child];
-
-    for (auto & action : expressions->actions)
-        action.node = copy_map[action.node];
-
-    return expressions;
-}
-
-
-ExpressionActionsPtr ActionsDAG::linearizeActions() const
-{
-    struct Data
-    {
-        const Node * node = nullptr;
-        size_t num_created_children = 0;
-        std::vector<const Node *> parents;
-
-        ssize_t position = -1;
-        size_t num_created_parents = 0;
-        bool used_in_result = false;
-    };
-
-    std::vector<Data> data(nodes.size());
-    std::unordered_map<const Node *, size_t> reverse_index;
-
-    for (const auto & node : nodes)
-    {
-        size_t id = reverse_index.size();
-        data[id].node = &node;
-        reverse_index[&node] = id;
-    }
-
-    std::queue<const Node *> ready_nodes;
-    std::queue<const Node *> ready_array_joins;
-
-    for (const auto * node : index)
-        data[reverse_index[node]].used_in_result = true;
-
-    for (const auto & node : nodes)
-    {
-        for (const auto & child : node.children)
-            data[reverse_index[child]].parents.emplace_back(&node);
-    }
-
-    for (const auto & node : nodes)
-    {
-        if (node.children.empty())
-            ready_nodes.emplace(&node);
-    }
-
-    auto expressions = std::make_shared<ExpressionActions>();
-    std::stack<size_t> free_positions;
-
-    while (!ready_nodes.empty() || !ready_array_joins.empty())
-    {
-        auto & stack = ready_nodes.empty() ? ready_array_joins : ready_nodes;
-        const Node * node = stack.front();
-        stack.pop();
-
-        Names argument_names;
-        for (const auto & child : node->children)
-            argument_names.emplace_back(child->result_name);
-
-        auto & cur = data[reverse_index[node]];
-
-        size_t free_position = expressions->num_columns;
-        if (free_positions.empty())
-            ++expressions->num_columns;
-        else
-        {
-            free_position = free_positions.top();
-            free_positions.pop();
-        }
-
-        cur.position = free_position;
-
-        ExpressionActions::Arguments arguments;
-        arguments.reserve(cur.node->children.size());
-        for (auto * child : cur.node->children)
-        {
-            auto & arg = data[reverse_index[child]];
-
-            if (arg.position < 0)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Argument was not calculated for {}", child->result_name);
-
-            ++arg.num_created_parents;
-
-            ExpressionActions::Argument argument;
-            argument.pos = arg.position;
-            argument.needed_later = arg.used_in_result || arg.num_created_parents != arg.parents.size();
-
-            if (!argument.needed_later)
-                free_positions.push(argument.pos);
-
-            arguments.emplace_back(argument);
-        }
-
-        if (node->type == ActionType::INPUT)
-        {
-            /// Argument for input is special. It contains the position from required columns.
-            ExpressionActions::Argument argument;
-            argument.pos = expressions->required_columns.size();
-            argument.needed_later = !cur.parents.empty();
-            arguments.emplace_back(argument);
-
-            expressions->required_columns.push_back({node->result_name, node->result_type});
-        }
-
-        expressions->actions.push_back({node, arguments, free_position});
-
-        for (const auto & parent : cur.parents)
-        {
-            auto & parent_data = data[reverse_index[parent]];
-            ++parent_data.num_created_children;
-
-            if (parent_data.num_created_children == parent->children.size())
-            {
-                auto & push_stack = parent->type == ActionType::ARRAY_JOIN ? ready_array_joins : ready_nodes;
-                push_stack.push(parent);
-            }
-        }
-    }
-
-    expressions->result_positions.reserve(index.size());
-
-    for (const auto & node : index)
-    {
-        auto pos = data[reverse_index[node]].position;
-
-        if (pos < 0)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Action for {} was not calculated", node->result_name);
-
-        expressions->result_positions.push_back(pos);
-
-        ColumnWithTypeAndName col{node->column, node->result_type, node->result_name};
-        expressions->sample_block.insert(std::move(col));
-    }
-
-    return expressions;
-}
-
-ExpressionActionsPtr ActionsDAG::buildExpressions() const
-{
-    auto cloned = clone();
-
 #if USE_EMBEDDED_COMPILER
-    if (compile_expressions)
+    if (settings.compile_expressions)
     {
-        cloned->compileFunctions();
-        cloned->removeUnusedActions();
+        compileFunctions();
+        removeUnusedActions();
     }
 #endif
-
-    auto expressions = cloned->linearizeActions();
-    expressions->nodes.swap(cloned->nodes);
-
-    if (max_temporary_columns && expressions->num_columns > max_temporary_columns)
-        throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,
-                        "Too many temporary columns: {}. Maximum: {}",
-                        dumpNames(), std::to_string(max_temporary_columns));
-
-    expressions->max_temporary_non_const_columns = max_temporary_non_const_columns;
-    expressions->project_input = project_input;
-
-    return expressions;
-}
-
-std::string ActionsDAG::dump() const
-{
-    return linearizeActions()->dumpActions();
 }
 
 std::string ActionsDAG::dumpDAG() const

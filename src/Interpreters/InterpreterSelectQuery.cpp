@@ -522,7 +522,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 
         if (analysis_result.prewhere_info)
         {
-            analysis_result.prewhere_info->prewhere_actions->buildExpressions()->execute(header);
+            ExpressionActions(analysis_result.prewhere_info->prewhere_actions).execute(header);
             header = materializeBlock(header);
             if (analysis_result.prewhere_info->remove_prewhere_column)
                 header.erase(analysis_result.prewhere_info->prewhere_column_name);
@@ -1435,13 +1435,13 @@ void InterpreterSelectQuery::executeFetchColumns(
         if (prewhere_info)
         {
             query_info.prewhere_info = std::make_shared<PrewhereInfo>(
-                    prewhere_info->prewhere_actions->buildExpressions(),
+                    std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions),
                     prewhere_info->prewhere_column_name);
 
             if (prewhere_info->alias_actions)
-                query_info.prewhere_info->alias_actions = prewhere_info->alias_actions->buildExpressions();
+                query_info.prewhere_info->alias_actions = std::make_shared<ExpressionActions>(prewhere_info->alias_actions);
             if (prewhere_info->remove_columns_actions)
-                query_info.prewhere_info->remove_columns_actions = prewhere_info->remove_columns_actions->buildExpressions();
+                query_info.prewhere_info->remove_columns_actions = std::make_shared<ExpressionActions>(prewhere_info->remove_columns_actions);
 
             query_info.prewhere_info->remove_prewhere_column = prewhere_info->remove_prewhere_column;
             query_info.prewhere_info->need_filter = prewhere_info->need_filter;

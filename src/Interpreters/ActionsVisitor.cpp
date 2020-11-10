@@ -895,7 +895,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 String result_name = lambda->arguments->children.at(1)->getColumnName();
                 lambda_dag->removeUnusedActions(Names(1, result_name));
 
-                auto lambda_actions = lambda_dag->buildExpressions();
+                auto lambda_actions = std::make_shared<ExpressionActions>(lambda_dag);
 
                 DataTypePtr result_type = lambda_actions->getSampleBlock().getByName(result_name).type;
 
