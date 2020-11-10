@@ -92,24 +92,23 @@ void ASTColumnsExceptTransformer::formatImpl(const FormatSettings & settings, Fo
 void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
 {
     std::set<String> expected_columns;
-    for (size_t i = 0; i < children.size(); ++i)
-        expected_columns.insert(children[i]->as<const ASTIdentifier &>().name());
+    for (const auto & child : children)
+        expected_columns.insert(child->as<const ASTIdentifier &>().name());
 
     for (auto it = nodes.begin(); it != nodes.end();)
     {
-        bool removed = false;
         if (const auto * id = it->get()->as<ASTIdentifier>())
         {
             auto expected_column = expected_columns.find(id->shortName());
             if (expected_column != expected_columns.end())
             {
-                removed = true;
                 expected_columns.erase(expected_column);
                 it = nodes.erase(it);
             }
+            else
+                ++it;
         }
-
-        if (!removed)
+        else
             ++it;
     }
 
