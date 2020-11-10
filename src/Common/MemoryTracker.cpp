@@ -134,6 +134,7 @@ void MemoryTracker::alloc(Int64 size)
 
         ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
         std::stringstream message;
+        message.exceptions(std::ios::failbit);
         message << "Memory tracker";
         if (const auto * description = description_ptr.load(std::memory_order_relaxed))
             message << " " << description;
@@ -166,6 +167,7 @@ void MemoryTracker::alloc(Int64 size)
 
         ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
         std::stringstream message;
+        message.exceptions(std::ios::failbit);
         message << "Memory limit";
         if (const auto * description = description_ptr.load(std::memory_order_relaxed))
             message << " " << description;

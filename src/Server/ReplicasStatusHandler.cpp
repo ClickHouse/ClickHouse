@@ -37,6 +37,7 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
 
         bool ok = true;
         std::stringstream message;
+        message.exceptions(std::ios::failbit);
 
         auto databases = DatabaseCatalog::instance().getDatabases();
 

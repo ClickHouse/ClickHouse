@@ -467,6 +467,26 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 <max_concurrent_queries>100</max_concurrent_queries>
 ```
 
+## max_concurrent_queries_for_all_users {#max-concurrent-queries-for-all-users}
+
+Если значение этой настройки меньше или равно текущему количеству одновременно обрабатываемых запросов, то будет сгенерировано исключение.
+
+Пример: `max_concurrent_queries_for_all_users` установлен на 99 для всех пользователей. Чтобы выполнять запросы даже когда сервер перегружен, администратор баз данных устанавливает для себя значение настройки на 100.
+
+Изменение настройки для одного запроса или пользователя не влияет на другие запросы.
+
+Значение по умолчанию: `0` — отсутствие ограничений.
+
+**Пример**
+
+``` xml
+<max_concurrent_queries_for_all_users>99</max_concurrent_queries_for_all_users>
+```
+
+**Смотрите также**
+
+-   [max_concurrent_queries](#max-concurrent-queries)
+
 ## max_connections {#max-connections}
 
 Максимальное количество входящих соединений.
@@ -533,6 +553,22 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 <merge_tree>
     <max_suspicious_broken_parts>5</max_suspicious_broken_parts>
 </merge_tree>
+```
+
+## replicated\_merge\_tree {#server_configuration_parameters-replicated_merge_tree}
+
+Тонкая настройка таблиц в [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
+
+Эта настройка имеет более высокий приоритет.
+
+Подробнее смотрите в заголовочном файле MergeTreeSettings.h.
+
+**Пример**
+
+``` xml
+<replicated_merge_tree>
+    <max_suspicious_broken_parts>5</max_suspicious_broken_parts>
+</replicated_merge_tree>
 ```
 
 ## openSSL {#server_configuration_parameters-openssl}
