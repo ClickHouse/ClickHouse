@@ -3831,7 +3831,7 @@ bool StorageReplicatedMergeTree::optimize(
                 }
                 if (try_no == max_retries)
                     return handle_noop("Can't create merge queue node in ZooKeeper, because log was updated in every of "
-                                       + toString(max_retries) + " tries");
+                        + toString(max_retries) + " tries");
             }
         }
         else
@@ -3844,7 +3844,7 @@ bool StorageReplicatedMergeTree::optimize(
 
                 FutureMergedMutatedPart future_merged_part;
                 String disable_reason;
-                SelectPartsDecision select_decision = SelectPartsDecision::NOTHING_TO_MERGE;
+                SelectPartsDecision select_decision;
 
                 if (!partition)
                 {

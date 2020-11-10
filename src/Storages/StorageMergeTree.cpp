@@ -653,10 +653,10 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
         if (!left)
             return !currently_merging_mutating_parts.count(right);
         return !currently_merging_mutating_parts.count(left) && !currently_merging_mutating_parts.count(right)
-               && getCurrentMutationVersion(left, lock) == getCurrentMutationVersion(right, lock);
+            && getCurrentMutationVersion(left, lock) == getCurrentMutationVersion(right, lock);
     };
 
-    SelectPartsDecision select_decision = SelectPartsDecision::NOTHING_TO_MERGE;
+    SelectPartsDecision select_decision;
 
     if (partition_id.empty())
     {
@@ -696,7 +696,7 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
                 && out_disable_reason->empty())
             {
                 LOG_DEBUG(log, "Waiting for currently running merges ({} parts are merging right now) to perform OPTIMIZE FINAL",
-                          currently_merging_mutating_parts.size());
+                    currently_merging_mutating_parts.size());
 
                 if (std::cv_status::timeout == currently_processing_in_background_condition.wait_for(
                     lock, std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC)))
