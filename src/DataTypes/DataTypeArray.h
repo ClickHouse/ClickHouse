@@ -82,7 +82,8 @@ public:
             IColumn & column,
             size_t limit,
             DeserializeBinaryBulkSettings & settings,
-            DeserializeBinaryBulkStatePtr & state) const override;
+            DeserializeBinaryBulkStatePtr & state,
+            SubstreamsCache * cache) const override;
 
     void serializeProtobuf(const IColumn & column,
                            size_t row_num,

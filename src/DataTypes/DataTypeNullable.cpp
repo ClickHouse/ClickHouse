@@ -108,16 +108,24 @@ void DataTypeNullable::deserializeBinaryBulkWithMultipleStreamsImpl(
     IColumn & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state) const
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsCache * cache) const
 {
     ColumnNullable & col = assert_cast<ColumnNullable &>(column);
 
     settings.path.push_back(Substream::NullMap);
-    if (auto * stream = settings.getter(settings.path))
+    if (auto cached_column = getFromSubstreamsCache(cache, settings.path))
+    {
+        col.getNullMapColumnPtr() = cached_column;
+    }
+    else if (auto * stream = settings.getter(settings.path))
+    {
         DataTypeUInt8().deserializeBinaryBulk(col.getNullMapColumn(), *stream, limit, 0);
+        addToSubstreamsCache(cache, settings.path, col.getNullMapColumnPtr());
+    }
 
     settings.path.back() = Substream::NullableElements;
-    nested_data_type->deserializeBinaryBulkWithMultipleStreams(col.getNestedColumn(), limit, settings, state);
+    nested_data_type->deserializeBinaryBulkWithMultipleStreams(col.getNestedColumnPtr(), limit, settings, state, cache);
     settings.path.pop_back();
 }
 

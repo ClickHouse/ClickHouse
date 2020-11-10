@@ -44,7 +44,6 @@ namespace ErrorCodes
     extern const int SIZES_OF_MARKS_FILES_ARE_INCONSISTENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_FILE_NAME;
-    extern const int NOT_IMPLEMENTED;
 }
 
 class LogSource final : public SourceWithProgress
@@ -58,7 +57,8 @@ public:
         for (const auto & name_type : columns)
             res.insert({ name_type.type->createColumn(), name_type.type, name_type.name });
 
-        return Nested::flatten(res);
+        // return Nested::flatten(res);
+        return res;
     }
 
     LogSource(
@@ -109,7 +109,7 @@ private:
     using DeserializeStates = std::map<String, DeserializeState>;
     DeserializeStates deserialize_states;
 
-    void readData(const NameAndTypePair & name_and_type, IColumn & column, size_t max_rows_to_read);
+    void readData(const NameAndTypePair & name_and_type, ColumnPtr & column, size_t max_rows_to_read, IDataType::SubstreamsCache & cache);
 };
 
 
@@ -209,27 +209,20 @@ Chunk LogSource::generate()
 
     /// How many rows to read for the next block.
     size_t max_rows_to_read = std::min(block_size, rows_limit - rows_read);
+    std::unordered_map<String, IDataType::SubstreamsCache> caches;
 
     for (const auto & name_type : columns)
     {
-        MutableColumnPtr column;
-        if (name_type.isSubcolumn() && res.has(name_type.getStorageName()))
+        ColumnPtr column;
+        try
         {
-            auto column_in_block = res.getByName(name_type.getStorageName()).column;
-            column = name_type.getStorageType()->getSubcolumn(name_type.getSubcolumnName(), *column_in_block->assumeMutable());
+            column = name_type.type->createColumn();
+            readData(name_type, column, max_rows_to_read, caches[name_type.getStorageName()]);
         }
-        else
+        catch (Exception & e)
         {
-            try
-            {
-                column = name_type.type->createColumn();
-                readData(name_type, *column, max_rows_to_read);
-            }
-            catch (Exception & e)
-            {
-                e.addMessage("while reading column " + name_type.name + " at " + fullPath(storage.disk, storage.table_path));
-                throw;
-            }
+            e.addMessage("while reading column " + name_type.name + " at " + fullPath(storage.disk, storage.table_path));
+            throw;
         }
 
         if (!column->empty())
@@ -248,13 +241,13 @@ Chunk LogSource::generate()
         streams.clear();
     }
 
-    res = Nested::flatten(res);
     UInt64 num_rows = res.rows();
     return Chunk(res.getColumns(), num_rows);
 }
 
 
-void LogSource::readData(const NameAndTypePair & name_and_type, IColumn & column, size_t max_rows_to_read)
+void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & column,
+    size_t max_rows_to_read, IDataType::SubstreamsCache & cache)
 {
     IDataType::DeserializeBinaryBulkSettings settings; /// TODO Use avg_value_size_hint.
     const auto & [name, type] = name_and_type;
@@ -263,8 +256,10 @@ void LogSource::readData(const NameAndTypePair & name_and_type, IColumn & column
     {
         return [&, stream_for_prefix] (const IDataType::SubstreamPath & path) -> ReadBuffer *
         {
-            String stream_name = IDataType::getFileNameForStream(name_and_type, path);
+            if (cache.count(IDataType::getSubcolumnNameForStream(path)))
+                return nullptr;
 
+            String stream_name = IDataType::getFileNameForStream(name_and_type, path);
             const auto & file_it = storage.files.find(stream_name);
             if (storage.files.end() == file_it)
                 throw Exception("Logical error: no information about file " + stream_name + " in StorageLog", ErrorCodes::LOGICAL_ERROR);
@@ -287,7 +282,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, IColumn & column
     }
 
     settings.getter = create_stream_getter(false);
-    type->deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, settings, deserialize_states[name]);
+    type->deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, settings, deserialize_states[name], &cache);
 }
 
 
@@ -633,12 +628,6 @@ Pipe StorageLog::read(
     loadMarks();
 
     auto all_columns = metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(column_names);
-
-    /// TODO: implement DataType Nested and support them
-    for (const auto & column : all_columns)
-        if (column.isSubcolumn() && startsWith(column.getSubcolumnName(), "size"))
-            throw Exception("Subcolumns of arrays are not supported in StorageLog", ErrorCodes::NOT_IMPLEMENTED);
-
     all_columns = Nested::collect(all_columns);
 
     std::shared_lock<std::shared_mutex> lock(rwlock);

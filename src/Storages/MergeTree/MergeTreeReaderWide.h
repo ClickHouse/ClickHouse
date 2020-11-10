@@ -41,9 +41,9 @@ private:
         const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
 
     void readData(
-        const NameAndTypePair & name_and_type, IColumn & column,
+        const NameAndTypePair & name_and_type, ColumnPtr & column,
         size_t from_mark, bool continue_reading, size_t max_rows_to_read,
-        bool with_offsets = true);
+        IDataType::SubstreamsCache & cache);
 };
 
 }

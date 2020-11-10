@@ -106,9 +106,17 @@ public:
         bool escape_tuple_delimiter = true;
 
         Substream(Type type_) : type(type_) {}
+
+        String toString() const;
     };
 
-    using SubstreamPath = std::vector<Substream>;
+    struct SubstreamPath : public std::vector<Substream>
+    {
+        UInt64 getHash() const;
+        String toString() const;
+    };
+
+    using SubstreamsCache = std::unordered_map<String, ColumnPtr>;
 
     using StreamCallback = std::function<void(const SubstreamPath &, const IDataType &)>;
 
@@ -190,10 +198,11 @@ public:
 
     /// Read no more than limit values and append them into column.
     void deserializeBinaryBulkWithMultipleStreams(
-        IColumn & column,
+        ColumnPtr & column,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & state) const;
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsCache * cache = nullptr) const;
 
     /** Override these methods for data types that require just single stream (most of data types).
       */
@@ -272,8 +281,8 @@ protected:
     }
 
     virtual void serializeBinaryBulkStatePrefixImpl(
-            SerializeBinaryBulkSettings & /*settings*/,
-            SerializeBinaryBulkStatePtr & /*state*/) const {}
+        SerializeBinaryBulkSettings & /*settings*/,
+        SerializeBinaryBulkStatePtr & /*state*/) const {}
 
     virtual void serializeBinaryBulkStateSuffixImpl(
         SerializeBinaryBulkSettings & /*settings*/,
@@ -298,11 +307,8 @@ protected:
         IColumn & column,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & /*state*/) const
-    {
-        if (ReadBuffer * stream = settings.getter(settings.path))
-            deserializeBinaryBulk(column, *stream, limit, settings.avg_value_size_hint);
-    }
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsCache * cache) const;
 
     /// Default implementations of text serialization in case of 'custom_text_serialization' is not set.
 
@@ -322,6 +328,9 @@ protected:
     }
 
 public:
+    static void addToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column);
+    static ColumnPtr getFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);
+
     /** Create empty column for corresponding type.
       */
     virtual MutableColumnPtr createColumn() const = 0;

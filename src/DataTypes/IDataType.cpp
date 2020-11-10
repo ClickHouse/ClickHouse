@@ -3,8 +3,10 @@
 
 #include <Common/Exception.h>
 #include <Common/escapeForFileName.h>
+#include <Common/SipHash.h>
 
 #include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeCustom.h>
@@ -22,7 +24,58 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-IDataType::IDataType() : custom_name(nullptr), custom_text_serialization(nullptr)
+String IDataType::Substream::toString() const
+{
+    switch (type)
+    {
+        case ArrayElements:
+            return "ArrayElements";
+        case ArraySizes:
+            return "ArraySizes";
+        case NullableElements:
+            return "NullableElements";
+        case NullMap:
+            return "NullMap";
+        case TupleElement:
+            return "TupleElement(" + tuple_element_name + ", "
+                + std::to_string(escape_tuple_delimiter) + ")";
+        case DictionaryKeys:
+            return "DictionaryKeys";
+        case DictionaryIndexes:
+            return "DictionaryIndexes";
+    }
+
+    __builtin_unreachable();
+}
+
+size_t IDataType::SubstreamPath::getHash() const
+{
+    SipHash hash;
+    for (const auto & elem : *this)
+    {
+        hash.update(elem.type);
+        hash.update(elem.tuple_element_name);
+        hash.update(elem.escape_tuple_delimiter);
+    }
+
+    return hash.get64();
+}
+
+String IDataType::SubstreamPath::toString() const
+{
+    WriteBufferFromOwnString wb;
+    wb << "{";
+    for (size_t i = 0; i < size(); ++i)
+    {
+        if (i != 0)
+            wb << ", ";
+        wb << at(i).toString();
+    }
+    wb << "}";
+    return wb.str();
+}
+
+IDataType::IDataType() : custom_name(nullptr), custom_text_serialization(nullptr), custom_streams(nullptr)
 {
 }
 
@@ -250,16 +303,49 @@ void IDataType::serializeBinaryBulkWithMultipleStreams(
         serializeBinaryBulkWithMultipleStreamsImpl(column, offset, limit, settings, state);
 }
 
-void IDataType::deserializeBinaryBulkWithMultipleStreams(
+void IDataType::deserializeBinaryBulkWithMultipleStreamsImpl(
     IColumn & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state) const
+    DeserializeBinaryBulkStatePtr & /* state */,
+    SubstreamsCache * /* cache */) const
+{
+    if (ReadBuffer * stream = settings.getter(settings.path))
+        deserializeBinaryBulk(column, *stream, limit, settings.avg_value_size_hint);
+}
+
+
+void IDataType::deserializeBinaryBulkWithMultipleStreams(
+    ColumnPtr & column,
+    size_t limit,
+    DeserializeBinaryBulkSettings & settings,
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsCache * cache) const
 {
     if (custom_streams)
-        custom_streams->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, state);
-    else
-        deserializeBinaryBulkWithMultipleStreamsImpl(column, limit, settings, state);
+    {
+        custom_streams->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, state, cache);
+        return;
+    }
+
+    /// Do not cache complex type, because they can be constructed
+    /// their subcolumns, which are in cache.
+    if (!haveSubtypes())
+    {
+        auto cached_column = getFromSubstreamsCache(cache, settings.path);
+        if (cached_column)
+        {
+            column = cached_column;
+            return;
+        }
+    }
+
+    auto mutable_column = IColumn::mutate(std::move(column));
+    deserializeBinaryBulkWithMultipleStreamsImpl(*mutable_column, limit, settings, state, cache);
+    column = std::move(mutable_column);
+
+    if (!haveSubtypes())
+        addToSubstreamsCache(cache, settings.path, column);
 }
 
 void IDataType::serializeAsTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -361,6 +447,24 @@ void IDataType::setCustomization(DataTypeCustomDescPtr custom_desc_) const
 
     if (custom_desc_->streams)
         custom_streams = std::move(custom_desc_->streams);
+}
+
+void IDataType::addToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column)
+{
+    if (cache && !path.empty())
+        cache->emplace(getSubcolumnNameForStream(path), column);
+}
+
+ColumnPtr IDataType::getFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path)
+{
+    if (!cache || path.empty())
+        return nullptr;
+
+    auto it = cache->find(getSubcolumnNameForStream(path));
+    if (it == cache->end())
+        return nullptr;
+
+    return it->second;
 }
 
 }

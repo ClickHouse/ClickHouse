@@ -92,10 +92,11 @@ public:
         IDataType::SerializeBinaryBulkStatePtr & state) const = 0;
 
     virtual void deserializeBinaryBulkWithMultipleStreams(
-        IColumn & column,
+        ColumnPtr & column,
         size_t limit,
         IDataType::DeserializeBinaryBulkSettings & settings,
-        IDataType::DeserializeBinaryBulkStatePtr & state) const = 0;
+        IDataType::DeserializeBinaryBulkStatePtr & state,
+        IDataType::SubstreamsCache * cache) const = 0;
 };
 
 using DataTypeCustomNamePtr = std::unique_ptr<const IDataTypeCustomName>;

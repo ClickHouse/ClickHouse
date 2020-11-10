@@ -65,4 +65,12 @@ void registerDataTypeNested(DataTypeFactory & factory)
     return factory.registerDataTypeCustom("Nested", create);
 }
 
+DataTypePtr createNested(const DataTypes & types, const Names & names)
+{
+    auto custom_desc = std::make_unique<DataTypeCustomDesc>(
+        std::make_unique<DataTypeNestedCustomName>(types, names));
+
+    return DataTypeFactory::instance().getCustom(std::move(custom_desc));
+}
+
 }

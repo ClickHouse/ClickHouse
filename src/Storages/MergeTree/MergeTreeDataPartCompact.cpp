@@ -1,4 +1,5 @@
 #include "MergeTreeDataPartCompact.h"
+#include <DataTypes/NestedUtils.h>
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 #include <Poco/File.h>
@@ -47,7 +48,7 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartCompact::getReader(
 {
     auto ptr = std::static_pointer_cast<const MergeTreeDataPartCompact>(shared_from_this());
     return std::make_unique<MergeTreeReaderCompact>(
-        ptr, columns_to_read, metadata_snapshot, uncompressed_cache,
+        ptr, Nested::collect(columns_to_read), metadata_snapshot, uncompressed_cache,
         mark_cache, mark_ranges, reader_settings,
         avg_value_size_hints, profile_callback);
 }

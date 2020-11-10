@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeOneElementTuple.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTNameTypePair.h>
 #include <Common/typeid_cast.h>
@@ -418,17 +417,18 @@ void DataTypeTuple::deserializeBinaryBulkWithMultipleStreamsImpl(
     IColumn & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state) const
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsCache * cache) const
 {
     auto * tuple_state = checkAndGetTupleDeserializeState(state);
+    auto & column_tuple = assert_cast<ColumnTuple &>(column);
 
     settings.path.push_back(Substream::TupleElement);
     settings.avg_value_size_hint = 0;
     for (const auto i : ext::range(0, ext::size(elems)))
     {
         settings.path.back().tuple_element_name = names[i];
-        auto & element_col = extractElementColumn(column, i);
-        elems[i]->deserializeBinaryBulkWithMultipleStreams(element_col, limit, settings, tuple_state->states[i]);
+        elems[i]->deserializeBinaryBulkWithMultipleStreams(column_tuple.getColumnPtr(i), limit, settings, tuple_state->states[i], cache);
     }
     settings.path.pop_back();
 }
@@ -557,7 +557,7 @@ DataTypePtr DataTypeTuple::tryGetSubcolumnType(const String & subcolumn_name) co
                 subcolumn_type = elems[i]->tryGetSubcolumnType(subcolumn_name.substr(name_length + 1));
 
             if (subcolumn_type)
-                return std::make_shared<DataTypeOneElementTuple>(std::move(subcolumn_type), names[i]);
+                return createOneElementTuple(std::move(subcolumn_type), names[i]);
         }
     }
 
