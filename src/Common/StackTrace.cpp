@@ -24,6 +24,7 @@
 std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext_t & context)
 {
     std::stringstream error;
+    error.exceptions(std::ios::failbit);
     switch (sig)
     {
         case SIGSEGV:
@@ -319,6 +320,7 @@ static void toStringEveryLineImpl(
     std::unordered_map<std::string, DB::Dwarf> dwarfs;
 
     std::stringstream out;
+    out.exceptions(std::ios::failbit);
 
     for (size_t i = offset; i < size; ++i)
     {
@@ -358,6 +360,7 @@ static void toStringEveryLineImpl(
     }
 #else
     std::stringstream out;
+    out.exceptions(std::ios::failbit);
 
     for (size_t i = offset; i < size; ++i)
     {
@@ -373,6 +376,7 @@ static void toStringEveryLineImpl(
 static std::string toStringImpl(const StackTrace::FramePointers & frame_pointers, size_t offset, size_t size)
 {
     std::stringstream out;
+    out.exceptions(std::ios::failbit);
     toStringEveryLineImpl(frame_pointers, offset, size, [&](const std::string & str) { out << str << '\n'; });
     return out.str();
 }

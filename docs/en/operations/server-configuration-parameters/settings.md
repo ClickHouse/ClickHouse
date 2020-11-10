@@ -571,7 +571,7 @@ For more information, see the MergeTreeSettings.h header file.
 
 Fine tuning for tables in the [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
 
-This setting has higher priority.
+This setting has a higher priority.
 
 For more information, see the MergeTreeSettings.h header file.
 

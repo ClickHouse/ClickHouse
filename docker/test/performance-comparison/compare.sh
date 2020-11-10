@@ -1074,6 +1074,53 @@ wait
 unset IFS
 }
 
+function upload_results
+{
+    if ! [ -v CHPC_DATABASE_URL ]
+    then
+        echo Database for test results is not specified, will not upload them.
+        return 0
+    fi 
+
+    # Surprisingly, clickhouse-client doesn't understand --host 127.0.0.1:9000
+    # so I have to extract host and port with clickhouse-local. I tried to use
+    # Poco URI parser to support this in the client, but it's broken and can't
+    # parse host:port.
+    set +x # Don't show password in the log
+    clickhouse-client \
+        $(clickhouse-local --query "with '${CHPC_DATABASE_URL}' as url select '--host ' || domain(url) || ' --port ' || toString(port(url)) format TSV") \
+        --secure \
+        --user "${CHPC_DATABASE_USER}" \
+        --password "${CHPC_DATABASE_PASSWORD}" \
+        --config "right/config/client_config.xml" \
+        --database perftest \
+        --date_time_input_format=best_effort \
+        --query "
+            insert into query_metrics_v2
+            select
+                toDate(event_time) event_date,
+                toDateTime('$(cd right/ch && git show -s --format=%ci "$SHA_TO_TEST" | cut -d' ' -f-2)') event_time,
+                $PR_TO_TEST pr_number,
+                '$REF_SHA' old_sha,
+                '$SHA_TO_TEST' new_sha,
+                test,
+                query_index,
+                query_display_name,
+                metric_name,
+                old_value,
+                new_value,
+                diff,
+                stat_threshold
+            from input('metric_name text, old_value float, new_value float, diff float,
+                    ratio_display_text text, stat_threshold float,
+                    test text, query_index int, query_display_name text')
+            settings date_time_input_format='best_effort'
+            format TSV
+            settings date_time_input_format='best_effort'
+" < report/all-query-metrics.tsv # Don't leave whitespace after INSERT: https://github.com/ClickHouse/ClickHouse/issues/16652
+    set -x
+}
+
 # Check that local and client are in PATH
 clickhouse-local --version > /dev/null
 clickhouse-client --version > /dev/null
@@ -1144,6 +1191,9 @@ case "$stage" in
 "report_html")
     time "$script_dir/report.py" --report=all-queries > all-queries.html 2> >(tee -a report/errors.log 1>&2) ||:
     time "$script_dir/report.py" > report.html
+    ;&
+"upload_results")
+    time upload_results ||:
     ;&
 esac
 
