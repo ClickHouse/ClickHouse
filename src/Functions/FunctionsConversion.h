@@ -213,17 +213,53 @@ struct ConvertImpl
                             throw Exception("Unexpected inf or nan to big int conversion", ErrorCodes::NOT_IMPLEMENTED);
                     }
                     else
-                        vec_to[i] = bigint_cast<ToFieldType>(vec_from[i]);
+                    {
+                        ToFieldType from = bigint_cast<ToFieldType>(vec_from[i]);
+
+                        if constexpr (convert_strategy == ConvertStrategy::Accurate)
+                        {
+                            if (accurate::greaterOp(std::numeric_limits<ToFieldType>::max(), vec_from[i])
+                                || accurate::greaterOp(vec_from[i], std::numeric_limits<ToFieldType>::min()))
+                            {
+                                vec_null_map_to[i] = true;
+                            }
+                            else
+                            {
+                                vec_to[i] = static_cast<ToFieldType>(from);
+                            }
+                        }
+                        else
+                        {
+                            vec_to[i] = static_cast<ToFieldType>(from);
+                        }
+                    }
                 }
                 else if constexpr (std::is_same_v<ToFieldType, UInt128> && sizeof(FromFieldType) <= sizeof(UInt64))
-                    vec_to[i] = static_cast<ToFieldType>(static_cast<UInt64>(vec_from[i]));
+                {
+                    UInt64 from = static_cast<UInt64>(vec_from[i]);
+                    if constexpr (convert_strategy == ConvertStrategy::Accurate)
+                    {
+                        if (accurate::greaterOp(vec_from[i], std::numeric_limits<ToFieldType>::max()) ||
+                            accurate::greaterOp(std::numeric_limits<ToFieldType>::min(), vec_from[i]))
+                        {
+                            vec_null_map_to[i] = true;
+                        }
+                        else
+                        {
+                            vec_to[i] = static_cast<ToFieldType>(from);
+                        }
+                    }
+                    else
+                    {
+                        vec_to[i] = static_cast<ToFieldType>(from);
+                    }
+                }
                 else
                 {
                     if constexpr (convert_strategy == ConvertStrategy::Accurate)
                     {
-                        /// TODO: Add support for big integers
-                        if (accurate::greaterOp(std::numeric_limits<ToFieldType>::max(), vec_from[i]) ||
-                            accurate::greaterOp(vec_from[i], std::numeric_limits<ToFieldType>::min()))
+                        if (accurate::greaterOp(vec_from[i], std::numeric_limits<ToFieldType>::max()) ||
+                            accurate::greaterOp(std::numeric_limits<ToFieldType>::min(), vec_from[i]))
                         {
                             vec_null_map_to[i] = true;
                         }
@@ -2066,7 +2102,8 @@ private:
         auto function_adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(function))
                                     .build({ColumnWithTypeAndName{nullptr, from_type, ""}});
 
-        return [function_adaptor] (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count)
+        return [function_adaptor]
+            (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count)
         {
             return function_adaptor->execute(arguments, result_type, input_rows_count);
         };
@@ -2087,7 +2124,7 @@ private:
     {
         TypeIndex from_type_index = from_type->getTypeId();
         WhichDataType which(from_type_index);
-        bool can_apply_accurate_cast = is_accurate_cast_or_null && (which.isNativeInt() || which.isNativeUInt() || which.isFloat());
+        bool can_apply_accurate_cast = is_accurate_cast_or_null && (which.isInt() || which.isUInt() || which.isFloat());
 
         if (requested_result_is_nullable && checkAndGetDataType<DataTypeString>(from_type.get()))
         {
@@ -2102,7 +2139,7 @@ private:
             return createFunctionAdaptor(function, from_type);
         }
     
-        return [from_type_index] 
+        return [from_type_index]
             (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count)
         {
             ColumnPtr result_column;
@@ -2112,7 +2149,7 @@ private:
                 using LeftDataType = typename Types::LeftType;
                 using RightDataType = typename Types::RightType;
 
-                if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>) 
+                if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>)
                 {
                     result_column = ConvertImpl<LeftDataType, RightDataType, NameCast>::execute(arguments, result_type, input_rows_count, AccurateAdditions());
                     return true;
@@ -2130,7 +2167,6 @@ private:
 
             return result_column;
         };
-
     }
 
     WrapperType createStringWrapper(const DataTypePtr & from_type) const
@@ -2168,11 +2204,13 @@ private:
             which.isFloat() ||
             which.isDateOrDateTime() ||
             which.isStringOrFixedString();
-        if (!ok) {
+        if (!ok)
+        {
             if (is_accurate_cast_or_null)
                 return createToNullableColumnWrapper();
-            else   
-                throw Exception{"Conversion from " + from_type->getName() + " to " + to_type->getName() + " is not supported",
+            else
+                throw Exception{
+                    "Conversion from " + from_type->getName() + " to " + to_type->getName() + " is not supported",
                     ErrorCodes::CANNOT_CONVERT_TYPE};
         }
 
@@ -2198,9 +2236,10 @@ private:
             {
                 if (is_accurate_cast)
                     return nullable_column_wrapper(arguments, result_type, columnNullable, input_rows_count);
-                else 
-                    throw Exception{"Conversion from " + std::string(getTypeName(type_index)) + " to " + to_type->getName() +
-                                   " is not supported", ErrorCodes::CANNOT_CONVERT_TYPE};
+                else
+                    throw Exception{
+                        "Conversion from " + std::string(getTypeName(type_index)) + " to " + to_type->getName() + " is not supported",
+                        ErrorCodes::CANNOT_CONVERT_TYPE};
             }
 
             return result_column;
