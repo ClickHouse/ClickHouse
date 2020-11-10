@@ -18,10 +18,12 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/config.h>
+#include <Formats/registerFormats.h>
 #include <common/logger_useful.h>
 #include <ext/scope_guard.h>
 #include <ext/range.h>
 #include <Common/SensitiveDataMasker.h>
+
 
 namespace DB
 {
@@ -159,6 +161,8 @@ int ODBCBridge::main(const std::vector<std::string> & /*args*/)
 {
     if (is_help)
         return Application::EXIT_OK;
+
+    registerFormats();
 
     LOG_INFO(log, "Starting up");
     Poco::Net::ServerSocket socket;

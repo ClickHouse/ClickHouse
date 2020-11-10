@@ -255,6 +255,7 @@ Strings listFilesWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & 
         if (!outcome.IsSuccess())
         {
             std::ostringstream message;
+            message.exceptions(std::ios::failbit);
             message << "Could not list objects in bucket " << quoteString(request.GetBucket())
                 << " with prefix " << quoteString(request.GetPrefix());
 
@@ -287,7 +288,7 @@ Strings listFilesWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & 
 Pipe StorageS3::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    const SelectQueryInfo & /*query_info*/,
+    SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,

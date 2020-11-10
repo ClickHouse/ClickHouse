@@ -101,15 +101,15 @@ StorageMaterializedView::StorageMaterializedView(
         DatabaseCatalog::instance().addDependency(select.select_table_id, getStorageID());
 }
 
-QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, const ASTPtr & query_ptr) const
+QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, SelectQueryInfo & query_info) const
 {
-    return getTargetTable()->getQueryProcessingStage(context, to_stage, query_ptr);
+    return getTargetTable()->getQueryProcessingStage(context, to_stage, query_info);
 }
 
 Pipe StorageMaterializedView::read(
     const Names & column_names,
     const StorageMetadataPtr & /*metadata_snapshot*/,
-    const SelectQueryInfo & query_info,
+    SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
@@ -120,7 +120,7 @@ Pipe StorageMaterializedView::read(
     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
 
     if (query_info.order_optimizer)
-        query_info.input_order_info = query_info.order_optimizer->getInputOrder(storage, metadata_snapshot);
+        query_info.input_order_info = query_info.order_optimizer->getInputOrder(metadata_snapshot);
 
     Pipe pipe = storage->read(column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
     pipe.addTableLock(lock);
@@ -256,10 +256,10 @@ void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & command
 }
 
 Pipe StorageMaterializedView::alterPartition(
-    const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, const PartitionCommands & commands, const Context & context)
+    const StorageMetadataPtr & metadata_snapshot, const PartitionCommands & commands, const Context & context)
 {
     checkStatementCanBeForwarded();
-    return getTargetTable()->alterPartition(query, metadata_snapshot, commands, context);
+    return getTargetTable()->alterPartition(metadata_snapshot, commands, context);
 }
 
 void StorageMaterializedView::checkAlterPartitionIsPossible(

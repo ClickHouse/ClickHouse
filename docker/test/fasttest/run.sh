@@ -240,6 +240,10 @@ TESTS_TO_SKIP=(
     01354_order_by_tuple_collate_const
     01355_ilike
     01411_bayesian_ab_testing
+    01532_collate_in_low_cardinality
+    01533_collate_in_nullable
+    01542_collate_in_array
+    01543_collate_in_tuple
     _orc_
     arrow
     avro
@@ -277,6 +281,8 @@ TESTS_TO_SKIP=(
 
     # Require python libraries like scipy, pandas and numpy
     01322_ttest_scipy
+
+    01545_system_errors
 )
 
 time clickhouse-test -j 8 --order=random --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"
