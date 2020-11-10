@@ -10,7 +10,7 @@ toc_title: "\u06CC\u0627\u0646\u062F\u06A9\u0633\u0627\u0637\u0644\u0627\u0639\u
 
 مجموعه داده شامل دو جدول حاوی داده های ناشناس در مورد بازدید (`hits_v1`) و بازدیدکننده داشته است (`visits_v1`) یاندکس . متریکا شما می توانید اطلاعات بیشتر در مورد یاندکس به عنوان خوانده شده.متریکا در [تاریخچه کلیک](../../introduction/history.md) بخش.
 
-مجموعه داده ها شامل دو جدول است که هر کدام می توانند به عنوان یک فشرده دانلود شوند `tsv.xz` فایل و یا به عنوان پارتیشن تهیه شده است. علاوه بر این, یک نسخه طولانی از `hits` جدول حاوی 100 میلیون ردیف به عنوان تسو در دسترس است https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits\_100m\_obfuscated\_v1.tsv.xz و به عنوان پارتیشن تهیه شده در https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits\_100m\_obfuscated\_v1.tar.xz.
+مجموعه داده ها شامل دو جدول است که هر کدام می توانند به عنوان یک فشرده دانلود شوند `tsv.xz` فایل و یا به عنوان پارتیشن تهیه شده است. علاوه بر این, یک نسخه طولانی از `hits` جدول حاوی 100 میلیون ردیف به عنوان تسو در دسترس است https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_100m_obfuscated_v1.tsv.xz و به عنوان پارتیشن تهیه شده در https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits_100m_obfuscated_v1.tar.xz.
 
 ## اخذ جداول از پارتیشن های تهیه شده {#obtaining-tables-from-prepared-partitions}
 

@@ -134,7 +134,7 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
 
-パフォーマンスを向上させるために、受信したメッセージは [max\_insert\_block\_size](../../../operations/server-configuration-parameters/settings.md#settings-max_insert_block_size). ブロックが内に形成されていない場合 [stream\_flush\_interval\_ms](../../../operations/server-configuration-parameters/settings.md) ミリ秒、データは関係なく、ブロックの完全性のテーブルにフラッシュされます。
+パフォーマンスを向上させるために、受信したメッセージは [max_insert_block_size](../../../operations/server-configuration-parameters/settings.md#settings-max_insert_block_size). ブロックが内に形成されていない場合 [stream_flush_interval_ms](../../../operations/server-configuration-parameters/settings.md) ミリ秒、データは関係なく、ブロックの完全性のテーブルにフラッシュされます。
 
 リクエストを受けた話題のデータは変更に変換ロジック、切り離しを実現ビュー:
 

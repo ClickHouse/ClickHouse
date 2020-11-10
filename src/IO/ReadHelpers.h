@@ -527,7 +527,7 @@ bool tryReadJSONStringInto(Vector & s, ReadBuffer & buf)
 }
 
 /// This could be used as template parameter for functions above, if you want to just skip data.
-struct NullSink
+struct NullOutput
 {
     void append(const char *, size_t) {}
     void push_back(char) {}
@@ -619,9 +619,11 @@ inline bool tryReadDateText(DayNum & date, ReadBuffer & buf)
     return readDateTextImpl<bool>(date, buf);
 }
 
-
-inline void readUUIDText(UUID & uuid, ReadBuffer & buf)
+template <typename ReturnType = void>
+inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
 {
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
     char s[36];
     size_t size = buf.read(s, 32);
 
@@ -634,19 +636,47 @@ inline void readUUIDText(UUID & uuid, ReadBuffer & buf)
             if (size != 36)
             {
                 s[size] = 0;
-                throw Exception(std::string("Cannot parse uuid ") + s, ErrorCodes::CANNOT_PARSE_UUID);
+
+                if constexpr (throw_exception)
+                {
+                    throw Exception(std::string("Cannot parse uuid ") + s, ErrorCodes::CANNOT_PARSE_UUID);
+                }
+                else
+                {
+                    return ReturnType(false);
+                }
             }
 
             parseUUID(reinterpret_cast<const UInt8 *>(s), std::reverse_iterator<UInt8 *>(reinterpret_cast<UInt8 *>(&uuid) + 16));
         }
         else
             parseUUIDWithoutSeparator(reinterpret_cast<const UInt8 *>(s), std::reverse_iterator<UInt8 *>(reinterpret_cast<UInt8 *>(&uuid) + 16));
+
+        return ReturnType(true);
     }
     else
     {
         s[size] = 0;
-        throw Exception(std::string("Cannot parse uuid ") + s, ErrorCodes::CANNOT_PARSE_UUID);
+
+        if constexpr (throw_exception)
+        {
+            throw Exception(std::string("Cannot parse uuid ") + s, ErrorCodes::CANNOT_PARSE_UUID);
+        }
+        else
+        {
+            return ReturnType(false);
+        }
     }
+}
+
+inline void readUUIDText(UUID & uuid, ReadBuffer & buf)
+{
+    return readUUIDTextImpl<void>(uuid, buf);
+}
+
+inline bool tryReadUUIDText(UUID & uuid, ReadBuffer & buf)
+{
+    return readUUIDTextImpl<bool>(uuid, buf);
 }
 
 
@@ -670,7 +700,7 @@ UInt128 stringToUUID(const String & str);
 template <typename ReturnType = void>
 ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut);
 
-/** In YYYY-MM-DD hh:mm:ss format, according to specified time zone.
+/** In YYYY-MM-DD hh:mm:ss or YYYY-MM-DD format, according to specified time zone.
   * As an exception, also supported parsing of unix timestamp in form of decimal number.
   */
 template <typename ReturnType = void>
@@ -679,12 +709,17 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
     /** Read 10 characters, that could represent unix timestamp.
       * Only unix timestamp of 5-10 characters is supported.
       * Then look at 5th character. If it is a number - treat whole as unix timestamp.
-      * If it is not a number - then parse datetime in YYYY-MM-DD hh:mm:ss format.
+      * If it is not a number - then parse datetime in YYYY-MM-DD hh:mm:ss or YYYY-MM-DD format.
       */
 
     /// Optimistic path, when whole value is in buffer.
     const char * s = buf.position();
-    if (s + 19 <= buf.buffer().end())
+
+    /// YYYY-MM-DD hh:mm:ss
+    static constexpr auto DateTimeStringInputSize = 19;
+    bool optimistic_path_for_date_time_input = s + DateTimeStringInputSize <= buf.buffer().end();
+
+    if (optimistic_path_for_date_time_input)
     {
         if (s[4] < '0' || s[4] > '9')
         {
@@ -701,7 +736,7 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
             else
                 datetime = date_lut.makeDateTime(year, month, day, hour, minute, second);
 
-            buf.position() += 19;
+            buf.position() += DateTimeStringInputSize;
             return ReturnType(true);
         }
         else

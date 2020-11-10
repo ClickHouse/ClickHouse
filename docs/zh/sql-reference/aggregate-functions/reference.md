@@ -29,7 +29,7 @@ ClickHouse支持以下语法 `count`:
 
 **详细信息**
 
-ClickHouse支持 `COUNT(DISTINCT ...)` 语法 这种结构的行为取决于 [count\_distinct\_implementation](../../operations/settings/settings.md#settings-count_distinct_implementation) 设置。 它定义了其中的 [uniq\*](#agg_function-uniq) 函数用于执行操作。 默认值为 [uniqExact](#agg_function-uniqexact) 功能。
+ClickHouse支持 `COUNT(DISTINCT ...)` 语法 这种结构的行为取决于 [count_distinct_implementation](../../operations/settings/settings.md#settings-count_distinct_implementation) 设置。 它定义了其中的 [uniq\*](#agg_function-uniq) 函数用于执行操作。 默认值为 [uniqExact](#agg_function-uniqexact) 功能。
 
 该 `SELECT count() FROM table` 查询未被优化，因为表中的条目数没有单独存储。 它从表中选择一个小列并计算其中的值数。
 
@@ -719,7 +719,7 @@ uniqExact(x[, ...])
 -   [uniqCombined](#agg_function-uniqcombined)
 -   [uniqHLL12](#agg_function-uniqhll12)
 
-## groupArray(x), groupArray(max\_size)(x) {#agg_function-grouparray}
+## groupArray(x), groupArray(max_size)(x) {#agg_function-grouparray}
 
 创建参数值的数组。
 值可以按任何（不确定）顺序添加到数组中。
@@ -965,7 +965,7 @@ FROM t
 └───────────┴──────────────────────────────────┴───────────────────────┘
 ```
 
-## groupUniqArray(x), groupUniqArray(max\_size)(x) {#groupuniqarrayx-groupuniqarraymax-sizex}
+## groupUniqArray(x), groupUniqArray(max_size)(x) {#groupuniqarrayx-groupuniqarraymax-sizex}
 
 从不同的参数值创建一个数组。 内存消耗是一样的 `uniqExact` 功能。
 

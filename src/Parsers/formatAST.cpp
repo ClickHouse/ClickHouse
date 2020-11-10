@@ -16,6 +16,7 @@ void formatAST(const IAST & ast, std::ostream & s, bool hilite, bool one_line)
 String serializeAST(const IAST & ast, bool one_line)
 {
     std::stringstream ss;
+    ss.exceptions(std::ios::failbit);
     formatAST(ast, ss, false, one_line);
     return ss.str();
 }

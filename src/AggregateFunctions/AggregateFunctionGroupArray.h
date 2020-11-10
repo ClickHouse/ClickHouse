@@ -245,6 +245,7 @@ public:
         {
             DB::writeIntBinary<size_t>(this->data(place).total_values, buf);
             std::ostringstream rng_stream;
+            rng_stream.exceptions(std::ios::failbit);
             rng_stream << this->data(place).rng;
             DB::writeStringBinary(rng_stream.str(), buf);
         }
@@ -275,6 +276,7 @@ public:
             std::string rng_string;
             DB::readStringBinary(rng_string, buf);
             std::istringstream rng_stream(rng_string);
+            rng_stream.exceptions(std::ios::failbit);
             rng_stream >> this->data(place).rng;
         }
 
@@ -296,7 +298,7 @@ public:
         {
             typename ColumnVector<T>::Container & data_to = assert_cast<ColumnVector<T> &>(arr_to.getData()).getData();
             if constexpr (is_big_int_v<T>)
-                // is data_to empty? we should probaly use std::vector::insert then
+                // is data_to empty? we should probably use std::vector::insert then
                 for (auto it = this->data(place).value.begin(); it != this->data(place).value.end(); it++)
                     data_to.push_back(*it);
             else
@@ -564,6 +566,7 @@ public:
         {
             DB::writeIntBinary<size_t>(data(place).total_values, buf);
             std::ostringstream rng_stream;
+            rng_stream.exceptions(std::ios::failbit);
             rng_stream << data(place).rng;
             DB::writeStringBinary(rng_stream.str(), buf);
         }
@@ -598,6 +601,7 @@ public:
             std::string rng_string;
             DB::readStringBinary(rng_string, buf);
             std::istringstream rng_stream(rng_string);
+            rng_stream.exceptions(std::ios::failbit);
             rng_stream >> data(place).rng;
         }
 

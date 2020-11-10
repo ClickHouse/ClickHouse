@@ -6,7 +6,6 @@ PEERDIR(
     contrib/libs/poco/Util
 )
 
-CFLAGS(-g0)
 
 SRCS(
     HTTPHandler.cpp
@@ -22,6 +21,7 @@ SRCS(
     ReplicasStatusHandler.cpp
     StaticRequestHandler.cpp
     TCPHandler.cpp
+    WebUIRequestHandler.cpp
 
 )
 

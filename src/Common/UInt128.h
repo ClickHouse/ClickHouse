@@ -49,6 +49,7 @@ struct UInt128
     String toHexString() const
     {
         std::ostringstream os;
+        os.exceptions(std::ios::failbit);
         os << std::setw(16) << std::setfill('0') << std::hex << high << low;
         return String(os.str());
     }

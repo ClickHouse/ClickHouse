@@ -15,7 +15,7 @@ file(path, format, structure)
 
 **Les paramètres d'entrée**
 
--   `path` — The relative path to the file from [user\_files\_path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_files_path). Chemin d'accès à la prise en charge des fichiers suivant les globs en mode Lecture seule: `*`, `?`, `{abc,def}` et `{N..M}` où `N`, `M` — numbers, \``'abc', 'def'` — strings.
+-   `path` — The relative path to the file from [user_files_path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_files_path). Chemin d'accès à la prise en charge des fichiers suivant les globs en mode Lecture seule: `*`, `?`, `{abc,def}` et `{N..M}` où `N`, `M` — numbers, \``'abc', 'def'` — strings.
 -   `format` — The [format](../../interfaces/formats.md#formats) de le fichier.
 -   `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
 
@@ -72,12 +72,12 @@ Les Constructions avec `{}` sont similaires à l' [fonction de table à distance
 
 1.  Supposons que nous ayons plusieurs fichiers avec les chemins relatifs suivants:
 
--   ‘some\_dir/some\_file\_1’
--   ‘some\_dir/some\_file\_2’
--   ‘some\_dir/some\_file\_3’
--   ‘another\_dir/some\_file\_1’
--   ‘another\_dir/some\_file\_2’
--   ‘another\_dir/some\_file\_3’
+-   ‘some_dir/some_file_1’
+-   ‘some_dir/some_file_2’
+-   ‘some_dir/some_file_3’
+-   ‘another_dir/some_file_1’
+-   ‘another_dir/some_file_2’
+-   ‘another_dir/some_file_3’
 
 1.  Interroger la quantité de lignes dans ces fichiers:
 

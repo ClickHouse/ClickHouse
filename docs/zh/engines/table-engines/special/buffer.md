@@ -4,13 +4,13 @@
 
     Buffer(database, table, num_layers, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes)
 
-引擎的参数：database，table - 要刷新数据的表。可以使用返回字符串的常量表达式而不是数据库名称。 num\_layers - 并行层数。在物理上，该表将表示为 num\_layers 个独立缓冲区。建议值为16。min\_time，max\_time，min\_rows，max\_rows，min\_bytes，max\_bytes - 从缓冲区刷新数据的条件。
+引擎的参数：database，table - 要刷新数据的表。可以使用返回字符串的常量表达式而不是数据库名称。 num_layers - 并行层数。在物理上，该表将表示为 num_layers 个独立缓冲区。建议值为16。min_time，max_time，min_rows，max_rows，min_bytes，max_bytes - 从缓冲区刷新数据的条件。
 
-如果满足所有 «min» 条件或至少一个 «max» 条件，则从缓冲区刷新数据并将其写入目标表。min\_time，max\_time — 从第一次写入缓冲区时起以秒为单位的时间条件。min\_rows，max\_rows - 缓冲区中行数的条件。min\_bytes，max\_bytes - 缓冲区中字节数的条件。
+如果满足所有 «min» 条件或至少一个 «max» 条件，则从缓冲区刷新数据并将其写入目标表。min_time，max_time — 从第一次写入缓冲区时起以秒为单位的时间条件。min_rows，max_rows - 缓冲区中行数的条件。min_bytes，max_bytes - 缓冲区中字节数的条件。
 
-写入时，数据从 num\_layers 个缓冲区中随机插入。或者，如果插入数据的大小足够大（大于 max\_rows 或 max\_bytes ），则会绕过缓冲区将其写入目标表。
+写入时，数据从 num_layers 个缓冲区中随机插入。或者，如果插入数据的大小足够大（大于 max_rows 或 max_bytes ），则会绕过缓冲区将其写入目标表。
 
-每个 «num\_layers» 缓冲区刷新数据的条件是分别计算。例如，如果 num\_layers = 16 且 max\_bytes = 100000000，则最大RAM消耗将为1.6 GB。
+每个 «num_layers» 缓冲区刷新数据的条件是分别计算。例如，如果 num_layers = 16 且 max_bytes = 100000000，则最大RAM消耗将为1.6 GB。
 
 示例：
 
@@ -18,7 +18,7 @@
 CREATE TABLE merge.hits_buffer AS merge.hits ENGINE = Buffer(merge, hits, 16, 10, 100, 10000, 1000000, 10000000, 100000000)
 ```
 
-创建一个 «merge.hits\_buffer» 表，其结构与 «merge.hits» 相同，并使用 Buffer 引擎。写入此表时，数据缓冲在 RAM 中，然后写入 «merge.hits» 表。创建了16个缓冲区。如果已经过了100秒，或者已写入100万行，或者已写入100 MB数据，则刷新每个缓冲区的数据；或者如果同时已经过了10秒并且已经写入了10,000行和10 MB的数据。例如，如果只写了一行，那么在100秒之后，都会被刷新。但是如果写了很多行，数据将会更快地刷新。
+创建一个 «merge.hits_buffer» 表，其结构与 «merge.hits» 相同，并使用 Buffer 引擎。写入此表时，数据缓冲在 RAM 中，然后写入 «merge.hits» 表。创建了16个缓冲区。如果已经过了100秒，或者已写入100万行，或者已写入100 MB数据，则刷新每个缓冲区的数据；或者如果同时已经过了10秒并且已经写入了10,000行和10 MB的数据。例如，如果只写了一行，那么在100秒之后，都会被刷新。但是如果写了很多行，数据将会更快地刷新。
 
 当服务器停止时，使用 DROP TABLE 或 DETACH TABLE，缓冲区数据也会刷新到目标表。
 
@@ -40,7 +40,7 @@ PREWHERE，FINAL 和 SAMPLE 对缓冲表不起作用。这些条件将传递到�
 
 将数据添加到缓冲区时，其中一个缓冲区被锁定。如果同时从表执行读操作，则会导致延迟。
 
-插入到 Buffer 表中的数据可能以不同的顺序和不同的块写入目标表中。因此，Buffer 表很难用于正确写入 CollapsingMergeTree。为避免出现问题，您可以将 «num\_layers» 设置为1。
+插入到 Buffer 表中的数据可能以不同的顺序和不同的块写入目标表中。因此，Buffer 表很难用于正确写入 CollapsingMergeTree。为避免出现问题，您可以将 «num_layers» 设置为1。
 
 如果目标表是复制表，则在写入 Buffer 表时会丢失复制表的某些预期特征。数据部分的行次序和大小的随机变化导致数据不能去重，这意味着无法对复制表进行可靠的 «exactly once» 写入。
 
