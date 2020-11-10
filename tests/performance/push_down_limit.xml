@@ -1,4 +1,4 @@
-<test>
+<test max_ignored_relative_change="0.3">
     <query>select number from (select number from numbers(150000000) order by -number) limit 10</query>
     <query>select number from (select number from numbers_mt(1500000000) order by -number) limit 10</query>
 </test>
