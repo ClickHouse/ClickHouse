@@ -232,6 +232,7 @@ struct integer<Bits, Signed>::_impl
         constexpr uint64_t max_uint = std::numeric_limits<uint64_t>::max();
         constexpr int64_t max_int = std::numeric_limits<int64_t>::max();
         constexpr size_t max_sizet = std::numeric_limits<size_t>::max();
+        constexpr long double max_int_long_double = static_cast<long double>(max_int);
 
         if ((rhs > 0 && rhs < max_uint) ||
             (rhs < 0 && rhs > std::numeric_limits<int64_t>::min()))
@@ -268,13 +269,18 @@ struct integer<Bits, Signed>::_impl
             "On your system long double has less than 64 precision bits,"
             "which may result in UB when initializing double from int64_t");
 
-        if (r - to_diff > static_cast<long double>(max_int))
+        if (long double diff = r - to_diff; diff > max_int_long_double)
         {
-            self += max_int;
-            self += static_cast<int64_t>(r - to_diff - max_int);
+            uint64_t diff_multiplier = max_uint;
+
+            if (const long double multiplier = diff / max_int_long_double; multiplier < max_uint)
+                diff_multiplier = multiplier;
+
+            self += max_int_long_double * diff_multiplier;
+            self += static_cast<int64_t>(diff - max_int_long_double * diff_multiplier);
         }
         else
-            self += to_Integral(r - to_diff);
+            self += static_cast<int64_t>(diff);
 
         if (rhs < 0)
             self = -self;
