@@ -215,4 +215,7 @@ def test_mysql_kill_sync_thread_restore_5_7(started_cluster, started_mysql_5_7):
 
 def test_mysql_kill_sync_thread_restore_8_0(started_cluster, started_mysql_8_0):
     materialize_with_ddl.mysql_kill_sync_thread_restore_test(clickhouse_node, started_mysql_8_0, "mysql8_0")
+<<<<<<< HEAD
 
+=======
+>>>>>>> add mysql kill sync id test
