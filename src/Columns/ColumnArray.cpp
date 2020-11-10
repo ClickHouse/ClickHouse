@@ -20,6 +20,7 @@
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
 
+#include <miniselect/floyd_rivest_select.h>
 
 namespace DB
 {
@@ -782,7 +783,7 @@ void ColumnArray::getPermutationImpl(size_t limit, Permutation & res, Comparator
     auto less = [&cmp](size_t lhs, size_t rhs){ return cmp(lhs, rhs) < 0; };
 
     if (limit)
-        std::partial_sort(res.begin(), res.begin() + limit, res.end(), less);
+        miniselect::floyd_rivest_partial_sort(res.begin(), res.begin() + limit, res.end(), less);
     else
         std::sort(res.begin(), res.end(), less);
 }
@@ -835,7 +836,7 @@ void ColumnArray::updatePermutationImpl(size_t limit, Permutation & res, EqualRa
 
         /// Since then we are working inside the interval.
 
-        std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less);
+        miniselect::floyd_rivest_partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less);
         auto new_first = first;
         for (auto j = first + 1; j < limit; ++j)
         {

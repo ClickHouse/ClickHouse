@@ -10,6 +10,7 @@
 #include <Common/HashTable/Hash.h>
 
 #include <ext/scope_guard.h>
+#include <miniselect/floyd_rivest_select.h>
 
 #include <DataStreams/ColumnGathererStream.h>
 
@@ -157,9 +158,9 @@ void ColumnFixedString::getPermutation(bool reverse, size_t limit, int /*nan_dir
     if (limit)
     {
         if (reverse)
-            std::partial_sort(res.begin(), res.begin() + limit, res.end(), less<false>(*this));
+            miniselect::floyd_rivest_partial_sort(res.begin(), res.begin() + limit, res.end(), less<false>(*this));
         else
-            std::partial_sort(res.begin(), res.begin() + limit, res.end(), less<true>(*this));
+            miniselect::floyd_rivest_partial_sort(res.begin(), res.begin() + limit, res.end(), less<true>(*this));
     }
     else
     {
@@ -217,9 +218,9 @@ void ColumnFixedString::updatePermutation(bool reverse, size_t limit, int, Permu
         /// Since then we are working inside the interval.
 
         if (reverse)
-            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less<false>(*this));
+            miniselect::floyd_rivest_partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less<false>(*this));
         else
-            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less<true>(*this));
+            miniselect::floyd_rivest_partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less<true>(*this));
 
         auto new_first = first;
         for (auto j = first + 1; j < limit; ++j)
