@@ -122,6 +122,7 @@ struct CustomizeASTSelectWithUnionQueryNormalize
     }
 };
 
+/// We need normalize children first, so we should visit AST tree bottom up
 using CustomizeASTSelectWithUnionQueryNormalizeVisitor
     = InDepthNodeVisitor<OneTypeMatcher<CustomizeASTSelectWithUnionQueryNormalize>, false>;
 
@@ -136,6 +137,14 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     {
         CustomizeASTSelectWithUnionQueryNormalizeVisitor::Data union_default_mode{context->getSettingsRef().union_default_mode};
         CustomizeASTSelectWithUnionQueryNormalizeVisitor(union_default_mode).visit(query_ptr);
+
+        /// After normalization, if it only has one ASTSelectWithUnionQuery child,
+        /// we can lift it up, this can reduce one unnecessary recursion later.
+        if (ast.list_of_selects->children.size() == 1 && ast.list_of_selects->children.at(0)->as<ASTSelectWithUnionQuery>())
+        {
+            query_ptr = std::move(ast.list_of_selects->children.at(0));
+            ast = query_ptr->as<ASTSelectWithUnionQuery &>();
+        }
     }
 
     size_t num_children = ast.list_of_selects->children.size();
