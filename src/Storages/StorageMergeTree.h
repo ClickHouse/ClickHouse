@@ -63,7 +63,6 @@ public:
         const Context & context) override;
 
     Pipe alterPartition(
-        const ASTPtr & query,
         const StorageMetadataPtr & /* metadata_snapshot */,
         const PartitionCommands & commands,
         const Context & context) override;
@@ -183,7 +182,7 @@ private:
     void clearOldMutations(bool truncate = false);
 
     // Partition helpers
-    void dropPartition(const ASTPtr & partition, bool detach, const Context & context);
+    void dropPartition(const ASTPtr & partition, bool detach, bool drop_part, const Context & context);
     PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, bool part, const Context & context);
 
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context);
