@@ -77,8 +77,6 @@ public:
 
     void attachTable(const String & table_name, const StoragePtr & storage, const String & relative_table_path) override;
 
-    bool shouldBeEmptyOnDetach() const override;
-
 protected:
     ASTPtr getCreateTableQueryImpl(const String & name, const Context & context, bool throw_on_error) const override;
 

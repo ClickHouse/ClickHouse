@@ -625,7 +625,7 @@ void MaterializeMySQLSyncThread::onEvent(Buffers & buffers, const BinlogEventPtr
         Position position_before_ddl;
         position_before_ddl.update(metadata.binlog_position, metadata.binlog_file, metadata.executed_gtid_set);
         metadata.transaction(position_before_ddl, [&]() { buffers.commit(global_context); });
-        metadata.transaction(client.getPosition(),[&](){ executeDDLAtomic(query_event); });
+        metadata.transaction(database->getMySQLReplicaClient().getPosition(),[&](){ executeDDLAtomic(query_event); });
     }
     else if (receive_event->header.type != HEARTBEAT_EVENT)
     {

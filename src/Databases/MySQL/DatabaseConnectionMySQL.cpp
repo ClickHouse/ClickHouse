@@ -414,11 +414,6 @@ void DatabaseConnectionMySQL::loadStoredObjects(Context & context, bool has_forc
     }
 }
 
-bool DatabaseConnectionMySQL::shouldBeEmptyOnDetach() const
-{
-    return false;
-}
-
 void DatabaseConnectionMySQL::dropTable(const Context &, const String & table_name, bool /*no_delay*/)
 {
     std::lock_guard<std::mutex> lock{mutex};
