@@ -1,11 +1,10 @@
 import os
 import subprocess
-import time
 
-import pymysql.cursors
 import pytest
-from helpers.cluster import ClickHouseCluster, get_docker_compose_path
 
+from helpers.cluster import ClickHouseCluster, get_docker_compose_path
+from helpers.mysql_helpers import MySQLNodeInstance
 from . import materialize_with_ddl
 
 DOCKER_COMPOSE_PATH = get_docker_compose_path()
@@ -21,43 +20,6 @@ def started_cluster():
         yield cluster
     finally:
         cluster.shutdown()
-
-
-class MySQLNodeInstance:
-    def __init__(self, user='root', password='clickhouse', hostname='127.0.0.1', port=3308):
-        self.user = user
-        self.port = port
-        self.hostname = hostname
-        self.password = password
-        self.mysql_connection = None  # lazy init
-
-    def alloc_connection(self):
-        if self.mysql_connection is None:
-            self.mysql_connection = pymysql.connect(user=self.user, password=self.password, host=self.hostname,
-                                                    port=self.port, autocommit=True)
-        return self.mysql_connection
-
-    def query(self, execution_query):
-        with self.alloc_connection().cursor() as cursor:
-            cursor.execute(execution_query)
-
-    def close(self):
-        if self.mysql_connection is not None:
-            self.mysql_connection.close()
-
-    def wait_mysql_to_start(self, timeout=60):
-        start = time.time()
-        while time.time() - start < timeout:
-            try:
-                self.alloc_connection()
-                print("Mysql Started")
-                return
-            except Exception as ex:
-                print("Can't connect to MySQL " + str(ex))
-                time.sleep(0.5)
-
-        subprocess.check_call(['docker-compose', 'ps', '--services', 'all'])
-        raise Exception("Cannot wait MySQL container")
 
 
 @pytest.fixture(scope="module")

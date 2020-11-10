@@ -1,11 +1,14 @@
 import contextlib
+import os
+import subprocess
 import time
 from string import Template
 
-import pymysql.cursors
 import pytest
+
 from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, get_docker_compose_path
+from helpers.mysql_helpers import MySQLNodeInstance
 
 cluster = ClickHouseCluster(__file__)
 clickhouse_node = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'], with_mysql=True)
@@ -18,40 +21,6 @@ def started_cluster():
         yield cluster
     finally:
         cluster.shutdown()
-
-
-class MySQLNodeInstance:
-    def __init__(self, user='root', password='clickhouse', hostname='127.0.0.1', port=3308):
-        self.user = user
-        self.port = port
-        self.hostname = hostname
-        self.password = password
-        self.mysql_connection = None  # lazy init
-
-    def query(self, execution_query):
-        if self.mysql_connection is None:
-            self.mysql_connection = pymysql.connect(user=self.user, password=self.password, host=self.hostname,
-                                                    port=self.port)
-        with self.mysql_connection.cursor() as cursor:
-            def execute(query):
-                res = cursor.execute(query)
-                if query.lstrip().lower().startswith(('select', 'show')):
-                    # Mimic output of the ClickHouseInstance, which is:
-                    # tab-sparated values and newline (\n)-separated rows.
-                    rows = []
-                    for row in cursor.fetchall():
-                        rows.append("\t".join(str(item) for item in row))
-                    res = "\n".join(rows)
-                return res
-
-            if isinstance(execution_query, (str, bytes)):
-                return execute(execution_query)
-            else:
-                return [execute(q) for q in execution_query]
-
-    def close(self):
-        if self.mysql_connection is not None:
-            self.mysql_connection.close()
 
 
 def test_mysql_ddl_for_mysql_database(started_cluster):
@@ -331,3 +300,17 @@ def test_mysql_types(started_cluster, case_name, mysql_type, expected_ch_type, m
             execute_query(clickhouse_node,
                           "SELECT value FROM mysql('mysql1:3306', '${mysql_db}', '${table_name}', 'root', 'clickhouse')",
                           settings=clickhouse_query_settings)
+
+
+def test_mysql_database_engine_with_unavailable_mysql(started_cluster):
+    docker_compose_path = get_docker_compose_path()
+    mysql_node = MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', 3308)
+    docker_compose = os.path.join(docker_compose_path, 'docker_compose_mysql.yml')
+
+    try:
+        subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d'])
+        mysql_node.wait_mysql_to_start(120)
+
+    finally:
+        mysql_node.close()
+        subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'down', '--volumes', '--remove-orphans'])
