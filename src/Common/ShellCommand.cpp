@@ -74,6 +74,7 @@ ShellCommand::~ShellCommand()
 void ShellCommand::logCommand(const char * filename, char * const argv[])
 {
     std::stringstream args;
+    args.exceptions(std::ios::failbit);
     for (int i = 0; argv != nullptr && argv[i] != nullptr; ++i)
     {
         if (i > 0)

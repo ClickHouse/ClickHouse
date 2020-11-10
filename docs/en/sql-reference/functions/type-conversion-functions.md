@@ -323,6 +323,10 @@ This function accepts a number or date or date with time, and returns a string c
 
 This function accepts a number or date or date with time, and returns a FixedString containing bytes representing the corresponding value in host order (little endian). Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a FixedString that is one byte long.
 
+## reinterpretAsUUID {#reinterpretasuuid}
+
+This function accepts FixedString, and returns UUID. Takes 16 bytes string. If the string isn't long enough, the functions work as if the string is padded with the necessary number of null bytes to the end. If the string longer than 16 bytes, the extra bytes at the end are ignored. 
+
 ## CAST(x, T) {#type_conversion_function-cast}
 
 Converts ‘x’ to the ‘t’ data type. The syntax CAST(x AS t) is also supported.
