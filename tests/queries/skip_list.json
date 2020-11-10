@@ -160,6 +160,7 @@
         "00804_test_alter_compression_codecs",
         "00804_test_custom_compression_codecs",
         "00804_test_custom_compression_codes_log_storages",
+        "00804_test_delta_codec_compression",
         "00834_cancel_http_readonly_queries_on_client_close",
         "00834_kill_mutation",
         "00834_kill_mutation_replicated_zookeeper",
