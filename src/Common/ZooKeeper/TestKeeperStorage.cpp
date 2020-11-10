@@ -24,6 +24,37 @@ static String baseName(const String & path)
     return path.substr(rslash_pos + 1);
 }
 
+static void processWatchesImpl(const String & path, TestKeeperStorage::Watches & watches, TestKeeperStorage::Watches & list_watches)
+{
+    Coordination::ZooKeeperWatchResponse watch_response;
+    watch_response.path = path;
+    watch_response.xid = -1;
+
+    auto it = watches.find(watch_response.path);
+    if (it != watches.end())
+    {
+        for (auto & callback : it->second)
+            if (callback)
+                callback(std::make_shared<Coordination::ZooKeeperWatchResponse>(watch_response));
+
+        watches.erase(it);
+    }
+
+    Coordination::ZooKeeperWatchResponse watch_list_response;
+    watch_list_response.path = parentPath(path);
+    watch_list_response.xid = -1;
+
+    it = list_watches.find(watch_list_response.path);
+    if (it != list_watches.end())
+    {
+        for (auto & callback : it->second)
+            if (callback)
+                callback(std::make_shared<Coordination::ZooKeeperWatchResponse>(watch_list_response));
+
+        list_watches.erase(it);
+    }
+}
+
 TestKeeperStorage::TestKeeperStorage()
 {
     container.emplace("/", Node());
@@ -41,6 +72,8 @@ struct TestKeeperStorageRequest
         : zk_request(zk_request_)
     {}
     virtual std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(TestKeeperStorage::Container & container, int64_t zxid) const = 0;
+    virtual void processWatches(TestKeeperStorage::Watches & /*watches*/, TestKeeperStorage::Watches & /*list_watches*/) const {}
+
     virtual ~TestKeeperStorageRequest() {}
 };
 
@@ -57,6 +90,12 @@ struct TestKeeperStorageHeartbeatRequest final : public TestKeeperStorageRequest
 struct TestKeeperStorageCreateRequest final : public TestKeeperStorageRequest
 {
     using TestKeeperStorageRequest::TestKeeperStorageRequest;
+
+    void processWatches(TestKeeperStorage::Watches & watches, TestKeeperStorage::Watches & list_watches) const override
+    {
+        processWatchesImpl(zk_request->getPath(), watches, list_watches);
+    }
+
     std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(TestKeeperStorage::Container & container, int64_t zxid) const override
     {
         LOG_DEBUG(&Poco::Logger::get("STORAGE"), "EXECUTING CREATE REQUEST");
@@ -201,6 +240,11 @@ struct TestKeeperStorageRemoveRequest final : public TestKeeperStorageRequest
 
         return { response_ptr, undo };
     }
+
+    void processWatches(TestKeeperStorage::Watches & watches, TestKeeperStorage::Watches & list_watches) const override
+    {
+        processWatchesImpl(zk_request->getPath(), watches, list_watches);
+    }
 };
 
 struct TestKeeperStorageExistsRequest final : public TestKeeperStorageRequest
@@ -268,6 +312,12 @@ struct TestKeeperStorageSetRequest final : public TestKeeperStorageRequest
 
         return { response_ptr, {} };
     }
+
+    void processWatches(TestKeeperStorage::Watches & watches, TestKeeperStorage::Watches & list_watches) const override
+    {
+        processWatchesImpl(zk_request->getPath(), watches, list_watches);
+    }
+
 };
 
 struct TestKeeperStorageListRequest final : public TestKeeperStorageRequest
@@ -407,6 +457,12 @@ struct TestKeeperStorageMultiRequest final : public TestKeeperStorageRequest
             throw;
         }
     }
+
+    void processWatches(TestKeeperStorage::Watches & watches, TestKeeperStorage::Watches & list_watches) const override
+    {
+        for (const auto & generic_request : concrete_requests)
+            generic_request->processWatches(watches, list_watches);
+    }
 };
 
 void TestKeeperStorage::processingThread()
@@ -427,12 +483,26 @@ void TestKeeperStorage::processingThread()
                 if (shutdown)
                     break;
 
-                ++zxid;
+                if (info.watch_callback)
+                {
+                    auto & watches_type = dynamic_cast<const Coordination::ZooKeeperListRequest *>(info.request->zk_request.get())
+                        ? list_watches
+                        : watches;
+
+                    watches_type[info.request->zk_request->getPath()].emplace_back(std::move(info.watch_callback));
+                }
 
                 auto zk_request = info.request->zk_request;
                 LOG_DEBUG(&Poco::Logger::get("STORAGE"), "GOT REQUEST {}", zk_request->getOpNum());
 
+                info.request->zk_request->addRootPath(root_path);
                 auto [response, _] = info.request->process(container, zxid);
+                if (response->error == Coordination::Error::ZOK)
+                {
+                    info.request->processWatches(watches, list_watches);
+                }
+
+                ++zxid;
                 response->xid = zk_request->xid;
                 response->zxid = zxid;
                 response->removeRootPath(root_path);
@@ -541,7 +611,7 @@ TestKeeperWrapperFactory::TestKeeperWrapperFactory()
     registerTestKeeperRequestWrapper<14, TestKeeperStorageMultiRequest>(*this);
 }
 
-TestKeeperStorage::AsyncResponse TestKeeperStorage::putRequest(const Coordination::ZooKeeperRequestPtr & request)
+TestKeeperStorage::ResponsePair TestKeeperStorage::putRequest(const Coordination::ZooKeeperRequestPtr & request)
 {
     auto promise = std::make_shared<std::promise<Coordination::ZooKeeperResponsePtr>>();
     auto future = promise->get_future();
@@ -550,12 +620,19 @@ TestKeeperStorage::AsyncResponse TestKeeperStorage::putRequest(const Coordinatio
     request_info.time = clock::now();
     request_info.request = storage_request;
     request_info.response_callback = [promise] (const Coordination::ZooKeeperResponsePtr & response) { promise->set_value(response); };
+    std::optional<AsyncResponse> watch_future;
+    if (request->has_watch)
+    {
+        auto watch_promise = std::make_shared<std::promise<Coordination::ZooKeeperResponsePtr>>();
+        watch_future.emplace(watch_promise->get_future());
+        request_info.watch_callback = [watch_promise] (const Coordination::ZooKeeperResponsePtr & response) { watch_promise->set_value(response); };
+    }
 
     std::lock_guard lock(push_request_mutex);
     if (!requests_queue.tryPush(std::move(request_info), operation_timeout.totalMilliseconds()))
         throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::LOGICAL_ERROR);
-    LOG_DEBUG(&Poco::Logger::get("STORAGE"), "PUSHED");
-    return future;
+    //LOG_DEBUG(&Poco::Logger::get("STORAGE"), "PUSHED");
+    return ResponsePair{std::move(future), std::move(watch_future)};
 }
 
 

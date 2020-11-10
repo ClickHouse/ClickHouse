@@ -35,7 +35,6 @@ private:
 
     std::queue<zkutil::TestKeeperStorage::AsyncResponse> responses;
 
-
     /// Streams for reading/writing from/to client connection socket.
     std::shared_ptr<ReadBufferFromPocoSocket> in;
     std::shared_ptr<WriteBufferFromPocoSocket> out;
@@ -45,7 +44,7 @@ private:
     void sendHandshake();
     void receiveHandshake();
 
-    void receiveRequest();
+    bool receiveRequest();
 };
 
 }
