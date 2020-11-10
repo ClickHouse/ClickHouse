@@ -4,12 +4,13 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/IInterpreter.h>
-#include <Parsers/queryToString.h>
 #include <Interpreters/ProcessList.h>
+#include <Parsers/queryToString.h>
 #include <Processors/Pipe.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Storages/SelectQueryInfo.h>
 
 
 namespace DB
@@ -85,10 +86,12 @@ Context updateSettingsForCluster(const Cluster & cluster, const Context & contex
 
 void executeQuery(
     QueryPlan & query_plan,
-    IStreamFactory & stream_factory, const ClusterPtr & cluster, Poco::Logger * log,
-    const ASTPtr & query_ast, const Context & context, const Settings & settings, const SelectQueryInfo & query_info)
+    IStreamFactory & stream_factory, Poco::Logger * log,
+    const ASTPtr & query_ast, const Context & context, const SelectQueryInfo & query_info)
 {
     assert(log);
+
+    const Settings & settings = context.getSettingsRef();
 
     std::vector<QueryPlanPtr> plans;
     Pipes remote_pipes;
@@ -96,7 +99,7 @@ void executeQuery(
 
     const std::string query = queryToString(query_ast);
 
-    Context new_context = updateSettingsForCluster(*cluster, context, settings, log);
+    Context new_context = updateSettingsForCluster(*query_info.cluster, context, settings, log);
 
     ThrottlerPtr user_level_throttler;
     if (auto * process_list_element = context.getProcessListElement())
@@ -115,7 +118,7 @@ void executeQuery(
     else
         throttler = user_level_throttler;
 
-    for (const auto & shard_info : cluster->getShardsInfo())
+    for (const auto & shard_info : query_info.cluster->getShardsInfo())
         stream_factory.createForShard(shard_info, query, query_ast, new_context, throttler, query_info, plans, remote_pipes, delayed_pipes);
 
     if (!remote_pipes.empty())

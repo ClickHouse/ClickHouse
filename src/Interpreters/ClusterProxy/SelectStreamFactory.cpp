@@ -99,6 +99,7 @@ String formattedAST(const ASTPtr & ast)
     if (!ast)
         return {};
     std::stringstream ss;
+    ss.exceptions(std::ios::failbit);
     formatAST(*ast, ss, false, true);
     return ss.str();
 }

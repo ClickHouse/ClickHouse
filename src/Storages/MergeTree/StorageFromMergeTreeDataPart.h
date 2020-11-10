@@ -23,7 +23,7 @@ public:
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
-        const SelectQueryInfo & query_info,
+        SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t max_block_size,
@@ -48,6 +48,16 @@ public:
     NamesAndTypesList getVirtuals() const override
     {
         return part->storage.getVirtuals();
+    }
+
+    String getPartitionId() const
+    {
+        return part->info.partition_id;
+    }
+
+    String getPartitionIDFromQuery(const ASTPtr & ast, const Context & context) const
+    {
+        return part->storage.getPartitionIDFromQuery(ast, context);
     }
 
 protected:

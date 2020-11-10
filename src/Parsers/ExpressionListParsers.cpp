@@ -55,6 +55,12 @@ const char * ParserComparisonExpression::operators[] =
     nullptr
 };
 
+const char * ParserComparisonExpression::overlapping_operators_to_skip[] =
+{
+    "IN PARTITION",
+    nullptr
+};
+
 const char * ParserLogicalNotExpression::operators[] =
 {
     "NOT", "not",
@@ -137,6 +143,14 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
             /// try to find any of the valid operators
 
             const char ** it;
+            Expected stub;
+            for (it = overlapping_operators_to_skip; *it; ++it)
+                if (ParserKeyword{*it}.checkWithoutMoving(pos, stub))
+                    break;
+
+            if (*it)
+                break;
+
             for (it = operators; *it; it += 2)
                 if (parseOperator(pos, *it, expected))
                     break;

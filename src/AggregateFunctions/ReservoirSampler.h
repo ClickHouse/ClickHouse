@@ -191,6 +191,7 @@ public:
         std::string rng_string;
         DB::readStringBinary(rng_string, buf);
         std::istringstream rng_stream(rng_string);
+        rng_stream.exceptions(std::ios::failbit);
         rng_stream >> rng;
 
         for (size_t i = 0; i < samples.size(); ++i)
@@ -205,6 +206,7 @@ public:
         DB::writeIntBinary<size_t>(total_values, buf);
 
         std::ostringstream rng_stream;
+        rng_stream.exceptions(std::ios::failbit);
         rng_stream << rng;
         DB::writeStringBinary(rng_stream.str(), buf);
 
