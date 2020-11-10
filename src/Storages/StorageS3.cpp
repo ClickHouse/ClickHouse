@@ -35,8 +35,6 @@
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
 
-#include <sstream>
-
 
 namespace DB
 {

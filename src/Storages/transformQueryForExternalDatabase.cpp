@@ -1,4 +1,3 @@
-#include <sstream>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypesNumber.h>

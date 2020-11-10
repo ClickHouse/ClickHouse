@@ -16,16 +16,16 @@ void formatAST(const IAST & ast, WriteBuffer & buf, bool hilite = true, bool one
 
 String serializeAST(const IAST & ast, bool one_line = true);
 
-//inline std::ostream & operator<<(std::ostream & os, const IAST & ast)
-//{
-//    formatAST(ast, os, false, true);
-//    return os;
-//}
-//
-//inline std::ostream & operator<<(std::ostream & os, const ASTPtr & ast)
-//{
-//    formatAST(*ast, os, false, true);
-//    return os;
-//}
+inline WriteBuffer & operator<<(WriteBuffer & buf, const IAST & ast)
+{
+    formatAST(ast, buf, false, true);
+    return buf;
+}
+
+inline WriteBuffer & operator<<(WriteBuffer & buf, const ASTPtr & ast)
+{
+    formatAST(*ast, buf, false, true);
+    return buf;
+}
 
 }

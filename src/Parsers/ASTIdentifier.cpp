@@ -1,6 +1,5 @@
 #include <Parsers/ASTIdentifier.h>
 
-#include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/StorageID.h>

@@ -11,10 +11,8 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <IO/WriteBufferFromOStream.h>
 
 #include <Storages/StorageView.h>
-#include <sstream>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/printPipeline.h>
 

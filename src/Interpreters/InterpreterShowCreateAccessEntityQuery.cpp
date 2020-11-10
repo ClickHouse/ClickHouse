@@ -26,7 +26,6 @@
 #include <Core/Defines.h>
 #include <ext/range.h>
 #include <boost/range/algorithm/sort.hpp>
-#include <sstream>
 
 
 namespace DB

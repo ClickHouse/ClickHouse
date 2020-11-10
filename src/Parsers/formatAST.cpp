@@ -1,6 +1,5 @@
 #include <Parsers/formatAST.h>
 
-#include <sstream>
 
 namespace DB
 {

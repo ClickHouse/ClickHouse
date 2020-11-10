@@ -1,4 +1,3 @@
-#include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>

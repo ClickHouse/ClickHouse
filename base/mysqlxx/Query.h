@@ -77,7 +77,7 @@ public:
 
 private:
     Connection * conn;
-    std::ostringstream query_buf;       // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    std::ostringstream query_buf;
 
     void executeImpl();
 };
