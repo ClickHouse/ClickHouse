@@ -40,7 +40,16 @@ void OpenTelemetrySpanLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(finish_time_us);
     columns[i++]->insert(DateLUT::instance().toDayNum(finish_time_us / 1000000));
     columns[i++]->insert(attribute_names);
-    columns[i++]->insert(attribute_values);
+    // The user might add some ints values, and we will have Int Field, and the
+    // insert will fail because the column requires Strings. Convert the fields
+    // here, because it's hard to remember to convert them in all other places.
+    Array string_values;
+    string_values.reserve(attribute_values.size());
+    for (auto & value : attribute_values)
+    {
+        string_values.push_back(toString(value));
+    }
+    columns[i++]->insert(string_values);
 }
 
 OpenTelemetrySpanHolder::OpenTelemetrySpanHolder(const std::string & _operation_name)
@@ -59,8 +68,8 @@ OpenTelemetrySpanHolder::OpenTelemetrySpanHolder(const std::string & _operation_
     start_time_us = std::chrono::duration_cast<std::chrono::microseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
 
-    // *** remove this
-    attribute_names.push_back("start.stacktrace");
+    // ****** remove this
+    attribute_names.push_back("clickhouse.start.stacktrace");
     attribute_values.push_back(StackTrace().toString());
 
     thread.opentelemetry_current_span_id = span_id;
@@ -70,8 +79,6 @@ OpenTelemetrySpanHolder::~OpenTelemetrySpanHolder()
 {
     try
     {
-        fmt::print(stderr, "{}\n", StackTrace().toString());
-
         if (!trace_id)
         {
             return;
@@ -90,8 +97,6 @@ OpenTelemetrySpanHolder::~OpenTelemetrySpanHolder()
             return;
         }
 
-        fmt::print(stderr, "1\n");
-
         auto * context = thread_group->query_context;
         if (!context)
         {
@@ -104,8 +109,8 @@ OpenTelemetrySpanHolder::~OpenTelemetrySpanHolder()
         //******** remove this
         attribute_names.push_back("clickhouse.query_id");
         attribute_values.push_back(context->getCurrentQueryId());
-
-        fmt::print(stderr, "2\n");
+        attribute_names.push_back("clickhouse.end.stacktrace");
+        attribute_values.push_back(StackTrace().toString());
 
         auto log = context->getOpenTelemetrySpanLog();
         if (!log)
@@ -113,8 +118,6 @@ OpenTelemetrySpanHolder::~OpenTelemetrySpanHolder()
             // The log might be disabled.
             return;
         }
-
-        fmt::print(stderr, "3\n");
 
         finish_time_us = std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
@@ -126,8 +129,6 @@ OpenTelemetrySpanHolder::~OpenTelemetrySpanHolder()
 
         log->add(OpenTelemetrySpanLogElement(
                      static_cast<OpenTelemetrySpan>(*this)));
-
-        fmt::print(stderr, "4\n");
     }
     catch (...)
     {

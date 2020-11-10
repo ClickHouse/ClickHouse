@@ -110,7 +110,6 @@ public:
 
     __uint128_t opentelemetry_trace_id;
     UInt64 opentelemetry_current_span_id;
-    std::unique_ptr<OpenTelemetrySpanHolder> opentelemetry_thread_span;
 
 protected:
     ThreadGroupStatusPtr thread_group;

@@ -79,6 +79,7 @@ FormatSettings getFormatSettings(const Context & context,
     format_settings.input_allow_errors_num = settings.input_format_allow_errors_num;
     format_settings.input_allow_errors_ratio = settings.input_format_allow_errors_ratio;
     format_settings.json.escape_forward_slashes = settings.output_format_json_escape_forward_slashes;
+    format_settings.json.named_tuple_as_object = settings.output_format_json_named_tuple_as_object;
     format_settings.json.quote_64bit_integers = settings.output_format_json_quote_64bit_integers;
     format_settings.json.quote_denormals = settings.output_format_json_quote_denormals;
     format_settings.null_as_default = settings.input_format_null_as_default;

@@ -70,8 +70,6 @@ protected:
     void writeRowsBeforeLimitAtLeast();
     void writeStatistics();
 
-    void addColumn(String name, DataTypePtr type, bool & need_validate_utf8,
-        std::string tabs);
 
     std::unique_ptr<WriteBuffer> validating_ostr;    /// Validates UTF-8 sequences, replaces bad sequences with replacement character.
     WriteBuffer * ostr;
@@ -80,16 +78,7 @@ protected:
     size_t row_count = 0;
     bool applied_limit = false;
     size_t rows_before_limit = 0;
-
-    struct FieldInfo
-    {
-        String name;
-        DataTypePtr type;
-        bool recurse = false;
-        std::string tabs;
-    };
-
-    std::vector<FieldInfo> fields;
+    NamesAndTypes fields;
 
     Progress progress;
     Stopwatch watch;
