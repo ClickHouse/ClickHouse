@@ -84,7 +84,7 @@ TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, cons
 Pipe IStorage::read(
         const Names & /*column_names*/,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        const SelectQueryInfo & /*query_info*/,
+        SelectQueryInfo & /*query_info*/,
         const Context & /*context*/,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t /*max_block_size*/,
@@ -97,7 +97,7 @@ void IStorage::read(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
-        const SelectQueryInfo & query_info,
+        SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
@@ -117,7 +117,6 @@ void IStorage::read(
 }
 
 Pipe IStorage::alterPartition(
-    const ASTPtr & /* query */,
     const StorageMetadataPtr & /* metadata_snapshot */,
     const PartitionCommands & /* commands */,
     const Context & /* context */)

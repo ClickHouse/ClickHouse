@@ -6,6 +6,7 @@
 #include <Poco/File.h>
 
 #include <Common/FieldVisitors.h>
+#include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeReverseSelectProcessor.h>
@@ -78,6 +79,17 @@ static Block getBlockWithPartColumn(const MergeTreeData::DataPartsVector & parts
     return Block{ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "_part")};
 }
 
+/// Check if ORDER BY clause of the query has some expression.
+static bool sortingDescriptionHasExpressions(const SortDescription & sort_description, const StorageMetadataPtr & metadata_snapshot)
+{
+    auto all_columns = metadata_snapshot->getColumns();
+    for (const auto & sort_column : sort_description)
+    {
+        if (!all_columns.has(sort_column.column_name))
+            return true;
+    }
+    return false;
+}
 
 size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
     const MergeTreeData::DataPartsVector & parts,
@@ -213,6 +225,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     if (settings.force_primary_key && key_condition.alwaysUnknownOrTrue())
     {
         std::stringstream exception_message;
+        exception_message.exceptions(std::ios::failbit);
         exception_message << "Primary key (";
         for (size_t i = 0, size = primary_key_columns.size(); i < size; ++i)
             exception_message << (i == 0 ? "" : ", ") << primary_key_columns[i];
@@ -222,13 +235,15 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     }
 
     std::optional<KeyCondition> minmax_idx_condition;
+    std::optional<PartitionPruner> partition_pruner;
     if (data.minmax_idx_expr)
     {
         minmax_idx_condition.emplace(query_info, context, data.minmax_idx_columns, data.minmax_idx_expr);
+        partition_pruner.emplace(metadata_snapshot->getPartitionKey(), query_info, context, false /* strict */);
 
-        if (settings.force_index_by_date && minmax_idx_condition->alwaysUnknownOrTrue())
+        if (settings.force_index_by_date && (minmax_idx_condition->alwaysUnknownOrTrue() && partition_pruner->isUseless()))
         {
-            String msg = "MinMax index by columns (";
+            String msg = "Neither MinMax index by columns (";
             bool first = true;
             for (const String & col : data.minmax_idx_columns)
             {
@@ -238,7 +253,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
                     msg += ", ";
                 msg += col;
             }
-            msg += ") is not used and setting 'force_index_by_date' is set";
+            msg += ") nor partition expr is used and setting 'force_index_by_date' is set";
 
             throw Exception(msg, ErrorCodes::INDEX_NOT_USED);
         }
@@ -261,6 +276,12 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
             if (minmax_idx_condition && !minmax_idx_condition->checkInHyperrectangle(
                     part->minmax_idx.hyperrectangle, data.minmax_idx_column_types).can_be_true)
                 continue;
+
+            if (partition_pruner)
+            {
+                if (partition_pruner->canBePruned(part))
+                    continue;
+            }
 
             if (max_block_numbers_to_read)
             {
@@ -1200,13 +1221,18 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
             plan->addStep(std::move(reverse_step));
         }
 
-        if (need_preliminary_merge)
-        {
-            SortDescription sort_description;
-            for (size_t j = 0; j < input_order_info->order_key_prefix_descr.size(); ++j)
-                sort_description.emplace_back(metadata_snapshot->getSortingKey().column_names[j],
-                                              input_order_info->direction, 1);
+        plans.emplace_back(std::move(plan));
+    }
 
+    if (need_preliminary_merge)
+    {
+        SortDescription sort_description;
+        for (size_t j = 0; j < input_order_info->order_key_prefix_descr.size(); ++j)
+            sort_description.emplace_back(metadata_snapshot->getSortingKey().column_names[j],
+                                          input_order_info->direction, 1);
+
+        for (auto & plan : plans)
+        {
             /// Drop temporary columns, added by 'sorting_key_prefix_expr'
             out_projection = createProjection(plan->getCurrentDataStream().header, data);
 
@@ -1225,8 +1251,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
             merging_sorted->setStepDescription("Merge sorting mark ranges");
             plan->addStep(std::move(merging_sorted));
         }
-
-        plans.emplace_back(std::move(plan));
     }
 
     if (plans.size() == 1)

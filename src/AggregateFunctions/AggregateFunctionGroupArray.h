@@ -245,6 +245,7 @@ public:
         {
             DB::writeIntBinary<size_t>(this->data(place).total_values, buf);
             std::ostringstream rng_stream;
+            rng_stream.exceptions(std::ios::failbit);
             rng_stream << this->data(place).rng;
             DB::writeStringBinary(rng_stream.str(), buf);
         }
@@ -275,6 +276,7 @@ public:
             std::string rng_string;
             DB::readStringBinary(rng_string, buf);
             std::istringstream rng_stream(rng_string);
+            rng_stream.exceptions(std::ios::failbit);
             rng_stream >> this->data(place).rng;
         }
 
@@ -564,6 +566,7 @@ public:
         {
             DB::writeIntBinary<size_t>(data(place).total_values, buf);
             std::ostringstream rng_stream;
+            rng_stream.exceptions(std::ios::failbit);
             rng_stream << data(place).rng;
             DB::writeStringBinary(rng_stream.str(), buf);
         }
@@ -598,6 +601,7 @@ public:
             std::string rng_string;
             DB::readStringBinary(rng_string, buf);
             std::istringstream rng_stream(rng_string);
+            rng_stream.exceptions(std::ios::failbit);
             rng_stream >> data(place).rng;
         }
 

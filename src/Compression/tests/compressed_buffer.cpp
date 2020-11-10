@@ -52,6 +52,7 @@ int main(int, char **)
                 if (x != i)
                 {
                     std::stringstream s;
+                    s.exceptions(std::ios::failbit);
                     s << "Failed!, read: " << x << ", expected: " << i;
                     throw DB::Exception(s.str(), 0);
                 }

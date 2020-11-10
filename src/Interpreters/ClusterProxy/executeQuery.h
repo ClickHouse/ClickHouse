@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Parsers/IAST.h>
-#include <Interpreters/Cluster.h>
 
 namespace DB
 {
@@ -35,8 +34,8 @@ Context updateSettingsForCluster(const Cluster & cluster, const Context & contex
 /// (currently SELECT, DESCRIBE).
 void executeQuery(
     QueryPlan & query_plan,
-    IStreamFactory & stream_factory, const ClusterPtr & cluster, Poco::Logger * log,
-    const ASTPtr & query_ast, const Context & context, const Settings & settings, const SelectQueryInfo & query_info);
+    IStreamFactory & stream_factory, Poco::Logger * log,
+    const ASTPtr & query_ast, const Context & context, const SelectQueryInfo & query_info);
 
 }
 
