@@ -3629,11 +3629,13 @@ void StorageReplicatedMergeTree::read(
     if (context.getSettingsRef().select_sequential_consistency)
     {
         auto max_added_blocks = getMaxAddedBlocks();
-        query_plan = std::move(*reader.read(column_names, metadata_snapshot, query_info, context, max_block_size, num_streams, &max_added_blocks));
+        if (auto plan = reader.read(column_names, metadata_snapshot, query_info, context, max_block_size, num_streams, &max_added_blocks))
+            query_plan = std::move(*plan);
         return;
     }
 
-    query_plan = std::move(*reader.read(column_names, metadata_snapshot, query_info, context, max_block_size, num_streams));
+    if (auto plan = reader.read(column_names, metadata_snapshot, query_info, context, max_block_size, num_streams))
+        query_plan = std::move(*plan);
 }
 
 Pipe StorageReplicatedMergeTree::read(
