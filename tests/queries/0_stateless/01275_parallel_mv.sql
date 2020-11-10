@@ -18,6 +18,6 @@ select count() from testXB;
 select count() from testXC;
 
 drop table testX;
-drop table testXA;
-drop table testXB;
-drop table testXC;
+drop view testXA;
+drop view testXB;
+drop view testXC;
