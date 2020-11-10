@@ -224,7 +224,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
         if (!exists_metadata_dir && fs::exists(metadata_path / ""))
         {
-            bool removed = fs::remove(metadata_path / "");
+            [[maybe_unused]] bool removed = fs::remove(metadata_path / "");
             assert(removed);
         }
 
