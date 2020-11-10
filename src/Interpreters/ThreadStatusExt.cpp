@@ -113,14 +113,13 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
         applyQuerySettings();
 
         opentelemetry_trace_id = query_context->getClientInfo().opentelemetry_trace_id;
-        opentelemetry_current_span_id = query_context->getClientInfo().opentelemetry_span_id;
-
         if (opentelemetry_trace_id)
         {
-            // Register the span for our thread. We might not know the name yet
-            // -- there are no strong constraints on when it is set relative to
-            // attaching the thread to query. Will set the name when the span ends.
-            opentelemetry_thread_span.reset(new OpenTelemetrySpanHolder(""));
+            opentelemetry_current_span_id = thread_local_rng();
+        }
+        else
+        {
+            opentelemetry_current_span_id = 0;
         }
     }
     else
@@ -319,11 +318,38 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 
     assertState({ThreadState::AttachedToQuery}, __PRETTY_FUNCTION__);
 
-    if (opentelemetry_thread_span)
+    std::shared_ptr<OpenTelemetrySpanLog> opentelemetry_span_log;
+    if (opentelemetry_trace_id && query_context)
     {
-        opentelemetry_thread_span->operation_name = getThreadName();
-        opentelemetry_thread_span->attribute_names.push_back("clickhouse.thread_id");
-        opentelemetry_thread_span->attribute_values.push_back(thread_id);
+        opentelemetry_span_log = query_context->getOpenTelemetrySpanLog();
+    }
+
+    if (opentelemetry_span_log)
+    {
+        // Log the current thread span.
+        // We do this manually, because we can't use OpenTelemetrySpanHolder as a
+        // ThreadStatus member, because of linking issues. This file is linked
+        // separately, so we can reference OpenTelemetrySpanLog here, but if we had
+        // the span holder as a field, we would have to reference it in the
+        // destructor, which is in another library.
+        OpenTelemetrySpanLogElement span;
+
+        span.trace_id = opentelemetry_trace_id;
+        // Might be problematic if some span holder isn't finished by the time
+        // we detach this thread...
+        span.span_id = opentelemetry_current_span_id;
+        span.parent_span_id = query_context->getClientInfo().opentelemetry_span_id;
+        span.operation_name = getThreadName();
+        span.start_time_us = query_start_time_microseconds;
+        span.finish_time_us =
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+        // We could use a more precise and monotonic counter for this.
+        span.duration_ns = (span.finish_time_us - span.start_time_us) * 1000;
+        span.attribute_names.push_back("clickhouse.thread_id");
+        span.attribute_values.push_back(thread_id);
+
+        opentelemetry_span_log->add(span);
     }
 
     finalizeQueryProfiler();
@@ -338,7 +364,6 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 
     query_id.clear();
     query_context = nullptr;
-    opentelemetry_thread_span = nullptr;
     opentelemetry_trace_id = 0;
     opentelemetry_current_span_id = 0;
     thread_group.reset();
