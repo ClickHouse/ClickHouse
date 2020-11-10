@@ -304,13 +304,6 @@ public:
     using Actions = std::vector<Action>;
 
 private:
-    struct ExecutionContext
-    {
-        ColumnsWithTypeAndName & inputs;
-        ColumnsWithTypeAndName columns = {};
-        std::vector<ssize_t> inputs_pos = {};
-        size_t num_rows;
-    };
 
     ActionsDAGPtr actions_dag;
     Actions actions;
@@ -367,9 +360,7 @@ public:
 private:
     ExpressionActions() = default;
 
-    void checkLimits(ExecutionContext & execution_context) const;
-
-    static void executeAction(const Action & action, ExecutionContext & execution_context, bool dry_run);
+    void checkLimits(const ColumnsWithTypeAndName & columns) const;
 
     void linearizeActions();
 };

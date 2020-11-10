@@ -257,19 +257,19 @@ std::string ExpressionActions::Action::toString() const
     return out.str();
 }
 
-void ExpressionActions::checkLimits(ExecutionContext & execution_context) const
+void ExpressionActions::checkLimits(const ColumnsWithTypeAndName & columns) const
 {
     if (max_temporary_non_const_columns)
     {
         size_t non_const_columns = 0;
-        for (const auto & column : execution_context.columns)
+        for (const auto & column : columns)
             if (column.column && !isColumnConst(*column.column))
                 ++non_const_columns;
 
         if (non_const_columns > max_temporary_non_const_columns)
         {
             std::stringstream list_of_non_const_columns;
-            for (const auto & column : execution_context.columns)
+            for (const auto & column : columns)
                 if (column.column && !isColumnConst(*column.column))
                     list_of_non_const_columns << "\n" << column.name;
 
@@ -280,74 +280,18 @@ void ExpressionActions::checkLimits(ExecutionContext & execution_context) const
     }
 }
 
-void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) const
+namespace
 {
-    ExecutionContext execution_context
+    struct ExecutionContext
     {
-        .inputs = block.data,
-        .num_rows = num_rows,
+        ColumnsWithTypeAndName & inputs;
+        ColumnsWithTypeAndName columns = {};
+        std::vector<ssize_t> inputs_pos = {};
+        size_t num_rows;
     };
-
-    execution_context.inputs_pos.reserve(required_columns.size());
-
-    for (const auto & column : required_columns)
-    {
-        ssize_t pos = -1;
-        if (block.has(column.name))
-            pos = block.getPositionByName(column.name);
-        execution_context.inputs_pos.push_back(pos);
-    }
-
-    execution_context.columns.resize(num_columns);
-
-    for (const auto & action : actions)
-    {
-        try
-        {
-            executeAction(action, execution_context, dry_run);
-            checkLimits(execution_context);
-
-            //std::cerr << "Action: " << action.toString() << std::endl;
-            //for (const auto & col : execution_context.columns)
-            //    std::cerr << col.dumpStructure() << std::endl;
-        }
-        catch (Exception & e)
-        {
-            e.addMessage(fmt::format("while executing '{}'", action.toString()));
-            throw;
-        }
-    }
-
-    if (project_input)
-    {
-        block.clear();
-    }
-    else
-    {
-        std::sort(execution_context.inputs_pos.rbegin(), execution_context.inputs_pos.rend());
-        for (auto input : execution_context.inputs_pos)
-            if (input >= 0)
-                block.erase(input);
-    }
-
-    for (auto pos : result_positions)
-        if (execution_context.columns[pos].column)
-            block.insert(execution_context.columns[pos]);
-
-    num_rows = execution_context.num_rows;
 }
 
-void ExpressionActions::execute(Block & block, bool dry_run) const
-{
-    size_t num_rows = block.rows();
-
-    execute(block, num_rows, dry_run);
-
-    if (!block)
-        block.insert({DataTypeUInt8().createColumnConst(num_rows, 0), std::make_shared<DataTypeUInt8>(), "_dummy"});
-}
-
-void ExpressionActions::executeAction(const Action & action, ExecutionContext & execution_context, bool dry_run)
+static void executeAction(const ExpressionActions::Action & action, ExecutionContext & execution_context, bool dry_run)
 {
     auto & inputs = execution_context.inputs;
     auto & columns = execution_context.columns;
@@ -456,6 +400,73 @@ void ExpressionActions::executeAction(const Action & action, ExecutionContext & 
             break;
         }
     }
+}
+
+void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) const
+{
+    ExecutionContext execution_context
+    {
+        .inputs = block.data,
+        .num_rows = num_rows,
+    };
+
+    execution_context.inputs_pos.reserve(required_columns.size());
+
+    for (const auto & column : required_columns)
+    {
+        ssize_t pos = -1;
+        if (block.has(column.name))
+            pos = block.getPositionByName(column.name);
+        execution_context.inputs_pos.push_back(pos);
+    }
+
+    execution_context.columns.resize(num_columns);
+
+    for (const auto & action : actions)
+    {
+        try
+        {
+            executeAction(action, execution_context, dry_run);
+            checkLimits(execution_context.columns);
+
+            //std::cerr << "Action: " << action.toString() << std::endl;
+            //for (const auto & col : execution_context.columns)
+            //    std::cerr << col.dumpStructure() << std::endl;
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(fmt::format("while executing '{}'", action.toString()));
+            throw;
+        }
+    }
+
+    if (project_input)
+    {
+        block.clear();
+    }
+    else
+    {
+        std::sort(execution_context.inputs_pos.rbegin(), execution_context.inputs_pos.rend());
+        for (auto input : execution_context.inputs_pos)
+            if (input >= 0)
+                block.erase(input);
+    }
+
+    for (auto pos : result_positions)
+        if (execution_context.columns[pos].column)
+            block.insert(execution_context.columns[pos]);
+
+    num_rows = execution_context.num_rows;
+}
+
+void ExpressionActions::execute(Block & block, bool dry_run) const
+{
+    size_t num_rows = block.rows();
+
+    execute(block, num_rows, dry_run);
+
+    if (!block)
+        block.insert({DataTypeUInt8().createColumnConst(num_rows, 0), std::make_shared<DataTypeUInt8>(), "_dummy"});
 }
 
 Names ExpressionActions::getRequiredColumns() const
