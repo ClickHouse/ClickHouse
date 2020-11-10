@@ -593,7 +593,7 @@ static bool isCompilableConstant(const ActionsDAG::Node & node)
 
 static bool isCompilableFunction(const ActionsDAG::Node & node)
 {
-    return node.type == ActionsDAG::Type::FUNCTION && isCompilable(*node.function_base);
+    return node.type == ActionsDAG::ActionType::FUNCTION && isCompilable(*node.function_base);
 }
 
 static LLVMFunction::CompileDAG getCompilableDAG(
@@ -884,7 +884,7 @@ void ActionsDAG::compileFunctions()
                             for (const auto * child : new_children)
                                 arguments.emplace_back(child->column, child->result_type, child->result_name);
 
-                            frame.node->type = ActionsDAG::Type::FUNCTION;
+                            frame.node->type = ActionsDAG::ActionType::FUNCTION;
                             frame.node->function_base = fn;
                             frame.node->function = fn->prepare(arguments);
                             frame.node->children.swap(new_children);

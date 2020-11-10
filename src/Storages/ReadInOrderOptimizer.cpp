@@ -57,7 +57,7 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(const StorageMetadataPtr &
             bool found_function = false;
             for (const auto & action : elements_actions[i]->getActions())
             {
-                if (action.node->type != ActionsDAG::Type::FUNCTION)
+                if (action.node->type != ActionsDAG::ActionType::FUNCTION)
                     continue;
 
                 if (found_function)

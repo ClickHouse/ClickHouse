@@ -259,10 +259,10 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
 {
     for (const auto & action : expr.getActions())
     {
-        if (action.node->type == ActionsDAG::Type::ARRAY_JOIN)
+        if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
             throw Exception(key_name + " key cannot contain array joins", ErrorCodes::ILLEGAL_COLUMN);
 
-        if (action.node->type == ActionsDAG::Type::FUNCTION)
+        if (action.node->type == ActionsDAG::ActionType::FUNCTION)
         {
             IFunctionBase & func = *action.node->function_base;
             if (!func.isDeterministic())

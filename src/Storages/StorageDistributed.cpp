@@ -201,7 +201,7 @@ bool isExpressionActionsDeterministics(const ExpressionActionsPtr & actions)
 {
     for (const auto & action : actions->getActions())
     {
-        if (action.node->type != ActionsDAG::Type::FUNCTION)
+        if (action.node->type != ActionsDAG::ActionType::FUNCTION)
             continue;
         if (!action.node->function_base->isDeterministic())
             return false;

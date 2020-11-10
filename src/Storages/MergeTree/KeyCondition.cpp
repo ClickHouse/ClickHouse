@@ -616,7 +616,7 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
           * which while not strictly monotonic, are monotonic everywhere on the input range.
           */
         const auto & children = action.node->children;
-        if (action.node->type == ActionsDAG::Type::FUNCTION
+        if (action.node->type == ActionsDAG::ActionType::FUNCTION
             && children.size() == 1
             && children[0]->result_name == expr_name)
         {
@@ -683,7 +683,7 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
 
                 chain.push(cur_node);
 
-                if (cur_node->type == ActionsDAG::Type::FUNCTION && cur_node->children.size() <= 2)
+                if (cur_node->type == ActionsDAG::ActionType::FUNCTION && cur_node->children.size() <= 2)
                 {
                     if (!cur_node->function_base->isDeterministic())
                         is_valid_chain = false;
@@ -705,7 +705,7 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
 
                     cur_node = next_node;
                 }
-                else if (cur_node->type == ActionsDAG::Type::ALIAS)
+                else if (cur_node->type == ActionsDAG::ActionType::ALIAS)
                     cur_node = cur_node->children.front();
                 else
                     is_valid_chain = false;
@@ -725,7 +725,7 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
                     const auto * func = chain.top();
                     chain.pop();
 
-                    if (func->type != ActionsDAG::Type::FUNCTION)
+                    if (func->type != ActionsDAG::ActionType::FUNCTION)
                         continue;
 
                     if (func->children.size() == 1)
