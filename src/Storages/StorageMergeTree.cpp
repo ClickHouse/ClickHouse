@@ -653,11 +653,7 @@ bool StorageMergeTree::merge(
                 && getCurrentMutationVersion(left, lock) == getCurrentMutationVersion(right, lock);
         };
 
-        bool selected = false;
-
-        /// This flag is true when there is only one part in partition, it's level > 0
-        /// and setting optimize_skip_merged_partitions is true
-        bool is_single_merged_part = false;
+        SelectPartsDecision select_decision = SelectPartsDecision::NOTHING_TO_MERGE;
 
         if (partition_id.empty())
         {
@@ -669,7 +665,7 @@ bool StorageMergeTree::merge(
             /// possible.
             if (max_source_parts_size > 0)
             {
-                selected = merger_mutator.selectPartsToMerge(
+                select_decision = merger_mutator.selectPartsToMerge(
                     future_part,
                     aggressive,
                     max_source_parts_size,
@@ -685,13 +681,13 @@ bool StorageMergeTree::merge(
             while (true)
             {
                 UInt64 disk_space = getStoragePolicy()->getMaxUnreservedFreeSpace();
-                selected = merger_mutator.selectAllPartsToMergeWithinPartition(
-                    future_part, disk_space, can_merge, partition_id, final, &is_single_merged_part, metadata_snapshot, out_disable_reason);
+                select_decision = merger_mutator.selectAllPartsToMergeWithinPartition(
+                    future_part, disk_space, can_merge, partition_id, final, metadata_snapshot, out_disable_reason);
 
                 /// If final - we will wait for currently processing merges to finish and continue.
                 /// TODO Respect query settings for timeout
                 if (final
-                    && !selected
+                    && select_decision != SelectPartsDecision::SELECTED
                     && !currently_merging_mutating_parts.empty()
                     && out_disable_reason
                     && out_disable_reason->empty())
@@ -711,13 +707,12 @@ bool StorageMergeTree::merge(
             }
         }
 
-        if (!selected)
+        /// If final and there is nothing to merge we treat this merge as successful.
+        if (final && select_decision == SelectPartsDecision::NOTHING_TO_MERGE)
+            return true;
+
+        if (select_decision != SelectPartsDecision::SELECTED)
         {
-            /// If is_single_merged_part is true we treat this part as already merged
-            if (final && is_single_merged_part)
-            {
-                return true;
-            }
             if (out_disable_reason)
             {
                 if (!out_disable_reason->empty())

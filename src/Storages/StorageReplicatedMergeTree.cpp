@@ -2681,7 +2681,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
 
             FutureMergedMutatedPart future_merged_part;
             if (max_source_parts_size_for_merge > 0 &&
-                merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size_for_merge, merge_pred, merge_with_ttl_allowed, nullptr))
+                merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size_for_merge, merge_pred, merge_with_ttl_allowed, nullptr) == SelectPartsDecision::SELECTED)
             {
                 create_result = createLogEntryToMergeParts(zookeeper, future_merged_part.parts,
                     future_merged_part.name, future_merged_part.type, deduplicate, nullptr, merge_pred.getVersion(), future_merged_part.merge_type);
@@ -3762,20 +3762,11 @@ bool StorageReplicatedMergeTree::optimize(
                     ReplicatedMergeTreeMergePredicate can_merge = queue.getMergePredicate(zookeeper);
 
                     FutureMergedMutatedPart future_merged_part;
+                    SelectPartsDecision select_decision = merger_mutator.selectAllPartsToMergeWithinPartition(
+                        future_merged_part, disk_space, can_merge, partition_id, true, metadata_snapshot, nullptr);
 
-                    /// This flag is true when there is only one part in partition, it's level > 0
-                    /// and setting optimize_skip_merged_partitions is true
-                    bool is_single_merged_part = false;
-                    bool selected = merger_mutator.selectAllPartsToMergeWithinPartition(
-                        future_merged_part, disk_space, can_merge, partition_id, true, &is_single_merged_part, metadata_snapshot, nullptr);
-
-                    if (!selected)
-                    {
-                        /// If is_single_merged_part is true we treat this part as already merged
-                        if (is_single_merged_part)
-                            return true;
+                    if (select_decision != SelectPartsDecision::SELECTED)
                         break;
-                    }
 
                     ReplicatedMergeTreeLogEntryData merge_entry;
                     CreateMergeEntryResult create_result = createLogEntryToMergeParts(
@@ -3807,29 +3798,26 @@ bool StorageReplicatedMergeTree::optimize(
 
                 FutureMergedMutatedPart future_merged_part;
                 String disable_reason;
-                bool selected = false;
+                SelectPartsDecision select_decision = SelectPartsDecision::NOTHING_TO_MERGE;
 
-                /// This flag is true when there is only one part in partition, it's level > 0
-                /// and setting optimize_skip_merged_partitions is true
-                bool is_single_merged_part = false;
                 if (!partition)
                 {
-                    selected = merger_mutator.selectPartsToMerge(
+                    select_decision = merger_mutator.selectPartsToMerge(
                         future_merged_part, true, storage_settings_ptr->max_bytes_to_merge_at_max_space_in_pool, can_merge, false, &disable_reason);
                 }
                 else
                 {
                     UInt64 disk_space = getStoragePolicy()->getMaxUnreservedFreeSpace();
                     String partition_id = getPartitionIDFromQuery(partition, query_context);
-                    selected = merger_mutator.selectAllPartsToMergeWithinPartition(
-                        future_merged_part, disk_space, can_merge, partition_id, final, &is_single_merged_part, metadata_snapshot, &disable_reason);
+                    select_decision = merger_mutator.selectAllPartsToMergeWithinPartition(
+                        future_merged_part, disk_space, can_merge, partition_id, final, metadata_snapshot, &disable_reason);
                 }
 
-                if (!selected)
+                if (final && select_decision == SelectPartsDecision::NOTHING_TO_MERGE)
+                    break;
+
+                if (select_decision != SelectPartsDecision::SELECTED)
                 {
-                    /// If is_single_merged_part is true we treat this part as already merged
-                    if (final && is_single_merged_part)
-                        return true;
                     std::stringstream message;
                     message << "Cannot select parts for optimization";
                     if (!disable_reason.empty())
