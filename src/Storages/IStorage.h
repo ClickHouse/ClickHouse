@@ -367,7 +367,6 @@ public:
       * Should handle locks for each command on its own.
       */
     virtual Pipe alterPartition(
-        const ASTPtr & /* query */,
         const StorageMetadataPtr & /* metadata_snapshot */,
         const PartitionCommands & /* commands */,
         const Context & /* context */);

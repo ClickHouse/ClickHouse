@@ -113,7 +113,6 @@ public:
     void alter(const AlterCommands & commands, const Context & query_context, TableLockHolder & table_lock_holder) override;
 
     Pipe alterPartition(
-        const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
         const PartitionCommands & commands,
         const Context & query_context) override;
@@ -499,6 +498,12 @@ private:
     /// Deletes info from quorum/last_part node for particular partition_id.
     void cleanLastPartNode(const String & partition_id);
 
+    /// Part name is stored in quorum/last_part for corresponding partition_id.
+    bool partIsLastQuorumPart(const MergeTreePartInfo & part_info) const;
+
+    /// Part currently inserting with quorum (node quorum/parallel/part_name exists)
+    bool partIsInsertingWithParallelQuorum(const MergeTreePartInfo & part_info) const;
+
     /// Creates new block number if block with such block_id does not exist
     std::optional<EphemeralLockInZooKeeper> allocateBlockNumber(
         const String & partition_id, zkutil::ZooKeeperPtr & zookeeper,
@@ -530,6 +535,7 @@ private:
     std::mutex existing_nodes_cache_mutex;
     bool existsNodeCached(const std::string & path);
 
+    void getClearBlocksInPartitionOps(Coordination::Requests & ops, zkutil::ZooKeeper & zookeeper, const String & partition_id, Int64 min_block_num, Int64 max_block_num);
     /// Remove block IDs from `blocks/` in ZooKeeper for the given partition ID in the given block number range.
     void clearBlocksInPartition(
         zkutil::ZooKeeper & zookeeper, const String & partition_id, Int64 min_block_num, Int64 max_block_num);
@@ -537,11 +543,12 @@ private:
     /// Info about how other replicas can access this one.
     ReplicatedMergeTreeAddress getReplicatedMergeTreeAddress() const;
 
-    bool dropPartsInPartition(zkutil::ZooKeeper & zookeeper, String & partition_id,
-        StorageReplicatedMergeTree::LogEntry & entry, bool detach);
+    bool dropPart(zkutil::ZooKeeperPtr & zookeeper, String part_name, LogEntry & entry, bool detach);
+    bool dropAllPartsInPartition(
+        zkutil::ZooKeeper & zookeeper, String & partition_id, LogEntry & entry, bool detach);
 
     // Partition helpers
-    void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & query_context);
+    void dropPartition(const ASTPtr & partition, bool detach, bool drop_part, const Context & query_context);
     PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, const Context & query_context);
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & query_context);
     void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, const Context & query_context);

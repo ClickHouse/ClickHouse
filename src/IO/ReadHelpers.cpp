@@ -821,7 +821,11 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
+    /// YYYY-MM-DD hh:mm:ss
     static constexpr auto date_time_broken_down_length = 19;
+    /// YYYY-MM-DD
+    static constexpr auto date_broken_down_length = 10;
+    /// unix timestamp max length
     static constexpr auto unix_timestamp_max_length = 10;
 
     char s[date_time_broken_down_length];
@@ -835,12 +839,15 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
         ++buf.position();
     }
 
-    /// 2015-01-01 01:02:03
+    /// 2015-01-01 01:02:03 or 2015-01-01
     if (s_pos == s + 4 && !buf.eof() && (*buf.position() < '0' || *buf.position() > '9'))
     {
-        const size_t remaining_size = date_time_broken_down_length - (s_pos - s);
-        size_t size = buf.read(s_pos, remaining_size);
-        if (remaining_size != size)
+        const auto already_read_length = s_pos - s;
+        const size_t remaining_date_time_size = date_time_broken_down_length - already_read_length;
+        const size_t remaining_date_size = date_broken_down_length - already_read_length;
+
+        size_t size = buf.read(s_pos, remaining_date_time_size);
+        if (size != remaining_date_time_size && size != remaining_date_size)
         {
             s_pos[size] = 0;
 
@@ -854,9 +861,16 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
         UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
         UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
 
-        UInt8 hour = (s[11] - '0') * 10 + (s[12] - '0');
-        UInt8 minute = (s[14] - '0') * 10 + (s[15] - '0');
-        UInt8 second = (s[17] - '0') * 10 + (s[18] - '0');
+        UInt8 hour = 0;
+        UInt8 minute = 0;
+        UInt8 second = 0;
+
+        if (size == remaining_date_time_size)
+        {
+            hour = (s[11] - '0') * 10 + (s[12] - '0');
+            minute = (s[14] - '0') * 10 + (s[15] - '0');
+            second = (s[17] - '0') * 10 + (s[18] - '0');
+        }
 
         if (unlikely(year == 0))
             datetime = 0;
