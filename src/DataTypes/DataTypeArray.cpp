@@ -168,7 +168,7 @@ namespace
 }
 
 
-void DataTypeArray::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
+void DataTypeArray::enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const
 {
     path.push_back(Substream::ArraySizes);
     callback(path, *this);
@@ -178,7 +178,7 @@ void DataTypeArray::enumerateStreams(const StreamCallback & callback, SubstreamP
 }
 
 
-void DataTypeArray::serializeBinaryBulkStatePrefix(
+void DataTypeArray::serializeBinaryBulkStatePrefixImpl(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
@@ -188,7 +188,7 @@ void DataTypeArray::serializeBinaryBulkStatePrefix(
 }
 
 
-void DataTypeArray::serializeBinaryBulkStateSuffix(
+void DataTypeArray::serializeBinaryBulkStateSuffixImpl(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
@@ -198,7 +198,7 @@ void DataTypeArray::serializeBinaryBulkStateSuffix(
 }
 
 
-void DataTypeArray::deserializeBinaryBulkStatePrefix(
+void DataTypeArray::deserializeBinaryBulkStatePrefixImpl(
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state) const
 {
@@ -208,7 +208,7 @@ void DataTypeArray::deserializeBinaryBulkStatePrefix(
 }
 
 
-void DataTypeArray::serializeBinaryBulkWithMultipleStreams(
+void DataTypeArray::serializeBinaryBulkWithMultipleStreamsImpl(
     const IColumn & column,
     size_t offset,
     size_t limit,
@@ -255,7 +255,7 @@ void DataTypeArray::serializeBinaryBulkWithMultipleStreams(
 }
 
 
-void DataTypeArray::deserializeBinaryBulkWithMultipleStreams(
+void DataTypeArray::deserializeBinaryBulkWithMultipleStreamsImpl(
     IColumn & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
@@ -527,7 +527,7 @@ DataTypePtr DataTypeArray::tryGetSubcolumnType(const String & subcolumn_name) co
 DataTypePtr DataTypeArray::tryGetSubcolumnTypeImpl(const String & subcolumn_name, size_t level) const
 {
     if (subcolumn_name == "size" + std::to_string(level))
-        return std::make_shared<DataTypeOneElementTuple>(std::make_shared<DataTypeUInt64>(), subcolumn_name, false);
+        return createOneElementTuple(std::make_shared<DataTypeUInt64>(), subcolumn_name, false);
 
     DataTypePtr subcolumn;
     if (const auto * nested_array = typeid_cast<const DataTypeArray *>(nested.get()))

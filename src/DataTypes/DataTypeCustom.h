@@ -3,6 +3,7 @@
 #include <memory>
 #include <cstddef>
 #include <Core/Types.h>
+#include <DataTypes/IDataType.h>
 
 namespace DB
 {
@@ -62,8 +63,45 @@ public:
     virtual void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const = 0;
 };
 
+class IDataTypeCustomStreams
+{
+public:
+    virtual ~IDataTypeCustomStreams() = default;
+
+    virtual void enumerateStreams(
+        const IDataType::StreamCallback & callback,
+        IDataType::SubstreamPath & path) const = 0;
+
+    virtual void serializeBinaryBulkStatePrefix(
+        IDataType::SerializeBinaryBulkSettings & settings,
+        IDataType::SerializeBinaryBulkStatePtr & state) const = 0;
+
+    virtual void serializeBinaryBulkStateSuffix(
+        IDataType::SerializeBinaryBulkSettings & settings,
+        IDataType::SerializeBinaryBulkStatePtr & state) const = 0;
+
+    virtual void deserializeBinaryBulkStatePrefix(
+        IDataType::DeserializeBinaryBulkSettings & settings,
+        IDataType::DeserializeBinaryBulkStatePtr & state) const = 0;
+
+    virtual void serializeBinaryBulkWithMultipleStreams(
+        const IColumn & column,
+        size_t offset,
+        size_t limit,
+        IDataType::SerializeBinaryBulkSettings & settings,
+        IDataType::SerializeBinaryBulkStatePtr & state) const = 0;
+
+    virtual void deserializeBinaryBulkWithMultipleStreams(
+        IColumn & column,
+        size_t limit,
+        IDataType::DeserializeBinaryBulkSettings & settings,
+        IDataType::DeserializeBinaryBulkStatePtr & state) const = 0;
+};
+
 using DataTypeCustomNamePtr = std::unique_ptr<const IDataTypeCustomName>;
 using DataTypeCustomTextSerializationPtr = std::unique_ptr<const IDataTypeCustomTextSerialization>;
+using DataTypeCustomStreamsPtr = std::unique_ptr<const IDataTypeCustomStreams>;
+
 
 /** Describe a data type customization
  */
@@ -71,9 +109,15 @@ struct DataTypeCustomDesc
 {
     DataTypeCustomNamePtr name;
     DataTypeCustomTextSerializationPtr text_serialization;
+    DataTypeCustomStreamsPtr streams;
 
-    DataTypeCustomDesc(DataTypeCustomNamePtr name_, DataTypeCustomTextSerializationPtr text_serialization_)
-            : name(std::move(name_)), text_serialization(std::move(text_serialization_)) {}
+    DataTypeCustomDesc(
+        DataTypeCustomNamePtr name_,
+        DataTypeCustomTextSerializationPtr text_serialization_ = nullptr,
+        DataTypeCustomStreamsPtr streams_ = nullptr)
+    : name(std::move(name_))
+    , text_serialization(std::move(text_serialization_))
+    , streams(std::move(streams_)) {}
 };
 
 using DataTypeCustomDescPtr = std::unique_ptr<DataTypeCustomDesc>;
