@@ -66,16 +66,16 @@ std::string ExpressionActions::Action::toString() const
     std::stringstream out;
     switch (node->type)
     {
-        case ActionsDAG::Type::COLUMN:
+        case ActionsDAG::ActionType::COLUMN:
             out << "COLUMN "
                 << (node->column ? node->column->getName() : "(no column)");
             break;
 
-        case ActionsDAG::Type::ALIAS:
+        case ActionsDAG::ActionType::ALIAS:
             out << "ALIAS " << node->children.front()->result_name << " " << arguments.front();
             break;
 
-        case ActionsDAG::Type::FUNCTION:
+        case ActionsDAG::ActionType::FUNCTION:
             out << "FUNCTION " << (node->is_function_compiled ? "[compiled] " : "")
                 << (node->function_base ? node->function_base->getName() : "(no function)") << "(";
             for (size_t i = 0; i < node->children.size(); ++i)
@@ -87,11 +87,11 @@ std::string ExpressionActions::Action::toString() const
             out << ")";
             break;
 
-        case ActionsDAG::Type::ARRAY_JOIN:
+        case ActionsDAG::ActionType::ARRAY_JOIN:
             out << "ARRAY JOIN " << node->children.front()->result_name << " " << arguments.front();
             break;
 
-        case ActionsDAG::Type::INPUT:
+        case ActionsDAG::ActionType::INPUT:
             out << "INPUT " << arguments.front();
             break;
     }
@@ -201,7 +201,7 @@ void ExpressionActions::executeAction(const Action & action, ExecutionContext & 
 
     switch (action.node->type)
     {
-        case ActionsDAG::Type::FUNCTION:
+        case ActionsDAG::ActionType::FUNCTION:
         {
             auto & res_column = columns[action.result_position];
             if (res_column.type || res_column.column)
@@ -227,7 +227,7 @@ void ExpressionActions::executeAction(const Action & action, ExecutionContext & 
             break;
         }
 
-        case ActionsDAG::Type::ARRAY_JOIN:
+        case ActionsDAG::ActionType::ARRAY_JOIN:
         {
             size_t array_join_key_pos = action.arguments.front().pos;
             auto array_join_key = columns[array_join_key_pos];
@@ -260,7 +260,7 @@ void ExpressionActions::executeAction(const Action & action, ExecutionContext & 
             break;
         }
 
-        case ActionsDAG::Type::COLUMN:
+        case ActionsDAG::ActionType::COLUMN:
         {
             auto & res_column = columns[action.result_position];
             res_column.column = action.node->column->cloneResized(num_rows);
@@ -269,7 +269,7 @@ void ExpressionActions::executeAction(const Action & action, ExecutionContext & 
             break;
         }
 
-        case ActionsDAG::Type::ALIAS:
+        case ActionsDAG::ActionType::ALIAS:
         {
             const auto & arg = action.arguments.front();
             if (action.result_position != arg.pos)
@@ -286,7 +286,7 @@ void ExpressionActions::executeAction(const Action & action, ExecutionContext & 
             break;
         }
 
-        case ActionsDAG::Type::INPUT:
+        case ActionsDAG::ActionType::INPUT:
         {
             auto pos = execution_context.inputs_pos[action.arguments.front().pos];
             if (pos < 0)
@@ -315,7 +315,7 @@ Names ExpressionActions::getRequiredColumns() const
 bool ExpressionActions::hasArrayJoin() const
 {
     for (const auto & action : actions)
-        if (action.node->type == ActionsDAG::Type::ARRAY_JOIN)
+        if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
             return true;
 
     return false;
@@ -388,7 +388,7 @@ std::string ExpressionActions::dumpActions() const
 bool ActionsDAG::hasArrayJoin() const
 {
     for (const auto & node : nodes)
-        if (node.type == Type::ARRAY_JOIN)
+        if (node.type == ActionType::ARRAY_JOIN)
             return true;
 
     return false;
@@ -397,7 +397,7 @@ bool ActionsDAG::hasArrayJoin() const
 bool ActionsDAG::empty() const
 {
     for (const auto & node : nodes)
-        if (node.type != Type::INPUT)
+        if (node.type != ActionType::INPUT)
             return false;
 
     return true;
@@ -468,7 +468,7 @@ ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_join
             /// Make a copy part.
             if (cur.next_child_to_visit == cur.node->children.size())
             {
-                if (cur.node->type == Type::INPUT && array_joined_columns.count(cur.node->result_name))
+                if (cur.node->type == ActionType::INPUT && array_joined_columns.count(cur.node->result_name))
                     cur_data.depend_on_array_join = true;
 
                 cur_data.visited = true;
@@ -487,7 +487,7 @@ ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_join
                         /// If children is not created, int may be from split part.
                         if (!child_data.to_this)
                         {
-                            if (child->type == Type::COLUMN) /// Just create new node for COLUMN action.
+                            if (child->type == ActionType::COLUMN) /// Just create new node for COLUMN action.
                             {
                                 child_data.to_this = &this_nodes.emplace_back(*child);
                             }
@@ -495,13 +495,13 @@ ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_join
                             {
                                 /// Node from split part is added as new input.
                                 Node input_node;
-                                input_node.type = Type::INPUT;
+                                input_node.type = ActionType::INPUT;
                                 input_node.result_type = child->result_type;
                                 input_node.result_name = child->result_name; // getUniqueNameForIndex(index, child->result_name);
                                 child_data.to_this = &this_nodes.emplace_back(std::move(input_node));
 
                                 /// This node is needed for current action, so put it to index also.
-                                split_index[child_data.to_split->result_name] = child_data.to_split;
+                                split_index.replace(child_data.to_split);
                             }
                         }
 
@@ -522,11 +522,11 @@ ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_join
 
                     if (cur_data.used_in_result)
                     {
-                        split_index[copy.result_name] = &copy;
+                        split_index.replace(&copy);
 
                         /// If this node is needed in result, add it as input.
                         Node input_node;
-                        input_node.type = Type::INPUT;
+                        input_node.type = ActionType::INPUT;
                         input_node.result_type = node.result_type;
                         input_node.result_name = node.result_name;
                         cur_data.to_this = &this_nodes.emplace_back(std::move(input_node));
@@ -567,7 +567,7 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
     for (auto it = actions.rbegin(); it != actions.rend(); ++it)
     {
         const auto & action = *it;
-        if (action.node->type == ActionsDAG::Type::FUNCTION && action.node->function_base)
+        if (action.node->type == ActionsDAG::ActionType::FUNCTION && action.node->function_base)
         {
             if (action.node->result_name == column_name && action.node->children.size() > 1)
             {
@@ -585,7 +585,7 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
     {
         for (const auto & action : actions)
         {
-            if (action.node->type == ActionsDAG::Type::COLUMN && action.node->result_name == set_to_check)
+            if (action.node->type == ActionsDAG::ActionType::COLUMN && action.node->result_name == set_to_check)
             {
                 // Constant ColumnSet cannot be empty, so we only need to check non-constant ones.
                 if (const auto * column_set = checkAndGetColumn<const ColumnSet>(action.node->column.get()))
@@ -793,7 +793,7 @@ ActionsDAG::Node & ActionsDAG::addNode(Node node, bool can_replace)
 
     auto & res = nodes.emplace_back(std::move(node));
 
-    index[res.result_name] = &res;
+    index.replace(&res);
     return res;
 }
 
@@ -809,7 +809,7 @@ ActionsDAG::Node & ActionsDAG::getNode(const std::string & name)
 const ActionsDAG::Node & ActionsDAG::addInput(std::string name, DataTypePtr type)
 {
     Node node;
-    node.type = Type::INPUT;
+    node.type = ActionType::INPUT;
     node.result_type = std::move(type);
     node.result_name = std::move(name);
 
@@ -819,7 +819,7 @@ const ActionsDAG::Node & ActionsDAG::addInput(std::string name, DataTypePtr type
 const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column)
 {
     Node node;
-    node.type = Type::INPUT;
+    node.type = ActionType::INPUT;
     node.result_type = std::move(column.type);
     node.result_name = std::move(column.name);
     node.column = std::move(column.column);
@@ -833,7 +833,7 @@ const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add column {} because it is nullptr", column.name);
 
     Node node;
-    node.type = Type::COLUMN;
+    node.type = ActionType::COLUMN;
     node.result_type = std::move(column.type);
     node.result_name = std::move(column.name);
     node.column = std::move(column.column);
@@ -846,7 +846,7 @@ const ActionsDAG::Node & ActionsDAG::addAlias(const std::string & name, std::str
     auto & child = getNode(name);
 
     Node node;
-    node.type = Type::ALIAS;
+    node.type = ActionType::ALIAS;
     node.result_type = child.result_type;
     node.result_name = std::move(alias);
     node.column = child.column;
@@ -865,7 +865,7 @@ const ActionsDAG::Node & ActionsDAG::addArrayJoin(const std::string & source_nam
         throw Exception("ARRAY JOIN requires array argument", ErrorCodes::TYPE_MISMATCH);
 
     Node node;
-    node.type = Type::ARRAY_JOIN;
+    node.type = ActionType::ARRAY_JOIN;
     node.result_type = array_type->getNestedType();
     node.result_name = std::move(result_name);
     node.children.emplace_back(&child);
@@ -894,7 +894,7 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     size_t num_arguments = argument_names.size();
 
     Node node;
-    node.type = Type::FUNCTION;
+    node.type = ActionType::FUNCTION;
     node.function_builder = function;
     node.children.reserve(num_arguments);
 
@@ -977,7 +977,7 @@ NamesAndTypesList ActionsDAG::getRequiredColumns() const
 {
     NamesAndTypesList result;
     for (const auto & node : nodes)
-        if (node.type == Type::INPUT)
+        if (node.type == ActionType::INPUT)
             result.push_back({node.result_name, node.result_type});
 
     return result;
@@ -1077,7 +1077,7 @@ void ActionsDAG::removeUnusedActions()
         if (!node->children.empty() && node->column && isColumnConst(*node->column) && node->allow_constant_folding)
         {
             /// Constant folding.
-            node->type = ActionsDAG::Type::COLUMN;
+            node->type = ActionsDAG::ActionType::COLUMN;
             node->children.clear();
         }
 
@@ -1114,7 +1114,7 @@ void ActionsDAG::addAliases(const NamesWithAliases & aliases, std::vector<Node *
         if (!item.second.empty() && item.first != item.second)
         {
             Node node;
-            node.type = Type::ALIAS;
+            node.type = ActionType::ALIAS;
             node.result_type = child->result_type;
             node.result_name = std::move(item.second);
             node.column = child->column;
@@ -1160,7 +1160,7 @@ bool ActionsDAG::tryRestoreColumn(const std::string & column_name)
         auto & node = *it;
         if (node.result_name == column_name)
         {
-            index[node.result_name] = &node;
+            index.replace(&node);
             return true;
         }
     }
@@ -1308,7 +1308,7 @@ ExpressionActionsPtr ActionsDAG::linearizeActions() const
             arguments.emplace_back(argument);
         }
 
-        if (node->type == Type::INPUT)
+        if (node->type == ActionType::INPUT)
         {
             /// Argument for input is special. It contains the position from required columns.
             ExpressionActions::Argument argument;
@@ -1328,7 +1328,7 @@ ExpressionActionsPtr ActionsDAG::linearizeActions() const
 
             if (parent_data.num_created_children == parent->children.size())
             {
-                auto & push_stack = parent->type == Type::ARRAY_JOIN ? ready_array_joins : ready_nodes;
+                auto & push_stack = parent->type == ActionType::ARRAY_JOIN ? ready_array_joins : ready_nodes;
                 push_stack.push(parent);
             }
         }
@@ -1398,23 +1398,23 @@ std::string ActionsDAG::dumpDAG() const
         out << map[&node] << " : ";
         switch (node.type)
         {
-            case ActionsDAG::Type::COLUMN:
+            case ActionsDAG::ActionType::COLUMN:
                 out << "COLUMN ";
                 break;
 
-            case ActionsDAG::Type::ALIAS:
+            case ActionsDAG::ActionType::ALIAS:
                 out << "ALIAS ";
                 break;
 
-            case ActionsDAG::Type::FUNCTION:
+            case ActionsDAG::ActionType::FUNCTION:
                 out << "FUNCTION ";
                 break;
 
-            case ActionsDAG::Type::ARRAY_JOIN:
+            case ActionsDAG::ActionType::ARRAY_JOIN:
                 out << "ARRAY JOIN ";
                 break;
 
-            case ActionsDAG::Type::INPUT:
+            case ActionsDAG::ActionType::INPUT:
                 out << "INPUT ";
                 break;
         }

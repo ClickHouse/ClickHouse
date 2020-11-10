@@ -164,7 +164,7 @@ void TotalsHavingTransform::transform(Chunk & chunk)
 
         for (const auto & action : expression->getActions())
         {
-            if (action.node->type == ActionsDAG::Type::ARRAY_JOIN)
+            if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
                 throw Exception("Having clause cannot contain arrayJoin", ErrorCodes::ILLEGAL_COLUMN);
         }
 

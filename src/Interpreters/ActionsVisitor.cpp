@@ -414,7 +414,7 @@ ScopeStack::ScopeStack(ActionsDAGPtr actions, const Context & context_)
     level.actions = std::move(actions);
 
     for (const auto & node : level.actions->getIndex())
-        if (node->type == ActionsDAG::Type::INPUT)
+        if (node->type == ActionsDAG::ActionType::INPUT)
             level.inputs.emplace(node->result_name);
 }
 
@@ -451,7 +451,7 @@ size_t ScopeStack::getColumnLevel(const std::string & name)
         const auto & index = stack[i].actions->getIndex();
         auto it = index.find(name);
 
-        if (it != index.end() && (*it)->type != ActionsDAG::Type::INPUT)
+        if (it != index.end() && (*it)->type != ActionsDAG::ActionType::INPUT)
             return i;
     }
 

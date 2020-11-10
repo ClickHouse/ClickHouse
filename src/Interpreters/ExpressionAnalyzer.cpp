@@ -77,7 +77,7 @@ bool allowEarlyConstantFolding(const ActionsDAG & actions, const Settings & sett
 
     for (const auto & node : actions.getNodes())
     {
-        if (node.type == ActionsDAG::Type::FUNCTION && node.function_base)
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base)
         {
             auto name = node.function_base->getName();
             if (name == "ignore")
@@ -1309,7 +1309,7 @@ void ExpressionAnalysisResult::checkActions() const
         {
             if (actions)
                 for (const auto & node : actions->getNodes())
-                    if (node.type == ActionsDAG::Type::ARRAY_JOIN)
+                    if (node.type == ActionsDAG::ActionType::ARRAY_JOIN)
                         throw Exception("PREWHERE cannot contain ARRAY JOIN action", ErrorCodes::ILLEGAL_PREWHERE);
         };
 

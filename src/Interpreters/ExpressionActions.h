@@ -61,11 +61,20 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 class ActionsDAG;
 using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
 
+/// Directed acyclic graph of expressions.
+/// This is an intermediate representation of actions which is usually built from expression list AST.
+/// Node of DAG describe calculation of a single column with known type, name, and constant value (if applicable).
+///
+/// DAG representation is useful in case we need to know explicit dependencies between actions.
+/// It is helpful when it is needed to optimize actions, remove unused expressions, compile subexpressions,
+/// split or merge parts of graph, calculate expressions on partial input.
+///
+/// Built DAG is used by ExpressionActions, which calculates expressions on block.
 class ActionsDAG
 {
 public:
 
-    enum class Type
+    enum class ActionType
     {
         /// Column which must be in input.
         INPUT,
@@ -82,7 +91,7 @@ public:
     {
         std::vector<Node *> children;
 
-        Type type;
+        ActionType type;
 
         std::string result_name;
         DataTypePtr result_type;
@@ -108,24 +117,11 @@ public:
     {
     private:
         std::list<Node *> list;
+        /// Map key is a string_view to Node::result_name for node from value.
+        /// Map always point to existing node, so key always valid (nodes live longer then index).
         std::unordered_map<std::string_view, std::list<Node *>::iterator> map;
 
     public:
-        Node *& operator[](std::string_view key)
-        {
-            auto res = map.emplace(key, list.end());
-            if (res.second)
-                res.first->second = list.emplace(list.end(), nullptr);
-
-            return *res.first->second;
-        }
-
-        void swap(Index & other)
-        {
-            list.swap(other.list);
-            map.swap(other.map);
-        }
-
         auto size() const { return list.size(); }
         bool contains(std::string_view key) const { return map.count(key) != 0; }
 
@@ -146,6 +142,20 @@ public:
         /// If node with the same name exists, it is removed from map, but not list.
         /// It is expected and used for project(), when result may have several columns with the same name.
         void insert(Node * node) { map[node->result_name] = list.emplace(list.end(), node); }
+
+        /// If node with same name exists in index, replace it. Otherwise insert new node to index.
+        void replace(Node * node)
+        {
+            if (auto handle = map.extract(node->result_name))
+            {
+                handle.key() = node->result_name; /// Change string_view
+                *handle.mapped() = node;
+                map.insert(std::move(handle));
+            }
+            else
+                insert(node);
+        }
+
         void remove(Node * node)
         {
             auto it = map.find(node->result_name);
@@ -154,6 +164,12 @@ public:
 
             list.erase(it->second);
             map.erase(it);
+        }
+
+        void swap(Index & other)
+        {
+            list.swap(other.list);
+            map.swap(other.map);
         }
     };
 
