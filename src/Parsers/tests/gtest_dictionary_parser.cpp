@@ -18,6 +18,7 @@ using namespace DB;
 static String astToString(IAST * ast)
 {
     std::ostringstream oss;
+    oss.exceptions(std::ios::failbit);
     dumpAST(*ast, oss);
     return oss.str();
 }
