@@ -79,17 +79,6 @@ static Block getBlockWithPartColumn(const MergeTreeData::DataPartsVector & parts
     return Block{ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "_part")};
 }
 
-/// Check if ORDER BY clause of the query has some expression.
-static bool sortingDescriptionHasExpressions(const SortDescription & sort_description, const StorageMetadataPtr & metadata_snapshot)
-{
-    auto all_columns = metadata_snapshot->getColumns();
-    for (const auto & sort_column : sort_description)
-    {
-        if (!all_columns.has(sort_column.column_name))
-            return true;
-    }
-    return false;
-}
 
 size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
     const MergeTreeData::DataPartsVector & parts,
