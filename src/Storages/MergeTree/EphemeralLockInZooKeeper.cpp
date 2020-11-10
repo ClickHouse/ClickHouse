@@ -135,13 +135,17 @@ void EphemeralLocksInAllPartitions::unlock()
     if (!zookeeper)
         return;
 
-    Coordination::Requests unlock_ops;
+    std::vector<zkutil::ZooKeeper::FutureMulti> futures;
     for (const auto & lock : locks)
     {
+        Coordination::Requests unlock_ops;
         unlock_ops.emplace_back(zkutil::makeRemoveRequest(lock.path, -1));
         unlock_ops.emplace_back(zkutil::makeRemoveRequest(lock.holder_path, -1));
+        futures.push_back(zookeeper->asyncMulti(unlock_ops));
     }
-    zookeeper->multi(unlock_ops);
+
+    for (auto & future : futures)
+        future.get();
 
     locks.clear();
 }
