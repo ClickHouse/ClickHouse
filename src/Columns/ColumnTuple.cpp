@@ -9,7 +9,7 @@
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
 #include <Core/Field.h>
-
+#include <miniselect/floyd_rivest_select.h>
 
 namespace DB
 {
@@ -352,7 +352,7 @@ void ColumnTuple::getPermutationImpl(size_t limit, Permutation & res, LessOperat
 
     if (limit)
     {
-        std::partial_sort(res.begin(), res.begin() + limit, res.end(), less);
+        miniselect::floyd_rivest_partial_sort(res.begin(), res.begin() + limit, res.end(), less);
     }
     else
     {
