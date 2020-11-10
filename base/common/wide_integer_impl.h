@@ -234,7 +234,6 @@ struct integer<Bits, Signed>::_impl
         constexpr int64_t min_int = std::numeric_limits<int64_t>::min();
 
         constexpr long double max_int_long_double = static_cast<long double>(max_int);
-        constexpr long double min_int_long_double = static_cast<long double>(min_int);
 
         if ((rhs > 0 && rhs < max_int) ||
             (rhs < 0 && rhs > min_int))
