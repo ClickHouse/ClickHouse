@@ -7,6 +7,7 @@ from helpers.client import QueryRuntimeException
 from helpers.network import PartitionManager
 import pytest
 from helpers.client import QueryRuntimeException
+import random
 
 def check_query(clickhouse_node, query, result_set, retry_count=60, interval_seconds=3):
     lastest_result = ''
@@ -573,6 +574,8 @@ def drop_instance_mysql_connections(clickhouse_node, pm, action='DROP'):
 
 def network_partition_test(clickhouse_node, mysql_node, service_name):
     mysql_node.query("CREATE DATABASE test_database;")
+    mysql_node.query("DROP DATABASE IF EXISTS test")
+    clickhouse_node.query("DROP DATABASE IF EXISTS test")
     mysql_node.query("CREATE DATABASE test;")
     mysql_node.query("CREATE TABLE test_database.test_table ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;")
 
@@ -598,4 +601,39 @@ def network_partition_test(clickhouse_node, mysql_node, service_name):
 
         clickhouse_node.query("ATTACH DATABASE test_database")
         check_query(clickhouse_node, "SELECT * FROM test_database.test_table FORMAT TSV", '1\n')
+
+        clickhouse_node.query("DROP DATABASE test_database")
+        mysql_node.query("DROP DATABASE test_database")
+
+def mysql_kill_sync_thread_restore_test(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("CREATE DATABASE test_database;")
+    mysql_node.query("CREATE TABLE test_database.test_table ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;")
+    mysql_node.query("INSERT INTO test_database.test_table VALUES (1)")
+
+    clickhouse_node.query("CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'root', 'clickhouse')".format(service_name))
+    check_query(clickhouse_node, "SELECT * FROM test_database.test_table FORMAT TSV", '1\n')
+
+    result = mysql_node.query_and_get_data("select id from information_schema.processlist where STATE='Master has sent all binlog to slave; waiting for more updates'")
+
+    for row in result:
+        row_result = {}
+        query = "kill " + str(row[0]) + ";"
+        mysql_node.query(query)
+
+    time.sleep(5)
+
+    with pytest.raises(QueryRuntimeException) as exception:
+        clickhouse_node.query("SELECT * FROM test_database.test_table")
+    assert "Cannot read all data" in str(exception.value)
+
+    check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV;", 'test_table\n')
+    clickhouse_node.query("DETACH DATABASE test_database")
+    clickhouse_node.query("ATTACH DATABASE test_database")
+    check_query(clickhouse_node, "SELECT * FROM test_database.test_table FORMAT TSV", '1\n')
+
+    mysql_node.query("INSERT INTO test_database.test_table VALUES (2)")
+    check_query(clickhouse_node, "SELECT * FROM test_database.test_table FORMAT TSV", '2\n1\n')
+
+    mysql_node.query("DROP DATABASE test_database")
+    clickhouse_node.query("DROP DATABASE test_database")
 
