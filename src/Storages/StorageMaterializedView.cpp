@@ -256,10 +256,10 @@ void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & command
 }
 
 Pipe StorageMaterializedView::alterPartition(
-    const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, const PartitionCommands & commands, const Context & context)
+    const StorageMetadataPtr & metadata_snapshot, const PartitionCommands & commands, const Context & context)
 {
     checkStatementCanBeForwarded();
-    return getTargetTable()->alterPartition(query, metadata_snapshot, commands, context);
+    return getTargetTable()->alterPartition(metadata_snapshot, commands, context);
 }
 
 void StorageMaterializedView::checkAlterPartitionIsPossible(
