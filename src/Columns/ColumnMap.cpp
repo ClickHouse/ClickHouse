@@ -32,8 +32,7 @@ std::string ColumnMap::getName() const
 
 ColumnMap::ColumnMap(MutableColumns && mutable_columns)
 {
-    assert(2 == mutable_columns.size());
-    columns.reserve(2);
+    columns.reserve(mutable_columns.size());
     for (auto & column : mutable_columns)
     {
         assert(column->getDataType() == TypeIndex::Array);
