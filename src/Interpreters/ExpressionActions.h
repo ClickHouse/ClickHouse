@@ -314,7 +314,7 @@ private:
 
     ActionsDAGPtr actions_dag;
     Actions actions;
-    size_t num_columns;
+    size_t num_columns = 0;
 
     NamesAndTypesList required_columns;
     ColumnNumbers result_positions;
