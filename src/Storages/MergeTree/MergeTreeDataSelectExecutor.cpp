@@ -1344,6 +1344,9 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
                 pipes.emplace_back(std::move(source_processor));
             }
 
+            if (pipes.empty())
+                continue;
+
             auto pipe = Pipe::unitePipes(std::move(pipes));
 
             /// Drop temporary columns, added by 'sorting_key_expr'
