@@ -16,6 +16,13 @@ namespace DB
 class MergeListEntry;
 class MergeProgressCallback;
 
+enum class SelectPartsDecision
+{
+    SELECTED = 0,
+    CANNOT_SELECT = 1,
+    NOTHING_TO_MERGE = 2,
+};
+
 /// Auxiliary struct holding metainformation for the future merged or mutated part.
 struct FutureMergedMutatedPart
 {
@@ -79,7 +86,7 @@ public:
       *  - Parts between which another part can still appear can not be merged. Refer to METR-7001.
       *  - A part that already merges with something in one place, you can not start to merge into something else in another place.
       */
-    bool selectPartsToMerge(
+    SelectPartsDecision selectPartsToMerge(
         FutureMergedMutatedPart & future_part,
         bool aggressive,
         size_t max_total_size_to_merge,
@@ -90,15 +97,14 @@ public:
     /** Select all the parts in the specified partition for merge, if possible.
       * final - choose to merge even a single part - that is, allow to merge one part "with itself",
       * but if setting optimize_skip_merged_partitions is true (it's true as default) than single part with level > 0
-      * won't be merged with itself.
+      * and without expired TTL won't be merged with itself.
       */
-    bool selectAllPartsToMergeWithinPartition(
+    SelectPartsDecision selectAllPartsToMergeWithinPartition(
         FutureMergedMutatedPart & future_part,
         UInt64 & available_disk_space,
         const AllowedMergingPredicate & can_merge,
         const String & partition_id,
         bool final,
-        bool * is_single_merged_part,
         const StorageMetadataPtr & metadata_snapshot,
         String * out_disable_reason = nullptr);
 
