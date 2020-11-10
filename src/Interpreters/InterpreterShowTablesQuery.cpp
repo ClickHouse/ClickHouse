@@ -33,6 +33,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     if (query.databases)
     {
         std::stringstream rewritten_query;
+        rewritten_query.exceptions(std::ios::failbit);
         rewritten_query << "SELECT name FROM system.databases";
 
         if (!query.like.empty())
@@ -54,6 +55,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     if (query.clusters)
     {
         std::stringstream rewritten_query;
+        rewritten_query.exceptions(std::ios::failbit);
         rewritten_query << "SELECT DISTINCT cluster FROM system.clusters";
 
         if (!query.like.empty())
@@ -73,6 +75,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     else if (query.cluster)
     {
         std::stringstream rewritten_query;
+        rewritten_query.exceptions(std::ios::failbit);
         rewritten_query << "SELECT * FROM system.clusters";
 
         rewritten_query << " WHERE cluster = " << std::quoted(query.cluster_str, '\'');
@@ -87,6 +90,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     DatabaseCatalog::instance().assertDatabaseExists(database);
 
     std::stringstream rewritten_query;
+    rewritten_query.exceptions(std::ios::failbit);
     rewritten_query << "SELECT name FROM system.";
 
     if (query.dictionaries)

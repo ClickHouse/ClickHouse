@@ -178,7 +178,8 @@ void ASTAlterCommand::formatImpl(
     }
     else if (type == ASTAlterCommand::DROP_PARTITION)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << (detach ? "DETACH" : "DROP") << " PARTITION "
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str
+                      << (detach ? "DETACH" : "DROP") << (part ? " PART " : " PARTITION ")
                       << (settings.hilite ? hilite_none : "");
         partition->formatImpl(settings, state, frame);
     }

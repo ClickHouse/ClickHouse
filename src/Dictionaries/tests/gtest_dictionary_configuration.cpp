@@ -19,6 +19,7 @@ static std::string configurationToString(const DictionaryConfigurationPtr & conf
 {
     const Poco::Util::XMLConfiguration * xml_config = dynamic_cast<const Poco::Util::XMLConfiguration *>(config.get());
     std::ostringstream oss;
+    oss.exceptions(std::ios::failbit);
     xml_config->save(oss);
     return oss.str();
 }

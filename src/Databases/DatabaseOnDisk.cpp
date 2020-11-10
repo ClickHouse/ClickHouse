@@ -95,6 +95,7 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
     if (!create)
     {
         std::ostringstream query_stream;
+        query_stream.exceptions(std::ios::failbit);
         formatAST(*query, query_stream, true);
         throw Exception("Query '" + query_stream.str() + "' is not CREATE query", ErrorCodes::LOGICAL_ERROR);
     }
@@ -121,6 +122,7 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
         create->table = TABLE_WITH_UUID_NAME_PLACEHOLDER;
 
     std::ostringstream statement_stream;
+    statement_stream.exceptions(std::ios::failbit);
     formatAST(*create, statement_stream, false);
     statement_stream << '\n';
     return statement_stream.str();
