@@ -71,6 +71,7 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric DelayedInserts;
+    extern const Metric BackgroundMovePoolTask;
 }
 
 
@@ -776,7 +777,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             if (!MergeTreePartInfo::tryParsePartName(part_name, &part_info, format_version))
                 return;
 
-            auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, part_disk_ptr);
+            auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, part_disk_ptr, 0);
             auto part = createPart(part_name, part_info, single_disk_volume, part_name);
             bool broken = false;
 
@@ -2642,6 +2643,17 @@ void MergeTreeData::checkPartitionCanBeDropped(const ASTPtr & partition)
     global_context.checkPartitionCanBeDropped(table_id.database_name, table_id.table_name, partition_size);
 }
 
+void MergeTreeData::checkPartCanBeDropped(const ASTPtr & part_ast)
+{
+    String part_name = part_ast->as<ASTLiteral &>().value.safeGet<String>();
+    auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Committed});
+    if (!part)
+        throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No part {} in commited state", part_name);
+
+    auto table_id = getStorageID();
+    global_context.checkPartitionCanBeDropped(table_id.database_name, table_id.table_name, part->getBytesOnDisk());
+}
+
 void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String & name, bool moving_part, const Context & context)
 {
     String partition_id;
@@ -2996,7 +3008,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
     for (const auto & part_names : renamed_parts.old_and_new_names)
     {
         LOG_DEBUG(log, "Checking part {}", part_names.second);
-        auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_names.first, name_to_disk[part_names.first]);
+        auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_names.first, name_to_disk[part_names.first], 0);
         MutableDataPartPtr part = createPart(part_names.first, single_disk_volume, source_dir + part_names.second);
         loadPartAndFixMetadataImpl(part);
         loaded_parts.push_back(part);
@@ -3205,6 +3217,7 @@ void MergeTreeData::Transaction::rollbackPartsToTemporaryState()
     if (!isEmpty())
     {
         std::stringstream ss;
+        ss.exceptions(std::ios::failbit);
         ss << " Rollbacking parts state to temporary and removing from working set:";
         for (const auto & part : precommitted_parts)
             ss << " " << part->relative_path;
@@ -3223,6 +3236,7 @@ void MergeTreeData::Transaction::rollback()
     if (!isEmpty())
     {
         std::stringstream ss;
+        ss.exceptions(std::ios::failbit);
         ss << " Removing parts:";
         for (const auto & part : precommitted_parts)
             ss << " " << part->relative_path;
@@ -3409,7 +3423,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
     localBackup(disk, src_part_path, dst_part_path);
     disk->removeIfExists(dst_part_path + "/" + IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME);
 
-    auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk);
+    auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
     auto dst_data_part = createPart(dst_part_name, dst_part_info, single_disk_volume, tmp_dst_part_name);
 
     dst_data_part->is_temp = true;
@@ -3614,10 +3628,25 @@ bool MergeTreeData::selectPartsAndMove()
         return false;
 
     auto moving_tagger = selectPartsForMove();
-    if (moving_tagger.parts_to_move.empty())
+    if (moving_tagger->parts_to_move.empty())
         return false;
 
     return moveParts(std::move(moving_tagger));
+}
+
+std::optional<JobAndPool> MergeTreeData::getDataMovingJob()
+{
+    if (parts_mover.moves_blocker.isCancelled())
+        return {};
+
+    auto moving_tagger = selectPartsForMove();
+    if (moving_tagger->parts_to_move.empty())
+        return {};
+
+    return JobAndPool{[this, moving_tagger] () mutable
+    {
+        moveParts(moving_tagger);
+    }, PoolType::MOVE};
 }
 
 bool MergeTreeData::areBackgroundMovesNeeded() const
@@ -3636,13 +3665,13 @@ bool MergeTreeData::movePartsToSpace(const DataPartsVector & parts, SpacePtr spa
         return false;
 
     auto moving_tagger = checkPartsForMove(parts, space);
-    if (moving_tagger.parts_to_move.empty())
+    if (moving_tagger->parts_to_move.empty())
         return false;
 
-    return moveParts(std::move(moving_tagger));
+    return moveParts(moving_tagger);
 }
 
-MergeTreeData::CurrentlyMovingPartsTagger MergeTreeData::selectPartsForMove()
+MergeTreeData::CurrentlyMovingPartsTaggerPtr MergeTreeData::selectPartsForMove()
 {
     MergeTreeMovingParts parts_to_move;
 
@@ -3665,10 +3694,10 @@ MergeTreeData::CurrentlyMovingPartsTagger MergeTreeData::selectPartsForMove()
     std::lock_guard moving_lock(moving_parts_mutex);
 
     parts_mover.selectPartsForMove(parts_to_move, can_move, moving_lock);
-    return CurrentlyMovingPartsTagger(std::move(parts_to_move), *this);
+    return std::make_shared<CurrentlyMovingPartsTagger>(std::move(parts_to_move), *this);
 }
 
-MergeTreeData::CurrentlyMovingPartsTagger MergeTreeData::checkPartsForMove(const DataPartsVector & parts, SpacePtr space)
+MergeTreeData::CurrentlyMovingPartsTaggerPtr MergeTreeData::checkPartsForMove(const DataPartsVector & parts, SpacePtr space)
 {
     std::lock_guard moving_lock(moving_parts_mutex);
 
@@ -3693,14 +3722,14 @@ MergeTreeData::CurrentlyMovingPartsTagger MergeTreeData::checkPartsForMove(const
 
         parts_to_move.emplace_back(part, std::move(reservation));
     }
-    return CurrentlyMovingPartsTagger(std::move(parts_to_move), *this);
+    return std::make_shared<CurrentlyMovingPartsTagger>(std::move(parts_to_move), *this);
 }
 
-bool MergeTreeData::moveParts(CurrentlyMovingPartsTagger && moving_tagger)
+bool MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagger)
 {
-    LOG_INFO(log, "Got {} parts to move.", moving_tagger.parts_to_move.size());
+    LOG_INFO(log, "Got {} parts to move.", moving_tagger->parts_to_move.size());
 
-    for (const auto & moving_part : moving_tagger.parts_to_move)
+    for (const auto & moving_part : moving_tagger->parts_to_move)
     {
         Stopwatch stopwatch;
         DataPartPtr cloned_part;
@@ -3743,6 +3772,7 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
             || settings.min_rows_for_compact_part != 0 || settings.min_bytes_for_compact_part != 0))
         {
             std::ostringstream message;
+            message.exceptions(std::ios::failbit);
             message << "Table can't create parts with adaptive granularity, but settings"
                     << " min_rows_for_wide_part = " << settings.min_rows_for_wide_part
                     << ", min_bytes_for_wide_part = " << settings.min_bytes_for_wide_part

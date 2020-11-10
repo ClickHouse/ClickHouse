@@ -54,9 +54,12 @@ std::pair<String, StoragePtr> createTableFromAST(
 
     if (ast_create_query.as_table_function)
     {
-        const auto & table_function = ast_create_query.as_table_function->as<ASTFunction &>();
         const auto & factory = TableFunctionFactory::instance();
-        StoragePtr storage = factory.get(table_function.name, context)->execute(ast_create_query.as_table_function, context, ast_create_query.table);
+        auto table_function = factory.get(ast_create_query.as_table_function, context);
+        ColumnsDescription columns;
+        if (ast_create_query.columns_list && ast_create_query.columns_list->columns)
+            columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, false);
+        StoragePtr storage = table_function->execute(ast_create_query.as_table_function, context, ast_create_query.table, std::move(columns));
         storage->renameInMemory(ast_create_query);
         return {ast_create_query.table, storage};
     }
@@ -92,6 +95,7 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
     if (!create)
     {
         std::ostringstream query_stream;
+        query_stream.exceptions(std::ios::failbit);
         formatAST(*query, query_stream, true);
         throw Exception("Query '" + query_stream.str() + "' is not CREATE query", ErrorCodes::LOGICAL_ERROR);
     }
@@ -118,6 +122,7 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
         create->table = TABLE_WITH_UUID_NAME_PLACEHOLDER;
 
     std::ostringstream statement_stream;
+    statement_stream.exceptions(std::ios::failbit);
     formatAST(*create, statement_stream, false);
     statement_stream << '\n';
     return statement_stream.str();
@@ -318,7 +323,7 @@ void DatabaseOnDisk::renameTable(
 
     /// Special case: usually no actions with symlinks are required when detaching/attaching table,
     /// but not when moving from Atomic database to Ordinary
-    if (from_atomic_to_ordinary)
+    if (from_atomic_to_ordinary && table->storesDataOnDisk())
     {
         auto & atomic_db = assert_cast<DatabaseAtomic &>(*this);
         atomic_db.tryRemoveSymlink(table_name);

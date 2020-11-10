@@ -82,6 +82,9 @@ public:
     void addMemoryStorage();
     void addMemoryStorage(const String & storage_name_);
 
+    /// Adds LDAPAccessStorage which allows querying remote LDAP server for user info.
+    void addLDAPStorage(const String & storage_name_, const Poco::Util::AbstractConfiguration & config_, const String & prefix_);
+
     /// Adds storages from <users_directories> config.
     void addStoragesFromUserDirectoriesConfig(const Poco::Util::AbstractConfiguration & config,
                                               const String & key,

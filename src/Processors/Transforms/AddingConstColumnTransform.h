@@ -4,33 +4,40 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 /// Adds a materialized const column to the chunk with a specified value.
-template <typename T>
 class AddingConstColumnTransform : public ISimpleTransform
 {
 public:
-    AddingConstColumnTransform(const Block & header, DataTypePtr data_type_, T value_, const String & column_name_)
-        : ISimpleTransform(header, addColumn(header, data_type_, column_name_), false)
-        , data_type(std::move(data_type_)), value(value_) {}
+    AddingConstColumnTransform(const Block & header, ColumnWithTypeAndName column_)
+        : ISimpleTransform(header, transformHeader(header, column_), false)
+        , column(std::move(column_))
+    {
+        if (!column.column || !isColumnConst(*column.column) || !column.column->empty())
+            throw Exception("AddingConstColumnTransform expected empty const column", ErrorCodes::LOGICAL_ERROR);
+    }
 
     String getName() const override { return "AddingConstColumnTransform"; }
+
+    static Block transformHeader(Block header, ColumnWithTypeAndName & column_)
+    {
+        header.insert(column_);
+        return header;
+    }
 
 protected:
     void transform(Chunk & chunk) override
     {
         auto num_rows = chunk.getNumRows();
-        chunk.addColumn(data_type->createColumnConst(num_rows, value)->convertToFullColumnIfConst());
+        chunk.addColumn(column.column->cloneResized(num_rows)->convertToFullColumnIfConst());
     }
 
 private:
-    static Block addColumn(Block header, const DataTypePtr & data_type, const String & column_name)
-    {
-        header.insert({data_type->createColumn(), data_type, column_name});
-        return header;
-    }
-
-    DataTypePtr data_type;
-    T value;
+    ColumnWithTypeAndName column;
 };
 
 }

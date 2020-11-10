@@ -2,11 +2,13 @@
 #include <IO/Operators.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTAssignment.h>
+#include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
 #include <Core/Defines.h>
@@ -32,6 +34,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.ast = command->ptr();
         res.type = DELETE;
         res.predicate = command->predicate;
+        res.partition = command->partition;
         return res;
     }
     else if (command->type == ASTAlterCommand::UPDATE)
@@ -40,6 +43,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.ast = command->ptr();
         res.type = UPDATE;
         res.predicate = command->predicate;
+        res.partition = command->partition;
         for (const ASTPtr & assignment_ast : command->update_assignments->children)
         {
             const auto & assignment = assignment_ast->as<ASTAssignment &>();
@@ -57,7 +61,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.type = MATERIALIZE_INDEX;
         res.partition = command->partition;
         res.predicate = nullptr;
-        res.index_name = command->index->as<ASTIdentifier &>().name;
+        res.index_name = command->index->as<ASTIdentifier &>().name();
         return res;
     }
     else if (parse_alter_commands && command->type == ASTAlterCommand::MODIFY_COLUMN)
@@ -88,7 +92,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         MutationCommand res;
         res.ast = command->ptr();
         res.type = MutationCommand::Type::DROP_INDEX;
-        res.column_name = command->index->as<ASTIdentifier &>().name;
+        res.column_name = command->index->as<ASTIdentifier &>().name();
         if (command->partition)
             res.partition = command->partition;
         if (command->clear_index)
@@ -100,8 +104,8 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         MutationCommand res;
         res.ast = command->ptr();
         res.type = MutationCommand::Type::RENAME_COLUMN;
-        res.column_name = command->column->as<ASTIdentifier &>().name;
-        res.rename_to = command->rename_to->as<ASTIdentifier &>().name;
+        res.column_name = command->column->as<ASTIdentifier &>().name();
+        res.rename_to = command->rename_to->as<ASTIdentifier &>().name();
         return res;
     }
     else if (command->type == ASTAlterCommand::MATERIALIZE_TTL)
@@ -124,9 +128,11 @@ std::shared_ptr<ASTAlterCommandList> MutationCommands::ast() const
     return res;
 }
 
+
 void MutationCommands::writeText(WriteBuffer & out) const
 {
     std::stringstream commands_ss;
+    commands_ss.exceptions(std::ios::failbit);
     formatAST(*ast(), commands_ss, /* hilite = */ false, /* one_line = */ true);
     out << escape << commands_ss.str();
 }

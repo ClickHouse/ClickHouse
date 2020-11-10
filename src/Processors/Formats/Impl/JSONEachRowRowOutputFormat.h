@@ -18,7 +18,7 @@ public:
     JSONEachRowRowOutputFormat(
         WriteBuffer & out_,
         const Block & header_,
-        FormatFactory::WriteCallback callback,
+        const RowOutputFormatParams & params_,
         const FormatSettings & settings_,
         bool yield_strings_);
 

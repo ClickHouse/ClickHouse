@@ -134,6 +134,7 @@ void PrettyCompactBlockOutputFormat::writeBottom(const Widths & max_widths)
                                        ascii_grid_symbols;
     /// Create delimiters
     std::stringstream bottom_separator;
+    bottom_separator.exceptions(std::ios::failbit);
 
     bottom_separator << grid_symbols.left_bottom_corner;
     for (size_t i = 0; i < max_widths.size(); ++i)
@@ -259,7 +260,7 @@ void registerOutputFormatProcessorPrettyCompact(FormatFactory & factory)
         factory.registerOutputFormatProcessor(name, [mono_block = mono_block](
             WriteBuffer & buf,
             const Block & sample,
-            FormatFactory::WriteCallback,
+            const RowOutputFormatParams &,
             const FormatSettings & format_settings)
         {
             return std::make_shared<PrettyCompactBlockOutputFormat>(buf, sample, format_settings, mono_block);
@@ -269,7 +270,7 @@ void registerOutputFormatProcessorPrettyCompact(FormatFactory & factory)
     factory.registerOutputFormatProcessor("PrettyCompactNoEscapes", [](
         WriteBuffer & buf,
         const Block & sample,
-        FormatFactory::WriteCallback,
+        const RowOutputFormatParams &,
         const FormatSettings & format_settings)
     {
         FormatSettings changed_settings = format_settings;

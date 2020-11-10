@@ -5,14 +5,11 @@ PEERDIR(
     clickhouse/src/Common
 )
 
-CFLAGS(-g0)
 
 SRCS(
     ITableFunction.cpp
     ITableFunctionFileLike.cpp
     ITableFunctionXDBC.cpp
-    parseColumnsListForTableFunction.cpp
-    registerTableFunctions.cpp
     TableFunctionFactory.cpp
     TableFunctionFile.cpp
     TableFunctionGenerateRandom.cpp
@@ -26,6 +23,8 @@ SRCS(
     TableFunctionValues.cpp
     TableFunctionView.cpp
     TableFunctionZeros.cpp
+    parseColumnsListForTableFunction.cpp
+    registerTableFunctions.cpp
 
 )
 

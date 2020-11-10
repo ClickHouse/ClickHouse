@@ -13,7 +13,6 @@
 namespace DB
 {
 
-class MergeListEntry;
 class MergeProgressCallback;
 
 enum class SelectPartsDecision

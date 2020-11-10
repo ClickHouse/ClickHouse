@@ -22,6 +22,7 @@
 
 #include <Common/typeid_cast.h>
 #include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 
 
 namespace DB
@@ -101,15 +102,30 @@ StorageMaterializedView::StorageMaterializedView(
         DatabaseCatalog::instance().addDependency(select.select_table_id, getStorageID());
 }
 
-QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, const ASTPtr & query_ptr) const
+QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, SelectQueryInfo & query_info) const
 {
-    return getTargetTable()->getQueryProcessingStage(context, to_stage, query_ptr);
+    return getTargetTable()->getQueryProcessingStage(context, to_stage, query_info);
 }
 
 Pipe StorageMaterializedView::read(
     const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
+    SelectQueryInfo & query_info,
+    const Context & context,
+    QueryProcessingStage::Enum processed_stage,
+    const size_t max_block_size,
+    const unsigned num_streams)
+{
+    QueryPlan plan;
+    read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+    return plan.convertToPipe();
+}
+
+void StorageMaterializedView::read(
+    QueryPlan & query_plan,
+    const Names & column_names,
     const StorageMetadataPtr & /*metadata_snapshot*/,
-    const SelectQueryInfo & query_info,
+    SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
@@ -120,12 +136,28 @@ Pipe StorageMaterializedView::read(
     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
 
     if (query_info.order_optimizer)
-        query_info.input_order_info = query_info.order_optimizer->getInputOrder(storage, metadata_snapshot);
+        query_info.input_order_info = query_info.order_optimizer->getInputOrder(metadata_snapshot);
 
-    Pipe pipe = storage->read(column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    pipe.addTableLock(lock);
+    storage->read(query_plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
 
-    return pipe;
+    if (query_plan.isInitialized())
+    {
+        StreamLocalLimits limits;
+        SizeLimits leaf_limits;
+
+        /// Add table lock for destination table.
+        auto adding_limits_and_quota = std::make_unique<SettingQuotaAndLimitsStep>(
+                query_plan.getCurrentDataStream(),
+                storage,
+                std::move(lock),
+                limits,
+                leaf_limits,
+                nullptr,
+                nullptr);
+
+        adding_limits_and_quota->setStepDescription("Lock destination table for Buffer");
+        query_plan.addStep(std::move(adding_limits_and_quota));
+    }
 }
 
 BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context)
@@ -255,10 +287,10 @@ void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & command
 }
 
 Pipe StorageMaterializedView::alterPartition(
-    const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, const PartitionCommands & commands, const Context & context)
+    const StorageMetadataPtr & metadata_snapshot, const PartitionCommands & commands, const Context & context)
 {
     checkStatementCanBeForwarded();
-    return getTargetTable()->alterPartition(query, metadata_snapshot, commands, context);
+    return getTargetTable()->alterPartition(metadata_snapshot, commands, context);
 }
 
 void StorageMaterializedView::checkAlterPartitionIsPossible(

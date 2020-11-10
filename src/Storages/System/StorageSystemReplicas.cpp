@@ -59,7 +59,7 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
 Pipe StorageSystemReplicas::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    const SelectQueryInfo & query_info,
+    SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
@@ -74,8 +74,8 @@ Pipe StorageSystemReplicas::read(
     std::map<String, std::map<String, StoragePtr>> replicated_tables;
     for (const auto & db : DatabaseCatalog::instance().getDatabases())
     {
-        /// Lazy database can not contain replicated tables
-        if (db.second->getEngineName() == "Lazy")
+        /// Check if database can contain replicated tables
+        if (!db.second->canContainMergeTreeTables())
             continue;
         const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, db.first);
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())

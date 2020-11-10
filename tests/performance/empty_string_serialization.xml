@@ -1,4 +1,4 @@
-<test max_ignored_relative_change="0.2">
+<test>
 
 
     <!-- gcc-8 generates 20% faster code than gcc-9

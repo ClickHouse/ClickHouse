@@ -20,6 +20,7 @@ namespace ErrorCodes
 
 
 thread_local ThreadStatus * current_thread = nullptr;
+thread_local ThreadStatus * main_thread = nullptr;
 
 
 ThreadStatus::ThreadStatus()
@@ -79,6 +80,7 @@ void ThreadStatus::assertState(const std::initializer_list<int> & permitted_stat
     }
 
     std::stringstream ss;
+    ss.exceptions(std::ios::failbit);
     ss << "Unexpected thread state " << getCurrentState();
     if (description)
         ss << ": " << description;
@@ -113,6 +115,22 @@ void ThreadStatus::onFatalError()
 {
     if (fatal_error_callback)
         fatal_error_callback();
+}
+
+ThreadStatus * MainThreadStatus::main_thread = nullptr;
+MainThreadStatus & MainThreadStatus::getInstance()
+{
+    static MainThreadStatus thread_status;
+    return thread_status;
+}
+MainThreadStatus::MainThreadStatus()
+    : ThreadStatus()
+{
+    main_thread = current_thread;
+}
+MainThreadStatus::~MainThreadStatus()
+{
+    main_thread = nullptr;
 }
 
 }

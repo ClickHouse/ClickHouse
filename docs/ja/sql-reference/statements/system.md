@@ -24,12 +24,12 @@ toc_title: SYSTEM
 ## RELOAD DICTIONARIES {#query_language-system-reload-dictionaries}
 
 以前に正常に読み込まれたすべての辞書を再読み込みします。
-デフォルトでは、辞書は遅延して読み込まれます [dictionaries\_lazy\_load](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load)）したがって、起動時に自動的にロードされるのではなく、dictGet関数による最初のアクセス時に初期化されるか、ENGINE=Dictionaryを使用してテーブルから選択されます。 その `SYSTEM RELOAD DICTIONARIES` クエバなどの辞書(ロード).
+デフォルトでは、辞書は遅延して読み込まれます [dictionaries_lazy_load](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load)）したがって、起動時に自動的にロードされるのではなく、dictGet関数による最初のアクセス時に初期化されるか、ENGINE=Dictionaryを使用してテーブルから選択されます。 その `SYSTEM RELOAD DICTIONARIES` クエバなどの辞書(ロード).
 常に戻ります `Ok.` 辞書の更新の結果に関係なく。
 
-## 辞書Dictionary\_nameを再読み込み {#query_language-system-reload-dictionary}
+## 辞書Dictionary_nameを再読み込み {#query_language-system-reload-dictionary}
 
-辞書を完全に再読み込みします `dictionary_name` ディクショナリの状態に関係なく(LOADED/NOT\_LOADED/FAILED)。
+辞書を完全に再読み込みします `dictionary_name` ディクショナリの状態に関係なく(LOADED/NOT_LOADED/FAILED)。
 常に戻ります `Ok.` 辞書の更新の結果に関係なく。
 ディクショナリのステータスは、 `system.dictionaries` テーブル。
 
@@ -41,7 +41,7 @@ SELECT name, status FROM system.dictionaries;
 
 ClickHouseの内部DNSキャッシュをリセットします。 場合によっては（古いClickHouseバージョンの場合）、インフラストラクチャを変更するとき（別のClickHouseサーバーまたは辞書で使用されているサーバーのIPアドレスを変更す
 
-より便利な(自動)キャッシュ管理については、"disable\_internal\_dns\_cache,dns\_cache\_update\_periodパラメーター"を参照してください。
+より便利な(自動)キャッシュ管理については、"disable_internal_dns_cache,dns_cache_update_periodパラメーター"を参照してください。
 
 ## DROP MARK CACHE {#query_language-system-drop-mark-cache}
 
@@ -49,7 +49,7 @@ ClickHouseの内部DNSキャッシュをリセットします。 場合によっ
 
 ## FLUSH LOGS {#query_language-system-flush_logs}
 
-Flushes buffers of log messages to system tables (e.g. system.query\_log). Allows you to not wait 7.5 seconds when debugging.
+Flushes buffers of log messages to system tables (e.g. system.query_log). Allows you to not wait 7.5 seconds when debugging.
 
 ## RELOAD CONFIG {#query_language-system-reload-config}
 

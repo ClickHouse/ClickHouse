@@ -158,12 +158,25 @@ public:
         }
         else
         {
-            randomShuffle(samples);
+            /// Replace every element in our reservoir to the b's reservoir
+            /// with the probability of b.total_values / (a.total_values + b.total_values)
+            /// Do it more roughly than true random sampling to save performance.
+
             total_values += b.total_values;
-            for (size_t i = 0; i < sample_count; ++i)
+
+            /// Will replace every frequency'th element in a to element from b.
+            double frequency = static_cast<double>(total_values) / b.total_values;
+
+            /// When frequency is too low, replace just one random element with the corresponding probability.
+            if (frequency * 2 >= sample_count)
             {
-                UInt64 rnd = genRandom(total_values);
-                if (rnd < b.total_values)
+                UInt64 rnd = genRandom(frequency);
+                if (rnd < sample_count)
+                    samples[rnd] = b.samples[rnd];
+            }
+            else
+            {
+                for (double i = 0; i < sample_count; i += frequency)
                     samples[i] = b.samples[i];
             }
         }
@@ -178,6 +191,7 @@ public:
         std::string rng_string;
         DB::readStringBinary(rng_string, buf);
         std::istringstream rng_stream(rng_string);
+        rng_stream.exceptions(std::ios::failbit);
         rng_stream >> rng;
 
         for (size_t i = 0; i < samples.size(); ++i)
@@ -192,6 +206,7 @@ public:
         DB::writeIntBinary<size_t>(total_values, buf);
 
         std::ostringstream rng_stream;
+        rng_stream.exceptions(std::ios::failbit);
         rng_stream << rng;
         DB::writeStringBinary(rng_stream.str(), buf);
 
@@ -200,9 +215,6 @@ public:
     }
 
 private:
-    friend void qdigest_test(int normal_size, UInt64 value_limit, const std::vector<UInt64> & values, int queries_count, bool verbose);
-    friend void rs_perf_test();
-
     /// We allocate a little memory on the stack - to avoid allocations when there are many objects with a small number of elements.
     using Array = DB::PODArrayWithStackMemory<T, 64>;
 
@@ -220,15 +232,6 @@ private:
             return static_cast<UInt32>(rng()) % static_cast<UInt32>(lim);
         else
             return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(rng.max()) + 1ULL) + static_cast<UInt64>(rng())) % lim;
-    }
-
-    void randomShuffle(Array & v)
-    {
-        for (size_t i = 1; i < v.size(); ++i)
-        {
-            size_t j = genRandom(i + 1);
-            std::swap(v[i], v[j]);
-        }
     }
 
     void sortIfNeeded()
