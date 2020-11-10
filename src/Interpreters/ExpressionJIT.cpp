@@ -875,7 +875,7 @@ void ActionsDAG::compileFunctions()
                         std::vector<Node *> new_children;
                         auto dag = getCompilableDAG(frame.node, new_children, used_in_result);
 
-                        if (auto fn = compile(dag, min_count_to_compile_expression, compilation_cache))
+                        if (auto fn = compile(dag, settings.min_count_to_compile_expression, compilation_cache))
                         {
                             /// Replace current node to compilable function.
 
