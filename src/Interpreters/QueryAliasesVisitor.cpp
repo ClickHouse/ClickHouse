@@ -1,6 +1,3 @@
-#include <ostream>
-#include <sstream>
-
 #include <Common/typeid_cast.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Parsers/ASTTablesInSelectQuery.h>

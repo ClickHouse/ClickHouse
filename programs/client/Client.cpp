@@ -1189,6 +1189,7 @@ private:
                         fprintf(stderr, "dump after fuzz:\n");
                         WriteBufferFromOStream cerr_buf(std::cerr, 4096);
                         fuzz_base->dumpTree(cerr_buf);
+                        cerr_buf.next();
 
                         fmt::print(stderr, "IAST::clone() is broken for some AST node. This is a bug. The original AST ('dump before fuzz') and its cloned copy ('dump of cloned AST') refer to the same nodes, which must never happen. This means that their parent node doesn't implement clone() correctly.");
 
@@ -1533,6 +1534,7 @@ private:
             std::cout << std::endl;
             WriteBufferFromOStream res_buf(std::cout, 4096);
             formatAST(*res, res_buf);
+            res_buf.next();
             std::cout << std::endl << std::endl;
         }
 

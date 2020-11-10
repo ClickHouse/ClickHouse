@@ -3,7 +3,6 @@
 #include <limits>
 #include <algorithm>
 #include <climits>
-#include <sstream>
 #include <common/types.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>

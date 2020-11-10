@@ -1,5 +1,4 @@
 #include <Parsers/ASTWithAlias.h>
-#include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 

@@ -5,7 +5,6 @@
 #include <Common/quoteString.h>
 #include <ext/range.h>
 #include <boost/range/algorithm/transform.hpp>
-#include <sstream>
 #include <IO/Operators.h>
 
 

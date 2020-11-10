@@ -1,6 +1,5 @@
 #pragma once
 
-#include <sstream>
 #include <common/logger_useful.h>
 #include <Poco/Util/Application.h>
 #include <IO/Operators.h>

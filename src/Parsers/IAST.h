@@ -8,9 +8,7 @@
 #include <IO/WriteBufferFromString.h>
 
 #include <algorithm>
-#include <ostream>
 #include <set>
-#include <sstream>
 
 
 class SipHash;
