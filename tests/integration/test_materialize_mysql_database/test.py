@@ -20,24 +20,22 @@ def started_cluster():
         cluster.start()
         yield cluster
     finally:
-        cluster.shutdown()
+        #cluster.shutdown()
+        pass
 
 
 class MySQLNodeInstance:
-    def __init__(self, user='root', password='clickhouse', hostname='127.0.0.1', port=3308):
+    def __init__(self, user='root', password='clickhouse', ip_address='127.0.0.1', port=3308):
         self.user = user
         self.port = port
-        self.hostname = hostname
+        self.ip_address = ip_address
         self.password = password
         self.mysql_connection = None  # lazy init
 
-    def getPort(self):
-        if self.port is not None:
-            return self.port
 
     def alloc_connection(self):
         if self.mysql_connection is None:
-            self.mysql_connection = pymysql.connect(user=self.user, password=self.password, host=self.hostname,
+            self.mysql_connection = pymysql.connect(user=self.user, password=self.password, host=self.ip_address,
                                                     port=self.port, autocommit=True)
         return self.mysql_connection
 

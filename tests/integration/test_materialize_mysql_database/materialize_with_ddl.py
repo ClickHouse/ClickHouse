@@ -5,6 +5,8 @@ import pymysql.cursors
 import pytest
 from helpers.client import QueryRuntimeException
 from helpers.network import PartitionManager
+import pytest
+from helpers.client import QueryRuntimeException
 
 def check_query(clickhouse_node, query, result_set, retry_count=60, interval_seconds=3):
     lastest_result = ''
@@ -557,28 +559,42 @@ def err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, mysql_n
     mysql_node.query("DROP DATABASE priv_err_db;")
     mysql_node.grant_min_priv_for_user("test")
 
+def restore_instance_mysql_connections(clickhouse_node, pm, action='DROP'):
+    pm._check_instance(clickhouse_node)
+    pm._delete_rule({'source': clickhouse_node.ip_address, 'destination_port': 3306, 'action': action})
+    pm._delete_rule({'destination': clickhouse_node.ip_address, 'source_port': 3306, 'action': action})
+    time.sleep(5)
+
+def drop_instance_mysql_connections(clickhouse_node, pm, action='DROP'):
+    pm._check_instance(clickhouse_node)
+    pm._add_rule({'source': clickhouse_node.ip_address, 'destination_port': 3306, 'action': action})
+    pm._add_rule({'destination': clickhouse_node.ip_address, 'source_port': 3306, 'action': action})
+    time.sleep(5)
 
 def network_partition_test(clickhouse_node, mysql_node, service_name):
     mysql_node.query("CREATE DATABASE test_database;")
+    mysql_node.query("CREATE DATABASE test;")
     mysql_node.query("CREATE TABLE test_database.test_table ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;")
 
     with PartitionManager() as pm:
         clickhouse_node.query(
             "CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'root', 'clickhouse')".format(service_name))
 
-        pm._check_instance(clickhouse_node)
-        pm._add_rule({'source': clickhouse_node.ip_address, 'destination_port': 3306, 'action': 'DROP'})
-        pm._add_rule({'destination': clickhouse_node.ip_address, 'source_port': 3306, 'action': 'DROP'})
-        time.sleep(5)
+        drop_instance_mysql_connections(clickhouse_node, pm)
 
         mysql_node.query('INSERT INTO test_database.test_table VALUES(1)')
         check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table\n")
-        check_query(clickhouse_node, "SELECT * FROM test_database.test_table FORMAT TSV", '')
+        check_query(clickhouse_node, "SELECT * FROM test_database.test_table", '')
+
+        with pytest.raises(QueryRuntimeException) as exception:
+            clickhouse_node.query(
+                "CREATE DATABASE test ENGINE = MaterializeMySQL('{}:3306', 'test', 'root', 'clickhouse')".format(service_name))
+
+        assert "Can't connect to MySQL server" in str(exception.value)
+
         clickhouse_node.query("DETACH DATABASE test_database")
 
-        pm._delete_rule({'source': clickhouse_node.ip_address, 'destination_port': 3306, 'action': 'DROP'})
-        pm._delete_rule({'destination': clickhouse_node.ip_address, 'source_port': 3306, 'action': 'DROP'})
-        time.sleep(5)
+        restore_instance_mysql_connections(clickhouse_node, pm)
 
         clickhouse_node.query("ATTACH DATABASE test_database")
         check_query(clickhouse_node, "SELECT * FROM test_database.test_table FORMAT TSV", '1\n')
