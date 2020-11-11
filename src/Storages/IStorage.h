@@ -443,6 +443,8 @@ public:
     /// Otherwise - throws an exception with detailed information.
     /// We do not use mutex because it is not very important that the size could change during the operation.
     virtual void checkTableCanBeDropped() const {}
+    /// Similar to above but checks for DETACH. It's only used for DICTIONARIES.
+    virtual void checkTableCanBeDetached() const {}
 
     /// Checks that Partition could be dropped right now
     /// Otherwise - throws an exception with detailed information.
