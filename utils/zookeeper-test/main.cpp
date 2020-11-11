@@ -1,4 +1,3 @@
-#include <iostream>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/ConsoleChannel.h>
@@ -13,6 +12,8 @@
 #include <exception>
 
 using namespace std;
+
+/// TODO: Remove ME
 
 void checkEq(zkutil::ZooKeeper & zk, const std::string & path, const std::string & expected)
 {
