@@ -12,7 +12,6 @@
 #endif
 
 
-
 namespace DB
 {
 
