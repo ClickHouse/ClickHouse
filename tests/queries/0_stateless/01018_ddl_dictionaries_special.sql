@@ -72,37 +72,6 @@ SELECT dictGetFloat64('database_for_dict.dict2', 'Tax', toUInt64(1), toDateTime(
 SELECT dictGetFloat64('database_for_dict.dict2', 'Tax', toUInt64(2), toDateTime('2019-05-29 00:00:00'));
 SELECT dictGetFloat64('database_for_dict.dict2', 'Tax', toUInt64(2), toDateTime('2019-05-31 00:00:00'));
 
-SELECT '***ip trie dict***';
-
-CREATE TABLE database_for_dict.table_ip_trie
-(
-    prefix String,
-    asn UInt32,
-    cca2 String
-)
-engine = TinyLog;
-
-INSERT INTO database_for_dict.table_ip_trie VALUES ('202.79.32.0/20', 17501, 'NP'), ('202.79.32.2', 17502, 'NP'), ('101.79.55.22', 11211, 'UK'), ('2620:0:870::/48', 3856, 'US'), ('2a02:6b8:1::/48', 13238, 'RU'), ('2001:db8::/32', 65536, 'ZZ');
-
-CREATE DICTIONARY database_for_dict.dict_ip_trie
-(
-  prefix String,
-  asn UInt32,
-  cca2 String
-)
-PRIMARY KEY prefix
-SOURCE(CLICKHOUSE(host 'localhost' port 9000 user 'default' db 'database_for_dict' table 'table_ip_trie'))
-LAYOUT(IP_TRIE())
-LIFETIME(MIN 10 MAX 100);
-
-SELECT dictGetUInt32('database_for_dict.dict_ip_trie', 'asn', tuple(IPv4StringToNum('202.79.32.0')));
-SELECT dictGetUInt32('database_for_dict.dict_ip_trie', 'asn', tuple(IPv4StringToNum('202.79.32.1')));
-SELECT dictGetUInt32('database_for_dict.dict_ip_trie', 'asn', tuple(IPv4StringToNum('202.79.32.2')));
-SELECT dictHas('database_for_dict.dict_ip_trie', tuple(IPv6StringToNum('654f:3716::')));
-SELECT dictGetUInt32('database_for_dict.dict_ip_trie', 'asn', tuple(IPv6StringToNum('::ffff:654f:3716')));
-SELECT dictGetUInt32('database_for_dict.dict_ip_trie', 'asn', tuple(IPv6StringToNum('::ffff:101.79.55.22')));
-SELECT dictGetString('database_for_dict.dict_ip_trie', 'cca2', tuple(IPv4StringToNum('202.79.32.0')));
-
 SELECT '***hierarchy dict***';
 
 CREATE TABLE database_for_dict.table_with_hierarchy

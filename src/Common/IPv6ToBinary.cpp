@@ -30,29 +30,4 @@ std::array<char, 16> IPv6ToBinary(const Poco::Net::IPAddress & address)
     return res;
 }
 
-
-UInt32 IPv4ToBinary(const Poco::Net::IPAddress & address, bool & success)
-{
-    if (!address.isIPv4Mapped())
-    {
-        success = false;
-        return 0;
-    }
-
-    success = true;
-    if (Poco::Net::IPAddress::IPv6 == address.family())
-    {
-        auto raw = reinterpret_cast<const uint8_t *>(address.addr());
-        return *reinterpret_cast<const UInt32 *>(&raw[12]);
-    }
-    else if (Poco::Net::IPAddress::IPv4 == address.family())
-    {
-        auto raw = reinterpret_cast<const uint8_t *>(address.addr());
-        return *reinterpret_cast<const UInt32 *>(raw);
-    }
-
-    success = false;
-    return 0;
-}
-
 }
