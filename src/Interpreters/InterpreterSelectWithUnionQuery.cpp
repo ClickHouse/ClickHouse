@@ -33,10 +33,8 @@ struct CustomizeASTSelectWithUnionQueryNormalize
     {
         if (auto * inner_union = ast_select->as<ASTSelectWithUnionQuery>())
         {
-            /// We need flatten from last to first
-            for (auto child = inner_union->list_of_selects->children.rbegin(); child != inner_union->list_of_selects->children.rend();
-                 ++child)
-                getSelectsFromUnionListNode(*child, selects);
+            for (auto & child : inner_union->list_of_selects->children)
+                getSelectsFromUnionListNode(child, selects);
 
             return;
         }
@@ -85,13 +83,13 @@ struct CustomizeASTSelectWithUnionQueryNormalize
                 auto distinct_list = std::make_shared<ASTSelectWithUnionQuery>();
                 distinct_list->list_of_selects = std::make_shared<ASTExpressionList>();
                 distinct_list->children.push_back(distinct_list->list_of_selects);
-                for (int j = i + 1; j >= 0; j--)
+
+                for (int j = 0; j <= i + 1; ++j)
                 {
                     getSelectsFromUnionListNode(select_list[j], distinct_list->list_of_selects->children);
                 }
+
                 distinct_list->union_mode = ASTSelectWithUnionQuery::Mode::DISTINCT;
-                // Reverse children list
-                std::reverse(distinct_list->list_of_selects->children.begin(), distinct_list->list_of_selects->children.end());
                 distinct_list->is_normalized = true;
                 selects.push_back(std::move(distinct_list));
                 break;
