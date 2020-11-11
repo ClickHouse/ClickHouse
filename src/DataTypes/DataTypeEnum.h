@@ -92,6 +92,8 @@ public:
                 FieldType x;
                 ReadBufferFromMemory tmp_buf(field_name.data, field_name.size);
                 readText(x, tmp_buf);
+                /// Check if we reached end of the tmp_buf (otherwise field_name is not a number)
+                /// and try to find it in enum ids
                 if (tmp_buf.eof() && value_to_name_map.find(x) != value_to_name_map.end())
                     return x;
             }
