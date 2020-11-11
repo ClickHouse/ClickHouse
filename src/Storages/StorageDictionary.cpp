@@ -130,6 +130,11 @@ void StorageDictionary::checkTableCanBeDropped() const
         throw Exception("Cannot detach table " + getStorageID().getFullTableName() + " from a database with DICTIONARY engine", ErrorCodes::CANNOT_DETACH_DICTIONARY_AS_TABLE);
 }
 
+void StorageDictionary::checkTableCanBeDetached() const
+{
+    checkTableCanBeDropped();
+}
+
 Pipe StorageDictionary::read(
     const Names & column_names,
     const StorageMetadataPtr & /*metadata_snapshot*/,
