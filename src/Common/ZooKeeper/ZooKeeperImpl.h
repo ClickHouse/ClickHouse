@@ -99,9 +99,6 @@ public:
 
     using Nodes = std::vector<Node>;
 
-    using XID = int32_t;
-    using OpNum = int32_t;
-
     /** Connection to nodes is performed in order. If you want, shuffle them manually.
       * Operation timeout couldn't be greater than session timeout.
       * Operation timeout applies independently for network read, network write, waiting for events and synchronization.

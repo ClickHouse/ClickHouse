@@ -1,4 +1,5 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -11,165 +12,6 @@ namespace Coordination
 {
 
 using namespace DB;
-
-/// ZooKeeper has 1 MB node size and serialization limit by default,
-/// but it can be raised up, so we have a slightly larger limit on our side.
-#define MAX_STRING_OR_ARRAY_SIZE (1 << 28)  /// 256 MiB
-
-/// Assuming we are at little endian.
-
-static void write(int64_t x, WriteBuffer & out)
-{
-    x = __builtin_bswap64(x);
-    writeBinary(x, out);
-}
-
-static void write(int32_t x, WriteBuffer & out)
-{
-    x = __builtin_bswap32(x);
-    writeBinary(x, out);
-}
-
-static void write(bool x, WriteBuffer & out)
-{
-    writeBinary(x, out);
-}
-
-static void write(const String & s, WriteBuffer & out)
-{
-    write(int32_t(s.size()), out);
-    out.write(s.data(), s.size());
-}
-
-template <size_t N> void write(std::array<char, N> s, WriteBuffer & out)
-{
-    write(int32_t(N), out);
-    out.write(s.data(), N);
-}
-
-template <typename T> void write(const std::vector<T> & arr, WriteBuffer & out)
-{
-    write(int32_t(arr.size()), out);
-    for (const auto & elem : arr)
-        write(elem, out);
-}
-
-static void write(const ACL & acl, WriteBuffer & out)
-{
-    write(acl.permissions, out);
-    write(acl.scheme, out);
-    write(acl.id, out);
-}
-
-static void write(const Stat & stat, WriteBuffer & out)
-{
-    write(stat.czxid, out);
-    write(stat.mzxid, out);
-    write(stat.ctime, out);
-    write(stat.mtime, out);
-    write(stat.version, out);
-    write(stat.cversion, out);
-    write(stat.aversion, out);
-    write(stat.ephemeralOwner, out);
-    write(stat.dataLength, out);
-    write(stat.numChildren, out);
-    write(stat.pzxid, out);
-}
-
-static void write(const Error & x, WriteBuffer & out)
-{
-    write(static_cast<int32_t>(x), out);
-}
-
-static void read(int64_t & x, ReadBuffer & in)
-{
-    readBinary(x, in);
-    x = __builtin_bswap64(x);
-}
-
-static void read(int32_t & x, ReadBuffer & in)
-{
-    readBinary(x, in);
-    x = __builtin_bswap32(x);
-}
-
-static void read(Error & x, ReadBuffer & in)
-{
-    int32_t code;
-    read(code, in);
-    x = Error(code);
-}
-
-static void read(bool & x, ReadBuffer & in)
-{
-    readBinary(x, in);
-}
-
-static void read(String & s, ReadBuffer & in)
-{
-    int32_t size = 0;
-    read(size, in);
-
-    if (size == -1)
-    {
-        /// It means that zookeeper node has NULL value. We will treat it like empty string.
-        s.clear();
-        return;
-    }
-
-    if (size < 0)
-        throw Exception("Negative size while reading string from ZooKeeper", Error::ZMARSHALLINGERROR);
-
-    if (size > MAX_STRING_OR_ARRAY_SIZE)
-        throw Exception("Too large string size while reading from ZooKeeper", Error::ZMARSHALLINGERROR);
-
-    s.resize(size);
-    in.read(s.data(), size);
-}
-
-template <size_t N> void read(std::array<char, N> & s, ReadBuffer & in)
-{
-    int32_t size = 0;
-    read(size, in);
-    if (size != N)
-        throw Exception("Unexpected array size while reading from ZooKeeper", Error::ZMARSHALLINGERROR);
-    in.read(s.data(), N);
-}
-
-static void read(Stat & stat, ReadBuffer & in)
-{
-    read(stat.czxid, in);
-    read(stat.mzxid, in);
-    read(stat.ctime, in);
-    read(stat.mtime, in);
-    read(stat.version, in);
-    read(stat.cversion, in);
-    read(stat.aversion, in);
-    read(stat.ephemeralOwner, in);
-    read(stat.dataLength, in);
-    read(stat.numChildren, in);
-    read(stat.pzxid, in);
-}
-
-template <typename T> void read(std::vector<T> & arr, ReadBuffer & in)
-{
-    int32_t size = 0;
-    read(size, in);
-    if (size < 0)
-        throw Exception("Negative size while reading array from ZooKeeper", Error::ZMARSHALLINGERROR);
-    if (size > MAX_STRING_OR_ARRAY_SIZE)
-        throw Exception("Too large array size while reading from ZooKeeper", Error::ZMARSHALLINGERROR);
-    arr.resize(size);
-    for (auto & elem : arr)
-        read(elem, in);
-}
-
-static void read(ACL & acl, ReadBuffer & in)
-{
-    read(acl.permissions, in);
-    read(acl.scheme, in);
-    read(acl.id, in);
-}
 
 void ZooKeeperResponse::write(WriteBuffer & out) const
 {
@@ -263,7 +105,6 @@ void ZooKeeperCreateResponse::readImpl(ReadBuffer & in)
 
 void ZooKeeperCreateResponse::writeImpl(WriteBuffer & out) const
 {
-    LOG_DEBUG(&Poco::Logger::get("LOG"), "WRITE IMPL ON: {}", path_created);
     Coordination::write(path_created, out);
 }
 
@@ -448,7 +289,7 @@ void ZooKeeperMultiRequest::writeImpl(WriteBuffer & out) const
         zk_request.writeImpl(out);
     }
 
-    OpNum op_num = -1;
+    OpNum op_num = OpNum::Error;
     bool done = true;
     int32_t error = -1;
 
@@ -471,7 +312,7 @@ void ZooKeeperMultiRequest::readImpl(ReadBuffer & in)
 
         if (done)
         {
-            if (op_num != -1)
+            if (op_num != OpNum::Error)
                 throw Exception("Unexpected op_num received at the end of results for multi transaction", Error::ZMARSHALLINGERROR);
             if (error != -1)
                 throw Exception("Unexpected error value received at the end of results for multi transaction", Error::ZMARSHALLINGERROR);
@@ -505,7 +346,7 @@ void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)
         /// op_num == -1 is special for multi transaction.
         /// For unknown reason, error code is duplicated in header and in response body.
 
-        if (op_num == -1)
+        if (op_num == OpNum::Error)
             response = std::make_shared<ZooKeeperErrorResponse>();
 
         if (op_error != Error::ZOK)
@@ -519,7 +360,7 @@ void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)
                 error = op_error;
         }
 
-        if (op_error == Error::ZOK || op_num == -1)
+        if (op_error == Error::ZOK || op_num == OpNum::Error)
             dynamic_cast<ZooKeeperResponse &>(*response).readImpl(in);
     }
 
@@ -535,7 +376,7 @@ void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)
 
         if (!done)
             throw Exception("Too many results received for multi transaction", Error::ZMARSHALLINGERROR);
-        if (op_num != -1)
+        if (op_num != OpNum::Error)
             throw Exception("Unexpected op_num received at the end of results for multi transaction", Error::ZMARSHALLINGERROR);
         if (error_read != -1)
             throw Exception("Unexpected error value received at the end of results for multi transaction", Error::ZMARSHALLINGERROR);
@@ -560,7 +401,7 @@ void ZooKeeperMultiResponse::writeImpl(WriteBuffer & out) const
 
     /// Footer.
     {
-        OpNum op_num = -1;
+        OpNum op_num = OpNum::Error;
         bool done = true;
         int32_t error_read = - 1;
 
@@ -606,7 +447,7 @@ ZooKeeperRequestPtr ZooKeeperRequestFactory::get(OpNum op_num) const
 {
     auto it = op_num_to_request.find(op_num);
     if (it == op_num_to_request.end())
-        throw Exception("Unknown operation type " + std::to_string(op_num), Error::ZBADARGUMENTS);
+        throw Exception("Unknown operation type " + toString(op_num), Error::ZBADARGUMENTS);
 
     return it->second();
 }
@@ -625,17 +466,17 @@ void registerZooKeeperRequest(ZooKeeperRequestFactory & factory)
 
 ZooKeeperRequestFactory::ZooKeeperRequestFactory()
 {
-    registerZooKeeperRequest<11, ZooKeeperHeartbeatRequest>(*this);
-    registerZooKeeperRequest<100, ZooKeeperAuthRequest>(*this);
-    registerZooKeeperRequest<-11, ZooKeeperCloseRequest>(*this);
-    registerZooKeeperRequest<1, ZooKeeperCreateRequest>(*this);
-    registerZooKeeperRequest<2, ZooKeeperRemoveRequest>(*this);
-    registerZooKeeperRequest<3, ZooKeeperExistsRequest>(*this);
-    registerZooKeeperRequest<4, ZooKeeperGetRequest>(*this);
-    registerZooKeeperRequest<5, ZooKeeperSetRequest>(*this);
-    registerZooKeeperRequest<12, ZooKeeperListRequest>(*this);
-    registerZooKeeperRequest<13, ZooKeeperCheckRequest>(*this);
-    registerZooKeeperRequest<14, ZooKeeperMultiRequest>(*this);
+    registerZooKeeperRequest<OpNum::Heartbeat, ZooKeeperHeartbeatRequest>(*this);
+    registerZooKeeperRequest<OpNum::Auth, ZooKeeperAuthRequest>(*this);
+    registerZooKeeperRequest<OpNum::Close, ZooKeeperCloseRequest>(*this);
+    registerZooKeeperRequest<OpNum::Create, ZooKeeperCreateRequest>(*this);
+    registerZooKeeperRequest<OpNum::Remove, ZooKeeperRemoveRequest>(*this);
+    registerZooKeeperRequest<OpNum::Exists, ZooKeeperExistsRequest>(*this);
+    registerZooKeeperRequest<OpNum::Get, ZooKeeperGetRequest>(*this);
+    registerZooKeeperRequest<OpNum::Set, ZooKeeperSetRequest>(*this);
+    registerZooKeeperRequest<OpNum::List, ZooKeeperListRequest>(*this);
+    registerZooKeeperRequest<OpNum::Check, ZooKeeperCheckRequest>(*this);
+    registerZooKeeperRequest<OpNum::Multi, ZooKeeperMultiRequest>(*this);
 }
   
 }

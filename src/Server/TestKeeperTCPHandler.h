@@ -4,6 +4,7 @@
 #include "IServer.h"
 #include <Interpreters/Context.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/TestKeeperStorage.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromPocoSocket.h>
@@ -21,7 +22,8 @@ public:
         , log(&Poco::Logger::get("TestKeeperTCPHandler"))
         , global_context(server.context())
         , test_keeper_storage(global_context.getTestKeeperStorage())
-        , operation_timeout(10000)
+        , operation_timeout(Coordination::DEFAULT_OPERATION_TIMEOUT)
+        , session_timeout(Coordination::DEFAULT_SESSION_TIMEOUT)
     {
     }
 
@@ -32,6 +34,7 @@ private:
     Context global_context;
     std::shared_ptr<zkutil::TestKeeperStorage> test_keeper_storage;
     Poco::Timespan operation_timeout;
+    Poco::Timespan session_timeout;
 
     std::queue<zkutil::TestKeeperStorage::AsyncResponse> responses;
     std::vector<zkutil::TestKeeperStorage::AsyncResponse> watch_responses;
