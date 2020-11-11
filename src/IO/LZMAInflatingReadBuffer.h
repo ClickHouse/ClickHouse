@@ -4,7 +4,6 @@
 #include <IO/ReadBuffer.h>
 
 #include <lzma.h>
-#include <fast-lzma2.h>
 
 namespace DB
 {
@@ -27,7 +26,8 @@ private:
     bool nextImpl() override;
 
     std::unique_ptr<ReadBuffer> in;
-    FL2_DStream * lstr;
+    lzma_stream lstr;
+    // FL2_DStream * lstr;
 
     bool eof;
 };
