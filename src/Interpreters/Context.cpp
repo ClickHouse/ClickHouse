@@ -451,6 +451,8 @@ struct ContextShared
 
     void initializeTraceCollector(std::shared_ptr<TraceLog> trace_log)
     {
+        if (!trace_log)
+            return;
         if (hasTraceCollector())
             return;
 
