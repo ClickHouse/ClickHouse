@@ -460,9 +460,6 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
 
     if (!inactive_replicas.empty())
     {
-        if (inactive_replicas.empty())
-            throw Exception(ErrorCodes::UNFINISHED, "Mutation is not finished, it will be done asynchronously");
-
         throw Exception(ErrorCodes::UNFINISHED,
                         "Mutation is not finished because some replicas are inactive right now: {}. Mutation will be done asynchronously",
                         boost::algorithm::join(inactive_replicas, ", "));
