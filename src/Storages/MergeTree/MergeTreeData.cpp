@@ -2753,6 +2753,96 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
         throw Exception("Cannot move parts because moves are manually disabled", ErrorCodes::ABORTED);
 }
 
+void MergeTreeData::fetchPartition(const ASTPtr & /*partition*/, const StorageMetadataPtr & /*metadata_snapshot*/, const String & /*from*/, const Context & /*query_context*/)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "FETCH PARTITION is not supported by storage {}", getName());
+}
+
+Pipe MergeTreeData::alterPartition(
+    const StorageMetadataPtr & metadata_snapshot,
+    const PartitionCommands & commands,
+    const Context & query_context)
+{
+    PartitionCommandsResultInfo result;
+    for (const PartitionCommand & command : commands)
+    {
+        PartitionCommandsResultInfo current_command_results;
+        switch (command.type)
+        {
+            case PartitionCommand::DROP_PARTITION:
+                if (command.part)
+                    checkPartCanBeDropped(command.partition);
+                else
+                    checkPartitionCanBeDropped(command.partition);
+                dropPartition(command.partition, command.detach, command.part, query_context);
+                break;
+
+            case PartitionCommand::DROP_DETACHED_PARTITION:
+                dropDetached(command.partition, command.part, query_context);
+                break;
+
+            case PartitionCommand::ATTACH_PARTITION:
+                current_command_results = attachPartition(command.partition, metadata_snapshot, command.part, query_context);
+                break;
+            case PartitionCommand::MOVE_PARTITION:
+            {
+                switch (*command.move_destination_type)
+                {
+                    case PartitionCommand::MoveDestinationType::DISK:
+                        movePartitionToDisk(command.partition, command.move_destination_name, command.part, query_context);
+                        break;
+
+                    case PartitionCommand::MoveDestinationType::VOLUME:
+                        movePartitionToVolume(command.partition, command.move_destination_name, command.part, query_context);
+                        break;
+
+                    case PartitionCommand::MoveDestinationType::TABLE:
+                        checkPartitionCanBeDropped(command.partition);
+                        String dest_database = query_context.resolveDatabase(command.to_database);
+                        auto dest_storage = DatabaseCatalog::instance().getTable({dest_database, command.to_table}, query_context);
+                        movePartitionToTable(dest_storage, command.partition, query_context);
+                        break;
+                }
+            }
+            break;
+
+            case PartitionCommand::REPLACE_PARTITION:
+            {
+                checkPartitionCanBeDropped(command.partition);
+                String from_database = query_context.resolveDatabase(command.from_database);
+                auto from_storage = DatabaseCatalog::instance().getTable({from_database, command.from_table}, query_context);
+                replacePartitionFrom(from_storage, command.partition, command.replace, query_context);
+            }
+            break;
+
+            case PartitionCommand::FETCH_PARTITION:
+                fetchPartition(command.partition, metadata_snapshot, command.from_zookeeper_path, query_context);
+                break;
+
+            case PartitionCommand::FREEZE_PARTITION:
+            {
+                auto lock = lockForShare(query_context.getCurrentQueryId(), query_context.getSettingsRef().lock_acquire_timeout);
+                current_command_results = freezePartition(command.partition, metadata_snapshot, command.with_name, query_context, lock);
+            }
+            break;
+
+            case PartitionCommand::FREEZE_ALL_PARTITIONS:
+            {
+                auto lock = lockForShare(query_context.getCurrentQueryId(), query_context.getSettingsRef().lock_acquire_timeout);
+                current_command_results = freezeAll(command.with_name, metadata_snapshot, query_context, lock);
+            }
+            break;
+        }
+        for (auto & command_result : current_command_results)
+            command_result.command_type = command.typeToString();
+        result.insert(result.end(), current_command_results.begin(), current_command_results.end());
+    }
+
+    if (query_context.getSettingsRef().alter_partition_verbose_result)
+        return convertCommandsResultToSource(result);
+
+    return {};
+}
 
 String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context & context) const
 {
