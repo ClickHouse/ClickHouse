@@ -487,6 +487,21 @@ Pipe StorageDistributed::read(
     SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
+    const size_t max_block_size,
+    const unsigned num_streams)
+{
+    QueryPlan plan;
+    read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+    return plan.convertToPipe();
+}
+
+void StorageDistributed::read(
+    QueryPlan & query_plan,
+    const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
+    SelectQueryInfo & query_info,
+    const Context & context,
+    QueryProcessingStage::Enum processed_stage,
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
@@ -508,7 +523,8 @@ Pipe StorageDistributed::read(
         : ClusterProxy::SelectStreamFactory(
             header, processed_stage, StorageID{remote_database, remote_table}, scalars, has_virtual_shard_num_column, context.getExternalTables());
 
-    return ClusterProxy::executeQuery(select_stream_factory, log, modified_query_ast, context, query_info);
+    ClusterProxy::executeQuery(query_plan, select_stream_factory, log,
+        modified_query_ast, context, query_info);
 }
 
 

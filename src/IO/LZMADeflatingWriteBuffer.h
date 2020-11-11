@@ -4,7 +4,6 @@
 #include <IO/WriteBuffer.h>
 
 #include <lzma.h>
-#include <fast-lzma2.h>
 
 namespace DB
 {
@@ -27,7 +26,8 @@ private:
     void nextImpl() override;
 
     std::unique_ptr<WriteBuffer> out;
-    FL2_CStream * lstr;
+    lzma_stream lstr;
+    // FL2_CStream * lstr;
     bool finished = false;
 };
 }

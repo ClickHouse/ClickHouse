@@ -13,10 +13,10 @@ LZMADeflatingWriteBuffer::LZMADeflatingWriteBuffer(
     : BufferWithOwnMemory<WriteBuffer>(buf_size, existing_memory, alignment), out(std::move(out_))
 {
     // FL2_createCStreamMt(number of threads, flag of two dictionaries usage)
-    lstr = FL2_createCStreamMt(2, 0);
-    /* size_t res = */ FL2_initCStream(lstr, compression_level);
+    // lstr = FL2_createCStreamMt(2, 0);
+    // size_t res = FL2_initCStream(lstr, compression_level);
 
-    /*lstr = LZMA_STREAM_INIT;
+    lstr = LZMA_STREAM_INIT;
     lstr.allocator = nullptr;
     lstr.next_in = nullptr;
     lstr.avail_in = 0;
@@ -26,10 +26,13 @@ LZMADeflatingWriteBuffer::LZMADeflatingWriteBuffer(
     // options for further compression
     lzma_options_lzma opt_lzma2;
     if (lzma_lzma_preset(&opt_lzma2, compression_level))
-        throw Exception(
-            std::string("lzma preset failed: ") + "; lzma version: " + LZMA_VERSION_STRING, ErrorCodes::LZMA_STREAM_ENCODER_FAILED);
+        throw Exception(ErrorCodes::LZMA_STREAM_ENCODER_FAILED, "lzma preset failed: lzma version: {}", LZMA_VERSION_STRING);
 
 
+    // LZMA_FILTER_X86 -
+    // LZMA2 - codec for *.xz files compression; LZMA is not suitable for this purpose
+    // VLI - variable length integer (in *.xz most integers encoded as VLI)
+    // LZMA_VLI_UNKNOWN (UINT64_MAX) - VLI value to denote that the value is unknown
     lzma_filter filters[] = {
         {.id = LZMA_FILTER_X86, .options = nullptr},
         {.id = LZMA_FILTER_LZMA2, .options = &opt_lzma2},
@@ -39,9 +42,10 @@ LZMADeflatingWriteBuffer::LZMADeflatingWriteBuffer(
 
     if (ret != LZMA_OK)
         throw Exception(
-            std::string("lzma stream encoder init failed: ") + std::to_string(ret) + "; lzma version: " + LZMA_VERSION_STRING,
-            ErrorCodes::LZMA_STREAM_ENCODER_FAILED);
-    */
+            ErrorCodes::LZMA_STREAM_ENCODER_FAILED,
+            "lzma stream encoder init failed: error code: {} lzma version: {}",
+            ret,
+            LZMA_VERSION_STRING);
 }
 
 LZMADeflatingWriteBuffer::~LZMADeflatingWriteBuffer()
@@ -50,7 +54,7 @@ LZMADeflatingWriteBuffer::~LZMADeflatingWriteBuffer()
     {
         finish();
 
-        //lzma_end(&lstr);
+        lzma_end(&lstr);
     }
     catch (...)
     {
@@ -60,7 +64,6 @@ LZMADeflatingWriteBuffer::~LZMADeflatingWriteBuffer()
 
 void LZMADeflatingWriteBuffer::nextImpl()
 {
-    /*
     if (!offset())
         return;
 
@@ -74,27 +77,25 @@ void LZMADeflatingWriteBuffer::nextImpl()
         lstr.next_out = reinterpret_cast<unsigned char *>(out->position());
         lstr.avail_out = out->buffer().end() - out->position();
 
-
         lzma_ret ret = lzma_code(&lstr, action);
         out->position() = out->buffer().end() - lstr.avail_out;
-
 
         if (ret == LZMA_STREAM_END)
             return;
 
         if (ret != LZMA_OK)
             throw Exception(
-                std::string("lzma stream encoding failed: ") + "; lzma version: " + LZMA_VERSION_STRING,
-                ErrorCodes::LZMA_STREAM_ENCODER_FAILED);
+                ErrorCodes::LZMA_STREAM_ENCODER_FAILED,
+                "lzma stream encoding failed: error code: {}; lzma_version: {}",
+                ret,
+                LZMA_VERSION_STRING);
 
     } while (lstr.avail_in > 0 || lstr.avail_out == 0);
-    */
 }
 
 
 void LZMADeflatingWriteBuffer::finish()
 {
-    /*
     if (finished)
         return;
 
@@ -109,7 +110,6 @@ void LZMADeflatingWriteBuffer::finish()
         lzma_ret ret = lzma_code(&lstr, LZMA_FINISH);
         out->position() = out->buffer().end() - lstr.avail_out;
 
-
         if (ret == LZMA_STREAM_END)
         {
             finished = true;
@@ -118,10 +118,11 @@ void LZMADeflatingWriteBuffer::finish()
 
         if (ret != LZMA_OK)
             throw Exception(
-                std::string("lzma stream encoding failed: ") + "; lzma version: " + LZMA_VERSION_STRING,
-                ErrorCodes::LZMA_STREAM_ENCODER_FAILED);
+                ErrorCodes::LZMA_STREAM_ENCODER_FAILED,
+                "lzma stream encoding failed: error code: {}; lzma version: {}",
+                ret,
+                LZMA_VERSION_STRING);
 
     } while (lstr.avail_out == 0);
-    */
 }
 }

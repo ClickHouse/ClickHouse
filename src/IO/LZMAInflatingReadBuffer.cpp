@@ -9,10 +9,6 @@ namespace ErrorCodes
 LZMAInflatingReadBuffer::LZMAInflatingReadBuffer(std::unique_ptr<ReadBuffer> in_, size_t buf_size, char * existing_memory, size_t alignment)
     : BufferWithOwnMemory<ReadBuffer>(buf_size, existing_memory, alignment), in(std::move(in_)), eof(false)
 {
-    // FL2_createDStreamMt(number of threads)
-    lstr = FL2_createDStreamMt(2);
-    /* size_t res = */ FL2_initDStream(lstr);
-    /*
     lstr = LZMA_STREAM_INIT;
     lstr.allocator = nullptr;
     lstr.next_in = nullptr;
@@ -21,28 +17,29 @@ LZMAInflatingReadBuffer::LZMAInflatingReadBuffer(std::unique_ptr<ReadBuffer> in_
     lstr.avail_out = 0;
 
     // 500 mb
-    uint64_t memlimit = 500 << 20;
+    uint64_t memlimit = 500ULL << 20;
 
     lzma_ret ret = lzma_stream_decoder(&lstr, memlimit, LZMA_CONCATENATED);
     // lzma does not provide api for converting error code to string unlike zlib
     if (ret != LZMA_OK)
         throw Exception(
-            std::string("lzma_stream_decoder initialization failed: error code: ") + std::to_string(ret)
-                + "; lzma version: " + LZMA_VERSION_STRING,
-            ErrorCodes::LZMA_STREAM_DECODER_FAILED);
-            */
+            ErrorCodes::LZMA_STREAM_DECODER_FAILED,
+            "lzma_stream_decoder initialization failed: error code: {}; lzma version: {}",
+            ret,
+            LZMA_VERSION_STRING);
 }
 
 LZMAInflatingReadBuffer::~LZMAInflatingReadBuffer()
 {
-    //lzma_end(&lstr);
+    lzma_end(&lstr);
 }
 
 bool LZMAInflatingReadBuffer::nextImpl()
 {
-    /*
     if (eof)
         return false;
+
+    lzma_action action = LZMA_RUN;
 
     if (!lstr.avail_in)
     {
@@ -50,11 +47,18 @@ bool LZMAInflatingReadBuffer::nextImpl()
         lstr.next_in = reinterpret_cast<unsigned char *>(in->position());
         lstr.avail_in = in->buffer().end() - in->position();
     }
+
+    if (in->eof())
+    {
+        action = LZMA_FINISH;
+    }
+
     lstr.next_out = reinterpret_cast<unsigned char *>(internal_buffer.begin());
     lstr.avail_out = internal_buffer.size();
+    // std::cout << lstr.avail_in << " " << lstr.avail_out << std::endl;
 
-    lzma_ret ret = lzma_code(&lstr, LZMA_RUN);
-
+    lzma_ret ret = lzma_code(&lstr, action);
+    // std::cout << ret << std::endl;
     in->position() = in->buffer().end() - lstr.avail_in;
     working_buffer.resize(internal_buffer.size() - lstr.avail_out);
 
@@ -69,7 +73,7 @@ bool LZMAInflatingReadBuffer::nextImpl()
         {
             throw Exception(
                 ErrorCodes::LZMA_STREAM_DECODER_FAILED,
-                "lzma decoder finished, but stream is still alive: error code: {}; lzma version: {}",
+                "lzma decoder finished, but input stream has not exceeded: error code: {}; lzma version: {}",
                 ret,
                 LZMA_VERSION_STRING);
         }
@@ -82,8 +86,6 @@ bool LZMAInflatingReadBuffer::nextImpl()
             ret,
             LZMA_VERSION_STRING);
 
-    return true;
-    */
     return true;
 }
 }
