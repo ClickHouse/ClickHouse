@@ -4,7 +4,6 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnConst.h>
 #include <Common/HashTable/HashMap.h>
-#include <IO/ReadHelpers.h>
 #include <vector>
 #include <unordered_map>
 
@@ -81,25 +80,24 @@ public:
         return findByValue(value)->second;
     }
 
-    FieldType getValue(StringRef field_name, bool try_treat_as_id=false) const
+    FieldType getValue(StringRef field_name, bool try_treat_as_id = false) const
     {
-        const auto value_it = name_to_value_map.find(field_name);
-        if (!value_it)
+        const auto it = name_to_value_map.find(field_name);
+        if (!it)
         {
             /// It is used in CSV and TSV input formats. If we fail to find given string in
-            /// enum names and this string is number, we will try to treat it as enum id.
-            if (try_treat_as_id && isStringNumber(field_name))
+            /// enum names, we will try to treat it as enum id.
+            if (try_treat_as_id)
             {
                 FieldType x;
                 ReadBufferFromMemory tmp_buf(field_name.data, field_name.size);
                 readText(x, tmp_buf);
-                const auto name_it = value_to_name_map.find(x);
-                if (name_it != value_to_name_map.end())
+                if (tmp_buf.eof() && value_to_name_map.find(x) != value_to_name_map.end())
                     return x;
             }
             throw Exception{"Unknown element '" + field_name.toString() + "' for type " + getName(), ErrorCodes::BAD_ARGUMENTS};
         }
-        return value_it->getMapped();
+        return it->getMapped();
     }
 
     FieldType readValue(ReadBuffer & istr) const
