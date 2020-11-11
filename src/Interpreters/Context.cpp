@@ -302,9 +302,11 @@ struct ContextShared
     mutable std::mutex zookeeper_mutex;
 
     mutable zkutil::ZooKeeperPtr zookeeper;                 /// Client for ZooKeeper.
+    ConfigurationPtr zookeeper_config;                      /// Stores zookeeper configs
 
     mutable std::mutex auxiliary_zookeepers_mutex;
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
+    ConfigurationPtr auxiliary_zookeepers_config;           /// Stores auxiliary zookeepers configs
 
     String interserver_io_host;                             /// The host name by which this server is available for other servers.
     UInt16 interserver_io_port = 0;                         /// and port.
@@ -364,8 +366,7 @@ struct ContextShared
     /// Initialized on demand (on distributed storages initialization) since Settings should be initialized
     std::unique_ptr<Clusters> clusters;
     ConfigurationPtr clusters_config;                        /// Stores updated configs
-    ConfigurationPtr zookeeper_config;                        /// Stores zookeeper configs
-    mutable std::mutex clusters_mutex;                        /// Guards clusters and clusters_config
+    mutable std::mutex clusters_mutex;                       /// Guards clusters and clusters_config
 
 #if USE_EMBEDDED_COMPILER
     std::shared_ptr<CompiledExpressionCache> compiled_expression_cache;
@@ -1498,10 +1499,16 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
     auto zookeeper = shared->auxiliary_zookeepers.find(name);
     if (zookeeper == shared->auxiliary_zookeepers.end())
     {
-        if (!getConfigRef().has("auxiliary_zookeepers." + name))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown auxiliary ZooKeeper name '{}'. If it's required it can be added to the section <auxiliary_zookeepers> in config.xml", name);
+        const auto & config = shared->auxiliary_zookeepers_config ? *shared->auxiliary_zookeepers_config : getConfigRef();
+        if (!config.has("auxiliary_zookeepers." + name))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Unknown auxiliary ZooKeeper name '{}'. If it's required it can be added to the section <auxiliary_zookeepers> in "
+                "config.xml",
+                name);
 
-        zookeeper->second = std::make_shared<zkutil::ZooKeeper>(getConfigRef(), "auxiliary_zookeepers." + name);
+        zookeeper
+            = shared->auxiliary_zookeepers.emplace(name, std::make_shared<zkutil::ZooKeeper>(config, "auxiliary_zookeepers." + name)).first;
     }
     else if (zookeeper->second->expired())
         zookeeper->second = zookeeper->second->startNewSession();
@@ -1515,16 +1522,37 @@ void Context::resetZooKeeper() const
     shared->zookeeper.reset();
 }
 
+static void reloadZooKeeperIfChangedImpl(const ConfigurationPtr & config, const std::string & config_name, zkutil::ZooKeeperPtr & zk)
+{
+    if (!zk || zk->configChanged(*config, config_name))
+        zk = std::make_shared<zkutil::ZooKeeper>(*config, config_name);
+}
+
 void Context::reloadZooKeeperIfChanged(const ConfigurationPtr & config) const
 {
     std::lock_guard lock(shared->zookeeper_mutex);
     shared->zookeeper_config = config;
+    reloadZooKeeperIfChangedImpl(config, "zookeeper", shared->zookeeper);
+}
 
-    if (!shared->zookeeper || shared->zookeeper->configChanged(*config, "zookeeper"))
+void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config)
+{
+    std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
+
+    shared->auxiliary_zookeepers_config = config;
+
+    for (auto it = shared->auxiliary_zookeepers.begin(); it != shared->auxiliary_zookeepers.end();)
     {
-        shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(*config, "zookeeper");
+        if (!config->has("auxiliary_zookeepers." + it->first))
+            it = shared->auxiliary_zookeepers.erase(it);
+        else
+        {
+            reloadZooKeeperIfChangedImpl(config, "auxiliary_zookeepers." + it->first, it->second);
+            ++it;
+        }
     }
 }
+
 
 bool Context::hasZooKeeper() const
 {

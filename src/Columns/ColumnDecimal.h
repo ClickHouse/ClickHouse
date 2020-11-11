@@ -7,6 +7,7 @@
 #include <Columns/IColumnImpl.h>
 #include <Columns/ColumnVectorHelper.h>
 #include <Core/Field.h>
+#include <miniselect/floyd_rivest_select.h>
 
 
 namespace DB
@@ -253,9 +254,9 @@ protected:
             sort_end = res.begin() + limit;
 
         if (reverse)
-            std::partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] > data[b]; });
+            miniselect::floyd_rivest_partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] > data[b]; });
         else
-            std::partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] < data[b]; });
+            miniselect::floyd_rivest_partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] < data[b]; });
     }
 };
 

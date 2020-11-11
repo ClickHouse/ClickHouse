@@ -46,6 +46,16 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
+    void read(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        SelectQueryInfo & query_info,
+        const Context & context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        unsigned num_streams) override;
+
     std::optional<UInt64> totalRows() const override;
     std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo &, const Context &) const override;
     std::optional<UInt64> totalBytes() const override;
@@ -63,7 +73,6 @@ public:
         const Context & context) override;
 
     Pipe alterPartition(
-        const ASTPtr & query,
         const StorageMetadataPtr & /* metadata_snapshot */,
         const PartitionCommands & commands,
         const Context & context) override;
@@ -183,7 +192,7 @@ private:
     void clearOldMutations(bool truncate = false);
 
     // Partition helpers
-    void dropPartition(const ASTPtr & partition, bool detach, const Context & context);
+    void dropPartition(const ASTPtr & partition, bool detach, bool drop_part, const Context & context);
     PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, bool part, const Context & context);
 
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context);
