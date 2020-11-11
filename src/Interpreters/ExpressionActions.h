@@ -235,7 +235,7 @@ public:
 
     /// Call addAlias several times.
     void addAliases(const NamesWithAliases & aliases);
-    /// Adds alias actions and removes unused columns from index.
+    /// Add alias actions and remove unused columns from index. Also specify result columns order in index.
     void project(const NamesWithAliases & projection);
 
     /// Removes column from index.
