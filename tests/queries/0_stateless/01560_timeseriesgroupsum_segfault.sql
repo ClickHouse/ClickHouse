@@ -15,7 +15,7 @@ CREATE TABLE tsgs AS tsgs_local ENGINE = Distributed(test_cluster_two_shards, cu
 
 SELECT timeSeriesGroupSum(a, b, c) FROM tsgs;
 
-SELECT count() FROM ( SELECT timeSeriesGroupSumState(a, b, c) FROM tsgs_local) WHERE NOT ignore(*);
+SELECT count() FROM ( SELECT timeSeriesGroupSumState(a, b, c) as x FROM tsgs_local) WHERE NOT ignore(*);
 
 SELECT 'server is still alive';
 
