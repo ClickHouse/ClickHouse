@@ -41,12 +41,12 @@ static ITransformingStep::Traits getJoinTraits()
     };
 }
 
-ExpressionStep::ExpressionStep(const DataStream & input_stream_, ActionsDAGPtr actions_)
+ExpressionStep::ExpressionStep(const DataStream & input_stream_, ActionsDAGPtr actions_dag_)
     : ITransformingStep(
         input_stream_,
-        Transform::transformHeader(input_stream_.header, *actions_),
-        getTraits(actions_))
-    , actions(std::move(actions_))
+        Transform::transformHeader(input_stream_.header, *actions_dag_),
+        getTraits(actions_dag_))
+    , actions_dag(std::move(actions_dag_))
 {
     /// Some columns may be removed by expression.
     updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
@@ -55,7 +55,7 @@ ExpressionStep::ExpressionStep(const DataStream & input_stream_, ActionsDAGPtr a
 void ExpressionStep::updateInputStream(DataStream input_stream, bool keep_header)
 {
     Block out_header = keep_header ? std::move(output_stream->header)
-                                   : Transform::transformHeader(input_stream.header, *actions);
+                                   : Transform::transformHeader(input_stream.header, *actions_dag);
     output_stream = createOutputStream(
             input_stream,
             std::move(out_header),
@@ -67,7 +67,7 @@ void ExpressionStep::updateInputStream(DataStream input_stream, bool keep_header
 
 void ExpressionStep::transformPipeline(QueryPipeline & pipeline)
 {
-    auto expression = std::make_shared<ExpressionActions>(actions);
+    auto expression = std::make_shared<ExpressionActions>(actions_dag);
     pipeline.addSimpleTransform([&](const Block & header)
     {
         return std::make_shared<Transform>(header, expression);
@@ -88,7 +88,7 @@ void ExpressionStep::describeActions(FormatSettings & settings) const
     String prefix(settings.offset, ' ');
     bool first = true;
 
-    auto expression = std::make_shared<ExpressionActions>(actions);
+    auto expression = std::make_shared<ExpressionActions>(actions_dag);
     for (const auto & action : expression->getActions())
     {
         settings.out << prefix << (first ? "Actions: "

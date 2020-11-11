@@ -16,7 +16,7 @@ public:
     TotalsHavingStep(
             const DataStream & input_stream_,
             bool overflow_row_,
-            const ActionsDAGPtr & actions_,
+            const ActionsDAGPtr & actions_dag_,
             const std::string & filter_column_,
             TotalsMode totals_mode_,
             double auto_include_threshold_,
@@ -30,7 +30,7 @@ public:
 
 private:
     bool overflow_row;
-    ActionsDAGPtr actions;
+    ActionsDAGPtr actions_dag;
     String filter_column_name;
     TotalsMode totals_mode;
     double auto_include_threshold;

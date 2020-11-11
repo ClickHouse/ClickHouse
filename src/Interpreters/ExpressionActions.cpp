@@ -950,12 +950,12 @@ void ExpressionActionsChain::JoinStep::finalize(const Names & required_output_)
 
 ActionsDAGPtr & ExpressionActionsChain::Step::actions()
 {
-    return typeid_cast<ExpressionActionsStep *>(this)->actions;
+    return typeid_cast<ExpressionActionsStep *>(this)->actions_dag;
 }
 
 const ActionsDAGPtr & ExpressionActionsChain::Step::actions() const
 {
-    return typeid_cast<const ExpressionActionsStep *>(this)->actions;
+    return typeid_cast<const ExpressionActionsStep *>(this)->actions_dag;
 }
 
 ActionsDAG::ActionsDAG(const NamesAndTypesList & inputs)

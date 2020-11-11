@@ -64,7 +64,7 @@ struct ScopeStack
 {
     struct Level
     {
-        ActionsDAGPtr actions;
+        ActionsDAGPtr actions_dag;
         NameSet inputs;
     };
 
@@ -74,7 +74,7 @@ struct ScopeStack
 
     const Context & context;
 
-    ScopeStack(ActionsDAGPtr actions, const Context & context_);
+    ScopeStack(ActionsDAGPtr actions_dag, const Context & context_);
 
     void pushLevel(const NamesAndTypesList & input_columns);
 
@@ -127,7 +127,7 @@ public:
         int next_unique_suffix;
 
         Data(const Context & context_, SizeLimits set_size_limit_, size_t subquery_depth_,
-                const NamesAndTypesList & source_columns_, ActionsDAGPtr actions,
+                const NamesAndTypesList & source_columns_, ActionsDAGPtr actions_dag,
                 PreparedSets & prepared_sets_, SubqueriesForSets & subqueries_for_sets_,
                 bool no_subqueries_, bool no_makeset_, bool only_consts_, bool create_source_for_in_);
 

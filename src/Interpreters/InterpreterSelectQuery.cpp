@@ -393,9 +393,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             if (row_policy_filter)
             {
                 filter_info = std::make_shared<FilterInfo>();
-                filter_info->column_name = generateFilterActions(filter_info->actions, row_policy_filter, required_columns);
+                filter_info->column_name = generateFilterActions(filter_info->actions_dag, row_policy_filter, required_columns);
                 source_header = metadata_snapshot->getSampleBlockForColumns(
-                    filter_info->actions->getRequiredColumns().getNames(), storage->getVirtuals(), storage->getStorageID());
+                        filter_info->actions_dag->getRequiredColumns().getNames(), storage->getVirtuals(), storage->getStorageID());
             }
         }
 
@@ -881,7 +881,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             {
                 auto row_level_security_step = std::make_unique<FilterStep>(
                         query_plan.getCurrentDataStream(),
-                        expressions.filter_info->actions,
+                        expressions.filter_info->actions_dag,
                         expressions.filter_info->column_name,
                         expressions.filter_info->do_remove_column);
 
@@ -1231,9 +1231,9 @@ void InterpreterSelectQuery::executeFetchColumns(
         if (row_policy_filter)
         {
             auto initial_required_columns = required_columns;
-            ActionsDAGPtr actions;
-            generateFilterActions(actions, row_policy_filter, initial_required_columns);
-            auto required_columns_from_filter = actions->getRequiredColumns();
+            ActionsDAGPtr actions_dag;
+            generateFilterActions(actions_dag, row_policy_filter, initial_required_columns);
+            auto required_columns_from_filter = actions_dag->getRequiredColumns();
 
             for (const auto & column : required_columns_from_filter)
             {

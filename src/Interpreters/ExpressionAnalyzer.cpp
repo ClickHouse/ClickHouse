@@ -734,13 +734,13 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
     return prewhere_actions;
 }
 
-void SelectQueryExpressionAnalyzer::appendPreliminaryFilter(ExpressionActionsChain & chain, ActionsDAGPtr actions, String column_name)
+void SelectQueryExpressionAnalyzer::appendPreliminaryFilter(ExpressionActionsChain & chain, ActionsDAGPtr actions_dag, String column_name)
 {
     ExpressionActionsChain::Step & step = chain.lastStep(sourceColumns());
 
     // FIXME: assert(filter_info);
     auto * expression_step = typeid_cast<ExpressionActionsChain::ExpressionActionsStep *>(&step);
-    expression_step->actions = std::move(actions);
+    expression_step->actions_dag = std::move(actions_dag);
     step.required_output.push_back(std::move(column_name));
     step.can_remove_required_output = {true};
 
@@ -1130,7 +1130,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         if (storage && filter_info_)
         {
             filter_info = filter_info_;
-            query_analyzer.appendPreliminaryFilter(chain, filter_info->actions, filter_info->column_name);
+            query_analyzer.appendPreliminaryFilter(chain, filter_info->actions_dag, filter_info->column_name);
         }
 
         if (auto actions = query_analyzer.appendPrewhere(chain, !first_stage, additional_required_columns_after_prewhere))
@@ -1292,7 +1292,7 @@ void ExpressionAnalysisResult::finalize(const ExpressionActionsChain & chain, si
 void ExpressionAnalysisResult::removeExtraColumns() const
 {
     if (hasFilter())
-        filter_info->actions->projectInput();
+        filter_info->actions_dag->projectInput();
     if (hasWhere())
         before_where->projectInput();
     if (hasHaving())

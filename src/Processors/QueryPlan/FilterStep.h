@@ -13,7 +13,7 @@ class FilterStep : public ITransformingStep
 public:
     FilterStep(
         const DataStream & input_stream_,
-        ActionsDAGPtr actions_,
+        ActionsDAGPtr actions_dag_,
         String filter_column_name_,
         bool remove_filter_column_);
 
@@ -24,12 +24,12 @@ public:
 
     void describeActions(FormatSettings & settings) const override;
 
-    const ActionsDAGPtr & getExpression() const { return actions; }
+    const ActionsDAGPtr & getExpression() const { return actions_dag; }
     const String & getFilterColumnName() const { return filter_column_name; }
     bool removesFilterColumn() const { return remove_filter_column; }
 
 private:
-    ActionsDAGPtr actions;
+    ActionsDAGPtr actions_dag;
     String filter_column_name;
     bool remove_filter_column;
 };
