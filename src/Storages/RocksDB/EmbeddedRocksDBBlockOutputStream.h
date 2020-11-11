@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataStreams/IBlockOutputStream.h>
-#include <Storages/StorageInMemoryMetadata.h>
 
 
 namespace DB
