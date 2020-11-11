@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataStreams/IBlockInputStream.h>
+#include <Storages/RocksDB/StorageEmbeddedRocksDB.h>
 
 
 namespace rocksdb
@@ -10,8 +11,6 @@ namespace rocksdb
 
 namespace DB
 {
-
-class StorageEmbeddedRocksDB;
 
 class EmbeddedRocksDBBlockInputStream : public IBlockInputStream
 {

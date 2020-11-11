@@ -1,5 +1,4 @@
 #include <Storages/RocksDB/EmbeddedRocksDBBlockOutputStream.h>
-#include <Storages/RocksDB/StorageEmbeddedRocksDB.h>
 #include <IO/WriteBufferFromString.h>
 
 #include <rocksdb/db.h>
@@ -7,11 +6,12 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ROCKSDB_ERROR;
 }
+
+class StorageEmbeddedRocksDB;
 
 EmbeddedRocksDBBlockOutputStream::EmbeddedRocksDBBlockOutputStream(
     StorageEmbeddedRocksDB & storage_,
@@ -42,6 +42,7 @@ void EmbeddedRocksDBBlockOutputStream::write(const Block & block)
     WriteBufferFromOwnString wb_value;
 
     rocksdb::WriteBatch batch;
+    rocksdb::Status status;
     for (size_t i = 0; i < rows; i++)
     {
         wb_key.restart();
@@ -53,10 +54,12 @@ void EmbeddedRocksDBBlockOutputStream::write(const Block & block)
             elem.type->serializeBinary(*elem.column, i, idx == primary_key_pos ? wb_key : wb_value);
             ++idx;
         }
-        batch.Put(wb_key.str(), wb_value.str());
+        status = batch.Put(wb_key.str(), wb_value.str());
+        if (!status.ok())
+            throw Exception("RocksDB write error: " + status.ToString(), ErrorCodes::ROCKSDB_ERROR);
     }
 
-    auto status = storage.rocksdb_ptr->Write(rocksdb::WriteOptions(), &batch);
+    status = storage.rocksdb_ptr->Write(rocksdb::WriteOptions(), &batch);
     if (!status.ok())
         throw Exception("RocksDB write error: " + status.ToString(), ErrorCodes::ROCKSDB_ERROR);
 }

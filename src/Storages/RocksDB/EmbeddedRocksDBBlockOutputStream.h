@@ -2,12 +2,11 @@
 
 #include <DataStreams/IBlockOutputStream.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/RocksDB/StorageEmbeddedRocksDB.h>
 
 
 namespace DB
 {
-
-class StorageEmbeddedRocksDB;
 
 class EmbeddedRocksDBBlockOutputStream : public IBlockOutputStream
 {

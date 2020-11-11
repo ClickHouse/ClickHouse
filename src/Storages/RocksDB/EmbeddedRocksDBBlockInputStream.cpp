@@ -1,6 +1,5 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/Context.h>
-#include <Storages/RocksDB/StorageEmbeddedRocksDB.h>
 #include <Storages/RocksDB/EmbeddedRocksDBBlockInputStream.h>
 
 #include <rocksdb/db.h>
@@ -14,13 +13,11 @@ namespace ErrorCodes
     extern const int ROCKSDB_ERROR;
 }
 
+class StorageEmbeddedRocksDB;
+
 EmbeddedRocksDBBlockInputStream::EmbeddedRocksDBBlockInputStream(
-            StorageEmbeddedRocksDB & storage_,
-            const StorageMetadataPtr & metadata_snapshot_,
-            size_t max_block_size_)
-            : storage(storage_)
-            , metadata_snapshot(metadata_snapshot_)
-            , max_block_size(max_block_size_)
+    StorageEmbeddedRocksDB & storage_, const StorageMetadataPtr & metadata_snapshot_, size_t max_block_size_)
+    : storage(storage_), metadata_snapshot(metadata_snapshot_), max_block_size(max_block_size_)
 {
     sample_block = metadata_snapshot->getSampleBlock();
     primary_key_pos = sample_block.getPositionByName(storage.primary_key);
@@ -39,8 +36,7 @@ Block EmbeddedRocksDBBlockInputStream::readImpl()
 
     MutableColumns columns = sample_block.cloneEmptyColumns();
 
-    size_t rows = 0;
-    for (; iterator->Valid(); iterator->Next())
+    for (size_t rows = 0; iterator->Valid() && rows < max_block_size; ++rows, iterator->Next())
     {
         ReadBufferFromString key_buffer(iterator->key());
         ReadBufferFromString value_buffer(iterator->value());
@@ -51,9 +47,6 @@ Block EmbeddedRocksDBBlockInputStream::readImpl()
             elem.type->deserializeBinary(*columns[idx], idx == primary_key_pos ? key_buffer : value_buffer);
             ++idx;
         }
-        ++rows;
-        if (rows >= max_block_size)
-            break;
     }
 
     finished = !iterator->Valid();
