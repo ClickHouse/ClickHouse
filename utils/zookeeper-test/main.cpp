@@ -135,7 +135,7 @@ void testMultiRequest(zkutil::ZooKeeper & zk)
         zk.multi(requests);
         std::terminate();
     }
-    catch(...)
+    catch (...)
     {
         std::cerr << "Got exception on multy request (it's ok)\n";
     }
@@ -143,7 +143,8 @@ void testMultiRequest(zkutil::ZooKeeper & zk)
     checkEq(zk, "/data/multirequest", "bbb");
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[])
+{
 
     if (argc != 2)
     {
@@ -167,7 +168,7 @@ int main(int argc, char *argv[]) {
         testCreateSetWatchEvent(zk);
         testCreateListWatchEvent(zk);
     }
-    catch(...)
+    catch (...)
     {
         zk.tryRemoveRecursive("/data");
         throw;

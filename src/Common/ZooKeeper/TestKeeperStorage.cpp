@@ -6,9 +6,21 @@
 #include <common/logger_useful.h>
 #include <Common/StringUtils/StringUtils.h>
 
+namespace DB
+{
+    namespace ErrorCodes
+    {
+        extern const int LOGICAL_ERROR;
+    }
+}
+
 namespace zkutil
 {
+
+
 using namespace DB;
+
+
 
 static String parentPath(const String & path)
 {

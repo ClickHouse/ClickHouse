@@ -195,17 +195,17 @@ Poco::Net::SocketAddress makeSocketAddress(const std::string & host, UInt16 port
                     || code == EAI_ADDRFAMILY
 #endif
            )
-       {
-           LOG_ERROR(log, "Cannot resolve listen_host ({}), error {}: {}. "
-               "If it is an IPv6 address and your host has disabled IPv6, then consider to "
-               "specify IPv4 address to listen in <listen_host> element of configuration "
-               "file. Example: <listen_host>0.0.0.0</listen_host>",
-               host, e.code(), e.message());
-       }
+        {
+            LOG_ERROR(log, "Cannot resolve listen_host ({}), error {}: {}. "
+                "If it is an IPv6 address and your host has disabled IPv6, then consider to "
+                "specify IPv4 address to listen in <listen_host> element of configuration "
+                "file. Example: <listen_host>0.0.0.0</listen_host>",
+                host, e.code(), e.message());
+        }
 
-       throw;
-   }
-   return socket_address;
+        throw;
+    }
+    return socket_address;
 }
 
 Poco::Net::SocketAddress Server::socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure)

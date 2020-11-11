@@ -25,7 +25,7 @@ void TestKeeperTCPHandler::sendHandshake()
 
     Coordination::write(Coordination::SERVER_HANDSHAKE_LENGTH, *out);
     Coordination::write(Coordination::ZOOKEEPER_PROTOCOL_VERSION, *out);
-    Coordination::write(Coordination::DEFAULT_SESSION_TIMEOUT, *out);
+    Coordination::write(Coordination::DEFAULT_SESSION_TIMEOUT_MS, *out);
     Coordination::write(test_keeper_storage->getSessionID(), *out);
     std::array<char, Coordination::PASSWORD_LENGTH> passwd{};
     Coordination::write(passwd, *out);
@@ -105,7 +105,7 @@ void TestKeeperTCPHandler::runImpl()
     while (true)
     {
         using namespace std::chrono_literals;
-        while(!responses.empty())
+        while (!responses.empty())
         {
             if (responses.front().wait_for(10ms) != std::future_status::ready)
                 break;

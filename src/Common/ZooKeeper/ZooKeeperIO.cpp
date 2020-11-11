@@ -16,7 +16,7 @@ void write(int32_t x, WriteBuffer & out)
 
 void write(OpNum x, WriteBuffer & out)
 {
-   write(static_cast<int32_t>(x), out);
+    write(static_cast<int32_t>(x), out);
 }
 
 void write(bool x, WriteBuffer & out)

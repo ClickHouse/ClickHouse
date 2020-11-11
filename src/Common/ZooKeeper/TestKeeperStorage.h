@@ -19,7 +19,7 @@ class TestKeeperStorage
 
 public:
 
-    Poco::Timespan operation_timeout{10000};
+    Poco::Timespan operation_timeout{0, Coordination::DEFAULT_OPERATION_TIMEOUT_MS * 1000};
     std::atomic<int64_t> session_id_counter{0};
 
     struct Node
@@ -85,5 +85,5 @@ public:
         return zxid.fetch_add(1);
     }
 };
-   
+
 }
