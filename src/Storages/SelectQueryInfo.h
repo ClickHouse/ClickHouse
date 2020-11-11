@@ -50,7 +50,7 @@ struct PrewhereDAGInfo
 /// Helper struct to store all the information about the filter expression.
 struct FilterInfo
 {
-    ActionsDAGPtr actions;
+    ActionsDAGPtr actions_dag;
     String column_name;
     bool do_remove_column = false;
 };

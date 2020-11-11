@@ -416,38 +416,38 @@ struct ExpressionActionsChain
 
     struct ExpressionActionsStep : public Step
     {
-        ActionsDAGPtr actions;
+        ActionsDAGPtr actions_dag;
 
-        explicit ExpressionActionsStep(ActionsDAGPtr actions_, Names required_output_ = Names())
+        explicit ExpressionActionsStep(ActionsDAGPtr actions_dag_, Names required_output_ = Names())
             : Step(std::move(required_output_))
-            , actions(std::move(actions_))
+            , actions_dag(std::move(actions_dag_))
         {
         }
 
         NamesAndTypesList getRequiredColumns() const override
         {
-            return actions->getRequiredColumns();
+            return actions_dag->getRequiredColumns();
         }
 
         ColumnsWithTypeAndName getResultColumns() const override
         {
-            return actions->getResultColumns();
+            return actions_dag->getResultColumns();
         }
 
         void finalize(const Names & required_output_) override
         {
-            if (!actions->getSettings().projected_output)
-                actions->removeUnusedActions(required_output_);
+            if (!actions_dag->getSettings().projected_output)
+                actions_dag->removeUnusedActions(required_output_);
         }
 
         void prependProjectInput() const override
         {
-            actions->projectInput();
+            actions_dag->projectInput();
         }
 
         std::string dump() const override
         {
-            return actions->dumpDAG();
+            return actions_dag->dumpDAG();
         }
     };
 
@@ -506,7 +506,7 @@ struct ExpressionActionsChain
             throw Exception("Empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
         }
 
-        return typeid_cast<ExpressionActionsStep *>(steps.back().get())->actions;
+        return typeid_cast<ExpressionActionsStep *>(steps.back().get())->actions_dag;
     }
 
     Step & getLastStep()
