@@ -1,4 +1,5 @@
 #include <Storages/RocksDB/EmbeddedRocksDBBlockOutputStream.h>
+#include <Storages/RocksDB/StorageEmbeddedRocksDB.h>
 #include <IO/WriteBufferFromString.h>
 
 #include <rocksdb/db.h>
@@ -6,12 +7,11 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ROCKSDB_ERROR;
 }
-
-class StorageEmbeddedRocksDB;
 
 EmbeddedRocksDBBlockOutputStream::EmbeddedRocksDBBlockOutputStream(
     StorageEmbeddedRocksDB & storage_,

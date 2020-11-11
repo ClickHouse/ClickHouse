@@ -2,11 +2,14 @@
 
 #include <DataStreams/IBlockOutputStream.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include <Storages/RocksDB/StorageEmbeddedRocksDB.h>
 
 
 namespace DB
 {
+
+class StorageEmbeddedRocksDB;
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 class EmbeddedRocksDBBlockOutputStream : public IBlockOutputStream
 {
