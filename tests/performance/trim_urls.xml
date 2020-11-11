@@ -20,6 +20,7 @@
                <value>trim(TRAILING '/' FROM </value>
                <value>trim(BOTH 'htpsw:/' FROM </value>
            <values>
+       </substitution>
     </substitutions>
 
     <query>SELECT ignore({func_fast}URL)) FROM hits_10m_single FORMAT Null</query>
