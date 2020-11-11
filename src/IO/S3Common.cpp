@@ -144,10 +144,10 @@ namespace S3
 {
     ClientFactory::ClientFactory()
     {
-        aws_options = Aws::SDKOptions{};
-        Aws::InitAPI(aws_options);
         Aws::Utils::Logging::InitializeAWSLogging(std::make_shared<AWSLogger>());
         Aws::Http::SetHttpClientFactory(std::make_shared<PocoHTTPClientFactory>());
+        aws_options = Aws::SDKOptions{};
+        Aws::InitAPI(aws_options);
     }
 
     ClientFactory::~ClientFactory()
