@@ -101,7 +101,7 @@ class ColumnMapIndex : public ColumnMap::IIndex
     mutable std::atomic<size_t> find_hits = 0;
     mutable std::atomic<size_t> find_misses = 0;
     mutable std::atomic<size_t> index_lookups = 0;
-    mutable std::atomic<size_t> accumulated_lookup_nanoseconds = 0;
+    mutable std::atomic<size_t> find_total_nanoseconds = 0;
     size_t index_rebuilds = 0;
 
 public:
@@ -124,8 +124,8 @@ public:
                       << "\n\tsearches : " << find_queries
                       << "\n\t  hits   : " << find_hits
                       << "\n\t  misses : " << find_misses
-                      << "\n\ttotal lookup time : " << accumulated_lookup_nanoseconds << "ns"
-                      << "\n\tavg lookup time   : " << static_cast<double>(accumulated_lookup_nanoseconds)/index_lookups << "ns/index lookup"
+                      << "\n\ttotal find time : " << find_total_nanoseconds << "ns"
+                      << "\n\tavg find (per row) time: " << static_cast<double>(find_total_nanoseconds)/index_lookups << "ns/index lookup"
                       << "\n\tavg lookups per search : " << static_cast<double>(index_lookups)/find_queries
                       << "\n\tindex rebuilds : " << index_rebuilds
                       << std::endl;
@@ -177,7 +177,6 @@ public:
 
             const size_t final_offset = keys_offsets[row];
 
-//            std::cerr << "!!!!! map #" << row << " would have " << final_offset - starting_offset << " cells" << std::endl;
             HashMapType map(SharedArenaWithFreeListsAllocator{&arena});
 
             if constexpr (!std::is_same_v<KeyStorageType, StringRef>)
@@ -196,7 +195,6 @@ public:
                     it->getMapped() = static_cast<MappedType>(i);
             }
             total_items += final_offset - starting_offset;
-//            std::cerr << "!!! " << row << " " << starting_offset << " : " << final_offset << std::endl;
             starting_offset = final_offset;
 
             index.emplace_back(std::move(map));
@@ -209,6 +207,39 @@ public:
         ++index_rebuilds;
     }
 
+    template <typename NeedleColumnType>
+    struct VectorColumnValueExtractor
+    {
+        const NeedleColumnType & needle_col;
+
+        VectorColumnValueExtractor(const NeedleColumnType & needle_col_)
+            : needle_col(needle_col_)
+        {}
+
+        inline KeyStorageType getElement(size_t row) const
+        {
+            return needle_col.getElement(row);
+        }
+    };
+
+    template <typename NeedleColumnType>
+    struct ConstColumnValueExtractor
+    {
+        const KeyStorageType value;
+        ConstColumnValueExtractor(const NeedleColumnType & needle_col)
+            : value(static_cast<KeyStorageType>(needle_col.getElement(0)))
+        {}
+
+//        ConstColumnValueExtractor(const ColumnConst & const_needle_col)
+//            : ConstColumnValueExtractor(typeid_cast<const NeedleColumnType>(const_needle_col))
+//        {}
+
+        inline KeyStorageType getElement(size_t /*row*/) const
+        {
+            return value;
+        }
+    };
+
     IColumn::Ptr findAll(const IColumn & needles, size_t rows_count) const override
     {
         if (index.size() < needles.size())
@@ -219,7 +250,7 @@ public:
         {
             auto findConst = [this](const auto & typed_needles_column, size_t rows_count_ ) -> auto
             {
-                return this->findAllTypedConst(typed_needles_column, rows_count_);
+                return this->findAllTyped<ConstColumnValueExtractor>(typed_needles_column, rows_count_);
             };
             return findDispatch(findConst, needles_column->getDataColumn(), rows_count);
         }
@@ -227,7 +258,7 @@ public:
         {
             auto findVector = [this](const auto & typed_needles_column, size_t rows_count_ ) -> auto
             {
-                return this->findAllTypedVector(typed_needles_column, rows_count_);
+                return this->findAllTyped<VectorColumnValueExtractor>(typed_needles_column, rows_count_);
             };
             return findDispatch(findVector, needles, rows_count);
         }
@@ -271,10 +302,13 @@ public:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    template <typename NeedleColumnType>
-    IColumn::Ptr findAllTypedVector(const NeedleColumnType & needles, size_t rows_count) const
+    template <template <typename> typename ValueExtractor, typename NeedleColumnType>
+    IColumn::Ptr findAllTyped(const NeedleColumnType & needles, size_t rows_count) const
     {
+        const ValueExtractor<NeedleColumnType> values(needles);
+
         ++find_queries;
+
         size_t misses = 0;
         size_t hits = 0;
 
@@ -283,14 +317,11 @@ public:
         result->reserve(needles.size());
 
         Stopwatch stopwatch;
-        size_t lookup_time = 0;
+        stopwatch.start();
+
         for (size_t row = 0; row < rows_count; ++row)
         {
-            stopwatch.restart();
-            auto res = index[row].find(static_cast<KeyStorageType>(needles.getElement(row)));
-            stopwatch.stop();
-            lookup_time += stopwatch.elapsed();
-
+            auto res = index[row].find(static_cast<KeyStorageType>(values.getElement(row)));
             if (res)
             {
                 result->insertFrom(nested_values, res->getMapped());
@@ -303,50 +334,9 @@ public:
             }
         }
 
+        stopwatch.stop();
+        find_total_nanoseconds += stopwatch.elapsed();
         index_lookups += rows_count;
-        accumulated_lookup_nanoseconds += lookup_time;
-        find_hits += hits;
-        find_misses += misses;
-        return result;
-    }
-
-    template <typename NeedleColumnType>
-    IColumn::Ptr findAllTypedConst(const NeedleColumnType & needles, size_t rows_count) const
-    {
-        // TODO: make a NeedleExtractorColumnConst that gets 0 value in c-tor and then returns it every time.
-        ++find_queries;
-
-        size_t misses = 0;
-        size_t hits = 0;
-
-        const auto & nested_values = values_column.getData();
-        auto result = nested_values.cloneEmpty();
-        result->reserve(needles.size());
-
-        const auto key = static_cast<KeyStorageType>(needles.getElement(0));
-        Stopwatch stopwatch;
-        size_t lookup_time = 0;
-        for (size_t row = 0; row < rows_count; ++row)
-        {
-            stopwatch.restart();
-            auto res = index[row].find(key);
-            stopwatch.stop();
-            lookup_time += stopwatch.elapsed();
-
-            if (res)
-            {
-                result->insertFrom(nested_values, res->getMapped());
-                ++hits;
-            }
-            else
-            {
-                result->insertDefault();
-                ++misses;
-            }
-        }
-
-        index_lookups += rows_count;
-        accumulated_lookup_nanoseconds += lookup_time;
         find_hits += hits;
         find_misses += misses;
         return result;
@@ -392,7 +382,8 @@ std::shared_ptr<ColumnMap::IIndex> makeIndex(const ColumnArray & keys_column, co
             return std::make_shared<ColumnMapIndex<ColumnFixedString, StringRef>>(keys_column, values_column);
         case TypeIndex::Enum8:
             return std::make_shared<ColumnMapIndex<ColumnVector<Int8>, Int64>>(keys_column, values_column);
-////        case TypeIndex::Enum16:
+        case TypeIndex::Enum16:
+            return std::make_shared<ColumnMapIndex<ColumnVector<Int16>, Int64>>(keys_column, values_column);
 ////        case TypeIndex::Decimal32:
 ////        case TypeIndex::Decimal64:
 ////        case TypeIndex::Decimal128:
