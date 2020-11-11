@@ -111,7 +111,16 @@ public:
         bool allow_constant_folding = true;
     };
 
-    /// Index is a list of nodes + hash table: name -> list_elem.
+    /// Index is used to:
+    ///     * find Node buy it's result_name
+    ///     * specify order of columns in result
+    /// It represents a set of available columns.
+    /// Removing of column from index is equivalent to removing of column from final result.
+    ///
+    /// DAG allows actions with duplicating result names. In this case index will point to last added Node.
+    /// It does not cause any problems as long as execution of actions does not depend on action names anymore.
+    ///
+    /// Index is a list of nodes + [map: name -> list::iterator].
     /// List is ordered, may contain nodes with same names, or one node several times.
     class Index
     {
