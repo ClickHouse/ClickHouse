@@ -650,6 +650,7 @@ void ZooKeeper::sendThread()
                     if (info.watch)
                     {
                         info.request->has_watch = true;
+                        std::cerr << "REQUEST" << info.request->getOpNum() << " HAS WATCH" << std::endl;
                         CurrentMetrics::add(CurrentMetrics::ZooKeeperWatch);
                     }
 
@@ -661,7 +662,7 @@ void ZooKeeper::sendThread()
                     info.request->addRootPath(root_path);
 
                     info.request->probably_sent = true;
-                    std::cerr << "SENDING GENERAL REQUEST\n";
+                    std::cerr << "SENDING GENERAL REQUEST:" << info.request->getOpNum() << std::endl;
                     info.request->write(*out);
 
                     /// We sent close request, exit
@@ -729,7 +730,9 @@ void ZooKeeper::receiveThread()
             else
             {
                 if (earliest_operation)
-                    throw Exception("Operation timeout (no response) for path: " + earliest_operation->request->getPath(), Error::ZOPERATIONTIMEOUT);
+                {
+                    throw Exception("Operation timeout (no response) for request " + std::to_string(earliest_operation->request->getOpNum()) + " for path: " + earliest_operation->request->getPath(), Error::ZOPERATIONTIMEOUT);
+                }
                 waited += max_wait;
                 if (waited >= session_timeout.totalMicroseconds())
                     throw Exception("Nothing is received in session timeout", Error::ZOPERATIONTIMEOUT);
@@ -772,6 +775,7 @@ void ZooKeeper::receiveEvent()
     }
     else if (xid == watch_xid)
     {
+        std::cerr << "Receiving watch\n";
         ProfileEvents::increment(ProfileEvents::ZooKeeperWatchResponse);
         response = std::make_shared<ZooKeeperWatchResponse>();
 
@@ -828,21 +832,23 @@ void ZooKeeper::receiveEvent()
 
     try
     {
-        std::cerr << "READING RESPONSE FOR REQUEST ID:" << request_info.request->getOpNum() << std::endl;
+        std::cerr << "READING RESPONSE FOR REQUEST\n";
         if (!response)
             response = request_info.request->makeResponse();
 
         if (err != Error::ZOK)
         {
-            std::cerr << "GOT ERROR:" << static_cast<int32_t>(err) << std::endl;
+            //std::cerr << "GOT ERROR:" << static_cast<int32_t>(err) << std::endl;
             response->error = err;
         }
         else
         {
-            std::cerr << "NO ERROR RECEIVED\n";
+            //std::cerr << "NO ERROR RECEIVED\n";
             response->readImpl(*in);
             response->removeRootPath(root_path);
         }
+        if (request_info.request)
+            std::cerr << "Response Request ID" << request_info.request->getOpNum() << std::endl;
 
         /// Instead of setting the watch in sendEvent, set it in receiveEvent because need to check the response.
         /// The watch shouldn't be set if the node does not exist and it will never exist like sequential ephemeral nodes.

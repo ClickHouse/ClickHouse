@@ -30,12 +30,18 @@ static void processWatchesImpl(const String & path, TestKeeperStorage::Watches &
     watch_response.path = path;
     watch_response.xid = -1;
 
+    std::cerr << "WATCHES SIZE:" << watches.size() << " path:" << path << std::endl;
     auto it = watches.find(watch_response.path);
     if (it != watches.end())
     {
         for (auto & callback : it->second)
+        {
             if (callback)
+            {
+                std::cerr << "CALLING WATCH CALLBACK\n";
                 callback(std::make_shared<Coordination::ZooKeeperWatchResponse>(watch_response));
+            }
+        }
 
         watches.erase(it);
     }
@@ -44,12 +50,18 @@ static void processWatchesImpl(const String & path, TestKeeperStorage::Watches &
     watch_list_response.path = parentPath(path);
     watch_list_response.xid = -1;
 
+    std::cerr << "LIST WATCHES SIZE:" << list_watches.size() << " path:" << path << std::endl;
     it = list_watches.find(watch_list_response.path);
     if (it != list_watches.end())
     {
         for (auto & callback : it->second)
+        {
             if (callback)
+            {
+                std::cerr << "Calling list watch callback\n" << std::endl;
                 callback(std::make_shared<Coordination::ZooKeeperWatchResponse>(watch_list_response));
+            }
+        }
 
         list_watches.erase(it);
     }

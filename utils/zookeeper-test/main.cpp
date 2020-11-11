@@ -82,6 +82,43 @@ void testCreateSetVersionRequest(zkutil::ZooKeeper & zk)
     checkEq(zk, "/data/check_data", "e");
 }
 
+void testCreateSetWatchEvent(zkutil::ZooKeeper & zk)
+{
+
+    std::shared_ptr<Poco::Event> event = std::make_shared<Poco::Event>();
+    zk.create("/data/nodeforwatch", "", zkutil::CreateMode::Persistent);
+    Coordination::Stat stat;
+    zk.get("/data/nodeforwatch", &stat, event);
+
+    if (event->tryWait(300))
+        throw std::runtime_error(fmt::format("Event for path {} was set without any actions", "/data/nodeforwatch"));
+
+    zk.set("/data/nodeforwatch", "x");
+    if (!event->tryWait(300))
+        throw std::runtime_error(fmt::format("Event for path {} was not set after set", "/data/nodeforwatch"));
+    else
+        std::cerr << "Event was set well\n";
+}
+
+void testCreateListWatchEvent(zkutil::ZooKeeper & zk)
+{
+    std::shared_ptr<Poco::Event> event = std::make_shared<Poco::Event>();
+    std::string path = "/data/pathforwatch";
+    zk.create(path, "", zkutil::CreateMode::Persistent);
+    zk.create(path + "/n1", "", zkutil::CreateMode::Persistent);
+    zk.create(path + "/n2", "", zkutil::CreateMode::Persistent);
+    zk.getChildren(path, nullptr, event);
+
+    if (event->tryWait(300))
+        throw std::runtime_error(fmt::format("ListEvent for path {} was set without any actions", path));
+
+    zk.create(path + "/n3", "", zkutil::CreateMode::Persistent);
+    if (!event->tryWait(300))
+        throw std::runtime_error(fmt::format("ListEvent for path {} was not set after create", path));
+    else
+        std::cerr << "ListEvent was set well\n";
+}
+
 void testMultiRequest(zkutil::ZooKeeper & zk)
 {
     Coordination::Requests requests;
@@ -127,6 +164,8 @@ int main(int argc, char *argv[]) {
         testCreateList(zk);
         testCreateSetVersionRequest(zk);
         testMultiRequest(zk);
+        testCreateSetWatchEvent(zk);
+        testCreateListWatchEvent(zk);
     }
     catch(...)
     {

@@ -34,6 +34,7 @@ private:
     Poco::Timespan operation_timeout;
 
     std::queue<zkutil::TestKeeperStorage::AsyncResponse> responses;
+    std::vector<zkutil::TestKeeperStorage::AsyncResponse> watch_responses;
 
     /// Streams for reading/writing from/to client connection socket.
     std::shared_ptr<ReadBufferFromPocoSocket> in;
