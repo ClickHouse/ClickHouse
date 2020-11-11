@@ -673,7 +673,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
         auto tmp_actions_dag = std::make_shared<ActionsDAG>(sourceColumns());
         getRootActions(select_query->prewhere(), only_types, tmp_actions_dag);
         tmp_actions_dag->removeUnusedActions({prewhere_column_name});
-        auto required_columns = tmp_actions_dag->getRequiredColumns();
+        auto required_columns = tmp_actions_dag->getRequiredColumns().getNames();
         NameSet required_source_columns(required_columns.begin(), required_columns.end());
 
         /// Add required columns to required output in order not to remove them after prewhere execution.
