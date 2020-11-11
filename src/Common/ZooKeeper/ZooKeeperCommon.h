@@ -19,7 +19,6 @@
 #include <functional>
 
 
-
 namespace Coordination
 {
 

@@ -17,10 +17,7 @@ namespace DB
 namespace zkutil
 {
 
-
 using namespace DB;
-
-
 
 static String parentPath(const String & path)
 {
@@ -678,7 +675,5 @@ TestKeeperStorage::~TestKeeperStorage()
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
-
-
 
 }
