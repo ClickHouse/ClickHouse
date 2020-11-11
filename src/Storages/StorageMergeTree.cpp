@@ -656,7 +656,7 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
             && getCurrentMutationVersion(left, lock) == getCurrentMutationVersion(right, lock);
     };
 
-    SelectPartsDecision select_decision;
+    SelectPartsDecision select_decision = SelectPartsDecision::CANNOT_SELECT;
 
     if (partition_id.empty())
     {

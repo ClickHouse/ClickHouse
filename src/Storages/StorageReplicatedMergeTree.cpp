@@ -3844,7 +3844,7 @@ bool StorageReplicatedMergeTree::optimize(
 
                 FutureMergedMutatedPart future_merged_part;
                 String disable_reason;
-                SelectPartsDecision select_decision;
+                SelectPartsDecision select_decision = SelectPartsDecision::CANNOT_SELECT;
 
                 if (!partition)
                 {
