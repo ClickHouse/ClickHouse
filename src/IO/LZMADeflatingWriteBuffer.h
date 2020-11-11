@@ -27,7 +27,6 @@ private:
 
     std::unique_ptr<WriteBuffer> out;
     lzma_stream lstr;
-    // FL2_CStream * lstr;
     bool finished = false;
 };
 }

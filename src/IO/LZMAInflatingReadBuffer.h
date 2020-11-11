@@ -27,7 +27,6 @@ private:
 
     std::unique_ptr<ReadBuffer> in;
     lzma_stream lstr;
-    // FL2_DStream * lstr;
 
     bool eof;
 };
