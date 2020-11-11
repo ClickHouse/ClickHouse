@@ -268,6 +268,7 @@ TESTS_TO_SKIP=(
     protobuf
     secure
     sha256
+    xz
 
     # Not sure why these two fail even in sequential mode. Disabled for now
     # to make some progress.
