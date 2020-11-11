@@ -39,8 +39,6 @@ public:
 
     Container container;
 
-    String root_path;
-
     std::atomic<int64_t> zxid{0};
     std::atomic<bool> shutdown{false};
 
@@ -56,6 +54,7 @@ public:
         ResponseCallback watch_callback;
         clock::time_point time;
     };
+
     std::mutex push_request_mutex;
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
     RequestsQueue requests_queue{1};
