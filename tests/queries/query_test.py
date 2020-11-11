@@ -29,7 +29,7 @@ def check_result(result, error, return_code, reference, replace_map):
 
 def run_client(bin_prefix, port, query, reference, replace_map={}):
     # We can't use `text=True` since some tests may return binary data
-    client = subprocess.Popen([bin_prefix + '-client', '--port', str(port), '-m', '-n', '--testmode'],
+    client = subprocess.Popen([bin_prefix + '-client', '--port', str(port), '-m', '-n', '--testmode', '--use_antlr_parser=1'],
                               stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     result, error = client.communicate(query.encode('utf-8'))
     assert client.returncode is not None, "Client should exit after processing all queries"

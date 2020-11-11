@@ -253,6 +253,24 @@ ServerThread.DEFAULT_SERVER_CONFIG = \
                 </replica>
             </shard>
         </test_cluster_two_shards_internal_replication>
+
+        <test_cluster_with_incorrect_pw>
+             <shard>
+                 <internal_replication>true</internal_replication>
+                 <replica>
+                     <host>127.0.0.1</host>
+                     <port>{tcp_port}</port>
+                     <!-- password is incorrect -->
+                     <password>foo</password>
+                 </replica>
+                 <replica>
+                     <host>127.0.0.2</host>
+                     <port>{tcp_port}</port>
+                     <!-- password is incorrect -->
+                     <password>foo</password>
+                 </replica>
+             </shard>
+         </test_cluster_with_incorrect_pw>
     </remote_servers>
 
     <storage_configuration>
