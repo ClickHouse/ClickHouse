@@ -8,6 +8,7 @@
 #include <Common/WeakHash.h>
 
 #include <ext/scope_guard.h>
+#include <miniselect/floyd_rivest_select.h>
 
 namespace DB
 {
@@ -393,7 +394,7 @@ void ColumnLowCardinality::updatePermutationImpl(size_t limit, Permutation & res
 
         /// Since then we are working inside the interval.
 
-        std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less);
+        miniselect::floyd_rivest_partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less);
         auto new_first = first;
 
         for (auto j = first + 1; j < limit; ++j)

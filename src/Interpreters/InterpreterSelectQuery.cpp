@@ -33,11 +33,13 @@
 
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Transforms/FilterTransform.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
-#include <Processors/QueryPlan/ReadFromStorageStep.h>
+#include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
@@ -1100,6 +1102,48 @@ static StreamLocalLimits getLimitsForStorage(const Settings & settings, const Se
     return limits;
 }
 
+void InterpreterSelectQuery::addEmptySourceToQueryPlan(QueryPlan & query_plan, const Block & source_header, const SelectQueryInfo & query_info)
+{
+    Pipe pipe(std::make_shared<NullSource>(source_header));
+
+    if (query_info.prewhere_info)
+    {
+        if (query_info.prewhere_info->alias_actions)
+        {
+            pipe.addSimpleTransform([&](const Block & header)
+            {
+                return std::make_shared<ExpressionTransform>(header, query_info.prewhere_info->alias_actions);
+            });
+        }
+
+        pipe.addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<FilterTransform>(
+                header,
+                query_info.prewhere_info->prewhere_actions,
+                query_info.prewhere_info->prewhere_column_name,
+                query_info.prewhere_info->remove_prewhere_column);
+        });
+
+        // To remove additional columns
+        // In some cases, we did not read any marks so that the pipeline.streams is empty
+        // Thus, some columns in prewhere are not removed as expected
+        // This leads to mismatched header in distributed table
+        if (query_info.prewhere_info->remove_columns_actions)
+        {
+            pipe.addSimpleTransform([&](const Block & header)
+            {
+                return std::make_shared<ExpressionTransform>(
+                        header, query_info.prewhere_info->remove_columns_actions);
+            });
+        }
+    }
+
+    auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+    read_from_pipe->setStepDescription("Read from NullSource");
+    query_plan.addStep(std::move(read_from_pipe));
+}
+
 void InterpreterSelectQuery::executeFetchColumns(
     QueryProcessingStage::Enum processing_stage, QueryPlan & query_plan,
     const PrewhereInfoPtr & prewhere_info, const Names & columns_to_remove_after_prewhere)
@@ -1345,7 +1389,7 @@ void InterpreterSelectQuery::executeFetchColumns(
             ErrorCodes::TOO_MANY_COLUMNS);
 
     /// General limit for the number of threads.
-    query_plan.setMaxThreads(settings.max_threads);
+    size_t max_threads_execute_query = settings.max_threads;
 
     /** With distributed query processing, almost no computations are done in the threads,
      *  but wait and receive data from remote servers.
@@ -1358,8 +1402,7 @@ void InterpreterSelectQuery::executeFetchColumns(
     if (storage && storage->isRemote())
     {
         is_remote = true;
-        max_streams = settings.max_distributed_connections;
-        query_plan.setMaxThreads(max_streams);
+        max_threads_execute_query = max_streams = settings.max_distributed_connections;
     }
 
     UInt64 max_block_size = settings.max_block_size;
@@ -1384,8 +1427,7 @@ void InterpreterSelectQuery::executeFetchColumns(
         && limit_length + limit_offset < max_block_size)
     {
         max_block_size = std::max(UInt64(1), limit_length + limit_offset);
-        max_streams = 1;
-        query_plan.setMaxThreads(max_streams);
+        max_threads_execute_query = max_streams = 1;
     }
 
     if (!max_block_size)
@@ -1465,11 +1507,35 @@ void InterpreterSelectQuery::executeFetchColumns(
         if (!options.ignore_quota && (options.to_stage == QueryProcessingStage::Complete))
             quota = context->getQuota();
 
-        storage->read(query_plan, table_lock, metadata_snapshot, limits, leaf_limits, std::move(quota),
-                      required_columns, query_info, context, processing_stage, max_block_size, max_streams);
+        storage->read(query_plan, required_columns, metadata_snapshot,
+                      query_info, *context, processing_stage, max_block_size, max_streams);
+
+        /// Create step which reads from empty source if storage has no data.
+        if (!query_plan.isInitialized())
+        {
+            auto header = metadata_snapshot->getSampleBlockForColumns(
+                    required_columns, storage->getVirtuals(), storage->getStorageID());
+            addEmptySourceToQueryPlan(query_plan, header, query_info);
+        }
+
+        /// Extend lifetime of context, table lock, storage. Set limits and quota.
+        auto adding_limits_and_quota = std::make_unique<SettingQuotaAndLimitsStep>(
+                query_plan.getCurrentDataStream(),
+                storage,
+                std::move(table_lock),
+                limits,
+                leaf_limits,
+                std::move(quota),
+                context);
+        adding_limits_and_quota->setStepDescription("Set limits and quota after reading from storage");
+        query_plan.addStep(std::move(adding_limits_and_quota));
     }
     else
         throw Exception("Logical error in InterpreterSelectQuery: nowhere to read", ErrorCodes::LOGICAL_ERROR);
+
+    /// Specify the number of threads only if it wasn't specified in storage.
+    if (!query_plan.getMaxThreads())
+        query_plan.setMaxThreads(max_threads_execute_query);
 
     /// Aliases in table declaration.
     if (processing_stage == QueryProcessingStage::FetchColumns && alias_actions)
