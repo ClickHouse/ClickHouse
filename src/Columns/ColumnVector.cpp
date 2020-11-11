@@ -17,7 +17,7 @@
 #include <ext/bit_cast.h>
 #include <ext/scope_guard.h>
 #include <pdqsort.h>
-
+#include <miniselect/floyd_rivest_select.h>
 
 #ifdef __SSE2__
     #include <emmintrin.h>
@@ -156,9 +156,9 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
             res[i] = i;
 
         if (reverse)
-            std::partial_sort(res.begin(), res.begin() + limit, res.end(), greater(*this, nan_direction_hint));
+            miniselect::floyd_rivest_partial_sort(res.begin(), res.begin() + limit, res.end(), greater(*this, nan_direction_hint));
         else
-            std::partial_sort(res.begin(), res.begin() + limit, res.end(), less(*this, nan_direction_hint));
+            miniselect::floyd_rivest_partial_sort(res.begin(), res.begin() + limit, res.end(), less(*this, nan_direction_hint));
     }
     else
     {
@@ -254,9 +254,9 @@ void ColumnVector<T>::updatePermutation(bool reverse, size_t limit, int nan_dire
         /// Since then, we are working inside the interval.
 
         if (reverse)
-            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, greater(*this, nan_direction_hint));
+            miniselect::floyd_rivest_partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, greater(*this, nan_direction_hint));
         else
-            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less(*this, nan_direction_hint));
+            miniselect::floyd_rivest_partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less(*this, nan_direction_hint));
 
         size_t new_first = first;
         for (size_t j = first + 1; j < limit; ++j)
