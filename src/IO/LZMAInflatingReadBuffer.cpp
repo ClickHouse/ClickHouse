@@ -55,10 +55,8 @@ bool LZMAInflatingReadBuffer::nextImpl()
 
     lstr.next_out = reinterpret_cast<unsigned char *>(internal_buffer.begin());
     lstr.avail_out = internal_buffer.size();
-    // std::cout << lstr.avail_in << " " << lstr.avail_out << std::endl;
 
     lzma_ret ret = lzma_code(&lstr, action);
-    // std::cout << ret << std::endl;
     in->position() = in->buffer().end() - lstr.avail_in;
     working_buffer.resize(internal_buffer.size() - lstr.avail_out);
 

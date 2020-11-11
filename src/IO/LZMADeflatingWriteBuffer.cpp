@@ -12,9 +12,6 @@ LZMADeflatingWriteBuffer::LZMADeflatingWriteBuffer(
     std::unique_ptr<WriteBuffer> out_, int compression_level, size_t buf_size, char * existing_memory, size_t alignment)
     : BufferWithOwnMemory<WriteBuffer>(buf_size, existing_memory, alignment), out(std::move(out_))
 {
-    // FL2_createCStreamMt(number of threads, flag of two dictionaries usage)
-    // lstr = FL2_createCStreamMt(2, 0);
-    // size_t res = FL2_initCStream(lstr, compression_level);
 
     lstr = LZMA_STREAM_INIT;
     lstr.allocator = nullptr;
