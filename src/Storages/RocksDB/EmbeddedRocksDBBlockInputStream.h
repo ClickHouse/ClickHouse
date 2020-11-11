@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataStreams/IBlockInputStream.h>
-#include <Storages/RocksDB/StorageEmbeddedRocksDB.h>
 
 
 namespace rocksdb
@@ -11,6 +10,10 @@ namespace rocksdb
 
 namespace DB
 {
+
+class StorageEmbeddedRocksDB;
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 class EmbeddedRocksDBBlockInputStream : public IBlockInputStream
 {
