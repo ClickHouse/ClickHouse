@@ -10,7 +10,7 @@
 #include <Common/WeakHash.h>
 #include <Core/Field.h>
 #if !defined(ARCADIA_BUILD)
-    #include <miniselect/floyd_rivest_select.h>
+    #include <miniselect/floyd_rivest_select.h> // Y_IGNORE
 #endif
 
 

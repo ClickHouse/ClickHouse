@@ -9,7 +9,7 @@
 #include <Common/PODArray.h>
 
 #if !defined(ARCADIA_BUILD)
-    #include <miniselect/floyd_rivest_select.h>
+    #include <miniselect/floyd_rivest_select.h> // Y_IGNORE
 #endif
 
 namespace DB
