@@ -316,9 +316,9 @@ This fuction returns current thread id.
 tid()
 ```
 
-**Returned value** 
+**Returned value**
 
--   Current thread id. [Uint64](../../sql-reference/data-types/int-uint.md#uint-ranges)
+-   Current thread id. [Uint64](../../sql-reference/data-types/int-uint.md#uint-ranges).
 
 **Example**
 
@@ -349,7 +349,7 @@ logTrace('message')
 
 -   `message` — Message that is emitted to server log. [String](../../sql-reference/data-types/string.md#string).
 
-**Returned value** 
+**Returned value**
 
 -   Always returns 0.
 
