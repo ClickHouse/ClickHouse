@@ -19,7 +19,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int SYNC_MYSQL_USER_ACCESS_ERR;
+    extern const int SYNC_MYSQL_USER_ACCESS_ERROR;
 }
 
 static std::unordered_map<String, String> fetchTablesCreateQuery(
@@ -146,7 +146,7 @@ static void checkSyncUserPriv(mysqlxx::PoolWithFailover::Entry & connection)
         throw Exception("MySQL SYNC USER ACCESS ERR: mysql sync user needs "
                         "at least GLOBAL PRIVILEGES:'RELOAD, REPLICATION SLAVE, REPLICATION CLIENT' "
                         "and SELECT PRIVILEGE on MySQL Database."
-                        "But the SYNC USER grant query is: " + out.str(), ErrorCodes::SYNC_MYSQL_USER_ACCESS_ERR);
+                        "But the SYNC USER grant query is: " + out.str(), ErrorCodes::SYNC_MYSQL_USER_ACCESS_ERROR);
 }
 
 bool MaterializeMetadata::checkBinlogFileExists(mysqlxx::PoolWithFailover::Entry & connection, const String & mysql_version) const

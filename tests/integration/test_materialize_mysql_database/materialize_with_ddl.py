@@ -489,48 +489,48 @@ def select_without_columns(clickhouse_node, mysql_node, service_name):
 
 
 def err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
-    mysql_node.query("DROP DATABASE IF EXISTS test_database")
-    clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
-    mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
-    mysql_node.query("CREATE TABLE test_database.test_table_1 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB;")
-    mysql_node.query("INSERT INTO test_database.test_table_1 VALUES(1), (2), (3), (4), (5), (6);")
+    mysql_node.query("DROP DATABASE IF EXISTS priv_err_db")
+    clickhouse_node.query("DROP DATABASE IF EXISTS priv_err_db")
+    mysql_node.query("CREATE DATABASE priv_err_db DEFAULT CHARACTER SET 'utf8'")
+    mysql_node.query("CREATE TABLE priv_err_db.test_table_1 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB;")
+    mysql_node.query("INSERT INTO priv_err_db.test_table_1 VALUES(1);")
 
     mysql_node.result("SHOW GRANTS FOR 'test'@'%';")
 
     clickhouse_node.query(
-        "CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'test', '123')".format(
+        "CREATE DATABASE priv_err_db ENGINE = MaterializeMySQL('{}:3306', 'priv_err_db', 'test', '123')".format(
             service_name))
 
     # wait MaterializeMySQL read binlog events
-    check_query(clickhouse_node, "SELECT count() FROM test_database.test_table_1 FORMAT TSV", "6\n", 30, 5)
-    mysql_node.query("INSERT INTO test_database.test_table_1 VALUES(7);")
-    check_query(clickhouse_node, "SELECT count() FROM test_database.test_table_1 FORMAT TSV", "7\n")
-    clickhouse_node.query("DROP DATABASE test_database;")
+    check_query(clickhouse_node, "SELECT count() FROM priv_err_db.test_table_1 FORMAT TSV", "1\n", 30, 5)
+    mysql_node.query("INSERT INTO priv_err_db.test_table_1 VALUES(2);")
+    check_query(clickhouse_node, "SELECT count() FROM priv_err_db.test_table_1 FORMAT TSV", "2\n")
+    clickhouse_node.query("DROP DATABASE priv_err_db;")
 
     mysql_node.query("REVOKE REPLICATION SLAVE ON *.* FROM 'test'@'%'")
     clickhouse_node.query(
-        "CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'test', '123')".format(
+        "CREATE DATABASE priv_err_db ENGINE = MaterializeMySQL('{}:3306', 'priv_err_db', 'test', '123')".format(
             service_name))
-    assert "test_database" in clickhouse_node.query("SHOW DATABASES")
-    assert "test_table_1" not in clickhouse_node.query("SHOW TABLES FROM test_database")
-    clickhouse_node.query("DROP DATABASE test_database")
+    assert "priv_err_db" in clickhouse_node.query("SHOW DATABASES")
+    assert "test_table_1" not in clickhouse_node.query("SHOW TABLES FROM priv_err_db")
+    clickhouse_node.query("DROP DATABASE priv_err_db")
 
     mysql_node.query("REVOKE REPLICATION CLIENT, RELOAD ON *.* FROM 'test'@'%'")
     clickhouse_node.query(
-        "CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'test', '123')".format(
+        "CREATE DATABASE priv_err_db ENGINE = MaterializeMySQL('{}:3306', 'priv_err_db', 'test', '123')".format(
             service_name))
-    assert "test_database" in clickhouse_node.query("SHOW DATABASES")
-    assert "test_table_1" not in clickhouse_node.query("SHOW TABLES FROM test_database")
-    clickhouse_node.query("DROP DATABASE test_database")
+    assert "priv_err_db" in clickhouse_node.query("SHOW DATABASES")
+    assert "test_table_1" not in clickhouse_node.query("SHOW TABLES FROM priv_err_db")
+    clickhouse_node.query("DETACH DATABASE priv_err_db")
 
-    mysql_node.query("REVOKE SELECT ON test_database.* FROM 'test'@'%'")
+    mysql_node.query("REVOKE SELECT ON priv_err_db.* FROM 'test'@'%'")
+    time.sleep(3)
+
     with pytest.raises(QueryRuntimeException) as exception:
-        clickhouse_node.query(
-            "CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'test', '123')".format(
-                service_name))
+        clickhouse_node.query("ATTACH DATABASE priv_err_db")
 
     assert 'MySQL SYNC USER ACCESS ERR:' in str(exception.value)
-    assert "test_database" not in clickhouse_node.query("SHOW DATABASES")
+    assert "priv_err_db" not in clickhouse_node.query("SHOW DATABASES")
 
-    mysql_node.query("DROP DATABASE test_database;")
-    mysql_node.query("DROP USER 'test'@'%';")
+    mysql_node.query("DROP DATABASE priv_err_db;")
+    mysql_node.grant_min_priv_for_user("test")
