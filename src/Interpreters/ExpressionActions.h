@@ -273,8 +273,10 @@ private:
 };
 
 
-/** Contains a sequence of actions on the block.
-  */
+/// Sequence of actions on the block.
+/// Is used to calculate expressions.
+///
+/// Takes ActionsDAG and orders actions using top-sort.
 class ExpressionActions
 {
 public:
@@ -313,11 +315,6 @@ private:
     ColumnNumbers result_positions;
     Block sample_block;
 
-    /// This flag means that all columns except input will be removed from block before execution.
-    bool project_input = false;
-
-    size_t max_temporary_non_const_columns = 0;
-
     friend class ActionsDAG;
 
 public:
@@ -329,9 +326,6 @@ public:
     const Actions & getActions() const { return actions; }
     const std::list<Node> & getNodes() const { return actions_dag->getNodes(); }
     const ActionsDAG & getActionsDAG() const { return *actions_dag; }
-
-    /// Adds to the beginning the removal of all extra columns.
-    void projectInput() { project_input = true; }
 
     /// Get a list of input columns.
     Names getRequiredColumns() const;

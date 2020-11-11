@@ -69,9 +69,6 @@ ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_)
         throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,
                         "Too many temporary columns: {}. Maximum: {}",
                         actions_dag->dumpNames(), std::to_string(settings.max_temporary_columns));
-
-    max_temporary_non_const_columns = settings.max_temporary_non_const_columns;
-    project_input = settings.project_input;
 }
 
 ExpressionActionsPtr ExpressionActions::clone() const
@@ -259,6 +256,7 @@ std::string ExpressionActions::Action::toString() const
 
 void ExpressionActions::checkLimits(const ColumnsWithTypeAndName & columns) const
 {
+    auto max_temporary_non_const_columns = actions_dag->getSettings().max_temporary_non_const_columns;
     if (max_temporary_non_const_columns)
     {
         size_t non_const_columns = 0;
@@ -440,7 +438,7 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) 
         }
     }
 
-    if (project_input)
+    if (actions_dag->getSettings().project_input)
     {
         block.clear();
     }
@@ -528,7 +526,7 @@ std::string ExpressionActions::dumpActions() const
     for (const auto & output_column : output_columns)
         ss << output_column.name << " " << output_column.type->getName() << "\n";
 
-    ss << "\nproject input: " << project_input << "\noutput positions:";
+    ss << "\nproject input: " << actions_dag->getSettings().project_input << "\noutput positions:";
     for (auto pos : result_positions)
         ss << " " << pos;
     ss << "\n";
@@ -706,6 +704,7 @@ ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_join
     auto split_actions = cloneEmpty();
     split_actions->nodes.swap(split_nodes);
     split_actions->index.swap(split_index);
+    split_actions->settings.project_input = false;
 
     return split_actions;
 }
