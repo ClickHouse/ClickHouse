@@ -673,7 +673,8 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
         auto tmp_actions_dag = std::make_shared<ActionsDAG>(sourceColumns());
         getRootActions(select_query->prewhere(), only_types, tmp_actions_dag);
         tmp_actions_dag->removeUnusedActions({prewhere_column_name});
-        auto required_columns = tmp_actions_dag->getRequiredColumns().getNames();
+        auto tmp_actions = std::make_shared<ExpressionActions>(tmp_actions_dag);
+        auto required_columns = tmp_actions->getRequiredColumns();
         NameSet required_source_columns(required_columns.begin(), required_columns.end());
 
         /// Add required columns to required output in order not to remove them after prewhere execution.
@@ -1142,7 +1143,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 Block before_prewhere_sample = source_header;
                 if (sanitizeBlock(before_prewhere_sample))
                 {
-                    prewhere_info->prewhere_actions->updateHeader(before_prewhere_sample);
+                    ExpressionActions(prewhere_info->prewhere_actions).execute(before_prewhere_sample);
                     auto & column_elem = before_prewhere_sample.getByName(query.prewhere()->getColumnName());
                     /// If the filter column is a constant, record it.
                     if (column_elem.column)
@@ -1175,7 +1176,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                     before_where_sample = source_header;
                 if (sanitizeBlock(before_where_sample))
                 {
-                    before_where->updateHeader(before_where_sample);
+                    ExpressionActions(before_where).execute(before_where_sample);
                     auto & column_elem = before_where_sample.getByName(query.where()->getColumnName());
                     /// If the filter column is a constant, record it.
                     if (column_elem.column)
