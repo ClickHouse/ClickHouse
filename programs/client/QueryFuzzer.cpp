@@ -422,6 +422,7 @@ void QueryFuzzer::fuzzMain(ASTPtr & ast)
     std::cout << std::endl;
     WriteBufferFromOStream ast_buf(std::cout, 4096);
     formatAST(*ast, ast_buf, false /*highlight*/);
+    ast_buf.next();
     std::cout << std::endl << std::endl;
 }
 

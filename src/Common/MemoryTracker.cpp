@@ -136,8 +136,9 @@ void MemoryTracker::alloc(Int64 size)
         const auto * description = description_ptr.load(std::memory_order_relaxed);
         amount.fetch_sub(size, std::memory_order_relaxed);
         throw DB::Exception(DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
-                            "Memory tracker {}: fault injected. Would use {} (attempt to allocate chunk of {} bytes), maximum: {}",
-                            description ? description : "", formatReadableSizeWithBinarySuffix(will_be),
+                            "Memory tracker{}{}: fault injected. Would use {} (attempt to allocate chunk of {} bytes), maximum: {}",
+                            description ? " " : "", description ? description : "",
+                            formatReadableSizeWithBinarySuffix(will_be),
                             size, formatReadableSizeWithBinarySuffix(current_hard_limit));
     }
 
@@ -164,8 +165,9 @@ void MemoryTracker::alloc(Int64 size)
         const auto * description = description_ptr.load(std::memory_order_relaxed);
         amount.fetch_sub(size, std::memory_order_relaxed);
         throw DB::Exception(DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
-                            "Memory limit {} exceeded: would use {} (attempt to allocate chunk of {} bytes), maximum: {}",
-                            description ? description : "", formatReadableSizeWithBinarySuffix(will_be),
+                            "Memory limit{}{} exceeded: would use {} (attempt to allocate chunk of {} bytes), maximum: {}",
+                            description ? " " : "", description ? description : "",
+                            formatReadableSizeWithBinarySuffix(will_be),
                             size, formatReadableSizeWithBinarySuffix(current_hard_limit));
     }
 
