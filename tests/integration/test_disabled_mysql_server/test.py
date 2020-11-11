@@ -11,7 +11,7 @@ from helpers.cluster import ClickHouseCluster, get_docker_compose_path
 from helpers.network import PartitionManager
 
 cluster = ClickHouseCluster(__file__)
-clickhouse_node = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'], with_mysql=True)
+clickhouse_node = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'], with_mysql=True, stay_alive=True)
 
 
 @pytest.fixture(scope="module")
