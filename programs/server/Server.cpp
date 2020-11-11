@@ -568,6 +568,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
             if (config->has("zookeeper"))
                 global_context->reloadZooKeeperIfChanged(config);
 
+            global_context->reloadAuxiliaryZooKeepersConfigIfChanged(config);
+
             global_context->updateStorageConfiguration(*config);
         },
         /* already_loaded = */ true);
