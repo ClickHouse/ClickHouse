@@ -498,6 +498,8 @@ public:
     /// Must be called with locked lockForShare() because use relative_data_path.
     void clearOldTemporaryDirectories(ssize_t custom_directories_lifetime_seconds = -1);
 
+    void clearEmptyParts();
+
     /// After the call to dropAllData() no method can be called.
     /// Deletes the data directory and flushes the uncompressed blocks cache and the marks cache.
     void dropAllData();
