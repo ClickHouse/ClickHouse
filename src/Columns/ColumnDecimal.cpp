@@ -7,10 +7,8 @@
 #include <Core/BigInt.h>
 
 #include <common/unaligned.h>
+#include <common/sort.h>
 #include <ext/scope_guard.h>
-#if !defined(ARCADIA_BUILD)
-    #include <miniselect/floyd_rivest_select.h> // Y_IGNORE
-#endif
 
 
 #include <IO/WriteHelpers.h>
@@ -197,21 +195,11 @@ void ColumnDecimal<T>::updatePermutation(bool reverse, size_t limit, int, IColum
         /// Since then we are working inside the interval.
 
         if (reverse)
-#if !defined(ARCADIA_BUILD)
-            miniselect::floyd_rivest_partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last,
+            partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last,
                 [this](size_t a, size_t b) { return data[a] > data[b]; });
-#else
-            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last,
-                [this](size_t a, size_t b) { return data[a] > data[b]; });
-#endif
         else
-#if !defined(ARCADIA_BUILD)
-            miniselect::floyd_rivest_partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last,
-                [this](size_t a, size_t b) { return data[a] < data[b]; });
-#else
-            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last,
+            partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last,
                 [this](size_t a, size_t b) { return data[a] > data[b]; });
-#endif
         auto new_first = first;
         for (auto j = first + 1; j < limit; ++j)
         {
