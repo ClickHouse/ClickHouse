@@ -179,7 +179,7 @@ class _NetworkManager:
                 except docker.errors.NotFound:
                     pass
                 except:
-                    print self._container.status(), self._container.log()
+                    print self._container.status, self._container.logs()
                     raise
 
             # for some reason docker api may hang if image doesn't exist, so we download it
