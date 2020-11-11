@@ -489,7 +489,11 @@ public:
     /// Same as above but return a zookeeper connection from auxiliary_zookeepers configuration entry.
     std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
 
+
     std::shared_ptr<zkutil::TestKeeperStorage> & getTestKeeperStorage() const;
+
+    /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
+    void reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config);
     /// Has ready or expired ZooKeeper
     bool hasZooKeeper() const;
     /// Reset current zookeeper session. Do not create a new one.
