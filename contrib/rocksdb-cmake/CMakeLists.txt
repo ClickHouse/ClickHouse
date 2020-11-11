@@ -18,8 +18,11 @@ endif()
 
 
 set(PORTABLE ON)
-option(WITH_JEMALLOC "build with JeMalloc" ${ENABLE_JEMALLOC})
+## always disable jemalloc for rocksdb by default
+## because it introduces non-standard jemalloc APIs
+option(WITH_JEMALLOC "build with JeMalloc" OFF)
 option(WITH_SNAPPY "build with SNAPPY" ${USE_SNAPPY})
+## lz4, zlib, zstd is enabled in ClickHouse by default
 option(WITH_LZ4 "build with lz4" ON)
 option(WITH_ZLIB "build with zlib" ON)
 option(WITH_ZSTD "build with zstd" ON)
