@@ -500,7 +500,7 @@ void ActionsDAG::updateHeader(Block & block) const
         if (node->column && isColumnConst(*node->column))
             col = node->column->cloneResized(0);
 
-        block.insert({node->column, node->result_type, node->result_name});
+        block.insert({col, node->result_type, node->result_name});
     }
 }
 
