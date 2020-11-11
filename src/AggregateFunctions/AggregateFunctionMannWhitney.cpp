@@ -1,5 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/AggregateFunctionRankCorrelation.h>
+#include <AggregateFunctions/AggregateFunctionMannWhitney.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include "registerAggregateFunctions.h"
 #include <AggregateFunctions/Helpers.h>
@@ -16,23 +16,22 @@ namespace DB
 namespace
 {
 
-AggregateFunctionPtr createAggregateFunctionRankCorrelation(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+AggregateFunctionPtr createAggregateFunctionMannWhitneyUTest(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
     assertBinary(name, argument_types);
-    assertNoParameters(name, parameters);
 
     if (!isNumber(argument_types[0]) || !isNumber(argument_types[1]))
         throw Exception("Aggregate function " + name + " only supports numerical types", ErrorCodes::NOT_IMPLEMENTED);
     
-    return std::make_shared<AggregateFunctionRankCorrelation>(argument_types);
+    return std::make_shared<AggregateFunctionMannWhitney<Float64>>(argument_types, parameters);
 }
 
 }
 
 
-void registerAggregateFunctionRankCorrelation(AggregateFunctionFactory & factory)
+void registerAggregateFunctionMannWhitney(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("rankCorr", createAggregateFunctionRankCorrelation);
+    factory.registerFunction("mannWhitneyUTest", createAggregateFunctionMannWhitneyUTest);
 }
 
 }

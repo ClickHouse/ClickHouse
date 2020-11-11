@@ -42,6 +42,7 @@ void registerAggregateFunctionAggThrow(AggregateFunctionFactory &);
 void registerAggregateFunctionWelchTTest(AggregateFunctionFactory &);
 void registerAggregateFunctionStudentTTest(AggregateFunctionFactory &);
 void registerAggregateFunctionRankCorrelation(AggregateFunctionFactory &);
+void registerAggregateFunctionMannWhitney(AggregateFunctionFactory &);
 
 class AggregateFunctionCombinatorFactory;
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory &);
@@ -94,6 +95,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionCategoricalIV(factory);
         registerAggregateFunctionAggThrow(factory);
         registerAggregateFunctionRankCorrelation(factory);
+        registerAggregateFunctionMannWhitney(factory);
     }
 
     {
