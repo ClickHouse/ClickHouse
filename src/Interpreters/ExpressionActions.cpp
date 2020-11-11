@@ -78,6 +78,9 @@ ExpressionActionsPtr ExpressionActions::clone() const
 
 void ExpressionActions::linearizeActions()
 {
+    /// This function does the topological sort or DAG and fills all the fields of ExpressionActions.
+    /// Algorithm traverses DAG starting from nodes without children.
+    /// For every node we support the number of created children, and if all children are created, put node into queue.
     struct Data
     {
         const Node * node = nullptr;
@@ -102,6 +105,8 @@ void ExpressionActions::linearizeActions()
         reverse_index[&node] = id;
     }
 
+    /// There are independent queues for arrayJoin and other actions.
+    /// We delay creation of arrayJoin as long as we can, so that they will be executed closer to end.
     std::queue<const Node *> ready_nodes;
     std::queue<const Node *> ready_array_joins;
 
@@ -120,6 +125,8 @@ void ExpressionActions::linearizeActions()
             ready_nodes.emplace(&node);
     }
 
+    /// Every argument will have fixed position in columns list.
+    /// If argument is removed, it's position may be reused by other action.
     std::stack<size_t> free_positions;
 
     while (!ready_nodes.empty() || !ready_array_joins.empty())
@@ -128,12 +135,9 @@ void ExpressionActions::linearizeActions()
         const Node * node = stack.front();
         stack.pop();
 
-        Names argument_names;
-        for (const auto & child : node->children)
-            argument_names.emplace_back(child->result_name);
-
         auto & cur = data[reverse_index[node]];
 
+        /// Select position for action result.
         size_t free_position = num_columns;
         if (free_positions.empty())
             ++num_columns;
@@ -396,6 +400,8 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
             auto pos = execution_context.inputs_pos[action.arguments.front().pos];
             if (pos < 0)
             {
+                /// Here we allow to skip input if it is not in block (in case it is not needed).
+                /// It may be unusual, but some code depend on such behaviour.
                 if (action.arguments.front().needed_later)
                     throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
                                     "Not found column {} in block",
