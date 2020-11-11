@@ -138,9 +138,9 @@ class _NetworkManager:
 
     @staticmethod
     def _iptables_cmd_suffix(
-            source=None, destination=None,
-            source_port=None, destination_port=None,
-            action=None, probability=None):
+        source=None, destination=None,
+        source_port=None, destination_port=None,
+        action=None, probability=None):
         ret = []
         if probability is not None:
             ret.extend(['-m', 'statistic', '--mode', 'random', '--probability', str(probability)])
@@ -158,8 +158,8 @@ class _NetworkManager:
         return ret
 
     def __init__(
-            self,
-            container_expire_timeout=50, container_exit_timeout=60):
+        self,
+        container_expire_timeout=50, container_exit_timeout=60):
 
         self.container_expire_timeout = container_expire_timeout
         self.container_exit_timeout = container_exit_timeout
@@ -178,6 +178,9 @@ class _NetworkManager:
                     self._container.remove(force=True)
                 except docker.errors.NotFound:
                     pass
+                except:
+                    print self._container.status(), self._container.log()
+                    raise
 
             # for some reason docker api may hang if image doesn't exist, so we download it
             # before running

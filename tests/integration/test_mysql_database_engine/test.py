@@ -300,17 +300,3 @@ def test_mysql_types(started_cluster, case_name, mysql_type, expected_ch_type, m
             execute_query(clickhouse_node,
                           "SELECT value FROM mysql('mysql1:3306', '${mysql_db}', '${table_name}', 'root', 'clickhouse')",
                           settings=clickhouse_query_settings)
-
-
-def test_mysql_database_engine_with_unavailable_mysql(started_cluster):
-    docker_compose_path = get_docker_compose_path()
-    mysql_node = MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', 3308)
-    docker_compose = os.path.join(docker_compose_path, 'docker_compose_mysql.yml')
-
-    try:
-        subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d'])
-        mysql_node.wait_mysql_to_start(120)
-
-    finally:
-        mysql_node.close()
-        subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'down', '--volumes', '--remove-orphans'])
