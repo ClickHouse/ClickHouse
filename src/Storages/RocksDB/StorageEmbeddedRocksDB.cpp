@@ -268,6 +268,7 @@ void StorageEmbeddedRocksDB::initDb()
     rocksdb::Options options;
     rocksdb::DB * db;
     options.create_if_missing = true;
+    options.compression = rocksdb::CompressionType::kZSTD;
     rocksdb::Status status = rocksdb::DB::Open(options, rocksdb_dir, &db);
 
     if (status != rocksdb::Status::OK())
