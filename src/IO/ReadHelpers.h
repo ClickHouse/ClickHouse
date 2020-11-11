@@ -1228,6 +1228,4 @@ void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current);
   */
 bool loadAtPosition(ReadBuffer & in, Memory<> & memory, char * & current);
 
-bool isStringNumber(StringRef str);
-
 }

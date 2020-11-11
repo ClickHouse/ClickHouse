@@ -1111,12 +1111,4 @@ bool loadAtPosition(ReadBuffer & in, DB::Memory<> & memory, char * & current)
     return loaded_more;
 }
 
-bool isStringNumber(StringRef str)
-{
-    for (size_t i = 0; i != str.size; ++i)
-        if (!isdigit(str.data[i]))
-            return false;
-    return true;
-}
-
 }
