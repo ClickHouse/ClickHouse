@@ -190,3 +190,6 @@
 	path = contrib/croaring
 	url = https://github.com/RoaringBitmap/CRoaring
 	branch = v0.2.66
+[submodule "contrib/miniselect"]
+	path = contrib/miniselect
+	url = https://github.com/danlark1/miniselect
