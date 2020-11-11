@@ -482,30 +482,6 @@ void ExpressionActions::execute(Block & block, bool dry_run) const
         block.insert({DataTypeUInt8().createColumnConst(num_rows, 0), std::make_shared<DataTypeUInt8>(), "_dummy"});
 }
 
-void ActionsDAG::updateHeader(Block & block) const
-{
-    if (settings.project_input)
-        block.clear();
-    else
-    {
-        for (const auto & node : nodes)
-            if (node.type == ActionType::INPUT && block.has(node.result_name))
-                block.erase(node.result_name);
-    }
-
-    for (const auto & node : index)
-    {
-        ColumnPtr col;
-
-        if (node->column && isColumnConst(*node->column))
-            col = node->column->cloneResized(0);
-        else
-            col = node->result_type->createColumn();
-
-        block.insert({col, node->result_type, node->result_name});
-    }
-}
-
 Names ExpressionActions::getRequiredColumns() const
 {
     Names names;

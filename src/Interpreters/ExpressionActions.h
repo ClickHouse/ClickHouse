@@ -246,10 +246,6 @@ public:
     void projectInput() { settings.project_input = true; }
     void removeUnusedActions(const Names & required_names);
 
-    /// Changed structure of empty block as if actions are executed.
-    /// Does not actually execute actions, but only creates empty columns.
-    void updateHeader(Block & block) const;
-
     /// Splits actions into two parts. Returned half may be swapped with ARRAY JOIN.
     /// Returns nullptr if no actions may be moved before ARRAY JOIN.
     ActionsDAGPtr splitActionsBeforeArrayJoin(const NameSet & array_joined_columns);

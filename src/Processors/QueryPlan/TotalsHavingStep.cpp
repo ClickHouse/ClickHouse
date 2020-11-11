@@ -34,7 +34,10 @@ TotalsHavingStep::TotalsHavingStep(
     bool final_)
     : ITransformingStep(
             input_stream_,
-            TotalsHavingTransform::transformHeader(input_stream_.header, actions_dag_.get(), final_),
+            TotalsHavingTransform::transformHeader(
+                    input_stream_.header,
+                    (actions_dag_ ? std::make_shared<ExpressionActions>(actions_dag_) : nullptr),
+                    final_),
             getTraits(!filter_column_.empty()))
     , overflow_row(overflow_row_)
     , actions_dag(actions_dag_)
