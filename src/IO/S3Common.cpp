@@ -7,6 +7,7 @@
 #    include <Storages/StorageS3Settings.h>
 
 #    include <aws/core/auth/AWSCredentialsProvider.h>
+#    include <aws/core/auth/AWSCredentialsProviderChain.h>
 #    include <aws/core/utils/logging/LogMacros.h>
 #    include <aws/core/utils/logging/LogSystemInterface.h>
 #    include <aws/s3/S3Client.h>
@@ -93,7 +94,10 @@ public:
         const Aws::Auth::AWSCredentials & credentials,
         const DB::HeaderCollection & headers_)
         : Aws::Client::AWSAuthV4Signer(
-            std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(credentials),
+            !credentials.IsEmpty()
+                ? std::dynamic_pointer_cast<Aws::Auth::AWSCredentialsProvider>(
+                    std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(credentials))
+                : std::make_shared<Aws::Auth::DefaultAWSCredentialsProviderChain>(),
             "s3",
             client_configuration.region,
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
@@ -189,12 +193,23 @@ namespace S3
 
         client_configuration.updateSchemeAndRegion();
 
-        return std::make_shared<Aws::S3::S3Client>(
-            credentials, // Aws credentials.
-            std::move(client_configuration), // Client configuration.
-            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never, // Sign policy.
-            is_virtual_hosted_style || cfg.endpointOverride.empty() // Use virtual addressing if endpoint is not specified.
-        );
+        if (!credentials.IsEmpty())
+        {
+            return std::make_shared<Aws::S3::S3Client>(
+                credentials, // Aws credentials.
+                std::move(client_configuration), // Client configuration.
+                Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never, // Sign policy.
+                is_virtual_hosted_style || cfg.endpointOverride.empty() // Use virtual addressing if endpoint is not specified.
+            );
+        }
+        else
+        {
+            return std::make_shared<Aws::S3::S3Client>(
+                std::move(client_configuration), // Client configuration.
+                Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never, // Sign policy.
+                is_virtual_hosted_style || cfg.endpointOverride.empty() // Use virtual addressing if endpoint is not specified.
+            );
+        }
     }
 
     std::shared_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
@@ -214,6 +229,7 @@ namespace S3
         client_configuration.updateSchemeAndRegion();
 
         Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
+
         return std::make_shared<Aws::S3::S3Client>(
             std::make_shared<S3AuthSigner>(client_configuration, std::move(credentials), std::move(headers)),
             std::move(client_configuration), // Client configuration.
