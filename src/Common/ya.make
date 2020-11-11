@@ -78,7 +78,11 @@ SRCS(
     WeakHash.cpp
     ZooKeeper/IKeeper.cpp
     ZooKeeper/TestKeeper.cpp
+    ZooKeeper/TestKeeperStorage.cpp
     ZooKeeper/ZooKeeper.cpp
+    ZooKeeper/ZooKeeperCommon.cpp
+    ZooKeeper/ZooKeeperConstants.cpp
+    ZooKeeper/ZooKeeperIO.cpp
     ZooKeeper/ZooKeeperImpl.cpp
     ZooKeeper/ZooKeeperNodeCache.cpp
     checkStackSize.cpp

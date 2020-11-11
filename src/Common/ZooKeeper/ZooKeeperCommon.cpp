@@ -17,13 +17,11 @@ void ZooKeeperResponse::write(WriteBuffer & out) const
 {
     /// Excessive copy to calculate length.
     WriteBufferFromOwnString buf;
-    //LOG_DEBUG(&Poco::Logger::get("LOG"), "WRITING {}", xid);
     Coordination::write(xid, buf);
     Coordination::write(zxid, buf);
     Coordination::write(error, buf);
     if (error == Error::ZOK)
         writeImpl(buf);
-    //LOG_DEBUG(&Poco::Logger::get("LOG"), "BUFFER LENGTH {}", buf.str().length());
     Coordination::write(buf.str(), out);
     out.next();
 }
@@ -426,7 +424,7 @@ ZooKeeperResponsePtr ZooKeeperCloseRequest::makeResponse() const { return std::m
 void ZooKeeperRequestFactory::registerRequest(OpNum op_num, Creator creator)
 {
     if (!op_num_to_request.try_emplace(op_num, creator).second)
-        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Request with op num {} already registered", op_num);
+        throw Coordination::Exception("Request type " + toString(op_num) + " already registered", Coordination::Error::ZRUNTIMEINCONSISTENCY);
 }
 
 std::shared_ptr<ZooKeeperRequest> ZooKeeperRequest::read(ReadBuffer & in)
@@ -478,5 +476,5 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::Check, ZooKeeperCheckRequest>(*this);
     registerZooKeeperRequest<OpNum::Multi, ZooKeeperMultiRequest>(*this);
 }
-  
+
 }
