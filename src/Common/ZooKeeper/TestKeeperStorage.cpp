@@ -30,18 +30,12 @@ static void processWatchesImpl(const String & path, TestKeeperStorage::Watches &
     watch_response.path = path;
     watch_response.xid = -1;
 
-    std::cerr << "WATCHES SIZE:" << watches.size() << " path:" << path << std::endl;
     auto it = watches.find(watch_response.path);
     if (it != watches.end())
     {
         for (auto & callback : it->second)
-        {
             if (callback)
-            {
-                std::cerr << "CALLING WATCH CALLBACK\n";
                 callback(std::make_shared<Coordination::ZooKeeperWatchResponse>(watch_response));
-            }
-        }
 
         watches.erase(it);
     }
@@ -50,18 +44,12 @@ static void processWatchesImpl(const String & path, TestKeeperStorage::Watches &
     watch_list_response.path = parentPath(path);
     watch_list_response.xid = -1;
 
-    std::cerr << "LIST WATCHES SIZE:" << list_watches.size() << " path:" << path << std::endl;
     it = list_watches.find(watch_list_response.path);
     if (it != list_watches.end())
     {
         for (auto & callback : it->second)
-        {
             if (callback)
-            {
-                std::cerr << "Calling list watch callback\n" << std::endl;
                 callback(std::make_shared<Coordination::ZooKeeperWatchResponse>(watch_list_response));
-            }
-        }
 
         list_watches.erase(it);
     }
@@ -110,7 +98,6 @@ struct TestKeeperStorageCreateRequest final : public TestKeeperStorageRequest
 
     std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(TestKeeperStorage::Container & container, int64_t zxid) const override
     {
-        LOG_DEBUG(&Poco::Logger::get("STORAGE"), "EXECUTING CREATE REQUEST");
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Undo undo;
         Coordination::ZooKeeperCreateResponse & response = dynamic_cast<Coordination::ZooKeeperCreateResponse &>(*response_ptr);
@@ -188,7 +175,7 @@ struct TestKeeperStorageGetRequest final : public TestKeeperStorageRequest
     using TestKeeperStorageRequest::TestKeeperStorageRequest;
     std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(TestKeeperStorage::Container & container, int64_t /* zxid */) const override
     {
-        LOG_DEBUG(&Poco::Logger::get("STORAGE"), "EXECUTING GET REQUEST");
+        //LOG_DEBUG(&Poco::Logger::get("STORAGE"), "EXECUTING GET REQUEST");
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperGetResponse & response = dynamic_cast<Coordination::ZooKeeperGetResponse &>(*response_ptr);
         Coordination::ZooKeeperGetRequest & request = dynamic_cast<Coordination::ZooKeeperGetRequest &>(*zk_request);
@@ -445,8 +432,6 @@ struct TestKeeperStorageMultiRequest final : public TestKeeperStorageRequest
                 response.responses[i] = cur_response;
                 if (cur_response->error != Coordination::Error::ZOK)
                 {
-                    std::cerr << "GOT ERROR ON: " << i << " error" << static_cast<int32_t>(cur_response->error) << std::endl;
-
                     for (auto it = undo_actions.rbegin(); it != undo_actions.rend(); ++it)
                         if (*it)
                             (*it)();
@@ -481,7 +466,6 @@ void TestKeeperStorage::processingThread()
 {
     setThreadName("TestKeeperSProc");
 
-    LOG_DEBUG(&Poco::Logger::get("STORAGE"), "LOOPING IN THREAD");
     try
     {
         while (!shutdown)
@@ -505,7 +489,6 @@ void TestKeeperStorage::processingThread()
                 }
 
                 auto zk_request = info.request->zk_request;
-                LOG_DEBUG(&Poco::Logger::get("STORAGE"), "GOT REQUEST {}", zk_request->getOpNum());
 
                 info.request->zk_request->addRootPath(root_path);
                 auto [response, _] = info.request->process(container, zxid);
@@ -519,9 +502,7 @@ void TestKeeperStorage::processingThread()
                 response->zxid = zxid;
                 response->removeRootPath(root_path);
 
-                LOG_DEBUG(&Poco::Logger::get("STORAGE"), "SENDING RESPONSE");
                 info.response_callback(response);
-                LOG_DEBUG(&Poco::Logger::get("STORAGE"), "DONE");
             }
         }
     }

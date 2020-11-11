@@ -175,13 +175,13 @@ void ZooKeeperResponse::write(WriteBuffer & out) const
 {
     /// Excessive copy to calculate length.
     WriteBufferFromOwnString buf;
-    LOG_DEBUG(&Poco::Logger::get("LOG"), "WRITING {}", xid);
+    //LOG_DEBUG(&Poco::Logger::get("LOG"), "WRITING {}", xid);
     Coordination::write(xid, buf);
     Coordination::write(zxid, buf);
     Coordination::write(error, buf);
     if (error == Error::ZOK)
         writeImpl(buf);
-    LOG_DEBUG(&Poco::Logger::get("LOG"), "BUFFER LENGTH {}", buf.str().length());
+    //LOG_DEBUG(&Poco::Logger::get("LOG"), "BUFFER LENGTH {}", buf.str().length());
     Coordination::write(buf.str(), out);
     out.next();
 }
@@ -544,14 +544,12 @@ void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)
 
 void ZooKeeperMultiResponse::writeImpl(WriteBuffer & out) const
 {
-    std::cerr << "WRITING MULTIRESPONSE " << responses.size() << std::endl;
     for (auto & response : responses)
     {
         const ZooKeeperResponse & zk_response = dynamic_cast<const ZooKeeperResponse &>(*response);
         OpNum op_num = zk_response.getOpNum();
         bool done = false;
         Error op_error = zk_response.error;
-        std::cerr << "WRITING OP ERROR:" << static_cast<int32_t>(op_error) << std::endl;
 
         Coordination::write(op_num, out);
         Coordination::write(done, out);

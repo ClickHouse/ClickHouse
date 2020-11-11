@@ -273,6 +273,7 @@ void TestKeeperTCPHandler::runImpl()
     catch (const Exception & e) /// Typical for an incorrect username, password, or address.
     {
         LOG_DEBUG(log, "Cannot receive handshake {}", e.displayText());
+        return;
     }
 
     sendHandshake();
@@ -281,15 +282,15 @@ void TestKeeperTCPHandler::runImpl()
     {
         //UInt64 max_wait = operation_timeout.totalMicroseconds();
         using namespace std::chrono_literals;
-        LOG_DEBUG(log, "TRYING TO GET RESPONSE (size {})", responses.size());
+        //LOG_DEBUG(log, "TRYING TO GET RESPONSE (size {})", responses.size());
         if (!responses.empty() && responses.front().wait_for(100ms) == std::future_status::ready)
         {
             auto response = responses.front().get();
 
-            LOG_DEBUG(log, "Writing response bytes to socket {}", response->getOpNum());
+            //LOG_DEBUG(log, "Writing response bytes to socket {}", response->getOpNum());
             response->write(*out);
             responses.pop();
-            LOG_DEBUG(log, "Responses size {}", responses.size());
+            //LOG_DEBUG(log, "Responses size {}", responses.size());
         }
         for (auto it = watch_responses.begin(); it != watch_responses.end();)
         {
@@ -304,7 +305,7 @@ void TestKeeperTCPHandler::runImpl()
             }
         }
 
-        LOG_DEBUG(log, "WAITING ON POLL");
+        //LOG_DEBUG(log, "WAITING ON POLL");
         if (in->poll(100 * 1000))
         {
             bool close_received = receiveRequest();
@@ -324,7 +325,7 @@ void TestKeeperTCPHandler::runImpl()
 
 bool TestKeeperTCPHandler::receiveRequest()
 {
-    LOG_DEBUG(log, "Receiving event");
+    //LOG_DEBUG(log, "Receiving event");
     int32_t length;
     read(length, *in);
     //LOG_DEBUG(log, "RECEIVED LENGTH {}", length);
@@ -347,7 +348,7 @@ bool TestKeeperTCPHandler::receiveRequest()
     if (request_future_responses.watch_response)
         watch_responses.emplace_back(std::move(*request_future_responses.watch_response));
 
-    LOG_DEBUG(log, "Responses size {}", responses.size());
+    //LOG_DEBUG(log, "Responses size {}", responses.size());
     return false;
 }
 
