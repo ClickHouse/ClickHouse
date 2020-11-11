@@ -33,7 +33,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_MYSQL_VARIABLE;
-    extern const int SYNC_MYSQL_USER_ACCESS_ERR;
+    extern const int SYNC_MYSQL_USER_ACCESS_ERROR;
     extern const int UNKNOWN_DATABASE;
 }
 
@@ -236,7 +236,7 @@ void MaterializeMySQLSyncThread::startSynchronization()
                 throw Exception("MySQL SYNC USER ACCESS ERR: mysql sync user needs "
                                 "at least GLOBAL PRIVILEGES:'RELOAD, REPLICATION SLAVE, REPLICATION CLIENT' "
                                 "and SELECT PRIVILEGE on Database " + mysql_database_name
-                    , ErrorCodes::SYNC_MYSQL_USER_ACCESS_ERR);
+                    , ErrorCodes::SYNC_MYSQL_USER_ACCESS_ERROR);
             else if (e.errnum() == ER_BAD_DB_ERROR)
                 throw Exception("Unknown database '" + mysql_database_name + "' on MySQL", ErrorCodes::UNKNOWN_DATABASE);
             else

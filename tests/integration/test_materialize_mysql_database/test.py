@@ -41,10 +41,13 @@ class MySQLNodeInstance:
         with self.alloc_connection().cursor() as cursor:
             cursor.execute(execution_query)
 
-    def create_min_priv_user(self):
-        self.query("CREATE USER 'test'@'%' IDENTIFIED BY '123'")
-        self.query("GRANT REPLICATION SLAVE, REPLICATION CLIENT, RELOAD ON *.* TO 'test'@'%'")
-        self.query("GRANT SELECT ON test_database.* TO 'test'@'%'")
+    def create_min_priv_user(self, user, password):
+        self.query("CREATE USER '" + user + "'@'%' IDENTIFIED BY '" + password + "'")
+        self.grant_min_priv_for_user(user)
+
+    def grant_min_priv_for_user(self, user, db='test_database'):
+        self.query("GRANT REPLICATION SLAVE, REPLICATION CLIENT, RELOAD ON *.* TO '" + user + "'@'%'")
+        self.query("GRANT SELECT ON " + db + ".* TO '" + user + "'@'%'")
 
     def result(self, execution_query):
         with self.alloc_connection().cursor() as cursor:
@@ -62,7 +65,7 @@ class MySQLNodeInstance:
             try:
                 self.alloc_connection()
                 print("Mysql Started")
-                self.create_min_priv_user()
+                self.create_min_priv_user("test", "123")
                 print("min priv user created")
                 return
             except Exception as ex:
