@@ -279,16 +279,33 @@ void TestKeeperTCPHandler::runImpl()
 
     while (true)
     {
-        UInt64 max_wait = operation_timeout.totalMicroseconds();
+        //UInt64 max_wait = operation_timeout.totalMicroseconds();
         using namespace std::chrono_literals;
+        LOG_DEBUG(log, "TRYING TO GET RESPONSE (size {})", responses.size());
         if (!responses.empty() && responses.front().wait_for(100ms) == std::future_status::ready)
         {
             auto response = responses.front().get();
+
+            LOG_DEBUG(log, "Writing response bytes to socket {}", response->getOpNum());
             response->write(*out);
             responses.pop();
+            LOG_DEBUG(log, "Responses size {}", responses.size());
+        }
+        for (auto it = watch_responses.begin(); it != watch_responses.end();)
+        {
+            if (it->wait_for(0s) == std::future_status::ready)
+            {
+                it->get()->write(*out);
+                it = watch_responses.erase(it);
+            }
+            else
+            {
+                ++it;
+            }
         }
 
-        if (in->poll(max_wait))
+        LOG_DEBUG(log, "WAITING ON POLL");
+        if (in->poll(100 * 1000))
         {
             bool close_received = receiveRequest();
             if (close_received)
@@ -296,6 +313,10 @@ void TestKeeperTCPHandler::runImpl()
                 LOG_DEBUG(log, "Received close request");
                 break;
             }
+        }
+        else
+        {
+            //LOG_DEBUG(log, "NOTHING POLLED");
         }
     }
 }
@@ -324,10 +345,10 @@ bool TestKeeperTCPHandler::receiveRequest()
     auto request_future_responses = test_keeper_storage->putRequest(request);
     responses.push(std::move(request_future_responses.response));
     if (request_future_responses.watch_response)
-        responses.push(std::move(*request_future_responses.watch_response));
+        watch_responses.emplace_back(std::move(*request_future_responses.watch_response));
 
+    LOG_DEBUG(log, "Responses size {}", responses.size());
     return false;
-    //LOG_DEBUG(log, "Event received");
 }
 
 
