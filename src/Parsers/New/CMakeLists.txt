@@ -86,3 +86,6 @@ set_source_files_properties(
         ClickHouseParser.cpp
     PROPERTIES COMPILE_FLAGS -std=c++17
 )
+
+# Disable clang-tidy for whole target.
+set_target_properties(clickhouse_parsers_new PROPERTIES CXX_CLANG_TIDY "")

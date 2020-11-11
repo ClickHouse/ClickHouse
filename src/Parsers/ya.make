@@ -80,6 +80,48 @@ SRCS(
     MySQL/ASTDeclareReference.cpp
     MySQL/ASTDeclareSubPartition.cpp
     MySQL/ASTDeclareTableOptions.cpp
+    New/AST/AlterTableQuery.cpp
+    New/AST/CheckQuery.cpp
+    New/AST/ColumnExpr.cpp
+    New/AST/ColumnTypeExpr.cpp
+    New/AST/CreateDatabaseQuery.cpp
+    New/AST/CreateMaterializedViewQuery.cpp
+    New/AST/CreateTableQuery.cpp
+    New/AST/CreateViewQuery.cpp
+    New/AST/DDLQuery.cpp
+    New/AST/DescribeQuery.cpp
+    New/AST/DropQuery.cpp
+    New/AST/EngineExpr.cpp
+    New/AST/ExistsQuery.cpp
+    New/AST/ExplainQuery.cpp
+    New/AST/Identifier.cpp
+    New/AST/InsertQuery.cpp
+    New/AST/JoinExpr.cpp
+    New/AST/LimitExpr.cpp
+    New/AST/Literal.cpp
+    New/AST/OptimizeQuery.cpp
+    New/AST/OrderExpr.cpp
+    New/AST/Query.cpp
+    New/AST/RatioExpr.cpp
+    New/AST/RenameQuery.cpp
+    New/AST/SelectUnionQuery.cpp
+    New/AST/SetQuery.cpp
+    New/AST/SettingExpr.cpp
+    New/AST/ShowCreateQuery.cpp
+    New/AST/SystemQuery.cpp
+    New/AST/TableElementExpr.cpp
+    New/AST/TableExpr.cpp
+    New/AST/TruncateQuery.cpp
+    New/AST/UseQuery.cpp
+    New/CharInputStream.cpp
+    New/ClickHouseLexer.cpp
+    New/ClickHouseParser.cpp
+    New/ClickHouseParserBaseVisitor.cpp
+    New/ClickHouseParserVisitor.cpp
+    New/LexerErrorListener.cpp
+    New/ParseTreeVisitor.cpp
+    New/ParserErrorListener.cpp
+    New/parseQuery.cpp
     ParserAlterQuery.cpp
     ParserCase.cpp
     ParserCheckQuery.cpp
@@ -127,7 +169,6 @@ SRCS(
     ParserWatchQuery.cpp
     ParserWithElement.cpp
     QueryWithOutputSettingsPushDownVisitor.cpp
-    StorageID.cpp
     TokenIterator.cpp
     formatAST.cpp
     formatSettingName.cpp
