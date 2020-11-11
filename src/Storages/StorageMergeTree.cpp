@@ -99,6 +99,7 @@ void StorageMergeTree::startup()
 {
     clearOldPartsFromFilesystem();
     clearOldWriteAheadLogs();
+    clearEmptyParts();
 
     /// Temporary directories contain incomplete results of merges (after forced restart)
     ///  and don't allow to reinitialize them, so delete each of them immediately
@@ -933,6 +934,7 @@ std::optional<JobAndPool> StorageMergeTree::getDataProcessingJob()
             clearOldTemporaryDirectories();
             clearOldWriteAheadLogs();
             clearOldMutations();
+            clearEmptyParts();
         }, PoolType::MERGE_MUTATE};
     }
     return {};
