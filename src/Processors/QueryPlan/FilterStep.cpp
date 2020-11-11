@@ -45,7 +45,7 @@ void FilterStep::updateInputStream(DataStream input_stream, bool keep_header)
 {
     Block out_header = std::move(output_stream->header);
     if (keep_header)
-        out_header = FilterTransform::transformHeader(input_stream.header, std::make_shared<ExpressionActions>(actions), filter_column_name, remove_filter_column);
+        out_header = FilterTransform::transformHeader(input_stream.header, *actions, filter_column_name, remove_filter_column);
 
     output_stream = createOutputStream(
             input_stream,

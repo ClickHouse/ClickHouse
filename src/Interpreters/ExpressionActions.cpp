@@ -280,6 +280,15 @@ void ExpressionActions::checkLimits(const ColumnsWithTypeAndName & columns) cons
 
 namespace
 {
+    /// This struct stores context needed to execute actions.
+    ///
+    /// Execution model is following:
+    ///   * execution is performed over list of columns (with fixed size = ExpressionActions::num_columns)
+    ///   * every argument has fixed position in columns list, every action has fixed position for result
+    ///   * if argument is not needed anymore (Argument::needed_later == false), it is removed from list
+    ///   * argument for INPUT is in inputs[inputs_pos[argument.pos]]
+    ///
+    /// Columns on positions `ExpressionActions::result_positions` are inserted back into block.
     struct ExecutionContext
     {
         ColumnsWithTypeAndName & inputs;
@@ -1145,7 +1154,7 @@ NamesAndTypesList ActionsDAG::getRequiredColumns() const
     NamesAndTypesList result;
     for (const auto & node : nodes)
         if (node.type == ActionType::INPUT)
-            result.push_back({node.result_name, node.result_type});
+            result.emplace_back(node.result_name, node.result_type);
 
     return result;
 }
