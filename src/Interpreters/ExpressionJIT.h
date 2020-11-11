@@ -31,6 +31,8 @@ class LLVMFunction : public IFunctionBaseImpl
 
 public:
 
+    /// LLVMFunction is a compiled part of ActionsDAG.
+    /// We store this part as independent DAG with minial required information to compile it.
     struct CompileNode
     {
         enum class NodeType
@@ -51,6 +53,8 @@ public:
         std::vector<size_t> arguments;
     };
 
+    /// DAG is represented as list of nodes stored in in-order traverse order.
+    /// Expression (a + 1) + (b + 1) will be represented like chain: a, 1, a + 1, b, b + 1, (a + 1) + (b + 1).
     struct CompileDAG : public std::vector<CompileNode>
     {
         std::string dump() const;
