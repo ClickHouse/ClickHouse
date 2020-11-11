@@ -7,6 +7,8 @@
 #include <Columns/ColumnString.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/HashMap.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnVector.h>
 #include <Poco/Net/IPAddress.h>
 #include <common/StringRef.h>
 #include <common/logger_useful.h>
@@ -26,8 +28,6 @@ public:
         DictionarySourcePtr source_ptr_,
         const DictionaryLifetime dict_lifetime_,
         bool require_nonempty_);
-
-    ~TrieDictionary() override;
 
     std::string getKeyDescription() const { return key_description; }
 
@@ -154,15 +154,14 @@ private:
 
     using IPAddress = Poco::Net::IPAddress;
 
-    struct IPRecord;
-    using IPRecordConstIt = ContainerType<IPRecord>::const_iterator;
+    using IPv4Container = PODArray<UInt32>;
+    using IPv6Container = PaddedPODArray<UInt8>;
+    using IPMaskContainer = PODArray<UInt8>;
+    using RowIdxConstIter = ContainerType<size_t>::const_iterator;
 
-    struct IPRecord final
-    {
-        IPAddress addr;
-        UInt8 prefix;
-        size_t row;
-    };
+    template <typename T> struct IPContainerToValueType {};
+    template <> struct IPContainerToValueType<IPv4Container> { using type = UInt32; };
+    template <> struct IPContainerToValueType<IPv6Container> { using type = const uint8_t *; };
 
     struct Attribute final
     {
@@ -218,6 +217,9 @@ private:
 
     Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
 
+    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
+    void getItemsByTwoKeyColumnsImpl(
+        const Attribute & attribute, const Columns & key_columns, ValueSetter && set_value, DefaultGetter && get_default) const;
 
     template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
     void
@@ -234,19 +236,15 @@ private:
     void has(const Attribute & attribute, const Columns & key_columns, PaddedPODArray<UInt8> & out) const;
 
     Columns getKeyColumns() const;
+    RowIdxConstIter ipNotFound() const;
+    RowIdxConstIter tryLookupIPv4(UInt32 addr, uint8_t * buf) const;
+    RowIdxConstIter tryLookupIPv6(const uint8_t * addr) const;
 
-    /**
-     *  Compare ip addresses.
-     *
-     * @return negative value if ipaddr less than address in record
-     * @return zero if ipaddr in record subnet
-     * @return positive value if ipaddr greater than address in record
-     */
-    int matchIPAddrWithRecord(const IPAddress & ipaddr, const IPRecord & record) const;
-    bool lessIPRecords(const IPRecord & a, const IPRecord & b) const;
+    template <typename IPContainerType,
+        typename IPValueType = typename IPContainerToValueType<IPContainerType>::value>
+    RowIdxConstIter lookupIP(IPValueType target) const;
 
-    IPRecordConstIt ipRecordNotFound() const;
-    IPRecordConstIt lookupIPRecord(const IPAddress & target) const;
+    static const uint8_t * getIPv6FromOffset(const IPv6Container & ipv6_col, size_t i);
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
@@ -254,8 +252,10 @@ private:
     const bool require_nonempty;
     const std::string key_description{dict_struct.getKeyDescription()};
 
-    ContainerType<IPRecord> ip_records;
-    size_t total_ip_length;
+    std::variant<IPv4Container, IPv6Container> ip_column;
+    IPMaskContainer mask_column;
+    ContainerType<size_t> parent_subnet;
+    ContainerType<size_t> row_idx;
 
     std::map<std::string, size_t> attribute_index_by_name;
     std::vector<Attribute> attributes;
