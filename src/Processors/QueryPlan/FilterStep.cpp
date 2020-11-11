@@ -31,7 +31,7 @@ FilterStep::FilterStep(
     bool remove_filter_column_)
     : ITransformingStep(
         input_stream_,
-        FilterTransform::transformHeader(input_stream_.header, std::make_shared<ExpressionActions>(actions_), filter_column_name_, remove_filter_column_),
+        FilterTransform::transformHeader(input_stream_.header, *actions_, filter_column_name_, remove_filter_column_),
         getTraits(actions_))
     , actions(std::move(actions_))
     , filter_column_name(std::move(filter_column_name_))

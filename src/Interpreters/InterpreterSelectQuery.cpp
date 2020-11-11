@@ -524,7 +524,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 
         if (analysis_result.prewhere_info)
         {
-            ExpressionActions(analysis_result.prewhere_info->prewhere_actions).execute(header);
+            analysis_result.prewhere_info->prewhere_actions->updateHeader(header);
             header = materializeBlock(header);
             if (analysis_result.prewhere_info->remove_prewhere_column)
                 header.erase(analysis_result.prewhere_info->prewhere_column_name);

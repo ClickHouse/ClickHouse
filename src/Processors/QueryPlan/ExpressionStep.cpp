@@ -44,7 +44,7 @@ static ITransformingStep::Traits getJoinTraits()
 ExpressionStep::ExpressionStep(const DataStream & input_stream_, ActionsDAGPtr actions_)
     : ITransformingStep(
         input_stream_,
-        Transform::transformHeader(input_stream_.header, std::make_shared<ExpressionActions>(actions_)),
+        Transform::transformHeader(input_stream_.header, *actions_),
         getTraits(actions_))
     , actions(std::move(actions_))
 {
@@ -55,7 +55,7 @@ ExpressionStep::ExpressionStep(const DataStream & input_stream_, ActionsDAGPtr a
 void ExpressionStep::updateInputStream(DataStream input_stream, bool keep_header)
 {
     Block out_header = keep_header ? std::move(output_stream->header)
-                                   : Transform::transformHeader(input_stream.header, std::make_shared<ExpressionActions>(actions));
+                                   : Transform::transformHeader(input_stream.header, *actions);
     output_stream = createOutputStream(
             input_stream,
             std::move(out_header),
