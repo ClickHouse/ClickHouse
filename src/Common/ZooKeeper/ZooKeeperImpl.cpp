@@ -650,7 +650,7 @@ void ZooKeeper::sendThread()
                     if (info.watch)
                     {
                         info.request->has_watch = true;
-                        std::cerr << "REQUEST" << info.request->getOpNum() << " HAS WATCH" << std::endl;
+                        //std::cerr << "REQUEST" << info.request->getOpNum() << " HAS WATCH" << std::endl;
                         CurrentMetrics::add(CurrentMetrics::ZooKeeperWatch);
                     }
 
@@ -662,7 +662,7 @@ void ZooKeeper::sendThread()
                     info.request->addRootPath(root_path);
 
                     info.request->probably_sent = true;
-                    std::cerr << "SENDING GENERAL REQUEST:" << info.request->getOpNum() << std::endl;
+                    //std::cerr << "SENDING GENERAL REQUEST:" << info.request->getOpNum() << std::endl;
                     info.request->write(*out);
 
                     /// We sent close request, exit
@@ -775,7 +775,6 @@ void ZooKeeper::receiveEvent()
     }
     else if (xid == watch_xid)
     {
-        std::cerr << "Receiving watch\n";
         ProfileEvents::increment(ProfileEvents::ZooKeeperWatchResponse);
         response = std::make_shared<ZooKeeperWatchResponse>();
 
@@ -832,7 +831,6 @@ void ZooKeeper::receiveEvent()
 
     try
     {
-        std::cerr << "READING RESPONSE FOR REQUEST\n";
         if (!response)
             response = request_info.request->makeResponse();
 
@@ -847,9 +845,6 @@ void ZooKeeper::receiveEvent()
             response->readImpl(*in);
             response->removeRootPath(root_path);
         }
-        if (request_info.request)
-            std::cerr << "Response Request ID" << request_info.request->getOpNum() << std::endl;
-
         /// Instead of setting the watch in sendEvent, set it in receiveEvent because need to check the response.
         /// The watch shouldn't be set if the node does not exist and it will never exist like sequential ephemeral nodes.
         /// By using getData() instead of exists(), a watch won't be set if the node doesn't exist.
