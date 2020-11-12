@@ -19,7 +19,7 @@
            <values>
                <value>trim(TRAILING '/' FROM </value>
                <value>trim(BOTH 'htpsw:/' FROM </value>
-           <values>
+           </values>
        </substitution>
     </substitutions>
 
