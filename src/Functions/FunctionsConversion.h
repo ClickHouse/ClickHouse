@@ -190,7 +190,7 @@ struct ConvertImpl
                     else
                     {
                         if constexpr (convert_strategy == ConvertStrategy::Accurate)
-                            vec_null_map_to[i] = true;
+                            (*vec_null_map_to)[i] = true;
                         else
                             throw Exception("Unsupported data type in conversion function", ErrorCodes::CANNOT_CONVERT_TYPE);
                     }
@@ -200,7 +200,7 @@ struct ConvertImpl
                     if constexpr (std::is_same_v<FromFieldType, UInt128> || std::is_same_v<ToFieldType, UInt128>)
                     {
                         if constexpr (convert_strategy == ConvertStrategy::Accurate)
-                            vec_null_map_to[i] = true;
+                            (*vec_null_map_to)[i] = true;
                         else
                             throw Exception("Unexpected UInt128 to big int conversion", ErrorCodes::NOT_IMPLEMENTED);
                     }
@@ -214,45 +214,34 @@ struct ConvertImpl
                     }
                     else
                     {
-                        ToFieldType from = bigint_cast<ToFieldType>(vec_from[i]);
-
                         if constexpr (convert_strategy == ConvertStrategy::Accurate)
                         {
-                            if (accurate::greaterOp(std::numeric_limits<ToFieldType>::max(), vec_from[i])
-                                || accurate::greaterOp(vec_from[i], std::numeric_limits<ToFieldType>::min()))
+                        if (accurate::greaterOp(vec_from[i], std::numeric_limits<ToFieldType>::max()) ||
+                            accurate::greaterOp(std::numeric_limits<ToFieldType>::min(), vec_from[i]))
                             {
-                                vec_null_map_to[i] = true;
-                            }
-                            else
-                            {
-                                vec_to[i] = static_cast<ToFieldType>(from);
+                                (*vec_null_map_to)[i] = true;
+                                continue;
                             }
                         }
-                        else
-                        {
-                            vec_to[i] = static_cast<ToFieldType>(from);
-                        }
+
+                        ToFieldType from = bigint_cast<ToFieldType>(vec_from[i]);
+                        vec_to[i] = static_cast<ToFieldType>(from);
                     }
                 }
                 else if constexpr (std::is_same_v<ToFieldType, UInt128> && sizeof(FromFieldType) <= sizeof(UInt64))
                 {
-                    UInt64 from = static_cast<UInt64>(vec_from[i]);
                     if constexpr (convert_strategy == ConvertStrategy::Accurate)
                     {
                         if (accurate::greaterOp(vec_from[i], std::numeric_limits<ToFieldType>::max()) ||
                             accurate::greaterOp(std::numeric_limits<ToFieldType>::min(), vec_from[i]))
                         {
-                            vec_null_map_to[i] = true;
-                        }
-                        else
-                        {
-                            vec_to[i] = static_cast<ToFieldType>(from);
+                            (*vec_null_map_to)[i] = true;
+                            continue;
                         }
                     }
-                    else
-                    {
-                        vec_to[i] = static_cast<ToFieldType>(from);
-                    }
+
+                    UInt64 from = static_cast<UInt64>(vec_from[i]);
+                    vec_to[i] = static_cast<ToFieldType>(from);
                 }
                 else
                 {
@@ -261,17 +250,12 @@ struct ConvertImpl
                         if (accurate::greaterOp(vec_from[i], std::numeric_limits<ToFieldType>::max()) ||
                             accurate::greaterOp(std::numeric_limits<ToFieldType>::min(), vec_from[i]))
                         {
-                            vec_null_map_to[i] = true;
-                        }
-                        else
-                        {
-                            vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
+                            (*vec_null_map_to)[i] = true;
+                            continue;
                         }
                     }
-                    else
-                    {
-                        vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
-                    }
+
+                    vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
                 }
             }
 
