@@ -242,14 +242,11 @@ struct integer<Bits, Signed>::_impl
         const T alpha = t / max_int;
 
         if (alpha <= max_int)
-            for (uint64_t i = 0; i < static_cast<uint64_t>(alpha); ++i)
-                self *= max_int;
-        else
-        {   // max(double) / 2^64 will surely contain less than 52 precision bits, so speed up computations.
+            self = static_cast<uint64_t>(alpha);
+        else // max(double) / 2^64 will surely contain less than 52 precision bits, so speed up computations.
             set_multiplier<double>(self, alpha);
-            self *= max_int;
-        }
 
+        self *= max_int;
         self += static_cast<uint64_t>(t - alpha * max_int); // += b_i
     }
 
