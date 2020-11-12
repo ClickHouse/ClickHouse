@@ -199,7 +199,7 @@ void ColumnDecimal<T>::updatePermutation(bool reverse, size_t limit, int, IColum
                 [this](size_t a, size_t b) { return data[a] > data[b]; });
         else
             partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last,
-                [this](size_t a, size_t b) { return data[a] > data[b]; });
+                [this](size_t a, size_t b) { return data[a] < data[b]; });
         auto new_first = first;
         for (auto j = first + 1; j < limit; ++j)
         {
