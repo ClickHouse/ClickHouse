@@ -46,6 +46,7 @@ namespace ErrorCodes
     extern const int CANNOT_ASSIGN_OPTIMIZE;
     extern const int TIMEOUT_EXCEEDED;
     extern const int UNKNOWN_POLICY;
+    extern const int NO_SUCH_DATA_PART;
 }
 
 namespace ActionLocks
@@ -172,17 +173,32 @@ StorageMergeTree::~StorageMergeTree()
     shutdown();
 }
 
-Pipe StorageMergeTree::read(
+void StorageMergeTree::read(
+    QueryPlan & query_plan,
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
+    size_t max_block_size,
+    unsigned num_streams)
+{
+    if (auto plan = reader.read(column_names, metadata_snapshot, query_info, context, max_block_size, num_streams))
+        query_plan = std::move(*plan);
+}
+
+Pipe StorageMergeTree::read(
+    const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
+    SelectQueryInfo & query_info,
+    const Context & context,
+    QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
     const unsigned num_streams)
 {
-    return reader.read(column_names, metadata_snapshot, query_info,
-        context, max_block_size, num_streams);
+    QueryPlan plan;
+    read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+    return plan.convertToPipe();
 }
 
 std::optional<UInt64> StorageMergeTree::totalRows() const
@@ -538,13 +554,12 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
 
         for (const MutationCommand & command : entry.commands)
         {
-            std::stringstream ss;
-            ss.exceptions(std::ios::failbit);
-            formatAST(*command.ast, ss, false, true);
+            WriteBufferFromOwnString buf;
+            formatAST(*command.ast, buf, false, true);
             result.push_back(MergeTreeMutationStatus
             {
                 entry.file_name,
-                ss.str(),
+                buf.str(),
                 entry.create_time,
                 block_numbers_map,
                 parts_to_do_names,
@@ -1014,17 +1029,13 @@ bool StorageMergeTree::optimize(
         {
             if (!merge(true, partition_id, true, deduplicate, &disable_reason))
             {
-                std::stringstream message;
-                message.exceptions(std::ios::failbit);
-                message << "Cannot OPTIMIZE table";
-                if (!disable_reason.empty())
-                    message << ": " << disable_reason;
-                else
-                    message << " by some reason.";
-                LOG_INFO(log, message.str());
+                constexpr const char * message = "Cannot OPTIMIZE table: {}";
+                if (disable_reason.empty())
+                    disable_reason = "unknown reason";
+                LOG_INFO(log, message, disable_reason);
 
                 if (context.getSettingsRef().optimize_throw_if_noop)
-                    throw Exception(message.str(), ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
+                    throw Exception(ErrorCodes::CANNOT_ASSIGN_OPTIMIZE, message, disable_reason);
                 return false;
             }
         }
@@ -1037,17 +1048,13 @@ bool StorageMergeTree::optimize(
 
         if (!merge(true, partition_id, final, deduplicate, &disable_reason))
         {
-            std::stringstream message;
-            message.exceptions(std::ios::failbit);
-            message << "Cannot OPTIMIZE table";
-            if (!disable_reason.empty())
-                message << ": " << disable_reason;
-            else
-                message << " by some reason.";
-            LOG_INFO(log, message.str());
+            constexpr const char * message = "Cannot OPTIMIZE table: {}";
+            if (disable_reason.empty())
+                disable_reason = "unknown reason";
+            LOG_INFO(log, message, disable_reason);
 
             if (context.getSettingsRef().optimize_throw_if_noop)
-                throw Exception(message.str(), ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
+                throw Exception(ErrorCodes::CANNOT_ASSIGN_OPTIMIZE, message, disable_reason);
             return false;
         }
     }
@@ -1056,7 +1063,6 @@ bool StorageMergeTree::optimize(
 }
 
 Pipe StorageMergeTree::alterPartition(
-    const ASTPtr & query,
     const StorageMetadataPtr & metadata_snapshot,
     const PartitionCommands & commands,
     const Context & query_context)
@@ -1068,8 +1074,11 @@ Pipe StorageMergeTree::alterPartition(
         switch (command.type)
         {
             case PartitionCommand::DROP_PARTITION:
-                checkPartitionCanBeDropped(command.partition);
-                dropPartition(command.partition, command.detach, query_context);
+                if (command.part)
+                    checkPartCanBeDropped(command.partition);
+                else
+                    checkPartitionCanBeDropped(command.partition);
+                dropPartition(command.partition, command.detach, command.part, query_context);
                 break;
 
             case PartitionCommand::DROP_DETACHED_PARTITION:
@@ -1127,7 +1136,7 @@ Pipe StorageMergeTree::alterPartition(
             break;
 
             default:
-                IStorage::alterPartition(query, metadata_snapshot, commands, query_context); // should throw an exception.
+                IStorage::alterPartition(metadata_snapshot, commands, query_context); // should throw an exception.
         }
 
         for (auto & command_result : current_command_results)
@@ -1167,7 +1176,7 @@ ActionLock StorageMergeTree::stopMergesAndWait()
 }
 
 
-void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, const Context & context)
+void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, bool drop_part, const Context & context)
 {
     {
         /// Asks to complete merges and does not allow them to start.
@@ -1175,10 +1184,25 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, cons
         auto merge_blocker = stopMergesAndWait();
 
         auto metadata_snapshot = getInMemoryMetadataPtr();
-        String partition_id = getPartitionIDFromQuery(partition, context);
 
-        /// TODO: should we include PreComitted parts like in Replicated case?
-        auto parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+        MergeTreeData::DataPartsVector parts_to_remove;
+
+        if (drop_part)
+        {
+            String part_name = partition->as<ASTLiteral &>().value.safeGet<String>();
+            auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Committed});
+
+            if (part)
+                parts_to_remove.push_back(part);
+            else
+                throw Exception("Part " + part_name + " not found, won't try to drop it.", ErrorCodes::NO_SUCH_DATA_PART);
+        }
+        else
+        {
+            String partition_id = getPartitionIDFromQuery(partition, context);
+            parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+        }
+
         // TODO should we throw an exception if parts_to_remove is empty?
         removePartsFromWorkingSet(parts_to_remove, true);
 
@@ -1193,9 +1217,9 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, cons
         }
 
         if (detach)
-            LOG_INFO(log, "Detached {} parts inside partition ID {}.", parts_to_remove.size(), partition_id);
+            LOG_INFO(log, "Detached {} parts.", parts_to_remove.size());
         else
-            LOG_INFO(log, "Removed {} parts inside partition ID {}.", parts_to_remove.size(), partition_id);
+            LOG_INFO(log, "Removed {} parts.", parts_to_remove.size());
     }
 
     clearOldPartsFromFilesystem();

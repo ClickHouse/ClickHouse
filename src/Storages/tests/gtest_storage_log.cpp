@@ -133,16 +133,14 @@ std::string readData(DB::StoragePtr & table, const DB::Context & context)
 
     tryRegisterFormats();
 
-    std::ostringstream ss;
-    ss.exceptions(std::ios::failbit);
-    WriteBufferFromOStream out_buf(ss);
+    WriteBufferFromOwnString out_buf;
     BlockOutputStreamPtr output = FormatFactory::instance().getOutput("Values", out_buf, sample, context);
 
     copyData(*in, *output);
 
     output->flush();
 
-    return ss.str();
+    return out_buf.str();
 }
 
 TYPED_TEST(StorageLogTest, testReadWrite)
