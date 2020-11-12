@@ -49,9 +49,6 @@ public:
     {
         throw Exception("LZMADeflatingWriteBuffer is not implemented for arcadia build", ErrorCodes::NOT_IMPLEMENTED);
     }
-
-private:
-    bool nextImpl() override {}
 };
 
 #endif
