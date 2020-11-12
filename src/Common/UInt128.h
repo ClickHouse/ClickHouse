@@ -28,13 +28,13 @@ struct UInt128
     UInt64 low;
     UInt64 high;
 
-    /// TODO: Make this constexpr. Currently it is used in unions 
+    /// TODO: Make this constexpr. Currently it is used in unions
     /// and union cannot contain member with non trivial constructor
     /// constructor must be non user provided but compiler cannot constexpr constructor
     /// if members low and high are not initialized, if we default member initialize them
     /// constructor becomes non trivial.
     UInt128() = default;
-    explicit constexpr UInt128(const UInt64 low_, const UInt64 high_) : low(low_), high(high_) {}
+    explicit constexpr UInt128(const UInt64 low_, const UInt64 high_) : low(low_), high(high_) { }
 
     /// We need Int128 to UInt128 conversion or AccurateComparison will call greaterOp<Int128, UInt64> instead of greaterOp<Int128, UInt128>
     explicit constexpr UInt128(const Int128 rhs) : low(rhs), high(rhs >> 64) {}
@@ -279,13 +279,10 @@ public:
     static constexpr bool traps = true;
     static constexpr bool tinyness_before = false;
 
-    static constexpr DB::UInt128 min() noexcept
-    {
-        return DB::UInt128(0, 0);
-    }
+    static constexpr DB::UInt128 min() noexcept { return DB::UInt128(0, 0); }
 
     static constexpr DB::UInt128 max() noexcept
-    { 
+    {
         return DB::UInt128(std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max());
     }
 

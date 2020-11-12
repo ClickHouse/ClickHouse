@@ -2135,18 +2135,17 @@ private:
         bool is_accurate_cast = is_accurate_cast_or_null;
 
         return [is_accurate_cast, nullable_column_wrapper, from_type_index, to_type]
-            (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t input_rows_count)
-        {
+            (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t input_rows_count) {
             ColumnPtr result_column;
-            auto res = callOnIndexAndDataType<ToDataType>(from_type_index, [&](const auto & types) -> bool
-            {
+            auto res = callOnIndexAndDataType<ToDataType>(from_type_index, [&](const auto & types) -> bool {
                 using Types = std::decay_t<decltype(types)>;
                 using LeftDataType = typename Types::LeftType;
                 using RightDataType = typename Types::RightType;
 
                 if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>)
                 {
-                    result_column = ConvertImpl<LeftDataType, RightDataType, NameCast>::execute(arguments, result_type, input_rows_count, AccurateAdditions());
+                    result_column = ConvertImpl<LeftDataType, RightDataType, NameCast>::execute(
+                        arguments, result_type, input_rows_count, AccurateAdditions());
                     return true;
                 }
 
@@ -2160,8 +2159,7 @@ private:
                     return nullable_column_wrapper(arguments, result_type, column_nullable, input_rows_count);
                 else
                 {
-                    throw Exception{
-                        "Conversion from " + std::string(getTypeName(from_type_index)) + " to " + to_type->getName() + " is not supported",
+                    throw Exception{"Conversion from " + std::string(getTypeName(from_type_index)) + " to " + to_type->getName() + " is not supported",
                         ErrorCodes::CANNOT_CONVERT_TYPE};
                 }
             }
@@ -2199,31 +2197,25 @@ private:
         UInt32 scale = to_type->getScale();
 
         WhichDataType which(type_index);
-        bool ok = which.isNativeInt() ||
-            which.isNativeUInt() ||
-            which.isDecimal() ||
-            which.isFloat() ||
-            which.isDateOrDateTime() ||
-            which.isStringOrFixedString();
+        bool ok = which.isNativeInt() || which.isNativeUInt() || which.isDecimal() || which.isFloat() || which.isDateOrDateTime()
+            || which.isStringOrFixedString();
         if (!ok)
         {
             if (is_accurate_cast_or_null)
                 return createToNullableColumnWrapper();
             else
-                throw Exception{
-                    "Conversion from " + from_type->getName() + " to " + to_type->getName() + " is not supported",
+                throw Exception{"Conversion from " + from_type->getName() + " to " + to_type->getName() + " is not supported",
                     ErrorCodes::CANNOT_CONVERT_TYPE};
         }
 
         auto nullable_column_wrapper = createToNullableColumnWrapper();
         bool is_accurate_cast = is_accurate_cast_or_null;
 
-        return [is_accurate_cast, nullable_column_wrapper, type_index, scale, to_type] 
+        return [is_accurate_cast, nullable_column_wrapper, type_index, scale, to_type]
             (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *column_nullable, size_t input_rows_count)
         {
             ColumnPtr result_column;
-            auto res = callOnIndexAndDataType<ToDataType>(type_index, [&](const auto & types) -> bool
-            {
+            auto res = callOnIndexAndDataType<ToDataType>(type_index, [&](const auto & types) -> bool {
                 using Types = std::decay_t<decltype(types)>;
                 using LeftDataType = typename Types::LeftType;
                 using RightDataType = typename Types::RightType;
@@ -2250,8 +2242,7 @@ private:
                 if (is_accurate_cast)
                     return nullable_column_wrapper(arguments, result_type, column_nullable, input_rows_count);
                 else
-                    throw Exception{
-                        "Conversion from " + std::string(getTypeName(type_index)) + " to " + to_type->getName() + " is not supported",
+                    throw Exception{"Conversion from " + std::string(getTypeName(type_index)) + " to " + to_type->getName() + " is not supported",
                         ErrorCodes::CANNOT_CONVERT_TYPE};
             }
 
@@ -2407,9 +2398,9 @@ private:
         {
             if (is_accurate_cast_or_null)
                 return createToNullableColumnWrapper();
-            else 
-                throw Exception{"Conversion from " + from_type->getName() + " to " + to_type->getName() +
-                    " is not supported", ErrorCodes::CANNOT_CONVERT_TYPE};
+            else
+                throw Exception{"Conversion from " + from_type->getName() + " to " + to_type->getName() + " is not supported",
+                    ErrorCodes::CANNOT_CONVERT_TYPE};
         }
     }
 
