@@ -248,7 +248,7 @@ struct integer<Bits, Signed>::_impl
         {   // max(double) / 2^64 will surely contain less than 52 precision bits, so speed up computations.
             set_multiplier<double>(self, alpha);
             self *= max_int;
-        };
+        }
 
         self += static_cast<uint64_t>(t - alpha * max_int); // += b_i
     }
