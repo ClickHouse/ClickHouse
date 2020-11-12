@@ -3,6 +3,7 @@ import subprocess
 import time
 
 import docker
+import docker.errors
 
 
 class PartitionManager:
@@ -178,8 +179,10 @@ class _NetworkManager:
                     self._container.remove(force=True)
                 except docker.errors.NotFound:
                     pass
-                except:
-                    print self._container.status, self._container.logs()
+                except docker.errors.APIError as e:
+                    # if "removal of container" in str(e):
+                    print self._docker_client.api.exec_inspect(self._container.id)
+                    # print self._container.status, self._container.logs()
                     raise
 
             # for some reason docker api may hang if image doesn't exist, so we download it
