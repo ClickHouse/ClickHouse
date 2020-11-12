@@ -177,43 +177,21 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
 
 struct GroupByKeysInfo
 {
-    std::unordered_set<String> key_names; ///set of keys' short names
-    bool has_identifier = false;
+    NameSet key_names; ///set of keys' short names
     bool has_function = false;
-    bool has_possible_collision = false;
 };
 
-GroupByKeysInfo getGroupByKeysInfo(ASTs & group_keys)
+GroupByKeysInfo getGroupByKeysInfo(const ASTs & group_by_keys)
 {
     GroupByKeysInfo data;
 
-    ///filling set with short names of keys
-    for (auto & group_key : group_keys)
+    /// filling set with short names of keys
+    for (auto & group_key : group_by_keys)
     {
         if (group_key->as<ASTFunction>())
             data.has_function = true;
 
-        if (auto * group_key_ident = group_key->as<ASTIdentifier>())
-        {
-            data.has_identifier = true;
-            if (data.key_names.count(group_key_ident->shortName()))
-            {
-                ///There may be a collision between different tables having similar variables.
-                ///Due to the fact that we can't track these conflicts yet,
-                ///it's better to disable some optimizations to avoid elimination necessary keys.
-                data.has_possible_collision = true;
-            }
-
-            data.key_names.insert(group_key_ident->shortName());
-        }
-        else if (auto * group_key_func = group_key->as<ASTFunction>())
-        {
-            data.key_names.insert(group_key_func->getColumnName());
-        }
-        else
-        {
-            data.key_names.insert(group_key->getColumnName());
-        }
+        data.key_names.insert(group_key->getColumnName());
     }
 
     return data;
@@ -225,47 +203,28 @@ void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
     if (!select_query->groupBy())
         return;
 
-    auto grp_by = select_query->groupBy();
-    auto & group_keys = grp_by->children;
+    auto group_by = select_query->groupBy();
+    const auto & group_by_keys = group_by->children;
 
     ASTs modified; ///result
 
-    GroupByKeysInfo group_by_keys_data = getGroupByKeysInfo(group_keys);
+    GroupByKeysInfo group_by_keys_data = getGroupByKeysInfo(group_by_keys);
 
-    if (!group_by_keys_data.has_function || group_by_keys_data.has_possible_collision)
+    if (!group_by_keys_data.has_function)
         return;
 
     GroupByFunctionKeysVisitor::Data visitor_data{group_by_keys_data.key_names};
-    GroupByFunctionKeysVisitor(visitor_data).visit(grp_by);
+    GroupByFunctionKeysVisitor(visitor_data).visit(group_by);
 
-    modified.reserve(group_keys.size());
+    modified.reserve(group_by_keys.size());
 
-    ///filling the result
-    for (auto & group_key : group_keys)
-    {
-        if (auto * group_key_func = group_key->as<ASTFunction>())
-        {
-            if (group_by_keys_data.key_names.count(group_key_func->getColumnName()))
-                modified.push_back(group_key);
+    /// filling the result
+    for (auto & group_key : group_by_keys)
+        if (group_by_keys_data.key_names.count(group_key->getColumnName()))
+            modified.push_back(group_key);
 
-            continue;
-        }
-        if (auto * group_key_ident = group_key->as<ASTIdentifier>())
-        {
-            if (group_by_keys_data.key_names.count(group_key_ident->shortName()))
-                modified.push_back(group_key);
-
-            continue;
-        }
-        else
-        {
-            if (group_by_keys_data.key_names.count(group_key->getColumnName()))
-                modified.push_back(group_key);
-        }
-    }
-
-    ///modifying the input
-    grp_by->children = modified;
+    /// modifying the input
+    group_by->children = modified;
 }
 
 /// Eliminates min/max/any-aggregators of functions of GROUP BY keys
@@ -274,10 +233,8 @@ void optimizeAggregateFunctionsOfGroupByKeys(ASTSelectQuery * select_query, ASTP
     if (!select_query->groupBy())
         return;
 
-    auto grp_by = select_query->groupBy();
-    auto & group_keys = grp_by->children;
-
-    GroupByKeysInfo group_by_keys_data = getGroupByKeysInfo(group_keys);
+    auto & group_by_keys = select_query->groupBy()->children;
+    GroupByKeysInfo group_by_keys_data = getGroupByKeysInfo(group_by_keys);
 
     SelectAggregateFunctionOfGroupByKeysVisitor::Data visitor_data{group_by_keys_data.key_names};
     SelectAggregateFunctionOfGroupByKeysVisitor(visitor_data).visit(node);
