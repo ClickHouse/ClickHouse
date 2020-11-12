@@ -275,7 +275,6 @@ struct integer<Bits, Signed>::_impl
             ? -static_cast<long double>(rhs)
             : rhs;
 
-        self = (rhs_long_double / max_int > 0) ? 1 : 0;
         set_multiplier(self, rhs_long_double);
 
         if (rhs < 0)
