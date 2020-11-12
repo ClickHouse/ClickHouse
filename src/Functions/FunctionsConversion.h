@@ -97,7 +97,7 @@ struct NameToUnixTimestamp { static constexpr auto name = "toUnixTimestamp"; };
 
 struct AccurateAdditions
 {
-    UInt32 scale;
+    UInt32 scale { 0 };
 };
 
 enum class ConvertStrategy
@@ -181,18 +181,26 @@ struct ConvertImpl
             {
                 if constexpr (IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
                 {
-                    if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
-                        vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], vec_from.getScale(), vec_to.getScale());
-                    else if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeNumber<ToDataType>)
-                        vec_to[i] = convertFromDecimal<FromDataType, ToDataType>(vec_from[i], vec_from.getScale());
-                    else if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDataType>)
-                        vec_to[i] = convertToDecimal<FromDataType, ToDataType>(vec_from[i], vec_to.getScale());
-                    else
+                    try
                     {
+                        if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
+                            vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], vec_from.getScale(), vec_to.getScale());
+                        else if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeNumber<ToDataType>)
+                            vec_to[i] = convertFromDecimal<FromDataType, ToDataType>(vec_from[i], vec_from.getScale());
+                        else if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDataType>)
+                            vec_to[i] = convertToDecimal<FromDataType, ToDataType>(vec_from[i], vec_to.getScale());
+                        else
+                        {
+                            throw Exception("Unsupported data type in conversion function", ErrorCodes::CANNOT_CONVERT_TYPE);
+                        }
+                    }
+                    catch (...)
+                    {
+                        /// Handle decimal overflow that propagated as exception
                         if constexpr (convert_strategy == ConvertStrategy::Accurate)
                             (*vec_null_map_to)[i] = true;
                         else
-                            throw Exception("Unsupported data type in conversion function", ErrorCodes::CANNOT_CONVERT_TYPE);
+                            throw;
                     }
                 }
                 else if constexpr (is_big_int_v<FromFieldType> || is_big_int_v<ToFieldType>)
@@ -216,8 +224,8 @@ struct ConvertImpl
                     {
                         if constexpr (convert_strategy == ConvertStrategy::Accurate)
                         {
-                        if (accurate::greaterOp(vec_from[i], std::numeric_limits<ToFieldType>::max()) ||
-                            accurate::greaterOp(std::numeric_limits<ToFieldType>::min(), vec_from[i]))
+                            if (accurate::greaterOp(vec_from[i], std::numeric_limits<ToFieldType>::max())
+                                || accurate::greaterOp(std::numeric_limits<ToFieldType>::min(), vec_from[i]))
                             {
                                 (*vec_null_map_to)[i] = true;
                                 continue;
@@ -232,8 +240,8 @@ struct ConvertImpl
                 {
                     if constexpr (convert_strategy == ConvertStrategy::Accurate)
                     {
-                        if (accurate::greaterOp(vec_from[i], std::numeric_limits<ToFieldType>::max()) ||
-                            accurate::greaterOp(std::numeric_limits<ToFieldType>::min(), vec_from[i]))
+                        if (accurate::greaterOp(vec_from[i], std::numeric_limits<ToFieldType>::max())
+                            || accurate::greaterOp(std::numeric_limits<ToFieldType>::min(), vec_from[i]))
                         {
                             (*vec_null_map_to)[i] = true;
                             continue;
@@ -247,8 +255,8 @@ struct ConvertImpl
                 {
                     if constexpr (convert_strategy == ConvertStrategy::Accurate)
                     {
-                        if (accurate::greaterOp(vec_from[i], std::numeric_limits<ToFieldType>::max()) ||
-                            accurate::greaterOp(std::numeric_limits<ToFieldType>::min(), vec_from[i]))
+                        if (accurate::greaterOp(vec_from[i], std::numeric_limits<ToFieldType>::max())
+                            || accurate::greaterOp(std::numeric_limits<ToFieldType>::min(), vec_from[i]))
                         {
                             (*vec_null_map_to)[i] = true;
                             continue;
@@ -2104,7 +2112,7 @@ private:
     }
 
     template <typename ToDataType>
-    WrapperType createWrapper(const DataTypePtr & from_type, const ToDataType * const, bool requested_result_is_nullable) const
+    WrapperType createWrapper(const DataTypePtr & from_type, const ToDataType * const to_type, bool requested_result_is_nullable) const
     {
         TypeIndex from_type_index = from_type->getTypeId();
         WhichDataType which(from_type_index);
@@ -2122,9 +2130,12 @@ private:
             FunctionPtr function = FunctionTo<ToDataType>::Type::create();
             return createFunctionAdaptor(function, from_type);
         }
-    
-        return [from_type_index]
-            (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count)
+
+        auto nullable_column_wrapper = createToNullableColumnWrapper();
+        bool is_accurate_cast = is_accurate_cast_or_null;
+
+        return [is_accurate_cast, nullable_column_wrapper, from_type_index, to_type]
+            (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t input_rows_count)
         {
             ColumnPtr result_column;
             auto res = callOnIndexAndDataType<ToDataType>(from_type_index, [&](const auto & types) -> bool
@@ -2145,8 +2156,14 @@ private:
             /// Additionally check if callOnIndexAndDataType wasn't called at all.
             if (!res)
             {
-                // throw Exception{"Conversion from " + std::string(getTypeName(from_type)) + " to " + to_type->getName() +
-                                // " is not supported", ErrorCodes::CANNOT_CONVERT_TYPE};
+                if (is_accurate_cast)
+                    return nullable_column_wrapper(arguments, result_type, column_nullable, input_rows_count);
+                else
+                {
+                    throw Exception{
+                        "Conversion from " + std::string(getTypeName(from_type_index)) + " to " + to_type->getName() + " is not supported",
+                        ErrorCodes::CANNOT_CONVERT_TYPE};
+                }
             }
 
             return result_column;
@@ -2202,7 +2219,7 @@ private:
         bool is_accurate_cast = is_accurate_cast_or_null;
 
         return [is_accurate_cast, nullable_column_wrapper, type_index, scale, to_type] 
-            (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *columnNullable, size_t input_rows_count)
+            (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *column_nullable, size_t input_rows_count)
         {
             ColumnPtr result_column;
             auto res = callOnIndexAndDataType<ToDataType>(type_index, [&](const auto & types) -> bool
@@ -2211,7 +2228,19 @@ private:
                 using LeftDataType = typename Types::LeftType;
                 using RightDataType = typename Types::RightType;
 
+                if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
+                {
+                    if (is_accurate_cast)
+                    {
+                        AccurateAdditions additions;
+                        additions.scale = scale;
+                        result_column = ConvertImpl<LeftDataType, RightDataType, NameCast>::execute(arguments, result_type, input_rows_count, additions);
+                        return true;
+                    }
+                }
+
                 result_column = ConvertImpl<LeftDataType, RightDataType, NameCast>::execute(arguments, result_type, input_rows_count, scale);
+
                 return true;
             });
 
@@ -2219,7 +2248,7 @@ private:
             if (!res)
             {
                 if (is_accurate_cast)
-                    return nullable_column_wrapper(arguments, result_type, columnNullable, input_rows_count);
+                    return nullable_column_wrapper(arguments, result_type, column_nullable, input_rows_count);
                 else
                     throw Exception{
                         "Conversion from " + std::string(getTypeName(type_index)) + " to " + to_type->getName() + " is not supported",
