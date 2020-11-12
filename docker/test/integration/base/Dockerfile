@@ -17,7 +17,8 @@ RUN apt-get update \
         sqlite3 \
         curl \
         tar \
-        krb5-user
+        krb5-user \
+        iproute2
 RUN rm -rf \
         /var/lib/apt/lists/* \
         /var/cache/debconf \

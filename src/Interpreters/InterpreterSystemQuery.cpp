@@ -21,6 +21,7 @@
 #include <Interpreters/TextLog.h>
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Access/ContextAccess.h>
 #include <Access/AllowedClientHosts.h>
 #include <Databases/IDatabase.h>
@@ -139,11 +140,17 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
     }
     else if (table_id)
     {
-        context.checkAccess(getRequiredAccessType(action_type), table_id);
-        if (start)
-            manager->remove(table_id, action_type);
-        else
-            manager->add(table_id, action_type);
+        auto table = DatabaseCatalog::instance().tryGetTable(table_id, context);
+        if (table)
+        {
+            if (start)
+            {
+                manager->remove(table, action_type);
+                table->onActionLockRemove(action_type);
+            }
+            else
+                manager->add(table, action_type);
+        }
     }
     else
     {
@@ -168,7 +175,10 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
                 }
 
                 if (start)
+                {
                     manager->remove(table, action_type);
+                    table->onActionLockRemove(action_type);
+                }
                 else
                     manager->add(table, action_type);
             }
@@ -329,7 +339,8 @@ BlockIO InterpreterSystemQuery::execute()
                     [&] () { if (auto trace_log = context.getTraceLog()) trace_log->flush(true); },
                     [&] () { if (auto text_log = context.getTextLog()) text_log->flush(true); },
                     [&] () { if (auto metric_log = context.getMetricLog()) metric_log->flush(true); },
-                    [&] () { if (auto asynchronous_metric_log = context.getAsynchronousMetricLog()) asynchronous_metric_log->flush(true); }
+                    [&] () { if (auto asynchronous_metric_log = context.getAsynchronousMetricLog()) asynchronous_metric_log->flush(true); },
+                    [&] () { if (auto opentelemetry_span_log = context.getOpenTelemetrySpanLog()) opentelemetry_span_log->flush(true); }
             );
             break;
         case Type::STOP_LISTEN_QUERIES:

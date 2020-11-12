@@ -51,6 +51,7 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
+#include <Formats/registerFormats.h>
 #include <Storages/registerStorages.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
@@ -190,10 +191,10 @@ int Server::run()
     if (config().hasOption("help"))
     {
         Poco::Util::HelpFormatter help_formatter(Server::options());
-        std::stringstream header;
-        header << commandName() << " [OPTION] [-- [ARG]...]\n";
-        header << "positional arguments can be used to rewrite config.xml properties, for example, --http_port=8010";
-        help_formatter.setHeader(header.str());
+        auto header_str = fmt::format("{} [OPTION] [-- [ARG]...]\n"
+                                      "positional arguments can be used to rewrite config.xml properties, for example, --http_port=8010",
+                                      commandName());
+        help_formatter.setHeader(header_str);
         help_formatter.format(std::cout);
         return 0;
     }
@@ -266,6 +267,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     registerStorages();
     registerDictionaries();
     registerDisks();
+    registerFormats();
 
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::getVersionRevision());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
@@ -565,6 +567,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
             if (config->has("zookeeper"))
                 global_context->reloadZooKeeperIfChanged(config);
+
+            global_context->reloadAuxiliaryZooKeepersConfigIfChanged(config);
 
             global_context->updateStorageConfiguration(*config);
         },

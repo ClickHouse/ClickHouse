@@ -13,7 +13,6 @@
 namespace DB
 {
 
-class MergeListEntry;
 class MergeProgressCallback;
 
 /// Auxiliary struct holding metainformation for the future merged or mutated part.

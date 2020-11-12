@@ -2,7 +2,7 @@
     
     <create_query>CREATE TABLE IF NOT EXISTS table_{format} ENGINE = File({format}) AS test.hits</create_query>
 
-    <fill_query>INSERT INTO table_{format} SELECT * FROM test.hits LIMIT 100000</fill_query>
+    <fill_query>INSERT INTO table_{format} SELECT * FROM test.hits LIMIT 200000</fill_query>
 
     <substitutions>
         <substitution>
