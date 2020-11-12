@@ -1465,7 +1465,7 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool()
     return *shared->distributed_schedule_pool;
 }
 
-bool Context::hasDistributedDDL() const 
+bool Context::hasDistributedDDL() const
 {
     return getConfigRef().has("distributed_ddl");
 }
