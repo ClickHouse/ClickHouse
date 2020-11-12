@@ -25,15 +25,15 @@ encrypt('mode', 'plaintext', 'key', [iv, aad])
 
 **Parameters**
 
--   `mode` — Encryption mode. [String][../../sql-reference/data-types/string.md#string].
--   `plaintext` — Text thats need to be encrypted. [String][../../sql-reference/data-types/string.md#string].
--   `key` — Encryption key. Length depends on enctyption mode. [String][../../sql-reference/data-types/string.md#string].
--   `iv` — Initialization vector for block encryption modes that require it. [String][../../sql-reference/data-types/string.md#string].
--   `add` — Additional authenticated data. It doen't get encrypted, but it affects decryption. Works only in `-gcm` modes. [String][../../sql-reference/data-types/string.md#string].
+-   `mode` — Encryption mode. [String](../../sql-reference/data-types/string.md#string).
+-   `plaintext` — Text thats need to be encrypted. [String](../../sql-reference/data-types/string.md#string).
+-   `key` — Encryption key. Length depends on enctyption mode. [String](../../sql-reference/data-types/string.md#string).
+-   `iv` — Initialization vector for block encryption modes that require it. [String](../../sql-reference/data-types/string.md#string).
+-   `add` — Additional authenticated data. It doen't get encrypted, but it affects decryption. Works only in `-gcm` modes. [String](../../sql-reference/data-types/string.md#string).
 
 **Returned value**
 
--   Ciphered String. [String][../../sql-reference/data-types/string.md#string].
+-   Ciphered String. [String](../../sql-reference/data-types/string.md#string).
 
 **Examples**
 
@@ -167,14 +167,14 @@ aes_encrypt_mysql('mode', 'plaintext', 'key', [iv])
 
 **Parameters**
 
--   `mode` — Encryption mode. [String][../../sql-reference/data-types/string.md#string].
--   `plaintext` — Text that needs to be encrypted. [String][../../sql-reference/data-types/string.md#string].
--   `key` — Encryption key. Length depends on enctyption mode. [String][../../sql-reference/data-types/string.md#string].
--   `iv` — Initialization vector for block encryption modes that require it. [String][../../sql-reference/data-types/string.md#string].
+-   `mode` — Encryption mode. [String](../../sql-reference/data-types/string.md#string).
+-   `plaintext` — Text that needs to be encrypted. [String](../../sql-reference/data-types/string.md#string).
+-   `key` — Encryption key. Length depends on enctyption mode. [String](../../sql-reference/data-types/string.md#string).
+-   `iv` — Initialization vector for block encryption modes that require it. [String](../../sql-reference/data-types/string.md#string).
 
 **Returned value**
 
--   Ciphered String. [String][../../sql-reference/data-types/string.md#string].
+-   Ciphered String. [String](../../sql-reference/data-types/string.md#string).
 
 **Examples**
 
@@ -266,15 +266,15 @@ decrypt('mode', 'ciphertext', 'key', [iv, aad])
 
 **Parameters**
 
--   `mode` — Decryption mode. [String][../../sql-reference/data-types/string.md#string].
--   `ciphertext` — Encrypted text that needs to be decrypted. [String][../../sql-reference/data-types/string.md#string].
--   `key` — Decryption key. [String][../../sql-reference/data-types/string.md#string].
--   `iv` — Initialization vector for block encryption modes that require it. [String][../../sql-reference/data-types/string.md#string].
--   `add` — Additional authenticated data. Wont decrypt if this value is incorrect. [String][../../sql-reference/data-types/string.md#string].
+-   `mode` — Decryption mode. [String](../../sql-reference/data-types/string.md#string).
+-   `ciphertext` — Encrypted text that needs to be decrypted. [String](../../sql-reference/data-types/string.md#string).
+-   `key` — Decryption key. [String](../../sql-reference/data-types/string.md#string).
+-   `iv` — Initialization vector for block encryption modes that require it. [String](../../sql-reference/data-types/string.md#string).
+-   `add` — Additional authenticated data. Wont decrypt if this value is incorrect. [String](../../sql-reference/data-types/string.md#string).
 
 **Returned value**
 
--   Decrypted String. [String][../../sql-reference/data-types/string.md#string].
+-   Decrypted String. [String](../../sql-reference/data-types/string.md#string).
 
 **Examples**
 
@@ -409,14 +409,14 @@ aes_decrypt_mysql'mode', 'ciphertext', 'key', [iv])
 
 **Parameters**
 
--   `mode` — Decryption mode. [String][../../sql-reference/data-types/string.md#string].
--   `ciphertext` — Encrypted text that needs to be decrypted. [String][../../sql-reference/data-types/string.md#string].
--   `key` — Decryption key. [String][../../sql-reference/data-types/string.md#string].
--   `iv` — Initialization vector for block encryption modes that require it. [String][../../sql-reference/data-types/string.md#string].
+-   `mode` — Decryption mode. [String](../../sql-reference/data-types/string.md#string).
+-   `ciphertext` — Encrypted text that needs to be decrypted. [String](../../sql-reference/data-types/string.md#string).
+-   `key` — Decryption key. [String](../../sql-reference/data-types/string.md#string).
+-   `iv` — Initialization vector for block encryption modes that require it. [String](../../sql-reference/data-types/string.md#string).
 
 **Returned value**
 
--   Decrypted String. [String][../../sql-reference/data-types/string.md#string].
+-   Decrypted String. [String](../../sql-reference/data-types/string.md#string).
 
 **Examples**
 
