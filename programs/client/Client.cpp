@@ -54,6 +54,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/UseSSL.h>
+#include <IO/WriteBufferFromOStream.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 #include <DataStreams/InternalTextLogsRowOutputStream.h>
@@ -1158,13 +1159,13 @@ private:
                 ASTPtr ast_to_process;
                 try
                 {
-                    std::stringstream dump_before_fuzz;
+                    WriteBufferFromOwnString dump_before_fuzz;
                     fuzz_base->dumpTree(dump_before_fuzz);
                     auto base_before_fuzz = fuzz_base->formatForErrorMessage();
 
                     ast_to_process = fuzz_base->clone();
 
-                    std::stringstream dump_of_cloned_ast;
+                    WriteBufferFromOwnString dump_of_cloned_ast;
                     ast_to_process->dumpTree(dump_of_cloned_ast);
 
                     // Run the original query as well.
@@ -1186,7 +1187,9 @@ private:
                         fprintf(stderr, "dump of cloned ast:\n%s\n",
                             dump_of_cloned_ast.str().c_str());
                         fprintf(stderr, "dump after fuzz:\n");
-                        fuzz_base->dumpTree(std::cerr);
+                        WriteBufferFromOStream cerr_buf(std::cerr, 4096);
+                        fuzz_base->dumpTree(cerr_buf);
+                        cerr_buf.next();
 
                         fmt::print(stderr, "IAST::clone() is broken for some AST node. This is a bug. The original AST ('dump before fuzz') and its cloned copy ('dump of cloned AST') refer to the same nodes, which must never happen. This means that their parent node doesn't implement clone() correctly.");
 
@@ -1529,7 +1532,9 @@ private:
         if (is_interactive)
         {
             std::cout << std::endl;
-            formatAST(*res, std::cout);
+            WriteBufferFromOStream res_buf(std::cout, 4096);
+            formatAST(*res, res_buf);
+            res_buf.next();
             std::cout << std::endl << std::endl;
         }
 
