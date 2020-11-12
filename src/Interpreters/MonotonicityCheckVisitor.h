@@ -134,7 +134,7 @@ public:
     static bool needChildVisit(const ASTPtr & parent, const ASTPtr &)
     {
         if (const auto * func = typeid_cast<const ASTFunction *>(parent.get()))
-            return func->children.size() < 2;
+            return func->arguments->children.size() < 2;
 
         return true;
     }
