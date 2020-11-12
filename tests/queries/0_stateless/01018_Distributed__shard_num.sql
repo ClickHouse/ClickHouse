@@ -77,3 +77,33 @@ CREATE TABLE dist_3 AS mem3 Engine=Distributed(test_shard_localhost, currentData
 INSERT INTO mem3 VALUES (100, 'foo');
 SELECT * FROM dist_3;
 SELECT _shard_num, * FROM dist_3 order by _shard_num;
+
+-- GROUP BY _shard_num
+SELECT _shard_num, count() FROM remote('127.0.0.{1,2}', system.one) GROUP BY _shard_num;
+SELECT _shard_num s, count() FROM remote('127.0.0.{1,2}', system.one) GROUP BY _shard_num;
+
+-- GROUP BY + JOIN
+SELECT any(c.host_name), _shard_num, count()
+FROM cluster(test_cluster_two_shards, system.one) a
+JOIN system.clusters c ON _shard_num = c.shard_num AND c.cluster = 'test_cluster_two_shards'
+GROUP BY _shard_num;
+SELECT c.host_name, _shard_num
+FROM cluster(test_cluster_two_shards, system.one) a
+JOIN system.clusters c ON _shard_num = c.shard_num AND c.cluster = 'test_cluster_two_shards';
+-- TODO: In case _shard_num was requested with an alias the alias will be
+-- normalized by the QueryNormalizer and final alias will be used on
+-- shards (not _shard_num), but on the initiator _shard_num will not be
+-- normalized, since it is the parent alias (due to lack of WITH
+-- statement there)
+--
+-- SELECT any(c.host_name), _shard_num s, count()
+-- FROM cluster(test_cluster_two_shards, system.one) a
+-- JOIN system.clusters c ON _shard_num = c.shard_num AND c.cluster = 'test_cluster_two_shards'
+-- GROUP BY s;
+--
+-- SELECT any(c.host_name), _shard_num s, count()
+-- FROM cluster(test_cluster_two_shards, system.one) a
+-- JOIN system.clusters c ON _shard_num = c.shard_num AND c.cluster = 'test_cluster_two_shards'
+-- GROUP BY _shard_num;
+--
+-- SELECT _shard_num s, count() FROM remote('127.0.0.{1,2}', system.one) GROUP BY s;
