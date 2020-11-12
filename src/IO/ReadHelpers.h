@@ -370,7 +370,14 @@ end:
 template <ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW, typename T>
 void readIntText(T & x, ReadBuffer & buf)
 {
-    readIntTextImpl<T, void, check_overflow>(x, buf);
+    if constexpr (IsDecimalNumber<T>)
+    {
+        readIntText<check_overflow>(x.value, buf);
+    }
+    else
+    {
+        readIntTextImpl<T, void, check_overflow>(x, buf);
+    }
 }
 
 template <ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::CHECK_OVERFLOW, typename T>
@@ -379,11 +386,6 @@ bool tryReadIntText(T & x, ReadBuffer & buf)
     return readIntTextImpl<T, bool, check_overflow>(x, buf);
 }
 
-template <ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW, typename T>
-void readIntText(Decimal<T> & x, ReadBuffer & buf)
-{
-    readIntText<check_overflow>(x.value, buf);
-}
 
 /** More efficient variant (about 1.5 times on real dataset).
   * Differs in following:

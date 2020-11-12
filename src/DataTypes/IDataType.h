@@ -615,6 +615,14 @@ inline bool isColumnedAsDecimal(const T & data_type)
     return which.isDecimal() || which.isDateTime64();
 }
 
+// Same as isColumnedAsDecimal but also checks value type of underlyig column.
+template <typename T, typename DataType>
+inline bool isColumnedAsDecimalT(const DataType & data_type)
+{
+    const WhichDataType which(data_type);
+    return (which.isDecimal() || which.isDateTime64()) && which.idx == TypeId<T>::value;
+}
+
 template <typename T>
 inline bool isString(const T & data_type)
 {
