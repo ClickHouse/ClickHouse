@@ -233,7 +233,7 @@ struct integer<Bits, Signed>::_impl
      * the recursive call happens when t / 2^64 > 2^64, so there won't be more than 5 of them.
      */
     template <class T>
-    constexpr static void set_multiplier(wide_integer<Bits, Signed> & self, T t) noexcept {
+    constexpr static void set_multiplier(integer<Bits, Signed> & self, T t) noexcept {
         constexpr uint64_t max_int = std::numeric_limits<uint64_t>::max();
         const T alpha = t / max_int;
 
@@ -241,14 +241,25 @@ struct integer<Bits, Signed>::_impl
             for (uint64_t i = 0; i < static_cast<uint64_t>(alpha); ++i)
                 self *= max_int;
         else // max(double) / 2^64 will surely contain less than 52 precision bits, so speed up computations.
-            set_multiplier(self, static_cast<double>(alpha));
+            set_multiplier<double>(self, alpha);
 
         self += static_cast<uint64_t>(t - alpha * max_int);
     }
 
-    constexpr static void wide_integer_from_bultin(wide_integer<Bits, Signed>& self, double rhs) noexcept {
+    constexpr static void wide_integer_from_bultin(integer<Bits, Signed>& self, double rhs) noexcept {
         constexpr int64_t max_int = std::numeric_limits<int64_t>::max();
         constexpr int64_t min_int = std::numeric_limits<int64_t>::min();
+
+        /// There are values in int64 that have more than 53 significant bits (in terms of double
+        /// representation). Such values, being promoted to double, are rounded up or down. If they are rounded up,
+        /// the result may not fit in 64 bits.
+        /// The example of such a number is 9.22337e+18.
+        /// As to_Integral does a static_cast to int64_t, it may result in UB.
+        /// The necessary check here is that long double has enough significant (mantissa) bits to store the
+        /// int64_t max value precisely.
+        static_assert(LDBL_MANT_DIG >= 64,
+            "On your system long double has less than 64 precision bits,"
+            "which may result in UB when initializing double from int64_t");
 
         if ((rhs > 0 && rhs < max_int) || (rhs < 0 && rhs > min_int)) {
             self = static_cast<int64_t>(rhs);
