@@ -79,17 +79,15 @@ SELECT 1272 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'asn', tuple(IP
 SELECT 1270 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'asn', tuple(IPv4StringToNum('127.0.0.3')));
 SELECT 1270 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'asn', tuple(IPv4StringToNum('127.0.0.255')));
 
--- SELECT 1 == dictHas('database_for_dict.dict_ipv4_trie', tuple(IPv4StringToNum('127.0.0.0')));
--- SELECT 1 == dictHas('database_for_dict.dict_ipv4_trie', tuple(IPv4StringToNum('127.0.0.1')));
--- SELECT 1 == dictHas('database_for_dict.dict_ipv4_trie', tuple(IPv4StringToNum('127.0.0.2')));
--- SELECT 1 == dictHas('database_for_dict.dict_ipv4_trie', tuple(IPv4StringToNum('127.0.0.3')));
--- SELECT 1 == dictHas('database_for_dict.dict_ipv4_trie', tuple(IPv4StringToNum('127.0.0.255')));
--- SELECT 0 == dictHas('database_for_dict.dict_ipv4_trie', tuple(IPv4StringToNum('127.127.127.127')));
--- SELECT 0 == dictHas('database_for_dict.dict_ipv4_trie', tuple(IPv4StringToNum('127.127.127.0')));
+SELECT 1 == dictHas('database_for_dict.dict_ipv4_trie', tuple(IPv4StringToNum('127.0.0.0')));
+SELECT 1 == dictHas('database_for_dict.dict_ipv4_trie', tuple(IPv4StringToNum('127.0.0.1')));
+SELECT 1 == dictHas('database_for_dict.dict_ipv4_trie', tuple(IPv4StringToNum('127.0.0.2')));
+SELECT 1 == dictHas('database_for_dict.dict_ipv4_trie', tuple(IPv4StringToNum('127.0.0.3')));
+SELECT 1 == dictHas('database_for_dict.dict_ipv4_trie', tuple(IPv4StringToNum('127.0.0.255')));
 
--- SELECT 11212 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'asn', tuple(IPv4StringToNum('101.79.55.22')));
--- SELECT 'x', dictGetUInt32('database_for_dict.dict_ipv4_trie', 'asn', tuple(IPv6StringToNum('::ffff:654f:3716')));
--- SELECT '11212', dictGetUInt32('database_for_dict.dict_ipv4_trie', 'asn', tuple(IPv6StringToNum('::ffff:101.79.55.22')));
+SELECT 11212 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'asn', tuple(IPv4StringToNum('101.79.55.22')));
+SELECT 11212 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'asn', tuple(IPv6StringToNum('::ffff:654f:3716')));
+SELECT 11212 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'asn', tuple(IPv6StringToNum('::ffff:101.79.55.22')));
 
 SELECT 11211 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'asn', tuple(IPv4StringToNum('202.79.32.2')));
 
@@ -151,6 +149,24 @@ SELECT 16 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4
 SELECT 18 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4StringToNum('127.255.128.10')));
 SELECT 19 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4StringToNum('127.255.128.255')));
 SELECT 20 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4StringToNum('127.255.255.128')));
+
+SELECT 1 == dictHas('database_for_dict.dict_ipv4_trie', tuple(IPv4StringToNum('127.0.0.0')));
+SELECT 1 == dictHas('database_for_dict.dict_ipv4_trie', tuple(IPv4StringToNum('127.0.0.1')));
+SELECT 1 == dictHas('database_for_dict.dict_ipv4_trie', tuple(IPv4StringToNum('127.0.0.127')));
+SELECT 1 == dictHas('database_for_dict.dict_ipv4_trie', tuple(IPv4StringToNum('127.0.255.127')));
+SELECT 1 == dictHas('database_for_dict.dict_ipv4_trie', tuple(IPv4StringToNum('127.255.127.127')));
+SELECT 1 == dictHas('database_for_dict.dict_ipv4_trie', tuple(IPv4StringToNum('127.255.128.9')));
+SELECT 1 == dictHas('database_for_dict.dict_ipv4_trie', tuple(IPv4StringToNum('127.255.128.127')));
+SELECT 1 == dictHas('database_for_dict.dict_ipv4_trie', tuple(IPv4StringToNum('127.255.128.10')));
+SELECT 1 == dictHas('database_for_dict.dict_ipv4_trie', tuple(IPv4StringToNum('127.255.128.255')));
+SELECT 1 == dictHas('database_for_dict.dict_ipv4_trie', tuple(IPv4StringToNum('127.255.255.128')));
+
+SELECT 0 == dictHas('database_for_dict.dict_ipv4_trie', tuple(IPv4StringToNum('128.127.127.127')));
+SELECT 0 == dictHas('database_for_dict.dict_ipv4_trie', tuple(IPv4StringToNum('128.127.127.0')));
+SELECT 0 == dictHas('database_for_dict.dict_ipv4_trie', tuple(IPv4StringToNum('255.127.127.0')));
+SELECT 0 == dictHas('database_for_dict.dict_ipv4_trie', tuple(IPv4StringToNum('255.0.0.0')));
+SELECT 0 == dictHas('database_for_dict.dict_ipv4_trie', tuple(IPv4StringToNum('0.0.0.0')));
+SELECT 0 == dictHas('database_for_dict.dict_ipv4_trie', tuple(IPv4StringToNum('1.1.1.1')));
 
 SELECT '***ipv6 trie dict***';
 

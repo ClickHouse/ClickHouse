@@ -73,12 +73,15 @@ static inline bool compPrefixes(UInt8 a, UInt8 b)
 /// Convert mapped IPv6 to IPv4 if possible
 inline static UInt32 mappedIPv4ToBinary(const uint8_t * addr, bool & success)
 {
-    const UInt16* words = reinterpret_cast<const UInt16*>(addr);
-    auto has_zero_prefix = words[0] == 0 && words[1] == 0 && words[2] == 0 && words[3] == 0 && words[4] == 0;
-    success = has_zero_prefix && Poco::ByteOrder::fromNetwork(words[5]) == 0xFFFF;
+    success = addr[0] == 0x0 && addr[1] == 0x0 &&
+              addr[2] == 0x0 && addr[3] == 0x0 &&
+              addr[4] == 0x0 && addr[5] == 0x0 &&
+              addr[6] == 0x0 && addr[7] == 0x0 &&
+              addr[8] == 0x0 && addr[9] == 0x0 &&
+              addr[10] == 0xff && addr[11] == 0xff;
     if (!success)
         return 0;
-    return Poco::ByteOrder::fromNetwork(*reinterpret_cast<const UInt32 *>(&addr[6]));
+    return Poco::ByteOrder::fromNetwork(*reinterpret_cast<const UInt32 *>(&addr[12]));
 }
 
 /// Convert IPv4 to IPv6-mapped and save results to buf
@@ -90,34 +93,6 @@ inline static void mapIPv4ToIPv6(UInt32 addr, uint8_t * buf)
     addr = Poco::ByteOrder::toNetwork(addr);
     memcpy(&buf[12], reinterpret_cast<const uint8_t *>(&addr), 4);
 }
-
-/*
-static UInt32 applyMask32(UInt32 val, UInt8 prefix)
-{
-    UInt32 mask = (prefix >= 32) ? 0xffffffff : ~(0xffffffff >> prefix);
-    return val & mask;
-}
-
-static void applyMask128(const uint8_t * val, uint8_t * out, UInt8 prefix)
-{
-    if (prefix >= 128)
-        prefix = 128;
-
-    size_t i = 0;
-
-    for (; prefix >= 8; ++i, prefix -= 8)
-        out[i] = val[i];
-
-    if (i >= 16)
-        return;
-
-    uint8_t mask = ~(0xff >> prefix);
-    out[i] = val[i] & mask;
-
-    i++;
-    memset(&out[i], 0, 16 - i);
-}
-*/
 
 static bool matchIPv4Subnet(UInt32 target, UInt32 addr, UInt8 prefix)
 {
