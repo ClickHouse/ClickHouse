@@ -7,7 +7,6 @@ PEERDIR(
     contrib/restricted/boost/libs
 )
 
-CFLAGS(-g0)
 
 SRCS(
     BackgroundSchedulePool.cpp
@@ -18,7 +17,6 @@ SRCS(
     ExternalResultDescription.cpp
     ExternalTable.cpp
     Field.cpp
-    iostream_debug_helpers.cpp
     MySQL/Authentication.cpp
     MySQL/IMySQLReadPacket.cpp
     MySQL/IMySQLWritePacket.cpp
@@ -32,10 +30,12 @@ SRCS(
     MySQL/PacketsReplication.cpp
     NamesAndTypes.cpp
     PostgreSQLProtocol.cpp
+    QueryProcessingStage.cpp
     Settings.cpp
     SettingsEnums.cpp
     SettingsFields.cpp
     SortDescription.cpp
+    iostream_debug_helpers.cpp
 
 )
 

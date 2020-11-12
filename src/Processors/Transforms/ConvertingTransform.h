@@ -1,6 +1,8 @@
 #pragma once
+
 #include <Processors/ISimpleTransform.h>
 #include <Core/ColumnNumbers.h>
+
 
 namespace DB
 {
@@ -46,7 +48,7 @@ private:
     /// How to construct result block. Position in source block, where to get each column.
     ColumnNumbers conversion;
     /// Do not check that constants are same. Use value from result_header.
-    /// This is needed in case run functions which are constant in query scope, 
+    /// This is needed in case run functions which are constant in query scope,
     /// but may return different result being executed remotely, like `now64()` or `randConstant()`.
     /// In this case we replace constants from remote source to constatns from initiator.
     bool ignore_constant_values;

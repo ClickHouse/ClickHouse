@@ -13,8 +13,15 @@
 #include <IO/ReadHelpers.h>
 #include <Poco/DirectoryIterator.h>
 #include <Common/renameat2.h>
+#include <Common/CurrentMetrics.h>
 
 #include <filesystem>
+
+
+namespace CurrentMetrics
+{
+    extern const Metric TablesToDropQueueSize;
+}
 
 namespace DB
 {
@@ -127,7 +134,10 @@ void DatabaseCatalog::loadDatabases()
     loadMarkedAsDroppedTables();
     auto task_holder = global_context->getSchedulePool().createTask("DatabaseCatalog", [this](){ this->dropTableDataTask(); });
     drop_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(task_holder));
-    (*drop_task)->activateAndSchedule();
+    (*drop_task)->activate();
+    std::lock_guard lock{tables_marked_dropped_mutex};
+    if (!tables_marked_dropped.empty())
+        (*drop_task)->schedule();
 }
 
 void DatabaseCatalog::shutdownImpl()
@@ -155,7 +165,17 @@ void DatabaseCatalog::shutdownImpl()
     tables_marked_dropped.clear();
 
     std::lock_guard lock(databases_mutex);
-    assert(std::find_if_not(uuid_map.begin(), uuid_map.end(), [](const auto & elem) { return elem.map.empty(); }) == uuid_map.end());
+    assert(std::find_if(uuid_map.begin(), uuid_map.end(), [](const auto & elem)
+    {
+        /// Ensure that all UUID mappings are emtpy (i.e. all mappings contain nullptr instead of a pointer to storage)
+        const auto & not_empty_mapping = [] (const auto & mapping)
+        {
+            auto & table = mapping.second.second;
+            return table;
+        };
+        auto it = std::find_if(elem.map.begin(), elem.map.end(), not_empty_mapping);
+        return it != elem.map.end();
+    }) == uuid_map.end());
     databases.clear();
     db_uuid_map.clear();
     view_dependencies.clear();
@@ -411,16 +431,40 @@ DatabasePtr DatabaseCatalog::getSystemDatabase() const
     return getDatabase(SYSTEM_DATABASE);
 }
 
-void DatabaseCatalog::addUUIDMapping(const UUID & uuid, DatabasePtr database, StoragePtr table)
+void DatabaseCatalog::addUUIDMapping(const UUID & uuid)
+{
+    addUUIDMapping(uuid, nullptr, nullptr);
+}
+
+void DatabaseCatalog::addUUIDMapping(const UUID & uuid, const DatabasePtr & database, const StoragePtr & table)
 {
     assert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
+    assert((database && table) || (!database && !table));
     UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
     std::lock_guard lock{map_part.mutex};
-    auto [_, inserted] = map_part.map.try_emplace(uuid, std::move(database), std::move(table));
+    auto [it, inserted] = map_part.map.try_emplace(uuid, database, table);
+    if (inserted)
+        return;
+
+    auto & prev_database = it->second.first;
+    auto & prev_table = it->second.second;
+    assert((prev_database && prev_table) || (!prev_database && !prev_table));
+
+    if (!prev_table && table)
+    {
+        /// It's empty mapping, it was created to "lock" UUID and prevent collision. Just update it.
+        prev_database = database;
+        prev_table = table;
+        return;
+    }
+
+    /// We are trying to replace existing mapping (prev_table != nullptr), it's logical error
+    if (table)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapping for table with UUID={} already exists", toString(uuid));
     /// Normally this should never happen, but it's possible when the same UUIDs are explicitly specified in different CREATE queries,
     /// so it's not LOGICAL_ERROR
-    if (!inserted)
-        throw Exception("Mapping for table with UUID=" + toString(uuid) + " already exists", ErrorCodes::TABLE_ALREADY_EXISTS);
+    throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Mapping for table with UUID={} already exists. It happened due to UUID collision, "
+                    "most likely because some not random UUIDs were manually specified in CREATE queries.", toString(uuid));
 }
 
 void DatabaseCatalog::removeUUIDMapping(const UUID & uuid)
@@ -428,19 +472,35 @@ void DatabaseCatalog::removeUUIDMapping(const UUID & uuid)
     assert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
     UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
     std::lock_guard lock{map_part.mutex};
+    auto it = map_part.map.find(uuid);
+    if (it == map_part.map.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapping for table with UUID={} doesn't exist", toString(uuid));
+    it->second = {};
+}
+
+void DatabaseCatalog::removeUUIDMappingFinally(const UUID & uuid)
+{
+    assert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
+    UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
+    std::lock_guard lock{map_part.mutex};
     if (!map_part.map.erase(uuid))
-        throw Exception("Mapping for table with UUID=" + toString(uuid) + " doesn't exist", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapping for table with UUID={} doesn't exist", toString(uuid));
 }
 
 void DatabaseCatalog::updateUUIDMapping(const UUID & uuid, DatabasePtr database, StoragePtr table)
 {
     assert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
+    assert(database && table);
     UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
     std::lock_guard lock{map_part.mutex};
     auto it = map_part.map.find(uuid);
     if (it == map_part.map.end())
-        throw Exception("Mapping for table with UUID=" + toString(uuid) + " doesn't exist", ErrorCodes::LOGICAL_ERROR);
-    it->second = std::make_pair(std::move(database), std::move(table));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapping for table with UUID={} doesn't exist", toString(uuid));
+    auto & prev_database = it->second.first;
+    auto & prev_table = it->second.second;
+    assert(prev_database && prev_table);
+    prev_database = std::move(database);
+    prev_table = std::move(table);
 }
 
 std::unique_ptr<DatabaseCatalog> DatabaseCatalog::database_catalog;
@@ -631,6 +691,8 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
         dropped_metadata.emplace(std::move(full_path), std::move(dropped_id));
     }
 
+    LOG_INFO(log, "Found {} partially dropped tables. Will load them and retry removal.", dropped_metadata.size());
+
     ThreadPool pool;
     for (const auto & elem : dropped_metadata)
     {
@@ -695,17 +757,21 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
             LOG_WARNING(log, "Cannot parse metadata of partially dropped table {} from {}. Will remove metadata file and data directory. Garbage may be left in /store directory and ZooKeeper.", table_id.getNameForLogs(), dropped_metadata_path);
         }
 
+        addUUIDMapping(table_id.uuid);
         drop_time = Poco::File(dropped_metadata_path).getLastModified().epochTime();
     }
 
     std::lock_guard lock(tables_marked_dropped_mutex);
     if (ignore_delay)
-        tables_marked_dropped.push_front({table_id, table, dropped_metadata_path, 0});
+        tables_marked_dropped.push_front({table_id, table, dropped_metadata_path, drop_time});
     else
-        tables_marked_dropped.push_back({table_id, table, dropped_metadata_path, drop_time});
+        tables_marked_dropped.push_back({table_id, table, dropped_metadata_path, drop_time + drop_delay_sec});
     tables_marked_dropped_ids.insert(table_id.uuid);
-    /// If list of dropped tables was empty, start a drop task
-    if (drop_task && tables_marked_dropped.size() == 1)
+    CurrentMetrics::add(CurrentMetrics::TablesToDropQueueSize, 1);
+
+    /// If list of dropped tables was empty, start a drop task.
+    /// If ignore_delay is set, schedule drop task as soon as possible.
+    if (drop_task && (tables_marked_dropped.size() == 1 || ignore_delay))
         (*drop_task)->schedule();
 }
 
@@ -715,22 +781,40 @@ void DatabaseCatalog::dropTableDataTask()
     /// Table can be removed when it's not used by queries and drop_delay_sec elapsed since it was marked as dropped.
 
     bool need_reschedule = true;
+    /// Default reschedule time for the case when we are waiting for reference count to become 1.
+    size_t schedule_after_ms = reschedule_time_ms;
     TableMarkedAsDropped table;
     try
     {
         std::lock_guard lock(tables_marked_dropped_mutex);
+        assert(!tables_marked_dropped.empty());
         time_t current_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        time_t min_drop_time = std::numeric_limits<time_t>::max();
+        size_t tables_in_use_count = 0;
         auto it = std::find_if(tables_marked_dropped.begin(), tables_marked_dropped.end(), [&](const auto & elem)
         {
             bool not_in_use = !elem.table || elem.table.unique();
-            bool old_enough = elem.drop_time + drop_delay_sec < current_time;
+            bool old_enough = elem.drop_time <= current_time;
+            min_drop_time = std::min(min_drop_time, elem.drop_time);
+            tables_in_use_count += !not_in_use;
             return not_in_use && old_enough;
         });
         if (it != tables_marked_dropped.end())
         {
             table = std::move(*it);
-            LOG_INFO(log, "Will try drop {}", table.table_id.getNameForLogs());
+            LOG_INFO(log, "Have {} tables in drop queue ({} of them are in use), will try drop {}",
+                     tables_marked_dropped.size(), tables_in_use_count, table.table_id.getNameForLogs());
             tables_marked_dropped.erase(it);
+            /// Schedule the task as soon as possible, while there are suitable tables to drop.
+            schedule_after_ms = 0;
+        }
+        else if (current_time < min_drop_time)
+        {
+            /// We are waiting for drop_delay_sec to exceed, no sense to wakeup until min_drop_time.
+            /// If new table is added to the queue with ignore_delay flag, schedule() is called to wakeup the task earlier.
+            schedule_after_ms = (min_drop_time - current_time) * 1000;
+            LOG_TRACE(log, "Not found any suitable tables to drop, still have {} tables in drop queue ({} of them are in use). "
+                           "Will check again after {} seconds", tables_marked_dropped.size(), tables_in_use_count, min_drop_time - current_time);
         }
         need_reschedule = !tables_marked_dropped.empty();
     }
@@ -754,11 +838,15 @@ void DatabaseCatalog::dropTableDataTask()
             tryLogCurrentException(log, "Cannot drop table " + table.table_id.getNameForLogs() +
                                         ". Will retry later.");
             {
+                table.drop_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) + drop_error_cooldown_sec;
                 std::lock_guard lock(tables_marked_dropped_mutex);
                 tables_marked_dropped.emplace_back(std::move(table));
                 /// If list of dropped tables was empty, schedule a task to retry deletion.
                 if (tables_marked_dropped.size() == 1)
+                {
                     need_reschedule = true;
+                    schedule_after_ms = drop_error_cooldown_sec * 1000;
+                }
             }
         }
 
@@ -767,10 +855,10 @@ void DatabaseCatalog::dropTableDataTask()
 
     /// Do not schedule a task if there is no tables to drop
     if (need_reschedule)
-        (*drop_task)->scheduleAfter(reschedule_time_ms);
+        (*drop_task)->scheduleAfter(schedule_after_ms);
 }
 
-void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table) const
+void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
 {
     if (table.table)
     {
@@ -789,6 +877,9 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table) const
 
     LOG_INFO(log, "Removing metadata {} of dropped table {}", table.metadata_path, table.table_id.getNameForLogs());
     Poco::File(table.metadata_path).remove();
+
+    removeUUIDMappingFinally(table.table_id.uuid);
+    CurrentMetrics::sub(CurrentMetrics::TablesToDropQueueSize, 1);
 }
 
 String DatabaseCatalog::getPathForUUID(const UUID & uuid)
@@ -826,6 +917,8 @@ void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid)
 {
     if (uuid == UUIDHelpers::Nil)
         return;
+
+    LOG_DEBUG(log, "Waiting for table {} to be finally dropped", toString(uuid));
     std::unique_lock lock{tables_marked_dropped_mutex};
     wait_table_finally_dropped.wait(lock, [&]()
     {

@@ -307,7 +307,51 @@ Disabled by default.
 
 ## input_format_tsv_enum_as_number {#settings-input_format_tsv_enum_as_number}
 
-For TSV input format switches to parsing enum values as enum ids.
+Enables or disables parsing enum values as enum ids for TSV input format.
+
+Possible values:
+
+-   0 — Enum values are parsed as values.
+-   1 — Enum values are parsed as enum IDs
+
+Default value: 0.
+
+**Example**
+
+Consider the table:
+
+```sql
+CREATE TABLE table_with_enum_column_for_tsv_insert (Id Int32,Value Enum('first' = 1, 'second' = 2)) ENGINE=Memory();
+```
+
+When the `input_format_tsv_enum_as_number` setting is enabled:  
+
+```sql
+SET input_format_tsv_enum_as_number = 1;
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 103	1;
+SELECT * FROM table_with_enum_column_for_tsv_insert;
+```
+
+Result:
+
+```text
+┌──Id─┬─Value──┐
+│ 102 │ second │
+└─────┴────────┘
+┌──Id─┬─Value──┐
+│ 103 │ first  │
+└─────┴────────┘
+```
+
+When the `input_format_tsv_enum_as_number` setting is disabled, the `INSERT` query:
+
+```sql
+SET input_format_tsv_enum_as_number = 0;
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
+```
+
+throws an exception.
 
 ## input_format_null_as_default {#settings-input-format-null-as-default}
 
@@ -384,7 +428,7 @@ Possible values:
 
 -   `'basic'` — Use basic parser.
 
-    ClickHouse can parse only the basic `YYYY-MM-DD HH:MM:SS` format. For example, `'2019-08-20 10:18:56'`.
+    ClickHouse can parse only the basic `YYYY-MM-DD HH:MM:SS` or `YYYY-MM-DD` format. For example, `'2019-08-20 10:18:56'` or `2019-08-20`.
 
 Default value: `'basic'`.
 
@@ -679,6 +723,21 @@ Example:
 ``` text
 log_queries=1
 ```
+
+## log_queries_min_query_duration_ms {#settings-log-queries-min-query-duration-ms}
+
+Minimal time for the query to run to get to the following tables:
+
+- `system.query_log`
+- `system.query_thread_log`
+
+Only the queries with the following type will get to the log:
+
+- `QUERY_FINISH`
+- `EXCEPTION_WHILE_PROCESSING`
+
+-   Type: milliseconds
+-   Default value: 0 (any query)
 
 ## log_queries_min_type {#settings-log-queries-min-type}
 
@@ -1167,7 +1226,47 @@ For CSV input format enables or disables parsing of unquoted `NULL` as literal (
 
 ## input_format_csv_enum_as_number {#settings-input_format_csv_enum_as_number}
 
-For CSV input format switches to parsing enum values as enum ids.
+Enables or disables parsing enum values as enum ids for CSV input format.
+
+Possible values:
+
+-   0 — Enum values are parsed as values.
+-   1 — Enum values are parsed as enum IDs.
+
+Default value: 0.
+
+**Examples**
+
+Consider the table:
+
+```sql
+CREATE TABLE table_with_enum_column_for_csv_insert (Id Int32,Value Enum('first' = 1, 'second' = 2)) ENGINE=Memory();
+```
+
+When the `input_format_csv_enum_as_number` setting is enabled:  
+
+```sql
+SET input_format_csv_enum_as_number = 1;
+INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2;
+SELECT * FROM table_with_enum_column_for_csv_insert;
+```
+
+Result:
+
+```text
+┌──Id─┬─Value─────┐
+│ 102 │ second    │
+└─────┴───────────┘
+```
+
+When the `input_format_csv_enum_as_number` setting is disabled, the `INSERT` query:
+
+```sql
+SET input_format_csv_enum_as_number = 0;
+INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2;
+```
+
+throws an exception.
 
 ## output_format_csv_crlf_end_of_line {#settings-output-format-csv-crlf-end-of-line}
 
@@ -1750,6 +1849,23 @@ Default value: `0`.
 
 -   [Distributed Table Engine](../../engines/table-engines/special/distributed.md#distributed)
 -   [Managing Distributed Tables](../../sql-reference/statements/system.md#query-language-system-distributed)
+
+
+## use_compact_format_in_distributed_parts_names {#use_compact_format_in_distributed_parts_names}
+
+Uses compact format for storing blocks for async (`insert_distributed_sync`) INSERT into tables with `Distributed` engine.
+
+Possible values:
+
+-   0 — Uses `user[:password]@host:port#default_database` directory format.
+-   1 — Uses `[shard{shard_index}[_replica{replica_index}]]` directory format.
+
+Default value: `1`.
+
+!!! note "Note"
+    - with `use_compact_format_in_distributed_parts_names=0` changes from cluster definition will not be applied for async INSERT.
+    - with `use_compact_format_in_distributed_parts_names=1` changing the order of the nodes in the cluster definition, will change the `shard_index`/`replica_index` so be aware.
+
 ## background_buffer_flush_schedule_pool_size {#background_buffer_flush_schedule_pool_size}
 
 Sets the number of threads performing background flush in [Buffer](../../engines/table-engines/special/buffer.md)-engine tables. This setting is applied at the ClickHouse server start and can’t be changed in a user session.
@@ -2148,7 +2264,34 @@ Result:
 └───────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
+## output_format_pretty_row_numbers {#output_format_pretty_row_numbers}
+
+Adds row numbers to output in the [Pretty](../../interfaces/formats.md#pretty) format.
+
+Possible values:
+
+-   0 — Output without row numbers.
+-   1 — Output with row numbers.
+
+Default value: `0`.
+
+**Example**
+
+Query:
+
+```sql
+SET output_format_pretty_row_numbers = 1;
+SELECT TOP 3 name, value FROM system.settings;
+```
+
+Result:
+```text
+   ┌─name────────────────────┬─value───┐
+1. │ min_compress_block_size │ 65536   │
+2. │ max_compress_block_size │ 1048576 │
+3. │ max_block_size          │ 65505   │
+   └─────────────────────────┴─────────┘
+```
 
 ## allow_experimental_bigint_types {#allow_experimental_bigint_types}
 
@@ -2160,3 +2303,18 @@ Possible values:
 -   0 — The bigint data type is disabled.
 
 Default value: `0`.
+
+## persistent {#persistent}
+
+Disables persistency for the [Set](../../engines/table-engines/special/set.md#set) and [Join](../../engines/table-engines/special/join.md#join) table engines. 
+
+Reduces the I/O overhead. Suitable for scenarios that pursue performance and do not require persistence.
+
+Possible values:
+
+- 1 — Enabled.
+- 0 — Disabled.
+
+Default value: `1`.
+
+[Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
