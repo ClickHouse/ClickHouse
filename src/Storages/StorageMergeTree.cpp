@@ -173,17 +173,32 @@ StorageMergeTree::~StorageMergeTree()
     shutdown();
 }
 
-Pipe StorageMergeTree::read(
+void StorageMergeTree::read(
+    QueryPlan & query_plan,
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
+    size_t max_block_size,
+    unsigned num_streams)
+{
+    if (auto plan = reader.read(column_names, metadata_snapshot, query_info, context, max_block_size, num_streams))
+        query_plan = std::move(*plan);
+}
+
+Pipe StorageMergeTree::read(
+    const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
+    SelectQueryInfo & query_info,
+    const Context & context,
+    QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
     const unsigned num_streams)
 {
-    return reader.read(column_names, metadata_snapshot, query_info,
-        context, max_block_size, num_streams);
+    QueryPlan plan;
+    read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+    return plan.convertToPipe();
 }
 
 std::optional<UInt64> StorageMergeTree::totalRows() const
@@ -539,13 +554,12 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
 
         for (const MutationCommand & command : entry.commands)
         {
-            std::stringstream ss;
-            ss.exceptions(std::ios::failbit);
-            formatAST(*command.ast, ss, false, true);
+            WriteBufferFromOwnString buf;
+            formatAST(*command.ast, buf, false, true);
             result.push_back(MergeTreeMutationStatus
             {
                 entry.file_name,
-                ss.str(),
+                buf.str(),
                 entry.create_time,
                 block_numbers_map,
                 parts_to_do_names,
@@ -1015,17 +1029,13 @@ bool StorageMergeTree::optimize(
         {
             if (!merge(true, partition_id, true, deduplicate, &disable_reason))
             {
-                std::stringstream message;
-                message.exceptions(std::ios::failbit);
-                message << "Cannot OPTIMIZE table";
-                if (!disable_reason.empty())
-                    message << ": " << disable_reason;
-                else
-                    message << " by some reason.";
-                LOG_INFO(log, message.str());
+                constexpr const char * message = "Cannot OPTIMIZE table: {}";
+                if (disable_reason.empty())
+                    disable_reason = "unknown reason";
+                LOG_INFO(log, message, disable_reason);
 
                 if (context.getSettingsRef().optimize_throw_if_noop)
-                    throw Exception(message.str(), ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
+                    throw Exception(ErrorCodes::CANNOT_ASSIGN_OPTIMIZE, message, disable_reason);
                 return false;
             }
         }
@@ -1038,17 +1048,13 @@ bool StorageMergeTree::optimize(
 
         if (!merge(true, partition_id, final, deduplicate, &disable_reason))
         {
-            std::stringstream message;
-            message.exceptions(std::ios::failbit);
-            message << "Cannot OPTIMIZE table";
-            if (!disable_reason.empty())
-                message << ": " << disable_reason;
-            else
-                message << " by some reason.";
-            LOG_INFO(log, message.str());
+            constexpr const char * message = "Cannot OPTIMIZE table: {}";
+            if (disable_reason.empty())
+                disable_reason = "unknown reason";
+            LOG_INFO(log, message, disable_reason);
 
             if (context.getSettingsRef().optimize_throw_if_noop)
-                throw Exception(message.str(), ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
+                throw Exception(ErrorCodes::CANNOT_ASSIGN_OPTIMIZE, message, disable_reason);
             return false;
         }
     }
