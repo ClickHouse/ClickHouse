@@ -321,17 +321,18 @@ struct TTestMoments
     T x2{};
     T y2{};
 
-    void add(T value, bool second_sample)
+    void addX(T value)
     {
-        if (second_sample) {
-            ++ny;
-            y1 += value;
-            y2 += value * value;
-        } else {
-            ++nx;
-            x1 += value;
-            x2 += value * value;
-        }
+        ++nx;
+        x1 += value;
+        x2 += value * value;
+    }
+
+    void addY(T value)
+    {
+        ++ny;
+        y1 += value;
+        y2 += value * value;
     }
 
     void merge(const TTestMoments & rhs)
