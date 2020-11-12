@@ -1223,7 +1223,8 @@ void MergeTreeData::clearEmptyParts()
         if (part->rows_count == 0)
         {
             ASTPtr literal = std::make_shared<ASTLiteral>(part->name);
-            dropPartition(literal, /* detach = */ false, /*drop_part = */ true, global_context);
+            /// If another replica has already started drop, it's ok, no need to throw.
+            dropPartition(literal, /* detach = */ false, /*drop_part = */ true, global_context, /* throw_if_noop = */ false);
         }
     }
 }

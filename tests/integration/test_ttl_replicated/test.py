@@ -323,3 +323,9 @@ def test_ttl_empty_parts(started_cluster):
 
     optimize_with_retry(node1, 'test_ttl_empty_parts')
     assert node1.query("SELECT name FROM system.parts WHERE table = 'test_ttl_empty_parts' AND active ORDER BY name") == "all_0_7_2_8\n"
+
+    node2.query('SYSTEM SYNC REPLICA test_ttl_empty_parts', timeout=20)
+
+    error_msg = '<Error> default.test_ttl_empty_parts (ReplicatedMergeTreeCleanupThread)'
+    assert not node1.contains_in_log(error_msg)
+    assert not node2.contains_in_log(error_msg)
