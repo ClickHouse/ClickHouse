@@ -24,6 +24,7 @@ class ServerThread(threading.Thread):
         self.server_config = os.path.join(self.etc_dir, 'server-config.xml')
         self.users_config = os.path.join(self.etc_dir, 'users.xml')
         self.dicts_config = os.path.join(self.etc_dir, 'dictionaries.xml')
+        self.client_config = os.path.join(self.etc_dir, 'client-config.xml')
 
         os.makedirs(self.log_dir)
         os.makedirs(self.etc_dir)
@@ -43,6 +44,7 @@ class ServerThread(threading.Thread):
             '--tcp_port={tcp_port}'.format(tcp_port=self.tcp_port),
             '--http_port={http_port}'.format(http_port=self.http_port),
             '--interserver_http_port={inter_port}'.format(inter_port=self.inter_port),
+            # TODO: SSL certificate is not specified '--tcp_port_secure={tcps_port}'.format(tcps_port=self.tcps_port),
         ]
 
         with open(self.server_config, 'w') as f:
@@ -54,6 +56,9 @@ class ServerThread(threading.Thread):
 
         with open(self.dicts_config, 'w') as f:
             f.write(ServerThread.DEFAULT_DICTIONARIES_CONFIG.format(tcp_port=self.tcp_port))
+
+        with open(self.client_config, 'w') as f:
+            f.write(ServerThread.DEFAULT_CLIENT_CONFIG)
 
     def run(self):
         retries = ServerThread.DEFAULT_RETRIES
@@ -1101,4 +1106,21 @@ ServerThread.DEFAULT_DICTIONARIES_CONFIG = \
         </structure>
     </dictionary>
 </yandex>
+"""
+
+ServerThread.DEFAULT_CLIENT_CONFIG = \
+"""\
+<config>
+    <openSSL>
+        <client>
+            <loadDefaultCAFile>true</loadDefaultCAFile>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+            <invalidCertificateHandler>
+                <name>AcceptCertificateHandler</name>
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+</config>
 """

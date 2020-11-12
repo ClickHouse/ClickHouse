@@ -368,7 +368,7 @@ keyword
 keywordForAlias
     : DATE | FIRST | ID | KEY
     ;
-alias: IDENTIFIER | interval | keywordForAlias;
+alias: IDENTIFIER | keywordForAlias;  // |interval| can't be an alias, otherwise 'INTERVAL 1 SOMETHING' becomes ambiguous.
 identifier: IDENTIFIER | interval | keyword;
 identifierOrNull: identifier | NULL_SQL;  // NULL_SQL can be only 'Null' here.
 enumValue: STRING_LITERAL EQ_SINGLE numberLiteral;

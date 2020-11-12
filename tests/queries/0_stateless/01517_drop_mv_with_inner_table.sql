@@ -26,8 +26,6 @@ create materialized view db_01517_atomic_sync.mv engine=Null as select * from db
 drop table db_01517_atomic_sync.mv sync;
 show tables from db_01517_atomic_sync;
 
-drop table db_01517_atomic_sync.source;
-
 --
 -- Ordinary
 ---
