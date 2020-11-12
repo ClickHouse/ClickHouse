@@ -50,7 +50,7 @@ namespace
 
 static void validateKeyTypes(const DataTypes & key_types)
 {
-    if (key_types.size() < 1 && 2 < key_types.size())
+    if (key_types.empty() || key_types.size() > 2)
         throw Exception{"Expected a single IP address or IP with mask", ErrorCodes::TYPE_MISMATCH};
 
     const auto & actual_type = key_types[0]->getName();
@@ -102,8 +102,8 @@ static bool matchIPv4Subnet(UInt32 target, UInt32 addr, UInt8 prefix)
 
 static bool matchIPv6Subnet(const uint8_t * target, const uint8_t * addr, UInt8 prefix)
 {
-    if (prefix > IPV6_BINARY_LENGTH * 8)
-        prefix = IPV6_BINARY_LENGTH * 8;
+    if (prefix > IPV6_BINARY_LENGTH * 8U)
+        prefix = IPV6_BINARY_LENGTH * 8U;
 
     size_t i = 0;
     for (; prefix >= 8; ++i, prefix -= 8)
@@ -439,8 +439,6 @@ void TrieDictionary::loadData()
 
     stream->readSuffix();
 
-    LOG_TRACE(logger, "{} ip records are read", ip_records.size());
-
     if (has_ipv6)
     {
         std::sort(ip_records.begin(), ip_records.end(),
@@ -520,6 +518,7 @@ void TrieDictionary::loadData()
         subnets_stack.push(i);
     }
 
+    LOG_TRACE(logger, "{} ip records are read", ip_records.size());
     if (require_nonempty && 0 == element_count)
         throw Exception{full_name + ": dictionary source is empty and 'require_nonempty' property is set.", ErrorCodes::DICTIONARY_IS_EMPTY};
 }
@@ -683,7 +682,7 @@ void TrieDictionary::getItemsByTwoKeyColumnsImpl(
     const auto rows = first_column->size();
     auto & vec = std::get<ContainerType<AttributeType>>(attribute.maps);
 
-    if (auto ipv4_col = std::get_if<IPv4Container>(&ip_column))
+    if (const auto * ipv4_col = std::get_if<IPv4Container>(&ip_column))
     {
         const auto * key_ip_column_ptr = typeid_cast<const ColumnVector<UInt32> *>(&*key_columns.front());
         if (key_ip_column_ptr == nullptr)
@@ -725,7 +724,7 @@ void TrieDictionary::getItemsByTwoKeyColumnsImpl(
 
     const auto & key_mask_column = assert_cast<const ColumnVector<UInt8> &>(*key_columns.back());
 
-    auto ipv6_col = std::get_if<IPv6Container>(&ip_column);
+    const auto * ipv6_col = std::get_if<IPv6Container>(&ip_column);
     auto comp_v6 = [&](size_t i, IPv6Subnet target)
     {
         auto cmpres = memcmp16(getIPv6FromOffset(*ipv6_col, i), target.addr);
@@ -890,7 +889,7 @@ void TrieDictionary::has(const Attribute &, const Columns & key_columns, PaddedP
 
 Columns TrieDictionary::getKeyColumns() const
 {
-    auto ipv4_col = std::get_if<IPv4Container>(&ip_column);
+    const auto * ipv4_col = std::get_if<IPv4Container>(&ip_column);
     if (ipv4_col)
     {
         auto key_ip_column = ColumnVector<UInt32>::create();
@@ -903,14 +902,14 @@ Columns TrieDictionary::getKeyColumns() const
         return {std::move(key_ip_column), std::move(key_mask_column)};
     }
 
-    auto ipv6_col = std::get_if<IPv6Container>(&ip_column);
+    const auto * ipv6_col = std::get_if<IPv6Container>(&ip_column);
 
     auto key_ip_column = ColumnFixedString::create(IPV6_BINARY_LENGTH);
     auto key_mask_column = ColumnVector<UInt8>::create();
 
     for (size_t row : ext::range(0, row_idx.size()))
     {
-        auto data = reinterpret_cast<const char *>(getIPv6FromOffset(*ipv6_col, row));
+        const char * data = reinterpret_cast<const char *>(getIPv6FromOffset(*ipv6_col, row));
         key_ip_column->insertData(data, IPV6_BINARY_LENGTH);
         key_mask_column->insertValue(mask_column[row]);
     }
@@ -948,13 +947,13 @@ BlockInputStreamPtr TrieDictionary::getBlockInputStream(const Names & column_nam
     using BlockInputStreamType = DictionaryBlockInputStream<TrieDictionary, UInt64>;
 
 
-    const bool isIPv4 = std::get_if<IPv4Container>(&ip_column) != nullptr;
+    const bool is_ipv4 = std::get_if<IPv4Container>(&ip_column) != nullptr;
 
-    auto get_keys = [isIPv4](const Columns & columns, const std::vector<DictionaryAttribute> & dict_attributes)
+    auto get_keys = [is_ipv4](const Columns & columns, const std::vector<DictionaryAttribute> & dict_attributes)
     {
         const auto & attr = dict_attributes.front();
         std::shared_ptr<const IDataType> key_typ;
-        if (isIPv4)
+        if (is_ipv4)
             key_typ = std::make_shared<DataTypeUInt32>();
         else
             key_typ = std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH);
@@ -965,7 +964,7 @@ BlockInputStreamPtr TrieDictionary::getBlockInputStream(const Names & column_nam
         });
     };
 
-    if (isIPv4)
+    if (is_ipv4)
     {
         auto get_view = keyViewGetter<ColumnVector<UInt32>, true>();
         return std::make_shared<BlockInputStreamType>(
@@ -1011,7 +1010,7 @@ TrieDictionary::RowIdxConstIter TrieDictionary::lookupIP(IPValueType target) con
     if (row_idx.empty())
         return ipNotFound();
 
-    auto ipv4or6_col = std::get_if<IPContainerType>(&ip_column);
+    const auto * ipv4or6_col = std::get_if<IPContainerType>(&ip_column);
     if (ipv4or6_col == nullptr)
         return ipNotFound();
 
