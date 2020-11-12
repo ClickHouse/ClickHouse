@@ -66,8 +66,8 @@ struct StatisticalSample
     using AllocatorYSample = MixedAlignedArenaAllocator<alignof(Y), 4096>;
     using SampleY = PODArray<Y, 32, AllocatorYSample>;
 
-    SampleX x;
-    SampleY y;
+    SampleX x{};
+    SampleY y{};
     size_t size_x{0};
     size_t size_y{0};
 

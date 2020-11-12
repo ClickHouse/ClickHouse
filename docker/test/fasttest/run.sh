@@ -288,6 +288,7 @@ TESTS_TO_SKIP=(
 
     # Require python libraries like scipy, pandas and numpy
     01322_ttest_scipy
+    01561_mann_whitney_scipy
 
     01545_system_errors
     # Checks system.errors

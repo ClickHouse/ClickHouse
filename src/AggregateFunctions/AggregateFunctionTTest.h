@@ -1,6 +1,7 @@
 #pragma once
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/StatCommon.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
@@ -26,20 +27,6 @@ namespace DB
 class ReadBuffer;
 class WriteBuffer;
 
-
-template <typename F>
-static Float64 integrateSimpson(Float64 a, Float64 b, F && func)
-{
-    const size_t iterations = std::max(1e6, 1e4 * std::abs(std::round(b)));
-    const long double h = (b - a) / iterations;
-    Float64 sum_odds = 0.0;
-    for (size_t i = 1; i < iterations; i += 2)
-        sum_odds += func(a + i * h);
-    Float64 sum_evens = 0.0;
-    for (size_t i = 2; i < iterations; i += 2)
-        sum_evens += func(a + i * h);
-    return (func(a) + func(b) + 2 * sum_evens + 4 * sum_odds) * h / 3;
-}
 
 static inline Float64 getPValue(Float64 degrees_of_freedom, Float64 t_stat2)
 {
@@ -98,7 +85,10 @@ public:
         Float64 value = columns[0]->getFloat64(row_num);
         UInt8 is_second = columns[1]->getUInt(row_num);
 
-        this->data(place).add(value, static_cast<bool>(is_second));
+        if (is_second)
+            this->data(place).addY(value);
+        else
+            this->data(place).addX(value);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
