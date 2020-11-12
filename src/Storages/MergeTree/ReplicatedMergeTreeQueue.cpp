@@ -941,7 +941,7 @@ size_t ReplicatedMergeTreeQueue::getConflictsCountForRange(
 
     if (out_description)
     {
-        std::stringstream ss;
+        WriteBufferFromOwnString ss;
         ss << "Can't execute command for range " << range.getPartName() << " (entry " << entry.znode_name << "). ";
         ss << "There are " << conflicts.size() << " currently executing entries blocking it: ";
         for (const auto & conflict : conflicts)
@@ -1036,6 +1036,16 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         {
             if (!isNotCoveredByFuturePartsImpl(entry.znode_name, new_part_name, out_postpone_reason, state_lock))
                 return false;
+        }
+    }
+
+    /// Check that fetches pool is not overloaded
+    if (entry.type == LogEntry::GET_PART)
+    {
+        if (!storage.canExecuteFetch(entry, out_postpone_reason))
+        {
+            LOG_TRACE(log, out_postpone_reason);
+            return false;
         }
     }
 
@@ -1692,12 +1702,12 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
 
         for (const MutationCommand & command : entry.commands)
         {
-            std::stringstream ss;
-            formatAST(*command.ast, ss, false, true);
+            WriteBufferFromOwnString buf;
+            formatAST(*command.ast, buf, false, true);
             result.push_back(MergeTreeMutationStatus
             {
                 entry.znode_name,
-                ss.str(),
+                buf.str(),
                 entry.create_time,
                 entry.block_numbers,
                 parts_to_mutate,

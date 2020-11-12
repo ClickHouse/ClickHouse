@@ -555,6 +555,22 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 </merge_tree>
 ```
 
+## replicated\_merge\_tree {#server_configuration_parameters-replicated_merge_tree}
+
+Тонкая настройка таблиц в [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
+
+Эта настройка имеет более высокий приоритет.
+
+Подробнее смотрите в заголовочном файле MergeTreeSettings.h.
+
+**Пример**
+
+``` xml
+<replicated_merge_tree>
+    <max_suspicious_broken_parts>5</max_suspicious_broken_parts>
+</replicated_merge_tree>
+```
+
 ## openSSL {#server_configuration_parameters-openssl}
 
 Настройки клиента/сервера SSL.
