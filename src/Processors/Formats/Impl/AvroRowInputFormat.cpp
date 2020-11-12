@@ -1,4 +1,5 @@
 #include "AvroRowInputFormat.h"
+#include "DataTypes/DataTypeLowCardinality.h"
 #if USE_AVRO
 
 #include <numeric>
@@ -159,7 +160,8 @@ static void insertNumber(IColumn & column, WhichDataType type, T value)
 
 static std::string nodeToJson(avro::NodePtr root_node)
 {
-    std::ostringstream ss;
+    std::ostringstream ss;      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    ss.exceptions(std::ios::failbit);
     root_node->printJson(ss, 0);
     return ss.str();
 }
@@ -174,7 +176,8 @@ static std::string nodeName(avro::NodePtr node)
 
 AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::NodePtr root_node, DataTypePtr target_type)
 {
-    WhichDataType target(target_type);
+    const WhichDataType target = removeLowCardinality(target_type);
+
     switch (root_node->type())
     {
         case avro::AVRO_STRING: [[fallthrough]];
@@ -384,7 +387,8 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
     }
 
     throw Exception(
-        "Type " + target_type->getName() + " is not compatible with Avro " + avro::toString(root_node->type()) + ":\n" + nodeToJson(root_node),
+        "Type " + target_type->getName() + " is not compatible with Avro " + avro::toString(root_node->type()) + ":\n"
+        + nodeToJson(root_node),
         ErrorCodes::ILLEGAL_COLUMN);
 }
 

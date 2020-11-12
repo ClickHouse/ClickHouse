@@ -5,6 +5,7 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/castColumn.h>
 #include <Interpreters/misc.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -16,6 +17,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 
 #include <cassert>
 
@@ -32,7 +35,7 @@ namespace ErrorCodes
 
 String Range::toString() const
 {
-    std::stringstream str;
+    WriteBufferFromOwnString str;
 
     if (!left_bounded)
         str << "(-inf, ";
@@ -485,6 +488,29 @@ static std::pair<Field, DataTypePtr> applyFunctionForFieldOfUnknownType(
 }
 
 
+/// Same as above but for binary operators
+static std::pair<Field, DataTypePtr> applyBinaryFunctionForFieldOfUnknownType(
+    const FunctionOverloadResolverPtr & func,
+    const DataTypePtr & arg_type,
+    const Field & arg_value,
+    const DataTypePtr & arg_type2,
+    const Field & arg_value2)
+{
+    ColumnsWithTypeAndName arguments{
+        {arg_type->createColumnConst(1, arg_value), arg_type, "x"}, {arg_type2->createColumnConst(1, arg_value2), arg_type2, "y"}};
+
+    FunctionBasePtr func_base = func->build(arguments);
+
+    DataTypePtr return_type = func_base->getResultType();
+
+    auto col = func_base->execute(arguments, return_type, 1);
+
+    Field result = (*col)[0];
+
+    return {std::move(result), std::move(return_type)};
+}
+
+
 static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & current_type, const FieldRef & field)
 {
     /// Fallback for fields without block reference.
@@ -568,7 +594,15 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     if (!sample_block.has(expr_name))
         return false;
 
+    /// TODO Nullable index is not yet landed.
+    if (out_value.isNull())
+        return false;
+
     bool found_transformation = false;
+    auto input_column = sample_block.getByName(expr_name);
+    auto const_column = out_type->createColumnConst(1, out_value);
+    out_value = (*castColumn({const_column, out_type, "c"}, input_column.type))[0];
+    out_type = input_column.type;
     for (const ExpressionAction & action : key_expr->getActions())
     {
         /** The key functional expression constraint may be inferred from a plain column in the expression.
@@ -611,6 +645,77 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
                 break;
             }
         }
+    }
+
+    return found_transformation;
+}
+
+/// Looking for possible transformation of `column = constant` into `partition_expr = function(constant)`
+bool KeyCondition::canConstantBeWrappedByFunctions(
+    const ASTPtr & node, size_t & out_key_column_num, DataTypePtr & out_key_column_type, Field & out_value, DataTypePtr & out_type)
+{
+    if (strict)
+        return false;
+
+    String expr_name = node->getColumnName();
+    const auto & sample_block = key_expr->getSampleBlock();
+    if (!sample_block.has(expr_name))
+        return false;
+
+    /// TODO Nullable index is not yet landed.
+    if (out_value.isNull())
+        return false;
+
+    bool found_transformation = false;
+    auto input_column = sample_block.getByName(expr_name);
+    auto const_column = out_type->createColumnConst(1, out_value);
+    out_value = (*castColumn({const_column, out_type, "c"}, input_column.type))[0];
+    out_type = input_column.type;
+    Block transform({{input_column.type->createColumn(), input_column.type, input_column.name}});
+    for (const ExpressionAction & action : key_expr->getActions())
+    {
+        const auto & argument_names = action.argument_names;
+        if (action.type == ExpressionAction::Type::APPLY_FUNCTION)
+        {
+            if (!action.function_base->isDeterministic())
+                return false;
+            if (argument_names.size() == 1 && argument_names[0] == expr_name)
+            {
+                std::tie(out_value, out_type) = applyFunctionForFieldOfUnknownType(action.function_builder, out_type, out_value);
+            }
+            else if (argument_names.size() == 2)
+            {
+                if (!transform.has(argument_names[0]) || !transform.has(argument_names[1]))
+                    return false;
+                auto left = transform.getByName(argument_names[0]);
+                auto right = transform.getByName(argument_names[1]);
+                if (isColumnConst(*left.column))
+                {
+                    auto left_arg_type = left.type;
+                    auto left_arg_value = (*left.column)[0];
+                    std::tie(out_value, out_type) = applyBinaryFunctionForFieldOfUnknownType(
+                        action.function_builder, left_arg_type, left_arg_value, out_type, out_value);
+                }
+                else if (isColumnConst(*right.column))
+                {
+                    auto right_arg_type = right.type;
+                    auto right_arg_value = (*right.column)[0];
+                    std::tie(out_value, out_type) = applyBinaryFunctionForFieldOfUnknownType(
+                        action.function_builder, out_type, out_value, right_arg_type, right_arg_value);
+                }
+            }
+
+            expr_name = action.result_name;
+            auto it = key_columns.find(expr_name);
+            if (key_columns.end() != it)
+            {
+                out_key_column_num = it->second;
+                out_key_column_type = sample_block.getByName(it->first).type;
+                found_transformation = true;
+                break;
+            }
+        }
+        action.execute(transform, true);
     }
 
     return found_transformation;
@@ -862,33 +967,57 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & cont
             bool is_set_const = false;
             bool is_constant_transformed = false;
 
-            if (functionIsInOrGlobalInOperator(func_name)
-                && tryPrepareSetIndex(args, context, out, key_column_num))
+            if (functionIsInOrGlobalInOperator(func_name))
             {
-                key_arg_pos = 0;
-                is_set_const = true;
+                if (tryPrepareSetIndex(args, context, out, key_column_num))
+                {
+                    key_arg_pos = 0;
+                    is_set_const = true;
+                }
+                else
+                    return false;
             }
-            else if (getConstant(args[1], block_with_constants, const_value, const_type)
-                && isKeyPossiblyWrappedByMonotonicFunctions(args[0], context, key_column_num, key_expr_type, chain))
+            else if (getConstant(args[1], block_with_constants, const_value, const_type))
             {
-                key_arg_pos = 0;
+                if (isKeyPossiblyWrappedByMonotonicFunctions(args[0], context, key_column_num, key_expr_type, chain))
+                {
+                    key_arg_pos = 0;
+                }
+                else if (canConstantBeWrappedByMonotonicFunctions(args[0], key_column_num, key_expr_type, const_value, const_type))
+                {
+                    key_arg_pos = 0;
+                    is_constant_transformed = true;
+                }
+                else if (
+                    single_point && func_name == "equals"
+                    && canConstantBeWrappedByFunctions(args[0], key_column_num, key_expr_type, const_value, const_type))
+                {
+                    key_arg_pos = 0;
+                    is_constant_transformed = true;
+                }
+                else
+                    return false;
             }
-            else if (getConstant(args[1], block_with_constants, const_value, const_type)
-                && canConstantBeWrappedByMonotonicFunctions(args[0], key_column_num, key_expr_type, const_value, const_type))
+            else if (getConstant(args[0], block_with_constants, const_value, const_type))
             {
-                key_arg_pos = 0;
-                is_constant_transformed = true;
-            }
-            else if (getConstant(args[0], block_with_constants, const_value, const_type)
-                && isKeyPossiblyWrappedByMonotonicFunctions(args[1], context, key_column_num, key_expr_type, chain))
-            {
-                key_arg_pos = 1;
-            }
-            else if (getConstant(args[0], block_with_constants, const_value, const_type)
-                && canConstantBeWrappedByMonotonicFunctions(args[1], key_column_num, key_expr_type, const_value, const_type))
-            {
-                key_arg_pos = 1;
-                is_constant_transformed = true;
+                if (isKeyPossiblyWrappedByMonotonicFunctions(args[1], context, key_column_num, key_expr_type, chain))
+                {
+                    key_arg_pos = 1;
+                }
+                else if (canConstantBeWrappedByMonotonicFunctions(args[1], key_column_num, key_expr_type, const_value, const_type))
+                {
+                    key_arg_pos = 1;
+                    is_constant_transformed = true;
+                }
+                else if (
+                    single_point && func_name == "equals"
+                    && canConstantBeWrappedByFunctions(args[1], key_column_num, key_expr_type, const_value, const_type))
+                {
+                    key_arg_pos = 0;
+                    is_constant_transformed = true;
+                }
+                else
+                    return false;
             }
             else
                 return false;
@@ -1431,18 +1560,18 @@ bool KeyCondition::mayBeTrueAfter(
 
 String KeyCondition::RPNElement::toString() const
 {
-    auto print_wrapped_column = [this](std::ostringstream & ss)
+    auto print_wrapped_column = [this](WriteBuffer & buf)
     {
         for (auto it = monotonic_functions_chain.rbegin(); it != monotonic_functions_chain.rend(); ++it)
-            ss << (*it)->getName() << "(";
+            buf << (*it)->getName() << "(";
 
-        ss << "column " << key_column;
+        buf << "column " << key_column;
 
         for (auto it = monotonic_functions_chain.rbegin(); it != monotonic_functions_chain.rend(); ++it)
-            ss << ")";
+            buf << ")";
     };
 
-    std::ostringstream ss;
+    WriteBufferFromOwnString buf;
     switch (function)
     {
         case FUNCTION_AND:
@@ -1456,24 +1585,24 @@ String KeyCondition::RPNElement::toString() const
         case FUNCTION_NOT_IN_SET:
         case FUNCTION_IN_SET:
         {
-            ss << "(";
-            print_wrapped_column(ss);
-            ss << (function == FUNCTION_IN_SET ? " in " : " notIn ");
+            buf << "(";
+            print_wrapped_column(buf);
+            buf << (function == FUNCTION_IN_SET ? " in " : " notIn ");
             if (!set_index)
-                ss << "unknown size set";
+                buf << "unknown size set";
             else
-                ss << set_index->size() << "-element set";
-            ss << ")";
-            return ss.str();
+                buf << set_index->size() << "-element set";
+            buf << ")";
+            return buf.str();
         }
         case FUNCTION_IN_RANGE:
         case FUNCTION_NOT_IN_RANGE:
         {
-            ss << "(";
-            print_wrapped_column(ss);
-            ss << (function == FUNCTION_NOT_IN_RANGE ? " not" : "") << " in " << range.toString();
-            ss << ")";
-            return ss.str();
+            buf << "(";
+            print_wrapped_column(buf);
+            buf << (function == FUNCTION_NOT_IN_RANGE ? " not" : "") << " in " << range.toString();
+            buf << ")";
+            return buf.str();
         }
         case ALWAYS_FALSE:
             return "false";

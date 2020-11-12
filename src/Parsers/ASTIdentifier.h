@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/UUID.h>
+#include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTWithAlias.h>
 
 #include <optional>
@@ -16,12 +17,16 @@ struct StorageID;
 /// Generic identifier. ASTTableIdentifier - for table identifier.
 class ASTIdentifier : public ASTWithAlias
 {
+    friend class ReplaceQueryParameterVisitor;
 public:
-    explicit ASTIdentifier(const String & short_name);
-    explicit ASTIdentifier(std::vector<String> && name_parts, bool special = false);
+    explicit ASTIdentifier(const String & short_name, ASTPtr && name_param = {});
+    explicit ASTIdentifier(std::vector<String> && name_parts, bool special = false, std::vector<ASTPtr> && name_params = {});
 
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "Identifier" + (delim + name()); }
+
+    /** Get the query param out of a non-compound identifier. */
+    ASTPtr getParam() const;
 
     ASTPtr clone() const override;
 
