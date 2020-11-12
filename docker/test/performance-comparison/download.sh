@@ -25,7 +25,8 @@ function download
 {
     # Historically there were various paths for the performance test package.
     # Test all of them.
-    for path in "https://clickhouse-builds.s3.yandex.net/$left_pr/$left_sha/"{,clickhouse_build_check/}"performance/performance.tgz"
+    # FIXME compare against 20.3
+    for path in "https://clickhouse-builds.s3.yandex.net/9624/e894f235aa4157c41f8d928bd1ee0af0f64d8613/clickhouse_build_check/performance/performance.tgz"
     do
         if curl --fail --head "$path"
         then
