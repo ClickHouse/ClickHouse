@@ -321,7 +321,7 @@ Default value: 0.
 Consider the table:
 
 ```sql
-CREATE TABLE table_with_enum_column_for_tsv_insert (Id Int32,Value Enum('first' = 1, 'second' = 2)) ENGINE=Memory() FORMAT TabSeparatedRaw;
+CREATE TABLE table_with_enum_column_for_tsv_insert (Id Int32,Value Enum('first' = 1, 'second' = 2)) ENGINE=Memory();
 ```
 
 When the `input_format_tsv_enum_as_number` setting is enabled:  
