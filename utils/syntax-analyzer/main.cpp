@@ -1,3 +1,4 @@
+#include <IO/WriteBufferFromOStream.h>
 #include <Parsers/IAST.h>
 #include <Parsers/New/AST/Query.h>
 #include <Parsers/New/parseQuery.h>
@@ -42,17 +43,19 @@ int main(int argc, const char **)
             if (orig_ast)
             {
                 std::cout << std::endl << "Original AST:" << std::endl;
-                orig_ast->dumpTree(std::cout);
+                WriteBufferFromOStream buf(std::cout, 4096);
+                orig_ast->dumpTree(buf);
                 std::cout << std::endl << "Original query:" << std::endl;
-                orig_ast->format({std::cout, false});
+                orig_ast->format({buf, false});
                 std::cout << std::endl;
             }
             if (old_ast)
             {
                 std::cout << std::endl << "Converted AST:" << std::endl;
-                old_ast->dumpTree(std::cout);
+                WriteBufferFromOStream buf(std::cout, 4096);
+                old_ast->dumpTree(buf);
                 std::cout << std::endl << "Converted query:" << std::endl;
-                old_ast->format({std::cout, false});
+                old_ast->format({buf, false});
                 std::cout << std::endl;
             }
         }
