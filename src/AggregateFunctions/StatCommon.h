@@ -53,8 +53,6 @@ std::pair<RanksArray, Float64> computeRanksAndTieCorrection(const Values & value
         }
         left = right;
     }
-    std::cout << "tie_numenator " << tie_numenator << std::endl;
-    std::cout << "size " << size << std::endl;
     return {out, 1 - (tie_numenator / (std::pow(size, 3) - size))};
 }
 
@@ -70,8 +68,8 @@ struct StatisticalSample
 
     SampleX x;
     SampleY y;
-    size_t size_x;
-    size_t size_y;
+    size_t size_x{0};
+    size_t size_y{0};
 
     void addX(X value, Arena * arena) {
         ++size_x;
