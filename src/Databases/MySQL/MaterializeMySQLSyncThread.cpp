@@ -373,10 +373,9 @@ void MaterializeMySQLSyncThread::flushBuffersData(Buffers & buffers, Materialize
 
     const auto & position_message = [&]()
     {
-        std::stringstream ss;
-        ss.exceptions(std::ios::failbit);
-        database->getMySQLReplicaClient().getPosition().dump(ss);
-        return ss.str();
+        WriteBufferFromOwnString buf;
+        database->getMySQLReplicaClient().getPosition().dump(buf);
+        return buf.str();
     };
     LOG_INFO(log, "MySQL executed position: \n {}", position_message());
 }
