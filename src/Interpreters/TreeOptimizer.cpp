@@ -219,7 +219,7 @@ void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
     modified.reserve(group_by_keys.size());
 
     /// filling the result
-    for (auto & group_key : group_by_keys)
+    for (const auto & group_key : group_by_keys)
         if (group_by_keys_data.key_names.count(group_key->getColumnName()))
             modified.push_back(group_key);
 
