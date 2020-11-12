@@ -193,3 +193,6 @@
 [submodule "contrib/miniselect"]
 	path = contrib/miniselect
 	url = https://github.com/danlark1/miniselect
+[submodule "contrib/xz"]
+       path = contrib/xz
+       url = https://github.com/xz-mirror/xz

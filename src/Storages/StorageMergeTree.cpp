@@ -554,13 +554,12 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
 
         for (const MutationCommand & command : entry.commands)
         {
-            std::stringstream ss;
-            ss.exceptions(std::ios::failbit);
-            formatAST(*command.ast, ss, false, true);
+            WriteBufferFromOwnString buf;
+            formatAST(*command.ast, buf, false, true);
             result.push_back(MergeTreeMutationStatus
             {
                 entry.file_name,
-                ss.str(),
+                buf.str(),
                 entry.create_time,
                 block_numbers_map,
                 parts_to_do_names,
@@ -1030,17 +1029,13 @@ bool StorageMergeTree::optimize(
         {
             if (!merge(true, partition_id, true, deduplicate, &disable_reason))
             {
-                std::stringstream message;
-                message.exceptions(std::ios::failbit);
-                message << "Cannot OPTIMIZE table";
-                if (!disable_reason.empty())
-                    message << ": " << disable_reason;
-                else
-                    message << " by some reason.";
-                LOG_INFO(log, message.str());
+                constexpr const char * message = "Cannot OPTIMIZE table: {}";
+                if (disable_reason.empty())
+                    disable_reason = "unknown reason";
+                LOG_INFO(log, message, disable_reason);
 
                 if (context.getSettingsRef().optimize_throw_if_noop)
-                    throw Exception(message.str(), ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
+                    throw Exception(ErrorCodes::CANNOT_ASSIGN_OPTIMIZE, message, disable_reason);
                 return false;
             }
         }
@@ -1053,17 +1048,13 @@ bool StorageMergeTree::optimize(
 
         if (!merge(true, partition_id, final, deduplicate, &disable_reason))
         {
-            std::stringstream message;
-            message.exceptions(std::ios::failbit);
-            message << "Cannot OPTIMIZE table";
-            if (!disable_reason.empty())
-                message << ": " << disable_reason;
-            else
-                message << " by some reason.";
-            LOG_INFO(log, message.str());
+            constexpr const char * message = "Cannot OPTIMIZE table: {}";
+            if (disable_reason.empty())
+                disable_reason = "unknown reason";
+            LOG_INFO(log, message, disable_reason);
 
             if (context.getSettingsRef().optimize_throw_if_noop)
-                throw Exception(message.str(), ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
+                throw Exception(ErrorCodes::CANNOT_ASSIGN_OPTIMIZE, message, disable_reason);
             return false;
         }
     }
