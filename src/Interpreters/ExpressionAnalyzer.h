@@ -95,12 +95,13 @@ private:
 
 public:
     /// Ctor for non-select queries. Generally its usage is:
-    /// auto actions = ExpressionAnalyzer(query, syntax, context).getActions();
+    /// auto actions = ExpressionAnalyzer(query, syntax, context, stage).getActions();
     ExpressionAnalyzer(
         const ASTPtr & query_,
         const TreeRewriterResultPtr & syntax_analyzer_result_,
-        ContextPtr context_)
-    :   ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, 0, false, {})
+        ContextPtr context_,
+        QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete)
+    :   ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, to_stage_, 0, false, {})
     {}
 
     ~ExpressionAnalyzer();
@@ -151,11 +152,13 @@ protected:
         const ASTPtr & query_,
         const TreeRewriterResultPtr & syntax_analyzer_result_,
         ContextPtr context_,
+        QueryProcessingStage::Enum to_stage_,
         size_t subquery_depth_,
         bool do_global_,
         SubqueriesForSets subqueries_for_sets_);
 
     ASTPtr query;
+    QueryProcessingStage::Enum to_stage;
     const ExtractedSettings settings;
     size_t subquery_depth;
 
@@ -281,12 +284,13 @@ public:
         const ASTPtr & query_,
         const TreeRewriterResultPtr & syntax_analyzer_result_,
         ContextPtr context_,
+        QueryProcessingStage::Enum to_stage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const NameSet & required_result_columns_ = {},
         bool do_global_ = false,
         const SelectQueryOptions & options_ = {},
         SubqueriesForSets subqueries_for_sets_ = {})
-        : ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, options_.subquery_depth, do_global_, std::move(subqueries_for_sets_))
+        : ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, to_stage_, options_.subquery_depth, do_global_, std::move(subqueries_for_sets_))
         , metadata_snapshot(metadata_snapshot_)
         , required_result_columns(required_result_columns_)
         , query_options(options_)

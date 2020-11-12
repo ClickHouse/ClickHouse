@@ -139,7 +139,7 @@ String InterpreterSelectQuery::generateFilterActions(ActionsDAGPtr & actions, co
 
     /// Using separate expression analyzer to prevent any possible alias injection
     auto syntax_result = TreeRewriter(context).analyzeSelect(query_ast, TreeRewriterResult({}, storage, metadata_snapshot));
-    SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, context, metadata_snapshot);
+    SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, context, options.to_stage, metadata_snapshot);
     actions = analyzer.simpleSelectActions();
 
     auto column_name = expr_list->children.at(0)->getColumnName();
@@ -429,7 +429,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
 
         query_analyzer = std::make_unique<SelectQueryExpressionAnalyzer>(
-                query_ptr, syntax_analyzer_result, context, metadata_snapshot,
+                query_ptr, syntax_analyzer_result, context, options.to_stage, metadata_snapshot,
                 NameSet(required_result_column_names.begin(), required_result_column_names.end()),
                 !options.only_analyze, options, std::move(subquery_for_sets));
 
@@ -1685,7 +1685,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
 
         auto syntax_result
             = TreeRewriter(context).analyze(required_columns_all_expr, required_columns_after_prewhere, storage, metadata_snapshot);
-        alias_actions = ExpressionAnalyzer(required_columns_all_expr, syntax_result, context).getActionsDAG(true);
+        alias_actions = ExpressionAnalyzer(required_columns_all_expr, syntax_result, context, options.to_stage).getActionsDAG(true);
 
         /// The set of required columns could be added as a result of adding an action to calculate ALIAS.
         required_columns = alias_actions->getRequiredColumns().getNames();

@@ -134,11 +134,14 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     const ASTPtr & query_,
     const TreeRewriterResultPtr & syntax_analyzer_result_,
     ContextPtr context_,
+    QueryProcessingStage::Enum to_stage_,
     size_t subquery_depth_,
     bool do_global,
     SubqueriesForSets subqueries_for_sets_)
     : WithContext(context_)
-    , query(query_), settings(getContext()->getSettings())
+    , query(query_)
+    , to_stage(to_stage_)
+    , settings(getContext()->getSettings())
     , subquery_depth(subquery_depth_)
     , syntax(syntax_analyzer_result_)
 {
@@ -248,8 +251,10 @@ void ExpressionAnalyzer::analyzeAggregation()
                     /// Constant expressions have non-null column pointer at this stage.
                     if (node->column && isColumnConst(*node->column))
                     {
-                        /// But don't remove last key column if no aggregate functions, otherwise aggregation will not work.
-                        if (!aggregate_descriptions.empty() || size > 1)
+                        /// But don't remove last key column if
+                        /// - no aggregate functions, otherwise aggregation will not work.
+                        /// - the query processing stage is not Complete, otherwise the initiator (that need to do the aggregation) will not get it.
+                        if (to_stage == QueryProcessingStage::Complete && (!aggregate_descriptions.empty() || size > 1))
                         {
                             if (i + 1 < static_cast<ssize_t>(size))
                                 group_asts[i] = std::move(group_asts.back());
@@ -751,11 +756,11 @@ static JoinPtr tryGetStorageJoin(std::shared_ptr<TableJoin> analyzed_join)
     return {};
 }
 
-static ActionsDAGPtr createJoinedBlockActions(ContextPtr context, const TableJoin & analyzed_join)
+static ActionsDAGPtr createJoinedBlockActions(ContextPtr context, const TableJoin & analyzed_join, QueryProcessingStage::Enum to_stage)
 {
     ASTPtr expression_list = analyzed_join.rightKeysList();
     auto syntax_result = TreeRewriter(context).analyze(expression_list, analyzed_join.columnsFromJoinedTable());
-    return ExpressionAnalyzer(expression_list, syntax_result, context).getActionsDAG(true, false);
+    return ExpressionAnalyzer(expression_list, syntax_result, context, to_stage).getActionsDAG(true, false);
 }
 
 static bool allowDictJoin(StoragePtr joined_storage, ContextPtr context, String & dict_name, String & key_name)
@@ -817,7 +822,7 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
     if (!join)
     {
         /// Actions which need to be calculated on joined block.
-        auto joined_block_actions = createJoinedBlockActions(getContext(), analyzedJoin());
+        auto joined_block_actions = createJoinedBlockActions(getContext(), analyzedJoin(), to_stage);
 
         Names original_right_columns;
 

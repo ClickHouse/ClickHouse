@@ -42,6 +42,7 @@ SKIP_LIST = [
     "01014_lazy_database_concurrent_recreate_reattach_and_show_tables",
     "01017_uniqCombined_memory_usage",
     "01018_Distributed__shard_num",
+    "01860_Distributed__shard_num_GROUP_BY",
     "01018_ip_dictionary_long",
     "01035_lc_empty_part_bug",  # FLAKY
     "01050_clickhouse_dict_source_with_subquery",

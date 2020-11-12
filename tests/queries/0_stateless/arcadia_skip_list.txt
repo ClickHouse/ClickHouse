@@ -44,6 +44,7 @@
 01018_ddl_dictionaries_special
 01018_dictionaries_from_dictionaries
 01018_Distributed__shard_num
+01860_Distributed__shard_num_GROUP_BY
 01023_materialized_view_query_context
 01030_storage_hdfs_syntax
 01033_dictionaries_lifetime
