@@ -1,7 +1,5 @@
 #pragma once
 
-#include <iostream>
-#include <sstream>
 #include <unordered_set>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -241,8 +239,7 @@ public:
     }
 
     AggregateFunctionPtr getOwnNullAdapter(
-        const AggregateFunctionPtr & nested_function, const DataTypes & arguments, const Array & params,
-        const AggregateFunctionProperties & /*properties*/) const override
+        const AggregateFunctionPtr & nested_function, const DataTypes & arguments, const Array & params) const override
     {
         return std::make_shared<AggregateFunctionNullVariadic<false, false, false>>(nested_function, arguments, params);
     }

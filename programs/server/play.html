@@ -3,7 +3,7 @@
     <meta charset="UTF-8">
     <title>ClickHouse Query</title>
 
-    <!-- Code style:
+    <!-- Code Style:
 
     Do not use any JavaScript or CSS frameworks or preprocessors.
     This HTML page should not require any build systems (node.js, npm, gulp, etc.)
@@ -16,6 +16,30 @@
     No unexpected changes in positions of elements while the page is loading.
     Navigation by keyboard should work.
     64-bit numbers must display correctly.
+
+    -->
+
+    <!-- Development Roadmap:
+
+    1. Add indication that the query was sent and when the query has been finished.
+    Do not use any animated spinners. Just a text or check mark.
+    Eliminate race conditions (results from the previous query should be ignored on arrival, the previous request should be cancelled).
+
+    2. Support readonly servers.
+    Check if readonly = 1 (with SELECT FROM system.settings) to avoid sending settings. It can be done once on address/credentials change.
+    It can be done in background, e.g. wait 100 ms after address/credentials change and do the check.
+    Also it can provide visual indication that credentials are correct.
+
+    3. Add history in localstorage. Integrate with history API.
+    There can be a counter in localstorage, that will be appended to location #fragment.
+    The 'back', 'forward' buttons in browser should work.
+    Also there should be UI element to list all the queries from history and select from the list.
+
+    4. Trivial sharing capabilities.
+    Sharing is only possible when system.query_log is accessible. Read the X-ClickHouse-QueryId from the response.
+    Share button will: - emit SYSTEM FLUSH LOGS if not readonly; - find the query in the query_log;
+    - generate an URL with the query id and: server address if not equal to the URL's host; user name if not default;
+    indication that password should be entered in case of non-empty password.
 
     -->
 

@@ -1,9 +1,13 @@
 #include <Core/MySQL/IMySQLWritePacket.h>
 #include <IO/MySQLPacketPayloadWriteBuffer.h>
-#include <sstream>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace MySQLProtocol
 {
@@ -15,9 +19,8 @@ void IMySQLWritePacket::writePayload(WriteBuffer & buffer, uint8_t & sequence_id
     buf.next();
     if (buf.remainingPayloadSize())
     {
-        std::stringstream ss;
-        ss << "Incomplete payload. Written " << getPayloadSize() - buf.remainingPayloadSize() << " bytes, expected " << getPayloadSize() << " bytes.";
-        throw Exception(ss.str(), 0);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Incomplete payload. Written {} bytes, expected {} bytes.",
+                        getPayloadSize() - buf.remainingPayloadSize(), getPayloadSize());
     }
 }
 

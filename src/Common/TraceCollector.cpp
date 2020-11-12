@@ -11,6 +11,7 @@
 #include <Common/Exception.h>
 #include <Common/PipeFDs.h>
 #include <Common/StackTrace.h>
+#include <Common/setThreadName.h>
 #include <common/logger_useful.h>
 
 
@@ -115,6 +116,8 @@ void TraceCollector::stop()
 
 void TraceCollector::run()
 {
+    setThreadName("TraceCollector");
+
     ReadBufferFromFileDescriptor in(pipe.fds_rw[0]);
 
     while (true)
@@ -152,7 +155,7 @@ void TraceCollector::run()
         if (trace_log)
         {
             // time and time_in_microseconds are both being constructed from the same timespec so that the
-            // times will be equal upto the precision of a second.
+            // times will be equal up to the precision of a second.
             struct timespec ts;
             clock_gettime(CLOCK_REALTIME, &ts);
 

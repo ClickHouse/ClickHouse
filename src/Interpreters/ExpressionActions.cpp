@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/IFunction.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <optional>
 #include <Columns/ColumnSet.h>
@@ -22,6 +23,15 @@
 #    include "config_core.h"
 #endif
 
+#include <common/defines.h>
+
+#if defined(MEMORY_SANITIZER)
+    #include <sanitizer/msan_interface.h>
+#endif
+
+#if defined(ADDRESS_SANITIZER)
+    #include <sanitizer/asan_interface.h>
+#endif
 
 namespace ProfileEvents
 {
@@ -444,7 +454,7 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
 
 std::string ExpressionAction::toString() const
 {
-    std::stringstream ss;
+    WriteBufferFromOwnString ss;
     switch (type)
     {
         case ADD_COLUMN:
@@ -540,7 +550,7 @@ void ExpressionActions::checkLimits(Block & block) const
 
         if (non_const_columns > settings.max_temporary_non_const_columns)
         {
-            std::stringstream list_of_non_const_columns;
+            WriteBufferFromOwnString list_of_non_const_columns;
             for (size_t i = 0, size = block.columns(); i < size; ++i)
                 if (block.safeGetByPosition(i).column && !isColumnConst(*block.safeGetByPosition(i).column))
                     list_of_non_const_columns << "\n" << block.safeGetByPosition(i).name;
@@ -624,6 +634,22 @@ void ExpressionActions::execute(Block & block, bool dry_run) const
         }
         catch (Exception & e)
         {
+#if defined(MEMORY_SANITIZER)
+            const auto & msg = e.message();
+            if (__msan_test_shadow(msg.data(), msg.size()) != -1)
+            {
+                LOG_FATAL(&Poco::Logger::get("ExpressionActions"), "Poisoned exception message (msan): {}", e.getStackTraceString());
+            }
+#endif
+
+#if defined(ADDRESS_SANITIZER)
+            const auto & msg = e.message();
+            if (__asan_region_is_poisoned(const_cast<char *>(msg.data()), msg.size()))
+            {
+                LOG_FATAL(&Poco::Logger::get("ExpressionActions"), "Poisoned exception message (asan): {}", e.getStackTraceString());
+            }
+#endif
+
             e.addMessage(fmt::format("while executing '{}'", action.toString()));
             throw;
         }
@@ -895,7 +921,7 @@ void ExpressionActions::finalize(const Names & output_columns)
 
 std::string ExpressionActions::dumpActions() const
 {
-    std::stringstream ss;
+    WriteBufferFromOwnString ss;
 
     ss << "input:\n";
     for (const auto & input_column : input_columns)
@@ -1316,7 +1342,7 @@ void ExpressionActionsChain::finalize()
 
 std::string ExpressionActionsChain::dumpChain() const
 {
-    std::stringstream ss;
+    WriteBufferFromOwnString ss;
 
     for (size_t i = 0; i < steps.size(); ++i)
     {
