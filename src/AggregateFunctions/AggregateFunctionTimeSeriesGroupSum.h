@@ -191,7 +191,7 @@ struct AggregateFunctionTimeSeriesGroupSumData
         writeVarUInt(size, buf);
         if (size > 0)
         {
-            buf.write(reinterpret_cast<const char *>(result.data()), sizeof(result[0]));
+            buf.write(reinterpret_cast<const char *>(result.data()), size * sizeof(result[0]));
         }
     }
 
