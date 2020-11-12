@@ -12,6 +12,7 @@
 #include <Common/quoteString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -107,7 +108,7 @@ static Block getShowMasterLogHeader(const String & mysql_version)
     };
 }
 
-static bool checkSyncUserPrivImpl(mysqlxx::PoolWithFailover::Entry & connection, std::ostream & out)
+static bool checkSyncUserPrivImpl(mysqlxx::PoolWithFailover::Entry & connection, WriteBuffer & out)
 {
     Block sync_user_privs_header
     {
@@ -120,8 +121,8 @@ static bool checkSyncUserPrivImpl(mysqlxx::PoolWithFailover::Entry & connection,
     {
         for (size_t index = 0; index < block.rows(); ++index)
         {
-            out << (*block.getByPosition(0).column)[index].safeGet<String>() + "; ";
             grants_query = (*block.getByPosition(0).column)[index].safeGet<String>();
+            out << grants_query << "; ";
             sub_privs = grants_query.substr(0, grants_query.find(" ON "));
             if (sub_privs.find("ALL PRIVILEGES") == std::string::npos)
             {
@@ -141,7 +142,8 @@ static bool checkSyncUserPrivImpl(mysqlxx::PoolWithFailover::Entry & connection,
 
 static void checkSyncUserPriv(mysqlxx::PoolWithFailover::Entry & connection)
 {
-    std::stringstream out;
+    WriteBufferFromOwnString out;
+
     if (!checkSyncUserPrivImpl(connection, out))
         throw Exception("MySQL SYNC USER ACCESS ERR: mysql sync user needs "
                         "at least GLOBAL PRIVILEGES:'RELOAD, REPLICATION SLAVE, REPLICATION CLIENT' "
