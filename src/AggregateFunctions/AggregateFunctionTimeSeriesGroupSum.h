@@ -189,7 +189,10 @@ struct AggregateFunctionTimeSeriesGroupSumData
     {
         size_t size = result.size();
         writeVarUInt(size, buf);
-        buf.write(reinterpret_cast<const char *>(result.data()), sizeof(result[0]));
+        if (size > 0)
+        {
+            buf.write(reinterpret_cast<const char *>(result.data()), size * sizeof(result[0]));
+        }
     }
 
     void deserialize(ReadBuffer & buf)
@@ -197,7 +200,10 @@ struct AggregateFunctionTimeSeriesGroupSumData
         size_t size = 0;
         readVarUInt(size, buf);
         result.resize(size);
-        buf.read(reinterpret_cast<char *>(result.data()), size * sizeof(result[0]));
+        if (size > 0)
+        {
+            buf.read(reinterpret_cast<char *>(result.data()), size * sizeof(result[0]));
+        }
     }
 };
 template <bool rate>
