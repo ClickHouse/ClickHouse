@@ -2233,4 +2233,14 @@ Possible values:
 
 Default value: `1`.
 
+## output_format_tsv_null_representation {#output_format_tsv_null_representation}
+
+Allows configurable `NULL` representation for [TSV](../../interfaces/formats.md#tabseparated) output format. The setting only controls output format and `\N` is the only supported `NULL` representation for TSV input format.
+
+Possible values:
+
+-   `\N` — Enabled.
+
+Default value: `\N`.
+
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
