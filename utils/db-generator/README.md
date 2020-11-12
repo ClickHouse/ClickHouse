@@ -1,4 +1,4 @@
-## Clickhouse query analysis
+# Clickhouse query analysis
 
 Here we will consider only `SELECT` queries, i.e. those queries that get data from the table.
 The built-in Clickhouse parser accepts a string as input, which is a query. Among 14 main clauses of  `SELECT` statement: `WITH`, `SELECT`, `TABLES`, `PREWHERE`, `WHERE`, `GROUP_BY`, `HAVING`, `ORDER_BY`, `LIMIT_BY_OFFSET`, `LIMIT_BY_LENGTH`, `LIMIT_BY`, `LIMIT_OFFSET`, `LIMIT_LENGTH`, `SETTINGS`, we will analyze the `SELECT`, `TABLES`, `WHERE`, `GROUP_BY`, `HAVING`, `ORDER_BY` clauses because the most of data is there. We need this data to analyze the structure and to identify values.  The parser issues a tree structure after parsing a query, where each node is a specific query execution operation, a function over values, a constant, a designation, etc.  Nodes also have subtrees where their arguments or suboperations are located. We will try to reveal the data we need by avoiding this tree.
