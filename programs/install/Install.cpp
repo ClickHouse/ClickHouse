@@ -373,7 +373,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             {
                 log_path = fs::path(configuration->getString("logger.log")).remove_filename();
                 fmt::print("{} has {} as log path.\n", main_config_file.string(), log_path);
-            }            
+            }
         }
 
 
