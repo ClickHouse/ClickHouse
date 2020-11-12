@@ -882,6 +882,8 @@ protected:
     virtual PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, const Context & context) = 0;
     virtual void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context) = 0;
     virtual void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, const Context & context) = 0;
+
+    /// Makes sense only for replicated tables
     virtual void fetchPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, const String & from, const Context & query_context);
 
     void writePartLog(
