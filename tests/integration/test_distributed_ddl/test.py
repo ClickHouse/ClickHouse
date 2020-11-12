@@ -11,6 +11,7 @@ from helpers.network import PartitionManager
 from helpers.test_tools import TSV
 from .cluster import ClickHouseClusterWithDDLHelpers
 
+# test flakyness
 
 @pytest.fixture(scope="module", params=["configs", "configs_secure"])
 def test_cluster(request):
