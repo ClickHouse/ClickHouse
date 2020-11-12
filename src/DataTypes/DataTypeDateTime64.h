@@ -16,6 +16,7 @@ namespace DB
 class DataTypeDateTime64 final : public DataTypeDecimalBase<DateTime64>, public TimezoneMixin
 {
 public:
+    using Base = DataTypeDecimalBase<DateTime64>;
     static constexpr UInt8 default_scale = 3;
 
     static constexpr auto family_name = "DateTime64";
