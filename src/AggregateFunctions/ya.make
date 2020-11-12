@@ -29,6 +29,7 @@ SRCS(
     AggregateFunctionHistogram.cpp
     AggregateFunctionIf.cpp
     AggregateFunctionMLMethod.cpp
+    AggregateFunctionMannWhitney.cpp
     AggregateFunctionMaxIntersections.cpp
     AggregateFunctionMerge.cpp
     AggregateFunctionMinMaxAny.cpp

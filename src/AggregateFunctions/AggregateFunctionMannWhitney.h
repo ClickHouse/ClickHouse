@@ -37,7 +37,7 @@ namespace ErrorCodes
 template <typename T>
 struct MannWhitneyData : public StatisticalSample<T, T>
 {
-    enum class Alternative 
+    enum class Alternative
     {
         TwoSided,
         Less,
@@ -58,7 +58,7 @@ struct MannWhitneyData : public StatisticalSample<T, T>
         const Float64 n2 = this->size_y;
 
         Float64 r1 = 0;
-        for (size_t i = 0; i < n1; ++i) 
+        for (size_t i = 0; i < n1; ++i)
             r1 += ranks[i];
 
         const Float64 u1 = n1 * n2 + (n1 * (n1 + 1.)) / 2. - r1;
@@ -74,7 +74,7 @@ struct MannWhitneyData : public StatisticalSample<T, T>
             u = u1;
         else if (alternative == Alternative::Greater)
             u = u2;
-        
+
         const Float64 z = (u - meanrank) / sd;
         const Float64 cdf = integrateSimpson(0, z, [] (Float64 t) { return std::pow(M_E, -0.5 * t * t) / std::sqrt(2 * M_PI);});
 
@@ -89,14 +89,15 @@ struct MannWhitneyData : public StatisticalSample<T, T>
 
 private:
     /// We need to compute ranks according to all samples. Use this class to avoid extra copy and memory allocation.
-    class ConcatenatedSamples {
+    class ConcatenatedSamples
+    {
         public:
-            ConcatenatedSamples(const Sample & first_, const Sample & second_) 
+            ConcatenatedSamples(const Sample & first_, const Sample & second_)
                 : first(first_), second(second_) {}
 
             const T & operator[](size_t ind) const
             {
-                if (ind < first.size()) 
+                if (ind < first.size())
                     return first[ind];
                 return second[ind % first.size()];
             }
@@ -128,7 +129,8 @@ public:
         if (params.size() > 2)
             throw Exception("Aggregate function " + getName() + " require two parameter or less", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (params.empty()) {
+        if (params.empty())
+        {
             alternative = Alternative::TwoSided;
             return;
         }
@@ -143,17 +145,16 @@ public:
             alternative = Alternative::Less;
         else if (param == "greater")
             alternative = Alternative::Greater;
-        else 
-            throw Exception("Unknown parameter in aggregate function " + getName() + 
+        else
+            throw Exception("Unknown parameter in aggregate function " + getName() +
                     ". It must be one of: 'two sided', 'less', 'greater'", ErrorCodes::BAD_ARGUMENTS);
-        
-        if (params.size() != 2) {
+
+        if (params.size() != 2)
             return;
-        } 
-        
+
         if (params[1].getType() != Field::Types::UInt64)
                 throw Exception("Aggregate function " + getName() + " require require second parameter to be a UInt64", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            
+
         continuity_correction = static_cast<bool>(params[1].get<UInt64>());
     }
 
@@ -215,7 +216,7 @@ public:
     {
         if (!this->data(place).size_x || !this->data(place).size_y)
             throw Exception("Aggregate function " + getName() + " require both samples to be non empty", ErrorCodes::BAD_ARGUMENTS);
-    
+
         auto [u_statistic, p_value] = this->data(place).getResult(alternative, continuity_correction);
 
         /// Because p-value is a probability.

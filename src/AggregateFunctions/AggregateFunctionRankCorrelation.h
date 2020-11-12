@@ -22,7 +22,8 @@ namespace DB
 
 struct RankCorrelationData : public StatisticalSample<Float64, Float64>
 {
-    Float64 getResult() {
+    Float64 getResult()
+    {
         RanksArray ranks_x;
         std::tie(ranks_x, std::ignore) = computeRanksAndTieCorrection(this->x);
 

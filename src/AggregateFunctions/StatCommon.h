@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <utility>
 
-namespace DB 
+namespace DB
 {
 
 template <typename F>
@@ -29,7 +29,8 @@ static Float64 integrateSimpson(Float64 a, Float64 b, F && func)
 using RanksArray = std::vector<Float64>;
 
 template <typename Values>
-std::pair<RanksArray, Float64> computeRanksAndTieCorrection(const Values & values) {
+std::pair<RanksArray, Float64> computeRanksAndTieCorrection(const Values & values)
+{
     const size_t size = values.size();
     /// Save initial positions, than sort indices according to the values.
     std::vector<size_t> indexes(size);
@@ -40,17 +41,16 @@ std::pair<RanksArray, Float64> computeRanksAndTieCorrection(const Values & value
     size_t left = 0;
     Float64 tie_numenator = 0;
     RanksArray out(size);
-    while (left < size) {
+    while (left < size)
+    {
         size_t right = left;
-        while (right < size && values[indexes[left]] == values[indexes[right]]) {
+        while (right < size && values[indexes[left]] == values[indexes[right]])
             ++right;
-        }
         auto adjusted = (left + right + 1.) / 2.;
         auto count_equal = right - left;
         tie_numenator += std::pow(count_equal, 3) - count_equal;
-        for (size_t iter = left; iter < right; ++iter) {
+        for (size_t iter = left; iter < right; ++iter)
             out[indexes[iter]] = adjusted;
-        }
         left = right;
     }
     return {out, 1 - (tie_numenator / (std::pow(size, 3) - size))};
@@ -71,12 +71,14 @@ struct StatisticalSample
     size_t size_x{0};
     size_t size_y{0};
 
-    void addX(X value, Arena * arena) {
+    void addX(X value, Arena * arena)
+    {
         ++size_x;
         x.push_back(value, arena);
     }
 
-    void addY(Y value, Arena * arena) {
+    void addY(Y value, Arena * arena)
+    {
         ++size_y;
         y.push_back(value, arena);
     }
@@ -97,7 +99,7 @@ struct StatisticalSample
         buf.write(reinterpret_cast<const char *>(y.data()), size_y * sizeof(y[0]));
     }
 
-    void read(ReadBuffer & buf, Arena * arena) 
+    void read(ReadBuffer & buf, Arena * arena)
     {
         readVarUInt(size_x, buf);
         readVarUInt(size_y, buf);
