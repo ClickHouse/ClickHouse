@@ -1049,8 +1049,8 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     settings.max_temporary_non_const_columns = all_settings.max_temporary_non_const_columns;
 
 #if USE_EMBEDDED_COMPILER
-    settings.compile_expressions = settings.compile_expressions;
-    settings.min_count_to_compile_expression = settings.min_count_to_compile_expression;
+    settings.compile_expressions = all_settings.compile_expressions;
+    settings.min_count_to_compile_expression = all_settings.min_count_to_compile_expression;
 
     if (!compilation_cache)
         compilation_cache = context.getCompiledExpressionCache();
