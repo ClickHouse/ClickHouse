@@ -182,10 +182,10 @@ public:
         : impl(SortCursorImpl(block, desc_))
     {}
 
-    size_t position() const { return impl.pos; }
+    size_t position() const { return impl.getPos(); }
     size_t end() const { return impl.rows; }
-    bool atEnd() const { return impl.pos >= impl.rows; }
-    void nextN(size_t num) { impl.pos += num; }
+    bool atEnd() const { return impl.getPos() >= impl.rows; }
+    void nextN(size_t num) { impl.getPosRef() += num; }
 
     void setCompareNullability(const MergeJoinCursor & rhs)
     {
@@ -254,10 +254,10 @@ private:
             else if (cmp > 0)
                 rhs.impl.next();
             else if (!cmp)
-                return Range{impl.pos, rhs.impl.pos, getEqualLength(), rhs.getEqualLength()};
+                return Range{impl.getPos(), rhs.impl.getPos(), getEqualLength(), rhs.getEqualLength()};
         }
 
-        return Range{impl.pos, rhs.impl.pos, 0, 0};
+        return Range{impl.getPos(), rhs.impl.getPos(), 0, 0};
     }
 
     template <bool left_nulls, bool right_nulls>
@@ -268,7 +268,7 @@ private:
             const auto * left_column = impl.sort_columns[i];
             const auto * right_column = rhs.impl.sort_columns[i];
 
-            int res = nullableCompareAt<left_nulls, right_nulls>(*left_column, *right_column, impl.pos, rhs.impl.pos);
+            int res = nullableCompareAt<left_nulls, right_nulls>(*left_column, *right_column, impl.getPos(), rhs.impl.getPos());
             if (res)
                 return res;
         }
@@ -278,11 +278,11 @@ private:
     /// Expects !atEnd()
     size_t getEqualLength()
     {
-        size_t pos = impl.pos + 1;
+        size_t pos = impl.getPos() + 1;
         for (; pos < impl.rows; ++pos)
             if (!samePrev(pos))
                 break;
-        return pos - impl.pos;
+        return pos - impl.getPos();
     }
 
     /// Expects lhs_pos > 0
