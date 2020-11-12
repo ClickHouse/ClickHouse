@@ -1346,8 +1346,6 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
     if (expired)
         return;
 
-    active_session_metric_increment.destroy();
-
     try
     {
         if (!error_send)
@@ -1375,6 +1373,8 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
             std::lock_guard lock(push_request_mutex);
             expired = true;
         }
+
+        active_session_metric_increment.destroy();
 
         try
         {
