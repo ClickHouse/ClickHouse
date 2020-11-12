@@ -73,6 +73,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         {
 #if USE_SSL
             socket = std::make_unique<Poco::Net::SecureStreamSocket>();
+            socket->setPeerHostName(host);
 #else
             throw Exception{"tcp_secure protocol is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
