@@ -125,7 +125,34 @@ struct CustomizeAggregateFunctionsSuffixData
         {
             auto properties = instance.tryGetProperties(func.name);
             if (properties && !properties->returns_default_when_only_null)
+            {
+                auto name_size = func.name.size();
+                if (endsWith(func.name, "MergeState"))
+                {
+                    func.name = func.name.substr(0, name_size - 10) + customized_func_suffix + "MergeState";
+                    return;
+                }
+
+                if (endsWith(func.name, "Merge"))
+                {
+                    func.name = func.name.substr(0, name_size - 5) + customized_func_suffix + "Merge";
+                    return;
+                }
+
+                if (endsWith(func.name, "State"))
+                {
+                    func.name = func.name.substr(0, name_size - 5) + customized_func_suffix + "State";
+                    return;
+                }
+
+                if (endsWith(func.name, "If"))
+                {
+                    func.name = func.name.substr(0, name_size - 2) + customized_func_suffix + "If";
+                    return;
+                }
+
                 func.name = func.name + customized_func_suffix;
+            }
         }
     }
 };
