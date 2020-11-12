@@ -23,7 +23,7 @@ AggregateFunctionPtr createAggregateFunctionMannWhitneyUTest(const std::string &
     if (!isNumber(argument_types[0]) || !isNumber(argument_types[1]))
         throw Exception("Aggregate function " + name + " only supports numerical types", ErrorCodes::NOT_IMPLEMENTED);
 
-    return std::make_shared<AggregateFunctionMannWhitney<Float64>>(argument_types, parameters);
+    return std::make_shared<AggregateFunctionMannWhitney>(argument_types, parameters);
 }
 
 }
