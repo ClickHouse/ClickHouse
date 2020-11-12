@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/IFunction.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <optional>
 #include <Columns/ColumnSet.h>
@@ -453,8 +454,7 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
 
 std::string ExpressionAction::toString() const
 {
-    std::stringstream ss;
-    ss.exceptions(std::ios::failbit);
+    WriteBufferFromOwnString ss;
     switch (type)
     {
         case ADD_COLUMN:
@@ -550,8 +550,7 @@ void ExpressionActions::checkLimits(Block & block) const
 
         if (non_const_columns > settings.max_temporary_non_const_columns)
         {
-            std::stringstream list_of_non_const_columns;
-            list_of_non_const_columns.exceptions(std::ios::failbit);
+            WriteBufferFromOwnString list_of_non_const_columns;
             for (size_t i = 0, size = block.columns(); i < size; ++i)
                 if (block.safeGetByPosition(i).column && !isColumnConst(*block.safeGetByPosition(i).column))
                     list_of_non_const_columns << "\n" << block.safeGetByPosition(i).name;
@@ -922,8 +921,7 @@ void ExpressionActions::finalize(const Names & output_columns)
 
 std::string ExpressionActions::dumpActions() const
 {
-    std::stringstream ss;
-    ss.exceptions(std::ios::failbit);
+    WriteBufferFromOwnString ss;
 
     ss << "input:\n";
     for (const auto & input_column : input_columns)
@@ -1344,8 +1342,7 @@ void ExpressionActionsChain::finalize()
 
 std::string ExpressionActionsChain::dumpChain() const
 {
-    std::stringstream ss;
-    ss.exceptions(std::ios::failbit);
+    WriteBufferFromOwnString ss;
 
     for (size_t i = 0; i < steps.size(); ++i)
     {

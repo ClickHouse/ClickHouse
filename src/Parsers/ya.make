@@ -52,7 +52,6 @@ SRCS(
     ASTShowAccessEntitiesQuery.cpp
     ASTShowCreateAccessEntityQuery.cpp
     ASTShowGrantsQuery.cpp
-    ASTShowPrivilegesQuery.cpp
     ASTShowTablesQuery.cpp
     ASTSubquery.cpp
     ASTSystemQuery.cpp
