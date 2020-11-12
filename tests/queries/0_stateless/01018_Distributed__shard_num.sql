@@ -1,3 +1,10 @@
+DROP TABLE IF EXISTS mem1;
+DROP TABLE IF EXISTS dist_1;
+DROP TABLE IF EXISTS mem2;
+DROP TABLE IF EXISTS dist_2;
+DROP TABLE IF EXISTS mem3;
+DROP TABLE IF EXISTS dist_3;
+
 -- make the order static
 SET max_threads = 1;
 
