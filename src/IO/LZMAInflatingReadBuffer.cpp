@@ -1,5 +1,6 @@
 #include <IO/LZMAInflatingReadBuffer.h>
 
+#if !defined(ARCADIA_BUILD)
 namespace DB
 {
 namespace ErrorCodes
@@ -87,3 +88,4 @@ bool LZMAInflatingReadBuffer::nextImpl()
     return true;
 }
 }
+#endif
