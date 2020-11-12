@@ -114,7 +114,7 @@ try
                     }
                 });
                 /// We've scheduled task in the background pool and when it will finish we will be triggered again. But this task can be
-                /// extremely long and we may have a lot of other small tasks to do, so we schedule ourselfs here.
+                /// extremely long and we may have a lot of other small tasks to do, so we schedule ourselves here.
                 scheduleTask(true);
             }
             catch (...)

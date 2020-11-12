@@ -1051,7 +1051,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
           * - this function shows the expression IN_data1.
           *
           * In case that we have HAVING with IN subquery, we have to force creating set for it.
-          * Also it doesn't make sence if it is GLOBAL IN or ordinary IN.
+          * Also it doesn't make sense if it is GLOBAL IN or ordinary IN.
           */
         if (!subquery_for_set.source && data.create_source_for_in)
         {
