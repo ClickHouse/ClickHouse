@@ -239,12 +239,12 @@ void AggregatingSortedAlgorithm::AggregatingMergedData::addRow(SortCursor & curs
         throw Exception("Can't add a row to the group because it was not started.", ErrorCodes::LOGICAL_ERROR);
 
     for (auto & desc : def.columns_to_aggregate)
-        desc.column->insertMergeFrom(*cursor->all_columns[desc.column_number], cursor->pos);
+        desc.column->insertMergeFrom(*cursor->all_columns[desc.column_number], cursor->getPos());
 
     for (auto & desc : def.columns_to_simple_aggregate)
     {
         auto & col = cursor->all_columns[desc.column_number];
-        desc.add_function(desc.function.get(), desc.state.data(), &col, cursor->pos, arena.get());
+        desc.add_function(desc.function.get(), desc.state.data(), &col, cursor->getPos(), arena.get());
     }
 }
 
@@ -334,7 +334,7 @@ IMergingAlgorithm::Status AggregatingSortedAlgorithm::merge()
                 return Status(merged_data.pull());
             }
 
-            merged_data.startGroup(current->all_columns, current->pos);
+            merged_data.startGroup(current->all_columns, current->getPos());
         }
 
         merged_data.addRow(current);
