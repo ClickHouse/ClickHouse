@@ -466,16 +466,9 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
 
     if (!inactive_replicas.empty())
     {
-        std::stringstream exception_message;
-        exception_message.exceptions(std::ios::failbit);
-        exception_message << "Mutation is not finished because";
-
-        if (!inactive_replicas.empty())
-            exception_message << " some replicas are inactive right now: " << boost::algorithm::join(inactive_replicas, ", ");
-
-        exception_message << ". Mutation will be done asynchronously";
-
-        throw Exception(exception_message.str(), ErrorCodes::UNFINISHED);
+        throw Exception(ErrorCodes::UNFINISHED,
+                        "Mutation is not finished because some replicas are inactive right now: {}. Mutation will be done asynchronously",
+                        boost::algorithm::join(inactive_replicas, ", "));
     }
 }
 
@@ -1024,13 +1017,6 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     for (const String & name : parts_to_fetch)
         parts_to_fetch_blocks += get_blocks_count_in_data_part(name);
 
-    std::stringstream sanity_report;
-    sanity_report.exceptions(std::ios::failbit);
-    sanity_report << "There are "
-        << unexpected_parts.size() << " unexpected parts with " << unexpected_parts_rows << " rows ("
-        << unexpected_parts_nonnew << " of them is not just-written with " << unexpected_parts_rows << " rows), "
-        << parts_to_fetch.size() << " missing parts (with " << parts_to_fetch_blocks << " blocks).";
-
     /** We can automatically synchronize data,
       *  if the ratio of the total number of errors to the total number of parts (minimum - on the local filesystem or in ZK)
       *  is no more than some threshold (for example 50%).
@@ -1047,20 +1033,26 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     const auto storage_settings_ptr = getSettings();
     bool insane = unexpected_parts_rows > total_rows_on_filesystem * storage_settings_ptr->replicated_max_ratio_of_wrong_parts;
 
+    constexpr const char * sanity_report_fmt = "The local set of parts of table {} doesn't look like the set of parts in ZooKeeper: "
+                                               "{} rows of {} total rows in filesystem are suspicious. "
+                                               "There are {} unexpected parts with {} rows ({} of them is not just-written with {} rows), "
+                                               "{} missing parts (with {} blocks).";
+
     if (insane && !skip_sanity_checks)
     {
-        std::stringstream why;
-        why.exceptions(std::ios::failbit);
-        why << "The local set of parts of table " << getStorageID().getNameForLogs() << " doesn't look like the set of parts "
-            << "in ZooKeeper: "
-            << formatReadableQuantity(unexpected_parts_rows) << " rows of " << formatReadableQuantity(total_rows_on_filesystem)
-            << " total rows in filesystem are suspicious.";
-
-        throw Exception(why.str() + " " + sanity_report.str(), ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS);
+        throw Exception(ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS, sanity_report_fmt, getStorageID().getNameForLogs(),
+                        formatReadableQuantity(unexpected_parts_rows), formatReadableQuantity(total_rows_on_filesystem),
+                        unexpected_parts.size(), unexpected_parts_rows, unexpected_parts_nonnew, unexpected_parts_nonnew_rows,
+                        parts_to_fetch.size(), parts_to_fetch_blocks);
     }
 
     if (unexpected_parts_nonnew_rows > 0)
-        LOG_WARNING(log, sanity_report.str());
+    {
+        LOG_WARNING(log, sanity_report_fmt, getStorageID().getNameForLogs(),
+                    formatReadableQuantity(unexpected_parts_rows), formatReadableQuantity(total_rows_on_filesystem),
+                    unexpected_parts.size(), unexpected_parts_rows, unexpected_parts_nonnew, unexpected_parts_nonnew_rows,
+                    parts_to_fetch.size(), parts_to_fetch_blocks);
+    }
 
     /// Add to the queue jobs to pick up the missing parts from other replicas and remove from ZK the information that we have them.
     std::vector<std::future<Coordination::ExistsResponse>> exists_futures;
@@ -1349,15 +1341,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 
 bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
 {
-    // Log source part names just in case
-    {
-        std::stringstream source_parts_msg;
-        source_parts_msg.exceptions(std::ios::failbit);
-        for (auto i : ext::range(0, entry.source_parts.size()))
-            source_parts_msg << (i != 0 ? ", " : "") << entry.source_parts[i];
-
-        LOG_TRACE(log, "Executing log entry to merge parts {} to {}", source_parts_msg.str(), entry.new_part_name);
-    }
+    LOG_TRACE(log, "Executing log entry to merge parts {} to {}", boost::algorithm::join(entry.source_parts, ", "), entry.new_part_name);
 
     const auto storage_settings_ptr = getSettings();
 
@@ -3675,7 +3659,9 @@ ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock StorageReplicatedMerg
     return max_added_blocks;
 }
 
-Pipe StorageReplicatedMergeTree::read(
+
+void StorageReplicatedMergeTree::read(
+    QueryPlan & query_plan,
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
@@ -3692,10 +3678,27 @@ Pipe StorageReplicatedMergeTree::read(
     if (context.getSettingsRef().select_sequential_consistency)
     {
         auto max_added_blocks = getMaxAddedBlocks();
-        return reader.read(column_names, metadata_snapshot, query_info, context, max_block_size, num_streams, &max_added_blocks);
+        if (auto plan = reader.read(column_names, metadata_snapshot, query_info, context, max_block_size, num_streams, &max_added_blocks))
+            query_plan = std::move(*plan);
+        return;
     }
 
-    return reader.read(column_names, metadata_snapshot, query_info, context, max_block_size, num_streams);
+    if (auto plan = reader.read(column_names, metadata_snapshot, query_info, context, max_block_size, num_streams))
+        query_plan = std::move(*plan);
+}
+
+Pipe StorageReplicatedMergeTree::read(
+    const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
+    SelectQueryInfo & query_info,
+    const Context & context,
+    QueryProcessingStage::Enum processed_stage,
+    const size_t max_block_size,
+    const unsigned num_streams)
+{
+    QueryPlan plan;
+    read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+    return plan.convertToPipe();
 }
 
 
@@ -3873,13 +3876,11 @@ bool StorageReplicatedMergeTree::optimize(
 
                 if (!selected)
                 {
-                    std::stringstream message;
-                    message.exceptions(std::ios::failbit);
-                    message << "Cannot select parts for optimization";
-                    if (!disable_reason.empty())
-                        message << ": " << disable_reason;
-                    LOG_INFO(log, message.str());
-                    return handle_noop(message.str());
+                    constexpr const char * message_fmt = "Cannot select parts for optimization: {}";
+                    if (disable_reason.empty())
+                        disable_reason = "unknown reason";
+                    LOG_INFO(log, message_fmt, disable_reason);
+                    return handle_noop(fmt::format(message_fmt, disable_reason));
                 }
 
                 ReplicatedMergeTreeLogEntryData merge_entry;
