@@ -139,7 +139,7 @@ String InterpreterSelectQuery::generateFilterActions(
 
     /// Using separate expression analyzer to prevent any possible alias injection
     auto syntax_result = TreeRewriter(*context).analyzeSelect(query_ast, TreeRewriterResult({}, storage, metadata_snapshot));
-    SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, *context, metadata_snapshot);
+    SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, *context, options.to_stage, metadata_snapshot);
     actions = analyzer.simpleSelectActions();
 
     return expr_list->children.at(0)->getColumnName();
@@ -405,7 +405,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
 
         query_analyzer = std::make_unique<SelectQueryExpressionAnalyzer>(
-                query_ptr, syntax_analyzer_result, *context, metadata_snapshot,
+                query_ptr, syntax_analyzer_result, *context, options.to_stage, metadata_snapshot,
                 NameSet(required_result_column_names.begin(), required_result_column_names.end()),
                 !options.only_analyze, options, std::move(subquery_for_sets));
 
@@ -1454,7 +1454,7 @@ void InterpreterSelectQuery::executeFetchColumns(
             }
 
             auto syntax_result = TreeRewriter(*context).analyze(required_columns_all_expr, required_columns_after_prewhere, storage, metadata_snapshot);
-            alias_actions = ExpressionAnalyzer(required_columns_all_expr, syntax_result, *context).getActionsDAG(true);
+            alias_actions = ExpressionAnalyzer(required_columns_all_expr, syntax_result, *context, options.to_stage).getActionsDAG(true);
 
             /// The set of required columns could be added as a result of adding an action to calculate ALIAS.
             required_columns = alias_actions->getRequiredColumns().getNames();
@@ -1480,7 +1480,7 @@ void InterpreterSelectQuery::executeFetchColumns(
                 auto analyzed_result
                     = TreeRewriter(*context).analyze(required_columns_from_prewhere_expr, metadata_snapshot->getColumns().getAllPhysical());
                 prewhere_info->alias_actions
-                    = ExpressionAnalyzer(required_columns_from_prewhere_expr, analyzed_result, *context).getActionsDAG(true, false);
+                    = ExpressionAnalyzer(required_columns_from_prewhere_expr, analyzed_result, *context, options.to_stage).getActionsDAG(true, false);
 
                 /// Add (physical?) columns required by alias actions.
                 auto required_columns_from_alias = prewhere_info->alias_actions->getRequiredColumns();
