@@ -20,8 +20,8 @@ TEST(Ranks, Simple)
 
     ASSERT_EQ(ranks.size(), expected.size());
 
-    for (size_t i = 0; i < ranks.size(); ++i) {
+    for (size_t i = 0; i < ranks.size(); ++i)
         ASSERT_DOUBLE_EQ(ranks[i], expected[i]);
-    }
+
     ASSERT_DOUBLE_EQ(t, 0.9975296442687747);
 }
