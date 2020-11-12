@@ -45,7 +45,7 @@ class MySQLNodeInstance:
         self.query("CREATE USER '" + user + "'@'%' IDENTIFIED BY '" + password + "'")
         self.grant_min_priv_for_user(user)
 
-    def grant_min_priv_for_user(self, user, db='test_database'):
+    def grant_min_priv_for_user(self, user, db='priv_err_db'):
         self.query("GRANT REPLICATION SLAVE, REPLICATION CLIENT, RELOAD ON *.* TO '" + user + "'@'%'")
         self.query("GRANT SELECT ON " + db + ".* TO '" + user + "'@'%'")
 
