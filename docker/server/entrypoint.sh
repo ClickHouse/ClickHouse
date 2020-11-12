@@ -40,6 +40,11 @@ CLICKHOUSE_USER="${CLICKHOUSE_USER:-default}"
 CLICKHOUSE_PASSWORD="${CLICKHOUSE_PASSWORD:-}"
 CLICKHOUSE_DB="${CLICKHOUSE_DB:-}"
 
+# ensure user config dir exists
+if [[ ! -e /etc/clickhouse-server/users.d ]]; then
+  mkdir /etc/clickhouse-server/users.d
+fi
+
 for dir in "$DATA_DIR" \
   "$ERROR_LOG_DIR" \
   "$LOG_DIR" \
