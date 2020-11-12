@@ -14,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
 }
 
 
@@ -123,7 +124,8 @@ class TDigest
         if (unmerged > params.max_unmerged)
             compress();
     }
-    void compress_brute() {
+    void compress_brute()
+    {
         if (centroids.size() <= params.max_centroids)
             return;
         const size_t batch_size = (centroids.size() + params.max_centroids - 1) / params.max_centroids; // at least 2
