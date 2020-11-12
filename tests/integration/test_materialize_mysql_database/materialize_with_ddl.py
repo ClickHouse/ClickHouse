@@ -500,7 +500,8 @@ def err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, mysql_n
     clickhouse_node.query(
         "CREATE DATABASE priv_err_db ENGINE = MaterializeMySQL('{}:3306', 'priv_err_db', 'test', '123')".format(
             service_name))
-
+    print("\n=== print log for CI test err ===\n")
+    print(clickhouse_node.exec_in_container(["bash", "-c", 'cat /var/log/clickhouse-server/clickhouse-server.log']))
     # wait MaterializeMySQL read binlog events
     check_query(clickhouse_node, "SELECT count() FROM priv_err_db.test_table_1 FORMAT TSV", "1\n", 30, 5)
     mysql_node.query("INSERT INTO priv_err_db.test_table_1 VALUES(2);")
