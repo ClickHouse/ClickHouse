@@ -548,12 +548,12 @@ private:
     /// Info about how other replicas can access this one.
     ReplicatedMergeTreeAddress getReplicatedMergeTreeAddress() const;
 
-    bool dropPart(zkutil::ZooKeeperPtr & zookeeper, String part_name, LogEntry & entry, bool detach);
+    bool dropPart(zkutil::ZooKeeperPtr & zookeeper, String part_name, LogEntry & entry, bool detach, bool throw_if_noop);
     bool dropAllPartsInPartition(
         zkutil::ZooKeeper & zookeeper, String & partition_id, LogEntry & entry, bool detach);
 
     // Partition helpers
-    void dropPartition(const ASTPtr & partition, bool detach, bool drop_part, const Context & query_context) override;
+    void dropPartition(const ASTPtr & partition, bool detach, bool drop_part, const Context & query_context, bool throw_if_noop) override;
     PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, const Context & query_context) override;
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & query_context) override;
     void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, const Context & query_context) override;

@@ -878,7 +878,7 @@ protected:
     // Partition helpers
     bool canReplacePartition(const DataPartPtr & src_part) const;
 
-    virtual void dropPartition(const ASTPtr & partition, bool detach, bool drop_part, const Context & context) = 0;
+    virtual void dropPartition(const ASTPtr & partition, bool detach, bool drop_part, const Context & context, bool throw_if_noop = true) = 0;
     virtual PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, const Context & context) = 0;
     virtual void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context) = 0;
     virtual void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, const Context & context) = 0;
