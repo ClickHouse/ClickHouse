@@ -440,6 +440,18 @@ struct ImplCityHash64
 };
 
 // see farmhash.h for definition of NAMESPACE_FOR_HASH_FUNCTIONS
+struct ImplFarmFingerprint64
+{
+    static constexpr auto name = "farmFingerprint64";
+    using ReturnType = UInt64;
+    using uint128_t = NAMESPACE_FOR_HASH_FUNCTIONS::uint128_t;
+
+    static auto combineHashes(UInt64 h1, UInt64 h2) { return NAMESPACE_FOR_HASH_FUNCTIONS::Fingerprint(uint128_t(h1, h2)); }
+    static auto apply(const char * s, const size_t len) { return NAMESPACE_FOR_HASH_FUNCTIONS::Fingerprint64(s, len); }
+    static constexpr bool use_int_hash_for_pods = true;
+};
+
+// see farmhash.h for definition of NAMESPACE_FOR_HASH_FUNCTIONS
 struct ImplFarmHash64
 {
     static constexpr auto name = "farmHash64";
@@ -1316,6 +1328,7 @@ using FunctionSHA256 = FunctionStringHashFixedString<SHA256Impl>;
 #endif
 using FunctionSipHash128 = FunctionStringHashFixedString<SipHash128Impl>;
 using FunctionCityHash64 = FunctionAnyHash<ImplCityHash64>;
+using FunctionFarmFingerprint64 = FunctionAnyHash<ImplFarmFingerprint64>;
 using FunctionFarmHash64 = FunctionAnyHash<ImplFarmHash64>;
 using FunctionMetroHash64 = FunctionAnyHash<ImplMetroHash64>;
 
