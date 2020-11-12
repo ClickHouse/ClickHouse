@@ -17,6 +17,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 
 #include <cassert>
 #include <stack>
@@ -34,8 +36,7 @@ namespace ErrorCodes
 
 String Range::toString() const
 {
-    std::stringstream str;
-    str.exceptions(std::ios::failbit);
+    WriteBufferFromOwnString str;
 
     if (!left_bounded)
         str << "(-inf, ";
@@ -1602,19 +1603,18 @@ bool KeyCondition::mayBeTrueAfter(
 
 String KeyCondition::RPNElement::toString() const
 {
-    auto print_wrapped_column = [this](std::ostringstream & ss)
+    auto print_wrapped_column = [this](WriteBuffer & buf)
     {
         for (auto it = monotonic_functions_chain.rbegin(); it != monotonic_functions_chain.rend(); ++it)
-            ss << (*it)->getName() << "(";
+            buf << (*it)->getName() << "(";
 
-        ss << "column " << key_column;
+        buf << "column " << key_column;
 
         for (auto it = monotonic_functions_chain.rbegin(); it != monotonic_functions_chain.rend(); ++it)
-            ss << ")";
+            buf << ")";
     };
 
-    std::ostringstream ss;
-    ss.exceptions(std::ios::failbit);
+    WriteBufferFromOwnString buf;
     switch (function)
     {
         case FUNCTION_AND:
@@ -1628,24 +1628,24 @@ String KeyCondition::RPNElement::toString() const
         case FUNCTION_NOT_IN_SET:
         case FUNCTION_IN_SET:
         {
-            ss << "(";
-            print_wrapped_column(ss);
-            ss << (function == FUNCTION_IN_SET ? " in " : " notIn ");
+            buf << "(";
+            print_wrapped_column(buf);
+            buf << (function == FUNCTION_IN_SET ? " in " : " notIn ");
             if (!set_index)
-                ss << "unknown size set";
+                buf << "unknown size set";
             else
-                ss << set_index->size() << "-element set";
-            ss << ")";
-            return ss.str();
+                buf << set_index->size() << "-element set";
+            buf << ")";
+            return buf.str();
         }
         case FUNCTION_IN_RANGE:
         case FUNCTION_NOT_IN_RANGE:
         {
-            ss << "(";
-            print_wrapped_column(ss);
-            ss << (function == FUNCTION_NOT_IN_RANGE ? " not" : "") << " in " << range.toString();
-            ss << ")";
-            return ss.str();
+            buf << "(";
+            print_wrapped_column(buf);
+            buf << (function == FUNCTION_NOT_IN_RANGE ? " not" : "") << " in " << range.toString();
+            buf << ")";
+            return buf.str();
         }
         case ALWAYS_FALSE:
             return "false";

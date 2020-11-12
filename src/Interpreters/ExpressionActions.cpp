@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/IFunction.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <optional>
 #include <Columns/ColumnSet.h>
@@ -213,14 +214,14 @@ void ExpressionActions::linearizeActions()
 }
 
 
-static std::ostream & operator << (std::ostream & out, const ExpressionActions::Argument & argument)
+static WriteBuffer & operator << (WriteBuffer & out, const ExpressionActions::Argument & argument)
 {
     return out << (argument.needed_later ? ": " : ":: ") << argument.pos;
 }
 
 std::string ExpressionActions::Action::toString() const
 {
-    std::stringstream out;
+    WriteBufferFromOwnString out;
     switch (node->type)
     {
         case ActionsDAG::ActionType::COLUMN:
@@ -270,7 +271,7 @@ void ExpressionActions::checkLimits(const ColumnsWithTypeAndName & columns) cons
 
         if (non_const_columns > max_temporary_non_const_columns)
         {
-            std::stringstream list_of_non_const_columns;
+            WriteBufferFromOwnString list_of_non_const_columns;
             for (const auto & column : columns)
                 if (column.column && !isColumnConst(*column.column))
                     list_of_non_const_columns << "\n" << column.name;
@@ -525,8 +526,7 @@ std::string ExpressionActions::getSmallestColumn(const NamesAndTypesList & colum
 
 std::string ExpressionActions::dumpActions() const
 {
-    std::stringstream ss;
-    ss.exceptions(std::ios::failbit);
+    WriteBufferFromOwnString ss;
 
     ss << "input:\n";
     for (const auto & input_column : required_columns)
@@ -823,8 +823,7 @@ void ExpressionActionsChain::finalize()
 
 std::string ExpressionActionsChain::dumpChain() const
 {
-    std::stringstream ss;
-    ss.exceptions(std::ios::failbit);
+    WriteBufferFromOwnString ss;
 
     for (size_t i = 0; i < steps.size(); ++i)
     {
@@ -1377,7 +1376,7 @@ std::string ActionsDAG::dumpDAG() const
         map[&node] = idx;
     }
 
-    std::stringstream out;
+    WriteBufferFromOwnString out;
     for (const auto & node : nodes)
     {
         out << map[&node] << " : ";

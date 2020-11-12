@@ -1,4 +1,5 @@
 #include <Parsers/ASTSampleRatio.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -34,5 +35,9 @@ String ASTSampleRatio::toString(Rational ratio)
         return toString(ratio.numerator) + " / " + toString(ratio.denominator);
 }
 
+void ASTSampleRatio::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
+{
+    settings.ostr << toString(ratio);
+}
 
 }
