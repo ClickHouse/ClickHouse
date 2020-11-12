@@ -131,8 +131,11 @@ public:
             data.reject();
     }
 
-    static bool needChildVisit(const ASTPtr &, const ASTPtr &)
+    static bool needChildVisit(const ASTPtr & parent, const ASTPtr &)
     {
+        if (const auto * func = typeid_cast<const ASTFunction *>(parent.get()))
+            return func->children.size() < 2;
+
         return true;
     }
 };
