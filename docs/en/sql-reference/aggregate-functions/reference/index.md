@@ -50,8 +50,6 @@ ClickHouse-specific aggregate functions:
 -   [skewPop](../../../sql-reference/aggregate-functions/reference/skewpop.md)
 -   [kurtSamp](../../../sql-reference/aggregate-functions/reference/kurtsamp.md)
 -   [kurtPop](../../../sql-reference/aggregate-functions/reference/kurtpop.md)
--   [timeSeriesGroupSum](../../../sql-reference/aggregate-functions/reference/timeseriesgroupsum.md)
--   [timeSeriesGroupRateSum](../../../sql-reference/aggregate-functions/reference/timeseriesgroupratesum.md)
 -   [uniq](../../../sql-reference/aggregate-functions/reference/uniq.md)
 -   [uniqExact](../../../sql-reference/aggregate-functions/reference/uniqexact.md)
 -   [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniqcombined.md)

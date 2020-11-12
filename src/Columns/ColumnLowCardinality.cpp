@@ -9,6 +9,10 @@
 
 #include <ext/scope_guard.h>
 
+#if !defined(ARCADIA_BUILD)
+    #include <miniselect/floyd_rivest_select.h> // Y_IGNORE
+#endif
+
 namespace DB
 {
 namespace ErrorCodes
@@ -393,7 +397,11 @@ void ColumnLowCardinality::updatePermutationImpl(size_t limit, Permutation & res
 
         /// Since then we are working inside the interval.
 
+#if !defined(ARCADIA_BUILD)
+        miniselect::floyd_rivest_partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less);
+#else
         std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less);
+#endif
         auto new_first = first;
 
         for (auto j = first + 1; j < limit; ++j)
