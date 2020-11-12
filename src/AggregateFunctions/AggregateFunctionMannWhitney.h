@@ -33,9 +33,7 @@ namespace ErrorCodes
 }
 
 
-/// Required two samples be of the same type. Because we need to compute ranks of all observations from both samples.
-template <typename T>
-struct MannWhitneyData : public StatisticalSample<T, T>
+struct MannWhitneyData : public StatisticalSample<Float64, Float64>
 {
     enum class Alternative
     {
@@ -43,8 +41,6 @@ struct MannWhitneyData : public StatisticalSample<T, T>
         Less,
         Greater
     };
-
-    using Sample = typename StatisticalSample<T, T>::SampleX;
 
     std::pair<Float64, Float64> getResult(Alternative alternative, bool continuity_correction)
     {
@@ -88,6 +84,8 @@ struct MannWhitneyData : public StatisticalSample<T, T>
     }
 
 private:
+    using Sample = typename StatisticalSample<Float64, Float64>::SampleX;
+
     /// We need to compute ranks according to all samples. Use this class to avoid extra copy and memory allocation.
     class ConcatenatedSamples
     {
@@ -95,7 +93,7 @@ private:
             ConcatenatedSamples(const Sample & first_, const Sample & second_)
                 : first(first_), second(second_) {}
 
-            const T & operator[](size_t ind) const
+            const Float64 & operator[](size_t ind) const
             {
                 if (ind < first.size())
                     return first[ind];
@@ -113,18 +111,17 @@ private:
     };
 };
 
-template <typename T>
-class AggregateFunctionMannWhitney :
-    public IAggregateFunctionDataHelper<MannWhitneyData<T>, AggregateFunctionMannWhitney<T>>
+class AggregateFunctionMannWhitney final:
+    public IAggregateFunctionDataHelper<MannWhitneyData, AggregateFunctionMannWhitney>
 {
 private:
-    using Alternative = typename MannWhitneyData<T>::Alternative;
-    typename MannWhitneyData<T>::Alternative alternative;
+    using Alternative = typename MannWhitneyData::Alternative;
+    Alternative alternative;
     bool continuity_correction{true};
 
 public:
     explicit AggregateFunctionMannWhitney(const DataTypes & arguments, const Array & params)
-        :IAggregateFunctionDataHelper<MannWhitneyData<T>, AggregateFunctionMannWhitney<T>> ({arguments}, {})
+        :IAggregateFunctionDataHelper<MannWhitneyData, AggregateFunctionMannWhitney> ({arguments}, {})
     {
         if (params.size() > 2)
             throw Exception("Aggregate function " + getName() + " require two parameter or less", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
