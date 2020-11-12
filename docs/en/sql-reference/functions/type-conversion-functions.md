@@ -430,6 +430,36 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null
 
 -   [cast_keep_nullable](../../operations/settings/settings.md#cast_keep_nullable) setting
 
+## accurateCastOrNull(x, T) {#type_conversion_function-accurate-cast}
+
+Converts ‘x’ to the ‘t’ data type. Always returns nullable type and returns NULL 
+if the casted value is not representable in the target type.
+
+Example:
+
+``` sql
+SELECT
+    accurateCastOrNull(-1, 'UInt8') as uint8,
+    accurateCastOrNull(128, 'Int8') as int8,
+    accurateCastOrNull('Test', 'FixedString(2)') as fixed_string
+```
+
+``` text
+┌─uint8─┬─int8─┬─fixed_string─┐
+│  ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ         │
+└───────┴──────┴──────────────┘┘
+```
+
+``` sql
+SELECT toTypeName(accurateCastOrNull(5, 'UInt8'))
+```
+
+``` text
+┌─toTypeName(accurateCastOrNull(5, 'UInt8'))─┐
+│ Nullable(UInt8)                            │
+└────────────────────────────────────────────┘
+```
+
 ## toInterval(Year\|Quarter\|Month\|Week\|Day\|Hour\|Minute\|Second) {#function-tointerval}
 
 Converts a Number type argument to an [Interval](../../sql-reference/data-types/special-data-types/interval.md) data type.
