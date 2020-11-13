@@ -298,17 +298,27 @@ private:
         return source_ptr;
     }
 
+    inline bool isExpired(time_point_t now, time_point_t deadline) const
+    {
+        return now > deadline;
+    }
+
     inline bool isExpiredPermanently(time_point_t now, time_point_t deadline) const
     {
         return now > deadline + std::chrono::seconds(extra_lifetime_seconds);
     }
 
-    struct FindResult
+    enum class ResultState
     {
-        const size_t cell_idx;
-        const bool valid;
-        const bool outdated;
+        NotFound,
+        FoundAndValid,
+        FoundButExpired,
+        /// Here is a gap between there two states in which a key could be read 
+        /// with an enabled setting in config enable_read_expired_keys.
+        FoundButExpiredPermanently
     };
+
+    using FindResult = std::pair<size_t, ResultState>; 
 
     FindResult findCellIdxForGet(const Key & id, const time_point_t now) const;
 
