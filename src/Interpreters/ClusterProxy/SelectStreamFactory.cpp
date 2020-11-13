@@ -1,5 +1,6 @@
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InDepthNodeVisitor.h>
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -109,6 +110,67 @@ String formattedAST(const ASTPtr & ast)
     return buf.str();
 }
 
+/// Rewrites '_shard_num AS foo' to '_shard_num'
+//
+/// Since iniator expects column '_shard_num' not 'foo', since it does not
+/// expect from the shard to make projections, see also rewriteShardNum()
+class RewriteShardNumMatcher
+{
+public:
+    struct Data
+    {
+        std::string alias_name;
+    };
+
+    static bool needChildVisit(ASTPtr & /*node*/, const ASTPtr & /*child*/)
+    {
+        return true;
+    }
+
+    static void visit(ASTPtr & node, Data &data)
+    {
+        if (auto * identifier = node->as<ASTIdentifier>())
+        {
+            if (data.alias_name.empty() && identifier->shortName() == "_shard_num")
+            {
+                data.alias_name = identifier->alias;
+                identifier->setAlias("");
+            }
+            else if (!data.alias_name.empty())
+            {
+                if (identifier->alias == data.alias_name)
+                    identifier->setAlias("");
+            }
+        }
+    }
+};
+
+void rewriteShardNum(ASTPtr & ast, const Field & shard_num)
+{
+    /// In case _shard_num was requested with an alias the alias will be
+    /// normalized by the QueryNormalizer and final alias will be used on
+    /// shards (not _shard_num), but on the initiator _shard_num will not be
+    /// normalized, since it is the parent alias (due to lack of WITH
+    /// statement there)
+    ///
+    /// So the alias for _shard_num should be replaced with _shard_num itself
+    /// (to match the query on the iniator and the shard).
+    ///
+    /// NOTE: that regular WITH from Distributed
+    /// (i.e. WITH 1 AS foo SELECT * FROM remote('127.{1,2}') GROUP BY foo)
+    /// is fine, since `foo` is the same on the initiator and shard (while
+    /// _shard_num is parent on the initiator and child on shards).
+    RewriteShardNumMatcher::Data visitor_data;
+    InDepthNodeVisitor<RewriteShardNumMatcher, true> visitor(visitor_data);
+    visitor.visit(ast);
+    /// Run second time to replace missing aliases
+    if (!visitor_data.alias_name.empty())
+        visitor.visit(ast);
+
+    /// toUInt32 to match type with system.clusters.shard_num
+    VirtualColumnUtils::rewriteEntityInAst(ast, "_shard_num", shard_num, "toUInt32");
+}
+
 }
 
 void SelectStreamFactory::createForShard(
@@ -135,7 +197,7 @@ void SelectStreamFactory::createForShard(
 
     auto modified_query_ast = query_ast->clone();
     if (has_virtual_shard_num_column)
-        VirtualColumnUtils::rewriteEntityInAst(modified_query_ast, "_shard_num", shard_info.shard_num, "toUInt32");
+        rewriteShardNum(modified_query_ast, shard_info.shard_num);
 
     auto emplace_local_stream = [&]()
     {
