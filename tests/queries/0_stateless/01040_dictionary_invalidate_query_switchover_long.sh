@@ -73,7 +73,7 @@ function check_exception_fixed()
 }
 
 export -f check_exception_fixed;
-# it may take a long until dictionary reloads
+# it may take a while until dictionary reloads
 timeout 60 bash -c check_exception_fixed 2> /dev/null
 
 $CLICKHOUSE_CLIENT --query "SELECT last_exception FROM system.dictionaries WHERE database = 'dictdb' AND name = 'invalidate'" 2>&1
