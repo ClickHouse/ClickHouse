@@ -14,10 +14,11 @@ struct IdentifierSemantic;
 struct IdentifierSemanticImpl;
 struct StorageID;
 
+class ASTTableIdentifier;
+
 /// Generic identifier. ASTTableIdentifier - for table identifier.
 class ASTIdentifier : public ASTWithAlias
 {
-    friend class ReplaceQueryParameterVisitor;
 public:
     explicit ASTIdentifier(const String & short_name, ASTPtr && name_param = {});
     explicit ASTIdentifier(std::vector<String> && name_parts, bool special = false, std::vector<ASTPtr> && name_params = {});
@@ -44,6 +45,7 @@ public:
     const String & name() const;
 
     void restoreTable();  // TODO(ilezhankin): get rid of this
+    std::shared_ptr<ASTTableIdentifier> createTable() const;  // return |nullptr| if identifier is not table.
 
 protected:
     String full_name;
@@ -56,10 +58,9 @@ protected:
 private:
     using ASTWithAlias::children; /// ASTIdentifier is child free
 
+    friend class ReplaceQueryParameterVisitor;
     friend struct IdentifierSemantic;
-    friend ASTPtr createTableIdentifier(const StorageID & table_id);
     friend void setIdentifierSpecial(ASTPtr & ast);
-    friend StorageID getTableIdentifier(const ASTPtr & ast);
 
     void resetFullName();
 };

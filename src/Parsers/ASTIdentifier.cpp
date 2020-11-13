@@ -142,6 +142,13 @@ void ASTIdentifier::restoreTable()
     }
 }
 
+std::shared_ptr<ASTTableIdentifier> ASTIdentifier::createTable() const
+{
+    if (name_parts.size() == 1) return std::make_shared<ASTTableIdentifier>(name_parts[0]);
+    if (name_parts.size() == 2) return std::make_shared<ASTTableIdentifier>(name_parts[0], name_parts[1]);
+    return nullptr;
+}
+
 void ASTIdentifier::resetFullName()
 {
     full_name = name_parts[0];
