@@ -8,6 +8,7 @@
 #include <IO/HTTPCommon.h>
 #include <IO/S3/PocoHTTPResponseStream.h>
 #include <Common/Stopwatch.h>
+#include <Interpreters/Context.h>
 #include <aws/core/http/HttpRequest.h>
 #include <aws/core/http/HttpResponse.h>
 #include <aws/core/http/standard/StandardHttpResponse.h>
@@ -48,9 +49,11 @@ namespace DB::S3
 
 PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
         const Aws::Client::ClientConfiguration & cfg,
-        const RemoteHostFilter & remote_host_filter_)
+        const RemoteHostFilter & remote_host_filter_,
+        const Context & global_context_)
     : Aws::Client::ClientConfiguration(cfg)
     , remote_host_filter(remote_host_filter_)
+    , global_context(global_context_)
 {
 }
 
@@ -81,6 +84,7 @@ PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & clientConfigu
           Poco::Timespan(clientConfiguration.httpRequestTimeoutMs * 1000) /// receive timeout.
           ))
     , remote_host_filter(clientConfiguration.remote_host_filter)
+    , global_context(clientConfiguration.global_context)
 {
 }
 
@@ -155,10 +159,10 @@ void PocoHTTPClient::makeRequestInternal(
 
     ProfileEvents::increment(select_metric(S3MetricType::Count));
 
-    static constexpr int max_redirect_attempts = 10;
+    unsigned int max_redirect_attempts = global_context.getSettingsRef().s3_max_redirects;
     try
     {
-        for (int attempt = 0; attempt < max_redirect_attempts; ++attempt)
+        for (unsigned int attempt = 0; attempt < max_redirect_attempts; ++attempt)
         {
             Poco::URI poco_uri(uri);
 
