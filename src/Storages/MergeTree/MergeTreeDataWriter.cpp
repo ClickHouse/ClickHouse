@@ -202,7 +202,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block
     return result;
 }
 
-Block MergeTreeDataWriter::mergeBlock(const Block & block, SortDescription sort_description,  Names & partition_key_columns, IColumn::Permutation ** permutation)
+Block MergeTreeDataWriter::mergeBlock(const Block & block, SortDescription sort_description, Names & partition_key_columns, IColumn::Permutation ** permutation)
 {
     size_t block_size = block.rows();
 
