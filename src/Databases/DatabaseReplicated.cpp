@@ -16,6 +16,8 @@
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/Cluster.h>
+#include <common/getFQDNOrHostName.h>
 #include <Parsers/ASTAlterQuery.h>
 
 namespace DB
@@ -25,28 +27,21 @@ namespace ErrorCodes
     extern const int NO_ZOOKEEPER;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int REPLICA_IS_ALREADY_EXIST;
 }
 
-//FIXME never used
-void DatabaseReplicated::setZooKeeper(zkutil::ZooKeeperPtr zookeeper)
-{
-    std::lock_guard lock(current_zookeeper_mutex);
-    current_zookeeper = zookeeper;
-}
-
-zkutil::ZooKeeperPtr DatabaseReplicated::tryGetZooKeeper() const
-{
-    std::lock_guard lock(current_zookeeper_mutex);
-    return current_zookeeper;
-}
+constexpr const char * first_entry_name = "query-0000000000";
 
 zkutil::ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
 {
-    auto res = tryGetZooKeeper();
-    if (!res)
-        throw Exception("Cannot get ZooKeeper", ErrorCodes::NO_ZOOKEEPER);
-    return res;
+    return global_context.getZooKeeper();
 }
+
+static inline String getHostID(const Context & global_context)
+{
+    return Cluster::Address::toString(getFQDNOrHostName(), global_context.getTCPPort());
+}
+
 
 DatabaseReplicated::~DatabaseReplicated() = default;
 
@@ -64,98 +59,118 @@ DatabaseReplicated::DatabaseReplicated(
     , replica_name(replica_name_)
 {
     if (zookeeper_path.empty() || shard_name.empty() || replica_name.empty())
-        throw Exception("ZooKeeper path and shard and replica names must be non-empty", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("ZooKeeper path, shard and replica names must be non-empty", ErrorCodes::BAD_ARGUMENTS);
+    if (shard_name.find('/') != std::string::npos || replica_name.find('/') != std::string::npos)
+        throw Exception("Shard and replica names should not contain '/'", ErrorCodes::BAD_ARGUMENTS);
 
     if (zookeeper_path.back() == '/')
         zookeeper_path.resize(zookeeper_path.size() - 1);
+
     /// If zookeeper chroot prefix is used, path should start with '/', because chroot concatenates without it.
     if (zookeeper_path.front() != '/')
         zookeeper_path = "/" + zookeeper_path;
 
-    if (context_.hasZooKeeper())
-    {
-        current_zookeeper = context_.getZooKeeper();
-    }
-    if (!current_zookeeper)
+    if (!context_.hasZooKeeper())
     {
         throw Exception("Can't create replicated database without ZooKeeper", ErrorCodes::NO_ZOOKEEPER);
     }
+    //FIXME it will fail on startup if zk is not available
 
-    /// New database
+    auto current_zookeeper = global_context.getZooKeeper();
+
     if (!current_zookeeper->exists(zookeeper_path))
     {
-        createDatabaseZooKeeperNodes();
+        /// Create new database, multiple nodes can execute it concurrently
+        createDatabaseNodesInZooKeeper(current_zookeeper);
     }
 
-    /// Attach existing replica
-    //TODO better protection from wrong replica names
-    if (current_zookeeper->exists(zookeeper_path + "/replicas/" + replica_name))
+    replica_path = zookeeper_path + "/replicas/" + shard_name + "|" + replica_name;
+
+    String replica_host_id;
+    if (current_zookeeper->tryGet(replica_path, replica_host_id))
     {
-        String remote_last_entry = current_zookeeper->get(zookeeper_path + "/replicas/" + replica_name, {}, nullptr);
+        String host_id = getHostID(global_context);
+        if (replica_host_id != host_id)
+            throw Exception(ErrorCodes::REPLICA_IS_ALREADY_EXIST,
+                            "Replica {} of shard {} of replicated database at {} already exists. Replica host ID: '{}', current host ID: '{}'",
+                            replica_name, shard_name, zookeeper_path, replica_host_id, host_id);
 
-        String local_last_entry;
-        try
-        {
-            ReadBufferFromFile in(getMetadataPath() + ".last_entry", 16);
-            readStringUntilEOF(local_last_entry, in);
-        }
-        catch (const Exception &)
-        {
-            /// Metadata is corrupted.
-            /// Replica erases the previous zk last executed log entry
-            /// and behaves like a new clean replica.
-            writeLastExecutedToDiskAndZK();
-        }
-
-        if (!local_last_entry.empty() && local_last_entry == remote_last_entry)
-        {
-            last_executed_log_entry = local_last_entry;
-        }
-        else
-        {
-            //FIXME
-            throw Exception(
-                "Replica name might be in use by a different node. Please check replica_name parameter. Remove .last_entry file from "
-                "metadata to create a new replica.",
-                ErrorCodes::LOGICAL_ERROR);
-        }
+        log_entry_to_execute = current_zookeeper->get(replica_path + "/log_ptr");
     }
     else
     {
-        createReplicaZooKeeperNodes();
+        /// Throws if replica with the same name was created concurrently
+        createReplicaNodesInZooKeeper(current_zookeeper);
     }
 
+    assert(log_entry_to_execute.starts_with("query-"));
+
+
     snapshot_period = context_.getConfigRef().getInt("database_replicated_snapshot_period", 10);
-    feedback_timeout = context_.getConfigRef().getInt("database_replicated_feedback_timeout", 0);
     LOG_DEBUG(log, "Snapshot period is set to {} log entries per one snapshot", snapshot_period);
-
-    //FIXME use database UUID
-    ddl_worker = std::make_unique<DDLWorker>(1, zookeeper_path + "/log", context_, nullptr, String{}, true, database_name, replica_name, shard_name);
-
-    //TODO do we need separate pool?
-    //background_log_executor = context_.getReplicatedSchedulePool().createTask(
-    //    database_name + "(DatabaseReplicated::background_executor)", [this] { runBackgroundLogExecutor(); }
-    //);
-
-    //background_log_executor->scheduleAfter(500);
 }
 
-void DatabaseReplicated::createDatabaseZooKeeperNodes()
+bool DatabaseReplicated::createDatabaseNodesInZooKeeper(const zkutil::ZooKeeperPtr & current_zookeeper)
 {
-    current_zookeeper = getZooKeeper();
-
     current_zookeeper->createAncestors(zookeeper_path);
 
-    current_zookeeper->createIfNotExists(zookeeper_path, String());
-    current_zookeeper->createIfNotExists(zookeeper_path + "/log", String());
-    current_zookeeper->createIfNotExists(zookeeper_path + "/snapshots", String());
-    current_zookeeper->createIfNotExists(zookeeper_path + "/replicas", String());
+    Coordination::Requests ops;
+    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path, "", zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/log", "", zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/snapshots", "", zkutil::CreateMode::Persistent));
+    /// Create empty snapshot (with no tables)
+    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/snapshots/" + first_entry_name, "", zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/replicas", "", zkutil::CreateMode::Persistent));
+
+    Coordination::Responses responses;
+    auto res = current_zookeeper->tryMulti(ops, responses);
+    if (res == Coordination::Error::ZOK)
+        return true;
+    if (res == Coordination::Error::ZNODEEXISTS)
+        return false;
+
+    zkutil::KeeperMultiException::check(res, ops, responses);
+    assert(false);
 }
 
-void DatabaseReplicated::createReplicaZooKeeperNodes()
+void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPtr & current_zookeeper)
 {
-    current_zookeeper->create(zookeeper_path + "/replicas/" + replica_name, "", zkutil::CreateMode::Persistent);
+    current_zookeeper->createAncestors(replica_path);
+
+    Strings snapshots = current_zookeeper->getChildren(zookeeper_path + "/snapshots");
+    std::sort(snapshots.begin(), snapshots.end());
+    if (snapshots.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No snapshots found");
+
+    /// When creating new replica, use latest snapshot version as initial value of log_pointer
+    log_entry_to_execute = snapshots.back();
+
+    /// Write host name to replica_path, it will protect from multiple replicas with the same name
+    auto host_id = getHostID(global_context);
+
+    Coordination::Requests ops;
+    ops.emplace_back(zkutil::makeCreateRequest(replica_path, host_id, zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/log_ptr", log_entry_to_execute , zkutil::CreateMode::Persistent));
+    current_zookeeper->multi(ops);
 }
+
+void DatabaseReplicated::loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool force_attach)
+{
+    DatabaseAtomic::loadStoredObjects(context, has_force_restore_data_flag, force_attach);
+
+    DatabaseReplicatedExtensions ext;
+    ext.database_uuid = getUUID();
+    ext.database_name = getDatabaseName();
+    ext.shard_name = shard_name;
+    ext.replica_name = replica_name;
+    ext.first_not_executed = log_entry_to_execute;
+
+    /// Pool size must be 1 (to avoid reordering of log entries)
+    constexpr size_t pool_size = 1;
+    ddl_worker = std::make_unique<DDLWorker>(pool_size, zookeeper_path + "/log", global_context, nullptr, "",
+                                             std::make_optional<DatabaseReplicatedExtensions>(std::move(ext)));
+}
+
 
 void DatabaseReplicated::removeOutdatedSnapshotsAndLog()
 {
@@ -170,7 +185,7 @@ void DatabaseReplicated::removeOutdatedSnapshotsAndLog()
     /// because the replica will use the latest snapshot available
     /// and this snapshot will set the last executed log query
     /// to a greater one than the least advanced current replica.
-    current_zookeeper = getZooKeeper();
+    auto current_zookeeper = getZooKeeper();
     Strings replica_states = current_zookeeper->getChildren(zookeeper_path + "/replicas");
     //TODO do not use log pointers to determine which entries to remove if there are staled pointers.
     // We can just remove all entries older than previous snapshot version.
@@ -209,7 +224,7 @@ void DatabaseReplicated::runBackgroundLogExecutor()
         loadMetadataFromSnapshot();
     }
 
-    current_zookeeper = getZooKeeper();
+    auto current_zookeeper = getZooKeeper();
     Strings log_entry_names = current_zookeeper->getChildren(zookeeper_path + "/log");
 
     std::sort(log_entry_names.begin(), log_entry_names.end());
@@ -219,7 +234,7 @@ void DatabaseReplicated::runBackgroundLogExecutor()
 
     for (const String & log_entry_name : log_entry_names)
     {
-        executeLogName(log_entry_name);
+        //executeLogName(log_entry_name);
         last_executed_log_entry = log_entry_name;
         writeLastExecutedToDiskAndZK();
 
@@ -238,7 +253,7 @@ void DatabaseReplicated::runBackgroundLogExecutor()
 
 void DatabaseReplicated::writeLastExecutedToDiskAndZK()
 {
-    current_zookeeper = getZooKeeper();
+    auto current_zookeeper = getZooKeeper();
     current_zookeeper->createOrUpdate(
         zookeeper_path + "/replicas/" + replica_name, last_executed_log_entry, zkutil::CreateMode::Persistent);
 
@@ -251,35 +266,9 @@ void DatabaseReplicated::writeLastExecutedToDiskAndZK()
     out.close();
 }
 
-void DatabaseReplicated::executeLogName(const String & /*log_entry_name*/)
-{
-//    String path = zookeeper_path + "/log/" + log_entry_name;
-//    current_zookeeper = getZooKeeper();
-//    String query_to_execute = current_zookeeper->get(path, {}, nullptr);
-//
-//    try
-//    {
-//        current_context = std::make_unique<Context>(global_context);
-//        current_context->getClientInfo().query_kind = ClientInfo::QueryKind::REPLICATED_LOG_QUERY;
-//        current_context->setCurrentDatabase(database_name);
-//        current_context->setCurrentQueryId(""); // generate random query_id
-//        executeQuery(query_to_execute, *current_context);
-//    }
-//    catch (const Exception & e)
-//    {
-//        tryLogCurrentException(log, "Query from zookeeper " + query_to_execute + " wasn't finished successfully");
-//        current_zookeeper->create(
-//            zookeeper_path + "/replicas/" + replica_name + "/errors/" + log_entry_name, e.what(), zkutil::CreateMode::Persistent);
-//    }
-//
-//    LOG_DEBUG(log, "Executed query: {}", query_to_execute);
-}
 
 BlockIO DatabaseReplicated::propose(const ASTPtr & query)
 {
-    //current_zookeeper = getZooKeeper();
-
-
     if (const auto * query_alter = query->as<ASTAlterQuery>())
     {
         for (const auto & command : query_alter->command_list->commands)
@@ -303,79 +292,18 @@ BlockIO DatabaseReplicated::propose(const ASTPtr & query)
     if (global_context.getSettingsRef().distributed_ddl_task_timeout == 0)
         return io;
 
-    //FIXME need list of all replicas
+    //FIXME need list of all replicas, we can obtain it from zk
     Strings hosts_to_wait;
-    //TODO maybe it's better to use (shard_name + sep + replica_name) as host ID to allow use {replica} macro (may may have the same values across shards)
-    hosts_to_wait.emplace_back(replica_name);
+    hosts_to_wait.emplace_back(shard_name + '/' +replica_name);
     auto stream = std::make_shared<DDLQueryStatusInputStream>(node_path, entry, global_context);
     io.in = std::move(stream);
     return io;
-
-    //executeDDLQueryOnCluster(query, global_context);
-
-
-    //{
-    //    std::lock_guard lock(log_name_mutex);
-    //    log_name_to_exec_with_result
-    //        = current_zookeeper->create(zookeeper_path + "/log/log-", queryToString(query), zkutil::CreateMode::PersistentSequential);
-    //}
-
-    //background_log_executor->schedule();
 }
 
-//BlockIO DatabaseReplicated::getFeedback()
-//{
-//    BlockIO res;
-//    if (feedback_timeout == 0)
-//        return res;
-//
-//    Stopwatch watch;
-//
-//    NamesAndTypes block_structure =
-//    {
-//        {"replica_name", std::make_shared<DataTypeString>()},
-//        {"execution_feedback", std::make_shared<DataTypeString>()},
-//    };
-//    auto replica_name_column = block_structure[0].type->createColumn();
-//    auto feedback_column = block_structure[1].type->createColumn();
-//
-//    current_zookeeper = getZooKeeper();
-//    Strings replica_states = current_zookeeper->getChildren(zookeeper_path + "/replicas");
-//    auto replica_iter = replica_states.begin();
-//
-//    while (!replica_states.empty() && watch.elapsedSeconds() < feedback_timeout)
-//    {
-//        String last_executed = current_zookeeper->get(zookeeper_path + "/replicas/" + *replica_iter);
-//        if (last_executed > log_name_to_exec_with_result)
-//        {
-//            replica_name_column->insert(*replica_iter);
-//            String err_path = zookeeper_path + "/replicas/" + *replica_iter + "/errors/" + log_name_to_exec_with_result;
-//            if (!current_zookeeper->exists(err_path))
-//            {
-//                feedback_column->insert("OK");
-//            }
-//            else
-//            {
-//                String feedback = current_zookeeper->get(err_path, {}, nullptr);
-//                feedback_column->insert(feedback);
-//            }
-//            replica_states.erase(replica_iter);
-//            replica_iter = replica_states.begin();
-//        }
-//    }
-//
-//    Block block = Block({
-//        {std::move(replica_name_column), block_structure[0].type, block_structure[0].name},
-//        {std::move(feedback_column), block_structure[1].type, block_structure[1].name}
-//    });
-//
-//    res.in = std::make_shared<OneBlockInputStream>(block);
-//    return res;
-//}
 
 void DatabaseReplicated::createSnapshot()
 {
-    current_zookeeper = getZooKeeper();
+    auto current_zookeeper = getZooKeeper();
     String snapshot_path = zookeeper_path + "/snapshots/" + last_executed_log_entry;
 
     if (Coordination::Error::ZNODEEXISTS == current_zookeeper->tryCreate(snapshot_path, String(), zkutil::CreateMode::Persistent))
@@ -399,7 +327,7 @@ void DatabaseReplicated::loadMetadataFromSnapshot()
 {
     /// Executes the latest snapshot.
     /// Used by new replicas only.
-    current_zookeeper = getZooKeeper();
+    auto current_zookeeper = getZooKeeper();
 
     Strings snapshots;
     if (current_zookeeper->tryGetChildren(zookeeper_path + "/snapshots", snapshots) != Coordination::Error::ZOK)
@@ -443,9 +371,19 @@ void DatabaseReplicated::loadMetadataFromSnapshot()
 
 void DatabaseReplicated::drop(const Context & context_)
 {
-    current_zookeeper = getZooKeeper();
+    auto current_zookeeper = getZooKeeper();
     current_zookeeper->tryRemove(zookeeper_path + "/replicas/" + replica_name);
     DatabaseAtomic::drop(context_);
+}
+
+void DatabaseReplicated::shutdown()
+{
+    if (ddl_worker)
+    {
+        ddl_worker->shutdown();
+        ddl_worker = nullptr;
+    }
+    DatabaseAtomic::shutdown();
 }
 
 }

@@ -31,13 +31,30 @@ class ASTAlterQuery;
 struct DDLLogEntry;
 struct DDLTask;
 using DDLTaskPtr = std::unique_ptr<DDLTask>;
+using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
+
+
+struct DatabaseReplicatedExtensions
+{
+    UUID database_uuid;
+    String database_name;
+    String shard_name;
+    String replica_name;
+    String first_not_executed;
+    using NewEntryCallback = std::function<void(const String & entry_name, const ZooKeeperPtr)>;
+    using EntryExecutedCallback = std::function<void(const String & entry_name, const ZooKeeperPtr)>;
+    using EntryErrorCallback = std::function<void(const String & entry_name, const ZooKeeperPtr, const std::exception_ptr &)>;
+    NewEntryCallback before_execution_callback;
+    EntryExecutedCallback executed_callback;
+    EntryErrorCallback error_callback;
+};
 
 
 class DDLWorker
 {
 public:
-    DDLWorker(int pool_size_, const std::string & zk_root_dir, Context & context_, const Poco::Util::AbstractConfiguration * config, const String & prefix,
-              bool is_replicated_db_ = false, const std::optional<String> & db_name_ = std::nullopt, const std::optional<String> & db_replica_name_ = std::nullopt, const std::optional<String> & db_shard_name_ = std::nullopt);
+    DDLWorker(int pool_size_, const std::string & zk_root_dir, const Context & context_, const Poco::Util::AbstractConfiguration * config, const String & prefix,
+              std::optional<DatabaseReplicatedExtensions> database_replicated_ext_ = std::nullopt);
     ~DDLWorker();
 
     /// Pushes query into DDL queue, returns path to created node
@@ -50,8 +67,9 @@ public:
         return host_fqdn_id;
     }
 
+    void shutdown();
+
 private:
-    using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
 
     /// Returns cached ZooKeeper session (possibly expired).
     ZooKeeperPtr tryGetZooKeeper() const;
@@ -103,13 +121,10 @@ private:
     void attachToThreadGroup();
 
 private:
-    bool is_replicated_db;
-    std::optional<String> db_name;
-    std::optional<String> db_replica_name;
-    std::optional<String> db_shard_name;
     std::atomic<bool> is_circular_replicated = false;
     Context context;
     Poco::Logger * log;
+    std::optional<DatabaseReplicatedExtensions> database_replicated_ext;
 
     std::string host_fqdn;      /// current host domain name
     std::string host_fqdn_id;   /// host_name:port
