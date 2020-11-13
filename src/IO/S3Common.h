@@ -19,6 +19,7 @@ namespace DB
     class RemoteHostFilter;
     struct HttpHeader;
     using HeaderCollection = std::vector<HttpHeader>;
+    class Context;
 }
 
 namespace DB::S3
@@ -36,14 +37,16 @@ public:
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
-        const RemoteHostFilter & remote_host_filter);
+        const RemoteHostFilter & remote_host_filter,
+        const Context & global_context);
 
     std::shared_ptr<Aws::S3::S3Client> create(
         Aws::Client::ClientConfiguration & cfg,
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
-        const RemoteHostFilter & remote_host_filter);
+        const RemoteHostFilter & remote_host_filter,
+        const Context & global_context);
 
     std::shared_ptr<Aws::S3::S3Client> create(
         const String & endpoint,
@@ -51,7 +54,8 @@ public:
         const String & access_key_id,
         const String & secret_access_key,
         HeaderCollection headers,
-        const RemoteHostFilter & remote_host_filter);
+        const RemoteHostFilter & remote_host_filter,
+        const Context & global_context);
 
 private:
     ClientFactory();

@@ -11,14 +11,21 @@ namespace Aws::Http::Standard
 class StandardHttpResponse;
 }
 
+namespace DB
+{
+class Context;
+}
+
 namespace DB::S3
 {
 
 struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
 {
     const RemoteHostFilter & remote_host_filter;
+    const Context & global_context;
 
-    PocoHTTPClientConfiguration(const Aws::Client::ClientConfiguration & cfg, const RemoteHostFilter & remote_host_filter_);
+    PocoHTTPClientConfiguration(const Aws::Client::ClientConfiguration & cfg, const RemoteHostFilter & remote_host_filter_,
+        const Context & global_context_);
 
     void updateSchemeAndRegion();
 };
@@ -48,6 +55,7 @@ private:
     std::function<Aws::Client::ClientConfigurationPerRequest(const Aws::Http::HttpRequest &)> per_request_configuration;
     ConnectionTimeouts timeouts;
     const RemoteHostFilter & remote_host_filter;
+    const Context & global_context;
 };
 
 }
