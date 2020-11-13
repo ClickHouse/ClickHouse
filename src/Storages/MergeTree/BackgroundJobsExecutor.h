@@ -33,6 +33,7 @@ enum class PoolType
 {
     MERGE_MUTATE,
     MOVE,
+    FETCH,
 };
 
 /// Result from background job providers. Function which will be executed in pool and pool type.
