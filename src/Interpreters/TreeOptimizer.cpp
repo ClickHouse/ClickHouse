@@ -186,7 +186,7 @@ GroupByKeysInfo getGroupByKeysInfo(const ASTs & group_by_keys)
     GroupByKeysInfo data;
 
     /// filling set with short names of keys
-    for (auto & group_key : group_by_keys)
+    for (const auto & group_key : group_by_keys)
     {
         if (group_key->as<ASTFunction>())
             data.has_function = true;
@@ -233,7 +233,7 @@ void optimizeAggregateFunctionsOfGroupByKeys(ASTSelectQuery * select_query, ASTP
     if (!select_query->groupBy())
         return;
 
-    auto & group_by_keys = select_query->groupBy()->children;
+    const auto & group_by_keys = select_query->groupBy()->children;
     GroupByKeysInfo group_by_keys_data = getGroupByKeysInfo(group_by_keys);
 
     SelectAggregateFunctionOfGroupByKeysVisitor::Data visitor_data{group_by_keys_data.key_names};
