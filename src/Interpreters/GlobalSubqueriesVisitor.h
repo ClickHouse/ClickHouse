@@ -158,9 +158,7 @@ public:
     static bool needChildVisit(ASTPtr &, const ASTPtr & child)
     {
         /// We do not go into subqueries.
-        if (child->as<ASTSelectQuery>())
-            return false;
-        return true;
+        return !child->as<ASTSelectQuery>();
     }
 
 private:
