@@ -47,7 +47,7 @@ public:
       */
     MergeTreeData::MutableDataPartPtr writeTempPart(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, const Context & context);
 
-    Block mergeBlock(const Block & block, SortDescription sort_description,  Names & partition_key_columns, IColumn::Permutation ** permutation);
+    Block mergeBlock(const Block & block, SortDescription sort_description, Names & partition_key_columns, IColumn::Permutation ** permutation);
 
 private:
     MergeTreeData & data;
