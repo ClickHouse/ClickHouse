@@ -32,7 +32,7 @@ void MarkTableIdentifiersMatcher::visit(const ASTFunction & func, ASTPtr & ptr, 
     {
         auto ast = func.arguments->children.at(1);
         auto opt_name = tryGetIdentifierName(ast);
-        if (opt_name && !data.aliases.count(*opt_name))
+        if (opt_name && !data.aliases.count(*opt_name) && ast->as<ASTIdentifier>())
         {
             ptr = func.clone();
             ptr->as<ASTFunction>()->arguments->children[1] = ast->as<ASTIdentifier>()->createTable();
@@ -48,7 +48,7 @@ void MarkTableIdentifiersMatcher::visit(const ASTFunction & func, ASTPtr & ptr, 
             return;
         auto & ast = func.arguments->children.at(0);
         auto opt_name = tryGetIdentifierName(ast);
-        if (opt_name && !data.aliases.count(*opt_name))
+        if (opt_name && !data.aliases.count(*opt_name) && ast->as<ASTIdentifier>())
         {
             ptr = func.clone();
             ptr->as<ASTFunction>()->arguments->children[0] = ast->as<ASTIdentifier>()->createTable();
