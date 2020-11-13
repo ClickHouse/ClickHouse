@@ -105,7 +105,7 @@ Result:
 └─────────────┴───────────────────────────────────────────────┘
 ```
 
-Example with GCM:
+Example with `-gcm`:
 
 Query:
 
@@ -123,7 +123,7 @@ Result:
 └─────────────┴────────────────────────────────────────────────────────────────────────┘
 ```
 
-Example with GCM mode and with `aad`:
+Example with `-gcm` mode and with `aad`:
 
 Query:
 
@@ -232,7 +232,6 @@ Result:
 │ aes-256-cfb128 │ 5CBD20F7ABD3AC41FCAA1A5C0E119E2BB5174F                     │
 └────────────────┴────────────────────────────────────────────────────────────┘
 ```
-
 
 ## decrypt {#decrypt}
 
