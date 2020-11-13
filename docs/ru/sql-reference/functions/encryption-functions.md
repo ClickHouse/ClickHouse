@@ -1,6 +1,6 @@
 ---
 toc_priority: 67
-toc_title: "\u0428\u0438\u0444\u0440\u043e\u0432\u0430\u043d\u0438\u0435"
+toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438 \u0434\u043b\u044f \u0448\u0438\u0444\u0440\u043e\u0432\u0430\u043d\u0438\u044f"
 ---
 
 # Функции шифрования {#encryption-functions}
