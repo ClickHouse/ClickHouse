@@ -23,6 +23,6 @@
        </substitution>
     </substitutions>
 
-    <query>SELECT ignore({func_fast}URL)) FROM hits_10m_single FORMAT Null</query>
-    <query>SELECT ignore({func_slow}URL)) FROM hits_100m_single FORMAT Null</query>
+    <query>SELECT ignore({func_fast}URL)) FROM hits_100m_single FORMAT Null</query>
+    <query>SELECT ignore({func_slow}URL)) FROM hits_10m_single FORMAT Null</query>
 </test>
