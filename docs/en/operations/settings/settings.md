@@ -2203,7 +2203,7 @@ Possible values:
 
 Default value: `0`.
 
-**Example of usage**
+**Example**
 
 Query
 ```sql
