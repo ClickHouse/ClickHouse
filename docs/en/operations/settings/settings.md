@@ -2194,95 +2194,29 @@ Result:
 
 ## system_events_show_zero_values {system_events_show_zero_values}
 
-Description.
-
-I want to explain why this feature is required and which corner cases it covers
-
-system.metrics, system.events and system.asyncronous_metrics can be monitored via prometheus
-prometheus has a scraping interval
-when "system.events" doesn't contain data with some critical events, like DelayedInserts or RejectedInserts for example before the first increment this counters will occur then prometheus probably will scrape only X value, instead of sequence 0 and X value between two scraping interval
-so alerts which calculated as increase(DelayedInserts[1m]) will not triggered
-
-For the switch setting, use the typical phrase: “Enables or disables something …”.
-
-SET system_events_show_zero_values = 1;
-SELECT value FROM system.events WHERE event == 'PerfAlignmentFaults';
-SET system_events_show_zero_values = 0;
-
-SELECT * FROM system.settings WHERE name='system_events_show_zero_values' \G
-
-SELECT *
-FROM system.settings
-WHERE name = 'system_events_show_zero_values'
-
-Query id: 42cac0a6-e1b4-4874-a4a9-9fb80c0e8748
-
-Row 1:
-──────
-name:        system_events_show_zero_values
-value:       0
-changed:     0
-description: Include all metrics, even with zero values
-min:         ᴺᵁᴸᴸ
-max:         ᴺᵁᴸᴸ
-readonly:    0
-type:        Bool
-
-Нас интересуют поля:
-value — значение по умолчанию, если changed:     0.
-min и max — ограничения по умолчанию, если changed:     0.
-description — краткое описание.
+Includes all metrics, even with zero values. Used for monitoring metrics: `system.metrics`, `system.events` and `system.asyncronous_metrics`.
 
 Possible values:
-
-*For switcher setting:*
 
 -   0 — Disabled.
 -   1 — Enabled.
 
-*For another setting (typical phrases):*
+Default value: `0`.
 
--   Positive integer.
--   0 — Disabled or unlimited or something else.
+**Example of usage**
 
-Default value: `value`.
-
-Tests
-
+Query
+```sql
 SET system_events_show_zero_values = 1;
+SELECT value FROM system.events WHERE event == 'PerfAlignmentFaults';
+```
 
-SET system_events_show_zero_values = 1
-
-Query id: db5562b8-0890-4ef8-bf4b-ace1e7786d61
-
-Ok.
-
-0 rows in set. Elapsed: 0.001 sec.
-
-clickhouse.ru-central1.internal :) SELECT value FROM system.events WHERE event == 'PerfAlignmentFaults';
-
-SELECT value
-FROM system.events
-WHERE event = 'PerfAlignmentFaults'
-
-Query id: 7baf8916-0fe9-4240-9dc4-5c70a2a80bb6
-
+Result
+```text
 ┌─value─┐
-│     0 │
+│     1 │
 └───────┘
-
-1 rows in set. Elapsed: 0.008 sec.
-
-clickhouse.ru-central1.internal :) SET system_events_show_zero_values = 0;
-
-SET system_events_show_zero_values = 0
-
-Query id: f0980af2-a3bd-41eb-8cc5-e0d5f48e85c8
-
-Ok.
-
-0 rows in set. Elapsed: 0.001 sec.
-
+```
 
 ## allow_experimental_bigint_types {#allow_experimental_bigint_types}
 
