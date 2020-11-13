@@ -1951,6 +1951,74 @@ No changes compared to v20.4.3.16-stable.
 
 ## ClickHouse release v20.3
 
+
+### ClickHouse release v20.3.21.2-lts, 2020-11-02
+
+#### Bug Fix
+
+* Fix dictGet in sharding_key (and similar places, i.e. when the function context is stored permanently). [#16205](https://github.com/ClickHouse/ClickHouse/pull/16205) ([Azat Khuzhin](https://github.com/azat)).
+* Fix incorrect empty result for query from `Distributed` table if query has `WHERE`, `PREWHERE` and `GLOBAL IN`. Fixes [#15792](https://github.com/ClickHouse/ClickHouse/issues/15792). [#15933](https://github.com/ClickHouse/ClickHouse/pull/15933) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Fix missing or excessive headers in `TSV/CSVWithNames` formats. This fixes [#12504](https://github.com/ClickHouse/ClickHouse/issues/12504). [#13343](https://github.com/ClickHouse/ClickHouse/pull/13343) ([Azat Khuzhin](https://github.com/azat)).
+
+
+### ClickHouse release v20.3.20.6-lts, 2020-10-09
+
+#### Bug Fix
+
+* Mutation might hang waiting for some non-existent part after `MOVE` or `REPLACE PARTITION` or, in rare cases, after `DETACH` or `DROP PARTITION`. It's fixed. [#15724](https://github.com/ClickHouse/ClickHouse/pull/15724), [#15537](https://github.com/ClickHouse/ClickHouse/pull/15537) ([tavplubix](https://github.com/tavplubix)).
+* Fix hang of queries with a lot of subqueries to same table of `MySQL` engine. Previously, if there were more than 16 subqueries to same `MySQL` table in query, it hang forever. [#15299](https://github.com/ClickHouse/ClickHouse/pull/15299) ([Anton Popov](https://github.com/CurtizJ)).
+* Fix 'Unknown identifier' in GROUP BY when query has JOIN over Merge table. [#15242](https://github.com/ClickHouse/ClickHouse/pull/15242) ([Artem Zuikov](https://github.com/4ertus2)).
+* Fix to make predicate push down work when subquery contains finalizeAggregation function. Fixes [#14847](https://github.com/ClickHouse/ClickHouse/issues/14847). [#14937](https://github.com/ClickHouse/ClickHouse/pull/14937) ([filimonov](https://github.com/filimonov)).
+* Concurrent `ALTER ... REPLACE/MOVE PARTITION ...` queries might cause deadlock. It's fixed. [#13626](https://github.com/ClickHouse/ClickHouse/pull/13626) ([tavplubix](https://github.com/tavplubix)).
+
+
+### ClickHouse release v20.3.19.4-lts, 2020-09-18
+
+#### Bug Fix
+
+* Fix rare error in `SELECT` queries when the queried column has `DEFAULT` expression which depends on the other column which also has `DEFAULT` and not present in select query and not exists on disk. Partially fixes [#14531](https://github.com/ClickHouse/ClickHouse/issues/14531). [#14845](https://github.com/ClickHouse/ClickHouse/pull/14845) ([alesapin](https://github.com/alesapin)).
+* Fix bug when `ALTER UPDATE` mutation with Nullable column in assignment expression and constant value (like `UPDATE x = 42`) leads to incorrect value in column or segfault. Fixes [#13634](https://github.com/ClickHouse/ClickHouse/issues/13634), [#14045](https://github.com/ClickHouse/ClickHouse/issues/14045). [#14646](https://github.com/ClickHouse/ClickHouse/pull/14646) ([alesapin](https://github.com/alesapin)).
+* Fix wrong Decimal multiplication result caused wrong decimal scale of result column. [#14603](https://github.com/ClickHouse/ClickHouse/pull/14603) ([Artem Zuikov](https://github.com/4ertus2)).
+
+#### Improvement
+
+* Support custom codecs in compact parts. [#12183](https://github.com/ClickHouse/ClickHouse/pull/12183) ([Anton Popov](https://github.com/CurtizJ)).
+
+
+### ClickHouse release v20.3.18.10-lts, 2020-09-08
+
+#### Bug Fix
+
+* Stop query execution if exception happened in `PipelineExecutor` itself. This could prevent rare possible query hung. Continuation of [#14334](https://github.com/ClickHouse/ClickHouse/issues/14334). [#14402](https://github.com/ClickHouse/ClickHouse/pull/14402) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Fixed the behaviour when sometimes cache-dictionary returned default value instead of present value from source. [#13624](https://github.com/ClickHouse/ClickHouse/pull/13624) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
+* Fix parsing row policies from users.xml when names of databases or tables contain dots. This fixes [#5779](https://github.com/ClickHouse/ClickHouse/issues/5779), [#12527](https://github.com/ClickHouse/ClickHouse/issues/12527). [#13199](https://github.com/ClickHouse/ClickHouse/pull/13199) ([Vitaly Baranov](https://github.com/vitlibar)).
+* Fix CAST(Nullable(String), Enum()). [#12745](https://github.com/ClickHouse/ClickHouse/pull/12745) ([Azat Khuzhin](https://github.com/azat)).
+* Fixed data race in `text_log`. It does not correspond to any real bug. [#9726](https://github.com/ClickHouse/ClickHouse/pull/9726) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+
+#### Improvement
+
+* Fix wrong error for long queries. It was possible to get syntax error other than `Max query size exceeded` for correct query. [#13928](https://github.com/ClickHouse/ClickHouse/pull/13928) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Return NULL/zero when value is not parsed completely in parseDateTimeBestEffortOrNull/Zero functions. This fixes [#7876](https://github.com/ClickHouse/ClickHouse/issues/7876). [#11653](https://github.com/ClickHouse/ClickHouse/pull/11653) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+
+#### Performance Improvement
+
+* Slightly optimize very short queries with LowCardinality. [#14129](https://github.com/ClickHouse/ClickHouse/pull/14129) ([Anton Popov](https://github.com/CurtizJ)).
+
+#### Build/Testing/Packaging Improvement
+
+* Fix UBSan report (adding zero to nullptr) in HashTable that appeared after migration to clang-10. [#10638](https://github.com/ClickHouse/ClickHouse/pull/10638) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+
+
+### ClickHouse release v20.3.17.173-lts, 2020-08-15
+
+#### Bug Fix
+
+* Fix crash in JOIN with StorageMerge and `set enable_optimize_predicate_expression=1`. [#13679](https://github.com/ClickHouse/ClickHouse/pull/13679) ([Artem Zuikov](https://github.com/4ertus2)).
+* Fix invalid return type for comparison of tuples with `NULL` elements. Fixes [#12461](https://github.com/ClickHouse/ClickHouse/issues/12461). [#13420](https://github.com/ClickHouse/ClickHouse/pull/13420) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Fix queries with constant columns and `ORDER BY` prefix of primary key. [#13396](https://github.com/ClickHouse/ClickHouse/pull/13396) ([Anton Popov](https://github.com/CurtizJ)).
+* Return passed number for numbers with MSB set in roundUpToPowerOfTwoOrZero(). [#13234](https://github.com/ClickHouse/ClickHouse/pull/13234) ([Azat Khuzhin](https://github.com/azat)).
+
+
 ### ClickHouse release v20.3.16.165-lts 2020-08-10
 
 #### Bug Fix
