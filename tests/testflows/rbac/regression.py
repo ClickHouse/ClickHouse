@@ -96,6 +96,12 @@ xfails = {
         [(Fail, issue_16403)],
     "privileges/alter move/:/:/:/:/user with revoked ALTER MOVE PARTITION privilege/":
         [(Fail, issue_16403)],
+    "/rbac/privileges/create table/create with join query privilege granted directly or via role/:":
+        [(Fail, issue_14149)],
+    "/rbac/privileges/create table/create with join union subquery privilege granted directly or via role/:":
+        [(Fail, issue_14149)],
+    "/rbac/privileges/create table/create with nested tables privilege granted directly or via role/:":
+        [(Fail, issue_14149)],
 }
 
 xflags = {
