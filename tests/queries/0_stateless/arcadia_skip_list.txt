@@ -168,3 +168,4 @@
 01555_system_distribution_queue_mask
 01557_max_parallel_replicas_no_sample.sql
 01525_select_with_offset_fetch_clause
+01560_timeseriesgroupsum_segfault
