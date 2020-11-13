@@ -24,7 +24,6 @@ public:
 
     Block getHeader() const override;
     void write(const Block & block) override;
-    Block mergeBlock(const Block & block);
 
 private:
     StorageMergeTree & storage;
