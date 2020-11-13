@@ -308,7 +308,7 @@ clone
 ```
 ## tid {#tid}
 
-This fuction returns current thread id.
+Returns id of the thread, in which current `Block` is processed.
 
 **Syntax**
 
@@ -325,7 +325,7 @@ tid()
 Query:
 
 ``` sql
-SELECT tid()
+SELECT tid();
 ```
 
 Result:
@@ -337,7 +337,7 @@ Result:
 ```
 ## logTrace {#logtrace}
 
-Emits trace log message for each block. 
+Emits trace log message to server log for each `Block`.
 
 **Syntax**
 
