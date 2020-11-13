@@ -14,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
 }
 
 
