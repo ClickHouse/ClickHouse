@@ -1215,6 +1215,20 @@ void MergeTreeData::clearOldWriteAheadLogs()
     }
 }
 
+void MergeTreeData::clearEmptyParts()
+{
+    auto parts = getDataPartsVector();
+    for (const auto & part : parts)
+    {
+        if (part->rows_count == 0)
+        {
+            ASTPtr literal = std::make_shared<ASTLiteral>(part->name);
+            /// If another replica has already started drop, it's ok, no need to throw.
+            dropPartition(literal, /* detach = */ false, /*drop_part = */ true, global_context, /* throw_if_noop = */ false);
+        }
+    }
+}
+
 void MergeTreeData::rename(const String & new_table_path, const StorageID & new_table_id)
 {
     auto disks = getStoragePolicy()->getDisks();
