@@ -319,11 +319,7 @@ std::string CacheDictionary::UpdateUnit::dumpFoundIds()
     return os.str();
 };
 
-/// Returns cell_idx in handmade open addressing cache table.
-/// true  false   found and valid
-/// false true    found, but expired
-/// false false   not found (other id stored with valid data)
-/// true  true    impossible
+/// Returns cell_idx in handmade open addressing cache table and the state of the cell stored the key.
 CacheDictionary::FindResult CacheDictionary::findCellIdxForGet(const Key & id, const time_point_t now) const
 {
     auto pos = getCellIdx(id);
@@ -336,13 +332,16 @@ CacheDictionary::FindResult CacheDictionary::findCellIdxForGet(const Key & id, c
         if (cell.id != id)
             continue;
 
-        if (cell.expiresAt() < now)
-            return {cell_idx, false, true};
+        if (isExpiredPermanently(now, cell.expiresAt()))
+            return {cell_idx, ResultState::FoundButExpiredPermanently};
 
-        return {cell_idx, true, false};
+        if (isExpired(now, cell.expiresAt()))
+            return {cell_idx, ResultState::FoundButExpired};
+
+        return {cell_idx, ResultState::FoundAndValid};
     }
 
-    return {pos & size_overlap_mask, false, false};
+    return {pos & size_overlap_mask, ResultState::NotFound};
 }
 
 /// Returns cell_idx such that cells[cell_idx].id = id or the oldest cell in bounds of max_coolision_length. 
@@ -403,41 +402,32 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
         for (const auto row : ext::range(0, rows))
         {
             const auto id = ids[row];
-            const auto find_result = findCellIdxForGet(id, now);
-            auto & cell = cells[find_result.cell_idx];
+            const auto [cell_idx, state] = findCellIdxForGet(id, now);
+            auto & cell = cells[cell_idx];
 
             auto insert_to_answer_routine = [&] ()
             {
                 out[row] = !cell.isDefault();
             };
 
-            if (!find_result.valid)
-            {
-                if (find_result.outdated)
-                {
-                    /// Protection of reading very expired keys.
-                    if (isExpiredPermanently(now, cell.expiresAt()))
-                    {
-                        cache_not_found_count++;
-                        cache_expired_or_not_found_ids[id].push_back(row);
-                        continue;
-                    }
-                    cache_expired_count++;
-                    cache_expired_or_not_found_ids[id].push_back(row);
-
-                    if (allow_read_expired_keys)
-                        insert_to_answer_routine();
-                }
-                else
-                {
-                    cache_not_found_count++;
-                    cache_expired_or_not_found_ids[id].push_back(row);
-                }
-            }
-            else
+            if (state == ResultState::FoundAndValid)
             {
                 ++cache_hit;
                 insert_to_answer_routine();
+            }
+            else if (state == ResultState::NotFound || state == ResultState::FoundButExpiredPermanently)
+            {
+                /// Permanently expired equals to not found semantically.
+                ++cache_not_found_count;
+                cache_expired_or_not_found_ids[id].push_back(row);
+            }
+            else if (state == ResultState::FoundButExpired)
+            {
+                cache_expired_count++;
+                cache_expired_or_not_found_ids[id].push_back(row);
+
+                if (allow_read_expired_keys)
+                    insert_to_answer_routine();
             }
         }
     }

@@ -60,6 +60,14 @@ void CacheDictionary::getItemsNumberImpl(
         const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
 
         const auto now = std::chrono::system_clock::now();
+
+        auto insert_to_answer_routine = [&](size_t row, size_t idx)
+        {
+            auto & cell = cells[idx];
+            if (!cell.isDefault())
+                out[row] = static_cast<OutputType>(attribute_array[idx]);
+        };
+
         /// fetch up-to-date values, decide which ones require update
         for (const auto row : ext::range(0, rows))
         {
@@ -70,44 +78,25 @@ void CacheDictionary::getItemsNumberImpl(
                 *    2. cell has expired,
                 *    3. explicit defaults were specified and cell was set default. */
 
-            const auto find_result = findCellIdxForGet(id, now);
-            auto & cell = cells[find_result.cell_idx];
+            const auto [cell_idx, state] = findCellIdxForGet(id, now);
 
-            auto update_routine = [&]()
-            {
-                const auto & cell_idx = find_result.cell_idx;
-                if (!cell.isDefault())
-                    out[row] = static_cast<OutputType>(attribute_array[cell_idx]);
-            };
-
-            if (!find_result.valid)
-            {
-                if (find_result.outdated)
-                {
-                    /// Protection of reading very expired keys.
-                    if (isExpiredPermanently(now, cell.expiresAt()))
-                    {
-                        cache_not_found_count++;
-                        cache_expired_or_not_found_ids[id].push_back(row);
-                        continue;
-                    }
-
-                    cache_expired_cound++;
-                    cache_expired_or_not_found_ids[id].push_back(row);
-
-                    if (allow_read_expired_keys)
-                        update_routine();
-                }
-                else
-                {
-                    cache_not_found_count++;
-                    cache_expired_or_not_found_ids[id].push_back(row);
-                }
-            }
-            else
+            if (state == ResultState::FoundAndValid) 
             {
                 ++cache_hit;
-                update_routine();
+                insert_to_answer_routine(row, cell_idx);
+            }
+            else if (state == ResultState::NotFound || state == ResultState::FoundButExpiredPermanently)
+            {
+                ++cache_not_found_count;
+                cache_expired_or_not_found_ids[id].push_back(row);
+            }
+            else if (state == ResultState::FoundButExpired)
+            {
+                cache_expired_cound++;
+                cache_expired_or_not_found_ids[id].push_back(row);
+
+                if (allow_read_expired_keys)
+                    insert_to_answer_routine(row, cell_idx);
             }
         }
     }
@@ -190,34 +179,28 @@ void CacheDictionary::getItemsString(
         const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
 
         const auto now = std::chrono::system_clock::now();
+
+        auto insert_routine = [&] (size_t row, size_t idx)
+        {
+            auto & cell = cells[idx];
+            const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[idx];
+            out->insertData(string_ref.data, string_ref.size);
+        };
+
         /// Fetch up-to-date values, discard on fail.
         for (const auto row : ext::range(0, rows))
         {
             const auto id = ids[row];
+            const auto [cell_idx, state] = findCellIdxForGet(id, now);
 
-            const auto find_result = findCellIdxForGet(id, now);
-            auto & cell = cells[find_result.cell_idx];
-
-            auto insert_routine = [&] ()
+            if (state == ResultState::FoundAndValid)
             {
-                const auto & cell_idx = find_result.cell_idx;
-                const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
-                out->insertData(string_ref.data, string_ref.size);
-            };
-
-            if (!find_result.valid)
-            {
-                if (find_result.outdated && allow_read_expired_keys && !isExpiredPermanently(now, cell.expiresAt()))
-                {
-                    insert_routine();
-                    continue;
-                }
-                found_outdated_values = true;
-                break;
+                insert_routine(row, cell_idx);
             }
             else
             {
-                insert_routine();
+                found_outdated_values = true;
+                break;
             }
         }
     }
@@ -249,51 +232,41 @@ void CacheDictionary::getItemsString(
         const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
 
         const auto now = std::chrono::system_clock::now();
+
+        auto insert_value_routine = [&](size_t row, size_t id, size_t cell_idx)
+        {
+            const auto & cell = cells[cell_idx];
+            const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
+
+            /// Do not store default, but count it in total length.
+            if (!cell.isDefault())
+                local_cache[id] = String{string_ref};
+
+            total_length += string_ref.size + 1;
+        };
+
         for (const auto row : ext::range(0, ids.size()))
         {
             const auto id = ids[row];
-            const auto find_result = findCellIdxForGet(id, now);
-            const auto & cell_idx = find_result.cell_idx;
-            const auto & cell = cells[cell_idx];
+            const auto [cell_idx, state] = findCellIdxForGet(id, now);
 
-            auto insert_value_routine = [&]()
-            {
-                const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
-
-                /// Do not store default, but count it in total length.
-                if (!cell.isDefault())
-                    local_cache[id] = String{string_ref};
-
-                total_length += string_ref.size + 1;
-            };
-
-            if (!find_result.valid)
-            {
-                if (find_result.outdated)
-                {
-                    /// Protection of reading too expired keys.
-                    if (isExpiredPermanently(now, cell.expiresAt()))
-                    {
-                        cache_not_found_count++;
-                        cache_expired_or_not_found_ids[id].push_back(row);
-                        continue;
-                    }
-
-                    cache_expired_count++;
-                    cache_expired_or_not_found_ids[id].push_back(row);
-
-                    if (allow_read_expired_keys)
-                        insert_value_routine();
-                }
-                else
-                {
-                    cache_not_found_count++;
-                    cache_expired_or_not_found_ids[id].push_back(row);
-                }
-            } else
+            if (state == ResultState::FoundAndValid)
             {
                 ++cache_hit;
-                insert_value_routine();
+                insert_value_routine(row, id, cell_idx);
+            }
+            else if (state == ResultState::NotFound || state == ResultState::FoundButExpiredPermanently)
+            {
+                ++cache_not_found_count;
+                cache_expired_or_not_found_ids[id].push_back(row);
+            }
+            else if (state == ResultState::FoundButExpired)
+            {
+                ++cache_expired_count;
+                cache_expired_or_not_found_ids[id].push_back(row);
+
+                if (allow_read_expired_keys)
+                    insert_value_routine(row, id, cell_idx);
             }
         }
     }
