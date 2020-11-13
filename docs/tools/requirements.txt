@@ -1,4 +1,4 @@
-Babel==2.8.0
+Babel==2.9.0
 backports-abc==0.5
 backports.functools-lru-cache==1.6.1
 beautifulsoup4==4.9.1
