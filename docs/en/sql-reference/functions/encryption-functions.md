@@ -5,6 +5,12 @@ toc_title: Encryption
 
 # Encryption functions {#encryption-functions}
 
+These function  implements encryption and decryption of data with AES (Advanced Encryption Standard) algorithm.
+
+Key length depends on encryption mode. It is 16, 24, and 32 bytes long for `-128-`, `-196-`, and `-256-` modes respectively.
+
+Initialization vector length is always 16 bytes (bytes in excess of 16 are ignored). 
+
 ## encrypt {#encrypt}
 
 This function encrypts data using these modes:
@@ -20,16 +26,16 @@ This function encrypts data using these modes:
 **Syntax**
 
 ``` sql
-encrypt('mode', 'plaintext', 'key', [iv, aad])
+encrypt('mode', 'plaintext', 'key' [iv, aad])
 ```
 
 **Parameters**
 
 -   `mode` — Encryption mode. [String](../../sql-reference/data-types/string.md#string).
 -   `plaintext` — Text thats need to be encrypted. [String](../../sql-reference/data-types/string.md#string).
--   `key` — Encryption key. Length depends on enctyption mode. [String](../../sql-reference/data-types/string.md#string).
--   `iv` — Initialization vector for block encryption modes that require it. [String](../../sql-reference/data-types/string.md#string).
--   `add` — Additional authenticated data. It doen't get encrypted, but it affects decryption. Works only in `-gcm` modes. [String](../../sql-reference/data-types/string.md#string).
+-   `key` — Encryption key. [String](../../sql-reference/data-types/string.md#string).
+-   `iv` — Initialization vector. Required for `-gcm` modes, optinal for others. [String](../../sql-reference/data-types/string.md#string).
+-   `add` — Additional authenticated data. It isn't encrypted, but it affects decryption. Works only in `-gcm` modes, for others would throw an exception. [String](../../sql-reference/data-types/string.md#string).
 
 **Returned value**
 
@@ -58,8 +64,7 @@ Insert this data:
 Query:
 
 ``` sql
-INSERT INTO encryption_test (input)
-VALUES (''), ('text'), ('What Is ClickHouse?');
+INSERT INTO encryption_test (input) VALUES (''), ('text'), ('What Is ClickHouse?');
 ```
 
 Example without `iv`:
@@ -67,10 +72,7 @@ Example without `iv`:
 Query:
 
 ``` sql
-SELECT
-    'aes-128-ecb' AS mode,
-    hex(encrypt(mode, input, key16))
-FROM encryption_test;
+SELECT 'aes-128-ecb' AS mode, hex(encrypt(mode, input, key16)) FROM encryption_test;
 ```
 
 Result:
@@ -88,10 +90,7 @@ Example with `iv`:
 Query:
 
 ``` sql
-SELECT
-    'aes-256-ctr' AS mode,
-    hex(encrypt(mode, input, key32, iv))
-FROM encryption_test;
+SELECT 'aes-256-ctr' AS mode, hex(encrypt(mode, input, key32, iv)) FROM encryption_test;
 ```
 
 Result:
@@ -104,15 +103,12 @@ Result:
 └─────────────┴───────────────────────────────────────────────┘
 ```
 
-Example with GCM mode that requires `iv`:
+Example with GCM:
 
 Query:
 
 ``` sql
-SELECT
-    'aes-256-gcm' AS mode,
-    hex(encrypt(mode, input, key32, iv))
-FROM encryption_test;
+SELECT 'aes-256-gcm' AS mode, hex(encrypt(mode, input, key32, iv)) FROM encryption_test;
 ```
 
 Result:
@@ -130,10 +126,7 @@ Example with GCM mode and with `aad`:
 Query:
 
 ``` sql
-SELECT
-    'aes-192-gcm' AS mode,
-    hex(encrypt(mode, input, key24, iv, 'AAD'))
-FROM encryption_test;
+SELECT 'aes-192-gcm' AS mode, hex(encrypt(mode, input, key24, iv, 'AAD')) FROM encryption_test;
 ```
 
 Result:
@@ -148,7 +141,7 @@ Result:
 
 ## aes_encrypt_mysql {#aes_encrypt_mysql}
 
-Function implements encryption of data with AES (Advanced Encryption Standard) algorithm. Compatible with mysql encryption and can be decrypted with `AES_DECRYPT` function.
+Compatible with mysql encryption and can be decrypted with `AES_DECRYPT` function.
 
 Supported encryption modes:
 
@@ -162,15 +155,15 @@ Supported encryption modes:
 **Syntax**
 
 ```sql
-aes_encrypt_mysql('mode', 'plaintext', 'key', [iv])
+aes_encrypt_mysql('mode', 'plaintext', 'key' [iv])
 ```
 
 **Parameters**
 
 -   `mode` — Encryption mode. [String](../../sql-reference/data-types/string.md#string).
 -   `plaintext` — Text that needs to be encrypted. [String](../../sql-reference/data-types/string.md#string).
--   `key` — Encryption key. Length depends on enctyption mode. [String](../../sql-reference/data-types/string.md#string).
--   `iv` — Initialization vector for block encryption modes that require it. [String](../../sql-reference/data-types/string.md#string).
+-   `key` — Encryption key. [String](../../sql-reference/data-types/string.md#string).
+-   `iv` — Initialization vector. Optinal. [String](../../sql-reference/data-types/string.md#string).
 
 **Returned value**
 
@@ -199,8 +192,7 @@ Insert this data:
 Query:
 
 ``` sql
-INSERT INTO encryption_test (input)
-VALUES (''), ('text'), ('What Is ClickHouse?');
+INSERT INTO encryption_test (input) VALUES (''), ('text'), ('What Is ClickHouse?');
 ```
 
 Example without `iv`:
@@ -208,10 +200,7 @@ Example without `iv`:
 Query:
 
 ``` sql
-SELECT
-    'aes-128-cbc' AS mode,
-    hex(aes_encrypt_mysql(mode, input, key32))
-FROM encryption_test;
+SELECT 'aes-128-cbc' AS mode, hex(aes_encrypt_mysql(mode, input, key32)) FROM encryption_test;
 ```
 
 Result:
@@ -229,10 +218,7 @@ Example with `iv`:
 Query:
 
 ``` sql
-SELECT
-    'aes-256-cfb128' AS mode,
-    hex(aes_encrypt_mysql(mode, input, key32, iv))
-FROM encryption_test;
+SELECT 'aes-256-cfb128' AS mode, hex(aes_encrypt_mysql(mode, input, key32, iv)) FROM encryption_test;
 ```
 
 Result:
@@ -261,7 +247,7 @@ This function decrypt data using these modes:
 **Syntax**
 
 ```sql
-decrypt('mode', 'ciphertext', 'key', [iv, aad])
+decrypt('mode', 'ciphertext', 'key' [iv, aad])
 ```
 
 **Parameters**
@@ -269,8 +255,8 @@ decrypt('mode', 'ciphertext', 'key', [iv, aad])
 -   `mode` — Decryption mode. [String](../../sql-reference/data-types/string.md#string).
 -   `ciphertext` — Encrypted text that needs to be decrypted. [String](../../sql-reference/data-types/string.md#string).
 -   `key` — Decryption key. [String](../../sql-reference/data-types/string.md#string).
--   `iv` — Initialization vector for block encryption modes that require it. [String](../../sql-reference/data-types/string.md#string).
--   `add` — Additional authenticated data. Wont decrypt if this value is incorrect. [String](../../sql-reference/data-types/string.md#string).
+-   `iv` — Initialization vector. Required for `-gcm` modes, optinal for others. [String](../../sql-reference/data-types/string.md#string).
+-   `add` — Additional authenticated data. Won't decrypt if this value is incorrect. Works only in `-gcm` modes, for others would throw an exception. [String](../../sql-reference/data-types/string.md#string).
 
 **Returned value**
 
@@ -299,20 +285,14 @@ Insert this data:
 Query:
 
 ``` sql
-INSERT INTO encryption_test (input)
-VALUES (''), ('text'), ('What Is ClickHouse?');
+INSERT INTO encryption_test (input) VALUES (''), ('text'), ('What Is ClickHouse?');
 ```
-
-Example without `iv`:
 
 Query:
 
 ``` sql
 
-SELECT
-    'aes-128-ecb' AS mode,
-    decrypt(mode, encrypt(mode, input, key16), key16)
-FROM encryption_test;
+SELECT 'aes-128-ecb' AS mode, decrypt(mode, encrypt(mode, input, key16), key16) FROM encryption_test;
 ```
 
 Result:
@@ -325,72 +305,9 @@ Result:
 └─────────────┴─────────────────────────────────────────────────────────────────────┘
 ```
 
-Example with `iv`:
-
-Query:
-
-``` sql
-SELECT
-    'aes-192-cbc' AS mode,
-    decrypt(mode, encrypt(mode, input, key24, iv), key24, iv)
-FROM encryption_test;
-```
-
-Result:
-
-``` text
-┌─mode────────┬─decrypt('aes-192-cbc', encrypt('aes-192-cbc', input, key24, iv), key24, iv)─┐
-│ aes-192-cbc │                                                                             │
-│ aes-192-cbc │ text                                                                        │
-│ aes-192-cbc │ What Is ClickHouse?                                                         │
-└─────────────┴─────────────────────────────────────────────────────────────────────────────┘
-```
-
-Example with GCM mode that requires `iv`:
-
-Query:
-
-``` sql
-SELECT
-    'aes-256-gcm' AS mode,
-    decrypt(mode, encrypt(mode, input, key32, iv), key32, iv)
-FROM encryption_test;
-```
-
-Result:
-
-``` text
-┌─mode────────┬─decrypt('aes-256-gcm', encrypt('aes-256-gcm', input, key32, iv), key32, iv)─┐
-│ aes-256-gcm │                                                                             │
-│ aes-256-gcm │ text                                                                        │
-│ aes-256-gcm │ What Is ClickHouse?                                                         │
-└─────────────┴─────────────────────────────────────────────────────────────────────────────┘
-```
-
-Example with GCM mode and with `aad`:
-
-Query:
-
-``` sql
-SELECT
-    'aes-128-gcm' AS mode,
-    decrypt(mode, encrypt(mode, input, key16, iv, 'AAD'), key16, iv, 'AAD')
-FROM encryption_test;
-```
-
-Result:
-
-``` text
-┌─mode────────┬─decrypt('aes-128-gcm', encrypt('aes-128-gcm', input, key16, iv, 'AAD'), key16, iv, 'AAD')─┐
-│ aes-128-gcm │                                                                                           │
-│ aes-128-gcm │ text                                                                                      │
-│ aes-128-gcm │ What Is ClickHouse?                                                                       │
-└─────────────┴───────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
 ## aes_decrypt_mysql {#aes_decrypt_mysql}
 
-Function implements decryption of data with AES (Advanced Encryption Standard) algorithm. Compatible with mysql encryption and will decrypt data encrypted with `AES_ENCRYPT` function.
+Compatible with mysql encryption and will decrypt data encrypted with `AES_ENCRYPT` function.
 
 Supported decryption modes:
 
@@ -404,7 +321,7 @@ Supported decryption modes:
 **Syntax**
 
 ```sql
-aes_decrypt_mysql'mode', 'ciphertext', 'key', [iv])
+aes_decrypt_mysql('mode', 'ciphertext', 'key' [iv])
 ```
 
 **Parameters**
@@ -412,7 +329,7 @@ aes_decrypt_mysql'mode', 'ciphertext', 'key', [iv])
 -   `mode` — Decryption mode. [String](../../sql-reference/data-types/string.md#string).
 -   `ciphertext` — Encrypted text that needs to be decrypted. [String](../../sql-reference/data-types/string.md#string).
 -   `key` — Decryption key. [String](../../sql-reference/data-types/string.md#string).
--   `iv` — Initialization vector for block encryption modes that require it. [String](../../sql-reference/data-types/string.md#string).
+-   `iv` — Initialization vector. Optinal. [String](../../sql-reference/data-types/string.md#string).
 
 **Returned value**
 
@@ -441,19 +358,13 @@ Insert this data:
 Query:
 
 ``` sql
-INSERT INTO encryption_test (input)
-VALUES (''), ('text'), ('What Is ClickHouse?');
+INSERT INTO encryption_test (input) VALUES (''), ('text'), ('What Is ClickHouse?');
 ```
-
-Example without `iv` and key folding:
 
 Query:
 
 ``` sql
-SELECT
-    'aes-128-cbc' AS mode,
-    aes_decrypt_mysql(mode, aes_encrypt_mysql(mode, input, key), key)
-FROM encryption_test;
+SELECT 'aes-128-cbc' AS mode, aes_decrypt_mysql(mode, aes_encrypt_mysql(mode, input, key), key) FROM encryption_test;
 ```
 
 Result:
@@ -464,27 +375,6 @@ Result:
 │ aes-128-cbc │ text                                                                                │
 │ aes-128-cbc │ What Is ClickHouse?                                                                 │
 └─────────────┴─────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-Example with `iv`:
-
-Query:
-
-``` sql
-SELECT
-    'aes-256-cfb128' AS mode,
-    aes_decrypt_mysql(mode, aes_encrypt_mysql(mode, input, key, iv), key, iv)
-FROM encryption_test;
-```
-
-Result:
-
-``` text
-┌─mode───────────┬─aes_decrypt_mysql('aes-256-cfb128', aes_encrypt_mysql('aes-256-cfb128', input, key, iv), key, iv)─┐
-│ aes-256-cfb128 │                                                                                                   │
-│ aes-256-cfb128 │ text                                                                                              │
-│ aes-256-cfb128 │ What Is ClickHouse?                                                                               │
-└────────────────┴───────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 [Original article](https://clickhouse.tech/docs/en/sql-reference/functions/encryption_functions/) <!--hide-->
