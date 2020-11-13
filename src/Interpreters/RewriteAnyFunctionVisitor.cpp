@@ -85,6 +85,15 @@ void RewriteAnyFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, Da
     if (!first_arg_func || first_arg_func->arguments->children.empty())
         return;
 
+    /// _shard_num is special and it should not be optimized,
+    /// otherwise initiator will not find the column, i.e.:
+    ///
+    ///     clickhouse-client -q "select any(_shard_num) from remote('127.1', system.one)" --stage with_mergeable_state
+    ///
+    /// But on shards it will be `any(toUInt32(1) AS _shard_num)`.
+    if (first_arg_func->tryGetAlias() == "_shard_num")
+        return;
+
     /// We have rewritten this function. Just unwrap its argument.
     if (data.rewritten.count(ast.get()))
     {
