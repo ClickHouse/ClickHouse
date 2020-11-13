@@ -19,14 +19,13 @@ ${CLICKHOUSE_CLIENT} --query "SELECT * FROM alter_table WHERE value == '733'"
 
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE alter_table MODIFY COLUMN value LowCardinality(String)" &
 
-type_query="SELECT type FROM system.columns WHERE name = 'value' and table='alter_table' and database='${CLICKHOUSE_DATABASE}'"
-value_type=""
-
 # waiting until schema will change (but not data)
-while [[ "$value_type" != "LowCardinality(String)" ]]
+show_query="SHOW CREATE TABLE alter_table"
+create_query=""
+while [[ "$create_query" != *"LowCardinality"* ]]
 do
     sleep 0.1
-    value_type=$($CLICKHOUSE_CLIENT --query "$type_query")
+    create_query=$($CLICKHOUSE_CLIENT --query "$show_query")
 done
 
 # checking type is LowCardinalty
