@@ -11,6 +11,8 @@ Key length depends on encryption mode. It is 16, 24, and 32 bytes long for `-128
 
 Initialization vector length is always 16 bytes (bytes in excess of 16 are ignored). 
 
+Note that these functions work slowly.
+
 ## encrypt {#encrypt}
 
 This function encrypts data using these modes:
