@@ -51,14 +51,15 @@ public:
 
     BlockIO propose(const ASTPtr & query);
 
-    //BlockIO getFeedback();
+    void shutdown() override;
+
+    void loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool force_attach = false) override;
 
 private:
-    void createDatabaseZooKeeperNodes();
-    void createReplicaZooKeeperNodes();
+    bool createDatabaseNodesInZooKeeper(const zkutil::ZooKeeperPtr & current_zookeeper);
+    void createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPtr & current_zookeeper);
 
     void runBackgroundLogExecutor();
-    void executeLogName(const String &);
     void writeLastExecutedToDiskAndZK();
 
     void loadMetadataFromSnapshot();
@@ -68,25 +69,18 @@ private:
     String zookeeper_path;
     String shard_name;
     String replica_name;
+    String replica_path;
 
-    //std::unique_ptr<Context> current_context; // to run executeQuery
+    String log_entry_to_execute;
 
     std::mutex log_name_mutex;
     String log_name_to_exec_with_result;
 
     int snapshot_period;
-    int feedback_timeout;
 
     String last_executed_log_entry = "";
 
-    //BackgroundSchedulePool::TaskHolder background_log_executor;
-
-    zkutil::ZooKeeperPtr current_zookeeper;        /// Use only the methods below.
-    mutable std::mutex current_zookeeper_mutex;    /// To recreate the session in the background thread.
-
-    zkutil::ZooKeeperPtr tryGetZooKeeper() const;
     zkutil::ZooKeeperPtr getZooKeeper() const;
-    void setZooKeeper(zkutil::ZooKeeperPtr zookeeper);
 
     std::unique_ptr<DDLWorker> ddl_worker;
 

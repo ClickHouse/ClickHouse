@@ -142,17 +142,15 @@ std::unique_ptr<ZooKeeperLock> createSimpleZooKeeperLock(
 }
 
 
-DDLWorker::DDLWorker(int pool_size_, const std::string & zk_root_dir, Context & context_, const Poco::Util::AbstractConfiguration * config, const String & prefix,
-                     bool is_replicated_db_, const std::optional<String> & db_name_, const std::optional<String> & db_replica_name_, const std::optional<String> & db_shard_name_)
+DDLWorker::DDLWorker(int pool_size_, const std::string & zk_root_dir, const Context & context_, const Poco::Util::AbstractConfiguration * config, const String & prefix,
+                     std::optional<DatabaseReplicatedExtensions> database_replicated_ext_)
     : context(context_)
-    , log(&Poco::Logger::get("DDLWorker"))
+    , log(&Poco::Logger::get(database_replicated_ext_ ? fmt::format("DDLWorker ({})", database_replicated_ext_->database_name) : "DDLWorker"))
+    , database_replicated_ext(std::move(database_replicated_ext_))
     , pool_size(pool_size_)
     , worker_pool(pool_size_)
 {
-    is_replicated_db = is_replicated_db_;
-    db_name = db_name_;
-    db_replica_name = db_replica_name_;
-    db_shard_name = db_shard_name_;
+    assert(!database_replicated_ext || pool_size == 1);
     last_tasks.reserve(pool_size);
 
     queue_dir = zk_root_dir;
@@ -181,25 +179,29 @@ DDLWorker::DDLWorker(int pool_size_, const std::string & zk_root_dir, Context & 
     cleanup_thread = ThreadFromGlobalPool(&DDLWorker::runCleanupThread, this);
 }
 
-
-DDLWorker::~DDLWorker()
+void DDLWorker::shutdown()
 {
     stop_flag = true;
     queue_updated_event->set();
     cleanup_event->set();
+}
+
+DDLWorker::~DDLWorker()
+{
+    shutdown();
     worker_pool.wait();
     main_thread.join();
     cleanup_thread.join();
 }
 
 
-DDLWorker::ZooKeeperPtr DDLWorker::tryGetZooKeeper() const
+ZooKeeperPtr DDLWorker::tryGetZooKeeper() const
 {
     std::lock_guard lock(zookeeper_mutex);
     return current_zookeeper;
 }
 
-DDLWorker::ZooKeeperPtr DDLWorker::getAndSetZooKeeper()
+ZooKeeperPtr DDLWorker::getAndSetZooKeeper()
 {
     std::lock_guard lock(zookeeper_mutex);
 
@@ -272,12 +274,11 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
         return {};
     }
 
-    if (is_replicated_db)
+    if (database_replicated_ext)
     {
-        //
         task->host_id.host_name = host_fqdn;
         task->host_id.port = context.getTCPPort();
-        task->host_id_str = *db_replica_name;
+        task->host_id_str = database_replicated_ext->shard_name + '|' + database_replicated_ext->replica_name;
         return task;
     }
 
@@ -404,7 +405,7 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
     if (!task.query || !(task.query_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(task.query.get())))
         throw Exception("Received unknown DDL query", ErrorCodes::UNKNOWN_TYPE_OF_QUERY);
 
-    if (is_replicated_db)
+    if (database_replicated_ext)
         return;
 
     task.cluster_name = task.query_on_cluster->cluster;
@@ -524,11 +525,11 @@ bool DDLWorker::tryExecuteQuery(const String & query, const DDLTask & task, Exec
     try
     {
         auto current_context = std::make_unique<Context>(context);
-        if (is_replicated_db)
+        if (database_replicated_ext)
         {
             current_context->getClientInfo().query_kind
                 = ClientInfo::QueryKind::REPLICATED_LOG_QUERY; //FIXME why do we need separate query kind?
-            current_context->setCurrentDatabase(*db_name);
+            current_context->setCurrentDatabase(database_replicated_ext->database_name);
         }
         else
             current_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
@@ -721,8 +722,8 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
     };
 
     String shard_node_name;
-    if (is_replicated_db)
-        shard_node_name = *db_shard_name;
+    if (database_replicated_ext)
+        shard_node_name = database_replicated_ext->shard_name;
     else
         shard_node_name = get_shard_name(task.cluster->getShardsAddresses().at(task.host_shard_num));
     String shard_path = node_path + "/shards/" + shard_node_name;
@@ -920,7 +921,7 @@ void DDLWorker::createStatusDirs(const std::string & node_path, const ZooKeeperP
 
 String DDLWorker::enqueueQuery(DDLLogEntry & entry)
 {
-    if (entry.hosts.empty() && !is_replicated_db)
+    if (entry.hosts.empty() && !database_replicated_ext)
         throw Exception("Empty host list in a distributed DDL task", ErrorCodes::LOGICAL_ERROR);
 
     auto zookeeper = getAndSetZooKeeper();
