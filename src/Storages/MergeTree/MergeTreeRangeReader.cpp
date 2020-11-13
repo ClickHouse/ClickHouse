@@ -637,7 +637,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
 
         if (!columns.empty())
         {
-            /// If some columns absent in part, than evaulate default values
+            /// If some columns absent in part, then evaulate default values
             if (should_evaluate_missing_defaults)
             {
                 auto block = prev_reader->sample_block.cloneWithColumns(read_result.columns);
@@ -662,7 +662,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
                 }
                 merge_tree_reader->evaluateMissingDefaults(block, columns);
             }
-            /// If columns not empty, than apply on-fly alter conversions if any required
+            /// If columns not empty, then apply on-fly alter conversions if any required
             merge_tree_reader->performRequiredConversions(columns);
         }
 
@@ -681,11 +681,11 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
             merge_tree_reader->fillMissingColumns(read_result.columns, should_evaluate_missing_defaults,
                                                   read_result.num_rows);
 
-            /// If some columns absent in part, than evaulate default values
+            /// If some columns absent in part, then evaulate default values
             if (should_evaluate_missing_defaults)
                 merge_tree_reader->evaluateMissingDefaults({}, read_result.columns);
 
-            /// If result not empty, than apply on-fly alter conversions if any required
+            /// If result not empty, then apply on-fly alter conversions if any required
             merge_tree_reader->performRequiredConversions(read_result.columns);
         }
         else
