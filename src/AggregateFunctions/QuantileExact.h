@@ -1,19 +1,17 @@
 #pragma once
 
-#include <algorithm>
-#include <common/types.h>
 #include <IO/ReadBuffer.h>
 #include <IO/VarInt.h>
 #include <IO/WriteBuffer.h>
 #include <Common/NaNUtils.h>
 #include <Common/PODArray.h>
+#include <common/sort.h>
+#include <common/types.h>
 
-#if !defined(ARCADIA_BUILD)
-    #include <miniselect/floyd_rivest_select.h> // Y_IGNORE
-#endif
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
@@ -89,12 +87,7 @@ struct QuantileExact : QuantileExactBase<Value, QuantileExact<Value>>
         if (!array.empty())
         {
             size_t n = level < 1 ? level * array.size() : (array.size() - 1);
-
-#if !defined(ARCADIA_BUILD)
-            miniselect::floyd_rivest_select(array.begin(), array.begin() + n, array.end()); /// NOTE You can think of the radix-select algorithm.
-#else
-            std::nth_element(array.begin(), array.begin() + n, array.end()); /// NOTE You can think of the radix-select algorithm.
-#endif
+            nth_element(array.begin(), array.begin() + n, array.end());  /// NOTE: You can think of the radix-select algorithm.
             return array[n];
         }
 
@@ -113,12 +106,7 @@ struct QuantileExact : QuantileExactBase<Value, QuantileExact<Value>>
                 auto level = levels[indices[i]];
 
                 size_t n = level < 1 ? level * array.size() : (array.size() - 1);
-
-#if !defined(ARCADIA_BUILD)
-                miniselect::floyd_rivest_select(array.begin() + prev_n, array.begin() + n, array.end());
-#else
-                std::nth_element(array.begin() + prev_n, array.begin() + n, array.end());
-#endif
+                nth_element(array.begin() + prev_n, array.begin() + n, array.end());
                 result[indices[i]] = array[n];
                 prev_n = n;
             }
@@ -154,14 +142,10 @@ struct QuantileExactExclusive : public QuantileExact<Value>
             else if (n < 1)
                 return static_cast<Float64>(array[0]);
 
-#if !defined(ARCADIA_BUILD)
-            miniselect::floyd_rivest_select(array.begin(), array.begin() + n - 1, array.end());
-#else
-            std::nth_element(array.begin(), array.begin() + n - 1, array.end());
-#endif
-            auto nth_element = std::min_element(array.begin() + n, array.end());
+            nth_element(array.begin(), array.begin() + n - 1, array.end());
+            auto nth_elem = std::min_element(array.begin() + n, array.end());
 
-            return static_cast<Float64>(array[n - 1]) + (h - n) * static_cast<Float64>(*nth_element - array[n - 1]);
+            return static_cast<Float64>(array[n - 1]) + (h - n) * static_cast<Float64>(*nth_elem - array[n - 1]);
         }
 
         return std::numeric_limits<Float64>::quiet_NaN();
@@ -187,14 +171,10 @@ struct QuantileExactExclusive : public QuantileExact<Value>
                     result[indices[i]] = static_cast<Float64>(array[0]);
                 else
                 {
-#if !defined(ARCADIA_BUILD)
-                    miniselect::floyd_rivest_select(array.begin() + prev_n, array.begin() + n - 1, array.end());
-#else
-                    std::nth_element(array.begin() + prev_n, array.begin() + n - 1, array.end());
-#endif
-                    auto nth_element = std::min_element(array.begin() + n, array.end());
+                    nth_element(array.begin() + prev_n, array.begin() + n - 1, array.end());
+                    auto nth_elem = std::min_element(array.begin() + n, array.end());
 
-                    result[indices[i]] = static_cast<Float64>(array[n - 1]) + (h - n) * static_cast<Float64>(*nth_element - array[n - 1]);
+                    result[indices[i]] = static_cast<Float64>(array[n - 1]) + (h - n) * static_cast<Float64>(*nth_elem - array[n - 1]);
                     prev_n = n - 1;
                 }
             }
@@ -226,14 +206,10 @@ struct QuantileExactInclusive : public QuantileExact<Value>
                 return static_cast<Float64>(array[array.size() - 1]);
             else if (n < 1)
                 return static_cast<Float64>(array[0]);
-#if !defined(ARCADIA_BUILD)
-            miniselect::floyd_rivest_select(array.begin(), array.begin() + n - 1, array.end());
-#else
-            std::nth_element(array.begin(), array.begin() + n - 1, array.end());
-#endif
-            auto nth_element = std::min_element(array.begin() + n, array.end());
+            nth_element(array.begin(), array.begin() + n - 1, array.end());
+            auto nth_elem = std::min_element(array.begin() + n, array.end());
 
-            return static_cast<Float64>(array[n - 1]) + (h - n) * static_cast<Float64>(*nth_element - array[n - 1]);
+            return static_cast<Float64>(array[n - 1]) + (h - n) * static_cast<Float64>(*nth_elem - array[n - 1]);
         }
 
         return std::numeric_limits<Float64>::quiet_NaN();
@@ -257,14 +233,10 @@ struct QuantileExactInclusive : public QuantileExact<Value>
                     result[indices[i]] = static_cast<Float64>(array[0]);
                 else
                 {
-#if !defined(ARCADIA_BUILD)
-                    miniselect::floyd_rivest_select(array.begin() + prev_n, array.begin() + n - 1, array.end());
-#else
-                    std::nth_element(array.begin() + prev_n, array.begin() + n - 1, array.end());
-#endif
-                    auto nth_element = std::min_element(array.begin() + n, array.end());
+                    nth_element(array.begin() + prev_n, array.begin() + n - 1, array.end());
+                    auto nth_elem = std::min_element(array.begin() + n, array.end());
 
-                    result[indices[i]] = static_cast<Float64>(array[n - 1]) + (h - n) * static_cast<Float64>(*nth_element - array[n - 1]);
+                    result[indices[i]] = static_cast<Float64>(array[n - 1]) + (h - n) * static_cast<Float64>(*nth_elem - array[n - 1]);
                     prev_n = n - 1;
                 }
             }

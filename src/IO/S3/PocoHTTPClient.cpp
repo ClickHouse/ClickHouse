@@ -7,6 +7,8 @@
 #include <utility>
 #include <IO/HTTPCommon.h>
 #include <IO/S3/PocoHTTPResponseStream.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 #include <Common/Stopwatch.h>
 #include <Interpreters/Context.h>
 #include <aws/core/http/HttpRequest.h>
@@ -251,8 +253,7 @@ void PocoHTTPClient::makeRequestInternal(
             response->SetResponseCode(static_cast<Aws::Http::HttpResponseCode>(status_code));
             response->SetContentType(poco_response.getContentType());
 
-            std::stringstream headers_ss;
-            headers_ss.exceptions(std::ios::failbit);
+            WriteBufferFromOwnString headers_ss;
             for (const auto & [header_name, header_value] : poco_response)
             {
                 response->AddHeader(header_name, header_value);

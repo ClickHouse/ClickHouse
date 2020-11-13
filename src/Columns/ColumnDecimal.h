@@ -1,15 +1,13 @@
 #pragma once
 
-#include <cmath>
-
-#include <Common/typeid_cast.h>
+#include <Columns/ColumnVectorHelper.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
-#include <Columns/ColumnVectorHelper.h>
 #include <Core/Field.h>
-#if !defined(ARCADIA_BUILD)
-    #include <miniselect/floyd_rivest_select.h> // Y_IGNORE
-#endif
+#include <Common/typeid_cast.h>
+#include <common/sort.h>
+
+#include <cmath>
 
 
 namespace DB
@@ -256,17 +254,9 @@ protected:
             sort_end = res.begin() + limit;
 
         if (reverse)
-#if !defined(ARCADIA_BUILD)
-            miniselect::floyd_rivest_partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] > data[b]; });
-#else
-            std::partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] > data[b]; });
-#endif
+            partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] > data[b]; });
         else
-#if !defined(ARCADIA_BUILD)
-            miniselect::floyd_rivest_partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] < data[b]; });
-#else
-            std::partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] < data[b]; });
-#endif
+            partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] < data[b]; });
     }
 };
 
