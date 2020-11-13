@@ -394,7 +394,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         }
         else
         {
-            fmt::print("Users config file {} already exists, will keep it and extract users info from it.\n", main_config_file.string());
+            fmt::print("Users config file {} already exists, will keep it and extract users info from it.\n", users_config_file.string());
 
             /// Check if password for default user already specified.
             ConfigProcessor processor(users_config_file.string(), /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
