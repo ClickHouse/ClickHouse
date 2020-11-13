@@ -123,7 +123,7 @@ class TDigest
         if (unmerged > params.max_unmerged)
             compress();
     }
-    void compress_brute() {
+    void compressBrute() {
         if (centroids.size() <= params.max_centroids)
             return;
         const size_t batch_size = (centroids.size() + params.max_centroids - 1) / params.max_centroids; // at least 2
@@ -242,7 +242,7 @@ public:
             unmerged = 0;
         }
         // Ensures centroids.size() < max_centroids, independent of unprovable floating point blackbox above
-        compress_brute();
+        compressBrute();
     }
 
     /** Adds to the digest a change in `x` with a weight of `cnt` (default 1)
