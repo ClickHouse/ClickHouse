@@ -158,7 +158,7 @@ public:
         bool is_session_expired;
         ReplicatedMergeTreeQueue::Status queue;
         UInt32 parts_to_check;
-        String zookeeper_cluster;
+        String zookeeper_name;
         String zookeeper_path;
         String replica_name;
         String replica_path;
@@ -235,14 +235,17 @@ private:
 
     zkutil::ZooKeeperPtr tryGetZooKeeper() const;
     zkutil::ZooKeeperPtr getZooKeeper() const;
-    void setZooKeeper(zkutil::ZooKeeperPtr zookeeper);
+    void setZooKeeper();
+    zkutil::ZooKeeperPtr obtainZooKeeperImpl(Context & global_context_,
+        const String & cluster_name_, bool use_auxiliary_zookeeper_);
 
     /// If true, the table is offline and can not be written to it.
     std::atomic_bool is_readonly {false};
     /// If false - ZooKeeper is available, but there is no table metadata. It's safe to drop table in this case.
     bool has_metadata_in_zookeeper = true;
 
-    String zookeeper_cluster;
+    bool use_auxiliary_zookeeper = false; 
+    String zookeeper_name;
     String zookeeper_path;
     String replica_name;
     String replica_path;
@@ -587,7 +590,6 @@ protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
       */
     StorageReplicatedMergeTree(
-        const String & zookeeper_cluster_,
         const String & zookeeper_path_,
         const String & replica_name_,
         bool attach,

@@ -83,8 +83,7 @@ void ReplicatedMergeTreeRestartingThread::run()
             {
                 try
                 {
-                    auto zookeeper_cluster_name = storage.getZooKeeperClusterName();
-                    storage.setZooKeeper(storage.global_context.getZooKeeper(zookeeper_cluster_name));
+                    storage.setZooKeeper();
                 }
                 catch (const Coordination::Exception &)
                 {

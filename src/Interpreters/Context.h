@@ -484,16 +484,16 @@ public:
 
     /// If the current session is expired at the time of the call, synchronously creates and returns a new session with the startNewSession() call.
     /// If no ZooKeeper configured, throws an exception.
-    std::shared_ptr<zkutil::ZooKeeper> getZooKeeper(const std::string & name = "default") const;
+    std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
     /// Same as above but return a zookeeper connection from auxiliary_zookeepers configuration entry.
     std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
 
     /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
     void reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config);
     /// Has ready or expired ZooKeeper
-    bool hasZooKeeper(const std::string & name = "default") const;
+    bool hasZooKeeper() const;
     /// Reset current zookeeper session. Do not create a new one.
-    void resetZooKeeper(const std::string & name = "default") const;
+    void resetZooKeeper() const;
     // Reload Zookeeper
     void reloadZooKeeperIfChanged(const ConfigurationPtr & config) const;
 

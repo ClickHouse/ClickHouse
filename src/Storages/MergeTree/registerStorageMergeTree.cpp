@@ -756,9 +756,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (replicated)
     {
-        auto zookeeper_cluster = storage_settings->zookeeper_cluster;
         return StorageReplicatedMergeTree::create(
-            zookeeper_cluster,
             zookeeper_path,
             replica_name,
             args.attach,

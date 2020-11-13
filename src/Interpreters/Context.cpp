@@ -1485,7 +1485,7 @@ DDLWorker & Context::getDDLWorker() const
 zkutil::ZooKeeperPtr Context::getZooKeeper() const
 {
     std::lock_guard lock(shared->zookeeper_mutex);
-
+ 
     const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
     if (!shared->zookeeper)
         shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(config, "zookeeper");
@@ -1519,15 +1519,10 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
     return zookeeper->second;
 }
 
-void Context::resetZooKeeper(const std::string & name) const
+void Context::resetZooKeeper() const
 {
     std::lock_guard lock(shared->zookeeper_mutex);
-    auto zookeeper = shared->zookeepers.find(name);
-    if (zookeeper == shared->zookeepers.end())
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown ZooKeeper name '{}'.", name);
-    }
-    zookeeper->second.reset();
+    shared->zookeeper.reset();
 }
 
 static void reloadZooKeeperIfChangedImpl(const ConfigurationPtr & config, const std::string & config_name, zkutil::ZooKeeperPtr & zk)
@@ -1563,23 +1558,8 @@ void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & 
 
 
 bool Context::hasZooKeeper() const
-=======
-    if (config->has("zookeeper"))
-    {
-        auto zookeeper = shared->zookeepers.find("default");
-        if (zookeeper != shared->zookeepers.end())
-            zookeeper->second->configChanged(*config, "zookeeper");
-    }
-    for (auto & zookeeper : shared->zookeepers)
-    {
-         zookeeper.second->configChanged(*config, "zookeepers.");
-    }
-}
-
-bool Context::hasZooKeeper(const std::string & name) const
->>>>>>> Support multi zookeeper clusters
 {
-    return getConfigRef().has("zookeepers." + name) || (name == "default" && getConfigRef().has("zookeeper"));
+    return getConfigRef().has("zookeeper");
 }
 
 

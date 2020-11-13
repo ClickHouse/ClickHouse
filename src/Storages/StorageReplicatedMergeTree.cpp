@@ -140,10 +140,23 @@ static const auto MUTATIONS_FINALIZING_SLEEP_MS      = 1 * 1000;
 static const auto MUTATIONS_FINALIZING_IDLE_SLEEP_MS = 5 * 1000;
 
 
-void StorageReplicatedMergeTree::setZooKeeper(zkutil::ZooKeeperPtr zookeeper)
+void StorageReplicatedMergeTree::setZooKeeper()
 {
     std::lock_guard lock(current_zookeeper_mutex);
-    current_zookeeper = zookeeper;
+    current_zookeeper = obtainZooKeeperImpl(global_context, zookeeper_name, use_auxiliary_zookeeper);
+}
+
+zkutil::ZooKeeperPtr StorageReplicatedMergeTree::obtainZooKeeperImpl(Context & global_context_,
+    const String & zookeeper_name_, bool use_auxiliary_zookeeper_)
+{
+    if (!use_auxiliary_zookeeper_)
+    {
+        if (global_context_.hasZooKeeper ())
+        {
+            return global_context_.getZooKeeper ();
+        }
+    }
+    return global_context_.getAuxiliaryZooKeeper (zookeeper_name_);
 }
 
 zkutil::ZooKeeperPtr StorageReplicatedMergeTree::tryGetZooKeeper() const
@@ -174,7 +187,6 @@ static std::string normalizeZooKeeperPath(std::string zookeeper_path)
 
 
 StorageReplicatedMergeTree::StorageReplicatedMergeTree(
-    const String & zookeeper_cluster_,
     const String & zookeeper_path_,
     const String & replica_name_,
     bool attach,
@@ -197,8 +209,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
                     true,                   /// require_part_metadata
                     attach,
                     [this] (const std::string & name) { enqueuePartForCheck(name); })
-    , zookeeper_cluster(zookeeper_cluster_)
-    , zookeeper_path(normalizeZooKeeperPath(zookeeper_path_))
     , replica_name(replica_name_)
     , replica_path(zookeeper_path + "/replicas/" + replica_name)
     , reader(*this)
@@ -214,6 +224,23 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , allow_renaming(allow_renaming_)
     , replicated_fetches_pool_size(global_context.getSettingsRef().background_fetches_pool_size)
 {
+    static constexpr auto default_zookeeper_name = "default";
+    if (zookeeper_path_.empty())
+        throw Exception("ZooKeeper path should not be empty", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    auto pos = zookeeper_path_.find(':');
+    if (pos != String::npos)
+    {
+        zookeeper_name = zookeeper_path_.substr(0, pos);
+        if (zookeeper_name.empty())
+            throw Exception("Zookeeper path should start with '/' or '<auxiliary_zookeeper_name>:/'", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        zookeeper_path = normalizeZooKeeperPath(zookeeper_path_.substr(pos + 1, String::npos));
+        use_auxiliary_zookeeper = true;
+    }
+    else
+    {
+        zookeeper_name = default_zookeeper_name;
+        zookeeper_path = normalizeZooKeeperPath(zookeeper_path_);
+    }
     queue_updating_task = global_context.getSchedulePool().createTask(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::queueUpdatingTask)", [this]{ queueUpdatingTask(); });
 
@@ -229,11 +256,12 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     mutations_finalizing_task = global_context.getSchedulePool().createTask(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::mutationsFinalizingTask)", [this] { mutationsFinalizingTask(); });
 
-    if (global_context.hasZooKeeper(zookeeper_cluster))
+    try
     {
-        /// It's possible for getZooKeeper() to timeout if  zookeeper host(s) can't
-        /// be reached. In such cases Poco::Exception is thrown after a connection
-        /// timeout - refer to src/Common/ZooKeeper/ZooKeeperImpl.cpp:866 for more info.
+        /// It's possible for getZooKeeper()/getAuxiliaryZookeeper() to timeout
+        /// if  zookeeper host(s) can't be reached. In such cases Poco::Exception
+        /// is thrown after a connection timeout 
+        /// - refer to src/Common/ZooKeeper/ZooKeeperImpl.cpp:866 for more info.
         ///
         /// Side effect of this is that the CreateQuery gets interrupted and it exits.
         /// But the data Directories for the tables being created aren't cleaned up.
@@ -244,16 +272,13 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         /// call dropIfEmpty() method only if the operation isn't ATTACH then proceed
         /// throwing the exception. Without this, the Directory for the tables need
         /// to be manually deleted before retrying the CreateQuery.
-        try
-        {
-            current_zookeeper = global_context.getZooKeeper(zookeeper_cluster);
-        }
-        catch (...)
-        {
-            if (!attach)
-                dropIfEmpty();
-            throw;
-        }
+        current_zookeeper = obtainZooKeeperImpl(global_context, zookeeper_name, use_auxiliary_zookeeper);
+    }
+    catch (...)
+    {
+        if (!attach)
+            dropIfEmpty();
+        throw;
     }
 
     bool skip_sanity_checks = false;
@@ -297,7 +322,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     }
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
-
     if (!attach)
     {
         if (!getDataParts().empty())
@@ -4660,7 +4684,7 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
 
     res.parts_to_check = part_check_thread.size();
 
-    res.zookeeper_cluster = zookeeper_cluster;
+    res.zookeeper_name = zookeeper_name;
     res.zookeeper_path = zookeeper_path;
     res.replica_name = replica_name;
     res.replica_path = replica_path;
