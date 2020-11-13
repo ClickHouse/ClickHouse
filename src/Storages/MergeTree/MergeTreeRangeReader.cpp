@@ -635,30 +635,32 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
                 merge_tree_reader->fillMissingColumns(columns, should_evaluate_missing_defaults, num_rows);
         }
 
-        if (!columns.empty() && should_evaluate_missing_defaults)
+        if (!columns.empty())
         {
-            auto block = prev_reader->sample_block.cloneWithColumns(read_result.columns);
-            auto block_before_prewhere = read_result.block_before_prewhere;
-            for (auto & ctn : block)
+            if (should_evaluate_missing_defaults)
             {
-                if (block_before_prewhere.has(ctn.name))
-                    block_before_prewhere.erase(ctn.name);
-            }
-
-            if (block_before_prewhere)
-            {
-                if (read_result.need_filter)
+                auto block = prev_reader->sample_block.cloneWithColumns(read_result.columns);
+                auto block_before_prewhere = read_result.block_before_prewhere;
+                for (auto & ctn : block)
                 {
-                    auto old_columns = block_before_prewhere.getColumns();
-                    filterColumns(old_columns, read_result.getFilterOriginal()->getData());
-                    block_before_prewhere.setColumns(std::move(old_columns));
+                    if (block_before_prewhere.has(ctn.name))
+                        block_before_prewhere.erase(ctn.name);
                 }
 
-                for (auto && ctn : block_before_prewhere)
-                    block.insert(std::move(ctn));
-            }
+                if (block_before_prewhere)
+                {
+                    if (read_result.need_filter)
+                    {
+                        auto old_columns = block_before_prewhere.getColumns();
+                        filterColumns(old_columns, read_result.getFilterOriginal()->getData());
+                        block_before_prewhere.setColumns(std::move(old_columns));
+                    }
 
-            merge_tree_reader->evaluateMissingDefaults(block, columns);
+                    for (auto && ctn : block_before_prewhere)
+                        block.insert(std::move(ctn));
+                }
+                merge_tree_reader->evaluateMissingDefaults(block, columns);
+            }
             merge_tree_reader->performRequiredConversions(columns);
         }
 
