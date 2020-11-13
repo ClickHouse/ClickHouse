@@ -8,7 +8,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int SYNTAX_ERROR;
     extern const int AMBIGUOUS_COLUMN_NAME;
 }
 

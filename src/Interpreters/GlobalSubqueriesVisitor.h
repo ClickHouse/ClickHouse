@@ -57,7 +57,7 @@ public:
                 return;
 
             bool is_table = false;
-            ASTPtr subquery_or_table_name = ast; /// ASTIdentifier | ASTSubquery | ASTTableExpression
+            ASTPtr subquery_or_table_name = ast; /// ASTTableIdentifier | ASTSubquery | ASTTableExpression
 
             if (const auto * ast_table_expr = ast->as<ASTTableExpression>())
             {
@@ -69,7 +69,7 @@ public:
                     is_table = true;
                 }
             }
-            else if (ast->as<ASTIdentifier>())
+            else if (ast->as<ASTTableIdentifier>())
                 is_table = true;
 
             if (!subquery_or_table_name)

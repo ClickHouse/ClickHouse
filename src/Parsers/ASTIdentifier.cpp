@@ -13,7 +13,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNEXPECTED_AST_STRUCTURE;
-    extern const int SYNTAX_ERROR;
 }
 
 ASTIdentifier::ASTIdentifier(const String & short_name, ASTPtr && name_param)
@@ -221,7 +220,7 @@ bool tryGetIdentifierNameInto(const IAST * ast, String & name)
 {
     if (ast)
     {
-        if (const auto * node = ast->as<ASTIdentifier>())
+        if (const auto * node = dynamic_cast<const ASTIdentifier *>(ast))
         {
             name = node->name();
             return true;
