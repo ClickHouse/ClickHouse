@@ -260,7 +260,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     {
         /// It's possible for getZooKeeper()/getAuxiliaryZookeeper() to timeout
         /// if  zookeeper host(s) can't be reached. In such cases Poco::Exception
-        /// is thrown after a connection timeout 
+        /// is thrown after a connection timeout
         /// - refer to src/Common/ZooKeeper/ZooKeeperImpl.cpp:866 for more info.
         ///
         /// Side effect of this is that the CreateQuery gets interrupted and it exits.
