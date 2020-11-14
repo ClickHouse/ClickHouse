@@ -146,7 +146,7 @@ private:
 
         while (repeat_time > 0)
         {
-            UInt64 cpy_size = size * (1 << k);
+            UInt64 cpy_size = size * (1ULL << k);
             memcpy(dst, dst_hdr, cpy_size);
             dst += cpy_size;
             if (last_bit)
