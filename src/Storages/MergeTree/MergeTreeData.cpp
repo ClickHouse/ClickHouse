@@ -257,14 +257,14 @@ StoragePolicyPtr MergeTreeData::getStoragePolicy() const
 
 static void checkKeyExpression(const ExpressionActions & expr, const Block & sample_block, const String & key_name, bool allow_nullable_key)
 {
-    for (const ExpressionAction & action : expr.getActions())
+    for (const auto & action : expr.getActions())
     {
-        if (action.type == ExpressionAction::ARRAY_JOIN)
+        if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
             throw Exception(key_name + " key cannot contain array joins", ErrorCodes::ILLEGAL_COLUMN);
 
-        if (action.type == ExpressionAction::APPLY_FUNCTION)
+        if (action.node->type == ActionsDAG::ActionType::FUNCTION)
         {
-            IFunctionBase & func = *action.function_base;
+            IFunctionBase & func = *action.node->function_base;
             if (!func.isDeterministic())
                 throw Exception(key_name + " key cannot contain non-deterministic functions, "
                     "but contains function " + func.getName(),
@@ -438,7 +438,7 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
 
     /// Add all columns used in the partition key to the min-max index.
     const NamesAndTypesList & minmax_idx_columns_with_types = new_partition_key.expression->getRequiredColumnsWithTypes();
-    minmax_idx_expr = std::make_shared<ExpressionActions>(minmax_idx_columns_with_types, global_context);
+    minmax_idx_expr = std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(minmax_idx_columns_with_types));
     for (const NameAndTypePair & column : minmax_idx_columns_with_types)
     {
         minmax_idx_columns.emplace_back(column.name);
@@ -1215,6 +1215,20 @@ void MergeTreeData::clearOldWriteAheadLogs()
     }
 }
 
+void MergeTreeData::clearEmptyParts()
+{
+    auto parts = getDataPartsVector();
+    for (const auto & part : parts)
+    {
+        if (part->rows_count == 0)
+        {
+            ASTPtr literal = std::make_shared<ASTLiteral>(part->name);
+            /// If another replica has already started drop, it's ok, no need to throw.
+            dropPartition(literal, /* detach = */ false, /*drop_part = */ true, global_context, /* throw_if_noop = */ false);
+        }
+    }
+}
+
 void MergeTreeData::rename(const String & new_table_path, const StorageID & new_table_id)
 {
     auto disks = getStoragePolicy()->getDisks();
@@ -1402,10 +1416,10 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
     {
         /// Forbid altering columns inside partition key expressions because it can change partition ID format.
         auto partition_key_expr = old_metadata.getPartitionKey().expression;
-        for (const ExpressionAction & action : partition_key_expr->getActions())
+        for (const auto & action : partition_key_expr->getActions())
         {
-            auto action_columns = action.getNeededColumns();
-            columns_alter_type_forbidden.insert(action_columns.begin(), action_columns.end());
+            for (const auto * child : action.node->children)
+                columns_alter_type_forbidden.insert(child->result_name);
         }
 
         /// But allow to alter columns without expressions under certain condition.
@@ -1422,10 +1436,10 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
     if (old_metadata.hasSortingKey())
     {
         auto sorting_key_expr = old_metadata.getSortingKey().expression;
-        for (const ExpressionAction & action : sorting_key_expr->getActions())
+        for (const auto & action : sorting_key_expr->getActions())
         {
-            auto action_columns = action.getNeededColumns();
-            columns_alter_type_forbidden.insert(action_columns.begin(), action_columns.end());
+            for (const auto * child : action.node->children)
+                columns_alter_type_forbidden.insert(child->result_name);
         }
         for (const String & col : sorting_key_expr->getRequiredColumns())
             columns_alter_type_metadata_only.insert(col);

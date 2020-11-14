@@ -12,7 +12,6 @@ namespace DB
 class Context;
 class ASTFunction;
 
-struct ExpressionAction;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
@@ -65,7 +64,7 @@ struct ScopeStack
 {
     struct Level
     {
-        ActionsDAGPtr actions;
+        ActionsDAGPtr actions_dag;
         NameSet inputs;
     };
 
@@ -75,7 +74,7 @@ struct ScopeStack
 
     const Context & context;
 
-    ScopeStack(ActionsDAGPtr actions, const Context & context_);
+    ScopeStack(ActionsDAGPtr actions_dag, const Context & context_);
 
     void pushLevel(const NamesAndTypesList & input_columns);
 
@@ -83,12 +82,11 @@ struct ScopeStack
 
     void addColumn(ColumnWithTypeAndName column);
     void addAlias(const std::string & name, std::string alias);
-    void addArrayJoin(const std::string & source_name, std::string result_name, std::string unique_column_name);
+    void addArrayJoin(const std::string & source_name, std::string result_name);
     void addFunction(
             const FunctionOverloadResolverPtr & function,
             const Names & argument_names,
-            std::string result_name,
-            bool compile_expressions);
+            std::string result_name);
 
     ActionsDAGPtr popLevel();
 
@@ -129,7 +127,7 @@ public:
         int next_unique_suffix;
 
         Data(const Context & context_, SizeLimits set_size_limit_, size_t subquery_depth_,
-                const NamesAndTypesList & source_columns_, ActionsDAGPtr actions,
+                const NamesAndTypesList & source_columns_, ActionsDAGPtr actions_dag,
                 PreparedSets & prepared_sets_, SubqueriesForSets & subqueries_for_sets_,
                 bool no_subqueries_, bool no_makeset_, bool only_consts_, bool create_source_for_in_);
 
@@ -147,15 +145,14 @@ public:
 
         void addArrayJoin(const std::string & source_name, std::string result_name)
         {
-            actions_stack.addArrayJoin(source_name, std::move(result_name), getUniqueName("_array_join_" + source_name));
+            actions_stack.addArrayJoin(source_name, std::move(result_name));
         }
 
         void addFunction(const FunctionOverloadResolverPtr & function,
                          const Names & argument_names,
                          std::string result_name)
         {
-            actions_stack.addFunction(function, argument_names, std::move(result_name),
-                                      context.getSettingsRef().compile_expressions);
+            actions_stack.addFunction(function, argument_names, std::move(result_name));
         }
 
         ActionsDAGPtr getActions()
