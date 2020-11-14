@@ -224,6 +224,7 @@ private:
 
     /// We will format query_id in interactive mode in various ways, the default is just to print Query id: ...
     std::vector<std::pair<String, String>> query_id_formats;
+    QueryProcessingStage::Enum query_processing_stage;
 
     void initialize(Poco::Util::Application & self) override
     {
@@ -1444,7 +1445,7 @@ private:
                     connection_parameters.timeouts,
                     query_to_send,
                     context.getCurrentQueryId(),
-                    QueryProcessingStage::Complete,
+                    query_processing_stage,
                     &context.getSettingsRef(),
                     &context.getClientInfo(),
                     true);
@@ -1485,7 +1486,7 @@ private:
             connection_parameters.timeouts,
             query_to_send,
             context.getCurrentQueryId(),
-            QueryProcessingStage::Complete,
+            query_processing_stage,
             &context.getSettingsRef(),
             &context.getClientInfo(),
             true);
@@ -2309,6 +2310,7 @@ public:
             ("password", po::value<std::string>()->implicit_value("\n", ""), "password")
             ("ask-password", "ask-password")
             ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
+            ("stage", po::value<std::string>()->default_value("complete"), "Request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation")
             ("query_id", po::value<std::string>(), "query_id")
             ("query,q", po::value<std::string>(), "query")
             ("database,d", po::value<std::string>(), "database")
@@ -2432,6 +2434,8 @@ public:
 
         if (options.count("config-file") && options.count("config"))
             throw Exception("Two or more configuration files referenced in arguments", ErrorCodes::BAD_ARGUMENTS);
+
+        query_processing_stage = QueryProcessingStage::fromString(options["stage"].as<std::string>());
 
         /// Save received data into the internal config.
         if (options.count("config-file"))

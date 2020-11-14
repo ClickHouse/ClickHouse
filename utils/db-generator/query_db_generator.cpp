@@ -1293,9 +1293,11 @@ int main(int argc, const char *argv[])
             return 1;
         }
         if (vm.count("input"))
-            freopen(vm["input"].as<std::string>().c_str(), "r", stdin);
+            if (!freopen(vm["input"].as<std::string>().c_str(), "r", stdin))
+                std::cout << "Error while input." << std::endl;
         if (vm.count("output"))
-            freopen(vm["output"].as<std::string>().c_str(), "w", stdout);
+            if (!freopen(vm["output"].as<std::string>().c_str(), "w", stdout))
+                std::cout << "Error while output." << std::endl;
         if (vm.empty())
             std::cout << "Copy your queries (with semicolons) here, press Enter and Ctrl+D." << std::endl;
     }
