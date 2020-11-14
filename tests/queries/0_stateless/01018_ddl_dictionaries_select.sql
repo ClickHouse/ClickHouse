@@ -62,7 +62,7 @@ CREATE DICTIONARY database_for_dict.dict1
   fourth_column Float64 DEFAULT 42.0
 )
 PRIMARY KEY key_column
-SOURCE(CLICKHOUSE(TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict'))
+SOURCE(CLICKHOUSE(TABLE 'table_for_dict' DB 'database_for_dict'))
 LIFETIME(MIN 1 MAX 10)
 LAYOUT(FLAT());
 
