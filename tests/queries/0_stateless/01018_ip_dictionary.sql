@@ -107,6 +107,68 @@ DROP DICTIONARY IF EXISTS database_for_dict.dict_ipv4_trie;
 DROP TABLE IF EXISTS database_for_dict.table_from_ipv4_trie_dict;
 DROP TABLE IF EXISTS database_for_dict.table_ipv4_trie;
 
+SELECT '***ipv4 trie dict mask***';
+CREATE TABLE database_for_dict.table_ipv4_trie
+(
+  prefix String,
+  val UInt32
+)
+engine = TinyLog;
+
+INSERT INTO database_for_dict.table_ipv4_trie
+SELECT
+  '255.255.255.255/' || toString(number) AS prefix,
+  toUInt32(number) AS val
+FROM VALUES ('number UInt32', 5, 13, 24, 30);
+
+CREATE DICTIONARY database_for_dict.dict_ipv4_trie
+(
+  prefix String,
+  val UInt32
+)
+PRIMARY KEY prefix
+SOURCE(CLICKHOUSE(host 'localhost' port 9000 user 'default' db 'database_for_dict' table 'table_ipv4_trie'))
+LAYOUT(IP_TRIE())
+LIFETIME(MIN 10 MAX 100);
+
+SELECT 0 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4StringToNum('0.0.0.0')));
+SELECT 0 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4StringToNum('128.0.0.0')));
+SELECT 0 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4StringToNum('192.0.0.0')));
+SELECT 0 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4StringToNum('224.0.0.0')));
+SELECT 0 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4StringToNum('240.0.0.0')));
+SELECT 5 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4StringToNum('248.0.0.0')));
+SELECT 5 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4StringToNum('252.0.0.0')));
+SELECT 5 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4StringToNum('254.0.0.0')));
+SELECT 5 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4StringToNum('255.0.0.0')));
+SELECT 5 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4StringToNum('255.128.0.0')));
+SELECT 5 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4StringToNum('255.192.0.0')));
+SELECT 5 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4StringToNum('255.224.0.0')));
+SELECT 5 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4StringToNum('255.240.0.0')));
+SELECT 13 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4StringToNum('255.248.0.0')));
+SELECT 13 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4StringToNum('255.252.0.0')));
+SELECT 13 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4StringToNum('255.254.0.0')));
+SELECT 13 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4StringToNum('255.255.0.0')));
+SELECT 13 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4StringToNum('255.255.128.0')));
+SELECT 13 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4StringToNum('255.255.192.0')));
+SELECT 13 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4StringToNum('255.255.224.0')));
+SELECT 13 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4StringToNum('255.255.240.0')));
+SELECT 13 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4StringToNum('255.255.248.0')));
+SELECT 13 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4StringToNum('255.255.252.0')));
+SELECT 13 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4StringToNum('255.255.254.0')));
+SELECT 24 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4StringToNum('255.255.255.0')));
+SELECT 24 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4StringToNum('255.255.255.128')));
+SELECT 24 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4StringToNum('255.255.255.192')));
+SELECT 24 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4StringToNum('255.255.255.224')));
+SELECT 24 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4StringToNum('255.255.255.240')));
+SELECT 24 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4StringToNum('255.255.255.248')));
+SELECT 30 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4StringToNum('255.255.255.252')));
+SELECT 30 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4StringToNum('255.255.255.254')));
+SELECT 30 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'val', tuple(IPv4StringToNum('255.255.255.255')));
+
+DROP DICTIONARY IF EXISTS database_for_dict.dict_ipv4_trie;
+DROP TABLE IF EXISTS database_for_dict.table_from_ipv4_trie_dict;
+DROP TABLE IF EXISTS database_for_dict.table_ipv4_trie;
+
 SELECT '***ipv4 trie dict pt2***';
 
 CREATE TABLE database_for_dict.table_ipv4_trie ( prefix String, val UInt32 ) engine = TinyLog;
@@ -357,5 +419,172 @@ SELECT MIN(val == 'US') FROM database_for_dict.table_from_ip_trie_dict
 WHERE prefix == '2620:0:870::/48';
 
 SELECT 134 == COUNT(*) FROM database_for_dict.table_from_ip_trie_dict;
+
+DROP DICTIONARY IF EXISTS database_for_dict.dict_ip_trie;
+DROP TABLE IF EXISTS database_for_dict.table_from_ip_trie_dict;
+DROP TABLE IF EXISTS database_for_dict.table_ip_trie;
+
+SELECT '***ipv6 trie dict mask***';
+
+CREATE TABLE database_for_dict.table_ip_trie
+(
+    prefix String,
+    val String
+)
+engine = TinyLog;
+
+INSERT INTO database_for_dict.table_ip_trie
+SELECT
+  'ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff/' || toString(number) AS prefix,
+  toString(number) AS val
+FROM VALUES ('number UInt32', 5, 13, 24, 48, 49, 99, 127);
+
+CREATE DICTIONARY database_for_dict.dict_ip_trie
+(
+  prefix String,
+  val String
+)
+PRIMARY KEY prefix
+SOURCE(CLICKHOUSE(host 'localhost' port 9000 user 'default' db 'database_for_dict' table 'table_ip_trie'))
+LAYOUT(IP_TRIE())
+LIFETIME(MIN 10 MAX 100);
+
+SELECT 0 == dictHas('database_for_dict.dict_ip_trie', tuple(IPv6StringToNum('::ffff:1:1')));
+
+SELECT '' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('::0')));
+SELECT '' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('8000::')));
+SELECT '' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('c000::')));
+SELECT '' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('e000::')));
+SELECT '' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('f000::')));
+SELECT '5' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('f800::')));
+SELECT '5' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('fc00::')));
+SELECT '5' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('fe00::')));
+SELECT '5' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ff00::')));
+SELECT '5' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ff80::')));
+SELECT '5' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffc0::')));
+SELECT '5' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffe0::')));
+SELECT '5' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('fff0::')));
+SELECT '13' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('fff8::')));
+SELECT '13' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('fffc::')));
+SELECT '13' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('fffe::')));
+SELECT '13' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff::')));
+SELECT '13' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:8000::')));
+SELECT '13' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:c000::')));
+SELECT '13' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:e000::')));
+SELECT '13' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:f000::')));
+SELECT '13' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:f800::')));
+SELECT '13' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:fc00::')));
+SELECT '13' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:c000::')));
+SELECT '13' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:e000::')));
+SELECT '13' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:f000::')));
+SELECT '13' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:f800::')));
+SELECT '13' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:fc00::')));
+SELECT '13' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:fe00::')));
+SELECT '24' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ff00::')));
+SELECT '24' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ff80::')));
+SELECT '24' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffc0::')));
+SELECT '24' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffe0::')));
+SELECT '24' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:fff0::')));
+SELECT '24' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:fff8::')));
+SELECT '24' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:fffc::')));
+SELECT '24' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:fffe::')));
+SELECT '24' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff::')));
+SELECT '24' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:8000::')));
+SELECT '24' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:c000::')));
+SELECT '24' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:e000::')));
+SELECT '24' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:f000::')));
+SELECT '24' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:f800::')));
+SELECT '24' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:fc00::')));
+SELECT '24' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:fe00::')));
+SELECT '24' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ff00::')));
+SELECT '24' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ff80::')));
+SELECT '24' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffc0::')));
+SELECT '24' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffe0::')));
+SELECT '24' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:fff0::')));
+SELECT '24' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:fff8::')));
+SELECT '24' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:fffc::')));
+SELECT '24' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:fffe::')));
+SELECT '48' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:8000::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:c000::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:e000::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:f000::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:f800::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:fc00::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:fe00::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ff00::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ff80::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffc0::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffe0::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:fff0::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:fff8::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:fffc::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:fffe::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:8000::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:c000::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:e000::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:f000::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:f800::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:fc00::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:fe00::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ff00::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ff80::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffc0::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffe0::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:fff0::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:fff8::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:fffc::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:fffe::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:8000::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:c000::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:e000::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:f000::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:f800::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:fc00::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:fe00::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ff00::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ff80::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ffc0::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ffe0::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:fff0::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:fff8::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:fffc::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:fffe::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ffff::')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ffff:8000:0')));
+SELECT '49' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ffff:c000:0')));
+SELECT '99' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ffff:e000:0')));
+SELECT '99' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ffff:f000:0')));
+SELECT '99' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ffff:f800:0')));
+SELECT '99' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ffff:fc00:0')));
+SELECT '99' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ffff:fe00:0')));
+SELECT '99' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ffff:ff00:0')));
+SELECT '99' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ffff:ff80:0')));
+SELECT '99' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ffff:ffc0:0')));
+SELECT '99' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ffff:ffe0:0')));
+SELECT '99' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ffff:fff0:0')));
+SELECT '99' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ffff:fff8:0')));
+SELECT '99' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ffff:fffc:0')));
+SELECT '99' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ffff:fffe:0')));
+SELECT '99' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ffff:ffff:0')));
+SELECT '99' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ffff:ffff:8000')));
+SELECT '99' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ffff:ffff:c000')));
+SELECT '99' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ffff:ffff:e000')));
+SELECT '99' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ffff:ffff:f000')));
+SELECT '99' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ffff:ffff:f800')));
+SELECT '99' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ffff:ffff:fc00')));
+SELECT '99' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ffff:ffff:fe00')));
+SELECT '99' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ffff:ffff:ff00')));
+SELECT '99' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ffff:ffff:ff80')));
+SELECT '99' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffc0')));
+SELECT '99' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffe0')));
+SELECT '99' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ffff:ffff:fff0')));
+SELECT '99' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ffff:ffff:fff8')));
+SELECT '99' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ffff:ffff:fffc')));
+SELECT '127' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ffff:ffff:fffe')));
+SELECT '127' == dictGetString('database_for_dict.dict_ip_trie', 'val', tuple(IPv6StringToNum('ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff')));
+
 
 DROP DATABASE IF EXISTS database_for_dict;

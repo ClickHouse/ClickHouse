@@ -115,7 +115,7 @@ static bool matchIPv6Subnet(const uint8_t * target, const uint8_t * addr, UInt8 
         return true;
 
     auto mask = ~(0xff >> prefix);
-    return (addr[i] & mask) == target[i];
+    return (target[i] & mask) == addr[i];
 }
 
 const uint8_t * TrieDictionary::getIPv6FromOffset(const TrieDictionary::IPv6Container & ipv6_col, size_t i)
@@ -465,7 +465,9 @@ void TrieDictionary::loadData()
             memcpySmallAllowReadWriteOverflow15(&ipv6_col[i * IPV6_BINARY_LENGTH],
                                                 reinterpret_cast<const uint8_t *>(ip_array.data()),
                                                 IPV6_BINARY_LENGTH);
-            mask_column.push_back(record.prefix);
+
+            bool converted = has_ipv6 && (record.addr.family() == Poco::Net::IPAddress::IPv4);
+            mask_column.push_back(converted ? record.prefix + 96 : record.prefix);
             row_idx.push_back(record.row);
         }
     }
