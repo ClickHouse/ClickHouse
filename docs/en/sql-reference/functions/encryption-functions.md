@@ -5,7 +5,7 @@ toc_title: Encryption
 
 # Encryption functions {#encryption-functions}
 
-These function  implements encryption and decryption of data with AES (Advanced Encryption Standard) algorithm.
+These function  implement encryption and decryption of data with AES (Advanced Encryption Standard) algorithm.
 
 Key length depends on encryption mode. It is 16, 24, and 32 bytes long for `-128-`, `-196-`, and `-256-` modes respectively.
 
@@ -28,7 +28,7 @@ This function encrypts data using these modes:
 **Syntax**
 
 ``` sql
-encrypt('mode', 'plaintext', 'key' [iv, aad])
+encrypt('mode', 'plaintext', 'key' [, iv, aad])
 ```
 
 **Parameters**
@@ -143,7 +143,7 @@ Result:
 
 ## aes_encrypt_mysql {#aes_encrypt_mysql}
 
-Compatible with mysql encryption and can be decrypted with `AES_DECRYPT` function.
+Compatible with mysql encryption and can be decrypted with [AES_DECRYPT](https://dev.mysql.com/doc/refman/8.0/en/encryption-functions.html#function_aes-decrypt) function.
 
 Supported encryption modes:
 
@@ -157,7 +157,7 @@ Supported encryption modes:
 **Syntax**
 
 ```sql
-aes_encrypt_mysql('mode', 'plaintext', 'key' [iv])
+aes_encrypt_mysql('mode', 'plaintext', 'key' [, iv])
 ```
 
 **Parameters**
@@ -235,7 +235,7 @@ Result:
 
 ## decrypt {#decrypt}
 
-This function decrypt data using these modes:
+This function decrypts data using these modes:
 
 -   aes-128-ecb, aes-192-ecb, aes-256-ecb
 -   aes-128-cbc, aes-192-cbc, aes-256-cbc
@@ -248,7 +248,7 @@ This function decrypt data using these modes:
 **Syntax**
 
 ```sql
-decrypt('mode', 'ciphertext', 'key' [iv, aad])
+decrypt('mode', 'ciphertext', 'key' [, iv, aad])
 ```
 
 **Parameters**
@@ -308,7 +308,7 @@ Result:
 
 ## aes_decrypt_mysql {#aes_decrypt_mysql}
 
-Compatible with mysql encryption and will decrypt data encrypted with `AES_ENCRYPT` function.
+Compatible with mysql encryption and decrypts data encrypted with [AES_ENCRYPT](https://dev.mysql.com/doc/refman/8.0/en/encryption-functions.html#function_aes-encrypt) function.
 
 Supported decryption modes:
 
@@ -322,7 +322,7 @@ Supported decryption modes:
 **Syntax**
 
 ```sql
-aes_decrypt_mysql('mode', 'ciphertext', 'key' [iv])
+aes_decrypt_mysql('mode', 'ciphertext', 'key' [, iv])
 ```
 
 **Parameters**

@@ -7,11 +7,11 @@ toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438 \u0434\u043b\u044f \u0448
 
 Даннвые функции реализуют шифрование и расшифровку данных с помощью AES (Advanced Encryption Standard) алгоритма.
 
-Длина ключа зависит от режима шифрования. Он может быть длинной в шестнадцать, двадцать четыре и тридцать два байта для режимов шифрования `-128-`, `-196-` и `-256-` соответственно.
+Длина ключа зависит от режима шифрования. Он может быть длинной в 16, 24 и 32 байта для режимов шифрования `-128-`, `-196-` и `-256-` соответственно.
 
-Длина инициализирующего вектора всегда шестнадцать байт (лишнии байты игнорируются). 
+Длина инициализирующего вектора всегда 16 байт (лишнии байты игнорируются). 
 
-Обратите внимания, что эти функции работают медленно.
+Обратите внимание, что эти функции работают медленно.
 
 ## encrypt {#encrypt}
 
@@ -28,7 +28,7 @@ toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438 \u0434\u043b\u044f \u0448
 **Синтаксис**
 
 ``` sql
-encrypt('mode', 'plaintext', 'key' [iv, aad])
+encrypt('mode', 'plaintext', 'key' [, iv, aad])
 ```
 
 **Параметры**
@@ -37,7 +37,7 @@ encrypt('mode', 'plaintext', 'key' [iv, aad])
 -   `plaintext` — текст, который будет зашифрован. [String](../../sql-reference/data-types/string.md#string).
 -   `key` — ключ шифрования. [String](../../sql-reference/data-types/string.md#string).
 -   `iv` — инициализирующий вектор. Обязателен для `-gcm` режимов, для остальных режимов необязателен. [String](../../sql-reference/data-types/string.md#string).
--   `add` — дополнительные аутентифицированные данные. Не шифруются, но влияют на расшифровку. Параметр работает только с `-gcm` режимами. Для остальных вызовет исключение. [String](../../sql-reference/data-types/string.md#string).
+-   `aad` — дополнительные аутентифицированные данные. Не шифруются, но влияют на расшифровку. Параметр работает только с `-gcm` режимами. Для остальных вызовет исключение. [String](../../sql-reference/data-types/string.md#string).
 
 **Возвращаемое значение**
 
@@ -143,7 +143,7 @@ SELECT 'aes-192-gcm' AS mode, hex(encrypt(mode, input, key24, iv, 'AAD')) FROM e
 
 ## aes_encrypt_mysql {#aes_encrypt_mysql}
 
-Совместима с шифрованием myqsl, результат может быть расшифрован функцией `AES_DECRYPT`.
+Совместима с шифрованием myqsl, результат может быть расшифрован функцией [AES_DECRYPT](https://dev.mysql.com/doc/refman/8.0/en/encryption-functions.html#function_aes-decrypt).
 
 Функция поддерживает шифрофание данных следующими режимами:
 
@@ -157,7 +157,7 @@ SELECT 'aes-192-gcm' AS mode, hex(encrypt(mode, input, key24, iv, 'AAD')) FROM e
 **Синтаксис**
 
 ```sql
-aes_encrypt_mysql('mode', 'plaintext', 'key' [iv])
+aes_encrypt_mysql('mode', 'plaintext', 'key' [, iv])
 ```
 
 **Параметры**
@@ -248,7 +248,7 @@ SELECT 'aes-256-cfb128' AS mode, hex(aes_encrypt_mysql(mode, input, key32, iv)) 
 **Синтаксис**
 
 ```sql
-decrypt('mode', 'ciphertext', 'key' [iv, aad])
+decrypt('mode', 'ciphertext', 'key' [, iv, aad])
 ```
 
 **Параметры**
@@ -257,7 +257,7 @@ decrypt('mode', 'ciphertext', 'key' [iv, aad])
 -   `ciphertext` — зашифрованный текст, который будет расшифрован. [String](../../sql-reference/data-types/string.md#string).
 -   `key` — ключ шифрования. [String](../../sql-reference/data-types/string.md#string).
 -   `iv` — инициализирующий вектор. Обязателен для `-gcm` режимов, для остальных режимов опциональный. [String](../../sql-reference/data-types/string.md#string).
--   `add` —  дополнительные аутентифицированные данные. Текст не будет расшифрован, если это значение неверно. Работает только с `-gcm` режимами. Для остальных вызовет исключение. [String](../../sql-reference/data-types/string.md#string).
+-   `aad` —  дополнительные аутентифицированные данные. Текст не будет расшифрован, если это значение неверно. Работает только с `-gcm` режимами. Для остальных вызовет исключение. [String](../../sql-reference/data-types/string.md#string).
 
 **Возвращаемое значение**
 
@@ -308,7 +308,7 @@ SELECT 'aes-128-ecb' AS mode, decrypt(mode, encrypt(mode, input, key16), key16) 
 
 ## aes_decrypt_mysql {#aes_decrypt_mysql}
 
-Совместима с шифрованием myqsl и может расшифровать данные, зашифрованные функцией `AES_ENCRYPT`. 
+Совместима с шифрованием myqsl и может расшифровать данные, зашифрованные функцией [AES_ENCRYPT](https://dev.mysql.com/doc/refman/8.0/en/encryption-functions.html#function_aes-encrypt). 
 
 Функция поддерживает расшифровку данных следующими режимами:
 
@@ -322,7 +322,7 @@ SELECT 'aes-128-ecb' AS mode, decrypt(mode, encrypt(mode, input, key16), key16) 
 **Синтаксис**
 
 ```sql
-aes_decrypt_mysql('mode', 'ciphertext', 'key' [iv])
+aes_decrypt_mysql('mode', 'ciphertext', 'key' [, iv])
 ```
 
 **Параметры**
