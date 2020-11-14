@@ -157,7 +157,7 @@ If the query omits the `DISTINCT`, `GROUP BY` and `ORDER BY` clauses and the `IN
 -   `max_bytes_before_external_sort`
 -   `max_bytes_before_external_group_by`
 
-For more information, see the section [Settings](../../operations/settings/query-complexity.md).
+For more information, see the section [Settings](../../../operations/settings/query-complexity.md).
 
 It is possible to use external sorting (saving temporary tables to a disk) and external aggregation.
 

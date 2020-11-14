@@ -159,6 +159,8 @@ Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of 
 -   `max_bytes_before_external_sort`
 -   `max_bytes_before_external_group_by`
 
-Подробнее смотрите в разделе «Настройки». Присутствует возможность использовать внешнюю сортировку (с сохранением временных данных на диск) и внешнюю агрегацию.
+Подробнее смотрите в разделе [Настройки](../../../operations/settings/query-complexity.md). 
+
+Присутствует возможность использовать внешнюю сортировку (с сохранением временных данных на диск) и внешнюю агрегацию.
 
 {## [Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/statements/select/) ##}
