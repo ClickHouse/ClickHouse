@@ -20,7 +20,7 @@ SELECT [DISTINCT] expr_list
 [GLOBAL] [ANY|ALL|ASOF] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI] JOIN (subquery)|table (ON <expr_list>)|(USING <column_list>)
 [PREWHERE expr]
 [WHERE expr]
-[GROUP BY expr_list] [WITH TOTALS]
+[GROUP BY expr_list] [WITH ROLLUP|WITH CUBE] [WITH TOTALS]
 [HAVING expr]
 [ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr]
 [LIMIT [offset_value, ]n BY columns]
@@ -157,6 +157,8 @@ If the query omits the `DISTINCT`, `GROUP BY` and `ORDER BY` clauses and the `IN
 -   `max_bytes_before_external_sort`
 -   `max_bytes_before_external_group_by`
 
-For more information, see the section “Settings”. It is possible to use external sorting (saving temporary tables to a disk) and external aggregation.
+For more information, see the section [Settings](../../operations/settings/query-complexity.md).
+
+It is possible to use external sorting (saving temporary tables to a disk) and external aggregation.
 
 {## [Original article](https://clickhouse.tech/docs/en/sql-reference/statements/select/) ##}
