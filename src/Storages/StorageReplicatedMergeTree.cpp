@@ -77,6 +77,10 @@ namespace ProfileEvents
     extern const Event NotCreatedLogEntryForMutation;
 }
 
+namespace CurrentMetrics
+{
+    extern const Metric BackgroundFetchesPoolTask;
+}
 
 namespace DB
 {
@@ -206,6 +210,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , part_check_thread(*this)
     , restarting_thread(*this)
     , allow_renaming(allow_renaming_)
+    , replicated_fetches_pool_size(global_context.getSettingsRef().background_fetches_pool_size)
 {
     queue_updating_task = global_context.getSchedulePool().createTask(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::queueUpdatingTask)", [this]{ queueUpdatingTask(); });
@@ -2604,10 +2609,37 @@ std::optional<JobAndPool> StorageReplicatedMergeTree::getDataProcessingJob()
     if (!selected_entry)
         return {};
 
+    PoolType pool_type;
+
+    /// Depending on entry type execute in fetches (small) pool or big merge_mutate pool
+    if (selected_entry->log_entry->type == LogEntry::GET_PART)
+        pool_type = PoolType::FETCH;
+    else
+        pool_type = PoolType::MERGE_MUTATE;
+
     return JobAndPool{[this, selected_entry] () mutable
     {
         processQueueEntry(selected_entry);
-    }, PoolType::MERGE_MUTATE};
+    }, pool_type};
+}
+
+
+bool StorageReplicatedMergeTree::canExecuteFetch(const ReplicatedMergeTreeLogEntry & entry, String & disable_reason) const
+{
+    if (fetcher.blocker.isCancelled())
+    {
+        disable_reason = fmt::format("Not executing fetch of part {} because replicated fetches are cancelled now.", entry.new_part_name);
+        return false;
+    }
+
+    size_t busy_threads_in_pool = CurrentMetrics::values[CurrentMetrics::BackgroundFetchesPoolTask].load(std::memory_order_relaxed);
+    if (busy_threads_in_pool >= replicated_fetches_pool_size)
+    {
+        disable_reason = fmt::format("Not executing fetch of part {} because {} fetches already executing, max {}.", entry.new_part_name, busy_threads_in_pool, replicated_fetches_pool_size);
+        return false;
+    }
+
+    return true;
 }
 
 bool StorageReplicatedMergeTree::partIsAssignedToBackgroundOperation(const DataPartPtr & part) const
@@ -4171,93 +4203,6 @@ void StorageReplicatedMergeTree::alter(
     }
 }
 
-Pipe StorageReplicatedMergeTree::alterPartition(
-    const StorageMetadataPtr & metadata_snapshot,
-    const PartitionCommands & commands,
-    const Context & query_context)
-{
-    PartitionCommandsResultInfo result;
-    for (const PartitionCommand & command : commands)
-    {
-        PartitionCommandsResultInfo current_command_results;
-        switch (command.type)
-        {
-            case PartitionCommand::DROP_PARTITION:
-                if (command.part)
-                    checkPartCanBeDropped(command.partition);
-                else
-                    checkPartitionCanBeDropped(command.partition);
-                dropPartition(command.partition, command.detach, command.part, query_context);
-                break;
-
-            case PartitionCommand::DROP_DETACHED_PARTITION:
-                dropDetached(command.partition, command.part, query_context);
-                break;
-
-            case PartitionCommand::ATTACH_PARTITION:
-                current_command_results = attachPartition(command.partition, metadata_snapshot, command.part, query_context);
-                break;
-            case PartitionCommand::MOVE_PARTITION:
-            {
-                switch (*command.move_destination_type)
-                {
-                    case PartitionCommand::MoveDestinationType::DISK:
-                        movePartitionToDisk(command.partition, command.move_destination_name, command.part, query_context);
-                        break;
-
-                    case PartitionCommand::MoveDestinationType::VOLUME:
-                        movePartitionToVolume(command.partition, command.move_destination_name, command.part, query_context);
-                        break;
-
-                    case PartitionCommand::MoveDestinationType::TABLE:
-                        checkPartitionCanBeDropped(command.partition);
-                        String dest_database = query_context.resolveDatabase(command.to_database);
-                        auto dest_storage = DatabaseCatalog::instance().getTable({dest_database, command.to_table}, query_context);
-                        movePartitionToTable(dest_storage, command.partition, query_context);
-                        break;
-                }
-            }
-            break;
-
-            case PartitionCommand::REPLACE_PARTITION:
-            {
-                checkPartitionCanBeDropped(command.partition);
-                String from_database = query_context.resolveDatabase(command.from_database);
-                auto from_storage = DatabaseCatalog::instance().getTable({from_database, command.from_table}, query_context);
-                replacePartitionFrom(from_storage, command.partition, command.replace, query_context);
-            }
-            break;
-
-            case PartitionCommand::FETCH_PARTITION:
-                fetchPartition(command.partition, metadata_snapshot, command.from_zookeeper_path, query_context);
-                break;
-
-            case PartitionCommand::FREEZE_PARTITION:
-            {
-                auto lock = lockForShare(query_context.getCurrentQueryId(), query_context.getSettingsRef().lock_acquire_timeout);
-                current_command_results = freezePartition(command.partition, metadata_snapshot, command.with_name, query_context, lock);
-            }
-            break;
-
-            case PartitionCommand::FREEZE_ALL_PARTITIONS:
-            {
-                auto lock = lockForShare(query_context.getCurrentQueryId(), query_context.getSettingsRef().lock_acquire_timeout);
-                current_command_results = freezeAll(command.with_name, metadata_snapshot, query_context, lock);
-            }
-            break;
-        }
-        for (auto & command_result : current_command_results)
-            command_result.command_type = command.typeToString();
-        result.insert(result.end(), current_command_results.begin(), current_command_results.end());
-    }
-
-    if (query_context.getSettingsRef().alter_partition_verbose_result)
-        return convertCommandsResultToSource(result);
-
-    return {};
-}
-
-
 /// If new version returns ordinary name, else returns part name containing the first and last month of the month
 /// NOTE: use it in pair with getFakePartCoveringAllPartsInPartition(...)
 static String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const MergeTreePartInfo & part_info)
@@ -4317,7 +4262,7 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const St
 }
 
 
-void StorageReplicatedMergeTree::dropPartition(const ASTPtr & partition, bool detach, bool drop_part, const Context & query_context)
+void StorageReplicatedMergeTree::dropPartition(const ASTPtr & partition, bool detach, bool drop_part, const Context & query_context, bool throw_if_noop)
 {
     assertNotReadonly();
     if (!is_leader)
@@ -4331,7 +4276,7 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & partition, bool de
     if (drop_part)
     {
         String part_name = partition->as<ASTLiteral &>().value.safeGet<String>();
-        did_drop = dropPart(zookeeper, part_name, entry, detach);
+        did_drop = dropPart(zookeeper, part_name, entry, detach, throw_if_noop);
     }
     else
     {
@@ -6024,7 +5969,7 @@ bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UI
 }
 
 bool StorageReplicatedMergeTree::dropPart(
-    zkutil::ZooKeeperPtr & zookeeper, String part_name, LogEntry & entry, bool detach)
+    zkutil::ZooKeeperPtr & zookeeper, String part_name, LogEntry & entry, bool detach, bool throw_if_noop)
 {
     LOG_TRACE(log, "Will try to insert a log entry to DROP_RANGE for part: " + part_name);
 
@@ -6037,32 +5982,52 @@ bool StorageReplicatedMergeTree::dropPart(
         auto part = getPartIfExists(part_info, {MergeTreeDataPartState::Committed});
 
         if (!part)
-            throw Exception("Part " + part_name + " not found locally, won't try to drop it.", ErrorCodes::NO_SUCH_DATA_PART);
+        {
+            if (throw_if_noop)
+                throw Exception("Part " + part_name + " not found locally, won't try to drop it.", ErrorCodes::NO_SUCH_DATA_PART);
+            return false;
+        }
 
         /// There isn't a lot we can do otherwise. Can't cancel merges because it is possible that a replica already
         /// finished the merge.
         if (partIsAssignedToBackgroundOperation(part))
-            throw Exception("Part " + part_name
-                            + " is currently participating in a background operation (mutation/merge)"
-                            + ", try again later", ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
+        {
+            if (throw_if_noop)
+                throw Exception("Part " + part_name
+                                + " is currently participating in a background operation (mutation/merge)"
+                                + ", try again later", ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
+            return false;
+        }
 
         if (partIsLastQuorumPart(part->info))
-            throw Exception("Part " + part_name + " is last inserted part with quorum in partition. Cannot drop",
-                            ErrorCodes::NOT_IMPLEMENTED);
+        {
+            if (throw_if_noop)
+                throw Exception("Part " + part_name + " is last inserted part with quorum in partition. Cannot drop",
+                                ErrorCodes::NOT_IMPLEMENTED);
+            return false;
+        }
 
         if (partIsInsertingWithParallelQuorum(part->info))
-            throw Exception("Part " + part_name + " is inserting with parallel quorum. Cannot drop",
-                            ErrorCodes::NOT_IMPLEMENTED);
+        {
+            if (throw_if_noop)
+                throw Exception("Part " + part_name + " is inserting with parallel quorum. Cannot drop",
+                                ErrorCodes::NOT_IMPLEMENTED);
+            return false;
+        }
 
         Coordination::Requests ops;
         getClearBlocksInPartitionOps(ops, *zookeeper, part_info.partition_id, part_info.min_block, part_info.max_block);
         size_t clean_block_ops_size = ops.size();
 
+        /// Set fake level to treat this part as virtual in queue.
+        auto drop_part_info = part->info;
+        drop_part_info.level = MergeTreePartInfo::MAX_LEVEL;
+
         /// If `part_name` is result of a recent merge and source parts are still available then
         /// DROP_RANGE with detach will move this part together with source parts to `detached/` dir.
         entry.type = LogEntry::DROP_RANGE;
         entry.source_replica = replica_name;
-        entry.new_part_name = part_name;
+        entry.new_part_name = drop_part_info.getPartName();
         entry.detach = detach;
         entry.create_time = time(nullptr);
 

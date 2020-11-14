@@ -464,69 +464,6 @@ The kurtosis of the given distribution. Type — [Float64](../../sql-reference/d
 SELECT kurtSamp(value) FROM series_with_value_column
 ```
 
-## timeSeriesGroupSum(uid,タイムスタンプ,値) {#agg-function-timeseriesgroupsum}
-
-`timeSeriesGroupSum` 総異なる時系列のサンプルのタイムスタンプなアライメントを実施します。
-これは、二つのサンプルタイムスタンプ間の線形補間を使用して、一緒に時系列を合計します。
-
--   `uid` 時系列は一意のidですか, `UInt64`.
--   `timestamp` ミリ秒またはマイクロ秒をサポートするためにInt64型です。
--   `value` は指標です。
-
-この関数は、次のような組の配列を返します `(timestamp, aggregated_value)` ペア。
-
-この関数を使用する前に、必ず `timestamp` 昇順です。
-
-例:
-
-``` text
-┌─uid─┬─timestamp─┬─value─┐
-│ 1   │     2     │   0.2 │
-│ 1   │     7     │   0.7 │
-│ 1   │    12     │   1.2 │
-│ 1   │    17     │   1.7 │
-│ 1   │    25     │   2.5 │
-│ 2   │     3     │   0.6 │
-│ 2   │     8     │   1.6 │
-│ 2   │    12     │   2.4 │
-│ 2   │    18     │   3.6 │
-│ 2   │    24     │   4.8 │
-└─────┴───────────┴───────┘
-```
-
-``` sql
-CREATE TABLE time_series(
-    uid       UInt64,
-    timestamp Int64,
-    value     Float64
-) ENGINE = Memory;
-INSERT INTO time_series VALUES
-    (1,2,0.2),(1,7,0.7),(1,12,1.2),(1,17,1.7),(1,25,2.5),
-    (2,3,0.6),(2,8,1.6),(2,12,2.4),(2,18,3.6),(2,24,4.8);
-
-SELECT timeSeriesGroupSum(uid, timestamp, value)
-FROM (
-    SELECT * FROM time_series order by timestamp ASC
-);
-```
-
-結果は次のようになります:
-
-``` text
-[(2,0.2),(3,0.9),(7,2.1),(8,2.4),(12,3.6),(17,5.1),(18,5.4),(24,7.2),(25,2.5)]
-```
-
-## タイムセリエスグロプラテスム(uid,ts,val) {#agg-function-timeseriesgroupratesum}
-
-同様に `timeSeriesGroupSum`, `timeSeriesGroupRateSum` 時系列のレートを計算し、レートを合計します。
-また、timestampはこの関数を使用する前に上昇順にする必要があります。
-
-のデータにこの関数を適用します。 `timeSeriesGroupSum` 例では、次の結果が得られます:
-
-``` text
-[(2,0),(3,0.1),(7,0.3),(8,0.3),(12,0.3),(17,0.3),(18,0.3),(24,0.3),(25,0.1)]
-```
-
 ## avg(x) {#agg_function-avg}
 
 平均を計算します。
