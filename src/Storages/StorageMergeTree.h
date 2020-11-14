@@ -187,7 +187,7 @@ private:
     void clearOldMutations(bool truncate = false);
 
     // Partition helpers
-    void dropPartition(const ASTPtr & partition, bool detach, bool drop_part, const Context & context) override;
+    void dropPartition(const ASTPtr & partition, bool detach, bool drop_part, const Context & context, bool throw_if_noop) override;
     PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, const Context & context) override;
 
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context) override;
