@@ -2662,7 +2662,7 @@ void MergeTreeData::checkPartCanBeDropped(const ASTPtr & part_ast)
     String part_name = part_ast->as<ASTLiteral &>().value.safeGet<String>();
     auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Committed});
     if (!part)
-        throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No part {} in commited state", part_name);
+        throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No part {} in committed state", part_name);
 
     auto table_id = getStorageID();
     global_context.checkPartitionCanBeDropped(table_id.database_name, table_id.table_name, part->getBytesOnDisk());
