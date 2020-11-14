@@ -17,6 +17,14 @@
 
 namespace DB
 {
+namespace
+{
+    inline static UInt16 getPortFromContext(const Context & context, bool secure)
+    {
+        return secure ? context.getTCPPortSecure().value_or(0) : context.getTCPPort();
+    }
+}
+
 namespace ErrorCodes
 {
 }
@@ -59,10 +67,10 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
     const std::string & default_database)
     : update_time{std::chrono::system_clock::from_time_t(0)}
     , dict_struct{dict_struct_}
-    , host{config.getString(config_prefix + ".host")}
-    , port(config.getInt(config_prefix + ".port"))
     , secure(config.getBool(config_prefix + ".secure", false))
-    , user{config.getString(config_prefix + ".user", "")}
+    , host{config.getString(config_prefix + ".host", "localhost")}
+    , port(config.getInt(config_prefix + ".port", getPortFromContext(context_, secure)))
+    , user{config.getString(config_prefix + ".user", "default")}
     , password{config.getString(config_prefix + ".password", "")}
     , db{config.getString(config_prefix + ".db", default_database)}
     , table{config.getString(config_prefix + ".table")}
@@ -72,7 +80,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
     , query_builder{dict_struct, db, "", table, where, IdentifierQuotingStyle::Backticks}
     , sample_block{sample_block_}
     , context(context_)
-    , is_local{isLocalAddress({host, port}, secure ? context.getTCPPortSecure().value_or(0) : context.getTCPPort())}
+    , is_local{isLocalAddress({host, port}, getPortFromContext(context_, secure))}
     , pool{is_local ? nullptr : createPool(host, port, secure, db, user, password)}
     , load_all_query{query_builder.composeLoadAllQuery()}
 {
@@ -92,9 +100,9 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
 ClickHouseDictionarySource::ClickHouseDictionarySource(const ClickHouseDictionarySource & other)
     : update_time{other.update_time}
     , dict_struct{other.dict_struct}
+    , secure{other.secure}
     , host{other.host}
     , port{other.port}
-    , secure{other.secure}
     , user{other.user}
     , password{other.password}
     , db{other.db}
