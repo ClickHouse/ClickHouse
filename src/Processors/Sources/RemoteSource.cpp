@@ -21,6 +21,10 @@ RemoteSource::~RemoteSource() = default;
 
 Chunk RemoteSource::generate()
 {
+    /// onCancel() will do the cancel if the query was sent.
+    if (was_query_canceled)
+        return {};
+
     if (!was_query_sent)
     {
         /// Progress method will be called on Progress packet.
@@ -62,6 +66,7 @@ Chunk RemoteSource::generate()
 
 void RemoteSource::onCancel()
 {
+    was_query_canceled = true;
     query_executor->cancel();
 }
 
