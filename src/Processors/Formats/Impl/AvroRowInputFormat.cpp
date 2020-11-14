@@ -644,7 +644,7 @@ private:
                 request.setHost(url.getHost());
 
                 auto session = makePooledHTTPSession(url, timeouts, 1);
-                std::istream * response_body;
+                std::istream * response_body{};
                 try
                 {
                     session->sendRequest(request);
