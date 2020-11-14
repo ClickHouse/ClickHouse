@@ -100,6 +100,33 @@ static bool matchIPv4Subnet(UInt32 target, UInt32 addr, UInt8 prefix)
     return (target & mask) == addr;
 }
 
+#if defined(__SSE2__)
+#include <emmintrin.h>
+
+static bool matchIPv6Subnet(const uint8_t * target, const uint8_t * addr, UInt8 prefix)
+{
+    uint16_t mask = _mm_movemask_epi8(_mm_cmpeq_epi8(
+        _mm_loadu_si128(reinterpret_cast<const __m128i *>(target)),
+        _mm_loadu_si128(reinterpret_cast<const __m128i *>(addr))));
+    mask = ~mask;
+
+    if (mask)
+    {
+        auto offset = __builtin_ctz(mask);
+
+        if (offset < prefix / 8)
+            return false;
+        if (offset >= prefix / 8 + 1)
+            return true;
+
+        auto cmpmask = ~(0xff >> (prefix % 8));
+        return (target[offset] & cmpmask) == addr[offset];
+    }
+    return true;
+}
+
+# else
+
 static bool matchIPv6Subnet(const uint8_t * target, const uint8_t * addr, UInt8 prefix)
 {
     if (prefix > IPV6_BINARY_LENGTH * 8U)
@@ -117,6 +144,8 @@ static bool matchIPv6Subnet(const uint8_t * target, const uint8_t * addr, UInt8 
     auto mask = ~(0xff >> prefix);
     return (target[i] & mask) == addr[i];
 }
+
+#endif  // __SSE2__
 
 const uint8_t * TrieDictionary::getIPv6FromOffset(const TrieDictionary::IPv6Container & ipv6_col, size_t i)
 {
@@ -746,7 +775,7 @@ void TrieDictionary::getItemsByTwoKeyColumnsImpl(
         auto found_it = std::lower_bound(range.begin(), range.end(), target, comp_v6);
 
         if (likely(found_it != range.end() &&
-            memcmp16(getIPv6FromOffset(*ipv6_col, *found_it), target.addr) == 0 &&
+            memequal16(getIPv6FromOffset(*ipv6_col, *found_it), target.addr) &&
             mask_column[*found_it] == mask))
             set_value(i, static_cast<OutputType>(vec[row_idx[*found_it]]));
         else
