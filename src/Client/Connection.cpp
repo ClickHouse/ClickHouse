@@ -73,6 +73,11 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         {
 #if USE_SSL
             socket = std::make_unique<Poco::Net::SecureStreamSocket>();
+
+            /// we resolve the ip when we open SecureStreamSocket, so to make Server Name Indication (SNI)
+            /// work we need to pass host name separately. It will be send into TLS Hello packet to let
+            /// the server know which host we want to talk with (single IP can process requests for multiple hosts using SNI).
+            static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setPeerHostName(host);
 #else
             throw Exception{"tcp_secure protocol is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
