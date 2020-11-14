@@ -30,6 +30,7 @@
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/QueryAliasesVisitor.h>
+#include <Interpreters/ColumnAliasesVisitor.h>
 
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SourceFromInputStream.h>
@@ -1291,8 +1292,11 @@ void InterpreterSelectQuery::executeFetchColumns(
                 {
                     auto column_decl = storage_columns.get(column);
                     /// TODO: can make CAST only if the type is different (but requires SyntaxAnalyzer).
-                    auto cast_column_default = addTypeConversionToAST(column_default->expression->clone(), column_decl.type->getName());
-                    column_expr = setAlias(cast_column_default->clone(), column);
+                    column_expr = addTypeConversionToAST(column_default->expression->clone(), column_decl.type->getName());
+                    // recursive visit for alias to alias
+                    ColumnAliasesVisitor::Data data(storage_columns);
+                    ColumnAliasesVisitor(data).visit(column_expr);
+                    column_expr = setAlias(column_expr, column);
                 }
                 else
                     column_expr = std::make_shared<ASTIdentifier>(column);

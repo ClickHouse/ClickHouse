@@ -34,6 +34,7 @@ SRCS(
     ClusterProxy/SelectStreamFactory.cpp
     ClusterProxy/executeQuery.cpp
     CollectJoinOnKeysVisitor.cpp
+    ColumnAliasesVisitor.cpp
     Context.cpp
     CrashLog.cpp
     CrossToInnerJoinVisitor.cpp
