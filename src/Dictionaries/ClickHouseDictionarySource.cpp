@@ -17,20 +17,13 @@
 
 namespace DB
 {
-namespace
-{
-    inline static UInt16 getPortFromContext(const Context & context, bool secure)
-    {
-        return secure ? context.getTCPPortSecure().value_or(0) : context.getTCPPort();
-    }
-}
-
-namespace ErrorCodes
-{
-}
-
 
 static const size_t MAX_CONNECTIONS = 16;
+
+inline static UInt16 getPortFromContext(const Context & context, bool secure)
+{
+    return secure ? context.getTCPPortSecure().value_or(0) : context.getTCPPort();
+}
 
 static ConnectionPoolWithFailoverPtr createPool(
     const std::string & host,
