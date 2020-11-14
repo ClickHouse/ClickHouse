@@ -5,7 +5,7 @@ toc_title: Encryption
 
 # Encryption functions {#encryption-functions}
 
-These function  implement encryption and decryption of data with AES (Advanced Encryption Standard) algorithm.
+These functions  implement encryption and decryption of data with AES (Advanced Encryption Standard) algorithm.
 
 Key length depends on encryption mode. It is 16, 24, and 32 bytes long for `-128-`, `-196-`, and `-256-` modes respectively.
 
@@ -37,7 +37,7 @@ encrypt('mode', 'plaintext', 'key' [, iv, aad])
 -   `plaintext` — Text thats need to be encrypted. [String](../../sql-reference/data-types/string.md#string).
 -   `key` — Encryption key. [String](../../sql-reference/data-types/string.md#string).
 -   `iv` — Initialization vector. Required for `-gcm` modes, optinal for others. [String](../../sql-reference/data-types/string.md#string).
--   `add` — Additional authenticated data. It isn't encrypted, but it affects decryption. Works only in `-gcm` modes, for others would throw an exception. [String](../../sql-reference/data-types/string.md#string).
+-   `aad` — Additional authenticated data. It isn't encrypted, but it affects decryption. Works only in `-gcm` modes, for others would throw an exception. [String](../../sql-reference/data-types/string.md#string).
 
 **Returned value**
 
@@ -257,7 +257,7 @@ decrypt('mode', 'ciphertext', 'key' [, iv, aad])
 -   `ciphertext` — Encrypted text that needs to be decrypted. [String](../../sql-reference/data-types/string.md#string).
 -   `key` — Decryption key. [String](../../sql-reference/data-types/string.md#string).
 -   `iv` — Initialization vector. Required for `-gcm` modes, optinal for others. [String](../../sql-reference/data-types/string.md#string).
--   `add` — Additional authenticated data. Won't decrypt if this value is incorrect. Works only in `-gcm` modes, for others would throw an exception. [String](../../sql-reference/data-types/string.md#string).
+-   `aad` — Additional authenticated data. Won't decrypt if this value is incorrect. Works only in `-gcm` modes, for others would throw an exception. [String](../../sql-reference/data-types/string.md#string).
 
 **Returned value**
 
