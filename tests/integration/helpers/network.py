@@ -174,8 +174,8 @@ class _NetworkManager:
     def _ensure_container(self):
         if self._container is None or self._container_expire_time <= time.time():
 
-            for retry in range(5):
-                if self._container is not None:
+            if self._container is not None:
+                for retry in range(5):
                     try:
                         self._container.remove(force=True)
                         break
@@ -185,8 +185,8 @@ class _NetworkManager:
                         if "removal of container" not in str(e):
                             raise e
                         time.sleep(retry)
-            else:
-                raise Exception("Cannot remove yandex/clickhouse-integration-helper container")
+                else:
+                    raise Exception("Cannot remove yandex/clickhouse-integration-helper container")
 
             # for some reason docker api may hang if image doesn't exist, so we download it
             # before running
