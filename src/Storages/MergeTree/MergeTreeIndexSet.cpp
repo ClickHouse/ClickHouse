@@ -468,7 +468,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexSet::createIndexAggregator() const
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexSet::createIndexCondition(
-    const SelectQueryInfo & query, const Context & context) const
+    const SelectQueryInfo & query, const ColumnsDescription & /*columns*/, const Context & context) const
 {
     return std::make_shared<MergeTreeIndexConditionSet>(index.name, index.sample_block, max_rows, query, context);
 };

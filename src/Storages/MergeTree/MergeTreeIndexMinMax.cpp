@@ -132,9 +132,10 @@ void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, s
 MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
     const IndexDescription & index,
     const SelectQueryInfo & query,
+    const ColumnsDescription & columns,
     const Context & context)
     : index_data_types(index.data_types)
-    , condition(query, context, index.column_names, index.expression)
+    , condition(query, context, columns, index.column_names, index.expression)
 {
 }
 
@@ -169,9 +170,9 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexMinMax::createIndexAggregator() const
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexCondition(
-    const SelectQueryInfo & query, const Context & context) const
+    const SelectQueryInfo & query, const ColumnsDescription & columns, const Context & context) const
 {
-    return std::make_shared<MergeTreeIndexConditionMinMax>(index, query, context);
+    return std::make_shared<MergeTreeIndexConditionMinMax>(index, query, columns, context);
 };
 
 bool MergeTreeIndexMinMax::mayBenefitFromIndexForIn(const ASTPtr & node) const

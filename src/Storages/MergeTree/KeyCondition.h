@@ -8,6 +8,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/ColumnsDescription.h>
 
 
 namespace DB
@@ -230,6 +231,7 @@ public:
     KeyCondition(
         const SelectQueryInfo & query_info,
         const Context & context,
+        const ColumnsDescription & columns_desc_,
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
         bool single_point_ = false,
@@ -418,6 +420,7 @@ private:
     ColumnIndices key_columns;
     ExpressionActionsPtr key_expr;
     PreparedSets prepared_sets;
+    const ColumnsDescription & columns_desc;
 
     // If true, always allow key_expr to be wrapped by function
     bool single_point;

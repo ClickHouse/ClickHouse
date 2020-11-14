@@ -13,6 +13,7 @@
 #include <Common/typeid_cast.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
+#include <Interpreters/ColumnAliasesVisitor.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
@@ -371,11 +372,12 @@ Block KeyCondition::getBlockWithConstants(
 KeyCondition::KeyCondition(
     const SelectQueryInfo & query_info,
     const Context & context,
+    const ColumnsDescription & columns_desc_,
     const Names & key_column_names,
     const ExpressionActionsPtr & key_expr_,
     bool single_point_,
     bool strict_)
-    : key_expr(key_expr_), prepared_sets(query_info.sets), single_point(single_point_), strict(strict_)
+    : key_expr(key_expr_), prepared_sets(query_info.sets), columns_desc(columns_desc_), single_point(single_point_), strict(strict_)
 {
     for (size_t i = 0, size = key_column_names.size(); i < size; ++i)
     {
@@ -405,7 +407,12 @@ KeyCondition::KeyCondition(
           * To overcome the problem, before parsing the AST we transform it to its semantically equivalent form where all NOT's
           * are pushed down and applied (when possible) to leaf nodes.
           */
-        traverseAST(cloneASTWithInversionPushDown(filter_query), context, block_with_constants);
+
+        auto cloned_query = cloneASTWithInversionPushDown(filter_query);
+        ColumnAliasesVisitor::Data data{columns_desc};
+        ColumnAliasesVisitor(data).visit(cloned_query);
+
+        traverseAST(cloned_query, context, block_with_constants);
     }
     else
     {
