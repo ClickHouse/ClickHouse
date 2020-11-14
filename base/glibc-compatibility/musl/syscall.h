@@ -13,3 +13,5 @@ long __syscall(syscall_arg_t, ...);
 
 __attribute__((visibility("hidden")))
 void *__vdsosym(const char *, const char *);
+
+#define syscall(...) __syscall_ret(__syscall(__VA_ARGS__))
