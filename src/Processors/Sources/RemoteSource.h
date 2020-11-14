@@ -20,6 +20,7 @@ public:
     RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation_info_);
     ~RemoteSource() override;
 
+    Status prepare() override;
     String getName() const override { return "Remote"; }
 
     void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) { rows_before_limit.swap(counter); }
