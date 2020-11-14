@@ -3,6 +3,7 @@
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/RowsBeforeLimitCounter.h>
 #include <Processors/Pipe.h>
+#include <atomic>
 
 namespace DB
 {
@@ -37,7 +38,7 @@ protected:
     void onCancel() override;
 
 private:
-    bool was_query_canceled = false;
+    std::atomic<bool> was_query_canceled = false;
     bool was_query_sent = false;
     bool add_aggregation_info = false;
     RemoteQueryExecutorPtr query_executor;
