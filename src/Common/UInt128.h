@@ -256,8 +256,8 @@ class numeric_limits<DB::UInt128>
 {
 public:
     static constexpr bool is_specialized = true;
-    static constexpr bool is_signed = is_signed<DB::UInt128>::value;
-    static constexpr bool is_integer = is_integer<DB::UInt128>::value;
+    static constexpr bool is_signed = ::is_signed<DB::UInt128>::value;
+    static constexpr bool is_integer = ::is_integer<DB::UInt128>::value;
     static constexpr bool is_exact = true;
     static constexpr bool has_infinity = false;
     static constexpr bool has_quiet_NaN = false;
