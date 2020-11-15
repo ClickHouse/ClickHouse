@@ -1,12 +1,13 @@
 #pragma once
 
-#include <cmath>
-
-#include <Common/typeid_cast.h>
+#include <Columns/ColumnVectorHelper.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
-#include <Columns/ColumnVectorHelper.h>
 #include <Core/Field.h>
+#include <Common/typeid_cast.h>
+#include <common/sort.h>
+
+#include <cmath>
 
 
 namespace DB
@@ -253,9 +254,9 @@ protected:
             sort_end = res.begin() + limit;
 
         if (reverse)
-            std::partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] > data[b]; });
+            partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] > data[b]; });
         else
-            std::partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] < data[b]; });
+            partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] < data[b]; });
     }
 };
 

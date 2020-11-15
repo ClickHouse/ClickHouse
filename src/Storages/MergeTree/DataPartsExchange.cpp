@@ -12,12 +12,12 @@
 #include <Poco/File.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/HTTPRequest.h>
+#include <Storages/MergeTree/ReplicatedFetchList.h>
 
 
 namespace CurrentMetrics
 {
     extern const Metric ReplicatedSend;
-    extern const Metric ReplicatedFetch;
 }
 
 namespace DB
@@ -51,6 +51,30 @@ std::string getEndpointId(const std::string & node_id)
 {
     return "DataPartsExchange:" + node_id;
 }
+
+/// Simple functor for tracking fetch progress in system.replicated_fetches table.
+struct ReplicatedFetchReadCallback
+{
+    ReplicatedFetchList::Entry & replicated_fetch_entry;
+
+    explicit ReplicatedFetchReadCallback(ReplicatedFetchList::Entry & replicated_fetch_entry_)
+        : replicated_fetch_entry(replicated_fetch_entry_)
+    {}
+
+    void operator() (size_t bytes_count)
+    {
+        replicated_fetch_entry->bytes_read_compressed.store(bytes_count, std::memory_order_relaxed);
+
+        /// It's possible when we fetch part from very old clickhouse version
+        /// which doesn't send total size.
+        if (replicated_fetch_entry->total_size_bytes_compressed != 0)
+        {
+            replicated_fetch_entry->progress.store(
+                    static_cast<double>(bytes_count) / replicated_fetch_entry->total_size_bytes_compressed,
+                    std::memory_order_relaxed);
+        }
+    }
+};
 
 }
 
@@ -228,7 +252,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         throw Exception("Fetching of part was cancelled", ErrorCodes::ABORTED);
 
     /// Validation of the input that may come from malicious replica.
-    MergeTreePartInfo::fromPartName(part_name, data.format_version);
+    auto part_info = MergeTreePartInfo::fromPartName(part_name, data.format_version);
     const auto data_settings = data.getSettings();
 
     Poco::URI uri;
@@ -294,6 +318,15 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_TYPE)
         readStringBinary(part_type, in);
 
+    auto storage_id = data.getStorageID();
+    String new_part_path = part_type == "InMemory" ? "memory" : data.getFullPathOnDisk(reservation->getDisk()) + part_name + "/";
+    auto entry = data.global_context.getReplicatedFetchList().insert(
+        storage_id.getDatabaseName(), storage_id.getTableName(),
+        part_info.partition_id, part_name, new_part_path,
+        replica_path, uri, to_detached, sum_files_size);
+
+    in.setNextCallback(ReplicatedFetchReadCallback(*entry));
+
     return part_type == "InMemory" ? downloadPartToMemory(part_name, metadata_snapshot, std::move(reservation), in)
         : downloadPartToDisk(part_name, replica_path, to_detached, tmp_prefix_, sync, std::move(reservation), in);
 }
@@ -351,8 +384,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
 
     if (disk->exists(part_download_path))
         throw Exception("Directory " + fullPath(disk, part_download_path) + " already exists.", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
-
-    CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedFetch};
 
     disk->createDirectories(part_download_path);
 

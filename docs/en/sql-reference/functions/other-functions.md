@@ -1657,4 +1657,24 @@ Result:
 10	10	19	19	39	39
 ```
 
+## errorCodeToName {#error-code-to-name}
+
+**Returned value**
+
+-   Variable name for the error code.
+
+Type: [LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md).
+
+**Syntax**
+
+``` sql
+errorCodeToName(1)
+```
+
+Result:
+
+``` text
+UNSUPPORTED_METHOD
+```
+
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/other_functions/) <!--hide-->
