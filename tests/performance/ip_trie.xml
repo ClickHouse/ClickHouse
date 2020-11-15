@@ -3,6 +3,7 @@
         CREATE TABLE table_ip_trie
         (
             ip String,
+            ver UInt8,
             val Float32
         ) ENGINE = TinyLog
     </create_query>
@@ -10,16 +11,18 @@
     <create_query>
         INSERT INTO table_ip_trie
         SELECT
-            IPv4NumToString(ipv4) || '/' || toString(rand() % 25 + 8) as ip,
+            IPv4NumToString(ipv4) || '/' || toString(rand() % 17 + 16) as ip,
+            4 as ver,
             val
         FROM generateRandom('ipv4 UInt32, val Float32', 0, 30, 30)
-        LIMIT 1000000
+        LIMIT 500000
     </create_query>
 
     <create_query>
         INSERT INTO table_ip_trie
         SELECT
-            IPv6NumToString(ipv6) || '/' || toString(rand() % 113 + 16) as ip,
+            IPv6NumToString(ipv6) || '/' || toString(rand() % 65 + 64) as ip,
+            6 as ver,
             val
         FROM generateRandom('ipv6 FixedString(16), val Float32', 0, 30, 30)
         LIMIT 2500000
@@ -29,6 +32,7 @@
         CREATE DICTIONARY dict_ip_trie
         (
             ip String,
+            ver UInt8,
             val Float32
         )
         PRIMARY KEY ip
@@ -41,8 +45,17 @@
         CREATE TABLE dict_ip_trie_table
         (
             `ip` String,
+            `ver` UInt8,
             `val` Float32
         ) ENGINE = Dictionary(default.dict_ip_trie)
+    </create_query>
+
+    <create_query>
+        CREATE TABLE table_ip_from_dict (`ip` String, `ver` UInt8) ENGINE = TinyLog
+    </create_query>
+    <create_query>
+        INSERT INTO table_ip_from_dict
+        SELECT ip, ver FROM dict_ip_trie_table
     </create_query>
 
     <query>
@@ -55,7 +68,22 @@
         FROM numbers(500000)
     </query>
 
+    <query>
+        SELECT dictGetFloat32('default.dict_ip_trie', 'val', tuple(IPv4StringToNum(ip)))
+        FROM table_ip_from_dict
+        WHERE ver == 4
+        LIMIT 500000
+    </query>
+
+    <query>
+        SELECT dictGetFloat32('default.dict_ip_trie', 'val', tuple(IPv6StringToNum(ip)))
+        FROM table_ip_from_dict
+        WHERE ver == 6
+        LIMIT 500000
+    </query>
+
     <drop_query>DROP DICTIONARY IF EXISTS default.dict_ip_trie</drop_query>
     <drop_query>DROP TABLE IF EXISTS table_ip_trie</drop_query>
     <drop_query>DROP TABLE IF EXISTS dict_ip_trie_table</drop_query>
+    <drop_query>DROP TABLE IF EXISTS table_ip_from_dict</drop_query>
 </test>
