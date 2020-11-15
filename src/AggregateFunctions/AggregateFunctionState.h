@@ -92,7 +92,7 @@ public:
         return nested_func->allocatesMemoryInArena();
     }
 
-    AggregateFunctionPtr getNestedFunction() const { return nested_func; }
+    AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
 };
 
 }
