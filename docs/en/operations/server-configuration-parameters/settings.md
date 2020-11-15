@@ -479,6 +479,26 @@ The maximum number of simultaneously processed requests.
 <max_concurrent_queries>100</max_concurrent_queries>
 ```
 
+## max_concurrent_queries_for_all_users {#max-concurrent-queries-for-all-users}
+
+Throw exception if the value of this setting is less or equal than the current number of simultaneously processed queries.
+
+Example: `max_concurrent_queries_for_all_users` can be set to 99 for all users and database administrator can set it to 100 for itself to run queries for investigation even when the server is overloaded.
+
+Modifying the setting for one query or user does not affect other queries.
+
+Default value: `0` that means no limit.
+
+**Example**
+
+``` xml
+<max_concurrent_queries_for_all_users>99</max_concurrent_queries_for_all_users>
+```
+
+**See Also**
+
+-   [max_concurrent_queries](#max-concurrent-queries)
+
 ## max_connections {#max-connections}
 
 The maximum number of inbound connections.
@@ -551,7 +571,7 @@ For more information, see the MergeTreeSettings.h header file.
 
 Fine tuning for tables in the [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
 
-This setting has higher priority.
+This setting has a higher priority.
 
 For more information, see the MergeTreeSettings.h header file.
 
@@ -1060,5 +1080,46 @@ Default value: `/var/lib/clickhouse/access/`.
 **See also**
 
 -   [Access Control and Account Management](../../operations/access-rights.md#access-control)
+
+## user_directories {#user_directories}
+
+Section of the configuration file that contains settings:
+-   Path to configuration file with predefined users.
+-   Path to folder where users created by SQL commands are stored.
+
+If this section is specified, the path from [users_config](../../operations/server-configuration-parameters/settings.md#users-config) and [access_control_path](../../operations/server-configuration-parameters/settings.md#access_control_path) won't be used.
+
+The `user_directories` section can contain any number of items, the order of the items means their precedence (the higher the item the higher the precedence).
+
+**Example**
+
+``` xml
+<user_directories>
+    <users_xml>
+        <path>/etc/clickhouse-server/users.xml</path>
+    </users_xml>
+    <local_directory>
+        <path>/var/lib/clickhouse/access/</path>
+    </local_directory>
+</user_directories>
+```
+
+You can also specify settings `memory` — means storing information only in memory, without writing to disk, and `ldap` — means storing information on an LDAP server.
+
+To add an LDAP server as a remote user directory of users that are not defined locally, define a single `ldap` section with a following parameters:
+-   `server` — one of LDAP server names defined in `ldap_servers` config section. This parameter is mandatory and cannot be empty.
+-   `roles` — section with a list of locally defined roles that will be assigned to each user retrieved from the LDAP server. If no roles are specified, user will not be able to perform any actions after authentication. If any of the listed roles is not defined locally at the time of authentication, the authenthication attept will fail as if the provided password was incorrect.
+
+**Example**
+
+``` xml
+<ldap>
+    <server>my_ldap_server</server>
+        <roles>
+            <my_local_role1 />
+            <my_local_role2 />
+        </roles>
+</ldap>
+```
 
 [Original article](https://clickhouse.tech/docs/en/operations/server_configuration_parameters/settings/) <!--hide-->

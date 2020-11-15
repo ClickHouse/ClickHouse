@@ -61,7 +61,7 @@
                 intDiv( number, 4 ) as rowid,
                 groupArray( base64Encode( left( reinterpretAsString( rand64() ), 6) ) ) as arr
             FROM 
-                numbers(1000000)
+                numbers(2000000)
             GROUP BY rowid
         ) GROUP BY id</fill_query>
     <fill_query>optimize table lot_of_string_arrays_src</fill_query>
