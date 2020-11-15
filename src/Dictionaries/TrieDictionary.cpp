@@ -28,7 +28,7 @@ namespace ErrorCodes
 
 namespace
 {
-    /// Intermediate stucture used for loading data
+    /// Intermediate structure that are used in loading procedure
     struct IPRecord
     {
         Poco::Net::IPAddress addr;
@@ -54,6 +54,11 @@ namespace
             memcpy(&buf[12], addr.addr(), 4);
 
             return buf;
+        }
+
+        inline UInt8 prefixIPv6() const
+        {
+            return isv6 ? prefix : prefix + 96;
         }
     };
 
@@ -504,7 +509,7 @@ void TrieDictionary::loadData()
                 auto cmpres = memcmp16(record_a.asIPv6Binary(a_buf), record_b.asIPv6Binary(b_buf));
 
                 if (cmpres == 0)
-                    return compPrefixes(record_a.prefix, record_b.prefix);
+                    return compPrefixes(record_a.prefixIPv6(), record_b.prefixIPv6());
                 return cmpres < 0;
             });
 
@@ -520,8 +525,7 @@ void TrieDictionary::loadData()
                                                 reinterpret_cast<const uint8_t *>(ip_array.data()),
                                                 IPV6_BINARY_LENGTH);
 
-            bool converted = has_ipv6 && (record.addr.family() == Poco::Net::IPAddress::IPv4);
-            mask_column.push_back(converted ? record.prefix + 96 : record.prefix);
+            mask_column.push_back(record.prefixIPv6());
             row_idx.push_back(record.row);
         }
     }
@@ -567,8 +571,8 @@ void TrieDictionary::loadData()
                 const auto * cur_address = ip_records[i].asIPv6Binary(a_buf);
                 const auto * cur_subnet = ip_records[pi].asIPv6Binary(b_buf);
 
-                bool is_mask_smaller = ip_records[pi].prefix < ip_records[i].prefix;
-                if (is_mask_smaller && matchIPv6Subnet(cur_address, cur_subnet, ip_records[pi].prefix))
+                bool is_mask_smaller = ip_records[pi].prefixIPv6() < ip_records[i].prefixIPv6();
+                if (is_mask_smaller && matchIPv6Subnet(cur_address, cur_subnet, ip_records[pi].prefixIPv6()))
                 {
                     parent_subnet[i] = pi;
                     break;
