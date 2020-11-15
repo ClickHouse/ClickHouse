@@ -74,6 +74,8 @@ StorageMaterializedView::StorageMaterializedView(
 
     if (!has_inner_table)
     {
+        if (query.to_table_id.database_name == table_id_.database_name && query.to_table_id.table_name == table_id_.table_name)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Materialized view {} cannot point to itself", table_id_.getFullTableName());
         target_table_id = query.to_table_id;
     }
     else if (attach_)
@@ -100,9 +102,6 @@ StorageMaterializedView::StorageMaterializedView(
 
         target_table_id = DatabaseCatalog::instance().getTable({manual_create_query->database, manual_create_query->table}, global_context)->getStorageID();
     }
-
-    if (target_table_id == getStorageID())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Materialized view {} cannot point to itself", getStorageID().getFullTableName());
 
     if (!select.select_table_id.empty())
         DatabaseCatalog::instance().addDependency(select.select_table_id, getStorageID());
