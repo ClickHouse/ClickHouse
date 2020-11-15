@@ -137,7 +137,7 @@ struct CustomizeSumFunctionData
 {
     using TypeToVisit = ASTFunction;
 
-    void visit(ASTFunction & func, ASTPtr &) const
+    static void visit(ASTFunction & func, ASTPtr &)
     {
         if (Poco::toLower(func.name) == "sumif")
         {
