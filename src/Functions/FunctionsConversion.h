@@ -2135,7 +2135,8 @@ private:
         bool is_accurate_cast = is_accurate_cast_or_null;
 
         return [is_accurate_cast, nullable_column_wrapper, from_type_index, to_type]
-            (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t input_rows_count) {
+            (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *column_nullable, size_t input_rows_count)
+        {
             ColumnPtr result_column;
             auto res = callOnIndexAndDataType<ToDataType>(from_type_index, [&](const auto & types) -> bool {
                 using Types = std::decay_t<decltype(types)>;
@@ -2264,7 +2265,7 @@ private:
         {
             if (is_accurate_cast_or_null)
                 return createToNullableColumnWrapper();
-            else 
+            else
                 throw Exception{"Conversion from " + from_type_untyped->getName() + " to " + to_type->getName() +
                     " is not supported", ErrorCodes::CANNOT_CONVERT_TYPE};
         }
