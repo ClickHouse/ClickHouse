@@ -1217,6 +1217,9 @@ void MergeTreeData::clearOldWriteAheadLogs()
 
 void MergeTreeData::clearEmptyParts()
 {
+    if (!getSettings()->remove_empty_parts)
+        return;
+
     auto parts = getDataPartsVector();
     for (const auto & part : parts)
     {
