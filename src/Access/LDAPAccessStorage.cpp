@@ -151,7 +151,7 @@ String LDAPAccessStorage::getStorageParamsJSON() const
     params_json.set("server", ldap_server_name);
     params_json.set("roles", default_role_names);
 
-    std::ostringstream oss;
+    std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
     Poco::JSON::Stringifier::stringify(params_json, oss);
 

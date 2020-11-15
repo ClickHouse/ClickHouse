@@ -102,7 +102,7 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, const Context & 
             else if (authentication.getType() == Authentication::Type::KERBEROS)
                 auth_params_json.set("realm", authentication.getKerberosRealm());
 
-            std::ostringstream oss;
+            std::ostringstream oss;         // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             oss.exceptions(std::ios::failbit);
             Poco::JSON::Stringifier::stringify(auth_params_json, oss);
             const auto str = oss.str();

@@ -8,7 +8,7 @@
 namespace DB
 {
 
-static ITransformingStep::Traits getTraits(const ExpressionActionsPtr & expression)
+static ITransformingStep::Traits getTraits(const ActionsDAGPtr & expression)
 {
     return ITransformingStep::Traits
     {
@@ -26,14 +26,14 @@ static ITransformingStep::Traits getTraits(const ExpressionActionsPtr & expressi
 
 FilterStep::FilterStep(
     const DataStream & input_stream_,
-    ExpressionActionsPtr expression_,
+    ActionsDAGPtr actions_dag_,
     String filter_column_name_,
     bool remove_filter_column_)
     : ITransformingStep(
         input_stream_,
-        FilterTransform::transformHeader(input_stream_.header, expression_, filter_column_name_, remove_filter_column_),
-        getTraits(expression_))
-    , expression(std::move(expression_))
+        FilterTransform::transformHeader(input_stream_.header, std::make_shared<ExpressionActions>(actions_dag_), filter_column_name_, remove_filter_column_),
+        getTraits(actions_dag_))
+    , actions_dag(std::move(actions_dag_))
     , filter_column_name(std::move(filter_column_name_))
     , remove_filter_column(remove_filter_column_)
 {
@@ -45,7 +45,7 @@ void FilterStep::updateInputStream(DataStream input_stream, bool keep_header)
 {
     Block out_header = std::move(output_stream->header);
     if (keep_header)
-        out_header = FilterTransform::transformHeader(input_stream.header, expression, filter_column_name, remove_filter_column);
+        out_header = FilterTransform::transformHeader(input_stream.header, std::make_shared<ExpressionActions>(actions_dag), filter_column_name, remove_filter_column);
 
     output_stream = createOutputStream(
             input_stream,
@@ -58,6 +58,7 @@ void FilterStep::updateInputStream(DataStream input_stream, bool keep_header)
 
 void FilterStep::transformPipeline(QueryPipeline & pipeline)
 {
+    auto expression = std::make_shared<ExpressionActions>(actions_dag);
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
@@ -79,6 +80,7 @@ void FilterStep::describeActions(FormatSettings & settings) const
     settings.out << prefix << "Filter column: " << filter_column_name << '\n';
 
     bool first = true;
+    auto expression = std::make_shared<ExpressionActions>(actions_dag);
     for (const auto & action : expression->getActions())
     {
         settings.out << prefix << (first ? "Actions: "
