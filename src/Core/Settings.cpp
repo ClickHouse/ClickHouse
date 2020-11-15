@@ -16,9 +16,12 @@ namespace ErrorCodes
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 }
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wframe-larger-than="
 
 IMPLEMENT_SETTINGS_TRAITS(SettingsTraits, LIST_OF_SETTINGS)
 
+#pragma clang diagnostic pop
 
 /** Set the settings from the profile (in the server configuration, many settings can be listed in one profile).
     * The profile can also be set using the `set` functions, like the `profile` setting.
