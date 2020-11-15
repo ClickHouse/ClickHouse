@@ -28,11 +28,33 @@ namespace ErrorCodes
 
 namespace
 {
+    /// Intermediate stucture used for loading data
     struct IPRecord
     {
         Poco::Net::IPAddress addr;
         UInt8 prefix;
         size_t row;
+        bool isv6;
+
+        IPRecord(const Poco::Net::IPAddress & addr_, UInt8 prefix_, size_t row_)
+            : addr(addr_)
+            , prefix(prefix_)
+            , row(row_)
+            , isv6(addr.family() == Poco::Net::IPAddress::IPv6)
+        {
+        }
+
+        const uint8_t * asIPv6Binary(uint8_t * buf) const
+        {
+            if (isv6)
+                return reinterpret_cast<const uint8_t *>(addr.addr());
+            memset(buf, 0, 10);
+            buf[10] = '\xFF';
+            buf[11] = '\xFF';
+            memcpy(&buf[12], addr.addr(), 4);
+
+            return buf;
+        }
     };
 
     struct IPv4Subnet
@@ -70,6 +92,11 @@ static inline bool compPrefixes(UInt8 a, UInt8 b)
     return a < b;
 }
 
+inline static UInt32 IPv4AsUInt32(const void * addr)
+{
+    return Poco::ByteOrder::fromNetwork(*reinterpret_cast<const UInt32 *>(addr));
+}
+
 /// Convert mapped IPv6 to IPv4 if possible
 inline static UInt32 mappedIPv4ToBinary(const uint8_t * addr, bool & success)
 {
@@ -81,7 +108,7 @@ inline static UInt32 mappedIPv4ToBinary(const uint8_t * addr, bool & success)
               addr[10] == 0xff && addr[11] == 0xff;
     if (!success)
         return 0;
-    return Poco::ByteOrder::fromNetwork(*reinterpret_cast<const UInt32 *>(&addr[12]));
+    return IPv4AsUInt32(&addr[12]);
 }
 
 /// Convert IPv4 to IPv6-mapped and save results to buf
@@ -114,10 +141,8 @@ static bool matchIPv6Subnet(const uint8_t * target, const uint8_t * addr, UInt8 
     {
         auto offset = __builtin_ctz(mask);
 
-        if (offset < prefix / 8)
-            return false;
-        if (offset >= prefix / 8 + 1)
-            return true;
+        if (prefix / 8 != offset)
+            return prefix / 8 < offset;
 
         auto cmpmask = ~(0xff >> (prefix % 8));
         return (target[offset] & cmpmask) == addr[offset];
@@ -454,14 +479,14 @@ void TrieDictionary::loadData()
                 UInt8 prefix = std::stoi(addr_str.substr(pos + 1), nullptr, 10);
 
                 addr = addr & IPAddress(prefix, addr.family());
-                ip_records.emplace_back(IPRecord{addr, prefix, row_number});
+                ip_records.emplace_back(addr, prefix, row_number);
             }
             else
             {
                 IPAddress addr(addr_str);
                 has_ipv6 = has_ipv6 || (addr.family() == Poco::Net::IPAddress::IPv6);
                 UInt8 prefix = addr.length() * 8;
-                ip_records.emplace_back(IPRecord{addr, prefix, row_number});
+                ip_records.emplace_back(addr, prefix, row_number);
             }
         }
     }
@@ -473,10 +498,10 @@ void TrieDictionary::loadData()
         std::sort(ip_records.begin(), ip_records.end(),
             [](const auto & record_a, const auto & record_b)
             {
-                auto a = IPv6ToBinary(record_a.addr);
-                auto b = IPv6ToBinary(record_b.addr);
-                auto cmpres = memcmp16(reinterpret_cast<const uint8_t *>(a.data()),
-                                       reinterpret_cast<const uint8_t *>(b.data()));
+                uint8_t a_buf[IPV6_BINARY_LENGTH];
+                uint8_t b_buf[IPV6_BINARY_LENGTH];
+
+                auto cmpres = memcmp16(record_a.asIPv6Binary(a_buf), record_b.asIPv6Binary(b_buf));
 
                 if (cmpres == 0)
                     return compPrefixes(record_a.prefix, record_b.prefix);
@@ -520,7 +545,7 @@ void TrieDictionary::loadData()
         ipv4_col.reserve(ip_records.size());
         for (const auto & record : ip_records)
         {
-            auto addr = Poco::ByteOrder::fromNetwork(*reinterpret_cast<const UInt32 *>(record.addr.addr()));
+            auto addr = IPv4AsUInt32(record.addr.addr());
             ipv4_col.push_back(addr);
             mask_column.push_back(record.prefix);
             row_idx.push_back(record.row);
@@ -532,17 +557,34 @@ void TrieDictionary::loadData()
     for (const auto i : ext::range(0, ip_records.size()))
     {
         parent_subnet[i] = i;
-
-        const auto & cur_address = ip_records[i].addr;
         while (!subnets_stack.empty())
         {
-            size_t subnet_idx = subnets_stack.top();
-            const auto cur_subnet = ip_records[subnet_idx];
-            auto cur_addr_masked = cur_address & IPAddress(cur_subnet.prefix, cur_address.family());
-            if (cur_subnet.addr == cur_addr_masked)
+            size_t pi = subnets_stack.top();
+            if (has_ipv6)
             {
-                parent_subnet[i] = subnet_idx;
-                break;
+                uint8_t a_buf[IPV6_BINARY_LENGTH];
+                uint8_t b_buf[IPV6_BINARY_LENGTH];
+                const auto * cur_address = ip_records[i].asIPv6Binary(a_buf);
+                const auto * cur_subnet = ip_records[pi].asIPv6Binary(b_buf);
+
+                bool is_mask_smaller = ip_records[pi].prefix < ip_records[i].prefix;
+                if (is_mask_smaller && matchIPv6Subnet(cur_address, cur_subnet, ip_records[pi].prefix))
+                {
+                    parent_subnet[i] = pi;
+                    break;
+                }
+            }
+            else
+            {
+                UInt32 cur_address = IPv4AsUInt32(ip_records[i].addr.addr());
+                UInt32 cur_subnet = IPv4AsUInt32(ip_records[pi].addr.addr());
+
+                bool is_mask_smaller = ip_records[pi].prefix < ip_records[i].prefix;
+                if (is_mask_smaller && matchIPv4Subnet(cur_address, cur_subnet, ip_records[pi].prefix))
+                {
+                    parent_subnet[i] = pi;
+                    break;
+                }
             }
             subnets_stack.pop();
         }
@@ -550,6 +592,7 @@ void TrieDictionary::loadData()
     }
 
     LOG_TRACE(logger, "{} ip records are read", ip_records.size());
+
     if (require_nonempty && 0 == element_count)
         throw Exception{full_name + ": dictionary source is empty and 'require_nonempty' property is set.", ErrorCodes::DICTIONARY_IS_EMPTY};
 }
