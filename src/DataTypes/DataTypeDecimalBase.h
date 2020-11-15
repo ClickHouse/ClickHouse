@@ -165,7 +165,7 @@ template <typename T>
 inline const DataTypeDecimalBase<T> * checkDecimalBase(const IDataType & data_type)
 {
     if (isColumnedAsDecimalT<T>(data_type))
-        return static_cast<const DataTypeDecimal<T> *>(&data_type);
+        return static_cast<const DataTypeDecimalBase<T> *>(&data_type);
 
     return nullptr;
 }
