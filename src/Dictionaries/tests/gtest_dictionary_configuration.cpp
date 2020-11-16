@@ -1,16 +1,8 @@
-#include <iostream>
-
-#include <sstream>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTDropQuery.h>
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/ParserDictionary.h>
-#include <Parsers/ParserDropQuery.h>
-#include <Parsers/ParserTablePropertiesQuery.h>
-#include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
@@ -27,6 +19,7 @@ static std::string configurationToString(const DictionaryConfigurationPtr & conf
 {
     const Poco::Util::XMLConfiguration * xml_config = dynamic_cast<const Poco::Util::XMLConfiguration *>(config.get());
     std::ostringstream oss;
+    oss.exceptions(std::ios::failbit);
     xml_config->save(oss);
     return oss.str();
 }

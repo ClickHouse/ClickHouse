@@ -193,10 +193,10 @@ When writing docs, you can use prepared templates. Copy the code of a template a
 
 Templates:
 
-- [Function](dscr-templates/template-function.md)
-- [Setting](dscr-templates/template-setting.md)
-- [Table engine](dscr-templates/template-table-engine.md)
-- [System table](dscr-templates/template-system-table.md)
+- [Function](_description_templates/template-function.md)
+- [Setting](_description_templates/template-setting.md)
+- [Database or Table engine](_description_templates/template-engine.md)
+- [System table](_description_templates/template-system-table.md)
 
 
 <a name="how-to-build-docs"/>

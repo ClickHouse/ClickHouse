@@ -1,14 +1,13 @@
 #include <string.h>
 #include <IO/BitHelpers.h>
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <Common/BitHelpers.h>
 #include <Common/PODArray.h>
 
 #include <cmath>
-#include <iomanip>
 #include <memory>
 #include <bitset>
 #include <string>
@@ -78,6 +77,7 @@ std::string dumpContents(const T& container,
 
 {
     std::stringstream sstr;
+    sstr.exceptions(std::ios::failbit);
     dumpBuffer(std::begin(container), std::end(container), &sstr, col_sep, row_sep, cols_in_row);
 
     return sstr.str();

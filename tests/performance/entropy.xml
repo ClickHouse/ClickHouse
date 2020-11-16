@@ -1,35 +1,16 @@
 <test>
-
     <preconditions>
-        <table_exists>test.hits</table_exists>
+        <table_exists>hits_100m_single</table_exists>
+        <table_exists>hits_10m_single</table_exists>
     </preconditions>
 
-    <stop_conditions>
-        <all_of>
-            <total_time_ms>10000</total_time_ms>
-        </all_of>
-        <any_of>
-            <total_time_ms>20000</total_time_ms>
-        </any_of>
-    </stop_conditions>
-
-
-    <substitutions>
-        <substitution>
-           <name>args</name>
-           <values>
-               <value>SearchEngineID</value>
-               <value>SearchPhrase</value>
-               <value>MobilePhoneModel</value>
-               <value>URL</value>
-               <value>URLDomain</value>
-               <value>URL, URLDomain</value>
-               <value>ClientIP</value>
-               <value>RegionID</value>
-               <value>ClientIP, RegionID</value>
-           </values>
-        </substitution>
-    </substitutions>
-
-    <query>SELECT entropy({args}) FROM test.hits</query>
+    <query>SELECT entropy(SearchEngineID) FROM hits_100m_single settings max_threads = 1</query>
+    <query>SELECT entropy(SearchPhrase) FROM hits_10m_single</query>
+    <query>SELECT entropy(MobilePhoneModel) FROM hits_100m_single</query>
+    <query>SELECT entropy(URL) FROM hits_10m_single</query>
+    <query>SELECT entropy(URLHash) FROM hits_10m_single</query>
+    <query>SELECT entropy(URL, URLHash) FROM hits_10m_single</query>
+    <query>SELECT entropy(ClientIP) FROM hits_10m_single</query>
+    <query>SELECT entropy(RegionID) FROM hits_100m_single settings max_threads = 1</query>
+    <query>SELECT entropy(ClientIP, RegionID) FROM hits_10m_single</query>
 </test>

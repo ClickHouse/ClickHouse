@@ -31,3 +31,13 @@ else ()
 endif ()
 
 target_include_directories(base64 SYSTEM PUBLIC ${LIBRARY_DIR})
+
+if (XCODE OR XCODE_VERSION)
+    # https://gitlab.kitware.com/cmake/cmake/issues/17457
+    #     Some native build systems may not like targets that have only object files, so consider adding at least one real source file
+    # This applies to Xcode.
+    if (NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/dummy.c")
+        file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/dummy.c" "")
+    endif ()
+    target_sources(base64 PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/dummy.c")
+endif ()

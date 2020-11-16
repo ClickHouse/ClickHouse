@@ -49,6 +49,15 @@ DataTypePtr FieldToDataType::operator() (const Int64 & x) const
     return std::make_shared<DataTypeInt64>();
 }
 
+DataTypePtr FieldToDataType::operator() (const Int128 & x) const
+{
+    if (x <= std::numeric_limits<Int8>::max() && x >= std::numeric_limits<Int8>::min()) return std::make_shared<DataTypeInt8>();
+    if (x <= std::numeric_limits<Int16>::max() && x >= std::numeric_limits<Int16>::min()) return std::make_shared<DataTypeInt16>();
+    if (x <= std::numeric_limits<Int32>::max() && x >= std::numeric_limits<Int32>::min()) return std::make_shared<DataTypeInt32>();
+    if (x <= std::numeric_limits<Int64>::max() && x >= std::numeric_limits<Int64>::min()) return std::make_shared<DataTypeInt64>();
+    return std::make_shared<DataTypeInt128>();
+}
+
 DataTypePtr FieldToDataType::operator() (const Float64 &) const
 {
     return std::make_shared<DataTypeFloat64>();
@@ -77,6 +86,11 @@ DataTypePtr FieldToDataType::operator() (const DecimalField<Decimal128> & x) con
     return std::make_shared<Type>(Type::maxPrecision(), x.getScale());
 }
 
+DataTypePtr FieldToDataType::operator() (const DecimalField<Decimal256> & x) const
+{
+    using Type = DataTypeDecimal<Decimal256>;
+    return std::make_shared<Type>(Type::maxPrecision(), x.getScale());
+}
 
 DataTypePtr FieldToDataType::operator() (const Array & x) const
 {
@@ -106,8 +120,18 @@ DataTypePtr FieldToDataType::operator() (const Tuple & tuple) const
 
 DataTypePtr FieldToDataType::operator() (const AggregateFunctionStateData & x) const
 {
-    auto & name = static_cast<const AggregateFunctionStateData &>(x).name;
+    const auto & name = static_cast<const AggregateFunctionStateData &>(x).name;
     return DataTypeFactory::instance().get(name);
+}
+
+DataTypePtr FieldToDataType::operator() (const UInt256 &) const
+{
+    throw Exception("There are no UInt256 literals in SQL", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+DataTypePtr FieldToDataType::operator() (const Int256 &) const
+{
+    throw Exception("There are no Int256 literals in SQL", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 }

@@ -1,7 +1,5 @@
 #pragma once
 
-#pragma once
-
 #include <Core/Block.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Formats/FormatSettings.h>
@@ -12,12 +10,23 @@ namespace DB
 
 class ReadBuffer;
 
-/** A stream for reading data in JSONCompactEachRow and JSONCompactEachRowWithNamesAndTypes formats
+/** A stream for reading data in a bunch of formats:
+ *  - JSONCompactEachRow
+ *  - JSONCompactEachRowWithNamesAndTypes
+ *  - JSONCompactStringsEachRow
+ *  - JSONCompactStringsEachRowWithNamesAndTypes
+ *
 */
 class JSONCompactEachRowRowInputFormat : public IRowInputFormat
 {
 public:
-    JSONCompactEachRowRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_, bool with_names_);
+    JSONCompactEachRowRowInputFormat(
+        ReadBuffer & in_,
+        const Block & header_,
+        Params params_,
+        const FormatSettings & format_settings_,
+        bool with_names_,
+        bool yield_strings_);
 
     String getName() const override { return "JSONCompactEachRowRowInputFormat"; }
 
@@ -26,7 +35,7 @@ public:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
-
+    void resetParser() override;
 
 private:
     void addInputColumn(const String & column_name);
@@ -48,7 +57,10 @@ private:
     /// This is for the correct exceptions in skipping unknown fields.
     std::vector<String> names_of_columns;
 
+    /// For *WithNamesAndTypes formats.
     bool with_names;
+    /// For JSONCompactString* formats.
+    bool yield_strings;
 };
 
 }

@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 21
 toc_title: "Giri\u015F ve \xE7\u0131k\u0131\u015F bi\xE7imleri"
 ---
@@ -42,7 +42,7 @@ Desteklenen formatlar şunlardır:
 | [ORC](#data-format-orc)                                         | ✔     | ✗     |
 | [RowBinary](#rowbinary)                                         | ✔     | ✔     |
 | [Rowbinarywithnames ve türleri](#rowbinarywithnamesandtypes)    | ✔     | ✔     |
-| [Yerel](#native)                                                | ✔     | ✔     |
+| [Yerli](#native)                                                | ✔     | ✔     |
 | [Boş](#null)                                                    | ✗     | ✔     |
 | [XML](#xml)                                                     | ✗     | ✔     |
 | [CapnProto](#capnproto)                                         | ✔     | ✗     |
@@ -72,7 +72,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 2014-03-22      1031592
 2014-03-23      1046491
 
-0000-00-00      8873898
+1970-01-01      8873898
 
 2014-03-17      1031592
 2014-03-23      1406958
@@ -110,9 +110,9 @@ Sadece küçük bir sembol seti kaçtı. Terminalinizin çıktıda mahvedeceği 
 
 Diziler köşeli parantez içinde virgülle ayrılmış değerlerin bir listesi olarak yazılır. Dizideki sayı öğeleri normal olarak biçimlendirilir. `Date` ve `DateTime` türleri tek tırnak yazılır. Diz .eler yukarıdaki gibi aynı kural quoteslarla tek tırnak içinde yazılır.
 
-[NULL](../sql_reference/syntax.md) olarak format islanır `\N`.
+[NULL](../sql-reference/syntax.md) olarak format islanır `\N`.
 
-Her eleman [İçiçe](../sql_reference/data_types/nested_data_structures/nested.md) yapılar dizi olarak temsil edilir.
+Her eleman [İçiçe](../sql-reference/data-types/nested-data-structures/nested.md) yapılar dizi olarak temsil edilir.
 
 Mesela:
 
@@ -201,7 +201,7 @@ Ayar `format_template_resultset` resultset için bir biçim dizesi içeren dosya
 -   `min` satır içinde minimum değerlere sahip mi `format_template_row` biçim (1 olarak ayarlandığında)
 -   `max` maksimum değerleri olan satır `format_template_row` biçim (1 olarak ayarlandığında)
 -   `rows` çıktı satırlarının toplam sayısıdır
--   `rows_before_limit` minimum satır sayısı sınırı olmadan olurdu. Yalnızca sorgu sınırı içeriyorsa çıktı. Sorgu GROUP BY içeriyorsa, ROWS\_BEFORE\_LİMİT\_AT\_LEAST SINIRSIZDI olurdu satır tam sayısıdır.
+-   `rows_before_limit` minimum satır sayısı sınırı olmadan olurdu. Yalnızca sorgu sınırı içeriyorsa çıktı. Sorgu GROUP BY içeriyorsa, ROWS_BEFORE_LİMİT_AT_LEAST SINIRSIZDI olurdu satır tam sayısıdır.
 -   `time` istek yürütme süresi saniyeler içinde mi
 -   `rows_read` satır sayısı okun thedu mu
 -   `bytes_read` bayt sayısı (sıkıştırılmamış) okundu mu
@@ -332,7 +332,7 @@ SearchPhrase=curtain designs        count()=1064
 SearchPhrase=baku       count()=1000
 ```
 
-[NULL](../sql_reference/syntax.md) olarak format islanır `\N`.
+[NULL](../sql-reference/syntax.md) olarak format islanır `\N`.
 
 ``` sql
 SELECT * FROM t_null FORMAT TSKV
@@ -352,21 +352,21 @@ Ayrıştırma, ek alanın varlığına izin verir `tskv` eşit işareti veya bir
 
 Virgülle ayrılmış değerler biçimi ([RFC](https://tools.ietf.org/html/rfc4180)).
 
-Biçimlendirme yaparken, satırlar çift tırnak içine alınır. Bir dizenin içindeki çift alıntı, bir satırda iki çift tırnak olarak çıktılanır. Karakterlerden kaçmak için başka kural yoktur. Tarih ve Tarih-Saat çift tırnak içine alınır. Sayılar tırnak işaretleri olmadan çıktı. Değerler, bir sınırlayıcı karakterle ayrılır; `,` varsayılan olarak. Sınırlayıcı karakteri ayarında tanımlanır [format\_csv\_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter). Satırlar Unıx satır besleme (LF) kullanılarak ayrılır. Diziler CSV'DE aşağıdaki gibi serileştirilir: ilk olarak, dizi TabSeparated biçiminde olduğu gibi bir dizeye serileştirilir ve daha sonra ortaya çıkan dize çift tırnak içinde CSV'YE çıkarılır. CSV biçimindeki Tuples ayrı sütunlar olarak serileştirilir(yani, tuple'daki yuvalanmaları kaybolur).
+Biçimlendirme yaparken, satırlar çift tırnak içine alınır. Bir dizenin içindeki çift alıntı, bir satırda iki çift tırnak olarak çıktılanır. Karakterlerden kaçmak için başka kural yoktur. Tarih ve Tarih-Saat çift tırnak içine alınır. Sayılar tırnak işaretleri olmadan çıktı. Değerler, bir sınırlayıcı karakterle ayrılır; `,` varsayılan olarak. Sınırlayıcı karakteri ayarında tanımlanır [format_csv_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter). Satırlar Unıx satır besleme (LF) kullanılarak ayrılır. Diziler CSV'DE aşağıdaki gibi serileştirilir: ilk olarak, dizi TabSeparated biçiminde olduğu gibi bir dizeye serileştirilir ve daha sonra ortaya çıkan dize çift tırnak içinde CSV'YE çıkarılır. CSV biçimindeki Tuples ayrı sütunlar olarak serileştirilir(yani, tuple'daki yuvalanmaları kaybolur).
 
 ``` bash
 $ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMAT CSV" < data.csv
 ```
 
-\* Varsayılan olarak, sınırlayıcı `,`. Görmek [format\_csv\_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter) daha fazla bilgi için ayarlama.
+\* Varsayılan olarak, sınırlayıcı `,`. Görmek [format_csv_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter) daha fazla bilgi için ayarlama.
 
 Ayrıştırma yaparken, tüm değerler tırnak işaretleri ile veya tırnak işaretleri olmadan ayrıştırılabilir. Hem çift hem de tek tırnak desteklenmektedir. Satırlar tırnak işaretleri olmadan da düzenlenebilir. Bu durumda, sınırlayıcı karaktere veya satır beslemesine (CR veya LF) ayrıştırılır. RFC'Yİ ihlal ederken, satırları tırnak işaretleri olmadan ayrıştırırken, önde gelen ve sondaki boşluklar ve sekmeler göz ardı edilir. Hat beslemesi için Unix (LF), Windows (CR LF) ve Mac OS Classic (CR LF) türleri desteklenir.
 
 Boş unquoted giriş değerleri, ilgili sütunlar için varsayılan değerlerle değiştirilir
-[ınput\_format\_defaults\_for\_omitted\_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)
+[ınput_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)
 etkindir.
 
-`NULL` olarak format islanır `\N` veya `NULL` veya boş bir unquoted dize (bkz. ayarlar [ınput\_format\_csv\_unquoted\_null\_literal\_as\_null](../operations/settings/settings.md#settings-input_format_csv_unquoted_null_literal_as_null) ve [ınput\_format\_defaults\_for\_omitted\_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)).
+`NULL` olarak format islanır `\N` veya `NULL` veya boş bir unquoted dize (bkz. ayarlar [ınput_format_csv_unquoted_null_literal_as_null](../operations/settings/settings.md#settings-input_format_csv_unquoted_null_literal_as_null) ve [ınput_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)).
 
 CSV biçimi, toplamların ve aşırılıkların çıktısını aynı şekilde destekler `TabSeparated`.
 
@@ -451,12 +451,12 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
 }
 ```
 
-Json JavaScript ile uyumludur. Bunu sağlamak için, bazı karakterler ek olarak kaçar: eğik çizgi `/` olarak kaç İsar `\/`; alternatif Satır sonları `U+2028` ve `U+2029`, hangi bazı tarayıcılar kırmak, olarak kaçtı `\uXXXX`. ASCII denetim karakterleri kaçtı: backspace, form besleme, satır besleme, satır başı ve yatay sekme ile değiştirilir `\b`, `\f`, `\n`, `\r`, `\t` , 00-1f aralığında kalan baytların yanı sıra `\uXXXX` sequences. Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences. For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double-quotes by default. To remove the quotes, you can set the configuration parameter [output\_format\_json\_quote\_64bit\_integers](../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) 0'a.
+Json JavaScript ile uyumludur. Bunu sağlamak için, bazı karakterler ek olarak kaçar: eğik çizgi `/` olarak kaç İsar `\/`; alternatif Satır sonları `U+2028` ve `U+2029`, hangi bazı tarayıcılar kırmak, olarak kaçtı `\uXXXX`. ASCII denetim karakterleri kaçtı: backspace, form besleme, satır besleme, satır başı ve yatay sekme ile değiştirilir `\b`, `\f`, `\n`, `\r`, `\t` , 00-1f aralığında kalan baytların yanı sıra `\uXXXX` sequences. Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences. For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double-quotes by default. To remove the quotes, you can set the configuration parameter [output_format_json_quote_64bit_integers](../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) 0'a.
 
 `rows` – The total number of output rows.
 
 `rows_before_limit_at_least` Minimum satır sayısı sınırı olmadan olurdu. Yalnızca sorgu sınırı içeriyorsa çıktı.
-Sorgu GROUP BY içeriyorsa, ROWS\_BEFORE\_LİMİT\_AT\_LEAST SINIRSIZDI olurdu satır tam sayısıdır.
+Sorgu GROUP BY içeriyorsa, ROWS_BEFORE_LİMİT_AT_LEAST SINIRSIZDI olurdu satır tam sayısıdır.
 
 `totals` – Total values (when using WITH TOTALS).
 
@@ -464,7 +464,7 @@ Sorgu GROUP BY içeriyorsa, ROWS\_BEFORE\_LİMİT\_AT\_LEAST SINIRSIZDI olurdu s
 
 Bu biçim yalnızca bir sorgu sonucu çıktısı için uygundur, ancak ayrıştırma için değil (bir tabloya eklemek için veri alma).
 
-ClickHouse destekler [NULL](../sql_reference/syntax.md) olarak görüntülenen `null` JSON çıkışında.
+ClickHouse destekler [NULL](../sql-reference/syntax.md) olarak görüntülenen `null` JSON çıkışında.
 
 Ayrıca bakınız [JSONEachRow](#jsoneachrow) biçimli.
 
@@ -541,9 +541,9 @@ ClickHouse, nesnelerden sonra öğeler ve virgüller arasındaki boşlukları yo
 
 **İhmal edilen değerler işleme**
 
-ClickHouse, karşılık gelen değerler için varsayılan değerlerle atlanmış değerleri değiştirir [veri türleri](../sql_reference/data_types/index.md).
+ClickHouse, karşılık gelen değerler için varsayılan değerlerle atlanmış değerleri değiştirir [veri türleri](../sql-reference/data-types/index.md).
 
-Eğer `DEFAULT expr` belirtilen, ClickHouse bağlı olarak farklı ikame kuralları kullanır [ınput\_format\_defaults\_for\_omitted\_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) ayar.
+Eğer `DEFAULT expr` belirtilen, ClickHouse bağlı olarak farklı ikame kuralları kullanır [ınput_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) ayar.
 
 Aşağıdaki tabloyu düşünün:
 
@@ -586,7 +586,7 @@ Aksine [JSON](#json) biçimi, geçersiz UTF-8 dizilerinin hiçbir ikame yoktur. 
 
 ### İç içe yapıların kullanımı {#jsoneachrow-nested}
 
-İle bir tablo varsa [İçiçe](../sql_reference/data_types/nested_data_structures/nested.md) veri türü sütunları, aynı yapıya sahip json verilerini ekleyebilirsiniz. İle bu özelliği etkinleştirin [ınput\_format\_ımport\_nested\_json](../operations/settings/settings.md#settings-input_format_import_nested_json) ayar.
+İle bir tablo varsa [İçiçe](../sql-reference/data-types/nested-data-structures/nested.md) veri türü sütunları, aynı yapıya sahip json verilerini ekleyebilirsiniz. İle bu özelliği etkinleştirin [ınput_format_ımport_nested_json](../operations/settings/settings.md#settings-input_format_import_nested_json) ayar.
 
 Örneğin, aşağıdaki tabloyu göz önünde bulundurun:
 
@@ -600,7 +600,7 @@ Gibi görmek `Nested` veri türü açıklaması, ClickHouse, iç içe geçmiş y
 INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n.s": ["abc", "def"], "n.i": [1, 23]}
 ```
 
-Hiyerarşik bir json nesnesi olarak veri eklemek için [input\_format\_import\_nested\_json = 1](../operations/settings/settings.md#settings-input_format_import_nested_json).
+Hiyerarşik bir json nesnesi olarak veri eklemek için [input_format_import_nested_json = 1](../operations/settings/settings.md#settings-input_format_import_nested_json).
 
 ``` json
 {
@@ -643,7 +643,7 @@ SELECT * FROM json_each_row_nested
 └───────────────┴────────┘
 ```
 
-## Yerel {#native}
+## Yerli {#native}
 
 En verimli biçim. Veriler ikili formatta bloklar tarafından yazılır ve okunur. Her blok için satır sayısı, sütun sayısı, sütun adları ve türleri ve bu bloktaki sütunların parçaları birbiri ardına kaydedilir. Başka bir deyişle, bu format “columnar” – it doesn't convert columns to rows. This is the format used in the native interface for interaction between servers, for using the command-line client, and for C++ clients.
 
@@ -660,7 +660,7 @@ Verileri Unicode-art tabloları olarak çıkarır, ayrıca TERMİNALDEKİ renkle
 Tablonun tam bir ızgarası çizilir ve her satır terminalde iki satır kaplar.
 Her sonuç bloğu ayrı bir tablo olarak çıktı. Bu, blokların arabelleğe alma sonuçları olmadan çıkabilmesi için gereklidir (tüm değerlerin görünür genişliğini önceden hesaplamak için arabelleğe alma gerekli olacaktır).
 
-[NULL](../sql_reference/syntax.md) olarak çıktı `ᴺᵁᴸᴸ`.
+[NULL](../sql-reference/syntax.md) olarak çıktı `ᴺᵁᴸᴸ`.
 
 Örnek (gösterilen [PrettyCompact](#prettycompact) biçimli):
 
@@ -708,7 +708,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 
 Totals:
 ┌──EventDate─┬───────c─┐
-│ 0000-00-00 │ 8873898 │
+│ 1970-01-01 │ 8873898 │
 └────────────┴─────────┘
 
 Extremes:
@@ -764,7 +764,7 @@ FixedString sadece bir bayt dizisi olarak temsil edilir.
 
 Dizi varint uzunluğu (imzasız) olarak temsil edilir [LEB128](https://en.wikipedia.org/wiki/LEB128)), ardından dizinin ardışık elemanları.
 
-İçin [NULL](../sql_reference/syntax.md#null-literal) destek, 1 veya 0 içeren ek bir bayt her önce eklenir [Nullable](../sql_reference/data_types/nullable.md) değer. 1 ise, o zaman değer `NULL` ve bu bayt ayrı bir değer olarak yorumlanır. 0 ise, bayttan sonraki değer değil `NULL`.
+İçin [NULL](../sql-reference/syntax.md#null-literal) destek, 1 veya 0 içeren ek bir bayt her önce eklenir [Nullable](../sql-reference/data-types/nullable.md) değer. 1 ise, o zaman değer `NULL` ve bu bayt ayrı bir değer olarak yorumlanır. 0 ise, bayttan sonraki değer değil `NULL`.
 
 ## Rowbinarywithnames ve türleri {#rowbinarywithnamesandtypes}
 
@@ -776,19 +776,19 @@ Benzer [RowBinary](#rowbinary), ancak eklenen Başlık ile:
 
 ## Değerler {#data-format-values}
 
-Her satırı parantez içinde yazdırır. Satırlar virgülle ayrılır. Son satırdan sonra virgül yok. Parantez içindeki değerler de virgülle ayrılır. Sayılar tırnak işaretleri olmadan ondalık biçimde çıktıdır. Diziler köşeli parantez içinde çıktı. Kat tırnak içinde çıkış dizelerle, tarihleri ve tarihleri. Kaçan kurallar ve ayrıştırma benzer [TabSeparated](#tabseparated) biçimli. Biçimlendirme sırasında fazladan boşluk eklenmez, ancak ayrıştırma sırasında izin verilir ve atlanır (izin verilmeyen dizi değerleri içindeki boşluklar hariç). [NULL](../sql_reference/syntax.md) olarak temsil edilir `NULL`.
+Her satırı parantez içinde yazdırır. Satırlar virgülle ayrılır. Son satırdan sonra virgül yok. Parantez içindeki değerler de virgülle ayrılır. Sayılar tırnak işaretleri olmadan ondalık biçimde çıktıdır. Diziler köşeli parantez içinde çıktı. Kat tırnak içinde çıkış dizelerle, tarihleri ve tarihleri. Kaçan kurallar ve ayrıştırma benzer [TabSeparated](#tabseparated) biçimli. Biçimlendirme sırasında fazladan boşluk eklenmez, ancak ayrıştırma sırasında izin verilir ve atlanır (izin verilmeyen dizi değerleri içindeki boşluklar hariç). [NULL](../sql-reference/syntax.md) olarak temsil edilir `NULL`.
 
 The minimum set of characters that you need to escape when passing data in Values ​​format: single quotes and backslashes.
 
 Bu, kullanılan formattır `INSERT INTO t VALUES ...`, ancak sorgu sonuçlarını biçimlendirmek için de kullanabilirsiniz.
 
-Ayrıca bakınız: [ınput\_format\_values\_interpret\_expressions](../operations/settings/settings.md#settings-input_format_values_interpret_expressions) ve [ınput\_format\_values\_deduce\_templates\_of\_expressions](../operations/settings/settings.md#settings-input_format_values_deduce_templates_of_expressions) ayarlar.
+Ayrıca bakınız: [ınput_format_values_interpret_expressions](../operations/settings/settings.md#settings-input_format_values_interpret_expressions) ve [ınput_format_values_deduce_templates_of_expressions](../operations/settings/settings.md#settings-input_format_values_deduce_templates_of_expressions) ayarlar.
 
 ## Dikey {#vertical}
 
 Her değeri belirtilen sütun adıyla ayrı bir satıra yazdırır. Bu biçim, her satır çok sayıda sütundan oluşuyorsa, yalnızca bir veya birkaç satır yazdırmak için uygundur.
 
-[NULL](../sql_reference/syntax.md) olarak çıktı `ᴺᵁᴸᴸ`.
+[NULL](../sql-reference/syntax.md) olarak çıktı `ᴺᵁᴸᴸ`.
 
 Örnek:
 
@@ -967,7 +967,7 @@ message MessageType {
 ```
 
 ClickHouse adlı bir sütun bulmaya çalışır `x.y.z` (veya `x_y_z` veya `X.y_Z` ve benzeri).
-İç içe mesajlar giriş veya çıkış a için uygundur [iç içe veri yapıları](../sql_reference/data_types/nested_data_structures/nested.md).
+İç içe mesajlar giriş veya çıkış a için uygundur [iç içe veri yapıları](../sql-reference/data-types/nested-data-structures/nested.md).
 
 Böyle bir protobuf şemasında tanımlanan varsayılan değerler
 
@@ -979,7 +979,7 @@ message MessageType {
 }
 ```
 
-uygulan ;mamaktadır; [tablo varsayılanları](../sql_reference/statements/create.md#create-default-values) bunların yerine kullanılır.
+uygulan ;mamaktadır; [tablo varsayılanları](../sql-reference/statements/create.md#create-default-values) bunların yerine kullanılır.
 
 ClickHouse girişleri ve çıkışları protobuf mesajları `length-delimited` biçimli.
 Bu, her mesajın uzunluğunu bir olarak yazmadan önce anlamına gelir [varint](https://developers.google.com/protocol-buffers/docs/encoding#varints).
@@ -993,23 +993,23 @@ ClickHouse Avro biçimi okuma ve yazma destekler [Avro veri dosyaları](http://a
 
 ### Veri Türleri Eşleştirme {#data_types-matching}
 
-Aşağıdaki tablo, desteklenen veri türlerini ve Clickhouse'la nasıl eşleştiğini gösterir [veri türleri](../sql_reference/data_types/index.md) içinde `INSERT` ve `SELECT` sorgular.
+Aşağıdaki tablo, desteklenen veri türlerini ve Clickhouse'la nasıl eşleştiğini gösterir [veri türleri](../sql-reference/data-types/index.md) içinde `INSERT` ve `SELECT` sorgular.
 
 | Avro veri türü `INSERT`                     | ClickHouse veri türü                                                                                              | Avro veri türü `SELECT`      |
 |---------------------------------------------|-------------------------------------------------------------------------------------------------------------------|------------------------------|
-| `boolean`, `int`, `long`, `float`, `double` | [Int(8/16/32)](../sql_reference/data_types/int_uint.md), [Uİnt(8/16/32)](../sql_reference/data_types/int_uint.md) | `int`                        |
-| `boolean`, `int`, `long`, `float`, `double` | [Int64](../sql_reference/data_types/int_uint.md), [Uİnt64](../sql_reference/data_types/int_uint.md)               | `long`                       |
-| `boolean`, `int`, `long`, `float`, `double` | [Float32](../sql_reference/data_types/float.md)                                                                   | `float`                      |
-| `boolean`, `int`, `long`, `float`, `double` | [Float64](../sql_reference/data_types/float.md)                                                                   | `double`                     |
-| `bytes`, `string`, `fixed`, `enum`          | [Dize](../sql_reference/data_types/string.md)                                                                     | `bytes`                      |
-| `bytes`, `string`, `fixed`                  | [FixedString(N)](../sql_reference/data_types/fixedstring.md)                                                      | `fixed(N)`                   |
-| `enum`                                      | [Enum (8/16)](../sql_reference/data_types/enum.md)                                                                | `enum`                       |
-| `array(T)`                                  | [Dizi(T)](../sql_reference/data_types/array.md)                                                                   | `array(T)`                   |
-| `union(null, T)`, `union(T, null)`          | [Null (T)](../sql_reference/data_types/date.md)                                                                   | `union(null, T)`             |
-| `null`                                      | [Null (Hiçbir Şey)](../sql_reference/data_types/special_data_types/nothing.md)                                    | `null`                       |
-| `int (date)` \*                             | [Tarihli](../sql_reference/data_types/date.md)                                                                    | `int (date)` \*              |
-| `long (timestamp-millis)` \*                | [DateTime64 (3)](../sql_reference/data_types/datetime.md)                                                         | `long (timestamp-millis)` \* |
-| `long (timestamp-micros)` \*                | [DateTime64 (6)](../sql_reference/data_types/datetime.md)                                                         | `long (timestamp-micros)` \* |
+| `boolean`, `int`, `long`, `float`, `double` | [Int(8/16/32)](../sql-reference/data-types/int-uint.md), [Uİnt(8/16/32)](../sql-reference/data-types/int-uint.md) | `int`                        |
+| `boolean`, `int`, `long`, `float`, `double` | [Int64](../sql-reference/data-types/int-uint.md), [Uİnt64](../sql-reference/data-types/int-uint.md)               | `long`                       |
+| `boolean`, `int`, `long`, `float`, `double` | [Float32](../sql-reference/data-types/float.md)                                                                   | `float`                      |
+| `boolean`, `int`, `long`, `float`, `double` | [Float64](../sql-reference/data-types/float.md)                                                                   | `double`                     |
+| `bytes`, `string`, `fixed`, `enum`          | [Dize](../sql-reference/data-types/string.md)                                                                     | `bytes`                      |
+| `bytes`, `string`, `fixed`                  | [FixedString(N)](../sql-reference/data-types/fixedstring.md)                                                      | `fixed(N)`                   |
+| `enum`                                      | [Enum (8/16)](../sql-reference/data-types/enum.md)                                                                | `enum`                       |
+| `array(T)`                                  | [Dizi(T)](../sql-reference/data-types/array.md)                                                                   | `array(T)`                   |
+| `union(null, T)`, `union(T, null)`          | [Null (T)](../sql-reference/data-types/date.md)                                                                   | `union(null, T)`             |
+| `null`                                      | [Null (Hiçbir Şey)](../sql-reference/data-types/special-data-types/nothing.md)                                    | `null`                       |
+| `int (date)` \*                             | [Tarihli](../sql-reference/data-types/date.md)                                                                    | `int (date)` \*              |
+| `long (timestamp-millis)` \*                | [DateTime64 (3)](../sql-reference/data-types/datetime.md)                                                         | `long (timestamp-millis)` \* |
+| `long (timestamp-micros)` \*                | [DateTime64 (6)](../sql-reference/data-types/datetime.md)                                                         | `long (timestamp-micros)` \* |
 
 \* [Avro mantıksal türleri](http://avro.apache.org/docs/current/spec.html#Logical+Types)
 
@@ -1030,7 +1030,7 @@ Giriş Avro dosyasının kök şeması olmalıdır `record` tür.
 ClickHouse tablo sütunları ve Avro şema alanları arasındaki yazışmaları bulmak için adlarını karşılaştırır. Bu karşılaştırma büyük / küçük harf duyarlıdır.
 Kullanılmayan alanlar atlanır.
 
-ClickHouse tablo sütunlarının veri türleri, eklenen Avro verilerinin karşılık gelen alanlarından farklı olabilir. Veri eklerken, ClickHouse veri türlerini yukarıdaki tabloya göre yorumlar ve sonra [döküm](../sql_reference/functions/type_conversion_functions.md#type_conversion_function-cast) karşılık gelen sütun türüne veri.
+ClickHouse tablo sütunlarının veri türleri, eklenen Avro verilerinin karşılık gelen alanlarından farklı olabilir. Veri eklerken, ClickHouse veri türlerini yukarıdaki tabloya göre yorumlar ve sonra [döküm](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) karşılık gelen sütun türüne veri.
 
 ### Veri Seçme {#selecting-data-1}
 
@@ -1045,7 +1045,7 @@ Sütun adları gerekir:
 -   ile başla `[A-Za-z_]`
 -   daha sonra sadece içerir `[A-Za-z0-9_]`
 
-Çıkış Avro dosya sıkıştırma ve senkronizasyon aralığı ile yapılandırılabilir [output\_format\_avro\_codec](../operations/settings/settings.md#settings-output_format_avro_codec) ve [output\_format\_avro\_sync\_interval](../operations/settings/settings.md#settings-output_format_avro_sync_interval) sırasıyla.
+Çıkış Avro dosya sıkıştırma ve senkronizasyon aralığı ile yapılandırılabilir [output_format_avro_codec](../operations/settings/settings.md#settings-output_format_avro_codec) ve [output_format_avro_sync_interval](../operations/settings/settings.md#settings-output_format_avro_sync_interval) sırasıyla.
 
 ## AvroConfluent {#data-format-avro-confluent}
 
@@ -1055,7 +1055,7 @@ Her Avro iletisi, şema Kayıt defterinin yardımıyla gerçek şemaya çözüle
 
 Şemalar çözüldükten sonra önbelleğe alınır.
 
-Şema kayıt defteri URL'si ile yapılandırılır [format\_avro\_schema\_registry\_url](../operations/settings/settings.md#settings-format_avro_schema_registry_url)
+Şema kayıt defteri URL'si ile yapılandırılır [format_avro_schema_registry_url](../operations/settings/settings.md#settings-format_avro_schema_registry_url)
 
 ### Veri Türleri Eşleştirme {#data_types-matching-1}
 
@@ -1072,7 +1072,7 @@ $ kafkacat -b kafka-broker  -C -t topic1 -o beginning -f '%s' -c 3 | clickhouse-
 3 c
 ```
 
-Kullanmak `AvroConfluent` ile [Kafka](../engines/table_engines/integrations/kafka.md):
+Kullanmak `AvroConfluent` ile [Kafka](../engines/table-engines/integrations/kafka.md):
 
 ``` sql
 CREATE TABLE topic1_stream
@@ -1101,25 +1101,25 @@ SELECT * FROM topic1_stream;
 
 ### Veri Türleri Eşleştirme {#data_types-matching-2}
 
-Aşağıdaki tablo, desteklenen veri türlerini ve Clickhouse'la nasıl eşleştiğini gösterir [veri türleri](../sql_reference/data_types/index.md) içinde `INSERT` ve `SELECT` sorgular.
+Aşağıdaki tablo, desteklenen veri türlerini ve Clickhouse'la nasıl eşleştiğini gösterir [veri türleri](../sql-reference/data-types/index.md) içinde `INSERT` ve `SELECT` sorgular.
 
 | Parke veri türü (`INSERT`) | ClickHouse veri türü                                      | Parke veri türü (`SELECT`) |
 |----------------------------|-----------------------------------------------------------|----------------------------|
-| `UINT8`, `BOOL`            | [Uİnt8](../sql_reference/data_types/int_uint.md)          | `UINT8`                    |
-| `INT8`                     | [Int8](../sql_reference/data_types/int_uint.md)           | `INT8`                     |
-| `UINT16`                   | [Uınt16](../sql_reference/data_types/int_uint.md)         | `UINT16`                   |
-| `INT16`                    | [Int16](../sql_reference/data_types/int_uint.md)          | `INT16`                    |
-| `UINT32`                   | [Uİnt32](../sql_reference/data_types/int_uint.md)         | `UINT32`                   |
-| `INT32`                    | [Int32](../sql_reference/data_types/int_uint.md)          | `INT32`                    |
-| `UINT64`                   | [Uİnt64](../sql_reference/data_types/int_uint.md)         | `UINT64`                   |
-| `INT64`                    | [Int64](../sql_reference/data_types/int_uint.md)          | `INT64`                    |
-| `FLOAT`, `HALF_FLOAT`      | [Float32](../sql_reference/data_types/float.md)           | `FLOAT`                    |
-| `DOUBLE`                   | [Float64](../sql_reference/data_types/float.md)           | `DOUBLE`                   |
-| `DATE32`                   | [Tarihli](../sql_reference/data_types/date.md)            | `UINT16`                   |
-| `DATE64`, `TIMESTAMP`      | [DateTime](../sql_reference/data_types/datetime.md)       | `UINT32`                   |
-| `STRING`, `BINARY`         | [Dize](../sql_reference/data_types/string.md)             | `STRING`                   |
-| —                          | [FixedString](../sql_reference/data_types/fixedstring.md) | `STRING`                   |
-| `DECIMAL`                  | [Ondalık](../sql_reference/data_types/decimal.md)         | `DECIMAL`                  |
+| `UINT8`, `BOOL`            | [Uİnt8](../sql-reference/data-types/int-uint.md)          | `UINT8`                    |
+| `INT8`                     | [Int8](../sql-reference/data-types/int-uint.md)           | `INT8`                     |
+| `UINT16`                   | [Uınt16](../sql-reference/data-types/int-uint.md)         | `UINT16`                   |
+| `INT16`                    | [Int16](../sql-reference/data-types/int-uint.md)          | `INT16`                    |
+| `UINT32`                   | [Uİnt32](../sql-reference/data-types/int-uint.md)         | `UINT32`                   |
+| `INT32`                    | [Int32](../sql-reference/data-types/int-uint.md)          | `INT32`                    |
+| `UINT64`                   | [Uİnt64](../sql-reference/data-types/int-uint.md)         | `UINT64`                   |
+| `INT64`                    | [Int64](../sql-reference/data-types/int-uint.md)          | `INT64`                    |
+| `FLOAT`, `HALF_FLOAT`      | [Float32](../sql-reference/data-types/float.md)           | `FLOAT`                    |
+| `DOUBLE`                   | [Float64](../sql-reference/data-types/float.md)           | `DOUBLE`                   |
+| `DATE32`                   | [Tarihli](../sql-reference/data-types/date.md)            | `UINT16`                   |
+| `DATE64`, `TIMESTAMP`      | [DateTime](../sql-reference/data-types/datetime.md)       | `UINT32`                   |
+| `STRING`, `BINARY`         | [Dize](../sql-reference/data-types/string.md)             | `STRING`                   |
+| —                          | [FixedString](../sql-reference/data-types/fixedstring.md) | `STRING`                   |
+| `DECIMAL`                  | [Ondalık](../sql-reference/data-types/decimal.md)         | `DECIMAL`                  |
 
 ClickHouse yapılandırılabilir hassas destekler `Decimal` tür. Bu `INSERT` sorgu parke davranır `DECIMAL` ClickHouse olarak yazın `Decimal128` tür.
 
@@ -1141,7 +1141,7 @@ Bir ClickHouse tablosundan veri seçin ve aşağıdaki komutla parke formatında
 $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
 ```
 
-Hadoop ile veri alışverişi yapmak için şunları kullanabilirsiniz [HDFS tablo motoru](../engines/table_engines/integrations/hdfs.md).
+Hadoop ile veri alışverişi yapmak için şunları kullanabilirsiniz [HDFS tablo motoru](../engines/table-engines/integrations/hdfs.md).
 
 ## ORC {#data-format-orc}
 
@@ -1149,30 +1149,30 @@ Hadoop ile veri alışverişi yapmak için şunları kullanabilirsiniz [HDFS tab
 
 ### Veri Türleri Eşleştirme {#data_types-matching-3}
 
-Aşağıdaki tablo, desteklenen veri türlerini ve Clickhouse'la nasıl eşleştiğini gösterir [veri türleri](../sql_reference/data_types/index.md) içinde `INSERT` sorgular.
+Aşağıdaki tablo, desteklenen veri türlerini ve Clickhouse'la nasıl eşleştiğini gösterir [veri türleri](../sql-reference/data-types/index.md) içinde `INSERT` sorgular.
 
 | Orc veri türü (`INSERT`) | ClickHouse veri türü                                |
 |--------------------------|-----------------------------------------------------|
-| `UINT8`, `BOOL`          | [Uİnt8](../sql_reference/data_types/int_uint.md)    |
-| `INT8`                   | [Int8](../sql_reference/data_types/int_uint.md)     |
-| `UINT16`                 | [Uınt16](../sql_reference/data_types/int_uint.md)   |
-| `INT16`                  | [Int16](../sql_reference/data_types/int_uint.md)    |
-| `UINT32`                 | [Uİnt32](../sql_reference/data_types/int_uint.md)   |
-| `INT32`                  | [Int32](../sql_reference/data_types/int_uint.md)    |
-| `UINT64`                 | [Uİnt64](../sql_reference/data_types/int_uint.md)   |
-| `INT64`                  | [Int64](../sql_reference/data_types/int_uint.md)    |
-| `FLOAT`, `HALF_FLOAT`    | [Float32](../sql_reference/data_types/float.md)     |
-| `DOUBLE`                 | [Float64](../sql_reference/data_types/float.md)     |
-| `DATE32`                 | [Tarihli](../sql_reference/data_types/date.md)      |
-| `DATE64`, `TIMESTAMP`    | [DateTime](../sql_reference/data_types/datetime.md) |
-| `STRING`, `BINARY`       | [Dize](../sql_reference/data_types/string.md)       |
-| `DECIMAL`                | [Ondalık](../sql_reference/data_types/decimal.md)   |
+| `UINT8`, `BOOL`          | [Uİnt8](../sql-reference/data-types/int-uint.md)    |
+| `INT8`                   | [Int8](../sql-reference/data-types/int-uint.md)     |
+| `UINT16`                 | [Uınt16](../sql-reference/data-types/int-uint.md)   |
+| `INT16`                  | [Int16](../sql-reference/data-types/int-uint.md)    |
+| `UINT32`                 | [Uİnt32](../sql-reference/data-types/int-uint.md)   |
+| `INT32`                  | [Int32](../sql-reference/data-types/int-uint.md)    |
+| `UINT64`                 | [Uİnt64](../sql-reference/data-types/int-uint.md)   |
+| `INT64`                  | [Int64](../sql-reference/data-types/int-uint.md)    |
+| `FLOAT`, `HALF_FLOAT`    | [Float32](../sql-reference/data-types/float.md)     |
+| `DOUBLE`                 | [Float64](../sql-reference/data-types/float.md)     |
+| `DATE32`                 | [Tarihli](../sql-reference/data-types/date.md)      |
+| `DATE64`, `TIMESTAMP`    | [DateTime](../sql-reference/data-types/datetime.md) |
+| `STRING`, `BINARY`       | [Dize](../sql-reference/data-types/string.md)       |
+| `DECIMAL`                | [Ondalık](../sql-reference/data-types/decimal.md)   |
 
 ClickHouse yapılandırılabilir hassas destekler `Decimal` tür. Bu `INSERT` sorgu Orc davranır `DECIMAL` ClickHouse olarak yazın `Decimal128` tür.
 
 Desteklenmeyen Orc veri türleri: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
-ClickHouse tablo sütunlarının veri türlerinin karşılık gelen ORC veri alanları ile eşleşmesi gerekmez. Veri eklerken, ClickHouse veri türlerini yukarıdaki tabloya göre yorumlar ve sonra [döküm](../sql_reference/functions/type_conversion_functions.md#type_conversion_function-cast) veri türü için veri kümesi ClickHouse tablo sütun.
+ClickHouse tablo sütunlarının veri türlerinin karşılık gelen ORC veri alanları ile eşleşmesi gerekmez. Veri eklerken, ClickHouse veri türlerini yukarıdaki tabloya göre yorumlar ve sonra [döküm](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) veri türü için veri kümesi ClickHouse tablo sütun.
 
 ### Veri Ekleme {#inserting-data-2}
 
@@ -1182,7 +1182,7 @@ Bir dosyadan Orc verilerini ClickHouse tablosuna aşağıdaki komutla ekleyebili
 $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT ORC"
 ```
 
-Hadoop ile veri alışverişi yapmak için şunları kullanabilirsiniz [HDFS tablo motoru](../engines/table_engines/integrations/hdfs.md).
+Hadoop ile veri alışverişi yapmak için şunları kullanabilirsiniz [HDFS tablo motoru](../engines/table-engines/integrations/hdfs.md).
 
 ## Biçim Şeması {#formatschema}
 
@@ -1198,13 +1198,13 @@ mutlak bir yol veya istemci üzerinde geçerli dizine göre bir yol içerebilir.
 Eğer istemci kullanıyorsanız [Toplu Modu](../interfaces/cli.md#cli_usage), şemanın yolu güvenlik nedeniyle göreceli olmalıdır.
 
 Eğer giriş veya çıkış veri üzerinden [HTTP arayüzü](../interfaces/http.md) biçim şemasında belirtilen dosya adı
-belirtilen dizinde bulunmalıdır [format\_schema\_path](../operations/server_configuration_parameters/settings.md#server_configuration_parameters-format_schema_path)
+belirtilen dizinde bulunmalıdır [format_schema_path](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path)
 sunucu yapılandırmasında.
 
 ## Atlama Hataları {#skippingerrors}
 
-Gibi bazı format suchlar `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` ve `Protobuf` ayrıştırma hatası oluşursa kırık satırı atlayabilir ve bir sonraki satırın başından ayrıştırmaya devam edebilir. Görmek [ınput\_format\_allow\_errors\_num](../operations/settings/settings.md#settings-input_format_allow_errors_num) ve
-[ınput\_format\_allow\_errors\_ratio](../operations/settings/settings.md#settings-input_format_allow_errors_ratio) ayarlar.
+Gibi bazı format suchlar `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` ve `Protobuf` ayrıştırma hatası oluşursa kırık satırı atlayabilir ve bir sonraki satırın başından ayrıştırmaya devam edebilir. Görmek [ınput_format_allow_errors_num](../operations/settings/settings.md#settings-input_format_allow_errors_num) ve
+[ınput_format_allow_errors_ratio](../operations/settings/settings.md#settings-input_format_allow_errors_ratio) ayarlar.
 Sınırlamalar:
 - Ayrıştırma hatası durumunda `JSONEachRow` yeni satıra (veya EOF) kadar tüm verileri atlar, bu nedenle satırlar AŞAĞIDAKİLERLE sınırlandırılmalıdır `\n` hataları doğru saymak için.
 - `Template` ve `CustomSeparated` bir sonraki satırın başlangıcını bulmak için son sütundan sonra sınırlayıcı ve satırlar arasındaki sınırlayıcıyı kullanın, Bu nedenle hataları atlamak yalnızca en az biri boş değilse çalışır.

@@ -16,7 +16,7 @@ namespace ErrorCodes
 /** Writes data to existing std::vector or similar type. When not enough space, it doubles vector size.
   *
   * In destructor, vector is cutted to the size of written data.
-  * You can call to 'finish' to resize earlier.
+  * You can call 'finalize' to resize earlier.
   *
   * The vector should live until this object is destroyed or until the 'finish' method is called.
   */

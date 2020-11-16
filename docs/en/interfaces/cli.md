@@ -7,7 +7,7 @@ toc_title: Command-Line Client
 
 ClickHouse provides a native command-line client: `clickhouse-client`. The client supports command-line options and configuration files. For more information, see [Configuring](#interfaces_cli_configuration).
 
-[Install](../getting_started/index.md) it from the `clickhouse-client` package and run it with the command `clickhouse-client`.
+[Install](../getting-started/index.md) it from the `clickhouse-client` package and run it with the command `clickhouse-client`.
 
 ``` bash
 $ clickhouse-client
@@ -87,7 +87,7 @@ Format a query as usual, then place the values that you want to pass from the ap
 ```
 
 -   `name` — Placeholder identifier. In the console client it should be used in app parameters as `--param_<name> = value`.
--   `data type` — [Data type](../sql_reference/data_types/index.md) of the app parameter value. For example, a data structure like `(integer, ('string', integer))` can have the `Tuple(UInt8, Tuple(String, UInt8))` data type (you can also use another [integer](../sql_reference/data_types/int_uint.md) types).
+-   `data type` — [Data type](../sql-reference/data-types/index.md) of the app parameter value. For example, a data structure like `(integer, ('string', integer))` can have the `Tuple(UInt8, Tuple(String, UInt8))` data type (you can also use another [integer](../sql-reference/data-types/int-uint.md) types).
 
 #### Example {#example}
 
@@ -123,6 +123,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 -   `--stacktrace` – If specified, also print the stack trace if an exception occurs.
 -   `--config-file` – The name of the configuration file.
 -   `--secure` – If specified, will connect to server over secure connection.
+-   `--history_file` — Path to a file containing command history.
 -   `--param_<name>` — Value for a [query with parameters](#cli-queries-with-parameters).
 
 ### Configuration Files {#configuration_files}

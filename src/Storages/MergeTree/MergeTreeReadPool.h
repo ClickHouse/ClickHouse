@@ -36,13 +36,16 @@ public:
         size_t min_interval_between_events_ms = 1000;
         /// Number of events to do backoff - to lower number of threads in pool.
         size_t min_events = 2;
+        /// Try keeping the minimal number of threads in pool.
+        size_t min_concurrency = 1;
 
         /// Constants above is just an example.
         BackoffSettings(const Settings & settings)
             : min_read_latency_ms(settings.read_backoff_min_latency_ms.totalMilliseconds()),
             max_throughput(settings.read_backoff_max_throughput),
             min_interval_between_events_ms(settings.read_backoff_min_interval_between_events_ms.totalMilliseconds()),
-            min_events(settings.read_backoff_min_events)
+            min_events(settings.read_backoff_min_events),
+            min_concurrency(settings.read_backoff_min_concurrency)
         {
         }
 
@@ -68,7 +71,7 @@ private:
 public:
     MergeTreeReadPool(
         const size_t threads_, const size_t sum_marks_, const size_t min_marks_for_concurrent_read_,
-        RangesInDataParts parts_, const MergeTreeData & data_, const PrewhereInfoPtr & prewhere_info_,
+        RangesInDataParts && parts_, const MergeTreeData & data_, const StorageMetadataPtr & metadata_snapshot_, const PrewhereInfoPtr & prewhere_info_,
         const bool check_columns_, const Names & column_names_,
         const BackoffSettings & backoff_settings_, size_t preferred_block_size_bytes_,
         const bool do_not_steal_tasks_ = false);
@@ -88,13 +91,14 @@ public:
 
 private:
     std::vector<size_t> fillPerPartInfo(
-        RangesInDataParts & parts, const bool check_columns);
+        const RangesInDataParts & parts, const bool check_columns);
 
     void fillPerThreadInfo(
         const size_t threads, const size_t sum_marks, std::vector<size_t> per_part_sum_marks,
-        RangesInDataParts & parts, const size_t min_marks_for_concurrent_read);
+        const RangesInDataParts & parts, const size_t min_marks_for_concurrent_read);
 
     const MergeTreeData & data;
+    StorageMetadataPtr metadata_snapshot;
     Names column_names;
     bool do_not_steal_tasks;
     bool predict_block_size_bytes;
@@ -133,7 +137,7 @@ private:
 
     mutable std::mutex mutex;
 
-    Logger * log = &Logger::get("MergeTreeReadPool");
+    Poco::Logger * log = &Poco::Logger::get("MergeTreeReadPool");
 };
 
 using MergeTreeReadPoolPtr = std::shared_ptr<MergeTreeReadPool>;

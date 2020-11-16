@@ -1,5 +1,4 @@
-# libc++
-race:locale
-
-# Too many mutexes: https://github.com/google/sanitizers/issues/950
-deadlock:DB::MergeTreeReadPool::fillPerPartInfo
+# looks like a bug in clang-11 thread sanitizer, detects normal data race with random FD in this method
+race:DB::LazyPipeFDs::close
+# races in openSSL https://github.com/openssl/openssl/issues/11974
+fun:evp_cipher_cache_constants

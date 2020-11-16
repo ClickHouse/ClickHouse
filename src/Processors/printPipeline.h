@@ -15,6 +15,8 @@ template <typename Processors, typename Statuses>
 void printPipeline(const Processors & processors, const Statuses & statuses, WriteBuffer & out)
 {
     out << "digraph\n{\n";
+    out << "  rankdir=\"LR\";\n";
+    out << "  { node [shape = box]\n";
 
     auto get_proc_id = [](const IProcessor & proc) -> UInt64
     {
@@ -26,7 +28,7 @@ void printPipeline(const Processors & processors, const Statuses & statuses, Wri
     /// Nodes // TODO quoting and escaping
     for (const auto & processor : processors)
     {
-        out << "n" << get_proc_id(*processor) << "[label=\"" << processor->getName() << processor->getDescription();
+        out << "    n" << get_proc_id(*processor) << "[label=\"" << processor->getName() << processor->getDescription();
 
         if (statuses_iter != statuses.end())
         {
@@ -36,6 +38,8 @@ void printPipeline(const Processors & processors, const Statuses & statuses, Wri
 
         out << "\"];\n";
     }
+
+    out << "  }\n";
 
     /// Edges
     for (const auto & processor : processors)
@@ -48,7 +52,7 @@ void printPipeline(const Processors & processors, const Statuses & statuses, Wri
             const IProcessor & curr = *processor;
             const IProcessor & next = port.getInputPort().getProcessor();
 
-            out << "n" << get_proc_id(curr) << " -> " << "n" << get_proc_id(next) << ";\n";
+            out << "  n" << get_proc_id(curr) << " -> n" << get_proc_id(next) << ";\n";
         }
     }
     out << "}\n";
@@ -59,5 +63,11 @@ void printPipeline(const Processors & processors, WriteBuffer & out)
 {
     printPipeline(processors, std::vector<IProcessor::Status>(), out);
 }
+
+/// Prints pipeline in compact representation.
+/// Group processors by it's name, QueryPlanStep and QueryPlanStepGroup.
+/// If QueryPlanStep wasn't set for processor, representation may be not correct.
+/// If with_header is set, prints block header for each edge.
+void printPipelineCompact(const Processors & processors, WriteBuffer & out, bool with_header);
 
 }

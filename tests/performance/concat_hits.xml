@@ -1,35 +1,35 @@
 <test>
     <preconditions>
-        <table_exists>test.hits</table_exists>
+        <table_exists>hits_100m_single</table_exists>
     </preconditions>
 
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(concat(URL, URL))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(concat(URL, SearchPhrase))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(concat(MobilePhoneModel, SearchPhrase))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(concat(URL, 'Hello'))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(concat('World', SearchPhrase))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(concat(MobilePhoneModel, 'Hello'))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(concat(PageCharset, 'a'))</query>
+    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(concat(URL, URL))</query>
+    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(concat(URL, SearchPhrase))</query>
+    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(concat(MobilePhoneModel, SearchPhrase))</query>
+    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(concat(URL, 'Hello'))</query>
+    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(concat('World', SearchPhrase))</query>
+    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(concat(MobilePhoneModel, 'Hello'))</query>
+    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(concat(PageCharset, 'a'))</query>
 
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(format('{{}}{{}}', URL, URL))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(format('{{}}{{}}', URL, SearchPhrase))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(format('{{}}{{}}', MobilePhoneModel, SearchPhrase))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(format('{{}}Hello', URL))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(format('World{{}}', SearchPhrase))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(format('{{}}Hello', MobilePhoneModel))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(format('{{}}a', PageCharset))</query>
+    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(format('{{}}{{}}', URL, URL))</query>
+    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(format('{{}}{{}}', URL, SearchPhrase))</query>
+    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(format('{{}}{{}}', MobilePhoneModel, SearchPhrase))</query>
+    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(format('{{}}Hello', URL))</query>
+    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(format('World{{}}', SearchPhrase))</query>
+    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(format('{{}}Hello', MobilePhoneModel))</query>
+    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(format('{{}}a', PageCharset))</query>
 
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(concat(URL, URL, URL))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(concat(URL, SearchPhrase, MobilePhoneModel))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(concat(URL, 'Hello', URL))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(concat('Hello', SearchPhrase, 'World'))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(concat(MobilePhoneModel, 'Hello', PageCharset))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(concat('a', PageCharset, 'b'))</query>
+    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(concat(URL, URL, URL))</query>
+    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(concat(URL, SearchPhrase, MobilePhoneModel))</query>
+    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(concat(URL, 'Hello', URL))</query>
+    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(concat('Hello', SearchPhrase, 'World'))</query>
+    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(concat(MobilePhoneModel, 'Hello', PageCharset))</query>
+    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(concat('a', PageCharset, 'b'))</query>
 
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(format('{{}}{{}}{{}}', URL, URL, URL))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(format('{{}}{{}}{{}}', URL, SearchPhrase, MobilePhoneModel))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(format('{{}}Hello{{}}', URL, URL))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(format('Hello{{}}World', SearchPhrase))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(format('{{}}Hello{{}}', MobilePhoneModel, PageCharset))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(format('a{{}}b', PageCharset))</query>
+    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(format('{{}}{{}}{{}}', URL, URL, URL))</query>
+    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(format('{{}}{{}}{{}}', URL, SearchPhrase, MobilePhoneModel))</query>
+    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(format('{{}}Hello{{}}', URL, URL))</query>
+    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(format('Hello{{}}World', SearchPhrase))</query>
+    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(format('{{}}Hello{{}}', MobilePhoneModel, PageCharset))</query>
+    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(format('a{{}}b', PageCharset))</query>
 </test>

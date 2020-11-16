@@ -1,4 +1,3 @@
-
 # 如何编写 C++ 代码 {#ru-he-bian-xie-c-dai-ma}
 
 ## 一般建议 {#yi-ban-jian-yi}
@@ -318,7 +317,7 @@ std::string getName() const override { return "Memory"; }
 class StorageMemory : public IStorage
 ```
 
-**4.** `using` 的命名方式与类相同，或者以\_\_t\`命名。
+**4.** `using` 的命名方式与类相同，或者以__t\`命名。
 
 **5.** 模板类型参数的名称：在简单的情况下，使用`T`; `T`，`U`; `T1`，`T2`。
 
@@ -390,7 +389,7 @@ FileQueueProcessor(
 timer (not m_timer)
 ```
 
-**14.** 对于 `enum` 中的常量，请使用带大写字母的驼峰标识。ALL\_CAPS 也可以接受。如果 `enum` 是非本地的，请使用 `enum class`。
+**14.** 对于 `enum` 中的常量，请使用带大写字母的驼峰标识。ALL_CAPS 也可以接受。如果 `enum` 是非本地的，请使用 `enum class`。
 
 ``` cpp
 enum class CompressionMethod
@@ -695,15 +694,15 @@ auto s = std::string{"Hello"};
 
 但在其他条件相同的情况下，首选跨平台或可移植代码。
 
-**2.** 语言： C++17.
+**2.** 语言： C++20.
 
-**3.** 编译器： `gcc`。 此时（2017年12月），代码使用7.2版编译。（它也可以使用`clang 4` 编译）
+**3.** 编译器： `gcc`。 此时（2020年08月），代码使用9.3版编译。（它也可以使用`clang 8` 编译）
 
-使用标准库 (`libstdc++` 或 `libc++`)。
+使用标准库 (`libc++`)。
 
 **4.** 操作系统：Linux Ubuntu，不比 Precise 早。
 
-**5.** 代码是为x86\_64 CPU架构编写的。
+**5.** 代码是为x86_64 CPU架构编写的。
 
 CPU指令集是我们服务器中支持的最小集合。 目前，它是SSE 4.2。
 
@@ -743,7 +742,7 @@ CPU指令集是我们服务器中支持的最小集合。 目前，它是SSE 4.2
 
 ## 库 {#ku}
 
-**1.** 使用C ++ 14标准库（允许实验性功能），以及 `boost` 和 `Poco` 框架。
+**1.** 使用C++20标准库（允许实验性功能），以及 `boost` 和 `Poco` 框架。
 
 **2.** 如有必要，您可以使用 OS 包中提供的任何已知库。
 

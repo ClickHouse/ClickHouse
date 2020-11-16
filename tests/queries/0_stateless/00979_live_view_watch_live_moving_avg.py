@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 import os
 import sys
 import signal
@@ -30,6 +30,7 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     client1.send('CREATE LIVE VIEW test.lv AS SELECT sum(a)/2 FROM (SELECT a, id FROM ( SELECT a, id FROM test.mt ORDER BY id DESC LIMIT 2 ) ORDER BY id DESC LIMIT 2)') 
     client1.expect(prompt)
     client1.send('WATCH test.lv')
+    client1.expect('_version')
     client1.expect(r'0.*1' + end_of_block)
     client2.send('INSERT INTO test.mt VALUES (1, 1),(2, 2),(3, 3)')
     client1.expect(r'2\.5.*2' + end_of_block)

@@ -69,15 +69,12 @@ static bool operator<(const RangeHashedDictionary::Range & left, const RangeHash
 
 
 RangeHashedDictionary::RangeHashedDictionary(
-    const std::string & database_,
-    const std::string & name_,
+    const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
     bool require_nonempty_)
-    : database(database_)
-    , name(name_)
-    , full_name{database_.empty() ? name_ : (database_ + "." + name_)}
+    : IDictionaryBase(dict_id_)
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
     , dict_lifetime(dict_lifetime_)
@@ -127,7 +124,7 @@ void RangeHashedDictionary::getString(
 
     for (const auto i : ext::range(0, ids.size()))
     {
-        const auto it = attr.find(ids[i]);
+        const auto * it = attr.find(ids[i]);
         if (it)
         {
             const auto date = dates[i];
@@ -160,8 +157,8 @@ void RangeHashedDictionary::createAttributes()
         attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value));
 
         if (attribute.hierarchical)
-            throw Exception{full_name + ": hierarchical attributes not supported by " + getName() + " dictionary.",
-                            ErrorCodes::BAD_ARGUMENTS};
+            throw Exception{ErrorCodes::BAD_ARGUMENTS, "Hierarchical attributes not supported by {} dictionary.",
+                            getDictionaryID().getNameForLogs()};
     }
 }
 
@@ -407,11 +404,11 @@ void RangeHashedDictionary::getItemsImpl(
                       return v.range.contains(date);
                   });
 
-            out[i] = static_cast<OutputType>(val_it != std::end(ranges_and_values) ? val_it->value : null_value);
+            out[i] = static_cast<OutputType>(val_it != std::end(ranges_and_values) ? val_it->value : null_value); // NOLINT
         }
         else
         {
-            out[i] = static_cast<OutputType>(null_value);
+            out[i] = static_cast<OutputType>(null_value); // NOLINT
         }
     }
 
@@ -493,10 +490,10 @@ void RangeHashedDictionary::setAttributeValue(Attribute & attribute, const Key i
         {
             auto & map = *std::get<Ptr<StringRef>>(attribute.maps);
             const auto & string = value.get<String>();
-            const auto string_in_arena = attribute.string_arena->insert(string.data(), string.size());
+            const auto * string_in_arena = attribute.string_arena->insert(string.data(), string.size());
             const StringRef string_ref{string_in_arena, string.size()};
 
-            const auto it = map.find(id);
+            auto * it = map.find(id);
 
             if (it)
             {
@@ -649,7 +646,7 @@ struct RangeHashedDIctionaryCallGetBlockInputStreamImpl
     template <typename RangeType, size_t>
     void operator()()
     {
-        auto & type = dict->dict_struct.range_min->type;
+        const auto & type = dict->dict_struct.range_min->type;
         if (!stream && dynamic_cast<const DataTypeNumberBase<RangeType> *>(type.get()))
             stream = dict->getBlockInputStreamImpl<RangeType>(*column_names, max_block_size);
     }
@@ -689,11 +686,10 @@ void registerDictionaryRangeHashed(DictionaryFactory & factory)
             throw Exception{full_name + ": dictionary of layout 'range_hashed' requires .structure.range_min and .structure.range_max",
                             ErrorCodes::BAD_ARGUMENTS};
 
-        const String database = config.getString(config_prefix + ".database", "");
-        const String name = config.getString(config_prefix + ".name");
+        const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
-        return std::make_unique<RangeHashedDictionary>(database, name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
+        return std::make_unique<RangeHashedDictionary>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
     };
     factory.registerLayout("range_hashed", create_layout, false);
 }

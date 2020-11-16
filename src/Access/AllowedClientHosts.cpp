@@ -8,6 +8,7 @@
 #include <ext/scope_guard.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <ifaddrs.h>
+#include <Common/DNSResolver.h>
 
 
 namespace DB
@@ -44,61 +45,22 @@ namespace
         return IPSubnet(toIPv6(subnet.getPrefix()), subnet.getMask());
     }
 
-
-    /// Helper function for isAddressOfHost().
-    bool isAddressOfHostImpl(const IPAddress & address, const String & host)
-    {
-        IPAddress addr_v6 = toIPv6(address);
-
-        /// Resolve by hand, because Poco don't use AI_ALL flag but we need it.
-        addrinfo * ai_begin = nullptr;
-        SCOPE_EXIT(
-        {
-            if (ai_begin)
-                freeaddrinfo(ai_begin);
-        });
-
-        addrinfo hints;
-        memset(&hints, 0, sizeof(hints));
-        hints.ai_family = AF_UNSPEC;
-        hints.ai_flags |= AI_V4MAPPED | AI_ALL;
-
-        int err = getaddrinfo(host.c_str(), nullptr, &hints, &ai_begin);
-        if (err)
-            throw Exception("Cannot getaddrinfo(" + host + "): " + gai_strerror(err), ErrorCodes::DNS_ERROR);
-
-        for (const addrinfo * ai = ai_begin; ai; ai = ai->ai_next)
-        {
-            if (ai->ai_addrlen && ai->ai_addr)
-            {
-                if (ai->ai_family == AF_INET)
-                {
-                    const auto & sin = *reinterpret_cast<const sockaddr_in *>(ai->ai_addr);
-                    if (addr_v6 == toIPv6(IPAddress(&sin.sin_addr, sizeof(sin.sin_addr))))
-                    {
-                        return true;
-                    }
-                }
-                else if (ai->ai_family == AF_INET6)
-                {
-                    const auto & sin = *reinterpret_cast<const sockaddr_in6*>(ai->ai_addr);
-                    if (addr_v6 == IPAddress(&sin.sin6_addr, sizeof(sin.sin6_addr), sin.sin6_scope_id))
-                    {
-                        return true;
-                    }
-                }
-            }
-        }
-
-        return false;
-    }
-
     /// Whether a specified address is one of the addresses of a specified host.
     bool isAddressOfHost(const IPAddress & address, const String & host)
     {
-        /// We need to cache DNS requests.
-        static SimpleCache<decltype(isAddressOfHostImpl), isAddressOfHostImpl> cache;
-        return cache(address, host);
+        IPAddress addr_v6 = toIPv6(address);
+
+        auto host_addresses = DNSResolver::instance().resolveHostAll(host);
+
+        for (const auto & addr : host_addresses)
+        {
+            if (addr.family() == IPAddress::Family::IPv4 && addr_v6 == toIPv6(addr))
+                return true;
+            else if (addr.family() == IPAddress::Family::IPv6 && addr_v6 == addr)
+                return true;
+        }
+
+        return false;
     }
 
     /// Helper function for isAddressOfLocalhost().
@@ -142,30 +104,16 @@ namespace
         return boost::range::find(local_addresses, toIPv6(address)) != local_addresses.end();
     }
 
-    /// Helper function for getHostByAddress().
-    String getHostByAddressImpl(const IPAddress & address)
+    /// Returns the host name by its address.
+    String getHostByAddress(const IPAddress & address)
     {
-        Poco::Net::SocketAddress sock_addr(address, 0);
-
-        /// Resolve by hand, because Poco library doesn't have such functionality.
-        char host[1024];
-        int err = getnameinfo(sock_addr.addr(), sock_addr.length(), host, sizeof(host), nullptr, 0, NI_NAMEREQD);
-        if (err)
-            throw Exception("Cannot getnameinfo(" + address.toString() + "): " + gai_strerror(err), ErrorCodes::DNS_ERROR);
+        String host = DNSResolver::instance().reverseResolve(address);
 
         /// Check that PTR record is resolved back to client address
         if (!isAddressOfHost(address, host))
             throw Exception("Host " + String(host) + " isn't resolved back to " + address.toString(), ErrorCodes::DNS_ERROR);
 
         return host;
-    }
-
-    /// Returns the host name by its address.
-    String getHostByAddress(const IPAddress & address)
-    {
-        /// We need to cache DNS requests.
-        static SimpleCache<decltype(getHostByAddressImpl), &getHostByAddressImpl> cache;
-        return cache(address);
     }
 
 
@@ -208,7 +156,7 @@ namespace
         subnet = IPSubnet{pattern};
     }
 
-    /// Extracts a subnet, a host name or a host name regular expession from a like pattern.
+    /// Extracts a subnet, a host name or a host name regular expression from a like pattern.
     void parseLikePattern(
         const String & pattern, std::optional<IPSubnet> & subnet, std::optional<String> & name, std::optional<String> & name_regexp)
     {
@@ -299,9 +247,9 @@ bool AllowedClientHosts::contains(const IPAddress & client_address) const
                 throw;
             /// Try to ignore DNS errors: if host cannot be resolved, skip it and try next.
             LOG_WARNING(
-                &Logger::get("AddressPatterns"),
-                "Failed to check if the allowed client hosts contain address " << client_address.toString() << ". " << e.displayText()
-                                                                               << ", code = " << e.code());
+                &Poco::Logger::get("AddressPatterns"),
+                "Failed to check if the allowed client hosts contain address {}. {}, code = {}",
+                client_address.toString(), e.displayText(), e.code());
             return false;
         }
     };
@@ -332,9 +280,9 @@ bool AllowedClientHosts::contains(const IPAddress & client_address) const
                 throw;
             /// Try to ignore DNS errors: if host cannot be resolved, skip it and try next.
             LOG_WARNING(
-                &Logger::get("AddressPatterns"),
-                "Failed to check if the allowed client hosts contain address " << client_address.toString() << ". " << e.displayText()
-                                                                             << ", code = " << e.code());
+                &Poco::Logger::get("AddressPatterns"),
+                "Failed to check if the allowed client hosts contain address {}. {}, code = {}",
+                client_address.toString(), e.displayText(), e.code());
             return false;
         }
     };

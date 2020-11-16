@@ -1,4 +1,3 @@
-
 # 常见问题 {#chang-jian-wen-ti}
 
 ## 为什么不使用MapReduce之类的产品呢? {#wei-shi-yao-bu-shi-yong-mapreducezhi-lei-de-chan-pin-ni}
@@ -11,7 +10,7 @@
 
 ## 如果我在通过ODBC使用Oracle时遇到编码问题，该怎么办？ {#oracle-odbc-encodings}
 
-如果您通过ODBC驱动程序使用Oracle作为外部字典的源，则需要为 `NLS_LANG` 在变量 `/etc/default/clickhouse`. 欲了解更多详情，请参阅 [Oracle NLS\_常见问题](https://www.oracle.com/technetwork/products/globalization/nls-lang-099431.html).
+如果您通过ODBC驱动程序使用Oracle作为外部字典的源，则需要为 `NLS_LANG` 在变量 `/etc/default/clickhouse`. 欲了解更多详情，请参阅 [Oracle NLS_常见问题](https://www.oracle.com/technetwork/products/globalization/nls-lang-099431.html).
 
 **示例**
 

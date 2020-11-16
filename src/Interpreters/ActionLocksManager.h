@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/ActionLock.h>
 #include <Interpreters/StorageID.h>
@@ -19,10 +19,10 @@ class Context;
 class ActionLocksManager
 {
 public:
-    explicit ActionLocksManager(Context & global_context_) : global_context(global_context_) {}
+    ActionLocksManager(const Context & context);
 
     /// Adds new locks for each table
-    void add(StorageActionBlockType action_type);
+    void add(StorageActionBlockType action_type, const Context & context);
     /// Add new lock for a table if it has not been already added
     void add(const StorageID & table_id, StorageActionBlockType action_type);
     void add(const StoragePtr & table, StorageActionBlockType action_type);
@@ -37,14 +37,13 @@ public:
     void cleanExpired();
 
 private:
-    Context & global_context;
-
     using StorageRawPtr = const IStorage *;
     using Locks = std::unordered_map<size_t, ActionLock>;
     using StorageLocks = std::unordered_map<StorageRawPtr, Locks>;
 
     mutable std::mutex mutex;
     StorageLocks storage_locks;
+    const Context & global_context;
 };
 
 }

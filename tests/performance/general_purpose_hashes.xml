@@ -1,17 +1,4 @@
 <test>
-
-    <stop_conditions>
-          <all_of>
-            <iterations>3</iterations>
-            <min_time_not_changing_for_ms>10000</min_time_not_changing_for_ms>
-        </all_of>
-        <any_of>
-            <iterations>5</iterations>
-            <total_time_ms>60000</total_time_ms>
-        </any_of>
-    </stop_conditions>
-
-
     <substitutions>
         <substitution>
            <name>gp_hash_func</name>

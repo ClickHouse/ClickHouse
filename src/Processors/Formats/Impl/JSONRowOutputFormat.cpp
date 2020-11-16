@@ -7,10 +7,15 @@
 namespace DB
 {
 
-JSONRowOutputFormat::JSONRowOutputFormat(WriteBuffer & out_, const Block & header, FormatFactory::WriteCallback callback, const FormatSettings & settings_)
-    : IRowOutputFormat(header, out_, callback), settings(settings_)
+JSONRowOutputFormat::JSONRowOutputFormat(
+    WriteBuffer & out_,
+    const Block & header,
+    const RowOutputFormatParams & params_,
+    const FormatSettings & settings_,
+    bool yield_strings_)
+    : IRowOutputFormat(header, out_, params_), settings(settings_), yield_strings(yield_strings_)
 {
-    auto & sample = getPort(PortKind::Main).getHeader();
+    const auto & sample = getPort(PortKind::Main).getHeader();
     NamesAndTypesList columns(sample.getNamesAndTypesList());
     fields.assign(columns.begin(), columns.end());
 
@@ -71,7 +76,17 @@ void JSONRowOutputFormat::writeField(const IColumn & column, const IDataType & t
     writeCString("\t\t\t", *ostr);
     writeString(fields[field_number].name, *ostr);
     writeCString(": ", *ostr);
-    type.serializeAsTextJSON(column, row_num, *ostr, settings);
+
+    if (yield_strings)
+    {
+        WriteBufferFromOwnString buf;
+
+        type.serializeAsText(column, row_num, buf, settings);
+        writeJSONString(buf.str(), *ostr, settings);
+    }
+    else
+        type.serializeAsTextJSON(column, row_num, *ostr, settings);
+
     ++field_number;
 }
 
@@ -80,7 +95,17 @@ void JSONRowOutputFormat::writeTotalsField(const IColumn & column, const IDataTy
     writeCString("\t\t", *ostr);
     writeString(fields[field_number].name, *ostr);
     writeCString(": ", *ostr);
-    type.serializeAsTextJSON(column, row_num, *ostr, settings);
+
+    if (yield_strings)
+    {
+        WriteBufferFromOwnString buf;
+
+        type.serializeAsText(column, row_num, buf, settings);
+        writeJSONString(buf.str(), *ostr, settings);
+    }
+    else
+        type.serializeAsTextJSON(column, row_num, *ostr, settings);
+
     ++field_number;
 }
 
@@ -246,10 +271,19 @@ void registerOutputFormatProcessorJSON(FormatFactory & factory)
     factory.registerOutputFormatProcessor("JSON", [](
         WriteBuffer & buf,
         const Block & sample,
-        FormatFactory::WriteCallback callback,
+        const RowOutputFormatParams & params,
         const FormatSettings & format_settings)
     {
-        return std::make_shared<JSONRowOutputFormat>(buf, sample, callback, format_settings);
+        return std::make_shared<JSONRowOutputFormat>(buf, sample, params, format_settings, false);
+    });
+
+    factory.registerOutputFormatProcessor("JSONStrings", [](
+        WriteBuffer & buf,
+        const Block & sample,
+        const RowOutputFormatParams & params,
+        const FormatSettings & format_settings)
+    {
+        return std::make_shared<JSONRowOutputFormat>(buf, sample, params, format_settings, true);
     });
 }
 

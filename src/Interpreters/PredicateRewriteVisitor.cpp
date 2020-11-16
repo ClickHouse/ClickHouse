@@ -17,8 +17,8 @@ namespace DB
 {
 
 PredicateRewriteVisitorData::PredicateRewriteVisitorData(
-    const Context & context_, const ASTs & predicates_, const Names & column_names_, bool optimize_final_)
-    : context(context_), predicates(predicates_), column_names(column_names_), optimize_final(optimize_final_)
+    const Context & context_, const ASTs & predicates_, Names && column_names_, bool optimize_final_, bool optimize_with_)
+    : context(context_), predicates(predicates_), column_names(column_names_), optimize_final(optimize_final_), optimize_with(optimize_with_)
 {
 }
 
@@ -76,7 +76,7 @@ static void cleanAliasAndCollectIdentifiers(ASTPtr & predicate, std::vector<ASTI
     }
 
     if (const auto alias = predicate->tryGetAlias(); !alias.empty())
-        predicate->setAlias("");
+        predicate->setAlias({});
 
     if (ASTIdentifier * identifier = predicate->as<ASTIdentifier>())
         identifiers.emplace_back(identifier);
@@ -85,7 +85,8 @@ static void cleanAliasAndCollectIdentifiers(ASTPtr & predicate, std::vector<ASTI
 bool PredicateRewriteVisitorData::rewriteSubquery(ASTSelectQuery & subquery, const Names & outer_columns, const Names & inner_columns)
 {
     if ((!optimize_final && subquery.final())
-        || subquery.with() || subquery.withFill()
+        || (!optimize_with && subquery.with())
+        || subquery.withFill()
         || subquery.limitBy() || subquery.limitLength()
         || hasStatefulFunction(subquery.select(), context))
         return false;

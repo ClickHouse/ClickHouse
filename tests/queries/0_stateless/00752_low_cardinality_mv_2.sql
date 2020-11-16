@@ -5,6 +5,7 @@ CREATE TABLE radacct ( radacctid UInt64, f3gppchargingid Nullable(String), f3gpp
 
 insert into radacct values (1, 'a', 'b', 'c', 'd', 'e', 2, 'a', 'b', 'c', 'd', 'e', 'f', 3, 4, 5, 6, 7, 'a', 'Stop', 'c', 'd', 'e', 'f', 'g', 'h', '2018-10-10 15:54:21', '2018-10-10 15:54:21', 8, 'a', 9, 10, 'a', 'b', '2018-10-10 15:54:21', 'a', 'b', 11, 12, '2018-10-10', 'a', 'b', 'c', 'd', 'e');
 
+SELECT any(acctstatustype = 'Stop') FROM radacct WHERE (acctstatustype = 'Stop') AND ((acctinputoctets + acctoutputoctets) > 0);
 create materialized view mv_traffic_by_tadig15min Engine=AggregatingMergeTree partition by tadig order by (ts,tadig) populate as select toStartOfFifteenMinutes(timestamp) ts,toDayOfWeek(timestamp) dow, tadig, sumState(acctinputoctets+acctoutputoctets) traffic_bytes,maxState(timestamp) last_stop, minState(radacctid) min_radacctid,maxState(radacctid) max_radacctid from radacct where acctstatustype='Stop' and acctinputoctets+acctoutputoctets > 0 group by tadig,ts,dow;
 
 select tadig, ts, dow, sumMerge(traffic_bytes), maxMerge(last_stop), minMerge(min_radacctid), maxMerge(max_radacctid) from mv_traffic_by_tadig15min group by tadig, ts, dow;

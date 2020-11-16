@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 62
 toc_title: Vue d'ensemble de L'Architecture ClickHouse
 ---
@@ -47,7 +47,7 @@ A `Block` est un conteneur qui représente un sous-ensemble (morceau) d'une tabl
 
 Lorsque nous calculons une fonction sur des colonnes dans un bloc, nous ajoutons une autre colonne avec son résultat au bloc, et nous ne touchons pas les colonnes pour les arguments de la fonction car les opérations sont immuables. Plus tard, les colonnes inutiles peuvent être supprimées du bloc, mais pas modifiées. Il est pratique pour l'élimination des sous-expressions communes.
 
-Des blocs sont créés pour chaque bloc de données traité. Notez que pour le même type de calcul, les noms et les types de colonnes restent les mêmes pour différents blocs, et seules les données de colonne changent. Il est préférable de diviser les données de bloc de l'en-tête de bloc car les petites tailles de Bloc ont une surcharge élevée de chaînes temporaires pour copier shared\_ptrs et les noms de colonnes.
+Des blocs sont créés pour chaque bloc de données traité. Notez que pour le même type de calcul, les noms et les types de colonnes restent les mêmes pour différents blocs, et seules les données de colonne changent. Il est préférable de diviser les données de bloc de l'en-tête de bloc car les petites tailles de Bloc ont une surcharge élevée de chaînes temporaires pour copier shared_ptrs et les noms de colonnes.
 
 ## Bloquer Les Flux {#block-streams}
 
@@ -122,7 +122,7 @@ Il y a des fonctions ordinaires et des fonctions agrégées. Pour les fonctions 
 
 Ordinary functions don't change the number of rows – they work as if they are processing each row independently. In fact, functions are not called for individual rows, but for `Block`'s de données pour implémenter l'exécution de requête vectorisée.
 
-Il y a quelques fonctions diverses, comme [la taille de bloc](../sql_reference/functions/other_functions.md#function-blocksize), [rowNumberInBlock](../sql_reference/functions/other_functions.md#function-rownumberinblock), et [runningAccumulate](../sql_reference/functions/other_functions.md#function-runningaccumulate), qui exploitent le traitement de bloc et violent l'indépendance des lignes.
+Il y a quelques fonctions diverses, comme [la taille de bloc](../sql-reference/functions/other-functions.md#function-blocksize), [rowNumberInBlock](../sql-reference/functions/other-functions.md#function-rownumberinblock), et [runningAccumulate](../sql-reference/functions/other-functions.md#function-runningaccumulate), qui exploitent le traitement de bloc et violent l'indépendance des lignes.
 
 ClickHouse a un typage fort, donc il n'y a pas de conversion de type implicite. Si une fonction ne prend pas en charge une combinaison spécifique de types, elle lève une exception. Mais les fonctions peuvent fonctionner (être surchargées) pour de nombreuses combinaisons de types différentes. Par exemple, l' `plus` fonction (pour mettre en œuvre la `+` opérateur) fonctionne pour toute combinaison de types numériques: `UInt8` + `Float32`, `UInt16` + `Int8` et ainsi de suite. En outre, certaines fonctions variadiques peuvent accepter n'importe quel nombre d'arguments, tels que `concat` fonction.
 

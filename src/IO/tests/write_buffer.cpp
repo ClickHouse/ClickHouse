@@ -1,9 +1,8 @@
 #include <string>
 
 #include <iostream>
-#include <sstream>
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromOStream.h>
 
@@ -18,6 +17,7 @@ int main(int, char **)
         DB::String d = "'xyz\\";
 
         std::stringstream s;
+        s.exceptions(std::ios::failbit);
 
         {
             DB::WriteBufferFromOStream out(s);

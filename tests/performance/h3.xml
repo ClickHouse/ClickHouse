@@ -1,11 +1,5 @@
 <test>
 
-    <stop_conditions>
-        <any_of>
-            <!-- This is only for infinite running query. -->
-            <total_time_ms>10000</total_time_ms>
-        </any_of>
-    </stop_conditions>
 
     <!-- Moscow coordinates, maximum precision. NOTE: H3 library is extraordinary slow. -->
     <query>SELECT count() FROM zeros(100000) WHERE NOT ignore(geoToH3(37.62 + rand(1) / 0x100000000, 55.75 + rand(2) / 0x100000000, 15))</query>

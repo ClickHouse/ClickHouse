@@ -3,12 +3,11 @@
 # This file is distributed under the same license as the PROJECT project.
 # FIRST AUTHOR <EMAIL@ADDRESS>, 2020.
 #
-#, fuzzy
 msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-04-15 13:19+0000\n"
+"POT-Creation-Date: 2020-06-17 12:20+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: en\n"
@@ -19,32 +18,47 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Generated-By: Babel 2.8.0\n"
 
-#: templates/common_meta.html:5 templates/common_meta.html:9
-#: templates/common_meta.html:16
+#: templates/common_meta.html:1
+msgid ""
+"ClickHouse is a fast open-source column-oriented database management "
+"system that allows generating analytical data reports in real-time using "
+"SQL queries"
+msgstr ""
+"ClickHouse is a fast open-source column-oriented database management "
+"system that allows generating analytical data reports in real-time using "
+"SQL queries"
+
+#: templates/common_meta.html:6
+msgid "ClickHouse - fast open-source OLAP DBMS"
+msgstr "ClickHouse - fast open-source OLAP DBMS"
+
+#: templates/common_meta.html:10
 msgid "ClickHouse DBMS"
 msgstr "ClickHouse DBMS"
 
-#: templates/common_meta.html:11
-msgid ""
-"ClickHouse is an open source column-oriented database management system "
-"that allows generating analytical data reports in real time using SQL "
-"queries."
-msgstr ""
-"ClickHouse is an open source column-oriented database management system "
-"that allows generating analytical data reports in real time using SQL "
-"queries."
+#: templates/common_meta.html:32
+msgid "open-source"
+msgstr "open-source"
 
-#: templates/common_meta.html:19
-msgid ""
-"ClickHouse is an open source distributed column-oriented database "
-"management system that allows generating analytical data reports in real "
-"time using SQL queries. Сreated by Yandex ClickHouse manages extremely "
-"large volumes of data in a stable and sustainable manner."
-msgstr ""
-"ClickHouse is an open source distributed column-oriented database "
-"management system that allows generating analytical data reports in real "
-"time using SQL queries. Сreated by Yandex ClickHouse manages extremely "
-"large volumes of data in a stable and sustainable manner."
+#: templates/common_meta.html:32
+msgid "relational"
+msgstr "relational"
+
+#: templates/common_meta.html:32
+msgid "analytics"
+msgstr "analytics"
+
+#: templates/common_meta.html:32
+msgid "analytical"
+msgstr "analytical"
+
+#: templates/common_meta.html:32
+msgid "Big Data"
+msgstr "Big Data"
+
+#: templates/common_meta.html:32
+msgid "web-analytics"
+msgstr "web-analytics"
 
 #: templates/footer.html:8
 msgid "ClickHouse source code is published under the Apache 2.0 License."
@@ -62,11 +76,76 @@ msgstr ""
 msgid "Yandex LLC"
 msgstr "Yandex LLC"
 
-#: templates/docs/content.html:6
+#: templates/blog/content.html:20 templates/blog/content.html:25
+#: templates/blog/content.html:30
+msgid "Share on"
+msgstr "Share on"
+
+#: templates/blog/content.html:37
+msgid "Published date"
+msgstr "Published date"
+
+#: templates/blog/nav.html:20
+msgid "New&nbsp;post"
+msgstr "New&nbsp;post"
+
+#: templates/blog/nav.html:25
+msgid "Documentation"
+msgstr "Documentation"
+
+#: templates/docs/footer.html:3
+msgid "Rating"
+msgstr "Rating"
+
+#: templates/docs/footer.html:3
+msgid "votes"
+msgstr "votes"
+
+#: templates/docs/footer.html:4
+msgid "Article Rating"
+msgstr "Article Rating"
+
+#: templates/docs/footer.html:4
+msgid "Was this content helpful?"
+msgstr "Was this content helpful?"
+
+#: templates/docs/footer.html:7
+msgid "Unusable"
+msgstr "Unusable"
+
+#: templates/docs/footer.html:7
+msgid "Poor"
+msgstr "Poor"
+
+#: templates/docs/footer.html:7
+msgid "Good"
+msgstr "Good"
+
+#: templates/docs/footer.html:7
+msgid "Excellent"
+msgstr "Excellent"
+
+#: templates/docs/footer.html:8
+msgid "documentation"
+msgstr "documentation"
+
+#: templates/docs/footer.html:15
+msgid "Built from"
+msgstr "Built from"
+
+#: templates/docs/footer.html:15
+msgid "published on"
+msgstr "published on"
+
+#: templates/docs/footer.html:15
+msgid "modified on"
+msgstr "modified on"
+
+#: templates/docs/machine-translated.html:3
 msgid "Help wanted!"
 msgstr "Help wanted!"
 
-#: templates/docs/content.html:7
+#: templates/docs/machine-translated.html:4
 msgid ""
 "The following content of this documentation page has been machine-"
 "translated. But unlike other websites, it is not done on the fly. This "
@@ -80,17 +159,13 @@ msgstr ""
 "codebase and waits for fellow native speakers to make it more human-"
 "readable."
 
-#: templates/docs/content.html:7
+#: templates/docs/machine-translated.html:4
 msgid "You can also use the original English version as a reference."
 msgstr "You can also use the original English version as a reference."
 
-#: templates/docs/content.html:10
+#: templates/docs/machine-translated.html:7
 msgid "Help ClickHouse documentation by editing this page"
 msgstr "Help ClickHouse documentation by editing this page"
-
-#: templates/docs/content.html:27
-msgid "Built from"
-msgstr "Built from"
 
 #: templates/docs/sidebar.html:3
 msgid "Multi-page or single-page"
@@ -204,12 +279,12 @@ msgstr "Hosting ClickHouse Meetups"
 msgid ""
 "ClickHouse meetups are essential for strengthening community worldwide, "
 "but they couldn't be possible without the help of local organizers. "
-"Please, feel this form if you want to become one or want to meet "
+"Please, fill this form if you want to become one or want to meet "
 "ClickHouse core team for any other reason."
 msgstr ""
 "ClickHouse meetups are essential for strengthening community worldwide, "
 "but they couldn't be possible without the help of local organizers. "
-"Please, feel this form if you want to become one or want to meet "
+"Please, fill this form if you want to become one or want to meet "
 "ClickHouse core team for any other reason."
 
 #: templates/index/community.html:159
@@ -267,4 +342,38 @@ msgstr ""
 #: templates/index/community.html:213
 msgid "turn on JavaScript to see email address"
 msgstr "turn on JavaScript to see email address"
+
+#~ msgid ""
+#~ "ClickHouse is an open source column-"
+#~ "oriented database management system that "
+#~ "allows generating analytical data reports "
+#~ "in real time using SQL queries."
+#~ msgstr ""
+#~ "ClickHouse is an open source column-"
+#~ "oriented database management system that "
+#~ "allows generating analytical data reports "
+#~ "in real time using SQL queries."
+
+#~ msgid ""
+#~ "ClickHouse is an open source distributed"
+#~ " column-oriented database management system"
+#~ " that allows generating analytical data "
+#~ "reports in real time using SQL "
+#~ "queries. Сreated by Yandex ClickHouse "
+#~ "manages extremely large volumes of data"
+#~ " in a stable and sustainable manner."
+#~ msgstr ""
+#~ "ClickHouse is an open source distributed"
+#~ " column-oriented database management system"
+#~ " that allows generating analytical data "
+#~ "reports in real time using SQL "
+#~ "queries. Сreated by Yandex ClickHouse "
+#~ "manages extremely large volumes of data"
+#~ " in a stable and sustainable manner."
+
+#~ msgid "published at"
+#~ msgstr "published at"
+
+#~ msgid "modified at"
+#~ msgstr "modified at"
 

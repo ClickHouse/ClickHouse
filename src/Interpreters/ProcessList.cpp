@@ -14,12 +14,6 @@
 #include <chrono>
 
 
-namespace CurrentMetrics
-{
-    extern const Metric MemoryTracking;
-}
-
-
 namespace DB
 {
 
@@ -68,7 +62,6 @@ static bool isUnlimitedQuery(const IAST * ast)
 ProcessList::ProcessList(size_t max_size_)
     : max_size(max_size_)
 {
-    total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 }
 
 
@@ -91,9 +84,37 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
         if (!is_unlimited_query && max_size && processes.size() >= max_size)
         {
             if (queue_max_wait_ms)
-                LOG_WARNING(&Logger::get("ProcessList"), "Too many simultaneous queries, will wait " << queue_max_wait_ms << " ms.");
+                LOG_WARNING(&Poco::Logger::get("ProcessList"), "Too many simultaneous queries, will wait {} ms.", queue_max_wait_ms);
             if (!queue_max_wait_ms || !have_space.wait_for(lock, std::chrono::milliseconds(queue_max_wait_ms), [&]{ return processes.size() < max_size; }))
                 throw Exception("Too many simultaneous queries. Maximum: " + toString(max_size), ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES);
+        }
+
+        {
+            /**
+             * `max_size` check above is controlled by `max_concurrent_queries` server setting and is a "hard" limit for how many
+             * queries the server can process concurrently. It is configured at startup. When the server is overloaded with queries and the
+             * hard limit is reached it is impossible to connect to the server to run queries for investigation.
+             *
+             * With `max_concurrent_queries_for_all_users` it is possible to configure an additional, runtime configurable, limit for query concurrency.
+             * Usually it should be configured just once for `default_profile` which is inherited by all users. DBAs can override
+             * this setting when connecting to ClickHouse, or it can be configured for a DBA profile to have a value greater than that of
+             * the default profile (or 0 for unlimited).
+             *
+             * One example is to set `max_size=X`, `max_concurrent_queries_for_all_users=X-10` for default profile,
+             * and `max_concurrent_queries_for_all_users=0` for DBAs or accounts that are vital for ClickHouse operations (like metrics
+             * exporters).
+             *
+             * Another creative example is to configure `max_concurrent_queries_for_all_users=50` for "analyst" profiles running adhoc queries
+             * and `max_concurrent_queries_for_all_users=100` for "customer facing" services. This way "analyst" queries will be rejected
+             * once is already processing 50+ concurrent queries (including analysts or any other users).
+             */
+
+            if (!is_unlimited_query && settings.max_concurrent_queries_for_all_users
+                && processes.size() >= settings.max_concurrent_queries_for_all_users)
+                throw Exception(
+                    "Too many simultaneous queries for all users. Current: " + toString(processes.size())
+                    + ", maximum: " + settings.max_concurrent_queries_for_all_users.toString(),
+                    ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES);
         }
 
         /** Why we use current user?
@@ -158,70 +179,56 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
         }
 
         auto process_it = processes.emplace(processes.end(),
-            query_, client_info, settings.max_memory_usage, settings.memory_tracker_fault_probability, priorities.insert(settings.priority));
+            query_, client_info, priorities.insert(settings.priority));
 
         res = std::make_shared<Entry>(*this, process_it);
 
         process_it->query_context = &query_context;
 
-        if (!client_info.current_query_id.empty())
+        ProcessListForUser & user_process_list = user_to_queries[client_info.current_user];
+        user_process_list.queries.emplace(client_info.current_query_id, &res->get());
+
+        process_it->setUserProcessList(&user_process_list);
+
+        /// Track memory usage for all simultaneously running queries from single user.
+        user_process_list.user_memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage_for_user);
+        user_process_list.user_memory_tracker.setDescription("(for user)");
+
+        /// Actualize thread group info
+        if (auto thread_group = CurrentThread::getGroup())
         {
-            ProcessListForUser & user_process_list = user_to_queries[client_info.current_user];
-            user_process_list.queries.emplace(client_info.current_query_id, &res->get());
+            std::lock_guard lock_thread_group(thread_group->mutex);
+            thread_group->performance_counters.setParent(&user_process_list.user_performance_counters);
+            thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
+            thread_group->query = process_it->query;
 
-            process_it->setUserProcessList(&user_process_list);
+            /// Set query-level memory trackers
+            thread_group->memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage);
 
-            /// Limits are only raised (to be more relaxed) or set to something instead of zero,
-            ///  because settings for different queries will interfere each other:
-            ///  setting from one query effectively sets values for all other queries.
-
-            /// Track memory usage for all simultaneously running queries.
-            /// You should specify this value in configuration for default profile,
-            ///  not for specific users, sessions or queries,
-            ///  because this setting is effectively global.
-            total_memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage_for_all_queries);
-            total_memory_tracker.setDescription("(total)");
-
-            /// Track memory usage for all simultaneously running queries from single user.
-            user_process_list.user_memory_tracker.setParent(&total_memory_tracker);
-            user_process_list.user_memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage_for_user);
-            user_process_list.user_memory_tracker.setDescription("(for user)");
-
-            /// Actualize thread group info
-            if (auto thread_group = CurrentThread::getGroup())
+            if (query_context.hasTraceCollector())
             {
-                std::lock_guard lock_thread_group(thread_group->mutex);
-                thread_group->performance_counters.setParent(&user_process_list.user_performance_counters);
-                thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
-                thread_group->query = process_it->query;
-
-                /// Set query-level memory trackers
-                thread_group->memory_tracker.setOrRaiseHardLimit(process_it->max_memory_usage);
-
-                if (query_context.hasTraceCollector())
-                {
-                    /// Set up memory profiling
-                    thread_group->memory_tracker.setOrRaiseProfilerLimit(settings.memory_profiler_step);
-                    thread_group->memory_tracker.setProfilerStep(settings.memory_profiler_step);
-                }
-
-                thread_group->memory_tracker.setDescription("(for query)");
-                if (process_it->memory_tracker_fault_probability)
-                    thread_group->memory_tracker.setFaultProbability(process_it->memory_tracker_fault_probability);
-
-                /// NOTE: Do not set the limit for thread-level memory tracker since it could show unreal values
-                ///  since allocation and deallocation could happen in different threads
-
-                process_it->thread_group = std::move(thread_group);
+                /// Set up memory profiling
+                thread_group->memory_tracker.setOrRaiseProfilerLimit(settings.memory_profiler_step);
+                thread_group->memory_tracker.setProfilerStep(settings.memory_profiler_step);
+                thread_group->memory_tracker.setSampleProbability(settings.memory_profiler_sample_probability);
             }
 
-            if (!user_process_list.user_throttler)
-            {
-                if (settings.max_network_bandwidth_for_user)
-                    user_process_list.user_throttler = std::make_shared<Throttler>(settings.max_network_bandwidth_for_user, total_network_throttler);
-                else if (settings.max_network_bandwidth_for_all_users)
-                    user_process_list.user_throttler = total_network_throttler;
-            }
+            thread_group->memory_tracker.setDescription("(for query)");
+            if (settings.memory_tracker_fault_probability)
+                thread_group->memory_tracker.setFaultProbability(settings.memory_tracker_fault_probability);
+
+            /// NOTE: Do not set the limit for thread-level memory tracker since it could show unreal values
+            ///  since allocation and deallocation could happen in different threads
+
+            process_it->thread_group = std::move(thread_group);
+        }
+
+        if (!user_process_list.user_throttler)
+        {
+            if (settings.max_network_bandwidth_for_user)
+                user_process_list.user_throttler = std::make_shared<Throttler>(settings.max_network_bandwidth_for_user, total_network_throttler);
+            else if (settings.max_network_bandwidth_for_all_users)
+                user_process_list.user_throttler = total_network_throttler;
         }
 
         if (!total_network_throttler && settings.max_network_bandwidth_for_all_users)
@@ -252,7 +259,7 @@ ProcessListEntry::~ProcessListEntry()
     auto user_process_list_it = parent.user_to_queries.find(user);
     if (user_process_list_it == parent.user_to_queries.end())
     {
-        LOG_ERROR(&Logger::get("ProcessList"), "Logical error: cannot find user in ProcessList");
+        LOG_ERROR(&Poco::Logger::get("ProcessList"), "Logical error: cannot find user in ProcessList");
         std::terminate();
     }
 
@@ -271,7 +278,7 @@ ProcessListEntry::~ProcessListEntry()
 
     if (!found)
     {
-        LOG_ERROR(&Logger::get("ProcessList"), "Logical error: cannot find query by query_id and pointer to ProcessListElement in ProcessListForUser");
+        LOG_ERROR(&Poco::Logger::get("ProcessList"), "Logical error: cannot find query by query_id and pointer to ProcessListElement in ProcessListForUser");
         std::terminate();
     }
     parent.have_space.notify_all();
@@ -280,30 +287,21 @@ ProcessListEntry::~ProcessListEntry()
     if (user_process_list.queries.empty())
         user_process_list.resetTrackers();
 
-    /// This removes memory_tracker for all requests. At this time, no other memory_trackers live.
+    /// Reset throttler, similarly (see above).
     if (parent.processes.empty())
-    {
-        /// Reset MemoryTracker, similarly (see above).
-        parent.total_memory_tracker.logPeakMemoryUsage();
-        parent.total_memory_tracker.reset();
         parent.total_network_throttler.reset();
-    }
 }
 
 
 QueryStatus::QueryStatus(
     const String & query_,
     const ClientInfo & client_info_,
-    size_t max_memory_usage_,
-    double memory_tracker_fault_probability_,
     QueryPriorities::Handle && priority_handle_)
     :
     query(query_),
     client_info(client_info_),
     priority_handle(std::move(priority_handle_)),
-    num_queries_increment{CurrentMetrics::Query},
-    max_memory_usage(max_memory_usage_),
-    memory_tracker_fault_probability(memory_tracker_fault_probability_)
+    num_queries_increment{CurrentMetrics::Query}
 {
 }
 
@@ -431,7 +429,7 @@ void ProcessList::killAllQueries()
 
 QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_events, bool get_settings) const
 {
-    QueryStatusInfo res;
+    QueryStatusInfo res{};
 
     res.query             = query;
     res.client_info       = client_info;
@@ -461,7 +459,7 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
     }
 
     if (get_settings && query_context)
-        res.query_settings = std::make_shared<Settings>(query_context->getSettingsRef());
+        res.query_settings = std::make_shared<Settings>(query_context->getSettings());
 
     return res;
 }

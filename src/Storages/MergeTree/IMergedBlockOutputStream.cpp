@@ -5,12 +5,13 @@
 
 namespace DB
 {
-
 IMergedBlockOutputStream::IMergedBlockOutputStream(
-    const MergeTreeDataPartPtr & data_part)
+    const MergeTreeDataPartPtr & data_part,
+    const StorageMetadataPtr & metadata_snapshot_)
     : storage(data_part->storage)
-    , disk(data_part->disk)
-    , part_path(data_part->getFullRelativePath())
+    , metadata_snapshot(metadata_snapshot_)
+    , volume(data_part->volume)
+    , part_path(data_part->isStoredOnDisk() ? data_part->getFullRelativePath() : "")
 {
 }
 
@@ -50,7 +51,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     for (const NameAndTypePair & column : columns)
     {
         column.type->enumerateStreams(
-            [&](const IDataType::SubstreamPath & substream_path)
+            [&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_path */)
             {
                 ++stream_counts[IDataType::getFileNameForStream(column.name, substream_path)];
             },
@@ -61,7 +62,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     const String mrk_extension = data_part->getMarksFileExtension();
     for (const auto & column_name : empty_columns)
     {
-        IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path)
+        IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_path */)
         {
             String stream_name = IDataType::getFileNameForStream(column_name, substream_path);
             /// Delete files if they are no longer shared with another column.
@@ -82,7 +83,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     {
         if (checksums.files.count(removed_file))
         {
-            data_part->disk->remove(data_part->getFullRelativePath() + removed_file);
+            data_part->volume->getDisk()->remove(data_part->getFullRelativePath() + removed_file);
             checksums.files.erase(removed_file);
         }
     }

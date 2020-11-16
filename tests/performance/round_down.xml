@@ -1,18 +1,7 @@
 <test>
-
-    <stop_conditions>
-        <all_of>
-            <total_time_ms>10000</total_time_ms>
-        </all_of>
-        <any_of>
-            <total_time_ms>20000</total_time_ms>
-        </any_of>
-    </stop_conditions>
-
-
-    <query>SELECT count() FROM zeros(10000000) WHERE NOT ignore(roundDuration(rand() % 65536))</query>
-    <query>SELECT count() FROM zeros(10000000) WHERE NOT ignore(roundDown(rand() % 65536, [0, 1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000]))</query>
-    <query>SELECT count() FROM zeros(10000000) WHERE NOT ignore(roundAge(rand() % 100))</query>
-    <query>SELECT count() FROM zeros(10000000) WHERE NOT ignore(roundDown(rand() % 100, [0, 1, 18, 25, 35, 45, 55]))</query>
-    <query>SELECT count() FROM numbers(10000000) WHERE NOT ignore(roundDown(rand() % 65536, (SELECT groupArray(number) FROM numbers(65536))))</query>
+    <query>SELECT count() FROM zeros  (100000000) WHERE NOT ignore(roundDuration(rand() % 65536))</query>
+    <query>SELECT count() FROM zeros  (100000000) WHERE NOT ignore(roundDown(rand() % 65536, [0, 1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000]))</query>
+    <query>SELECT count() FROM zeros  (100000000) WHERE NOT ignore(roundAge(rand() % 100))</query>
+    <query>SELECT count() FROM zeros  (100000000) WHERE NOT ignore(roundDown(rand() % 100, [0, 1, 18, 25, 35, 45, 55]))</query>
+    <query>SELECT count() FROM numbers(10000000)  WHERE NOT ignore(roundDown(rand() % 65536, (SELECT groupArray(number) FROM numbers(65536))))</query>
 </test>

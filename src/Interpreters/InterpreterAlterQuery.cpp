@@ -23,7 +23,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_QUERY;
 }
 
@@ -35,6 +34,7 @@ InterpreterAlterQuery::InterpreterAlterQuery(const ASTPtr & query_ptr_, const Co
 
 BlockIO InterpreterAlterQuery::execute()
 {
+    BlockIO res;
     const auto & alter = query_ptr->as<ASTAlterQuery &>();
 
     if (!alter.cluster.empty())
@@ -42,7 +42,9 @@ BlockIO InterpreterAlterQuery::execute()
 
     context.checkAccess(getRequiredAccess());
     auto table_id = context.resolveStorageID(alter, Context::ResolveOrdinary);
-    StoragePtr table = DatabaseCatalog::instance().getTable(table_id);
+    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, context);
+    auto alter_lock = table->lockForAlter(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+    auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions,
     /// mutation expression, etc.
@@ -60,15 +62,11 @@ BlockIO InterpreterAlterQuery::execute()
             alter_commands.emplace_back(std::move(*alter_command));
         else if (auto partition_command = PartitionCommand::parse(command_ast))
         {
-            if (partition_command->type == PartitionCommand::DROP_DETACHED_PARTITION
-                && !context.getSettingsRef().allow_drop_detached)
-                throw DB::Exception("Cannot execute query: DROP DETACHED PART is disabled "
-                                    "(see allow_drop_detached setting)", ErrorCodes::SUPPORT_IS_DISABLED);
             partition_commands.emplace_back(std::move(*partition_command));
         }
         else if (auto mut_command = MutationCommand::parse(command_ast))
         {
-            if (mut_command->type == MutationCommand::MATERIALIZE_TTL && !table->hasAnyTTL())
+            if (mut_command->type == MutationCommand::MATERIALIZE_TTL && !metadata_snapshot->hasAnyTTL())
                 throw Exception("Cannot MATERIALIZE TTL as there is no TTL set for table "
                     + table->getStorageID().getNameForLogs(), ErrorCodes::INCORRECT_QUERY);
 
@@ -82,16 +80,16 @@ BlockIO InterpreterAlterQuery::execute()
 
     if (!mutation_commands.empty())
     {
-        auto table_lock_holder = table->lockStructureForShare(
-                false /* because mutation is executed asyncronously */,
-                context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
-        MutationsInterpreter(table, mutation_commands, context, false).validate(table_lock_holder);
+        MutationsInterpreter(table, metadata_snapshot, mutation_commands, context, false).validate();
         table->mutate(mutation_commands, context);
     }
 
     if (!partition_commands.empty())
     {
-        table->alterPartition(query_ptr, partition_commands, context);
+        table->checkAlterPartitionIsPossible(partition_commands, metadata_snapshot, context.getSettingsRef());
+        auto partition_commands_pipe = table->alterPartition(metadata_snapshot, partition_commands, context);
+        if (!partition_commands_pipe.empty())
+            res.pipeline.init(std::move(partition_commands_pipe));
     }
 
     if (!live_view_commands.empty())
@@ -103,7 +101,7 @@ BlockIO InterpreterAlterQuery::execute()
             switch (command.type)
             {
                 case LiveViewCommand::REFRESH:
-                    live_view->refresh(context);
+                    live_view->refresh();
                     break;
             }
         }
@@ -111,16 +109,14 @@ BlockIO InterpreterAlterQuery::execute()
 
     if (!alter_commands.empty())
     {
-        auto table_lock_holder = table->lockAlterIntention(
-                context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
         StorageInMemoryMetadata metadata = table->getInMemoryMetadata();
         alter_commands.validate(metadata, context);
         alter_commands.prepare(metadata);
         table->checkAlterIsPossible(alter_commands, context.getSettingsRef());
-        table->alter(alter_commands, context, table_lock_holder);
+        table->alter(alter_commands, context, alter_lock);
     }
 
-    return {};
+    return res;
 }
 
 
@@ -188,6 +184,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             required_access.emplace_back(AccessType::ALTER_ORDER_BY, database, table);
             break;
         }
+        case ASTAlterCommand::MODIFY_SAMPLE_BY:
+        {
+            required_access.emplace_back(AccessType::ALTER_SAMPLE_BY, database, table);
+            break;
+        }
         case ASTAlterCommand::ADD_INDEX:
         {
             required_access.emplace_back(AccessType::ALTER_ADD_INDEX, database, table);
@@ -221,6 +222,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             required_access.emplace_back(AccessType::ALTER_TTL, database, table);
             break;
         }
+        case ASTAlterCommand::REMOVE_TTL:
+        {
+            required_access.emplace_back(AccessType::ALTER_TTL, database, table);
+            break;
+        }
         case ASTAlterCommand::MATERIALIZE_TTL:
         {
             required_access.emplace_back(AccessType::ALTER_MATERIALIZE_TTL, database, table);
@@ -244,12 +250,12 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
         }
         case ASTAlterCommand::MOVE_PARTITION:
         {
-            if ((command.move_destination_type == PartDestinationType::DISK)
-                || (command.move_destination_type == PartDestinationType::VOLUME))
+            if ((command.move_destination_type == DataDestinationType::DISK)
+                || (command.move_destination_type == DataDestinationType::VOLUME))
             {
                 required_access.emplace_back(AccessType::ALTER_MOVE_PARTITION, database, table);
             }
-            else if (command.move_destination_type == PartDestinationType::TABLE)
+            else if (command.move_destination_type == DataDestinationType::TABLE)
             {
                 required_access.emplace_back(AccessType::SELECT | AccessType::ALTER_DELETE, database, table);
                 required_access.emplace_back(AccessType::INSERT, command.to_database, command.to_table);

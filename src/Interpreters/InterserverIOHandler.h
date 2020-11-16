@@ -7,7 +7,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Common/ActionBlocker.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <map>
 #include <atomic>
 #include <utility>
@@ -32,7 +32,7 @@ class InterserverIOEndpoint
 public:
     virtual std::string getId(const std::string & path) const = 0;
     virtual void processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out, Poco::Net::HTTPServerResponse & response) = 0;
-    virtual ~InterserverIOEndpoint() {}
+    virtual ~InterserverIOEndpoint() = default;
 
     /// You need to stop the data transfer if blocker is activated.
     ActionBlocker blocker;

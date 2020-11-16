@@ -15,6 +15,7 @@ using NameSet = std::unordered_set<std::string>;
 using NameOrderedSet = std::set<std::string>;
 using NameToNameMap = std::unordered_map<std::string, std::string>;
 using NameToNameSetMap = std::unordered_map<std::string, NameSet>;
+using NameToNameVector = std::vector<std::pair<std::string, std::string>>;
 
 using NameWithAlias = std::pair<std::string, std::string>;
 using NamesWithAliases = std::vector<NameWithAlias>;

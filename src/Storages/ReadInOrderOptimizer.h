@@ -18,12 +18,12 @@ public:
     ReadInOrderOptimizer(
         const ManyExpressionActions & elements_actions,
         const SortDescription & required_sort_description,
-        const SyntaxAnalyzerResultPtr & syntax_result);
+        const TreeRewriterResultPtr & syntax_result);
 
-    InputSortingInfoPtr getInputOrder(const StoragePtr & storage) const;
+    InputOrderInfoPtr getInputOrder(const StorageMetadataPtr & metadata_snapshot) const;
 
 private:
-    /// Actions for every element of order expression to analyze functions for monotonicicy
+    /// Actions for every element of order expression to analyze functions for monotonicity
     ManyExpressionActions elements_actions;
     NameSet forbidden_columns;
     SortDescription required_sort_description;

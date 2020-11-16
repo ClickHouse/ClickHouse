@@ -18,6 +18,17 @@ SELECT domain('example.com') as Host;
 SELECT domainWithoutWWW('//paul@www.example.com') AS Host;
 SELECT domainWithoutWWW('http://paul@www.example.com:80/') AS Host;
 
+SELECT '====NETLOC====';
+SELECT netloc('http://paul@www.example.com:80/') AS Netloc;
+SELECT netloc('http://127.0.0.1:443/') AS Netloc;
+SELECT netloc('http://127.0.0.1:443') AS Netloc;
+SELECT netloc('svn+ssh://example.ru/?q=hello%20world') AS Netloc;
+SELECT netloc('svn+ssh://example.ru/?q=hello%20world') AS Netloc;
+SELECT netloc('svn+ssh://paul:zozo@example.ru/?q=hello%20world') AS Netloc;
+SELECT netloc('svn+ssh://paul:zozo@example.ru/?q=hello%20world') AS Netloc;
+SELECT netloc('//www.example.com') AS Netloc;
+SELECT netloc('www.example.com') as Netloc;
+SELECT netloc('example.com') as Netloc;
 
 SELECT '====DOMAIN====';
 SELECT topLevelDomain('http://paul@www.example.com:80/') AS Domain;

@@ -1,8 +1,9 @@
 #pragma once
 
+#include <Core/DecimalFunctions.h>
 #include <Core/Field.h>
-#include <Core/AccurateComparison.h>
 #include <common/demangle.h>
+#include <Common/NaNUtils.h>
 
 
 class SipHash;
@@ -14,8 +15,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_CONVERT_TYPE;
-    extern const int BAD_TYPE_OF_FIELD;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 #pragma GCC diagnostic push
@@ -42,21 +43,24 @@ struct StaticVisitor
 template <typename Visitor, typename F>
 auto applyVisitor(Visitor && visitor, F && field)
 {
-    return Field::dispatch(visitor, field);
+    return Field::dispatch(std::forward<Visitor>(visitor),
+        std::forward<F>(field));
 }
 
 template <typename Visitor, typename F1, typename F2>
 auto applyVisitor(Visitor && visitor, F1 && field1, F2 && field2)
 {
-    return Field::dispatch([&](auto & field1_value)
+    return Field::dispatch(
+        [&field2, &visitor](auto & field1_value)
         {
-            return Field::dispatch([&](auto & field2_value)
+            return Field::dispatch(
+                [&field1_value, &visitor](auto & field2_value)
                 {
                     return visitor(field1_value, field2_value);
                 },
-                field2);
+                std::forward<F2>(field2));
         },
-        field1);
+        std::forward<F1>(field1));
 }
 
 
@@ -68,6 +72,7 @@ public:
     String operator() (const UInt64 & x) const;
     String operator() (const UInt128 & x) const;
     String operator() (const Int64 & x) const;
+    String operator() (const Int128 & x) const;
     String operator() (const Float64 & x) const;
     String operator() (const String & x) const;
     String operator() (const Array & x) const;
@@ -75,7 +80,11 @@ public:
     String operator() (const DecimalField<Decimal32> & x) const;
     String operator() (const DecimalField<Decimal64> & x) const;
     String operator() (const DecimalField<Decimal128> & x) const;
+    String operator() (const DecimalField<Decimal256> & x) const;
     String operator() (const AggregateFunctionStateData & x) const;
+
+    String operator() (const UInt256 & x) const;
+    String operator() (const Int256 & x) const;
 };
 
 
@@ -87,6 +96,7 @@ public:
     String operator() (const UInt64 & x) const;
     String operator() (const UInt128 & x) const;
     String operator() (const Int64 & x) const;
+    String operator() (const Int128 & x) const;
     String operator() (const Float64 & x) const;
     String operator() (const String & x) const;
     String operator() (const Array & x) const;
@@ -94,11 +104,15 @@ public:
     String operator() (const DecimalField<Decimal32> & x) const;
     String operator() (const DecimalField<Decimal64> & x) const;
     String operator() (const DecimalField<Decimal128> & x) const;
+    String operator() (const DecimalField<Decimal256> & x) const;
     String operator() (const AggregateFunctionStateData & x) const;
+
+    String operator() (const UInt256 & x) const;
+    String operator() (const Int256 & x) const;
 };
 
 
-/** Converts numberic value of any type to specified type. */
+/** Converts numeric value of any type to specified type. */
 template <typename T>
 class FieldVisitorConvertToNumber : public StaticVisitor<T>
 {
@@ -123,9 +137,30 @@ public:
         throw Exception("Cannot convert Tuple to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
-    T operator() (const UInt64 & x) const { return x; }
-    T operator() (const Int64 & x) const { return x; }
-    T operator() (const Float64 & x) const { return x; }
+    T operator() (const UInt64 & x) const { return T(x); }
+    T operator() (const Int64 & x) const { return T(x); }
+    T operator() (const Int128 & x) const { return T(x); }
+
+    T operator() (const Float64 & x) const
+    {
+        if constexpr (!std::is_floating_point_v<T>)
+        {
+            if (!isFinite(x))
+            {
+                /// When converting to bool it's ok (non-zero converts to true, NaN including).
+                if (std::is_same_v<T, bool>)
+                    return true;
+
+                /// Conversion of infinite values to integer is undefined.
+                throw Exception("Cannot convert infinite value to integer type", ErrorCodes::CANNOT_CONVERT_TYPE);
+            }
+        }
+
+        if constexpr (std::is_same_v<Decimal256, T>)
+            return Int256(x);
+        else
+            return T(x);
+    }
 
     T operator() (const UInt128 &) const
     {
@@ -136,14 +171,40 @@ public:
     T operator() (const DecimalField<U> & x) const
     {
         if constexpr (std::is_floating_point_v<T>)
-            return static_cast<T>(x.getValue()) / x.getScaleMultiplier();
+            return x.getValue(). template convertTo<T>() / x.getScaleMultiplier(). template convertTo<T>();
+        else if constexpr (std::is_same_v<T, UInt128>)
+        {
+            /// TODO: remove with old UInt128 type
+            if constexpr (sizeof(U) < 16)
+            {
+                return UInt128(0, (x.getValue() / x.getScaleMultiplier()).value);
+            }
+            else if constexpr (sizeof(U) == 16)
+            {
+                auto tmp = (x.getValue() / x.getScaleMultiplier()).value;
+                return UInt128(tmp >> 64, UInt64(tmp));
+            }
+            else
+                throw Exception("No conversion to old UInt128 from " + demangle(typeid(U).name()), ErrorCodes::NOT_IMPLEMENTED);
+        }
         else
-            return x.getValue() / x.getScaleMultiplier();
+            return (x.getValue() / x.getScaleMultiplier()). template convertTo<T>();
     }
 
     T operator() (const AggregateFunctionStateData &) const
     {
         throw Exception("Cannot convert AggregateFunctionStateData to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
+    }
+
+    template <typename U, typename = std::enable_if_t<is_big_int_v<U>> >
+    T operator() (const U & x) const
+    {
+        if constexpr (IsDecimalNumber<T>)
+            return static_cast<T>(static_cast<typename T::NativeType>(x));
+        else if constexpr (std::is_same_v<T, UInt128>)
+            throw Exception("No conversion to old UInt128 from " + demangle(typeid(U).name()), ErrorCodes::NOT_IMPLEMENTED);
+        else
+            return bigint_cast<T>(x);
     }
 };
 
@@ -160,6 +221,7 @@ public:
     void operator() (const UInt64 & x) const;
     void operator() (const UInt128 & x) const;
     void operator() (const Int64 & x) const;
+    void operator() (const Int128 & x) const;
     void operator() (const Float64 & x) const;
     void operator() (const String & x) const;
     void operator() (const Array & x) const;
@@ -167,7 +229,11 @@ public:
     void operator() (const DecimalField<Decimal32> & x) const;
     void operator() (const DecimalField<Decimal64> & x) const;
     void operator() (const DecimalField<Decimal128> & x) const;
+    void operator() (const DecimalField<Decimal256> & x) const;
     void operator() (const AggregateFunctionStateData & x) const;
+
+    void operator() (const UInt256 & x) const;
+    void operator() (const Int256 & x) const;
 };
 
 
@@ -175,243 +241,7 @@ template <typename T> constexpr bool isDecimalField() { return false; }
 template <> constexpr bool isDecimalField<DecimalField<Decimal32>>() { return true; }
 template <> constexpr bool isDecimalField<DecimalField<Decimal64>>() { return true; }
 template <> constexpr bool isDecimalField<DecimalField<Decimal128>>() { return true; }
-
-
-/** More precise comparison, used for index.
-  * Differs from Field::operator< and Field::operator== in that it also compares values of different types.
-  * Comparison rules are same as in FunctionsComparison (to be consistent with expression evaluation in query).
-  */
-class FieldVisitorAccurateEquals : public StaticVisitor<bool>
-{
-public:
-    bool operator() (const UInt64 &, const Null &)          const { return false; }
-    bool operator() (const UInt64 & l, const UInt64 & r)    const { return l == r; }
-    bool operator() (const UInt64 & l, const UInt128 & r)   const { return cantCompare(l, r); }
-    bool operator() (const UInt64 & l, const Int64 & r)     const { return accurate::equalsOp(l, r); }
-    bool operator() (const UInt64 & l, const Float64 & r)   const { return accurate::equalsOp(l, r); }
-    bool operator() (const UInt64 & l, const String & r)    const { return cantCompare(l, r); }
-    bool operator() (const UInt64 & l, const Array & r)     const { return cantCompare(l, r); }
-    bool operator() (const UInt64 & l, const Tuple & r)     const { return cantCompare(l, r); }
-    bool operator() (const UInt64 & l, const AggregateFunctionStateData & r) const { return cantCompare(l, r); }
-
-    bool operator() (const Int64 &, const Null &)           const { return false; }
-    bool operator() (const Int64 & l, const UInt64 & r)     const { return accurate::equalsOp(l, r); }
-    bool operator() (const Int64 & l, const UInt128 & r)    const { return cantCompare(l, r); }
-    bool operator() (const Int64 & l, const Int64 & r)      const { return l == r; }
-    bool operator() (const Int64 & l, const Float64 & r)    const { return accurate::equalsOp(l, r); }
-    bool operator() (const Int64 & l, const String & r)     const { return cantCompare(l, r); }
-    bool operator() (const Int64 & l, const Array & r)      const { return cantCompare(l, r); }
-    bool operator() (const Int64 & l, const Tuple & r)      const { return cantCompare(l, r); }
-    bool operator() (const Int64 & l, const AggregateFunctionStateData & r) const { return cantCompare(l, r); }
-
-    bool operator() (const Float64 &, const Null &)         const { return false; }
-    bool operator() (const Float64 & l, const UInt64 & r)   const { return accurate::equalsOp(l, r); }
-    bool operator() (const Float64 & l, const UInt128 & r)  const { return cantCompare(l, r); }
-    bool operator() (const Float64 & l, const Int64 & r)    const { return accurate::equalsOp(l, r); }
-    bool operator() (const Float64 & l, const Float64 & r)  const { return l == r; }
-    bool operator() (const Float64 & l, const String & r)   const { return cantCompare(l, r); }
-    bool operator() (const Float64 & l, const Array & r)    const { return cantCompare(l, r); }
-    bool operator() (const Float64 & l, const Tuple & r)    const { return cantCompare(l, r); }
-    bool operator() (const Float64 & l, const AggregateFunctionStateData & r) const { return cantCompare(l, r); }
-
-    template <typename T>
-    bool operator() (const Null &, const T &) const
-    {
-        return std::is_same_v<T, Null>;
-    }
-
-    template <typename T>
-    bool operator() (const String & l, const T & r) const
-    {
-        if constexpr (std::is_same_v<T, String>)
-            return l == r;
-        if constexpr (std::is_same_v<T, UInt128>)
-            return stringToUUID(l) == r;
-        if constexpr (std::is_same_v<T, Null>)
-            return false;
-        return cantCompare(l, r);
-    }
-
-    template <typename T>
-    bool operator() (const UInt128 & l, const T & r) const
-    {
-        if constexpr (std::is_same_v<T, UInt128>)
-            return l == r;
-        if constexpr (std::is_same_v<T, String>)
-            return l == stringToUUID(r);
-        if constexpr (std::is_same_v<T, Null>)
-            return false;
-        return cantCompare(l, r);
-    }
-
-    template <typename T>
-    bool operator() (const Array & l, const T & r) const
-    {
-        if constexpr (std::is_same_v<T, Array>)
-            return l == r;
-        if constexpr (std::is_same_v<T, Null>)
-            return false;
-        return cantCompare(l, r);
-    }
-
-    template <typename T>
-    bool operator() (const Tuple & l, const T & r) const
-    {
-        if constexpr (std::is_same_v<T, Tuple>)
-            return l == r;
-        if constexpr (std::is_same_v<T, Null>)
-            return false;
-        return cantCompare(l, r);
-    }
-
-    template <typename T, typename U>
-    bool operator() (const DecimalField<T> & l, const U & r) const
-    {
-        if constexpr (isDecimalField<U>())
-            return l == r;
-        if constexpr (std::is_same_v<U, Int64> || std::is_same_v<U, UInt64>)
-            return l == DecimalField<Decimal128>(r, 0);
-        if constexpr (std::is_same_v<U, Null>)
-            return false;
-        return cantCompare(l, r);
-    }
-
-    template <typename T> bool operator() (const UInt64 & l, const DecimalField<T> & r) const { return DecimalField<Decimal128>(l, 0) == r; }
-    template <typename T> bool operator() (const Int64 & l, const DecimalField<T> & r) const { return DecimalField<Decimal128>(l, 0) == r; }
-    template <typename T> bool operator() (const Float64 & l, const DecimalField<T> & r) const { return cantCompare(l, r); }
-
-    template <typename T>
-    bool operator() (const AggregateFunctionStateData & l, const T & r) const
-    {
-        if constexpr (std::is_same_v<T, AggregateFunctionStateData>)
-            return l == r;
-        return cantCompare(l, r);
-    }
-
-private:
-    template <typename T, typename U>
-    bool cantCompare(const T &, const U &) const
-    {
-        if constexpr (std::is_same_v<U, Null>)
-            return false;
-        throw Exception("Cannot compare " + demangle(typeid(T).name()) + " with " + demangle(typeid(U).name()),
-                        ErrorCodes::BAD_TYPE_OF_FIELD);
-    }
-};
-
-class FieldVisitorAccurateLess : public StaticVisitor<bool>
-{
-public:
-    bool operator() (const UInt64 &, const Null &)          const { return false; }
-    bool operator() (const UInt64 & l, const UInt64 & r)    const { return l < r; }
-    bool operator() (const UInt64 & l, const UInt128 & r)   const { return cantCompare(l, r); }
-    bool operator() (const UInt64 & l, const Int64 & r)     const { return accurate::lessOp(l, r); }
-    bool operator() (const UInt64 & l, const Float64 & r)   const { return accurate::lessOp(l, r); }
-    bool operator() (const UInt64 & l, const String & r)    const { return cantCompare(l, r); }
-    bool operator() (const UInt64 & l, const Array & r)     const { return cantCompare(l, r); }
-    bool operator() (const UInt64 & l, const Tuple & r)     const { return cantCompare(l, r); }
-    bool operator() (const UInt64 & l, const AggregateFunctionStateData & r) const { return cantCompare(l, r); }
-
-    bool operator() (const Int64 &, const Null &)           const { return false; }
-    bool operator() (const Int64 & l, const UInt64 & r)     const { return accurate::lessOp(l, r); }
-    bool operator() (const Int64 & l, const UInt128 & r)    const { return cantCompare(l, r); }
-    bool operator() (const Int64 & l, const Int64 & r)      const { return l < r; }
-    bool operator() (const Int64 & l, const Float64 & r)    const { return accurate::lessOp(l, r); }
-    bool operator() (const Int64 & l, const String & r)     const { return cantCompare(l, r); }
-    bool operator() (const Int64 & l, const Array & r)      const { return cantCompare(l, r); }
-    bool operator() (const Int64 & l, const Tuple & r)      const { return cantCompare(l, r); }
-    bool operator() (const Int64 & l, const AggregateFunctionStateData & r) const { return cantCompare(l, r); }
-
-    bool operator() (const Float64 &, const Null &)         const { return false; }
-    bool operator() (const Float64 & l, const UInt64 & r)   const { return accurate::lessOp(l, r); }
-    bool operator() (const Float64 & l, const UInt128 & r)  const { return cantCompare(l, r); }
-    bool operator() (const Float64 & l, const Int64 & r)    const { return accurate::lessOp(l, r); }
-    bool operator() (const Float64 & l, const Float64 & r)  const { return l < r; }
-    bool operator() (const Float64 & l, const String & r)   const { return cantCompare(l, r); }
-    bool operator() (const Float64 & l, const Array & r)    const { return cantCompare(l, r); }
-    bool operator() (const Float64 & l, const Tuple & r)    const { return cantCompare(l, r); }
-    bool operator() (const Float64 & l, const AggregateFunctionStateData & r) const { return cantCompare(l, r); }
-
-    template <typename T>
-    bool operator() (const Null &, const T &) const
-    {
-        return !std::is_same_v<T, Null>;
-    }
-
-    template <typename T>
-    bool operator() (const String & l, const T & r) const
-    {
-        if constexpr (std::is_same_v<T, String>)
-            return l < r;
-        if constexpr (std::is_same_v<T, UInt128>)
-            return stringToUUID(l) < r;
-        if constexpr (std::is_same_v<T, Null>)
-            return false;
-        return cantCompare(l, r);
-    }
-
-    template <typename T>
-    bool operator() (const UInt128 & l, const T & r) const
-    {
-        if constexpr (std::is_same_v<T, UInt128>)
-            return l < r;
-        if constexpr (std::is_same_v<T, String>)
-            return l < stringToUUID(r);
-        if constexpr (std::is_same_v<T, Null>)
-            return false;
-        return cantCompare(l, r);
-    }
-
-    template <typename T>
-    bool operator() (const Array & l, const T & r) const
-    {
-        if constexpr (std::is_same_v<T, Array>)
-            return l < r;
-        if constexpr (std::is_same_v<T, Null>)
-            return false;
-        return cantCompare(l, r);
-    }
-
-    template <typename T>
-    bool operator() (const Tuple & l, const T & r) const
-    {
-        if constexpr (std::is_same_v<T, Tuple>)
-            return l < r;
-        if constexpr (std::is_same_v<T, Null>)
-            return false;
-        return cantCompare(l, r);
-    }
-
-    template <typename T, typename U>
-    bool operator() (const DecimalField<T> & l, const U & r) const
-    {
-        if constexpr (isDecimalField<U>())
-            return l < r;
-        if constexpr (std::is_same_v<U, Int64> || std::is_same_v<U, UInt64>)
-            return l < DecimalField<Decimal128>(r, 0);
-        if constexpr (std::is_same_v<U, Null>)
-            return false;
-        return cantCompare(l, r);
-    }
-
-    template <typename T> bool operator() (const UInt64 & l, const DecimalField<T> & r) const { return DecimalField<Decimal128>(l, 0) < r; }
-    template <typename T> bool operator() (const Int64 & l, const DecimalField<T> & r) const { return DecimalField<Decimal128>(l, 0) < r; }
-    template <typename T> bool operator() (const Float64 &, const DecimalField<T> &) const { return false; }
-
-    template <typename T>
-    bool operator() (const AggregateFunctionStateData & l, const T & r) const
-    {
-        return cantCompare(l, r);
-    }
-
-private:
-    template <typename T, typename U>
-    bool cantCompare(const T &, const U &) const
-    {
-        throw Exception("Cannot compare " + demangle(typeid(T).name()) + " with " + demangle(typeid(U).name()),
-                        ErrorCodes::BAD_TYPE_OF_FIELD);
-    }
-};
+template <> constexpr bool isDecimalField<DecimalField<Decimal256>>() { return true; }
 
 
 /** Implements `+=` operation.
@@ -441,11 +271,24 @@ public:
     bool operator() (UInt128 &) const { throw Exception("Cannot sum UUIDs", ErrorCodes::LOGICAL_ERROR); }
     bool operator() (AggregateFunctionStateData &) const { throw Exception("Cannot sum AggregateFunctionStates", ErrorCodes::LOGICAL_ERROR); }
 
+    bool operator() (Int128 & x) const
+    {
+        x += get<Int128>(rhs);
+        return x != Int128(0);
+    }
+
     template <typename T>
     bool operator() (DecimalField<T> & x) const
     {
         x += get<DecimalField<T>>(rhs);
-        return x.getValue() != 0;
+        return x.getValue() != T(0);
+    }
+
+    template <typename T, typename = std::enable_if_t<is_big_int_v<T>> >
+    bool operator() (T & x) const
+    {
+        x += rhs.reinterpret<T>();
+        return x != T(0);
     }
 };
 

@@ -1,19 +1,29 @@
-<div id="content-wrapper" class="{% if single_page %}col-md-10{% else %}col-md-8{% endif %} p-2 p-md-5">
-    <div id="content">
+<div id="content-wrapper" class="{% if single_page %}col-md-10{% else %}col-md-8{% endif %} p-2 p-md-4">
+    <div id="content" class="mt-md-n3">
         {% if not single_page %}
-            {% if page.meta.machine_translated %}
-                <div class="alert alert-primary" role="alert">
-                  <p class="display-5 mb-2">{{ _('Help wanted!') }}</p>
-                  <p class="lead">{{ _('The following content of this documentation page has been machine-translated. But unlike other websites, it is not done on the fly. This translated text lives on GitHub repository alongside main ClickHouse codebase and waits for fellow native speakers to make it more human-readable.') }} <a href="{{ page.abs_url.replace('/' + language + '/', '/en/') }}" class="alert-link">{{ _('You can also use the original English version as a reference.') }}</a></p>
-                  <p class="lead">
-                      <a class="btn btn-lg btn-primary text-white" href="{{ page.edit_url }}" target="_blank" rel="external nofollow noreferrer">
-                          {{ _('Help ClickHouse documentation by editing this page') }}
-                      </a>
-                  </p>
-                </div>
+            {% set ancestors = page.ancestors|reverse|list %}
+            {% if page.is_index %}
+                {% set ancestors = ancestors[:-1] %}
+            {% endif %}
+            {% if ancestors %}
+                {% set ancestor_ns = namespace(level=ancestors|length) %}
+                <nav class="text-muted" aria-label="breadcrumb">
+                    <ol class="breadcrumb bg-transparent p-0">
+                        {% for ancestor in ancestors %}
+                        {% set ancestor_title = ancestor.title.strip() %}
+                        {% if ancestor_title.endswith('|hidden-folder') %}
+                            {% set ancestor_title = ancestor_title[:-14] %}
+                        {% endif %}
+                        <li class="breadcrumb-item"><a href="{{ '../' * ancestor_ns.level }}" class="text-reset">{{ ancestor_title }}</a>
+                            {% set ancestor_ns.level = ancestor_ns.level - 1 %}
+                        </li>
+                       {% endfor %}
+                    </ol>
+                </nav>
             {% endif %}
 
-            {{ page.content }}
+            {% include "templates/docs/machine-translated.html" %}
+            {{ page.content|adjust_markdown_html }}
         {% endif %}
 
         {% if single_page and page.content %}
@@ -21,17 +31,12 @@
         {% endif %}
     </div>
 
-    {% if not single_page %}
-    <div id="content-footer" class="text-muted pt-5">
-        <div class="float-right">{{ config.copyright }}</div>
-        <div>{{ _('Built from') }} <a href="{{ config.extra.rev_url }}" rel="external nofollow noreferrer" target="_blank" class="text-reset">{{ config.extra.rev_short }}</a></div>
-    </div>
-    {% endif %}
+    {% include "templates/docs/footer.html" %}
 </div>
 {% if single_page and page.content %}
 <!-- BREAK -->
 (function() {
-    {% for chunk in page.content|chunks %}
+    {% for chunk in page.content|adjust_markdown_html|chunks %}
     document.write({{ chunk|tojson|safe }});
     {% endfor %}
 })();

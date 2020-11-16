@@ -63,7 +63,7 @@ struct SortCursorImpl
         for (auto & column_desc : desc)
         {
             if (!column_desc.column_name.empty())
-                throw Exception("SortDesctiption should contain column position if SortCursor was used without header.",
+                throw Exception("SortDescription should contain column position if SortCursor was used without header.",
                         ErrorCodes::LOGICAL_ERROR);
         }
         reset(columns, {});
@@ -96,7 +96,7 @@ struct SortCursorImpl
                                    : column_desc.column_number;
             sort_columns.push_back(columns[column_number].get());
 
-            need_collation[j] = desc[j].collator != nullptr && typeid_cast<const ColumnString *>(sort_columns.back());    /// TODO Nullable(String)
+            need_collation[j] = desc[j].collator != nullptr && sort_columns.back()->isCollationSupported();    /// TODO Nullable(String)
             has_collation |= need_collation[j];
         }
 
@@ -201,10 +201,7 @@ struct SortCursorWithCollation : SortCursorHelper<SortCursorWithCollation>
             int nulls_direction = desc.nulls_direction;
             int res;
             if (impl->need_collation[i])
-            {
-                const ColumnString & column_string = assert_cast<const ColumnString &>(*impl->sort_columns[i]);
-                res = column_string.compareAtWithCollation(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[i]), *impl->desc[i].collator);
-            }
+                res = impl->sort_columns[i]->compareAtWithCollation(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[i]), nulls_direction, *impl->desc[i].collator);
             else
                 res = impl->sort_columns[i]->compareAt(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[i]), nulls_direction);
 

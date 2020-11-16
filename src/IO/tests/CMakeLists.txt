@@ -37,9 +37,6 @@ target_link_libraries (parse_int_perf2 PRIVATE clickhouse_common_io)
 add_executable (read_write_int read_write_int.cpp)
 target_link_libraries (read_write_int PRIVATE clickhouse_common_io)
 
-add_executable (mempbrk mempbrk.cpp)
-target_link_libraries (mempbrk PRIVATE clickhouse_common_io)
-
 add_executable (o_direct_and_dirty_pages o_direct_and_dirty_pages.cpp)
 target_link_libraries (o_direct_and_dirty_pages PRIVATE clickhouse_common_io)
 
@@ -78,7 +75,7 @@ add_executable (parse_date_time_best_effort parse_date_time_best_effort.cpp)
 target_link_libraries (parse_date_time_best_effort PRIVATE clickhouse_common_io)
 
 add_executable (zlib_ng_bug zlib_ng_bug.cpp)
-target_link_libraries (zlib_ng_bug PRIVATE ${Poco_Foundation_LIBRARY} ${ZLIB_LIBRARY})
+target_link_libraries (zlib_ng_bug PRIVATE ${ZLIB_LIBRARIES})
 
 add_executable (ryu_test ryu_test.cpp)
 target_link_libraries (ryu_test PRIVATE ryu)

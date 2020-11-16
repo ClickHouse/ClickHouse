@@ -110,7 +110,7 @@ namespace pcg_extras {
 /*
  * C++ requires us to be able to serialize RNG state by printing or reading
  * it from a stream.  Because we use 128-bit ints, we also need to be able
- * ot print them, so here is code to do so.
+ * or print them, so here is code to do so.
  *
  * This code provides enough functionality to print 128-bit ints in decimal
  * and zero-padded in hex.  It's not a full-featured implementation.
@@ -253,7 +253,7 @@ inline std::istream& operator>>(std::istream& in, uint8_t& value)
  */
 
 /*
- * XorShifts are invertable, but they are someting of a pain to invert.
+ * XorShifts are invertable, but they are something of a pain to invert.
  * This function backs them out.  It's used by the whacky "inside out"
  * generator defined later.
  */

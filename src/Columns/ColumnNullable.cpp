@@ -6,6 +6,7 @@
 #include <Common/WeakHash.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnString.h>
 #include <DataStreams/ColumnGathererStream.h>
 
 
@@ -14,7 +15,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
     extern const int SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT;
@@ -54,7 +54,7 @@ void ColumnNullable::updateWeakHash32(WeakHash32 & hash) const
     WeakHash32 old_hash = hash;
     nested_column->updateWeakHash32(hash);
 
-    auto & null_map_data = getNullMapData();
+    const auto & null_map_data = getNullMapData();
     auto & hash_data = hash.getData();
     auto & old_hash_data = old_hash.getData();
 
@@ -62,6 +62,12 @@ void ColumnNullable::updateWeakHash32(WeakHash32 & hash) const
     for (size_t row = 0; row < s; ++row)
         if (null_map_data[row])
             hash_data[row] = old_hash_data[row];
+}
+
+void ColumnNullable::updateHashFast(SipHash & hash) const
+{
+    null_map->updateHashFast(hash);
+    nested_column->updateHashFast(hash);
 }
 
 MutableColumnPtr ColumnNullable::cloneResized(size_t new_size) const
@@ -99,11 +105,6 @@ void ColumnNullable::get(size_t n, Field & res) const
         getNestedColumn().get(n, res);
 }
 
-StringRef ColumnNullable::getDataAt(size_t /*n*/) const
-{
-    throw Exception{"Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED};
-}
-
 void ColumnNullable::insertData(const char * pos, size_t length)
 {
     if (pos == nullptr)
@@ -123,7 +124,7 @@ StringRef ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char 
     const auto & arr = getNullMapData();
     static constexpr auto s = sizeof(arr[0]);
 
-    auto pos = arena.allocContinue(s, begin);
+    auto * pos = arena.allocContinue(s, begin);
     memcpy(pos, &arr[n], s);
 
     if (arr[n])
@@ -223,7 +224,7 @@ ColumnPtr ColumnNullable::index(const IColumn & indexes, size_t limit) const
     return ColumnNullable::create(indexed_data, indexed_null_map);
 }
 
-int ColumnNullable::compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const
+int ColumnNullable::compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint, const Collator * collator) const
 {
     /// NULL values share the properties of NaN values.
     /// Here the last parameter of compareAt is called null_direction_hint
@@ -245,13 +246,38 @@ int ColumnNullable::compareAt(size_t n, size_t m, const IColumn & rhs_, int null
     }
 
     const IColumn & nested_rhs = nullable_rhs.getNestedColumn();
+    if (collator)
+        return getNestedColumn().compareAtWithCollation(n, m, nested_rhs, null_direction_hint, *collator);
+
     return getNestedColumn().compareAt(n, m, nested_rhs, null_direction_hint);
 }
 
-void ColumnNullable::getPermutation(bool reverse, size_t limit, int null_direction_hint, Permutation & res) const
+int ColumnNullable::compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const
+{
+    return compareAtImpl(n, m, rhs_, null_direction_hint);
+}
+
+int ColumnNullable::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint, const Collator & collator) const
+{
+    return compareAtImpl(n, m, rhs_, null_direction_hint, &collator);
+}
+
+void ColumnNullable::compareColumn(const IColumn & rhs, size_t rhs_row_num,
+                                   PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
+                                   int direction, int nan_direction_hint) const
+{
+    return doCompareColumn<ColumnNullable>(assert_cast<const ColumnNullable &>(rhs), rhs_row_num, row_indexes,
+                                           compare_results, direction, nan_direction_hint);
+}
+
+void ColumnNullable::getPermutationImpl(bool reverse, size_t limit, int null_direction_hint, Permutation & res, const Collator * collator) const
 {
     /// Cannot pass limit because of unknown amount of NULLs.
-    getNestedColumn().getPermutation(reverse, 0, null_direction_hint, res);
+
+    if (collator)
+        getNestedColumn().getPermutationWithCollation(*collator, reverse, 0, null_direction_hint, res);
+    else
+        getNestedColumn().getPermutation(reverse, 0, null_direction_hint, res);
 
     if ((null_direction_hint > 0) != reverse)
     {
@@ -319,6 +345,138 @@ void ColumnNullable::getPermutation(bool reverse, size_t limit, int null_directi
             --read_idx;
         }
     }
+}
+
+void ColumnNullable::updatePermutationImpl(bool reverse, size_t limit, int null_direction_hint, Permutation & res, EqualRanges & equal_ranges, const Collator * collator) const
+{
+    if (equal_ranges.empty())
+        return;
+
+    /// We will sort nested columns into `new_ranges` and call updatePermutation in next columns with `null_ranges`.
+    EqualRanges new_ranges, null_ranges;
+
+    const auto is_nulls_last = ((null_direction_hint > 0) != reverse);
+
+    if (is_nulls_last)
+    {
+        /// Shift all NULL values to the end.
+        for (const auto & [first, last] : equal_ranges)
+        {
+            /// Current interval is righter than limit.
+            if (limit && first > limit)
+                break;
+
+            /// Consider a half interval [first, last)
+            size_t read_idx = first;
+            size_t write_idx = first;
+            size_t end_idx = last;
+
+            /// We can't check the limit here because the interval is not sorted by nested column.
+            while (read_idx < end_idx && !isNullAt(res[read_idx]))
+            {
+                ++read_idx;
+                ++write_idx;
+            }
+
+            ++read_idx;
+
+            /// Invariants:
+            ///  write_idx < read_idx
+            ///  write_idx points to NULL
+            ///  read_idx will be incremented to position of next not-NULL
+            ///  there are range of NULLs between write_idx and read_idx - 1,
+            /// We are moving elements from end to begin of this range,
+            ///  so range will "bubble" towards the end.
+            /// Relative order of NULL elements could be changed,
+            ///  but relative order of non-NULLs is preserved.
+
+            while (read_idx < end_idx && write_idx < end_idx)
+            {
+                if (!isNullAt(res[read_idx]))
+                {
+                    std::swap(res[read_idx], res[write_idx]);
+                    ++write_idx;
+                }
+                ++read_idx;
+            }
+
+            /// We have a range [first, write_idx) of non-NULL values
+            if (first != write_idx)
+                new_ranges.emplace_back(first, write_idx);
+
+            /// We have a range [write_idx, list) of NULL values
+            if (write_idx != last)
+                null_ranges.emplace_back(write_idx, last);
+        }
+    }
+    else
+    {
+        /// Shift all NULL values to the beginning.
+        for (const auto & [first, last] : equal_ranges)
+        {
+            /// Current interval is righter than limit.
+            if (limit && first > limit)
+                break;
+
+            ssize_t read_idx = last - 1;
+            ssize_t write_idx = last - 1;
+            ssize_t begin_idx = first;
+
+            while (read_idx >= begin_idx && !isNullAt(res[read_idx]))
+            {
+                --read_idx;
+                --write_idx;
+            }
+
+            --read_idx;
+
+            while (read_idx >= begin_idx && write_idx >= begin_idx)
+            {
+                if (!isNullAt(res[read_idx]))
+                {
+                    std::swap(res[read_idx], res[write_idx]);
+                    --write_idx;
+                }
+                --read_idx;
+            }
+
+            /// We have a range [write_idx+1, last) of non-NULL values
+            if (write_idx != static_cast<ssize_t>(last))
+                new_ranges.emplace_back(write_idx + 1, last);
+
+            /// We have a range [first, write_idx+1) of NULL values
+            if (static_cast<ssize_t>(first) != write_idx)
+                null_ranges.emplace_back(first, write_idx + 1);
+        }
+    }
+
+    if (collator)
+        getNestedColumn().updatePermutationWithCollation(*collator, reverse, limit, null_direction_hint, res, new_ranges);
+    else
+        getNestedColumn().updatePermutation(reverse, limit, null_direction_hint, res, new_ranges);
+
+    equal_ranges = std::move(new_ranges);
+    std::move(null_ranges.begin(), null_ranges.end(), std::back_inserter(equal_ranges));
+}
+
+void ColumnNullable::getPermutation(bool reverse, size_t limit, int null_direction_hint, Permutation & res) const
+{
+    getPermutationImpl(reverse, limit, null_direction_hint, res);
+}
+
+void ColumnNullable::updatePermutation(bool reverse, size_t limit, int null_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
+{
+    updatePermutationImpl(reverse, limit, null_direction_hint, res, equal_ranges);
+}
+
+void ColumnNullable::getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int null_direction_hint, Permutation & res) const
+{
+    getPermutationImpl(reverse, limit, null_direction_hint, res, &collator);
+}
+
+void ColumnNullable::updatePermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int null_direction_hint, Permutation & res, EqualRanges & equal_range) const
+{
+    updatePermutationImpl(reverse, limit, null_direction_hint, res, equal_range, &collator);
 }
 
 void ColumnNullable::gather(ColumnGathererStream & gatherer)
@@ -424,25 +582,25 @@ void ColumnNullable::getExtremes(Field & min, Field & max) const
 
     const auto & null_map_data = getNullMapData();
 
-    if (const auto col_i8 = typeid_cast<const ColumnInt8 *>(nested_column.get()))
+    if (const auto * col_i8 = typeid_cast<const ColumnInt8 *>(nested_column.get()))
         getExtremesFromNullableContent<Int8>(*col_i8, null_map_data, min, max);
-    else if (const auto col_i16 = typeid_cast<const ColumnInt16 *>(nested_column.get()))
+    else if (const auto * col_i16 = typeid_cast<const ColumnInt16 *>(nested_column.get()))
         getExtremesFromNullableContent<Int16>(*col_i16, null_map_data, min, max);
-    else if (const auto col_i32 = typeid_cast<const ColumnInt32 *>(nested_column.get()))
+    else if (const auto * col_i32 = typeid_cast<const ColumnInt32 *>(nested_column.get()))
         getExtremesFromNullableContent<Int32>(*col_i32, null_map_data, min, max);
-    else if (const auto col_i64 = typeid_cast<const ColumnInt64 *>(nested_column.get()))
+    else if (const auto * col_i64 = typeid_cast<const ColumnInt64 *>(nested_column.get()))
         getExtremesFromNullableContent<Int64>(*col_i64, null_map_data, min, max);
-    else if (const auto col_u8 = typeid_cast<const ColumnUInt8 *>(nested_column.get()))
+    else if (const auto * col_u8 = typeid_cast<const ColumnUInt8 *>(nested_column.get()))
         getExtremesFromNullableContent<UInt8>(*col_u8, null_map_data, min, max);
-    else if (const auto col_u16 = typeid_cast<const ColumnUInt16 *>(nested_column.get()))
+    else if (const auto * col_u16 = typeid_cast<const ColumnUInt16 *>(nested_column.get()))
         getExtremesFromNullableContent<UInt16>(*col_u16, null_map_data, min, max);
-    else if (const auto col_u32 = typeid_cast<const ColumnUInt32 *>(nested_column.get()))
+    else if (const auto * col_u32 = typeid_cast<const ColumnUInt32 *>(nested_column.get()))
         getExtremesFromNullableContent<UInt32>(*col_u32, null_map_data, min, max);
-    else if (const auto col_u64 = typeid_cast<const ColumnUInt64 *>(nested_column.get()))
+    else if (const auto * col_u64 = typeid_cast<const ColumnUInt64 *>(nested_column.get()))
         getExtremesFromNullableContent<UInt64>(*col_u64, null_map_data, min, max);
-    else if (const auto col_f32 = typeid_cast<const ColumnFloat32 *>(nested_column.get()))
+    else if (const auto * col_f32 = typeid_cast<const ColumnFloat32 *>(nested_column.get()))
         getExtremesFromNullableContent<Float32>(*col_f32, null_map_data, min, max);
-    else if (const auto col_f64 = typeid_cast<const ColumnFloat64 *>(nested_column.get()))
+    else if (const auto * col_f64 = typeid_cast<const ColumnFloat64 *>(nested_column.get()))
         getExtremesFromNullableContent<Float64>(*col_f64, null_map_data, min, max);
 }
 
@@ -484,7 +642,6 @@ void ColumnNullable::applyNullMap(const ColumnNullable & other)
 {
     applyNullMap(other.getNullMapColumn());
 }
-
 
 void ColumnNullable::checkConsistency() const
 {

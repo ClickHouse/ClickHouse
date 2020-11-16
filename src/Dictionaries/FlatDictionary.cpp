@@ -2,6 +2,8 @@
 #include <IO/WriteHelpers.h>
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
+#include <Core/Defines.h>
+
 
 namespace DB
 {
@@ -19,16 +21,13 @@ static const auto max_array_size = 500000;
 
 
 FlatDictionary::FlatDictionary(
-    const std::string & database_,
-    const std::string & name_,
+    const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
     bool require_nonempty_,
     BlockPtr saved_block_)
-    : database(database_)
-    , name(name_)
-    , full_name{database_.empty() ? name_ : (database_ + "." + name_)}
+    : IDictionary(dict_id_)
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
     , dict_lifetime(dict_lifetime_)
@@ -77,7 +76,7 @@ void FlatDictionary::isInImpl(const ChildType & child_ids, const AncestorType & 
         auto id = getAt(child_ids, row);
         const auto ancestor_id = getAt(ancestor_ids, row);
 
-        while (id < loaded_size && id != null_value && id != ancestor_id)
+        for (size_t i = 0; id < loaded_size && id != null_value && id != ancestor_id && i < DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH; ++i)
             id = attr[id];
 
         out[row] = id != null_value && id == ancestor_id;
@@ -108,7 +107,7 @@ void FlatDictionary::isInConstantVector(const Key child_id, const PaddedPODArray
     void FlatDictionary::get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ResultArrayType<TYPE> & out) const \
     { \
         const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
 \
         const auto null_value = std::get<TYPE>(attribute.null_values); \
 \
@@ -134,7 +133,7 @@ DECLARE(Decimal128)
 void FlatDictionary::getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const
 {
     const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     const auto & null_value = std::get<StringRef>(attribute.null_values);
 
@@ -153,7 +152,7 @@ void FlatDictionary::getString(const std::string & attribute_name, const PaddedP
         ResultArrayType<TYPE> & out) const \
     { \
         const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
 \
         getItemsImpl<TYPE, TYPE>( \
             attribute, ids, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t row) { return def[row]; }); \
@@ -178,7 +177,7 @@ void FlatDictionary::getString(
     const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def, ColumnString * const out) const
 {
     const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     getItemsImpl<StringRef, StringRef>(
         attribute,
@@ -192,7 +191,7 @@ void FlatDictionary::getString(
         const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE def, ResultArrayType<TYPE> & out) const \
     { \
         const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
 \
         getItemsImpl<TYPE, TYPE>( \
             attribute, ids, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t) { return def; }); \
@@ -217,7 +216,7 @@ void FlatDictionary::getString(
     const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def, ColumnString * const out) const
 {
     const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     FlatDictionary::getItemsImpl<StringRef, StringRef>(
         attribute,
@@ -603,7 +602,7 @@ template <>
 void FlatDictionary::setAttributeValueImpl<String>(Attribute & attribute, const Key id, const String & value)
 {
     resize<StringRef>(attribute, id);
-    const auto string_in_arena = attribute.string_arena->insert(value.data(), value.size());
+    const auto * string_in_arena = attribute.string_arena->insert(value.data(), value.size());
     auto & array = std::get<ContainerType<StringRef>>(attribute.arrays);
     array[id] = StringRef{string_in_arena, value.size()};
     loaded_ids[id] = true;
@@ -722,11 +721,10 @@ void registerDictionaryFlat(DictionaryFactory & factory)
                                   "for a dictionary of layout 'range_hashed'",
                             ErrorCodes::BAD_ARGUMENTS};
 
-        const String database = config.getString(config_prefix + ".database", "");
-        const String name = config.getString(config_prefix + ".name");
+        const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
-        return std::make_unique<FlatDictionary>(database, name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
+        return std::make_unique<FlatDictionary>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
     };
     factory.registerLayout("flat", create_layout, false);
 }

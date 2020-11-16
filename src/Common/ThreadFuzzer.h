@@ -1,3 +1,4 @@
+#pragma once
 #include <cstdint>
 
 
@@ -31,10 +32,8 @@ namespace DB
   *
   * Notes:
   * - it can be also implemented with instrumentation (example: LLVM Xray) instead of signals.
-  * - it's also reasonable to insert glitches around interesting functions (example: mutex lock/unlock, starting of threads, etc.),
-  *   it is doable with wrapping these functions (todo).
   * - we should also make the sleep time random.
-  * - sleep obviously helps, but the effect of yield and migration is unclear.
+  * - sleep and migration obviously helps, but the effect of yield is unclear.
   *
   * In addition, we allow to inject glitches around thread synchronization functions.
   * Example:
@@ -65,7 +64,7 @@ private:
     ThreadFuzzer();
 
     void initConfiguration();
-    void setup();
+    void setup() const;
 
     static void signalHandler(int);
 };

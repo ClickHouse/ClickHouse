@@ -11,7 +11,7 @@ namespace DB
         ResultArrayType<TYPE> & out) const \
     { \
         auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
         getItemsNumberImpl<TYPE, TYPE>(attribute, ids, out, [&](const size_t row) { return def[row]; }); \
     }
 

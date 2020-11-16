@@ -5,7 +5,6 @@
 #include <DataStreams/SizeLimits.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/SetVariants.h>
-#include <Interpreters/Context.h>
 #include <Parsers/IAST.h>
 #include <Storages/MergeTree/BoolMask.h>
 
@@ -18,6 +17,7 @@ namespace DB
 class Range;
 class FieldWithInfinity;
 
+class Context;
 class IFunctionBase;
 using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
@@ -32,7 +32,7 @@ public:
     /// store all set elements in explicit form.
     /// This is needed for subsequent use for index.
     Set(const SizeLimits & limits_, bool fill_set_elements_, bool transform_null_in_)
-        : log(&Logger::get("Set")),
+        : log(&Poco::Logger::get("Set")),
         limits(limits_), fill_set_elements(fill_set_elements_), transform_null_in(transform_null_in_)
     {
     }
@@ -41,12 +41,6 @@ public:
 
     /** Set can be created either from AST or from a stream of data (subquery result).
       */
-
-    /** Create a Set from expression (specified literally in the query).
-      * 'types' - types of what are on the left hand side of IN.
-      * 'node' - list of values: 1, 2, 3 or list of tuples: (1, 2), (3, 4), (5, 6).
-      */
-    void createFromAST(const DataTypes & types, ASTPtr node, const Context & context);
 
     /** Create a Set from stream.
       * Call setHeader, then call insertFromBlock for each block.
@@ -75,6 +69,7 @@ public:
     Columns getSetElements() const { return { set_elements.begin(), set_elements.end() }; }
 
     void checkColumnsNumber(size_t num_key_columns) const;
+    bool areTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const;
     void checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const;
 
 private:
@@ -106,7 +101,7 @@ private:
     /// Types for set_elements.
     DataTypes set_elements_types;
 
-    Logger * log;
+    Poco::Logger * log;
 
     /// Limitations on the maximum size of the set
     SizeLimits limits;
@@ -114,9 +109,8 @@ private:
     /// Do we need to additionally store all elements of the set in explicit form for subsequent use for index.
     bool fill_set_elements;
 
+    /// If true, insert NULL values to set.
     bool transform_null_in;
-
-    bool has_null = false;
 
     /// Check if set contains all the data.
     bool is_created = false;
@@ -234,16 +228,13 @@ public:
 
     bool hasMonotonicFunctionsChain() const;
 
-    BoolMask checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types);
+    BoolMask checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types) const;
 
 private:
     Columns ordered_set;
     std::vector<KeyTuplePositionMapping> indexes_mapping;
 
     using ColumnsWithInfinity = std::vector<ValueWithInfinity>;
-
-    ColumnsWithInfinity left_point;
-    ColumnsWithInfinity right_point;
 };
 
 }

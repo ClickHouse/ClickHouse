@@ -16,7 +16,7 @@ struct ExpressionInfoMatcher
     struct Data
     {
         const Context & context;
-        const std::vector<TableWithColumnNames> & tables;
+        const TablesWithColumns & tables;
 
         bool is_array_join = false;
         bool is_stateful_function = false;

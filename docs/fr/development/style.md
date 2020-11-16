@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 68
 toc_title: "Comment \xE9crire du Code C++ "
 ---
@@ -356,7 +356,7 @@ Dans tous les autres cas, utilisez un nom qui décrit la signification.
 bool info_successfully_loaded = false;
 ```
 
-**9.** Les noms de `define`les constantes s et globales utilisent ALL\_CAPS avec des traits de soulignement.
+**9.** Les noms de `define`les constantes s et globales utilisent ALL_CAPS avec des traits de soulignement.
 
 ``` cpp
 #define MAX_SRC_TABLE_NAMES_TO_STORE 1000
@@ -396,7 +396,7 @@ Le suffixe de soulignement peut être omis si l'argument n'est pas utilisé dans
 timer (not m_timer)
 ```
 
-**14.** Pour les constantes dans un `enum`, utilisez CamelCase avec une lettre majuscule. ALL\_CAPS est également acceptable. Si l' `enum` est non local, utilisez un `enum class`.
+**14.** Pour les constantes dans un `enum`, utilisez CamelCase avec une lettre majuscule. ALL_CAPS est également acceptable. Si l' `enum` est non local, utilisez un `enum class`.
 
 ``` cpp
 enum class CompressionMethod
@@ -701,15 +701,15 @@ auto s = std::string{"Hello"};
 
 Mais toutes choses étant égales par ailleurs, le code multi-plateforme ou portable est préféré.
 
-**2.** Langue: C++17.
+**2.** Langue: C++20.
 
-**3.** Compilateur: `gcc`. En ce moment (décembre 2017), le code est compilé en utilisant la version 7.2. (Il peut également être compilé en utilisant `clang 4`.)
+**3.** Compilateur: `gcc`. En ce moment (août 2020), le code est compilé en utilisant la version 9.3. (Il peut également être compilé en utilisant `clang 8`.)
 
-La bibliothèque standard est utilisée (`libstdc++` ou `libc++`).
+La bibliothèque standard est utilisée (`libc++`).
 
 **4.**OS: Linux Ubuntu, pas plus vieux que précis.
 
-**5.**Le Code est écrit pour l'architecture CPU x86\_64.
+**5.**Le Code est écrit pour l'architecture CPU x86_64.
 
 Le jeu D'instructions CPU est l'ensemble minimum pris en charge parmi nos serveurs. Actuellement, il s'agit de SSE 4.2.
 
@@ -749,7 +749,7 @@ Si votre code dans le `master` la branche n'est pas constructible pourtant, l'ex
 
 ## Bibliothèque {#libraries}
 
-**1.** La bibliothèque standard C++14 est utilisée (les extensions expérimentales sont autorisées), ainsi que `boost` et `Poco` Framework.
+**1.** La bibliothèque standard C++20 est utilisée (les extensions expérimentales sont autorisées), ainsi que `boost` et `Poco` Framework.
 
 **2.** Si nécessaire, vous pouvez utiliser toutes les bibliothèques bien connues disponibles dans le package OS.
 

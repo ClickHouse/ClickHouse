@@ -2,6 +2,7 @@
 
 import os
 import random
+import re
 import sys
 import time
 import urllib.parse
@@ -15,11 +16,12 @@ import typograph_ru
 
 translator = googletrans.Translator()
 default_target_language = os.environ.get('TARGET_LANGUAGE', 'ru')
+curly_braces_re = re.compile('({[^}]+})')
 
 is_yandex = os.environ.get('YANDEX') is not None
 
 
-def translate(text, target_language=None):
+def translate_impl(text, target_language=None):
     target_language = target_language or default_target_language
     if target_language == 'en':
         return text
@@ -44,6 +46,17 @@ def translate(text, target_language=None):
     else:
         time.sleep(random.random())
         return translator.translate(text, target_language).text
+
+
+def translate(text, target_language=None):
+    return "".join(
+        [
+            part
+            if part.startswith("{") and part.endswith("}")
+            else translate_impl(part, target_language=target_language)
+            for part in re.split(curly_braces_re, text)
+        ]
+    )
 
 
 def translate_toc(root, lang):

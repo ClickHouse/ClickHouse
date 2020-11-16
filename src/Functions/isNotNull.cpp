@@ -9,6 +9,8 @@
 
 namespace DB
 {
+namespace
+{
 
 /// Implements the function isNotNull which returns true if a value
 /// is not null, false otherwise.
@@ -37,10 +39,10 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const ColumnWithTypeAndName & elem = block.getByPosition(arguments[0]);
-        if (auto * nullable = checkAndGetColumn<ColumnNullable>(*elem.column))
+        const ColumnWithTypeAndName & elem = arguments[0];
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*elem.column))
         {
             /// Return the negated null map.
             auto res_column = ColumnUInt8::create(input_rows_count);
@@ -50,15 +52,17 @@ public:
             for (size_t i = 0; i < input_rows_count; ++i)
                 res_data[i] = !src_data[i];
 
-            block.getByPosition(result).column = std::move(res_column);
+            return res_column;
         }
         else
         {
             /// Since no element is nullable, return a constant one.
-            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(elem.column->size(), 1u);
+            return DataTypeUInt8().createColumnConst(elem.column->size(), 1u);
         }
     }
 };
+
+}
 
 void registerFunctionIsNotNull(FunctionFactory & factory)
 {

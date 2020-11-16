@@ -2,7 +2,7 @@
 #include <map>
 #include <optional>
 #include <city.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -126,7 +126,7 @@ struct MinimalisticDataPartChecksums
 
     void serialize(WriteBuffer & to) const;
     void serializeWithoutHeader(WriteBuffer & to) const;
-    String getSerializedString();
+    String getSerializedString() const;
     static String getSerializedString(const MergeTreeDataPartChecksums & full_checksums, bool minimalistic);
 
     void checkEqual(const MinimalisticDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files) const;

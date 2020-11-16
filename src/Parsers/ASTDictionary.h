@@ -5,6 +5,10 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
 
+#include <Parsers/ASTSetQuery.h>
+
+#include <Parsers/ParserSetQuery.h>
+
 namespace DB
 {
 
@@ -31,8 +35,9 @@ class ASTDictionaryLayout : public IAST
 public:
     /// flat, cache, hashed, etc.
     String layout_type;
-    /// optional parameter (size_in_cells)
-    std::optional<KeyValue> parameter;
+    /// parameters (size_in_cells, ...)
+    /// ASTExpressionList -> ASTPair -> (ASTLiteral key, ASTLiteral value).
+    ASTExpressionList * parameters;
     /// has brackets after layout type
     bool has_brackets = true;
 
@@ -60,23 +65,37 @@ public:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
+class ASTDictionarySettings : public IAST
+{
+public:
+    SettingsChanges changes;
+
+    String getID(char) const override { return "Dictionary settings"; }
+
+    ASTPtr clone() const override;
+
+    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+};
+
 
 /// AST contains all parts of external dictionary definition except attributes
 class ASTDictionary : public IAST
 {
 public:
     /// Dictionary keys -- one or more
-    ASTExpressionList * primary_key;
+    ASTExpressionList * primary_key = nullptr;
     /// Dictionary external source, doesn't have own AST, because
     /// source parameters absolutely different for different sources
-    ASTFunctionWithKeyValueArguments * source;
+    ASTFunctionWithKeyValueArguments * source = nullptr;
 
     /// Lifetime of dictionary (required part)
-    ASTDictionaryLifetime * lifetime;
+    ASTDictionaryLifetime * lifetime = nullptr;
     /// Layout of dictionary (required part)
-    ASTDictionaryLayout * layout;
+    ASTDictionaryLayout * layout = nullptr;
     /// Range for dictionary (only for range-hashed dictionaries)
-    ASTDictionaryRange * range;
+    ASTDictionaryRange * range = nullptr;
+    /// Settings for dictionary (optionally)
+    ASTDictionarySettings * dict_settings = nullptr;
 
     String getID(char) const override { return "Dictionary definition"; }
 

@@ -16,6 +16,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 class Arena;
 using ArenaPtr = std::shared_ptr<Arena>;
 using ConstArenaPtr = std::shared_ptr<const Arena>;
@@ -74,6 +79,9 @@ private:
     /// Array of pointers to aggregation states, that are placed in arenas.
     Container data;
 
+    /// Name of the type to distinguish different aggregation states.
+    String type_string;
+
     ColumnAggregateFunction() {}
 
     /// Create a new column that has another column as a source.
@@ -84,29 +92,17 @@ private:
     ///  but ownership of different elements cannot be mixed by different columns.
     void ensureOwnership();
 
-    ColumnAggregateFunction(const AggregateFunctionPtr & func_)
-        : func(func_)
-    {
-    }
+    ColumnAggregateFunction(const AggregateFunctionPtr & func_);
 
     ColumnAggregateFunction(const AggregateFunctionPtr & func_,
-                            const ConstArenas & arenas_)
-        : foreign_arenas(arenas_), func(func_)
-    {
-    }
-
+                            const ConstArenas & arenas_);
 
     ColumnAggregateFunction(const ColumnAggregateFunction & src_);
-
-    String getTypeString() const;
 
 public:
     ~ColumnAggregateFunction() override;
 
-    void set(const AggregateFunctionPtr & func_)
-    {
-        func = func_;
-    }
+    void set(const AggregateFunctionPtr & func_);
 
     AggregateFunctionPtr getAggregateFunction() { return func; }
     AggregateFunctionPtr getAggregateFunction() const { return func; }
@@ -114,15 +110,16 @@ public:
     /// Take shared ownership of Arena, that holds memory for states of aggregate functions.
     void addArena(ConstArenaPtr arena_);
 
-    /** Transform column with states of aggregate functions to column with final result values.
-      */
-    MutableColumnPtr convertToValues() const;
+    /// Transform column with states of aggregate functions to column with final result values.
+    /// It expects ColumnAggregateFunction as an argument, this column will be destroyed.
+    /// This method is made static and receive MutableColumnPtr object to explicitly destroy it.
+    static MutableColumnPtr convertToValues(MutableColumnPtr column);
 
     std::string getName() const override { return "AggregateFunction(" + func->getName() + ")"; }
     const char * getFamilyName() const override { return "AggregateFunction"; }
+    TypeIndex getDataType() const override { return TypeIndex::AggregateFunction; }
 
-    bool tryFinalizeAggregateFunction(MutableColumnPtr* res_) const;
-    MutableColumnPtr predictValues(Block & block, const ColumnNumbers & arguments, const Context & context) const;
+    MutableColumnPtr predictValues(ColumnsWithTypeAndName & arguments, const Context & context) const;
 
     size_t size() const override
     {
@@ -162,6 +159,8 @@ public:
 
     void updateWeakHash32(WeakHash32 & hash) const override;
 
+    void updateHashFast(SipHash & hash) const override;
+
     size_t byteSize() const override;
 
     size_t allocatedBytes() const override;
@@ -192,7 +191,13 @@ public:
         return 0;
     }
 
+    void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
+    {
+        throw Exception("Method compareColumn is not supported for ColumnAggregateFunction", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
+    void updatePermutation(bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_range) const override;
 
     /** More efficient manipulation methods */
     Container & getData()

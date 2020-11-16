@@ -1,23 +1,21 @@
 ---
-machine_translated: true
-machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
 toc_priority: 46
-toc_title: "\u7591\u96BE\u89E3\u7B54"
+toc_title: "常见问题"
 ---
 
-# 疑难解答 {#troubleshooting}
+# 常见问题 {#troubleshooting}
 
--   [安装方式](#troubleshooting-installation-errors)
+-   [安装](#troubleshooting-installation-errors)
 -   [连接到服务器](#troubleshooting-accepts-no-connections)
 -   [查询处理](#troubleshooting-does-not-process-queries)
 -   [查询处理效率](#troubleshooting-too-slow)
 
-## 安装方式 {#troubleshooting-installation-errors}
+## 安装 {#troubleshooting-installation-errors}
 
 ### 您无法使用Apt-get从ClickHouse存储库获取Deb软件包 {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
 
 -   检查防火墙设置。
--   如果出于任何原因无法访问存储库，请按照以下文件中的描述下载软件包 [开始](../getting_started/index.md) 文章并使用手动安装它们 `sudo dpkg -i <packages>` 指挥部 您还需要 `tzdata` 包。
+-   如果出于任何原因无法访问存储库，请按照[开始](../getting-started/index.md)中的描述下载软件包，并使用命令 `sudo dpkg -i <packages>` 手动安装它们。除此之外你还需要 `tzdata` 包。
 
 ## 连接到服务器 {#troubleshooting-accepts-no-connections}
 
@@ -44,7 +42,7 @@ $ sudo service clickhouse-server start
 
 **检查日志**
 
-主日志 `clickhouse-server` 是在 `/var/log/clickhouse-server/clickhouse-server.log` 默认情况下。
+主日志 `clickhouse-server` 默认情况是在 `/var/log/clickhouse-server/clickhouse-server.log` 下。
 
 如果服务器成功启动，您应该看到字符串:
 
@@ -57,13 +55,13 @@ $ sudo service clickhouse-server start
 2019.01.11 15:23:25.549505 [ 45 ] {} <Error> ExternalDictionaries: Failed reloading 'event2id' external dictionary: Poco::Exception. Code: 1000, e.code() = 111, e.displayText() = Connection refused, e.what() = Connection refused
 ```
 
-如果在文件末尾没有看到错误，请从字符串开始查看整个文件:
+如果在文件末尾没有看到错误，请从如下字符串开始查看整个文件:
 
 ``` text
 <Information> Application: starting up.
 ```
 
-如果您尝试启动第二个实例 `clickhouse-server` 在服务器上，您将看到以下日志:
+如果您尝试在服务器上启动第二个实例 `clickhouse-server` ，您将看到以下日志:
 
 ``` text
 2019.01.11 15:25:11.151730 [ 1 ] {} <Information> : Starting ClickHouse 19.1.0 with revision 54413
@@ -79,9 +77,9 @@ Revision: 54413
 2019.01.11 15:25:11.156716 [ 2 ] {} <Information> BaseDaemon: Stop SignalListener thread
 ```
 
-**请参阅系统。d日志**
+**查看系统日志**
 
-如果你没有找到任何有用的信息 `clickhouse-server` 日志或没有任何日志，您可以查看 `system.d` 使用命令记录:
+如果你在 `clickhouse-server` 没有找到任何有用的信息或根本没有任何日志，您可以使用命令查看 `system.d` :
 
 ``` bash
 $ sudo journalctl -u clickhouse-server
@@ -99,13 +97,13 @@ $ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-se
 
 检查:
 
--   码头工人设置。
+-   Docker设置。
 
-    如果您在IPv6网络中的Docker中运行ClickHouse，请确保 `network=host` 已设置。
+    如果您在IPv6网络中的Docker中运行ClickHouse，请确保 `network=host` 被设置。
 
 -   端点设置。
 
-    检查 [listen\_host](server_configuration_parameters/settings.md#server_configuration_parameters-listen_host) 和 [tcp\_port](server_configuration_parameters/settings.md#server_configuration_parameters-tcp_port) 设置。
+    检查 [listen_host](server-configuration-parameters/settings.md#server_configuration_parameters-listen_host) 和 [tcp_port](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) 设置。
 
     ClickHouse服务器默认情况下仅接受本地主机连接。
 
@@ -117,10 +115,10 @@ $ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-se
 
     检查:
 
-    -   该 [tcp\_port\_secure](server_configuration_parameters/settings.md#server_configuration_parameters-tcp_port_secure) 设置。
-    -   设置 [SSL序列](server_configuration_parameters/settings.md#server_configuration_parameters-openssl).
+    -   [tcp_port_secure](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) 设置。
+    -   [SSL证书](server-configuration-parameters/settings.md#server_configuration_parameters-openssl) 设置.
 
-    连接时使用正确的参数。 例如，使用 `port_secure` 参数 `clickhouse_client`.
+    连接时使用正确的参数。 例如，使用 `clickhouse_client` 的时候使用 `port_secure` 参数 .
 
 -   用户设置。
 
@@ -135,7 +133,7 @@ $ curl 'http://localhost:8123/' --data-binary "SELECT a"
 Code: 47, e.displayText() = DB::Exception: Unknown identifier: a. Note that there are no tables (FROM clause) in your query, context: required_names: 'a' source_tables: table_aliases: private_aliases: column_aliases: public_columns: 'a' masked_columns: array_join_columns: source_columns: , e.what() = DB::Exception
 ```
 
-如果你开始 `clickhouse-client` 与 `stack-trace` 参数，ClickHouse返回包含错误描述的服务器堆栈跟踪。
+如果你使用 `clickhouse-client` 时设置了 `stack-trace` 参数，ClickHouse返回包含错误描述的服务器堆栈跟踪信息。
 
 您可能会看到一条关于连接中断的消息。 在这种情况下，可以重复查询。 如果每次执行查询时连接中断，请检查服务器日志中是否存在错误。
 

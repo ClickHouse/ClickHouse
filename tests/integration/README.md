@@ -12,11 +12,36 @@ You must install latest Docker from
 https://docs.docker.com/engine/installation/linux/docker-ce/ubuntu/#set-up-the-repository
 Don't use Docker from your system repository.
 
-* [pip](https://pypi.python.org/pypi/pip) and `libpq-dev`. To install: `sudo apt-get install python-pip libpq-dev zlib1g-dev libcrypto++-dev libssl-dev`
+* [pip](https://pypi.python.org/pypi/pip) and `libpq-dev`. To install: `sudo apt-get install python3-pip libpq-dev zlib1g-dev libcrypto++-dev libssl-dev`
 * [py.test](https://docs.pytest.org/) testing framework. To install: `sudo -H pip install pytest`
-* [docker-compose](https://docs.docker.com/compose/) and additional python libraries. To install: `sudo -H pip install urllib3==1.23 pytest docker-compose==1.22.0 docker dicttoxml kazoo PyMySQL psycopg2==2.7.5 pymongo tzlocal kafka-python protobuf redis aerospike pytest-timeout minio rpm-confluent-schemaregistry`
+* [docker-compose](https://docs.docker.com/compose/) and additional python libraries. To install:
 
-(highly not recommended) If you really want to use OS packages on modern debian/ubuntu instead of "pip": `sudo apt install -y docker docker-compose python-pytest python-dicttoxml python-docker python-pymysql python-pymongo python-tzlocal python-kazoo python-psycopg2 python-kafka python-pytest-timeout python-minio`
+```
+sudo -H pip install \
+    PyMySQL \
+    aerospike \
+    avro \
+    cassandra-driver \
+    confluent-kafka \
+    dicttoxml \
+    docker \
+    docker-compose==1.22.0 \
+    grpcio \
+    grpcio-tools \
+    kafka-python \
+    kazoo \
+    minio \
+    protobuf \
+    psycopg2-binary==2.7.5 \
+    pymongo \
+    pytest \
+    pytest-timeout \
+    redis \
+    tzlocal \
+    urllib3
+```
+
+(highly not recommended) If you really want to use OS packages on modern debian/ubuntu instead of "pip": `sudo apt install -y docker docker-compose python3-pytest python3-dicttoxml python3-docker python3-pymysql python3-pymongo python3-tzlocal python3-kazoo python3-psycopg2 kafka-python python3-pytest-timeout python3-minio`
 
 If you want to run the tests under a non-privileged user, you must add this user to `docker` group: `sudo usermod -aG docker $USER` and re-login.
 (You must close all your sessions (for example, restart your computer))
@@ -25,12 +50,13 @@ To check, that you have access to Docker, run `docker ps`.
 Run the tests with the `pytest` command. To select which tests to run, use: `pytest -k <test_name_pattern>`
 
 By default tests are run with system-wide client binary, server binary and base configs. To change that,
-set the following environment variables:
+set the following environment variables:`
 * `CLICKHOUSE_TESTS_SERVER_BIN_PATH` to choose the server binary.
 * `CLICKHOUSE_TESTS_CLIENT_BIN_PATH` to choose the client binary.
 * `CLICKHOUSE_TESTS_BASE_CONFIG_DIR` to choose the directory from which base configs (`config.xml` and
   `users.xml`) are taken.
 
+For tests that use common docker compose files you may need to set up their path with environment variable: `DOCKER_COMPOSE_DIR=$HOME/ClickHouse/docker/test/integration/runner/compose`
 
 ### Running with runner script
 
@@ -44,7 +70,7 @@ Notes:
 
 You can run tests via `./runner` script and pass pytest arguments as last arg:
 ```
-$ ./runner --binary $HOME/ClickHouse/programs/clickhouse  --bridge-binary $HOME/ClickHouse/programs/clickhouse-odbc-bridge --configs-dir $HOME/ClickHouse/programs/server/ 'test_odbc_interaction -ss'
+$ ./runner --binary $HOME/ClickHouse/programs/clickhouse  --bridge-binary $HOME/ClickHouse/programs/clickhouse-odbc-bridge --base-configs-dir $HOME/ClickHouse/programs/server/ 'test_odbc_interaction -ss'
 Start tests
 ============================= test session starts ==============================
 platform linux2 -- Python 2.7.15rc1, pytest-4.0.0, py-1.7.0, pluggy-0.8.0
@@ -94,7 +120,7 @@ cd docker/test/integration
 docker build -t yandex/clickhouse-integration-test .
 ```
 
-The helper container used by the `runner` script is in `tests/integration/image/Dockerfile`.
+The helper container used by the `runner` script is in `docker/test/integration/runner/Dockerfile`.
 
 ### Adding new tests
 

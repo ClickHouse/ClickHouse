@@ -1,11 +1,10 @@
-#include <ext/map.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnTuple.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeTuple.h>
 #include "PolygonDictionary.h"
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
+
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
+#include <DataTypes/DataTypeArray.h>
 
 #include <numeric>
 
@@ -21,16 +20,13 @@ namespace ErrorCodes
 
 
 IPolygonDictionary::IPolygonDictionary(
-        const std::string & database_,
-        const std::string & name_,
+        const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
         const DictionaryLifetime dict_lifetime_,
         InputType input_type_,
         PointType point_type_)
-        : database(database_)
-        , name(name_)
-        , full_name{database_.empty() ? name_ : (database_ + "." + name_)}
+        : IDictionaryBase(dict_id_)
         , dict_struct(dict_struct_)
         , source_ptr(std::move(source_ptr_))
         , dict_lifetime(dict_lifetime_)
@@ -39,21 +35,6 @@ IPolygonDictionary::IPolygonDictionary(
 {
     createAttributes();
     loadData();
-}
-
-const std::string & IPolygonDictionary::getDatabase() const
-{
-    return database;
-}
-
-const std::string & IPolygonDictionary::getName() const
-{
-    return name;
-}
-
-const std::string & IPolygonDictionary::getFullName() const
-{
-    return full_name;
 }
 
 std::string IPolygonDictionary::getTypeName() const
@@ -187,11 +168,13 @@ void IPolygonDictionary::createAttributes()
         appendNullValue(attr.underlying_type, attr.null_value);
 
         if (attr.hierarchical)
-            throw Exception{name + ": hierarchical attributes not supported for dictionary of polygonal type", ErrorCodes::TYPE_MISMATCH};
+            throw Exception{ErrorCodes::TYPE_MISMATCH,
+                            "{}: hierarchical attributes not supported for dictionary of polygonal type",
+                            getDictionaryID().getNameForLogs()};
     }
 }
 
-void IPolygonDictionary::blockToAttributes(const DB::Block &block)
+void IPolygonDictionary::blockToAttributes(const DB::Block & block)
 {
     const auto rows = block.rows();
     element_count += rows;
@@ -200,7 +183,7 @@ void IPolygonDictionary::blockToAttributes(const DB::Block &block)
         const auto & column = block.safeGetByPosition(i + 1);
         if (attributes[i])
         {
-            MutableColumnPtr mutated = std::move(*attributes[i]).mutate();
+            MutableColumnPtr mutated = IColumn::mutate(std::move(attributes[i]));
             mutated->insertRangeFrom(*column.column, 0, column.column->size());
             attributes[i] = std::move(mutated);
         }
@@ -222,8 +205,31 @@ void IPolygonDictionary::loadData()
         blockToAttributes(block);
     stream->readSuffix();
 
-    for (auto & polygon : polygons)
+    std::vector<double> areas;
+    areas.reserve(polygons.size());
+
+    std::vector<std::pair<Polygon, size_t>> polygon_ids;
+    polygon_ids.reserve(polygons.size());
+    for (size_t i = 0; i < polygons.size(); ++i)
+    {
+        auto & polygon = polygons[i];
         bg::correct(polygon);
+        areas.push_back(bg::area(polygon));
+        polygon_ids.emplace_back(polygon, i);
+    }
+    sort(polygon_ids.begin(), polygon_ids.end(), [& areas](const auto & lhs, const auto & rhs)
+    {
+        return areas[lhs.second] < areas[rhs.second];
+    });
+    std::vector<size_t> correct_ids;
+    correct_ids.reserve(polygon_ids.size());
+    for (size_t i = 0; i < polygon_ids.size(); ++i)
+    {
+        auto & polygon = polygon_ids[i];
+        correct_ids.emplace_back(ids[polygon.second]);
+        polygons[i] = polygon.first;
+    }
+    ids = correct_ids;
 }
 
 void IPolygonDictionary::calculateBytesAllocated()
@@ -233,12 +239,12 @@ void IPolygonDictionary::calculateBytesAllocated()
         bytes_allocated += column->allocatedBytes();
 }
 
-std::vector<IPolygonDictionary::Point> IPolygonDictionary::extractPoints(const Columns &key_columns)
+std::vector<IPolygonDictionary::Point> IPolygonDictionary::extractPoints(const Columns & key_columns)
 {
     if (key_columns.size() != 2)
         throw Exception{"Expected two columns of coordinates", ErrorCodes::BAD_ARGUMENTS};
-    const auto column_x = typeid_cast<const ColumnVector<Float64>*>(key_columns[0].get());
-    const auto column_y = typeid_cast<const ColumnVector<Float64>*>(key_columns[1].get());
+    const auto * column_x = typeid_cast<const ColumnVector<Float64>*>(key_columns[0].get());
+    const auto * column_y = typeid_cast<const ColumnVector<Float64>*>(key_columns[1].get());
     if (!column_x || !column_y)
         throw Exception{"Expected columns of Float64", ErrorCodes::TYPE_MISMATCH};
     const auto rows = key_columns.front()->size();
@@ -249,7 +255,7 @@ std::vector<IPolygonDictionary::Point> IPolygonDictionary::extractPoints(const C
     return result;
 }
 
-void IPolygonDictionary::has(const Columns &key_columns, const DataTypes &, PaddedPODArray<UInt8> &out) const
+void IPolygonDictionary::has(const Columns & key_columns, const DataTypes &, PaddedPODArray<UInt8> & out) const
 {
     size_t row = 0;
     for (const auto & pt : extractPoints(key_columns))
@@ -275,7 +281,7 @@ size_t IPolygonDictionary::getAttributeIndex(const std::string & attribute_name)
         const std::string & attribute_name, const Columns & key_columns, const DataTypes &, ResultArrayType<TYPE> & out) const \
     { \
         const auto ind = getAttributeIndex(attribute_name); \
-        checkAttributeType(name, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(this, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::ut##TYPE); \
 \
         const auto null_value = std::get<TYPE>(null_values[ind]); \
 \
@@ -305,7 +311,7 @@ void IPolygonDictionary::getString(
         const std::string & attribute_name, const Columns & key_columns, const DataTypes &, ColumnString * out) const
 {
     const auto ind = getAttributeIndex(attribute_name);
-    checkAttributeType(name, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::utString);
 
     const auto & null_value = StringRef{std::get<String>(null_values[ind])};
 
@@ -325,7 +331,7 @@ void IPolygonDictionary::getString(
         ResultArrayType<TYPE> & out) const \
     { \
         const auto ind = getAttributeIndex(attribute_name); \
-        checkAttributeType(name, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(this, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::ut##TYPE); \
 \
         getItemsImpl<TYPE, TYPE>( \
             ind, \
@@ -357,7 +363,7 @@ void IPolygonDictionary::getString(
         ColumnString * const out) const
 {
     const auto ind = getAttributeIndex(attribute_name);
-    checkAttributeType(name, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::utString);
 
     getItemsImpl<String, StringRef>(
             ind,
@@ -375,7 +381,7 @@ void IPolygonDictionary::getString(
         ResultArrayType<TYPE> & out) const \
     { \
         const auto ind = getAttributeIndex(attribute_name); \
-        checkAttributeType(name, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(this, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::ut##TYPE); \
 \
         getItemsImpl<TYPE, TYPE>( \
             ind, key_columns, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t) { return def; }); \
@@ -404,7 +410,7 @@ void IPolygonDictionary::getString(
         ColumnString * const out) const
 {
     const auto ind = getAttributeIndex(attribute_name);
-    checkAttributeType(name, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::utString);
 
     getItemsImpl<String, StringRef>(
             ind,
@@ -505,7 +511,7 @@ struct Data
         ids.push_back((ids.empty() ? 0 : ids.back() + new_multi_polygon));
     }
 
-    void addPoint(Float64 x, Float64 y)
+    void addPoint(IPolygonDictionary::Coord x, IPolygonDictionary::Coord y)
     {
         auto & last_polygon = dest.back();
         auto & last_ring = (last_polygon.inners().empty() ? last_polygon.outer() : last_polygon.inners().back());
@@ -513,7 +519,7 @@ struct Data
     }
 };
 
-void addNewPoint(Float64 x, Float64 y, Data & data, Offset & offset)
+void addNewPoint(IPolygonDictionary::Coord x, IPolygonDictionary::Coord y, Data & data, Offset & offset)
 {
     if (offset.atLastPointOfRing())
     {
@@ -534,17 +540,17 @@ void addNewPoint(Float64 x, Float64 y, Data & data, Offset & offset)
 
 const IColumn * unrollMultiPolygons(const ColumnPtr & column, Offset & offset)
 {
-    const auto ptr_multi_polygons = typeid_cast<const ColumnArray*>(column.get());
+    const auto * ptr_multi_polygons = typeid_cast<const ColumnArray*>(column.get());
     if (!ptr_multi_polygons)
         throw Exception{"Expected a column containing arrays of polygons", ErrorCodes::TYPE_MISMATCH};
     offset.multi_polygon_offsets.assign(ptr_multi_polygons->getOffsets());
 
-    const auto ptr_polygons = typeid_cast<const ColumnArray*>(&ptr_multi_polygons->getData());
+    const auto * ptr_polygons = typeid_cast<const ColumnArray*>(&ptr_multi_polygons->getData());
     if (!ptr_polygons)
         throw Exception{"Expected a column containing arrays of rings when reading polygons", ErrorCodes::TYPE_MISMATCH};
     offset.polygon_offsets.assign(ptr_polygons->getOffsets());
 
-    const auto ptr_rings = typeid_cast<const ColumnArray*>(&ptr_polygons->getData());
+    const auto * ptr_rings = typeid_cast<const ColumnArray*>(&ptr_polygons->getData());
     if (!ptr_rings)
         throw Exception{"Expected a column containing arrays of points when reading rings", ErrorCodes::TYPE_MISMATCH};
     offset.ring_offsets.assign(ptr_rings->getOffsets());
@@ -554,7 +560,7 @@ const IColumn * unrollMultiPolygons(const ColumnPtr & column, Offset & offset)
 
 const IColumn * unrollSimplePolygons(const ColumnPtr & column, Offset & offset)
 {
-    const auto ptr_polygons = typeid_cast<const ColumnArray*>(column.get());
+    const auto * ptr_polygons = typeid_cast<const ColumnArray*>(column.get());
     if (!ptr_polygons)
         throw Exception{"Expected a column containing arrays of points", ErrorCodes::TYPE_MISMATCH};
     offset.ring_offsets.assign(ptr_polygons->getOffsets());
@@ -566,8 +572,8 @@ const IColumn * unrollSimplePolygons(const ColumnPtr & column, Offset & offset)
 
 void handlePointsReprByArrays(const IColumn * column, Data & data, Offset & offset)
 {
-    const auto ptr_points = typeid_cast<const ColumnArray*>(column);
-    const auto ptr_coord = typeid_cast<const ColumnVector<Float64>*>(&ptr_points->getData());
+    const auto * ptr_points = typeid_cast<const ColumnArray*>(column);
+    const auto * ptr_coord = typeid_cast<const ColumnVector<Float64>*>(&ptr_points->getData());
     if (!ptr_coord)
         throw Exception{"Expected coordinates to be of type Float64", ErrorCodes::TYPE_MISMATCH};
     const auto & offsets = ptr_points->getOffsets();
@@ -583,13 +589,13 @@ void handlePointsReprByArrays(const IColumn * column, Data & data, Offset & offs
 
 void handlePointsReprByTuples(const IColumn * column, Data & data, Offset & offset)
 {
-    const auto ptr_points = typeid_cast<const ColumnTuple*>(column);
+    const auto * ptr_points = typeid_cast<const ColumnTuple*>(column);
     if (!ptr_points)
         throw Exception{"Expected a column of tuples representing points", ErrorCodes::TYPE_MISMATCH};
     if (ptr_points->tupleSize() != 2)
         throw Exception{"Points should be two-dimensional", ErrorCodes::BAD_ARGUMENTS};
-    const auto column_x = typeid_cast<const ColumnVector<Float64>*>(&ptr_points->getColumn(0));
-    const auto column_y = typeid_cast<const ColumnVector<Float64>*>(&ptr_points->getColumn(1));
+    const auto * column_x = typeid_cast<const ColumnVector<Float64>*>(&ptr_points->getColumn(0));
+    const auto * column_y = typeid_cast<const ColumnVector<Float64>*>(&ptr_points->getColumn(1));
     if (!column_x || !column_y)
         throw Exception{"Expected coordinates to be of type Float64", ErrorCodes::TYPE_MISMATCH};
     for (size_t i = 0; i < column_x->size(); ++i)
@@ -600,7 +606,7 @@ void handlePointsReprByTuples(const IColumn * column, Data & data, Offset & offs
 
 }
 
-void IPolygonDictionary::extractPolygons(const ColumnPtr &column)
+void IPolygonDictionary::extractPolygons(const ColumnPtr & column)
 {
     Data data = {polygons, ids};
     Offset offset;
@@ -632,115 +638,6 @@ void IPolygonDictionary::extractPolygons(const ColumnPtr &column)
             handlePointsReprByTuples(points_collection, data, offset);
             break;
     }
-}
-
-SimplePolygonDictionary::SimplePolygonDictionary(
-    const std::string & database_,
-    const std::string & name_,
-    const DictionaryStructure & dict_struct_,
-    DictionarySourcePtr source_ptr_,
-    const DictionaryLifetime dict_lifetime_,
-    InputType input_type_,
-    PointType point_type_)
-    : IPolygonDictionary(database_, name_, dict_struct_, std::move(source_ptr_), dict_lifetime_, input_type_, point_type_)
-{
-}
-
-std::shared_ptr<const IExternalLoadable> SimplePolygonDictionary::clone() const
-{
-    return std::make_shared<SimplePolygonDictionary>(
-            this->database,
-            this->name,
-            this->dict_struct,
-            this->source_ptr->clone(),
-            this->dict_lifetime,
-            this->input_type,
-            this->point_type);
-}
-
-bool SimplePolygonDictionary::find(const Point &point, size_t & id) const
-{
-    bool found = false;
-    double area = 0;
-    for (size_t i = 0; i < (this->polygons).size(); ++i)
-    {
-        if (bg::covered_by(point, (this->polygons)[i]))
-        {
-            double new_area = bg::area((this->polygons)[i]);
-            if (!found || new_area < area)
-            {
-                found = true;
-                id = i;
-                area = new_area;
-            }
-        }
-    }
-    return found;
-}
-
-void registerDictionaryPolygon(DictionaryFactory & factory)
-{
-    auto create_layout = [=](const std::string &,
-                             const DictionaryStructure & dict_struct,
-                             const Poco::Util::AbstractConfiguration & config,
-                             const std::string & config_prefix,
-                             DictionarySourcePtr source_ptr) -> DictionaryPtr
-    {
-        const String database = config.getString(config_prefix + ".database", "");
-        const String name = config.getString(config_prefix + ".name");
-
-        if (!dict_struct.key)
-            throw Exception{"'key' is required for a dictionary of layout 'polygon'", ErrorCodes::BAD_ARGUMENTS};
-        if (dict_struct.key->size() != 1)
-            throw Exception{"The 'key' should consist of a single attribute for a dictionary of layout 'polygon'",
-                            ErrorCodes::BAD_ARGUMENTS};
-        IPolygonDictionary::InputType input_type;
-        IPolygonDictionary::PointType point_type;
-        const auto key_type = (*dict_struct.key)[0].type;
-        const auto f64 = std::make_shared<DataTypeFloat64>();
-        const auto multi_polygon_array = DataTypeArray(std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(f64))));
-        const auto multi_polygon_tuple = DataTypeArray(std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(std::vector<DataTypePtr>{f64, f64}))));
-        const auto simple_polygon_array = DataTypeArray(std::make_shared<DataTypeArray>(f64));
-        const auto simple_polygon_tuple = DataTypeArray(std::make_shared<DataTypeTuple>(std::vector<DataTypePtr>{f64, f64}));
-        if (key_type->equals(multi_polygon_array))
-        {
-            input_type = IPolygonDictionary::InputType::MultiPolygon;
-            point_type = IPolygonDictionary::PointType::Array;
-        }
-        else if (key_type->equals(multi_polygon_tuple))
-        {
-            input_type = IPolygonDictionary::InputType::MultiPolygon;
-            point_type = IPolygonDictionary::PointType::Tuple;
-        }
-        else if (key_type->equals(simple_polygon_array))
-        {
-            input_type = IPolygonDictionary::InputType::SimplePolygon;
-            point_type = IPolygonDictionary::PointType::Array;
-        }
-        else if (key_type->equals(simple_polygon_tuple))
-        {
-            input_type = IPolygonDictionary::InputType::SimplePolygon;
-            point_type = IPolygonDictionary::PointType::Tuple;
-        }
-        else
-            throw Exception{"The key type " + key_type->getName() +
-                            " is not one of the following allowed types for a dictionary of layout 'polygon': " +
-                            multi_polygon_array.getName() + " " +
-                            multi_polygon_tuple.getName() + " " +
-                            simple_polygon_array.getName() + " " +
-                            simple_polygon_tuple.getName() + " ",
-                            ErrorCodes::BAD_ARGUMENTS};
-
-        if (dict_struct.range_min || dict_struct.range_max)
-            throw Exception{name
-                            + ": elements range_min and range_max should be defined only "
-                              "for a dictionary of layout 'range_hashed'",
-                            ErrorCodes::BAD_ARGUMENTS};
-
-        const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
-        return std::make_unique<SimplePolygonDictionary>(database, name, dict_struct, std::move(source_ptr), dict_lifetime, input_type, point_type);
-    };
-    factory.registerLayout("polygon", create_layout, true);
 }
 
 }

@@ -3,12 +3,12 @@
 #include <Common/PODArray.h>
 #include <common/unaligned.h>
 #include <Compression/CompressionFactory.h>
-#include <IO/ReadHelpers.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/hex.h>
-#include <sstream>
 
 
 namespace DB
@@ -17,12 +17,17 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int CORRUPTED_DATA;
+    extern const int CORRUPTED_DATA;
 }
 
 CompressionCodecMultiple::CompressionCodecMultiple(Codecs codecs_)
     : codecs(codecs_)
 {
+    ASTs arguments;
+    for (const auto & codec : codecs)
+        arguments.push_back(codec->getCodecDesc());
+    /// Special case, codec doesn't have name and contain list of codecs.
+    setCodecDescription("", arguments);
 }
 
 uint8_t CompressionCodecMultiple::getMethodByte() const
@@ -30,23 +35,16 @@ uint8_t CompressionCodecMultiple::getMethodByte() const
     return static_cast<uint8_t>(CompressionMethodByte::Multiple);
 }
 
-String CompressionCodecMultiple::getCodecDesc() const
+void CompressionCodecMultiple::updateHash(SipHash & hash) const
 {
-    WriteBufferFromOwnString out;
-    for (size_t idx = 0; idx < codecs.size(); ++idx)
-    {
-        if (idx != 0)
-            out << ", ";
-
-        out << codecs[idx]->getCodecDesc();
-    }
-    return out.str();
+    for (const auto & codec : codecs)
+        codec->updateHash(hash);
 }
 
 UInt32 CompressionCodecMultiple::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
     UInt32 compressed_size = uncompressed_size;
-    for (auto & codec : codecs)
+    for (const auto & codec : codecs)
         compressed_size = codec->getCompressedReserveSize(compressed_size);
 
     ///    TotalCodecs  ByteForEachCodec       data
@@ -76,14 +74,6 @@ UInt32 CompressionCodecMultiple::doCompressData(const char * source, UInt32 sour
     memcpy(&dest[1 + codecs.size()], uncompressed_buf.data(), source_size);
 
     return 1 + codecs.size() + source_size;
-}
-
-void CompressionCodecMultiple::useInfoAboutType(DataTypePtr data_type)
-{
-    for (auto & codec : codecs)
-    {
-        codec->useInfoAboutType(data_type);
-    }
 }
 
 void CompressionCodecMultiple::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 decompressed_size) const
@@ -119,6 +109,24 @@ void CompressionCodecMultiple::doDecompressData(const char * source, UInt32 sour
 
     memcpy(dest, compressed_buf.data(), decompressed_size);
 }
+
+std::vector<uint8_t> CompressionCodecMultiple::getCodecsBytesFromData(const char * source)
+{
+    std::vector<uint8_t> result;
+    uint8_t compression_methods_size = source[0];
+    for (size_t i = 0; i < compression_methods_size; ++i)
+        result.push_back(source[1 + i]);
+    return result;
+}
+
+bool CompressionCodecMultiple::isCompression() const
+{
+    for (const auto & codec : codecs)
+        if (codec->isCompression())
+            return true;
+    return false;
+}
+
 
 void registerCodecMultiple(CompressionCodecFactory & factory)
 {

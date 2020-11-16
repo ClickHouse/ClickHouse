@@ -27,8 +27,12 @@ Array getAggregateFunctionParametersArray(const ASTPtr & expression_list, const 
         const auto * literal = parameters[i]->as<ASTLiteral>();
         if (!literal)
         {
-            throw Exception("Parameters to aggregate functions must be literals" + (error_context.empty() ? "" : " (in " + error_context +")"),
-                        ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS);
+            throw Exception(
+                ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS,
+                "Parameters to aggregate functions must be literals. "
+                "Got parameter '{}'{}",
+                parameters[i]->formatForErrorMessage(),
+                (error_context.empty() ? "" : " (in " + error_context +")"));
         }
 
         params_row[i] = literal->value;

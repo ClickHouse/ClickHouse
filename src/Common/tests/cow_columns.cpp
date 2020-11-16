@@ -53,11 +53,11 @@ int main(int, char **)
     std::cerr << "addresses: " << x.get() << ", " << y.get() << "\n";
 
     {
-        MutableColumnPtr mut = std::move(*y).mutate();
+        MutableColumnPtr mut = IColumn::mutate(std::move(y));
         mut->set(2);
 
-        std::cerr << "refcounts: " << x->use_count() << ", " << y->use_count() << ", " << mut->use_count() << "\n";
-        std::cerr << "addresses: " << x.get() << ", " << y.get() << ", " << mut.get() << "\n";
+        std::cerr << "refcounts: " << x->use_count() << ", " << mut->use_count() << "\n";
+        std::cerr << "addresses: " << x.get() << ", " << mut.get() << "\n";
         y = std::move(mut);
     }
 
@@ -72,11 +72,11 @@ int main(int, char **)
     std::cerr << "addresses: " << x.get() << ", " << y.get() << "\n";
 
     {
-        MutableColumnPtr mut = std::move(*y).mutate();
+        MutableColumnPtr mut = IColumn::mutate(std::move(y));
         mut->set(3);
 
-        std::cerr << "refcounts: " << x->use_count() << ", " << y->use_count() << ", " << mut->use_count() << "\n";
-        std::cerr << "addresses: " << x.get() << ", " << y.get() << ", " << mut.get() << "\n";
+        std::cerr << "refcounts: " << x->use_count() << ", " << mut->use_count() << "\n";
+        std::cerr << "addresses: " << x.get() << ", " << mut.get() << "\n";
         y = std::move(mut);
     }
 

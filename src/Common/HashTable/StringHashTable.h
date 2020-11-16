@@ -3,7 +3,9 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashTable.h>
 
+#include <new>
 #include <variant>
+
 
 using StringKey8 = UInt64;
 using StringKey16 = DB::UInt128;
@@ -106,8 +108,8 @@ public:
             zeroValue()->~Cell();
     }
 
-    Cell * zeroValue() { return reinterpret_cast<Cell *>(&zero_value_storage); }
-    const Cell * zeroValue() const { return reinterpret_cast<const Cell *>(&zero_value_storage); }
+    Cell * zeroValue() { return std::launder(reinterpret_cast<Cell *>(&zero_value_storage)); }
+    const Cell * zeroValue() const { return std::launder(reinterpret_cast<const Cell *>(&zero_value_storage)); }
 
     using LookupResult = Cell *;
     using ConstLookupResult = const Cell *;
@@ -333,7 +335,11 @@ public:
         template <typename Submap, typename SubmapKey>
         auto ALWAYS_INLINE operator()(Submap & map, const SubmapKey & key, size_t hash)
         {
-            return &map.find(key, hash)->getMapped();
+            auto it = map.find(key, hash);
+            if (!it)
+                return decltype(&it->getMapped()){};
+            else
+                return &it->getMapped();
         }
     };
 

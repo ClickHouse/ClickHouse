@@ -12,7 +12,7 @@ namespace DB
     { \
         dict_struct.validateKeyTypes(key_types); \
         auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
         getItemsNumberImpl<TYPE, TYPE>(attribute, key_columns, out, [&](const size_t) { return def; }); \
     }
 

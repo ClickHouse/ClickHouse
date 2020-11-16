@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 28
 toc_title: Les Interfaces Visuelles
 ---
@@ -92,6 +92,10 @@ Caractéristique:
 ### clickhouse-flamegraph {#clickhouse-flamegraph}
 
 [clickhouse-flamegraph](https://github.com/Slach/clickhouse-flamegraph) est un outil spécialisé pour visualiser la `system.trace_log` comme [flamegraph](http://www.brendangregg.com/flamegraphs.html).
+
+### clickhouse-plantuml {#clickhouse-plantuml}
+
+[cickhouse-plantuml](https://pypi.org/project/clickhouse-plantuml/) est un script à générer [PlantUML](https://plantuml.com/) schéma des schémas des tableaux.
 
 ## Commercial {#commercial}
 

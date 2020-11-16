@@ -31,7 +31,7 @@ HTTPDictionarySource::HTTPDictionarySource(
     Block & sample_block_,
     const Context & context_,
     bool check_config)
-    : log(&Logger::get("HTTPDictionarySource"))
+    : log(&Poco::Logger::get("HTTPDictionarySource"))
     , update_time{std::chrono::system_clock::from_time_t(0)}
     , dict_struct{dict_struct_}
     , url{config.getString(config_prefix + ".url", "")}
@@ -71,7 +71,7 @@ HTTPDictionarySource::HTTPDictionarySource(
 }
 
 HTTPDictionarySource::HTTPDictionarySource(const HTTPDictionarySource & other)
-    : log(&Logger::get("HTTPDictionarySource"))
+    : log(&Poco::Logger::get("HTTPDictionarySource"))
     , update_time{other.update_time}
     , dict_struct{other.dict_struct}
     , url{other.url}
@@ -105,7 +105,7 @@ void HTTPDictionarySource::getUpdateFieldAndDate(Poco::URI & uri)
 
 BlockInputStreamPtr HTTPDictionarySource::loadAll()
 {
-    LOG_TRACE(log, "loadAll " + toString());
+    LOG_TRACE(log, "loadAll {}", toString());
     Poco::URI uri(url);
     auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(
         uri, Poco::Net::HTTPRequest::HTTP_GET, ReadWriteBufferFromHTTP::OutStreamCallback(), timeouts,
@@ -118,7 +118,7 @@ BlockInputStreamPtr HTTPDictionarySource::loadUpdatedAll()
 {
     Poco::URI uri(url);
     getUpdateFieldAndDate(uri);
-    LOG_TRACE(log, "loadUpdatedAll " + uri.toString());
+    LOG_TRACE(log, "loadUpdatedAll {}", uri.toString());
     auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(
         uri, Poco::Net::HTTPRequest::HTTP_GET, ReadWriteBufferFromHTTP::OutStreamCallback(), timeouts,
         0, credentials, DBMS_DEFAULT_BUFFER_SIZE, header_entries);
@@ -128,7 +128,7 @@ BlockInputStreamPtr HTTPDictionarySource::loadUpdatedAll()
 
 BlockInputStreamPtr HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
-    LOG_TRACE(log, "loadIds " << toString() << " size = " << ids.size());
+    LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [&](std::ostream & ostr)
     {
@@ -147,7 +147,7 @@ BlockInputStreamPtr HTTPDictionarySource::loadIds(const std::vector<UInt64> & id
 
 BlockInputStreamPtr HTTPDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
-    LOG_TRACE(log, "loadKeys " << toString() << " size = " << requested_rows.size());
+    LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
 
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [&](std::ostream & ostr)
     {
@@ -197,14 +197,17 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
                                  const std::string & config_prefix,
                                  Block & sample_block,
                                  const Context & context,
+                                 const std::string & /* default_database */,
                                  bool check_config) -> DictionarySourcePtr
     {
         if (dict_struct.has_expressions)
             throw Exception{"Dictionary source of type `http` does not support attribute expressions", ErrorCodes::LOGICAL_ERROR};
 
+        Context context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
+
         return std::make_unique<HTTPDictionarySource>(
             dict_struct, config, config_prefix + ".http",
-            sample_block, context, check_config);
+            sample_block, context_local_copy, check_config);
     };
     factory.registerSource("http", create_table_source);
 }

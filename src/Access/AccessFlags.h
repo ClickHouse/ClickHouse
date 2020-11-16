@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Access/AccessType.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/Exception.h>
 #include <ext/range.h>
 #include <ext/push_back.h>
@@ -61,11 +61,18 @@ public:
 
     friend bool operator ==(const AccessFlags & left, const AccessFlags & right) { return left.flags == right.flags; }
     friend bool operator !=(const AccessFlags & left, const AccessFlags & right) { return !(left == right); }
+    friend bool operator <(const AccessFlags & left, const AccessFlags & right) { return memcmp(&left.flags, &right.flags, sizeof(Flags)) < 0; }
+    friend bool operator >(const AccessFlags & left, const AccessFlags & right) { return right < left; }
+    friend bool operator <=(const AccessFlags & left, const AccessFlags & right) { return !(right < left); }
+    friend bool operator >=(const AccessFlags & left, const AccessFlags & right) { return !(left < right); }
 
     void clear() { flags.reset(); }
 
     /// Returns a comma-separated list of keywords, like "SELECT, CREATE USER, UPDATE".
     String toString() const;
+
+    /// Returns a list of access types.
+    std::vector<AccessType> toAccessTypes() const;
 
     /// Returns a list of keywords.
     std::vector<std::string_view> toKeywords() const;
@@ -88,6 +95,22 @@ public:
 
     /// Returns all the flags related to a dictionary.
     static AccessFlags allDictionaryFlags();
+
+    /// Returns all the flags which could be granted on the global level.
+    /// The same as allFlags().
+    static AccessFlags allFlagsGrantableOnGlobalLevel();
+
+    /// Returns all the flags which could be granted on the database level.
+    /// Returns allDatabaseFlags() | allTableFlags() | allDictionaryFlags() | allColumnFlags().
+    static AccessFlags allFlagsGrantableOnDatabaseLevel();
+
+    /// Returns all the flags which could be granted on the table level.
+    /// Returns allTableFlags() | allDictionaryFlags() | allColumnFlags().
+    static AccessFlags allFlagsGrantableOnTableLevel();
+
+    /// Returns all the flags which could be granted on the global level.
+    /// The same as allColumnFlags().
+    static AccessFlags allFlagsGrantableOnColumnLevel();
 
 private:
     static constexpr size_t NUM_FLAGS = 128;
@@ -151,21 +174,27 @@ public:
         return res;
     }
 
+    std::vector<AccessType> flagsToAccessTypes(const Flags & flags_) const
+    {
+        std::vector<AccessType> access_types;
+        flagsToAccessTypesRec(flags_, access_types, *all_node);
+        return access_types;
+    }
+
     std::vector<std::string_view> flagsToKeywords(const Flags & flags_) const
     {
         std::vector<std::string_view> keywords;
-        flagsToKeywordsRec(flags_, keywords, *flags_to_keyword_tree);
-
-        if (keywords.empty())
-            keywords.push_back("USAGE");
-
+        flagsToKeywordsRec(flags_, keywords, *all_node);
         return keywords;
     }
 
     String flagsToString(const Flags & flags_) const
     {
+        auto keywords = flagsToKeywords(flags_);
+        if (keywords.empty())
+            return "USAGE";
         String str;
-        for (const auto & keyword : flagsToKeywords(flags_))
+        for (const auto & keyword : keywords)
         {
             if (!str.empty())
                 str += ", ";
@@ -180,6 +209,10 @@ public:
     const Flags & getTableFlags() const { return all_flags_for_target[TABLE]; }
     const Flags & getColumnFlags() const { return all_flags_for_target[COLUMN]; }
     const Flags & getDictionaryFlags() const { return all_flags_for_target[DICTIONARY]; }
+    const Flags & getAllFlagsGrantableOnGlobalLevel() const { return getAllFlags(); }
+    const Flags & getAllFlagsGrantableOnDatabaseLevel() const { return all_flags_grantable_on_database_level; }
+    const Flags & getAllFlagsGrantableOnTableLevel() const { return all_flags_grantable_on_table_level; }
+    const Flags & getAllFlagsGrantableOnColumnLevel() const { return getColumnFlags(); }
 
 private:
     enum NodeType
@@ -201,7 +234,7 @@ private:
     {
         const String keyword;
         NodeType node_type;
-        AccessType type = AccessType::NONE;
+        AccessType access_type = AccessType::NONE;
         Strings aliases;
         Flags flags;
         std::vector<NodePtr> children;
@@ -233,8 +266,8 @@ private:
         return aliases;
     }
 
-    static void makeFlagsToKeywordTreeNode(
-        AccessType type,
+    static void makeNode(
+        AccessType access_type,
         const std::string_view & name,
         const std::string_view & aliases,
         NodeType node_type,
@@ -259,13 +292,13 @@ private:
             nodes[node->keyword] = node.get();
         }
 
-        node->type = type;
+        node->access_type = access_type;
         node->node_type = node_type;
         node->aliases = splitAliases(aliases);
         if (node_type != GROUP)
             node->setFlag(next_flag++);
 
-        bool has_parent_group = (parent_group_name != "NONE");
+        bool has_parent_group = (parent_group_name != std::string_view{"NONE"});
         if (!has_parent_group)
         {
             std::string_view keyword_as_string_view = node->keyword;
@@ -286,25 +319,25 @@ private:
         it_parent->second->addChild(std::move(node));
     }
 
-    void makeFlagsToKeywordTree()
+    void makeNodes()
     {
         std::unordered_map<std::string_view, NodePtr> owned_nodes;
         std::unordered_map<std::string_view, Node *> nodes;
         size_t next_flag = 0;
 
-#define MAKE_ACCESS_FLAGS_TO_KEYWORD_TREE_NODE(name, aliases, node_type, parent_group_name) \
-            makeFlagsToKeywordTreeNode(AccessType::name, #name, aliases, node_type, #parent_group_name, nodes, owned_nodes, next_flag);
+#define MAKE_ACCESS_FLAGS_NODE(name, aliases, node_type, parent_group_name) \
+            makeNode(AccessType::name, #name, aliases, node_type, #parent_group_name, nodes, owned_nodes, next_flag);
 
-            APPLY_FOR_ACCESS_TYPES(MAKE_ACCESS_FLAGS_TO_KEYWORD_TREE_NODE)
+            APPLY_FOR_ACCESS_TYPES(MAKE_ACCESS_FLAGS_NODE)
 
-#undef MAKE_ACCESS_FLAGS_TO_KEYWORD_TREE_NODE
+#undef MAKE_ACCESS_FLAGS_NODE
 
         if (!owned_nodes.count("NONE"))
             throw Exception("'NONE' not declared", ErrorCodes::LOGICAL_ERROR);
         if (!owned_nodes.count("ALL"))
             throw Exception("'ALL' not declared", ErrorCodes::LOGICAL_ERROR);
 
-        flags_to_keyword_tree = std::move(owned_nodes["ALL"]);
+        all_node = std::move(owned_nodes["ALL"]);
         none_node = std::move(owned_nodes["NONE"]);
         owned_nodes.erase("ALL");
         owned_nodes.erase("NONE");
@@ -324,7 +357,7 @@ private:
         if (!start_node)
         {
             makeKeywordToFlagsMap(none_node.get());
-            start_node = flags_to_keyword_tree.get();
+            start_node = all_node.get();
         }
 
         start_node->aliases.emplace_back(start_node->keyword);
@@ -343,10 +376,10 @@ private:
         if (!start_node)
         {
             makeAccessTypeToFlagsMapping(none_node.get());
-            start_node = flags_to_keyword_tree.get();
+            start_node = all_node.get();
         }
 
-        size_t index = static_cast<size_t>(start_node->type);
+        size_t index = static_cast<size_t>(start_node->access_type);
         access_type_to_flags_mapping.resize(std::max(index + 1, access_type_to_flags_mapping.size()));
         access_type_to_flags_mapping[index] = start_node->flags;
 
@@ -358,7 +391,7 @@ private:
     {
         if (!start_node)
         {
-            start_node = flags_to_keyword_tree.get();
+            start_node = all_node.get();
             all_flags = start_node->flags;
         }
         if (start_node->node_type != GROUP)
@@ -368,14 +401,34 @@ private:
         }
         for (const auto & child : start_node->children)
             collectAllFlags(child.get());
+
+        all_flags_grantable_on_table_level = all_flags_for_target[TABLE] | all_flags_for_target[DICTIONARY] | all_flags_for_target[COLUMN];
+        all_flags_grantable_on_database_level = all_flags_for_target[DATABASE] | all_flags_grantable_on_table_level;
     }
 
     Impl()
     {
-        makeFlagsToKeywordTree();
+        makeNodes();
         makeKeywordToFlagsMap();
         makeAccessTypeToFlagsMapping();
         collectAllFlags();
+    }
+
+    static void flagsToAccessTypesRec(const Flags & flags_, std::vector<AccessType> & access_types, const Node & start_node)
+    {
+        Flags matching_flags = (flags_ & start_node.flags);
+        if (matching_flags.any())
+        {
+            if (matching_flags == start_node.flags)
+            {
+                access_types.push_back(start_node.access_type);
+            }
+            else
+            {
+                for (const auto & child : start_node.children)
+                   flagsToAccessTypesRec(flags_, access_types, *child);
+            }
+        }
     }
 
     static void flagsToKeywordsRec(const Flags & flags_, std::vector<std::string_view> & keywords, const Node & start_node)
@@ -395,12 +448,14 @@ private:
         }
     }
 
-    NodePtr flags_to_keyword_tree;
+    NodePtr all_node;
     NodePtr none_node;
     std::unordered_map<std::string_view, Flags> keyword_to_flags_map;
     std::vector<Flags> access_type_to_flags_mapping;
     Flags all_flags;
     Flags all_flags_for_target[static_cast<size_t>(DICTIONARY) + 1];
+    Flags all_flags_grantable_on_database_level;
+    Flags all_flags_grantable_on_table_level;
 };
 
 
@@ -409,6 +464,7 @@ inline AccessFlags::AccessFlags(const std::string_view & keyword) : flags(Impl<>
 inline AccessFlags::AccessFlags(const std::vector<std::string_view> & keywords) : flags(Impl<>::instance().keywordsToFlags(keywords)) {}
 inline AccessFlags::AccessFlags(const Strings & keywords) : flags(Impl<>::instance().keywordsToFlags(keywords)) {}
 inline String AccessFlags::toString() const { return Impl<>::instance().flagsToString(flags); }
+inline std::vector<AccessType> AccessFlags::toAccessTypes() const { return Impl<>::instance().flagsToAccessTypes(flags); }
 inline std::vector<std::string_view> AccessFlags::toKeywords() const { return Impl<>::instance().flagsToKeywords(flags); }
 inline AccessFlags AccessFlags::allFlags() { return Impl<>::instance().getAllFlags(); }
 inline AccessFlags AccessFlags::allGlobalFlags() { return Impl<>::instance().getGlobalFlags(); }
@@ -416,6 +472,10 @@ inline AccessFlags AccessFlags::allDatabaseFlags() { return Impl<>::instance().g
 inline AccessFlags AccessFlags::allTableFlags() { return Impl<>::instance().getTableFlags(); }
 inline AccessFlags AccessFlags::allColumnFlags() { return Impl<>::instance().getColumnFlags(); }
 inline AccessFlags AccessFlags::allDictionaryFlags() { return Impl<>::instance().getDictionaryFlags(); }
+inline AccessFlags AccessFlags::allFlagsGrantableOnGlobalLevel() { return Impl<>::instance().getAllFlagsGrantableOnGlobalLevel(); }
+inline AccessFlags AccessFlags::allFlagsGrantableOnDatabaseLevel() { return Impl<>::instance().getAllFlagsGrantableOnDatabaseLevel(); }
+inline AccessFlags AccessFlags::allFlagsGrantableOnTableLevel() { return Impl<>::instance().getAllFlagsGrantableOnTableLevel(); }
+inline AccessFlags AccessFlags::allFlagsGrantableOnColumnLevel() { return Impl<>::instance().getAllFlagsGrantableOnColumnLevel(); }
 
 inline AccessFlags operator |(AccessType left, AccessType right) { return AccessFlags(left) | right; }
 inline AccessFlags operator &(AccessType left, AccessType right) { return AccessFlags(left) & right; }

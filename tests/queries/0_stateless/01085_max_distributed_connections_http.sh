@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 query="SELECT sleepEachRow(1) FROM remote('127.{2,3}', system.one)"
 # 1.8 less then 2 seconds, but long enough to cover possible load peaks

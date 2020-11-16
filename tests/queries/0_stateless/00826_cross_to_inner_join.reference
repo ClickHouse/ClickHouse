@@ -35,18 +35,74 @@ comma nullable
 1	1	1	1
 2	2	1	2
 cross
-SELECT \n    a, \n    b, \n    t2_00826.a, \n    t2_00826.b\nFROM t1_00826\nALL INNER JOIN t2_00826 ON a = t2_00826.a\nWHERE a = t2_00826.a
+SELECT
+    a,
+    b,
+    t2_00826.a,
+    t2_00826.b
+FROM t1_00826
+ALL INNER JOIN t2_00826 ON a = t2_00826.a
+WHERE a = t2_00826.a
 cross nullable
-SELECT \n    a, \n    b, \n    t2_00826.a, \n    t2_00826.b\nFROM t1_00826\nALL INNER JOIN t2_00826 ON a = t2_00826.a\nWHERE a = t2_00826.a
+SELECT
+    a,
+    b,
+    t2_00826.a,
+    t2_00826.b
+FROM t1_00826
+ALL INNER JOIN t2_00826 ON a = t2_00826.a
+WHERE a = t2_00826.a
 cross nullable vs not nullable
-SELECT \n    a, \n    b, \n    t2_00826.a, \n    t2_00826.b\nFROM t1_00826\nALL INNER JOIN t2_00826 ON a = t2_00826.b\nWHERE a = t2_00826.b
+SELECT
+    a,
+    b,
+    t2_00826.a,
+    t2_00826.b
+FROM t1_00826
+ALL INNER JOIN t2_00826 ON a = t2_00826.b
+WHERE a = t2_00826.b
 cross self
-SELECT \n    a, \n    b, \n    y.a, \n    y.b\nFROM t1_00826 AS x\nALL INNER JOIN t1_00826 AS y ON (a = y.a) AND (b = y.b)\nWHERE (a = y.a) AND (b = y.b)
+SELECT
+    a,
+    b,
+    y.a,
+    y.b
+FROM t1_00826 AS x
+ALL INNER JOIN t1_00826 AS y ON (a = y.a) AND (b = y.b)
+WHERE (a = y.a) AND (b = y.b)
 cross one table expr
-SELECT \n    a, \n    b, \n    t2_00826.a, \n    t2_00826.b\nFROM t1_00826\nCROSS JOIN t2_00826\nWHERE a = b
+SELECT
+    a,
+    b,
+    t2_00826.a,
+    t2_00826.b
+FROM t1_00826
+CROSS JOIN t2_00826
+WHERE a = b
 cross multiple ands
-SELECT \n    a, \n    b, \n    t2_00826.a, \n    t2_00826.b\nFROM t1_00826\nALL INNER JOIN t2_00826 ON (a = t2_00826.a) AND (b = t2_00826.b)\nWHERE (a = t2_00826.a) AND (b = t2_00826.b)
+SELECT
+    a,
+    b,
+    t2_00826.a,
+    t2_00826.b
+FROM t1_00826
+ALL INNER JOIN t2_00826 ON (a = t2_00826.a) AND (b = t2_00826.b)
+WHERE (a = t2_00826.a) AND (b = t2_00826.b)
 cross and inside and
-SELECT \n    a, \n    b, \n    t2_00826.a, \n    t2_00826.b\nFROM t1_00826\nALL INNER JOIN t2_00826 ON (a = t2_00826.a) AND (a = t2_00826.a) AND (a = t2_00826.a) AND (b = t2_00826.b)\nWHERE (a = t2_00826.a) AND ((a = t2_00826.a) AND ((a = t2_00826.a) AND (b = t2_00826.b)))
+SELECT
+    a,
+    b,
+    t2_00826.a,
+    t2_00826.b
+FROM t1_00826
+ALL INNER JOIN t2_00826 ON (a = t2_00826.a) AND (a = t2_00826.a) AND (a = t2_00826.a) AND (b = t2_00826.b)
+WHERE (a = t2_00826.a) AND ((a = t2_00826.a) AND ((a = t2_00826.a) AND (b = t2_00826.b)))
 cross split conjunction
-SELECT \n    a, \n    b, \n    t2_00826.a, \n    t2_00826.b\nFROM t1_00826\nALL INNER JOIN t2_00826 ON (a = t2_00826.a) AND (b = t2_00826.b)\nWHERE (a = t2_00826.a) AND (b = t2_00826.b) AND (a >= 1) AND (t2_00826.b > 0)
+SELECT
+    a,
+    b,
+    t2_00826.a,
+    t2_00826.b
+FROM t1_00826
+ALL INNER JOIN t2_00826 ON (a = t2_00826.a) AND (b = t2_00826.b)
+WHERE (a = t2_00826.a) AND (b = t2_00826.b) AND (a >= 1) AND (t2_00826.b > 0)

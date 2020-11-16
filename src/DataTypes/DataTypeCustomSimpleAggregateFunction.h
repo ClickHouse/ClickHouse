@@ -21,7 +21,7 @@ namespace DB
  * SimpleAggregateFunction(anyLast, LowCardinality(Nullable(String)))
  * SimpleAggregateFunction(anyLast, IPv4)
  *
- * Technically, a standard IDataType is instanciated and customized with IDataTypeCustomName and DataTypeCustomDesc.
+ * Technically, a standard IDataType is instantiated and customized with IDataTypeCustomName and DataTypeCustomDesc.
   */
 
 class DataTypeCustomSimpleAggregateFunction : public IDataTypeCustomName

@@ -29,7 +29,19 @@ Check total_bytes/total_rows for TinyLog
 \N	\N
 Check total_bytes/total_rows for Memory
 0	0
-2	1
+64	1
 Check total_bytes/total_rows for Buffer
 0	0
+256	50
+Check lifetime_bytes/lifetime_rows for Buffer
 100	50
+100	50
+200	100
+200	100
+402	201
+Check total_bytes/total_rows for Set
+2048	50
+2048	100
+Check total_bytes/total_rows for Join
+10240	50
+10240	100

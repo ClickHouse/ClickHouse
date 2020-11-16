@@ -48,12 +48,12 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             else
                 fields_count = 0;
         }
-        else if (auto literal = value->as<ASTLiteral>())
+        else if (const auto * literal = value->as<ASTLiteral>())
         {
             if (literal->value.getType() == Field::Types::Tuple)
             {
                 surrounded_by_parens = true;
-                fields_count = literal->value.get<Tuple &>().size();
+                fields_count = literal->value.get<const Tuple &>().size();
             }
             else
             {

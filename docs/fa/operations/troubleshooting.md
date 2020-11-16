@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 46
 toc_title: "\u0639\u06CC\u0628 \u06CC\u0627\u0628\u06CC"
 ---
@@ -17,7 +17,7 @@ toc_title: "\u0639\u06CC\u0628 \u06CC\u0627\u0628\u06CC"
 ### شما می توانید بسته های دب از مخزن کلیک با مناسب دریافت کنید {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
 
 -   بررسی تنظیمات فایروال.
--   اگر شما می توانید مخزن به هر دلیلی دسترسی پیدا کنید, دانلود بسته همانطور که در توصیف [شروع کار](../getting_started/index.md) مقاله و نصب دستی با استفاده از `sudo dpkg -i <packages>` فرمان. همچنین شما می خواهد نیاز `tzdata` بسته
+-   اگر شما می توانید مخزن به هر دلیلی دسترسی پیدا کنید, دانلود بسته همانطور که در توصیف [شروع کار](../getting-started/index.md) مقاله و نصب دستی با استفاده از `sudo dpkg -i <packages>` فرمان. همچنین شما می خواهد نیاز `tzdata` بسته
 
 ## اتصال به سرور {#troubleshooting-accepts-no-connections}
 
@@ -105,7 +105,7 @@ $ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-se
 
 -   تنظیمات نقطه پایانی.
 
-    بررسی [\_نوست فهرست](server_configuration_parameters/settings.md#server_configuration_parameters-listen_host) و [\_صادر کردن](server_configuration_parameters/settings.md#server_configuration_parameters-tcp_port) تنظیمات.
+    بررسی [_نوست فهرست](server-configuration-parameters/settings.md#server_configuration_parameters-listen_host) و [_صادر کردن](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) تنظیمات.
 
     سرور کلیک می پذیرد اتصالات مجنون تنها به طور پیش فرض.
 
@@ -117,8 +117,8 @@ $ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-se
 
     بررسی:
 
-    -   این [\_شروع مجدد](server_configuration_parameters/settings.md#server_configuration_parameters-tcp_port_secure) تنظیمات.
-    -   تنظیمات برای [SSL sertificates](server_configuration_parameters/settings.md#server_configuration_parameters-openssl).
+    -   این [_شروع مجدد](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) تنظیمات.
+    -   تنظیمات برای [SSL sertificates](server-configuration-parameters/settings.md#server_configuration_parameters-openssl).
 
     استفاده از پارامترهای مناسب در حالی که اتصال. برای مثال با استفاده از `port_secure` پارامتر با `clickhouse_client`.
 

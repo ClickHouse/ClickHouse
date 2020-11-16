@@ -3,16 +3,16 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Access/RowPolicy.h>
-#include <utility>
-#include <vector>
+#include <optional>
 
 
 namespace DB
 {
-class ASTExtendedRoleSet;
+class ASTRowPolicyNames;
+class ASTRolesOrUsersSet;
 
 /** CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] name ON [database.]table
-  *      [AS {PERMISSIVE | RESTRICTIVE}]
+  *      [AS {permissive | restrictive}]
   *      [FOR {SELECT | INSERT | UPDATE | DELETE | ALL}]
   *      [USING condition]
   *      [WITH CHECK condition] [,...]
@@ -20,7 +20,7 @@ class ASTExtendedRoleSet;
   *
   * ALTER [ROW] POLICY [IF EXISTS] name ON [database.]table
   *      [RENAME TO new_name]
-  *      [AS {PERMISSIVE | RESTRICTIVE}]
+  *      [AS {permissive | restrictive}]
   *      [FOR {SELECT | INSERT | UPDATE | DELETE | ALL}]
   *      [USING {condition | NONE}]
   *      [WITH CHECK {condition | NONE}] [,...]
@@ -36,19 +36,20 @@ public:
     bool if_not_exists = false;
     bool or_replace = false;
 
-    RowPolicy::FullNameParts name_parts;
-    String new_policy_name;
+    std::shared_ptr<ASTRowPolicyNames> names;
+    String new_short_name;
 
     std::optional<bool> is_restrictive;
-    using ConditionType = RowPolicy::ConditionType;
-    std::vector<std::pair<ConditionType, ASTPtr>> conditions;
+    std::vector<std::pair<RowPolicy::ConditionType, ASTPtr>> conditions; /// `nullptr` means set to NONE.
 
-    std::shared_ptr<ASTExtendedRoleSet> roles;
+    std::shared_ptr<ASTRolesOrUsersSet> roles;
 
     String getID(char) const override;
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
-    void replaceCurrentUserTagWithName(const String & current_user_name);
     ASTPtr getRewrittenASTWithoutOnCluster(const std::string &) const override { return removeOnCluster<ASTCreateRowPolicyQuery>(clone()); }
+
+    void replaceCurrentUserTagWithName(const String & current_user_name) const;
+    void replaceEmptyDatabaseWithCurrent(const String & current_database) const;
 };
 }

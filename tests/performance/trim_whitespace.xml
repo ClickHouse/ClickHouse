@@ -10,11 +10,6 @@
             from numbers_mt(100000000);
     </create_query>
 
-    <stop_conditions>
-        <all_of>
-            <total_time_ms>30000</total_time_ms>
-        </all_of>
-    </stop_conditions>
 
 
     <substitutions>

@@ -12,13 +12,17 @@
 //#define DBMS_HASH_MAP_COUNT_COLLISIONS
 #define DBMS_HASH_MAP_DEBUG_RESIZES
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <common/StringRef.h>
 #include <Common/HashTable/HashMap.h>
 #include <Interpreters/AggregationCommon.h>
+
+#if defined(__clang__)
+    #pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
+#endif
 
 
 struct CompactStringRef

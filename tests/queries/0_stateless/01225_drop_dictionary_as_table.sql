@@ -13,8 +13,8 @@ LIFETIME(MIN 0 MAX 0)
 LAYOUT(FLAT());
 
 SYSTEM RELOAD DICTIONARY dict_db_01225.dict;
-DROP TABLE dict_db_01225.dict; -- { serverError 60; }
--- Regression:
---     Code: 1000. DB::Exception: Received from localhost:9000. DB::Exception: File not found: ./metadata/dict_db_01225/dict.sql.
+
+DROP TABLE dict_db_01225.dict; -- { serverError 520; }
 DROP DICTIONARY dict_db_01225.dict;
+
 DROP DATABASE dict_db_01225;

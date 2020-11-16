@@ -143,7 +143,7 @@ public:
         this->data(place).deserialize(buf);
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         this->data(place).publish(to);
     }
@@ -153,7 +153,7 @@ public:
   */
 struct AggregateFunctionVarSampImpl
 {
-    static constexpr auto name = "varSamp";
+    static constexpr auto name = "varSampStable";
 
     static inline Float64 apply(Float64 m2, UInt64 count)
     {
@@ -168,7 +168,7 @@ struct AggregateFunctionVarSampImpl
   */
 struct AggregateFunctionStdDevSampImpl
 {
-    static constexpr auto name = "stddevSamp";
+    static constexpr auto name = "stddevSampStable";
 
     static inline Float64 apply(Float64 m2, UInt64 count)
     {
@@ -180,7 +180,7 @@ struct AggregateFunctionStdDevSampImpl
   */
 struct AggregateFunctionVarPopImpl
 {
-    static constexpr auto name = "varPop";
+    static constexpr auto name = "varPopStable";
 
     static inline Float64 apply(Float64 m2, UInt64 count)
     {
@@ -197,7 +197,7 @@ struct AggregateFunctionVarPopImpl
   */
 struct AggregateFunctionStdDevPopImpl
 {
-    static constexpr auto name = "stddevPop";
+    static constexpr auto name = "stddevPopStable";
 
     static inline Float64 apply(Float64 m2, UInt64 count)
     {
@@ -395,7 +395,7 @@ public:
         this->data(place).deserialize(buf);
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         this->data(place).publish(to);
     }
@@ -405,7 +405,7 @@ public:
   */
 struct AggregateFunctionCovarSampImpl
 {
-    static constexpr auto name = "covarSamp";
+    static constexpr auto name = "covarSampStable";
 
     static inline Float64 apply(Float64 co_moment, UInt64 count)
     {
@@ -420,7 +420,7 @@ struct AggregateFunctionCovarSampImpl
   */
 struct AggregateFunctionCovarPopImpl
 {
-    static constexpr auto name = "covarPop";
+    static constexpr auto name = "covarPopStable";
 
     static inline Float64 apply(Float64 co_moment, UInt64 count)
     {
@@ -437,7 +437,7 @@ struct AggregateFunctionCovarPopImpl
   */
 struct AggregateFunctionCorrImpl
 {
-    static constexpr auto name = "corr";
+    static constexpr auto name = "corrStable";
 
     static inline Float64 apply(Float64 co_moment, Float64 left_m2, Float64 right_m2, UInt64 count)
     {

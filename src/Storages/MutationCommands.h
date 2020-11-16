@@ -17,7 +17,7 @@ class WriteBuffer;
 class ReadBuffer;
 
 /// Represents set of actions which should be applied
-/// to values from set of columns which statisfy predicate.
+/// to values from set of columns which satisfy predicate.
 struct MutationCommand
 {
     ASTPtr ast; /// The AST of the whole command
@@ -28,7 +28,7 @@ struct MutationCommand
         DELETE,
         UPDATE,
         MATERIALIZE_INDEX,
-        READ_COLUMN,
+        READ_COLUMN, /// Read column and apply conversions (MODIFY COLUMN alter query).
         DROP_COLUMN,
         DROP_INDEX,
         MATERIALIZE_TTL,

@@ -14,13 +14,14 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_INDEX;
 }
 
+namespace
+{
 
 /** Extract element of tuple by constant index or name. The operation is essentially free.
   * Also the function looks through Arrays: you can get Array of tuple elements from Array of Tuples.
@@ -78,11 +79,11 @@ public:
         return out_return_type;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         Columns array_offsets;
 
-        const auto & first_arg = block.getByPosition(arguments[0]);
+        const auto & first_arg = arguments[0];
 
         const IDataType * tuple_type = first_arg.type.get();
         const IColumn * tuple_col = first_arg.column.get();
@@ -100,22 +101,27 @@ public:
         if (!tuple_type_concrete || !tuple_col_concrete)
             throw Exception("First argument for function " + getName() + " must be tuple or array of tuple.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        size_t index = getElementNum(block.getByPosition(arguments[1]).column, *tuple_type_concrete);
+        size_t index = getElementNum(arguments[1].column, *tuple_type_concrete);
         ColumnPtr res = tuple_col_concrete->getColumns()[index];
 
         /// Wrap into Arrays
         for (auto it = array_offsets.rbegin(); it != array_offsets.rend(); ++it)
             res = ColumnArray::create(res, *it);
 
-        block.getByPosition(result).column = res;
+        return res;
     }
 
 private:
     size_t getElementNum(const ColumnPtr & index_column, const DataTypeTuple & tuple) const
     {
-        if (auto index_col = checkAndGetColumnConst<ColumnUInt8>(index_column.get()))
+        if (
+            checkAndGetColumnConst<ColumnUInt8>(index_column.get())
+                || checkAndGetColumnConst<ColumnUInt16>(index_column.get())
+                || checkAndGetColumnConst<ColumnUInt32>(index_column.get())
+                || checkAndGetColumnConst<ColumnUInt64>(index_column.get())
+        )
         {
-            size_t index = index_col->getValue<UInt8>();
+            size_t index = index_column->getUInt(0);
 
             if (index == 0)
                 throw Exception("Indices in tuples are 1-based.", ErrorCodes::ILLEGAL_INDEX);
@@ -125,15 +131,16 @@ private:
 
             return index - 1;
         }
-        else if (auto name_col = checkAndGetColumnConst<ColumnString>(index_column.get()))
+        else if (const auto * name_col = checkAndGetColumnConst<ColumnString>(index_column.get()))
         {
             return tuple.getPositionByName(name_col->getValue<String>());
         }
         else
-            throw Exception("Second argument to " + getName() + " must be a constant UInt8 or String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception("Second argument to " + getName() + " must be a constant UInt or String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 };
 
+}
 
 void registerFunctionTupleElement(FunctionFactory & factory)
 {

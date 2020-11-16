@@ -8,6 +8,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/ParserDataType.h>
 #include <Poco/String.h>
 
 
@@ -24,10 +25,9 @@ protected:
 };
 
 
-/** Parametric type or Storage. For example:
- *         FixedString(10) or
- *         Partitioned(Log, ChunkID) or
- *         Nested(UInt32 CounterID, FixedString(2) UserAgentMajor)
+/** Storage engine or Codec. For example:
+ *         Memory()
+ *         ReplicatedMergeTree('/path', 'replica')
  * Result of parsing - ASTFunction with or without parameters.
  */
 class ParserIdentifierWithParameters : public IParserBase
@@ -47,14 +47,12 @@ protected:
 
 /** The name and type are separated by a space. For example, URL String. */
 using ParserNameTypePair = IParserNameTypePair<ParserIdentifier>;
-/** Name and type separated by a space. The name can contain a dot. For example, Hits.URL String. */
-using ParserCompoundNameTypePair = IParserNameTypePair<ParserCompoundIdentifier>;
 
 template <typename NameParser>
 bool IParserNameTypePair<NameParser>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     NameParser name_parser;
-    ParserIdentifierWithOptionalParameters type_parser;
+    ParserDataType type_parser;
 
     ASTPtr name, type;
     if (name_parser.parse(pos, name, expected)
@@ -92,7 +90,10 @@ template <typename NameParser>
 class IParserColumnDeclaration : public IParserBase
 {
 public:
-    explicit IParserColumnDeclaration(bool require_type_ = true) : require_type(require_type_)
+    explicit IParserColumnDeclaration(bool require_type_ = true, bool allow_null_modifiers_ = false, bool check_keywords_after_name_ = false)
+    : require_type(require_type_)
+    , allow_null_modifiers(allow_null_modifiers_)
+    , check_keywords_after_name(check_keywords_after_name_)
     {
     }
 
@@ -104,6 +105,8 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
     bool require_type = true;
+    bool allow_null_modifiers = false;
+    bool check_keywords_after_name = false;
 };
 
 using ParserColumnDeclaration = IParserColumnDeclaration<ParserIdentifier>;
@@ -113,13 +116,16 @@ template <typename NameParser>
 bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     NameParser name_parser;
-    ParserIdentifierWithOptionalParameters type_parser;
+    ParserDataType type_parser;
     ParserKeyword s_default{"DEFAULT"};
+    ParserKeyword s_null{"NULL"};
+    ParserKeyword s_not{"NOT"};
     ParserKeyword s_materialized{"MATERIALIZED"};
     ParserKeyword s_alias{"ALIAS"};
     ParserKeyword s_comment{"COMMENT"};
     ParserKeyword s_codec{"CODEC"};
     ParserKeyword s_ttl{"TTL"};
+    ParserKeyword s_remove{"REMOVE"};
     ParserTernaryOperatorExpression expr_parser;
     ParserStringLiteral string_literal_parser;
     ParserCodec codec_parser;
@@ -130,21 +136,41 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     if (!name_parser.parse(pos, name, expected))
         return false;
 
+    const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
+    tryGetIdentifierNameInto(name, column_declaration->name);
+
+    /// This keyword may occur only in MODIFY COLUMN query. We check it here
+    /// because ParserDataType parses types as an arbitrary identifiers and
+    /// doesn't check that parsed string is existing data type. In this way
+    /// REMOVE keyword can be parsed as data type and further parsing will fail.
+    /// So we just check this keyword and in case of success return column
+    /// declaration with name only.
+    if (!require_type && s_remove.checkWithoutMoving(pos, expected))
+    {
+        if (!check_keywords_after_name)
+            return false;
+
+        node = column_declaration;
+        return true;
+    }
+
     /** column name should be followed by type name if it
       *    is not immediately followed by {DEFAULT, MATERIALIZED, ALIAS, COMMENT}
       */
     ASTPtr type;
     String default_specifier;
+    std::optional<bool> null_modifier;
     ASTPtr default_expression;
     ASTPtr comment_expression;
     ASTPtr codec_expression;
     ASTPtr ttl_expression;
 
-    if (!s_default.checkWithoutMoving(pos, expected) &&
-        !s_materialized.checkWithoutMoving(pos, expected) &&
-        !s_alias.checkWithoutMoving(pos, expected) &&
-        !s_comment.checkWithoutMoving(pos, expected) &&
-        !s_codec.checkWithoutMoving(pos, expected))
+    if (!s_default.checkWithoutMoving(pos, expected)
+        && !s_materialized.checkWithoutMoving(pos, expected)
+        && !s_alias.checkWithoutMoving(pos, expected)
+        && (require_type
+            || (!s_comment.checkWithoutMoving(pos, expected)
+                && !s_codec.checkWithoutMoving(pos, expected))))
     {
         if (!type_parser.parse(pos, type, expected))
             return false;
@@ -163,6 +189,17 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     if (require_type && !type && !default_expression)
         return false; /// reject column name without type
 
+    if (type && allow_null_modifiers)
+    {
+        if (s_not.ignore(pos, expected))
+        {
+            if (!s_null.ignore(pos, expected))
+                return false;
+            null_modifier.emplace(false);
+        }
+        else if (s_null.ignore(pos, expected))
+            null_modifier.emplace(true);
+    }
 
     if (s_comment.ignore(pos, expected))
     {
@@ -183,15 +220,15 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             return false;
     }
 
-    const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
     node = column_declaration;
-    tryGetIdentifierNameInto(name, column_declaration->name);
 
     if (type)
     {
         column_declaration->type = type;
         column_declaration->children.push_back(std::move(type));
     }
+
+    column_declaration->null_modifier = null_modifier;
 
     if (default_expression)
     {
@@ -289,7 +326,7 @@ protected:
 };
 
 /** Query like this:
-  * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name
+  * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name [UUID 'uuid'] [ON CLUSTER cluster]
   * (
   *     name1 type1,
   *     name2 type2,
@@ -299,10 +336,10 @@ protected:
   * ) ENGINE = engine
   *
   * Or:
-  * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name AS [db2.]name2 [ENGINE = engine]
+  * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name [UUID 'uuid'] [ON CLUSTER cluster] AS [db2.]name2 [ENGINE = engine]
   *
   * Or:
-  * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name AS ENGINE = engine SELECT ...
+  * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name [UUID 'uuid'] [ON CLUSTER cluster] AS ENGINE = engine SELECT ...
   *
   */
 class ParserCreateTableQuery : public IParserBase
@@ -312,7 +349,7 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/// CREATE|ATTACH LIVE VIEW [IF NOT EXISTS] [db.]name [TO [db.]name] AS SELECT ...
+/// CREATE|ATTACH LIVE VIEW [IF NOT EXISTS] [db.]name [UUID 'uuid'] [TO [db.]name] AS SELECT ...
 class ParserCreateLiveViewQuery : public IParserBase
 {
 protected:
@@ -328,7 +365,7 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/// CREATE[OR REPLACE]|ATTACH [[MATERIALIZED] VIEW] | [VIEW]] [IF NOT EXISTS] [db.]name [TO [db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
+/// CREATE[OR REPLACE]|ATTACH [[MATERIALIZED] VIEW] | [VIEW]] [IF NOT EXISTS] [db.]name [UUID 'uuid'] [TO [db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
 class ParserCreateViewQuery : public IParserBase
 {
 protected:
@@ -338,7 +375,7 @@ protected:
 
 /// Parses complete dictionary create query. Uses ParserDictionary and
 /// ParserDictionaryAttributeDeclaration. Produces ASTCreateQuery.
-/// CREATE DICTIONAY [IF NOT EXISTS] [db.]name (attrs) PRIMARY KEY key SOURCE(s(params)) LAYOUT(l(params)) LIFETIME([min v1 max] v2) [RANGE(min v1 max v2)]
+/// CREATE DICTIONARY [IF NOT EXISTS] [db.]name (attrs) PRIMARY KEY key SOURCE(s(params)) LAYOUT(l(params)) LIFETIME([min v1 max] v2) [RANGE(min v1 max v2)]
 class ParserCreateDictionaryQuery : public IParserBase
 {
 protected:
@@ -355,6 +392,7 @@ protected:
   *     ...
   *     INDEX name1 expr TYPE type1(args) GRANULARITY value,
   *     ...
+  *     PRIMARY KEY expr
   * ) ENGINE = engine
   *
   * Or:

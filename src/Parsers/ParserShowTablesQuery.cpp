@@ -6,6 +6,7 @@
 #include <Parsers/ParserShowTablesQuery.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 
 #include <Common/typeid_cast.h>
 
@@ -20,11 +21,14 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_tables("TABLES");
     ParserKeyword s_databases("DATABASES");
+    ParserKeyword s_clusters("CLUSTERS");
+    ParserKeyword s_cluster("CLUSTER");
     ParserKeyword s_dictionaries("DICTIONARIES");
     ParserKeyword s_from("FROM");
     ParserKeyword s_in("IN");
     ParserKeyword s_not("NOT");
     ParserKeyword s_like("LIKE");
+    ParserKeyword s_ilike("ILIKE");
     ParserKeyword s_where("WHERE");
     ParserKeyword s_limit("LIMIT");
     ParserStringLiteral like_p;
@@ -42,6 +46,58 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (s_databases.ignore(pos))
     {
         query->databases = true;
+
+        if (s_not.ignore(pos, expected))
+            query->not_like = true;
+
+        if (bool insensitive = s_ilike.ignore(pos, expected); insensitive || s_like.ignore(pos, expected))
+        {
+            if (insensitive)
+                query->case_insensitive_like = true;
+
+            if (!like_p.parse(pos, like, expected))
+                return false;
+        }
+        else if (query->not_like)
+            return false;
+        if (s_limit.ignore(pos, expected))
+        {
+            if (!exp_elem.parse(pos, query->limit_length, expected))
+                return false;
+        }
+    }
+    else if (s_clusters.ignore(pos))
+    {
+        query->clusters = true;
+
+        if (s_not.ignore(pos, expected))
+            query->not_like = true;
+
+        if (bool insensitive = s_ilike.ignore(pos, expected); insensitive || s_like.ignore(pos, expected))
+        {
+            if (insensitive)
+                query->case_insensitive_like = true;
+
+            if (!like_p.parse(pos, like, expected))
+                return false;
+        }
+        else if (query->not_like)
+            return false;
+        if (s_limit.ignore(pos, expected))
+        {
+            if (!exp_elem.parse(pos, query->limit_length, expected))
+                return false;
+        }
+    }
+    else if (s_cluster.ignore(pos))
+    {
+        query->cluster = true;
+
+        String cluster_str;
+        if (!parseIdentifierOrStringLiteral(pos, expected, cluster_str))
+            return false;
+
+        query->cluster_str = std::move(cluster_str);
     }
     else
     {
@@ -65,8 +121,11 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (s_not.ignore(pos, expected))
             query->not_like = true;
 
-        if (s_like.ignore(pos, expected))
+        if (bool insensitive = s_ilike.ignore(pos, expected); insensitive || s_like.ignore(pos, expected))
         {
+            if (insensitive)
+                query->case_insensitive_like = true;
+
             if (!like_p.parse(pos, like, expected))
                 return false;
         }
@@ -86,6 +145,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     }
 
     tryGetIdentifierNameInto(database, query->from);
+
     if (like)
         query->like = safeGet<const String &>(like->as<ASTLiteral &>().value);
 

@@ -1,25 +1,16 @@
 <test>
-
     <preconditions>
-        <table_exists>default.hits_100m_single</table_exists>
+        <table_exists>hits_100m_single</table_exists>
     </preconditions>
+
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
 
     <create_query>CREATE TABLE dt (x DateTime) ENGINE = MergeTree ORDER BY tuple()</create_query>
     <create_query>CREATE TABLE dt64 (x DateTime64(3)) ENGINE = MergeTree ORDER BY tuple()</create_query>
-    <fill_query>INSERT INTO dt SELECT EventTime FROM hits_100m_single</fill_query>
-    <fill_query>INSERT INTO dt64 SELECT toDateTime64(toDecimal64(toUInt64(EventTime), 3) + toDecimal64((rand() % 1000) / 1000, 3), 3) FROM hits_100m_single</fill_query>
-
-    <stop_conditions>
-        <all_of>
-            <iterations>5</iterations>
-            <min_time_not_changing_for_ms>10000</min_time_not_changing_for_ms>
-        </all_of>
-        <any_of>
-            <iterations>100</iterations>
-            <total_time_ms>60000</total_time_ms>
-        </any_of>
-    </stop_conditions>
-
+    <fill_query>INSERT INTO dt SELECT EventTime FROM hits_10m_single</fill_query>
+    <fill_query>INSERT INTO dt64 SELECT toDateTime64(toDecimal64(toUInt64(EventTime), 3) + toDecimal64((rand() % 1000) / 1000, 3), 3) FROM hits_10m_single</fill_query>
 
 
     <query>SELECT count() FROM dt where not ignore(x)</query>

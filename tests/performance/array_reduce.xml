@@ -1,10 +1,5 @@
 <test>
 
-    <stop_conditions>
-        <all_of>
-            <total_time_ms>10000</total_time_ms>
-        </all_of>
-    </stop_conditions>
 
 
     <query>SELECT arrayReduce('count', range(100000000))</query>

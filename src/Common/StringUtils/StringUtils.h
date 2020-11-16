@@ -3,6 +3,7 @@
 #include <string>
 #include <cstring>
 #include <cstddef>
+#include <cstdint>
 #include <type_traits>
 
 
@@ -66,10 +67,19 @@ inline bool isASCII(char c)
     return static_cast<unsigned char>(c) < 0x80;
 }
 
+inline bool isLowerAlphaASCII(char c)
+{
+    return (c >= 'a' && c <= 'z');
+}
+
+inline bool isUpperAlphaASCII(char c)
+{
+    return (c >= 'A' && c <= 'Z');
+}
+
 inline bool isAlphaASCII(char c)
 {
-    return (c >= 'a' && c <= 'z')
-        || (c >= 'A' && c <= 'Z');
+    return isLowerAlphaASCII(c) || isUpperAlphaASCII(c);
 }
 
 inline bool isNumericASCII(char c)
@@ -115,6 +125,27 @@ inline bool isControlASCII(char c)
     return static_cast<unsigned char>(c) <= 31;
 }
 
+inline bool isPrintableASCII(char c)
+{
+    uint8_t uc = c;
+    return uc >= 32 && uc <= 126;   /// 127 is ASCII DEL.
+}
+
+inline bool isPunctuationASCII(char c)
+{
+    uint8_t uc = c;
+    return (uc >= 33 && uc <= 47)
+        || (uc >= 58 && uc <= 64)
+        || (uc >= 91 && uc <= 96)
+        || (uc >= 123 && uc <= 125);
+}
+
+
+inline bool isValidIdentifier(const std::string_view & str)
+{
+    return !str.empty() && isValidIdentifierBegin(str[0]) && std::all_of(str.begin() + 1, str.end(), isWordCharASCII);
+}
+
 /// Works assuming isAlphaASCII.
 inline char toLowerIfAlphaASCII(char c)
 {
@@ -129,6 +160,69 @@ inline char toUpperIfAlphaASCII(char c)
 inline char alternateCaseIfAlphaASCII(char c)
 {
     return c ^ 0x20;
+}
+
+inline const char * skipWhitespacesUTF8(const char * pos, const char * end)
+{
+    /// https://en.wikipedia.org/wiki/Whitespace_character
+    /// with some adjustments.
+
+    /// Code points: 0085 00A0 180E 2000..200A 2028..2029 200B..200D 202F 205F 2060 3000 FEFF
+    /// The corresponding UTF-8 is: C285 C2A0 E1A08E E28080..E2808A E280A8..E280A9 E2808B..E2808D E280AF E2819F E281A0 E38080 EFBBBF
+
+    /// We check for these bytes directly in UTF8 for simplicity reasons.
+
+    /** C2
+      *    85
+      *    A0
+      * E1 A0 8E
+      * E2
+      *    80
+      *       80..8A
+      *       A8..A9
+      *       8B..8D
+      *       AF
+      *    81
+      *       9F
+      *       A0
+      * E3 80 80
+      * EF BB BF
+      */
+
+    while (pos < end)
+    {
+        if (isWhitespaceASCII(*pos))
+        {
+            ++pos;
+        }
+        else
+        {
+            const uint8_t * upos = reinterpret_cast<const uint8_t *>(pos);
+
+            if (pos + 1 < end && upos[0] == 0xC2 && (upos[1] == 0x85 || upos[1] == 0xA0))
+            {
+                pos += 2;
+            }
+            else if (pos + 2 < end
+                &&    ((upos[0] == 0xE1 && upos[1] == 0xA0 && upos[2] == 0x8E)
+                    || (upos[0] == 0xE2
+                        &&    ((upos[1] == 0x80
+                            &&    ((upos[2] >= 0x80 && upos[2] <= 0x8A)
+                                || (upos[2] >= 0xA8 && upos[2] <= 0xA9)
+                                || (upos[2] >= 0x8B && upos[2] <= 0x8D)
+                                || (upos[2] == 0xAF)))
+                            || (upos[1] == 0x81 && (upos[2] == 0x9F || upos[2] == 0xA0))))
+                    || (upos[0] == 0xE3 && upos[1] == 0x80 && upos[2] == 0x80)
+                    || (upos[0] == 0xEF && upos[1] == 0xBB && upos[2] == 0xBF)))
+            {
+                pos += 3;
+            }
+            else
+                break;
+        }
+    }
+
+    return pos;
 }
 
 inline bool equalsCaseInsensitive(char a, char b)
@@ -164,4 +258,22 @@ std::string trim(const std::string & str, F && predicate)
     }
 
     return str.substr(cut_front, size - cut_front - cut_back);
+}
+
+inline void trimLeft(std::string_view & str, char c = ' ')
+{
+    while (str.starts_with(c))
+        str.remove_prefix(1);
+}
+
+inline void trimRight(std::string_view & str, char c = ' ')
+{
+    while (str.ends_with(c))
+        str.remove_suffix(1);
+}
+
+inline void trim(std::string_view & str, char c = ' ')
+{
+    trimLeft(str, c);
+    trimRight(str, c);
 }

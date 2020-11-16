@@ -15,7 +15,6 @@ namespace DB
 class ClusterCopier
 {
 public:
-
     ClusterCopier(const String & task_path_,
                   const String & host_id_,
                   const String & proxy_database_name_,
@@ -59,6 +58,11 @@ public:
     void setMoveFaultProbability(double move_fault_probability_)
     {
         move_fault_probability = move_fault_probability_;
+    }
+
+    void setExperimentalUseSampleOffset(bool value)
+    {
+        experimental_use_sample_offset = value;
     }
 
 protected:
@@ -182,8 +186,7 @@ protected:
     UInt64 executeQueryOnCluster(
             const ClusterPtr & cluster,
             const String & query,
-            const ASTPtr & query_ast_ = nullptr,
-            const Settings * settings = nullptr,
+            const Settings & current_settings,
             PoolMode pool_mode = PoolMode::GET_ALL,
             ClusterExecutionMode execution_mode = ClusterExecutionMode::ON_EACH_SHARD,
             UInt64 max_successful_executions_per_shard = 0) const;
@@ -210,6 +213,8 @@ private:
     bool is_safe_mode = false;
     double copy_fault_probability = 0.0;
     double move_fault_probability = 0.0;
+
+    bool experimental_use_sample_offset{false};
 
     Context & context;
     Poco::Logger * log;

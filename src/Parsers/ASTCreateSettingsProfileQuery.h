@@ -7,7 +7,7 @@
 namespace DB
 {
 class ASTSettingsProfileElements;
-class ASTExtendedRoleSet;
+class ASTRolesOrUsersSet;
 
 
 /** CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name
@@ -29,17 +29,17 @@ public:
     bool if_not_exists = false;
     bool or_replace = false;
 
-    String name;
+    Strings names;
     String new_name;
 
     std::shared_ptr<ASTSettingsProfileElements> settings;
 
-    std::shared_ptr<ASTExtendedRoleSet> to_roles;
+    std::shared_ptr<ASTRolesOrUsersSet> to_roles;
 
     String getID(char) const override;
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const override;
-    void replaceCurrentUserTagWithName(const String & current_user_name);
+    void replaceCurrentUserTagWithName(const String & current_user_name) const;
     ASTPtr getRewrittenASTWithoutOnCluster(const std::string &) const override { return removeOnCluster<ASTCreateSettingsProfileQuery>(clone()); }
 };
 }

@@ -11,23 +11,13 @@
     SELECT DOMInteractiveTiming, NSToDOMContentLoadedTiming, RefererCategories, URLCategories, arrayMap(x -> x * 0.5, RefererRegions) AS arf from test.hits LIMIT 10000 INTO OUTFILE '/path/to/data/user_files/test_some_expr_matches.values' FORMAT Template SETTINGS format_schema_rows = '(${DOMInteractiveTiming:Quoted} * ${NSToDOMContentLoadedTiming:Quoted}, arraySort(arrayConcat(${RefererCategories:Quoted}, ${URLCategories:Quoted})), arrayMap(x -> toString(x), ${arf:Quoted}))', format_schema_rows_between_delimiter = ',\n'
     -->
 
-    <stop_conditions>
-        <all_of>
-            <iterations>10</iterations>
-            <min_time_not_changing_for_ms>3000</min_time_not_changing_for_ms>
-        </all_of>
-        <any_of>
-            <iterations>100</iterations>
-            <total_time_ms>60000</total_time_ms>
-        </any_of>
-    </stop_conditions>
 
     <preconditions>
         <table_exists>file('test_all_expr_matches.values', Values, 'd DateTime, i UInt32, s String, ni Nullable(UInt64), ns Nullable(String), ars Array(String)')</table_exists>
         <table_exists>file('test_some_expr_matches.values', Values, 'i Int64, ari Array(Int64), ars Array(String)')</table_exists>
     </preconditions>
 
-    <query>select * from file('test_all_expr_matches.values', Values, 'd DateTime, i UInt32, s String, ni Nullable(UInt64), ns Nullable(String), ars Array(String)')</query>
-    <query>select * from file('test_some_expr_matches.values', Values, 'i Int64, ari Array(Int64), ars Array(String)')</query>
+    <query>select * from file('test_all_expr_matches.values', Values, 'd DateTime, i UInt32, s String, ni Nullable(UInt64), ns Nullable(String), ars Array(String)') format Null</query>
+    <query>select * from file('test_some_expr_matches.values', Values, 'i Int64, ari Array(Int64), ars Array(String)') format Null</query>
 
 </test>

@@ -4,6 +4,8 @@
 #include <Columns/ColumnNullable.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -76,7 +78,6 @@ public:
     void create(AggregateDataPtr place) const override
     {
         nested_function->create(place);
-
         place[size_of_data] = 0;
     }
 
@@ -92,8 +93,40 @@ public:
         Arena * arena) const override
     {
         nested_function->add(place, columns, row_num, arena);
-
         place[size_of_data] = 1;
+    }
+
+    void addBatch(size_t batch_size, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, Arena * arena) const override
+    {
+        nested_function->addBatch(batch_size, places, place_offset, columns, arena);
+        for (size_t i = 0; i < batch_size; ++i)
+            (places[i] + place_offset)[size_of_data] = 1;
+    }
+
+    void addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const override
+    {
+        if (batch_size)
+        {
+            nested_function->addBatchSinglePlace(batch_size, place, columns, arena);
+            place[size_of_data] = 1;
+        }
+    }
+
+    void addBatchSinglePlaceNotNull(
+        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, const UInt8 * null_map, Arena * arena) const override
+    {
+        if (batch_size)
+        {
+            nested_function->addBatchSinglePlaceNotNull(batch_size, place, columns, null_map, arena);
+            for (size_t i = 0; i < batch_size; ++i)
+            {
+                if (!null_map[i])
+                {
+                    place[size_of_data] = 1;
+                    break;
+                }
+            }
+        }
     }
 
     void merge(
@@ -102,6 +135,7 @@ public:
         Arena * arena) const override
     {
         nested_function->merge(place, rhs, arena);
+        place[size_of_data] |= rhs[size_of_data];
     }
 
     void serialize(
@@ -109,6 +143,8 @@ public:
         WriteBuffer & buf) const override
     {
         nested_function->serialize(place, buf);
+
+        writeChar(place[size_of_data], buf);
     }
 
     void deserialize(
@@ -117,6 +153,8 @@ public:
         Arena * arena) const override
     {
         nested_function->deserialize(place, buf, arena);
+
+        readChar(place[size_of_data], buf);
     }
 
     DataTypePtr getReturnType() const override
@@ -139,8 +177,9 @@ public:
     }
 
     void insertResultInto(
-        ConstAggregateDataPtr place,
-        IColumn & to) const override
+        AggregateDataPtr place,
+        IColumn & to,
+        Arena * arena) const override
     {
         if (place[size_of_data])
         {
@@ -149,20 +188,20 @@ public:
                 // -OrNull
 
                 if (inner_nullable)
-                    nested_function->insertResultInto(place, to);
+                    nested_function->insertResultInto(place, to, arena);
                 else
                 {
                     ColumnNullable & col = typeid_cast<ColumnNullable &>(to);
 
                     col.getNullMapColumn().insertDefault();
-                    nested_function->insertResultInto(place, col.getNestedColumn());
+                    nested_function->insertResultInto(place, col.getNestedColumn(), arena);
                 }
             }
             else
             {
                 // -OrDefault
 
-                nested_function->insertResultInto(place, to);
+                nested_function->insertResultInto(place, to, arena);
             }
         }
         else

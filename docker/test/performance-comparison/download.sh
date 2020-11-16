@@ -5,11 +5,12 @@ trap "exit" INT TERM
 trap 'kill $(jobs -pr) ||:' EXIT
 
 mkdir db0 ||:
+mkdir left ||:
 
 left_pr=$1
 left_sha=$2
 
-right_pr=$3
+# right_pr=$3 not used for now
 right_sha=$4
 
 datasets=${CHPC_DATASETS:-"hits1 hits10 hits100 values"}
@@ -22,29 +23,47 @@ dataset_paths["values"]="https://clickhouse-datasets.s3.yandex.net/values_with_e
 
 function download
 {
-    rm -r left ||:
-    mkdir left ||:
-    rm -r right ||:
-    mkdir right ||:
+    # Historically there were various paths for the performance test package.
+    # Test all of them.
+    for path in "https://clickhouse-builds.s3.yandex.net/$left_pr/$left_sha/"{,clickhouse_build_check/}"performance/performance.tgz"
+    do
+        if curl --fail --head "$path"
+        then
+            left_path="$path"
+        fi
+    done
 
-    # might have the same version on left and right
+    # Might have the same version on left and right (for testing) -- in this case we just copy
+    # already downloaded 'right' to the 'left. There is the third case when we don't have to
+    # download anything, for example in some manual runs. In this case, SHAs are not set.
     if ! [ "$left_sha" = "$right_sha" ]
     then
-        wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$left_pr/$left_sha/performance/performance.tgz" -O- | tar -C left --strip-components=1 -zxv  &
-        wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$right_pr/$right_sha/performance/performance.tgz" -O- | tar -C right --strip-components=1 -zxv &
-    else
-        wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$left_pr/$left_sha/performance/performance.tgz" -O- | tar -C left --strip-components=1 -zxv && cp -a left right &
+        wget -nv -nd -c "$left_path" -O- | tar -C left --strip-components=1 -zxv  &
+    elif [ "$right_sha" != "" ]
+    then
+        mkdir left ||:
+        cp -an right/* left &
     fi
 
     for dataset_name in $datasets
     do
         dataset_path="${dataset_paths[$dataset_name]}"
-        [ "$dataset_path" != "" ]
+        if [ "$dataset_path" = "" ]
+        then
+            >&2 echo "Unknown dataset '$dataset_name'"
+            exit 1
+        fi
         cd db0 && wget -nv -nd -c "$dataset_path" -O- | tar -xv &
     done
 
     mkdir ~/fg ||:
-    cd ~/fg && wget -nv -nd -c "https://raw.githubusercontent.com/brendangregg/FlameGraph/master/flamegraph.pl" && chmod +x ~/fg/flamegraph.pl &
+    (
+        cd ~/fg
+        wget -nv -nd -c "https://raw.githubusercontent.com/brendangregg/FlameGraph/master/flamegraph.pl"
+        wget -nv -nd -c "https://raw.githubusercontent.com/brendangregg/FlameGraph/master/difffolded.pl"
+        chmod +x ~/fg/difffolded.pl
+        chmod +x ~/fg/flamegraph.pl
+    ) &
 
     wait
 }

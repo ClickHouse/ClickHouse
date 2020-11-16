@@ -9,7 +9,7 @@ namespace ErrorCodes
 
 /// Simple struct which stores threads with numbers [0 .. num_threads - 1].
 /// Allows to push and pop specified thread, or pop any thread if has.
-/// Oll operations (except init) are O(1). No memory allocations after init happen.
+/// All operations (except init) are O(1). No memory allocations after init happen.
 struct ThreadsQueue
 {
     void init(size_t num_threads)
@@ -37,7 +37,7 @@ struct ThreadsQueue
         if (unlikely(has(thread)))
             throw Exception("Can't push thread because it is already in threads queue.", ErrorCodes::LOGICAL_ERROR);
 
-        swap_threads(thread, stack[stack_size]);
+        swapThreads(thread, stack[stack_size]);
         ++stack_size;
     }
 
@@ -47,10 +47,10 @@ struct ThreadsQueue
             throw Exception("Can't pop thread because it is not in threads queue.", ErrorCodes::LOGICAL_ERROR);
 
         --stack_size;
-        swap_threads(thread, stack[stack_size]);
+        swapThreads(thread, stack[stack_size]);
     }
 
-    size_t pop_any()
+    size_t popAny()
     {
         if (unlikely(stack_size == 0))
             throw Exception("Can't pop from empty queue.", ErrorCodes::LOGICAL_ERROR);
@@ -64,7 +64,7 @@ private:
     std::vector<size_t> thread_pos_in_stack;
     size_t stack_size = 0;
 
-    void swap_threads(size_t first, size_t second)
+    void swapThreads(size_t first, size_t second)
     {
         std::swap(thread_pos_in_stack[first], thread_pos_in_stack[second]);
         std::swap(stack[thread_pos_in_stack[first]], stack[thread_pos_in_stack[second]]);

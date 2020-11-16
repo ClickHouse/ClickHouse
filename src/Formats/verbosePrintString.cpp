@@ -16,7 +16,7 @@ void verbosePrintString(const char * begin, const char * end, WriteBuffer & out)
 
     out << "\"";
 
-    for (auto pos = begin; pos < end; ++pos)
+    for (const char * pos = begin; pos < end; ++pos)
     {
         switch (*pos)
         {

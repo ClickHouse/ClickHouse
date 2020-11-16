@@ -39,29 +39,35 @@ protected:
 
 
 /** An identifier, for example, x_yz123 or `something special`
+  * If allow_query_parameter_ = true, also parses substitutions in form {name:Identifier}
   */
 class ParserIdentifier : public IParserBase
 {
+public:
+    ParserIdentifier(bool allow_query_parameter_ = false) : allow_query_parameter(allow_query_parameter_) {}
 protected:
     const char * getName() const override { return "identifier"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool allow_query_parameter;
 };
 
 
-class ParserBareWord : public IParserBase
-{
-protected:
-    const char * getName() const override { return "bare word"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-/** An identifier, possibly containing a dot, for example, x_yz123 or `something special` or Hits.EventTime
+/** An identifier, possibly containing a dot, for example, x_yz123 or `something special` or Hits.EventTime,
+ *  possibly with UUID clause like `db name`.`table name` UUID 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
   */
 class ParserCompoundIdentifier : public IParserBase
 {
+public:
+    ParserCompoundIdentifier(bool table_name_with_optional_uuid_ = false, bool allow_query_parameter_ = false)
+        : table_name_with_optional_uuid(table_name_with_optional_uuid_), allow_query_parameter(allow_query_parameter_)
+    {
+    }
+
 protected:
     const char * getName() const override { return "compound identifier"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool table_name_with_optional_uuid;
+    bool allow_query_parameter;
 };
 
 /// Just *
@@ -87,6 +93,15 @@ class ParserColumnsMatcher : public IParserBase
 {
 protected:
     const char * getName() const override { return "COLUMNS matcher"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+/** *, t.*, db.table.*, COLUMNS('<regular expression>') APPLY(...) or EXCEPT(...) or REPLACE(...)
+  */
+class ParserColumnsTransformers : public IParserBase
+{
+protected:
+    const char * getName() const override { return "COLUMNS transformers"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -295,10 +310,31 @@ private:
 /** Prepared statements.
   * Parse query with parameter expression {name:type}.
   */
+class ParserIdentifierOrSubstitution : public IParserBase
+{
+protected:
+    const char * getName() const override { return "identifier or substitution"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
+/** Prepared statements.
+  * Parse query with parameter expression {name:type}.
+  */
 class ParserSubstitution : public IParserBase
 {
 protected:
     const char * getName() const override { return "substitution"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
+/** MySQL-style global variable: @@var
+  */
+class ParserMySQLGlobalVariable : public IParserBase
+{
+protected:
+    const char * getName() const override { return "MySQL-style global variable"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -342,7 +378,7 @@ protected:
 };
 
 /** Parser for function with arguments like KEY VALUE (space separated)
-  * no commas alowed, just space-separated pairs.
+  * no commas allowed, just space-separated pairs.
   */
 class ParserFunctionWithKeyValueArguments : public IParserBase
 {
@@ -358,7 +394,7 @@ protected:
     bool brackets_can_be_omitted;
 };
 
-/** Data type or table engine, possibly with parameters. For example, UInt8 or see examples from ParserIdentifierWithParameters
+/** Table engine, possibly with parameters. See examples from ParserIdentifierWithParameters
   * Parse result is ASTFunction, with or without arguments.
   */
 class ParserIdentifierWithOptionalParameters : public IParserBase

@@ -67,9 +67,7 @@ private:
 template
 <
     typename TKey,
-    typename Hash = DefaultHash<TKey>,
-    typename Grower = HashTableGrower<>,
-    typename Allocator = HashTableAllocator
+    typename Hash = DefaultHash<TKey>
 >
 class SpaceSaving
 {
@@ -149,16 +147,17 @@ public:
     {
         // Increase weight of a key that already exists
         auto hash = counter_map.hash(key);
-        auto counter = findCounter(key, hash);
-        if (counter)
+
+        if (auto counter = findCounter(key, hash); counter)
         {
             counter->count += increment;
             counter->error += error;
             percolate(counter);
             return;
         }
+
         // Key doesn't exist, but can fit in the top K
-        else if (unlikely(size() < capacity()))
+        if (unlikely(size() < capacity()))
         {
             auto c = new Counter(arena.emplace(key), increment, error, hash);
             push(c);
@@ -380,7 +379,7 @@ private:
             counter_map[counter->key] = counter;
     }
 
-    using CounterMap = HashMap<TKey, Counter *, Hash, Grower, Allocator>;
+    using CounterMap = HashMapWithStackMemory<TKey, Counter *, Hash, 4>;
 
     CounterMap counter_map;
     std::vector<Counter *> counter_list;

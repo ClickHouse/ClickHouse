@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <string>
 #include <Core/Field.h>
+#include <Core/SettingsEnums.h>
 
 class Collator;
 
@@ -32,18 +33,17 @@ struct SortColumnDescription
     bool with_fill;
     FillColumnDescription fill_description;
 
-
     SortColumnDescription(
             size_t column_number_, int direction_, int nulls_direction_,
-            const std::shared_ptr<Collator> & collator_ = nullptr, bool with_fill_ = false,
-            const FillColumnDescription & fill_description_ = {})
+            const std::shared_ptr<Collator> & collator_ = nullptr,
+            bool with_fill_ = false, const FillColumnDescription & fill_description_ = {})
             : column_number(column_number_), direction(direction_), nulls_direction(nulls_direction_), collator(collator_)
             , with_fill(with_fill_), fill_description(fill_description_) {}
 
     SortColumnDescription(
             const std::string & column_name_, int direction_, int nulls_direction_,
-            const std::shared_ptr<Collator> & collator_ = nullptr, bool with_fill_ = false,
-            const FillColumnDescription & fill_description_ = {})
+            const std::shared_ptr<Collator> & collator_ = nullptr,
+            bool with_fill_ = false, const FillColumnDescription & fill_description_ = {})
             : column_name(column_name_), column_number(0), direction(direction_), nulls_direction(nulls_direction_)
             , collator(collator_), with_fill(with_fill_), fill_description(fill_description_) {}
 
@@ -57,9 +57,22 @@ struct SortColumnDescription
     {
         return !(*this == other);
     }
+
+    std::string dump() const
+    {
+        std::stringstream ss;
+        ss.exceptions(std::ios::failbit);
+        ss << column_name << ":" << column_number << ":dir " << direction << "nulls " << nulls_direction;
+        return ss.str();
+    }
 };
 
 /// Description of the sorting rule for several columns.
 using SortDescription = std::vector<SortColumnDescription>;
+
+class Block;
+
+/// Outputs user-readable description into `out`.
+void dumpSortDescription(const SortDescription & description, const Block & header, WriteBuffer & out);
 
 }

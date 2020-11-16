@@ -1,6 +1,6 @@
 #pragma once
 
-#if defined(__linux__) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(__FreeBSD__)
 
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteBuffer.h>

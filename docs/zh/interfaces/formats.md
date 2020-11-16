@@ -1,4 +1,3 @@
-
 # 输入输出格式 {#formats}
 
 ClickHouse 可以接受多种数据格式，可以在 (`INSERT`) 以及 (`SELECT`) 请求中使用。
@@ -62,7 +61,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
     2014-03-22      1031592
     2014-03-23      1046491
 
-    0000-00-00      8873898
+    1970-01-01      8873898
 
     2014-03-17      1031592
     2014-03-23      1406958
@@ -71,7 +70,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 
 整数以十进制形式写入。数字在开头可以包含额外的 `+` 字符（解析时忽略，格式化时不记录）。非负数不能包含负号。 读取时，允许将空字符串解析为零，或者（对于带符号的类型）将仅包含负号的字符串解析为零。 不符合相应数据类型的数字可能会被解析为不同的数字，而不会显示错误消息。
 
-浮点数以十进制形式写入。点号用作小数点分隔符。支持指数等符号，如'inf'，‘+ inf’，‘-inf’和’nan’。 浮点数的输入可以以小数点开始或结束。
+浮点数以十进制形式写入。点号用作小数点分隔符。支持指数等符号，如’inf’，‘+ inf’，‘-inf’和’nan’。 浮点数的输入可以以小数点开始或结束。
 格式化的时候，浮点数的精确度可能会丢失。
 解析的时候，没有严格需要去读取与机器可以表示的最接近的数值。
 
@@ -97,7 +96,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 
 数组写在方括号内的逗号分隔值列表中。 通常情况下，数组中的数字项目会被拼凑，但日期，带时间的日期以及字符串将使用与上面相同的转义规则用单引号引起来。
 
-[NULL](../sql_reference/syntax.md) 将输出为 `\N`。
+[NULL](../sql-reference/syntax.md) 将输出为 `\N`。
 
 ## TabSeparatedRaw {#tabseparatedraw}
 
@@ -160,7 +159,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 -   `min` 是具有最小值的行 `format_schema_rows` 格式（当极值设置为1时)
 -   `max` 是具有最大值的行 `format_schema_rows` 格式（当极值设置为1时)
 -   `rows` 输出行总数
--   `rows_before_limit` 是没有限制的最小行数。 仅当查询包含LIMIT时输出。 如果查询包含GROUP BY，则rows\_before\_limit\_at\_least是没有限制的确切行数。
+-   `rows_before_limit` 是没有限制的最小行数。 仅当查询包含LIMIT时输出。 如果查询包含GROUP BY，则rows_before_limit_at_least是没有限制的确切行数。
 -   `time` 请求执行时间以秒为单位
 -   `rows_read` 已读取的行数
 -   `bytes_read` 被读取的字节数（未压缩）
@@ -255,7 +254,7 @@ format_schema_rows_between_delimiter = ','
     SearchPhrase=curtain designs        count()=1064
     SearchPhrase=baku       count()=1000
 
-[NULL](../sql_reference/syntax.md) 输出为 `\N`。
+[NULL](../sql-reference/syntax.md) 输出为 `\N`。
 
 ``` sql
 SELECT * FROM t_null FORMAT TSKV
@@ -277,7 +276,7 @@ SELECT * FROM t_null FORMAT TSKV
 
     clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMAT CSV" < data.csv
 
-\*默认情况下间隔符是 `,` ，在 [format\_csv\_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter) 中可以了解更多间隔符配置。
+\*默认情况下间隔符是 `,` ，在 [format_csv_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter) 中可以了解更多间隔符配置。
 
 解析的时候，可以使用或不使用引号来解析所有值。支持双引号和单引号。行也可以不用引号排列。 在这种情况下，它们被解析为逗号或换行符（CR 或 LF）。在解析不带引号的行时，若违反 RFC 规则，会忽略前导和尾随的空格和制表符。 对于换行，全部支持 Unix（LF），Windows（CR LF）和 Mac OS Classic（CR LF）。
 
@@ -366,12 +365,12 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
 }
 ```
 
-JSON 与 JavaScript 兼容。为了确保这一点，一些字符被另外转义：斜线`/`被转义为`\/`; 替代的换行符 `U+2028` 和 `U+2029` 会打断一些浏览器解析，它们会被转义为 `\uXXXX`。 ASCII 控制字符被转义：退格，换页，换行，回车和水平制表符被替换为`\b`，`\f`，`\n`，`\r`，`\t` 作为使用`\uXXXX`序列的00-1F范围内的剩余字节。 无效的 UTF-8 序列更改为替换字符 ，因此输出文本将包含有效的 UTF-8 序列。 为了与 JavaScript 兼容，默认情况下，Int64 和 UInt64 整数用双引号引起来。要除去引号，可以将配置参数 output\_format\_json\_quote\_64bit\_integers 设置为0。
+JSON 与 JavaScript 兼容。为了确保这一点，一些字符被另外转义：斜线`/`被转义为`\/`; 替代的换行符 `U+2028` 和 `U+2029` 会打断一些浏览器解析，它们会被转义为 `\uXXXX`。 ASCII 控制字符被转义：退格，换页，换行，回车和水平制表符被替换为`\b`，`\f`，`\n`，`\r`，`\t` 作为使用`\uXXXX`序列的00-1F范围内的剩余字节。 无效的 UTF-8 序列更改为替换字符 ，因此输出文本将包含有效的 UTF-8 序列。 为了与 JavaScript 兼容，默认情况下，Int64 和 UInt64 整数用双引号引起来。要除去引号，可以将配置参数 output_format_json_quote_64bit_integers 设置为0。
 
 `rows` – 结果输出的行数。
 
 `rows_before_limit_at_least` 去掉 LIMIT 过滤后的最小行总数。 只会在查询包含 LIMIT 条件时输出。
-若查询包含 GROUP BY，rows\_before\_limit\_at\_least 就是去掉 LIMIT 后过滤后的准确行数。
+若查询包含 GROUP BY，rows_before_limit_at_least 就是去掉 LIMIT 后过滤后的准确行数。
 
 `totals` – 总值 （当使用 TOTALS 条件时）。
 
@@ -379,7 +378,7 @@ JSON 与 JavaScript 兼容。为了确保这一点，一些字符被另外转义
 
 该格式仅适用于输出查询结果，但不适用于解析输入（将数据插入到表中）。
 
-ClickHouse 支持 [NULL](../sql_reference/syntax.md), 在 JSON 格式中以 `null` 输出来表示.
+ClickHouse 支持 [NULL](../sql-reference/syntax.md), 在 JSON 格式中以 `null` 输出来表示.
 
 参考 JSONEachRow 格式。
 
@@ -452,7 +451,7 @@ ClickHouse 支持 [NULL](../sql_reference/syntax.md), 在 JSON 格式中以 `nul
 
 ### 嵌套结构的使用 {#jsoneachrow-nested}
 
-如果你有一张桌子 [嵌套式](../sql_reference/data_types/nested_data_structures/nested.md) 数据类型列，可以插入具有相同结构的JSON数据。 启用此功能与 [input\_format\_import\_nested\_json](../operations/settings/settings.md#settings-input_format_import_nested_json) 设置。
+如果你有一张桌子 [嵌套式](../sql-reference/data-types/nested-data-structures/nested.md) 数据类型列，可以插入具有相同结构的JSON数据。 启用此功能与 [input_format_import_nested_json](../operations/settings/settings.md#settings-input_format_import_nested_json) 设置。
 
 例如，请考虑下表:
 
@@ -466,7 +465,7 @@ CREATE TABLE json_each_row_nested (n Nested (s String, i Int32) ) ENGINE = Memor
 INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n.s": ["abc", "def"], "n.i": [1, 23]}
 ```
 
-将数据作为分层JSON对象集插入 [input\_format\_import\_nested\_json=1](../operations/settings/settings.md#settings-input_format_import_nested_json).
+将数据作为分层JSON对象集插入 [input_format_import_nested_json=1](../operations/settings/settings.md#settings-input_format_import_nested_json).
 
 ``` json
 {
@@ -526,7 +525,7 @@ SELECT * FROM json_each_row_nested
 它会绘制一个完整的表格，每行数据在终端中占用两行。
 每一个结果块都会以单独的表格输出。这是很有必要的，以便结果块不用缓冲结果输出（缓冲在可以预见结果集宽度的时候是很有必要的）。
 
-[NULL](../sql_reference/syntax.md) 输出为 `ᴺᵁᴸᴸ`。
+[NULL](../sql-reference/syntax.md) 输出为 `ᴺᵁᴸᴸ`。
 
 ``` sql
 SELECT * FROM t_null
@@ -557,7 +556,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 
     Totals:
     ┌──EventDate─┬───────c─┐
-    │ 0000-00-00 │ 8873898 │
+    │ 1970-01-01 │ 8873898 │
     └────────────┴─────────┘
 
     Extremes:
@@ -596,7 +595,7 @@ watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events FOR
 
 ## PrettySpace {#prettyspace}
 
-与 `PrettyCompact`(\#prettycompact) 格式不一样的是，它使用空格来代替网格来显示数据。
+与 `PrettyCompact`(#prettycompact) 格式不一样的是，它使用空格来代替网格来显示数据。
 
 ## RowBinary {#rowbinary}
 
@@ -611,7 +610,7 @@ FixedString 被简单地表示为一个字节序列。
 
 数组表示为 varint 长度（无符号 [LEB128](https://en.wikipedia.org/wiki/LEB128)），后跟有序的数组元素。
 
-对于 [NULL](../sql_reference/syntax.md#null-literal) 的支持， 一个为 1 或 0 的字节会加在每个 [可为空](../sql_reference/data_types/nullable.md) 值前面。如果为 1, 那么该值就是 `NULL`。 如果为 0，则不为 `NULL`。
+对于 [NULL](../sql-reference/syntax.md#null-literal) 的支持， 一个为 1 或 0 的字节会加在每个 [可为空](../sql-reference/data-types/nullable.md) 值前面。如果为 1, 那么该值就是 `NULL`。 如果为 0，则不为 `NULL`。
 
 ## RowBinaryWithNamesAndTypes {#rowbinarywithnamesandtypes}
 
@@ -623,7 +622,7 @@ FixedString 被简单地表示为一个字节序列。
 
 ## 值 {#data-format-values}
 
-在括号中打印每一行。行由逗号分隔。最后一行之后没有逗号。括号内的值也用逗号分隔。数字以十进制格式输出，不含引号。 数组以方括号输出。带有时间的字符串，日期和时间用引号包围输出。转义字符的解析规则与 [TabSeparated](#tabseparated) 格式类似。 在格式化过程中，不插入额外的空格，但在解析过程中，空格是被允许并跳过的（除了数组值之外的空格，这是不允许的）。[NULL](../sql_reference/syntax.md) 为 `NULL`。
+在括号中打印每一行。行由逗号分隔。最后一行之后没有逗号。括号内的值也用逗号分隔。数字以十进制格式输出，不含引号。 数组以方括号输出。带有时间的字符串，日期和时间用引号包围输出。转义字符的解析规则与 [TabSeparated](#tabseparated) 格式类似。 在格式化过程中，不插入额外的空格，但在解析过程中，空格是被允许并跳过的（除了数组值之外的空格，这是不允许的）。[NULL](../sql-reference/syntax.md) 为 `NULL`。
 
 以 Values 格式传递数据时需要转义的最小字符集是：单引号和反斜线。
 
@@ -633,7 +632,7 @@ FixedString 被简单地表示为一个字节序列。
 
 使用指定的列名在单独的行上打印每个值。如果每行都包含大量列，则此格式便于打印一行或几行。
 
-[NULL](../sql_reference/syntax.md) 输出为 `ᴺᵁᴸᴸ`。
+[NULL](../sql-reference/syntax.md) 输出为 `ᴺᵁᴸᴸ`。
 
 示例:
 
@@ -748,9 +747,9 @@ SELECT * FROM t_null FORMAT Vertical
 
 ## CapnProto {#capnproto}
 
-Cap'n Proto 是一种二进制消息格式，类似 Protocol Buffers 和 Thriftis，但与 JSON 或 MessagePack 格式不一样。
+Cap’n Proto 是一种二进制消息格式，类似 Protocol Buffers 和 Thriftis，但与 JSON 或 MessagePack 格式不一样。
 
-Cap'n Proto 消息格式是严格类型的，而不是自我描述，这意味着它们不需要外部的描述。这种格式可以实时地应用，并针对每个查询进行缓存。
+Cap’n Proto 消息格式是严格类型的，而不是自我描述，这意味着它们不需要外部的描述。这种格式可以实时地应用，并针对每个查询进行缓存。
 
 ``` sql
 SELECT SearchPhrase, count() AS c FROM test.hits
@@ -764,9 +763,9 @@ SELECT SearchPhrase, count() AS c FROM test.hits
       c @1 :Uint64;
     }
 
-格式文件存储的目录可以在服务配置中的 [format\_schema\_path](../operations/server_configuration_parameters/settings.md) 指定。
+格式文件存储的目录可以在服务配置中的 [format_schema_path](../operations/server-configuration-parameters/settings.md) 指定。
 
-Cap'n Proto 反序列化是很高效的，通常不会增加系统的负载。
+Cap’n Proto 反序列化是很高效的，通常不会增加系统的负载。
 
 ## Protobuf {#protobuf}
 
@@ -817,7 +816,7 @@ message MessageType {
 ```
 
 ClickHouse尝试找到一个名为 `x.y.z` （或 `x_y_z` 或 `X.y_Z` 等）。
-嵌套消息适用于输入或输出一个 [嵌套数据结构](../sql_reference/data_types/nested_data_structures/nested.md).
+嵌套消息适用于输入或输出一个 [嵌套数据结构](../sql-reference/data-types/nested-data-structures/nested.md).
 
 在protobuf模式中定义的默认值，如下所示
 
@@ -829,7 +828,7 @@ message MessageType {
 }
 ```
 
-不应用;该 [表默认值](../sql_reference/statements/create.md#create-default-values) 用来代替它们。
+不应用;该 [表默认值](../sql-reference/statements/create.md#create-default-values) 用来代替它们。
 
 ClickHouse在输入和输出protobuf消息 `length-delimited` 格式。
 这意味着每个消息之前，应该写它的长度作为一个 [varint](https://developers.google.com/protocol-buffers/docs/encoding#varints).
@@ -841,25 +840,25 @@ ClickHouse在输入和输出protobuf消息 `length-delimited` 格式。
 
 ClickHouse Avro格式支持读取和写入 [Avro数据文件](http://avro.apache.org/docs/current/spec.html#Object+Container+Files).
 
-### 数据类型匹配{\#sql\_reference/data\_types-matching} {#data-types-matching-sql_referencedata_types-matching}
+### 数据类型匹配{#sql_reference/data_types-matching} {#data-types-matching-sql_referencedata_types-matching}
 
-下表显示了支持的数据类型以及它们如何匹配ClickHouse [数据类型](../sql_reference/data_types/index.md) 在 `INSERT` 和 `SELECT` 查询。
+下表显示了支持的数据类型以及它们如何匹配ClickHouse [数据类型](../sql-reference/data-types/index.md) 在 `INSERT` 和 `SELECT` 查询。
 
 | Avro数据类型 `INSERT`                       | ClickHouse数据类型                                                                                                | Avro数据类型 `SELECT`        |
 |---------------------------------------------|-------------------------------------------------------------------------------------------------------------------|------------------------------|
-| `boolean`, `int`, `long`, `float`, `double` | [Int(8/16/32)](../sql_reference/data_types/int_uint.md), [UInt(8/16/32)](../sql_reference/data_types/int_uint.md) | `int`                        |
-| `boolean`, `int`, `long`, `float`, `double` | [Int64](../sql_reference/data_types/int_uint.md), [UInt64](../sql_reference/data_types/int_uint.md)               | `long`                       |
-| `boolean`, `int`, `long`, `float`, `double` | [Float32](../sql_reference/data_types/float.md)                                                                   | `float`                      |
-| `boolean`, `int`, `long`, `float`, `double` | [Float64](../sql_reference/data_types/float.md)                                                                   | `double`                     |
-| `bytes`, `string`, `fixed`, `enum`          | [字符串](../sql_reference/data_types/string.md)                                                                   | `bytes`                      |
-| `bytes`, `string`, `fixed`                  | [固定字符串(N)](../sql_reference/data_types/fixedstring.md)                                                       | `fixed(N)`                   |
-| `enum`                                      | [枚举(8/16)](../sql_reference/data_types/enum.md)                                                                 | `enum`                       |
-| `array(T)`                                  | [阵列(T)](../sql_reference/data_types/array.md)                                                                   | `array(T)`                   |
-| `union(null, T)`, `union(T, null)`          | [可为空(T)](../sql_reference/data_types/date.md)                                                                  | `union(null, T)`             |
-| `null`                                      | [可为空（无)](../sql_reference/data_types/special_data_types/nothing.md)                                          | `null`                       |
-| `int (date)` \*                             | [日期](../sql_reference/data_types/date.md)                                                                       | `int (date)` \*              |
-| `long (timestamp-millis)` \*                | [DateTime64(3)](../sql_reference/data_types/datetime.md)                                                          | `long (timestamp-millis)` \* |
-| `long (timestamp-micros)` \*                | [DateTime64(6)](../sql_reference/data_types/datetime.md)                                                          | `long (timestamp-micros)` \* |
+| `boolean`, `int`, `long`, `float`, `double` | [Int(8/16/32)](../sql-reference/data-types/int-uint.md), [UInt(8/16/32)](../sql-reference/data-types/int-uint.md) | `int`                        |
+| `boolean`, `int`, `long`, `float`, `double` | [Int64](../sql-reference/data-types/int-uint.md), [UInt64](../sql-reference/data-types/int-uint.md)               | `long`                       |
+| `boolean`, `int`, `long`, `float`, `double` | [Float32](../sql-reference/data-types/float.md)                                                                   | `float`                      |
+| `boolean`, `int`, `long`, `float`, `double` | [Float64](../sql-reference/data-types/float.md)                                                                   | `double`                     |
+| `bytes`, `string`, `fixed`, `enum`          | [字符串](../sql-reference/data-types/string.md)                                                                   | `bytes`                      |
+| `bytes`, `string`, `fixed`                  | [固定字符串(N)](../sql-reference/data-types/fixedstring.md)                                                       | `fixed(N)`                   |
+| `enum`                                      | [枚举(8/16)](../sql-reference/data-types/enum.md)                                                                 | `enum`                       |
+| `array(T)`                                  | [阵列(T)](../sql-reference/data-types/array.md)                                                                   | `array(T)`                   |
+| `union(null, T)`, `union(T, null)`          | [可为空(T)](../sql-reference/data-types/date.md)                                                                  | `union(null, T)`             |
+| `null`                                      | [可为空（无)](../sql-reference/data-types/special-data-types/nothing.md)                                          | `null`                       |
+| `int (date)` \*                             | [日期](../sql-reference/data-types/date.md)                                                                       | `int (date)` \*              |
+| `long (timestamp-millis)` \*                | [DateTime64(3)](../sql-reference/data-types/datetime.md)                                                          | `long (timestamp-millis)` \* |
+| `long (timestamp-micros)` \*                | [DateTime64(6)](../sql-reference/data-types/datetime.md)                                                          | `long (timestamp-micros)` \* |
 
 \* [Avro逻辑类型](http://avro.apache.org/docs/current/spec.html#Logical+Types)
 
@@ -895,7 +894,7 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Avro" > file.avro
 -   名,名,名,名 `[A-Za-z_]`
 -   随后只包含 `[A-Za-z0-9_]`
 
-输出Avro文件压缩和同步间隔可以配置 [output\_format\_avro\_codec](../operations/settings/settings.md#settings-output_format_avro_codec) 和 [output\_format\_avro\_sync\_interval](../operations/settings/settings.md#settings-output_format_avro_sync_interval) 分别。
+输出Avro文件压缩和同步间隔可以配置 [output_format_avro_codec](../operations/settings/settings.md#settings-output_format_avro_codec) 和 [output_format_avro_sync_interval](../operations/settings/settings.md#settings-output_format_avro_sync_interval) 分别。
 
 ## AvroConfluent {#data-format-avro-confluent}
 
@@ -905,9 +904,9 @@ AvroConfluent支持解码单对象Avro消息常用于 [卡夫卡](https://kafka.
 
 模式解析后会进行缓存。
 
-架构注册表URL配置为 [format\_avro\_schema\_registry\_url](../operations/settings/settings.md#settings-format_avro_schema_registry_url)
+架构注册表URL配置为 [format_avro_schema_registry_url](../operations/settings/settings.md#settings-format_avro_schema_registry_url)
 
-### 数据类型匹配{\#sql\_reference/data\_types-matching-1} {#data-types-matching-sql_referencedata_types-matching-1}
+### 数据类型匹配{#sql_reference/data_types-matching-1} {#data-types-matching-sql_referencedata_types-matching-1}
 
 和 [Avro](#data-format-avro)
 
@@ -922,7 +921,7 @@ $ kafkacat -b kafka-broker  -C -t topic1 -o beginning -f '%s' -c 3 | clickhouse-
 3 c
 ```
 
-使用 `AvroConfluent` 与 [卡夫卡](../engines/table_engines/integrations/kafka.md):
+使用 `AvroConfluent` 与 [卡夫卡](../engines/table-engines/integrations/kafka.md):
 
 ``` sql
 CREATE TABLE topic1_stream
@@ -949,27 +948,27 @@ SELECT * FROM topic1_stream;
 
 [阿帕奇地板](http://parquet.apache.org/) 是Hadoop生态系统中普遍存在的列式存储格式。 ClickHouse支持此格式的读写操作。
 
-### 数据类型匹配{\#sql\_reference/data\_types-matching-2} {#data-types-matching-sql_referencedata_types-matching-2}
+### 数据类型匹配{#sql_reference/data_types-matching-2} {#data-types-matching-sql_referencedata_types-matching-2}
 
-下表显示了支持的数据类型以及它们如何匹配ClickHouse [数据类型](../sql_reference/data_types/index.md) 在 `INSERT` 和 `SELECT` 查询。
+下表显示了支持的数据类型以及它们如何匹配ClickHouse [数据类型](../sql-reference/data-types/index.md) 在 `INSERT` 和 `SELECT` 查询。
 
 | Parquet数据类型 (`INSERT`) | ClickHouse数据类型                                       | Parquet数据类型 (`SELECT`) |
 |----------------------------|----------------------------------------------------------|----------------------------|
-| `UINT8`, `BOOL`            | [UInt8](../sql_reference/data_types/int_uint.md)         | `UINT8`                    |
-| `INT8`                     | [Int8](../sql_reference/data_types/int_uint.md)          | `INT8`                     |
-| `UINT16`                   | [UInt16](../sql_reference/data_types/int_uint.md)        | `UINT16`                   |
-| `INT16`                    | [Int16](../sql_reference/data_types/int_uint.md)         | `INT16`                    |
-| `UINT32`                   | [UInt32](../sql_reference/data_types/int_uint.md)        | `UINT32`                   |
-| `INT32`                    | [Int32](../sql_reference/data_types/int_uint.md)         | `INT32`                    |
-| `UINT64`                   | [UInt64](../sql_reference/data_types/int_uint.md)        | `UINT64`                   |
-| `INT64`                    | [Int64](../sql_reference/data_types/int_uint.md)         | `INT64`                    |
-| `FLOAT`, `HALF_FLOAT`      | [Float32](../sql_reference/data_types/float.md)          | `FLOAT`                    |
-| `DOUBLE`                   | [Float64](../sql_reference/data_types/float.md)          | `DOUBLE`                   |
-| `DATE32`                   | [日期](../sql_reference/data_types/date.md)              | `UINT16`                   |
-| `DATE64`, `TIMESTAMP`      | [日期时间](../sql_reference/data_types/datetime.md)      | `UINT32`                   |
-| `STRING`, `BINARY`         | [字符串](../sql_reference/data_types/string.md)          | `STRING`                   |
-| —                          | [固定字符串](../sql_reference/data_types/fixedstring.md) | `STRING`                   |
-| `DECIMAL`                  | [十进制](../sql_reference/data_types/decimal.md)         | `DECIMAL`                  |
+| `UINT8`, `BOOL`            | [UInt8](../sql-reference/data-types/int-uint.md)         | `UINT8`                    |
+| `INT8`                     | [Int8](../sql-reference/data-types/int-uint.md)          | `INT8`                     |
+| `UINT16`                   | [UInt16](../sql-reference/data-types/int-uint.md)        | `UINT16`                   |
+| `INT16`                    | [Int16](../sql-reference/data-types/int-uint.md)         | `INT16`                    |
+| `UINT32`                   | [UInt32](../sql-reference/data-types/int-uint.md)        | `UINT32`                   |
+| `INT32`                    | [Int32](../sql-reference/data-types/int-uint.md)         | `INT32`                    |
+| `UINT64`                   | [UInt64](../sql-reference/data-types/int-uint.md)        | `UINT64`                   |
+| `INT64`                    | [Int64](../sql-reference/data-types/int-uint.md)         | `INT64`                    |
+| `FLOAT`, `HALF_FLOAT`      | [Float32](../sql-reference/data-types/float.md)          | `FLOAT`                    |
+| `DOUBLE`                   | [Float64](../sql-reference/data-types/float.md)          | `DOUBLE`                   |
+| `DATE32`                   | [日期](../sql-reference/data-types/date.md)              | `UINT16`                   |
+| `DATE64`, `TIMESTAMP`      | [日期时间](../sql-reference/data-types/datetime.md)      | `UINT32`                   |
+| `STRING`, `BINARY`         | [字符串](../sql-reference/data-types/string.md)          | `STRING`                   |
+| —                          | [固定字符串](../sql-reference/data-types/fixedstring.md) | `STRING`                   |
+| `DECIMAL`                  | [十进制](../sql-reference/data-types/decimal.md)         | `DECIMAL`                  |
 
 ClickHouse支持可配置的精度 `Decimal` 类型。 该 `INSERT` 查询对待实木复合地板 `DECIMAL` 键入为ClickHouse `Decimal128` 类型。
 
@@ -991,32 +990,32 @@ $ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Pa
 $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
 ```
 
-要与Hadoop交换数据，您可以使用 [HDFS表引擎](../engines/table_engines/integrations/hdfs.md).
+要与Hadoop交换数据，您可以使用 [HDFS表引擎](../engines/table-engines/integrations/hdfs.md).
 
 ## ORC {#data-format-orc}
 
 [阿帕奇兽人](https://orc.apache.org/) 是Hadoop生态系统中普遍存在的列式存储格式。 您只能将此格式的数据插入ClickHouse。
 
-### 数据类型匹配{\#sql\_reference/data\_types-matching-3} {#data-types-matching-sql_referencedata_types-matching-3}
+### 数据类型匹配{#sql_reference/data_types-matching-3} {#data-types-matching-sql_referencedata_types-matching-3}
 
-下表显示了支持的数据类型以及它们如何匹配ClickHouse [数据类型](../sql_reference/data_types/index.md) 在 `INSERT` 查询。
+下表显示了支持的数据类型以及它们如何匹配ClickHouse [数据类型](../sql-reference/data-types/index.md) 在 `INSERT` 查询。
 
 | ORC数据类型 (`INSERT`) | ClickHouse数据类型                                  |
 |------------------------|-----------------------------------------------------|
-| `UINT8`, `BOOL`        | [UInt8](../sql_reference/data_types/int_uint.md)    |
-| `INT8`                 | [Int8](../sql_reference/data_types/int_uint.md)     |
-| `UINT16`               | [UInt16](../sql_reference/data_types/int_uint.md)   |
-| `INT16`                | [Int16](../sql_reference/data_types/int_uint.md)    |
-| `UINT32`               | [UInt32](../sql_reference/data_types/int_uint.md)   |
-| `INT32`                | [Int32](../sql_reference/data_types/int_uint.md)    |
-| `UINT64`               | [UInt64](../sql_reference/data_types/int_uint.md)   |
-| `INT64`                | [Int64](../sql_reference/data_types/int_uint.md)    |
-| `FLOAT`, `HALF_FLOAT`  | [Float32](../sql_reference/data_types/float.md)     |
-| `DOUBLE`               | [Float64](../sql_reference/data_types/float.md)     |
-| `DATE32`               | [日期](../sql_reference/data_types/date.md)         |
-| `DATE64`, `TIMESTAMP`  | [日期时间](../sql_reference/data_types/datetime.md) |
-| `STRING`, `BINARY`     | [字符串](../sql_reference/data_types/string.md)     |
-| `DECIMAL`              | [十进制](../sql_reference/data_types/decimal.md)    |
+| `UINT8`, `BOOL`        | [UInt8](../sql-reference/data-types/int-uint.md)    |
+| `INT8`                 | [Int8](../sql-reference/data-types/int-uint.md)     |
+| `UINT16`               | [UInt16](../sql-reference/data-types/int-uint.md)   |
+| `INT16`                | [Int16](../sql-reference/data-types/int-uint.md)    |
+| `UINT32`               | [UInt32](../sql-reference/data-types/int-uint.md)   |
+| `INT32`                | [Int32](../sql-reference/data-types/int-uint.md)    |
+| `UINT64`               | [UInt64](../sql-reference/data-types/int-uint.md)   |
+| `INT64`                | [Int64](../sql-reference/data-types/int-uint.md)    |
+| `FLOAT`, `HALF_FLOAT`  | [Float32](../sql-reference/data-types/float.md)     |
+| `DOUBLE`               | [Float64](../sql-reference/data-types/float.md)     |
+| `DATE32`               | [日期](../sql-reference/data-types/date.md)         |
+| `DATE64`, `TIMESTAMP`  | [日期时间](../sql-reference/data-types/datetime.md) |
+| `STRING`, `BINARY`     | [字符串](../sql-reference/data-types/string.md)     |
+| `DECIMAL`              | [十进制](../sql-reference/data-types/decimal.md)    |
 
 ClickHouse支持的可配置精度 `Decimal` 类型。 该 `INSERT` 查询对待兽人 `DECIMAL` 键入为ClickHouse `Decimal128` 类型。
 
@@ -1032,7 +1031,7 @@ ClickHouse表列的数据类型不必匹配相应的ORC数据字段。 插入数
 $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT ORC"
 ```
 
-要与Hadoop交换数据，您可以使用 [HDFS表引擎](../engines/table_engines/integrations/hdfs.md).
+要与Hadoop交换数据，您可以使用 [HDFS表引擎](../engines/table-engines/integrations/hdfs.md).
 
 ## 格式架构 {#formatschema}
 
@@ -1048,15 +1047,15 @@ e.g. `schemafile.proto:MessageType`.
 如果在批处理模式下使用客户端，则由于安全原因，架构的路径必须是相对的。
 
 如果您通过输入或输出数据 [HTTP接口](../interfaces/http.md) 格式架构中指定的文件名
-应该位于指定的目录中 [format\_schema\_path](../operations/server_configuration_parameters/settings.md#server_configuration_parameters-format_schema_path)
+应该位于指定的目录中 [format_schema_path](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path)
 在服务器配置中。
 
 [原始文章](https://clickhouse.tech/docs/en/interfaces/formats/) <!--hide-->
 
 ## 跳过错误 {#skippingerrors}
 
-一些格式，如 `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` 和 `Protobuf` 如果发生解析错误，可以跳过断开的行，并从下一行开始继续解析。 看 [input\_format\_allow\_errors\_num](../operations/settings/settings.md#settings-input_format_allow_errors_num) 和
-[input\_format\_allow\_errors\_ratio](../operations/settings/settings.md#settings-input_format_allow_errors_ratio) 设置。
+一些格式，如 `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` 和 `Protobuf` 如果发生解析错误，可以跳过断开的行，并从下一行开始继续解析。 看 [input_format_allow_errors_num](../operations/settings/settings.md#settings-input_format_allow_errors_num) 和
+[input_format_allow_errors_ratio](../operations/settings/settings.md#settings-input_format_allow_errors_ratio) 设置。
 限制:
 -在解析错误的情况下 `JSONEachRow` 跳过所有数据，直到新行（或EOF），所以行必须由 `\n` 正确计算错误。
 - `Template` 和 `CustomSeparated` 在最后一列之后使用分隔符，并在行之间使用分隔符来查找下一行的开头，所以跳过错误只有在其中至少有一个不为空时才有效。

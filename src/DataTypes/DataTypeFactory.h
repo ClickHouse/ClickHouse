@@ -23,7 +23,7 @@ class DataTypeFactory final : private boost::noncopyable, public IFactoryWithAli
 {
 private:
     using SimpleCreator = std::function<DataTypePtr()>;
-    using DataTypesDictionary = std::unordered_map<String, Creator>;
+    using DataTypesDictionary = std::unordered_map<String, Value>;
     using CreatorWithCustom = std::function<std::pair<DataTypePtr,DataTypeCustomDescPtr>(const ASTPtr & parameters)>;
     using SimpleCreatorWithCustom = std::function<std::pair<DataTypePtr,DataTypeCustomDescPtr>()>;
 
@@ -35,7 +35,7 @@ public:
     DataTypePtr get(const ASTPtr & ast) const;
 
     /// Register a type family by its name.
-    void registerDataType(const String & family_name, Creator creator, CaseSensitiveness case_sensitiveness = CaseSensitive);
+    void registerDataType(const String & family_name, Value creator, CaseSensitiveness case_sensitiveness = CaseSensitive);
 
     /// Register a simple data type, that have no parameters.
     void registerSimpleDataType(const String & name, SimpleCreator creator, CaseSensitiveness case_sensitiveness = CaseSensitive);
@@ -47,7 +47,7 @@ public:
     void registerSimpleDataTypeCustom(const String & name, SimpleCreatorWithCustom creator, CaseSensitiveness case_sensitiveness = CaseSensitive);
 
 private:
-    const Creator& findCreatorByName(const String & family_name) const;
+    const Value & findCreatorByName(const String & family_name) const;
 
 private:
     DataTypesDictionary data_types;
@@ -57,9 +57,9 @@ private:
 
     DataTypeFactory();
 
-    const DataTypesDictionary & getCreatorMap() const override { return data_types; }
+    const DataTypesDictionary & getMap() const override { return data_types; }
 
-    const DataTypesDictionary & getCaseInsensitiveCreatorMap() const override { return case_insensitive_data_types; }
+    const DataTypesDictionary & getCaseInsensitiveMap() const override { return case_insensitive_data_types; }
 
     String getFactoryName() const override { return "DataTypeFactory"; }
 };
@@ -82,6 +82,6 @@ void registerDataTypeInterval(DataTypeFactory & factory);
 void registerDataTypeLowCardinality(DataTypeFactory & factory);
 void registerDataTypeDomainIPv4AndIPv6(DataTypeFactory & factory);
 void registerDataTypeDomainSimpleAggregateFunction(DataTypeFactory & factory);
-void registerDataTypeDateTime64(DataTypeFactory & factory);
+void registerDataTypeDomainGeo(DataTypeFactory & factory);
 
 }

@@ -8,10 +8,10 @@
 # install compiler and libs
 sudo apt install -y git bash cmake ninja-build gcc-8 g++-8 libicu-dev libreadline-dev gperf
 # for -DUNBUNDLED=1 mode:
-#sudo apt install -y libboost-program-options-dev libboost-system-dev libboost-filesystem-dev libboost-thread-dev zlib1g-dev liblz4-dev libdouble-conversion-dev libzstd-dev libre2-dev librdkafka-dev libcapnp-dev libpoco-dev libgoogle-perftools-dev libunwind-dev googletest libcctz-dev
+#sudo apt install -y libboost-program-options-dev libboost-system-dev libboost-filesystem-dev libboost-thread-dev libboost-regex-dev libboost-iostreams-dev zlib1g-dev liblz4-dev libdouble-conversion-dev libzstd-dev libre2-dev librdkafka-dev libcapnp-dev libpoco-dev libgoogle-perftools-dev libunwind-dev googletest libcctz-dev
 
 # install testing only stuff if you want:
-sudo apt install -y expect python python-lxml python-termcolor python-requests curl perl sudo openssl netcat-openbsd telnet
+sudo apt install -y expect python3 python3-lxml python3-termcolor python3-requests curl perl sudo openssl netcat-openbsd telnet
 
 BASE_DIR=$(dirname $0) && [ -f "$BASE_DIR/../../CMakeLists.txt" ] && ROOT_DIR=$BASE_DIR/../.. && cd $ROOT_DIR
 

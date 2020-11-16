@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 17
 toc_title: "Komut Sat\u0131r\u0131 \u0130stemcisi"
 ---
@@ -9,7 +9,7 @@ toc_title: "Komut Sat\u0131r\u0131 \u0130stemcisi"
 
 ClickHouse yerel bir komut satırı istemcisi sağlar: `clickhouse-client`. İstemci komut satırı seçeneklerini ve yapılandırma dosyalarını destekler. Daha fazla bilgi için, bkz. [Yapılandırma](#interfaces_cli_configuration).
 
-[Yüklemek](../getting_started/index.md) ıt from the `clickhouse-client` paketleyin ve komutla çalıştırın `clickhouse-client`.
+[Yüklemek](../getting-started/index.md) ıt from the `clickhouse-client` paketleyin ve komutla çalıştırın `clickhouse-client`.
 
 ``` bash
 $ clickhouse-client
@@ -89,7 +89,7 @@ Bir sorguyu her zamanki gibi biçimlendirin, ardından uygulama parametrelerinde
 ```
 
 -   `name` — Placeholder identifier. In the console client it should be used in app parameters as `--param_<name> = value`.
--   `data type` — [Veri türü](../sql_reference/data_types/index.md) app parametre değeri. Örneğin, aşağıdaki gibi bir veri yapısı `(integer, ('string', integer))` olabilir var `Tuple(UInt8, Tuple(String, UInt8))` veri türü (başka birini de kullanabilirsiniz [tamsayı](../sql_reference/data_types/int_uint.md) türler).
+-   `data type` — [Veri türü](../sql-reference/data-types/index.md) app parametre değeri. Örneğin, aşağıdaki gibi bir veri yapısı `(integer, ('string', integer))` olabilir var `Tuple(UInt8, Tuple(String, UInt8))` veri türü (başka birini de kullanabilirsiniz [tamsayı](../sql-reference/data-types/int-uint.md) türler).
 
 #### Örnek {#example}
 

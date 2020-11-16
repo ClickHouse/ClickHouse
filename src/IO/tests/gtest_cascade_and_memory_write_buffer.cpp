@@ -5,7 +5,6 @@
 #include <IO/CascadeWriteBuffer.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/WriteBufferFromTemporaryFile.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/copyData.h>
@@ -42,7 +41,7 @@ static void testCascadeBufferRedability(
         if (!wbuf)
             continue;
 
-        auto wbuf_readable = dynamic_cast<IReadableWriteBuffer *>(wbuf.get());
+        auto * wbuf_readable = dynamic_cast<IReadableWriteBuffer *>(wbuf.get());
         ASSERT_FALSE(!wbuf_readable);
 
         auto rbuf = wbuf_readable->tryGetReadBuffer();
@@ -133,7 +132,7 @@ static void checkHTTPHandlerCase(size_t input_size, size_t memory_buffer_size)
             {
                 [res_buf] (const WriteBufferPtr & prev_buf)
                 {
-                    auto prev_memory_buffer = typeid_cast<MemoryWriteBuffer *>(prev_buf.get());
+                    auto * prev_memory_buffer = typeid_cast<MemoryWriteBuffer *>(prev_buf.get());
                     if (prev_memory_buffer != nullptr)
                     {
                         auto rdbuf = prev_memory_buffer->tryGetReadBuffer();

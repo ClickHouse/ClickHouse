@@ -1,0 +1,54 @@
+<yandex>
+    <dictionary>
+        <name>test_http</name>
+        <source>
+            <http>
+                <url>http://localhost:5555/source.csv</url>
+                <format>CSVWithNames</format>
+                <credentials>
+                    <user>foo</user>
+                    <password>bar</password>
+                </credentials>
+                <headers>
+                    <header>
+                        <name>api-key</name>
+                        <value>secret</value>
+                    </header>
+                </headers>
+            </http>
+
+            <settings>
+                <format_csv_allow_single_quotes>0</format_csv_allow_single_quotes>
+                <format_csv_allow_double_quotes>0</format_csv_allow_double_quotes>
+            </settings>
+
+        </source>
+
+        <lifetime>600</lifetime>
+
+        <layout>
+            <flat/>
+        </layout>
+
+        <structure>
+            <id>
+                <name>id</name>
+            </id>
+            <attribute>
+                <name>first</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+            <attribute>
+                <name>second</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+            <attribute>
+                <name>third</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+        </structure>
+    </dictionary>
+</yandex>

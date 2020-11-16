@@ -11,7 +11,7 @@ namespace DB
  * to support 64bit types. The drawback is 1 extra bit for 32-byte wide deltas: 5-bit prefix
  * instead of 4-bit prefix.
  *
- * This codec is best used against monotonic integer sequences with constant (or almost contant)
+ * This codec is best used against monotonic integer sequences with constant (or almost constant)
  * stride, like event timestamp for some monitoring application.
  *
  * Given input sequence a: [a0, a1, ... an]:
@@ -45,7 +45,7 @@ namespace DB
  *      write sign bit (1 if signed):                                  x
  *      write 64-1 bits of abs(double_delta - 1):                      xxxxxxxxxxx...
  *
- * @example sequence of UInt8 values [1, 2, 3, 4, 5, 6, 7, 8, 9 10] is encoded as (codec header is ommited):
+ * @example sequence of UInt8 values [1, 2, 3, 4, 5, 6, 7, 8, 9 10] is encoded as (codec header is omitted):
  *
  * .- 4-byte little-endian sequence length (10 == 0xa)
  * |               .- 1 byte (sizeof(UInt8) a[0]                                            : 0x01
@@ -98,22 +98,21 @@ public:
 
     uint8_t getMethodByte() const override;
 
-    String getCodecDesc() const override;
-
-    void useInfoAboutType(DataTypePtr data_type) override;
+    void updateHash(SipHash & hash) const override;
 
 protected:
+
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
 
     void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
+    bool isCompression() const override { return true; }
+    bool isGenericCompression() const override { return false; }
+
 private:
     UInt8 data_bytes_size;
 };
-
-class CompressionCodecFactory;
-void registerCodecDoubleDelta(CompressionCodecFactory & factory);
 
 }

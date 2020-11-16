@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 78
 toc_title: "Questions G\xE9n\xE9rales"
 ---
@@ -17,7 +17,7 @@ La plupart des implémentations MapReduce vous permettent d'exécuter du code ar
 
 ## Que Faire si j'ai un problème avec les encodages lors de l'utilisation D'Oracle via ODBC? {#oracle-odbc-encodings}
 
-Si vous utilisez Oracle via le pilote ODBC comme source de dictionnaires externes, vous devez définir la valeur correcte pour `NLS_LANG` variable d'environnement dans `/etc/default/clickhouse`. Pour plus d'informations, voir le [FAQ Oracle NLS\_LANG](https://www.oracle.com/technetwork/products/globalization/nls-lang-099431.html).
+Si vous utilisez Oracle via le pilote ODBC comme source de dictionnaires externes, vous devez définir la valeur correcte pour `NLS_LANG` variable d'environnement dans `/etc/default/clickhouse`. Pour plus d'informations, voir le [FAQ Oracle NLS_LANG](https://www.oracle.com/technetwork/products/globalization/nls-lang-099431.html).
 
 **Exemple**
 
@@ -29,7 +29,7 @@ NLS_LANG=RUSSIAN_RUSSIA.UTF8
 
 ### Utilisation de la Clause INTO OUTFILE {#using-into-outfile-clause}
 
-Ajouter un [INTO OUTFILE](../query_language/select/#into-outfile-clause) clause à votre requête.
+Ajouter un [INTO OUTFILE](../sql-reference/statements/select/into-outfile.md#into-outfile-clause) clause à votre requête.
 
 Exemple:
 
@@ -37,7 +37,7 @@ Exemple:
 SELECT * FROM table INTO OUTFILE 'file'
 ```
 
-Par défaut, ClickHouse utilise [TabSeparated](../interfaces/formats.md#tabseparated) format pour les données de sortie. Pour sélectionner le [format de données](../interfaces/formats.md), utiliser le [FORMAT de la clause](../query_language/select/#format-clause).
+Par défaut, ClickHouse utilise [TabSeparated](../interfaces/formats.md#tabseparated) format pour les données de sortie. Pour sélectionner le [format de données](../interfaces/formats.md), utiliser le [FORMAT de la clause](../sql-reference/statements/select/format.md#format-clause).
 
 Exemple:
 
@@ -47,7 +47,7 @@ SELECT * FROM table INTO OUTFILE 'file' FORMAT CSV
 
 ### Utilisation d'une Table de moteur de fichiers {#using-a-file-engine-table}
 
-Voir [Fichier](../engines/table_engines/special/file.md).
+Voir [Fichier](../engines/table-engines/special/file.md).
 
 ### Utilisation De La Redirection En Ligne De Commande {#using-command-line-redirection}
 

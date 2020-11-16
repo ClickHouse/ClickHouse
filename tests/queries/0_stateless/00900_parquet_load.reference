@@ -39,7 +39,7 @@
 23.0
 24.0
 === Try load data from datapage_v2.snappy.parquet
-Code: 33. DB::Ex---tion: Error while reading Parquet data: IOError: Arrow error: IOError: Corrupt snappy compressed data.
+Code: 33. DB::Ex---tion: Error while reading Parquet data: IOError: Not yet implemented: Unsupported encoding.: data for INSERT was parsed from stdin
 
 === Try load data from fixed_length_decimal_1.parquet
 1.0
@@ -168,22 +168,22 @@ Code: 33. DB::Ex---tion: Error while reading Parquet data: IOError: Arrow error:
 23	UNITED KINGDOM	3	eans boost carefully special requests. accounts are. carefull
 24	UNITED STATES	1	y final packages. slow foxes cajole quickly. quickly silent platelets breach ironic accounts. unusual pinto be
 === Try load data from nested_lists.snappy.parquet
-Code: 8. DB::Ex---tion: Column "element" is not presented in input data
+Code: 8. DB::Ex---tion: Column "element" is not presented in input data: data for INSERT was parsed from stdin
 
 === Try load data from nested_maps.snappy.parquet
-Code: 33. DB::Ex---tion: Error while reading Parquet data: NotImplemented: Reading lists of structs from Parquet files not yet supported: key_value: list<key_value: struct<key: string not null, value: struct<key_value: list<key_value: struct<key: int32 not null, value: bool not null> not null> not null>> not null> not null
+Code: 33. DB::Ex---tion: Error while reading Parquet data: NotImplemented: Reading lists of structs from Parquet files not yet supported: key_value: list<key_value: struct<key: string not null, value: struct<key_value: list<key_value: struct<key: int32 not null, value: bool not null> not null> not null>> not null> not null: data for INSERT was parsed from stdin
 
 === Try load data from nonnullable.impala.parquet
-Code: 8. DB::Ex---tion: Column "element" is not presented in input data
+Code: 8. DB::Ex---tion: Column "element" is not presented in input data: data for INSERT was parsed from stdin
 
 === Try load data from nullable.impala.parquet
-Code: 8. DB::Ex---tion: Column "element" is not presented in input data
+Code: 8. DB::Ex---tion: Column "element" is not presented in input data: data for INSERT was parsed from stdin
 
 === Try load data from nulls.snappy.parquet
-Code: 8. DB::Ex---tion: Column "b_c_int" is not presented in input data
+Code: 8. DB::Ex---tion: Column "b_c_int" is not presented in input data: data for INSERT was parsed from stdin
 
 === Try load data from repeated_no_annotation.parquet
-Code: 8. DB::Ex---tion: Column "number" is not presented in input data
+Code: 8. DB::Ex---tion: Column "number" is not presented in input data: data for INSERT was parsed from stdin
 
 === Try load data from userdata1.parquet
 1454486129	1	Amanda	Jordan	ajordan0@com.com	Female	1.197.201.2	6759521864920116	Indonesia	3/8/1971	49756.53	Internal Auditor	1E+02

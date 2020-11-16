@@ -1,25 +1,52 @@
+{% set description = description or _('ClickHouse is a fast open-source column-oriented database management system that allows generating analytical data reports in real-time using SQL queries') %}
 <meta charset="utf-8" />
 <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1" />
 
-<title>{% if title %}{{ title }}{% else %}{{ _('ClickHouse DBMS') }}{% endif %}</title>
+<title>{% if title %}{{ title }}{% else %}{{ _('ClickHouse - fast open-source OLAP DBMS') }}{% endif %}</title>
 
-<link rel="shortcut icon" href="/favicon.ico"/>
+<link rel="shortcut icon" href="/favicon.ico" />
+<link rel="apple-touch-icon" sizes="180x180" href="/images/logo-180x180.png" />
 
 <meta property="og:title" content="{% if title %}{{ title }}{% else %}{{ _('ClickHouse DBMS') }}{% endif %}"/>
-<meta property="og:description"
-      content="{% if description %}{{ description }}{% else %}{{ _('ClickHouse is an open source column-oriented database management system that allows generating analytical data reports in real time using SQL queries.') }}{% endif %}"/>
-<meta property="og:type" content="website"/>
-<meta property="og:image" content="https://clickhouse.tech/images/logo.png"/>
+<meta property="og:description" content="{{ description }}" />
+<meta property="og:type" content="{{ og_type or 'website' }}" />
+{% if page and page.meta.image %}
+<meta property="og:image" content="{{ page.meta.image}}" />
+{% else %}
+<meta property="og:image" content="https://clickhouse.tech/images/logo.png" />
+{% endif %}
+<meta property="og:url" content="{{ url or 'https://clickhouse.tech/' }}"/>
+<link rel="canonical" href="{{ canonical_url or 'https://clickhouse.tech/' }}" />
+{% if page and not single_page and not is_blog %}
+<link rel="amphtml" href="{{ url or 'https://clickhouse.tech/' }}amp/" />
+{% endif %}
+<link rel="search" href="/opensearch.xml" title="ClickHouse" type="application/opensearchdescription+xml" />
+{% include "templates/docs/ld_json.html" %}
 
-
-<meta property="twitter:title" content="{% if title %}{{ title }}{% else %}{{ _('ClickHouse DBMS') }}{% endif %}"/>
-
-<meta name="description"
-      content="{% if description %}{{ description }}{% else %}{{ _('ClickHouse is an open source distributed column-oriented database management system that allows generating analytical data reports in real time using SQL queries. Сreated by Yandex ClickHouse manages extremely large volumes of data in a stable and sustainable manner.') }}{% endif %}"/>
+<meta name="description" content="{{ description }}" />
+{% if page and page.meta.tags %}
 <meta name="keywords"
-      content="ClickHouse, DBMS, OLAP, relational, analytics, analytical, big data, open-source, SQL, web-analytics" />
+      content="{% for tag in page.meta.tags %}{{tag}}{{ ', ' if not loop.last }}{% endfor %}" />
+{% else %}
+<meta name="keywords"
+      content="ClickHouse, DBMS, OLAP, SQL, {{ _('open-source') }}, {{ _('relational') }}, {{ _('analytics') }}, {{ _('analytical') }}, {{ _('Big Data') }}, {{ _('web-analytics') }}" />
+{% endif %}
+{% if config and (config.extra.single_page or config.extra.version_prefix) %}
+<meta name="robots" content="noindex,follow" />
+{% endif %}
+
+{% if config and page and not is_blog %}
+    {% for code, name in config.extra.languages.items() %}
+    <link rel="alternate" hreflang="{{ code }}" href="{{ config.extra.website_url }}/docs/{% if config.extra.version_prefix %}{{ config.extra.version_prefix }}/{% endif %}{{ code }}/{{ page.url }}" />
+    {% endfor %}
+    <link rel="alternate" hreflang="x-default" href="{{ config.extra.website_url }}/docs/{% if config.extra.version_prefix %}{{ config.extra.version_prefix }}/{% endif %}en/{{ page.url }}" />
+{% endif %}
 
 {% for prefetch_item in prefetch_items %}
 <link rel="prefetch" href="{{ prefetch_item.0 }}" as="{{ prefetch_item.1 }}" />
 {% endfor %}
+
+{% if is_blog %}
+<link rel="alternate" type="application/rss+xml" href="{{ config.site_url }}rss.xml" />
+{% endif %}

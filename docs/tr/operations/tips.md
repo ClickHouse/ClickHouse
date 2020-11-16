@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 58
 toc_title: "Kullan\u0131m \xD6nerileri"
 ---
@@ -59,7 +59,7 @@ RAID-10 oluştururken, `far` düzen.
 Bütçeniz izin veriyorsa, RAID-10'u seçin.
 
 4'ten fazla diskiniz varsa, RAID-5 yerine RAID-6 (tercih edilen) veya RAID-50 kullanın.
-RAID-5, RAID-6 veya RAID-50 kullanırken, varsayılan değer genellikle en iyi seçenek olmadığından daima stripe\_cache\_size değerini artırın.
+RAID-5, RAID-6 veya RAID-50 kullanırken, varsayılan değer genellikle en iyi seçenek olmadığından daima stripe_cache_size değerini artırın.
 
 ``` bash
 $ echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size

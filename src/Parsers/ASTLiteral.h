@@ -21,6 +21,17 @@ public:
     std::optional<TokenIterator> begin;
     std::optional<TokenIterator> end;
 
+    /*
+     * The name of the column corresponding to this literal. Only used to
+     * disambiguate the literal columns with the same display name that are
+     * created at the expression analyzer stage. In the future, we might want to
+     * have a full separation between display names and column identifiers. For
+     * now, this field is effectively just some private EA data.
+     */
+    String unique_column_name;
+
+
+public:
     ASTLiteral(Field && value_) : value(value_) {}
     ASTLiteral(const Field & value_) : value(value_) {}
 

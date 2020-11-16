@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import os
 import logging
@@ -32,7 +32,7 @@ class S3API(object):
         chunkcount = int(math.ceil(filesize / chunksize))
 
         def call_back(x, y):
-            print "Uploaded {}/{} bytes".format(x, y)
+            print("Uploaded {}/{} bytes".format(x, y))
         try:
             for i in range(chunkcount + 1):
                 logging.info("Uploading chunk %s of %s", i, chunkcount + 1)
@@ -68,8 +68,8 @@ def make_tar_file_for_table(clickhouse_data_path, db_name, table_name,
 
 USAGE_EXAMPLES = '''
 examples:
-\ts3uploader --dataset-name some_ds --access-key-id XXX --secret-access-key YYY --clickhouse-data-path /opt/clickhouse/ --table-name default.some_tbl --bucket-name some-bucket
-\ts3uploader --dataset-name some_ds --access-key-id XXX --secret-access-key YYY --file-name some_ds.tsv.xz --bucket-name some-bucket
+\t./s3uploader --dataset-name some_ds --access-key-id XXX --secret-access-key YYY --clickhouse-data-path /opt/clickhouse/ --table-name default.some_tbl --bucket-name some-bucket
+\t./s3uploader --dataset-name some_ds --access-key-id XXX --secret-access-key YYY --file-path some_ds.tsv.xz --bucket-name some-bucket --s3-path /path/to/
 '''
 
 if __name__ == "__main__":
@@ -90,7 +90,7 @@ if __name__ == "__main__":
                         help='Path to clickhouse database on filesystem')
     parser.add_argument('--s3-path', help='Path in s3, where to upload file')
     parser.add_argument('--tmp-prefix', default='/tmp',
-                        help='Prefix to store temporay downloaded file')
+                        help='Prefix to store temporary downloaded file')
     data_group = parser.add_mutually_exclusive_group(required=True)
     table_name_argument = data_group.add_argument('--table-name',
                             help='Name of table with database, if you are uploading partitions')

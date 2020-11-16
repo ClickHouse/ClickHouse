@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 set -e
 
@@ -55,6 +55,7 @@ timeout $TIMEOUT bash -c thread2 2> /dev/null &
 timeout $TIMEOUT bash -c thread3 2> /dev/null &
 
 wait
+sleep 1
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE test1"
 $CLICKHOUSE_CLIENT -q "DROP TABLE test2"

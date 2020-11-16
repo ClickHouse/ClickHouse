@@ -88,10 +88,29 @@ SELECT JSONExtractRaw('{}');
 SELECT JSONExtractRaw('{"abc":"\\n\\u0000"}', 'abc');
 SELECT JSONExtractRaw('{"abc":"\\u263a"}', 'abc');
 
+SELECT '--JSONExtractArrayRaw--';
+SELECT JSONExtractArrayRaw('');
+SELECT JSONExtractArrayRaw('{"a": "hello", "b": "not_array"}');
+SELECT JSONExtractArrayRaw('[]');
+SELECT JSONExtractArrayRaw('[[],[]]');
+SELECT JSONExtractArrayRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b');
+SELECT JSONExtractArrayRaw('[1,2,3,4,5,"hello"]');
+SELECT JSONExtractArrayRaw(arrayJoin(JSONExtractArrayRaw('[[1,2,3],[4,5,6]]')));
+
+SELECT '--JSONExtractKeysAndValuesRaw--';
+SELECT JSONExtractKeysAndValuesRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'a');
+SELECT JSONExtractKeysAndValuesRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b');
+SELECT JSONExtractKeysAndValuesRaw('{"a": "hello", "b": [-100, 200.0, 300]}');
+SELECT JSONExtractKeysAndValuesRaw('{"a": "hello", "b": [-100, 200.0, 300], "c":{"d":[121,144]}}');
+SELECT JSONExtractKeysAndValuesRaw('{"a": "hello", "b": [-100, 200.0, 300], "c":{"d":[121,144]}}', 'c');
+
 SELECT '--const/non-const mixed--';
 SELECT JSONExtractString('["a", "b", "c", "d", "e"]', idx) FROM (SELECT arrayJoin([1,2,3,4,5]) AS idx);
 SELECT JSONExtractString(json, 's') FROM (SELECT arrayJoin(['{"s":"u"}', '{"s":"v"}']) AS json);
 
+SELECT '--show error: type should be const string';
+SELECT JSONExtractKeysAndValues([], JSONLength('^?V{LSwp')); -- { serverError 44 }
+WITH '{"i": 1, "f": 1.2}' AS json SELECT JSONExtract(json, 'i', JSONType(json, 'i')); -- { serverError 44 }
 
 
 SELECT '--allow_simdjson=0--';
@@ -106,6 +125,11 @@ SELECT '--JSONHas--';
 SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'a');
 SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b');
 SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'c');
+
+SELECT '--isValidJSON--';
+SELECT isValidJSON('{"a": "hello", "b": [-100, 200.0, 300]}');
+SELECT isValidJSON('not a json');
+SELECT isValidJSON('"HX-=');
 
 SELECT '--JSONKey--';
 SELECT JSONKey('{"a": "hello", "b": [-100, 200.0, 300]}', 1);
@@ -179,10 +203,6 @@ SELECT JSONExtractRaw('{}');
 SELECT JSONExtractRaw('{"abc":"\\n\\u0000"}', 'abc');
 SELECT JSONExtractRaw('{"abc":"\\u263a"}', 'abc');
 
-SELECT '--const/non-const mixed--';
-SELECT JSONExtractString('["a", "b", "c", "d", "e"]', idx) FROM (SELECT arrayJoin([1,2,3,4,5]) AS idx);
-SELECT JSONExtractString(json, 's') FROM (SELECT arrayJoin(['{"s":"u"}', '{"s":"v"}']) AS json);
-
 SELECT '--JSONExtractArrayRaw--';
 SELECT JSONExtractArrayRaw('');
 SELECT JSONExtractArrayRaw('{"a": "hello", "b": "not_array"}');
@@ -191,3 +211,18 @@ SELECT JSONExtractArrayRaw('[[],[]]');
 SELECT JSONExtractArrayRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b');
 SELECT JSONExtractArrayRaw('[1,2,3,4,5,"hello"]');
 SELECT JSONExtractArrayRaw(arrayJoin(JSONExtractArrayRaw('[[1,2,3],[4,5,6]]')));
+
+SELECT '--JSONExtractKeysAndValuesRaw--';
+SELECT JSONExtractKeysAndValuesRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'a');
+SELECT JSONExtractKeysAndValuesRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b');
+SELECT JSONExtractKeysAndValuesRaw('{"a": "hello", "b": [-100, 200.0, 300]}');
+SELECT JSONExtractKeysAndValuesRaw('{"a": "hello", "b": [-100, 200.0, 300], "c":{"d":[121,144]}}');
+SELECT JSONExtractKeysAndValuesRaw('{"a": "hello", "b": [-100, 200.0, 300], "c":{"d":[121,144]}}', 'c');
+
+SELECT '--const/non-const mixed--';
+SELECT JSONExtractString('["a", "b", "c", "d", "e"]', idx) FROM (SELECT arrayJoin([1,2,3,4,5]) AS idx);
+SELECT JSONExtractString(json, 's') FROM (SELECT arrayJoin(['{"s":"u"}', '{"s":"v"}']) AS json);
+
+SELECT '--show error: type should be const string';
+SELECT JSONExtractKeysAndValues([], JSONLength('^?V{LSwp')); -- { serverError 44 }
+WITH '{"i": 1, "f": 1.2}' AS json SELECT JSONExtract(json, 'i', JSONType(json, 'i')); -- { serverError 44 }

@@ -3,20 +3,20 @@ DROP TABLE IF EXISTS datetime_table;
 -- Create a table with DateTime column, but not used in partition key
 CREATE TABLE datetime_table
   (
-    t DateTime,
+    t DateTime('UTC'),
     name String,
     value UInt32
   ) ENGINE = MergeTree()
     ORDER BY (t, name)
 	PARTITION BY value;
 
-INSERT INTO datetime_table VALUES (toDateTime('2016-01-01 00:00:00'),'name1',2);
-INSERT INTO datetime_table VALUES (toDateTime('2016-01-02 00:00:00'),'name2',2);
-INSERT INTO datetime_table VALUES (toDateTime('2016-01-03 00:00:00'),'name1',4);
+INSERT INTO datetime_table VALUES ('2016-01-01 00:00:00','name1',2);
+INSERT INTO datetime_table VALUES ('2016-01-02 00:00:00','name2',2);
+INSERT INTO datetime_table VALUES ('2016-01-03 00:00:00','name1',4);
 
 -- min_time and max_time are not filled
 
-SELECT partition, MIN(min_time) as min_time, MAX(max_time) as max_time
+SELECT partition, toTimeZone(MIN(min_time), 'UTC') as min_time, toTimeZone(MAX(max_time), 'UTC') as max_time
 FROM system.parts
 WHERE database = currentDatabase() and table = 'datetime_table' AND active = 1
 GROUP BY partition
@@ -28,22 +28,22 @@ DROP TABLE IF EXISTS datetime_table;
 -- Create a table with DateTime column, this time used in partition key
 CREATE TABLE datetime_table
   (
-    t DateTime,
+    t DateTime('UTC'),
     name String,
     value UInt32
   ) ENGINE = MergeTree()
     ORDER BY (t, name)
 	PARTITION BY toStartOfDay(t);
 
-INSERT INTO datetime_table VALUES (toDateTime('2016-01-01 00:00:00'),'name1',2);
-INSERT INTO datetime_table VALUES (toDateTime('2016-01-01 02:00:00'),'name1',3);
-INSERT INTO datetime_table VALUES (toDateTime('2016-01-02 01:00:00'),'name2',2);
-INSERT INTO datetime_table VALUES (toDateTime('2016-01-02 23:00:00'),'name2',5);
-INSERT INTO datetime_table VALUES (toDateTime('2016-01-03 04:00:00'),'name1',4);
+INSERT INTO datetime_table VALUES ('2016-01-01 00:00:00','name1',2);
+INSERT INTO datetime_table VALUES ('2016-01-01 02:00:00','name1',3);
+INSERT INTO datetime_table VALUES ('2016-01-02 01:00:00','name2',2);
+INSERT INTO datetime_table VALUES ('2016-01-02 23:00:00','name2',5);
+INSERT INTO datetime_table VALUES ('2016-01-03 04:00:00','name1',4);
 
 -- min_time and max_time are now filled
 
-SELECT partition, MIN(min_time) as min_time, MAX(max_time) as max_time
+SELECT partition, toTimeZone(MIN(min_time), 'UTC') as min_time, toTimeZone(MAX(max_time), 'UTC') as max_time
 FROM system.parts
 WHERE database = currentDatabase() and table = 'datetime_table' AND active = 1
 GROUP BY partition
@@ -55,7 +55,7 @@ DROP TABLE IF EXISTS datetime_table;
 -- Create a table with DateTime column, this time used in partition key, but not at the first level
 CREATE TABLE datetime_table
   (
-    t DateTime,
+    t DateTime('UTC'),
     name String,
     value UInt32
   ) ENGINE = MergeTree()

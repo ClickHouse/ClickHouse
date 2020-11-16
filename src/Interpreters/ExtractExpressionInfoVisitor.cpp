@@ -38,10 +38,10 @@ void ExpressionInfoMatcher::visit(const ASTIdentifier & identifier, const ASTPtr
     {
         for (size_t index = 0; index < data.tables.size(); ++index)
         {
-            const auto & columns = data.tables[index].columns;
+            const auto & table = data.tables[index];
 
             // TODO: make sure no collision ever happens
-            if (std::find(columns.begin(), columns.end(), identifier.name) != columns.end())
+            if (table.hasColumn(identifier.name()))
             {
                 data.unique_reference_tables_pos.emplace(index);
                 break;

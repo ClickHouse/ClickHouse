@@ -1,6 +1,8 @@
 #include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromString.h>
 
 #include <Processors/Formats/Impl/JSONEachRowRowInputFormat.h>
+#include <Formats/JSONEachRowUtils.h>
 #include <Formats/FormatFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -28,12 +30,13 @@ enum
 
 
 JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
-    ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
-    : IRowInputFormat(header_, in_, std::move(params_)), format_settings(format_settings_), name_map(header_.columns())
+    ReadBuffer & in_,
+    const Block & header_,
+    Params params_,
+    const FormatSettings & format_settings_,
+    bool yield_strings_)
+    : IRowInputFormat(header_, in_, std::move(params_)), format_settings(format_settings_), name_map(header_.columns()), yield_strings(yield_strings_)
 {
-    /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
-    skipBOMIfExists(in);
-
     size_t num_columns = getPort().getHeader().columns();
     for (size_t i = 0; i < num_columns; ++i)
     {
@@ -41,10 +44,10 @@ JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
         name_map[column_name] = i;        /// NOTE You could place names more cache-locally.
         if (format_settings_.import_nested_json)
         {
-            const auto splitted = Nested::splitName(column_name);
-            if (!splitted.second.empty())
+            const auto split = Nested::splitName(column_name);
+            if (!split.second.empty())
             {
-                const StringRef table_name(column_name.data(), splitted.first.size());
+                const StringRef table_name(column_name.data(), split.first.size());
                 name_map[table_name] = NESTED_FIELD;
             }
         }
@@ -71,7 +74,7 @@ inline size_t JSONEachRowRowInputFormat::columnIndex(const StringRef & name, siz
     }
     else
     {
-        const auto it = name_map.find(name);
+        auto * it = name_map.find(name);
 
         if (it)
         {
@@ -137,10 +140,26 @@ void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns
     {
         seen_columns[index] = read_columns[index] = true;
         const auto & type = getPort().getHeader().getByPosition(index).type;
-        if (format_settings.null_as_default && !type->isNullable())
-            read_columns[index] = DataTypeNullable::deserializeTextJSON(*columns[index], in, format_settings, type);
+
+        if (yield_strings)
+        {
+            String str;
+            readJSONString(str, in);
+
+            ReadBufferFromString buf(str);
+
+            if (format_settings.null_as_default && !type->isNullable())
+                read_columns[index] = DataTypeNullable::deserializeWholeText(*columns[index], buf, format_settings, type);
+            else
+                type->deserializeAsWholeText(*columns[index], buf, format_settings);
+        }
         else
-            type->deserializeAsTextJSON(*columns[index], in, format_settings);
+        {
+            if (format_settings.null_as_default && !type->isNullable())
+                read_columns[index] = DataTypeNullable::deserializeTextJSON(*columns[index], in, format_settings, type);
+            else
+                type->deserializeAsTextJSON(*columns[index], in, format_settings);
+        }
     }
     catch (Exception & e)
     {
@@ -256,7 +275,7 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
     nested_prefix_length = 0;
     readJSONObject(columns);
 
-    auto & header = getPort().getHeader();
+    const auto & header = getPort().getHeader();
     /// Fill non-visited columns with the default values.
     for (size_t i = 0; i < num_columns; ++i)
         if (!seen_columns[i])
@@ -284,6 +303,9 @@ void JSONEachRowRowInputFormat::resetParser()
 
 void JSONEachRowRowInputFormat::readPrefix()
 {
+    /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
+    skipBOMIfExists(in);
+
     skipWhitespaceIfAny(in);
     if (!in.eof() && *in.position() == '[')
     {
@@ -317,73 +339,23 @@ void registerInputFormatProcessorJSONEachRow(FormatFactory & factory)
         IRowInputFormat::Params params,
         const FormatSettings & settings)
     {
-        return std::make_shared<JSONEachRowRowInputFormat>(buf, sample, std::move(params), settings);
+        return std::make_shared<JSONEachRowRowInputFormat>(buf, sample, std::move(params), settings, false);
     });
-}
 
-static bool fileSegmentationEngineJSONEachRowImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
-{
-    skipWhitespaceIfAny(in);
-
-    char * pos = in.position();
-    size_t balance = 0;
-    bool quotes = false;
-
-    while (loadAtPosition(in, memory, pos)  && (balance || memory.size() + static_cast<size_t>(pos - in.position()) < min_chunk_size))
+    factory.registerInputFormatProcessor("JSONStringsEachRow", [](
+        ReadBuffer & buf,
+        const Block & sample,
+        IRowInputFormat::Params params,
+        const FormatSettings & settings)
     {
-        if (quotes)
-        {
-            pos = find_first_symbols<'\\', '"'>(pos, in.buffer().end());
-            if (pos == in.buffer().end())
-                continue;
-            if (*pos == '\\')
-            {
-                ++pos;
-                if (loadAtPosition(in, memory, pos))
-                    ++pos;
-            }
-            else if (*pos == '"')
-            {
-                ++pos;
-                quotes = false;
-            }
-        }
-        else
-        {
-            pos = find_first_symbols<'{', '}', '\\', '"'>(pos, in.buffer().end());
-            if (pos == in.buffer().end())
-                continue;
-            if (*pos == '{')
-            {
-                ++balance;
-                ++pos;
-            }
-            else if (*pos == '}')
-            {
-                --balance;
-                ++pos;
-            }
-            else if (*pos == '\\')
-            {
-                ++pos;
-                if (loadAtPosition(in, memory, pos))
-                    ++pos;
-            }
-            else if (*pos == '"')
-            {
-                quotes = true;
-                ++pos;
-            }
-        }
-    }
-
-    saveUpToPosition(in, memory, pos);
-    return loadAtPosition(in, memory, pos);
+        return std::make_shared<JSONEachRowRowInputFormat>(buf, sample, std::move(params), settings, true);
+    });
 }
 
 void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory)
 {
     factory.registerFileSegmentationEngine("JSONEachRow", &fileSegmentationEngineJSONEachRowImpl);
+    factory.registerFileSegmentationEngine("JSONStringsEachRow", &fileSegmentationEngineJSONEachRowImpl);
 }
 
 }

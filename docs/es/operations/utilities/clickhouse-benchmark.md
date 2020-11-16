@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 61
 toc_title: Sistema abierto.
 ---
 
-# Sistema abierto. {#clickhouse-benchmark}
+# Sistema abierto {#clickhouse-benchmark}
 
 Se conecta a un servidor ClickHouse y envía repetidamente las consultas especificadas.
 
@@ -38,7 +38,7 @@ clickhouse-benchmark [keys] < queries_file
 
 -   `-c N`, `--concurrency=N` — Number of queries that `clickhouse-benchmark` se envía simultáneamente. Valor predeterminado: 1.
 -   `-d N`, `--delay=N` — Interval in seconds between intermediate reports (set 0 to disable reports). Default value: 1.
--   `-h WORD`, `--host=WORD` — Server host. Default value: `localhost`. Para el [modo de comparación](#clickhouse-benchmark-comparison-mode) se pueden utilizar varios `-h` claves.
+-   `-h WORD`, `--host=WORD` — Server host. Default value: `localhost`. Para el [modo de comparación](#clickhouse-benchmark-comparison-mode) puedes usar múltiples `-h` claves.
 -   `-p N`, `--port=N` — Server port. Default value: 9000. For the [modo de comparación](#clickhouse-benchmark-comparison-mode) puedes usar múltiples `-p` claves.
 -   `-i N`, `--iterations=N` — Total number of queries. Default value: 0.
 -   `-r`, `--randomize` — Random order of queries execution if there is more then one input query.
@@ -91,7 +91,7 @@ En el informe puedes encontrar:
 
     -   Punto final del servidor ClickHouse.
     -   Número de consultas procesadas.
-    -   QPS: QPS: ¿cuántas consultas servidor realizó por segundo durante un período de tiempo especificado en el `--delay` argumento.
+    -   QPS: QPS: ¿Cuántas consultas realizó el servidor por segundo durante un período `--delay` argumento.
     -   RPS: ¿Cuántas filas lee el servidor por segundo durante un período `--delay` argumento.
     -   MiB/s: ¿Cuántos mebibytes servidor leído por segundo durante un período especificado en el `--delay` argumento.
     -   resultado RPS: ¿Cuántas filas colocadas por el servidor al resultado de una consulta por segundo durante un período `--delay` argumento.

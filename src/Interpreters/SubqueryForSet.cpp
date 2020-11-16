@@ -3,19 +3,24 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/ExpressionActions.h>
-#include <DataStreams/LazyBlockInputStream.h>
+
 
 namespace DB
 {
+
+SubqueryForSet::SubqueryForSet() = default;
+SubqueryForSet::~SubqueryForSet() = default;
+SubqueryForSet::SubqueryForSet(SubqueryForSet &&) = default;
+SubqueryForSet & SubqueryForSet::operator= (SubqueryForSet &&) = default;
 
 void SubqueryForSet::makeSource(std::shared_ptr<InterpreterSelectWithUnionQuery> & interpreter,
                                 NamesWithAliases && joined_block_aliases_)
 {
     joined_block_aliases = std::move(joined_block_aliases_);
-    source = std::make_shared<LazyBlockInputStream>(interpreter->getSampleBlock(),
-                                                    [interpreter]() mutable { return interpreter->execute().in; });
+    source = std::make_unique<QueryPlan>();
+    interpreter->buildQueryPlan(*source);
 
-    sample_block = source->getHeader();
+    sample_block = interpreter->getSampleBlock();
     renameColumns(sample_block);
 }
 
@@ -50,11 +55,10 @@ bool SubqueryForSet::insertJoinedBlock(Block & block)
     return join->addJoinedBlock(block);
 }
 
-void SubqueryForSet::setTotals()
+void SubqueryForSet::setTotals(Block totals)
 {
-    if (join && source)
+    if (join)
     {
-        Block totals = source->getTotals();
         renameColumns(totals);
         join->setTotals(totals);
     }

@@ -2,7 +2,6 @@
 
 #include <iostream>
 
-#include <Core/Types.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ConcatReadBuffer.h>

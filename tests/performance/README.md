@@ -1,14 +1,12 @@
 ## ClickHouse performance tests
 
-This directory contains `.xml`-files with performance tests for `clickhouse-performance-test` tool.
+This directory contains `.xml`-files with performance tests for @akuzm tool.
 
 ### How to write performance test
 
 First of all you should check existing tests don't cover your case. If there are no such tests than you should write your own.
 
 You have to specify `preconditions`. It contains table names. Only `hits_100m_single`, `hits_10m_single`, `test.hits` are available in CI.
-
-The most important part of test is `stop_conditions`. Also you should always specify `total_time_ms` metric. Endless tests will be ignored by CI.
 
 You can use `substitions`, `create`, `fill` and `drop` queries to prepare test. You can find examples in this folder.
 
@@ -18,9 +16,11 @@ If your test continued more than 10 minutes, please, add tag `long` to have an o
 
 ### How to run performance test
 
-You have to run clickhouse-server and after you can start testing:
+TODO @akuzm
+
+### How to validate single test
 
 ```
-$ clickhouse-performance-test --input-file my_lovely_test1.xml --input-file my_lovely_test2.xml
-$ clickhouse-performance-test --input-file /my_lovely_test_dir/
+pip3 install clickhouse_driver
+../../docker/test/performance-comparison/perf.py --runs 1 insert_parallel.xml
 ```

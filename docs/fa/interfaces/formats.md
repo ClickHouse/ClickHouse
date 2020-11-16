@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 21
 toc_title: "\u0641\u0631\u0645\u062A \u0647\u0627\u06CC \u0648\u0631\u0648\u062F\u06CC\
   \ \u0648 \u062E\u0631\u0648\u062C\u06CC"
@@ -73,7 +73,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 2014-03-22      1031592
 2014-03-23      1046491
 
-0000-00-00      8873898
+1970-01-01      8873898
 
 2014-03-17      1031592
 2014-03-23      1406958
@@ -111,9 +111,9 @@ world
 
 ارریس به عنوان یک لیست از ارزش کاما از هم جدا در براکت مربع نوشته شده است. موارد شماره در مجموعه به طور معمول فرمت می شوند. `Date` و `DateTime` انواع در نقل قول تک نوشته شده است. رشته ها در نقل قول های تک با قوانین فرار همان بالا نوشته شده است.
 
-[NULL](../sql_reference/syntax.md) به عنوان فرمت `\N`.
+[NULL](../sql-reference/syntax.md) به عنوان فرمت `\N`.
 
-هر عنصر [تو در تو](../sql_reference/data_types/nested_data_structures/nested.md) سازه ها به عنوان مجموعه ای نشان داده شده است.
+هر عنصر [تو در تو](../sql-reference/data-types/nested-data-structures/nested.md) سازه ها به عنوان مجموعه ای نشان داده شده است.
 
 به عنوان مثال:
 
@@ -202,7 +202,7 @@ SELECT * FROM nestedt FORMAT TSV
 -   `min` ردیف با حداقل مقدار در `format_template_row` فرمت (هنگامی که افراط و به مجموعه 1)
 -   `max` ردیف با حداکثر ارزش در است `format_template_row` فرمت (هنگامی که افراط و به مجموعه 1)
 -   `rows` تعداد کل ردیف خروجی است
--   `rows_before_limit` است حداقل تعداد ردیف وجود دارد که بدون محدودیت بوده است. خروجی تنها در صورتی که پرس و جو شامل حد. اگر پرس و جو شامل گروه های, ردیف ها\_افور\_لیمیت\_تلاست تعداد دقیق ردیف وجود دارد که بدون محدودیت بوده است.
+-   `rows_before_limit` است حداقل تعداد ردیف وجود دارد که بدون محدودیت بوده است. خروجی تنها در صورتی که پرس و جو شامل حد. اگر پرس و جو شامل گروه های, ردیف ها_افور_لیمیت_تلاست تعداد دقیق ردیف وجود دارد که بدون محدودیت بوده است.
 -   `time` زمان اجرای درخواست در ثانیه است
 -   `rows_read` است تعداد ردیف خوانده شده است
 -   `bytes_read` تعداد بایت (غیر فشرده) خوانده شده است
@@ -333,7 +333,7 @@ SearchPhrase=curtain designs        count()=1064
 SearchPhrase=baku       count()=1000
 ```
 
-[NULL](../sql_reference/syntax.md) به عنوان فرمت `\N`.
+[NULL](../sql-reference/syntax.md) به عنوان فرمت `\N`.
 
 ``` sql
 SELECT * FROM t_null FORMAT TSKV
@@ -353,21 +353,21 @@ Both data output and parsing are supported in this format. For parsing, any orde
 
 با کاما از هم جدا فرمت ارزش ([RFC](https://tools.ietf.org/html/rfc4180)).
 
-هنگام قالب بندی, ردیف در دو نقل قول محصور. نقل قول دو در داخل یک رشته خروجی به عنوان دو نقل قول دو در یک ردیف است. هیچ قانون دیگری برای فرار از شخصیت وجود دارد. تاریخ و تاریخ زمان در دو نقل قول محصور شده است. اعداد خروجی بدون نقل قول. ارزش ها توسط یک شخصیت جداساز از هم جدا, که `,` به طور پیش فرض. شخصیت جداساز در تنظیمات تعریف شده است [\_مخفی کردن \_قابلیت \_جدید](../operations/settings/settings.md#settings-format_csv_delimiter). ردیف ها با استفاده از خوراک خط یونیکس جدا می شوند. ارریس در سی سی اس وی به شرح زیر مرتب شده است: ابتدا مجموعه ای به یک رشته به عنوان در قالب تبسپار شده مرتب شده است و سپس رشته حاصل خروجی به سی سی اس وی در دو نقل قول است. دسته بندی ها در قالب سی اس وی به صورت ستون های جداگانه مرتب می شوند (به این معنا که لانه خود را در تاپل از دست داده است).
+هنگام قالب بندی, ردیف در دو نقل قول محصور. نقل قول دو در داخل یک رشته خروجی به عنوان دو نقل قول دو در یک ردیف است. هیچ قانون دیگری برای فرار از شخصیت وجود دارد. تاریخ و تاریخ زمان در دو نقل قول محصور شده است. اعداد خروجی بدون نقل قول. ارزش ها توسط یک شخصیت جداساز از هم جدا, که `,` به طور پیش فرض. شخصیت جداساز در تنظیمات تعریف شده است [_مخفی کردن _قابلیت _جدید](../operations/settings/settings.md#settings-format_csv_delimiter). ردیف ها با استفاده از خوراک خط یونیکس جدا می شوند. ارریس در سی سی اس وی به شرح زیر مرتب شده است: ابتدا مجموعه ای به یک رشته به عنوان در قالب تبسپار شده مرتب شده است و سپس رشته حاصل خروجی به سی سی اس وی در دو نقل قول است. دسته بندی ها در قالب سی اس وی به صورت ستون های جداگانه مرتب می شوند (به این معنا که لانه خود را در تاپل از دست داده است).
 
 ``` bash
 $ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMAT CSV" < data.csv
 ```
 
-\* به طور پیش فرض, جداساز است `,`. دیدن [\_مخفی کردن \_قابلیت \_جدید](../operations/settings/settings.md#settings-format_csv_delimiter) تنظیم برای اطلاعات بیشتر.
+\* به طور پیش فرض, جداساز است `,`. دیدن [_مخفی کردن _قابلیت _جدید](../operations/settings/settings.md#settings-format_csv_delimiter) تنظیم برای اطلاعات بیشتر.
 
 هنگامی که تجزیه, تمام مقادیر را می توان یا با یا بدون نقل قول تجزیه. هر دو نقل قول دو و تک پشتیبانی می شوند. ردیف همچنین می توانید بدون نقل قول مرتب شود. در این مورد, به شخصیت جداساز و یا خوراک خط تجزیه (کروم و یا ال اف). در هنگام تجزیه ردیف بدون نقل قول فضاهای پیشرو و انتهایی و زبانه ها نادیده گرفته می شوند. برای اشتراک خط, یونیکس (کلیک کنید), پنجره ها (کروم ال اف) و سیستم عامل مک کلاسیک (کروم ال اف) انواع پشتیبانی می شوند.
 
 مقادیر ورودی بدون علامت خالی با مقادیر پیش فرض برای ستون های مربوطه جایگزین می شوند
-[\_پوشه های ورودی و خروجی](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)
+[_پوشه های ورودی و خروجی](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)
 فعال است.
 
-`NULL` به عنوان فرمت `\N` یا `NULL` یا یک رشته بدون علامت خالی (تنظیمات را ببینید [\_فرستادن به \_کوچکنمایی](../operations/settings/settings.md#settings-input_format_csv_unquoted_null_literal_as_null) و [\_پوشه های ورودی و خروجی](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)).
+`NULL` به عنوان فرمت `\N` یا `NULL` یا یک رشته بدون علامت خالی (تنظیمات را ببینید [_فرستادن به _کوچکنمایی](../operations/settings/settings.md#settings-input_format_csv_unquoted_null_literal_as_null) و [_پوشه های ورودی و خروجی](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)).
 
 پشتیبانی از خروجی بالغ و افراط به همان شیوه به عنوان `TabSeparated`.
 
@@ -452,12 +452,12 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
 }
 ```
 
-جانسون سازگار با جاوا اسکریپت است. برای اطمینان از این, برخی از شخصیت ها علاوه بر فرار: بریده بریده `/` فرار به عنوان `\/`; معافیت خط جایگزین `U+2028` و `U+2029`, که شکستن برخی از مرورگرهای, به عنوان فرار `\uXXXX`. شخصیت های کنترل اسکی فرار: برگشت به عقب, خوراک فرم, خوراک خط, بازگشت حمل, و تب افقی با جایگزین `\b`, `\f`, `\n`, `\r`, `\t` , و همچنین بایت باقی مانده در محدوده 00-1ف با استفاده از `\uXXXX` sequences. Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences. For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double-quotes by default. To remove the quotes, you can set the configuration parameter [خروجی \_فرمان\_جسون\_کوات\_64بیت\_تنظیمی](../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) به 0.
+جانسون سازگار با جاوا اسکریپت است. برای اطمینان از این, برخی از شخصیت ها علاوه بر فرار: بریده بریده `/` فرار به عنوان `\/`; معافیت خط جایگزین `U+2028` و `U+2029`, که شکستن برخی از مرورگرهای, به عنوان فرار `\uXXXX`. شخصیت های کنترل اسکی فرار: برگشت به عقب, خوراک فرم, خوراک خط, بازگشت حمل, و تب افقی با جایگزین `\b`, `\f`, `\n`, `\r`, `\t` , و همچنین بایت باقی مانده در محدوده 00-1ف با استفاده از `\uXXXX` sequences. Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences. For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double-quotes by default. To remove the quotes, you can set the configuration parameter [خروجی _فرمان_جسون_کوات_64بیت_تنظیمی](../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) به 0.
 
 `rows` – The total number of output rows.
 
 `rows_before_limit_at_least` حداقل تعداد ردیف وجود دارد که بدون محدودیت بوده است. خروجی تنها در صورتی که پرس و جو شامل حد.
-اگر پرس و جو شامل گروه های, ردیف ها\_افور\_لیمیت\_تلاست تعداد دقیق ردیف وجود دارد که بدون محدودیت بوده است.
+اگر پرس و جو شامل گروه های, ردیف ها_افور_لیمیت_تلاست تعداد دقیق ردیف وجود دارد که بدون محدودیت بوده است.
 
 `totals` – Total values (when using WITH TOTALS).
 
@@ -465,7 +465,7 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
 
 این فرمت فقط برای خروجی یک نتیجه پرس و جو مناسب است, اما نه برای تجزیه (بازیابی اطلاعات برای وارد کردن در یک جدول).
 
-پشتیبانی از کلیک [NULL](../sql_reference/syntax.md), است که به عنوان نمایش داده `null` در خروجی جانسون.
+پشتیبانی از کلیک [NULL](../sql-reference/syntax.md), است که به عنوان نمایش داده `null` در خروجی جانسون.
 
 همچنین نگاه کنید به [جیسانچرو](#jsoneachrow) قالب.
 
@@ -542,9 +542,9 @@ INSERT INTO UserActivity FORMAT JSONEachRow {"PageViews":5, "UserID":"4324182021
 
 **حذف پردازش مقادیر**
 
-را کلیک کنید جایگزین مقادیر حذف شده با مقادیر پیش فرض برای مربوطه [انواع داده ها](../sql_reference/data_types/index.md).
+را کلیک کنید جایگزین مقادیر حذف شده با مقادیر پیش فرض برای مربوطه [انواع داده ها](../sql-reference/data-types/index.md).
 
-اگر `DEFAULT expr` مشخص شده است, تاتر با استفاده از قوانین تعویض مختلف بسته به [\_پوشه های ورودی و خروجی](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) تنظیمات.
+اگر `DEFAULT expr` مشخص شده است, تاتر با استفاده از قوانین تعویض مختلف بسته به [_پوشه های ورودی و خروجی](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) تنظیمات.
 
 جدول زیر را در نظر بگیرید:
 
@@ -587,7 +587,7 @@ CREATE TABLE IF NOT EXISTS example_table
 
 ### استفاده از ساختارهای تو در تو {#jsoneachrow-nested}
 
-اگر شما یک جدول با [تو در تو](../sql_reference/data_types/nested_data_structures/nested.md) ستون نوع داده, شما می توانید داده های جانسون با همان ساختار وارد. فعال کردن این ویژگی با [تغییر \_کم\_تر\_تنظیم مجدد \_جنسان](../operations/settings/settings.md#settings-input_format_import_nested_json) تنظیمات.
+اگر شما یک جدول با [تو در تو](../sql-reference/data-types/nested-data-structures/nested.md) ستون نوع داده, شما می توانید داده های جانسون با همان ساختار وارد. فعال کردن این ویژگی با [تغییر _کم_تر_تنظیم مجدد _جنسان](../operations/settings/settings.md#settings-input_format_import_nested_json) تنظیمات.
 
 برای مثال جدول زیر را در نظر بگیرید:
 
@@ -601,7 +601,7 @@ CREATE TABLE json_each_row_nested (n Nested (s String, i Int32) ) ENGINE = Memor
 INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n.s": ["abc", "def"], "n.i": [1, 23]}
 ```
 
-برای قرار دادن داده ها به عنوان یک شی جوسون سلسله مراتبی, تنظیم [وارد کردن \_ترمپ\_م\_تر\_اس\_جسون ثبت شده=1](../operations/settings/settings.md#settings-input_format_import_nested_json).
+برای قرار دادن داده ها به عنوان یک شی جوسون سلسله مراتبی, تنظیم [وارد کردن _ترمپ_م_تر_اس_جسون ثبت شده=1](../operations/settings/settings.md#settings-input_format_import_nested_json).
 
 ``` json
 {
@@ -661,7 +661,7 @@ SELECT * FROM json_each_row_nested
 یک شبکه کامل از جدول کشیده شده است, و هر سطر را اشغال دو خط در ترمینال.
 هر بلوک نتیجه خروجی به عنوان یک جدول جداگانه است. این لازم است به طوری که بلوک می تواند خروجی بدون نتیجه بافر (بافر می شود به منظور قبل از محاسبه عرض قابل مشاهده از تمام مقادیر لازم).
 
-[NULL](../sql_reference/syntax.md) خروجی به عنوان `ᴺᵁᴸᴸ`.
+[NULL](../sql-reference/syntax.md) خروجی به عنوان `ᴺᵁᴸᴸ`.
 
 مثال (نشان داده شده برای [پیش تیمار](#prettycompact) قالب):
 
@@ -709,7 +709,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 
 Totals:
 ┌──EventDate─┬───────c─┐
-│ 0000-00-00 │ 8873898 │
+│ 1970-01-01 │ 8873898 │
 └────────────┴─────────┘
 
 Extremes:
@@ -765,7 +765,7 @@ $ watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events F
 
 اری به عنوان یک طول ورینت (بدون علامت) نشان داده شده است [LEB128](https://en.wikipedia.org/wiki/LEB128)), پس از عناصر پی در پی از مجموعه.
 
-برای [NULL](../sql_reference/syntax.md#null-literal) حمایت کردن, یک بایت اضافی حاوی 1 یا 0 قبل از هر اضافه [Nullable](../sql_reference/data_types/nullable.md) ارزش. اگر 1, سپس ارزش است `NULL` و این بایت به عنوان یک مقدار جداگانه تفسیر. اگر 0, ارزش پس از بایت است `NULL`.
+برای [NULL](../sql-reference/syntax.md#null-literal) حمایت کردن, یک بایت اضافی حاوی 1 یا 0 قبل از هر اضافه [Nullable](../sql-reference/data-types/nullable.md) ارزش. اگر 1, سپس ارزش است `NULL` و این بایت به عنوان یک مقدار جداگانه تفسیر. اگر 0, ارزش پس از بایت است `NULL`.
 
 ## ارزشهای خبری عبارتند از: {#rowbinarywithnamesandtypes}
 
@@ -777,7 +777,7 @@ $ watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events F
 
 ## مقادیر {#data-format-values}
 
-چاپ هر سطر در براکت. ردیف ها توسط کاما جدا می شوند. بعد از ردیف گذشته هیچ کاما وجود ندارد. مقادیر داخل براکت نیز با کاما از هم جدا هستند. اعداد خروجی در قالب اعشاری بدون نقل قول هستند. ارریس خروجی در براکت مربع است. رشته, تاریخ, و تاریخ با زمان خروجی در نقل قول. فرار قوانین و تجزیه شبیه به [جدول دار](#tabseparated) قالب. در قالب بندی فضاهای اضافی وارد نشده اند اما در طول تجزیه مجاز و نادیده گرفته می شوند (به جز فضاهای درون مقادیر مجموعه ای که مجاز نیستند). [NULL](../sql_reference/syntax.md) به عنوان نمایندگی `NULL`.
+چاپ هر سطر در براکت. ردیف ها توسط کاما جدا می شوند. بعد از ردیف گذشته هیچ کاما وجود ندارد. مقادیر داخل براکت نیز با کاما از هم جدا هستند. اعداد خروجی در قالب اعشاری بدون نقل قول هستند. ارریس خروجی در براکت مربع است. رشته, تاریخ, و تاریخ با زمان خروجی در نقل قول. فرار قوانین و تجزیه شبیه به [جدول دار](#tabseparated) قالب. در قالب بندی فضاهای اضافی وارد نشده اند اما در طول تجزیه مجاز و نادیده گرفته می شوند (به جز فضاهای درون مقادیر مجموعه ای که مجاز نیستند). [NULL](../sql-reference/syntax.md) به عنوان نمایندگی `NULL`.
 
 The minimum set of characters that you need to escape when passing data in Values ​​format: single quotes and backslashes.
 
@@ -789,7 +789,7 @@ The minimum set of characters that you need to escape when passing data in Value
 
 چاپ هر مقدار در یک خط جداگانه با نام ستون مشخص. این فرمت مناسب برای چاپ فقط یک یا چند ردیف است اگر هر سطر شامل تعداد زیادی از ستون.
 
-[NULL](../sql_reference/syntax.md) خروجی به عنوان `ᴺᵁᴸᴸ`.
+[NULL](../sql-reference/syntax.md) خروجی به عنوان `ᴺᵁᴸᴸ`.
 
 مثال:
 
@@ -968,7 +968,7 @@ message MessageType {
 ```
 
 تاتر تلاش می کند برای پیدا کردن یک ستون به نام `x.y.z` (یا `x_y_z` یا `X.y_Z` و به همین ترتیب).
-پیام های تو در تو مناسب برای ورودی یا خروجی هستند [ساختارهای داده تو در تو](../sql_reference/data_types/nested_data_structures/nested.md).
+پیام های تو در تو مناسب برای ورودی یا خروجی هستند [ساختارهای داده تو در تو](../sql-reference/data-types/nested-data-structures/nested.md).
 
 مقادیر پیش فرض تعریف شده در یک طرح اولیه مانند این
 
@@ -980,7 +980,7 @@ message MessageType {
 }
 ```
 
-اعمال نمی شود [پیشفرضهای جدول](../sql_reference/statements/create.md#create-default-values) به جای اونها استفاده میشه
+اعمال نمی شود [پیشفرضهای جدول](../sql-reference/statements/create.md#create-default-values) به جای اونها استفاده میشه
 
 ClickHouse ورودی و خروجی protobuf پیام در `length-delimited` قالب.
 این بدان معنی است قبل از هر پیام باید طول خود را به عنوان یک نوشته [ورینت](https://developers.google.com/protocol-buffers/docs/encoding#varints).
@@ -994,23 +994,23 @@ ClickHouse ورودی و خروجی protobuf پیام در `length-delimited` ق
 
 ### تطبیق انواع داده ها {#data_types-matching}
 
-جدول زیر انواع داده های پشتیبانی شده را نشان می دهد و چگونه با کلیک مطابقت دارند [انواع داده ها](../sql_reference/data_types/index.md) داخل `INSERT` و `SELECT` نمایش داده شد.
+جدول زیر انواع داده های پشتیبانی شده را نشان می دهد و چگونه با کلیک مطابقت دارند [انواع داده ها](../sql-reference/data-types/index.md) داخل `INSERT` و `SELECT` نمایش داده شد.
 
 | نوع داده اورو `INSERT`                      | نوع داده کلیک                                                                                                              | نوع داده اورو `SELECT`       |
 |---------------------------------------------|----------------------------------------------------------------------------------------------------------------------------|------------------------------|
-| `boolean`, `int`, `long`, `float`, `double` | [اعضای هیات(8/16/32)](../sql_reference/data_types/int_uint.md), [اوینت (8/16/32)](../sql_reference/data_types/int_uint.md) | `int`                        |
-| `boolean`, `int`, `long`, `float`, `double` | [Int64](../sql_reference/data_types/int_uint.md), [UInt64](../sql_reference/data_types/int_uint.md)                        | `long`                       |
-| `boolean`, `int`, `long`, `float`, `double` | [Float32](../sql_reference/data_types/float.md)                                                                            | `float`                      |
-| `boolean`, `int`, `long`, `float`, `double` | [جسم شناور64](../sql_reference/data_types/float.md)                                                                        | `double`                     |
-| `bytes`, `string`, `fixed`, `enum`          | [رشته](../sql_reference/data_types/string.md)                                                                              | `bytes`                      |
-| `bytes`, `string`, `fixed`                  | [رشته ثابت)](../sql_reference/data_types/fixedstring.md)                                                                   | `fixed(N)`                   |
-| `enum`                                      | [شمارشی (8/16)](../sql_reference/data_types/enum.md)                                                                       | `enum`                       |
-| `array(T)`                                  | [& توری)](../sql_reference/data_types/array.md)                                                                            | `array(T)`                   |
-| `union(null, T)`, `union(T, null)`          | [Nullable(T)](../sql_reference/data_types/date.md)                                                                         | `union(null, T)`             |
-| `null`                                      | [Nullable(هیچ چیز)](../sql_reference/data_types/special_data_types/nothing.md)                                             | `null`                       |
-| `int (date)` \*                             | [تاریخ](../sql_reference/data_types/date.md)                                                                               | `int (date)` \*              |
-| `long (timestamp-millis)` \*                | [طول تاریخ 64 (3)](../sql_reference/data_types/datetime.md)                                                                | `long (timestamp-millis)` \* |
-| `long (timestamp-micros)` \*                | [طول تاریخ 64 (6)](../sql_reference/data_types/datetime.md)                                                                | `long (timestamp-micros)` \* |
+| `boolean`, `int`, `long`, `float`, `double` | [اعضای هیات(8/16/32)](../sql-reference/data-types/int-uint.md), [اوینت (8/16/32)](../sql-reference/data-types/int-uint.md) | `int`                        |
+| `boolean`, `int`, `long`, `float`, `double` | [Int64](../sql-reference/data-types/int-uint.md), [UInt64](../sql-reference/data-types/int-uint.md)                        | `long`                       |
+| `boolean`, `int`, `long`, `float`, `double` | [Float32](../sql-reference/data-types/float.md)                                                                            | `float`                      |
+| `boolean`, `int`, `long`, `float`, `double` | [جسم شناور64](../sql-reference/data-types/float.md)                                                                        | `double`                     |
+| `bytes`, `string`, `fixed`, `enum`          | [رشته](../sql-reference/data-types/string.md)                                                                              | `bytes`                      |
+| `bytes`, `string`, `fixed`                  | [رشته ثابت)](../sql-reference/data-types/fixedstring.md)                                                                   | `fixed(N)`                   |
+| `enum`                                      | [شمارشی (8/16)](../sql-reference/data-types/enum.md)                                                                       | `enum`                       |
+| `array(T)`                                  | [& توری)](../sql-reference/data-types/array.md)                                                                            | `array(T)`                   |
+| `union(null, T)`, `union(T, null)`          | [Nullable(T)](../sql-reference/data-types/date.md)                                                                         | `union(null, T)`             |
+| `null`                                      | [Nullable(هیچ چیز)](../sql-reference/data-types/special-data-types/nothing.md)                                             | `null`                       |
+| `int (date)` \*                             | [تاریخ](../sql-reference/data-types/date.md)                                                                               | `int (date)` \*              |
+| `long (timestamp-millis)` \*                | [طول تاریخ 64 (3)](../sql-reference/data-types/datetime.md)                                                                | `long (timestamp-millis)` \* |
+| `long (timestamp-micros)` \*                | [طول تاریخ 64 (6)](../sql-reference/data-types/datetime.md)                                                                | `long (timestamp-micros)` \* |
 
 \* [انواع منطقی اورو](http://avro.apache.org/docs/current/spec.html#Logical+Types)
 
@@ -1031,7 +1031,7 @@ $ cat file.avro | clickhouse-client --query="INSERT INTO {some_table} FORMAT Avr
 برای پیدا کردن مکاتبات بین ستون های جدول و زمینه های اور طرحواره کلیک نام خود را مقایسه می کند. این مقایسه حساس به حروف است.
 زمینه های استفاده نشده قلم می شوند.
 
-انواع داده ها از ستون جدول کلیک می توانید از زمینه های مربوطه را از داده های اور قرار داده متفاوت است. در هنگام قرار دادن داده ها, تاتر تفسیر انواع داده ها با توجه به جدول بالا و سپس [کست](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) داده ها به نوع ستون مربوطه.
+انواع داده ها از ستون جدول کلیک می توانید از زمینه های مربوطه را از داده های اور قرار داده متفاوت است. در هنگام قرار دادن داده ها, تاتر تفسیر انواع داده ها با توجه به جدول بالا و سپس [کست](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) داده ها به نوع ستون مربوطه.
 
 ### انتخاب داده ها {#selecting-data-1}
 
@@ -1046,7 +1046,7 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Avro" > file.avro
 -   شروع با `[A-Za-z_]`
 -   متعاقبا تنها حاوی `[A-Za-z0-9_]`
 
-خروجی فشرده سازی فایل و فاصله همگام سازی را می توان با پیکربندی [\_فرماندگی لبه بام](../operations/settings/settings.md#settings-output_format_avro_codec) و [\_فرماندگی لبه چشم](../operations/settings/settings.md#settings-output_format_avro_sync_interval) به ترتیب.
+خروجی فشرده سازی فایل و فاصله همگام سازی را می توان با پیکربندی [_فرماندگی لبه بام](../operations/settings/settings.md#settings-output_format_avro_codec) و [_فرماندگی لبه چشم](../operations/settings/settings.md#settings-output_format_avro_sync_interval) به ترتیب.
 
 ## هشدار داده می شود {#data-format-avro-confluent}
 
@@ -1056,7 +1056,7 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Avro" > file.avro
 
 طرحواره ذخیره سازی یک بار حل شود.
 
-نشانی وب رجیستری طرحواره با پیکربندی [باز کردن \_نمایش مجدد](../operations/settings/settings.md#settings-format_avro_schema_registry_url)
+نشانی وب رجیستری طرحواره با پیکربندی [باز کردن _نمایش مجدد](../operations/settings/settings.md#settings-format_avro_schema_registry_url)
 
 ### تطبیق انواع داده ها {#data_types-matching-1}
 
@@ -1073,7 +1073,7 @@ $ kafkacat -b kafka-broker  -C -t topic1 -o beginning -f '%s' -c 3 | clickhouse-
 3 c
 ```
 
-برای استفاده `AvroConfluent` با [کافکا](../engines/table_engines/integrations/kafka.md):
+برای استفاده `AvroConfluent` با [کافکا](../engines/table-engines/integrations/kafka.md):
 
 ``` sql
 CREATE TABLE topic1_stream
@@ -1102,25 +1102,25 @@ SELECT * FROM topic1_stream;
 
 ### تطبیق انواع داده ها {#data_types-matching-2}
 
-جدول زیر انواع داده های پشتیبانی شده را نشان می دهد و چگونه با کلیک مطابقت دارند [انواع داده ها](../sql_reference/data_types/index.md) داخل `INSERT` و `SELECT` نمایش داده شد.
+جدول زیر انواع داده های پشتیبانی شده را نشان می دهد و چگونه با کلیک مطابقت دارند [انواع داده ها](../sql-reference/data-types/index.md) داخل `INSERT` و `SELECT` نمایش داده شد.
 
 | نوع داده پارکت (`INSERT`) | نوع داده کلیک                                           | نوع داده پارکت (`SELECT`) |
 |---------------------------|---------------------------------------------------------|---------------------------|
-| `UINT8`, `BOOL`           | [UInt8](../sql_reference/data_types/int_uint.md)        | `UINT8`                   |
-| `INT8`                    | [Int8](../sql_reference/data_types/int_uint.md)         | `INT8`                    |
-| `UINT16`                  | [UInt16](../sql_reference/data_types/int_uint.md)       | `UINT16`                  |
-| `INT16`                   | [Int16](../sql_reference/data_types/int_uint.md)        | `INT16`                   |
-| `UINT32`                  | [UInt32](../sql_reference/data_types/int_uint.md)       | `UINT32`                  |
-| `INT32`                   | [Int32](../sql_reference/data_types/int_uint.md)        | `INT32`                   |
-| `UINT64`                  | [UInt64](../sql_reference/data_types/int_uint.md)       | `UINT64`                  |
-| `INT64`                   | [Int64](../sql_reference/data_types/int_uint.md)        | `INT64`                   |
-| `FLOAT`, `HALF_FLOAT`     | [Float32](../sql_reference/data_types/float.md)         | `FLOAT`                   |
-| `DOUBLE`                  | [جسم شناور64](../sql_reference/data_types/float.md)     | `DOUBLE`                  |
-| `DATE32`                  | [تاریخ](../sql_reference/data_types/date.md)            | `UINT16`                  |
-| `DATE64`, `TIMESTAMP`     | [DateTime](../sql_reference/data_types/datetime.md)     | `UINT32`                  |
-| `STRING`, `BINARY`        | [رشته](../sql_reference/data_types/string.md)           | `STRING`                  |
-| —                         | [رشته ثابت](../sql_reference/data_types/fixedstring.md) | `STRING`                  |
-| `DECIMAL`                 | [دهدهی](../sql_reference/data_types/decimal.md)         | `DECIMAL`                 |
+| `UINT8`, `BOOL`           | [UInt8](../sql-reference/data-types/int-uint.md)        | `UINT8`                   |
+| `INT8`                    | [Int8](../sql-reference/data-types/int-uint.md)         | `INT8`                    |
+| `UINT16`                  | [UInt16](../sql-reference/data-types/int-uint.md)       | `UINT16`                  |
+| `INT16`                   | [Int16](../sql-reference/data-types/int-uint.md)        | `INT16`                   |
+| `UINT32`                  | [UInt32](../sql-reference/data-types/int-uint.md)       | `UINT32`                  |
+| `INT32`                   | [Int32](../sql-reference/data-types/int-uint.md)        | `INT32`                   |
+| `UINT64`                  | [UInt64](../sql-reference/data-types/int-uint.md)       | `UINT64`                  |
+| `INT64`                   | [Int64](../sql-reference/data-types/int-uint.md)        | `INT64`                   |
+| `FLOAT`, `HALF_FLOAT`     | [Float32](../sql-reference/data-types/float.md)         | `FLOAT`                   |
+| `DOUBLE`                  | [جسم شناور64](../sql-reference/data-types/float.md)     | `DOUBLE`                  |
+| `DATE32`                  | [تاریخ](../sql-reference/data-types/date.md)            | `UINT16`                  |
+| `DATE64`, `TIMESTAMP`     | [DateTime](../sql-reference/data-types/datetime.md)     | `UINT32`                  |
+| `STRING`, `BINARY`        | [رشته](../sql-reference/data-types/string.md)           | `STRING`                  |
+| —                         | [رشته ثابت](../sql-reference/data-types/fixedstring.md) | `STRING`                  |
+| `DECIMAL`                 | [دهدهی](../sql-reference/data-types/decimal.md)         | `DECIMAL`                 |
 
 کلیک هاوس از دقت قابل تنظیم پشتیبانی می کند `Decimal` نوع. این `INSERT` پرس و جو رفتار پارکت `DECIMAL` نوع به عنوان محل کلیک `Decimal128` نوع.
 
@@ -1142,38 +1142,38 @@ $ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Pa
 $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
 ```
 
-برای تبادل اطلاعات با هادوپ, شما می توانید استفاده کنید [موتور جدول اچ دی اف](../engines/table_engines/integrations/hdfs.md).
+برای تبادل اطلاعات با هادوپ, شما می توانید استفاده کنید [موتور جدول اچ دی اف](../engines/table-engines/integrations/hdfs.md).
 
 ## ORC {#data-format-orc}
 
-[آپاچی orc](https://orc.apache.org/) فرمت ذخیره سازی ستونی گسترده در اکوسیستم هادوپ است. شما فقط می توانید داده ها را در این قالب به کلیک کنید.
+[آپاچی ORC](https://orc.apache.org/) فرمت ذخیره سازی ستونی گسترده در اکوسیستم هادوپ است. شما فقط می توانید داده ها را در این قالب به کلیک کنید.
 
 ### تطبیق انواع داده ها {#data_types-matching-3}
 
-جدول زیر انواع داده های پشتیبانی شده را نشان می دهد و چگونه با کلیک مطابقت دارند [انواع داده ها](../sql_reference/data_types/index.md) داخل `INSERT` نمایش داده شد.
+جدول زیر انواع داده های پشتیبانی شده را نشان می دهد و چگونه با کلیک مطابقت دارند [انواع داده ها](../sql-reference/data-types/index.md) داخل `INSERT` نمایش داده شد.
 
 | نوع داده اورک (`INSERT`) | نوع داده کلیک                                       |
 |--------------------------|-----------------------------------------------------|
-| `UINT8`, `BOOL`          | [UInt8](../sql_reference/data_types/int_uint.md)    |
-| `INT8`                   | [Int8](../sql_reference/data_types/int_uint.md)     |
-| `UINT16`                 | [UInt16](../sql_reference/data_types/int_uint.md)   |
-| `INT16`                  | [Int16](../sql_reference/data_types/int_uint.md)    |
-| `UINT32`                 | [UInt32](../sql_reference/data_types/int_uint.md)   |
-| `INT32`                  | [Int32](../sql_reference/data_types/int_uint.md)    |
-| `UINT64`                 | [UInt64](../sql_reference/data_types/int_uint.md)   |
-| `INT64`                  | [Int64](../sql_reference/data_types/int_uint.md)    |
-| `FLOAT`, `HALF_FLOAT`    | [Float32](../sql_reference/data_types/float.md)     |
-| `DOUBLE`                 | [جسم شناور64](../sql_reference/data_types/float.md) |
-| `DATE32`                 | [تاریخ](../sql_reference/data_types/date.md)        |
-| `DATE64`, `TIMESTAMP`    | [DateTime](../sql_reference/data_types/datetime.md) |
-| `STRING`, `BINARY`       | [رشته](../sql_reference/data_types/string.md)       |
-| `DECIMAL`                | [دهدهی](../sql_reference/data_types/decimal.md)     |
+| `UINT8`, `BOOL`          | [UInt8](../sql-reference/data-types/int-uint.md)    |
+| `INT8`                   | [Int8](../sql-reference/data-types/int-uint.md)     |
+| `UINT16`                 | [UInt16](../sql-reference/data-types/int-uint.md)   |
+| `INT16`                  | [Int16](../sql-reference/data-types/int-uint.md)    |
+| `UINT32`                 | [UInt32](../sql-reference/data-types/int-uint.md)   |
+| `INT32`                  | [Int32](../sql-reference/data-types/int-uint.md)    |
+| `UINT64`                 | [UInt64](../sql-reference/data-types/int-uint.md)   |
+| `INT64`                  | [Int64](../sql-reference/data-types/int-uint.md)    |
+| `FLOAT`, `HALF_FLOAT`    | [Float32](../sql-reference/data-types/float.md)     |
+| `DOUBLE`                 | [جسم شناور64](../sql-reference/data-types/float.md) |
+| `DATE32`                 | [تاریخ](../sql-reference/data-types/date.md)        |
+| `DATE64`, `TIMESTAMP`    | [DateTime](../sql-reference/data-types/datetime.md) |
+| `STRING`, `BINARY`       | [رشته](../sql-reference/data-types/string.md)       |
+| `DECIMAL`                | [دهدهی](../sql-reference/data-types/decimal.md)     |
 
 تاتر از دقت قابل تنظیم از `Decimal` نوع. این `INSERT` پرس و جو رفتار اورک `DECIMAL` نوع به عنوان محل کلیک `Decimal128` نوع.
 
 انواع داده های پشتیبانی نشده: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
-انواع داده ها از ستون جدول کلیک هاوس لازم نیست برای مطابقت با زمینه های داده اورک مربوطه. در هنگام قرار دادن داده ها, تاتر تفسیر انواع داده ها با توجه به جدول بالا و سپس [کست](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) داده ها به نوع داده تعیین شده برای ستون جدول کلیک.
+انواع داده ها از ستون جدول کلیک هاوس لازم نیست برای مطابقت با زمینه های داده اورک مربوطه. در هنگام قرار دادن داده ها, تاتر تفسیر انواع داده ها با توجه به جدول بالا و سپس [کست](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) داده ها به نوع داده تعیین شده برای ستون جدول کلیک.
 
 ### درج داده {#inserting-data-2}
 
@@ -1183,7 +1183,7 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_
 $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT ORC"
 ```
 
-برای تبادل اطلاعات با هادوپ, شما می توانید استفاده کنید [موتور جدول اچ دی اف](../engines/table_engines/integrations/hdfs.md).
+برای تبادل اطلاعات با هادوپ, شما می توانید استفاده کنید [موتور جدول اچ دی اف](../engines/table-engines/integrations/hdfs.md).
 
 ## شمای فرمت {#formatschema}
 
@@ -1199,12 +1199,12 @@ e.g. `schemafile.proto:MessageType`.
 اگر شما با استفاده از مشتری در [حالت دسته ای](../interfaces/cli.md#cli_usage) مسیر طرح باید به دلایل امنیتی نسبی باشد.
 
 اگر داده های ورودی یا خروجی را از طریق [رابط قام](../interfaces/http.md) نام پرونده مشخص شده در شمای قالب
-باید در دایرکتوری مشخص شده در واقع [قالب\_شکلمات شیمی](../operations/server_configuration_parameters/settings.md#server_configuration_parameters-format_schema_path)
+باید در دایرکتوری مشخص شده در واقع [قالب_شکلمات شیمی](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path)
 در پیکربندی سرور.
 
 ## پرش خطاها {#skippingerrors}
 
-برخی از فرمت های مانند `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` و `Protobuf` می توانید ردیف شکسته جست و خیز اگر خطای تجزیه رخ داده است و ادامه تجزیه از ابتدای ردیف بعدی. ببینید [وارد کردن \_فرست\_مرزیابی \_نمایش مجدد](../operations/settings/settings.md#settings-input_format_allow_errors_num) و
+برخی از فرمت های مانند `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` و `Protobuf` می توانید ردیف شکسته جست و خیز اگر خطای تجزیه رخ داده است و ادامه تجزیه از ابتدای ردیف بعدی. ببینید [وارد کردن _فرست_مرزیابی _نمایش مجدد](../operations/settings/settings.md#settings-input_format_allow_errors_num) و
 [ثبت نام](../operations/settings/settings.md#settings-input_format_allow_errors_ratio) تنظیمات.
 محدودیت ها:
 - در صورت خطای تجزیه `JSONEachRow` پرش تمام داده ها تا زمانی که خط جدید (یا بخش ویژه), بنابراین ردیف باید توسط حد و مرز مشخصی `\n` برای شمارش خطاها به درستی.

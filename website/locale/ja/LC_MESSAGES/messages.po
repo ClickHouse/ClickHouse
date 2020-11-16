@@ -1,257 +1,326 @@
-# Japanese translations for PROJECT.
+# Translations template for PROJECT.
 # Copyright (C) 2020 ORGANIZATION
 # This file is distributed under the same license as the PROJECT project.
-# FIRST AUTHOR <EMAIL@ADDRESS>, 2020.
+# Automatically generated, 2020.
 #
 msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-04-15 13:19+0000\n"
-"PO-Revision-Date: 2020-03-26 10:19+0300\n"
-"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
-"Language: ja\n"
-"Language-Team: ja <LL@li.org>\n"
-"Plural-Forms: nplurals=1; plural=0\n"
+"POT-Creation-Date: 2020-06-17 12:20+0300\n"
+"PO-Revision-Date: 2020-06-17 12:20+0300\n"
+"Last-Translator: Automatically generated\n"
+"Language-Team: none\n"
 "MIME-Version: 1.0\n"
-"Content-Type: text/plain; charset=utf-8\n"
+"Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Generated-By: Babel 2.8.0\n"
+"Language: ja\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
 
-#: templates/common_meta.html:5 templates/common_meta.html:9
-#: templates/common_meta.html:16
-msgid "ClickHouse DBMS"
-msgstr "クリックハウスDBMS"
-
-#: templates/common_meta.html:11
+#: templates/common_meta.html:1
 msgid ""
-"ClickHouse is an open source column-oriented database management system "
-"that allows generating analytical data reports in real time using SQL "
-"queries."
-msgstr "ClickHouseオープンソース列指向データベース管理システムで生成解析データをリアルタイムのレポート用のSQLクエリ."
-
-#: templates/common_meta.html:19
-msgid ""
-"ClickHouse is an open source distributed column-oriented database "
-"management system that allows generating analytical data reports in real "
-"time using SQL queries. Сreated by Yandex ClickHouse manages extremely "
-"large volumes of data in a stable and sustainable manner."
+"ClickHouse is a fast open-source column-oriented database management system "
+"that allows generating analytical data reports in real-time using SQL queries"
 msgstr ""
-"ClickHouse is an open source distributed column-oriented database "
-"management system that allows generating analytical data reports in real "
-"time using SQL queries. Сreated by Yandex ClickHouse manages extremely "
-"large volumes of data in a stable and sustainable manner."
+
+#: templates/common_meta.html:6
+msgid "ClickHouse - fast open-source OLAP DBMS"
+msgstr ""
+
+#: templates/common_meta.html:10
+msgid "ClickHouse DBMS"
+msgstr ""
+
+#: templates/common_meta.html:32
+msgid "open-source"
+msgstr ""
+
+#: templates/common_meta.html:32
+msgid "relational"
+msgstr ""
+
+#: templates/common_meta.html:32
+msgid "analytics"
+msgstr ""
+
+#: templates/common_meta.html:32
+msgid "analytical"
+msgstr ""
+
+#: templates/common_meta.html:32
+msgid "Big Data"
+msgstr ""
+
+#: templates/common_meta.html:32
+msgid "web-analytics"
+msgstr ""
 
 #: templates/footer.html:8
 msgid "ClickHouse source code is published under the Apache 2.0 License."
-msgstr "ClickHouseソースコードが公開されてApache2.0のライセンスです。"
+msgstr ""
 
 #: templates/footer.html:8
 msgid ""
 "Software is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR "
 "CONDITIONS OF ANY KIND, either express or implied."
-msgstr "ソフトウェアは、明示または黙示を問わず、いかなる種類の保証または条件なしに、\"現状のまま\"ベースで配布されます。"
+msgstr ""
 
 #: templates/footer.html:11
 msgid "Yandex LLC"
-msgstr "Yandex LLC"
+msgstr ""
 
-#: templates/docs/content.html:6
+#: templates/blog/content.html:20 templates/blog/content.html:25
+#: templates/blog/content.html:30
+msgid "Share on"
+msgstr ""
+
+#: templates/blog/content.html:37
+msgid "Published date"
+msgstr ""
+
+#: templates/blog/nav.html:20
+msgid "New&nbsp;post"
+msgstr ""
+
+#: templates/blog/nav.html:25
+msgid "Documentation"
+msgstr ""
+
+#: templates/docs/footer.html:3
+msgid "Rating"
+msgstr ""
+
+#: templates/docs/footer.html:3
+msgid "votes"
+msgstr ""
+
+#: templates/docs/footer.html:4
+msgid "Article Rating"
+msgstr ""
+
+#: templates/docs/footer.html:4
+msgid "Was this content helpful?"
+msgstr ""
+
+#: templates/docs/footer.html:7
+msgid "Unusable"
+msgstr ""
+
+#: templates/docs/footer.html:7
+msgid "Poor"
+msgstr ""
+
+#: templates/docs/footer.html:7
+msgid "Good"
+msgstr ""
+
+#: templates/docs/footer.html:7
+msgid "Excellent"
+msgstr ""
+
+#: templates/docs/footer.html:8
+msgid "documentation"
+msgstr ""
+
+#: templates/docs/footer.html:15
+msgid "Built from"
+msgstr ""
+
+#: templates/docs/footer.html:15
+msgid "published on"
+msgstr ""
+
+#: templates/docs/footer.html:15
+msgid "modified on"
+msgstr ""
+
+#: templates/docs/machine-translated.html:3
 msgid "Help wanted!"
-msgstr "助けが欲しかった！"
+msgstr ""
 
-#: templates/docs/content.html:7
+#: templates/docs/machine-translated.html:4
 msgid ""
 "The following content of this documentation page has been machine-"
 "translated. But unlike other websites, it is not done on the fly. This "
 "translated text lives on GitHub repository alongside main ClickHouse "
-"codebase and waits for fellow native speakers to make it more human-"
-"readable."
+"codebase and waits for fellow native speakers to make it more human-readable."
 msgstr ""
-"このドキュメントページの以下の内容は機械翻訳されています。 異な他のウェブサイトで行われませんができます。 "
-"この翻訳テキスト生活をGitHubリポジトリとClickHouseコードベース、待ち員ネイティブスピーカーで人間が読む."
 
-#: templates/docs/content.html:7
+#: templates/docs/machine-translated.html:4
 msgid "You can also use the original English version as a reference."
-msgstr "また、参照として、元の英語版を使用することができます。"
+msgstr ""
 
-#: templates/docs/content.html:10
+#: templates/docs/machine-translated.html:7
 msgid "Help ClickHouse documentation by editing this page"
-msgstr "このページを編集してClickHouseの文書を編集する"
-
-#: templates/docs/content.html:27
-msgid "Built from"
-msgstr "から構築"
+msgstr ""
 
 #: templates/docs/sidebar.html:3
 msgid "Multi-page or single-page"
-msgstr "複数ページまたは単一ページ"
+msgstr ""
 
 #: templates/docs/sidebar.html:5
 msgid "Multi-page version"
-msgstr "複数ページバージョン"
+msgstr ""
 
 #: templates/docs/sidebar.html:8
 msgid "Single-page version"
-msgstr "単一ページ版"
+msgstr ""
 
 #: templates/docs/sidebar.html:13
 msgid "Version"
-msgstr "バージョン"
+msgstr ""
 
 #: templates/docs/sidebar.html:13 templates/docs/sidebar.html:19
 msgid "latest"
-msgstr "最新の"
+msgstr ""
 
 #: templates/docs/sidebar.html:36
 msgid "PDF version"
-msgstr "PDFバージョン"
+msgstr ""
 
 #: templates/docs/toc.html:8
 msgid "Table of Contents"
-msgstr "テーブルの内容"
+msgstr ""
 
 #: templates/index/community.html:4
 msgid "ClickHouse community"
-msgstr "ClickHouse地域"
+msgstr ""
 
 #: templates/index/community.html:13 templates/index/community.html:14
 msgid "ClickHouse YouTube Channel"
-msgstr "ClickHouse YouTubeチャンネル"
+msgstr ""
 
 #: templates/index/community.html:25 templates/index/community.html:26
 msgid "ClickHouse Official Twitter Account"
-msgstr "ClickHouse公式Twitterアカウント"
+msgstr ""
 
 #: templates/index/community.html:36 templates/index/community.html:37
 msgid "ClickHouse at Telegram"
-msgstr "ClickHouseで電報"
+msgstr ""
 
 #: templates/index/community.html:41
 msgid "Chat with real users in "
-msgstr "で実際のユーザーとチャット "
+msgstr ""
 
 #: templates/index/community.html:44 templates/index/community.html:116
 msgid "English"
-msgstr "英語"
+msgstr ""
 
 #: templates/index/community.html:45
 msgid "or in"
-msgstr "または"
+msgstr ""
 
 #: templates/index/community.html:47 templates/index/community.html:117
 msgid "Russian"
-msgstr "ロシア語"
+msgstr ""
 
 #: templates/index/community.html:65
 msgid "Open GitHub issue to ask for help or to file a feature request"
-msgstr "GitHub issueを開いて助けを求めたり、機能要求を提出したりする"
+msgstr ""
 
 #: templates/index/community.html:76 templates/index/community.html:77
 msgid "ClickHouse Slack Workspace"
-msgstr "ClickHouseみワークスペース"
+msgstr ""
 
 #: templates/index/community.html:82
 msgid "Multipurpose public hangout"
-msgstr "多目的パブリックハングアウト"
+msgstr ""
 
 #: templates/index/community.html:101
 msgid "Ask any questions"
-msgstr "質問をする"
+msgstr ""
 
 #: templates/index/community.html:115
 msgid "ClickHouse Blog"
-msgstr "ClickHouseブログ"
+msgstr ""
 
 #: templates/index/community.html:116
 msgid "in"
-msgstr "で"
+msgstr ""
 
 #: templates/index/community.html:128 templates/index/community.html:129
 msgid "ClickHouse at Google Groups"
-msgstr "Googleグループのクリックハウス"
+msgstr ""
 
 #: templates/index/community.html:133
 msgid "Email discussions"
-msgstr "メールでの議論"
+msgstr ""
 
 #: templates/index/community.html:142
 msgid "Like ClickHouse?"
-msgstr "ClickHouseのような？"
+msgstr ""
 
 #: templates/index/community.html:143
 msgid "Help to spread the word about it via"
-msgstr "それについての言葉を広めるのに役立ちます"
+msgstr ""
 
 #: templates/index/community.html:144
 msgid "and"
-msgstr "と"
+msgstr ""
 
 #: templates/index/community.html:153
 msgid "Hosting ClickHouse Meetups"
-msgstr "開催ClickHouse Meetups"
+msgstr ""
 
 #: templates/index/community.html:157
 msgid ""
-"ClickHouse meetups are essential for strengthening community worldwide, "
-"but they couldn't be possible without the help of local organizers. "
-"Please, feel this form if you want to become one or want to meet "
-"ClickHouse core team for any other reason."
+"ClickHouse meetups are essential for strengthening community worldwide, but "
+"they couldn't be possible without the help of local organizers. Please, fill "
+"this form if you want to become one or want to meet ClickHouse core team for "
+"any other reason."
 msgstr ""
-"ClickHouseの交流会は、世界中のコミュニティを強化するために不可欠ですが、彼らは地元の主催者の助けなしには不可能でした。 "
-"ﾂつｨﾂ姪\"ﾂつ\"ﾂ債ﾂづｭﾂつｹﾂづ債、ﾂつｨﾂ電ﾂ話ﾂづﾂつｨﾂ甘ｨﾂつ\"ﾂ致ﾂつｵﾂづ慊つｷﾂ。"
 
 #: templates/index/community.html:159
 msgid "ClickHouse Meetup"
-msgstr "クリックハウスミート"
+msgstr ""
 
 #: templates/index/community.html:165
 msgid "Name"
-msgstr "名前"
+msgstr ""
 
 #: templates/index/community.html:168
 msgid "Email"
-msgstr "メール"
+msgstr ""
 
 #: templates/index/community.html:171
 msgid "Company"
-msgstr "会社"
+msgstr ""
 
 #: templates/index/community.html:174
 msgid "City"
-msgstr "市"
+msgstr ""
 
 #: templates/index/community.html:179
 msgid "We'd like to host a public ClickHouse Meetup"
-msgstr "というホストの公ClickHouseスク管理のツールとして利用"
+msgstr ""
 
 #: templates/index/community.html:185
 msgid "We'd like to invite Yandex ClickHouse team to our office"
-msgstr "という招待Yandex ClickHouseチーム事務局"
+msgstr ""
 
 #: templates/index/community.html:191
 msgid "We'd like to invite Yandex ClickHouse team to another event we organize"
-msgstr "私たちは、整理別のイベントにYandexのClickHouseチームを招待したいと思います"
+msgstr ""
 
 #: templates/index/community.html:197
 msgid "We're interested in commercial consulting, support or managed service"
-msgstr "しい商業コンサルティングや管理サービス"
+msgstr ""
 
 #: templates/index/community.html:201
 msgid "Additional comments"
-msgstr "追加コメント"
+msgstr ""
 
 #: templates/index/community.html:203
 msgid "Send"
-msgstr "送信"
+msgstr ""
 
 #: templates/index/community.html:212
 msgid ""
 "If you have any more thoughts or questions, feel free to contact Yandex "
 "ClickHouse team directly at"
-msgstr "これ以上の考えや質問がある場合は、Yandex ClickHouseチームに直接お気軽にお問い合わせください"
+msgstr ""
 
 #: templates/index/community.html:213
 msgid "turn on JavaScript to see email address"
-msgstr "turn on JavaScriptを見るメールアドレス"
-
+msgstr ""

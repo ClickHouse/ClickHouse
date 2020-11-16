@@ -11,7 +11,7 @@
 /*
 #define DBMS_HASH_MAP_COUNT_COLLISIONS
 */
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Core/Row.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -103,9 +103,10 @@ int main(int argc, char ** argv)
     std::vector<Key> data(n);
     Value value;
 
-    AggregateFunctionPtr func_count = factory.get("count", data_types_empty);
-    AggregateFunctionPtr func_avg = factory.get("avg", data_types_uint64);
-    AggregateFunctionPtr func_uniq = factory.get("uniq", data_types_uint64);
+    AggregateFunctionProperties properties;
+    AggregateFunctionPtr func_count = factory.get("count", data_types_empty, {}, properties);
+    AggregateFunctionPtr func_avg = factory.get("avg", data_types_uint64, {}, properties);
+    AggregateFunctionPtr func_uniq = factory.get("uniq", data_types_uint64, {}, properties);
 
     #define INIT \
     { \

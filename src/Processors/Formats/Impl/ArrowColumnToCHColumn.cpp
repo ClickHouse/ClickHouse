@@ -1,19 +1,20 @@
 #include "config_formats.h"
 #include "ArrowColumnToCHColumn.h"
 
-#if USE_ORC || USE_PARQUET
+#if USE_ARROW || USE_ORC || USE_PARQUET
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <common/DateLUTImpl.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Core/Block.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
 #include <Interpreters/castColumn.h>
 #include <algorithm>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 
 namespace DB
@@ -22,7 +23,6 @@ namespace DB
     {
         extern const int UNKNOWN_TYPE;
         extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
-        extern const int CANNOT_READ_ALL_DATA;
         extern const int CANNOT_CONVERT_TYPE;
         extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
         extern const int THERE_IS_NO_COLUMN;
@@ -50,7 +50,7 @@ namespace DB
             {arrow::Type::STRING, "String"},
             {arrow::Type::BINARY, "String"},
 
-            // TODO: add other types that are convertable to internal ones:
+            // TODO: add other types that are convertible to internal ones:
             // 0. ENUM?
             // 1. UUID -> String
             // 2. JSON -> String
@@ -244,9 +244,8 @@ namespace DB
         }
     }
 
-    void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk &res, std::shared_ptr<arrow::Table> &table,
-                                                    arrow::Status &read_status, const Block &header,
-                                                    int &row_group_current, std::string format_name)
+    void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table,
+                                                    const Block & header, std::string format_name)
     {
         Columns columns_list;
         UInt64 num_rows = 0;
@@ -254,11 +253,6 @@ namespace DB
         columns_list.reserve(header.rows());
 
         using NameToColumnPtr = std::unordered_map<std::string, std::shared_ptr<arrow::ChunkedArray>>;
-        if (!read_status.ok())
-            throw Exception{"Error while reading " + format_name + " data: " + read_status.ToString(),
-                            ErrorCodes::CANNOT_READ_ALL_DATA};
-
-        ++row_group_current;
 
         NameToColumnPtr name_to_column_ptr;
         for (const auto& column_name : table->ColumnNames())
@@ -270,6 +264,7 @@ namespace DB
         for (size_t column_i = 0, columns = header.columns(); column_i < columns; ++column_i)
         {
             ColumnWithTypeAndName header_column = header.getByPosition(column_i);
+            const auto column_type = recursiveRemoveLowCardinality(header_column.type);
 
             if (name_to_column_ptr.find(header_column.name) == name_to_column_ptr.end())
                 // TODO: What if some columns were not presented? Insert NULLs? What if a column is not nullable?
@@ -280,23 +275,23 @@ namespace DB
             arrow::Type::type arrow_type = arrow_column->type()->id();
 
             // TODO: check if a column is const?
-            if (!header_column.type->isNullable() && arrow_column->null_count())
+            if (!column_type->isNullable() && arrow_column->null_count())
             {
                 throw Exception{"Can not insert NULL data into non-nullable column \"" + header_column.name + "\"",
                                 ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN};
             }
 
-            const bool target_column_is_nullable = header_column.type->isNullable() || arrow_column->null_count();
+            const bool target_column_is_nullable = column_type->isNullable() || arrow_column->null_count();
 
             DataTypePtr internal_nested_type;
 
             if (arrow_type == arrow::Type::DECIMAL)
             {
-                const auto decimal_type = static_cast<arrow::DecimalType *>(arrow_column->type().get());
+                const auto * decimal_type = static_cast<arrow::DecimalType *>(arrow_column->type().get());
                 internal_nested_type = std::make_shared<DataTypeDecimal<Decimal128>>(decimal_type->precision(),
                                                                                      decimal_type->scale());
             }
-            else if (auto internal_type_it = std::find_if(arrow_type_to_internal_type.begin(), arrow_type_to_internal_type.end(),
+            else if (const auto * internal_type_it = std::find_if(arrow_type_to_internal_type.begin(), arrow_type_to_internal_type.end(),
                 [=](auto && elem) { return elem.first == arrow_type; });
                 internal_type_it != arrow_type_to_internal_type.end())
             {
@@ -311,15 +306,6 @@ namespace DB
 
             const DataTypePtr internal_type = target_column_is_nullable ? makeNullable(internal_nested_type)
                                                                         : internal_nested_type;
-            const std::string internal_nested_type_name = internal_nested_type->getName();
-
-            const DataTypePtr column_nested_type = header_column.type->isNullable()
-                                                   ? static_cast<const DataTypeNullable *>(header_column.type.get())->getNestedType()
-                                                   : header_column.type;
-
-            const DataTypePtr column_type = header_column.type;
-
-            const std::string column_nested_type_name = column_nested_type->getName();
 
             ColumnWithTypeAndName column;
             column.name = header_column.name;
@@ -380,8 +366,8 @@ namespace DB
             else
                 column.column = std::move(read_column);
 
-            column.column = castColumn(column, column_type);
-            column.type = column_type;
+            column.column = castColumn(column, header_column.type);
+            column.type = header_column.type;
             num_rows = column.column->size();
             columns_list.push_back(std::move(column.column));
         }

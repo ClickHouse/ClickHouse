@@ -15,7 +15,7 @@ toc_title: Troubleshooting
 ### You Cannot Get Deb Packages from ClickHouse Repository with Apt-get {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
 
 -   Check firewall settings.
--   If you cannot access the repository for any reason, download packages as described in the [Getting started](../getting_started/index.md) article and install them manually using the `sudo dpkg -i <packages>` command. You will also need the `tzdata` package.
+-   If you cannot access the repository for any reason, download packages as described in the [Getting started](../getting-started/index.md) article and install them manually using the `sudo dpkg -i <packages>` command. You will also need the `tzdata` package.
 
 ## Connecting to the Server {#troubleshooting-accepts-no-connections}
 
@@ -103,7 +103,7 @@ Check:
 
 -   Endpoint settings.
 
-    Check [listen\_host](server_configuration_parameters/settings.md#server_configuration_parameters-listen_host) and [tcp\_port](server_configuration_parameters/settings.md#server_configuration_parameters-tcp_port) settings.
+    Check [listen_host](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-listen_host) and [tcp_port](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) settings.
 
     ClickHouse server accepts localhost connections only by default.
 
@@ -115,8 +115,8 @@ Check:
 
     Check:
 
-    -   The [tcp\_port\_secure](server_configuration_parameters/settings.md#server_configuration_parameters-tcp_port_secure) setting.
-    -   Settings for [SSL sertificates](server_configuration_parameters/settings.md#server_configuration_parameters-openssl).
+    -   The [tcp_port_secure](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) setting.
+    -   Settings for [SSL certificates](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-openssl).
 
     Use proper parameters while connecting. For example, use the `port_secure` parameter with `clickhouse_client`.
 

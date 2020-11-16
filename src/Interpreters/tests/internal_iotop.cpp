@@ -54,7 +54,7 @@ static void do_io(size_t id)
     get_info.getStat(stat, tid);
     {
         std::lock_guard lock(mutex);
-        std::cerr << "#" << id << ", tid " << tid << ", intitial\n" << stat << "\n";
+        std::cerr << "#" << id << ", tid " << tid << ", initial\n" << stat << "\n";
     }
 
     size_t copy_size = 1048576 * (1 + id);

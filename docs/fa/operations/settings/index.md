@@ -1,14 +1,15 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
-toc_folder_title: Settings
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+toc_folder_title: "\u062A\u0646\u0638\u06CC\u0645\u0627\u062A"
 toc_priority: 55
 toc_title: "\u0645\u0639\u0631\u0641\u06CC \u0634\u0631\u06A9\u062A"
 ---
 
-# تنظیمات {#settings}
+# تنظیمات {#session-settings-intro}
 
-راه های متعدد را به تمام تنظیمات زیر توضیح داده شده وجود دارد.
+راه های متعدد را به تمام تنظیمات شرح داده شده در این بخش از اسناد و مدارک وجود دارد.
+
 تنظیمات در لایه پیکربندی, بنابراین هر لایه های بعدی دوباره تعریف تنظیمات قبلی.
 
 راه های پیکربندی تنظیمات به ترتیب اولویت:

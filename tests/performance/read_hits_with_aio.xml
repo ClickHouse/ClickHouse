@@ -1,10 +1,5 @@
 <test>
 
-    <stop_conditions>
-        <any_of>
-            <total_time_ms>30000</total_time_ms>
-        </any_of>
-    </stop_conditions>
 
     <preconditions>
         <table_exists>hits_100m_single</table_exists>

@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeUUID.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
@@ -207,6 +208,18 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
                 encoder.encodeEnum(enum_mapping.at(enum_value));
             }};
         }
+        case TypeIndex::UUID:
+        {
+            auto schema = avro::StringSchema();
+            schema.root()->setLogicalType(avro::LogicalType(avro::LogicalType::UUID));
+            return {schema, [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
+            {
+                const auto & uuid = assert_cast<const DataTypeUUID::ColumnType &>(column).getElement(row_num);
+                std::array<UInt8, 36> s;
+                formatUUID(std::reverse_iterator<const UInt8 *>(reinterpret_cast<const UInt8 *>(&uuid) + 16), s.data());
+                encoder.encodeBytes(reinterpret_cast<const uint8_t *>(s.data()), s.size());
+            }};
+        }
         case TypeIndex::Array:
         {
             const auto & array_type = assert_cast<const DataTypeArray &>(*data_type);
@@ -286,7 +299,7 @@ AvroSerializer::AvroSerializer(const ColumnsWithTypeAndName & columns)
     avro::RecordSchema record_schema("row");
 
     size_t type_name_increment = 0;
-    for (auto & column : columns)
+    for (const auto & column : columns)
     {
         try
         {
@@ -334,8 +347,8 @@ static avro::Codec getCodec(const std::string & codec_name)
 }
 
 AvroRowOutputFormat::AvroRowOutputFormat(
-    WriteBuffer & out_, const Block & header_, FormatFactory::WriteCallback callback, const FormatSettings & settings_)
-    : IRowOutputFormat(header_, out_, callback)
+    WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & settings_)
+    : IRowOutputFormat(header_, out_, params_)
     , settings(settings_)
     , serializer(header_.getColumnsWithTypeAndName())
     , file_writer(
@@ -370,10 +383,10 @@ void registerOutputFormatProcessorAvro(FormatFactory & factory)
     factory.registerOutputFormatProcessor("Avro", [](
         WriteBuffer & buf,
         const Block & sample,
-        FormatFactory::WriteCallback callback,
+        const RowOutputFormatParams & params,
         const FormatSettings & settings)
     {
-        return std::make_shared<AvroRowOutputFormat>(buf, sample, callback, settings);
+        return std::make_shared<AvroRowOutputFormat>(buf, sample, params, settings);
     });
 }
 

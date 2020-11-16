@@ -1,14 +1,4 @@
 <test>
-
-    <tags>
-    </tags>
-
-    <stop_conditions>
-        <any_of>
-            <total_time_ms>10000</total_time_ms>
-        </any_of>
-    </stop_conditions>
-
     <substitutions>
        <substitution>
            <name>format</name>
@@ -23,5 +13,5 @@
        </substitution>
     </substitutions>
 
-    <query>SELECT count() FROM numbers(1000000) WHERE NOT ignore(toDateTime('2017-01-01 00:00:00') + number % 100000000 + rand() % 100000 AS t, formatDateTime(t, '{format}'))</query>
+    <query>SELECT count() FROM numbers(10000000) WHERE NOT ignore(toDateTime('2017-01-01 00:00:00') + number % 100000000 + rand() % 100000 AS t, formatDateTime(t, '{format}'))</query>
 </test>

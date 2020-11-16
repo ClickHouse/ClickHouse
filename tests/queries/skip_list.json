@@ -1,0 +1,110 @@
+/** List of tests which should be skipped depending on clickhouse build options.
+  * This file in json format, but javascript-style comments are allowed.
+  */
+{
+    "thread-sanitizer": [
+        "00877",
+        "00985",
+        "query_profiler",
+        "memory_profiler",
+        /// 01083 and 00505 and 00505 are critical and temproray disabled
+        "01083_expressions_in_engine_arguments",
+        "00505_shard_secure",
+        "00505_secure",
+        "01103_check_cpu_instructions_at_startup",
+        "01098_temporary_and_external_tables", /// race in openssl (should be enabled as fast as possible)
+        "00152_insert_different_granularity",
+        "00151_replace_partition_with_different_granularity",
+        "00157_cache_dictionary",
+        "01193_metadata_loading",
+        "01473_event_time_microseconds",
+        "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
+        "01474_executable_dictionary" /// informational stderr from sanitizer at start
+    ],
+    "address-sanitizer": [
+        "00877",
+        "query_profiler",
+        "memory_profiler",
+        "odbc_roundtrip",
+        "01103_check_cpu_instructions_at_startup",
+        "01473_event_time_microseconds",
+        "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
+        "01193_metadata_loading"
+    ],
+    "ub-sanitizer": [
+        "capnproto",
+        "query_profiler",
+        "memory_profiler",
+        "01103_check_cpu_instructions_at_startup",
+        "00900_orc_load",
+        "01473_event_time_microseconds",
+        "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
+        "01193_metadata_loading"
+    ],
+    "memory-sanitizer": [
+        "capnproto",
+        "query_profiler",
+        "memory_profiler",
+        "01103_check_cpu_instructions_at_startup",
+        "01086_odbc_roundtrip", /// can't pass because odbc libraries are not instrumented
+        "00877_memory_limit_for_new_delete", /// memory limits don't work correctly under msan because it replaces malloc/free
+        "01114_mysql_database_engine_segfault", /// it fails in _nss_files_parse_servent while using NSS from GLibc to authenticate (need to get rid of it)
+        "01473_event_time_microseconds",
+        "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
+        "01193_metadata_loading"
+    ],
+    "debug-build": [
+        "query_profiler",
+        "memory_profiler",
+        "00899_long_attach",
+        "00980_alter_settings_race",
+        "00834_kill_mutation_replicated_zookeeper",
+        "00834_kill_mutation",
+        "01200_mutations_memory_consumption",
+        "01103_check_cpu_instructions_at_startup",
+        "01037_polygon_dicts_",
+        "hyperscan",
+        "01193_metadata_loading",
+        "01473_event_time_microseconds",
+        "01396_inactive_replica_cleanup_nodes"
+    ],
+    "unbundled-build": [
+        "00429",
+        "00877",
+        "pocopatch",
+        "parquet",
+        "xxhash",
+        "_h3",
+        "query_profiler",
+        "memory_profiler",
+        "orc_load",
+        "01033_storage_odbc_parsing_exception_check",
+        "avro",
+        "01072_optimize_skip_unused_shards_const_expr_eval",
+        "00505_secure",
+        "00505_shard_secure",
+        "odbc_roundtrip",
+        "01103_check_cpu_instructions_at_startup",
+        "01114_mysql_database_engine_segfault",
+        "00834_cancel_http_readonly_queries_on_client_close",
+        "_arrow",
+        "01099_parallel_distributed_insert_select",
+        "01300_client_save_history_when_terminated",
+        "orc_output",
+        "01370_client_autocomplete_word_break_characters",
+        "01193_metadata_loading",
+        "01455_time_zones"
+    ],
+    "release-build": [
+    ],
+    "database-ordinary": [
+        "00604_show_create_database",
+        "00609_mv_index_in_in",
+        "00510_materizlized_view_and_deduplication_zookeeper",
+        "00738_lock_for_inner_table"
+    ],
+    "polymorphic-parts": [
+        "01508_partition_pruning", /// bug, shoud be fixed
+        "01482_move_to_prewhere_and_cast" /// bug, shoud be fixed
+    ]
+}

@@ -13,25 +13,20 @@ namespace
     void updateRoleFromQueryImpl(
         Role & role,
         const ASTCreateRoleQuery & query,
-        const std::optional<SettingsProfileElements> & settings_from_query = {})
+        const String & override_name,
+        const std::optional<SettingsProfileElements> & override_settings)
     {
-        if (query.alter)
-        {
-            if (!query.new_name.empty())
-                role.setName(query.new_name);
-        }
-        else
-            role.setName(query.name);
+        if (!override_name.empty())
+            role.setName(override_name);
+        else if (!query.new_name.empty())
+            role.setName(query.new_name);
+        else if (query.names.size() == 1)
+            role.setName(query.names.front());
 
-        const SettingsProfileElements * settings = nullptr;
-        std::optional<SettingsProfileElements> temp_settings;
-        if (settings_from_query)
-            settings = &*settings_from_query;
+        if (override_settings)
+            role.settings = *override_settings;
         else if (query.settings)
-            settings = &temp_settings.emplace(*query.settings);
-
-        if (settings)
-            role.settings = *settings;
+            role.settings = *query.settings;
     }
 }
 
@@ -57,28 +52,33 @@ BlockIO InterpreterCreateRoleQuery::execute()
         auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
         {
             auto updated_role = typeid_cast<std::shared_ptr<Role>>(entity->clone());
-            updateRoleFromQueryImpl(*updated_role, query, settings_from_query);
+            updateRoleFromQueryImpl(*updated_role, query, {}, settings_from_query);
             return updated_role;
         };
         if (query.if_exists)
         {
-            if (auto id = access_control.find<Role>(query.name))
-                access_control.tryUpdate(*id, update_func);
+            auto ids = access_control.find<Role>(query.names);
+            access_control.tryUpdate(ids, update_func);
         }
         else
-            access_control.update(access_control.getID<Role>(query.name), update_func);
+            access_control.update(access_control.getIDs<Role>(query.names), update_func);
     }
     else
     {
-        auto new_role = std::make_shared<Role>();
-        updateRoleFromQueryImpl(*new_role, query, settings_from_query);
+        std::vector<AccessEntityPtr> new_roles;
+        for (const auto & name : query.names)
+        {
+            auto new_role = std::make_shared<Role>();
+            updateRoleFromQueryImpl(*new_role, query, name, settings_from_query);
+            new_roles.emplace_back(std::move(new_role));
+        }
 
         if (query.if_not_exists)
-            access_control.tryInsert(new_role);
+            access_control.tryInsert(new_roles);
         else if (query.or_replace)
-            access_control.insertOrReplace(new_role);
+            access_control.insertOrReplace(new_roles);
         else
-            access_control.insert(new_role);
+            access_control.insert(new_roles);
     }
 
     return {};
@@ -87,6 +87,6 @@ BlockIO InterpreterCreateRoleQuery::execute()
 
 void InterpreterCreateRoleQuery::updateRoleFromQuery(Role & role, const ASTCreateRoleQuery & query)
 {
-    updateRoleFromQueryImpl(role, query);
+    updateRoleFromQueryImpl(role, query, {}, {});
 }
 }

@@ -3,7 +3,7 @@
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS json_noisy"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE json_noisy (d1 UInt8, d2 String) ENGINE = Memory"

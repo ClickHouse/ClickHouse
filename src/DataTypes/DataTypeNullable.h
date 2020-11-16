@@ -90,7 +90,7 @@ public:
     bool canBeComparedWithCollation() const override { return nested_data_type->canBeComparedWithCollation(); }
     bool canBeUsedAsVersion() const override { return false; }
     bool isSummable() const override { return nested_data_type->isSummable(); }
-    bool canBeUsedInBooleanContext() const override { return nested_data_type->canBeUsedInBooleanContext(); }
+    bool canBeUsedInBooleanContext() const override { return nested_data_type->canBeUsedInBooleanContext() || onlyNull(); }
     bool haveMaximumSizeOfValue() const override { return nested_data_type->haveMaximumSizeOfValue(); }
     size_t getMaximumSizeOfValueInMemory() const override { return 1 + nested_data_type->getMaximumSizeOfValueInMemory(); }
     bool isNullable() const override { return true; }
@@ -102,6 +102,8 @@ public:
 
     /// If ReturnType is bool, check for NULL and deserialize value into non-nullable column (and return true) or insert default value of nested type (and return false)
     /// If ReturnType is void, deserialize Nullable(T)
+    template <typename ReturnType = bool>
+    static ReturnType deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const DataTypePtr & nested);
     template <typename ReturnType = bool>
     static ReturnType deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const DataTypePtr & nested);
     template <typename ReturnType = bool>

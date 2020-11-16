@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 61
 toc_title: clickhouse-benchmark
 ---
@@ -99,7 +99,7 @@ Dans le rapport, vous pouvez trouver:
 
 -   Percentiles du temps d'exécution des requêtes.
 
-## Mode de comparaison {#clickhouse-benchmark-comparison-mode}
+## Mode De Comparaison {#clickhouse-benchmark-comparison-mode}
 
 `clickhouse-benchmark` peut comparer les performances pour deux serveurs clickhouse en cours d'exécution.
 

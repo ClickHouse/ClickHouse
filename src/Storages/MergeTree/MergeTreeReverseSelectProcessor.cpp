@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeReverseSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -11,28 +12,9 @@ namespace ErrorCodes
     extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
-static Block replaceTypes(Block && header, const MergeTreeData::DataPartPtr & data_part)
-{
-    /// Types may be different during ALTER (when this stream is used to perform an ALTER).
-    /// NOTE: We may use similar code to implement non blocking ALTERs.
-    for (const auto & name_type : data_part->getColumns())
-    {
-        if (header.has(name_type.name))
-        {
-            auto & elem = header.getByName(name_type.name);
-            if (!elem.type->equals(*name_type.type))
-            {
-                elem.type = name_type.type;
-                elem.column = elem.type->createColumn();
-            }
-        }
-    }
-
-    return std::move(header);
-}
-
 MergeTreeReverseSelectProcessor::MergeTreeReverseSelectProcessor(
     const MergeTreeData & storage_,
+    const StorageMetadataPtr & metadata_snapshot_,
     const MergeTreeData::DataPartPtr & owned_data_part_,
     UInt64 max_block_size_rows_,
     size_t preferred_block_size_bytes_,
@@ -48,8 +30,8 @@ MergeTreeReverseSelectProcessor::MergeTreeReverseSelectProcessor(
     bool quiet)
     :
     MergeTreeBaseSelectProcessor{
-        replaceTypes(storage_.getSampleBlockForColumns(required_columns_), owned_data_part_),
-        storage_, prewhere_info_, max_block_size_rows_,
+        metadata_snapshot_->getSampleBlockForColumns(required_columns_, storage_.getVirtuals(), storage_.getStorageID()),
+        storage_, metadata_snapshot_, prewhere_info_, max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
         reader_settings_, use_uncompressed_cache_, virt_column_names_},
     required_columns{std::move(required_columns_)},
@@ -65,18 +47,16 @@ MergeTreeReverseSelectProcessor::MergeTreeReverseSelectProcessor(
     size_t total_rows = data_part->index_granularity.getTotalRows();
 
     if (!quiet)
-        LOG_TRACE(log, "Reading " << all_mark_ranges.size() << " ranges in reverse order from part " << data_part->name
-        << ", approx. " << total_rows
-        << (all_mark_ranges.size() > 1
-        ? ", up to " + toString(data_part->index_granularity.getRowsCountInRanges(all_mark_ranges))
-        : "")
-        << " rows starting from " << data_part->index_granularity.getMarkStartingRow(all_mark_ranges.front().begin));
+        LOG_TRACE(log, "Reading {} ranges in reverse order from part {}, approx. {}, up to {} rows starting from {}",
+            all_mark_ranges.size(), data_part->name, total_rows,
+            data_part->index_granularity.getRowsCountInRanges(all_mark_ranges),
+            data_part->index_granularity.getMarkStartingRow(all_mark_ranges.front().begin));
 
     addTotalRowsApprox(total_rows);
 
     ordered_names = header_without_virtual_columns.getNames();
 
-    task_columns = getReadTaskColumns(storage, data_part, required_columns, prewhere_info, check_columns);
+    task_columns = getReadTaskColumns(storage, metadata_snapshot, data_part, required_columns, prewhere_info, check_columns);
 
     /// will be used to distinguish between PREWHERE and WHERE columns when applying filter
     const auto & column_names = task_columns.columns.getNames();
@@ -87,11 +67,12 @@ MergeTreeReverseSelectProcessor::MergeTreeReverseSelectProcessor(
 
     owned_mark_cache = storage.global_context.getMarkCache();
 
-    reader = data_part->getReader(task_columns.columns, all_mark_ranges,
-        owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings);
+    reader = data_part->getReader(task_columns.columns, metadata_snapshot,
+        all_mark_ranges, owned_uncompressed_cache.get(),
+        owned_mark_cache.get(), reader_settings);
 
     if (prewhere_info)
-        pre_reader = data_part->getReader(task_columns.pre_columns, all_mark_ranges,
+        pre_reader = data_part->getReader(task_columns.pre_columns, metadata_snapshot, all_mark_ranges,
             owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings);
 }
 
@@ -115,7 +96,7 @@ try
 
     auto size_predictor = (preferred_block_size_bytes == 0)
         ? nullptr
-        : std::make_unique<MergeTreeBlockSizePredictor>(data_part, ordered_names, data_part->storage.getSampleBlock());
+        : std::make_unique<MergeTreeBlockSizePredictor>(data_part, ordered_names, metadata_snapshot->getSampleBlock());
 
     task = std::make_unique<MergeTreeReadTask>(
         data_part, mark_ranges_for_task, part_index_in_query, ordered_names, column_name_set,

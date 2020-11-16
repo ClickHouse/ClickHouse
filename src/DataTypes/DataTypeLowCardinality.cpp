@@ -54,7 +54,7 @@ void DataTypeLowCardinality::enumerateStreams(const StreamCallback & callback, S
     path.push_back(Substream::DictionaryKeys);
     dictionary_type->enumerateStreams(callback, path);
     path.back() = Substream::DictionaryIndexes;
-    callback(path);
+    callback(path, *this);
     path.pop_back();
 }
 
@@ -546,7 +546,7 @@ void DataTypeLowCardinality::serializeBinaryBulkWithMultipleStreams(
                             ErrorCodes::LOGICAL_ERROR);
     }
 
-    if (auto * nullable_keys = checkAndGetColumn<ColumnNullable>(*keys))
+    if (const auto * nullable_keys = checkAndGetColumn<ColumnNullable>(*keys))
         keys = nullable_keys->getNestedColumnPtr();
 
     bool need_additional_keys = !keys->empty();
@@ -672,7 +672,7 @@ void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreams(
             ColumnLowCardinality::Index(indexes_column->getPtr()).check(
                     maps.dictionary_map->size() + maps.additional_keys_map->size());
 
-            auto used_keys = (*std::move(global_dictionary->getNestedColumn()->index(*maps.dictionary_map, 0))).mutate();
+            auto used_keys = IColumn::mutate(global_dictionary->getNestedColumn()->index(*maps.dictionary_map, 0));
 
             if (!maps.additional_keys_map->empty())
             {
@@ -774,7 +774,7 @@ void DataTypeLowCardinality::deserializeTextQuoted(IColumn & column, ReadBuffer 
 
 void DataTypeLowCardinality::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    deserializeImpl(column, &IDataType::deserializeAsTextEscaped, istr, settings);
+    deserializeImpl(column, &IDataType::deserializeAsWholeText, istr, settings);
 }
 
 void DataTypeLowCardinality::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -835,7 +835,7 @@ template <typename... Params, typename... Args>
 void DataTypeLowCardinality::serializeImpl(
     const IColumn & column, size_t row_num, DataTypeLowCardinality::SerializeFunctionPtr<Params...> func, Args &&... args) const
 {
-    auto & low_cardinality_column = getColumnLowCardinality(column);
+    const auto & low_cardinality_column = getColumnLowCardinality(column);
     size_t unique_row_number = low_cardinality_column.getIndexes().getUInt(row_num);
     (dictionary_type.get()->*func)(*low_cardinality_column.getDictionary().getNestedColumn(), unique_row_number, std::forward<Args>(args)...);
 }
@@ -879,8 +879,8 @@ template <typename Creator>
 MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDataType & keys_type,
                                                                       const Creator & creator)
 {
-    auto * type = &keys_type;
-    if (auto * nullable_type = typeid_cast<const DataTypeNullable *>(&keys_type))
+    const auto * type = &keys_type;
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&keys_type))
         type = nullable_type->getNestedType().get();
 
     if (isString(type))
@@ -944,7 +944,7 @@ bool DataTypeLowCardinality::equals(const IDataType & rhs) const
     if (typeid(rhs) != typeid(*this))
         return false;
 
-    auto & low_cardinality_rhs= static_cast<const DataTypeLowCardinality &>(rhs);
+    const auto & low_cardinality_rhs= static_cast<const DataTypeLowCardinality &>(rhs);
     return dictionary_type->equals(*low_cardinality_rhs.dictionary_type);
 }
 
@@ -966,7 +966,7 @@ void registerDataTypeLowCardinality(DataTypeFactory & factory)
 
 DataTypePtr removeLowCardinality(const DataTypePtr & type)
 {
-    if (auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
         return low_cardinality_type->getDictionaryType();
     return type;
 }

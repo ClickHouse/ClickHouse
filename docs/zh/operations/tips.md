@@ -1,4 +1,3 @@
-
 # 使用建议 {#usage-recommendations}
 
 ## CPU {#cpu}
@@ -67,7 +66,7 @@ echo 'never' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
 如果您的预算允许，请选择RAID-10。
 
 如果您有超过4个磁盘，请使用RAID-6（首选）或RAID-50，而不是RAID-5。
-当使用RAID-5、RAID-6或RAID-50时，始终增加stripe\_cache\_size，因为默认值通常不是最佳选择。
+当使用RAID-5、RAID-6或RAID-50时，始终增加stripe_cache_size，因为默认值通常不是最佳选择。
 
 ``` bash
 echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size
@@ -105,7 +104,7 @@ XFS也是合适的，但它还没有经过ClickHouse的彻底测试。
 
 您可能已经将ZooKeeper用于其他目的。 您可以使用相同的zookeeper安装，如果它还没有超载。
 
-It's best to use a fresh version of ZooKeeper – 3.4.9 or later. The version in stable Linux distributions may be outdated.
+It’s best to use a fresh version of ZooKeeper – 3.4.9 or later. The version in stable Linux distributions may be outdated.
 
 You should never use manually written scripts to transfer data between different ZooKeeper clusters, because the result will be incorrect for sequential nodes. Never use the «zkcopy» utility for the same reason: https://github.com/ksprojects/zkcopy/issues/15
 

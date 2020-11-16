@@ -51,15 +51,12 @@ inline UInt64 ComplexKeyCacheDictionary::getCellIdx(const StringRef key) const
 
 
 ComplexKeyCacheDictionary::ComplexKeyCacheDictionary(
-    const std::string & database_,
-    const std::string & name_,
+    const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
     const size_t size_)
-    : database(database_)
-    , name(name_)
-    , full_name{database_.empty() ? name_ : (database_ + "." + name_)}
+    : IDictionaryBase(dict_id_)
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
     , dict_lifetime(dict_lifetime_)
@@ -80,7 +77,7 @@ void ComplexKeyCacheDictionary::getString(
     dict_struct.validateKeyTypes(key_types);
 
     auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     const auto null_value = StringRef{std::get<String>(attribute.null_values)};
 
@@ -97,7 +94,7 @@ void ComplexKeyCacheDictionary::getString(
     dict_struct.validateKeyTypes(key_types);
 
     auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     getItemsString(attribute, key_columns, out, [&](const size_t row) { return def->getDataAt(row); });
 }
@@ -112,7 +109,7 @@ void ComplexKeyCacheDictionary::getString(
     dict_struct.validateKeyTypes(key_types);
 
     auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     getItemsString(attribute, key_columns, out, [&](const size_t) { return StringRef{def}; });
 }
@@ -345,8 +342,8 @@ template StringRef ComplexKeyCacheDictionary::placeKeysInPool<ArenaWithFreeLists
 
 StringRef ComplexKeyCacheDictionary::placeKeysInFixedSizePool(const size_t row, const Columns & key_columns) const
 {
-    const auto res = fixed_size_keys_pool->alloc();
-    auto place = res;
+    auto * res = fixed_size_keys_pool->alloc();
+    auto * place = res;
 
     for (const auto & key_column : key_columns)
     {
@@ -367,7 +364,7 @@ StringRef ComplexKeyCacheDictionary::copyIntoArena(StringRef src, Arena & arena)
 
 StringRef ComplexKeyCacheDictionary::copyKey(const StringRef key) const
 {
-    const auto res = key_size_is_fixed ? fixed_size_keys_pool->alloc() : keys_pool->alloc(key.size);
+    auto * res = key_size_is_fixed ? fixed_size_keys_pool->alloc() : keys_pool->alloc(key.size);
     memcpy(res, key.data, key.size);
 
     return {res, key.size};
@@ -415,10 +412,9 @@ void registerDictionaryComplexKeyCache(DictionaryFactory & factory)
             throw Exception{full_name + ": dictionary of layout 'cache' cannot have 'require_nonempty' attribute set",
                             ErrorCodes::BAD_ARGUMENTS};
 
-        const String database = config.getString(config_prefix + ".database", "");
-        const String name = config.getString(config_prefix + ".name");
+        const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
-        return std::make_unique<ComplexKeyCacheDictionary>(database, name, dict_struct, std::move(source_ptr), dict_lifetime, size);
+        return std::make_unique<ComplexKeyCacheDictionary>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, size);
     };
     factory.registerLayout("complex_key_cache", create_layout, true);
 }

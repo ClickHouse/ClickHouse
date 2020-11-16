@@ -5,4 +5,5 @@ list(REMOVE_ITEM clickhouse_table_functions_sources ITableFunction.cpp TableFunc
 list(REMOVE_ITEM clickhouse_table_functions_headers ITableFunction.h TableFunctionFactory.h)
 
 add_library(clickhouse_table_functions ${clickhouse_table_functions_sources})
-target_link_libraries(clickhouse_table_functions PRIVATE clickhouse_parsers clickhouse_storages_system dbms ${Poco_Foundation_LIBRARY})
+target_link_libraries(clickhouse_table_functions PRIVATE clickhouse_parsers clickhouse_storages_system dbms)
+

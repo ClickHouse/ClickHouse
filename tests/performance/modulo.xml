@@ -1,10 +1,5 @@
 <test>
 
-    <stop_conditions>
-        <any_of>
-            <iterations>10</iterations>
-        </any_of>
-    </stop_conditions>
 
 
     <query>SELECT number % 128 FROM numbers(300000000) FORMAT Null</query>

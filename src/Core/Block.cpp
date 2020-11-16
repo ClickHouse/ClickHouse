@@ -6,13 +6,11 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
-#include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
 #include <Columns/ColumnConst.h>
 
 #include <iterator>
-#include <memory>
 
 
 namespace DB
@@ -24,7 +22,6 @@ namespace ErrorCodes
     extern const int POSITION_OUT_OF_BOUND;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
-    extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE;
 }
 
 
@@ -181,25 +178,25 @@ const ColumnWithTypeAndName & Block::safeGetByPosition(size_t position) const
 }
 
 
-ColumnWithTypeAndName & Block::getByName(const std::string & name)
+const ColumnWithTypeAndName * Block::findByName(const std::string & name) const
 {
     auto it = index_by_name.find(name);
     if (index_by_name.end() == it)
-        throw Exception("Not found column " + name + " in block. There are only columns: " + dumpNames()
-            , ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
-
-    return data[it->second];
+    {
+        return nullptr;
+    }
+    return &data[it->second];
 }
 
 
 const ColumnWithTypeAndName & Block::getByName(const std::string & name) const
 {
-    auto it = index_by_name.find(name);
-    if (index_by_name.end() == it)
+    const auto * result = findByName(name);
+    if (!result)
         throw Exception("Not found column " + name + " in block. There are only columns: " + dumpNames()
             , ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
 
-    return data[it->second];
+    return *result;
 }
 
 
@@ -335,7 +332,7 @@ MutableColumns Block::mutateColumns()
     size_t num_columns = data.size();
     MutableColumns columns(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
-        columns[i] = data[i].column ? (*std::move(data[i].column)).mutate() : data[i].type->createColumn();
+        columns[i] = data[i].column ? IColumn::mutate(std::move(data[i].column)) : data[i].type->createColumn();
     return columns;
 }
 
@@ -403,8 +400,20 @@ Block Block::sortColumns() const
 {
     Block sorted_block;
 
-    for (const auto & name : index_by_name)
-        sorted_block.insert(data[name.second]);
+    /// std::unordered_map (index_by_name) cannot be used to guarantee the sort order
+    std::vector<decltype(index_by_name.begin())> sorted_index_by_name(index_by_name.size());
+    {
+        size_t i = 0;
+        for (auto it = index_by_name.begin(); it != index_by_name.end(); ++it)
+            sorted_index_by_name[i++] = it;
+    }
+    std::sort(sorted_index_by_name.begin(), sorted_index_by_name.end(), [](const auto & lhs, const auto & rhs)
+    {
+        return lhs->first < rhs->first;
+    });
+
+    for (const auto & it : sorted_index_by_name)
+        sorted_block.insert(data[it->second]);
 
     return sorted_block;
 }
@@ -465,7 +474,7 @@ static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, cons
     size_t columns = rhs.columns();
     if (lhs.columns() != columns)
         return on_error("Block structure mismatch in " + context_description + " stream: different number of columns:\n"
-            + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+            + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
 
     for (size_t i = 0; i < columns; ++i)
     {
@@ -474,18 +483,18 @@ static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, cons
 
         if (actual.name != expected.name)
             return on_error("Block structure mismatch in " + context_description + " stream: different names of columns:\n"
-                + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+                + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
 
         if (!actual.type->equals(*expected.type))
             return on_error("Block structure mismatch in " + context_description + " stream: different types:\n"
-                + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+                + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
 
         if (!actual.column || !expected.column)
             continue;
 
         if (actual.column->getName() != expected.column->getName())
             return on_error("Block structure mismatch in " + context_description + " stream: different columns:\n"
-                + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+                + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
 
         if (isColumnConst(*actual.column) && isColumnConst(*expected.column))
         {
@@ -495,7 +504,7 @@ static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, cons
             if (actual_value != expected_value)
                 return on_error("Block structure mismatch in " + context_description + " stream: different values of constants, actual: "
                     + applyVisitor(FieldVisitorToString(), actual_value) + ", expected: " + applyVisitor(FieldVisitorToString(), expected_value),
-                    ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+                    ErrorCodes::LOGICAL_ERROR);
         }
     }
 

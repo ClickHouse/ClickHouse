@@ -3,6 +3,7 @@
 #if USE_HDFS
 #include <IO/HDFSCommon.h>
 #include <hdfs/hdfs.h>
+#include <mutex>
 
 
 namespace DB
@@ -17,6 +18,9 @@ ReadBufferFromHDFS::~ReadBufferFromHDFS() = default;
 
 struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
 {
+    /// HDFS create/open functions are not thread safe
+    static std::mutex hdfs_init_mutex;
+
     std::string hdfs_uri;
     hdfsFile fin;
     HDFSBuilderPtr builder;
@@ -24,9 +28,11 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
 
     explicit ReadBufferFromHDFSImpl(const std::string & hdfs_name_)
         : hdfs_uri(hdfs_name_)
-        , builder(createHDFSBuilder(hdfs_uri))
-        , fs(createHDFSFS(builder.get()))
     {
+        std::lock_guard lock(hdfs_init_mutex);
+
+        builder = createHDFSBuilder(hdfs_uri);
+        fs = createHDFSFS(builder.get());
         const size_t begin_of_path = hdfs_uri.find('/', hdfs_uri.find("//") + 2);
         const std::string path = hdfs_uri.substr(begin_of_path);
         fin = hdfsOpenFile(fs.get(), path.c_str(), O_RDONLY, 0, 0, 0);
@@ -36,7 +42,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
                 ErrorCodes::CANNOT_OPEN_FILE);
     }
 
-    int read(char * start, size_t size)
+    int read(char * start, size_t size) const
     {
         int bytes_read = hdfsRead(fs.get(), fin, start, size);
         if (bytes_read < 0)
@@ -47,9 +53,12 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
 
     ~ReadBufferFromHDFSImpl()
     {
+        std::lock_guard lock(hdfs_init_mutex);
         hdfsCloseFile(fs.get(), fin);
     }
 };
+
+std::mutex ReadBufferFromHDFS::ReadBufferFromHDFSImpl::hdfs_init_mutex;
 
 ReadBufferFromHDFS::ReadBufferFromHDFS(const std::string & hdfs_name_, size_t buf_size)
     : BufferWithOwnMemory<ReadBuffer>(buf_size)

@@ -6,6 +6,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
+class Collator;
 
 namespace DB
 {
@@ -45,14 +46,26 @@ public:
 
     const char * getFamilyName() const override { return "Nullable"; }
     std::string getName() const override { return "Nullable(" + nested_column->getName() + ")"; }
+    TypeIndex getDataType() const override { return TypeIndex::Nullable; }
     MutableColumnPtr cloneResized(size_t size) const override;
     size_t size() const override { return nested_column->size(); }
     bool isNullAt(size_t n) const override { return assert_cast<const ColumnUInt8 &>(*null_map).getData()[n] != 0;}
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
-    bool getBool(size_t n) const override { return isNullAt(n) ? 0 : nested_column->getBool(n); }
+    bool getBool(size_t n) const override { return isNullAt(n) ? false : nested_column->getBool(n); }
     UInt64 get64(size_t n) const override { return nested_column->get64(n); }
-    StringRef getDataAt(size_t n) const override;
+
+    /**
+     * If isNullAt(n) returns false, returns the nested column's getDataAt(n), otherwise returns a special value
+     * EMPTY_STRING_REF indicating that data is not present.
+     */
+    StringRef getDataAt(size_t n) const override
+    {
+        if (isNullAt(n))
+            return EMPTY_STRING_REF;
+
+        return getNestedColumn().getDataAt(n);
+    }
 
     /// Will insert null value if pos=nullptr
     void insertData(const char * pos, size_t length) override;
@@ -77,7 +90,15 @@ public:
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const override;
+    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
+                       PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
+                       int direction, int nan_direction_hint) const override;
+    int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int null_direction_hint, const Collator &) const override;
     void getPermutation(bool reverse, size_t limit, int null_direction_hint, Permutation & res) const override;
+    void updatePermutation(bool reverse, size_t limit, int null_direction_hint, Permutation & res, EqualRanges & equal_range) const override;
+    void getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int null_direction_hint, Permutation & res) const override;
+    void updatePermutationWithCollation(
+        const Collator & collator, bool reverse, size_t limit, int null_direction_hint, Permutation & res, EqualRanges& equal_range) const override;
     void reserve(size_t n) override;
     size_t byteSize() const override;
     size_t allocatedBytes() const override;
@@ -85,6 +106,7 @@ public:
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void updateWeakHash32(WeakHash32 & hash) const override;
+    void updateHashFast(SipHash & hash) const override;
     void getExtremes(Field & min, Field & max) const override;
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override
@@ -112,6 +134,7 @@ public:
     bool valuesHaveFixedSize() const override { return nested_column->valuesHaveFixedSize(); }
     size_t sizeOfValueIfFixed() const override { return null_map->sizeOfValueIfFixed() + nested_column->sizeOfValueIfFixed(); }
     bool onlyNull() const override { return nested_column->isDummy(); }
+    bool isCollationSupported() const override { return nested_column->isCollationSupported(); }
 
 
     /// Return the column that represents values.
@@ -147,6 +170,13 @@ private:
 
     template <bool negative>
     void applyNullMapImpl(const ColumnUInt8 & map);
+
+    int compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint, const Collator * collator=nullptr) const;
+
+    void getPermutationImpl(bool reverse, size_t limit, int null_direction_hint, Permutation & res, const Collator * collator = nullptr) const;
+
+    void updatePermutationImpl(
+        bool reverse, size_t limit, int null_direction_hint, Permutation & res, EqualRanges & equal_ranges, const Collator * collator = nullptr) const;
 };
 
 ColumnPtr makeNullable(const ColumnPtr & column);

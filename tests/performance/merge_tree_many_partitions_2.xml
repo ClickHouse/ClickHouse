@@ -1,18 +1,8 @@
-<test>
+<test max_ignored_relative_change="0.2">
 
     <create_query>CREATE TABLE bad_partitions (a UInt64, b UInt64, c UInt64, d UInt64, e UInt64, f UInt64, g UInt64, h UInt64, i UInt64, j UInt64, k UInt64, l UInt64, m UInt64, n UInt64, o UInt64, p UInt64, q UInt64, r UInt64, s UInt64, t UInt64, u UInt64, v UInt64, w UInt64, x UInt64, y UInt64, z UInt64) ENGINE = MergeTree PARTITION BY x ORDER BY x</create_query>
     <fill_query>INSERT INTO bad_partitions (x) SELECT * FROM numbers_mt(3000)</fill_query>
 
-    <stop_conditions>
-        <all_of>
-            <iterations>5</iterations>
-            <min_time_not_changing_for_ms>10000</min_time_not_changing_for_ms>
-        </all_of>
-        <any_of>
-            <iterations>100</iterations>
-            <total_time_ms>60000</total_time_ms>
-        </any_of>
-    </stop_conditions>
 
 
     <settings>

@@ -4,10 +4,8 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
-#include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
 
 #include <ext/scope_guard.h>
-#include <pcg_random.hpp>
 
 #include <iostream>
 
@@ -86,7 +84,7 @@ try
         for (BlockInfo & block : block_infos)
         {
             Coordination::GetResponse resp = block.contents_future.get();
-            if (!resp.error && lock_holder_paths.count(resp.data))
+            if (resp.error == Coordination::Error::ZOK && lock_holder_paths.count(resp.data))
             {
                 ++total_count;
                 current_inserts[block.partition].insert(block.number);

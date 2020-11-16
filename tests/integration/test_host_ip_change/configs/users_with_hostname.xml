@@ -1,0 +1,13 @@
+<yandex>
+    <users>
+        <default>
+            <networks>
+                <host>node3</host>
+                <host_regexp>[a-z]+4</host_regexp>
+                <ip>::1</ip>
+                <ip>127.0.0.1</ip>
+            </networks>
+            <profile>default</profile>
+        </default>
+    </users>
+</yandex>

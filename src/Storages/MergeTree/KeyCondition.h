@@ -3,27 +3,24 @@
 #include <sstream>
 #include <optional>
 
-#include <Interpreters/Context.h>
 #include <Interpreters/Set.h>
 #include <Core/SortDescription.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Storages/MergeTree/FieldRange.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/MergeTree/FieldRange.h>
 
 
 namespace DB
 {
 
-
+class Context;
 class IFunction;
 using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
-
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
-
 
 /** Condition on the index.
   *
@@ -41,7 +38,9 @@ public:
         const SelectQueryInfo & query_info,
         const Context & context,
         const Names & key_column_names,
-        const ExpressionActionsPtr & key_expr);
+        const ExpressionActionsPtr & key_expr,
+        bool single_point_ = false,
+        bool strict_ = false);
 
     /// Whether the condition and its negation are feasible in the direct product of single column ranges specified by `hyperrectangle`.
     BoolMask checkInHyperrectangle(
@@ -109,23 +108,28 @@ public:
       * Returns false, if expression isn't constant.
       */
     static bool getConstant(
-            const ASTPtr & expr, Block & block_with_constants, Field & out_value, DataTypePtr & out_type);
+        const ASTPtr & expr, Block & block_with_constants, Field & out_value, DataTypePtr & out_type);
 
     static Block getBlockWithConstants(
-        const ASTPtr & query, const SyntaxAnalyzerResultPtr & syntax_analyzer_result, const Context & context);
+        const ASTPtr & query, const TreeRewriterResultPtr & syntax_analyzer_result, const Context & context);
+
+    bool matchesExactContinuousRange() const;
 
     static std::optional<Range> applyMonotonicFunctionsChainToRange(
         Range key_range,
-        FunctionsChain & functions,
-        DataTypePtr current_type);
+        const FunctionsChain & functions,
+        DataTypePtr current_type,
+        bool single_point = false);
+
     static std::optional<RangeSet> applyMonotonicFunctionsChainToRangeSet(
-            RangeSet key_range_set,
-            const FunctionsChain & functions,
-            DataTypePtr current_type);
+        RangeSet key_range_set,
+        const FunctionsChain & functions,
+        DataTypePtr current_type);
+
     static std::optional<RangeSet> applyInvertibleFunctionsChainToRange(
-            RangeSet key_range_set,
-            const FunctionsChain & functions,
-            const FunctionArgumentStack& argument_stack);
+        RangeSet key_range_set,
+        const FunctionsChain & functions,
+        const FunctionArgumentStack& argument_stack);
 
 private:
     /// The expression is stored as Reverse Polish Notation.
@@ -164,10 +168,10 @@ private:
         DataTypePtr data_type;
         FunctionArgumentStack function_argument_stack;
         /// For FUNCTION_IN_SET, FUNCTION_NOT_IN_SET
-        using MergeTreeSetIndexPtr = std::shared_ptr<MergeTreeSetIndex>;
+        using MergeTreeSetIndexPtr = std::shared_ptr<const MergeTreeSetIndex>;
         MergeTreeSetIndexPtr set_index;
 
-        mutable FunctionsChain monotonic_functions_chain;    /// The function execution does not violate the constancy.
+        mutable FunctionsChain monotonic_functions_chain;  /// Function execution does not violate its constancy.
         mutable FunctionsChain invertible_functions_chain;
     };
 
@@ -192,8 +196,8 @@ private:
     bool tryParseAtomFromAST(const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out);
     static bool tryParseLogicalOperatorFromAST(const ASTFunction * func, RPNElement & out);
 
-    /** Is the given node a key column
-      *  or expression in which a key column is wrapped by chain of functions,
+    /** Whether the given node is a key column
+      *  or an expression in which key column is wrapped in a chain of functions,
       *  that can be monotonic on certain ranges?
       * Returns the key column number, the type of the resulting expression
       *  and fills the chain of possibly-monotonic functions if those conditions are met.
@@ -214,12 +218,14 @@ private:
         DataTypePtr & out_key_column_type,
         FunctionsChain & out_invertible_functions_chain,
         FunctionArgumentStack & out_function_argument_stack);
+
     bool isColumnPossiblyAnArgumentOfInvertibleFunctionsInKeyExprImpl(
         const String & name,
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
         FunctionsChain & out_invertible_functions_chain,
         FunctionArgumentStack & out_function_argument_stack);
+
     bool isKeyPossiblyWrappedByMonotonicOrInvertibleFunctions(
         const ASTPtr & node,
         const Context & context,
@@ -247,6 +253,13 @@ private:
         Field & out_value,
         DataTypePtr & out_type);
 
+    bool canConstantBeWrappedByFunctions(
+        const ASTPtr & node,
+        size_t & out_key_column_num,
+        DataTypePtr & out_key_column_type,
+        Field & out_value,
+        DataTypePtr & out_type);
+
     /// If it's possible to make an RPNElement
     /// that will filter values (possibly tuples) by the content of 'prepared_set',
     /// do it and return true.
@@ -261,6 +274,11 @@ private:
     ColumnIndices key_columns;
     ExpressionActionsPtr key_expr;
     PreparedSets prepared_sets;
+
+    // If true, always allow key_expr to be wrapped by function
+    bool single_point;
+    // If true, do not use always_monotonic information to transform constants
+    bool strict;
 };
 
 }

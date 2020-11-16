@@ -50,6 +50,8 @@ class Connection;
 using ConnectionPtr = std::shared_ptr<Connection>;
 using Connections = std::vector<ConnectionPtr>;
 
+using Scalars = std::map<String, Block>;
+
 
 /// Packet that could be received from server.
 struct Packet
@@ -81,6 +83,8 @@ public:
     Connection(const String & host_, UInt16 port_,
         const String & default_database_,
         const String & user_, const String & password_,
+        const String & cluster_,
+        const String & cluster_secret_,
         const String & client_name_ = "client",
         Protocol::Compression compression_ = Protocol::Compression::Enable,
         Protocol::Secure secure_ = Protocol::Secure::Disable,
@@ -88,6 +92,8 @@ public:
         :
         host(host_), port(port_), default_database(default_database_),
         user(user_), password(password_),
+        cluster(cluster_),
+        cluster_secret(cluster_secret_),
         client_name(client_name_),
         compression(compression_),
         secure(secure_),
@@ -168,6 +174,8 @@ public:
     /// If not connected yet, or if connection is broken - then connect. If cannot connect - throw an exception.
     void forceConnected(const ConnectionTimeouts & timeouts);
 
+    bool isConnected() const { return connected; }
+
     TablesStatusResponse getTablesStatus(const ConnectionTimeouts & timeouts,
                                          const TablesStatusRequest & request);
 
@@ -186,6 +194,11 @@ private:
     String default_database;
     String user;
     String password;
+
+    /// For inter-server authorization
+    String cluster;
+    String cluster_secret;
+    String salt;
 
     /// Address is resolved during the first connection (or the following reconnects)
     /// Use it only for logging purposes
@@ -247,16 +260,16 @@ private:
         {
         }
 
-        Logger * get()
+        Poco::Logger * get()
         {
             if (!log)
-                log = &Logger::get("Connection (" + parent.getDescription() + ")");
+                log = &Poco::Logger::get("Connection (" + parent.getDescription() + ")");
 
             return log;
         }
 
     private:
-        std::atomic<Logger *> log;
+        std::atomic<Poco::Logger *> log;
         Connection & parent;
     };
 
@@ -265,6 +278,10 @@ private:
     void connect(const ConnectionTimeouts & timeouts);
     void sendHello();
     void receiveHello();
+
+#if USE_SSL
+    void sendClusterNameAndSalt();
+#endif
     bool ping();
 
     Block receiveData();

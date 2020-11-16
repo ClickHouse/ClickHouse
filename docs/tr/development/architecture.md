@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 62
 toc_title: "ClickHouse mimarisine genel bak\u0131\u015F"
 ---
@@ -41,13 +41,13 @@ Sütunlar üzerinde çeşitli işlevler kullanarak genel, verimli olmayan bir ş
 
 `IDataType` çeşitli veri formatları için yardımcı yöntemlere sahiptir. Örnekler, Olası Alıntı ile bir değeri serileştirmek, json için bir değeri serileştirmek ve XML formatının bir parçası olarak bir değeri serileştirmek için kullanılan yöntemlerdir. Veri formatlarına doğrudan yazışma yoktur. Örneğin, farklı veri biçimleri `Pretty` ve `TabSeparated` aynı kullanabilirsiniz `serializeTextEscaped` hel methodper yöntemi `IDataType` Arabirim.
 
-## Blok {#block}
+## Engel {#block}
 
 A `Block` bellekteki bir tablonun bir alt kümesini (yığın) temsil eden bir kapsayıcıdır. Bu sadece üçlü bir dizi: `(IColumn, IDataType, column name)`. Sorgu yürütme sırasında veri tarafından işlenir `Block`s. Eğer bir `Block`(bu yaptığımız verileri `IColumn` nesne), biz onun türü hakkında bilgi var (içinde `IDataType`) bu bize bu sütunla nasıl başa çıkacağımızı söyler ve sütun adına sahibiz. Tablodan orijinal sütun adı veya hesaplamaların geçici sonuçlarını almak için atanan bazı yapay ad olabilir.
 
 Bir bloktaki sütunlar üzerinde bazı işlevleri hesapladığımızda, bloğa sonucu olan başka bir sütun ekleriz ve işlemler değişmez olduğu için işlevin argümanları için sütunlara dokunmayız. Daha sonra, gereksiz sütunlar bloktan kaldırılabilir, ancak değiştirilemez. Ortak alt ifadelerin ortadan kaldırılması için uygundur.
 
-İşlenen her veri yığını için bloklar oluşturulur. Aynı hesaplama türü için, sütun adları ve türleri farklı bloklar için aynı kalır ve yalnızca sütun verileri değişir unutmayın. Küçük blok boyutları shared\_ptrs ve sütun adlarını kopyalamak için geçici dizeleri yüksek bir ek yükü olduğundan blok üstbilgisinden blok verileri bölmek daha iyidir.
+İşlenen her veri yığını için bloklar oluşturulur. Aynı hesaplama türü için, sütun adları ve türleri farklı bloklar için aynı kalır ve yalnızca sütun verileri değişir unutmayın. Küçük blok boyutları shared_ptrs ve sütun adlarını kopyalamak için geçici dizeleri yüksek bir ek yükü olduğundan blok üstbilgisinden blok verileri bölmek daha iyidir.
 
 ## Blok Akışları {#block-streams}
 
@@ -122,9 +122,9 @@ Sıradan fonksiyonlar ve toplam fonksiyonlar vardır. Toplama işlevleri için b
 
 Ordinary functions don't change the number of rows – they work as if they are processing each row independently. In fact, functions are not called for individual rows, but for `Block`'s vectorized sorgu yürütme uygulamak için veri.
 
-Gibi bazı çeşitli fonksiyonlar vardır [blockSize](../sql_reference/functions/other_functions.md#function-blocksize), [rowNumberİnBlock](../sql_reference/functions/other_functions.md#function-rownumberinblock), ve [runningAccumulate](../sql_reference/functions/other_functions.md#function-runningaccumulate), blok işlemeyi istismar eden ve satırların bağımsızlığını ihlal eden.
+Gibi bazı çeşitli fonksiyonlar vardır [blockSize](../sql-reference/functions/other-functions.md#function-blocksize), [rowNumberİnBlock](../sql-reference/functions/other-functions.md#function-rownumberinblock), ve [runningAccumulate](../sql-reference/functions/other-functions.md#function-runningaccumulate), blok işlemeyi istismar eden ve satırların bağımsızlığını ihlal eden.
 
-Clickhouse'un güçlü yazımı var, bu yüzden örtük tür dönüşümü yok. Bir işlev belirli bir tür kombinasyonunu desteklemiyorsa, bir istisna atar. Ancak, birçok farklı tür kombinasyonu için işlevler çalışabilir (aşırı yüklenebilir). Örneğin, `plus` fonksiyonu (uygulamak için `+` operatör) sayısal türlerin herhangi bir kombinasyonu için çalışır: `UInt8` + `Float32`, `UInt16` + `Int8` ve bu yüzden. Ayrıca, bazı variadic işlevleri gibi bağımsız değişkenlerin herhangi bir sayıda kabul edebilir `concat` işlev.
+Clickhouse'un güçlü yazımı var, bu yüzden örtük tür dönüşümü yok. Bir işlev belirli bir tür kombinasyonunu desteklemiyorsa, bir istisna atar. Ancak, birçok farklı tür kombinasyonu için işlevler çalışabilir (aşırı yüklenebilir). Örneğin, `plus` fonksiyonu (uygulamak için `+` operatör) sayısal türlerin herhangi bir kombinasyonu için çalışır: `UInt8` + `Float32`, `UInt16` + `Int8` ve bu yüzden. Ayrıca, bazı variadic işlevleri gibi bağımsız değişkenlerin herhangi bir sayıda kabul edebilir `concat` İşlev.
 
 Bir işlev açıkça desteklenen veri türlerini gönderir ve desteklenen çünkü bir işlev uygulamak biraz rahatsız edici olabilir `IColumns`. Örneğin, `plus` işlev, sayısal türlerin ve sabit veya sabit olmayan sol ve sağ bağımsız değişkenlerin her birleşimi için bir C++ şablonunun örneklendirilmesiyle oluşturulan koda sahiptir.
 

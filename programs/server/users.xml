@@ -44,6 +44,9 @@
                  If you want to specify double SHA1, place it in 'password_double_sha1_hex' element.
                  Example: <password_double_sha1_hex>e395796d6546b1b65db9d665cd43f0e858dd4303</password_double_sha1_hex>
 
+                 If you want to specify a previously defined LDAP server (see 'ldap_servers' in main config) for authentication, place its name in 'server' element inside 'ldap' element.
+                 Example: <ldap><server>my_ldap_server</server></ldap>
+
                  How to generate decent password:
                  Execute: PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha256sum | tr -d '-'
                  In first line will be password and in second - corresponding SHA256.

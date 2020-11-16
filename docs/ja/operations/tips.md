@@ -1,15 +1,15 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 58
-toc_title: "\u4F7F\u7528\u306E\u63A8\u5968\u4E8B\u9805"
+toc_title: "\u4F7F\u7528\u6CD5\u306E\u63A8\u5968\u4E8B\u9805"
 ---
 
-# 使用の推奨事項 {#usage-recommendations}
+# 使用法の推奨事項 {#usage-recommendations}
 
-## CPUスケールガバナー {#cpu-scaling-governor}
+## CPUのスケール知事 {#cpu-scaling-governor}
 
-常に使用する `performance` スケーリング知事。 その `on-demand` スケーリング知事は、常に高い需要とはるかに悪い作品。
+常に `performance` スケーリング知事。 その `on-demand` スケーリング総裁の作品もないと常に高いです。
 
 ``` bash
 $ echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
@@ -17,36 +17,36 @@ $ echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_gov
 
 ## CPUの制限 {#cpu-limitations}
 
-プロセッサでの過熱を防止します。 使用 `dmesg` 過熱によりCPUのクロックレートが制限されているかどうかを確認します。
-の制限を設定することもできます外部のデータセンターです。 を使用することができ `turbostat` 負荷の下でそれを監視する。
+プロセッサでの過熱を防止します。 使用 `dmesg` cpuのクロックレートが過熱により制限されているかどうかを確認します。
+制限は、データセンターレベルで外部で設定することもできます。 以下を使用できます `turbostat` 負荷の下でそれを監視する。
 
 ## RAM {#ram}
 
-少量のデータ（最大-200gb圧縮）の場合は、データ量と同じくらいのメモリを使用するのが最善です。
-大量のデータと対話型（オンライン）クエリを処理する場合は、ホットデータサブセットがページのキャッシュに収まるように、妥当な量のram（128gb以上）を使
-でもデータ量の50tbサーバ用のもの128gb ramを大幅に向上するクエリの性能に比べて64gbにサンプルがあります。
+少量のデータ（最大200GB圧縮）の場合は、データ量と同じくらいのメモリを使用することをお勧めします。
+大量のデータの場合、および対話型(オンライン)クエリを処理する場合は、ホットデータサブセットがページのキャッシュに収まるように、妥当な量のRAM(128GB
+でもデータ量の50TBサーバ用のもの128GB RAMを大幅に向上するクエリの性能に比べて64GBにサンプルがあります。
 
-Overcommitを無効にしないでください。 を値 `cat /proc/sys/vm/overcommit_memory` 0または1である必要があります。 走れ。
+オーバーコミットを無効にしません。 値 `cat /proc/sys/vm/overcommit_memory` 0または1にする必要があります。 走れ。
 
 ``` bash
 $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 ```
 
-## ヒュージページ {#huge-pages}
+## 巨大なページ {#huge-pages}
 
-常に透明な巨大ページを無効にします。 これはメモリアロケータに干渉し、パフォーマンスが大幅に低下します。
+常に透明な巨大ページを無効にします。 これはメモリアロケータと干渉し、パフォーマンスが大幅に低下します。
 
 ``` bash
 $ echo 'never' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
 ```
 
-使用 `perf top` メモリ管理のためにカーネルに費やされた時間を監視する。
-永続的なヒュージページも割り当てる必要はありません。
+使用 `perf top` メモリ管理のためにカーネルで費やされた時間を監視する。
+永続的な巨大なページも割り当てる必要はありません。
 
-## 格納サブシステム {#storage-subsystem}
+## Storageサブシステム {#storage-subsystem}
 
-予算でssdを使用できる場合は、ssdを使用してください。
-そうでない場合は、hddを使用します。 sata hdd7200rpmが実行されます。
+予算でSSDを使用できる場合は、SSDを使用してください。
+そうでない場合は、HDDを使用します。 SATA Hdd7200RPMが行います。
 
 優先のサーバー地域のハードディスク上に小さな複数のサーバーが付属ディスクが増す。
 ものの保存アーカイブでクエリー、棚します。
@@ -54,29 +54,29 @@ $ echo 'never' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
 ## RAID {#raid}
 
 HDDを使用する場合は、RAID-10、RAID-5、RAID-6またはRAID-50を組み合わせることができます。
-Linuxでは、ソフトウェアRAIDが優れている（と `mdadm`). LVMの使用はお勧めしません。
-RAID-10を作成するときは、以下を選択します。 `far` レイアウト。
-予算が許せば、raid-10を選択します。
+Linuxでは、ソフトウェアRAIDが優れています（ `mdadm`). LVMの使用はお勧めしません。
+RAID-10を作成するときは、 `far` レイアウト。
+予算が許せば、RAID-10を選択します。
 
-4台以上のディスクがある場合は、raid-6(優先)またはraid-50を使用します(raid-5の代わりに使用します)。
-RAID-5、RAID-6またはRAID-50を使用する場合、デフォルト値は通常最良の選択ではないので、常にstripe\_cache\_sizeを増加させます。
+4つ以上のディスクがある場合は、RAID-6(優先)またはRAID-50を使用してください。
+RAID-5、RAID-6、またはRAID-50を使用する場合は、常にstripe_cache_sizeを増やしてください。
 
 ``` bash
 $ echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size
 ```
 
-次の式を使用して、デバイスの数とブロックサイズから正確な数を計算します: `2 * num_devices * chunk_size_in_bytes / 4096`.
+式を使用して、デバイスの数とブロックサイズから正確な数を計算します: `2 * num_devices * chunk_size_in_bytes / 4096`.
 
-1024kbのブロックサイズは、すべてのraid構成で十分です。
+すべてのRAID構成では、1024KBのブロックサイズで十分です。
 ないセットのブロックサイズでは多すぎます。
 
-SSDにRAID-0を使用できます。
-に関わらずraidの利用、使用複製のためのデータです。
+SSDではRAID-0を使用できます。
+に関わらずRAIDの利用、使用複製のためのデータです。
 
-長いキューでncqを有効にします。 hddの場合はcfqスケジューラを選択し、ssdの場合はnoopを選択します。 減らしてはいけない ‘readahead’ 設定。
-のためのハードディスク（hdd）を、書き込みます。
+長いキューでNCQを有効にします。 HDDの場合はCFQスケジューラを選択し、SSDの場合はnoopを選択します。 減らさないで下さい ‘readahead’ 設定。
+HDDの場合、ライトキャッシュを有効にします。
 
-## ファイル {#file-system}
+## ファイルシス {#file-system}
 
 Ext4は最も信頼性の高いオプションです。 マウントオプションの設定 `noatime, nobarrier`.
 XFSも適していますが、ClickHouseで徹底的にテストされていません。
@@ -84,34 +84,34 @@ XFSも適していますが、ClickHouseで徹底的にテストされていま�
 
 ## Linuxカーネル {#linux-kernel}
 
-古いlinuxカーネルを使用しないでください。
+古いLinuxカーネルを使用しないでください。
 
-## ネットワーク {#network}
+## ネット {#network}
 
-IPv6を使用している場合は、ルートキャッシュのサイズを大きくします。
-3.2より前のlinuxカーネルでは、ipv6の実装に多くの問題がありました。
+IPv6を使用している場合は、ルートキャッシュのサイズを増やします。
+3.2より前のLinuxカーネルには、IPv6実装に関して多くの問題がありました。
 
-可能な場合は、少なくとも10gbのネットワークを使用します。 1gbも動作しますが、数十テラバイトのデータを含むレプリカにパッチを適用したり、大量の中間データを含む分散クエリを処理する場合は、さらに悪
+可能であれば、10GB以上のネットワークを使用してください。 1Gbも動作しますが、数十テラバイトのデータを使用してレプリカにパッチを適用する場合や、大量の中間データを使用して分散クエリを処理する場合
 
-## ZooKeeper {#zookeeper}
+## 飼育係 {#zookeeper}
 
-おそらく既にzookeeperを他の目的で使用しているでしょう。 それがまだ過負荷になっていない場合は、zookeeperと同じインストールを使用できます。
+おそらく既に他の目的のためにZooKeeperを使用しています。 まだ過負荷になっていない場合は、ZooKeeperと同じインストールを使用できます。
 
 It's best to use a fresh version of ZooKeeper – 3.4.9 or later. The version in stable Linux distributions may be outdated.
 
-異なるzookeeperクラスタ間でデータを転送するために手動で記述されたスクリプトを使用することはありません。 決して使用 “zkcopy” 同じ理由でユーティリティ：https://github.com/ksprojects/zkcopy/issues/15
+異なるZooKeeperクラスター間でデータを転送するには、手動で書かれたスクリプトを使用しないでください。 決して使用しない “zkcopy” 同じ理由でユーティリティ：https://github.com/ksprojects/zkcopy/issues/15
 
-既存のzookeeperクラスターを二つに分割したい場合、正しい方法はレプリカの数を増やし、それを二つの独立したクラスターとして再構成することです。
+既存のZooKeeperクラスタを二つに分割する場合、正しい方法は、そのレプリカの数を増やし、それを二つの独立したクラスタとして再構成することです。
 
-ClickHouseと同じサーバーでZooKeeperを実行しないでください。 で飼育係が非常に敏感なために時間遅れとClickHouseを利用することも可能で利用可能なすべてシステム資源です。
+ClickHouseと同じサーバー上でZooKeeperを実行しないでください。 で飼育係が非常に敏感なために時間遅れとClickHouseを利用することも可能で利用可能なすべてシステム資源です。
 
-デフォルトの設定では、zookeeperは時限爆弾です:
+デフォルト設定では、飼育係は時限爆弾です:
 
-> ZooKeeperサーバーは、デフォルト設定（autopurgeを参照）を使用するときに古いスナップショットやログからファイルを削除することはありません。
+> ZooKeeperサーバーは、デフォルト設定を使用するときに古いスナップショットとログからファイルを削除しません(autopurgeを参照)。
 
-この爆弾は取り除かれなければならない
+この爆弾は取り除かなければならない
 
-以下のzookeeper（3.5.1）設定はyandexで使用されています。月のメトリカの生産環境20,2017:
+以下の飼育係（3.5.1）設定はYandexで使用されています。月のようMetricaの生産環境20,2017:
 
 動物園cfg:
 

@@ -3,7 +3,7 @@ EXISTS TABLE db_01048.t_01048;
 EXISTS DICTIONARY db_01048.t_01048;
 
 DROP DATABASE IF EXISTS db_01048;
-CREATE DATABASE db_01048 Engine = Ordinary;
+CREATE DATABASE db_01048;
 
 DROP TABLE IF EXISTS db_01048.t_01048;
 EXISTS db_01048.t_01048;
@@ -32,7 +32,7 @@ EXISTS TABLE db_01048.t_01048; -- Dictionaries are tables as well. But not all t
 EXISTS DICTIONARY db_01048.t_01048;
 
 -- But dictionary-tables cannot be dropped as usual tables.
-DROP TABLE db_01048.t_01048; -- { serverError 60 }
+DROP TABLE db_01048.t_01048; -- { serverError 520 }
 DROP DICTIONARY db_01048.t_01048;
 EXISTS db_01048.t_01048;
 EXISTS TABLE db_01048.t_01048;

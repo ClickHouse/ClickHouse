@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 46
 toc_title: "Ar\u0131za"
 ---
@@ -17,7 +17,7 @@ toc_title: "Ar\u0131za"
 ### Apt-get ile ClickHouse deposundan Deb paketleri alınamıyor {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
 
 -   Güvenlik Duvarı ayarlarını kontrol edin.
--   Depoya herhangi bir nedenle erişemiyorsanız, paketleri aşağıda açıklandığı gibi indirin [Başlarken](../getting_started/index.md) makale ve bunları kullanarak manuel olarak yükleyin `sudo dpkg -i <packages>` komut. Ayrıca ihtiyacınız olacak `tzdata` paket.
+-   Depoya herhangi bir nedenle erişemiyorsanız, paketleri aşağıda açıklandığı gibi indirin [Başlarken](../getting-started/index.md) makale ve bunları kullanarak manuel olarak yükleyin `sudo dpkg -i <packages>` komut. Ayrıca ihtiyacınız olacak `tzdata` paket.
 
 ## Sunucuya bağlanma {#troubleshooting-accepts-no-connections}
 
@@ -105,7 +105,7 @@ Kontrol:
 
 -   Bitiş noktası ayarları.
 
-    Kontrol [listen\_host](server_configuration_parameters/settings.md#server_configuration_parameters-listen_host) ve [tcp\_port](server_configuration_parameters/settings.md#server_configuration_parameters-tcp_port) ayarlar.
+    Kontrol [listen_host](server-configuration-parameters/settings.md#server_configuration_parameters-listen_host) ve [tcp_port](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) ayarlar.
 
     ClickHouse server, yalnızca varsayılan olarak localhost bağlantılarını kabul eder.
 
@@ -117,8 +117,8 @@ Kontrol:
 
     Kontrol:
 
-    -   Bu [tcp\_port\_secure](server_configuration_parameters/settings.md#server_configuration_parameters-tcp_port_secure) ayar.
-    -   İçin ayarlar [SSL sertifikaları](server_configuration_parameters/settings.md#server_configuration_parameters-openssl).
+    -   Bu [tcp_port_secure](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) ayar.
+    -   İçin ayarlar [SSL sertifikaları](server-configuration-parameters/settings.md#server_configuration_parameters-openssl).
 
     Bağlanırken uygun parametreleri kullanın. Örneğin, kullanın `port_secure` parametre ile `clickhouse_client`.
 

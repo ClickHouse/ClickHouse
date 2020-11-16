@@ -72,26 +72,19 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
             table_expression.subquery->children.at(0), context).getNamesAndTypesList();
         columns = ColumnsDescription(std::move(names_and_types));
     }
+    else if (table_expression.table_function)
+    {
+        TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_expression.table_function, context);
+        columns = table_function_ptr->getActualTableStructure(context);
+    }
     else
     {
-        StoragePtr table;
-        if (table_expression.table_function)
-        {
-            const auto & table_function = table_expression.table_function->as<ASTFunction &>();
-            TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_function.name, context);
-            /// Run the table function and remember the result
-            table = table_function_ptr->execute(table_expression.table_function, context, table_function_ptr->getName());
-        }
-        else
-        {
-            auto table_id = context.resolveStorageID(table_expression.database_and_table_name);
-            context.checkAccess(AccessType::SHOW_COLUMNS, table_id);
-            table = DatabaseCatalog::instance().getTable(table_id);
-        }
-
-        auto table_lock = table->lockStructureForShare(
-                false, context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout);
-        columns = table->getColumns();
+        auto table_id = context.resolveStorageID(table_expression.database_and_table_name);
+        context.checkAccess(AccessType::SHOW_COLUMNS, table_id);
+        auto table = DatabaseCatalog::instance().getTable(table_id, context);
+        auto table_lock = table->lockForShare(context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout);
+        auto metadata_snapshot = table->getInMemoryMetadataPtr();
+        columns = metadata_snapshot->getColumns();
     }
 
     Block sample_block = getSampleBlock();
@@ -99,9 +92,6 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
 
     for (const auto & column : columns)
     {
-        if (column.is_virtual)
-            continue;
-
         res_columns[0]->insert(column.name);
         res_columns[1]->insert(column.type->getName());
 
@@ -119,7 +109,7 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
         res_columns[4]->insert(column.comment);
 
         if (column.codec)
-            res_columns[5]->insert(column.codec->getCodecDesc());
+            res_columns[5]->insert(queryToString(column.codec->as<ASTFunction>()->arguments));
         else
             res_columns[5]->insertDefault();
 

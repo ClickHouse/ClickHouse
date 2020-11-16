@@ -22,14 +22,15 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int DECIMAL_OVERFLOW;
 }
 
-//
 
 template <typename T>
 std::string DataTypeDecimal<T>::doGetName() const
 {
     std::stringstream ss;
+    ss.exceptions(std::ios::failbit);
     ss << "Decimal(" << this->precision << ", " << this->scale << ")";
     return ss.str();
 }
@@ -61,10 +62,13 @@ template <typename T>
 bool DataTypeDecimal<T>::tryReadText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale)
 {
     UInt32 unread_scale = scale;
-    bool done = tryReadDecimalText(istr, x, precision, unread_scale);
+    if (!tryReadDecimalText(istr, x, precision, unread_scale))
+        return false;
 
-    x *= T::getScaleMultiplier(unread_scale);
-    return done;
+    if (common::mulOverflow(x.value, DecimalUtils::scaleMultiplier<T>(unread_scale), x.value))
+        return false;
+
+    return true;
 }
 
 template <typename T>
@@ -75,7 +79,9 @@ void DataTypeDecimal<T>::readText(T & x, ReadBuffer & istr, UInt32 precision, UI
         readCSVDecimalText(istr, x, precision, unread_scale);
     else
         readDecimalText(istr, x, precision, unread_scale);
-    x *= T::getScaleMultiplier(unread_scale);
+
+    if (common::mulOverflow(x.value, DecimalUtils::scaleMultiplier<T>(unread_scale), x.value))
+        throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
 }
 
 template <typename T>
@@ -101,7 +107,9 @@ T DataTypeDecimal<T>::parseFromString(const String & str) const
     T x;
     UInt32 unread_scale = this->scale;
     readDecimalText(buf, x, this->precision, unread_scale, true);
-    x *= T::getScaleMultiplier(unread_scale);
+
+    if (common::mulOverflow(x.value, DecimalUtils::scaleMultiplier<T>(unread_scale), x.value))
+        throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
 
     return x;
 }
@@ -176,14 +184,18 @@ void registerDataTypeDecimal(DataTypeFactory & factory)
     factory.registerDataType("Decimal32", createExact<Decimal32>, DataTypeFactory::CaseInsensitive);
     factory.registerDataType("Decimal64", createExact<Decimal64>, DataTypeFactory::CaseInsensitive);
     factory.registerDataType("Decimal128", createExact<Decimal128>, DataTypeFactory::CaseInsensitive);
+    factory.registerDataType("Decimal256", createExact<Decimal256>, DataTypeFactory::CaseInsensitive);
 
     factory.registerDataType("Decimal", create, DataTypeFactory::CaseInsensitive);
     factory.registerAlias("DEC", "Decimal", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("NUMERIC", "Decimal", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("FIXED", "Decimal", DataTypeFactory::CaseInsensitive);
 }
 
 /// Explicit template instantiations.
 template class DataTypeDecimal<Decimal32>;
 template class DataTypeDecimal<Decimal64>;
 template class DataTypeDecimal<Decimal128>;
+template class DataTypeDecimal<Decimal256>;
 
 }

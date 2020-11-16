@@ -1,8 +1,30 @@
 #include <DataStreams/BlockIO.h>
 #include <Interpreters/ProcessList.h>
+#include <Processors/Executors/PipelineExecutingBlockInputStream.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+BlockInputStreamPtr BlockIO::getInputStream()
+{
+    if (out)
+        throw Exception("Cannot get input stream from BlockIO because output stream is not empty",
+                        ErrorCodes::LOGICAL_ERROR);
+
+    if (in)
+        return in;
+
+    if (pipeline.initialized())
+        return std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
+
+    throw Exception("Cannot get input stream from BlockIO because query pipeline was not initialized",
+                    ErrorCodes::LOGICAL_ERROR);
+}
 
 void BlockIO::reset()
 {
@@ -20,7 +42,7 @@ void BlockIO::reset()
     in.reset();
     if (process_list_entry)
         process_list_entry->get().releaseQueryStreams();
-    pipeline = QueryPipeline();
+    pipeline.reset();
     process_list_entry.reset();
 
     /// TODO Do we need also reset callbacks? In which order?

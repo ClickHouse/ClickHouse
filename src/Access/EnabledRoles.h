@@ -2,6 +2,7 @@
 
 #include <Core/UUID.h>
 #include <ext/scope_guard.h>
+#include <boost/container/flat_set.hpp>
 #include <list>
 #include <mutex>
 #include <vector>
@@ -16,8 +17,8 @@ class EnabledRoles
 public:
     struct Params
     {
-        std::vector<UUID> current_roles;
-        std::vector<UUID> current_roles_with_admin_option;
+        boost::container::flat_set<UUID> current_roles;
+        boost::container::flat_set<UUID> current_roles_with_admin_option;
 
         auto toTuple() const { return std::tie(current_roles, current_roles_with_admin_option); }
         friend bool operator ==(const Params & lhs, const Params & rhs) { return lhs.toTuple() == rhs.toTuple(); }
@@ -42,7 +43,7 @@ private:
     friend class RoleCache;
     EnabledRoles(const Params & params_);
 
-    void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & info_);
+    void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & info_, ext::scope_guard & notifications);
 
     const Params params;
     mutable std::shared_ptr<const EnabledRolesInfo> info;

@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 78
 toc_title: Genel Sorular
 ---
@@ -17,7 +17,7 @@ Bu sistemler, yüksek gecikme süreleri nedeniyle çevrimiçi sorgular için uyg
 
 ## Oracle aracılığıyla ODBC kullanırken Kodlamalarla ilgili bir sorunum varsa ne olur? {#oracle-odbc-encodings}
 
-Oracle ODBC sürücüsü aracılığıyla dış sözlükler kaynağı olarak kullanırsanız, doğru değeri ayarlamanız gerekir. `NLS_LANG` ortam değişkeni `/etc/default/clickhouse`. Daha fazla bilgi için, bkz: [Oracle NLS\_LANG SSS](https://www.oracle.com/technetwork/products/globalization/nls-lang-099431.html).
+Oracle ODBC sürücüsü aracılığıyla dış sözlükler kaynağı olarak kullanırsanız, doğru değeri ayarlamanız gerekir. `NLS_LANG` ortam değişkeni `/etc/default/clickhouse`. Daha fazla bilgi için, bkz: [Oracle NLS_LANG SSS](https://www.oracle.com/technetwork/products/globalization/nls-lang-099431.html).
 
 **Örnek**
 
@@ -29,7 +29,7 @@ NLS_LANG=RUSSIAN_RUSSIA.UTF8
 
 ### INTO OUTFİLE yan tümcesini kullanma {#using-into-outfile-clause}
 
-Add an [INTO OUTFILE](../sql_reference/statements/select.md#into-outfile-clause) sorgunuza yan tümce.
+Add an [INTO OUTFILE](../sql-reference/statements/select/into-outfile.md#into-outfile-clause) sorgunuza yan tümce.
 
 Mesela:
 
@@ -37,7 +37,7 @@ Mesela:
 SELECT * FROM table INTO OUTFILE 'file'
 ```
 
-Varsayılan olarak, ClickHouse kullanır [TabSeparated](../interfaces/formats.md#tabseparated) çıktı verileri için Biçim. Seçmek için [Veri formatı](../interfaces/formats.md), use the [FORMAT CLA clauseuse](../sql_reference/statements/select.md#format-clause).
+Varsayılan olarak, ClickHouse kullanır [TabSeparated](../interfaces/formats.md#tabseparated) çıktı verileri için Biçim. Seçmek için [Veri formatı](../interfaces/formats.md), use the [FORMAT CLA clauseuse](../sql-reference/statements/select/format.md#format-clause).
 
 Mesela:
 
@@ -47,7 +47,7 @@ SELECT * FROM table INTO OUTFILE 'file' FORMAT CSV
 
 ### Dosya altyapısı tablosu kullanma {#using-a-file-engine-table}
 
-Görmek [Dosya](../engines/table_engines/special/file.md).
+Görmek [Dosya](../engines/table-engines/special/file.md).
 
 ### Komut Satırı Yeniden Yönlendirmesini Kullanma {#using-command-line-redirection}
 

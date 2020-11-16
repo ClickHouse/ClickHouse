@@ -1,6 +1,6 @@
 #pragma once
 
-#if defined(__linux__) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(__FreeBSD__)
 
 #include <condition_variable>
 #include <future>
@@ -36,7 +36,7 @@ class AIOContextPool : private boost::noncopyable
 
     void doMonitor();
     void waitForCompletion();
-    int getCompletionEvents(io_event events[], const int max_events);
+    int getCompletionEvents(io_event events[], const int max_events) const;
     void fulfillPromises(const io_event events[], const int num_events);
     void notifyProducers(const int num_producers) const;
     void reportExceptionToAnyProducer();

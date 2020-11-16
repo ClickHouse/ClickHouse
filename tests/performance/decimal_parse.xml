@@ -1,0 +1,3 @@
+<test>
+    <query>SELECT count() FROM zeros(10000000) WHERE NOT ignore(toDecimal32OrZero(toString(rand() % 10000), 5))</query>
+</test>

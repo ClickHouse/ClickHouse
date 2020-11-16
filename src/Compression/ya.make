@@ -1,3 +1,4 @@
+# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
 LIBRARY()
 
 ADDINCL(
@@ -10,6 +11,7 @@ PEERDIR(
     contrib/libs/lz4
     contrib/libs/zstd
 )
+
 
 SRCS(
     CachedCompressedReadBuffer.cpp
@@ -28,6 +30,8 @@ SRCS(
     CompressionFactory.cpp
     ICompressionCodec.cpp
     LZ4_decompress_faster.cpp
+    getCompressionCodecForFile.cpp
+
 )
 
 END()

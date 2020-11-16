@@ -1,23 +1,12 @@
 #pragma once
 
 #include <Storages/IStorage.h>
-#include <Core/Defines.h>
-#include <Common/MultiVersion.h>
 #include <ext/shared_ptr_helper.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
 
-
-namespace Poco
-{
-class Logger;
-}
 
 namespace DB
 {
 struct DictionaryStructure;
-struct IDictionaryBase;
-class ExternalDictionaries;
 
 class StorageDictionary final : public ext::shared_ptr_helper<StorageDictionary>, public IStorage
 {
@@ -27,50 +16,55 @@ public:
 
     void checkTableCanBeDropped() const override;
 
-    Pipes read(const Names & column_names,
-        const SelectQueryInfo & query_info,
+    Pipe read(
+        const Names & column_names,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned threads) override;
 
     static NamesAndTypesList getNamesAndTypes(const DictionaryStructure & dictionary_structure);
+    static String generateNamesAndTypesDescription(const NamesAndTypesList & list);
 
-    template <typename ForwardIterator>
-    static std::string generateNamesAndTypesDescription(ForwardIterator begin, ForwardIterator end)
+    const String & dictionaryName() const { return dictionary_name; }
+    String resolvedDictionaryName() const;
+
+    /// Specifies where the table is located relative to the dictionary.
+    enum class Location
     {
-        std::string description;
-        {
-            WriteBufferFromString buffer(description);
-            bool first = true;
-            for (; begin != end; ++begin)
-            {
-                if (!first)
-                    buffer << ", ";
-                first = false;
+        /// Table was created automatically as an element of a database with the Dictionary engine.
+        DictionaryDatabase,
 
-                buffer << begin->name << ' ' << begin->type->getName();
-            }
-        }
+        /// Table was created automatically along with a dictionary
+        /// and has the same database and name as the dictionary.
+        /// It provides table-like access to the dictionary.
+        /// User cannot drop that table.
+        SameDatabaseAndNameAsDictionary,
 
-        return description;
-    }
+        /// Table was created explicitly by a statement like
+        /// CREATE TABLE ... ENGINE=Dictionary
+        /// User chose the table's database and name and can drop that table.
+        Custom,
+    };
 
 private:
-    using Ptr = MultiVersion<IDictionaryBase>::Version;
-
-    String dictionary_name;
-    Poco::Logger * logger;
-
-    void checkNamesAndTypesCompatibleWithDictionary(const DictionaryStructure & dictionary_structure) const;
+    const String dictionary_name;
+    const Location location;
 
 protected:
     StorageDictionary(
         const StorageID & table_id_,
+        const String & dictionary_name_,
         const ColumnsDescription & columns_,
-        const Context & context,
-        bool attach,
-        const String & dictionary_name_);
+        Location location_);
+
+    StorageDictionary(
+        const StorageID & table_id_,
+        const String & dictionary_name_,
+        const DictionaryStructure & dictionary_structure,
+        Location location_);
 };
 
 }

@@ -1,16 +1,4 @@
 <test>
-
-    <stop_conditions>
-        <all_of>
-            <iterations>10</iterations>
-            <min_time_not_changing_for_ms>12000</min_time_not_changing_for_ms>
-        </all_of>
-        <any_of>
-            <iterations>50</iterations>
-            <total_time_ms>60000</total_time_ms>
-        </any_of>
-    </stop_conditions>
-    
     <create_query>
         CREATE TABLE huge_pk ENGINE = MergeTree ORDER BY (
         c001, c002, c003, c004, c005, c006, c007, c008, c009, c010, c011, c012, c013, c014, c015, c016, c017, c018, c019, c020, 
@@ -195,11 +183,11 @@
 </create_query>
 
     <!-- some queries with PK conditions -->
-    <query><![CDATA[SELECT count() FROM huge_pk WHERE c001 > 10]]></query>
-    <query><![CDATA[SELECT count() FROM huge_pk WHERE c001 in (2,3) and c400 in (10,0) and c100 < 2]]></query>
-    <query><![CDATA[SELECT count() FROM huge_pk WHERE c700 > 10]]></query>
+    <query short="1"><![CDATA[SELECT count() FROM huge_pk WHERE c001 > 10]]></query>
+    <query short="1"><![CDATA[SELECT count() FROM huge_pk WHERE c001 in (2,3) and c400 in (10,0) and c100 < 2]]></query>
+    <query short="1"><![CDATA[SELECT count() FROM huge_pk WHERE c700 > 10]]></query>
     <!-- column c701 is not in PK-->
-    <query><![CDATA[SELECT count() FROM huge_pk WHERE c701 > 10]]></query>
+    <query short="1"><![CDATA[SELECT count() FROM huge_pk WHERE c701 > 10]]></query>
 
     <drop_query>DROP TABLE IF EXISTS huge_pk</drop_query>
 </test>

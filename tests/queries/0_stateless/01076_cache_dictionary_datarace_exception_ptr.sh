@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
-# This is a monkey test used to trigger sanitizers. 
+# This is a monkey test used to trigger sanitizers.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT --query="CREATE DATABASE dictdb_01076; "
 
@@ -35,21 +35,21 @@ LAYOUT(CACHE());
 
 function thread1()
 {
-  for attempt_thread1 in {1..50}
-  do
-  	# This query will be ended with exception, because source dictionary has UInt8 as a key type.
-    $CLICKHOUSE_CLIENT --query="SELECT dictGetFloat64('dictdb_01076.dict_datarace', 'value', toUInt64(1));"
-  done
+    for _ in {1..50}
+    do
+        # This query will be ended with exception, because source dictionary has UInt8 as a key type.
+        $CLICKHOUSE_CLIENT --query="SELECT dictGetFloat64('dictdb_01076.dict_datarace', 'value', toUInt64(1));"
+    done
 }
 
 
 function thread2()
 {
-  for attempt_thread2 in {1..50}
-  do
-  	# This query will be ended with exception, because source dictionary has UInt8 as a key type.
-    $CLICKHOUSE_CLIENT --query="SELECT dictGetFloat64('dictdb_01076.dict_datarace', 'value', toUInt64(2));"
-  done
+    for _ in {1..50}
+    do
+        # This query will be ended with exception, because source dictionary has UInt8 as a key type.
+        $CLICKHOUSE_CLIENT --query="SELECT dictGetFloat64('dictdb_01076.dict_datarace', 'value', toUInt64(2));"
+    done
 }
 
 export -f thread1;

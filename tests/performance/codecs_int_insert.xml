@@ -1,15 +1,7 @@
 <test>
-
-    <stop_conditions>
-        <all_of>
-            <iterations>10</iterations>
-            <min_time_not_changing_for_ms>10000</min_time_not_changing_for_ms>
-        </all_of>
-        <any_of>
-            <iterations>100</iterations>
-            <total_time_ms>60000</total_time_ms>
-        </any_of>
-    </stop_conditions>
+    <settings>
+        <allow_suspicious_codecs>1</allow_suspicious_codecs>
+    </settings>
 
     <substitutions>
         <substitution>
@@ -41,7 +33,7 @@
         <substitution>
             <name>num_rows</name>
             <values>
-                <value>10000000</value>
+                <value>20000000</value>
             </values>
         </substitution>
     </substitutions>

@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 28
 toc_title: Interfaces Visuales
 ---
@@ -23,7 +23,7 @@ Función:
 
 [Documentación de Tabix](https://tabix.io/doc/).
 
-### Sistema abierto. {#houseops}
+### Sistema abierto {#houseops}
 
 [Sistema abierto.](https://github.com/HouseOps/HouseOps) Es una interfaz de usuario / IDE para OSX, Linux y Windows.
 
@@ -78,7 +78,7 @@ Función:
 -   Vista previa de datos de tabla.
 -   Búsqueda de texto completo.
 
-### Sistema abierto. {#clickhouse-cli}
+### Sistema abierto {#clickhouse-cli}
 
 [Sistema abierto.](https://github.com/hatarist/clickhouse-cli) es un cliente de línea de comandos alternativo para ClickHouse, escrito en Python 3.
 
@@ -89,9 +89,13 @@ Función:
 -   Soporte de buscapersonas para la salida de datos.
 -   Comandos similares a PostgreSQL personalizados.
 
-### Sistema abierto. {#clickhouse-flamegraph}
+### Sistema abierto {#clickhouse-flamegraph}
 
 [Sistema abierto.](https://github.com/Slach/clickhouse-flamegraph) es una herramienta especializada para visualizar el `system.trace_log` como [Flamegraph](http://www.brendangregg.com/flamegraphs.html).
+
+### Bienvenidos al Portal de LicitaciÃ³n ElectrÃ³nica de LicitaciÃ³n ElectrÃ³nica {#clickhouse-plantuml}
+
+[Método de codificación de datos:](https://pypi.org/project/clickhouse-plantuml/) es un script para generar [PlantUML](https://plantuml.com/) diagrama de esquemas de tablas.
 
 ## Comercial {#commercial}
 

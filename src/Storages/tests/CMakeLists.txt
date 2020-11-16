@@ -1,9 +1,3 @@
-add_executable (system_numbers system_numbers.cpp)
-target_link_libraries (system_numbers PRIVATE dbms clickhouse_storages_system clickhouse_common_io)
-
-add_executable (storage_log storage_log.cpp)
-target_link_libraries (storage_log PRIVATE dbms)
-
 add_executable (part_name part_name.cpp)
 target_link_libraries (part_name PRIVATE dbms)
 
@@ -23,4 +17,16 @@ add_executable (get_abandonable_lock_in_all_partitions get_abandonable_lock_in_a
 target_link_libraries (get_abandonable_lock_in_all_partitions PRIVATE dbms clickhouse_common_config clickhouse_common_zookeeper)
 
 add_executable (transform_part_zk_nodes transform_part_zk_nodes.cpp)
-target_link_libraries (transform_part_zk_nodes PRIVATE dbms clickhouse_common_config clickhouse_common_zookeeper string_utils ${Boost_PROGRAM_OPTIONS_LIBRARY})
+target_link_libraries (transform_part_zk_nodes
+    PRIVATE
+        boost::program_options
+        clickhouse_common_config
+        clickhouse_common_zookeeper
+        dbms
+        string_utils
+)
+
+if (ENABLE_FUZZING)
+    add_executable (mergetree_checksum_fuzzer mergetree_checksum_fuzzer.cpp)
+    target_link_libraries (mergetree_checksum_fuzzer PRIVATE dbms ${LIB_FUZZING_ENGINE})
+endif ()

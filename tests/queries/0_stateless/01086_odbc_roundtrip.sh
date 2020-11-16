@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CUR_DIR/../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
 
 
-for i in $(seq 1 10); do
+for _ in $(seq 1 10); do
     ${CLICKHOUSE_CLIENT} -q "select count() > 1 as ok from (select * from odbc('DSN={ClickHouse DSN (ANSI)}','system','tables'))" 2>/dev/null && break
     sleep 0.1
 done

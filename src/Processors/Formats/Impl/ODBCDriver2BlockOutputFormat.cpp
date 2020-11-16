@@ -29,7 +29,7 @@ void ODBCDriver2BlockOutputFormat::writeRow(const Block & header, const Columns 
     for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
     {
         buffer.clear();
-        auto & column = columns[column_idx];
+        const auto & column = columns[column_idx];
 
         if (column->isNullAt(row_idx))
         {
@@ -49,8 +49,8 @@ void ODBCDriver2BlockOutputFormat::writeRow(const Block & header, const Columns 
 void ODBCDriver2BlockOutputFormat::write(Chunk chunk, PortKind port_kind)
 {
     String text_value;
-    auto & header = getPort(port_kind).getHeader();
-    auto & columns = chunk.getColumns();
+    const auto & header = getPort(port_kind).getHeader();
+    const auto & columns = chunk.getColumns();
     const size_t rows = chunk.getNumRows();
     for (size_t i = 0; i < rows; ++i)
         writeRow(header, columns, i, text_value);
@@ -75,7 +75,7 @@ void ODBCDriver2BlockOutputFormat::finalize()
 
 void ODBCDriver2BlockOutputFormat::writePrefix()
 {
-    auto & header = getPort(PortKind::Main).getHeader();
+    const auto & header = getPort(PortKind::Main).getHeader();
     const size_t columns = header.columns();
 
     /// Number of header rows.
@@ -107,7 +107,7 @@ void ODBCDriver2BlockOutputFormat::writePrefix()
 void registerOutputFormatProcessorODBCDriver2(FormatFactory & factory)
 {
     factory.registerOutputFormatProcessor(
-        "ODBCDriver2", [](WriteBuffer & buf, const Block & sample, FormatFactory::WriteCallback, const FormatSettings & format_settings)
+        "ODBCDriver2", [](WriteBuffer & buf, const Block & sample, const RowOutputFormatParams &, const FormatSettings & format_settings)
         {
             return std::make_shared<ODBCDriver2BlockOutputFormat>(buf, sample, format_settings);
         });

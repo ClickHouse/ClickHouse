@@ -3,12 +3,12 @@
 # set -x
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 # Not default server config needed
 
 
-if [ -n $CLICKHOUSE_CONFIG_CLIENT ]; then
+if [ -n "$CLICKHOUSE_CONFIG_CLIENT" ]; then
     USE_CONFIG="--config-file $CLICKHOUSE_CONFIG_CLIENT"
 fi
 
@@ -30,8 +30,8 @@ $CLICKHOUSE_CLIENT_SECURE -q "SELECT 4;"
 
 # TODO: can test only on unchanged port. Possible solutions: generate config or pass shard port via command line
 if [[ "$CLICKHOUSE_PORT_TCP_SECURE" = "$CLICKHOUSE_PORT_TCP_SECURE" ]]; then
-    cat $CURDIR/00505_distributed_secure.data | $CLICKHOUSE_CLIENT_SECURE -n -m
+    cat "$CURDIR"/00505_distributed_secure.data | $CLICKHOUSE_CLIENT_SECURE -n -m
 else
-    tail -n 13 $CURDIR/00505_secure.reference
+    tail -n 13 "$CURDIR"/00505_secure.reference
 fi
 

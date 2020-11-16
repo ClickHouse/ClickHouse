@@ -10,6 +10,7 @@ namespace DB
 {
 class Context;
 using DatabaseAndTable = std::pair<DatabasePtr, StoragePtr>;
+class AccessRightsElements;
 
 /** Allow to either drop table with all its data (DROP),
   * or remove information about table (just forget) from server (DETACH),
@@ -28,13 +29,15 @@ private:
     ASTPtr query_ptr;
     Context & context;
 
-    BlockIO executeToDatabase(const String & database_name, ASTDropQuery::Kind kind, bool if_exists);
+    BlockIO executeToDatabase(const ASTDropQuery & query);
+    BlockIO executeToDatabaseImpl(const ASTDropQuery & query, DatabasePtr & database, std::vector<UUID> & uuids_to_wait);
 
-    BlockIO executeToTable(const String & database_name, const String & table_name, ASTDropQuery::Kind kind, bool if_exists, bool is_temporary, bool no_ddl_lock);
+    BlockIO executeToTable(const ASTDropQuery & query);
+    BlockIO executeToTableImpl(const ASTDropQuery & query, DatabasePtr & db, UUID & uuid_to_wait);
+
+    static void waitForTableToBeActuallyDroppedOrDetached(const ASTDropQuery & query, const DatabasePtr & db, const UUID & uuid_to_wait);
 
     BlockIO executeToDictionary(const String & database_name, const String & dictionary_name, ASTDropQuery::Kind kind, bool if_exists, bool is_temporary, bool no_ddl_lock);
-
-    DatabaseAndTable tryGetDatabaseAndTable(const String & database_name, const String & table_name, bool if_exists);
 
     BlockIO executeToTemporaryTable(const String & table_name, ASTDropQuery::Kind kind);
 };

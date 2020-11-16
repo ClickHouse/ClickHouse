@@ -20,7 +20,7 @@ SourceFromInputStream::SourceFromInputStream(BlockInputStreamPtr stream_, bool f
 
 void SourceFromInputStream::init()
 {
-    auto & sample = getPort().getHeader();
+    const auto & sample = getPort().getHeader();
     for (auto & type : sample.getDataTypes())
         if (typeid_cast<const DataTypeAggregateFunction *>(type.get()))
             has_aggregate_functions = true;
@@ -115,7 +115,7 @@ void SourceFromInputStream::work()
 
     if (rows_before_limit)
     {
-        auto & info = stream->getProfileInfo();
+        const auto & info = stream->getProfileInfo();
         if (info.hasAppliedLimit())
             rows_before_limit->add(info.getRowsBeforeLimit());
     }
@@ -147,7 +147,7 @@ Chunk SourceFromInputStream::generate()
     {
         if (rows_before_limit)
         {
-            auto & info = stream->getProfileInfo();
+            const auto & info = stream->getProfileInfo();
             if (info.hasAppliedLimit())
                 rows_before_limit->add(info.getRowsBeforeLimit());
         }

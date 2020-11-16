@@ -6,7 +6,7 @@
         <div class="w-100 navbar-text text-left d-none d-md-block">
             <h1 class="h3 m-0 p-0 d-inline">
                 <a href="#" class="text-white text-decoration-none">
-                    {% if page.title != 'hidden' %}
+                    {% if not page.title.startswith('hidden') %}
                         {{ page.title or config.site_name }}
                     {% else %}
                         {{ page.meta.toc_folder_title or config.site_name }}
@@ -23,8 +23,8 @@
                     {% set edit_url = page.edit_url %}
                 {% endif %}
                 {% if edit_url %}
-                <li class="nav-item">
-                    <a href="{{ edit_url }}" title="Edit this article" class="nav-link" rel="external nofollow noreferrer" target="_blank"><img src="/images/mkdocs/edit.svg" alt="Edit this article" class="mt-1" height="22" /></a>
+                <li id="edit-wrapper" class="nav-item">
+                    <a id="edit-link" href="{{ edit_url }}" title="Edit this article" class="nav-link" rel="external nofollow noreferrer" target="_blank"><img src="/images/mkdocs/edit.svg" alt="Edit this article" class="mt-1" height="22" /></a>
                 </li>
                 {% endif %}
                 <li class="nav-item">

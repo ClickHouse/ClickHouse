@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <cstring>
 #include <algorithm>
 #include <memory>
@@ -41,6 +42,11 @@ public:
       */
     ReadBuffer(Position ptr, size_t size, size_t offset) : BufferBase(ptr, size, offset) {}
 
+    // Copying the read buffers can be dangerous because they can hold a lot of
+    // memory or open files, so better to disable the copy constructor to prevent
+    // accidental copying.
+    ReadBuffer(const ReadBuffer &) = delete;
+
     // FIXME: behavior differs greately from `BufferBase::set()` and it's very confusing.
     void set(Position ptr, size_t size) { BufferBase::set(ptr, size, 0); working_buffer.resize(0); }
 
@@ -54,8 +60,8 @@ public:
         if (!res)
             working_buffer.resize(0);
 
-        pos = working_buffer.begin() + working_buffer_offset;
-        working_buffer_offset = 0;
+        pos = working_buffer.begin() + nextimpl_working_buffer_offset;
+        nextimpl_working_buffer_offset = 0;
         return res;
     }
 
@@ -117,6 +123,11 @@ public:
         return bytes_ignored;
     }
 
+    void ignoreAll()
+    {
+        tryIgnore(std::numeric_limits<size_t>::max());
+    }
+
     /** Reads a single byte. */
     bool ALWAYS_INLINE read(char & c)
     {
@@ -169,8 +180,10 @@ public:
     }
 
 protected:
-    /// The number of bytes to ignore from the initial position of `working_buffer` buffer.
-    size_t working_buffer_offset = 0;
+    /// The number of bytes to ignore from the initial position of `working_buffer`
+    /// buffer. Apparently this is an additional out-parameter for nextImpl(),
+    /// not a real field.
+    size_t nextimpl_working_buffer_offset = 0;
 
 private:
     /** Read the next data and fill a buffer with it.

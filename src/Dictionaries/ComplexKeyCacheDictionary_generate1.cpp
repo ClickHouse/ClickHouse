@@ -8,7 +8,7 @@ namespace DB
     { \
         dict_struct.validateKeyTypes(key_types); \
         auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
         const auto null_value = std::get<TYPE>(attribute.null_values); \
         getItemsNumberImpl<TYPE, TYPE>(attribute, key_columns, out, [&](const size_t) { return null_value; }); \
     }

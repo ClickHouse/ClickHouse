@@ -1,63 +1,64 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 21
-toc_title: "\u5165\u529B\u304A\u3088\u3073\u51FA\u529B\u5F62\u5F0F"
+toc_title: "\u5165\u529B\u304A\u3088\u3073\u51FA\u529B\u30D5\u30A9\u30FC\u30DE\u30C3\
+  \u30C8"
 ---
 
-# 入力データと出力データの形式 {#formats}
+# 入出力データのフォーマット {#formats}
 
-ClickHouse受け入れと返信データなフレームワークです。 入力でサポートされている形式を使用して、指定されたデータを解析できます。 `INSERT`s、実行する `SELECT`ファイル、URL、またはHDFSなどのファイルバックアップテーブルから、または外部辞書を読み取ります。 出力用にサポートされている形式を使用して、
-の結果 `SELECT`、および実行する `INSERT`ファイルによって支持される表へのs。
+ClickHouse受け入れと返信データなフレームワークです。 入力用にサポートされている形式を使用して、指定されたデータを解析できます `INSERT`s、実行する `SELECT`ファイル、URL、HDFSなどのファイルバックアップテーブルから、または外部辞書を読み取ることができます。 出力でサポートされているフォーマットを使用して、
+aの結果 `SELECT`、および実行する `INSERT`ファイルバックアップテーブルにs。
 
 のサポートされるフォーマットは:
 
-| 書式                                                                | 入力 | 出力 |
-|---------------------------------------------------------------------|------|------|
-| [タブ区切り](#tabseparated)                                         | ✔    | ✔    |
-| [TabSeparatedRaw](#tabseparatedraw)                                 | ✗    | ✔    |
-| [Tabseparatedwithnamesname](#tabseparatedwithnames)                 | ✔    | ✔    |
-| [Tabseparatedwithnamesandtypesname](#tabseparatedwithnamesandtypes) | ✔    | ✔    |
-| [テンプレ](#format-template)                                        | ✔    | ✔    |
-| [TemplateIgnoreSpaces](#templateignorespaces)                       | ✔    | ✗    |
-| [CSV](#csv)                                                         | ✔    | ✔    |
-| [Csvwithnamesname](#csvwithnames)                                   | ✔    | ✔    |
-| [CustomSeparated](#format-customseparated)                          | ✔    | ✔    |
-| [値](#data-format-values)                                           | ✔    | ✔    |
-| [垂直](#vertical)                                                   | ✗    | ✔    |
-| [VerticalRaw](#verticalraw)                                         | ✗    | ✔    |
-| [JSON](#json)                                                       | ✗    | ✔    |
-| [JSONCompact](#jsoncompact)                                         | ✗    | ✔    |
-| [JSONEachRow](#jsoneachrow)                                         | ✔    | ✔    |
-| [TSKV](#tskv)                                                       | ✔    | ✔    |
-| [可愛い](#pretty)                                                   | ✗    | ✔    |
-| [PrettyCompact](#prettycompact)                                     | ✗    | ✔    |
-| [PrettyCompactMonoBlock](#prettycompactmonoblock)                   | ✗    | ✔    |
-| [PrettyNoEscapes](#prettynoescapes)                                 | ✗    | ✔    |
-| [PrettySpace](#prettyspace)                                         | ✗    | ✔    |
-| [Protobuf](#protobuf)                                               | ✔    | ✔    |
-| [アブロ](#data-format-avro)                                         | ✔    | ✔    |
-| [AvroConfluent](#data-format-avro-confluent)                        | ✔    | ✗    |
-| [Parquet張り](#data-format-parquet)                                 | ✔    | ✔    |
-| [ORC](#data-format-orc)                                             | ✔    | ✗    |
-| [RowBinary](#rowbinary)                                             | ✔    | ✔    |
-| [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)           | ✔    | ✔    |
-| [ネイティブ](#native)                                               | ✔    | ✔    |
-| [ヌル](#null)                                                       | ✗    | ✔    |
-| [XML](#xml)                                                         | ✗    | ✔    |
-| [CapnProto](#capnproto)                                             | ✔    | ✗    |
+| 形式                                                            | 入力 | 出力 |
+|-----------------------------------------------------------------|------|------|
+| [TabSeparated](#tabseparated)                                   | ✔    | ✔    |
+| [TabSeparatedRaw](#tabseparatedraw)                             | ✗    | ✔    |
+| [TabSeparatedWithNames](#tabseparatedwithnames)                 | ✔    | ✔    |
+| [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes) | ✔    | ✔    |
+| [テンプレー](#format-template)                                  | ✔    | ✔    |
+| [TemplateIgnoreSpaces](#templateignorespaces)                   | ✔    | ✗    |
+| [CSV](#csv)                                                     | ✔    | ✔    |
+| [CSVWithNames](#csvwithnames)                                   | ✔    | ✔    |
+| [カスタム区切り](#format-customseparated)                       | ✔    | ✔    |
+| [値](#data-format-values)                                       | ✔    | ✔    |
+| [垂直](#vertical)                                               | ✗    | ✔    |
+| [VerticalRaw](#verticalraw)                                     | ✗    | ✔    |
+| [JSON](#json)                                                   | ✗    | ✔    |
+| [JSONCompact](#jsoncompact)                                     | ✗    | ✔    |
+| [JSONEachRow](#jsoneachrow)                                     | ✔    | ✔    |
+| [TSKV](#tskv)                                                   | ✔    | ✔    |
+| [プリティ](#pretty)                                             | ✗    | ✔    |
+| [プリティコンパクト](#prettycompact)                            | ✗    | ✔    |
+| [プリティコンパクトモノブロック](#prettycompactmonoblock)       | ✗    | ✔    |
+| [プリティノスケープ](#prettynoescapes)                          | ✗    | ✔    |
+| [PrettySpace](#prettyspace)                                     | ✗    | ✔    |
+| [プロトブフ](#protobuf)                                         | ✔    | ✔    |
+| [アヴロ](#data-format-avro)                                     | ✔    | ✔    |
+| [アブロコンフルエント](#data-format-avro-confluent)             | ✔    | ✗    |
+| [寄木細工](#data-format-parquet)                                | ✔    | ✔    |
+| [ORC](#data-format-orc)                                         | ✔    | ✗    |
+| [ローバイナリ](#rowbinary)                                      | ✔    | ✔    |
+| [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)       | ✔    | ✔    |
+| [ネイティブ](#native)                                           | ✔    | ✔    |
+| [Null](#null)                                                   | ✗    | ✔    |
+| [XML](#xml)                                                     | ✗    | ✔    |
+| [CapnProto](#capnproto)                                         | ✔    | ✗    |
 
-ClickHouseの設定で、一部のフォーマット処理パラメータを制御できます。 詳細については、 [設定](../operations/settings/settings.md) セクション。
+ClickHouse設定を使用して、いくつかの形式処理パラメータを制御できます。 詳細については、 [設定](../operations/settings/settings.md) セクション
 
-## タブ区切り {#tabseparated}
+## TabSeparated {#tabseparated}
 
-TabSeparated形式では、データは行によって書き込まれます。 各行にはタブで区切られた値が含まれます。 各値の後には、行の最後の値を除くタブが続き、その後に改行が続きます。 厳密にUnixの改行はどこでも想定されます。 最後の行には、最後に改行が含まれている必要があります。 値は、引用符を囲まずにテキスト形式で書き込まれ、特殊文字はエスケープされます。
+TabSeparated形式では、データは行ごとに書き込まれます。 各行にはタブで区切られた値が含まれます。 各値の後にはタブが続きますが、行の最後の値の後には改行が続きます。 厳正なUnixラインフィードと仮定します。 最後の行には、最後に改行も含める必要があります。 値は、引用符を囲まずにテキスト形式で書き込まれ、特殊文字はエスケープされます。
 
-この形式は、名前の下でも利用できます `TSV`.
+この形式は、名前でも使用できます `TSV`.
 
-その `TabSeparated` 形式は便利な加工データをカスタムプログラムやイントロダクションです。 デフォルトでは、HTTPインターフェイスとコマンドラインクライアントのバッチモードで使用されます。 この形式は、異なるDbms間でデータを転送することもできます。 たとえば、MySQLからダンプを取得してClickHouseにアップロードすることも、その逆にすることもできます。
+その `TabSeparated` 形式は便利な加工データをカスタムプログラムやイントロダクションです。 これは、HTTPインターフェイスおよびコマンドラインクライアントのバッチモードで既定で使用されます。 この形式は、異なるDbms間でデータを転送することもできます。 たとえば、MySQLからダンプを取得してClickHouseにアップロードすることも、その逆も可能です。
 
-その `TabSeparated` formatでは、合計値（合計と共に使用する場合）と極端な値（次の場合）の出力をサポートします ‘extremes’ 1)に設定します。 このような場合、メインデータの後に合計値と極値が出力されます。 主な結果、合計値、および極値は、空の行で区切られます。 例えば:
+その `TabSeparated` 書式では、合計値(合計と共に使用する場合)と極値(場合)の出力がサポートされます ‘extremes’ 1)に設定される。 このような場合、合計値と極値がメインデータの後に出力されます。 主な結果、合計値、および極値は、空の行で区切られます。 例:
 
 ``` sql
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated``
@@ -72,7 +73,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 2014-03-22      1031592
 2014-03-23      1046491
 
-0000-00-00      8873898
+1970-01-01      8873898
 
 2014-03-17      1031592
 2014-03-23      1406958
@@ -80,20 +81,20 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 
 ### データの書式設定 {#data-formatting}
 
-整数は小数で書かれています。 数字には、 “+” 最初の文字(解析時は無視され、書式設定時には記録されません)。 負でない数値には、負の符号を含めることはできません。 読み込むときには、空の文字列をゼロとして解析するか、（符号付きの型の場合）マイナス記号だけをゼロとして含む文字列を解析することができま 対応するデータ型に収まらない数値は、エラーメッセージなしで別の数値として解析できます。
+整数は小数点形式で書かれています。 番号を含むことができ追加 “+” 先頭の文字(解析時は無視され、書式設定時は記録されません)。 負でない数値には負符号を含めることはできません。 読み取り時には、空の文字列をゼロとして解析するか、（符号付き型の場合）マイナス記号だけで構成される文字列をゼロとして解析することができ 対応するデータ型に適合しない数値は、エラーメッセージなしで別の数値として解析される可能性があります。
 
-浮動小数点数は小数で書かれています。 ドットは小数点として使用されます。 指数作に対応してい ‘inf’, ‘+inf’, ‘-inf’、と ‘nan’. 浮動小数点数のエントリは、小数点で開始または終了することができます。
-書式設定時に、浮動小数点数の精度が失われることがあります。
+浮動小数点数は小数点形式で記述されます。 ドットは小数点区切り記号として使用されます。 指数エントリがサポートされています。 ‘inf’, ‘+inf’, ‘-inf’,and ‘nan’. 浮動小数点数のエントリは、小数点で始まったり終わったりすることがあります。
+書式設定中に、浮動小数点数の精度が失われる可能性があります。
 解析中に、最も近いマシン表現可能な番号を読み取ることは厳密には必要ありません。
 
-日付はyyyy-mm-dd形式で書かれ、同じ形式で解析されますが、任意の文字を区切り文字として使用します。
-時刻を含む日付は、次の形式で書き込まれます `YYYY-MM-DD hh:mm:ss` 同じ形式で解析されますが、区切り文字として任意の文字が使用されます。
-これはすべて、クライアントまたはサーバーの起動時にシステムタイムゾーンで発生します(データの形式に応じて異なります)。 時刻を含む日付の場合、夏時間は指定されません。 したがって、ダンプが夏時間の間に時間がある場合、ダンプはデータと明確に一致しません。
-読み取り操作中に、時間を含む不適切な日付と日付は、エラーメッセージなしで自然なオーバーフローまたはnull日付と時刻として解析できます。
+日付はYYYY-MM-DD形式で記述され、同じ形式で解析されますが、区切り文字として任意の文字が使用されます。
+時刻付きの日付は、次の形式で記述されます `YYYY-MM-DD hh:mm:ss` 同じ形式で解析されますが、区切り文字として任意の文字で解析されます。
+これはすべて、クライアントまたはサーバーが起動したときのシステムタイムゾーンで発生します(データの形式に応じて)。 時刻のある日付の場合、夏時間は指定されません。 したがって、夏時間の間にダンプに時間がある場合、ダンプはデータと明確に一致しないため、解析は二回のいずれかを選択します。
+読み取り操作中に、エラーメッセージなしで、自然なオーバーフローまたはnullの日付と時刻として、不適切な日付と時刻を解析することができます。
 
-例外として、時刻を含む日付の解析は、unixタイムスタンプ形式でもサポートされています(正確に10桁の数字で構成されている場合)。 結果はタイムゾーンに依存しません。 フォーマットyyyy-mm-dd hh:mm:ssとnnnnnnnnnは自動的に区別されます。
+例外として、正確に10桁の数字で構成されている場合は、時刻を含む日付の解析もUnixタイムスタンプ形式でサポートされます。 結果はタイムゾーンに依存しません。 YYYY-MM-DD hh:mm:ssとNNNNNNNNNNの形式は自動的に区別されます。
 
-文字列はバックスラッシュでエスケープされた特殊文字で出力されます。 以下のエスケープシーケンスを使用出力: `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\'`, `\\`. 解析にも対応し配列 `\a`, `\v`、と `\xHH` (hexエスケープシーケンス)および `\c` シーケンス、ここで `c` は任意の文字です（これらのシーケンスは `c`). このように、データを読み込む形式に対応し、改行して書き込み可能で `\n` または `\`、または改行として。 たとえば、文字列 `Hello world` スペースではなく単語間の改行を使用すると、次のいずれかのバリエーションで解析できます:
+文字列はバックスラッシュでエスケープされた特殊文字で出力されます。 以下のエスケープシーケンスを使用出力: `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\'`, `\\`. 解析にも対応し配列 `\a`, `\v`,and `\xHH` (hexエスケープシーケンス)と `\c` シーケンス `c` は任意の文字です(これらのシーケンスは `c`). このように、データを読み込む形式に対応し、改行して書き込み可能で `\n` または `\`、または改行として。 たとえば、文字列 `Hello world` スペースの代わりに単語の間の改行を使用すると、次のいずれかのバリエーションで解析できます:
 
 ``` text
 Hello\nworld
@@ -102,17 +103,17 @@ Hello\
 world
 ```
 
-これは、mysqlがタブで区切られたダンプを書き込むときに使用するためです。
+の変異体でサポートしてMySQLで書く時にタブ区切り捨て場.
 
-TabSeparated形式でデータを渡すときにエスケープする必要がある文字の最小セット：tab、改行（LF）、およびバックスラッシュ。
+TabSeparated形式でデータを渡すときにエスケープする必要がある最小文字セット:tab、改行(LF)、およびバックスラッシュ。
 
-小さなシンボルのみがエスケープされます。 あなたの端末が出力で台無しにする文字列値に簡単につまずくことができます。
+のみの小さなセットの記号は自動的にエスケープされます。 あなたの端末が出力で台無しにする文字列値に簡単に遭遇することができます。
 
-配列は、角かっこで囲まれたコンマ区切りの値のリストとして記述されます。 配列内の数値項目は通常どおりに書式設定されます。 `Date` と `DateTime` 型は一重引quotesで書き込まれます。 文字列は、上記と同じエスケープ規則で一重引quotesで書き込まれます。
+配列は、角かっこで囲まれたコンマ区切りの値のリストとして記述されます。 配列内のNumber項目は、通常どおりに書式設定されます。 `Date` と `DateTime` 型は単一引quotesで記述されます。 文字列は、上記と同じエスケープ規則で一重引quotesで記述されます。
 
-[NULL](../sql_reference/syntax.md) フォーマットとして `\N`.
+[NULL](../sql-reference/syntax.md) として書式設定される `\N`.
 
-の各要素 [ネスト](../sql_reference/data_types/nested_data_structures/nested.md) 構造体は配列として表されます。
+の各要素 [入れ子](../sql-reference/data-types/nested-data-structures/nested.md) 構造体は配列として表されます。
 
 例えば:
 
@@ -142,75 +143,75 @@ SELECT * FROM nestedt FORMAT TSV
 
 ## TabSeparatedRaw {#tabseparatedraw}
 
-とは異なります `TabSeparated` エスケープせずに行が書き込まれるという形式です。
-この形式は、クエリ結果を出力する場合にのみ適切ですが、解析(テーブルに挿入するデータの取得)には適していません。
+とは異なる `TabSeparated` 行がエスケープせずに書き込まれる形式。
+この形式は、クエリ結果の出力にのみ適していますが、解析(テーブルに挿入するデータの取得)には適していません。
 
-この形式は、名前の下でも利用できます `TSVRaw`.
+この形式は、名前でも使用できます `TSVRaw`.
 
-## Tabseparatedwithnamesname {#tabseparatedwithnames}
+## TabSeparatedWithNames {#tabseparatedwithnames}
 
-とは異なり `TabSeparated` 列名が最初の行に書き込まれる形式。
-解析中、最初の行は完全に無視されます。 列名を使用して、列の位置を特定したり、列の正確性を確認したりすることはできません。
-（ヘッダー行の解析のサポートは、将来追加される可能性があります。)
+とは異なる `TabSeparated` 列名が最初の行に書き込まれる形式。
+解析中、最初の行は完全に無視されます。 列名を使用して位置を特定したり、列の正しさを確認したりすることはできません。
+（ヘッダー行の解析のサポートは、将来的に追加される可能性があります。)
 
-この形式は、名前の下でも利用できます `TSVWithNames`.
+この形式は、名前でも使用できます `TSVWithNames`.
 
-## Tabseparatedwithnamesandtypesname {#tabseparatedwithnamesandtypes}
+## TabSeparatedWithNamesAndTypes {#tabseparatedwithnamesandtypes}
 
-とは異なり `TabSeparated` 列名が最初の行に書き込まれ、列タイプが次の行に書き込まれるという形式です。
-解析時には、最初と二番目の行は完全に無視されます。
+とは異なる `TabSeparated` 列名は最初の行に書き込まれ、列タイプは二番目の行に書き込まれます。
+解析中、第一行と第二行は完全に無視されます。
 
-この形式は、名前の下でも利用できます `TSVWithNamesAndTypes`.
+この形式は、名前でも使用できます `TSVWithNamesAndTypes`.
 
-## テンプレ {#format-template}
+## テンプレー {#format-template}
 
 このフォーマットで指定するカスタムフォーマット文字列とプレースホルダーのための値を指定して逃げます。
 
-それは設定を使用します `format_template_resultset`, `format_template_row`, `format_template_rows_between_delimiter` and some settings of other formats (e.g. `output_format_json_quote_64bit_integers` 使用する場合 `JSON` エスケープ,さらに見る)
+設定を使用します `format_template_resultset`, `format_template_row`, `format_template_rows_between_delimiter` and some settings of other formats (e.g. `output_format_json_quote_64bit_integers` 使用する場合 `JSON` エスケープ、さらに参照)
 
-設定 `format_template_row` 次の構文の行の書式文字列を含むファイルへのパスを指定します:
+設定 `format_template_row` 次の構文で行の書式指定文字列を含むファイルへのパスを指定します:
 
 `delimiter_1${column_1:serializeAs_1}delimiter_2${column_2:serializeAs_2} ... delimiter_N`,
 
-どこに `delimiter_i` 値間の区切り文字です (`$` シンボルは `$$`),
+どこに `delimiter_i` 値の区切り文字です (`$` シンボルでき逃してい `$$`),
 `column_i` 値が選択または挿入される列の名前またはインデックスを指定します(空の場合、列はスキップされます),
-`serializeAs_i` 列の値のエスケープ規則です。 以下の脱出ルールに対応:
+`serializeAs_i` 列値のエスケープ規則です。 以下の脱出ルールに対応:
 
--   `CSV`, `JSON`, `XML` （同じ名前の形式と同様に)
+-   `CSV`, `JSON`, `XML` （同じ名前の形式と同様)
 -   `Escaped` （同様に `TSV`)
 -   `Quoted` （同様に `Values`)
 -   `Raw` （エスケープせずに、同様に `TSVRaw`)
--   `None` (エスケープルールはありません。)
+-   `None` （エスケープルールなし、詳細を参照)
 
-エスケープルールが省略された場合は、 `None` 使用されます。 `XML` と `Raw` 出力にのみ適しています。
+エスケープ規則が省略された場合、 `None` 使用されます。 `XML` と `Raw` 出力のためにだけ適しています。
 
-したがって、次の書式文字列については:
+したがって、次の書式文字列の場合:
 
       `Search phrase: ${SearchPhrase:Quoted}, count: ${c:Escaped}, ad price: $$${price:JSON};`
 
-の値 `SearchPhrase`, `c` と `price` としてエスケープされる列 `Quoted`, `Escaped` と `JSON` (選択のために)印刷されるか、または(挿入のために)その間期待されます `Search phrase:`, `, count:`, `, ad price: $` と `;` それぞれ区切り文字。 例えば:
+の値 `SearchPhrase`, `c` と `price` 列は、次のようにエスケープ `Quoted`, `Escaped` と `JSON` その間に（選択のために）印刷されるか、または（挿入のために）期待されます `Search phrase:`, `, count:`, `, ad price: $` と `;` 区切り文字。 例えば:
 
 `Search phrase: 'bathroom interior design', count: 2166, ad price: $3;`
 
-その `format_template_rows_between_delimiter` 最後の行を除くすべての行の後に印刷される（または期待される）行間の区切り文字を指定します (`\n` デフォルトでは)
+その `format_template_rows_between_delimiter` これは、最後の行を除くすべての行の後に印刷されます（または期待されます）。 (`\n` 既定では)
 
-設定 `format_template_resultset` resultsetの書式文字列を含むファイルへのパスを指定します。 Resultsetの書式文字列は、行の書式文字列と同じ構文を持ち、接頭辞、接尾辞、およびいくつかの追加情報を出力する方法を指定できます。 で以下のプレースホルダの代わりにカラム名:
+設定 `format_template_resultset` このパスには、resultsetの書式指定文字列が含まれます。 Resultsetの書式指定文字列は、行の書式指定文字列と同じ構文を持ち、接頭辞、接尾辞、および追加情報を出力する方法を指定できます。 列名の代わりに次のプレースホルダが含まれます:
 
--   `data` データのある行ですか `format_template_row` フォーマット `format_template_rows_between_delimiter`. このプレースホルダーの最初のプレースホルダー形式の文字列になります。
--   `totals` 合計値が入っている行です `format_template_row` 形式(合計と共に使用する場合)
--   `min` 最小値を持つ行です `format_template_row` フォーマット(極値が1に設定されている場合)
--   `max` は、最大値を持つ行です `format_template_row` フォーマット(極値が1に設定されている場合)
+-   `data` はデータを含む行です `format_template_row` で区切られた形式 `format_template_rows_between_delimiter`. このプレースホルダーの最初のプレースホルダー形式の文字列になります。
+-   `totals` は、合計値を持つ行です。 `format_template_row` 書式(合計で使用する場合)
+-   `min` は最小値を持つ行です。 `format_template_row` 書式(極値が1に設定されている場合)
+-   `max` は最大値を持つ行です。 `format_template_row` 書式(極値が1に設定されている場合)
 -   `rows` 出力行の合計数です
--   `rows_before_limit` そこにあったであろう行の最小数は制限なしです。 出力の場合のみを含むクエリを制限します。 クエリにGROUP BYが含まれている場合、rows\_before\_limit\_at\_leastは、制限なしで存在していた正確な行数です。
+-   `rows_before_limit` そこにあったであろう行の最小数は制限なしです。 出力の場合のみを含むクエリを制限します。 クエリにGROUP BYが含まれている場合、rows_before_limit_at_leastは制限なしで行われていた行の正確な数です。
 -   `time` リクエストの実行時間を秒単位で指定します
--   `rows_read` 読み取られた行の数です
--   `bytes_read` 読み込まれたバイト数(圧縮されていないバイト数)を指定します
+-   `rows_read` 読み込まれた行数です
+-   `bytes_read` (圧縮されていない)読み込まれたバイト数です
 
-プレースホルダ `data`, `totals`, `min` と `max` 必要な脱出ルールの指定（または `None` 明示的に指定する必要があります)。 残りのプレースホ
-この `format_template_resultset` 設定は空の文字列です, `${data}` デフォルト値として使用されます。
-Insertクエリ形式では、いくつかの列またはいくつかのフィールドをスキップすることができます。
+プレースホルダ `data`, `totals`, `min` と `max` エスケープルールを指定してはいけません `None` 明示的に指定する必要があります)。 残りのプレースホルダはあるの脱出ルールを指定します。
+もし `format_template_resultset` 設定は空の文字列です, `${data}` デフォルト値として使用されます。
+Insertクエリ形式では、接頭辞または接尾辞の場合は、一部の列または一部のフィールドをスキップできます（例を参照）。
 
-選択例:
+例を選択:
 
 ``` sql
 SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase ORDER BY c DESC LIMIT 5 FORMAT Template SETTINGS
@@ -289,14 +290,14 @@ Some header\n${data}\nTotal rows: ${:CSV}\n
 Page views: ${PageViews:CSV}, User id: ${UserID:CSV}, Useless field: ${:CSV}, Duration: ${Duration:CSV}, Sign: ${Sign:CSV}
 ```
 
-`PageViews`, `UserID`, `Duration` と `Sign` 内部のプレースホルダーは、テーブル内の列の名前です。 その後の値 `Useless field` 行とその後 `\nTotal rows:` サフィックスでは無視されます。
+`PageViews`, `UserID`, `Duration` と `Sign` 内部のプレースホルダーは、テーブル内の列の名前です。 後の値 `Useless field` 行とその後 `\nTotal rows:` in suffixは無視されます。
 すべての区切り文字の入力データを厳密に等しい区切り文字で指定されたフォーマット文字列です。
 
 ## TemplateIgnoreSpaces {#templateignorespaces}
 
 この形式は入力にのみ適しています。
-に似て `Template` ただし、入力ストリームの区切り文字と値の間の空白文字はスキップします。 ただし、書式指定文字列に空白文字が含まれている場合は、これらの文字が入力ストリームに必要になります。 空のプレースホルダも指定できます (`${}` または `${:None}`)いくつかの区切り文字を別々の部分に分割して、それらの間の空白を無視する。 などのプレースホルダを使用させていただきますの飛び空白文字です。
-それは読むことが可能です `JSON` 列の値がすべての行で同じ順序を持つ場合、この形式を使用します。 たとえば、次のリクエストは、formatの出力例からデータを挿入するために使用できます [JSON](#json):
+に類似した `Template` しかし、入力ストリーム内の区切り文字と値の間の空白文字をスキップします。 ただし、書式指定文字列に空白文字が含まれている場合、これらの文字は入力ストリーム内で使用されます。 でも指定空のプレースホルダー (`${}` または `${:None}`）区切り文字を別々の部分に分割して、それらの間のスペースを無視します。 などのプレースホルダを使用させていただきますの飛び空白文字です。
+それは読むことが可能です `JSON` 列の値がすべての行で同じ順序を持つ場合は、この形式を使用します。 たとえば、次のリクエストは、formatの出力例からデータを挿入するために使用できます [JSON](#json):
 
 ``` sql
 INSERT INTO table_name FORMAT TemplateIgnoreSpaces SETTINGS
@@ -317,7 +318,7 @@ format_template_resultset = '/some/path/resultset.format', format_template_row =
 
 ## TSKV {#tskv}
 
-TabSeparatedに似ていますが、name=value形式で値を出力します。 名前はTabSeparated形式と同じようにエスケープされ、=記号もエスケープされます。
+TabSeparatedに似ていますが、name=value形式で値を出力します。 名前はTabSeparated形式と同じ方法でエスケープされ、=記号もエスケープされます。
 
 ``` text
 SearchPhrase=   count()=8267016
@@ -332,7 +333,7 @@ SearchPhrase=curtain designs        count()=1064
 SearchPhrase=baku       count()=1000
 ```
 
-[NULL](../sql_reference/syntax.md) フォーマットとして `\N`.
+[NULL](../sql-reference/syntax.md) として書式設定される `\N`.
 
 ``` sql
 SELECT * FROM t_null FORMAT TSKV
@@ -342,46 +343,46 @@ SELECT * FROM t_null FORMAT TSKV
 x=1    y=\N
 ```
 
-多数の小さな列がある場合、この形式は無効であり、一般的にそれを使用する理由はありません。 それにもかかわらず、それは効率の面でjsoneachrowよりも悪くありません。
+小さな列が多数ある場合、この形式は無効であり、一般的に使用する理由はありません。 それにもかかわらず、それはJSONEachRowよりも悪くありません効率の面で。
 
 Both data output and parsing are supported in this format. For parsing, any order is supported for the values of different columns. It is acceptable for some values to be omitted – they are treated as equal to their default values. In this case, zeros and blank rows are used as default values. Complex values that could be specified in the table are not supported as defaults.
 
-解析により、追加フィールドの存在が許可されます `tskv` 等号または値なし。 この項目は無視されます。
+構文解析できるの存在は、追加のフィールド `tskv` 等号または値なし。 この項目は無視されます。
 
 ## CSV {#csv}
 
-コンマ区切りの値の形式 ([RFC](https://tools.ietf.org/html/rfc4180)).
+カンマ区切りの値の形式 ([RFC](https://tools.ietf.org/html/rfc4180)).
 
-書式設定の場合、行は二重引用符で囲まれます。 文字列内の二重引用符は、行内の二つの二重引用符として出力されます。 文字をエスケープする他の規則はありません。 日付と日時は二重引用符で囲みます。 数字は引用符なしで出力されます。 値は区切り文字で区切られます。 `,` デフォルトでは。 区切り文字は設定で定義されます [format\_csv\_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter). 行は、Unixの改行(LF)を使用して区切られます。 まず、配列をTabSeparated形式のように文字列にシリアル化し、結果の文字列を二重引用符でCSVに出力します。 CSV形式の組は、別々の列としてシリアル化されます（つまり、組内の入れ子は失われます）。
+書式設定の場合、行は二重引用符で囲まれます。 文字列内の二重引用符は、行の二重引用符として出力されます。 文字をエスケープするルールは他にありません。 Dateとdate-timeは二重引用符で囲みます。 数値は引用符なしで出力されます。 値は区切り文字で区切られます。 `,` デフォルトでは。 区切り文字は設定で定義されています [format_csv_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter). 行は、Unixラインフィード(LF)を使用して区切られます。 最初に、配列はTabSeparated形式のように文字列にシリアル化され、結果の文字列は二重引用符でCSVに出力されます。 CSV形式のタプルは、個別の列としてシリアル化されます(つまり、タプル内の入れ子は失われます)。
 
 ``` bash
 $ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMAT CSV" < data.csv
 ```
 
-\*デフォルトでは、区切り文字は `,`. を見る [format\_csv\_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter) より多くの情報のための設定。
+\*デフォルトでは、区切り文字は `,`. を参照。 [format_csv_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter) より多くの情報のための設定。
 
-解析時には、すべての値を引用符で囲んで解析することができます。 二重引用符と一重引quotesの両方がサポートされます。 行は、引用符なしで配置することもできます。 この場合、それらは区切り文字または改行（crまたはlf）まで解析されます。 rfcに違反して、引用符なしで行を解析するとき、先頭と末尾のスペースとタブは無視されます。 改行には、unix(lf)、windows(cr lf)、およびmac os classic(cr lf)タイプがすべてサポートされています。
+解析時には、すべての値を引用符の有無にかかわらず解析できます。 二重引用符と単一引quotesの両方がサポートされています。 行は引用符なしで配置することもできます。 この場合、区切り文字または改行（CRまたはLF）まで解析されます。 RFCに違反して、引用符なしで行を解析すると、先頭と末尾のスペースとタブは無視されます。 ラインフィードでは、Unix(LF)、Windows(CR LF)、およびMac OS Classic(CR LF)タイプがすべてサポートされています。
 
 空の引用符で囲まれていない入力値は、それぞれの列のデフォルト値に置き換えられます。
-[input\_format\_defaults\_for\_omitted\_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)
-は有効です。
+[input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)
+有効です。
 
-`NULL` フォーマットとして `\N` または `NULL` または、引用符で囲まれていない空の文字列("設定"を参照 [input\_format\_csv\_unquoted\_null\_literal\_as\_null](../operations/settings/settings.md#settings-input_format_csv_unquoted_null_literal_as_null) と [input\_format\_defaults\_for\_omitted\_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)).
+`NULL` として書式設定される `\N` または `NULL` または空の引用符で囲まれていない文字列(設定を参照 [input_format_csv_unquoted_null_literal_as_null](../operations/settings/settings.md#settings-input_format_csv_unquoted_null_literal_as_null) と [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)).
 
-CSV形式は、totalsとextremesの出力を次のようにサポートします `TabSeparated`.
+CSV形式では、合計と極値の出力は次のようにサポートされます `TabSeparated`.
 
-## Csvwithnamesname {#csvwithnames}
+## CSVWithNames {#csvwithnames}
 
 また、次のようなヘッダー行も出力します `TabSeparatedWithNames`.
 
-## CustomSeparated {#format-customseparated}
+## カスタム区切り {#format-customseparated}
 
-に似て [テンプレ](#format-template) ですが、版画を読み込みまたは全てのカラムを使用脱出ルールからの設定 `format_custom_escaping_rule` 設定からの区切り文字 `format_custom_field_delimiter`, `format_custom_row_before_delimiter`, `format_custom_row_after_delimiter`, `format_custom_row_between_delimiter`, `format_custom_result_before_delimiter` と `format_custom_result_after_delimiter`、書式文字列からではありません。
-また、 `CustomSeparatedIgnoreSpaces` フォーマット `TemplateIgnoreSpaces`.
+に類似した [テンプレー](#format-template) ですが、版画を読み込みまたは全てのカラムを使用脱出ルールからの設定 `format_custom_escaping_rule` 設定から区切り文字 `format_custom_field_delimiter`, `format_custom_row_before_delimiter`, `format_custom_row_after_delimiter`, `format_custom_row_between_delimiter`, `format_custom_result_before_delimiter` と `format_custom_result_after_delimiter` 書式指定文字列からではありません。
+また `CustomSeparatedIgnoreSpaces` 形式は次のようになります `TemplateIgnoreSpaces`.
 
 ## JSON {#json}
 
-JSON形式でデータを出力します。 データテーブルのほかに、列名と型、およびいくつかの追加情報(出力行の合計数、および制限がない場合に出力される可能性のある行の数)も出力します。 例えば:
+JSON形式でデータを出力します。 データテーブルのほかに、列名と型、および出力行の合計数、制限がない場合に出力される可能性のある行の数などの追加情報も出力します。 例:
 
 ``` sql
 SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTALS ORDER BY c DESC LIMIT 5 FORMAT JSON
@@ -451,28 +452,28 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
 }
 ```
 
-JSONはJavaScriptと互換性があります。 これを確実にするために、一部の文字は追加でエスケープされます。 `/` としてエスケープ `\/`;代替改行 `U+2028` と `U+2029` いくつかのブラウザを破る、としてエスケープ `\uXXXX`. バックスペース、フォームフィード、ラインフィード、キャリッジリターン、および水平タブがエスケープされます `\b`, `\f`, `\n`, `\r`, `\t` 00-1F範囲の残りのバイトと同様に、 `\uXXXX` sequences. Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences. For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double-quotes by default. To remove the quotes, you can set the configuration parameter [output\_format\_json\_quote\_64bit\_integers](../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) に0.
+JSONはJavaScriptと互換性があります。 これを確実にするために、一部の文字は追加でエスケープされます。 `/` としてエスケープ `\/`;代替の改行 `U+2028` と `U+2029` ブラウザによってはエスケープされます `\uXXXX`. ASCII制御文字はエスケープされます。 `\b`, `\f`, `\n`, `\r`, `\t` を使用して、00-1F範囲の残りのバイトと同様に `\uXXXX` sequences. Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences. For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double-quotes by default. To remove the quotes, you can set the configuration parameter [output_format_json_quote_64bit_integers](../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) 0にする。
 
 `rows` – The total number of output rows.
 
 `rows_before_limit_at_least` そこにある行の最小数は制限なしであったでしょう。 出力の場合のみを含むクエリを制限します。
-クエリにgroup byが含まれている場合、rows\_before\_limit\_at\_leastは、制限なしで存在していた正確な行数です。
+クエリにGROUP BYが含まれている場合、rows_before_limit_at_leastは制限なしで行われていた行の正確な数です。
 
 `totals` – Total values (when using WITH TOTALS).
 
 `extremes` – Extreme values (when extremes are set to 1).
 
-この形式は、クエリ結果を出力する場合にのみ適切ですが、解析(テーブルに挿入するデータの取得)には適していません。
+この形式は、クエリ結果の出力にのみ適していますが、解析(テーブルに挿入するデータの取得)には適していません。
 
-ClickHouse支援 [NULL](../sql_reference/syntax.md) として表示されます `null` JSON出力で。
+ClickHouseサポート [NULL](../sql-reference/syntax.md) として表示されます。 `null` JSON出力で。
 
-また、 [JSONEachRow](#jsoneachrow) フォーマット。
+も参照。 [JSONEachRow](#jsoneachrow) 形式。
 
 ## JSONCompact {#jsoncompact}
 
-JSONとは異なり、データ行はオブジェクトではなく配列内に出力されます。
+JSONとは異なるのは、データ行がオブジェクトではなく配列で出力される点だけです。
 
-例えば:
+例:
 
 ``` json
 {
@@ -511,12 +512,12 @@ JSONとは異なり、データ行はオブジェクトではなく配列内に�
 }
 ```
 
-この形式は、クエリ結果を出力する場合にのみ適切ですが、解析(テーブルに挿入するデータの取得)には適していません。
-また、 `JSONEachRow` フォーマット。
+この形式は、クエリ結果の出力にのみ適していますが、解析(テーブルに挿入するデータの取得)には適していません。
+も参照。 `JSONEachRow` 形式。
 
 ## JSONEachRow {#jsoneachrow}
 
-この形式を使用する場合、clickhouseは行を区切られた改行で区切られたjsonオブジェクトとして出力しますが、データ全体が有効なjsonではありません。
+この形式を使用する場合、ClickHouseは行を区切り、改行区切りのJSONオブジェクトとして出力しますが、データ全体は有効なJSONではありません。
 
 ``` json
 {"SearchPhrase":"curtain designs","count()":"1064"}
@@ -524,7 +525,7 @@ JSONとは異なり、データ行はオブジェクトではなく配列内に�
 {"SearchPhrase":"","count()":"8267016"}
 ```
 
-データを挿入するときは、各行に別々のjsonオブジェクトを指定する必要があります。
+データを挿入するときは、各行に個別のJSONオブジェクトを指定する必要があります。
 
 ### データの挿入 {#inserting-data}
 
@@ -532,20 +533,20 @@ JSONとは異なり、データ行はオブジェクトではなく配列内に�
 INSERT INTO UserActivity FORMAT JSONEachRow {"PageViews":5, "UserID":"4324182021466249494", "Duration":146,"Sign":-1} {"UserID":"4324182021466249494","PageViews":6,"Duration":185,"Sign":1}
 ```
 
-クリックハウスは:
+クリックハウス:
 
--   オブジェクト内のキーと値のペアの順序。
--   いくつかの値を省略する。
+-   オブジェクト内のキーと値のペアの任意の順序。
+-   いくつかの値を省略します。
 
 ClickHouseを無視した空間要素には、カンマの後にオブジェクト。 すべてのオブジェクトを一行で渡すことができます。 改行で区切る必要はありません。
 
 **省略された値の処理**
 
-ClickHouseは、省略された値を対応するデフォルト値に置き換えます [データ型](../sql_reference/data_types/index.md).
+ClickHouseは省略された値を対応するデフォルト値に置き換えます [データ型](../sql-reference/data-types/index.md).
 
-もし `DEFAULT expr` は、ClickHouseはに応じて異なる置換規則を使用して、指定されています [input\_format\_defaults\_for\_omitted\_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) 設定。
+もし `DEFAULT expr` に応じて異なる置換規則を使用します。 [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) 設定。
 
-次の表を考えてみます:
+次の表を考えます:
 
 ``` sql
 CREATE TABLE IF NOT EXISTS example_table
@@ -555,15 +556,15 @@ CREATE TABLE IF NOT EXISTS example_table
 ) ENGINE = Memory;
 ```
 
--   もし `input_format_defaults_for_omitted_fields = 0` のデフォルト値を返します。 `x` と `a` 等しい `0` のデフォルト値として `UInt32` データ型)。
--   もし `input_format_defaults_for_omitted_fields = 1` のデフォルト値を返します。 `x` 等しい `0` しかし、デフォルト値は `a` 等しい `x * 2`.
+-   もし `input_format_defaults_for_omitted_fields = 0` のデフォルト値 `x` と `a` 等しい `0` のデフォルト値として `UInt32` データ型）。
+-   もし `input_format_defaults_for_omitted_fields = 1` のデフォルト値 `x` 等しい `0` しかし、デフォルト値は `a` 等しい `x * 2`.
 
 !!! note "警告"
-    データを挿入するとき `insert_sample_with_metadata = 1`、ClickHouseは、より多くの計算リソースを消費します。 `insert_sample_with_metadata = 0`.
+    データを挿入するとき `insert_sample_with_metadata = 1`,ClickHouseは、挿入と比較して、より多くの計算リソースを消費します `insert_sample_with_metadata = 0`.
 
 ### データの選択 {#selecting-data}
 
-考慮する `UserActivity` 例として表:
+を考える `UserActivity` 例としての表:
 
 ``` text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
@@ -572,35 +573,35 @@ CREATE TABLE IF NOT EXISTS example_table
 └─────────────────────┴───────────┴──────────┴──────┘
 ```
 
-クエリ `SELECT * FROM UserActivity FORMAT JSONEachRow` を返します:
+クエリ `SELECT * FROM UserActivity FORMAT JSONEachRow` ﾂづｩﾂ。:
 
 ``` text
 {"UserID":"4324182021466249494","PageViews":5,"Duration":146,"Sign":-1}
 {"UserID":"4324182021466249494","PageViews":6,"Duration":185,"Sign":1}
 ```
 
-とは異なり [JSON](#json) 形式は、無効なUTF-8シーケンスの置換はありません。 値は、forと同じ方法でエスケープされます `JSON`.
+とは異なり [JSON](#json) 無効なUTF-8シーケンスの置換はありません。 値は、次の場合と同じ方法でエスケープされます `JSON`.
 
-!!! note "メモ"
-    任意のバイトセットを文字列に出力することができます。 を使用 `JSONEachRow` テーブル内のデータをJSON形式にすることができると確信している場合は、情報を失うことなく書式設定します。
+!!! note "注"
+    任意のバイトセットを文字列に出力できます。 使用する `JSONEachRow` テーブル内のデータが情報を失うことなくJSONとしてフォーマットできることが確実な場合は、format。
 
-### 入れ子構造の使用法 {#jsoneachrow-nested}
+### 入れ子構造の使用 {#jsoneachrow-nested}
 
-あなたがテーブルを持っている場合 [ネスト](../sql_reference/data_types/nested_data_structures/nested.md) データ型の列には、同じ構造でJSONデータを挿入することができます。 この機能を有効にするには [input\_format\_import\_nested\_json](../operations/settings/settings.md#settings-input_format_import_nested_json) 設定。
+あなたがテーブルを持っている場合 [入れ子](../sql-reference/data-types/nested-data-structures/nested.md) データ型の列には、同じ構造でJSONデータを挿入することができます。 この機能を有効にするには [input_format_import_nested_json](../operations/settings/settings.md#settings-input_format_import_nested_json) 設定。
 
-たとえば、次の表を考えてみます:
+たとえば、次の表を考えてみましょう:
 
 ``` sql
 CREATE TABLE json_each_row_nested (n Nested (s String, i Int32) ) ENGINE = Memory
 ```
 
-あなたが見ることができるように `Nested` データ型の説明、ClickHouseは、入れ子構造の各コンポーネントを個別の列として扱います (`n.s` と `n.i` 私達のテーブルのため）。 次の方法でデータを挿入できます:
+で見ることができるように `Nested` ClickHouseは、入れ子構造の各コンポーネントを個別の列として扱います (`n.s` と `n.i` 私達のテーブルのため）。 次の方法でデータを挿入できます:
 
 ``` sql
 INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n.s": ["abc", "def"], "n.i": [1, 23]}
 ```
 
-データを階層jsonオブジェクトとして挿入するには、 [input\_format\_import\_nested\_json=1](../operations/settings/settings.md#settings-input_format_import_nested_json).
+挿入データとしての階層JSONオブジェクト [input_format_import_nested_json=1](../operations/settings/settings.md#settings-input_format_import_nested_json).
 
 ``` json
 {
@@ -611,7 +612,7 @@ INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n.s": ["abc", "def"], "n.i
 }
 ```
 
-この設定がない場合、clickhouseは例外をスローします。
+この設定がない場合、ClickHouseは例外をスローします。
 
 ``` sql
 SELECT name, value FROM system.settings WHERE name = 'input_format_import_nested_json'
@@ -645,24 +646,24 @@ SELECT * FROM json_each_row_nested
 
 ## ネイティブ {#native}
 
-最も効率的な形式。 データ書き込みおよび読み込みをブロックのバイナリ形式です。 各ブロックについて、行数、列数、列名と型、およびこのブロック内の列の一部が次々に記録されます。 つまり、この形式は次のとおりです “columnar” – it doesn't convert columns to rows. This is the format used in the native interface for interaction between servers, for using the command-line client, and for C++ clients.
+最も効率的な形式。 データ書き込みおよび読み込みをブロックのバイナリ形式です。 ブロックごとに、このブロック内の行数、列数、列名と型、および列の一部が次々と記録されます。 つまり、この形式は “columnar” – it doesn't convert columns to rows. This is the format used in the native interface for interaction between servers, for using the command-line client, and for C++ clients.
 
-この形式を使用すると、clickhouse dbmsでのみ読み取ることができるダンプをすばやく生成できます。 この形式を自分で操作するのは意味がありません。
+この形式を使用すると、ClickHouse DBMSでのみ読み取ることができるダンプをすばやく生成できます。 この形式で自分で作業するのは理にかなっていません。
 
-## ヌル {#null}
+## Null {#null}
 
-何も出力されません。 ただし、クエリが処理され、コマンドラインクライアントを使用すると、データがクライアントに送信されます。 パフォーマンステストを含むテストに使用されます。
+何も出力されません。 ただし、クエリは処理され、コマンドラインクライアントを使用する場合、データはクライアントに送信されます。 この使用のための試験、性能試験をします。
 明らかに、この形式は出力にのみ適しており、解析には適していません。
 
-## 可愛い {#pretty}
+## プリティ {#pretty}
 
-出力データとしてのunicodeトテーブルも用ansi-エスケープシーケンス設定色の端子です。
-テーブルの完全なグリッドが描画され、各行は端末内の二行を占めています。
-各結果ブロックは、別のテーブルとして出力されます。 これは、結果をバッファリングせずにブロックを出力できるようにするために必要です（すべての値の可視幅を事前に計算するためにバッファリ
+出力データとしてのUnicodeトテーブルも用ANSI-エスケープシーケンス設定色の端子です。
+テーブルの完全なグリッドが描画され、各行は、端末内の二つの行を占めています。
+各結果ブロックは、個別のテーブルとして出力されます。 これは、結果をバッファリングせずにブロックを出力できるようにするために必要です（すべての値の可視幅を事前に計算するためにはバッファ
 
-[NULL](../sql_reference/syntax.md) として出力されます `ᴺᵁᴸᴸ`.
+[NULL](../sql-reference/syntax.md) として出力されます `ᴺᵁᴸᴸ`.
 
-例(以下に示す [PrettyCompact](#prettycompact) 書式):
+例（以下に示す [プリティコンパクト](#prettycompact) 形式):
 
 ``` sql
 SELECT * FROM t_null
@@ -674,7 +675,7 @@ SELECT * FROM t_null
 └───┴──────┘
 ```
 
-行はpretty\*形式でエスケープされません。 例はのために示されています [PrettyCompact](#prettycompact) 書式:
+行はきれいな\*形式ではエスケープされません。 例はのために示されています [プリティコンパクト](#prettycompact) 形式:
 
 ``` sql
 SELECT 'String with \'quotes\' and \t character' AS Escaping_test
@@ -686,10 +687,10 @@ SELECT 'String with \'quotes\' and \t character' AS Escaping_test
 └──────────────────────────────────────┘
 ```
 
-ターミナルへのデータのダンプを避けるために、最初の10,000行だけが出力されます。 行数が10,000以上の場合、メッセージは次のようになります “Showed first 10 000” 印刷されます。
-この形式は、クエリ結果を出力する場合にのみ適切ですが、解析(テーブルに挿入するデータの取得)には適していません。
+端末に大量のデータをダンプするのを避けるために、最初の10,000行だけが印刷されます。 行数が10,000以上の場合、メッセージ “Showed first 10 000” 印刷されます。
+この形式は、クエリ結果の出力にのみ適していますが、解析(テーブルに挿入するデータの取得)には適していません。
 
-かの形式に対応出力の合計値（利用の場合との合計)は、極端な場合 ‘extremes’ 1)に設定します。 このような場合、合計値と極値がメインデータの後に別のテーブルで出力されます。 例(以下に示す [PrettyCompact](#prettycompact) 書式):
+Pretty形式は、合計値(合計と共に使用する場合)および極値(場合)の出力をサポートします ‘extremes’ 1)に設定される。 このような場合、合計値と極値は、メインデータの後に個別のテーブルで出力されます。 例（以下に示す [プリティコンパクト](#prettycompact) 形式):
 
 ``` sql
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT PrettyCompact
@@ -708,7 +709,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 
 Totals:
 ┌──EventDate─┬───────c─┐
-│ 0000-00-00 │ 8873898 │
+│ 1970-01-01 │ 8873898 │
 └────────────┴─────────┘
 
 Extremes:
@@ -718,57 +719,57 @@ Extremes:
 └────────────┴─────────┘
 ```
 
-## PrettyCompact {#prettycompact}
+## プリティコンパクト {#prettycompact}
 
-とは異なります [可愛い](#pretty) グリッドが行間に描画され、結果がよりコンパクトになるという点です。
-この形式は、対話モードのコマンドラインクライアントでは既定で使用されます。
+とは異なる [プリティ](#pretty) グリッドが行の間に描画され、結果がよりコンパクトになるという点で。
+この形式は、対話モードのコマンドラインクライアントで既定で使用されます。
 
-## PrettyCompactMonoBlock {#prettycompactmonoblock}
+## プリティコンパクトモノブロック {#prettycompactmonoblock}
 
-とは異なります [PrettyCompact](#prettycompact) その中で最大10,000行がバッファリングされ、ブロックではなく単一のテーブルとして出力されます。
+とは異なる [プリティコンパクト](#prettycompact) 最大10,000行がバッファリングされ、ブロックではなく単一のテーブルとして出力されます。
 
-## PrettyNoEscapes {#prettynoescapes}
+## プリティノスケープ {#prettynoescapes}
 
-Ansi-escapeシーケンスが使用されていない点がPrettyと異なります。 これは、ブラウザでこの形式を表示するためだけでなく、 ‘watch’ コマンドラインユーティ
+Ansiエスケープシーケンスが使用されない点でPrettyとは異なります。 これは、ブラウザでこの形式を表示するために必要です。 ‘watch’ コマンドライン
 
-例えば:
+例:
 
 ``` bash
 $ watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events FORMAT PrettyCompactNoEscapes'"
 ```
 
-ブラウザに表示するためにhttpインターフェイスを使用できます。
+HTTPインターフェイスを使用して、ブラウザーで表示できます。
 
-### Prettompactnoescapes {#prettycompactnoescapes}
+### プリティコンパクトノスケープ {#prettycompactnoescapes}
 
 前の設定と同じです。
 
-### PrettySpaceNoEscapes {#prettyspacenoescapes}
+### プリティスパセノスケープス {#prettyspacenoescapes}
 
 前の設定と同じです。
 
 ## PrettySpace {#prettyspace}
 
-とは異なります [PrettyCompact](#prettycompact) その空白（空白文字）では、グリッドの代わりに使用されます。
+とは異なる [プリティコンパクト](#prettycompact) その中で、グリッドの代わりに空白（空白文字）が使用されます。
 
-## RowBinary {#rowbinary}
+## ローバイナリ {#rowbinary}
 
-バイナリ形式の行ごとにデータを書式設定および解析します。 行と値は、区切り文字なしで連続して一覧表示されます。
-この形式は、行ベースであるため、ネイティブ形式よりも効率的ではありません。
+バイナリ形式で行ごとにデータを書式設定および解析します。 行と値は、区切り文字なしで連続して表示されます。
+この形式は行ベースであるため、ネイティブ形式よりも効率的ではありません。
 
-整数は固定長のリトルエンディアン表現を使用します。 たとえば、uint64は8バイトを使用します。
+整数は固定長のリトルエンディアン表現を使用します。 たとえば、UInt64は8バイトを使用します。
 DateTimeは、Unixタイムスタンプを値として含むUInt32として表されます。
-日付はuint16オブジェクトとして表され、このオブジェクトには1970-01-01からの日数が値として含まれます。
-Stringは、varintの長さ(符号なし)として表されます [LEB128](https://en.wikipedia.org/wiki/LEB128)その後に文字列のバイトが続きます。
-FixedStringは、単純にバイトのシーケンスとして表されます。
+Dateは、値として1970-01-01以降の日数を含むUInt16オブジェクトとして表されます。
+文字列はvarintの長さ(符号なし)で表されます [LEB128](https://en.wikipedia.org/wiki/LEB128))の後に文字列のバイトが続きます。
+FixedStringは、単にバイトのシーケンスとして表されます。
 
-配列は、varintの長さ(符号なし)として表されます [LEB128](https://en.wikipedia.org/wiki/LEB128)）、配列の連続した要素が続きます。
+配列はvarintの長さとして表されます(符号なし [LEB128](https://en.wikipedia.org/wiki/LEB128))の後に、配列の連続する要素が続きます。
 
-のために [NULL](../sql_reference/syntax.md#null-literal) 支援、追加のバイトを含む1または0が追加される前に各 [Nullable](../sql_reference/data_types/nullable.md) 値。 1の場合、値は次のようになります `NULL` このバイトは別の値として解釈されます。 0の場合、バイトの後の値はそうではありません `NULL`.
+のために [NULL](../sql-reference/syntax.md#null-literal) 1または0を含む追加のバイトがそれぞれの前に追加されます [Null可能](../sql-reference/data-types/nullable.md) 値。 1の場合、値は `NULL` このバイトは別の値として解釈されます。 0の場合、バイトの後の値は `NULL`.
 
 ## RowBinaryWithNamesAndTypes {#rowbinarywithnamesandtypes}
 
-に似て [RowBinary](#rowbinary)、しかし、追加されたヘッダと:
+に類似した [ローバイナリ](#rowbinary),しかし、追加されたヘッダ:
 
 -   [LEB128](https://en.wikipedia.org/wiki/LEB128)-エンコードされた列数(N)
 -   N `String`s列名の指定
@@ -776,21 +777,21 @@ FixedStringは、単純にバイトのシーケンスとして表されます。
 
 ## 値 {#data-format-values}
 
-版画毎に行ットに固定して使用します。 行はコンマで区切られます。 最後の行の後にコンマはありません。 角かっこ内の値もコンマで区切られます。 数字は引用符なしの小数点形式で出力されます。 配列は角かっこで囲まれて出力されます。 文字列、日付、および時刻を含む日付が引用符で囲まれて出力されます。 ルールのエスケープと解析は、 [タブ区切り](#tabseparated) フォーマット。 書式設定時には、余分なスペースは挿入されませんが、解析時には、それらは許可され、スキップされます（配列値内のスペースは許可されません）。 [NULL](../sql_reference/syntax.md) として表されます `NULL`.
+すべての行をかっこで表示します。 行はカンマで区切られます。 最後の行の後にコンマはありません。 角かっこ内の値もコンマ区切りです。 数値は、引用符なしで小数点形式で出力されます。 配列は角かっこで出力されます。 文字列、日付、および時刻付きの日付は引用符で出力されます。 ルールのエスケープと解析は [TabSeparated](#tabseparated) 形式。 フォーマット中に余分なスペースは挿入されませんが、解析中には許可され、スキップされます（配列値内のスペースは許可されません）。 [NULL](../sql-reference/syntax.md) と表される。 `NULL`.
 
 The minimum set of characters that you need to escape when passing data in Values ​​format: single quotes and backslashes.
 
-これは、以下で使用される形式です `INSERT INTO t VALUES ...` ただし、クエリ結果の書式設定にも使用できます。
+これはで使用される形式です `INSERT INTO t VALUES ...` ただし、クエリ結果の書式設定にも使用できます。
 
-また見なさい: [input\_format\_values\_interpret\_expressions](../operations/settings/settings.md#settings-input_format_values_interpret_expressions) と [input\_format\_values\_deduce\_templates\_of\_expressions](../operations/settings/settings.md#settings-input_format_values_deduce_templates_of_expressions) 設定。
+も参照。: [input_format_values_interpret_expressions](../operations/settings/settings.md#settings-input_format_values_interpret_expressions) と [input_format_values_deduce_templates_of_expressions](../operations/settings/settings.md#settings-input_format_values_deduce_templates_of_expressions) 設定。
 
 ## 垂直 {#vertical}
 
-各値を、指定された列名とは別の行に出力します。 このフォーマットは、各行が多数の列で構成されている場合に、単一または少数の行だけを印刷する場合に便利です。
+列名を指定して、それぞれの値を別々の行に出力します。 この形式は、各行が多数の列で構成されている場合、一つまたは数つの行だけを印刷するのに便利です。
 
-[NULL](../sql_reference/syntax.md) として出力されます `ᴺᵁᴸᴸ`.
+[NULL](../sql-reference/syntax.md) として出力されます `ᴺᵁᴸᴸ`.
 
-例えば:
+例:
 
 ``` sql
 SELECT * FROM t_null FORMAT Vertical
@@ -816,15 +817,15 @@ test: string with 'quotes' and      with some special
  characters
 ```
 
-この形式は、クエリ結果を出力する場合にのみ適切ですが、解析(テーブルに挿入するデータの取得)には適していません。
+この形式は、クエリ結果の出力にのみ適していますが、解析(テーブルに挿入するデータの取得)には適していません。
 
 ## VerticalRaw {#verticalraw}
 
-に似て [垂直](#vertical) しかし、無効にエスケープすると。 この形式は、クエリ結果の出力にのみ適しており、解析（データの受信とテーブルへの挿入）には適していません。
+に類似した [垂直](#vertical) しかし、エスケープ無効で。 この形式は、クエリ結果の出力にのみ適しており、解析（データの受信とテーブルへの挿入）には適していません。
 
 ## XML {#xml}
 
-XML形式は出力にのみ適しており、解析には適していません。 例えば:
+XML形式は出力にのみ適しており、解析には適していません。 例:
 
 ``` xml
 <?xml version='1.0' encoding='UTF-8' ?>
@@ -888,24 +889,24 @@ XML形式は出力にのみ適しており、解析には適していません�
 </result>
 ```
 
-列名に許容可能な形式がない場合は、 ‘field’ 要素名として使用されます。 一般に、XML構造はJSON構造に従います。
+列名に許容可能な形式がない場合は、次のようにします ‘field’ 要素名として使用されます。 一般に、XML構造はJSON構造に従います。
 Just as for JSON, invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences.
 
 文字列値では、文字 `<` と `&` としてエスケープ `<` と `&`.
 
-配列は出力されます `<array><elem>Hello</elem><elem>World</elem>...</array>`、およびタプルとして `<tuple><elem>Hello</elem><elem>World</elem>...</tuple>`.
+配列は次のように出力される `<array><elem>Hello</elem><elem>World</elem>...</array>`、およびタプルとして `<tuple><elem>Hello</elem><elem>World</elem>...</tuple>`.
 
 ## CapnProto {#capnproto}
 
-Cap'n Protoは、プロトコルバッファやThriftに似たバイナリメッセージ形式ですが、JSONやMessagePackには似ていません。
+Cap'n Protoは、プロトコルバッファや倹約に似たバイナリメッセージ形式ですが、JSONやMessagePackのようなものではありません。
 
-Cap'n Protoメッセージは厳密に型付けされており、自己記述型ではありません。 スキーマはその場で適用され、クエリごとにキャッシュされます。
+Cap'n Protoメッセージは厳密に型指定され、自己記述ではないため、外部スキーマ記述が必要です。 スキーマはその場で適用され、クエリごとにキャッシュされます。
 
 ``` bash
 $ cat capnproto_messages.bin | clickhouse-client --query "INSERT INTO test.hits FORMAT CapnProto SETTINGS format_schema='schema:Message'"
 ```
 
-どこに `schema.capnp` このように見える:
+どこに `schema.capnp` このように見えます:
 
 ``` capnp
 struct Message {
@@ -914,16 +915,16 @@ struct Message {
 }
 ```
 
-逆シリアル化は効果的であり、通常はシステムの負荷を増加させません。
+逆シリアル化は効果的であり、通常はシステム負荷を増加させません。
 
-また見なさい [書式スキーマ](#formatschema).
+も参照。 [スキーマの書式](#formatschema).
 
-## Protobuf {#protobuf}
+## プロトブフ {#protobuf}
 
-Protobufは-です [プロトコル](https://developers.google.com/protocol-buffers/) フォーマット。
+Protobufは-です [プロトコル](https://developers.google.com/protocol-buffers/) 形式。
 
 この形式には、外部形式スキーマが必要です。 このスキーマをキャッシュ間のクエリ.
-クリックハウスは、 `proto2` と `proto3` 構文。 繰り返し/省略可能/必須項目がサポートされます。
+ClickHouseは両方をサポート `proto2` と `proto3` 構文。 繰り返/オプションに必要な分野に対応しています。
 
 使用例:
 
@@ -935,7 +936,7 @@ SELECT * FROM test.table FORMAT Protobuf SETTINGS format_schema = 'schemafile:Me
 cat protobuf_messages.bin | clickhouse-client --query "INSERT INTO test.table FORMAT Protobuf SETTINGS format_schema='schemafile:MessageType'"
 ```
 
-ここで、ファイル `schemafile.proto` このように見える:
+ここで、ファイル `schemafile.proto` このように見えます:
 
 ``` capnp
 syntax = "proto3";
@@ -948,11 +949,11 @@ message MessageType {
 };
 ```
 
-の対応関係はテーブル列-分野のプロトコルバッファのメッセージタイプclickhouseを比較しつけられた名前が使われている。
-この比較では、大文字と小文字は区別されません `_` （アンダースコア）と `.` （ドット）は等しいとみなされます。
-列の型とプロトコルバッファのメッセージのフィールドが異なる場合、必要な変換が適用されます。
+の対応関係はテーブル列-分野のプロトコルバッファのメッセージタイプClickHouseを比較しつけられた名前が使われている。
+この比較では、大文字と小文字は区別されません。 `_` (アンダースコア)と `.` （ドット）は等しいと見なされます。
+列の型とプロトコルバッファのメッセージのフィールドが異なる場合は、必要な変換が適用されます。
 
-ネストしたメッセージに対応します。 たとえば、フィールドの場合 `z` 次のメッセージタイプ
+ネストしたメッセージに対応します。 たとえば、フィールドの場合 `z` 次のメッセージの種類
 
 ``` capnp
 message MessageType {
@@ -966,10 +967,10 @@ message MessageType {
 };
 ```
 
-ClickHouseは、名前の付いた列を検索しようとします `x.y.z` （または `x_y_z` または `X.y_Z` など）。
-ネストしたメッセージを入力と出力 [入れ子のデータ構造](../sql_reference/data_types/nested_data_structures/nested.md).
+ClickHouseは、名前のある列を検索しようとします `x.y.z` （または `x_y_z` または `X.y_Z` というように）。
+入れ子になったメッセージは、 [入れ子データ構造](../sql-reference/data-types/nested-data-structures/nested.md).
 
-このようなprotobufスキーマで定義されたデフォルト値
+次のようにprotobufスキーマで定義されたデフォルト値
 
 ``` capnp
 syntax = "proto2";
@@ -979,58 +980,58 @@ message MessageType {
 }
 ```
 
-適用されない。 [表のデフォルト](../sql_reference/statements/create.md#create-default-values) それらの代わりに使用されます。
+は適用されない。 [テーブルの既定値](../sql-reference/statements/create.md#create-default-values) それらの代わりに使用されます。
 
-クリックハウスの入力および出力のprotobufメッセージ `length-delimited` フォーマット。
-これは、すべてのメッセージがその長さを [varint](https://developers.google.com/protocol-buffers/docs/encoding#varints).
-また見なさい [一般的な言語で長さ区切りのprotobufメッセージを読み書きする方法](https://cwiki.apache.org/confluence/display/GEODE/Delimiting+Protobuf+Messages).
+ClickHouseの入力および出力protobufのメッセージ `length-delimited` 形式。
+これは、すべてのメッセージがその長さを書き込まれる前に [varint](https://developers.google.com/protocol-buffers/docs/encoding#varints).
+も参照。 [一般的な言語で長さ区切りのprotobufメッセージを読み書きする方法](https://cwiki.apache.org/confluence/display/GEODE/Delimiting+Protobuf+Messages).
 
-## アブロ {#data-format-avro}
+## アヴロ {#data-format-avro}
 
-[Apache Avro](http://avro.apache.org/) は、列指向データを直列化の枠組みに発展してApache Hadoopのプロジェクト.
+[Apache Avro](http://avro.apache.org/) ApacheのHadoopプロジェクト内で開発された行指向のデータ直列化フレームワークです。
 
-ClickHouseアブロ形式の読み書きの支援 [Avroデータファイル](http://avro.apache.org/docs/current/spec.html#Object+Container+Files).
+ClickHouse Avro形式は読み書きをサポートします [Avroデータファイル](http://avro.apache.org/docs/current/spec.html#Object+Container+Files).
 
-### 一致するデータ型 {#data_types-matching}
+### データ型の一致 {#data_types-matching}
 
-下の表に、サポートされているデータの種類とどのように試合clickhouse [データ型](../sql_reference/data_types/index.md) で `INSERT` と `SELECT` クエリ。
+次の表に、サポートされているデータ型とClickHouseとの一致を示します [データ型](../sql-reference/data-types/index.md) で `INSERT` と `SELECT` クエリ。
 
-| Avroデータ型 `INSERT`                       | ClickHouseデータタイプ                                                                                            | Avroデータ型 `SELECT`        |
+| Avroデータ型 `INSERT`                       | ClickHouseデータ型                                                                                                | Avroデータ型 `SELECT`        |
 |---------------------------------------------|-------------------------------------------------------------------------------------------------------------------|------------------------------|
-| `boolean`, `int`, `long`, `float`, `double` | [Int(8/16/32)](../sql_reference/data_types/int_uint.md), [UInt(8/16/32)](../sql_reference/data_types/int_uint.md) | `int`                        |
-| `boolean`, `int`, `long`, `float`, `double` | [Int64](../sql_reference/data_types/int_uint.md), [UInt64](../sql_reference/data_types/int_uint.md)               | `long`                       |
-| `boolean`, `int`, `long`, `float`, `double` | [Float32](../sql_reference/data_types/float.md)                                                                   | `float`                      |
-| `boolean`, `int`, `long`, `float`, `double` | [Float64](../sql_reference/data_types/float.md)                                                                   | `double`                     |
-| `bytes`, `string`, `fixed`, `enum`          | [文字列](../sql_reference/data_types/string.md)                                                                   | `bytes`                      |
-| `bytes`, `string`, `fixed`                  | [FixedString(N)](../sql_reference/data_types/fixedstring.md)                                                      | `fixed(N)`                   |
-| `enum`                                      | [Enum(8/16)](../sql_reference/data_types/enum.md)                                                                 | `enum`                       |
-| `array(T)`                                  | [配列(t)](../sql_reference/data_types/array.md)                                                                   | `array(T)`                   |
-| `union(null, T)`, `union(T, null)`          | [Nullable(T)](../sql_reference/data_types/date.md)                                                                | `union(null, T)`             |
-| `null`                                      | [Nullable(何もなし)](../sql_reference/data_types/special_data_types/nothing.md)                                   | `null`                       |
-| `int (date)` \*                             | [日付](../sql_reference/data_types/date.md)                                                                       | `int (date)` \*              |
-| `long (timestamp-millis)` \*                | [DateTime64(3)](../sql_reference/data_types/datetime.md)                                                          | `long (timestamp-millis)` \* |
-| `long (timestamp-micros)` \*                | [DateTime64(6)](../sql_reference/data_types/datetime.md)                                                          | `long (timestamp-micros)` \* |
+| `boolean`, `int`, `long`, `float`, `double` | [Int(8/16/32)](../sql-reference/data-types/int-uint.md), [UInt(8/16/32)](../sql-reference/data-types/int-uint.md) | `int`                        |
+| `boolean`, `int`, `long`, `float`, `double` | [Int64](../sql-reference/data-types/int-uint.md), [UInt64](../sql-reference/data-types/int-uint.md)               | `long`                       |
+| `boolean`, `int`, `long`, `float`, `double` | [Float32](../sql-reference/data-types/float.md)                                                                   | `float`                      |
+| `boolean`, `int`, `long`, `float`, `double` | [Float64](../sql-reference/data-types/float.md)                                                                   | `double`                     |
+| `bytes`, `string`, `fixed`, `enum`          | [文字列](../sql-reference/data-types/string.md)                                                                   | `bytes`                      |
+| `bytes`, `string`, `fixed`                  | [固定文字列(N)](../sql-reference/data-types/fixedstring.md)                                                       | `fixed(N)`                   |
+| `enum`                                      | [Enum（8月16日)](../sql-reference/data-types/enum.md)                                                             | `enum`                       |
+| `array(T)`                                  | [配列(T)](../sql-reference/data-types/array.md)                                                                   | `array(T)`                   |
+| `union(null, T)`, `union(T, null)`          | [Nullable(T)](../sql-reference/data-types/date.md)                                                                | `union(null, T)`             |
+| `null`                                      | [Nullable(Nothing)](../sql-reference/data-types/special-data-types/nothing.md)                                    | `null`                       |
+| `int (date)` \*                             | [日付](../sql-reference/data-types/date.md)                                                                       | `int (date)` \*              |
+| `long (timestamp-millis)` \*                | [DateTime64(3)](../sql-reference/data-types/datetime.md)                                                          | `long (timestamp-millis)` \* |
+| `long (timestamp-micros)` \*                | [DateTime64(6)](../sql-reference/data-types/datetime.md)                                                          | `long (timestamp-micros)` \* |
 
-\* [Avro論理型](http://avro.apache.org/docs/current/spec.html#Logical+Types)
+\* [Avro論理タイプ](http://avro.apache.org/docs/current/spec.html#Logical+Types)
 
-未サポートのavroデータ型: `record` (非ルート), `map`
+未サポートのAvroデータ型: `record` （非ルート), `map`
 
-サポートされないavro論理データ型: `uuid`, `time-millis`, `time-micros`, `duration`
+サポートされないAvro論理データ型: `uuid`, `time-millis`, `time-micros`, `duration`
 
 ### データの挿入 {#inserting-data-1}
 
-AvroファイルのデータをClickHouseテーブルに挿入するには:
+AvroファイルからClickHouseテーブルにデータを挿入するには:
 
 ``` bash
 $ cat file.avro | clickhouse-client --query="INSERT INTO {some_table} FORMAT Avro"
 ```
 
-入力avroファ `record` タイプ。
+入力Avroファ `record` タイプ。
 
-AvroスキーマClickHouseのテーブル列とフィールド間の対応を検索するには、その名前を比較します。 この比較では、大文字と小文字が区別されます。
+の対応関係はテーブル列分野のアブロスキーマClickHouseを比較しつけられた名前が使われている。 この比較では、大文字と小文字が区別されます。
 未使用の項目はスキップされます。
 
-データの種類clickhouseテーブルの列ができ、対応する分野においてアブロのデータを挿入します。 データを挿入するとき、clickhouseは上記の表に従ってデータ型を解釈します [キャスト](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) 対応する列タイプのデータ。
+データの種類ClickHouseテーブルの列ができ、対応する分野においてアブロのデータを挿入します。 データを挿入するとき、ClickHouseは上記の表に従ってデータ型を解釈し、次に [キャスト](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) 対応する列タイプのデータ。
 
 ### データの選択 {#selecting-data-1}
 
@@ -1042,28 +1043,28 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Avro" > file.avro
 
 列名は必須です:
 
--   始める `[A-Za-z_]`
+-   で始まる `[A-Za-z_]`
 -   その後のみ `[A-Za-z0-9_]`
 
-出力avroファイル圧縮およびsync間隔はと形成することができます [output\_format\_avro\_codec](../operations/settings/settings.md#settings-output_format_avro_codec) と [output\_format\_avro\_sync\_interval](../operations/settings/settings.md#settings-output_format_avro_sync_interval) それぞれ。
+出力Avroファイルの圧縮および同期間隔は以下で設定できます [output_format_avro_codec](../operations/settings/settings.md#settings-output_format_avro_codec) と [output_format_avro_sync_interval](../operations/settings/settings.md#settings-output_format_avro_sync_interval) それぞれ。
 
-## AvroConfluent {#data-format-avro-confluent}
+## アブロコンフルエント {#data-format-avro-confluent}
 
-AvroConfluent支援復号単一のオブジェクトアブロのメッセージを使用する [カフカname](https://kafka.apache.org/) と [Confluentスキーマレジストリ](https://docs.confluent.io/current/schema-registry/index.html).
+AvroConfluent支援復号単一のオブジェクトアブロのメッセージを使用する [カフカ](https://kafka.apache.org/) と [Confluentスキーマレジストリ](https://docs.confluent.io/current/schema-registry/index.html).
 
-各avroメッセージには、スキーマレジストリを使用して実際のスキーマに解決できるスキーマidが埋め込まれます。
+各Avroメッセージには、スキーマレジストリを使用して実際のスキーマに解決できるスキーマidが埋め込まれます。
 
 スキーマがキャッシュ一度に解決されます。
 
-スキーマレジスト [format\_avro\_schema\_registry\_url](../operations/settings/settings.md#settings-format_avro_schema_registry_url)
+スキーマのレジストリのURLは設定され [format_avro_schema_registry_url](../operations/settings/settings.md#settings-format_avro_schema_registry_url)
 
-### 一致するデータ型 {#data_types-matching-1}
+### データ型の一致 {#data_types-matching-1}
 
-と同じ [アブロ](#data-format-avro)
+同じ [アヴロ](#data-format-avro)
 
-### 使い方 {#usage}
+### 使用法 {#usage}
 
-使用できるスキーマ解決をすばやく検証するには [kafkacat](https://github.com/edenhill/kafkacat) と [ﾂつ"ﾂづ按つｵﾂ！](../operations/utilities/clickhouse-local.md):
+迅速な検証スキーマ分解能を使用でき [kafkacat](https://github.com/edenhill/kafkacat) と [ﾂつｨﾂ姪"ﾂ債ﾂつｹ](../operations/utilities/clickhouse-local.md):
 
 ``` bash
 $ kafkacat -b kafka-broker  -C -t topic1 -o beginning -f '%s' -c 3 | clickhouse-local   --input-format AvroConfluent --format_avro_schema_registry_url 'http://schema-registry' -S "field1 Int64, field2 String"  -q 'select *  from table'
@@ -1072,7 +1073,7 @@ $ kafkacat -b kafka-broker  -C -t topic1 -o beginning -f '%s' -c 3 | clickhouse-
 3 c
 ```
 
-使用するには `AvroConfluent` と [カフカname](../engines/table_engines/integrations/kafka.md):
+使用するには `AvroConfluent` と [カフカ](../engines/table-engines/integrations/kafka.md):
 
 ``` sql
 CREATE TABLE topic1_stream
@@ -1093,120 +1094,120 @@ SELECT * FROM topic1_stream;
 ```
 
 !!! note "警告"
-    設定 `format_avro_schema_registry_url` で構成する必要があります `users.xml` 再起動後にその価値を維持する。
+    設定 `format_avro_schema_registry_url` で構成する必要があります `users.xml` 再起動後にその値を維持する。
 
-## Parquet張り {#data-format-parquet}
+## 寄木細工 {#data-format-parquet}
 
-[Apacheの寄木細工](http://parquet.apache.org/) Hadoopエコシステムでは柱状のストレージ形式が普及しています。 ClickHouse支援を読み取りと書き込みの操作のためにこの形式です。
+[アパッチの寄木細工](http://parquet.apache.org/) Hadoopエコシステムに広く普及している柱状ストレージ形式です。 ClickHouse支援を読み取りと書き込みの操作のためにこの形式です。
 
-### 一致するデータ型 {#data_types-matching-2}
+### データ型の一致 {#data_types-matching-2}
 
-下の表に、サポートされているデータの種類とどのように試合clickhouse [データ型](../sql_reference/data_types/index.md) で `INSERT` と `SELECT` クエリ。
+次の表に、サポートされているデータ型とClickHouseとの一致を示します [データ型](../sql-reference/data-types/index.md) で `INSERT` と `SELECT` クエリ。
 
-| Parquetデータ型 (`INSERT`) | ClickHouseデータタイプ                                    | Parquetデータ型 (`SELECT`) |
+| Parquetデータ型 (`INSERT`) | ClickHouseデータ型                                        | Parquetデータ型 (`SELECT`) |
 |----------------------------|-----------------------------------------------------------|----------------------------|
-| `UINT8`, `BOOL`            | [UInt8](../sql_reference/data_types/int_uint.md)          | `UINT8`                    |
-| `INT8`                     | [Int8](../sql_reference/data_types/int_uint.md)           | `INT8`                     |
-| `UINT16`                   | [UInt16](../sql_reference/data_types/int_uint.md)         | `UINT16`                   |
-| `INT16`                    | [Int16](../sql_reference/data_types/int_uint.md)          | `INT16`                    |
-| `UINT32`                   | [UInt32](../sql_reference/data_types/int_uint.md)         | `UINT32`                   |
-| `INT32`                    | [Int32](../sql_reference/data_types/int_uint.md)          | `INT32`                    |
-| `UINT64`                   | [UInt64](../sql_reference/data_types/int_uint.md)         | `UINT64`                   |
-| `INT64`                    | [Int64](../sql_reference/data_types/int_uint.md)          | `INT64`                    |
-| `FLOAT`, `HALF_FLOAT`      | [Float32](../sql_reference/data_types/float.md)           | `FLOAT`                    |
-| `DOUBLE`                   | [Float64](../sql_reference/data_types/float.md)           | `DOUBLE`                   |
-| `DATE32`                   | [日付](../sql_reference/data_types/date.md)               | `UINT16`                   |
-| `DATE64`, `TIMESTAMP`      | [DateTime](../sql_reference/data_types/datetime.md)       | `UINT32`                   |
-| `STRING`, `BINARY`         | [文字列](../sql_reference/data_types/string.md)           | `STRING`                   |
-| —                          | [FixedString](../sql_reference/data_types/fixedstring.md) | `STRING`                   |
-| `DECIMAL`                  | [小数](../sql_reference/data_types/decimal.md)            | `DECIMAL`                  |
+| `UINT8`, `BOOL`            | [UInt8](../sql-reference/data-types/int-uint.md)          | `UINT8`                    |
+| `INT8`                     | [Int8](../sql-reference/data-types/int-uint.md)           | `INT8`                     |
+| `UINT16`                   | [UInt16](../sql-reference/data-types/int-uint.md)         | `UINT16`                   |
+| `INT16`                    | [Int16](../sql-reference/data-types/int-uint.md)          | `INT16`                    |
+| `UINT32`                   | [UInt32](../sql-reference/data-types/int-uint.md)         | `UINT32`                   |
+| `INT32`                    | [Int32](../sql-reference/data-types/int-uint.md)          | `INT32`                    |
+| `UINT64`                   | [UInt64](../sql-reference/data-types/int-uint.md)         | `UINT64`                   |
+| `INT64`                    | [Int64](../sql-reference/data-types/int-uint.md)          | `INT64`                    |
+| `FLOAT`, `HALF_FLOAT`      | [Float32](../sql-reference/data-types/float.md)           | `FLOAT`                    |
+| `DOUBLE`                   | [Float64](../sql-reference/data-types/float.md)           | `DOUBLE`                   |
+| `DATE32`                   | [日付](../sql-reference/data-types/date.md)               | `UINT16`                   |
+| `DATE64`, `TIMESTAMP`      | [DateTime](../sql-reference/data-types/datetime.md)       | `UINT32`                   |
+| `STRING`, `BINARY`         | [文字列](../sql-reference/data-types/string.md)           | `STRING`                   |
+| —                          | [FixedString](../sql-reference/data-types/fixedstring.md) | `STRING`                   |
+| `DECIMAL`                  | [小数点](../sql-reference/data-types/decimal.md)          | `DECIMAL`                  |
 
-ClickHouseは構成可能の精密をの支えます `Decimal` タイプ。 その `INSERT` クエリは寄木細工を扱います `DECIMAL` クリックハウスとして入力 `Decimal128` タイプ。
+ClickHouseは構成可能の精密を支えます `Decimal` タイプ。 その `INSERT` クエリは、寄木細工を扱います `DECIMAL` ClickHouseとして入力します `Decimal128` タイプ。
 
-Parquetデータ型: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
+対応していな寄木細工のデータ種類: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
-データの種類clickhouseテーブルの列ができ、対応する分野の寄木細工のデータを挿入します。 データを挿入するとき、clickhouseは上記の表に従ってデータ型を解釈します [キャスト](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) ClickHouseテーブル列に設定されているデータ型へのデータ。
+データの種類ClickHouseテーブルの列ができ、対応する分野の寄木細工のデータを挿入します。 データを挿入するとき、ClickHouseは上記の表に従ってデータ型を解釈し、次に [キャスト](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) ClickHouseテーブル列に設定されているそのデータ型のデータ。
 
 ### データの挿入と選択 {#inserting-and-selecting-data}
 
-次のコマンドを使用して、ファイルのparquetデータをclickhouseテーブルに挿入できます:
+次のコマンドで、ファイルからパーケットデータをClickHouseテーブルに挿入できます:
 
 ``` bash
 $ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Parquet"
 ```
 
-次のコマンドを実行すると、clickhouseテーブルからデータを選択し、parquet形式のファイルに保存することができます:
+ClickHouseテーブルからデータを選択し、次のコマンドでParquet形式でファイルに保存できます:
 
 ``` bash
 $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
 ```
 
-Hadoopとデータを交換するには、次のようにします [HDFSテーブルエンジン](../engines/table_engines/integrations/hdfs.md).
+Hadoopとデータを交換するには、以下を使用できます [HDFSテーブルエンジン](../engines/table-engines/integrations/hdfs.md).
 
 ## ORC {#data-format-orc}
 
-[Apache ORC](https://orc.apache.org/) Hadoopエコシステムでは柱状のストレージ形式が普及しています。 この形式のデータのみをClickHouseに挿入できます。
+[Apache ORC](https://orc.apache.org/) Hadoopエコシステムに広く普及している柱状ストレージ形式です。 この形式のデータはClickHouseにのみ挿入できます。
 
-### 一致するデータ型 {#data_types-matching-3}
+### データ型の一致 {#data_types-matching-3}
 
-下の表に、サポートされているデータの種類とどのように試合clickhouse [データ型](../sql_reference/data_types/index.md) で `INSERT` クエリ。
+次の表に、サポートされているデータ型とClickHouseとの一致を示します [データ型](../sql-reference/data-types/index.md) で `INSERT` クエリ。
 
-| ORCデータ型 (`INSERT`) | ClickHouseデータタイプ                              |
+| ORCデータ型 (`INSERT`) | ClickHouseデータ型                                  |
 |------------------------|-----------------------------------------------------|
-| `UINT8`, `BOOL`        | [UInt8](../sql_reference/data_types/int_uint.md)    |
-| `INT8`                 | [Int8](../sql_reference/data_types/int_uint.md)     |
-| `UINT16`               | [UInt16](../sql_reference/data_types/int_uint.md)   |
-| `INT16`                | [Int16](../sql_reference/data_types/int_uint.md)    |
-| `UINT32`               | [UInt32](../sql_reference/data_types/int_uint.md)   |
-| `INT32`                | [Int32](../sql_reference/data_types/int_uint.md)    |
-| `UINT64`               | [UInt64](../sql_reference/data_types/int_uint.md)   |
-| `INT64`                | [Int64](../sql_reference/data_types/int_uint.md)    |
-| `FLOAT`, `HALF_FLOAT`  | [Float32](../sql_reference/data_types/float.md)     |
-| `DOUBLE`               | [Float64](../sql_reference/data_types/float.md)     |
-| `DATE32`               | [日付](../sql_reference/data_types/date.md)         |
-| `DATE64`, `TIMESTAMP`  | [DateTime](../sql_reference/data_types/datetime.md) |
-| `STRING`, `BINARY`     | [文字列](../sql_reference/data_types/string.md)     |
-| `DECIMAL`              | [小数](../sql_reference/data_types/decimal.md)      |
+| `UINT8`, `BOOL`        | [UInt8](../sql-reference/data-types/int-uint.md)    |
+| `INT8`                 | [Int8](../sql-reference/data-types/int-uint.md)     |
+| `UINT16`               | [UInt16](../sql-reference/data-types/int-uint.md)   |
+| `INT16`                | [Int16](../sql-reference/data-types/int-uint.md)    |
+| `UINT32`               | [UInt32](../sql-reference/data-types/int-uint.md)   |
+| `INT32`                | [Int32](../sql-reference/data-types/int-uint.md)    |
+| `UINT64`               | [UInt64](../sql-reference/data-types/int-uint.md)   |
+| `INT64`                | [Int64](../sql-reference/data-types/int-uint.md)    |
+| `FLOAT`, `HALF_FLOAT`  | [Float32](../sql-reference/data-types/float.md)     |
+| `DOUBLE`               | [Float64](../sql-reference/data-types/float.md)     |
+| `DATE32`               | [日付](../sql-reference/data-types/date.md)         |
+| `DATE64`, `TIMESTAMP`  | [DateTime](../sql-reference/data-types/datetime.md) |
+| `STRING`, `BINARY`     | [文字列](../sql-reference/data-types/string.md)     |
+| `DECIMAL`              | [小数点](../sql-reference/data-types/decimal.md)    |
 
-ClickHouseはの構成可能の精密を支えます `Decimal` タイプ。 その `INSERT` クエリはORCを処理します `DECIMAL` クリックハウスとして入力 `Decimal128` タイプ。
+ClickHouseはの構成可能の精密を支えます `Decimal` タイプ。 その `INSERT` クエリはORCを扱います `DECIMAL` ClickHouseとして入力します `Decimal128` タイプ。
 
-サポートされていな: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
+未サポートのORCデータ型: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
-ClickHouseテーブル列のデータ型は、対応するORCデータフィールドと一致する必要はありません。 データを挿入するとき、ClickHouseは上記の表に従ってデータ型を解釈します [キャスト](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) ClickHouseテーブル列のデータ型セットに対するデータ。
+ClickHouseテーブル列のデータ型は、対応するORCデータフィールドと一致する必要はありません。 データを挿入するとき、ClickHouseは上記の表に従ってデータ型を解釈し、次に [キャスト](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) ClickHouseテーブル列のデータ型セットへのデータ。
 
 ### データの挿入 {#inserting-data-2}
 
-次のコマンドを実行すると、ファイルのorcデータをclickhouseテーブルに挿入できます:
+次のコマンドで、ファイルからOrcデータをClickHouseテーブルに挿入できます:
 
 ``` bash
 $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT ORC"
 ```
 
-Hadoopとデータを交換するには、次のようにします [HDFSテーブルエンジン](../engines/table_engines/integrations/hdfs.md).
+Hadoopとデータを交換するには、以下を使用できます [HDFSテーブルエンジン](../engines/table-engines/integrations/hdfs.md).
 
-## 書式スキーマ {#formatschema}
+## スキーマの書式 {#formatschema}
 
-ファイルのファイル名を含む形式スキーマを設定し、設定 `format_schema`.
-いずれかの形式を使用する場合は、この設定を行う必要があります `Cap'n Proto` と `Protobuf`.
-フォーマット-スキーマは、このファイル内のファイル名とメッセージ-タイプ名の組み合わせで、コロンで区切られます,
+形式スキーマを含むファイル名は、この設定によって設定されます `format_schema`.
+いずれかの形式を使用する場合は、この設定を設定する必要があります `Cap'n Proto` と `Protobuf`.
+形式スキーマは、ファイル名とこのファイル内のメッセージ型の名前の組み合わせで、コロンで区切られます,
 e.g. `schemafile.proto:MessageType`.
-ファイルにフォーマットの標準拡張子がある場合(例えば, `.proto` のために `Protobuf`),
-これは省略することができ、この場合、形式スキーマは次のようになります `schemafile:MessageType`.
+ファイルが形式の標準拡張子を持っている場合（たとえば, `.proto` のために `Protobuf`),
+この場合、形式スキーマは次のようになります `schemafile:MessageType`.
 
-データを入力するか、または出力すれば [お客様](../interfaces/cli.md) で [対話モード](../interfaces/cli.md#cli_usage)、フォーマットスキーマで指定されたファイル名
-クライアン
-でクライアントを使用する場合 [バッチモード](../interfaces/cli.md#cli_usage) は、パスのスキーマ"相対的"に指定する必要があります。
+を介してデータを入力または出力する場合 [クライアン](../interfaces/cli.md) で [対話モード](../interfaces/cli.md#cli_usage),形式スキーマで指定されたファイル名
+を含むことができ、絶対パス名は相対パスを現在のディレクトリのクライアント
+クライアントを使用する場合 [バッチモード](../interfaces/cli.md#cli_usage) は、パスのスキーマ"相対的"に指定する必要があります。
 
-データを入力するか、または出力すれば [HTTPインター](../interfaces/http.md) フォーマットスキーマで指定したファイル名
-に指定されたディレクトリにあるはずです。 [format\_schema\_path](../operations/server_configuration_parameters/settings.md#server_configuration_parameters-format_schema_path)
+を介してデータを入力または出力する場合 [HTTPインターフェ](../interfaces/http.md) 形式スキーマで指定されたファイル名
+指定されたディレクトリにあるはずです。 [format_schema_path](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path)
 サーバー構成で。
 
-## エラーのスキップ {#skippingerrors}
+## スキップエラー {#skippingerrors}
 
-以下のようないくつかの形式 `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` と `Protobuf` キ壊れた列が構文解析エラーが発生したときの解析から初めます。 見る [input\_format\_allow\_errors\_num](../operations/settings/settings.md#settings-input_format_allow_errors_num) と
-[input\_format\_allow\_errors\_ratio](../operations/settings/settings.md#settings-input_format_allow_errors_ratio) 設定。
+次のような形式があります `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` と `Protobuf` 解析エラーが発生した場合に壊れた行をスキップし、次の行の先頭から解析を続行できます。 見る [input_format_allow_errors_num](../operations/settings/settings.md#settings-input_format_allow_errors_num) と
+[input_format_allow_errors_ratio](../operations/settings/settings.md#settings-input_format_allow_errors_ratio) 設定。
 制限:
--解析エラーの場合 `JSONEachRow` 新しい行（またはEOF）まですべてのデータをスキップするので、行は次のように区切られます `\n` エラーを正確にカウントする。
-- `Template` と `CustomSeparated` 最後の列の後にdelimiterを使用し、次の行の先頭を見つけるために行間の区切り文字を使用するので、エラーをスキップすると、少なくとも一方が空でない
+-解析エラーの場合 `JSONEachRow` 新しい行(またはEOF)まですべてのデータをスキップします。 `\n` エラーを正しく数える。
+- `Template` と `CustomSeparated` 最後の列の後にdelimiterを使用し、行の間にdelimiterを使用すると、次の行の先頭を見つけることができます。
 
 [元の記事](https://clickhouse.tech/docs/en/interfaces/formats/) <!--hide-->

@@ -1,12 +1,4 @@
 <test>
-
-    <stop_conditions>
-        <any_of>
-            <!-- This is only for infinite running query. -->
-            <total_time_ms>10000</total_time_ms>
-        </any_of>
-    </stop_conditions>
-
-    <query>SELECT boundingRatio(number, number) FROM numbers(1000000)</query>
-    <query>SELECT (argMax(number, number) - argMin(number, number)) / (max(number) - min(number)) FROM numbers(1000000)</query>
+    <query>SELECT boundingRatio(number, number) FROM numbers(100000000)</query>
+    <query>SELECT (argMax(number, number) - argMin(number, number)) / (max(number) - min(number)) FROM numbers(100000000)</query>
 </test>

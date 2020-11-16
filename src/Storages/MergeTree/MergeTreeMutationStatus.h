@@ -1,11 +1,15 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
+#include <Core/Names.h>
+#include <optional>
 #include <map>
+#include <ctime>
 
 
 namespace DB
 {
+
 
 struct MergeTreeMutationStatus
 {
@@ -24,5 +28,11 @@ struct MergeTreeMutationStatus
     time_t latest_fail_time = 0;
     String latest_fail_reason;
 };
+
+/// Check mutation status and throw exception in case of error during mutation
+/// (latest_fail_reason not empty) or if mutation was killed (status empty
+/// optional). mutation_ids passed separately, because status may be empty and
+/// we can execute multiple mutations at once
+void checkMutationStatus(std::optional<MergeTreeMutationStatus> & status, const std::set<String> & mutation_ids);
 
 }

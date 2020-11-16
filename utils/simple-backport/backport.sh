@@ -4,7 +4,10 @@ set -e
 branch="$1"
 merge_base=$(git merge-base origin/master "origin/$branch")
 master_git_cmd=(git log "$merge_base..origin/master" --first-parent)
-branch_git_cmd=(git log "$merge_base..origin/$branch" --first-parent)
+# The history in back branches shouldn't be too crazy, and sometimes we have a PR
+# that merges several backport commits there (3f2cba6824fddf31c30bde8c6f4f860572f4f580),
+# so don't use --first-parent
+branch_git_cmd=(git log "$merge_base..origin/$branch")
 
 # Make lists of PRs that were merged into each branch. Use first parent here, or else
 # we'll get weird things like seeing older master that was merged into a PR branch
@@ -13,30 +16,31 @@ branch_git_cmd=(git log "$merge_base..origin/$branch" --first-parent)
 "${branch_git_cmd[@]}" > "$branch-log.txt"
 
 # Check for diamond merges.
-"${master_git_cmd[@]}" --oneline --grep "Merge branch '" | grep ''
-diamonds_in_master=$?
+diamonds_in_master=$("${master_git_cmd[@]}" --oneline --grep "Merge branch '")
+diamonds_in_branch=$("${branch_git_cmd[@]}" --oneline --grep "Merge branch '")
 
-"${branch_git_cmd[@]}" --oneline --grep "Merge branch '" | grep ''
-diamonds_in_branch=$?
-
-if [ "$diamonds_in_master" -eq 0 ] || [ "$diamonds_in_branch" -eq 0 ]
+if [ "$diamonds_in_master" != "" ] || [ "$diamonds_in_branch" != "" ]
 then
+    echo "$diamonds_in_master"
+    echo "$diamonds_in_branch"
     # DO NOT ADD automated handling of diamond merges to this script.
     # It is an unsustainable way to work with git, and it MUST be visible.
     echo Warning: suspected diamond merges above.
     echo Some commits will be missed, review these manually.
 fi
 
-# NOTE keep in sync with ./changelog.sh.
+# NOTE keep in sync with ./backport.sh.
 # Search for PR numbers in commit messages. First variant is normal merge, and second
 # variant is squashed. Next are some backport message variants.
-find_prs=(sed -n "s/^.*Merge pull request #\([[:digit:]]\+\).*$/\1/p;
-                  s/^.*(#\([[:digit:]]\+\))$/\1/p;
-                  s/^.*back[- ]*port[ed of]*#\([[:digit:]]\+\).*$/\1/Ip;
-                  s/^.*cherry[- ]*pick[ed of]*#\([[:digit:]]\+\).*$/\1/Ip")
+find_prs=(sed -n "s/^.*merg[eding]*.*#\([[:digit:]]\+\).*$/\1/Ip;
+                  s/^.*#\([[:digit:]]\+\))$/\1/p;
+                  s/^.*back[- ]*port[ed of]*.*#\([[:digit:]]\+\).*$/\1/Ip;
+                  s/^.*cherry[- ]*pick[ed of]*.*#\([[:digit:]]\+\).*$/\1/Ip")
 
-"${find_prs[@]}" master-log.txt | sort -rn > master-prs.txt
-"${find_prs[@]}" "$branch-log.txt" | sort -rn > "$branch-prs.txt"
+# awk is to filter out small task numbers from different task tracker, which are
+# referenced by documentation commits like '* DOCSUP-824: query log (#115)'.
+"${find_prs[@]}" master-log.txt | sort -rn | uniq | awk '$0 > 1000 { print $0 }' > master-prs.txt
+"${find_prs[@]}" "$branch-log.txt" | sort -rn | uniq | awk '$0 > 1000 { print $0 }' > "$branch-prs.txt"
 
 # Find all master PRs that are not in branch by calculating differences of two PR lists.
 grep -f "$branch-prs.txt" -F -x -v master-prs.txt > "$branch-diff-prs.txt"

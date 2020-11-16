@@ -1,57 +1,60 @@
 <test>
-
-    <stop_conditions>
-        <all_of>
-            <total_time_ms>10000</total_time_ms>
-        </all_of>
-        <any_of>
-            <total_time_ms>20000</total_time_ms>
-        </any_of>
-    </stop_conditions>
-
-
     <substitutions>
         <substitution>
-           <name>crypto_hash_func</name>
+           <name>hash_slow</name>
            <values>
                <value>MD5</value>
                <value>SHA1</value>
                <value>SHA224</value>
                <value>SHA256</value>
                <value>halfMD5</value>
+          </values>
+        </substitution>
+        <substitution>
+           <name>hash_fast</name>
+           <values>
                <value>sipHash64</value>
                <value>sipHash128</value>
            </values>
         </substitution>
         <substitution>
-           <name>string</name>
+           <name>string_small</name>
            <values>
                <value>materialize('')</value>
                <value>toString(1000000000+number)</value>
            </values>
         </substitution>
         <substitution>
-           <name>string_slow</name>
+           <name>string_large</name>
            <values>
                <value>materialize('Lorem ipsum dolor sit amet, consectetur adipiscing elit. Mauris sollicitudin nisi ac erat mollis dapibus. Maecenas leo purus, bibendum eu erat eget, iaculis molestie tortor. Phasellus maximus odio nec mauris ultrices dictum. Morbi efficitur nisl eget congue mollis. Vestibulum pharetra diam vitae urna interdum, eget ultricies justo sollicitudin. Nunc sit amet purus id leo tempus dignissim. Donec ac lacus ut orci tempus scelerisque quis ultricies nibh. Nullam lobortis, erat ac ullamcorper interdum, odio nisl elementum quam, ut malesuada massa nunc eget quam. Nam suscipit neque quis sapien ultricies imperdiet. Maecenas augue libero, finibus tristique sagittis et, semper nec arcu. Morbi non tortor ultrices, sollicitudin justo sed, accumsan ligula. Nullam at ipsum in nibh auctor ullamcorper. Nullam laoreet neque id lorem condimentum tincidunt. Nullam vel orci nibh. Ut sit amet sem faucibus, fringilla orci at, lacinia enim. Mauris imperdiet ex id scelerisque eleifend. Ut tincidunt massa nibh, viverra pharetra metus')</value>
            </values>
         </substitution>
         <substitution>
-           <name>table</name>
+           <name>numbers_small</name>
+           <values>
+               <value>numbers(100000)</value>
+               <value>numbers_mt(1000000)</value>
+           </values>
+        </substitution>
+        <substitution>
+           <name>numbers_medium</name>
            <values>
                <value>numbers(1000000)</value>
                <value>numbers_mt(10000000)</value>
            </values>
         </substitution>
         <substitution>
-           <name>table_slow</name>
+           <name>numbers_large</name>
            <values>
-               <value>zeros(100000)</value>
-               <value>zeros_mt(1000000)</value>
+               <value>numbers(10000000)</value>
+               <value>numbers_mt(100000000)</value>
            </values>
         </substitution>
     </substitutions>
 
-    <query>SELECT ignore({crypto_hash_func}({string})) FROM {table} FORMAT Null</query>
-    <query>SELECT ignore({crypto_hash_func}({string_slow})) FROM {table_slow} FORMAT Null</query>
+    <query>SELECT ignore({hash_slow}({string_small})) FROM {numbers_medium} FORMAT Null</query>
+    <query>SELECT ignore({hash_slow}({string_large})) FROM {numbers_small} FORMAT Null</query>
+    <query>SELECT ignore({hash_fast}({string_small})) FROM {numbers_large} FORMAT Null</query>
+    <query>SELECT ignore({hash_fast}({string_large})) FROM {numbers_medium} FORMAT Null</query>
 </test>

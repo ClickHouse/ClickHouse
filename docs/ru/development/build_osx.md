@@ -1,1 +1,0 @@
-../../en/development/build_osx.md

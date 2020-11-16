@@ -9,12 +9,9 @@
 
 // Include this header last, because it is an auto-generated dump of questionable
 // garbage that breaks the build (e.g. it changes _POSIX_C_SOURCE).
-// TODO: find out what it is. On github, they have proper inteface headers like
+// TODO: find out what it is. On github, they have proper interface headers like
 // this one: https://github.com/RoaringBitmap/CRoaring/blob/master/include/roaring/roaring.h
-#pragma GCC diagnostic push
-#pragma GCC diagnostic warning "-Wold-style-cast"
 #include <roaring/roaring.h>
-#pragma GCC diagnostic pop
 
 namespace DB
 {
@@ -511,20 +508,20 @@ public:
         UInt64 count = 0;
         if (isSmall())
         {
-            std::vector<T> ans;
+            std::vector<T> answer;
             for (const auto & x : small)
             {
                 T val = x.getValue();
                 if (UInt32(val) >= range_start)
                 {
-                    ans.push_back(val);
+                    answer.push_back(val);
                 }
             }
-            sort(ans.begin(), ans.end());
-            if (limit > ans.size())
-                limit = ans.size();
+            sort(answer.begin(), answer.end());
+            if (limit > answer.size())
+                limit = answer.size();
             for (size_t i = 0; i < limit; ++i)
-                r1.add(ans[i]);
+                r1.add(answer[i]);
             count = UInt64(limit);
         }
         else
@@ -601,128 +598,6 @@ public:
         }
     }
 
-private:
-    /// To read and write the DB Buffer directly, migrate code from CRoaring
-    void db_roaring_bitmap_add_many(DB::ReadBuffer & dbBuf, roaring_bitmap_t * r, size_t n_args)
-    {
-        void * container = nullptr; // hold value of last container touched
-        uint8_t typecode = 0; // typecode of last container touched
-        uint32_t prev = 0; // previous valued inserted
-        size_t i = 0; // index of value
-        int containerindex = 0;
-        if (n_args == 0)
-            return;
-        uint32_t val;
-        readBinary(val, dbBuf);
-        container = containerptr_roaring_bitmap_add(r, val, &typecode, &containerindex);
-        prev = val;
-        ++i;
-        for (; i < n_args; ++i)
-        {
-            readBinary(val, dbBuf);
-            if (((prev ^ val) >> 16) == 0)
-            { // no need to seek the container, it is at hand
-                // because we already have the container at hand, we can do the
-                // insertion
-                // automatically, bypassing the roaring_bitmap_add call
-                uint8_t newtypecode = typecode;
-                void * container2 = container_add(container, val & 0xFFFF, typecode, &newtypecode);
-                // rare instance when we need to
-                if (container2 != container)
-                {
-                    // change the container type
-                    container_free(container, typecode);
-                    ra_set_container_at_index(&r->high_low_container, containerindex, container2, newtypecode);
-                    typecode = newtypecode;
-                    container = container2;
-                }
-            }
-            else
-            {
-                container = containerptr_roaring_bitmap_add(r, val, &typecode, &containerindex);
-            }
-            prev = val;
-        }
-    }
-
-    void db_ra_to_uint32_array(DB::WriteBuffer & dbBuf, roaring_array_t * ra) const
-    {
-        size_t ctr = 0;
-        for (Int32 i = 0; i < ra->size; ++i)
-        {
-            Int32 num_added = db_container_to_uint32_array(dbBuf, ra->containers[i], ra->typecodes[i], (static_cast<UInt32>(ra->keys[i])) << 16);
-            ctr += num_added;
-        }
-    }
-
-    UInt32 db_container_to_uint32_array(DB::WriteBuffer & dbBuf, const void * container, uint8_t typecode, UInt32 base) const
-    {
-        container = container_unwrap_shared(container, &typecode);
-        switch (typecode)
-        {
-            case BITSET_CONTAINER_TYPE_CODE:
-                return db_bitset_container_to_uint32_array(dbBuf, static_cast<const bitset_container_t *>(container), base);
-            case ARRAY_CONTAINER_TYPE_CODE:
-                return db_array_container_to_uint32_array(dbBuf, static_cast<const array_container_t *>(container), base);
-            case RUN_CONTAINER_TYPE_CODE:
-                return db_run_container_to_uint32_array(dbBuf, static_cast<const run_container_t *>(container), base);
-        }
-        return 0;
-    }
-
-    UInt32 db_bitset_container_to_uint32_array(DB::WriteBuffer & dbBuf, const bitset_container_t * cont, UInt32 base) const
-    {
-        return static_cast<UInt32>(db_bitset_extract_setbits(dbBuf, cont->array, BITSET_CONTAINER_SIZE_IN_WORDS, base));
-    }
-
-    size_t db_bitset_extract_setbits(DB::WriteBuffer & dbBuf, UInt64 * bitset, size_t length, UInt32 base) const
-    {
-        UInt32 outpos = 0;
-        for (size_t i = 0; i < length; ++i)
-        {
-            UInt64 w = bitset[i];
-            while (w != 0)
-            {
-                UInt64 t = w & (~w + 1); // on x64, should compile to BLSI (careful: the Intel compiler seems to fail)
-                UInt32 r = __builtin_ctzll(w); // on x64, should compile to TZCNT
-                UInt32 val = r + base;
-                writePODBinary(val, dbBuf);
-                outpos++;
-                w ^= t;
-            }
-            base += 64;
-        }
-        return outpos;
-    }
-
-    int db_array_container_to_uint32_array(DB::WriteBuffer & dbBuf, const array_container_t * cont, UInt32 base) const
-    {
-        UInt32 outpos = 0;
-        for (Int32 i = 0; i < cont->cardinality; ++i)
-        {
-            const UInt32 val = base + cont->array[i];
-            writePODBinary(val, dbBuf);
-            outpos++;
-        }
-        return outpos;
-    }
-
-    int db_run_container_to_uint32_array(DB::WriteBuffer & dbBuf, const run_container_t * cont, UInt32 base) const
-    {
-        UInt32 outpos = 0;
-        for (Int32 i = 0; i < cont->n_runs; ++i)
-        {
-            UInt32 run_start = base + cont->runs[i].value;
-            UInt16 le = cont->runs[i].length;
-            for (Int32 j = 0; j <= le; ++j)
-            {
-                UInt32 val = run_start + j;
-                writePODBinary(val, dbBuf);
-                outpos++;
-            }
-        }
-        return outpos;
-    }
 };
 
 template <typename T>

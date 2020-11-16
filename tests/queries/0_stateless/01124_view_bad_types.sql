@@ -1,11 +1,11 @@
-DROP TABLE IF EXISTS test.table;
-CREATE TABLE test.table (x UInt16) ENGINE = TinyLog;
-INSERT INTO test.table SELECT * FROM system.numbers LIMIT 10;
+DROP TABLE IF EXISTS source_table;
+CREATE TABLE source_table (x UInt16) ENGINE = TinyLog;
+INSERT INTO source_table SELECT * FROM system.numbers LIMIT 10;
 
-DROP TABLE IF EXISTS test.view;
-CREATE VIEW test.view (x UInt64) AS SELECT * FROM test.table;
+DROP TABLE IF EXISTS dest_view;
+CREATE VIEW dest_view (x UInt64) AS SELECT * FROM source_table;
 
-SELECT x, any(x) FROM test.view GROUP BY x ORDER BY x;
+SELECT x, any(x) FROM dest_view GROUP BY x ORDER BY x;
 
-DROP TABLE test.view;
-DROP TABLE test.table;
+DROP TABLE dest_view;
+DROP TABLE source_table;

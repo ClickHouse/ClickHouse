@@ -1,37 +1,61 @@
 set(CLICKHOUSE_SERVER_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/HTTPHandler.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/HTTPHandlerFactory.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/InterserverIOHTTPHandler.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/MetricsTransmitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/NotFoundHandler.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/PingRequestHandler.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/PrometheusMetricsWriter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/PrometheusRequestHandler.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/ReplicasStatusHandler.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/RootRequestHandler.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/Server.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/TCPHandler.cpp
-   )
-
-set(CLICKHOUSE_SERVER_SOURCES
-    ${CLICKHOUSE_SERVER_SOURCES}
-    ${CMAKE_CURRENT_SOURCE_DIR}/MySQLHandler.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/MySQLHandlerFactory.cpp
+    MetricsTransmitter.cpp
+    Server.cpp
 )
 
-set(CLICKHOUSE_SERVER_LINK PRIVATE clickhouse_dictionaries clickhouse_common_io clickhouse_common_config clickhouse_common_zookeeper clickhouse_parsers string_utils PUBLIC daemon PRIVATE clickhouse_storages_system clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions ${Poco_Net_LIBRARY})
-if (USE_POCO_NETSSL)
-    set(CLICKHOUSE_SERVER_LINK ${CLICKHOUSE_SERVER_LINK} PRIVATE ${Poco_NetSSL_LIBRARY} ${Poco_Crypto_LIBRARY})
+if (OS_LINUX)
+    set (LINK_RESOURCE_LIB INTERFACE "-Wl,${WHOLE_ARCHIVE} $<TARGET_FILE:clickhouse_server_configs> -Wl,${NO_WHOLE_ARCHIVE}")
 endif ()
+
+set (CLICKHOUSE_SERVER_LINK
+    PRIVATE
+        clickhouse_aggregate_functions
+        clickhouse_common_config
+        clickhouse_common_io
+        clickhouse_common_zookeeper
+        clickhouse_dictionaries
+        clickhouse_functions
+        clickhouse_parsers
+        clickhouse_storages_system
+        clickhouse_table_functions
+        string_utils
+
+    ${LINK_RESOURCE_LIB}
+
+    PUBLIC
+        daemon
+)
 
 clickhouse_program_add(server)
 
-if (GLIBC_COMPATIBILITY)
-    set (GLIBC_MAX_REQUIRED 2.4 CACHE INTERNAL "")
-    # temporary disabled. to enable - change 'exit 0' to 'exit $a'
-    add_test(NAME GLIBC_required_version COMMAND bash -c "readelf -s ${CMAKE_CURRENT_BINARY_DIR}/../clickhouse-server | perl -nE 'END {exit 0 if $a} ++$a, print if /\\x40GLIBC_(\\S+)/ and pack(q{C*}, split /\\./, \$1) gt pack q{C*}, split /\\./, q{${GLIBC_MAX_REQUIRED}}'")
-
-    #add_test(NAME GLIBC_required_version COMMAND bash -c "readelf -s ${CMAKE_CURRENT_BINARY_DIR}/../clickhouse-server | grep '@GLIBC' | grep -oP 'GLIBC_[\\d\\.]+' | sort | uniq | sort --version-sort --reverse | perl -lnE 'warn($_), exit 1 if $_ gt q{GLIBC_${GLIBC_MAX_REQUIRED}}'") # old
-endif ()
-
 install(FILES config.xml users.xml DESTINATION ${CLICKHOUSE_ETC_DIR}/clickhouse-server COMPONENT clickhouse)
+
+# TODO We actually need this on Mac, FreeBSD.
+if (OS_LINUX)
+    # Embed default config files as a resource into the binary.
+    # This is needed for two purposes:
+    # 1. Allow to run the binary without download of any other files.
+    # 2. Allow to implement "sudo clickhouse install" tool.
+
+    foreach(RESOURCE_FILE config.xml users.xml embedded.xml play.html)
+        set(RESOURCE_OBJ ${RESOURCE_FILE}.o)
+        set(RESOURCE_OBJS ${RESOURCE_OBJS} ${RESOURCE_OBJ})
+
+        # https://stackoverflow.com/questions/14776463/compile-and-add-an-object-file-from-a-binary-with-cmake
+        add_custom_command(OUTPUT ${RESOURCE_OBJ}
+            COMMAND cd ${CMAKE_CURRENT_SOURCE_DIR} && ${OBJCOPY_PATH} -I binary ${OBJCOPY_ARCH_OPTIONS} ${RESOURCE_FILE} ${CMAKE_CURRENT_BINARY_DIR}/${RESOURCE_OBJ}
+            COMMAND ${OBJCOPY_PATH} --rename-section .data=.rodata,alloc,load,readonly,data,contents
+                ${CMAKE_CURRENT_BINARY_DIR}/${RESOURCE_OBJ} ${CMAKE_CURRENT_BINARY_DIR}/${RESOURCE_OBJ})
+
+        set_source_files_properties(${RESOURCE_OBJ} PROPERTIES EXTERNAL_OBJECT true GENERATED true)
+    endforeach(RESOURCE_FILE)
+
+    add_library(clickhouse_server_configs STATIC ${RESOURCE_OBJS})
+    set_target_properties(clickhouse_server_configs PROPERTIES LINKER_LANGUAGE C)
+
+    # whole-archive prevents symbols from being discarded for unknown reason
+    # CMake can shuffle each of target_link_libraries arguments with other
+    # libraries in linker command. To avoid this we hardcode whole-archive
+    # library into single string.
+    add_dependencies(clickhouse-server-lib clickhouse_server_configs)
+endif ()

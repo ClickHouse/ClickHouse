@@ -1,25 +1,12 @@
 <test>
-
     <create_query>CREATE TABLE bad_partitions (x UInt64) ENGINE = MergeTree PARTITION BY x ORDER BY x</create_query>
     <fill_query>INSERT INTO bad_partitions SELECT * FROM numbers(10000)</fill_query>
-
-    <stop_conditions>
-        <all_of>
-            <iterations>5</iterations>
-            <min_time_not_changing_for_ms>10000</min_time_not_changing_for_ms>
-        </all_of>
-        <any_of>
-            <iterations>100</iterations>
-            <total_time_ms>60000</total_time_ms>
-        </any_of>
-    </stop_conditions>
-
 
     <settings>
         <max_partitions_per_insert_block>0</max_partitions_per_insert_block>
     </settings>
 
-    <query>SELECT count() FROM bad_partitions</query>
+    <query short="1">SELECT count() FROM bad_partitions</query>
 
     <drop_query>DROP TABLE IF EXISTS bad_partitions</drop_query>
 </test>

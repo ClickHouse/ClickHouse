@@ -6,14 +6,14 @@
 namespace DB
 {
 
-class ASTStorage;
+class ASTCreateQuery;
 
 class DatabaseFactory
 {
 public:
-    static DatabasePtr get(const String & database_name, const String & metadata_path, const ASTStorage * engine_define, Context & context);
+    static DatabasePtr get(const ASTCreateQuery & create, const String & metadata_path, Context & context);
 
-    static DatabasePtr getImpl(const String & database_name, const String & metadata_path, const ASTStorage * engine_define, Context & context);
+    static DatabasePtr getImpl(const ASTCreateQuery & create, const String & metadata_path, Context & context);
 };
 
 }

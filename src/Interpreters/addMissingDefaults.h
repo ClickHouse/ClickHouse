@@ -1,6 +1,7 @@
 #pragma once
 
 #include <unordered_map>
+#include <string>
 
 
 namespace DB
@@ -9,7 +10,7 @@ namespace DB
 class Block;
 class Context;
 class NamesAndTypesList;
-struct ColumnDefault;
+class ColumnsDescription;
 
 /** Adds three types of columns into block
   * 1. Columns, that are missed inside request, but present in table without defaults (missed columns)
@@ -20,7 +21,7 @@ struct ColumnDefault;
 Block addMissingDefaults(
     const Block & block,
     const NamesAndTypesList & required_columns,
-    const std::unordered_map<std::string, ColumnDefault> & column_defaults,
+    const ColumnsDescription & columns,
     const Context & context);
 
 }

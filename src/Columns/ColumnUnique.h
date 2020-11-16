@@ -1,5 +1,6 @@
 #pragma once
 #include <Columns/IColumnUnique.h>
+#include <Columns/IColumnImpl.h>
 #include <Columns/ReverseIndex.h>
 
 #include <Columns/ColumnVector.h>
@@ -15,6 +16,7 @@
 #include <ext/range.h>
 
 #include <common/unaligned.h>
+#include "Columns/ColumnConst.h"
 
 
 namespace DB
@@ -77,6 +79,7 @@ public:
     }
 
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
+    void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_range) const override;
 
     void getExtremes(Field & min, Field & max) const override { column_holder->getExtremes(min, max); }
     bool valuesHaveFixedSize() const override { return column_holder->valuesHaveFixedSize(); }
@@ -88,14 +91,13 @@ public:
     void protect() override { column_holder->protect(); }
     size_t allocatedBytes() const override
     {
-        return column_holder->allocatedBytes()
-               + index.allocatedBytes()
-               + (nested_null_mask ? nested_null_mask->allocatedBytes() : 0);
+        return column_holder->allocatedBytes() + reverse_index.allocatedBytes()
+            + (nested_null_mask ? nested_null_mask->allocatedBytes() : 0);
     }
     void forEachSubcolumn(IColumn::ColumnCallback callback) override
     {
         callback(column_holder);
-        index.setColumn(getRawColumnPtr());
+        reverse_index.setColumn(getRawColumnPtr());
         if (is_nullable)
             nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
     }
@@ -107,16 +109,30 @@ public:
         return false;
     }
 
-    const UInt64 * tryGetSavedHash() const override { return index.tryGetSavedHash(); }
+    const UInt64 * tryGetSavedHash() const override { return reverse_index.tryGetSavedHash(); }
 
     UInt128 getHash() const override { return hash.getHash(*getRawColumnPtr()); }
 
-private:
+    std::optional<UInt64> getOrFindValueIndex(StringRef value) const override
+    {
+        if (std::optional<UInt64> res = reverse_index.getIndex(value); res)
+            return res;
 
+        auto& nested = *getNestedColumn();
+
+        for (size_t i = 0; i < nested.size(); ++i)
+            if (nested.getDataAt(i) == value)
+                return i;
+
+        return {};
+    }
+
+private:
     IColumn::WrappedPtr column_holder;
     bool is_nullable;
     size_t size_of_value_if_fixed = 0;
-    ReverseIndex<UInt64, ColumnType> index;
+
+    ReverseIndex<UInt64, ColumnType> reverse_index;
 
     /// For DataTypeNullable, stores null map.
     IColumn::WrappedPtr nested_null_mask;
@@ -167,21 +183,20 @@ template <typename ColumnType>
 ColumnUnique<ColumnType>::ColumnUnique(const ColumnUnique & other)
     : column_holder(other.column_holder)
     , is_nullable(other.is_nullable)
-    , size_of_value_if_fixed (other.size_of_value_if_fixed)
-    , index(numSpecialValues(is_nullable), 0)
+    , size_of_value_if_fixed(other.size_of_value_if_fixed)
+    , reverse_index(numSpecialValues(is_nullable), 0)
 {
-    index.setColumn(getRawColumnPtr());
+    reverse_index.setColumn(getRawColumnPtr());
     createNullMask();
 }
 
 template <typename ColumnType>
 ColumnUnique<ColumnType>::ColumnUnique(const IDataType & type)
-    : is_nullable(type.isNullable())
-    , index(numSpecialValues(is_nullable), 0)
+    : is_nullable(type.isNullable()), reverse_index(numSpecialValues(is_nullable), 0)
 {
     const auto & holder_type = is_nullable ? *static_cast<const DataTypeNullable &>(type).getNestedType() : type;
     column_holder = holder_type.createColumn()->cloneResized(numSpecialValues());
-    index.setColumn(getRawColumnPtr());
+    reverse_index.setColumn(getRawColumnPtr());
     createNullMask();
 
     if (column_holder->valuesHaveFixedSize())
@@ -190,16 +205,14 @@ ColumnUnique<ColumnType>::ColumnUnique(const IDataType & type)
 
 template <typename ColumnType>
 ColumnUnique<ColumnType>::ColumnUnique(MutableColumnPtr && holder, bool is_nullable_)
-    : column_holder(std::move(holder))
-    , is_nullable(is_nullable_)
-    , index(numSpecialValues(is_nullable_), 0)
+    : column_holder(std::move(holder)), is_nullable(is_nullable_), reverse_index(numSpecialValues(is_nullable_), 0)
 {
     if (column_holder->size() < numSpecialValues())
         throw Exception("Too small holder column for ColumnUnique.", ErrorCodes::ILLEGAL_COLUMN);
     if (isColumnNullable(*column_holder))
         throw Exception("Holder column for ColumnUnique can't be nullable.", ErrorCodes::ILLEGAL_COLUMN);
 
-    index.setColumn(getRawColumnPtr());
+    reverse_index.setColumn(getRawColumnPtr());
     createNullMask();
 
     if (column_holder->valuesHaveFixedSize())
@@ -263,7 +276,7 @@ size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
     if (x.getType() == Field::Types::Null)
         return getNullValueIndex();
 
-    if (size_of_value_if_fixed)
+    if (isNumeric())
         return uniqueInsertData(&x.reinterpret<char>(), size_of_value_if_fixed);
 
     auto & val = x.get<String>();
@@ -286,12 +299,10 @@ size_t ColumnUnique<ColumnType>::uniqueInsertFrom(const IColumn & src, size_t n)
 template <typename ColumnType>
 size_t ColumnUnique<ColumnType>::uniqueInsertData(const char * pos, size_t length)
 {
-    auto column = getRawColumnPtr();
+    if (auto index = getNestedTypeDefaultValueIndex(); getRawColumnPtr()->getDataAt(index) == StringRef(pos, length))
+        return index;
 
-    if (column->getDataAt(getNestedTypeDefaultValueIndex()) == StringRef(pos, length))
-        return getNestedTypeDefaultValueIndex();
-
-    auto insertion_point = index.insert(StringRef(pos, length));
+    auto insertion_point = reverse_index.insert({pos, length});
 
     updateNullMask();
 
@@ -317,6 +328,7 @@ StringRef ColumnUnique<ColumnType>::serializeValueIntoArena(size_t n, Arena & ar
         /// serializeValueIntoArena may reallocate memory. Have to use ptr from nested_ref.data and move it back.
         return StringRef(nested_ref.data - s, nested_ref.size + s);
     }
+
 
     return column_holder->serializeValueIntoArena(n, arena, begin);
 }
@@ -370,8 +382,44 @@ int ColumnUnique<ColumnType>::compareAt(size_t n, size_t m, const IColumn & rhs,
         }
     }
 
-    auto & column_unique = static_cast<const IColumnUnique &>(rhs);
+    const auto & column_unique = static_cast<const IColumnUnique &>(rhs);
     return getNestedColumn()->compareAt(n, m, *column_unique.getNestedColumn(), nan_direction_hint);
+}
+
+template <typename ColumnType>
+void ColumnUnique<ColumnType>::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
+{
+    if (equal_ranges.empty())
+        return;
+
+    bool found_null_value_index = false;
+    for (size_t i = 0; i < equal_ranges.size() && !found_null_value_index; ++i)
+    {
+        auto & [first, last] = equal_ranges[i];
+        for (auto j = first; j < last; ++j)
+        {
+            if (res[j] == getNullValueIndex())
+            {
+                if ((nan_direction_hint > 0) != reverse)
+                {
+                    std::swap(res[j], res[last - 1]);
+                    --last;
+                }
+                else
+                {
+                    std::swap(res[j], res[first]);
+                    ++first;
+                }
+                if (last - first <= 1)
+                {
+                    equal_ranges.erase(equal_ranges.begin() + i);
+                }
+                found_null_value_index = true;
+                break;
+            }
+        }
+    }
+    getNestedColumn()->updatePermutation(reverse, limit, nan_direction_hint, res, equal_ranges);
 }
 
 template <typename IndexType>
@@ -478,14 +526,14 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
 
             if (secondary_index && next_position >= max_dictionary_size)
             {
-                auto insertion_point = index.getInsertionPoint(ref);
-                if (insertion_point == index.lastInsertionPoint())
+                auto insertion_point = reverse_index.getInsertionPoint(ref);
+                if (insertion_point == reverse_index.lastInsertionPoint())
                     res = insert_key(ref, *secondary_index);
                 else
                     positions[num_added_rows] = insertion_point;
             }
             else
-                res = insert_key(ref, index);
+                res = insert_key(ref, reverse_index);
 
             if (res)
                 return res;

@@ -1,32 +1,33 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
-toc_folder_title: Settings
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+toc_folder_title: "\u8A2D\u5B9A"
 toc_priority: 55
-toc_title: "\u5C0E\u5165"
+toc_title: "\u306F\u3058\u3081\u306B"
 ---
 
-# 設定 {#settings}
+# 設定 {#session-settings-intro}
 
-以下に説明するすべての設定を行うには、複数の方法があります。
-設定はレイヤーで構成されるので、後続の各レイヤーは以前の設定を再定義します。
+複数あるというものですすべての設定は、このセクションで説明する文書
 
-優先順位の順に設定を構成する方法:
+設定はレイヤーで構成されるため、後続の各レイヤーは以前の設定を再定義します。
+
+優先順位の順に設定する方法:
 
 -   の設定 `users.xml` サーバー構成ファイル。
 
-    要素内に設定する `<profiles>`.
+    要素に設定 `<profiles>`.
 
--   セッションの設定。
+-   セッション設定。
 
-    送信 `SET setting=value` 対話モードでのClickHouseコンソールクライアントから。
-    同様に、httpプロトコルでclickhouseセッションを使用できます。 これを行うには、以下を指定する必要があります。 `session_id` HTTPパラメータ。
+    送信 `SET setting=value` 対話モードでClickHouseコンソールクライアントから。
+    同様に、HttpプロトコルでClickHouseセッションを使用できます。 これを行うには、以下を指定する必要があります `session_id` HTTPパラメータ。
 
--   クエリの設定。
+-   クエリ設定。
 
-    -   を開始する場合にclickhouseコンソールがクライアントを非インタラクティブモードの設定を起動パラメータ `--setting=value`.
-    -   HTTP APIを使用する場合は、CGIパラメーターを渡します (`URL?setting_1=value&setting_2=value...`).
+    -   ClickHouse consoleクライアントを非対話モードで起動するときは、startupパラメータを設定します `--setting=value`.
+    -   HTTP APIを使用する場合は、CGIパラメータを渡します (`URL?setting_1=value&setting_2=value...`).
 
-このセクションでは、server configファイルでのみ行うことができる設定については説明しません。
+サーバー設定ファイルでのみ行うことができる設定は、このセクションでは説明しません。
 
 [元の記事](https://clickhouse.tech/docs/en/operations/settings/) <!--hide-->

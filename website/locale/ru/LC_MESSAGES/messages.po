@@ -1,277 +1,327 @@
-# Russian translations for PROJECT.
+# Translations template for PROJECT.
 # Copyright (C) 2020 ORGANIZATION
 # This file is distributed under the same license as the PROJECT project.
-# FIRST AUTHOR <EMAIL@ADDRESS>, 2020.
+# Automatically generated, 2020.
 #
 msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-04-15 13:19+0000\n"
-"PO-Revision-Date: 2020-03-26 10:19+0300\n"
-"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
-"Language: ru\n"
-"Language-Team: ru <LL@li.org>\n"
-"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && "
-"n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2)\n"
+"POT-Creation-Date: 2020-06-17 12:20+0300\n"
+"PO-Revision-Date: 2020-06-17 12:20+0300\n"
+"Last-Translator: Automatically generated\n"
+"Language-Team: none\n"
 "MIME-Version: 1.0\n"
-"Content-Type: text/plain; charset=utf-8\n"
+"Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Generated-By: Babel 2.8.0\n"
+"Language: ru\n"
+"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n"
+"%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
 
-#: templates/common_meta.html:5 templates/common_meta.html:9
-#: templates/common_meta.html:16
+#: templates/common_meta.html:1
+msgid ""
+"ClickHouse is a fast open-source column-oriented database management system "
+"that allows generating analytical data reports in real-time using SQL queries"
+msgstr ""
+
+#: templates/common_meta.html:6
+msgid "ClickHouse - fast open-source OLAP DBMS"
+msgstr ""
+
+#: templates/common_meta.html:10
 msgid "ClickHouse DBMS"
-msgstr "СУБД ClickHouse"
-
-#: templates/common_meta.html:11
-msgid ""
-"ClickHouse is an open source column-oriented database management system "
-"that allows generating analytical data reports in real time using SQL "
-"queries."
 msgstr ""
-"ClickHouse - это ориентированная на столбцы система управления базами "
-"данных с открытым исходным кодом, позволяющая создавать аналитические "
-"отчеты о данных в режиме реального времени с использованием SQL-запросов."
 
-#: templates/common_meta.html:19
-msgid ""
-"ClickHouse is an open source distributed column-oriented database "
-"management system that allows generating analytical data reports in real "
-"time using SQL queries. Сreated by Yandex ClickHouse manages extremely "
-"large volumes of data in a stable and sustainable manner."
+#: templates/common_meta.html:32
+msgid "open-source"
 msgstr ""
-"ClickHouse is an open source distributed column-oriented database "
-"management system that allows generating analytical data reports in real "
-"time using SQL queries. Сreated by Yandex ClickHouse manages extremely "
-"large volumes of data in a stable and sustainable manner."
+
+#: templates/common_meta.html:32
+msgid "relational"
+msgstr ""
+
+#: templates/common_meta.html:32
+msgid "analytics"
+msgstr ""
+
+#: templates/common_meta.html:32
+msgid "analytical"
+msgstr ""
+
+#: templates/common_meta.html:32
+msgid "Big Data"
+msgstr ""
+
+#: templates/common_meta.html:32
+msgid "web-analytics"
+msgstr ""
 
 #: templates/footer.html:8
 msgid "ClickHouse source code is published under the Apache 2.0 License."
-msgstr "Исходный код ClickHouse публикуется под лицензией Apache 2.0."
+msgstr ""
 
 #: templates/footer.html:8
 msgid ""
 "Software is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR "
 "CONDITIONS OF ANY KIND, either express or implied."
 msgstr ""
-"Программное обеспечение распространяется на условиях \"как есть\", без "
-"каких-либо гарантий или условий, явных или подразумеваемых."
 
 #: templates/footer.html:11
 msgid "Yandex LLC"
-msgstr "ООО «Яндекс»"
+msgstr ""
 
-#: templates/docs/content.html:6
+#: templates/blog/content.html:20 templates/blog/content.html:25
+#: templates/blog/content.html:30
+msgid "Share on"
+msgstr ""
+
+#: templates/blog/content.html:37
+msgid "Published date"
+msgstr ""
+
+#: templates/blog/nav.html:20
+msgid "New&nbsp;post"
+msgstr ""
+
+#: templates/blog/nav.html:25
+msgid "Documentation"
+msgstr ""
+
+#: templates/docs/footer.html:3
+msgid "Rating"
+msgstr ""
+
+#: templates/docs/footer.html:3
+msgid "votes"
+msgstr ""
+
+#: templates/docs/footer.html:4
+msgid "Article Rating"
+msgstr ""
+
+#: templates/docs/footer.html:4
+msgid "Was this content helpful?"
+msgstr ""
+
+#: templates/docs/footer.html:7
+msgid "Unusable"
+msgstr ""
+
+#: templates/docs/footer.html:7
+msgid "Poor"
+msgstr ""
+
+#: templates/docs/footer.html:7
+msgid "Good"
+msgstr ""
+
+#: templates/docs/footer.html:7
+msgid "Excellent"
+msgstr ""
+
+#: templates/docs/footer.html:8
+msgid "documentation"
+msgstr ""
+
+#: templates/docs/footer.html:15
+msgid "Built from"
+msgstr ""
+
+#: templates/docs/footer.html:15
+msgid "published on"
+msgstr ""
+
+#: templates/docs/footer.html:15
+msgid "modified on"
+msgstr ""
+
+#: templates/docs/machine-translated.html:3
 msgid "Help wanted!"
-msgstr "Нужна помощь!"
+msgstr ""
 
-#: templates/docs/content.html:7
+#: templates/docs/machine-translated.html:4
 msgid ""
 "The following content of this documentation page has been machine-"
 "translated. But unlike other websites, it is not done on the fly. This "
 "translated text lives on GitHub repository alongside main ClickHouse "
-"codebase and waits for fellow native speakers to make it more human-"
-"readable."
+"codebase and waits for fellow native speakers to make it more human-readable."
 msgstr ""
-"Нижеследующее содержание этой страницы документации было создано через "
-"машинный перевод. Но в отличие от других сайтов, это делается не на лету. "
-"Этот переведенный текст живет в репозитории GitHub вместе с основной "
-"кодовой базой ClickHouse и ждет, когда другие носители языка сделают его "
-"более удобочитаемым."
 
-#: templates/docs/content.html:7
+#: templates/docs/machine-translated.html:4
 msgid "You can also use the original English version as a reference."
 msgstr ""
-"Вы также можете использовать оригинальную английскую версию в качестве "
-"образца."
 
-#: templates/docs/content.html:10
+#: templates/docs/machine-translated.html:7
 msgid "Help ClickHouse documentation by editing this page"
-msgstr "Помогите документации ClickHouse, отредактировав эту страницу"
-
-#: templates/docs/content.html:27
-msgid "Built from"
-msgstr "Собрано из"
+msgstr ""
 
 #: templates/docs/sidebar.html:3
 msgid "Multi-page or single-page"
-msgstr "Многостраничный или одностраничный"
+msgstr ""
 
 #: templates/docs/sidebar.html:5
 msgid "Multi-page version"
-msgstr "Многостраничная версия"
+msgstr ""
 
 #: templates/docs/sidebar.html:8
 msgid "Single-page version"
-msgstr "Одностраничная версия"
+msgstr ""
 
 #: templates/docs/sidebar.html:13
 msgid "Version"
-msgstr "Версия"
+msgstr ""
 
 #: templates/docs/sidebar.html:13 templates/docs/sidebar.html:19
 msgid "latest"
-msgstr "последняя"
+msgstr ""
 
 #: templates/docs/sidebar.html:36
 msgid "PDF version"
-msgstr "PDF-версия"
+msgstr ""
 
 #: templates/docs/toc.html:8
 msgid "Table of Contents"
-msgstr "Cодержание"
+msgstr ""
 
 #: templates/index/community.html:4
 msgid "ClickHouse community"
-msgstr "Сообщество ClickHouse"
+msgstr ""
 
 #: templates/index/community.html:13 templates/index/community.html:14
 msgid "ClickHouse YouTube Channel"
-msgstr "ClickHouse YouTube Канал"
+msgstr ""
 
 #: templates/index/community.html:25 templates/index/community.html:26
 msgid "ClickHouse Official Twitter Account"
-msgstr "Официальный Твиттер-Аккаунт ClickHouse"
+msgstr ""
 
 #: templates/index/community.html:36 templates/index/community.html:37
 msgid "ClickHouse at Telegram"
-msgstr "ClickHouse в Telegram"
+msgstr ""
 
 #: templates/index/community.html:41
 msgid "Chat with real users in "
-msgstr "Чат с реальными пользователями "
+msgstr ""
 
 #: templates/index/community.html:44 templates/index/community.html:116
 msgid "English"
-msgstr "Английский"
+msgstr ""
 
 #: templates/index/community.html:45
 msgid "or in"
-msgstr "или в"
+msgstr ""
 
 #: templates/index/community.html:47 templates/index/community.html:117
 msgid "Russian"
-msgstr "Русский"
+msgstr ""
 
 #: templates/index/community.html:65
 msgid "Open GitHub issue to ask for help or to file a feature request"
-msgstr "Открыть вопрос на GitHub, чтобы попросить помочь или подать запрос "
+msgstr ""
 
 #: templates/index/community.html:76 templates/index/community.html:77
 msgid "ClickHouse Slack Workspace"
-msgstr "Рабочее Пространство ClickHouse Slack"
+msgstr ""
 
 #: templates/index/community.html:82
 msgid "Multipurpose public hangout"
-msgstr "Универсальное публичное сообщество"
+msgstr ""
 
 #: templates/index/community.html:101
 msgid "Ask any questions"
-msgstr "Задать любые вопросы"
+msgstr ""
 
 #: templates/index/community.html:115
 msgid "ClickHouse Blog"
-msgstr "Блог ClickHouse"
+msgstr ""
 
 #: templates/index/community.html:116
 msgid "in"
-msgstr "в"
+msgstr ""
 
 #: templates/index/community.html:128 templates/index/community.html:129
 msgid "ClickHouse at Google Groups"
-msgstr "ClickHouse в Google Groups"
+msgstr ""
 
 #: templates/index/community.html:133
 msgid "Email discussions"
-msgstr "Обсуждения по электронной почте"
+msgstr ""
 
 #: templates/index/community.html:142
 msgid "Like ClickHouse?"
-msgstr "Нравится ClickHouse?"
+msgstr ""
 
 #: templates/index/community.html:143
 msgid "Help to spread the word about it via"
-msgstr "Помогите распространить информацию о нём через"
+msgstr ""
 
 #: templates/index/community.html:144
 msgid "and"
-msgstr "и"
+msgstr ""
 
 #: templates/index/community.html:153
 msgid "Hosting ClickHouse Meetups"
-msgstr "Таких Встреч ClickHouse "
+msgstr ""
 
 #: templates/index/community.html:157
 msgid ""
-"ClickHouse meetups are essential for strengthening community worldwide, "
-"but they couldn't be possible without the help of local organizers. "
-"Please, feel this form if you want to become one or want to meet "
-"ClickHouse core team for any other reason."
+"ClickHouse meetups are essential for strengthening community worldwide, but "
+"they couldn't be possible without the help of local organizers. Please, fill "
+"this form if you want to become one or want to meet ClickHouse core team for "
+"any other reason."
 msgstr ""
-"Встречи ClickHouse имеют важное значение для укрепления сообщества во "
-"всем мире, но они не могут быть возможны без помощи местных "
-"организаторов. Пожалуйста, прочувствуйте эту форму, если вы хотите стать "
-"одним из них или хотите встретиться с основной командой ClickHouse по "
-"любой другой причине."
 
 #: templates/index/community.html:159
 msgid "ClickHouse Meetup"
-msgstr "ClickHouse Сходка"
+msgstr ""
 
 #: templates/index/community.html:165
 msgid "Name"
-msgstr "Имя"
+msgstr ""
 
 #: templates/index/community.html:168
 msgid "Email"
-msgstr "Электронная почта"
+msgstr ""
 
 #: templates/index/community.html:171
 msgid "Company"
-msgstr "Компания"
+msgstr ""
 
 #: templates/index/community.html:174
 msgid "City"
-msgstr "Город"
+msgstr ""
 
 #: templates/index/community.html:179
 msgid "We'd like to host a public ClickHouse Meetup"
-msgstr "Мы хотели бы провести публичное собрание ClickHouse Meetup"
+msgstr ""
 
 #: templates/index/community.html:185
 msgid "We'd like to invite Yandex ClickHouse team to our office"
-msgstr "Мы хотели бы пригласить команду Yandex ClickHouse в наш офис"
+msgstr ""
 
 #: templates/index/community.html:191
 msgid "We'd like to invite Yandex ClickHouse team to another event we organize"
 msgstr ""
-"Мы хотели бы пригласить команду Yandex ClickHouse на другое мероприятие, "
-"которое мы организуем"
 
 #: templates/index/community.html:197
 msgid "We're interested in commercial consulting, support or managed service"
 msgstr ""
-"Мы заинтересованы в коммерческом консалтинге, поддержке или управляемом "
-"обслуживании"
 
 #: templates/index/community.html:201
 msgid "Additional comments"
-msgstr "Дополнительный комментарий"
+msgstr ""
 
 #: templates/index/community.html:203
 msgid "Send"
-msgstr "Отправить"
+msgstr ""
 
 #: templates/index/community.html:212
 msgid ""
 "If you have any more thoughts or questions, feel free to contact Yandex "
 "ClickHouse team directly at"
 msgstr ""
-"Если у вас есть еще какие-либо мысли или вопросы, не стесняйтесь "
-"обращаться в команду Яндекс ClickHouse напрямую по адресу"
 
 #: templates/index/community.html:213
 msgid "turn on JavaScript to see email address"
-msgstr "включите JavaScript, чтобы увидеть адрес электронной почты"
-
+msgstr ""

@@ -104,8 +104,8 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
     while (!to_visit.empty())
     {
         auto edge = to_visit.back();
-        auto from_node = edge.first;
-        auto to_node = edge.second;
+        auto * from_node = edge.first;
+        auto * to_node = edge.second;
 
         to_visit.pop_back();
 
@@ -118,7 +118,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
             if (expression_list)
             {
                 /// The chain of elements of the OR expression.
-                for (auto & child : expression_list->children)
+                for (const auto & child : expression_list->children)
                 {
                     auto * equals = child->as<ASTFunction>();
                     if (equals && equals->name == "equals" && equals->children.size() == 1)
@@ -227,7 +227,7 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
 
     /// Construct a list of literals `x1, ..., xN` from the string `expr = x1 OR ... OR expr = xN`
     ASTPtr value_list = std::make_shared<ASTExpressionList>();
-    for (const auto function : equality_functions)
+    for (const auto * function : equality_functions)
     {
         const auto & operands = getFunctionOperands(function);
         value_list->children.push_back(operands[1]);
@@ -245,7 +245,7 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
     /// Get the expression `expr` from the chain `expr = x1 OR ... OR expr = xN`
     ASTPtr equals_expr_lhs;
     {
-        auto function = equality_functions[0];
+        auto * function = equality_functions[0];
         const auto & operands = getFunctionOperands(function);
         equals_expr_lhs = operands[0];
     }
@@ -316,7 +316,7 @@ void LogicalExpressionsOptimizer::cleanupOrExpressions()
     /// Delete garbage.
     for (const auto & entry : garbage_map)
     {
-        auto function = entry.first;
+        const auto * function = entry.first;
         auto first_erased = entry.second;
 
         auto & operands = getFunctionOperands(function);
@@ -333,7 +333,7 @@ void LogicalExpressionsOptimizer::fixBrokenOrExpressions()
             continue;
 
         const auto & or_with_expression = chain.first;
-        auto or_function = or_with_expression.or_function;
+        const auto * or_function = or_with_expression.or_function;
         auto & operands = getFunctionOperands(or_with_expression.or_function);
 
         if (operands.size() == 1)

@@ -34,7 +34,7 @@ AggregateFunctionPtr createAggregateFunctionWindowFunnel(const std::string & nam
 
     for (const auto i : ext::range(1, arguments.size()))
     {
-        auto cond_arg = arguments[i].get();
+        const auto * cond_arg = arguments[i].get();
         if (!isUInt8(cond_arg))
             throw Exception{"Illegal type " + cond_arg->getName() + " of argument " + toString(i + 1) + " of aggregate function "
                     + name + ", must be UInt8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -58,7 +58,7 @@ AggregateFunctionPtr createAggregateFunctionWindowFunnel(const std::string & nam
 
 void registerAggregateFunctionWindowFunnel(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("windowFunnel", createAggregateFunctionWindowFunnel<AggregateFunctionWindowFunnelData>, AggregateFunctionFactory::CaseInsensitive);
+    factory.registerFunction("windowFunnel", createAggregateFunctionWindowFunnel<AggregateFunctionWindowFunnelData>);
 }
 
 }

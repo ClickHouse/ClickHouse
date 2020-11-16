@@ -1,14 +1,14 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 51
 toc_title: Cuota
 ---
 
 # Cuota {#quotas}
 
-Las cuotas le permiten limitar el uso de recursos durante un período de tiempo, o simplemente realizar un seguimiento del uso de recursos.
-Las cuotas se configuran en la configuración del usuario. Esto suele ser ‘users.xml’.
+Las cuotas le permiten limitar el uso de recursos durante un período de tiempo o realizar un seguimiento del uso de recursos.
+Las cuotas se configuran en la configuración del usuario, que generalmente ‘users.xml’.
 
 El sistema también tiene una característica para limitar la complejidad de una sola consulta. Vea la sección “Restrictions on query complexity”).
 
@@ -39,7 +39,7 @@ Veamos la sección del ‘users.xml’ fichero que define las cuotas.
     </default>
 ```
 
-De forma predeterminada, la cuota sólo pistas de consumo de recursos por cada hora, sin limitación de uso.
+De forma predeterminada, la cuota realiza un seguimiento del consumo de recursos para cada hora, sin limitar el uso.
 El consumo de recursos calculado para cada intervalo se envía al registro del servidor después de cada solicitud.
 
 ``` xml
@@ -68,7 +68,7 @@ El consumo de recursos calculado para cada intervalo se envía al registro del s
 </statbox>
 ```
 
-Para el ‘statbox’ Las restricciones se establecen por cada hora y por cada 24 horas (86.400 segundos). El intervalo de tiempo se cuenta a partir de un momento fijo definido por la implementación en el tiempo. En otras palabras, el intervalo de 24 horas no necesariamente comienza a medianoche.
+Para el ‘statbox’ Las restricciones se establecen por cada hora y por cada 24 horas (86.400 segundos). El intervalo de tiempo se cuenta, a partir de un momento fijo definido por la implementación en el tiempo. En otras palabras, el intervalo de 24 horas no necesariamente comienza a medianoche.
 
 Cuando finaliza el intervalo, se borran todos los valores recopilados. Para la siguiente hora, el cálculo de la cuota comienza de nuevo.
 
@@ -78,15 +78,15 @@ Estas son las cantidades que se pueden restringir:
 
 `errors` – The number of queries that threw an exception.
 
-`result_rows` – The total number of rows given as the result.
+`result_rows` – The total number of rows given as a result.
 
-`read_rows` – The total number of source rows read from tables for running the query, on all remote servers.
+`read_rows` – The total number of source rows read from tables for running the query on all remote servers.
 
 `execution_time` – The total query execution time, in seconds (wall time).
 
 Si se excede el límite durante al menos un intervalo de tiempo, se lanza una excepción con un texto sobre qué restricción se excedió, para qué intervalo y cuándo comienza el nuevo intervalo (cuando se pueden enviar consultas nuevamente).
 
-Las cuotas pueden usar el “quota key” característica con el fin de informar sobre los recursos para múltiples claves de forma independiente. Aquí hay un ejemplo de esto:
+Las cuotas pueden usar el “quota key” característica para informar sobre los recursos para múltiples claves de forma independiente. Aquí hay un ejemplo de esto:
 
 ``` xml
 <!-- For the global reports designer. -->
@@ -97,7 +97,7 @@ Las cuotas pueden usar el “quota key” característica con el fin de informar
             so the quota will be counted separately for each username.
         Using keys makes sense only if quota_key is transmitted by the program, not by a user.
 
-        You can also write <keyed_by_ip /> so the IP address is used as the quota key.
+        You can also write <keyed_by_ip />, so the IP address is used as the quota key.
         (But keep in mind that users can change the IPv6 address fairly easily.)
     -->
     <keyed />

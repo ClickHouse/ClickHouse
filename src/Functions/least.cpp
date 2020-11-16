@@ -1,6 +1,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 #include <Core/AccurateComparison.h>
+#include <Functions/LeastGreatestGeneric.h>
+
 
 namespace DB
 {
@@ -15,7 +17,7 @@ struct LeastBaseImpl
     static inline Result apply(A a, B b)
     {
         /** gcc 4.9.2 successfully vectorizes a loop from this function. */
-        return static_cast<Result>(a) < static_cast<Result>(b) ? static_cast<Result>(a) : static_cast<Result>(b);
+        return bigint_cast<Result>(a) < bigint_cast<Result>(b) ? bigint_cast<Result>(a) : bigint_cast<Result>(b);
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -57,7 +59,7 @@ using FunctionLeast = FunctionBinaryArithmetic<LeastImpl, NameLeast>;
 
 void registerFunctionLeast(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionLeast>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<LeastGreatestOverloadResolver<LeastGreatest::Least, FunctionLeast>>(FunctionFactory::CaseInsensitive);
 }
 
 }

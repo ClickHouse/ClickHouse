@@ -104,7 +104,7 @@ namespace
 
 // Read (bitwise) one object of type T
 template <typename T>
-std::enable_if_t<std::is_pod_v<T>, T> read(std::string_view & sp)
+std::enable_if_t<std::is_trivial_v<T> && std::is_standard_layout_v<T>, T> read(std::string_view & sp)
 {
     SAFE_CHECK(sp.size() >= sizeof(T), "underflow");
     T x;

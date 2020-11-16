@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Common/Exception.h>
@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <ostream>
 #include <set>
+#include <sstream>
 
 
 class SipHash;
@@ -201,6 +202,8 @@ public:
     {
         UInt8 indent = 0;
         bool need_parens = false;
+        bool expression_list_always_start_on_new_line = false;  /// Line feed and indent before expression list even if it's of single element.
+        bool expression_list_prepend_whitespace = false; /// Prepend whitespace (if it is required)
         const IAST * current_select = nullptr;
     };
 
@@ -214,6 +217,11 @@ public:
     {
         throw Exception("Unknown element in AST: " + getID(), ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
     }
+
+    // A simple way to add some user-readable context to an error message.
+    std::string formatForErrorMessage() const;
+    template <typename AstArray>
+    static std::string formatForErrorMessage(const AstArray & array);
 
     void cloneChildren();
 
@@ -230,5 +238,21 @@ public:
 private:
     size_t checkDepthImpl(size_t max_depth, size_t level) const;
 };
+
+template <typename AstArray>
+std::string IAST::formatForErrorMessage(const AstArray & array)
+{
+    std::stringstream ss;
+    ss.exceptions(std::ios::failbit);
+    for (size_t i = 0; i < array.size(); ++i)
+    {
+        if (i > 0)
+        {
+            ss << ", ";
+        }
+        array[i]->format(IAST::FormatSettings(ss, true /* one line */));
+    }
+    return ss.str();
+}
 
 }

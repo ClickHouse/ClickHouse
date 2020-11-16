@@ -1,64 +1,46 @@
 #include <Parsers/parseUserName.h>
-#include <Parsers/parseIdentifierOrStringLiteral.h>
+#include <Parsers/ParserUserNameWithHost.h>
+#include <Parsers/ASTUserNameWithHost.h>
 #include <Parsers/CommonParsers.h>
-#include <boost/algorithm/string.hpp>
 
 
 namespace DB
 {
-bool parseUserName(IParser::Pos & pos, Expected & expected, String & user_name, std::optional<String> & host_like_pattern)
+
+bool parseUserName(IParser::Pos & pos, Expected & expected, String & user_name)
 {
-    String name;
-    if (!parseIdentifierOrStringLiteral(pos, expected, name))
+    ASTPtr ast;
+    if (!ParserUserNameWithHost{}.parse(pos, ast, expected))
         return false;
-
-    boost::algorithm::trim(name);
-
-    std::optional<String> pattern;
-    if (ParserToken{TokenType::At}.ignore(pos, expected))
-    {
-        if (!parseIdentifierOrStringLiteral(pos, expected, pattern.emplace()))
-            return false;
-
-        boost::algorithm::trim(*pattern);
-    }
-
-    if (pattern && (pattern != "%"))
-        name += '@' + *pattern;
-
-    user_name = std::move(name);
-    host_like_pattern = std::move(pattern);
+    user_name = ast->as<const ASTUserNameWithHost &>().toString();
     return true;
 }
 
 
-bool parseUserName(IParser::Pos & pos, Expected & expected, String & user_name)
+bool parseUserNames(IParser::Pos & pos, Expected & expected, Strings & user_names)
 {
-    std::optional<String> unused_pattern;
-    return parseUserName(pos, expected, user_name, unused_pattern);
+    ASTPtr ast;
+    if (!ParserUserNamesWithHost{}.parse(pos, ast, expected))
+        return false;
+    user_names = ast->as<const ASTUserNamesWithHost &>().toStrings();
+    return true;
 }
 
 
-bool parseUserNameOrCurrentUserTag(IParser::Pos & pos, Expected & expected, String & user_name, bool & current_user)
+bool parseCurrentUserTag(IParser::Pos & pos, Expected & expected)
 {
-    if (ParserKeyword{"CURRENT_USER"}.ignore(pos, expected) || ParserKeyword{"currentUser"}.ignore(pos, expected))
+    return IParserBase::wrapParseImpl(pos, [&]
     {
+        if (!ParserKeyword{"CURRENT_USER"}.ignore(pos, expected) && !ParserKeyword{"currentUser"}.ignore(pos, expected))
+            return false;
+
         if (ParserToken{TokenType::OpeningRoundBracket}.ignore(pos, expected))
         {
             if (!ParserToken{TokenType::ClosingRoundBracket}.ignore(pos, expected))
                 return false;
         }
-        current_user = true;
         return true;
-    }
-
-    if (parseUserName(pos, expected, user_name))
-    {
-        current_user = false;
-        return true;
-    }
-
-    return false;
+    });
 }
 
 }

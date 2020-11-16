@@ -1,0 +1,45 @@
+<yandex>
+    <dictionary>
+        <name>test_executable</name>
+        
+        <source>
+            <executable>
+		<command>cat /etc/clickhouse-server/config.d/source.csv</command>
+            	<format>CSVWithNames</format>
+            </executable>
+
+            <settings>
+                <format_csv_allow_single_quotes>0</format_csv_allow_single_quotes>
+                <format_csv_allow_double_quotes>0</format_csv_allow_double_quotes>
+            </settings>
+
+        </source>
+
+        <lifetime>600</lifetime>
+
+        <layout>
+            <flat/>
+        </layout>
+
+        <structure>
+            <id>
+                <name>id</name>
+            </id>
+            <attribute>
+                <name>first</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+            <attribute>
+                <name>second</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+            <attribute>
+                <name>third</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+        </structure>
+    </dictionary>
+</yandex>

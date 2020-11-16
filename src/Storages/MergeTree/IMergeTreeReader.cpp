@@ -22,13 +22,23 @@ namespace ErrorCodes
 }
 
 
-IMergeTreeReader::IMergeTreeReader(const MergeTreeData::DataPartPtr & data_part_,
-    const NamesAndTypesList & columns_, UncompressedCache * uncompressed_cache_, MarkCache * mark_cache_,
-    const MarkRanges & all_mark_ranges_, const MergeTreeReaderSettings & settings_,
+IMergeTreeReader::IMergeTreeReader(
+    const MergeTreeData::DataPartPtr & data_part_,
+    const NamesAndTypesList & columns_,
+    const StorageMetadataPtr & metadata_snapshot_,
+    UncompressedCache * uncompressed_cache_,
+    MarkCache * mark_cache_,
+    const MarkRanges & all_mark_ranges_,
+    const MergeTreeReaderSettings & settings_,
     const ValueSizeMap & avg_value_size_hints_)
-    : data_part(data_part_), avg_value_size_hints(avg_value_size_hints_)
-    , columns(columns_), uncompressed_cache(uncompressed_cache_), mark_cache(mark_cache_)
-    , settings(settings_), storage(data_part_->storage)
+    : data_part(data_part_)
+    , avg_value_size_hints(avg_value_size_hints_)
+    , columns(columns_)
+    , uncompressed_cache(uncompressed_cache_)
+    , mark_cache(mark_cache_)
+    , settings(settings_)
+    , storage(data_part_->storage)
+    , metadata_snapshot(metadata_snapshot_)
     , all_mark_ranges(all_mark_ranges_)
     , alter_conversions(storage.getAlterConversionsForPart(data_part))
 {
@@ -112,7 +122,7 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
 
             if (res_columns[i] == nullptr)
             {
-                if (storage.getColumns().hasDefault(name))
+                if (metadata_snapshot->getColumns().hasDefault(name))
                 {
                     should_evaluate_missing_defaults = true;
                     continue;
@@ -160,7 +170,7 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
                             "got " + toString(res_columns.size()), ErrorCodes::LOGICAL_ERROR);
 
         /// Convert columns list to block.
-        /// TODO: rewrite with columns interface. It wll be possible after changes in ExpressionActions.
+        /// TODO: rewrite with columns interface. It will be possible after changes in ExpressionActions.
         auto name_and_type = columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
         {
@@ -170,7 +180,7 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
             additional_columns.insert({res_columns[pos], name_and_type->type, name_and_type->name});
         }
 
-        DB::evaluateMissingDefaults(additional_columns, columns, storage.getColumns().getDefaults(), storage.global_context);
+        DB::evaluateMissingDefaults(additional_columns, columns, metadata_snapshot->getColumns(), storage.global_context);
 
         /// Move columns from block.
         name_and_type = columns.begin();
@@ -187,16 +197,16 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
 
 NameAndTypePair IMergeTreeReader::getColumnFromPart(const NameAndTypePair & required_column) const
 {
-    auto it = columns_from_part.find(required_column.name);
-    if (it != columns_from_part.end())
-        return {it->first, it->second};
-
     if (alter_conversions.isColumnRenamed(required_column.name))
     {
         String old_name = alter_conversions.getColumnOldName(required_column.name);
-        it = columns_from_part.find(old_name);
+        auto it = columns_from_part.find(old_name);
         if (it != columns_from_part.end())
             return {it->first, it->second};
+    }
+    else if (auto it = columns_from_part.find(required_column.name); it != columns_from_part.end())
+    {
+        return {it->first, it->second};
     }
 
     return required_column;
@@ -246,6 +256,30 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns)
         e.addMessage("(while reading from part " + data_part->getFullPath() + ")");
         throw;
     }
+}
+
+IMergeTreeReader::ColumnPosition IMergeTreeReader::findColumnForOffsets(const String & column_name) const
+{
+    String table_name = Nested::extractTableName(column_name);
+    for (const auto & part_column : data_part->getColumns())
+    {
+        if (typeid_cast<const DataTypeArray *>(part_column.type.get()))
+        {
+            auto position = data_part->getColumnPosition(part_column.name);
+            if (position && Nested::extractTableName(part_column.name) == table_name)
+                return position;
+        }
+    }
+
+    return {};
+}
+
+void IMergeTreeReader::checkNumberOfColumns(size_t num_columns_to_read) const
+{
+    if (num_columns_to_read != columns.size())
+        throw Exception("invalid number of columns passed to MergeTreeReader::readRows. "
+                        "Expected " + toString(columns.size()) + ", "
+                        "got " + toString(num_columns_to_read), ErrorCodes::LOGICAL_ERROR);
 }
 
 }

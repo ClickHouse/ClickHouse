@@ -8,6 +8,7 @@
 #include <Common/QueryProfiler.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/TraceCollector.h>
+#include <common/errnoToString.h>
 
 #if defined(OS_LINUX)
 #   include <Common/hasLinuxCapability.h>
@@ -29,11 +30,37 @@ namespace ErrorCodes
     extern const int CANNOT_SET_THREAD_PRIORITY;
 }
 
+void ThreadStatus::applyQuerySettings()
+{
+    const Settings & settings = query_context->getSettingsRef();
+
+    query_id = query_context->getCurrentQueryId();
+    initQueryProfiler();
+
+    untracked_memory_limit = settings.max_untracked_memory;
+    if (settings.memory_profiler_step && settings.memory_profiler_step < UInt64(untracked_memory_limit))
+        untracked_memory_limit = settings.memory_profiler_step;
+
+#if defined(OS_LINUX)
+    /// Set "nice" value if required.
+    Int32 new_os_thread_priority = settings.os_thread_priority;
+    if (new_os_thread_priority && hasLinuxCapability(CAP_SYS_NICE))
+    {
+        LOG_TRACE(log, "Setting nice to {}", new_os_thread_priority);
+
+        if (0 != setpriority(PRIO_PROCESS, thread_id, new_os_thread_priority))
+            throwFromErrno("Cannot 'setpriority'", ErrorCodes::CANNOT_SET_THREAD_PRIORITY);
+
+        os_thread_priority = new_os_thread_priority;
+    }
+#endif
+}
+
 
 void ThreadStatus::attachQueryContext(Context & query_context_)
 {
     query_context = &query_context_;
-    query_id = query_context->getCurrentQueryId();
+
     if (!global_context)
         global_context = &query_context->getGlobalContext();
 
@@ -46,7 +73,7 @@ void ThreadStatus::attachQueryContext(Context & query_context_)
             thread_group->global_context = global_context;
     }
 
-    initQueryProfiler();
+    applyQuerySettings();
 }
 
 void CurrentThread::defaultThreadDeleter()
@@ -73,6 +100,7 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
         thread_group->thread_ids.emplace_back(thread_id);
 
         logs_queue_ptr = thread_group->logs_queue_ptr;
+        fatal_error_callback = thread_group->fatal_error_callback;
         query_context = thread_group->query_context;
 
         if (!global_context)
@@ -80,24 +108,7 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
     }
 
     if (query_context)
-    {
-        query_id = query_context->getCurrentQueryId();
-        initQueryProfiler();
-
-#if defined(OS_LINUX)
-        /// Set "nice" value if required.
-        Int32 new_os_thread_priority = query_context->getSettingsRef().os_thread_priority;
-        if (new_os_thread_priority && hasLinuxCapability(CAP_SYS_NICE))
-        {
-            LOG_TRACE(log, "Setting nice to " << new_os_thread_priority);
-
-            if (0 != setpriority(PRIO_PROCESS, thread_id, new_os_thread_priority))
-                throwFromErrno("Cannot 'setpriority'", ErrorCodes::CANNOT_SET_THREAD_PRIORITY);
-
-            os_thread_priority = new_os_thread_priority;
-        }
-#endif
-    }
+        applyQuerySettings();
 
     initPerformanceCounters();
 
@@ -128,6 +139,76 @@ void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool 
     setupState(thread_group_);
 }
 
+inline UInt64 time_in_nanoseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+{
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(timepoint.time_since_epoch()).count();
+}
+
+inline UInt64 time_in_microseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+{
+    return std::chrono::duration_cast<std::chrono::microseconds>(timepoint.time_since_epoch()).count();
+}
+
+
+inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+{
+    return std::chrono::duration_cast<std::chrono::seconds>(timepoint.time_since_epoch()).count();
+}
+
+void ThreadStatus::initPerformanceCounters()
+{
+    performance_counters_finalized = false;
+
+    /// Clear stats from previous query if a new query is started
+    /// TODO: make separate query_thread_performance_counters and thread_performance_counters
+    performance_counters.resetCounters();
+    memory_tracker.resetCounters();
+    memory_tracker.setDescription("(for thread)");
+
+    // query_start_time_{microseconds, nanoseconds} are all constructed from the same time point
+    // to ensure that they are all equal up to the precision of a second.
+    const auto now = std::chrono::system_clock::now();
+
+    query_start_time_nanoseconds = time_in_nanoseconds(now);
+    query_start_time = time_in_seconds(now);
+    query_start_time_microseconds = time_in_microseconds(now);
+    ++queries_started;
+
+    // query_start_time_nanoseconds cannot be used here since RUsageCounters expect CLOCK_MONOTONIC
+    *last_rusage = RUsageCounters::current();
+
+    if (query_context)
+    {
+        const Settings & settings = query_context->getSettingsRef();
+        if (settings.metrics_perf_events_enabled)
+        {
+            try
+            {
+                current_thread_counters.initializeProfileEvents(
+                    settings.metrics_perf_events_list);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+    }
+
+    if (!taskstats)
+    {
+        try
+        {
+            taskstats = TasksStatsCounters::create(thread_id);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+        }
+    }
+    if (taskstats)
+        taskstats->reset();
+}
+
 void ThreadStatus::finalizePerformanceCounters()
 {
     if (performance_counters_finalized)
@@ -136,14 +217,40 @@ void ThreadStatus::finalizePerformanceCounters()
     performance_counters_finalized = true;
     updatePerformanceCounters();
 
+    // We want to close perf file descriptors if the perf events were enabled for
+    // one query. What this code does in practice is less clear -- e.g., if I run
+    // 'select 1 settings metrics_perf_events_enabled = 1', I still get
+    // query_context->getSettingsRef().metrics_perf_events_enabled == 0 *shrug*.
+    bool close_perf_descriptors = true;
+    if (query_context)
+        close_perf_descriptors = !query_context->getSettingsRef().metrics_perf_events_enabled;
+
+    try
+    {
+        current_thread_counters.finalizeProfileEvents(performance_counters);
+        if (close_perf_descriptors)
+            current_thread_counters.closeEventDescriptors();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+    }
+
     try
     {
         if (global_context && query_context)
         {
-            auto & settings = query_context->getSettingsRef();
+            const auto & settings = query_context->getSettingsRef();
             if (settings.log_queries && settings.log_query_threads)
-                if (auto thread_log = global_context->getQueryThreadLog())
-                    logToQueryThreadLog(*thread_log);
+            {
+                const auto now = std::chrono::system_clock::now();
+                Int64 query_duration_ms = (time_in_microseconds(now) - query_start_time_microseconds) / 1000;
+                if (query_duration_ms >= settings.log_queries_min_query_duration_ms.totalMilliseconds())
+                {
+                    if (auto thread_log = global_context->getQueryThreadLog())
+                        logToQueryThreadLog(*thread_log, query_context->getCurrentDatabase(), now);
+                }
+            }
         }
     }
     catch (...)
@@ -200,8 +307,8 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
     performance_counters.setParent(&ProfileEvents::global_counters);
     memory_tracker.reset();
 
-    /// Must reset pointer to thread_group's memory_tracker, because it will be destroyed two lines below.
-    memory_tracker.setParent(nullptr);
+    /// Must reset pointer to thread_group's memory_tracker, because it will be destroyed two lines below (will reset to its parent).
+    memory_tracker.setParent(thread_group->memory_tracker.getParent());
 
     query_id.clear();
     query_context = nullptr;
@@ -215,20 +322,27 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
         LOG_TRACE(log, "Resetting nice");
 
         if (0 != setpriority(PRIO_PROCESS, thread_id, 0))
-            LOG_ERROR(log, "Cannot 'setpriority' back to zero: " << errnoToString(ErrorCodes::CANNOT_SET_THREAD_PRIORITY, errno));
+            LOG_ERROR(log, "Cannot 'setpriority' back to zero: {}", errnoToString(ErrorCodes::CANNOT_SET_THREAD_PRIORITY, errno));
 
         os_thread_priority = 0;
     }
 #endif
 }
 
-void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
+void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String & current_database, std::chrono::time_point<std::chrono::system_clock> now)
 {
     QueryThreadLogElement elem;
 
-    elem.event_time = time(nullptr);
+    // construct current_time and current_time_microseconds using the same time point
+    // so that the two times will always be equal up to a precision of a second.
+    auto current_time = time_in_seconds(now);
+    auto current_time_microseconds = time_in_microseconds(now);
+
+    elem.event_time = current_time;
+    elem.event_time_microseconds = current_time_microseconds;
     elem.query_start_time = query_start_time;
-    elem.query_duration_ms = (getCurrentTimeNanoseconds() - query_start_time_nanoseconds) / 1000000U;
+    elem.query_start_time_microseconds = query_start_time_microseconds;
+    elem.query_duration_ms = (time_in_nanoseconds(now) - query_start_time_nanoseconds) / 1000000U;
 
     elem.read_rows = progress_in.read_rows.load(std::memory_order_relaxed);
     elem.read_bytes = progress_in.read_bytes.load(std::memory_order_relaxed);
@@ -242,6 +356,7 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
     elem.thread_name = getThreadName();
     elem.thread_id = thread_id;
 
+    elem.current_database = current_database;
     if (thread_group)
     {
         {

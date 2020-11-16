@@ -1,15 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
-toc_priority: 60
-toc_title: Ayarlar
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 ---
 
 # Ayarlar {#settings}
 
-## distributed\_product\_mode {#distributed-product-mode}
+## distributed_product_mode {#distributed-product-mode}
 
-Davranışını değiştirir [dağıtılmış alt sorgular](../../sql_reference/statements/select.md).
+Davranışını değiştirir [dağıtılmış alt sorgular](../../sql-reference/operators/in.md).
 
 ClickHouse applies this setting when the query contains the product of distributed tables, i.e. when the query for a distributed table contains a non-GLOBAL subquery for the distributed table.
 
@@ -18,7 +16,7 @@ Kısıtlama:
 -   Yalnızca ın ve JOIN alt sorguları için uygulanır.
 -   Yalnızca FROM bölümü birden fazla parça içeren dağıtılmış bir tablo kullanıyorsa.
 -   Alt sorgu birden fazla parça içeren dağıtılmış bir tablo ile ilgiliyse.
--   Bir tablo için kullanılmaz-değerli [uzak](../../sql_reference/table_functions/remote.md) işlev.
+-   Bir tablo için kullanılmaz-değerli [uzak](../../sql-reference/table-functions/remote.md) İşlev.
 
 Olası değerler:
 
@@ -27,7 +25,7 @@ Olası değerler:
 -   `global` — Replaces the `IN`/`JOIN` ile sorgu `GLOBAL IN`/`GLOBAL JOIN.`
 -   `allow` — Allows the use of these types of subqueries.
 
-## enable\_optimize\_predicate\_expression {#enable-optimize-predicate-expression}
+## enable_optimize_predicate_expression {#enable-optimize-predicate-expression}
 
 Yüklemi pushdown açar `SELECT` sorgular.
 
@@ -51,9 +49,9 @@ Eğer `enable_optimize_predicate_expression = 1`, daha sonra bu sorguların yür
 
 Eğer `enable_optimize_predicate_expression = 0`, daha sonra ikinci sorgunun yürütme süresi çok daha uzundur, çünkü `WHERE` yan tümcesi alt sorgu tamamlandıktan sonra tüm veriler için geçerlidir.
 
-## fallback\_to\_stale\_replicas\_for\_distributed\_queries {#settings-fallback_to_stale_replicas_for_distributed_queries}
+## fallback_to_stale_replicas_for_distributed_queries {#settings-fallback_to_stale_replicas_for_distributed_queries}
 
-Güncelleştirilmiş veriler mevcut değilse, bir sorgu için güncel olmayan bir yineleme zorlar. Görmek [Çoğalma](../../engines/table_engines/mergetree_family/replication.md).
+Güncelleştirilmiş veriler mevcut değilse, bir sorgu için güncel olmayan bir yineleme zorlar. Görmek [Çoğalma](../../engines/table-engines/mergetree-family/replication.md).
 
 ClickHouse, tablonun eski kopyalarından en alakalı olanı seçer.
 
@@ -61,33 +59,33 @@ Yaparken kullanılır `SELECT` çoğaltılmış tablolara işaret eden dağıtı
 
 Varsayılan olarak, 1 (etkin).
 
-## force\_index\_by\_date {#settings-force_index_by_date}
+## force_index_by_date {#settings-force_index_by_date}
 
 Dizin tarihe göre kullanılamıyorsa, sorgu yürütülmesini devre dışı bırakır.
 
 MergeTree ailesindeki tablolarla çalışır.
 
-Eğer `force_index_by_date=1`, ClickHouse sorgunun veri aralıklarını kısıtlamak için kullanılabilecek bir tarih anahtarı koşulu olup olmadığını denetler. Uygun bir koşul yoksa, bir istisna atar. Ancak, koşul okumak için veri miktarını azaltır olup olmadığını denetlemez. Örneğin, durum `Date != ' 2000-01-01 '` tablodaki tüm verilerle eşleştiğinde bile kabul edilebilir (yani, sorguyu çalıştırmak tam bir tarama gerektirir). MergeTree tablolarındaki veri aralıkları hakkında daha fazla bilgi için bkz. [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md).
+Eğer `force_index_by_date=1`, ClickHouse sorgunun veri aralıklarını kısıtlamak için kullanılabilecek bir tarih anahtarı koşulu olup olmadığını denetler. Uygun bir koşul yoksa, bir istisna atar. Ancak, koşul okumak için veri miktarını azaltır olup olmadığını denetlemez. Örneğin, durum `Date != ' 2000-01-01 '` tablodaki tüm verilerle eşleştiğinde bile kabul edilebilir (yani, sorguyu çalıştırmak tam bir tarama gerektirir). MergeTree tablolarındaki veri aralıkları hakkında daha fazla bilgi için bkz. [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
 
-## force\_primary\_key {#force-primary-key}
+## force_primary_key {#force-primary-key}
 
 Birincil anahtar tarafından dizin oluşturma mümkün değilse, sorgu yürütülmesini devre dışı bırakır.
 
 MergeTree ailesindeki tablolarla çalışır.
 
-Eğer `force_primary_key=1`, ClickHouse, sorgunun veri aralıklarını kısıtlamak için kullanılabilecek bir birincil anahtar koşulu olup olmadığını denetler. Uygun bir koşul yoksa, bir istisna atar. Ancak, koşul okumak için veri miktarını azaltır olup olmadığını denetlemez. MergeTree tablolarındaki veri aralıkları hakkında daha fazla bilgi için bkz. [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md).
+Eğer `force_primary_key=1`, ClickHouse, sorgunun veri aralıklarını kısıtlamak için kullanılabilecek bir birincil anahtar koşulu olup olmadığını denetler. Uygun bir koşul yoksa, bir istisna atar. Ancak, koşul okumak için veri miktarını azaltır olup olmadığını denetlemez. MergeTree tablolarındaki veri aralıkları hakkında daha fazla bilgi için bkz. [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
 
-## format\_schema {#format-schema}
+## format_schema {#format-schema}
 
 Bu parametre, aşağıdaki gibi bir şema tanımı gerektiren biçimler kullanırken kullanışlıdır [Cap'n Proto](https://capnproto.org/) veya [Protobuf](https://developers.google.com/protocol-buffers/). Değer biçime bağlıdır.
 
-## fsync\_metadata {#fsync-metadata}
+## fsync_metadata {#fsync-metadata}
 
 Etkinleştirir veya devre dışı bırakır [fsync](http://pubs.opengroup.org/onlinepubs/9699919799/functions/fsync.html) yazarken `.sql` eğe. Varsayılan olarak etkin.
 
 Sunucu, sürekli olarak oluşturulan ve yok edilen milyonlarca küçük tabloya sahipse, onu devre dışı bırakmak mantıklıdır.
 
-## enable\_http\_compression {#settings-enable_http_compression}
+## enable_http_compression {#settings-enable_http_compression}
 
 Bir HTTP isteğine yanıt olarak veri sıkıştırmasını etkinleştirir veya devre dışı bırakır.
 
@@ -100,15 +98,15 @@ Olası değerler:
 
 Varsayılan değer: 0.
 
-## http\_zlib\_compression\_level {#settings-http_zlib_compression_level}
+## http_zlib_compression_level {#settings-http_zlib_compression_level}
 
-Eğer bir HTTP isteğine yanıt veri sıkıştırma düzeyini ayarlar [enable\_http\_compression = 1](#settings-enable_http_compression).
+Eğer bir HTTP isteğine yanıt veri sıkıştırma düzeyini ayarlar [enable_http_compression = 1](#settings-enable_http_compression).
 
 Olası değerler: 1'den 9'a kadar olan sayılar.
 
 Varsayılan değer: 3.
 
-## http\_native\_compression\_disable\_checksumming\_on\_decompress {#settings-http_native_compression_disable_checksumming_on_decompress}
+## http_native_compression_disable_checksumming_on_decompress {#settings-http_native_compression_disable_checksumming_on_decompress}
 
 İstemciden HTTP POST verilerini açarken sağlama toplamı doğrulamasını etkinleştirir veya devre dışı bırakır. Sadece ClickHouse yerel sıkıştırma formatı için kullanılır (ile kullanılmaz `gzip` veya `deflate`).
 
@@ -121,7 +119,7 @@ Olası değerler:
 
 Varsayılan değer: 0.
 
-## send\_progress\_in\_http\_headers {#settings-send_progress_in_http_headers}
+## send_progress_in_http_headers {#settings-send_progress_in_http_headers}
 
 Etkinleştirir veya devre dışı bırakır `X-ClickHouse-Progress` HTTP yanıt başlıkları `clickhouse-server` yanıtlar.
 
@@ -134,9 +132,9 @@ Olası değerler:
 
 Varsayılan değer: 0.
 
-## max\_http\_get\_redirects {#setting-max_http_get_redirects}
+## max_http_get_redirects {#setting-max_http_get_redirects}
 
-Maksimum http get yönlendirme atlama sayısını sınırlar [URL](../../engines/table_engines/special/url.md)- motor masaları. Ayarı tablolar iki tür tarafından oluşturulan bu geçerlidir: [CREATE TABLE](../../sql_reference/statements/create.md#create-table-query) sorgu ve [url](../../sql_reference/table_functions/url.md) tablo işlevi.
+Maksimum http get yönlendirme atlama sayısını sınırlar [URL](../../engines/table-engines/special/url.md)- motor masaları. Ayarı tablolar iki tür tarafından oluşturulan bu geçerlidir: [CREATE TABLE](../../sql-reference/statements/create.md#create-table-query) sorgu ve [url](../../sql-reference/table-functions/url.md) tablo işlevi.
 
 Olası değerler:
 
@@ -145,7 +143,7 @@ Olası değerler:
 
 Varsayılan değer: 0.
 
-## ınput\_format\_allow\_errors\_num {#settings-input_format_allow_errors_num}
+## ınput_format_allow_errors_num {#settings-input_format_allow_errors_num}
 
 Metin biçimlerinden (CSV, TSV, vb.) okurken kabul edilebilir hataların maksimum sayısını ayarlar.).
 
@@ -157,7 +155,7 @@ Satırları okurken bir hata oluştu, ancak hata sayacı hala daha az `input_for
 
 Eğer her ikisi de `input_format_allow_errors_num` ve `input_format_allow_errors_ratio` aşıldı, ClickHouse bir istisna atar.
 
-## ınput\_format\_allow\_errors\_ratio {#settings-input_format_allow_errors_ratio}
+## ınput_format_allow_errors_ratio {#settings-input_format_allow_errors_ratio}
 
 Metin biçimlerinden (CSV, TSV, vb.) okurken izin verilen maksimum hata yüzdesini ayarlar.).
 Hataların yüzdesi 0 ile 1 arasında kayan nokta sayısı olarak ayarlanır.
@@ -170,9 +168,9 @@ Satırları okurken bir hata oluştu, ancak hata sayacı hala daha az `input_for
 
 Eğer her ikisi de `input_format_allow_errors_num` ve `input_format_allow_errors_ratio` aşıldı, ClickHouse bir istisna atar.
 
-## ınput\_format\_values\_interpret\_expressions {#settings-input_format_values_interpret_expressions}
+## ınput_format_values_interpret_expressions {#settings-input_format_values_interpret_expressions}
 
-Hızlı akış ayrıştırıcısı verileri ayrıştıramazsa, tam SQL ayrıştırıcısını etkinleştirir veya devre dışı bırakır. Bu ayar yalnızca için kullanılır [Değerler](../../interfaces/formats.md#data-format-values) veri ekleme sırasında biçimlendirin. Sözdizimi ayrıştırma hakkında daha fazla bilgi için bkz: [Sözdizimi](../../sql_reference/syntax.md) bölme.
+Hızlı akış ayrıştırıcısı verileri ayrıştıramazsa, tam SQL ayrıştırıcısını etkinleştirir veya devre dışı bırakır. Bu ayar yalnızca için kullanılır [Değerler](../../interfaces/formats.md#data-format-values) veri ekleme sırasında biçimlendirin. Sözdizimi ayrıştırma hakkında daha fazla bilgi için bkz: [Sözdizimi](../../sql-reference/syntax.md) bölme.
 
 Olası değerler:
 
@@ -188,7 +186,7 @@ Varsayılan değer: 1.
 
 Kullanım örneği
 
-Ekle [DateTime](../../sql_reference/data_types/datetime.md) farklı ayarlarla değer yazın.
+Ekle [DateTime](../../sql-reference/data-types/datetime.md) farklı ayarlarla değer yazın.
 
 ``` sql
 SET input_format_values_interpret_expressions = 0;
@@ -220,7 +218,7 @@ INSERT INTO datetime_t SELECT now()
 Ok.
 ```
 
-## ınput\_format\_values\_deduce\_templates\_of\_expressions {#settings-input_format_values_deduce_templates_of_expressions}
+## ınput_format_values_deduce_templates_of_expressions {#settings-input_format_values_deduce_templates_of_expressions}
 
 SQL deyimleri için şablon kesintisini etkinleştirir veya devre dışı bırakır [Değerler](../../interfaces/formats.md#data-format-values) biçimli. Bu ayrıştırma ve ifadeleri yorumlama sağlar `Values` ardışık satırlardaki ifadeler aynı yapıya sahipse çok daha hızlı. ClickHouse, bir ifadenin şablonunu çıkarmaya, bu şablonu kullanarak aşağıdaki satırları ayrıştırmaya ve ifadeyi başarılı bir şekilde ayrıştırılmış satırların bir yığınında değerlendirmeye çalışır.
 
@@ -241,7 +239,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 -   Eğer `input_format_values_interpret_expressions=0` ve `format_values_deduce_templates_of_expressions=1`, birinci, ikinci ve üçüncü satırlardaki ifadeler şablon kullanılarak ayrıştırılır `lower(String)` ve birlikte yorumlanır, ileri satırdaki ifade başka bir şablonla ayrıştırılır (`upper(String)`).
 -   Eğer `input_format_values_interpret_expressions=1` ve `format_values_deduce_templates_of_expressions=1`, önceki durumda olduğu gibi aynı, ama aynı zamanda şablon anlamak mümkün değilse ayrı ayrı ifadeleri yorumlama geri dönüş sağlar.
 
-## ınput\_format\_values\_accurate\_types\_of\_literals {#settings-input-format-values-accurate-types-of-literals}
+## ınput_format_values_accurate_types_of_literals {#settings-input-format-values-accurate-types-of-literals}
 
 Bu ayar yalnızca şu durumlarda kullanılır `input_format_values_deduce_templates_of_expressions = 1`. Bu, bazı sütunların ifadelerinin aynı yapıya sahip olması, ancak farklı türlerde sayısal değişmezler içermesi olabilir, örneğin
 
@@ -263,7 +261,7 @@ Olası değerler:
 
 Varsayılan değer: 1.
 
-## ınput\_format\_defaults\_for\_omitted\_fields {#session_settings-input_format_defaults_for_omitted_fields}
+## ınput_format_defaults_for_omitted_fields {#session_settings-input_format_defaults_for_omitted_fields}
 
 Yaparken `INSERT` sorgular, atlanmış giriş sütun değerlerini ilgili sütunların varsayılan değerleriyle değiştirin. Bu seçenek yalnızca aşağıdakiler için geçerlidir [JSONEachRow](../../interfaces/formats.md#jsoneachrow), [CSV](../../interfaces/formats.md#csv) ve [TabSeparated](../../interfaces/formats.md#tabseparated) biçimliler.
 
@@ -277,17 +275,17 @@ Olası değerler:
 
 Varsayılan değer: 1.
 
-## ınput\_format\_tsv\_empty\_as\_default {#settings-input-format-tsv-empty-as-default}
+## ınput_format_tsv_empty_as_default {#settings-input-format-tsv-empty-as-default}
 
 Etkinleştirildiğinde, TSV'DEKİ boş giriş alanlarını varsayılan değerlerle değiştirin. Karmaşık varsayılan ifadeler için `input_format_defaults_for_omitted_fields` de etkin olmalıdır.
 
 Varsayılan olarak devre dışı.
 
-## ınput\_format\_null\_as\_default {#settings-input-format-null-as-default}
+## ınput_format_null_as_default {#settings-input-format-null-as-default}
 
 Giriş verileri içeriyorsa, varsayılan değerleri kullanarak etkinleştirir veya devre dışı bırakır `NULL`, ancak ilgili sütunun veri türü değil `Nullable(T)` (Metin Giriş biçimleri için).
 
-## ınput\_format\_skip\_unknown\_fields {#settings-input-format-skip-unknown-fields}
+## ınput_format_skip_unknown_fields {#settings-input-format-skip-unknown-fields}
 
 Etkinleştirir veya ek veri ekleme atlama devre dışı bırakır.
 
@@ -307,7 +305,7 @@ Olası değerler:
 
 Varsayılan değer: 0.
 
-## ınput\_format\_ımport\_nested\_json {#settings-input_format_import_nested_json}
+## ınput_format_ımport_nested_json {#settings-input_format_import_nested_json}
 
 Json verilerinin iç içe nesnelerle eklenmesini etkinleştirir veya devre dışı bırakır.
 
@@ -326,7 +324,7 @@ Ayrıca bakınız:
 
 -   [İç içe yapıların kullanımı](../../interfaces/formats.md#jsoneachrow-nested) ile... `JSONEachRow` biçimli.
 
-## ınput\_format\_with\_names\_use\_header {#settings-input-format-with-names-use-header}
+## ınput_format_with_names_use_header {#settings-input-format-with-names-use-header}
 
 Veri eklerken sütun sırasını denetlemeyi etkinleştirir veya devre dışı bırakır.
 
@@ -344,11 +342,11 @@ Olası değerler:
 
 Varsayılan değer: 1.
 
-## date\_time\_input\_format {#settings-date_time_input_format}
+## date_time_input_format {#settings-date_time_input_format}
 
 Tarih ve saat metin gösterimi bir ayrıştırıcı seçme sağlar.
 
-Ayar için geçerli değildir [tarih ve saat fonksiyonları](../../sql_reference/functions/date_time_functions.md).
+Ayar için geçerli değildir [tarih ve saat fonksiyonları](../../sql-reference/functions/date-time-functions.md).
 
 Olası değerler:
 
@@ -364,12 +362,12 @@ Varsayılan değer: `'basic'`.
 
 Ayrıca bakınız:
 
--   [DateTime veri türü.](../../sql_reference/data_types/datetime.md)
--   [Tarihler ve saatler ile çalışmak için fonksiyonlar.](../../sql_reference/functions/date_time_functions.md)
+-   [DateTime veri türü.](../../sql-reference/data-types/datetime.md)
+-   [Tarihler ve saatler ile çalışmak için fonksiyonlar.](../../sql-reference/functions/date-time-functions.md)
 
-## join\_default\_strictness {#settings-join_default_strictness}
+## join_default_strictness {#settings-join_default_strictness}
 
-Ayarlar varsayılan strictness için [Maddeleri KATILIN ](../../sql_reference/statements/select.md#select-join).
+Ayarlar varsayılan strictness için [Maddeleri KATILIN ](../../sql-reference/statements/select/join.md#select-join).
 
 Olası değerler:
 
@@ -380,12 +378,12 @@ Olası değerler:
 
 Varsayılan değer: `ALL`.
 
-## join\_any\_take\_last\_row {#settings-join_any_take_last_row}
+## join_any_take_last_row {#settings-join_any_take_last_row}
 
 İle birleştirme işlemlerinin davranışını değiştirir `ANY` katılık.
 
 !!! warning "Dikkat"
-    Bu ayar yalnızca aşağıdakiler için geçerlidir `JOIN` ile işlemler [Katmak](../../engines/table_engines/special/join.md) motor tabloları.
+    Bu ayar yalnızca aşağıdakiler için geçerlidir `JOIN` ile işlemler [Katmak](../../engines/table-engines/special/join.md) motor tabloları.
 
 Olası değerler:
 
@@ -396,22 +394,22 @@ Varsayılan değer: 0.
 
 Ayrıca bakınız:
 
--   [Jo](../../sql_reference/statements/select.md#select-join)
--   [Jo tablein table engine](../../engines/table_engines/special/join.md)
--   [join\_default\_strictness](#settings-join_default_strictness)
+-   [Jo](../../sql-reference/statements/select/join.md#select-join)
+-   [Jo tablein table engine](../../engines/table-engines/special/join.md)
+-   [join_default_strictness](#settings-join_default_strictness)
 
-## join\_use\_nulls {#join_use_nulls}
+## join_use_nulls {#join_use_nulls}
 
-Türünü ayarlar [JOIN](../../sql_reference/statements/select.md) davranış. Tabloları birleştirirken boş hücreler görünebilir. ClickHouse bu ayara göre onları farklı şekilde doldurur.
+Türünü ayarlar [JOIN](../../sql-reference/statements/select/join.md) davranış. Tabloları birleştirirken boş hücreler görünebilir. ClickHouse bu ayara göre onları farklı şekilde doldurur.
 
 Olası değerler:
 
 -   0 — The empty cells are filled with the default value of the corresponding field type.
--   1 — `JOIN` standart SQL ile aynı şekilde davranır. Karşılık gelen alanın türü dönüştürülür [Nullable](../../sql_reference/data_types/nullable.md#data_type-nullable) ve boş hücreler ile doldurulur [NULL](../../sql_reference/syntax.md).
+-   1 — `JOIN` standart SQL ile aynı şekilde davranır. Karşılık gelen alanın türü dönüştürülür [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable) ve boş hücreler ile doldurulur [NULL](../../sql-reference/syntax.md).
 
 Varsayılan değer: 0.
 
-## max\_block\_size {#setting-max_block_size}
+## max_block_size {#setting-max_block_size}
 
 Clickhouse'da, veriler bloklarla (sütun parçaları kümeleri) işlenir. Tek bir blok için dahili işlem döngüleri yeterince verimlidir, ancak her blokta gözle görülür harcamalar vardır. Bu `max_block_size` ayar, blokun boyutunun (satır sayımında) tablolardan yükleneceği bir öneridir. Blok boyutu çok küçük olmamalı, böylece her bloktaki harcamalar hala fark edilebilir, ancak çok büyük olmamalı, böylece ilk blok hızla işlendikten sonra tamamlanan limitli sorgu çok büyük olmamalıdır. Amaç, birden çok iş parçacığında çok sayıda sütun ayıklarken çok fazla bellek tüketmekten kaçınmak ve en azından bazı önbellek konumlarını korumaktır.
 
@@ -419,15 +417,15 @@ Varsayılan değer: 65,536.
 
 Blok boyutu `max_block_size` her zaman tablodan yüklenmez. Daha az verinin alınması gerektiği açıksa, daha küçük bir blok işlenir.
 
-## preferred\_block\_size\_bytes {#preferred-block-size-bytes}
+## preferred_block_size_bytes {#preferred-block-size-bytes}
 
 Olarak aynı amaç için kullanılır `max_block_size`, ancak önerilen blok boyutunu bayt cinsinden, bloktaki satır sayısına uyarlayarak ayarlar.
 Ancak, blok boyutu daha fazla olamaz `max_block_size` satırlar.
 Varsayılan olarak: 1.000.000. Sadece MergeTree motorlarından okurken çalışır.
 
-## merge\_tree\_mın\_rows\_for\_concurrent\_read {#setting-merge-tree-min-rows-for-concurrent-read}
+## merge_tree_mın_rows_for_concurrent_read {#setting-merge-tree-min-rows-for-concurrent-read}
 
-Bir dosyadan okunacak satır sayısı ise [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md) tablo aşıyor `merge_tree_min_rows_for_concurrent_read` daha sonra ClickHouse, bu dosyadan birkaç iş parçacığı üzerinde eşzamanlı bir okuma gerçekleştirmeye çalışır.
+Bir dosyadan okunacak satır sayısı ise [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tablo aşıyor `merge_tree_min_rows_for_concurrent_read` daha sonra ClickHouse, bu dosyadan birkaç iş parçacığı üzerinde eşzamanlı bir okuma gerçekleştirmeye çalışır.
 
 Olası değerler:
 
@@ -435,9 +433,9 @@ Olası değerler:
 
 Varsayılan değer: 163840.
 
-## merge\_tree\_min\_bytes\_for\_concurrent\_read {#setting-merge-tree-min-bytes-for-concurrent-read}
+## merge_tree_min_bytes_for_concurrent_read {#setting-merge-tree-min-bytes-for-concurrent-read}
 
-Eğer bir dosyadan okunacak bayt sayısı [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md)- motor tablosu `merge_tree_min_bytes_for_concurrent_read`, daha sonra ClickHouse, bu dosyadan aynı anda birkaç iş parçacığında okumaya çalışır.
+Eğer bir dosyadan okunacak bayt sayısı [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)- motor tablosu `merge_tree_min_bytes_for_concurrent_read`, daha sonra ClickHouse, bu dosyadan aynı anda birkaç iş parçacığında okumaya çalışır.
 
 Olası değer:
 
@@ -445,7 +443,7 @@ Olası değer:
 
 Varsayılan değer: 251658240.
 
-## merge\_tree\_mın\_rows\_for\_seek {#setting-merge-tree-min-rows-for-seek}
+## merge_tree_mın_rows_for_seek {#setting-merge-tree-min-rows-for-seek}
 
 Bir dosyada okunacak iki veri bloğu arasındaki mesafe daha az ise `merge_tree_min_rows_for_seek` satırlar, daha sonra ClickHouse dosyayı aramaz, ancak verileri sırayla okur.
 
@@ -455,7 +453,7 @@ Olası değerler:
 
 Varsayılan değer: 0.
 
-## merge\_tree\_min\_bytes\_for\_seek {#setting-merge-tree-min-bytes-for-seek}
+## merge_tree_min_bytes_for_seek {#setting-merge-tree-min-bytes-for-seek}
 
 Bir dosyada okunacak iki veri bloğu arasındaki mesafe daha az ise `merge_tree_min_bytes_for_seek` bayt, daha sonra ClickHouse sırayla böylece ekstra arama kaçınarak, her iki blok içeren bir dosya aralığını okur.
 
@@ -465,7 +463,7 @@ Olası değerler:
 
 Varsayılan değer: 0.
 
-## merge\_tree\_coarse\_index\_granularity {#setting-merge-tree-coarse-index-granularity}
+## merge_tree_coarse_index_granularity {#setting-merge-tree-coarse-index-granularity}
 
 Veri ararken, ClickHouse dizin dosyasındaki veri işaretlerini denetler. ClickHouse gerekli tuşların bazı aralıklarda olduğunu bulursa, bu aralığı `merge_tree_coarse_index_granularity` subranges ve gerekli anahtarları orada yinelemeli olarak arar.
 
@@ -475,11 +473,11 @@ Olası değerler:
 
 Varsayılan değer: 8.
 
-## merge\_tree\_max\_rows\_to\_use\_cache {#setting-merge-tree-max-rows-to-use-cache}
+## merge_tree_max_rows_to_use_cache {#setting-merge-tree-max-rows-to-use-cache}
 
 ClickHouse daha fazla okumak gerekiyorsa `merge_tree_max_rows_to_use_cache` bir sorgudaki satırlar, sıkıştırılmamış blokların önbelleğini kullanmaz.
 
-Sıkıştırılmamış blokların önbelleği, sorgular için ayıklanan verileri depolar. ClickHouse, tekrarlanan küçük sorgulara verilen yanıtları hızlandırmak için bu önbelleği kullanır. Bu ayar, önbelleğin büyük miktarda veri okuyan sorgularla çöpe atmasını önler. Bu [uncompressed\_cache\_size](../server_configuration_parameters/settings.md#server-settings-uncompressed_cache_size) sunucu ayarı, sıkıştırılmamış blokların önbelleğinin boyutunu tanımlar.
+Sıkıştırılmamış blokların önbelleği, sorgular için ayıklanan verileri depolar. ClickHouse, tekrarlanan küçük sorgulara verilen yanıtları hızlandırmak için bu önbelleği kullanır. Bu ayar, önbelleğin büyük miktarda veri okuyan sorgularla çöpe atmasını önler. Bu [uncompressed_cache_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) sunucu ayarı, sıkıştırılmamış blokların önbelleğinin boyutunu tanımlar.
 
 Olası değerler:
 
@@ -487,11 +485,11 @@ Olası değerler:
 
 Default value: 128 ✕ 8192.
 
-## merge\_tree\_max\_bytes\_to\_use\_cache {#setting-merge-tree-max-bytes-to-use-cache}
+## merge_tree_max_bytes_to_use_cache {#setting-merge-tree-max-bytes-to-use-cache}
 
 ClickHouse daha fazla okumak gerekiyorsa `merge_tree_max_bytes_to_use_cache` bir sorguda bayt, sıkıştırılmamış blokların önbelleğini kullanmaz.
 
-Sıkıştırılmamış blokların önbelleği, sorgular için ayıklanan verileri depolar. ClickHouse, tekrarlanan küçük sorgulara verilen yanıtları hızlandırmak için bu önbelleği kullanır. Bu ayar, önbelleğin büyük miktarda veri okuyan sorgularla çöpe atmasını önler. Bu [uncompressed\_cache\_size](../server_configuration_parameters/settings.md#server-settings-uncompressed_cache_size) sunucu ayarı, sıkıştırılmamış blokların önbelleğinin boyutunu tanımlar.
+Sıkıştırılmamış blokların önbelleği, sorgular için ayıklanan verileri depolar. ClickHouse, tekrarlanan küçük sorgulara verilen yanıtları hızlandırmak için bu önbelleği kullanır. Bu ayar, önbelleğin büyük miktarda veri okuyan sorgularla çöpe atmasını önler. Bu [uncompressed_cache_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) sunucu ayarı, sıkıştırılmamış blokların önbelleğinin boyutunu tanımlar.
 
 Olası değer:
 
@@ -499,7 +497,7 @@ Olası değer:
 
 Varsayılan değer: 2013265920.
 
-## min\_bytes\_to\_use\_direct\_io {#settings-min-bytes-to-use-direct-io}
+## min_bytes_to_use_direct_io {#settings-min-bytes-to-use-direct-io}
 
 Depolama diskine Doğrudan G/Ç erişimi kullanmak için gereken minimum veri hacmi.
 
@@ -512,11 +510,11 @@ Olası değerler:
 
 Varsayılan değer: 0.
 
-## log\_queries {#settings-log-queries}
+## log_queries {#settings-log-queries}
 
 Sorgu günlüğü ayarlama.
 
-Bu kurulum ile Clickhouse'a gönderilen sorgular, [query\_log](../server_configuration_parameters/settings.md#server_configuration_parameters-query-log) sunucu yapılandırma parametresi.
+Bu kurulum ile Clickhouse'a gönderilen sorgular, [query_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query-log) sunucu yapılandırma parametresi.
 
 Örnek:
 
@@ -524,7 +522,7 @@ Bu kurulum ile Clickhouse'a gönderilen sorgular, [query\_log](../server_configu
 log_queries=1
 ```
 
-## log\_queries\_min\_type {#settings-log-queries-min-type}
+## log_queries_min_type {#settings-log-queries-min-type}
 
 `query_log` giriş yapmak için en az tür.
 
@@ -542,11 +540,11 @@ Entiries gider hangi sınırlamak için kullanılabilir `query_log`, sadece hata
 log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 ```
 
-## log\_query\_threads {#settings-log-query-threads}
+## log_query_threads {#settings-log-query-threads}
 
 Sorgu iş parçacığı günlüğü ayarlama.
 
-Bu kurulum ile ClickHouse tarafından çalıştırılan sorguların konuları, [query\_thread\_log](../server_configuration_parameters/settings.md#server_configuration_parameters-query-thread-log) sunucu yapılandırma parametresi.
+Bu kurulum ile ClickHouse tarafından çalıştırılan sorguların konuları, [query_thread_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) sunucu yapılandırma parametresi.
 
 Örnek:
 
@@ -554,21 +552,43 @@ Bu kurulum ile ClickHouse tarafından çalıştırılan sorguların konuları, [
 log_query_threads=1
 ```
 
-## max\_ınsert\_block\_size {#settings-max_insert_block_size}
+## max_ınsert_block_size {#settings-max_insert_block_size}
 
 Bir tabloya eklemek için oluşturulacak blokların boyutu.
 Bu ayar yalnızca sunucu blokları oluşturduğu durumlarda geçerlidir.
 Örneğin, HTTP arabirimi üzerinden bir ekleme için sunucu veri biçimini ayrıştırır ve belirtilen boyuttaki blokları oluşturur.
-Ancak, clickhouse-client kullanırken, istemci verileri kendisi ayrıştırır ve ‘max\_insert\_block\_size’ sunucudaki ayar, eklenen blokların boyutunu etkilemez.
+Ancak, clickhouse-client kullanırken, istemci verileri kendisi ayrıştırır ve ‘max_insert_block_size’ sunucudaki ayar, eklenen blokların boyutunu etkilemez.
 Veri SELECT sonra oluşturulan aynı blokları kullanarak eklendiğinden, INSERT SELECT kullanırken ayarı da bir amacı yoktur.
 
 Varsayılan değer: 1.048,576.
 
 Varsayılan biraz daha fazla `max_block_size`. Bunun nedeni, bazı tablo motorlarının (`*MergeTree`) oldukça büyük bir varlık olan eklenen her blok için diskte bir veri parçası oluşturun. Benzer bir şekilde, `*MergeTree` tablolar ekleme sırasında verileri sıralar ve yeterince büyük bir blok boyutu RAM'de daha fazla veriyi sıralamaya izin verir.
 
-## max\_replica\_delay\_for\_distributed\_queries {#settings-max_replica_delay_for_distributed_queries}
+## min_insert_block_size_rows {#min-insert-block-size-rows}
 
-Dağıtılmış sorgular için gecikmeli yinelemeleri devre dışı bırakır. Görmek [Çoğalma](../../engines/table_engines/mergetree_family/replication.md).
+Bir tabloya eklenebilen blok içindeki minimum satır sayısını ayarlar. `INSERT` sorgu. Daha küçük boyutlu bloklar daha büyük olanlara ezilir.
+
+Olası değerler:
+
+-   Pozitif tamsayı.
+-   0 — Squashing disabled.
+
+Varsayılan değer: 1048576.
+
+## min_insert_block_size_bytes {#min-insert-block-size-bytes}
+
+Bir tabloya eklenebilen blok içindeki minimum bayt sayısını ayarlar. `INSERT` sorgu. Daha küçük boyutlu bloklar daha büyük olanlara ezilir.
+
+Olası değerler:
+
+-   Pozitif tamsayı.
+-   0 — Squashing disabled.
+
+Varsayılan değer: 268435456.
+
+## max_replica_delay_for_distributed_queries {#settings-max_replica_delay_for_distributed_queries}
+
+Dağıtılmış sorgular için gecikmeli yinelemeleri devre dışı bırakır. Görmek [Çoğalma](../../engines/table-engines/mergetree-family/replication.md).
 
 Saati saniye olarak ayarlar. Bir çoğaltma ayarlanan değerden daha fazla kalıyorsa, Bu çoğaltma kullanılmaz.
 
@@ -576,22 +596,22 @@ Varsayılan değer: 300.
 
 Yaparken kullanılır `SELECT` çoğaltılmış tablolara işaret eden dağıtılmış bir tablodan.
 
-## max\_threads {#settings-max_threads}
+## max_threads {#settings-max_threads}
 
-Uzak sunuculardan veri almak için iş parçacıkları hariç olmak üzere sorgu işleme iş parçacıklarının maksimum sayısı (bkz. ‘max\_distributed\_connections’ parametre).
+Uzak sunuculardan veri almak için iş parçacıkları hariç olmak üzere sorgu işleme iş parçacıklarının maksimum sayısı (bkz. ‘max_distributed_connections’ parametre).
 
 Bu parametre, paralel olarak sorgu işleme ardışık düzeninin aynı aşamalarını gerçekleştiren iş parçacıkları için geçerlidir.
-Örneğin, bir tablodan okurken, ifadeleri işlevlerle değerlendirmek mümkün ise, en azından paralel olarak grup için where ve pre-aggregate ile filtreleyin ‘max\_threads’ konu sayısı, daha sonra ‘max\_threads’ kullanılır.
+Örneğin, bir tablodan okurken, ifadeleri işlevlerle değerlendirmek mümkün ise, en azından paralel olarak grup için where ve pre-aggregate ile filtreleyin ‘max_threads’ konu sayısı, daha sonra ‘max_threads’ kullanılır.
 
 Varsayılan değer: fiziksel CPU çekirdeği sayısı.
 
 Bir kerede bir sunucuda normal olarak birden az SELECT sorgusu çalıştırılırsa, bu parametreyi gerçek işlemci çekirdeği sayısından biraz daha küçük bir değere ayarlayın.
 
-Bir sınır nedeniyle hızlı bir şekilde tamamlanan sorgular için, daha düşük bir ‘max\_threads’. Örneğin, gerekli sayıda giriş her blokta ve max\_threads = 8'de bulunuyorsa, sadece bir tane okumak için yeterli olsa da, 8 blok alınır.
+Bir sınır nedeniyle hızlı bir şekilde tamamlanan sorgular için, daha düşük bir ‘max_threads’. Örneğin, gerekli sayıda giriş her blokta ve max_threads = 8'de bulunuyorsa, sadece bir tane okumak için yeterli olsa da, 8 blok alınır.
 
 Daha küçük `max_threads` değer, daha az bellek tüketilir.
 
-## max\_ınsert\_threads {#settings-max-insert-threads}
+## max_ınsert_threads {#settings-max-insert-threads}
 
 Çalıştırılacak maksimum iş parçacığı sayısı `INSERT SELECT` sorgu.
 
@@ -602,61 +622,61 @@ Olası değerler:
 
 Varsayılan değer: 0.
 
-Paralellik `INSERT SELECT` etkisi vardır sadece eğer `SELECT` bölüm paralel olarak yürütülür, bkz [max\_threads](#settings-max_threads) ayar.
+Paralellik `INSERT SELECT` etkisi vardır sadece eğer `SELECT` bölüm paralel olarak yürütülür, bkz [max_threads](#settings-max_threads) ayar.
 Daha yüksek değerler daha yüksek bellek kullanımına yol açacaktır.
 
-## max\_compress\_block\_size {#max-compress-block-size}
+## max_compress_block_size {#max-compress-block-size}
 
 Bir tabloya yazmak için sıkıştırmadan önce sıkıştırılmamış veri bloklarının en büyük boyutu. Varsayılan olarak, 1.048.576 (1 MiB). Boyut azaltılırsa, sıkıştırma oranı önemli ölçüde azalır, önbellek konumu nedeniyle sıkıştırma ve dekompresyon hızı biraz artar ve bellek tüketimi azalır. Bu ayarı değiştirmek için genellikle herhangi bir neden yoktur.
 
 Sıkıştırma için blokları (bayttan oluşan bir bellek yığını) sorgu işleme için bloklarla (bir tablodan satır kümesi) karıştırmayın.
 
-## min\_compress\_block\_size {#min-compress-block-size}
+## min_compress_block_size {#min-compress-block-size}
 
-İçin [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md)" Tablolar. Sorguları işlerken gecikmeyi azaltmak için, boyutu en az bir sonraki işareti yazarken bir blok sıkıştırılır ‘min\_compress\_block\_size’. Varsayılan olarak, 65.536.
+İçin [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)" Tablolar. Sorguları işlerken gecikmeyi azaltmak için, boyutu en az bir sonraki işareti yazarken bir blok sıkıştırılır ‘min_compress_block_size’. Varsayılan olarak, 65.536.
 
-Sıkıştırılmamış veriler daha az ise, bloğun gerçek boyutu ‘max\_compress\_block\_size’, bu değerden daha az değildir ve bir işaret için veri hacminden daha az değildir.
+Sıkıştırılmamış veriler daha az ise, bloğun gerçek boyutu ‘max_compress_block_size’, bu değerden daha az değildir ve bir işaret için veri hacminden daha az değildir.
 
-Bir örneğe bakalım. Varsaymak ‘index\_granularity’ tablo oluşturma sırasında 8192 olarak ayarlandı.
+Bir örneğe bakalım. Varsaymak ‘index_granularity’ tablo oluşturma sırasında 8192 olarak ayarlandı.
 
-Bir uint32 tipi sütun yazıyoruz (değer başına 4 bayt). 8192 satır yazarken, toplam 32 KB veri olacaktır. Min\_compress\_block\_size = 65.536 olduğundan, her iki işaret için sıkıştırılmış bir blok oluşturulacaktır.
+Bir uint32 tipi sütun yazıyoruz (değer başına 4 bayt). 8192 satır yazarken, toplam 32 KB veri olacaktır. Min_compress_block_size = 65.536 olduğundan, her iki işaret için sıkıştırılmış bir blok oluşturulacaktır.
 
 Dize türüne sahip bir URL sütunu yazıyoruz (değer başına ortalama 60 bayt boyutu). 8192 satır yazarken, ortalama 500 KB veri biraz daha az olacaktır. Bu 65,536'dan fazla olduğu için, her işaret için sıkıştırılmış bir blok oluşturulacaktır. Bu durumda, diskteki verileri tek bir işaret aralığında okurken, ekstra veriler sıkıştırılmaz.
 
 Bu ayarı değiştirmek için genellikle herhangi bir neden yoktur.
 
-## max\_query\_size {#settings-max_query_size}
+## max_query_size {#settings-max_query_size}
 
 SQL ayrıştırıcısı ile ayrıştırmak için RAM'e alınabilecek bir sorgunun en büyük kısmı.
 INSERT sorgusu, bu kısıtlamaya dahil olmayan ayrı bir akış ayrıştırıcısı (o(1) RAM tüketir) tarafından işlenen INSERT için veri de içerir.
 
 Varsayılan değer: 256 KiB.
 
-## ınteractive\_delay {#interactive-delay}
+## ınteractive_delay {#interactive-delay}
 
 İstek yürütülmesinin iptal edilip edilmediğini kontrol etmek ve ilerlemeyi göndermek için mikrosaniye cinsinden Aralık.
 
 Varsayılan değer: 100.000 (iptal için denetler ve ilerleme saniyede on kez gönderir).
 
-## connect\_timeout, receıve\_tımeout, send\_timeout {#connect-timeout-receive-timeout-send-timeout}
+## connect_timeout, receıve_tımeout, send_timeout {#connect-timeout-receive-timeout-send-timeout}
 
 İstemci ile iletişim kurmak için kullanılan sokette saniye cinsinden zaman aşımları.
 
 Varsayılan değer: 10, 300, 300.
 
-## cancel\_http\_readonly\_queries\_on\_client\_close {#cancel-http-readonly-queries-on-client-close}
+## cancel_http_readonly_queries_on_client_close {#cancel-http-readonly-queries-on-client-close}
 
 Cancels HTTP read-only queries (e.g. SELECT) when a client closes the connection without waiting for the response.
 
 Varsayılan değer: 0
 
-## poll\_interval {#poll-interval}
+## poll_interval {#poll-interval}
 
 Belirtilen saniye sayısı için bir bekleme döngüsünde kilitleyin.
 
 Varsayılan değer: 10.
 
-## max\_distributed\_connections {#max-distributed-connections}
+## max_distributed_connections {#max-distributed-connections}
 
 Tek bir dağıtılmış tabloya tek bir sorgunun dağıtılmış işlenmesi için uzak sunucularla eşzamanlı bağlantı sayısı. Kümedeki sunucu sayısından daha az bir değer ayarlamanızı öneririz.
 
@@ -664,20 +684,20 @@ Varsayılan değer: 1024.
 
 Aşağıdaki parametreler yalnızca dağıtılmış tablolar oluştururken (ve bir sunucu başlatırken) kullanılır, bu nedenle bunları çalışma zamanında değiştirmek için hiçbir neden yoktur.
 
-## distributed\_connections\_pool\_size {#distributed-connections-pool-size}
+## distributed_connections_pool_size {#distributed-connections-pool-size}
 
 Tüm sorguların tek bir dağıtılmış tabloya dağıtılmış işlenmesi için uzak sunucularla eşzamanlı bağlantıların maksimum sayısı. Kümedeki sunucu sayısından daha az bir değer ayarlamanızı öneririz.
 
 Varsayılan değer: 1024.
 
-## connect\_timeout\_with\_failover\_ms {#connect-timeout-with-failover-ms}
+## connect_timeout_with_failover_ms {#connect-timeout-with-failover-ms}
 
 Dağıtılmış bir tablo altyapısı için uzak bir sunucuya bağlanmak için milisaniye cinsinden zaman aşımı ‘shard’ ve ‘replica’ bölümler küme tanımında kullanılır.
 Başarısız olursa, çeşitli yinelemelere bağlanmak için birkaç deneme yapılır.
 
 Varsayılan değer: 50.
 
-## connections\_with\_failover\_max\_tries {#connections-with-failover-max-tries}
+## connections_with_failover_max_tries {#connections-with-failover-max-tries}
 
 Dağıtılmış tablo altyapısı için her yineleme ile bağlantı girişimi sayısı.
 
@@ -688,27 +708,27 @@ Varsayılan değer: 3.
 Aşırı değerleri (bir sorgu sonucunun sütunlarındaki minimum ve maksimum değerler) saymak ister. 0 veya 1 kabul eder. Varsayılan olarak, 0 (devre dışı).
 Daha fazla bilgi için bölüme bakın “Extreme values”.
 
-## use\_uncompressed\_cache {#setting-use_uncompressed_cache}
+## use_uncompressed_cache {#setting-use_uncompressed_cache}
 
 Sıkıştırılmamış blokların önbelleğinin kullanılıp kullanılmayacağı. 0 veya 1 kabul eder. Varsayılan olarak, 0 (devre dışı).
-Sıkıştırılmamış önbelleği (yalnızca mergetree ailesindeki tablolar için) kullanmak, çok sayıda kısa Sorgu ile çalışırken gecikmeyi önemli ölçüde azaltabilir ve verimi artırabilir. Sık sık kısa istek Gönderen kullanıcılar için bu ayarı etkinleştirin. Ayrıca dikkat [uncompressed\_cache\_size](../server_configuration_parameters/settings.md#server-settings-uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
+Sıkıştırılmamış önbelleği (yalnızca mergetree ailesindeki tablolar için) kullanmak, çok sayıda kısa Sorgu ile çalışırken gecikmeyi önemli ölçüde azaltabilir ve verimi artırabilir. Sık sık kısa istek Gönderen kullanıcılar için bu ayarı etkinleştirin. Ayrıca dikkat [uncompressed_cache_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
 
-En azından biraz büyük bir veri hacmi (bir milyon satır veya daha fazla) okuyan sorgular için sıkıştırılmamış önbellek, gerçekten küçük sorgular için yer kazanmak için otomatik olarak devre dışı bırakılır. Bu tutmak anlamına gelir ‘use\_uncompressed\_cache’ ayar her zaman 1 olarak ayarlanır.
+En azından biraz büyük bir veri hacmi (bir milyon satır veya daha fazla) okuyan sorgular için sıkıştırılmamış önbellek, gerçekten küçük sorgular için yer kazanmak için otomatik olarak devre dışı bırakılır. Bu tutmak anlamına gelir ‘use_uncompressed_cache’ ayar her zaman 1 olarak ayarlanır.
 
-## replace\_running\_query {#replace-running-query}
+## replace_running_query {#replace-running-query}
 
-HTTP arayüzünü kullanırken, ‘query\_id’ parametre geçirilebilir. Bu, sorgu tanımlayıcısı olarak hizmet veren herhangi bir dizedir.
-Aynı kullanıcıdan aynı sorgu varsa ‘query\_id’ zaten şu anda var, davranış bağlıdır ‘replace\_running\_query’ parametre.
+HTTP arayüzünü kullanırken, ‘query_id’ parametre geçirilebilir. Bu, sorgu tanımlayıcısı olarak hizmet veren herhangi bir dizedir.
+Aynı kullanıcıdan aynı sorgu varsa ‘query_id’ zaten şu anda var, davranış bağlıdır ‘replace_running_query’ parametre.
 
-`0` (default) – Throw an exception (don't allow the query to run if a query with the same ‘query\_id’ zaten çalışan) var.
+`0` (default) – Throw an exception (don't allow the query to run if a query with the same ‘query_id’ zaten çalışan) var.
 
 `1` – Cancel the old query and start running the new one.
 
 Üye.Metrica, segmentasyon koşulları için öneriler uygulamak için 1 olarak ayarlanmış bu parametreyi kullanır. Bir sonraki karakteri girdikten sonra, eski sorgu henüz tamamlanmamışsa, iptal edilmelidir.
 
-## stream\_flush\_interval\_ms {#stream-flush-interval-ms}
+## stream_flush_interval_ms {#stream-flush-interval-ms}
 
-Bir zaman aşımı durumunda akışlı tablolar için çalışır veya bir iş parçacığı oluşturduğunda [max\_ınsert\_block\_size](#settings-max_insert_block_size) satırlar.
+Bir zaman aşımı durumunda akışlı tablolar için çalışır veya bir iş parçacığı oluşturduğunda [max_ınsert_block_size](#settings-max_insert_block_size) satırlar.
 
 Varsayılan değer 7500'dür.
 
@@ -767,7 +787,7 @@ load_balancing = first_or_random
 
 Bu `first_or_random` algoritma sorunu çözer `in_order` algoritma. İle `in_order`, bir çoğaltma aşağı giderse, kalan yinelemeler normal trafik miktarını işlerken bir sonraki bir çift yük alır. Kullanırken `first_or_random` algoritma, yük hala mevcut olan kopyalar arasında eşit olarak dağıtılır.
 
-## prefer\_localhost\_replica {#settings-prefer-localhost-replica}
+## prefer_localhost_replica {#settings-prefer-localhost-replica}
 
 Etkinleştirir / devre dışı bırakır tercih kullanarak localhost çoğaltma dağıtılmış sorguları işlerken.
 
@@ -779,19 +799,19 @@ Olası değerler:
 Varsayılan değer: 1.
 
 !!! warning "Uyarıcı"
-    Kullanıyorsanız bu ayarı devre dışı bırakın [max\_parallel\_replicas](#settings-max_parallel_replicas).
+    Kullanıyorsanız bu ayarı devre dışı bırakın [max_parallel_replicas](#settings-max_parallel_replicas).
 
-## totals\_mode {#totals-mode}
+## totals_mode {#totals-mode}
 
-MAX\_ROWS\_TO\_GROUP\_BY ve group\_by\_overflow\_mode = ‘any’ Bulunmak.
+MAX_ROWS_TO_GROUP_BY ve group_by_overflow_mode = ‘any’ Bulunmak.
 Bölümüne bakınız “WITH TOTALS modifier”.
 
-## totals\_auto\_threshold {#totals-auto-threshold}
+## totals_auto_threshold {#totals-auto-threshold}
 
 İçin eşik `totals_mode = 'auto'`.
 Bölümüne bakınız “WITH TOTALS modifier”.
 
-## max\_parallel\_replicas {#settings-max_parallel_replicas}
+## max_parallel_replicas {#settings-max_parallel_replicas}
 
 Bir sorgu yürütülürken her parça için en fazla yineleme sayısı.
 Tutarlılık için (aynı veri bölünmesinin farklı bölümlerini elde etmek için), bu seçenek yalnızca örnekleme anahtarı ayarlandığında çalışır.
@@ -804,7 +824,7 @@ Sorguların derlenmesini etkinleştirin. Varsayılan olarak, 0 (devre dışı).
 Derleme yalnızca sorgu işleme boru hattının bir parçası için kullanılır: toplamanın ilk aşaması için (GROUP BY).
 Potansiyel hattın bu bölümü derlenmişse, sorgu, kısa döngüleri ve inlining toplu işlev çağrılarının dağıtımı nedeniyle daha hızlı çalışabilir. Birden çok basit toplama işlevine sahip sorgular için maksimum performans artışı (nadir durumlarda dört kata kadar daha hızlı) görülür. Tipik olarak, performans kazancı önemsİzdİr. Çok nadir durumlarda, sorgu yürütülmesini yavaşlatabilir.
 
-## min\_count\_to\_compile {#min-count-to-compile}
+## min_count_to_compile {#min-count-to-compile}
 
 Derleme çalıştırmadan önce derlenmiş bir kod yığını potansiyel olarak kaç kez kullanılır. Varsayılan olarak, 3.
 For testing, the value can be set to 0: compilation runs synchronously and the query waits for the end of the compilation process before continuing execution. For all other cases, use values ​​starting with 1. Compilation normally takes about 5-10 seconds.
@@ -813,27 +833,27 @@ Değer 1 veya daha fazla ise, derleme zaman uyumsuz olarak ayrı bir iş parçac
 Derlenmiş kod, sorguda kullanılan toplama işlevlerinin her farklı birleşimi ve GROUP BY yan tümcesindeki anahtarların türü için gereklidir.
 The results of the compilation are saved in the build directory in the form of .so files. There is no restriction on the number of compilation results since they don't use very much space. Old results will be used after server restarts, except in the case of a server upgrade – in this case, the old results are deleted.
 
-## output\_format\_json\_quote\_64bit\_integers {#session_settings-output_format_json_quote_64bit_integers}
+## output_format_json_quote_64bit_integers {#session_settings-output_format_json_quote_64bit_integers}
 
 Değer doğruysa, json\* Int64 ve Uİnt64 formatlarını kullanırken tamsayılar tırnak içinde görünür (çoğu JavaScript uygulamasıyla uyumluluk için); aksi takdirde, tamsayılar tırnak işaretleri olmadan çıktılanır.
 
-## format\_csv\_delimiter {#settings-format_csv_delimiter}
+## format_csv_delimiter {#settings-format_csv_delimiter}
 
 Karakter CSV verilerinde bir sınırlayıcı olarak yorumlanır. Varsayılan olarak, sınırlayıcı `,`.
 
-## ınput\_format\_csv\_unquoted\_null\_literal\_as\_null {#settings-input_format_csv_unquoted_null_literal_as_null}
+## ınput_format_csv_unquoted_null_literal_as_null {#settings-input_format_csv_unquoted_null_literal_as_null}
 
 CSV giriş biçimi sağlar veya unquoted ayrıştırma devre dışı bırakır için `NULL` literal olarak (eşanlamlı `\N`).
 
-## output\_format\_csv\_crlf\_end\_of\_line {#settings-output-format-csv-crlf-end-of-line}
+## output_format_csv_crlf_end_of_line {#settings-output-format-csv-crlf-end-of-line}
 
 Unix stili (LF) yerine CSV'DE DOS/Windows stili çizgi ayırıcı (CRLF) kullanın.
 
-## output\_format\_tsv\_crlf\_end\_of\_line {#settings-output-format-tsv-crlf-end-of-line}
+## output_format_tsv_crlf_end_of_line {#settings-output-format-tsv-crlf-end-of-line}
 
 Unıx stili (LF) yerine TSV'DE DOC/Windows stili çizgi ayırıcı (CRLF) kullanın.
 
-## insert\_quorum {#settings-insert_quorum}
+## insert_quorum {#settings-insert_quorum}
 
 Çekirdek yazma sağlar.
 
@@ -848,7 +868,7 @@ Nis writesap yazar
 
 Nisaptaki tüm kopyalar tutarlıdır, yani önceki tüm verileri içerir `INSERT` sorgular. Bu `INSERT` sıra doğrusallaştırılmıştır.
 
-Yazılan verileri okurken `insert_quorum` olabilir kullanın [select\_sequential\_consistency](#settings-select_sequential_consistency) seçenek.
+Yazılan verileri okurken `insert_quorum` olabilir kullanın [select_sequential_consistency](#settings-select_sequential_consistency) seçenek.
 
 ClickHouse bir istisna oluşturur
 
@@ -857,10 +877,10 @@ ClickHouse bir istisna oluşturur
 
 Ayrıca bakınız:
 
--   [ınsert\_quorum\_timeout](#settings-insert_quorum_timeout)
--   [select\_sequential\_consistency](#settings-select_sequential_consistency)
+-   [ınsert_quorum_timeout](#settings-insert_quorum_timeout)
+-   [select_sequential_consistency](#settings-select_sequential_consistency)
 
-## ınsert\_quorum\_timeout {#settings-insert_quorum-timeout}
+## ınsert_quorum_timeout {#settings-insert_quorum_timeout}
 
 Çekirdek zaman aşımına saniyeler içinde yazın. Zaman aşımı geçti ve yazma henüz gerçekleşmedi, ClickHouse bir özel durum oluşturur ve istemci aynı bloğu aynı veya başka bir yineleme yazmak için sorguyu yinelemeniz gerekir.
 
@@ -868,10 +888,10 @@ Varsayılan değer: 60 saniye.
 
 Ayrıca bakınız:
 
--   [insert\_quorum](#settings-insert_quorum)
--   [select\_sequential\_consistency](#settings-select_sequential_consistency)
+-   [insert_quorum](#settings-insert_quorum)
+-   [select_sequential_consistency](#settings-select_sequential_consistency)
 
-## select\_sequential\_consistency {#settings-select_sequential_consistency}
+## select_sequential_consistency {#settings-select_sequential_consistency}
 
 İçin sıralı tutarlılığı etkinleştirir veya devre dışı bırakır `SELECT` sorgular:
 
@@ -888,10 +908,10 @@ Sıralı tutarlılık etkinleştirildiğinde, clickhouse istemci çalıştırmak
 
 Ayrıca bakınız:
 
--   [insert\_quorum](#settings-insert_quorum)
--   [ınsert\_quorum\_timeout](#settings-insert_quorum_timeout)
+-   [insert_quorum](#settings-insert_quorum)
+-   [ınsert_quorum_timeout](#settings-insert_quorum_timeout)
 
-## ınsert\_deduplicate {#settings-insert-deduplicate}
+## ınsert_deduplicate {#settings-insert-deduplicate}
 
 Blok tekilleştirmesini etkinleştirir veya devre dışı bırakır `INSERT` (çoğaltılmış \* tablolar için).
 
@@ -902,9 +922,9 @@ Olası değerler:
 
 Varsayılan değer: 1.
 
-Varsayılan olarak, çoğaltılmış tablolara eklenen bloklar `INSERT` deyim tekilleştirilir (bkz. \[Data Replication\] (../engines/table\_engines/mergetree\_family/replication.md).
+Varsayılan olarak, çoğaltılmış tablolara eklenen bloklar `INSERT` açıklama tekilleştirilmiştir (bkz [Veri Çoğaltma](../../engines/table-engines/mergetree-family/replication.md)).
 
-## deduplicate\_blocks\_ın\_dependent\_materialized\_views {#settings-deduplicate-blocks-in-dependent-materialized-views}
+## deduplicate_blocks_ın_dependent_materialized_views {#settings-deduplicate-blocks-in-dependent-materialized-views}
 
 Yinelenmiş\* tablolardan veri alan materialized görünümler için tekilleştirme denetimini etkinleştirir veya devre dışı bırakır.
 
@@ -922,7 +942,7 @@ Eklenen bir blok, kaynak tablodaki tekilleştirme nedeniyle atlanırsa, ekli mat
 Aynı zamanda, bu davranış “breaks” `INSERT` idempotency. Eğer bir `INSERT` ana tabloya başarılı oldu ve `INSERT` into a materialized view failed (e.g. because of communication failure with Zookeeper) a client will get an error and can retry the operation. However, the materialized view won't receive the second insert because it will be discarded by deduplication in the main (source) table. The setting `deduplicate_blocks_in_dependent_materialized_views` bu davranışı değiştirmeye izin verir. Yeniden denemede, somutlaştırılmış bir görünüm tekrar ekleme işlemini alacak ve tekilleştirme kontrolünü kendi başına gerçekleştirecektir,
 kaynak tablo için onay sonucunu yoksayar ve ilk hata nedeniyle kaybedilen satırları ekler.
 
-## max\_network\_bytes {#settings-max-network-bytes}
+## max_network_bytes {#settings-max-network-bytes}
 
 Alınan veya bir sorgu yürütülürken ağ üzerinden iletilen veri birimi (bayt cinsinden) sınırlar. Bu ayar, her bir sorgu için geçerlidir.
 
@@ -933,7 +953,7 @@ Olası değerler:
 
 Varsayılan değer: 0.
 
-## max\_network\_bandwidth {#settings-max-network-bandwidth}
+## max_network_bandwidth {#settings-max-network-bandwidth}
 
 Ağ üzerinden veri alışverişinin hızını saniyede bayt cinsinden sınırlar. Bu ayar her sorgu için geçerlidir.
 
@@ -944,7 +964,7 @@ Olası değerler:
 
 Varsayılan değer: 0.
 
-## max\_network\_bandwidth\_for\_user {#settings-max-network-bandwidth-for-user}
+## max_network_bandwidth_for_user {#settings-max-network-bandwidth-for-user}
 
 Ağ üzerinden veri alışverişinin hızını saniyede bayt cinsinden sınırlar. Bu ayar, tek bir kullanıcı tarafından gerçekleştirilen tüm aynı anda çalışan sorgular için geçerlidir.
 
@@ -955,7 +975,7 @@ Olası değerler:
 
 Varsayılan değer: 0.
 
-## max\_network\_bandwidth\_for\_all\_users {#settings-max-network-bandwidth-for-all-users}
+## max_network_bandwidth_for_all_users {#settings-max-network-bandwidth-for-all-users}
 
 Verilerin ağ üzerinden saniyede bayt olarak değiştirildiği hızı sınırlar. Bu ayar, sunucuda aynı anda çalışan tüm sorgular için geçerlidir.
 
@@ -966,21 +986,21 @@ Olası değerler:
 
 Varsayılan değer: 0.
 
-## count\_distinct\_implementation {#settings-count_distinct_implementation}
+## count_distinct_implementation {#settings-count_distinct_implementation}
 
-Aşağıdakilerden hang theisinin `uniq*` işlevleri gerçekleştirmek için kullanılmalıdır [COUNT(DISTINCT …)](../../sql_reference/aggregate_functions/reference.md#agg_function-count) yapma.
+Aşağıdakilerden hang theisinin `uniq*` işlevleri gerçekleştirmek için kullanılmalıdır [COUNT(DISTINCT …)](../../sql-reference/aggregate-functions/reference.md#agg_function-count) yapı.
 
 Olası değerler:
 
--   [uniq](../../sql_reference/aggregate_functions/reference.md#agg_function-uniq)
--   [uniqCombined](../../sql_reference/aggregate_functions/reference.md#agg_function-uniqcombined)
--   [uniqCombined64](../../sql_reference/aggregate_functions/reference.md#agg_function-uniqcombined64)
--   [uniqHLL12](../../sql_reference/aggregate_functions/reference.md#agg_function-uniqhll12)
--   [uniqExact](../../sql_reference/aggregate_functions/reference.md#agg_function-uniqexact)
+-   [uniq](../../sql-reference/aggregate-functions/reference.md#agg_function-uniq)
+-   [uniqCombined](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqcombined)
+-   [uniqCombined64](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqcombined64)
+-   [uniqHLL12](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqhll12)
+-   [uniqExact](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqexact)
 
 Varsayılan değer: `uniqExact`.
 
-## skip\_unavailable\_shards {#settings-skip_unavailable_shards}
+## skip_unavailable_shards {#settings-skip_unavailable_shards}
 
 Etkinleştirir veya sessizce kullanılamaz kırıkları atlama devre dışı bırakır.
 
@@ -1010,13 +1030,13 @@ Olası değerler:
 
 Varsayılan değer: 0.
 
-## optimize\_skip\_unused\_shards {#settings-optimize_skip_unused_shards}
+## optimize_skip_unused_shards {#settings-optimize_skip_unused_shards}
 
 Prewhere/WHERE (verilerin sharding anahtarı tarafından dağıtıldığını varsayar, aksi takdirde hiçbir şey yapmaz).
 
 Varsayılan değer: 0
 
-## force\_optimize\_skip\_unused\_shards {#settings-force_optimize_skip_unused_shards}
+## force_optimize_skip_unused_shards {#settings-force_optimize_skip_unused_shards}
 
 Sorgu yürütülmesini etkinleştirir veya devre dışı bırakır [`optimize_skip_unused_shards`](#settings-optimize_skip_unused_shards) etkin ve kullanılmayan kırıkları atlama mümkün değildir. Atlama mümkün değilse ve ayar etkinse özel durum atılır.
 
@@ -1028,20 +1048,9 @@ Olası değerler:
 
 Varsayılan değer: 0
 
-## force\_optimize\_skip\_unused\_shards\_no\_nested {#settings-force_optimize_skip_unused_shards_no_nested}
+## optimize_throw_if_noop {#setting-optimize_throw_if_noop}
 
-Sıfırlamak [`optimize_skip_unused_shards`](#settings-force_optimize_skip_unused_shards) iç içe geçmiş için `Distributed` Tablo
-
-Olası değerler:
-
--   1 — Enabled.
--   0 — Disabled.
-
-Varsayılan değer: 0.
-
-## optimize\_throw\_if\_noop {#setting-optimize_throw_if_noop}
-
-Bir özel durum atmayı etkinleştirir veya devre dışı bırakır. [OPTIMIZE](../../sql_reference/statements/misc.md#misc_operations-optimize) sorgu birleştirme gerçekleştirmedi.
+Bir özel durum atmayı etkinleştirir veya devre dışı bırakır. [OPTIMIZE](../../sql-reference/statements/misc.md#misc_operations-optimize) sorgu birleştirme gerçekleştirmedi.
 
 Varsayılan olarak, `OPTIMIZE` eğer hiç bir şey yapmamış olsa bile, başarılı bir şekilde verir. Bu ayar, bu durumları ayırt etmenizi ve bir özel durum iletisinde nedeni almanızı sağlar.
 
@@ -1052,19 +1061,19 @@ Olası değerler:
 
 Varsayılan değer: 0.
 
-## distributed\_replica\_error\_half\_life {#settings-distributed_replica_error_half_life}
+## distributed_replica_error_half_life {#settings-distributed_replica_error_half_life}
 
 -   Türü: saniye
 -   Varsayılan değer: 60 saniye
 
-Dağıtılmış tablolardaki hataların ne kadar hızlı sıfırlandığını denetler. Bir yineleme bir süre için kullanılamıyorsa, 5 hataları biriktirir ve distributed\_replica\_error\_half\_lıfe 1 saniye olarak ayarlanır, sonra yineleme son hatadan sonra normal 3 saniye olarak kabul edilir.
+Dağıtılmış tablolardaki hataların ne kadar hızlı sıfırlandığını denetler. Bir yineleme bir süre için kullanılamıyorsa, 5 hataları biriktirir ve distributed_replica_error_half_lıfe 1 saniye olarak ayarlanır, sonra yineleme son hatadan sonra normal 3 saniye olarak kabul edilir.
 
 Ayrıca bakınız:
 
--   [Masa motoru Dağıt Distributedıldı](../../engines/table_engines/special/distributed.md)
--   [distributed\_replica\_error\_cap](#settings-distributed_replica_error_cap)
+-   [Masa motoru Dağıt Distributedıldı](../../engines/table-engines/special/distributed.md)
+-   [distributed_replica_error_cap](#settings-distributed_replica_error_cap)
 
-## distributed\_replica\_error\_cap {#settings-distributed_replica_error_cap}
+## distributed_replica_error_cap {#settings-distributed_replica_error_cap}
 
 -   Tür: imzasız int
 -   Varsayılan değer: 1000
@@ -1073,12 +1082,12 @@ Her yineleme hata sayısı çok fazla hata biriken tek bir yineleme engelleyerek
 
 Ayrıca bakınız:
 
--   [Masa motoru Dağıt Distributedıldı](../../engines/table_engines/special/distributed.md)
--   [distributed\_replica\_error\_half\_life](#settings-distributed_replica_error_half_life)
+-   [Masa motoru Dağıt Distributedıldı](../../engines/table-engines/special/distributed.md)
+-   [distributed_replica_error_half_life](#settings-distributed_replica_error_half_life)
 
-## distributed\_directory\_monitor\_sleep\_time\_ms {#distributed_directory_monitor_sleep_time_ms}
+## distributed_directory_monitor_sleep_time_ms {#distributed_directory_monitor_sleep_time_ms}
 
-İçin taban aralığı [Dağılı](../../engines/table_engines/special/distributed.md) veri göndermek için tablo motoru. Gerçek Aralık, hatalar durumunda katlanarak büyür.
+İçin taban aralığı [Dağılı](../../engines/table-engines/special/distributed.md) veri göndermek için tablo motoru. Gerçek Aralık, hatalar durumunda katlanarak büyür.
 
 Olası değerler:
 
@@ -1086,9 +1095,9 @@ Olası değerler:
 
 Varsayılan değer: 100 milisaniye.
 
-## distributed\_directory\_monitor\_max\_sleep\_time\_ms {#distributed_directory_monitor_max_sleep_time_ms}
+## distributed_directory_monitor_max_sleep_time_ms {#distributed_directory_monitor_max_sleep_time_ms}
 
-İçin Maksimum Aralık [Dağılı](../../engines/table_engines/special/distributed.md) veri göndermek için tablo motoru. Sınırları içinde belirlenen Aralık üstel büyüme [distributed\_directory\_monitor\_sleep\_time\_ms](#distributed_directory_monitor_sleep_time_ms) ayar.
+İçin Maksimum Aralık [Dağılı](../../engines/table-engines/special/distributed.md) veri göndermek için tablo motoru. Sınırları içinde belirlenen Aralık üstel büyüme [distributed_directory_monitor_sleep_time_ms](#distributed_directory_monitor_sleep_time_ms) ayar.
 
 Olası değerler:
 
@@ -1096,11 +1105,11 @@ Olası değerler:
 
 Varsayılan değer: 30000 milisaniye (30 saniye).
 
-## distributed\_directory\_monitor\_batch\_ınserts {#distributed_directory_monitor_batch_inserts}
+## distributed_directory_monitor_batch_ınserts {#distributed_directory_monitor_batch_inserts}
 
 Eklenen verilerin toplu olarak gönderilmesini etkinleştirir / devre dışı bırakır.
 
-Toplu gönderme etkinleştirildiğinde, [Dağılı](../../engines/table_engines/special/distributed.md) table engine, eklenen verilerin birden çok dosyasını ayrı ayrı göndermek yerine tek bir işlemde göndermeye çalışır. Toplu gönderme, sunucu ve ağ kaynaklarını daha iyi kullanarak küme performansını artırır.
+Toplu gönderme etkinleştirildiğinde, [Dağılı](../../engines/table-engines/special/distributed.md) table engine, eklenen verilerin birden çok dosyasını ayrı ayrı göndermek yerine tek bir işlemde göndermeye çalışır. Toplu gönderme, sunucu ve ağ kaynaklarını daha iyi kullanarak küme performansını artırır.
 
 Olası değerler:
 
@@ -1109,7 +1118,7 @@ Olası değerler:
 
 Varsayılan değer: 0.
 
-## os\_thread\_priority {#setting-os-thread-priority}
+## os_thread_priority {#setting-os-thread-priority}
 
 Önceliği ayarlar ([güzel](https://en.wikipedia.org/wiki/Nice_(Unix))) sorguları yürüten iş parçacıkları için. İşletim sistemi Zamanlayıcısı, kullanılabilir her CPU çekirdeğinde çalışacak bir sonraki iş parçacığını seçerken bu önceliği dikkate alır.
 
@@ -1124,9 +1133,9 @@ Daha düşük değerler daha yüksek öncelik anlamına gelir. Düşük olan ipl
 
 Varsayılan değer: 0.
 
-## query\_profiler\_real\_time\_period\_ns {#query_profiler_real_time_period_ns}
+## query_profiler_real_time_period_ns {#query_profiler_real_time_period_ns}
 
-Gerçek bir saat zamanlayıcı için süreyi ayarlar [sorgu profiler](../../operations/optimizing_performance/sampling_query_profiler.md). Gerçek saat zamanlayıcı duvar saati zaman sayar.
+Gerçek bir saat zamanlayıcı için süreyi ayarlar [sorgu profiler](../../operations/optimizing-performance/sampling-query-profiler.md). Gerçek saat zamanlayıcı duvar saati zaman sayar.
 
 Olası değerler:
 
@@ -1139,17 +1148,17 @@ Olası değerler:
 
 -   Zamanlayıcıyı kapatmak için 0.
 
-Tür: [Uİnt64](../../sql_reference/data_types/int_uint.md).
+Tür: [Uİnt64](../../sql-reference/data-types/int-uint.md).
 
 Varsayılan değer: 1000000000 nanosaniye (saniyede bir kez).
 
 Ayrıca bakınız:
 
--   Sistem tablosu [trace\_log](../../operations/system_tables.md#system_tables-trace_log)
+-   Sistem tablosu [trace_log](../../operations/system-tables.md#system_tables-trace_log)
 
-## query\_profiler\_cpu\_time\_period\_ns {#query_profiler_cpu_time_period_ns}
+## query_profiler_cpu_time_period_ns {#query_profiler_cpu_time_period_ns}
 
-Bir CPU saat süreölçerinin dönemini ayarlar. [sorgu profiler](../../operations/optimizing_performance/sampling_query_profiler.md). Bu zamanlayıcı sadece CPU süresini sayar.
+Bir CPU saat süreölçerinin dönemini ayarlar. [sorgu profiler](../../operations/optimizing-performance/sampling-query-profiler.md). Bu zamanlayıcı sadece CPU süresini sayar.
 
 Olası değerler:
 
@@ -1162,17 +1171,17 @@ Olası değerler:
 
 -   Zamanlayıcıyı kapatmak için 0.
 
-Tür: [Uİnt64](../../sql_reference/data_types/int_uint.md).
+Tür: [Uİnt64](../../sql-reference/data-types/int-uint.md).
 
 Varsayılan değer: 1000000000 nanosaniye.
 
 Ayrıca bakınız:
 
--   Sistem tablosu [trace\_log](../../operations/system_tables.md#system_tables-trace_log)
+-   Sistem tablosu [trace_log](../../operations/system-tables.md#system_tables-trace_log)
 
-## allow\_introspection\_functions {#settings-allow_introspection_functions}
+## allow_introspection_functions {#settings-allow_introspection_functions}
 
-Devre dışı bırakmayı etkinleştirir [ıntrospections fonksiyonları](../../sql_reference/functions/introspection.md) sorgu profilleme için.
+Devre dışı bırakmayı etkinleştirir [ıntrospections fonksiyonları](../../sql-reference/functions/introspection.md) sorgu profilleme için.
 
 Olası değerler:
 
@@ -1183,24 +1192,24 @@ Varsayılan değer: 0.
 
 **Ayrıca Bakınız**
 
--   [Örnekleme Sorgusu Profiler](../optimizing_performance/sampling_query_profiler.md)
--   Sistem tablosu [trace\_log](../../operations/system_tables.md#system_tables-trace_log)
+-   [Örnekleme Sorgusu Profiler](../optimizing-performance/sampling-query-profiler.md)
+-   Sistem tablosu [trace_log](../../operations/system-tables.md#system_tables-trace_log)
 
-## ınput\_format\_parallel\_parsing {#input-format-parallel-parsing}
+## ınput_format_parallel_parsing {#input-format-parallel-parsing}
 
 -   Tipi: bool
 -   Varsayılan değer: True
 
 Veri biçimlerinin paralel ayrıştırma sırasını koruyarak etkinleştirin. Sadece TSV, TKSV, CSV ve JSONEachRow formatları için desteklenir.
 
-## min\_chunk\_bytes\_for\_parallel\_parsing {#min-chunk-bytes-for-parallel-parsing}
+## min_chunk_bytes_for_parallel_parsing {#min-chunk-bytes-for-parallel-parsing}
 
 -   Tür: imzasız int
 -   Varsayılan değer: 1 MiB
 
 Her iş parçacığının paralel olarak ayrıştırılacağı bayt cinsinden minimum yığın boyutu.
 
-## output\_format\_avro\_codec {#settings-output_format_avro_codec}
+## output_format_avro_codec {#settings-output_format_avro_codec}
 
 Çıkış Avro dosyası için kullanılan sıkıştırma codec ayarlar.
 
@@ -1214,7 +1223,7 @@ Olası değerler:
 
 Varsayılan değer: `snappy` (varsa) veya `deflate`.
 
-## output\_format\_avro\_sync\_interval {#settings-output_format_avro_sync_interval}
+## output_format_avro_sync_interval {#settings-output_format_avro_sync_interval}
 
 Çıkış Avro dosyası için senkronizasyon işaretçileri arasında minimum veri boyutunu (bayt cinsinden) ayarlar.
 
@@ -1224,12 +1233,22 @@ Olası değerler: 32 (32 bayt) - 1073741824 (1 GiB)
 
 Varsayılan değer: 32768 (32 KiB)
 
-## format\_avro\_schema\_registry\_url {#settings-format_avro_schema_registry_url}
+## format_avro_schema_registry_url {#settings-format_avro_schema_registry_url}
 
 Sets Confluent Schema Registry URL to use with [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent) biçimli
 
 Type: URL
 
 Varsayılan değer: boş
+
+## background_pool_size {#background_pool_size}
+
+Tablo altyapılarında arka plan işlemlerini gerçekleştiren iş parçacıklarının sayısını ayarlar (örneğin, [MergeTree motoru](../../engines/table-engines/mergetree-family/index.md) Tablolar). Bu ayar ClickHouse sunucu başlangıcında uygulanır ve bir kullanıcı oturumunda değiştirilemez. Bu ayarı ayarlayarak, CPU ve disk yükünü yönetirsiniz. Daha küçük havuz boyutu daha az CPU ve disk kaynağı kullanır, ancak arka plan işlemleri daha yavaş ilerler ve bu da sorgu performansını etkileyebilir.
+
+Olası değerler:
+
+-   Herhangi bir pozitif tamsayı.
+
+Varsayılan değer: 16.
 
 [Orijinal makale](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

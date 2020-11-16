@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTWithAlias.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 
 
 namespace DB
@@ -23,6 +24,10 @@ public:
 
     ASTPtr clone() const override;
 
+    void updateTreeHashImpl(SipHash & hash_state) const override;
+
+    ASTSelectWithUnionQuery * tryGetQueryArgument() const;
+
 protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
@@ -32,7 +37,7 @@ protected:
 template <typename... Args>
 std::shared_ptr<ASTFunction> makeASTFunction(const String & name, Args &&... args)
 {
-    const auto function = std::make_shared<ASTFunction>();
+    auto function = std::make_shared<ASTFunction>();
 
     function->name = name;
     function->arguments = std::make_shared<ASTExpressionList>();

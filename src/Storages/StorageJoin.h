@@ -3,6 +3,7 @@
 #include <ext/shared_ptr_helper.h>
 
 #include <Storages/StorageSet.h>
+#include <Storages/JoinSettings.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 
@@ -27,7 +28,7 @@ class StorageJoin final : public ext::shared_ptr_helper<StorageJoin>, public Sto
 public:
     String getName() const override { return "Join"; }
 
-    void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
+    void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &) override;
 
     /// Access the innards.
     HashJoinPtr & getJoin() { return join; }
@@ -36,13 +37,17 @@ public:
     /// Verify that the data structure is suitable for implementing this type of JOIN.
     void assertCompatible(ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_) const;
 
-    Pipes read(
+    Pipe read(
         const Names & column_names,
-        const SelectQueryInfo & query_info,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
+
+    std::optional<UInt64> totalRows() const override;
+    std::optional<UInt64> totalBytes() const override;
 
 private:
     Block sample_block;
@@ -71,7 +76,8 @@ protected:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         bool overwrite,
-        const Context & context_);
+        const Context & context_,
+        bool persistent_);
 };
 
 }

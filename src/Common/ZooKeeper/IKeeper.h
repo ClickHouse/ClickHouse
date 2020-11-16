@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/Exception.h>
 
 #include <vector>
@@ -53,6 +53,57 @@ struct Stat
     int64_t pzxid;
 };
 
+enum class Error : int32_t
+{
+    ZOK = 0,
+
+    /** System and server-side errors.
+        * This is never thrown by the server, it shouldn't be used other than
+        * to indicate a range. Specifically error codes greater than this
+        * value, but lesser than ZAPIERROR, are system errors.
+        */
+    ZSYSTEMERROR = -1,
+
+    ZRUNTIMEINCONSISTENCY = -2, /// A runtime inconsistency was found
+    ZDATAINCONSISTENCY = -3,    /// A data inconsistency was found
+    ZCONNECTIONLOSS = -4,       /// Connection to the server has been lost
+    ZMARSHALLINGERROR = -5,     /// Error while marshalling or unmarshalling data
+    ZUNIMPLEMENTED = -6,        /// Operation is unimplemented
+    ZOPERATIONTIMEOUT = -7,     /// Operation timeout
+    ZBADARGUMENTS = -8,         /// Invalid arguments
+    ZINVALIDSTATE = -9,         /// Invliad zhandle state
+
+    /** API errors.
+        * This is never thrown by the server, it shouldn't be used other than
+        * to indicate a range. Specifically error codes greater than this
+        * value are API errors.
+        */
+    ZAPIERROR = -100,
+
+    ZNONODE = -101,                     /// Node does not exist
+    ZNOAUTH = -102,                     /// Not authenticated
+    ZBADVERSION = -103,                 /// Version conflict
+    ZNOCHILDRENFOREPHEMERALS = -108,    /// Ephemeral nodes may not have children
+    ZNODEEXISTS = -110,                 /// The node already exists
+    ZNOTEMPTY = -111,                   /// The node has children
+    ZSESSIONEXPIRED = -112,             /// The session has been expired by the server
+    ZINVALIDCALLBACK = -113,            /// Invalid callback specified
+    ZINVALIDACL = -114,                 /// Invalid ACL specified
+    ZAUTHFAILED = -115,                 /// Client authentication failed
+    ZCLOSING = -116,                    /// ZooKeeper is closing
+    ZNOTHING = -117,                    /// (not error) no server responses to process
+    ZSESSIONMOVED = -118                /// Session moved to another server, so operation is ignored
+};
+
+/// Network errors and similar. You should reinitialize ZooKeeper session in case of these errors
+bool isHardwareError(Error code);
+
+/// Valid errors sent from the server about database state (like "no node"). Logical and authentication errors (like "bad arguments") are not here.
+bool isUserError(Error code);
+
+const char * errorMessage(Error code);
+
+
 struct Request;
 using RequestPtr = std::shared_ptr<Request>;
 using Requests = std::vector<RequestPtr>;
@@ -74,7 +125,7 @@ using ResponseCallback = std::function<void(const Response &)>;
 
 struct Response
 {
-    int32_t error = 0;
+    Error error = Error::ZOK;
     Response() = default;
     Response(const Response &) = default;
     Response & operator=(const Response &) = default;
@@ -225,56 +276,6 @@ using CheckCallback = std::function<void(const CheckResponse &)>;
 using MultiCallback = std::function<void(const MultiResponse &)>;
 
 
-enum Error
-{
-    ZOK = 0,
-
-    /** System and server-side errors.
-        * This is never thrown by the server, it shouldn't be used other than
-        * to indicate a range. Specifically error codes greater than this
-        * value, but lesser than ZAPIERROR, are system errors.
-        */
-    ZSYSTEMERROR = -1,
-
-    ZRUNTIMEINCONSISTENCY = -2, /// A runtime inconsistency was found
-    ZDATAINCONSISTENCY = -3,    /// A data inconsistency was found
-    ZCONNECTIONLOSS = -4,       /// Connection to the server has been lost
-    ZMARSHALLINGERROR = -5,     /// Error while marshalling or unmarshalling data
-    ZUNIMPLEMENTED = -6,        /// Operation is unimplemented
-    ZOPERATIONTIMEOUT = -7,     /// Operation timeout
-    ZBADARGUMENTS = -8,         /// Invalid arguments
-    ZINVALIDSTATE = -9,         /// Invliad zhandle state
-
-    /** API errors.
-        * This is never thrown by the server, it shouldn't be used other than
-        * to indicate a range. Specifically error codes greater than this
-        * value are API errors.
-        */
-    ZAPIERROR = -100,
-
-    ZNONODE = -101,                     /// Node does not exist
-    ZNOAUTH = -102,                     /// Not authenticated
-    ZBADVERSION = -103,                 /// Version conflict
-    ZNOCHILDRENFOREPHEMERALS = -108,    /// Ephemeral nodes may not have children
-    ZNODEEXISTS = -110,                 /// The node already exists
-    ZNOTEMPTY = -111,                   /// The node has children
-    ZSESSIONEXPIRED = -112,             /// The session has been expired by the server
-    ZINVALIDCALLBACK = -113,            /// Invalid callback specified
-    ZINVALIDACL = -114,                 /// Invalid ACL specified
-    ZAUTHFAILED = -115,                 /// Client authentication failed
-    ZCLOSING = -116,                    /// ZooKeeper is closing
-    ZNOTHING = -117,                    /// (not error) no server responses to process
-    ZSESSIONMOVED = -118                /// Session moved to another server, so operation is ignored
-};
-
-/// Network errors and similar. You should reinitialize ZooKeeper session in case of these errors
-bool isHardwareError(int32_t code);
-
-/// Valid errors sent from the server about database state (like "no node"). Logical and authentication errors (like "bad arguments") are not here.
-bool isUserError(int32_t code);
-
-const char * errorMessage(int32_t code);
-
 /// For watches.
 enum State
 {
@@ -301,19 +302,19 @@ class Exception : public DB::Exception
 {
 private:
     /// Delegate constructor, used to minimize repetition; last parameter used for overload resolution.
-    Exception(const std::string & msg, const int32_t code_, int);
+    Exception(const std::string & msg, const Error code_, int);
 
 public:
-    explicit Exception(const int32_t code_);
-    Exception(const std::string & msg, const int32_t code_);
-    Exception(const int32_t code_, const std::string & path);
+    explicit Exception(const Error code_);
+    Exception(const std::string & msg, const Error code_);
+    Exception(const Error code_, const std::string & path);
     Exception(const Exception & exc);
 
     const char * name() const throw() override { return "Coordination::Exception"; }
     const char * className() const throw() override { return "Coordination::Exception"; }
     Exception * clone() const override { return new Exception(*this); }
 
-    const int32_t code;
+    const Error code;
 };
 
 

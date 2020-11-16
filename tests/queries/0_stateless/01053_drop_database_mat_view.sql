@@ -1,5 +1,5 @@
 DROP DATABASE IF EXISTS some_tests;
-CREATE DATABASE some_tests;
+CREATE DATABASE some_tests ENGINE=Ordinary; -- Different inner table name with Atomic
 
 create table some_tests.my_table ENGINE = MergeTree(day, (day), 8192) as select today() as day, 'mystring' as str;
 show tables from some_tests;

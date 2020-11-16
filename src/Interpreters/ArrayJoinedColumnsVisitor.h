@@ -98,33 +98,33 @@ private:
         if (!IdentifierSemantic::getColumnName(node))
             return;
 
-        auto splitted = Nested::splitName(node.name);  /// ParsedParams, Key1
+        auto split = Nested::splitName(node.name());  /// ParsedParams, Key1
 
-        if (array_join_alias_to_name.count(node.name))
+        if (array_join_alias_to_name.count(node.name()))
         {
             /// ARRAY JOIN was written with an array column. Example: SELECT K1 FROM ... ARRAY JOIN ParsedParams.Key1 AS K1
-            array_join_result_to_source[node.name] = array_join_alias_to_name[node.name];    /// K1 -> ParsedParams.Key1
+            array_join_result_to_source[node.name()] = array_join_alias_to_name[node.name()];    /// K1 -> ParsedParams.Key1
         }
-        else if (array_join_alias_to_name.count(splitted.first) && !splitted.second.empty())
+        else if (array_join_alias_to_name.count(split.first) && !split.second.empty())
         {
             /// ARRAY JOIN was written with a nested table. Example: SELECT PP.KEY1 FROM ... ARRAY JOIN ParsedParams AS PP
-            array_join_result_to_source[node.name]    /// PP.Key1 -> ParsedParams.Key1
-                = Nested::concatenateName(array_join_alias_to_name[splitted.first], splitted.second);
+            array_join_result_to_source[node.name()]    /// PP.Key1 -> ParsedParams.Key1
+                = Nested::concatenateName(array_join_alias_to_name[split.first], split.second);
         }
-        else if (array_join_name_to_alias.count(node.name))
+        else if (array_join_name_to_alias.count(node.name()))
         {
             /** Example: SELECT ParsedParams.Key1 FROM ... ARRAY JOIN ParsedParams.Key1 AS PP.Key1.
             * That is, the query uses the original array, replicated by itself.
             */
             array_join_result_to_source[    /// PP.Key1 -> ParsedParams.Key1
-                array_join_name_to_alias[node.name]] = node.name;
+                array_join_name_to_alias[node.name()]] = node.name();
         }
-        else if (array_join_name_to_alias.count(splitted.first) && !splitted.second.empty())
+        else if (array_join_name_to_alias.count(split.first) && !split.second.empty())
         {
             /** Example: SELECT ParsedParams.Key1 FROM ... ARRAY JOIN ParsedParams AS PP.
             */
             array_join_result_to_source[    /// PP.Key1 -> ParsedParams.Key1
-                Nested::concatenateName(array_join_name_to_alias[splitted.first], splitted.second)] = node.name;
+                Nested::concatenateName(array_join_name_to_alias[split.first], split.second)] = node.name();
         }
     }
 };

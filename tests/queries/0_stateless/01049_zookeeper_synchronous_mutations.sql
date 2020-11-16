@@ -3,9 +3,9 @@ DROP TABLE IF EXISTS table_for_synchronous_mutations2;
 
 SELECT 'Replicated';
 
-CREATE TABLE table_for_synchronous_mutations1(k UInt32, v1 UInt64) ENGINE ReplicatedMergeTree('/clickhouse/tables/table_for_synchronous_mutations', '1') ORDER BY k;
+CREATE TABLE table_for_synchronous_mutations1(k UInt32, v1 UInt64) ENGINE ReplicatedMergeTree('/clickhouse/tables/test_01049/table_for_synchronous_mutations', '1') ORDER BY k;
 
-CREATE TABLE table_for_synchronous_mutations2(k UInt32, v1 UInt64) ENGINE ReplicatedMergeTree('/clickhouse/tables/table_for_synchronous_mutations', '2') ORDER BY k;
+CREATE TABLE table_for_synchronous_mutations2(k UInt32, v1 UInt64) ENGINE ReplicatedMergeTree('/clickhouse/tables/test_01049/table_for_synchronous_mutations', '2') ORDER BY k;
 
 INSERT INTO table_for_synchronous_mutations1 select number, number from numbers(100000);
 

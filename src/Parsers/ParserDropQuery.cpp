@@ -11,7 +11,7 @@ namespace DB
 namespace
 {
 
-bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, bool optional_table_keyword = false)
 {
     ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_table("TABLE");
@@ -21,6 +21,8 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
     ParserToken s_dot(TokenType::Dot);
     ParserKeyword s_if_exists("IF EXISTS");
     ParserIdentifier name_p;
+    ParserKeyword s_no_delay("NO DELAY");
+    ParserKeyword s_sync("SYNC");
 
     ASTPtr database;
     ASTPtr table;
@@ -29,6 +31,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
     bool temporary = false;
     bool is_dictionary = false;
     bool is_view = false;
+    bool no_delay = false;
 
     if (s_database.ignore(pos, expected))
     {
@@ -43,6 +46,9 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
             if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
                 return false;
         }
+
+        if (s_no_delay.ignore(pos, expected) || s_sync.ignore(pos, expected))
+            no_delay = true;
     }
     else
     {
@@ -53,7 +59,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
         else if (s_temporary.ignore(pos, expected))
             temporary = true;
 
-        if (!is_view && !is_dictionary && !s_table.ignore(pos, expected))
+        if (!is_view && !is_dictionary && (!s_table.ignore(pos, expected) && !optional_table_keyword))
         {
             return false;
         }
@@ -76,6 +82,9 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
             if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
                 return false;
         }
+
+        if (s_no_delay.ignore(pos, expected) || s_sync.ignore(pos, expected))
+            no_delay = true;
     }
 
     auto query = std::make_shared<ASTDropQuery>();
@@ -86,6 +95,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
     query->temporary = temporary;
     query->is_dictionary = is_dictionary;
     query->is_view = is_view;
+    query->no_delay = no_delay;
 
     tryGetIdentifierNameInto(database, query->database);
     tryGetIdentifierNameInto(table, query->table);
@@ -108,7 +118,7 @@ bool parseDetachQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 
 bool parseTruncateQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (parseDropQuery(pos, node, expected))
+    if (parseDropQuery(pos, node, expected, true))
     {
         auto * drop_query = node->as<ASTDropQuery>();
         drop_query->kind = ASTDropQuery::Kind::Truncate;

@@ -13,6 +13,9 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+
 class AggregateFunctionCombinatorState final : public IAggregateFunctionCombinator
 {
 public:
@@ -24,11 +27,16 @@ public:
     }
 
     AggregateFunctionPtr transformAggregateFunction(
-        const AggregateFunctionPtr & nested_function, const DataTypes & arguments, const Array & params) const override
+        const AggregateFunctionPtr & nested_function,
+        const AggregateFunctionProperties &,
+        const DataTypes & arguments,
+        const Array & params) const override
     {
         return std::make_shared<AggregateFunctionState>(nested_function, arguments, params);
     }
 };
+
+}
 
 void registerAggregateFunctionCombinatorState(AggregateFunctionCombinatorFactory & factory)
 {

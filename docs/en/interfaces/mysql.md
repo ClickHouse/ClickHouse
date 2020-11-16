@@ -5,7 +5,7 @@ toc_title: MySQL Interface
 
 # MySQL Interface {#mysql-interface}
 
-ClickHouse supports MySQL wire protocol. It can be enabled by [mysql\_port](../operations/server_configuration_parameters/settings.md#server_configuration_parameters-mysql_port) setting in configuration file:
+ClickHouse supports MySQL wire protocol. It can be enabled by [mysql_port](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-mysql_port) setting in configuration file:
 
 ``` xml
 <mysql_port>9004</mysql_port>
@@ -35,8 +35,8 @@ Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
 mysql>
 ```
 
-For compatibility with all MySQL clients, it is recommended to specify user password with [double SHA1](../operations/settings/settings_users.md#password_double_sha1_hex) in configuration file.
-If user password is specified using [SHA256](../operations/settings/settings_users.md#password_sha256_hex), some clients won’t be able to authenticate (mysqljs and old versions of command-line tool mysql).
+For compatibility with all MySQL clients, it is recommended to specify user password with [double SHA1](../operations/settings/settings-users.md#password_double_sha1_hex) in configuration file.
+If user password is specified using [SHA256](../operations/settings/settings-users.md#password_sha256_hex), some clients won’t be able to authenticate (mysqljs and old versions of command-line tool mysql).
 
 Restrictions:
 

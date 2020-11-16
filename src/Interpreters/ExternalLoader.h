@@ -3,7 +3,7 @@
 #include <chrono>
 #include <functional>
 #include <unordered_map>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Interpreters/IExternalLoadable.h>
 #include <Interpreters/IExternalLoaderConfigRepository.h>
 #include <common/logger_useful.h>
@@ -27,6 +27,7 @@ struct ExternalLoaderConfigSettings
     std::string external_config;
     std::string external_name;
     std::string external_database;
+    std::string external_uuid;
 };
 
 /** Interface for manage user-defined objects.
@@ -53,17 +54,25 @@ public:
     using Duration = std::chrono::milliseconds;
     using TimePoint = std::chrono::system_clock::time_point;
 
+    struct ObjectConfig
+    {
+        Poco::AutoPtr<Poco::Util::AbstractConfiguration> config;
+        String key_in_config;
+        String repository_name;
+        bool from_temp_repository = false;
+        String path;
+    };
+
     struct LoadResult
     {
         Status status = Status::NOT_EXIST;
         String name;
         LoadablePtr object;
-        String origin;
         TimePoint loading_start_time;
         TimePoint last_successful_update_time;
         Duration loading_duration;
         std::exception_ptr exception;
-        std::string repository_name;
+        std::shared_ptr<const ObjectConfig> config;
     };
 
     using LoadResults = std::vector<LoadResult>;
@@ -74,11 +83,11 @@ public:
     template <typename T>
     static constexpr bool is_vector_load_result_type = std::is_same_v<T, LoadResults> || std::is_same_v<T, Loadables>;
 
-    ExternalLoader(const String & type_name_, Logger * log);
+    ExternalLoader(const String & type_name_, Poco::Logger * log);
     virtual ~ExternalLoader();
 
     /// Adds a repository which will be used to read configurations from.
-    ext::scope_guard addConfigRepository(std::unique_ptr<IExternalLoaderConfigRepository> config_repository);
+    ext::scope_guard addConfigRepository(std::unique_ptr<IExternalLoaderConfigRepository> config_repository) const;
 
     void setConfigSettings(const ExternalLoaderConfigSettings & settings_);
 
@@ -99,26 +108,32 @@ public:
     /// Returns the result of loading the object.
     /// The function doesn't load anything, it just returns the current load result as is.
     template <typename ReturnType = LoadResult, typename = std::enable_if_t<is_scalar_load_result_type<ReturnType>, void>>
-    ReturnType getCurrentLoadResult(const String & name) const;
+    ReturnType getLoadResult(const String & name) const;
 
     using FilterByNameFunction = std::function<bool(const String &)>;
 
     /// Returns all the load results as a map.
     /// The function doesn't load anything, it just returns the current load results as is.
     template <typename ReturnType = LoadResults, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>>
-    ReturnType getCurrentLoadResults() const { return getCurrentLoadResults<ReturnType>(alwaysTrue); }
+    ReturnType getLoadResults() const { return getLoadResults<ReturnType>(FilterByNameFunction{}); }
 
     template <typename ReturnType = LoadResults, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>>
-    ReturnType getCurrentLoadResults(const FilterByNameFunction & filter) const;
+    ReturnType getLoadResults(const FilterByNameFunction & filter) const;
 
     /// Returns all loaded objects as a map.
     /// The function doesn't load anything, it just returns the current load results as is.
-    Loadables getCurrentlyLoadedObjects() const;
-    Loadables getCurrentlyLoadedObjects(const FilterByNameFunction & filter) const;
+    Loadables getLoadedObjects() const;
+    Loadables getLoadedObjects(const FilterByNameFunction & filter) const;
 
     /// Returns true if any object was loaded.
-    bool hasCurrentlyLoadedObjects() const;
-    size_t getNumberOfCurrentlyLoadedObjects() const;
+    bool hasLoadedObjects() const;
+    size_t getNumberOfLoadedObjects() const;
+
+    /// Returns true if there is no object.
+    bool hasObjects() const { return getNumberOfObjects() == 0; }
+
+    /// Returns number of objects.
+    size_t getNumberOfObjects() const;
 
     static constexpr Duration NO_WAIT = Duration::zero();
     static constexpr Duration WAIT = Duration::max();
@@ -139,7 +154,7 @@ public:
     /// The function does nothing for already loaded objects, it just returns them.
     /// The function doesn't throw an exception if it's failed to load something.
     template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>>
-    ReturnType tryLoadAll(Duration timeout = WAIT) const { return tryLoad<ReturnType>(alwaysTrue, timeout); }
+    ReturnType tryLoadAll(Duration timeout = WAIT) const { return tryLoad<ReturnType>(FilterByNameFunction{}, timeout); }
 
     /// Loads a specified object.
     /// The function does nothing if it's already loaded.
@@ -157,7 +172,7 @@ public:
     /// The function does nothing for already loaded objects, it just returns them.
     /// The function throws an exception if it's failed to load something.
     template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>>
-    ReturnType loadAll() const { return load<ReturnType>(alwaysTrue); }
+    ReturnType loadAll() const { return load<ReturnType>(FilterByNameFunction{}); }
 
     /// Loads or reloads a specified object.
     /// The function reloads the object if it's already loaded.
@@ -174,7 +189,7 @@ public:
     /// Load or reloads all objects. Not recommended to use.
     /// The function throws an exception if it's failed to load or reload something.
     template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>>
-    ReturnType loadOrReloadAll() const { return loadOrReload<ReturnType>(alwaysTrue); }
+    ReturnType loadOrReloadAll() const { return loadOrReload<ReturnType>(FilterByNameFunction{}); }
 
     /// Reloads objects by filter which were tried to load before (successfully or not).
     /// The function throws an exception if it's failed to load or reload something.
@@ -197,10 +212,8 @@ private:
     void checkLoaded(const LoadResult & result, bool check_no_errors) const;
     void checkLoaded(const LoadResults & results, bool check_no_errors) const;
 
-    static bool alwaysTrue(const String &) { return true; }
     Strings getAllTriedToLoadNames() const;
 
-    struct ObjectConfig;
     LoadablePtr createObject(const String & name, const ObjectConfig & config, const LoadablePtr & previous_version) const;
 
     class LoadablesConfigReader;

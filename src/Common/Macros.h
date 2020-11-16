@@ -1,7 +1,8 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Core/Names.h>
+#include <Interpreters/StorageID.h>
 
 #include <map>
 
@@ -12,6 +13,7 @@ namespace Poco
     {
         class AbstractConfiguration;
     }
+    class Logger;
 }
 
 
@@ -24,15 +26,33 @@ class Macros
 {
 public:
     Macros() = default;
-    Macros(const Poco::Util::AbstractConfiguration & config, const String & key);
+    Macros(const Poco::Util::AbstractConfiguration & config, const String & key, Poco::Logger * log = nullptr);
+
+    struct MacroExpansionInfo
+    {
+        /// Settings
+        StorageID table_id = StorageID::createEmpty();
+        bool ignore_unknown = false;
+        bool expand_special_macros_only = false;
+
+        /// Information about macro expansion
+        size_t level = 0;
+        bool expanded_database = false;
+        bool expanded_table = false;
+        bool expanded_uuid = false;
+        bool has_unknown = false;
+    };
 
     /** Replace the substring of the form {macro_name} with the value for macro_name, obtained from the config file.
       * If {database} and {table} macros aren`t defined explicitly, expand them as database_name and table_name respectively.
       * level - the level of recursion.
       */
-    String expand(const String & s, size_t level = 0, const String & database_name = "", const String & table_name = "") const;
+    String expand(const String & s,
+                  MacroExpansionInfo & info) const;
 
-    String expand(const String & s, const String & database_name, const String & table_name) const;
+    String expand(const String & s) const;
+
+    String expand(const String & s, const StorageID & table_id, bool allow_uuid) const;
 
 
     /** Apply expand for the list.
@@ -46,6 +66,7 @@ public:
 
 private:
     MacroMap macros;
+    bool enable_special_macros = true;
 };
 
 

@@ -1,15 +1,4 @@
 <test>
-    <stop_conditions>
-        <all_of>
-            <iterations>10</iterations>
-            <min_time_not_changing_for_ms>100</min_time_not_changing_for_ms>
-        </all_of>
-        <any_of>
-            <iterations>100</iterations>
-            <total_time_ms>1000</total_time_ms>
-        </any_of>
-    </stop_conditions>
-
     <settings>
         <max_memory_usage>30000000000</max_memory_usage>
     </settings>

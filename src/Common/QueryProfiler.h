@@ -1,12 +1,11 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <signal.h>
 #include <time.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
-#    include <common/config_common.h>
 #endif
 
 
@@ -26,7 +25,7 @@ namespace DB
   *  2. collect thread's current stack trace
   *  3. write collected stack trace to trace_pipe for TraceCollector
   *
-  * Desctructor tries to unset timer and restore previous signal handler.
+  * Destructor tries to unset timer and restore previous signal handler.
   * Note that signal handler implementation is defined by template parameter. See QueryProfilerReal and QueryProfilerCpu.
   */
 template <typename ProfilerImpl>

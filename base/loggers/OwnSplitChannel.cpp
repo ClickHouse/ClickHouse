@@ -20,7 +20,7 @@ void OwnSplitChannel::log(const Poco::Message & msg)
     if (channels.empty() && (logs_queue == nullptr || msg.getPriority() > logs_queue->max_priority))
         return;
 
-    if (auto masker = SensitiveDataMasker::getInstance())
+    if (auto * masker = SensitiveDataMasker::getInstance())
     {
         auto message_text = msg.getText();
         auto matches = masker->wipeSensitiveData(message_text);
@@ -69,7 +69,6 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
         logs_queue->emplace(std::move(columns));
     }
 
-
     /// Also log to system.text_log table, if message is not too noisy
     auto text_log_max_priority_loaded = text_log_max_priority.load(std::memory_order_relaxed);
     if (text_log_max_priority_loaded && msg.getPriority() <= text_log_max_priority_loaded)
@@ -77,6 +76,7 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
         TextLogElement elem;
 
         elem.event_time = msg_ext.time_seconds;
+        elem.event_time_microseconds = msg_ext.time_in_microseconds;
         elem.microseconds = msg_ext.time_microseconds;
 
         elem.thread_name = getThreadName();
@@ -92,10 +92,13 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
             elem.source_file = msg.getSourceFile();
 
         elem.source_line = msg.getSourceLine();
-
-        std::lock_guard<std::mutex> lock(text_log_mutex);
-        if (auto log = text_log.lock())
-            log->add(elem);
+        std::shared_ptr<TextLog> text_log_locked{};
+        {
+            std::lock_guard<std::mutex> lock(text_log_mutex);
+            text_log_locked = text_log.lock();
+        }
+        if (text_log_locked)
+            text_log_locked->add(elem);
     }
 }
 

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #-*- coding: utf-8 -*-
 import subprocess
 import os
@@ -11,6 +11,7 @@ SCRIPT_PATH = os.path.realpath(__file__)
 IMAGE_MAP = {
     "deb": "yandex/clickhouse-deb-builder",
     "binary": "yandex/clickhouse-binary-builder",
+    "unbundled": "yandex/clickhouse-unbundled-builder"
 }
 
 def check_image_exists_locally(image_name):
@@ -31,7 +32,7 @@ def pull_image(image_name):
 def build_image(image_name, filepath):
     subprocess.check_call("docker build --network=host -t {} -f {} .".format(image_name, filepath), shell=True)
 
-def run_docker_image_with_env(image_name, output, env_variables, ch_root, ccache_dir):
+def run_docker_image_with_env(image_name, output, env_variables, ch_root, ccache_dir, docker_image_version):
     env_part = " -e ".join(env_variables)
     if env_part:
         env_part = " -e " + env_part
@@ -46,7 +47,7 @@ def run_docker_image_with_env(image_name, output, env_variables, ch_root, ccache
         ch_root=ch_root,
         ccache_dir=ccache_dir,
         env=env_part,
-        img_name=image_name,
+        img_name=image_name + ":" + docker_image_version,
         interactive=interactive
     )
 
@@ -54,7 +55,7 @@ def run_docker_image_with_env(image_name, output, env_variables, ch_root, ccache
 
     subprocess.check_call(cmd, shell=True)
 
-def parse_env_variables(build_type, compiler, sanitizer, package_type, image_type, cache, distcc_hosts, unbundled, split_binary, clang_tidy, version, author, official, alien_pkgs, with_coverage):
+def parse_env_variables(build_type, compiler, sanitizer, package_type, image_type, cache, distcc_hosts, unbundled, split_binary, clang_tidy, version, author, official, alien_pkgs, with_coverage, with_binaries):
     CLANG_PREFIX = "clang"
     DARWIN_SUFFIX = "-darwin"
     ARM_SUFFIX = "-aarch64"
@@ -92,7 +93,7 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
 
     cxx = cc.replace('gcc', 'g++').replace('clang', 'clang++')
 
-    if image_type == "deb":
+    if image_type == "deb" or image_type == "unbundled":
         result.append("DEB_CC={}".format(cc))
         result.append("DEB_CXX={}".format(cxx))
     elif image_type == "binary":
@@ -104,6 +105,7 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
     # Create combined output archive for split build and for performance tests.
     if package_type == "performance":
         result.append("COMBINED_OUTPUT=performance")
+        cmake_flags.append("-DENABLE_TESTS=0")
     elif split_binary:
         result.append("COMBINED_OUTPUT=shared_build")
 
@@ -120,6 +122,7 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
         result.append("CCACHE_BASEDIR=/build")
         result.append("CCACHE_NOHASHDIR=true")
         result.append("CCACHE_COMPILERCHECK=content")
+        result.append("CCACHE_MAXSIZE=15G")
         # result.append("CCACHE_UMASK=777")
 
     if distcc_hosts:
@@ -131,15 +134,25 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
     if alien_pkgs:
         result.append("ALIEN_PKGS='" + ' '.join(['--' + pkg for pkg in alien_pkgs]) + "'")
 
+    if with_binaries == "programs":
+        result.append('BINARY_OUTPUT=programs')
+    elif with_binaries == "tests":
+        result.append('ENABLE_TESTS=1')
+        result.append('BINARY_OUTPUT=tests')
+        cmake_flags.append('-DENABLE_TESTS=1')
+        cmake_flags.append('-DUSE_GTEST=1')
+
     if unbundled:
         # TODO: fix build with ENABLE_RDKAFKA
-        cmake_flags.append('-DUNBUNDLED=1 -DENABLE_MYSQL=0 -DENABLE_POCO_ODBC=0 -DENABLE_ODBC=0 -DENABLE_REPLXX=0 -DENABLE_RDKAFKA=0')
+        cmake_flags.append('-DUNBUNDLED=1 -DUSE_INTERNAL_RDKAFKA_LIBRARY=1 -DENABLE_ARROW=0 -DENABLE_ORC=0 -DENABLE_PARQUET=0')
 
     if split_binary:
         cmake_flags.append('-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1')
 
     if clang_tidy:
         cmake_flags.append('-DENABLE_CLANG_TIDY=1')
+        # Don't stop on first error to find more clang-tidy errors in one run.
+        result.append('NINJA_FLAGS=-k0')
 
     if with_coverage:
         cmake_flags.append('-DWITH_COVERAGE=1')
@@ -162,10 +175,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="ClickHouse building script using prebuilt Docker image")
     # 'performance' creates a combined .tgz with server and configs to be used for performance test.
     parser.add_argument("--package-type", choices=['deb', 'binary', 'performance'], required=True)
-    parser.add_argument("--clickhouse-repo-path", default="../../")
+    parser.add_argument("--clickhouse-repo-path", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, os.pardir))
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--build-type", choices=("debug", ""), default="")
-    parser.add_argument("--compiler", choices=("clang-8", "clang-8-darwin", "clang-9-aarch64", "clang-9-freebsd", "gcc-8", "gcc-9", "clang-9"), default="gcc-8")
+    parser.add_argument("--compiler", choices=("clang-10", "clang-10-darwin", "clang-10-aarch64", "clang-10-freebsd",
+                                               "clang-11", "clang-11-darwin", "clang-11-aarch64", "clang-11-freebsd",
+                                               "gcc-9", "gcc-10"), default="gcc-9")
     parser.add_argument("--sanitizer", choices=("address", "thread", "memory", "undefined", ""), default="")
     parser.add_argument("--unbundled", action="store_true")
     parser.add_argument("--split-binary", action="store_true")
@@ -179,12 +194,14 @@ if __name__ == "__main__":
     parser.add_argument("--official", action="store_true")
     parser.add_argument("--alien-pkgs", nargs='+', default=[])
     parser.add_argument("--with-coverage", action="store_true")
+    parser.add_argument("--with-binaries", choices=("programs", "tests", ""), default="")
+    parser.add_argument("--docker-image-version", default="latest")
 
     args = parser.parse_args()
     if not os.path.isabs(args.output_dir):
         args.output_dir = os.path.abspath(os.path.join(os.getcwd(), args.output_dir))
 
-    image_type = 'binary' if args.package_type == 'performance' else args.package_type
+    image_type = 'binary' if args.package_type == 'performance' else 'unbundled' if args.unbundled else args.package_type
     image_name = IMAGE_MAP[image_type]
 
     if not os.path.isabs(args.clickhouse_repo_path):
@@ -195,13 +212,21 @@ if __name__ == "__main__":
     if args.alien_pkgs and not image_type == "deb":
         raise Exception("Can add alien packages only in deb build")
 
+    if args.with_binaries != "" and not image_type == "deb":
+        raise Exception("Can add additional binaries only in deb build")
+
+    if args.with_binaries != "" and image_type == "deb":
+        logging.info("Should place {} to output".format(args.with_binaries))
+
     dockerfile = os.path.join(ch_root, "docker/packager", image_type, "Dockerfile")
+    image_with_version = image_name + ":" + args.docker_image_version
     if image_type != "freebsd" and not check_image_exists_locally(image_name) or args.force_build_image:
-        if not pull_image(image_name) or args.force_build_image:
-            build_image(image_name, dockerfile)
+        if not pull_image(image_with_version) or args.force_build_image:
+            build_image(image_with_version, dockerfile)
     env_prepared = parse_env_variables(
         args.build_type, args.compiler, args.sanitizer, args.package_type, image_type,
         args.cache, args.distcc_hosts, args.unbundled, args.split_binary, args.clang_tidy,
-        args.version, args.author, args.official, args.alien_pkgs, args.with_coverage)
-    run_docker_image_with_env(image_name, args.output_dir, env_prepared, ch_root, args.ccache_dir)
+        args.version, args.author, args.official, args.alien_pkgs, args.with_coverage, args.with_binaries)
+
+    run_docker_image_with_env(image_name, args.output_dir, env_prepared, ch_root, args.ccache_dir, args.docker_image_version)
     logging.info("Output placed into {}".format(args.output_dir))

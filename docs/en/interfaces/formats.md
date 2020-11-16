@@ -10,40 +10,53 @@ results of a `SELECT`, and to perform `INSERT`s into a file-backed table.
 
 The supported formats are:
 
-| Format                                                          | Input | Output |
-|-----------------------------------------------------------------|-------|--------|
-| [TabSeparated](#tabseparated)                                   | ✔     | ✔      |
-| [TabSeparatedRaw](#tabseparatedraw)                             | ✗     | ✔      |
-| [TabSeparatedWithNames](#tabseparatedwithnames)                 | ✔     | ✔      |
-| [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes) | ✔     | ✔      |
-| [Template](#format-template)                                    | ✔     | ✔      |
-| [TemplateIgnoreSpaces](#templateignorespaces)                   | ✔     | ✗      |
-| [CSV](#csv)                                                     | ✔     | ✔      |
-| [CSVWithNames](#csvwithnames)                                   | ✔     | ✔      |
-| [CustomSeparated](#format-customseparated)                      | ✔     | ✔      |
-| [Values](#data-format-values)                                   | ✔     | ✔      |
-| [Vertical](#vertical)                                           | ✗     | ✔      |
-| [VerticalRaw](#verticalraw)                                     | ✗     | ✔      |
-| [JSON](#json)                                                   | ✗     | ✔      |
-| [JSONCompact](#jsoncompact)                                     | ✗     | ✔      |
-| [JSONEachRow](#jsoneachrow)                                     | ✔     | ✔      |
-| [TSKV](#tskv)                                                   | ✔     | ✔      |
-| [Pretty](#pretty)                                               | ✗     | ✔      |
-| [PrettyCompact](#prettycompact)                                 | ✗     | ✔      |
-| [PrettyCompactMonoBlock](#prettycompactmonoblock)               | ✗     | ✔      |
-| [PrettyNoEscapes](#prettynoescapes)                             | ✗     | ✔      |
-| [PrettySpace](#prettyspace)                                     | ✗     | ✔      |
-| [Protobuf](#protobuf)                                           | ✔     | ✔      |
-| [Avro](#data-format-avro)                                       | ✔     | ✔      |
-| [AvroConfluent](#data-format-avro-confluent)                    | ✔     | ✗      |
-| [Parquet](#data-format-parquet)                                 | ✔     | ✔      |
-| [ORC](#data-format-orc)                                         | ✔     | ✗      |
-| [RowBinary](#rowbinary)                                         | ✔     | ✔      |
-| [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)       | ✔     | ✔      |
-| [Native](#native)                                               | ✔     | ✔      |
-| [Null](#null)                                                   | ✗     | ✔      |
-| [XML](#xml)                                                     | ✗     | ✔      |
-| [CapnProto](#capnproto)                                         | ✔     | ✗      |
+| Format                                                                                  | Input | Output |
+|-----------------------------------------------------------------------------------------|-------|--------|
+| [TabSeparated](#tabseparated)                                                           | ✔     | ✔      |
+| [TabSeparatedRaw](#tabseparatedraw)                                                     | ✔     | ✔      |
+| [TabSeparatedWithNames](#tabseparatedwithnames)                                         | ✔     | ✔      |
+| [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes)                         | ✔     | ✔      |
+| [Template](#format-template)                                                            | ✔     | ✔      |
+| [TemplateIgnoreSpaces](#templateignorespaces)                                           | ✔     | ✗      |
+| [CSV](#csv)                                                                             | ✔     | ✔      |
+| [CSVWithNames](#csvwithnames)                                                           | ✔     | ✔      |
+| [CustomSeparated](#format-customseparated)                                              | ✔     | ✔      |
+| [Values](#data-format-values)                                                           | ✔     | ✔      |
+| [Vertical](#vertical)                                                                   | ✗     | ✔      |
+| [VerticalRaw](#verticalraw)                                                             | ✗     | ✔      |
+| [JSON](#json)                                                                           | ✗     | ✔      |
+| [JSONString](#jsonstring)                                                               | ✗     | ✔      |
+| [JSONCompact](#jsoncompact)                                                             | ✗     | ✔      |
+| [JSONCompactString](#jsoncompactstring)                                                 | ✗     | ✔      |
+| [JSONEachRow](#jsoneachrow)                                                             | ✔     | ✔      |
+| [JSONEachRowWithProgress](#jsoneachrowwithprogress)                                     | ✗     | ✔      |
+| [JSONStringEachRow](#jsonstringeachrow)                                                 | ✔     | ✔      |
+| [JSONStringEachRowWithProgress](#jsonstringeachrowwithprogress)                         | ✗     | ✔      |
+| [JSONCompactEachRow](#jsoncompacteachrow)                                               | ✔     | ✔      |
+| [JSONCompactEachRowWithNamesAndTypes](#jsoncompacteachrowwithnamesandtypes)             | ✔     | ✔      |
+| [JSONCompactStringEachRow](#jsoncompactstringeachrow)                                   | ✔     | ✔      |
+| [JSONCompactStringEachRowWithNamesAndTypes](#jsoncompactstringeachrowwithnamesandtypes) | ✔     | ✔      |
+| [TSKV](#tskv)                                                                           | ✔     | ✔      |
+| [Pretty](#pretty)                                                                       | ✗     | ✔      |
+| [PrettyCompact](#prettycompact)                                                         | ✗     | ✔      |
+| [PrettyCompactMonoBlock](#prettycompactmonoblock)                                       | ✗     | ✔      |
+| [PrettyNoEscapes](#prettynoescapes)                                                     | ✗     | ✔      |
+| [PrettySpace](#prettyspace)                                                             | ✗     | ✔      |
+| [Protobuf](#protobuf)                                                                   | ✔     | ✔      |
+| [ProtobufSingle](#protobufsingle)                                                       | ✔     | ✔      |
+| [Avro](#data-format-avro)                                                               | ✔     | ✔      |
+| [AvroConfluent](#data-format-avro-confluent)                                            | ✔     | ✗      |
+| [Parquet](#data-format-parquet)                                                         | ✔     | ✔      |
+| [Arrow](#data-format-arrow)                                                             | ✔     | ✔      |
+| [ArrowStream](#data-format-arrow-stream)                                                | ✔     | ✔      |
+| [ORC](#data-format-orc)                                                                 | ✔     | ✗      |
+| [RowBinary](#rowbinary)                                                                 | ✔     | ✔      |
+| [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                               | ✔     | ✔      |
+| [Native](#native)                                                                       | ✔     | ✔      |
+| [Null](#null)                                                                           | ✗     | ✔      |
+| [XML](#xml)                                                                             | ✗     | ✔      |
+| [CapnProto](#capnproto)                                                                 | ✔     | ✗      |
+| [LineAsString](#lineasstring)                                                           | ✔     | ✗      |
 
 You can control some format processing parameters with the ClickHouse settings. For more information read the [Settings](../operations/settings/settings.md) section.
 
@@ -70,7 +83,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 2014-03-22      1031592
 2014-03-23      1046491
 
-0000-00-00      8873898
+1970-01-01      8873898
 
 2014-03-17      1031592
 2014-03-23      1406958
@@ -108,9 +121,9 @@ Only a small set of symbols are escaped. You can easily stumble onto a string va
 
 Arrays are written as a list of comma-separated values in square brackets. Number items in the array are formatted as normally. `Date` and `DateTime` types are written in single quotes. Strings are written in single quotes with the same escaping rules as above.
 
-[NULL](../sql_reference/syntax.md) is formatted as `\N`.
+[NULL](../sql-reference/syntax.md) is formatted as `\N`.
 
-Each element of [Nested](../sql_reference/data_types/nested_data_structures/nested.md) structures is represented as array.
+Each element of [Nested](../sql-reference/data-types/nested-data-structures/nested.md) structures is represented as array.
 
 For example:
 
@@ -141,7 +154,7 @@ SELECT * FROM nestedt FORMAT TSV
 ## TabSeparatedRaw {#tabseparatedraw}
 
 Differs from `TabSeparated` format in that the rows are written without escaping.
-This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
+When parsing with this format, tabs or linefeeds are not allowed in each field.
 
 This format is also available under the name `TSVRaw`.
 
@@ -199,7 +212,7 @@ Setting `format_template_resultset` specifies the path to file, which contains a
 -   `min` is the row with minimum values in `format_template_row` format (when extremes are set to 1)
 -   `max` is the row with maximum values in `format_template_row` format (when extremes are set to 1)
 -   `rows` is the total number of output rows
--   `rows_before_limit` is the minimal number of rows there would have been without LIMIT. Output only if the query contains LIMIT. If the query contains GROUP BY, rows\_before\_limit\_at\_least is the exact number of rows there would have been without a LIMIT.
+-   `rows_before_limit` is the minimal number of rows there would have been without LIMIT. Output only if the query contains LIMIT. If the query contains GROUP BY, rows_before_limit_at_least is the exact number of rows there would have been without a LIMIT.
 -   `time` is the request execution time in seconds
 -   `rows_read` is the number of rows has been read
 -   `bytes_read` is the number of bytes (uncompressed) has been read
@@ -330,7 +343,7 @@ SearchPhrase=curtain designs        count()=1064
 SearchPhrase=baku       count()=1000
 ```
 
-[NULL](../sql_reference/syntax.md) is formatted as `\N`.
+[NULL](../sql-reference/syntax.md) is formatted as `\N`.
 
 ``` sql
 SELECT * FROM t_null FORMAT TSKV
@@ -350,21 +363,21 @@ Parsing allows the presence of the additional field `tskv` without the equal sig
 
 Comma Separated Values format ([RFC](https://tools.ietf.org/html/rfc4180)).
 
-When formatting, rows are enclosed in double-quotes. A double quote inside a string is output as two double quotes in a row. There are no other rules for escaping characters. Date and date-time are enclosed in double-quotes. Numbers are output without quotes. Values are separated by a delimiter character, which is `,` by default. The delimiter character is defined in the setting [format\_csv\_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter). Rows are separated using the Unix line feed (LF). Arrays are serialized in CSV as follows: first, the array is serialized to a string as in TabSeparated format, and then the resulting string is output to CSV in double-quotes. Tuples in CSV format are serialized as separate columns (that is, their nesting in the tuple is lost).
+When formatting, rows are enclosed in double-quotes. A double quote inside a string is output as two double quotes in a row. There are no other rules for escaping characters. Date and date-time are enclosed in double-quotes. Numbers are output without quotes. Values are separated by a delimiter character, which is `,` by default. The delimiter character is defined in the setting [format_csv_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter). Rows are separated using the Unix line feed (LF). Arrays are serialized in CSV as follows: first, the array is serialized to a string as in TabSeparated format, and then the resulting string is output to CSV in double-quotes. Tuples in CSV format are serialized as separate columns (that is, their nesting in the tuple is lost).
 
 ``` bash
 $ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMAT CSV" < data.csv
 ```
 
-\*By default, the delimiter is `,`. See the [format\_csv\_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter) setting for more information.
+\*By default, the delimiter is `,`. See the [format_csv_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter) setting for more information.
 
 When parsing, all values can be parsed either with or without quotes. Both double and single quotes are supported. Rows can also be arranged without quotes. In this case, they are parsed up to the delimiter character or line feed (CR or LF). In violation of the RFC, when parsing rows without quotes, the leading and trailing spaces and tabs are ignored. For the line feed, Unix (LF), Windows (CR LF) and Mac OS Classic (CR LF) types are all supported.
 
 Empty unquoted input values are replaced with default values for the respective columns, if
-[input\_format\_defaults\_for\_omitted\_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)
+[input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)
 is enabled.
 
-`NULL` is formatted as `\N` or `NULL` or an empty unquoted string (see settings [input\_format\_csv\_unquoted\_null\_literal\_as\_null](../operations/settings/settings.md#settings-input_format_csv_unquoted_null_literal_as_null) and [input\_format\_defaults\_for\_omitted\_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)).
+`NULL` is formatted as `\N` or `NULL` or an empty unquoted string (see settings [input_format_csv_unquoted_null_literal_as_null](../operations/settings/settings.md#settings-input_format_csv_unquoted_null_literal_as_null) and [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)).
 
 The CSV format supports the output of totals and extremes the same way as `TabSeparated`.
 
@@ -390,71 +403,50 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
         "meta":
         [
                 {
-                        "name": "SearchPhrase",
+                        "name": "'hello'",
                         "type": "String"
                 },
                 {
-                        "name": "c",
+                        "name": "multiply(42, number)",
                         "type": "UInt64"
+                },
+                {
+                        "name": "range(5)",
+                        "type": "Array(UInt8)"
                 }
         ],
 
         "data":
         [
                 {
-                        "SearchPhrase": "",
-                        "c": "8267016"
+                        "'hello'": "hello",
+                        "multiply(42, number)": "0",
+                        "range(5)": [0,1,2,3,4]
                 },
                 {
-                        "SearchPhrase": "bathroom interior design",
-                        "c": "2166"
+                        "'hello'": "hello",
+                        "multiply(42, number)": "42",
+                        "range(5)": [0,1,2,3,4]
                 },
                 {
-                        "SearchPhrase": "yandex",
-                        "c": "1655"
-                },
-                {
-                        "SearchPhrase": "spring 2014 fashion",
-                        "c": "1549"
-                },
-                {
-                        "SearchPhrase": "freeform photos",
-                        "c": "1480"
+                        "'hello'": "hello",
+                        "multiply(42, number)": "84",
+                        "range(5)": [0,1,2,3,4]
                 }
         ],
 
-        "totals":
-        {
-                "SearchPhrase": "",
-                "c": "8873898"
-        },
+        "rows": 3,
 
-        "extremes":
-        {
-                "min":
-                {
-                        "SearchPhrase": "",
-                        "c": "1480"
-                },
-                "max":
-                {
-                        "SearchPhrase": "",
-                        "c": "8267016"
-                }
-        },
-
-        "rows": 5,
-
-        "rows_before_limit_at_least": 141137
+        "rows_before_limit_at_least": 3
 }
 ```
 
-The JSON is compatible with JavaScript. To ensure this, some characters are additionally escaped: the slash `/` is escaped as `\/`; alternative line breaks `U+2028` and `U+2029`, which break some browsers, are escaped as `\uXXXX`. ASCII control characters are escaped: backspace, form feed, line feed, carriage return, and horizontal tab are replaced with `\b`, `\f`, `\n`, `\r`, `\t` , as well as the remaining bytes in the 00-1F range using `\uXXXX` sequences. Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences. For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double-quotes by default. To remove the quotes, you can set the configuration parameter [output\_format\_json\_quote\_64bit\_integers](../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) to 0.
+The JSON is compatible with JavaScript. To ensure this, some characters are additionally escaped: the slash `/` is escaped as `\/`; alternative line breaks `U+2028` and `U+2029`, which break some browsers, are escaped as `\uXXXX`. ASCII control characters are escaped: backspace, form feed, line feed, carriage return, and horizontal tab are replaced with `\b`, `\f`, `\n`, `\r`, `\t` , as well as the remaining bytes in the 00-1F range using `\uXXXX` sequences. Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences. For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double-quotes by default. To remove the quotes, you can set the configuration parameter [output_format_json_quote_64bit_integers](../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) to 0.
 
 `rows` – The total number of output rows.
 
 `rows_before_limit_at_least` The minimal number of rows there would have been without LIMIT. Output only if the query contains LIMIT.
-If the query contains GROUP BY, rows\_before\_limit\_at\_least is the exact number of rows there would have been without a LIMIT.
+If the query contains GROUP BY, rows_before_limit_at_least is the exact number of rows there would have been without a LIMIT.
 
 `totals` – Total values (when using WITH TOTALS).
 
@@ -462,67 +454,169 @@ If the query contains GROUP BY, rows\_before\_limit\_at\_least is the exact numb
 
 This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
 
-ClickHouse supports [NULL](../sql_reference/syntax.md), which is displayed as `null` in the JSON output.
+ClickHouse supports [NULL](../sql-reference/syntax.md), which is displayed as `null` in the JSON output. To enable `+nan`, `-nan`, `+inf`, `-inf` values in output, set the [output_format_json_quote_denormals](../operations/settings/settings.md#settings-output_format_json_quote_denormals) to 1.
 
 See also the [JSONEachRow](#jsoneachrow) format.
 
+## JSONString {#jsonstring}
+
+Differs from JSON only in that data fields are output in strings, not in typed JSON values.
+
+Example:
+
+```json
+{
+        "meta":
+        [
+                {
+                        "name": "'hello'",
+                        "type": "String"
+                },
+                {
+                        "name": "multiply(42, number)",
+                        "type": "UInt64"
+                },
+                {
+                        "name": "range(5)",
+                        "type": "Array(UInt8)"
+                }
+        ],
+
+        "data":
+        [
+                {
+                        "'hello'": "hello",
+                        "multiply(42, number)": "0",
+                        "range(5)": "[0,1,2,3,4]"
+                },
+                {
+                        "'hello'": "hello",
+                        "multiply(42, number)": "42",
+                        "range(5)": "[0,1,2,3,4]"
+                },
+                {
+                        "'hello'": "hello",
+                        "multiply(42, number)": "84",
+                        "range(5)": "[0,1,2,3,4]"
+                }
+        ],
+
+        "rows": 3,
+
+        "rows_before_limit_at_least": 3
+}
+```
+
 ## JSONCompact {#jsoncompact}
+## JSONCompactString {#jsoncompactstring}
 
 Differs from JSON only in that data rows are output in arrays, not in objects.
 
 Example:
 
 ``` json
+// JSONCompact
 {
         "meta":
         [
                 {
-                        "name": "SearchPhrase",
+                        "name": "'hello'",
                         "type": "String"
                 },
                 {
-                        "name": "c",
+                        "name": "multiply(42, number)",
                         "type": "UInt64"
+                },
+                {
+                        "name": "range(5)",
+                        "type": "Array(UInt8)"
                 }
         ],
 
         "data":
         [
-                ["", "8267016"],
-                ["bathroom interior design", "2166"],
-                ["yandex", "1655"],
-                ["fashion trends spring 2014", "1549"],
-                ["freeform photo", "1480"]
+                ["hello", "0", [0,1,2,3,4]],
+                ["hello", "42", [0,1,2,3,4]],
+                ["hello", "84", [0,1,2,3,4]]
         ],
 
-        "totals": ["","8873898"],
+        "rows": 3,
 
-        "extremes":
-        {
-                "min": ["","1480"],
-                "max": ["","8267016"]
-        },
-
-        "rows": 5,
-
-        "rows_before_limit_at_least": 141137
+        "rows_before_limit_at_least": 3
 }
 ```
 
-This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
-See also the `JSONEachRow` format.
+```json
+// JSONCompactString
+{
+        "meta":
+        [
+                {
+                        "name": "'hello'",
+                        "type": "String"
+                },
+                {
+                        "name": "multiply(42, number)",
+                        "type": "UInt64"
+                },
+                {
+                        "name": "range(5)",
+                        "type": "Array(UInt8)"
+                }
+        ],
 
-## JSONEachRow {#jsoneachrow}
+        "data":
+        [
+                ["hello", "0", "[0,1,2,3,4]"],
+                ["hello", "42", "[0,1,2,3,4]"],
+                ["hello", "84", "[0,1,2,3,4]"]
+        ],
 
-When using this format, ClickHouse outputs rows as separated, newline-delimited JSON objects, but the data as a whole is not valid JSON.
+        "rows": 3,
 
-``` json
-{"SearchPhrase":"curtain designs","count()":"1064"}
-{"SearchPhrase":"baku","count()":"1000"}
-{"SearchPhrase":"","count()":"8267016"}
+        "rows_before_limit_at_least": 3
+}
 ```
 
-When inserting the data, you should provide a separate JSON object for each row.
+## JSONEachRow {#jsoneachrow}
+## JSONStringEachRow {#jsonstringeachrow}
+## JSONCompactEachRow {#jsoncompacteachrow}
+## JSONCompactStringEachRow {#jsoncompactstringeachrow}
+
+When using these formats, ClickHouse outputs rows as separated, newline-delimited JSON values, but the data as a whole is not valid JSON.
+
+``` json
+{"some_int":42,"some_str":"hello","some_tuple":[1,"a"]} // JSONEachRow
+[42,"hello",[1,"a"]] // JSONCompactEachRow
+["42","hello","(2,'a')"] // JSONCompactStringsEachRow
+```
+
+When inserting the data, you should provide a separate JSON value for each row.
+
+## JSONEachRowWithProgress {#jsoneachrowwithprogress}
+## JSONStringEachRowWithProgress {#jsonstringeachrowwithprogress}
+
+Differs from `JSONEachRow`/`JSONStringEachRow` in that ClickHouse will also yield progress information as JSON values.
+
+```json
+{"row":{"'hello'":"hello","multiply(42, number)":"0","range(5)":[0,1,2,3,4]}}
+{"row":{"'hello'":"hello","multiply(42, number)":"42","range(5)":[0,1,2,3,4]}}
+{"row":{"'hello'":"hello","multiply(42, number)":"84","range(5)":[0,1,2,3,4]}}
+{"progress":{"read_rows":"3","read_bytes":"24","written_rows":"0","written_bytes":"0","total_rows_to_read":"3"}}
+```
+
+## JSONCompactEachRowWithNamesAndTypes {#jsoncompacteachrowwithnamesandtypes}
+## JSONCompactStringEachRowWithNamesAndTypes {#jsoncompactstringeachrowwithnamesandtypes}
+
+Differs from `JSONCompactEachRow`/`JSONCompactStringEachRow` in that the column names and types are written as the first two rows.
+
+```json
+["'hello'", "multiply(42, number)", "range(5)"]
+["String", "UInt64", "Array(UInt8)"]
+["hello", "0", [0,1,2,3,4]]
+["hello", "42", [0,1,2,3,4]]
+["hello", "84", [0,1,2,3,4]]
+```
 
 ### Inserting Data {#inserting-data}
 
@@ -539,9 +633,9 @@ ClickHouse ignores spaces between elements and commas after the objects. You can
 
 **Omitted values processing**
 
-ClickHouse substitutes omitted values with the default values for the corresponding [data types](../sql_reference/data_types/index.md).
+ClickHouse substitutes omitted values with the default values for the corresponding [data types](../sql-reference/data-types/index.md).
 
-If `DEFAULT expr` is specified, ClickHouse uses different substitution rules depending on the [input\_format\_defaults\_for\_omitted\_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) setting.
+If `DEFAULT expr` is specified, ClickHouse uses different substitution rules depending on the [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) setting.
 
 Consider the following table:
 
@@ -584,7 +678,7 @@ Unlike the [JSON](#json) format, there is no substitution of invalid UTF-8 seque
 
 ### Usage of Nested Structures {#jsoneachrow-nested}
 
-If you have a table with [Nested](../sql_reference/data_types/nested_data_structures/nested.md) data type columns, you can insert JSON data with the same structure. Enable this feature with the [input\_format\_import\_nested\_json](../operations/settings/settings.md#settings-input_format_import_nested_json) setting.
+If you have a table with [Nested](../sql-reference/data-types/nested-data-structures/nested.md) data type columns, you can insert JSON data with the same structure. Enable this feature with the [input_format_import_nested_json](../operations/settings/settings.md#settings-input_format_import_nested_json) setting.
 
 For example, consider the following table:
 
@@ -598,7 +692,7 @@ As you can see in the `Nested` data type description, ClickHouse treats each com
 INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n.s": ["abc", "def"], "n.i": [1, 23]}
 ```
 
-To insert data as a hierarchical JSON object, set [input\_format\_import\_nested\_json=1](../operations/settings/settings.md#settings-input_format_import_nested_json).
+To insert data as a hierarchical JSON object, set [input_format_import_nested_json=1](../operations/settings/settings.md#settings-input_format_import_nested_json).
 
 ``` json
 {
@@ -658,7 +752,7 @@ Outputs data as Unicode-art tables, also using ANSI-escape sequences for setting
 A full grid of the table is drawn, and each row occupies two lines in the terminal.
 Each result block is output as a separate table. This is necessary so that blocks can be output without buffering results (buffering would be necessary in order to pre-calculate the visible width of all the values).
 
-[NULL](../sql_reference/syntax.md) is output as `ᴺᵁᴸᴸ`.
+[NULL](../sql-reference/syntax.md) is output as `ᴺᵁᴸᴸ`.
 
 Example (shown for the [PrettyCompact](#prettycompact) format):
 
@@ -706,7 +800,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 
 Totals:
 ┌──EventDate─┬───────c─┐
-│ 0000-00-00 │ 8873898 │
+│ 1970-01-01 │ 8873898 │
 └────────────┴─────────┘
 
 Extremes:
@@ -762,7 +856,7 @@ FixedString is represented simply as a sequence of bytes.
 
 Array is represented as a varint length (unsigned [LEB128](https://en.wikipedia.org/wiki/LEB128)), followed by successive elements of the array.
 
-For [NULL](../sql_reference/syntax.md#null-literal) support, an additional byte containing 1 or 0 is added before each [Nullable](../sql_reference/data_types/nullable.md) value. If 1, then the value is `NULL` and this byte is interpreted as a separate value. If 0, the value after the byte is not `NULL`.
+For [NULL](../sql-reference/syntax.md#null-literal) support, an additional byte containing 1 or 0 is added before each [Nullable](../sql-reference/data-types/nullable.md) value. If 1, then the value is `NULL` and this byte is interpreted as a separate value. If 0, the value after the byte is not `NULL`.
 
 ## RowBinaryWithNamesAndTypes {#rowbinarywithnamesandtypes}
 
@@ -774,19 +868,19 @@ Similar to [RowBinary](#rowbinary), but with added header:
 
 ## Values {#data-format-values}
 
-Prints every row in brackets. Rows are separated by commas. There is no comma after the last row. The values inside the brackets are also comma-separated. Numbers are output in a decimal format without quotes. Arrays are output in square brackets. Strings, dates, and dates with times are output in quotes. Escaping rules and parsing are similar to the [TabSeparated](#tabseparated) format. During formatting, extra spaces aren’t inserted, but during parsing, they are allowed and skipped (except for spaces inside array values, which are not allowed). [NULL](../sql_reference/syntax.md) is represented as `NULL`.
+Prints every row in brackets. Rows are separated by commas. There is no comma after the last row. The values inside the brackets are also comma-separated. Numbers are output in a decimal format without quotes. Arrays are output in square brackets. Strings, dates, and dates with times are output in quotes. Escaping rules and parsing are similar to the [TabSeparated](#tabseparated) format. During formatting, extra spaces aren’t inserted, but during parsing, they are allowed and skipped (except for spaces inside array values, which are not allowed). [NULL](../sql-reference/syntax.md) is represented as `NULL`.
 
 The minimum set of characters that you need to escape when passing data in Values ​​format: single quotes and backslashes.
 
 This is the format that is used in `INSERT INTO t VALUES ...`, but you can also use it for formatting query results.
 
-See also: [input\_format\_values\_interpret\_expressions](../operations/settings/settings.md#settings-input_format_values_interpret_expressions) and [input\_format\_values\_deduce\_templates\_of\_expressions](../operations/settings/settings.md#settings-input_format_values_deduce_templates_of_expressions) settings.
+See also: [input_format_values_interpret_expressions](../operations/settings/settings.md#settings-input_format_values_interpret_expressions) and [input_format_values_deduce_templates_of_expressions](../operations/settings/settings.md#settings-input_format_values_deduce_templates_of_expressions) settings.
 
 ## Vertical {#vertical}
 
 Prints each value on a separate line with the column name specified. This format is convenient for printing just one or a few rows if each row consists of a large number of columns.
 
-[NULL](../sql_reference/syntax.md) is output as `ᴺᵁᴸᴸ`.
+[NULL](../sql-reference/syntax.md) is output as `ᴺᵁᴸᴸ`.
 
 Example:
 
@@ -965,7 +1059,7 @@ message MessageType {
 ```
 
 ClickHouse tries to find a column named `x.y.z` (or `x_y_z` or `X.y_Z` and so on).
-Nested messages are suitable to input or output a [nested data structures](../sql_reference/data_types/nested_data_structures/nested.md).
+Nested messages are suitable to input or output a [nested data structures](../sql-reference/data-types/nested-data-structures/nested.md).
 
 Default values defined in a protobuf schema like this
 
@@ -977,43 +1071,47 @@ message MessageType {
 }
 ```
 
-are not applied; the [table defaults](../sql_reference/statements/create.md#create-default-values) are used instead of them.
+are not applied; the [table defaults](../sql-reference/statements/create/table.md#create-default-values) are used instead of them.
 
 ClickHouse inputs and outputs protobuf messages in the `length-delimited` format.
 It means before every message should be written its length as a [varint](https://developers.google.com/protocol-buffers/docs/encoding#varints).
 See also [how to read/write length-delimited protobuf messages in popular languages](https://cwiki.apache.org/confluence/display/GEODE/Delimiting+Protobuf+Messages).
 
+## ProtobufSingle {#protobufsingle}
+
+Same as [Protobuf](#protobuf) but for storing/parsing single Protobuf message without length delimiters.
+
 ## Avro {#data-format-avro}
 
-[Apache Avro](http://avro.apache.org/) is a row-oriented data serialization framework developed within Apache’s Hadoop project.
+[Apache Avro](https://avro.apache.org/) is a row-oriented data serialization framework developed within Apache’s Hadoop project.
 
-ClickHouse Avro format supports reading and writing [Avro data files](http://avro.apache.org/docs/current/spec.html#Object+Container+Files).
+ClickHouse Avro format supports reading and writing [Avro data files](https://avro.apache.org/docs/current/spec.html#Object+Container+Files).
 
 ### Data Types Matching {#data_types-matching}
 
-The table below shows supported data types and how they match ClickHouse [data types](../sql_reference/data_types/index.md) in `INSERT` and `SELECT` queries.
+The table below shows supported data types and how they match ClickHouse [data types](../sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
 
 | Avro data type `INSERT`                     | ClickHouse data type                                                                                                  | Avro data type `SELECT`      |
 |---------------------------------------------|-----------------------------------------------------------------------------------------------------------------------|------------------------------|
-| `boolean`, `int`, `long`, `float`, `double` | [Int(8\|16\|32)](../sql_reference/data_types/int_uint.md), [UInt(8\|16\|32)](../sql_reference/data_types/int_uint.md) | `int`                        |
-| `boolean`, `int`, `long`, `float`, `double` | [Int64](../sql_reference/data_types/int_uint.md), [UInt64](../sql_reference/data_types/int_uint.md)                   | `long`                       |
-| `boolean`, `int`, `long`, `float`, `double` | [Float32](../sql_reference/data_types/float.md)                                                                       | `float`                      |
-| `boolean`, `int`, `long`, `float`, `double` | [Float64](../sql_reference/data_types/float.md)                                                                       | `double`                     |
-| `bytes`, `string`, `fixed`, `enum`          | [String](../sql_reference/data_types/string.md)                                                                       | `bytes`                      |
-| `bytes`, `string`, `fixed`                  | [FixedString(N)](../sql_reference/data_types/fixedstring.md)                                                          | `fixed(N)`                   |
-| `enum`                                      | [Enum(8\|16)](../sql_reference/data_types/enum.md)                                                                    | `enum`                       |
-| `array(T)`                                  | [Array(T)](../sql_reference/data_types/array.md)                                                                      | `array(T)`                   |
-| `union(null, T)`, `union(T, null)`          | [Nullable(T)](../sql_reference/data_types/date.md)                                                                    | `union(null, T)`             |
-| `null`                                      | [Nullable(Nothing)](../sql_reference/data_types/special_data_types/nothing.md)                                        | `null`                       |
-| `int (date)` \*                             | [Date](../sql_reference/data_types/date.md)                                                                           | `int (date)` \*              |
-| `long (timestamp-millis)` \*                | [DateTime64(3)](../sql_reference/data_types/datetime.md)                                                              | `long (timestamp-millis)` \* |
-| `long (timestamp-micros)` \*                | [DateTime64(6)](../sql_reference/data_types/datetime.md)                                                              | `long (timestamp-micros)` \* |
+| `boolean`, `int`, `long`, `float`, `double` | [Int(8\|16\|32)](../sql-reference/data-types/int-uint.md), [UInt(8\|16\|32)](../sql-reference/data-types/int-uint.md) | `int`                        |
+| `boolean`, `int`, `long`, `float`, `double` | [Int64](../sql-reference/data-types/int-uint.md), [UInt64](../sql-reference/data-types/int-uint.md)                   | `long`                       |
+| `boolean`, `int`, `long`, `float`, `double` | [Float32](../sql-reference/data-types/float.md)                                                                       | `float`                      |
+| `boolean`, `int`, `long`, `float`, `double` | [Float64](../sql-reference/data-types/float.md)                                                                       | `double`                     |
+| `bytes`, `string`, `fixed`, `enum`          | [String](../sql-reference/data-types/string.md)                                                                       | `bytes`                      |
+| `bytes`, `string`, `fixed`                  | [FixedString(N)](../sql-reference/data-types/fixedstring.md)                                                          | `fixed(N)`                   |
+| `enum`                                      | [Enum(8\|16)](../sql-reference/data-types/enum.md)                                                                    | `enum`                       |
+| `array(T)`                                  | [Array(T)](../sql-reference/data-types/array.md)                                                                      | `array(T)`                   |
+| `union(null, T)`, `union(T, null)`          | [Nullable(T)](../sql-reference/data-types/date.md)                                                                    | `union(null, T)`             |
+| `null`                                      | [Nullable(Nothing)](../sql-reference/data-types/special-data-types/nothing.md)                                        | `null`                       |
+| `int (date)` \*                             | [Date](../sql-reference/data-types/date.md)                                                                           | `int (date)` \*              |
+| `long (timestamp-millis)` \*                | [DateTime64(3)](../sql-reference/data-types/datetime.md)                                                              | `long (timestamp-millis)` \* |
+| `long (timestamp-micros)` \*                | [DateTime64(6)](../sql-reference/data-types/datetime.md)                                                              | `long (timestamp-micros)` \* |
 
-\* [Avro logical types](http://avro.apache.org/docs/current/spec.html#Logical+Types)
+\* [Avro logical types](https://avro.apache.org/docs/current/spec.html#Logical+Types)
 
 Unsupported Avro data types: `record` (non-root), `map`
 
-Unsupported Avro logical data types: `uuid`, `time-millis`, `time-micros`, `duration`
+Unsupported Avro logical data types: `time-millis`, `time-micros`, `duration`
 
 ### Inserting Data {#inserting-data-1}
 
@@ -1028,7 +1126,7 @@ The root schema of input Avro file must be of `record` type.
 To find the correspondence between table columns and fields of Avro schema ClickHouse compares their names. This comparison is case-sensitive.
 Unused fields are skipped.
 
-Data types of ClickHouse table columns can differ from the corresponding fields of the Avro data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [casts](../sql_reference/functions/type_conversion_functions.md#type_conversion_function-cast) the data to corresponding column type.
+Data types of ClickHouse table columns can differ from the corresponding fields of the Avro data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [casts](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) the data to corresponding column type.
 
 ### Selecting Data {#selecting-data-1}
 
@@ -1043,7 +1141,7 @@ Column names must:
 -   start with `[A-Za-z_]`
 -   subsequently contain only `[A-Za-z0-9_]`
 
-Output Avro file compression and sync interval can be configured with [output\_format\_avro\_codec](../operations/settings/settings.md#settings-output_format_avro_codec) and [output\_format\_avro\_sync\_interval](../operations/settings/settings.md#settings-output_format_avro_sync_interval) respectively.
+Output Avro file compression and sync interval can be configured with [output_format_avro_codec](../operations/settings/settings.md#settings-output_format_avro_codec) and [output_format_avro_sync_interval](../operations/settings/settings.md#settings-output_format_avro_sync_interval) respectively.
 
 ## AvroConfluent {#data-format-avro-confluent}
 
@@ -1053,11 +1151,11 @@ Each Avro message embeds a schema id that can be resolved to the actual schema w
 
 Schemas are cached once resolved.
 
-Schema Registry URL is configured with [format\_avro\_schema\_registry\_url](../operations/settings/settings.md#settings-format_avro_schema_registry_url)
+Schema Registry URL is configured with [format_avro_schema_registry_url](../operations/settings/settings.md#format_avro_schema_registry_url).
 
 ### Data Types Matching {#data_types-matching-1}
 
-Same as [Avro](#data-format-avro)
+Same as [Avro](#data-format-avro).
 
 ### Usage {#usage}
 
@@ -1070,7 +1168,7 @@ $ kafkacat -b kafka-broker  -C -t topic1 -o beginning -f '%s' -c 3 | clickhouse-
 3 c
 ```
 
-To use `AvroConfluent` with [Kafka](../engines/table_engines/integrations/kafka.md):
+To use `AvroConfluent` with [Kafka](../engines/table-engines/integrations/kafka.md):
 
 ``` sql
 CREATE TABLE topic1_stream
@@ -1091,33 +1189,33 @@ SELECT * FROM topic1_stream;
 ```
 
 !!! note "Warning"
-    Setting `format_avro_schema_registry_url` needs to be configured in `users.xml` to maintain it’s value after a restart.
+    Setting `format_avro_schema_registry_url` needs to be configured in `users.xml` to maintain it’s value after a restart. Also you can use the `format_avro_schema_registry_url` setting of the `Kafka` table engine.
 
 ## Parquet {#data-format-parquet}
 
-[Apache Parquet](http://parquet.apache.org/) is a columnar storage format widespread in the Hadoop ecosystem. ClickHouse supports read and write operations for this format.
+[Apache Parquet](https://parquet.apache.org/) is a columnar storage format widespread in the Hadoop ecosystem. ClickHouse supports read and write operations for this format.
 
 ### Data Types Matching {#data_types-matching-2}
 
-The table below shows supported data types and how they match ClickHouse [data types](../sql_reference/data_types/index.md) in `INSERT` and `SELECT` queries.
+The table below shows supported data types and how they match ClickHouse [data types](../sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
 
 | Parquet data type (`INSERT`) | ClickHouse data type                                      | Parquet data type (`SELECT`) |
 |------------------------------|-----------------------------------------------------------|------------------------------|
-| `UINT8`, `BOOL`              | [UInt8](../sql_reference/data_types/int_uint.md)          | `UINT8`                      |
-| `INT8`                       | [Int8](../sql_reference/data_types/int_uint.md)           | `INT8`                       |
-| `UINT16`                     | [UInt16](../sql_reference/data_types/int_uint.md)         | `UINT16`                     |
-| `INT16`                      | [Int16](../sql_reference/data_types/int_uint.md)          | `INT16`                      |
-| `UINT32`                     | [UInt32](../sql_reference/data_types/int_uint.md)         | `UINT32`                     |
-| `INT32`                      | [Int32](../sql_reference/data_types/int_uint.md)          | `INT32`                      |
-| `UINT64`                     | [UInt64](../sql_reference/data_types/int_uint.md)         | `UINT64`                     |
-| `INT64`                      | [Int64](../sql_reference/data_types/int_uint.md)          | `INT64`                      |
-| `FLOAT`, `HALF_FLOAT`        | [Float32](../sql_reference/data_types/float.md)           | `FLOAT`                      |
-| `DOUBLE`                     | [Float64](../sql_reference/data_types/float.md)           | `DOUBLE`                     |
-| `DATE32`                     | [Date](../sql_reference/data_types/date.md)               | `UINT16`                     |
-| `DATE64`, `TIMESTAMP`        | [DateTime](../sql_reference/data_types/datetime.md)       | `UINT32`                     |
-| `STRING`, `BINARY`           | [String](../sql_reference/data_types/string.md)           | `STRING`                     |
-| —                            | [FixedString](../sql_reference/data_types/fixedstring.md) | `STRING`                     |
-| `DECIMAL`                    | [Decimal](../sql_reference/data_types/decimal.md)         | `DECIMAL`                    |
+| `UINT8`, `BOOL`              | [UInt8](../sql-reference/data-types/int-uint.md)          | `UINT8`                      |
+| `INT8`                       | [Int8](../sql-reference/data-types/int-uint.md)           | `INT8`                       |
+| `UINT16`                     | [UInt16](../sql-reference/data-types/int-uint.md)         | `UINT16`                     |
+| `INT16`                      | [Int16](../sql-reference/data-types/int-uint.md)          | `INT16`                      |
+| `UINT32`                     | [UInt32](../sql-reference/data-types/int-uint.md)         | `UINT32`                     |
+| `INT32`                      | [Int32](../sql-reference/data-types/int-uint.md)          | `INT32`                      |
+| `UINT64`                     | [UInt64](../sql-reference/data-types/int-uint.md)         | `UINT64`                     |
+| `INT64`                      | [Int64](../sql-reference/data-types/int-uint.md)          | `INT64`                      |
+| `FLOAT`, `HALF_FLOAT`        | [Float32](../sql-reference/data-types/float.md)           | `FLOAT`                      |
+| `DOUBLE`                     | [Float64](../sql-reference/data-types/float.md)           | `DOUBLE`                     |
+| `DATE32`                     | [Date](../sql-reference/data-types/date.md)               | `UINT16`                     |
+| `DATE64`, `TIMESTAMP`        | [DateTime](../sql-reference/data-types/datetime.md)       | `UINT32`                     |
+| `STRING`, `BINARY`           | [String](../sql-reference/data-types/string.md)           | `STRING`                     |
+| —                            | [FixedString](../sql-reference/data-types/fixedstring.md) | `STRING`                     |
+| `DECIMAL`                    | [Decimal](../sql-reference/data-types/decimal.md)         | `DECIMAL`                    |
 
 ClickHouse supports configurable precision of `Decimal` type. The `INSERT` query treats the Parquet `DECIMAL` type as the ClickHouse `Decimal128` type.
 
@@ -1139,7 +1237,17 @@ You can select data from a ClickHouse table and save them into some file in the 
 $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
 ```
 
-To exchange data with Hadoop, you can use [HDFS table engine](../engines/table_engines/integrations/hdfs.md).
+To exchange data with Hadoop, you can use [HDFS table engine](../engines/table-engines/integrations/hdfs.md).
+
+## Arrow {#data-format-arrow}
+
+[Apache Arrow](https://arrow.apache.org/) comes with two built-in columnar storage formats. ClickHouse supports read and write operations for these formats.
+
+`Arrow` is Apache Arrow’s “file mode” format. It is designed for in-memory random access.
+
+## ArrowStream {#data-format-arrow-stream}
+
+`ArrowStream` is Apache Arrow’s “stream mode” format. It is designed for in-memory stream processing.
 
 ## ORC {#data-format-orc}
 
@@ -1147,30 +1255,30 @@ To exchange data with Hadoop, you can use [HDFS table engine](../engines/table_e
 
 ### Data Types Matching {#data_types-matching-3}
 
-The table below shows supported data types and how they match ClickHouse [data types](../sql_reference/data_types/index.md) in `INSERT` queries.
+The table below shows supported data types and how they match ClickHouse [data types](../sql-reference/data-types/index.md) in `INSERT` queries.
 
 | ORC data type (`INSERT`) | ClickHouse data type                                |
 |--------------------------|-----------------------------------------------------|
-| `UINT8`, `BOOL`          | [UInt8](../sql_reference/data_types/int_uint.md)    |
-| `INT8`                   | [Int8](../sql_reference/data_types/int_uint.md)     |
-| `UINT16`                 | [UInt16](../sql_reference/data_types/int_uint.md)   |
-| `INT16`                  | [Int16](../sql_reference/data_types/int_uint.md)    |
-| `UINT32`                 | [UInt32](../sql_reference/data_types/int_uint.md)   |
-| `INT32`                  | [Int32](../sql_reference/data_types/int_uint.md)    |
-| `UINT64`                 | [UInt64](../sql_reference/data_types/int_uint.md)   |
-| `INT64`                  | [Int64](../sql_reference/data_types/int_uint.md)    |
-| `FLOAT`, `HALF_FLOAT`    | [Float32](../sql_reference/data_types/float.md)     |
-| `DOUBLE`                 | [Float64](../sql_reference/data_types/float.md)     |
-| `DATE32`                 | [Date](../sql_reference/data_types/date.md)         |
-| `DATE64`, `TIMESTAMP`    | [DateTime](../sql_reference/data_types/datetime.md) |
-| `STRING`, `BINARY`       | [String](../sql_reference/data_types/string.md)     |
-| `DECIMAL`                | [Decimal](../sql_reference/data_types/decimal.md)   |
+| `UINT8`, `BOOL`          | [UInt8](../sql-reference/data-types/int-uint.md)    |
+| `INT8`                   | [Int8](../sql-reference/data-types/int-uint.md)     |
+| `UINT16`                 | [UInt16](../sql-reference/data-types/int-uint.md)   |
+| `INT16`                  | [Int16](../sql-reference/data-types/int-uint.md)    |
+| `UINT32`                 | [UInt32](../sql-reference/data-types/int-uint.md)   |
+| `INT32`                  | [Int32](../sql-reference/data-types/int-uint.md)    |
+| `UINT64`                 | [UInt64](../sql-reference/data-types/int-uint.md)   |
+| `INT64`                  | [Int64](../sql-reference/data-types/int-uint.md)    |
+| `FLOAT`, `HALF_FLOAT`    | [Float32](../sql-reference/data-types/float.md)     |
+| `DOUBLE`                 | [Float64](../sql-reference/data-types/float.md)     |
+| `DATE32`                 | [Date](../sql-reference/data-types/date.md)         |
+| `DATE64`, `TIMESTAMP`    | [DateTime](../sql-reference/data-types/datetime.md) |
+| `STRING`, `BINARY`       | [String](../sql-reference/data-types/string.md)     |
+| `DECIMAL`                | [Decimal](../sql-reference/data-types/decimal.md)   |
 
 ClickHouse supports configurable precision of the `Decimal` type. The `INSERT` query treats the ORC `DECIMAL` type as the ClickHouse `Decimal128` type.
 
 Unsupported ORC data types: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
-The data types of ClickHouse table columns don’t have to match the corresponding ORC data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](../sql_reference/functions/type_conversion_functions.md#type_conversion_function-cast) the data to the data type set for the ClickHouse table column.
+The data types of ClickHouse table columns don’t have to match the corresponding ORC data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) the data to the data type set for the ClickHouse table column.
 
 ### Inserting Data {#inserting-data-2}
 
@@ -1180,7 +1288,7 @@ You can insert ORC data from a file into ClickHouse table by the following comma
 $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT ORC"
 ```
 
-To exchange data with Hadoop, you can use [HDFS table engine](../engines/table_engines/integrations/hdfs.md).
+To exchange data with Hadoop, you can use [HDFS table engine](../engines/table-engines/integrations/hdfs.md).
 
 ## Format Schema {#formatschema}
 
@@ -1196,15 +1304,38 @@ can contain an absolute path or a path relative to the current directory on the 
 If you use the client in the [batch mode](../interfaces/cli.md#cli_usage), the path to the schema must be relative due to security reasons.
 
 If you input or output data via the [HTTP interface](../interfaces/http.md) the file name specified in the format schema
-should be located in the directory specified in [format\_schema\_path](../operations/server_configuration_parameters/settings.md#server_configuration_parameters-format_schema_path)
+should be located in the directory specified in [format_schema_path](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path)
 in the server configuration.
 
 ## Skipping Errors {#skippingerrors}
 
-Some formats such as `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` and `Protobuf` can skip broken row if parsing error occurred and continue parsing from the beginning of next row. See [input\_format\_allow\_errors\_num](../operations/settings/settings.md#settings-input_format_allow_errors_num) and
-[input\_format\_allow\_errors\_ratio](../operations/settings/settings.md#settings-input_format_allow_errors_ratio) settings.
+Some formats such as `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` and `Protobuf` can skip broken row if parsing error occurred and continue parsing from the beginning of next row. See [input_format_allow_errors_num](../operations/settings/settings.md#settings-input_format_allow_errors_num) and
+[input_format_allow_errors_ratio](../operations/settings/settings.md#settings-input_format_allow_errors_ratio) settings.
 Limitations:
 - In case of parsing error `JSONEachRow` skips all data until the new line (or EOF), so rows must be delimited by `\n` to count errors correctly.
 - `Template` and `CustomSeparated` use delimiter after the last column and delimiter between rows to find the beginning of next row, so skipping errors works only if at least one of them is not empty.
+
+## LineAsString {#lineasstring}
+
+In this format, a sequence of string objects separated by a newline character is interpreted as a single value. This format can only be parsed for table with a single field of type [String](../sql-reference/data-types/string.md). The remaining columns must be set to  [DEFAULT](../sql-reference/statements/create/table.md#default) or [MATERIALIZED](../sql-reference/statements/create/table.md#materialized), or omitted.
+
+**Example**
+
+Query:
+
+``` sql
+DROP TABLE IF EXISTS line_as_string;
+CREATE TABLE line_as_string (field String) ENGINE = Memory;
+INSERT INTO line_as_string FORMAT LineAsString "I love apple", "I love banana", "I love orange";
+SELECT * FROM line_as_string;
+```
+
+Result:
+
+``` text
+┌─field─────────────────────────────────────────────┐
+│ "I love apple", "I love banana", "I love orange"; │
+└───────────────────────────────────────────────────┘
+```
 
 [Original article](https://clickhouse.tech/docs/en/interfaces/formats/) <!--hide-->

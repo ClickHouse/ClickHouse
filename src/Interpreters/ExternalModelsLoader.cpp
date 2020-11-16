@@ -11,10 +11,10 @@ namespace ErrorCodes
 
 
 ExternalModelsLoader::ExternalModelsLoader(Context & context_)
-    : ExternalLoader("external model", &Logger::get("ExternalModelsLoader"))
+    : ExternalLoader("external model", &Poco::Logger::get("ExternalModelsLoader"))
     , context(context_)
 {
-    setConfigSettings({"model", "name", {}});
+    setConfigSettings({"model", "name", {}, {}});
     enablePeriodicUpdates(true);
 }
 

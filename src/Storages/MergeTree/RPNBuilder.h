@@ -3,7 +3,6 @@
 #include <Common/typeid_cast.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -13,6 +12,7 @@
 
 namespace DB
 {
+class Context;
 
 /// Builds reverse polish notation
 template <typename RPNElement>

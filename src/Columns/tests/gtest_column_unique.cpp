@@ -43,7 +43,7 @@ TEST(ColumnUnique, InsertRange)
         ASSERT_EQ(indexes[i] + 1, idx->getUInt(i)) << "Different indexes at position " << i;
     }
 
-    auto & nested = column_unique->getNestedColumn();
+    const auto & nested = column_unique->getNestedColumn();
     ASSERT_EQ(nested->size(), mod_to + 1);
 
     for (size_t i = 0; i < mod_to; ++i)
@@ -87,7 +87,7 @@ TEST(ColumnUnique, InsertRangeWithOverflow)
         ASSERT_EQ(indexes[i] + 1, idx->getUInt(i)) << "Different indexes at position " << i;
     }
 
-    auto & nested = column_unique->getNestedColumn();
+    const auto & nested = column_unique->getNestedColumn();
     ASSERT_EQ(nested->size(), max_dict_size);
     ASSERT_EQ(add_keys->size(), mod_to - max_val);
 
@@ -196,15 +196,15 @@ TEST(ColumnVector, CorrectnessOfReplicate)
     column->insertValue(1);
 
     const auto empty_column = column->replicate({0, 0, 0});
-    const auto empty_column_ptr = typeid_cast<const ColumnUInt8 *>(empty_column.get());
+    const auto * empty_column_ptr = typeid_cast<const ColumnUInt8 *>(empty_column.get());
     EXPECT_NE(empty_column_ptr, nullptr);
     EXPECT_EQ(empty_column_ptr->size(), 0);
 
     const auto new_column = column->replicate({1, 1, 5});
-    const auto new_column_ptr = typeid_cast<const ColumnUInt8 *>(new_column.get());
+    const auto * new_column_ptr = typeid_cast<const ColumnUInt8 *>(new_column.get());
     EXPECT_NE(new_column_ptr, nullptr);
     EXPECT_EQ(new_column_ptr->size(), 5);
-    auto it = new_column_ptr->getData().cbegin();
+    const auto * it = new_column_ptr->getData().cbegin();
     for (const auto num : {3, 1, 1, 1, 1})
     {
         EXPECT_EQ(*it, num);

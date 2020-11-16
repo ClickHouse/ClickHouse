@@ -1,6 +1,6 @@
 #include <IO/createWriteBufferFromFileBase.h>
 #include <IO/WriteBufferFromFile.h>
-#if defined(__linux__) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(__FreeBSD__)
 #include <IO/WriteBufferAIO.h>
 #endif
 #include <Common/ProfileEvents.h>
@@ -20,7 +20,7 @@ std::unique_ptr<WriteBufferFromFileBase> createWriteBufferFromFileBase(const std
         size_t aio_threshold, size_t buffer_size_, int flags_, mode_t mode, char * existing_memory_,
         size_t alignment)
 {
-#if defined(__linux__) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(__FreeBSD__)
     if (aio_threshold && estimated_size >= aio_threshold)
     {
         /// Attempt to open a file with O_DIRECT

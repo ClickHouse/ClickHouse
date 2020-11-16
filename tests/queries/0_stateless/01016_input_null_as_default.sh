@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS null_as_default";
 $CLICKHOUSE_CLIENT --query="CREATE TABLE null_as_default (i Int8, s String DEFAULT 'Hello', n UInt64 DEFAULT 42, d Date DEFAULT '2019-06-19', a Array(UInt8) DEFAULT [1, 2, 3], t Tuple(String, Float64) DEFAULT ('default', i / 4)) ENGINE = Memory";
@@ -35,6 +35,14 @@ echo '{"i": null, "s": "1", "n": null, "d": "2019-07-22", "a": [10, 20, 30], "t"
 {"i": 1, "s": "world", "n": 3, "d": "2019-07-23", "a": null, "t": ["tuple", 3.14]}
 {"i": 2, "s": null, "n": 123, "d": null, "a": [], "t": ["test", 2.71828]}
 {"i": 3, "s": null, "n": null, "d": null, "a": null, "t": null}' | $CLICKHOUSE_CLIENT --input_format_null_as_default=1 --query="INSERT INTO null_as_default FORMAT JSONEachRow";
+$CLICKHOUSE_CLIENT --query="SELECT * FROM null_as_default ORDER BY i";
+$CLICKHOUSE_CLIENT --query="TRUNCATE TABLE null_as_default";
+
+echo 'JSONStringsEachRow'
+echo '{"i": "null", "s": "1", "n": "ᴺᵁᴸᴸ", "d": "2019-07-22", "a": "[10, 20, 30]", "t": "NULL"}
+{"i": "1", "s": "world", "n": "3", "d": "2019-07-23", "a": "null", "t": "('\''tuple'\'', 3.14)"}
+{"i": "2", "s": "null", "n": "123", "d": "null", "a": "[]", "t": "('\''test'\'', 2.71828)"}
+{"i": "3", "s": "null", "n": "null", "d": "null", "a": "null", "t": "null"}' | $CLICKHOUSE_CLIENT --input_format_null_as_default=1 --query="INSERT INTO null_as_default FORMAT JSONStringsEachRow";
 $CLICKHOUSE_CLIENT --query="SELECT * FROM null_as_default ORDER BY i";
 $CLICKHOUSE_CLIENT --query="TRUNCATE TABLE null_as_default";
 

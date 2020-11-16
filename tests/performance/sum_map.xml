@@ -1,11 +1,4 @@
 <test>
-
-    <stop_conditions>
-        <all_of>
-            <total_time_ms>30000</total_time_ms>
-        </all_of>
-    </stop_conditions>
-
     <settings>
         <max_threads>1</max_threads>
     </settings>
@@ -14,13 +7,14 @@
         <substitution>
            <name>scale</name>
            <values>
-               <value>100000</value>
                <value>1000000</value>
            </values>
        </substitution>
         <substitution>
            <name>func</name>
            <values>
+               <value>minMap</value>
+               <value>maxMap</value>
                <value>sumMap</value>
                <value>sumMapWithOverflow</value>
            </values>
@@ -28,7 +22,7 @@
     </substitutions>
 
     <create_query>
-        CREATE TEMPORARY TABLE sum_map_{scale} AS 
+        CREATE TABLE sum_map_{scale} ENGINE Memory AS
         SELECT
             arrayMap(x -> (x % 23), range(50)) AS key,
             arrayMap(x -> intDiv(number, x + 1), range(50)) AS val
@@ -36,4 +30,5 @@
     </create_query>
 
     <query>SELECT {func}(key, val) FROM sum_map_{scale} FORMAT Null</query>
+    <query>SELECT {func}((key, val)) FROM sum_map_{scale} FORMAT Null</query>
 </test>

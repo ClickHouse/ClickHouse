@@ -2,6 +2,7 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <IO/ReadBufferFromFileBase.h>
 
 
 namespace DB
@@ -10,6 +11,9 @@ namespace DB
 class MergeTreeDataPartCompact;
 using DataPartCompactPtr = std::shared_ptr<const MergeTreeDataPartCompact>;
 
+class IMergeTreeDataPart;
+using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
+
 /// Reader for compact parts
 class MergeTreeReaderCompact : public IMergeTreeReader
 {
@@ -17,6 +21,7 @@ public:
     MergeTreeReaderCompact(
         DataPartCompactPtr data_part_,
         NamesAndTypesList columns_,
+        const StorageMetadataPtr & metadata_snapshot_,
         UncompressedCache * uncompressed_cache_,
         MarkCache * mark_cache_,
         MarkRanges mark_ranges_,
@@ -40,9 +45,9 @@ private:
 
     MergeTreeMarksLoader marks_loader;
 
-    using ColumnPosition = std::optional<size_t>;
     /// Positions of columns in part structure.
-    std::vector<ColumnPosition> column_positions;
+    using ColumnPositions = std::vector<ColumnPosition>;
+    ColumnPositions column_positions;
     /// Should we read full column or only it's offsets
     std::vector<bool> read_only_offsets;
 
@@ -54,7 +59,13 @@ private:
     void readData(const String & name, IColumn & column, const IDataType & type,
         size_t from_mark, size_t column_position, size_t rows_to_read, bool only_offsets = false);
 
-    ColumnPosition findColumnForOffsets(const String & column_name);
+    /// Returns maximal value of granule size in compressed file from @mark_ranges.
+    /// This value is used as size of read buffer.
+    static size_t getReadBufferSize(
+        const DataPartPtr & part,
+        MergeTreeMarksLoader & marks_loader,
+        const ColumnPositions & column_positions,
+        const MarkRanges & mark_ranges);
 };
 
 }

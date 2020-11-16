@@ -13,7 +13,7 @@
  * Implementation details:
  *
  * cluster-copier workers pull each partition of each shard of the source cluster and push it to the destination cluster through
- * Distributed table (to preform data resharding). So, worker job is a partition of a source shard.
+ * Distributed table (to perform data resharding). So, worker job is a partition of a source shard.
  * A job has three states: Active, Finished and Abandoned. Abandoned means that worker died and did not finish the job.
  *
  * If an error occurred during the copying (a worker failed or a worker did not finish the INSERT), then the whole partition (on
@@ -81,6 +81,8 @@ private:
     double copy_fault_probability = 0.0;
     double move_fault_probability = 0.0;
     bool is_help = false;
+
+    bool experimental_use_sample_offset{false};
 
     std::string base_dir;
     std::string process_path;

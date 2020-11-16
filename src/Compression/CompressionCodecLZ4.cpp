@@ -7,6 +7,8 @@
 #include <Compression/LZ4_decompress_faster.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <IO/WriteHelpers.h>
 
 #pragma GCC diagnostic ignored "-Wold-style-cast"
@@ -19,17 +21,22 @@ namespace ErrorCodes
 {
 extern const int CANNOT_COMPRESS;
 extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
+extern const int ILLEGAL_CODEC_PARAMETER;
 }
 
+CompressionCodecLZ4::CompressionCodecLZ4()
+{
+    setCodecDescription("LZ4");
+}
 
 uint8_t CompressionCodecLZ4::getMethodByte() const
 {
     return static_cast<uint8_t>(CompressionMethodByte::LZ4);
 }
 
-String CompressionCodecLZ4::getCodecDesc() const
+void CompressionCodecLZ4::updateHash(SipHash & hash) const
 {
-    return "LZ4";
+    getCodecDesc()->updateTreeHash(hash);
 }
 
 UInt32 CompressionCodecLZ4::getMaxCompressedDataSize(UInt32 uncompressed_size) const
@@ -55,12 +62,6 @@ void registerCodecLZ4(CompressionCodecFactory & factory)
     });
 }
 
-
-String CompressionCodecLZ4HC::getCodecDesc() const
-{
-    return "LZ4HC(" + toString(level) + ")";
-}
-
 UInt32 CompressionCodecLZ4HC::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
     auto success = LZ4_compress_HC(source, dest, source_size, LZ4_COMPRESSBOUND(source_size), level);
@@ -84,6 +85,9 @@ void registerCodecLZ4HC(CompressionCodecFactory & factory)
 
             const auto children = arguments->children;
             const auto * literal = children[0]->as<ASTLiteral>();
+            if (!literal)
+                throw Exception("LZ4HC codec argument must be integer", ErrorCodes::ILLEGAL_CODEC_PARAMETER);
+
             level = literal->value.safeGet<UInt64>();
         }
 
@@ -94,6 +98,7 @@ void registerCodecLZ4HC(CompressionCodecFactory & factory)
 CompressionCodecLZ4HC::CompressionCodecLZ4HC(int level_)
     : level(level_)
 {
+    setCodecDescription("LZ4HC", {std::make_shared<ASTLiteral>(static_cast<UInt64>(level))});
 }
 
 }

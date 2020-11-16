@@ -1,19 +1,19 @@
 #pragma once
 
+#include <Core/Names.h>
+#include <Core/Field.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/MemoryTracker.h>
-#include <Interpreters/Context.h>
-#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeType.h>
+#include <Storages/MergeTree/MergeAlgorithm.h>
+#include <Storages/MergeTree/BackgroundProcessList.h>
+#include <boost/noncopyable.hpp>
 #include <memory>
 #include <list>
 #include <mutex>
 #include <atomic>
 
-
-/** Maintains a list of currently running merges.
-  * For implementation of system.merges table.
-  */
 
 namespace CurrentMetrics
 {
@@ -46,6 +46,8 @@ struct MergeInfo
     UInt64 columns_written;
     UInt64 memory_usage;
     UInt64 thread_id;
+    std::string merge_type;
+    std::string merge_algorithm;
 };
 
 struct FutureMergedMutatedPart;
@@ -88,7 +90,9 @@ struct MergeListElement : boost::noncopyable
     MemoryTracker * background_thread_memory_tracker_prev_parent = nullptr;
 
     UInt64 thread_id;
-
+    MergeType merge_type;
+    /// Detected after merge already started
+    std::atomic<MergeAlgorithm> merge_algorithm;
 
     MergeListElement(const std::string & database, const std::string & table, const FutureMergedMutatedPart & future_part);
 
@@ -97,64 +101,37 @@ struct MergeListElement : boost::noncopyable
     ~MergeListElement();
 };
 
+using MergeListEntry = BackgroundProcessListEntry<MergeListElement, MergeInfo>;
 
-class MergeList;
-
-class MergeListEntry
+/** Maintains a list of currently running merges.
+  * For implementation of system.merges table.
+  */
+class MergeList final : public BackgroundProcessList<MergeListElement, MergeInfo>
 {
-    MergeList & list;
-
-    using container_t = std::list<MergeListElement>;
-    container_t::iterator it;
-
-    CurrentMetrics::Increment num_merges {CurrentMetrics::Merge};
-
+private:
+    using Parent = BackgroundProcessList<MergeListElement, MergeInfo>;
+    std::atomic<size_t> merges_with_ttl_counter = 0;
 public:
-    MergeListEntry(const MergeListEntry &) = delete;
-    MergeListEntry & operator=(const MergeListEntry &) = delete;
+    MergeList()
+        : Parent(CurrentMetrics::Merge)
+    {}
 
-    MergeListEntry(MergeList & list_, const container_t::iterator it_) : list(list_), it{it_} {}
-    ~MergeListEntry();
-
-    MergeListElement * operator->() { return &*it; }
-    const MergeListElement * operator->() const { return &*it; }
-};
-
-
-class MergeList
-{
-    friend class MergeListEntry;
-
-    using container_t = std::list<MergeListElement>;
-    using info_container_t = std::list<MergeInfo>;
-
-    mutable std::mutex mutex;
-    container_t merges;
-
-public:
-    using Entry = MergeListEntry;
-    using EntryPtr = std::unique_ptr<Entry>;
-
-    template <typename... Args>
-    EntryPtr insert(Args &&... args)
+    void onEntryCreate(const Parent::Entry & entry) override
     {
-        std::lock_guard lock{mutex};
-        return std::make_unique<Entry>(*this, merges.emplace(merges.end(), std::forward<Args>(args)...));
+        if (isTTLMergeType(entry->merge_type))
+            ++merges_with_ttl_counter;
     }
 
-    info_container_t get() const
+    void onEntryDestroy(const Parent::Entry & entry) override
     {
-        std::lock_guard lock{mutex};
-        info_container_t res;
-        for (const auto & merge_element : merges)
-            res.emplace_back(merge_element.getInfo());
-        return res;
+        if (isTTLMergeType(entry->merge_type))
+            --merges_with_ttl_counter;
     }
 
     void cancelPartMutations(const String & partition_id, Int64 mutation_version)
     {
         std::lock_guard lock{mutex};
-        for (auto & merge_element : merges)
+        for (auto & merge_element : entries)
         {
             if ((partition_id.empty() || merge_element.partition_id == partition_id)
                 && merge_element.source_data_version < mutation_version
@@ -162,14 +139,11 @@ public:
                 merge_element.is_cancelled = true;
         }
     }
+
+    size_t getExecutingMergesWithTTLCount() const
+    {
+        return merges_with_ttl_counter;
+    }
 };
-
-
-inline MergeListEntry::~MergeListEntry()
-{
-    std::lock_guard lock{list.mutex};
-    list.merges.erase(it);
-}
-
 
 }

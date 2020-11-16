@@ -1,3 +1,4 @@
+# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
 LIBRARY()
 
 PEERDIR(
@@ -7,6 +8,7 @@ PEERDIR(
     contrib/libs/poco/NetSSL_OpenSSL
 )
 
+
 SRCS(
     AIO.cpp
     AIOContextPool.cpp
@@ -14,19 +16,18 @@ SRCS(
     BrotliWriteBuffer.cpp
     CascadeWriteBuffer.cpp
     CompressionMethod.cpp
-    copyData.cpp
-    createReadBufferFromFileBase.cpp
-    createWriteBufferFromFileBase.cpp
     DoubleConverter.cpp
+    HTTPCommon.cpp
     HashingWriteBuffer.cpp
     HexWriteBuffer.cpp
-    HTTPCommon.cpp
     LimitReadBuffer.cpp
-    MemoryReadWriteBuffer.cpp
     MMapReadBufferFromFile.cpp
     MMapReadBufferFromFileDescriptor.cpp
+    MemoryReadWriteBuffer.cpp
+    MySQLBinlogEventReadBuffer.cpp
+    MySQLPacketPayloadReadBuffer.cpp
+    MySQLPacketPayloadWriteBuffer.cpp
     NullWriteBuffer.cpp
-    parseDateTimeBestEffort.cpp
     PeekableReadBuffer.cpp
     Progress.cpp
     ReadBufferAIO.cpp
@@ -36,9 +37,8 @@ SRCS(
     ReadBufferFromIStream.cpp
     ReadBufferFromMemory.cpp
     ReadBufferFromPocoSocket.cpp
-    readFloatText.cpp
     ReadHelpers.cpp
-    ReadWriteBufferFromHTTP.cpp
+    SeekAvoidingReadBuffer.cpp
     UseSSL.cpp
     WriteBufferAIO.cpp
     WriteBufferFromFile.cpp
@@ -54,6 +54,12 @@ SRCS(
     WriteHelpers.cpp
     ZlibDeflatingWriteBuffer.cpp
     ZlibInflatingReadBuffer.cpp
+    copyData.cpp
+    createReadBufferFromFileBase.cpp
+    createWriteBufferFromFileBase.cpp
+    parseDateTimeBestEffort.cpp
+    readFloatText.cpp
+
 )
 
 END()

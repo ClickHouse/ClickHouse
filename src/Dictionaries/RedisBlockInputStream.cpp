@@ -1,23 +1,21 @@
 #include "RedisBlockInputStream.h"
 
-#if USE_POCO_REDIS
+#include <string>
+#include <vector>
 
-#    include <string>
-#    include <vector>
+#include <Poco/Redis/Array.h>
+#include <Poco/Redis/Client.h>
+#include <Poco/Redis/Command.h>
+#include <Poco/Redis/Type.h>
 
-#    include <Poco/Redis/Array.h>
-#    include <Poco/Redis/Client.h>
-#    include <Poco/Redis/Command.h>
-#    include <Poco/Redis/Type.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <ext/range.h>
 
-#    include <Columns/ColumnNullable.h>
-#    include <Columns/ColumnString.h>
-#    include <Columns/ColumnsNumber.h>
-#    include <IO/ReadHelpers.h>
-#    include <IO/WriteHelpers.h>
-#    include <ext/range.h>
-
-#    include "DictionaryStructure.h"
+#include "DictionaryStructure.h"
 
 
 namespace DB
@@ -28,6 +26,7 @@ namespace DB
         extern const int LOGICAL_ERROR;
         extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
         extern const int INTERNAL_REDIS_ERROR;
+        extern const int UNKNOWN_TYPE;
     }
 
 
@@ -105,6 +104,8 @@ namespace DB
                 case ValueType::vtUUID:
                     assert_cast<ColumnUInt128 &>(column).insertValue(parse<UUID>(string_value));
                     break;
+                default:
+                    throw Exception("Value of unsupported type:" + column.getName(), ErrorCodes::UNKNOWN_TYPE);
             }
         }
     }
@@ -208,5 +209,3 @@ namespace DB
         return description.sample_block.cloneWithColumns(std::move(columns));
     }
 }
-
-#endif

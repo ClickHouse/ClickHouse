@@ -1,4 +1,5 @@
-option (SANITIZE "Enable sanitizer: address, memory, thread, undefined" "")
+# Possible values: `address` (ASan), `memory` (MSan), `thread` (TSan), `undefined` (UBSan), and "" (no sanitizing)
+option (SANITIZE "Enable one of the code sanitizers" "")
 
 set (SAN_FLAGS "${SAN_FLAGS} -g -fno-omit-frame-pointer -DSANITIZER")
 
@@ -36,8 +37,18 @@ if (SANITIZE)
         endif ()
 
     elseif (SANITIZE STREQUAL "thread")
-        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} -fsanitize=thread")
-        set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SAN_FLAGS} -fsanitize=thread")
+        set (TSAN_FLAGS "-fsanitize=thread")
+        if (COMPILER_CLANG)
+            set (TSAN_FLAGS "${TSAN_FLAGS} -fsanitize-blacklist=${CMAKE_SOURCE_DIR}/tests/tsan_suppressions.txt")
+        else()
+            message (WARNING "TSAN suppressions was not passed to the compiler (since the compiler is not clang)")
+            message (WARNING "Use the following command to pass them manually:")
+            message (WARNING "    export TSAN_OPTIONS=\"$TSAN_OPTIONS suppressions=${CMAKE_SOURCE_DIR}/tests/tsan_suppressions.txt\"")
+        endif()
+
+
+        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} ${TSAN_FLAGS}")
+        set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SAN_FLAGS} ${TSAN_FLAGS}")
         if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
             set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=thread")
         endif()
@@ -46,8 +57,8 @@ if (SANITIZE)
         endif ()
 
     elseif (SANITIZE STREQUAL "undefined")
-        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} -fsanitize=undefined -fno-sanitize-recover=all -fno-sanitize=float-divide-by-zero")
-        set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SAN_FLAGS} -fsanitize=undefined -fno-sanitize-recover=all -fno-sanitize=float-divide-by-zero")
+        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} -fsanitize=undefined -fno-sanitize-recover=all -fno-sanitize=float-divide-by-zero -fsanitize-blacklist=${CMAKE_SOURCE_DIR}/tests/ubsan_suppressions.txt")
+        set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SAN_FLAGS} -fsanitize=undefined -fno-sanitize-recover=all -fno-sanitize=float-divide-by-zero -fsanitize-blacklist=${CMAKE_SOURCE_DIR}/tests/ubsan_suppressions.txt")
         if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
             set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=undefined")
         endif()
@@ -58,18 +69,6 @@ if (SANITIZE)
         # llvm-tblgen, that is used during LLVM build, doesn't work with UBSan.
         set (ENABLE_EMBEDDED_COMPILER 0 CACHE BOOL "")
 
-    elseif (SANITIZE STREQUAL "libfuzzer")
-        # NOTE: Eldar Zaitov decided to name it "libfuzzer" instead of "fuzzer" to keep in mind another possible fuzzer backends.
-        # NOTE: no-link means that all the targets are built with instrumentation for fuzzer, but only some of them (tests) have entry point for fuzzer and it's not checked.
-        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} -fsanitize=fuzzer-no-link,address,undefined -fsanitize-address-use-after-scope")
-        set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SAN_FLAGS} -fsanitize=fuzzer-no-link,address,undefined -fsanitize-address-use-after-scope")
-        if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-            set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=fuzzer-no-link,address,undefined -fsanitize-address-use-after-scope")
-        endif()
-        if (MAKE_STATIC_LIBRARIES AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-            set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libasan -static-libubsan")
-        endif ()
-        set (LIBFUZZER_CMAKE_CXX_FLAGS "-fsanitize=fuzzer,address,undefined -fsanitize-address-use-after-scope")
     else ()
         message (FATAL_ERROR "Unknown sanitizer type: ${SANITIZE}")
     endif ()

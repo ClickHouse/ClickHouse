@@ -40,6 +40,7 @@ public:
 
     std::string getName() const override;
     const char * getFamilyName() const override { return "Tuple"; }
+    TypeIndex getDataType() const override { return TypeIndex::Tuple; }
 
     MutableColumnPtr cloneEmpty() const override;
     MutableColumnPtr cloneResized(size_t size) const override;
@@ -62,6 +63,7 @@ public:
     const char * deserializeAndInsertFromArena(const char * pos) override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void updateWeakHash32(WeakHash32 & hash) const override;
+    void updateHashFast(SipHash & hash) const override;
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
@@ -70,14 +72,22 @@ public:
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
     void gather(ColumnGathererStream & gatherer_stream) override;
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
+    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
+                       PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
+                       int direction, int nan_direction_hint) const override;
+    int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator & collator) const override;
     void getExtremes(Field & min, Field & max) const override;
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
+    void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const override;
+    void getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
+    void updatePermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges& equal_ranges) const override;
     void reserve(size_t n) override;
     size_t byteSize() const override;
     size_t allocatedBytes() const override;
     void protect() override;
     void forEachSubcolumn(ColumnCallback callback) override;
     bool structureEquals(const IColumn & rhs) const override;
+    bool isCollationSupported() const override;
 
     size_t tupleSize() const { return columns.size(); }
 
@@ -88,6 +98,15 @@ public:
     Columns getColumnsCopy() const { return {columns.begin(), columns.end()}; }
 
     const ColumnPtr & getColumnPtr(size_t idx) const { return columns[idx]; }
+
+private:
+    int compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator * collator=nullptr) const;
+
+    template <typename LessOperator>
+    void getPermutationImpl(size_t limit, Permutation & res, LessOperator less) const;
+
+    void updatePermutationImpl(
+        bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges, const Collator * collator=nullptr) const;
 };
 
 

@@ -1,6 +1,8 @@
 #include <Access/MemoryAccessStorage.h>
 #include <ext/scope_guard.h>
-#include <unordered_set>
+#include <boost/container/flat_set.hpp>
+#include <boost/range/adaptor/map.hpp>
+#include <boost/range/algorithm/copy.hpp>
 
 
 namespace DB
@@ -11,11 +13,12 @@ MemoryAccessStorage::MemoryAccessStorage(const String & storage_name_)
 }
 
 
-std::optional<UUID> MemoryAccessStorage::findImpl(std::type_index type, const String & name) const
+std::optional<UUID> MemoryAccessStorage::findImpl(EntityType type, const String & name) const
 {
     std::lock_guard lock{mutex};
-    auto it = names.find({name, type});
-    if (it == names.end())
+    const auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
+    auto it = entries_by_name.find(name);
+    if (it == entries_by_name.end())
         return {};
 
     Entry & entry = *(it->second);
@@ -23,12 +26,12 @@ std::optional<UUID> MemoryAccessStorage::findImpl(std::type_index type, const St
 }
 
 
-std::vector<UUID> MemoryAccessStorage::findAllImpl(std::type_index type) const
+std::vector<UUID> MemoryAccessStorage::findAllImpl(EntityType type) const
 {
     std::lock_guard lock{mutex};
     std::vector<UUID> result;
-    result.reserve(entries.size());
-    for (const auto & [id, entry] : entries)
+    result.reserve(entries_by_id.size());
+    for (const auto & [id, entry] : entries_by_id)
         if (entry.entity->isTypeOf(type))
             result.emplace_back(id);
     return result;
@@ -38,15 +41,15 @@ std::vector<UUID> MemoryAccessStorage::findAllImpl(std::type_index type) const
 bool MemoryAccessStorage::existsImpl(const UUID & id) const
 {
     std::lock_guard lock{mutex};
-    return entries.count(id);
+    return entries_by_id.count(id);
 }
 
 
 AccessEntityPtr MemoryAccessStorage::readImpl(const UUID & id) const
 {
     std::lock_guard lock{mutex};
-    auto it = entries.find(id);
-    if (it == entries.end())
+    auto it = entries_by_id.find(id);
+    if (it == entries_by_id.end())
         throwNotFound(id);
     const Entry & entry = it->second;
     return entry.entity;
@@ -55,7 +58,7 @@ AccessEntityPtr MemoryAccessStorage::readImpl(const UUID & id) const
 
 String MemoryAccessStorage::readNameImpl(const UUID & id) const
 {
-    return readImpl(id)->getFullName();
+    return readImpl(id)->getName();
 }
 
 
@@ -66,26 +69,27 @@ UUID MemoryAccessStorage::insertImpl(const AccessEntityPtr & new_entity, bool re
 
     UUID id = generateRandomID();
     std::lock_guard lock{mutex};
-    insertNoLock(generateRandomID(), new_entity, replace_if_exists, notifications);
+    insertNoLock(id, new_entity, replace_if_exists, notifications);
     return id;
 }
 
 
 void MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, Notifications & notifications)
 {
-    const String & name = new_entity->getFullName();
-    std::type_index type = new_entity->getType();
+    const String & name = new_entity->getName();
+    EntityType type = new_entity->getType();
 
     /// Check that we can insert.
-    auto it = entries.find(id);
-    if (it != entries.end())
+    auto it = entries_by_id.find(id);
+    if (it != entries_by_id.end())
     {
         const auto & existing_entry = it->second;
-        throwIDCollisionCannotInsert(id, type, name, existing_entry.entity->getType(), existing_entry.entity->getFullName());
+        throwIDCollisionCannotInsert(id, type, name, existing_entry.entity->getType(), existing_entry.entity->getName());
     }
 
-    auto it2 = names.find({name, type});
-    if (it2 != names.end())
+    auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
+    auto it2 = entries_by_name.find(name);
+    if (it2 != entries_by_name.end())
     {
         const auto & existing_entry = *(it2->second);
         if (replace_if_exists)
@@ -95,10 +99,10 @@ void MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & 
     }
 
     /// Do insertion.
-    auto & entry = entries[id];
+    auto & entry = entries_by_id[id];
     entry.id = id;
     entry.entity = new_entity;
-    names[std::pair{name, type}] = &entry;
+    entries_by_name[name] = &entry;
     prepareNotifications(entry, false, notifications);
 }
 
@@ -115,19 +119,20 @@ void MemoryAccessStorage::removeImpl(const UUID & id)
 
 void MemoryAccessStorage::removeNoLock(const UUID & id, Notifications & notifications)
 {
-    auto it = entries.find(id);
-    if (it == entries.end())
+    auto it = entries_by_id.find(id);
+    if (it == entries_by_id.end())
         throwNotFound(id);
 
     Entry & entry = it->second;
-    const String & name = entry.entity->getFullName();
-    std::type_index type = entry.entity->getType();
+    const String & name = entry.entity->getName();
+    EntityType type = entry.entity->getType();
 
     prepareNotifications(entry, true, notifications);
 
     /// Do removing.
-    names.erase({name, type});
-    entries.erase(it);
+    auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
+    entries_by_name.erase(name);
+    entries_by_id.erase(it);
 }
 
 
@@ -143,27 +148,31 @@ void MemoryAccessStorage::updateImpl(const UUID & id, const UpdateFunc & update_
 
 void MemoryAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_func, Notifications & notifications)
 {
-    auto it = entries.find(id);
-    if (it == entries.end())
+    auto it = entries_by_id.find(id);
+    if (it == entries_by_id.end())
         throwNotFound(id);
 
     Entry & entry = it->second;
     auto old_entity = entry.entity;
     auto new_entity = update_func(old_entity);
 
+    if (!new_entity->isTypeOf(old_entity->getType()))
+        throwBadCast(id, new_entity->getType(), new_entity->getName(), old_entity->getType());
+
     if (*new_entity == *old_entity)
         return;
 
     entry.entity = new_entity;
 
-    if (new_entity->getFullName() != old_entity->getFullName())
+    if (new_entity->getName() != old_entity->getName())
     {
-        auto it2 = names.find({new_entity->getFullName(), new_entity->getType()});
-        if (it2 != names.end())
-            throwNameCollisionCannotRename(old_entity->getType(), old_entity->getFullName(), new_entity->getFullName());
+        auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(old_entity->getType())];
+        auto it2 = entries_by_name.find(new_entity->getName());
+        if (it2 != entries_by_name.end())
+            throwNameCollisionCannotRename(old_entity->getType(), old_entity->getName(), new_entity->getName());
 
-        names.erase({old_entity->getFullName(), old_entity->getType()});
-        names[std::pair{new_entity->getFullName(), new_entity->getType()}] = &entry;
+        entries_by_name.erase(old_entity->getName());
+        entries_by_name[new_entity->getName()] = &entry;
     }
 
     prepareNotifications(entry, false, notifications);
@@ -192,43 +201,47 @@ void MemoryAccessStorage::setAll(const std::vector<std::pair<UUID, AccessEntityP
 
 void MemoryAccessStorage::setAllNoLock(const std::vector<std::pair<UUID, AccessEntityPtr>> & all_entities, Notifications & notifications)
 {
-    /// Get list of the currently used IDs. Later we will remove those of them which are not used anymore.
-    std::unordered_set<UUID> not_used_ids;
-    for (const auto & id_and_entry : entries)
-        not_used_ids.emplace(id_and_entry.first);
+    boost::container::flat_set<UUID> not_used_ids;
+    std::vector<UUID> conflicting_ids;
 
-    /// Remove conflicting entities.
+    /// Get the list of currently used IDs. Later we will remove those of them which are not used anymore.
+    for (const auto & id : entries_by_id | boost::adaptors::map_keys)
+        not_used_ids.emplace(id);
+
+    /// Get the list of conflicting IDs and update the list of currently used ones.
     for (const auto & [id, entity] : all_entities)
     {
-        auto it = entries.find(id);
-        if (it != entries.end())
+        auto it = entries_by_id.find(id);
+        if (it != entries_by_id.end())
         {
             not_used_ids.erase(id); /// ID is used.
+
             Entry & entry = it->second;
             if (entry.entity->getType() != entity->getType())
-            {
-                removeNoLock(id, notifications);
-                continue;
-            }
+                conflicting_ids.emplace_back(id); /// Conflict: same ID, different type.
         }
-        auto it2 = names.find({entity->getFullName(), entity->getType()});
-        if (it2 != names.end())
+
+        const auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(entity->getType())];
+        auto it2 = entries_by_name.find(entity->getName());
+        if (it2 != entries_by_name.end())
         {
             Entry & entry = *(it2->second);
             if (entry.id != id)
-                removeNoLock(id, notifications);
+                conflicting_ids.emplace_back(entry.id); /// Conflict: same name and type, different ID.
         }
     }
 
-    /// Remove entities which are not used anymore.
-    for (const auto & id : not_used_ids)
+    /// Remove entities which are not used anymore and which are in conflict with new entities.
+    boost::container::flat_set<UUID> ids_to_remove = std::move(not_used_ids);
+    boost::range::copy(conflicting_ids, std::inserter(ids_to_remove, ids_to_remove.end()));
+    for (const auto & id : ids_to_remove)
         removeNoLock(id, notifications);
 
     /// Insert or update entities.
     for (const auto & [id, entity] : all_entities)
     {
-        auto it = entries.find(id);
-        if (it != entries.end())
+        auto it = entries_by_id.find(id);
+        if (it != entries_by_id.end())
         {
             if (*(it->second.entity) != *entity)
             {
@@ -244,24 +257,27 @@ void MemoryAccessStorage::setAllNoLock(const std::vector<std::pair<UUID, AccessE
 
 void MemoryAccessStorage::prepareNotifications(const Entry & entry, bool remove, Notifications & notifications) const
 {
+    const AccessEntityPtr entity = remove ? nullptr : entry.entity;
     for (const auto & handler : entry.handlers_by_id)
-        notifications.push_back({handler, entry.id, remove ? nullptr : entry.entity});
+        notifications.push_back({handler, entry.id, entity});
 
-    auto range = handlers_by_type.equal_range(entry.entity->getType());
-    for (auto it = range.first; it != range.second; ++it)
-        notifications.push_back({it->second, entry.id, remove ? nullptr : entry.entity});
+    for (const auto & handler : handlers_by_type[static_cast<size_t>(entry.entity->getType())])
+        notifications.push_back({handler, entry.id, entity});
 }
 
 
-ext::scope_guard MemoryAccessStorage::subscribeForChangesImpl(std::type_index type, const OnChangedHandler & handler) const
+ext::scope_guard MemoryAccessStorage::subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const
 {
     std::lock_guard lock{mutex};
-    auto handler_it = handlers_by_type.emplace(type, handler);
+    auto & handlers = handlers_by_type[static_cast<size_t>(type)];
+    handlers.push_back(handler);
+    auto handler_it = std::prev(handlers.end());
 
-    return [this, handler_it]
+    return [this, type, handler_it]
     {
         std::lock_guard lock2{mutex};
-        handlers_by_type.erase(handler_it);
+        auto & handlers2 = handlers_by_type[static_cast<size_t>(type)];
+        handlers2.erase(handler_it);
     };
 }
 
@@ -269,8 +285,8 @@ ext::scope_guard MemoryAccessStorage::subscribeForChangesImpl(std::type_index ty
 ext::scope_guard MemoryAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
 {
     std::lock_guard lock{mutex};
-    auto it = entries.find(id);
-    if (it == entries.end())
+    auto it = entries_by_id.find(id);
+    if (it == entries_by_id.end())
         return {};
     const Entry & entry = it->second;
     auto handler_it = entry.handlers_by_id.insert(entry.handlers_by_id.end(), handler);
@@ -278,8 +294,8 @@ ext::scope_guard MemoryAccessStorage::subscribeForChangesImpl(const UUID & id, c
     return [this, id, handler_it]
     {
         std::lock_guard lock2{mutex};
-        auto it2 = entries.find(id);
-        if (it2 != entries.end())
+        auto it2 = entries_by_id.find(id);
+        if (it2 != entries_by_id.end())
         {
             const Entry & entry2 = it2->second;
             entry2.handlers_by_id.erase(handler_it);
@@ -291,8 +307,8 @@ ext::scope_guard MemoryAccessStorage::subscribeForChangesImpl(const UUID & id, c
 bool MemoryAccessStorage::hasSubscriptionImpl(const UUID & id) const
 {
     std::lock_guard lock{mutex};
-    auto it = entries.find(id);
-    if (it != entries.end())
+    auto it = entries_by_id.find(id);
+    if (it != entries_by_id.end())
     {
         const Entry & entry = it->second;
         return !entry.handlers_by_id.empty();
@@ -301,10 +317,10 @@ bool MemoryAccessStorage::hasSubscriptionImpl(const UUID & id) const
 }
 
 
-bool MemoryAccessStorage::hasSubscriptionImpl(std::type_index type) const
+bool MemoryAccessStorage::hasSubscriptionImpl(EntityType type) const
 {
     std::lock_guard lock{mutex};
-    auto range = handlers_by_type.equal_range(type);
-    return range.first != range.second;
+    const auto & handlers = handlers_by_type[static_cast<size_t>(type)];
+    return !handlers.empty();
 }
 }

@@ -5,12 +5,14 @@
 #include <atomic>
 #include <functional>
 #include <Common/ActionBlocker.h>
+#include <Storages/MergeTree/TTLMergeSelector.h>
+#include <Storages/MergeTree/MergeAlgorithm.h>
+#include <Storages/MergeTree/MergeType.h>
 
 
 namespace DB
 {
 
-class MergeListEntry;
 class MergeProgressCallback;
 
 /// Auxiliary struct holding metainformation for the future merged or mutated part.
@@ -21,6 +23,7 @@ struct FutureMergedMutatedPart
     MergeTreeDataPartType type;
     MergeTreePartInfo part_info;
     MergeTreeData::DataPartsVector parts;
+    MergeType merge_type = MergeType::REGULAR;
 
     const MergeTreePartition & getPartition() const { return parts.front()->partition; }
 
@@ -49,25 +52,24 @@ struct FutureMergedMutatedPart
 class MergeTreeDataMergerMutator
 {
 public:
-    using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &, String * reason)>;
+    using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &, String *)>;
 
-public:
     MergeTreeDataMergerMutator(MergeTreeData & data_, size_t background_pool_size);
 
     /** Get maximum total size of parts to do merge, at current moment of time.
       * It depends on number of free threads in background_pool and amount of free space in disk.
       */
-    UInt64 getMaxSourcePartsSizeForMerge();
+    UInt64 getMaxSourcePartsSizeForMerge() const;
 
     /** For explicitly passed size of pool and number of used tasks.
       * This method could be used to calculate threshold depending on number of tasks in replication queue.
       */
-    UInt64 getMaxSourcePartsSizeForMerge(size_t pool_size, size_t pool_used);
+    UInt64 getMaxSourcePartsSizeForMerge(size_t pool_size, size_t pool_used) const;
 
     /** Get maximum total size of parts to do mutation, at current moment of time.
       * It depends only on amount of free space in disk.
       */
-    UInt64 getMaxSourcePartSizeForMutation();
+    UInt64 getMaxSourcePartSizeForMutation() const;
 
     /** Selects which parts to merge. Uses a lot of heuristics.
       *
@@ -81,8 +83,8 @@ public:
         bool aggressive,
         size_t max_total_size_to_merge,
         const AllowedMergingPredicate & can_merge,
+        bool merge_with_ttl_allowed,
         String * out_disable_reason = nullptr);
-
 
     /** Select all the parts in the specified partition for merge, if possible.
       * final - choose to merge even a single part - that is, allow to merge one part "with itself".
@@ -107,18 +109,24 @@ public:
       */
     MergeTreeData::MutableDataPartPtr mergePartsToTemporaryPart(
         const FutureMergedMutatedPart & future_part,
-        MergeListEntry & merge_entry, TableStructureReadLockHolder & table_lock_holder, time_t time_of_merge,
-        const ReservationPtr & space_reservation, bool deduplicate, bool force_ttl);
+        const StorageMetadataPtr & metadata_snapshot,
+        MergeListEntry & merge_entry,
+        TableLockHolder & table_lock_holder,
+        time_t time_of_merge,
+        const Context & context,
+        const ReservationPtr & space_reservation,
+        bool deduplicate);
 
     /// Mutate a single data part with the specified commands. Will create and return a temporary part.
     MergeTreeData::MutableDataPartPtr mutatePartToTemporaryPart(
         const FutureMergedMutatedPart & future_part,
+        const StorageMetadataPtr & metadata_snapshot,
         const MutationCommands & commands,
         MergeListEntry & merge_entry,
         time_t time_of_mutation,
         const Context & context,
         const ReservationPtr & space_reservation,
-        TableStructureReadLockHolder & table_lock_holder);
+        TableLockHolder & table_lock_holder);
 
     MergeTreeData::DataPartPtr renameMergedTemporaryPart(
         MergeTreeData::MutableDataPartPtr & new_data_part,
@@ -144,50 +152,58 @@ private:
         MutationCommands & for_interpreter,
         MutationCommands & for_file_renames);
 
-
-    /// Apply commands to source_part i.e. remove some columns in source_part
-    /// and return set of files, that have to be removed from filesystem and checksums
-    static NameToNameMap collectFilesForRenames(MergeTreeData::DataPartPtr source_part, const MutationCommands & commands_for_removes, const String & mrk_extension);
+    /// Apply commands to source_part i.e. remove and rename some columns in
+    /// source_part and return set of files, that have to be removed or renamed
+    /// from filesystem and in-memory checksums. Ordered result is important,
+    /// because we can apply renames that affects each other: x -> z, y -> x.
+    static NameToNameVector collectFilesForRenames(MergeTreeData::DataPartPtr source_part, const MutationCommands & commands_for_removes, const String & mrk_extension);
 
     /// Files, that we don't need to remove and don't need to hardlink, for example columns.txt and checksums.txt.
     /// Because we will generate new versions of them after we perform mutation.
-    static NameSet collectFilesToSkip(const Block & updated_header, const std::set<MergeTreeIndexPtr> & indices_to_recalc, const String & mrk_extension);
+    static NameSet collectFilesToSkip(
+        const MergeTreeDataPartPtr & source_part,
+        const Block & updated_header,
+        const std::set<MergeTreeIndexPtr> & indices_to_recalc,
+        const String & mrk_extension);
 
-    /// Get the columns list of the resulting part in the same order as all_columns.
+    /// Get the columns list of the resulting part in the same order as storage_columns.
     static NamesAndTypesList getColumnsForNewDataPart(
         MergeTreeData::DataPartPtr source_part,
         const Block & updated_header,
-        NamesAndTypesList all_columns,
+        NamesAndTypesList storage_columns,
         const MutationCommands & commands_for_removes);
 
-    /// Get skip indcies, that should exists in the resulting data part.
+    /// Get skip indices, that should exists in the resulting data part.
     static MergeTreeIndices getIndicesForNewDataPart(
-        const MergeTreeIndices & all_indices,
+        const IndicesDescription & all_indices,
         const MutationCommands & commands_for_removes);
 
-    bool shouldExecuteTTL(const Names & columns, const MutationCommands & commands) const;
+    static bool shouldExecuteTTL(const StorageMetadataPtr & metadata_snapshot, const Names & columns, const MutationCommands & commands);
 
     /// Return set of indices which should be recalculated during mutation also
     /// wraps input stream into additional expression stream
-    std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
+    static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
         BlockInputStreamPtr & input_stream,
-        StoragePtr storage_from_source_part,
         const NamesAndTypesList & updated_columns,
-        const Context & context) const;
+        const StorageMetadataPtr & metadata_snapshot,
+        const Context & context);
 
     /// Override all columns of new part using mutating_stream
     void mutateAllPartColumns(
         MergeTreeData::MutableDataPartPtr new_data_part,
+        const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeIndices & skip_indices,
         BlockInputStreamPtr mutating_stream,
         time_t time_of_mutation,
         const CompressionCodecPtr & codec,
         MergeListEntry & merge_entry,
-        bool need_remove_expired_values) const;
+        bool need_remove_expired_values,
+        bool need_sync) const;
 
     /// Mutate some columns of source part with mutation_stream
     void mutateSomePartColumns(
         const MergeTreeDataPartPtr & source_part,
+        const StorageMetadataPtr & metadata_snapshot,
         const std::set<MergeTreeIndexPtr> & indices_to_recalc,
         const Block & mutation_header,
         MergeTreeData::MutableDataPartPtr new_data_part,
@@ -195,14 +211,16 @@ private:
         time_t time_of_mutation,
         const CompressionCodecPtr & codec,
         MergeListEntry & merge_entry,
-        bool need_remove_expired_values) const;
+        bool need_remove_expired_values,
+        bool need_sync) const;
 
     /// Initialize and write to disk new part fields like checksums, columns,
     /// etc.
     static void finalizeMutatedPart(
         const MergeTreeDataPartPtr & source_part,
         MergeTreeData::MutableDataPartPtr new_data_part,
-        bool need_remove_expired_values);
+        bool need_remove_expired_values,
+        const CompressionCodecPtr & codec);
 
 public :
     /** Is used to cancel all merges and mutations. On cancel() call all currently running actions will throw exception soon.
@@ -210,12 +228,6 @@ public :
       */
     ActionBlocker merges_blocker;
     ActionBlocker ttl_merges_blocker;
-
-    enum class MergeAlgorithm
-    {
-        Horizontal, /// per-row merge of all columns
-        Vertical    /// per-row merge of PK and secondary indices columns, per-column gather for non-PK columns
-    };
 
 private:
 
@@ -230,13 +242,18 @@ private:
     MergeTreeData & data;
     const size_t background_pool_size;
 
-    Logger * log;
+    Poco::Logger * log;
 
     /// When the last time you wrote to the log that the disk space was running out (not to write about this too often).
     time_t disk_space_warning_time = 0;
 
-    /// Last time when TTLMergeSelector has been used
-    time_t last_merge_with_ttl = 0;
+    /// Stores the next TTL delete merge due time for each partition (used only by TTLDeleteMergeSelector)
+    ITTLMergeSelector::PartitionIdToTTLs next_delete_ttl_merge_times_by_partition;
+
+    /// Stores the next TTL recompress merge due time for each partition (used only by TTLRecompressionMergeSelector)
+    ITTLMergeSelector::PartitionIdToTTLs next_recompress_ttl_merge_times_by_partition;
+    /// Performing TTL merges independently for each partition guarantees that
+    /// there is only a limited number of TTL merges and no partition stores data, that is too stale
 };
 
 

@@ -1,13 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 49
 toc_title: Veri Yedekleme
 ---
 
 # Veri Yedekleme {#data-backup}
 
-Karşın [çoğalma](../engines/table_engines/mergetree_family/replication.md) provides protection from hardware failures, it does not protect against human errors: accidental deletion of data, deletion of the wrong table or a table on the wrong cluster, and software bugs that result in incorrect data processing or data corruption. In many cases mistakes like these will affect all replicas. ClickHouse has built-in safeguards to prevent some types of mistakes — for example, by default [50 GB'den fazla veri içeren MergeTree benzeri bir motorla tabloları bırakamazsınız](https://github.com/ClickHouse/ClickHouse/blob/v18.14.18-stable/programs/server/config.xml#L322-L330). Ancak, bu önlemler olası tüm davaları kapsamaz ve atlatılabilir.
+Karşın [çoğalma](../engines/table-engines/mergetree-family/replication.md) provides protection from hardware failures, it does not protect against human errors: accidental deletion of data, deletion of the wrong table or a table on the wrong cluster, and software bugs that result in incorrect data processing or data corruption. In many cases mistakes like these will affect all replicas. ClickHouse has built-in safeguards to prevent some types of mistakes — for example, by default [50 GB'den fazla veri içeren MergeTree benzeri bir motorla tabloları bırakamazsınız](https://github.com/ClickHouse/ClickHouse/blob/v18.14.18-stable/programs/server/config.xml#L322-L330). Ancak, bu önlemler olası tüm davaları kapsamaz ve atlatılabilir.
 
 Olası insan hatalarını etkili bir şekilde azaltmak için, verilerinizi yedeklemek ve geri yüklemek için dikkatli bir şekilde bir strateji hazırlamanız gerekir **önceden**.
 
@@ -22,7 +22,7 @@ Genellikle Clickhouse'a alınan veriler, aşağıdaki gibi bir tür kalıcı sı
 
 ## Dosya Sistemi Anlık Görüntüleri {#filesystem-snapshots}
 
-Bazı yerel dosya sistemleri anlık görüntü işlevselliği sağlar (örneğin, [ZFS](https://en.wikipedia.org/wiki/ZFS)), ancak canlı sorguları sunmak için en iyi seçenek olmayabilir. Olası bir çözüm, bu tür dosya sistemi ile ek kopyalar oluşturmak ve bunları [Dağılı](../engines/table_engines/special/distributed.md) için kullanılan tablolar `SELECT` sorgular. Bu tür yinelemelerdeki anlık görüntüler, verileri değiştiren sorguların erişemeyeceği bir yerde olacaktır. Bonus olarak, bu yinelemeler, sunucu başına daha fazla disk eklenmiş özel donanım yapılandırmalarına sahip olabilir ve bu da uygun maliyetli olabilir.
+Bazı yerel dosya sistemleri anlık görüntü işlevselliği sağlar (örneğin, [ZFS](https://en.wikipedia.org/wiki/ZFS)), ancak canlı sorguları sunmak için en iyi seçenek olmayabilir. Olası bir çözüm, bu tür dosya sistemi ile ek kopyalar oluşturmak ve bunları [Dağılı](../engines/table-engines/special/distributed.md) için kullanılan tablolar `SELECT` sorgular. Bu tür yinelemelerdeki anlık görüntüler, verileri değiştiren sorguların erişemeyeceği bir yerde olacaktır. Bonus olarak, bu yinelemeler, sunucu başına daha fazla disk eklenmiş özel donanım yapılandırmalarına sahip olabilir ve bu da uygun maliyetli olabilir.
 
 ## clickhouse-fotokopi makinesi {#clickhouse-copier}
 
@@ -34,7 +34,7 @@ Daha küçük veri hacimleri için, basit bir `INSERT INTO ... SELECT ...` uzak 
 
 ClickHouse kullanarak sağlar `ALTER TABLE ... FREEZE PARTITION ...` tablo bölümleri yerel bir kopyasını oluşturmak için sorgu. Bu hardlinks kullanarak uygulanır `/var/lib/clickhouse/shadow/` klasör, bu yüzden genellikle eski veriler için ekstra disk alanı tüketmez. Oluşturulan dosyaların kopyaları ClickHouse server tarafından işlenmez, bu yüzden onları orada bırakabilirsiniz: herhangi bir ek harici sistem gerektirmeyen basit bir yedeklemeniz olacak, ancak yine de donanım sorunlarına eğilimli olacaktır. Bu nedenle, bunları uzaktan başka bir konuma kopyalamak ve ardından yerel kopyaları kaldırmak daha iyidir. Dağıtılmış dosya sistemleri ve nesne depoları bunun için hala iyi bir seçenektir, ancak yeterince büyük kapasiteye sahip normal ekli dosya sunucuları da işe yarayabilir (bu durumda aktarım ağ dosya sistemi veya belki de [rsync](https://en.wikipedia.org/wiki/Rsync)).
 
-Bölüm işlemleriyle ilgili sorgular hakkında daha fazla bilgi için bkz. [ALTER belgeleri](../sql_reference/statements/alter.md#alter_manipulations-with-partitions).
+Bölüm işlemleriyle ilgili sorgular hakkında daha fazla bilgi için bkz. [ALTER belgeleri](../sql-reference/statements/alter.md#alter_manipulations-with-partitions).
 
 Bu yaklaşımı otomatikleştirmek için üçüncü taraf bir araç kullanılabilir: [clickhouse-yedekleme](https://github.com/AlexAkulov/clickhouse-backup).
 

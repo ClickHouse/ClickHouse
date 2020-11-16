@@ -138,7 +138,7 @@ SortingTransform::SortingTransform(
     , max_merged_block_size(max_merged_block_size_)
     , limit(limit_)
 {
-    auto & sample = inputs.front().getHeader();
+    const auto & sample = inputs.front().getHeader();
 
     /// Replace column names to column position in sort_description.
     for (auto & column_description : description)
@@ -285,7 +285,9 @@ IProcessor::Status SortingTransform::prepareGenerate()
 
     if (output.isFinished())
     {
-        inputs.front().close();
+        for (auto & input : inputs)
+            input.close();
+
         return Status::Finished;
     }
 
@@ -368,7 +370,7 @@ void SortingTransform::enrichChunkWithConstants(Chunk & chunk)
     Columns column_with_constants;
     column_with_constants.reserve(num_result_columns);
 
-    auto & header = inputs.front().getHeader();
+    const auto & header = inputs.front().getHeader();
 
     size_t next_non_const_column = 0;
     for (size_t i = 0; i < num_result_columns; ++i)

@@ -1,15 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
-toc_priority: 60
-toc_title: "Param\xE8tre"
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 ---
 
 # Paramètre {#settings}
 
-## distributed\_product\_mode {#distributed-product-mode}
+## distributed_product_mode {#distributed-product-mode}
 
-Modifie le comportement de [distribués sous-requêtes](../../sql_reference/statements/select.md).
+Modifie le comportement de [distribués sous-requêtes](../../sql-reference/operators/in.md).
 
 ClickHouse applies this setting when the query contains the product of distributed tables, i.e. when the query for a distributed table contains a non-GLOBAL subquery for the distributed table.
 
@@ -18,7 +16,7 @@ Restriction:
 -   Uniquement appliqué pour les sous-requêtes IN et JOIN.
 -   Uniquement si la section FROM utilise une table distribuée contenant plus d'un fragment.
 -   Si la sous-requête concerne un distribué tableau contenant plus d'un fragment.
--   Pas utilisé pour une table [distant](../../sql_reference/table_functions/remote.md) fonction.
+-   Pas utilisé pour une table [distant](../../sql-reference/table-functions/remote.md) fonction.
 
 Valeurs possibles:
 
@@ -27,7 +25,7 @@ Valeurs possibles:
 -   `global` — Replaces the `IN`/`JOIN` requête avec `GLOBAL IN`/`GLOBAL JOIN.`
 -   `allow` — Allows the use of these types of subqueries.
 
-## enable\_optimize\_predicate\_expression {#enable-optimize-predicate-expression}
+## enable_optimize_predicate_expression {#enable-optimize-predicate-expression}
 
 Active la poussée du prédicat `SELECT` requête.
 
@@ -51,9 +49,9 @@ Si `enable_optimize_predicate_expression = 1`, alors le temps d'exécution de ce
 
 Si `enable_optimize_predicate_expression = 0` puis le temps d'exécution de la deuxième requête est beaucoup plus long, parce que le `WHERE` la clause s'applique à toutes les données après la sous-requête des finitions.
 
-## fallback\_to\_stale\_replicas\_for\_distributed\_queries {#settings-fallback_to_stale_replicas_for_distributed_queries}
+## fallback_to_stale_replicas_for_distributed_queries {#settings-fallback_to_stale_replicas_for_distributed_queries}
 
-Force une requête à un réplica obsolète si les données mises à jour ne sont pas disponibles. Voir [Réplication](../../engines/table_engines/mergetree_family/replication.md).
+Force une requête à un réplica obsolète si les données mises à jour ne sont pas disponibles. Voir [Réplication](../../engines/table-engines/mergetree-family/replication.md).
 
 ClickHouse sélectionne le plus pertinent parmi les répliques obsolètes de la table.
 
@@ -61,33 +59,33 @@ Utilisé lors de l'exécution `SELECT` à partir d'une table distribuée qui poi
 
 Par défaut, 1 (activé).
 
-## force\_index\_by\_date {#settings-force_index_by_date}
+## force_index_by_date {#settings-force_index_by_date}
 
 Désactive l'exécution de la requête si l'index ne peut pas être utilisé par jour.
 
 Fonctionne avec les tables de la famille MergeTree.
 
-Si `force_index_by_date=1`, Clickhouse vérifie si la requête a une condition de clé de date qui peut être utilisée pour restreindre les plages de données. S'il n'y a pas de condition appropriée, il lève une exception. Cependant, il ne vérifie pas si la condition réduit la quantité de données à lire. Par exemple, la condition `Date != ' 2000-01-01 '` est acceptable même lorsqu'il correspond à toutes les données de la table (c'est-à-dire que l'exécution de la requête nécessite une analyse complète). Pour plus d'informations sur les plages de données dans les tables MergeTree, voir [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md).
+Si `force_index_by_date=1`, Clickhouse vérifie si la requête a une condition de clé de date qui peut être utilisée pour restreindre les plages de données. S'il n'y a pas de condition appropriée, il lève une exception. Cependant, il ne vérifie pas si la condition réduit la quantité de données à lire. Par exemple, la condition `Date != ' 2000-01-01 '` est acceptable même lorsqu'il correspond à toutes les données de la table (c'est-à-dire que l'exécution de la requête nécessite une analyse complète). Pour plus d'informations sur les plages de données dans les tables MergeTree, voir [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
 
-## force\_primary\_key {#force-primary-key}
+## force_primary_key {#force-primary-key}
 
 Désactive l'exécution de la requête si l'indexation par la clé primaire n'est pas possible.
 
 Fonctionne avec les tables de la famille MergeTree.
 
-Si `force_primary_key=1`, Clickhouse vérifie si la requête a une condition de clé primaire qui peut être utilisée pour restreindre les plages de données. S'il n'y a pas de condition appropriée, il lève une exception. Cependant, il ne vérifie pas si la condition réduit la quantité de données à lire. Pour plus d'informations sur les plages de données dans les tables MergeTree, voir [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md).
+Si `force_primary_key=1`, Clickhouse vérifie si la requête a une condition de clé primaire qui peut être utilisée pour restreindre les plages de données. S'il n'y a pas de condition appropriée, il lève une exception. Cependant, il ne vérifie pas si la condition réduit la quantité de données à lire. Pour plus d'informations sur les plages de données dans les tables MergeTree, voir [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
 
-## format\_schema {#format-schema}
+## format_schema {#format-schema}
 
 Ce paramètre est utile lorsque vous utilisez des formats nécessitant une définition de schéma, tels que [Cap'n Proto](https://capnproto.org/) ou [Protobuf](https://developers.google.com/protocol-buffers/). La valeur dépend du format.
 
-## fsync\_metadata {#fsync-metadata}
+## fsync_metadata {#fsync-metadata}
 
 Active ou désactive [fsync](http://pubs.opengroup.org/onlinepubs/9699919799/functions/fsync.html) lors de l'écriture `.sql` fichier. Activé par défaut.
 
 Il est logique de le désactiver si le serveur a des millions de tables minuscules qui sont constamment créées et détruites.
 
-## enable\_http\_compression {#settings-enable_http_compression}
+## enable_http_compression {#settings-enable_http_compression}
 
 Active ou désactive la compression de données dans la réponse à une requête HTTP.
 
@@ -100,15 +98,15 @@ Valeurs possibles:
 
 Valeur par défaut: 0.
 
-## http\_zlib\_compression\_level {#settings-http_zlib_compression_level}
+## http_zlib_compression_level {#settings-http_zlib_compression_level}
 
-Définit le niveau de compression des données dans la réponse à une requête HTTP si [enable\_http\_compression = 1](#settings-enable_http_compression).
+Définit le niveau de compression des données dans la réponse à une requête HTTP si [enable_http_compression = 1](#settings-enable_http_compression).
 
 Valeurs possibles: nombres de 1 à 9.
 
 Valeur par défaut: 3.
 
-## http\_native\_compression\_disable\_checksumming\_on\_decompress {#settings-http_native_compression_disable_checksumming_on_decompress}
+## http_native_compression_disable_checksumming_on_decompress {#settings-http_native_compression_disable_checksumming_on_decompress}
 
 Active ou désactive la vérification de la somme de contrôle lors de la décompression des données HTTP POST du client. Utilisé uniquement pour le format de compression natif ClickHouse (non utilisé avec `gzip` ou `deflate`).
 
@@ -121,7 +119,7 @@ Valeurs possibles:
 
 Valeur par défaut: 0.
 
-## send\_progress\_in\_http\_headers {#settings-send_progress_in_http_headers}
+## send_progress_in_http_headers {#settings-send_progress_in_http_headers}
 
 Active ou désactive `X-ClickHouse-Progress` - Têtes de réponse HTTP dans `clickhouse-server` réponse.
 
@@ -134,9 +132,9 @@ Valeurs possibles:
 
 Valeur par défaut: 0.
 
-## max\_http\_get\_redirects {#setting-max_http_get_redirects}
+## max_http_get_redirects {#setting-max_http_get_redirects}
 
-Limite le nombre maximal de sauts de redirection HTTP GET pour [URL](../../engines/table_engines/special/url.md)-tables de moteur. Le paramètre s'applique aux deux types de tables: celles créées par [CREATE TABLE](../../query_language/create/#create-table-query) requête et par la [URL](../../sql_reference/table_functions/url.md) table de fonction.
+Limite le nombre maximal de sauts de redirection HTTP GET pour [URL](../../engines/table-engines/special/url.md)-tables de moteur. Le paramètre s'applique aux deux types de tables: celles créées par [CREATE TABLE](../../sql-reference/statements/create.md#create-table-query) requête et par la [URL](../../sql-reference/table-functions/url.md) table de fonction.
 
 Valeurs possibles:
 
@@ -145,7 +143,7 @@ Valeurs possibles:
 
 Valeur par défaut: 0.
 
-## input\_format\_allow\_errors\_num {#settings-input_format_allow_errors_num}
+## input_format_allow_errors_num {#settings-input_format_allow_errors_num}
 
 Définit le nombre maximal d'erreurs acceptables lors de la lecture à partir de formats de texte (CSV, TSV, etc.).
 
@@ -157,7 +155,7 @@ Si une erreur s'est produite lors de la lecture de lignes mais que le compteur d
 
 Si les deux `input_format_allow_errors_num` et `input_format_allow_errors_ratio` sont dépassés, ClickHouse lève une exception.
 
-## input\_format\_allow\_errors\_ratio {#settings-input_format_allow_errors_ratio}
+## input_format_allow_errors_ratio {#settings-input_format_allow_errors_ratio}
 
 Définit le pourcentage maximal d'erreurs autorisées lors de la lecture à partir de formats de texte (CSV, TSV, etc.).
 Le pourcentage d'erreurs est défini comme un nombre à virgule flottante compris entre 0 et 1.
@@ -170,9 +168,9 @@ Si une erreur s'est produite lors de la lecture de lignes mais que le compteur d
 
 Si les deux `input_format_allow_errors_num` et `input_format_allow_errors_ratio` sont dépassés, ClickHouse lève une exception.
 
-## input\_format\_values\_interpret\_expressions {#settings-input_format_values_interpret_expressions}
+## input_format_values_interpret_expressions {#settings-input_format_values_interpret_expressions}
 
-Active ou désactive L'analyseur SQL complet si l'analyseur de flux rapide ne peut pas analyser les données. Ce paramètre est utilisé uniquement pour la [Valeur](../../interfaces/formats.md#data-format-values) format lors de l'insertion des données. Pour plus d'informations sur l'analyse syntaxique, consultez [Syntaxe](../../sql_reference/syntax.md) section.
+Active ou désactive L'analyseur SQL complet si l'analyseur de flux rapide ne peut pas analyser les données. Ce paramètre est utilisé uniquement pour la [Valeur](../../interfaces/formats.md#data-format-values) format lors de l'insertion des données. Pour plus d'informations sur l'analyse syntaxique, consultez [Syntaxe](../../sql-reference/syntax.md) section.
 
 Valeurs possibles:
 
@@ -188,7 +186,7 @@ Valeur par défaut: 1.
 
 Exemple D'utilisation
 
-Insérez le [DateTime](../../sql_reference/data_types/datetime.md) tapez valeur avec les différents paramètres.
+Insérez le [DateTime](../../sql-reference/data-types/datetime.md) tapez valeur avec les différents paramètres.
 
 ``` sql
 SET input_format_values_interpret_expressions = 0;
@@ -220,21 +218,28 @@ INSERT INTO datetime_t SELECT now()
 Ok.
 ```
 
-## input\_format\_values\_deduce\_templates\_of\_expressions {#settings-input_format_values_deduce_templates_of_expressions}
+## input_format_values_deduce_templates_of_expressions {#settings-input_format_values_deduce_templates_of_expressions}
 
-Active ou désactive la déduction de modèle pour une expression SQL dans [Valeur](../../interfaces/formats.md#data-format-values) format. Il permet d'analyser et d'interpréter les expressions dans `Values` beaucoup plus rapide si les expressions dans des lignes consécutives ont la même structure. ClickHouse va essayer de déduire le modèle d'une expression, analyser les lignes suivantes en utilisant ce modèle et évaluer l'expression sur un lot de lignes analysées avec succès. Pour la requête suivante:
+Active ou désactive la déduction de modèle pour les expressions SQL dans [Valeur](../../interfaces/formats.md#data-format-values) format. Il permet d'analyser et d'interpréter des expressions dans `Values` beaucoup plus rapide si les expressions dans des lignes consécutives ont la même structure. ClickHouse tente de déduire le modèle d'une expression, d'analyser les lignes suivantes à l'aide de ce modèle et d'évaluer l'expression sur un lot de lignes analysées avec succès.
+
+Valeurs possibles:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Valeur par défaut: 1.
+
+Pour la requête suivante:
 
 ``` sql
 INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (upper('Values')), ...
 ```
 
--   si `input_format_values_interpret_expressions=1` et `format_values_deduce_templates_of_expressions=0` les expressions seront interprétées séparément pour chaque ligne (Ceci est très lent pour un grand nombre de lignes)
--   si `input_format_values_interpret_expressions=0` et `format_values_deduce_templates_of_expressions=1` expressions dans les première, deuxième et troisième lignes seront analysées à l'aide du modèle `lower(String)` et interprété ensemble, l'expression est la quatrième ligne sera analysée avec un autre modèle (`upper(String)`)
--   si `input_format_values_interpret_expressions=1` et `format_values_deduce_templates_of_expressions=1` - la même chose que dans le cas précédent, mais permet également d'interpréter les expressions séparément s'il n'est pas possible de déduire le modèle.
+-   Si `input_format_values_interpret_expressions=1` et `format_values_deduce_templates_of_expressions=0`, les expressions sont interprétées séparément pour chaque ligne (c'est très lent pour un grand nombre de lignes).
+-   Si `input_format_values_interpret_expressions=0` et `format_values_deduce_templates_of_expressions=1`, les expressions des première, deuxième et troisième lignes sont analysées à l'aide de template `lower(String)` et interprété ensemble, l'expression dans la quatrième ligne est analysée avec un autre modèle (`upper(String)`).
+-   Si `input_format_values_interpret_expressions=1` et `format_values_deduce_templates_of_expressions=1`, le même que dans le cas précédent, mais permet également d'interpréter les expressions séparément s'il n'est pas possible de déduire le modèle.
 
-Activé par défaut.
-
-## input\_format\_values\_accurate\_types\_of\_literals {#settings-input-format-values-accurate-types-of-literals}
+## input_format_values_accurate_types_of_literals {#settings-input-format-values-accurate-types-of-literals}
 
 Ce paramètre est utilisé uniquement lorsque `input_format_values_deduce_templates_of_expressions = 1`. Il peut arriver que les expressions pour une colonne aient la même structure, mais contiennent des littéraux numériques de types différents, par exemple
 
@@ -244,11 +249,19 @@ Ce paramètre est utilisé uniquement lorsque `input_format_values_deduce_templa
 (..., abs(-1), ...),            -- Int64 literal
 ```
 
-Lorsque ce paramètre est activé, ClickHouse vérifie le type réel de littéral et utilise un modèle d'expression du type correspondant. Dans certains cas, cela peut considérablement ralentir l'évaluation de l'expression dans `Values`.
-When disabled, ClickHouse may use more general type for some literals (e.g. `Float64` ou `Int64` plutôt `UInt64` pour `42`), mais cela peut causer des problèmes de débordement et de précision.
-Activé par défaut.
+Valeurs possibles:
 
-## input\_format\_defaults\_for\_omitted\_fields {#session_settings-input_format_defaults_for_omitted_fields}
+-   0 — Disabled.
+
+    In this case, ClickHouse may use a more general type for some literals (e.g., `Float64` ou `Int64` plutôt `UInt64` pour `42`), mais cela peut causer des problèmes de débordement et de précision.
+
+-   1 — Enabled.
+
+    Dans ce cas, ClickHouse vérifie le type réel de littéral et utilise un modèle d'expression du type correspondant. Dans certains cas, cela peut considérablement ralentir l'évaluation de l'expression dans `Values`.
+
+Valeur par défaut: 1.
+
+## input_format_defaults_for_omitted_fields {#session_settings-input_format_defaults_for_omitted_fields}
 
 Lors de l'exécution de `INSERT` requêtes, remplacez les valeurs de colonne d'entrée omises par les valeurs par défaut des colonnes respectives. Cette option s'applique uniquement aux [JSONEachRow](../../interfaces/formats.md#jsoneachrow), [CSV](../../interfaces/formats.md#csv) et [TabSeparated](../../interfaces/formats.md#tabseparated) format.
 
@@ -262,17 +275,17 @@ Valeurs possibles:
 
 Valeur par défaut: 1.
 
-## input\_format\_tsv\_empty\_as\_default {#settings-input-format-tsv-empty-as-default}
+## input_format_tsv_empty_as_default {#settings-input-format-tsv-empty-as-default}
 
 Lorsque cette option est activée, remplacez les champs de saisie vides dans TSV par des valeurs par défaut. Pour les expressions par défaut complexes `input_format_defaults_for_omitted_fields` doit être activé en trop.
 
 Désactivé par défaut.
 
-## input\_format\_null\_as\_default {#settings-input-format-null-as-default}
+## input_format_null_as_default {#settings-input-format-null-as-default}
 
 Active ou désactive l'utilisation des valeurs par défaut si les données `NULL` mais le type de données de la colonne correspondante dans pas `Nullable(T)` (pour les formats de saisie de texte).
 
-## input\_format\_skip\_unknown\_fields {#settings-input-format-skip-unknown-fields}
+## input_format_skip_unknown_fields {#settings-input-format-skip-unknown-fields}
 
 Active ou désactive le saut d'insertion de données supplémentaires.
 
@@ -292,7 +305,7 @@ Valeurs possibles:
 
 Valeur par défaut: 0.
 
-## input\_format\_import\_nested\_json {#settings-input_format_import_nested_json}
+## input_format_import_nested_json {#settings-input_format_import_nested_json}
 
 Active ou désactive l'insertion de données JSON avec des objets imbriqués.
 
@@ -311,7 +324,7 @@ Voir aussi:
 
 -   [Utilisation de Structures imbriquées](../../interfaces/formats.md#jsoneachrow-nested) avec l' `JSONEachRow` format.
 
-## input\_format\_with\_names\_use\_header {#settings-input-format-with-names-use-header}
+## input_format_with_names_use_header {#settings-input-format-with-names-use-header}
 
 Active ou désactive la vérification de l'ordre des colonnes lors de l'insertion de données.
 
@@ -329,11 +342,11 @@ Valeurs possibles:
 
 Valeur par défaut: 1.
 
-## date\_time\_input\_format {#settings-date_time_input_format}
+## date_time_input_format {#settings-date_time_input_format}
 
 Permet de choisir un analyseur de la représentation textuelle de la date et de l'heure.
 
-Le réglage ne s'applique pas à [fonctions date et heure](../../sql_reference/functions/date_time_functions.md).
+Le réglage ne s'applique pas à [fonctions date et heure](../../sql-reference/functions/date-time-functions.md).
 
 Valeurs possibles:
 
@@ -349,12 +362,12 @@ Valeur par défaut: `'basic'`.
 
 Voir aussi:
 
--   [Type de données DateTime.](../../sql_reference/data_types/datetime.md)
--   [Fonctions pour travailler avec des dates et des heures.](../../sql_reference/functions/date_time_functions.md)
+-   [Type de données DateTime.](../../sql-reference/data-types/datetime.md)
+-   [Fonctions pour travailler avec des dates et des heures.](../../sql-reference/functions/date-time-functions.md)
 
-## join\_default\_strictness {#settings-join_default_strictness}
+## join_default_strictness {#settings-join_default_strictness}
 
-Définit la rigueur par défaut pour [JOIN clauses](../../sql_reference/statements/select.md#select-join).
+Définit la rigueur par défaut pour [JOIN clauses](../../sql-reference/statements/select/join.md#select-join).
 
 Valeurs possibles:
 
@@ -365,12 +378,12 @@ Valeurs possibles:
 
 Valeur par défaut: `ALL`.
 
-## join\_any\_take\_last\_row {#settings-join_any_take_last_row}
+## join_any_take_last_row {#settings-join_any_take_last_row}
 
 Modifie le comportement des opérations de jointure avec `ANY` rigueur.
 
 !!! warning "Attention"
-    Ce paramètre s'applique uniquement pour `JOIN` opérations avec [Rejoindre](../../engines/table_engines/special/join.md) le moteur de tables.
+    Ce paramètre s'applique uniquement pour `JOIN` opérations avec [Rejoindre](../../engines/table-engines/special/join.md) le moteur de tables.
 
 Valeurs possibles:
 
@@ -381,22 +394,22 @@ Valeur par défaut: 0.
 
 Voir aussi:
 
--   [Clause de JOINTURE](../../sql_reference/statements/select.md#select-join)
--   [Rejoindre le moteur de table](../../engines/table_engines/special/join.md)
--   [join\_default\_strictness](#settings-join_default_strictness)
+-   [Clause de JOINTURE](../../sql-reference/statements/select/join.md#select-join)
+-   [Rejoindre le moteur de table](../../engines/table-engines/special/join.md)
+-   [join_default_strictness](#settings-join_default_strictness)
 
-## join\_use\_nulls {#join_use_nulls}
+## join_use_nulls {#join_use_nulls}
 
-Définit le type de [JOIN](../../sql_reference/statements/select.md) comportement. Lors de la fusion de tables, des cellules vides peuvent apparaître. ClickHouse les remplit différemment en fonction de ce paramètre.
+Définit le type de [JOIN](../../sql-reference/statements/select/join.md) comportement. Lors de la fusion de tables, des cellules vides peuvent apparaître. ClickHouse les remplit différemment en fonction de ce paramètre.
 
 Valeurs possibles:
 
 -   0 — The empty cells are filled with the default value of the corresponding field type.
--   1 — `JOIN` se comporte de la même manière que dans SQL standard. Le type du champ correspondant est converti en [Nullable](../../sql_reference/data_types/nullable.md#data_type-nullable) et les cellules vides sont remplis avec [NULL](../../sql_reference/syntax.md).
+-   1 — `JOIN` se comporte de la même manière que dans SQL standard. Le type du champ correspondant est converti en [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable) et les cellules vides sont remplis avec [NULL](../../sql-reference/syntax.md).
 
 Valeur par défaut: 0.
 
-## max\_block\_size {#setting-max_block_size}
+## max_block_size {#setting-max_block_size}
 
 Dans ClickHouse, les données sont traitées par Blocs (Ensembles de parties de colonne). Les cycles de traitement internes pour un seul bloc sont assez efficaces, mais il y a des dépenses notables sur chaque bloc. Le `max_block_size` le paramètre est une recommandation pour la taille du bloc (dans un nombre de lignes) à charger à partir des tables. La taille du bloc ne doit pas être trop petite, de sorte que les dépenses sur chaque bloc sont toujours perceptibles, mais pas trop grande pour que la requête avec limite qui est terminée après le premier bloc soit traitée rapidement. L'objectif est d'éviter de consommer trop de mémoire lors de l'extraction d'un grand nombre de colonnes dans plusieurs threads et de préserver au moins certains localité de cache.
 
@@ -404,15 +417,15 @@ Valeur par défaut: de 65 536.
 
 Les blocs de la taille de `max_block_size` ne sont pas toujours chargées de la table. Si il est évident que moins de données doivent être récupérées, un bloc plus petit est traitée.
 
-## preferred\_block\_size\_bytes {#preferred-block-size-bytes}
+## preferred_block_size_bytes {#preferred-block-size-bytes}
 
 Utilisé dans le même but que `max_block_size`, mais il définit la taille de bloc recommandée en octets en l'adaptant au nombre de lignes dans le bloc.
 Cependant, la taille du bloc ne peut pas être supérieure à `max_block_size` rangée.
 Par défaut: 1 000 000. Cela ne fonctionne que lors de la lecture des moteurs MergeTree.
 
-## merge\_tree\_min\_rows\_for\_concurrent\_read {#setting-merge-tree-min-rows-for-concurrent-read}
+## merge_tree_min_rows_for_concurrent_read {#setting-merge-tree-min-rows-for-concurrent-read}
 
-Si le nombre de lignes à lire à partir d'un fichier d'un [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md) table dépasse `merge_tree_min_rows_for_concurrent_read` ensuite, ClickHouse essaie d'effectuer une lecture simultanée de ce fichier sur plusieurs threads.
+Si le nombre de lignes à lire à partir d'un fichier d'un [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table dépasse `merge_tree_min_rows_for_concurrent_read` ensuite, ClickHouse essaie d'effectuer une lecture simultanée de ce fichier sur plusieurs threads.
 
 Valeurs possibles:
 
@@ -420,9 +433,9 @@ Valeurs possibles:
 
 Valeur par défaut: 163840.
 
-## merge\_tree\_min\_bytes\_for\_concurrent\_read {#setting-merge-tree-min-bytes-for-concurrent-read}
+## merge_tree_min_bytes_for_concurrent_read {#setting-merge-tree-min-bytes-for-concurrent-read}
 
-Si le nombre d'octets à lire à partir d'un fichier d'un [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md)- table de moteur dépasse `merge_tree_min_bytes_for_concurrent_read` puis ClickHouse essaie de lire simultanément à partir de ce fichier dans plusieurs threads.
+Si le nombre d'octets à lire à partir d'un fichier d'un [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)- table de moteur dépasse `merge_tree_min_bytes_for_concurrent_read` puis ClickHouse essaie de lire simultanément à partir de ce fichier dans plusieurs threads.
 
 Valeur Possible:
 
@@ -430,7 +443,7 @@ Valeur Possible:
 
 Valeur par défaut: 251658240.
 
-## merge\_tree\_min\_rows\_for\_seek {#setting-merge-tree-min-rows-for-seek}
+## merge_tree_min_rows_for_seek {#setting-merge-tree-min-rows-for-seek}
 
 Si la distance entre deux blocs de données à lire dans un fichier est inférieure à `merge_tree_min_rows_for_seek` lignes, puis ClickHouse ne cherche pas à travers le fichier mais lit les données séquentiellement.
 
@@ -440,7 +453,7 @@ Valeurs possibles:
 
 Valeur par défaut: 0.
 
-## merge\_tree\_min\_bytes\_for\_seek {#setting-merge-tree-min-bytes-for-seek}
+## merge_tree_min_bytes_for_seek {#setting-merge-tree-min-bytes-for-seek}
 
 Si la distance entre deux blocs de données à lire dans un fichier est inférieure à `merge_tree_min_bytes_for_seek` octets, puis ClickHouse lit séquentiellement une plage de fichier qui contient les deux blocs, évitant ainsi la recherche supplémentaire.
 
@@ -450,7 +463,7 @@ Valeurs possibles:
 
 Valeur par défaut: 0.
 
-## merge\_tree\_coarse\_index\_granularité {#setting-merge-tree-coarse-index-granularity}
+## merge_tree_coarse_index_granularité {#setting-merge-tree-coarse-index-granularity}
 
 Lors de la recherche de données, ClickHouse vérifie les marques de données dans le fichier d'index. Si ClickHouse trouve que les clés requises sont dans une certaine plage, il divise cette plage en `merge_tree_coarse_index_granularity` subranges et recherche les clés requises récursivement.
 
@@ -460,11 +473,11 @@ Valeurs possibles:
 
 Valeur par défaut: 8.
 
-## merge\_tree\_max\_rows\_to\_use\_cache {#setting-merge-tree-max-rows-to-use-cache}
+## merge_tree_max_rows_to_use_cache {#setting-merge-tree-max-rows-to-use-cache}
 
 Si ClickHouse devrait lire plus de `merge_tree_max_rows_to_use_cache` lignes dans une requête, il n'utilise pas le cache des blocs non compressés.
 
-Le cache des blocs non compressés stocke les données extraites pour les requêtes. ClickHouse utilise ce cache pour accélérer les réponses aux petites requêtes répétées. Ce paramètre protège le cache contre le saccage par les requêtes qui lisent une grande quantité de données. Le [uncompressed\_cache\_size](../server_configuration_parameters/settings.md#server-settings-uncompressed_cache_size) le paramètre serveur définit la taille du cache des blocs non compressés.
+Le cache des blocs non compressés stocke les données extraites pour les requêtes. ClickHouse utilise ce cache pour accélérer les réponses aux petites requêtes répétées. Ce paramètre protège le cache contre le saccage par les requêtes qui lisent une grande quantité de données. Le [uncompressed_cache_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) le paramètre serveur définit la taille du cache des blocs non compressés.
 
 Valeurs possibles:
 
@@ -472,11 +485,11 @@ Valeurs possibles:
 
 Default value: 128 ✕ 8192.
 
-## merge\_tree\_max\_bytes\_to\_use\_cache {#setting-merge-tree-max-bytes-to-use-cache}
+## merge_tree_max_bytes_to_use_cache {#setting-merge-tree-max-bytes-to-use-cache}
 
 Si ClickHouse devrait lire plus de `merge_tree_max_bytes_to_use_cache` octets dans une requête, il n'utilise pas le cache de non compressé blocs.
 
-Le cache des blocs non compressés stocke les données extraites pour les requêtes. ClickHouse utilise ce cache pour accélérer les réponses aux petites requêtes répétées. Ce paramètre protège le cache contre le saccage par les requêtes qui lisent une grande quantité de données. Le [uncompressed\_cache\_size](../server_configuration_parameters/settings.md#server-settings-uncompressed_cache_size) le paramètre serveur définit la taille du cache des blocs non compressés.
+Le cache des blocs non compressés stocke les données extraites pour les requêtes. ClickHouse utilise ce cache pour accélérer les réponses aux petites requêtes répétées. Ce paramètre protège le cache contre le saccage par les requêtes qui lisent une grande quantité de données. Le [uncompressed_cache_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) le paramètre serveur définit la taille du cache des blocs non compressés.
 
 Valeur Possible:
 
@@ -484,7 +497,7 @@ Valeur Possible:
 
 Valeur par défaut: 2013265920.
 
-## min\_bytes\_to\_use\_direct\_io {#settings-min-bytes-to-use-direct-io}
+## min_bytes_to_use_direct_io {#settings-min-bytes-to-use-direct-io}
 
 Volume de données minimum requis pour utiliser l'accès direct aux E/S sur le disque de stockage.
 
@@ -497,11 +510,11 @@ Valeurs possibles:
 
 Valeur par défaut: 0.
 
-## log\_queries {#settings-log-queries}
+## log_queries {#settings-log-queries}
 
 Configuration de la journalisation des requêtes.
 
-Les requêtes envoyées à ClickHouse avec cette configuration sont enregistrées selon les règles du [query\_log](../server_configuration_parameters/settings.md#server_configuration_parameters-query-log) paramètre de configuration du serveur.
+Les requêtes envoyées à ClickHouse avec cette configuration sont enregistrées selon les règles du [query_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query-log) paramètre de configuration du serveur.
 
 Exemple:
 
@@ -509,11 +522,29 @@ Exemple:
 log_queries=1
 ```
 
-## log\_query\_threads {#settings-log-query-threads}
+## log_queries_min_type {#settings-log-queries-min-type}
+
+`query_log` type minimal à enregistrer.
+
+Valeurs possibles:
+- `QUERY_START` (`=1`)
+- `QUERY_FINISH` (`=2`)
+- `EXCEPTION_BEFORE_START` (`=3`)
+- `EXCEPTION_WHILE_PROCESSING` (`=4`)
+
+Valeur par défaut: `QUERY_START`.
+
+Peut être utilisé pour limiter le nombre de entiries va va `query_log`, dites que vous êtes intéressant que dans les erreurs, alors vous pouvez utiliser `EXCEPTION_WHILE_PROCESSING`:
+
+``` text
+log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
+```
+
+## log_query_threads {#settings-log-query-threads}
 
 Configuration de la journalisation des threads de requête.
 
-Les threads de requêtes exécutés par ClickHouse avec cette configuration sont journalisés selon les règles du [query\_thread\_log](../server_configuration_parameters/settings.md#server_configuration_parameters-query-thread-log) paramètre de configuration du serveur.
+Les threads de requêtes exécutés par ClickHouse avec cette configuration sont journalisés selon les règles du [query_thread_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) paramètre de configuration du serveur.
 
 Exemple:
 
@@ -521,21 +552,43 @@ Exemple:
 log_query_threads=1
 ```
 
-## max\_insert\_block\_size {#settings-max_insert_block_size}
+## max_insert_block_size {#settings-max_insert_block_size}
 
 La taille des blocs à former pour l'insertion dans une table.
 Ce paramètre s'applique uniquement dans les cas où le serveur formes les blocs.
 Par exemple, pour une insertion via L'interface HTTP, le serveur analyse le format de données et forme des blocs de la taille spécifiée.
-Mais lors de l'utilisation de clickhouse-client, le client analyse les données ‘max\_insert\_block\_size’ le réglage sur le serveur n'affecte pas la taille des blocs insérés.
+Mais lors de l'utilisation de clickhouse-client, le client analyse les données ‘max_insert_block_size’ le réglage sur le serveur n'affecte pas la taille des blocs insérés.
 Le paramètre n'a pas non plus de but lors de L'utilisation D'INSERT SELECT, car les données sont insérées à l'aide des mêmes blocs qui sont formés après SELECT.
 
 Valeur par défaut: 1 048 576 octets.
 
 La valeur par défaut est légèrement supérieure à `max_block_size`. La raison en est que certains moteurs de table (`*MergeTree`) former une partie de données sur le disque pour chaque bloc inséré, qui est une entité assez grande. Pareillement, `*MergeTree` les tables trient les données lors de l'insertion et une taille de bloc suffisamment grande permet de trier plus de données dans la RAM.
 
-## max\_replica\_delay\_for\_distributed\_queries {#settings-max_replica_delay_for_distributed_queries}
+## min_insert_block_size_rows {#min-insert-block-size-rows}
 
-Désactive les répliques en retard pour les requêtes distribuées. Voir [Réplication](../../engines/table_engines/mergetree_family/replication.md).
+Définit le nombre minimum de lignes dans le bloc qui peut être inséré dans un tableau par un `INSERT` requête. Les blocs de plus petite taille sont écrasés en plus gros.
+
+Valeurs possibles:
+
+-   Entier positif.
+-   0 — Squashing disabled.
+
+Valeur par défaut: 1048576.
+
+## min_insert_block_size_bytes {#min-insert-block-size-bytes}
+
+Définit le nombre minimal d'octets dans le bloc qui peut être inséré dans un tableau par un `INSERT` requête. Les blocs de plus petite taille sont écrasés en plus gros.
+
+Valeurs possibles:
+
+-   Entier positif.
+-   0 — Squashing disabled.
+
+Valeur par défaut: 268435456.
+
+## max_replica_delay_for_distributed_queries {#settings-max_replica_delay_for_distributed_queries}
+
+Désactive les répliques en retard pour les requêtes distribuées. Voir [Réplication](../../engines/table-engines/mergetree-family/replication.md).
 
 Définit le temps en secondes. Si une réplique accuse plus de retard que la valeur définie, cette réplique n'est pas utilisée.
 
@@ -543,22 +596,22 @@ Valeur par défaut: 300.
 
 Utilisé lors de l'exécution `SELECT` à partir d'une table distribuée qui pointe vers des tables répliquées.
 
-## max\_threads {#settings-max_threads}
+## max_threads {#settings-max_threads}
 
-Nombre maximal de threads de traitement des requêtes, à l'exclusion des threads de récupération de données à partir de serveurs distants (voir ‘max\_distributed\_connections’ paramètre).
+Nombre maximal de threads de traitement des requêtes, à l'exclusion des threads de récupération de données à partir de serveurs distants (voir ‘max_distributed_connections’ paramètre).
 
 Ce paramètre s'applique aux threads qui effectuent les mêmes étapes du pipeline de traitement des requêtes en parallèle.
-Par exemple, lors de la lecture d'une table, s'il est possible d'évaluer des expressions avec des fonctions, filtrer avec WHERE et pré-agréger pour GROUP BY en parallèle en utilisant au moins ‘max\_threads’ nombre de threads, puis ‘max\_threads’ sont utilisés.
+Par exemple, lors de la lecture d'une table, s'il est possible d'évaluer des expressions avec des fonctions, filtrer avec WHERE et pré-agréger pour GROUP BY en parallèle en utilisant au moins ‘max_threads’ nombre de threads, puis ‘max_threads’ sont utilisés.
 
 Valeur par défaut: nombre de cœurs de processeur physiques.
 
 Si moins d'une requête SELECT est normalement exécutée sur un serveur à la fois, définissez ce paramètre sur une valeur légèrement inférieure au nombre réel de cœurs de processeur.
 
-Pour les requêtes qui sont terminées rapidement en raison d'une limite, vous pouvez définir une valeur inférieure ‘max\_threads’. Par exemple, si le nombre d'entrées se trouvent dans chaque bloc et max\_threads = 8, 8 blocs sont récupérées, même s'il aurait été suffisante pour lire un seul.
+Pour les requêtes qui sont terminées rapidement en raison d'une limite, vous pouvez définir une valeur inférieure ‘max_threads’. Par exemple, si le nombre d'entrées se trouvent dans chaque bloc et max_threads = 8, 8 blocs sont récupérées, même s'il aurait été suffisante pour lire un seul.
 
 Le plus petit de la `max_threads` valeur, moins la mémoire est consommée.
 
-## max\_insert\_threads {#settings-max-insert-threads}
+## max_insert_threads {#settings-max-insert-threads}
 
 Nombre maximal de threads à exécuter `INSERT SELECT` requête.
 
@@ -569,61 +622,61 @@ Valeurs possibles:
 
 Valeur par défaut: 0.
 
-Parallèle `INSERT SELECT` n'a d'effet que si l' `SELECT` une partie est exécutée en parallèle, voir [max\_threads](#settings-max_threads) paramètre.
+Parallèle `INSERT SELECT` n'a d'effet que si l' `SELECT` une partie est exécutée en parallèle, voir [max_threads](#settings-max_threads) paramètre.
 Des valeurs plus élevées conduiront à une utilisation de la mémoire plus élevée.
 
-## max\_compress\_block\_size {#max-compress-block-size}
+## max_compress_block_size {#max-compress-block-size}
 
 La taille maximale des blocs de données non compressées avant la compression pour l'écriture dans une table. Par défaut, 1 048 576 (1 MiB). Si la taille est réduite, le taux de compression est considérablement réduit, la vitesse de compression et de décompression augmente légèrement en raison de la localisation du cache, et la consommation de mémoire est réduite. Il n'y aucune raison de modifier ce paramètre.
 
 Ne confondez pas les blocs pour la compression (un morceau de mémoire constitué d'octets) avec des blocs pour le traitement des requêtes (Un ensemble de lignes d'une table).
 
-## min\_compress\_block\_size {#min-compress-block-size}
+## min_compress_block_size {#min-compress-block-size}
 
-Pour [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md)" table. Afin de réduire la latence lors du traitement des requêtes, un bloc est compressé lors de l'écriture de la marque suivante si sa taille est au moins ‘min\_compress\_block\_size’. Par défaut, 65 536.
+Pour [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)" table. Afin de réduire la latence lors du traitement des requêtes, un bloc est compressé lors de l'écriture de la marque suivante si sa taille est au moins ‘min_compress_block_size’. Par défaut, 65 536.
 
-La taille réelle du bloc, si les données non compressées sont inférieures à ‘max\_compress\_block\_size’ pas moins de cette valeur et pas moins que le volume de données pour une marque.
+La taille réelle du bloc, si les données non compressées sont inférieures à ‘max_compress_block_size’ pas moins de cette valeur et pas moins que le volume de données pour une marque.
 
-Regardons un exemple. Supposons que ‘index\_granularity’ a 8192 lors de la création de la table.
+Regardons un exemple. Supposons que ‘index_granularity’ a 8192 lors de la création de la table.
 
-Nous écrivons une colonne de type UInt32 (4 octets par valeur). Lors de l'écriture de 8192 lignes, le total sera de 32 KO de données. Puisque min\_compress\_block\_size = 65 536, un bloc compressé sera formé pour toutes les deux marques.
+Nous écrivons une colonne de type UInt32 (4 octets par valeur). Lors de l'écriture de 8192 lignes, le total sera de 32 KO de données. Puisque min_compress_block_size = 65 536, un bloc compressé sera formé pour toutes les deux marques.
 
 Nous écrivons une colonne URL avec le type de chaîne (taille moyenne de 60 octets par valeur). Lors de l'écriture de 8192 lignes, la moyenne sera légèrement inférieure à 500 Ko de données. Comme il s'agit de plus de 65 536, un bloc compressé sera formé pour chaque marque. Dans ce cas, lors de la lecture de données du disque dans la plage d'une seule marque, les données supplémentaires ne seront pas décompressées.
 
 Il n'y aucune raison de modifier ce paramètre.
 
-## max\_query\_size {#settings-max_query_size}
+## max_query_size {#settings-max_query_size}
 
 La partie maximale d'une requête qui peut être prise en RAM pour l'analyse avec L'analyseur SQL.
 La requête INSERT contient également des données pour INSERT qui sont traitées par un analyseur de flux séparé (qui consomme O (1) RAM), qui n'est pas inclus dans cette restriction.
 
 Valeur par défaut: 256 Ko.
 
-## interactive\_delay {#interactive-delay}
+## interactive_delay {#interactive-delay}
 
 Intervalle en microsecondes pour vérifier si l'exécution de la requête a été annulée et envoyer la progression.
 
 Valeur par défaut: 100 000 (vérifie l'Annulation et envoie la progression dix fois par seconde).
 
-## connect\_timeout, receive\_timeout, send\_timeout {#connect-timeout-receive-timeout-send-timeout}
+## connect_timeout, receive_timeout, send_timeout {#connect-timeout-receive-timeout-send-timeout}
 
 Délais d'attente en secondes sur le socket utilisé pour communiquer avec le client.
 
 Valeur par défaut: 10, 300, 300.
 
-## cancel\_http\_readonly\_queries\_on\_client\_close {#cancel-http-readonly-queries-on-client-close}
+## cancel_http_readonly_queries_on_client_close {#cancel-http-readonly-queries-on-client-close}
 
 Cancels HTTP read-only queries (e.g. SELECT) when a client closes the connection without waiting for the response.
 
 Valeur par défaut: 0
 
-## poll\_interval {#poll-interval}
+## poll_interval {#poll-interval}
 
 Verrouillez une boucle d'attente pendant le nombre de secondes spécifié.
 
 Valeur par défaut: 10.
 
-## max\_distributed\_connections {#max-distributed-connections}
+## max_distributed_connections {#max-distributed-connections}
 
 Nombre maximal de connexions simultanées avec des serveurs distants pour le traitement distribué d'une seule requête vers une seule table distribuée. Nous vous recommandons de définir une valeur au moins égale au nombre de serveurs dans le cluster.
 
@@ -631,20 +684,20 @@ Valeur par défaut: 1024.
 
 Les paramètres suivants ne sont utilisés que lors de la création de tables distribuées (et lors du lancement d'un serveur), il n'y a donc aucune raison de les modifier lors de l'exécution.
 
-## distributed\_connections\_pool\_size {#distributed-connections-pool-size}
+## distributed_connections_pool_size {#distributed-connections-pool-size}
 
 Nombre maximal de connexions simultanées avec des serveurs distants pour le traitement distribué de toutes les requêtes vers une seule table distribuée. Nous vous recommandons de définir une valeur au moins égale au nombre de serveurs dans le cluster.
 
 Valeur par défaut: 1024.
 
-## connect\_timeout\_with\_failover\_ms {#connect-timeout-with-failover-ms}
+## connect_timeout_with_failover_ms {#connect-timeout-with-failover-ms}
 
 Délai d'attente en millisecondes pour la connexion à un serveur distant pour un moteur de table distribué, si ‘shard’ et ‘replica’ les sections sont utilisées dans la définition du cluster.
 En cas d'échec, plusieurs tentatives sont faites pour se connecter à diverses répliques.
 
 Valeur par défaut: 50.
 
-## connections\_with\_failover\_max\_tries {#connections-with-failover-max-tries}
+## connections_with_failover_max_tries {#connections-with-failover-max-tries}
 
 Nombre maximal de tentatives de connexion avec chaque réplique pour le moteur de table distribué.
 
@@ -655,27 +708,27 @@ Valeur par défaut: 3.
 Indique s'il faut compter les valeurs extrêmes (les minimums et les maximums dans les colonnes d'un résultat de requête). Accepte 0 ou 1. Par défaut, 0 (désactivé).
 Pour plus d'informations, consultez la section “Extreme values”.
 
-## use\_uncompressed\_cache {#setting-use_uncompressed_cache}
+## use_uncompressed_cache {#setting-use_uncompressed_cache}
 
 Indique s'il faut utiliser un cache de blocs non compressés. Accepte 0 ou 1. Par défaut, 0 (désactivé).
-L'utilisation du cache non compressé (uniquement pour les tables de la famille MergeTree) peut réduire considérablement la latence et augmenter le débit lorsque vous travaillez avec un grand nombre de requêtes courtes. Activez ce paramètre pour les utilisateurs qui envoient des requêtes courtes fréquentes. Faites également attention à la [uncompressed\_cache\_size](../server_configuration_parameters/settings.md#server-settings-uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
+L'utilisation du cache non compressé (uniquement pour les tables de la famille MergeTree) peut réduire considérablement la latence et augmenter le débit lorsque vous travaillez avec un grand nombre de requêtes courtes. Activez ce paramètre pour les utilisateurs qui envoient des requêtes courtes fréquentes. Faites également attention à la [uncompressed_cache_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
 
-Pour les requêtes qui lisent au moins un volume de données assez important (un million de lignes ou plus), le cache non compressé est désactivé automatiquement pour économiser de l'espace pour les requêtes vraiment petites. Cela signifie que vous pouvez garder la ‘use\_uncompressed\_cache’ toujours la valeur 1.
+Pour les requêtes qui lisent au moins un volume de données assez important (un million de lignes ou plus), le cache non compressé est désactivé automatiquement pour économiser de l'espace pour les requêtes vraiment petites. Cela signifie que vous pouvez garder la ‘use_uncompressed_cache’ toujours la valeur 1.
 
-## replace\_running\_query {#replace-running-query}
+## replace_running_query {#replace-running-query}
 
-Lors de l'utilisation de L'interface HTTP, le ‘query\_id’ le paramètre peut être passé. C'est n'importe quelle chaîne qui sert d'Identificateur de requête.
-Si une requête d'un utilisateur avec le même ‘query\_id’ il existe déjà à ce moment, le comportement dépend de la ‘replace\_running\_query’ paramètre.
+Lors de l'utilisation de L'interface HTTP, le ‘query_id’ le paramètre peut être passé. C'est n'importe quelle chaîne qui sert d'Identificateur de requête.
+Si une requête d'un utilisateur avec le même ‘query_id’ il existe déjà à ce moment, le comportement dépend de la ‘replace_running_query’ paramètre.
 
-`0` (default) – Throw an exception (don't allow the query to run if a query with the same ‘query\_id’ est déjà en cours d'exécution).
+`0` (default) – Throw an exception (don't allow the query to run if a query with the same ‘query_id’ est déjà en cours d'exécution).
 
 `1` – Cancel the old query and start running the new one.
 
 Yandex.Metrica utilise ce paramètre défini sur 1 pour implémenter des suggestions de conditions de segmentation. Après avoir entré le caractère suivant, si l'ancienne requête n'est pas encore terminée, elle doit être annulée.
 
-## stream\_flush\_interval\_ms {#stream-flush-interval-ms}
+## stream_flush_interval_ms {#stream-flush-interval-ms}
 
-Fonctionne pour les tables avec des flux dans le cas d'une expiration, ou lorsqu'un thread génère [max\_insert\_block\_size](#settings-max_insert_block_size) rangée.
+Fonctionne pour les tables avec des flux dans le cas d'une expiration, ou lorsqu'un thread génère [max_insert_block_size](#settings-max_insert_block_size) rangée.
 
 La valeur par défaut est 7500.
 
@@ -734,7 +787,7 @@ Cet algorithme choisit la première réplique de l'ensemble ou une réplique al�
 
 Le `first_or_random` algorithme résout le problème de la `in_order` algorithme. Avec `in_order`, si une réplique tombe en panne, la suivante obtient une double charge tandis que les répliques restantes gèrent la quantité habituelle de trafic. Lors de l'utilisation de la `first_or_random` algorithme, la charge est répartie uniformément entre les répliques qui sont encore disponibles.
 
-## prefer\_localhost\_replica {#settings-prefer-localhost-replica}
+## prefer_localhost_replica {#settings-prefer-localhost-replica}
 
 Active / désactive préférable d'utiliser le réplica localhost lors du traitement des requêtes distribuées.
 
@@ -746,19 +799,19 @@ Valeurs possibles:
 Valeur par défaut: 1.
 
 !!! warning "Avertissement"
-    Désactivez ce paramètre si vous utilisez [max\_parallel\_replicas](#settings-max_parallel_replicas).
+    Désactivez ce paramètre si vous utilisez [max_parallel_replicas](#settings-max_parallel_replicas).
 
-## totals\_mode {#totals-mode}
+## totals_mode {#totals-mode}
 
-Comment calculer les totaux lorsque HAVING est présent, ainsi que lorsque max\_rows\_to\_group\_by et group\_by\_overflow\_mode = ‘any’ sont présents.
+Comment calculer les totaux lorsque HAVING est présent, ainsi que lorsque max_rows_to_group_by et group_by_overflow_mode = ‘any’ sont présents.
 Voir la section “WITH TOTALS modifier”.
 
-## totals\_auto\_threshold {#totals-auto-threshold}
+## totals_auto_threshold {#totals-auto-threshold}
 
 Le seuil de `totals_mode = 'auto'`.
 Voir la section “WITH TOTALS modifier”.
 
-## max\_parallel\_replicas {#settings-max_parallel_replicas}
+## max_parallel_replicas {#settings-max_parallel_replicas}
 
 Nombre maximal de répliques pour chaque fragment lors de l'exécution d'une requête.
 Par souci de cohérence (pour obtenir différentes parties du même partage de données), Cette option ne fonctionne que lorsque la clé d'échantillonnage est définie.
@@ -771,7 +824,7 @@ Activer la compilation des requêtes. Par défaut, 0 (désactivé).
 La compilation n'est utilisée que pour une partie du pipeline de traitement des requêtes: pour la première étape de l'agrégation (GROUP BY).
 Si cette partie du pipeline a été compilée, la requête peut s'exécuter plus rapidement en raison du déploiement de cycles courts et des appels de fonction d'agrégation intégrés. L'amélioration maximale des performances (jusqu'à quatre fois plus rapide dans de rares cas) est observée pour les requêtes avec plusieurs fonctions d'agrégat simples. Typiquement, le gain de performance est insignifiant. Dans de très rares cas, il peut ralentir l'exécution de la requête.
 
-## min\_count\_to\_compile {#min-count-to-compile}
+## min_count_to_compile {#min-count-to-compile}
 
 Combien de fois utiliser potentiellement un morceau de code compilé avant d'exécuter la compilation. Par défaut, 3.
 For testing, the value can be set to 0: compilation runs synchronously and the query waits for the end of the compilation process before continuing execution. For all other cases, use values ​​starting with 1. Compilation normally takes about 5-10 seconds.
@@ -780,27 +833,27 @@ Si la valeur est 1 ou plus, la compilation se produit de manière asynchrone dan
 Le code compilé est requis pour chaque combinaison différente de fonctions d'agrégat utilisées dans la requête et le type de clés dans la clause GROUP BY.
 The results of the compilation are saved in the build directory in the form of .so files. There is no restriction on the number of compilation results since they don't use very much space. Old results will be used after server restarts, except in the case of a server upgrade – in this case, the old results are deleted.
 
-## output\_format\_json\_quote\_64bit\_integers {#session_settings-output_format_json_quote_64bit_integers}
+## output_format_json_quote_64bit_integers {#session_settings-output_format_json_quote_64bit_integers}
 
 Si la valeur est true, les entiers apparaissent entre guillemets lors de l'utilisation des formats JSON\* Int64 et UInt64 (pour la compatibilité avec la plupart des implémentations JavaScript); sinon, les entiers sont sortis sans les guillemets.
 
-## format\_csv\_delimiter {#settings-format_csv_delimiter}
+## format_csv_delimiter {#settings-format_csv_delimiter}
 
 Caractère interprété comme un délimiteur dans les données CSV. Par défaut, le délimiteur est `,`.
 
-## input\_format\_csv\_unquoted\_null\_literal\_as\_null {#settings-input_format_csv_unquoted_null_literal_as_null}
+## input_format_csv_unquoted_null_literal_as_null {#settings-input_format_csv_unquoted_null_literal_as_null}
 
 Pour le format D'entrée CSV active ou désactive l'analyse des `NULL` comme littéral (synonyme de `\N`).
 
-## output\_format\_csv\_crlf\_end\_of\_line {#settings-output-format-csv-crlf-end-of-line}
+## output_format_csv_crlf_end_of_line {#settings-output-format-csv-crlf-end-of-line}
 
 Utilisez le séparateur de ligne de style DOS/Windows (CRLF) en CSV au lieu du style Unix (LF).
 
-## output\_format\_tsv\_crlf\_end\_of\_line {#settings-output-format-tsv-crlf-end-of-line}
+## output_format_tsv_crlf_end_of_line {#settings-output-format-tsv-crlf-end-of-line}
 
 Utilisez le séparateur de ligne de style DOC/Windows (CRLF) dans TSV au lieu du style Unix (LF).
 
-## insert\_quorum {#settings-insert_quorum}
+## insert_quorum {#settings-insert_quorum}
 
 Active les Écritures de quorum.
 
@@ -815,7 +868,7 @@ Quorum écrit
 
 Toutes les répliques du quorum sont cohérentes, c'est-à-dire qu'elles contiennent des données de toutes les `INSERT` requête. Le `INSERT` la séquence est linéarisé.
 
-Lors de la lecture des données écrites à partir du `insert_quorum`, vous pouvez utiliser le [select\_sequential\_consistency](#settings-select_sequential_consistency) option.
+Lors de la lecture des données écrites à partir du `insert_quorum`, vous pouvez utiliser le [select_sequential_consistency](#settings-select_sequential_consistency) option.
 
 Clickhouse génère une exception
 
@@ -824,10 +877,10 @@ Clickhouse génère une exception
 
 Voir aussi:
 
--   [insert\_quorum\_timeout](#settings-insert_quorum_timeout)
--   [select\_sequential\_consistency](#settings-select_sequential_consistency)
+-   [insert_quorum_timeout](#settings-insert_quorum_timeout)
+-   [select_sequential_consistency](#settings-select_sequential_consistency)
 
-## insert\_quorum\_timeout {#settings-insert_quorum-timeout}
+## insert_quorum_timeout {#settings-insert_quorum_timeout}
 
 Ecrire dans quorum timeout en secondes. Si le délai d'attente est passé et qu'aucune écriture n'a encore eu lieu, ClickHouse génère une exception et le client doit répéter la requête pour écrire le même bloc dans le même réplica ou tout autre réplica.
 
@@ -835,10 +888,10 @@ Valeur par défaut: 60 secondes.
 
 Voir aussi:
 
--   [insert\_quorum](#settings-insert_quorum)
--   [select\_sequential\_consistency](#settings-select_sequential_consistency)
+-   [insert_quorum](#settings-insert_quorum)
+-   [select_sequential_consistency](#settings-select_sequential_consistency)
 
-## select\_sequential\_consistency {#settings-select_sequential_consistency}
+## select_sequential_consistency {#settings-select_sequential_consistency}
 
 Active ou désactive la cohérence séquentielle pour `SELECT` requête:
 
@@ -855,10 +908,10 @@ Lorsque la cohérence séquentielle est activée, ClickHouse permet au client d'
 
 Voir aussi:
 
--   [insert\_quorum](#settings-insert_quorum)
--   [insert\_quorum\_timeout](#settings-insert_quorum_timeout)
+-   [insert_quorum](#settings-insert_quorum)
+-   [insert_quorum_timeout](#settings-insert_quorum_timeout)
 
-## insert\_deduplicate {#settings-insert-deduplicate}
+## insert_deduplicate {#settings-insert-deduplicate}
 
 Active ou désactive la déduplication des blocs `INSERT` (Répliqués\* les tableaux).
 
@@ -869,9 +922,9 @@ Valeurs possibles:
 
 Valeur par défaut: 1.
 
-Par défaut, les blocs insérés dans les tables répliquées `INSERT` déclaration sont dédupliquées (voir \[Réplication de Données\] (../moteurs/table\_engines/mergetree\_family/réplication.md).
+Par défaut, les blocs insérés dans les tables répliquées `INSERT` déclaration sont dédupliquées (voir [Réplication Des Données](../../engines/table-engines/mergetree-family/replication.md)).
 
-## déduplicate\_blocks\_in\_dependent\_materialized\_views {#settings-deduplicate-blocks-in-dependent-materialized-views}
+## déduplicate_blocks_in_dependent_materialized_views {#settings-deduplicate-blocks-in-dependent-materialized-views}
 
 Active ou désactive la vérification de déduplication des vues matérialisées qui reçoivent des données à partir de tables\* répliquées.
 
@@ -889,7 +942,7 @@ Si un bloc inséré est ignoré en raison de la déduplication dans la table sou
 Dans le même temps, ce comportement “breaks” `INSERT` idempotence. Si un `INSERT` dans la table principale a été un succès et `INSERT` into a materialized view failed (e.g. because of communication failure with Zookeeper) a client will get an error and can retry the operation. However, the materialized view won't receive the second insert because it will be discarded by deduplication in the main (source) table. The setting `deduplicate_blocks_in_dependent_materialized_views` permet de changer ce comportement. Lors d'une nouvelle tentative, une vue matérialisée recevra l'insertion répétée et effectuera une vérification de déduplication par elle-même,
 ignorant le résultat de la vérification pour la table source, et insérera des lignes perdues en raison de la première défaillance.
 
-## max\_network\_bytes {#settings-max-network-bytes}
+## max_network_bytes {#settings-max-network-bytes}
 
 Limite le volume de données (en octets) qui est reçu ou transmis sur le réseau lors de l'exécution d'une requête. Ce paramètre s'applique à chaque individu requête.
 
@@ -900,7 +953,7 @@ Valeurs possibles:
 
 Valeur par défaut: 0.
 
-## max\_network\_bandwidth {#settings-max-network-bandwidth}
+## max_network_bandwidth {#settings-max-network-bandwidth}
 
 Limite la vitesse de l'échange de données sur le réseau en octets par seconde. Ce paramètre s'applique à toutes les requêtes.
 
@@ -911,7 +964,7 @@ Valeurs possibles:
 
 Valeur par défaut: 0.
 
-## max\_network\_bandwidth\_for\_user {#settings-max-network-bandwidth-for-user}
+## max_network_bandwidth_for_user {#settings-max-network-bandwidth-for-user}
 
 Limite la vitesse de l'échange de données sur le réseau en octets par seconde. Ce paramètre s'applique à toutes les requêtes exécutées simultanément par un seul utilisateur.
 
@@ -922,7 +975,7 @@ Valeurs possibles:
 
 Valeur par défaut: 0.
 
-## max\_network\_bandwidth\_for\_all\_users {#settings-max-network-bandwidth-for-all-users}
+## max_network_bandwidth_for_all_users {#settings-max-network-bandwidth-for-all-users}
 
 Limite la vitesse à laquelle les données sont échangées sur le réseau en octets par seconde. Ce paramètre s'applique à toutes les requêtes exécutées simultanément sur le serveur.
 
@@ -933,21 +986,21 @@ Valeurs possibles:
 
 Valeur par défaut: 0.
 
-## count\_distinct\_implementation {#settings-count_distinct_implementation}
+## count_distinct_implementation {#settings-count_distinct_implementation}
 
-Spécifie de l' `uniq*` les fonctions doivent être utilisées pour [COUNT(DISTINCT …)](../../sql_reference/aggregate_functions/reference.md#agg_function-count) construction.
+Spécifie de l' `uniq*` les fonctions doivent être utilisées pour [COUNT(DISTINCT …)](../../sql-reference/aggregate-functions/reference.md#agg_function-count) construction.
 
 Valeurs possibles:
 
--   [uniq](../../sql_reference/aggregate_functions/reference.md#agg_function-uniq)
--   [uniqcombiné](../../sql_reference/aggregate_functions/reference.md#agg_function-uniqcombined)
--   [uniqCombined64](../../sql_reference/aggregate_functions/reference.md#agg_function-uniqcombined64)
--   [uniqHLL12](../../sql_reference/aggregate_functions/reference.md#agg_function-uniqhll12)
--   [uniqExact](../../sql_reference/aggregate_functions/reference.md#agg_function-uniqexact)
+-   [uniq](../../sql-reference/aggregate-functions/reference.md#agg_function-uniq)
+-   [uniqcombiné](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqcombined)
+-   [uniqCombined64](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqcombined64)
+-   [uniqHLL12](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqhll12)
+-   [uniqExact](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqexact)
 
 Valeur par défaut: `uniqExact`.
 
-## skip\_unavailable\_shards {#settings-skip_unavailable_shards}
+## skip_unavailable_shards {#settings-skip_unavailable_shards}
 
 Active ou désactive le saut silencieux des fragments indisponibles.
 
@@ -977,13 +1030,13 @@ Valeurs possibles:
 
 Valeur par défaut: 0.
 
-## optimize\_skip\_unused\_shards {#settings-optimize_skip_unused_shards}
+## optimize_skip_unused_shards {#settings-optimize_skip_unused_shards}
 
 Active ou désactive le saut des fragments inutilisés pour les requêtes SELECT qui ont la condition de clé de sharding dans PREWHERE/WHERE (suppose que les données sont distribuées par la clé de sharding, sinon ne rien faire).
 
 Valeur par défaut: 0
 
-## force\_optimize\_skip\_unused\_shards {#settings-force_optimize_skip_unused_shards}
+## force_optimize_skip_unused_shards {#settings-force_optimize_skip_unused_shards}
 
 Active ou désactive l'exécution de la requête si [`optimize_skip_unused_shards`](#settings-optimize_skip_unused_shards) activé et sauter des fragments inutilisés n'est pas possible. Si le saut n'est pas possible et le paramètre est activé, une exception sera levée.
 
@@ -995,20 +1048,9 @@ Valeurs possibles:
 
 Valeur par défaut: 0
 
-## force\_optimize\_skip\_unused\_shards\_no\_nested {#settings-force_optimize_skip_unused_shards_no_nested}
+## optimize_throw_if_noop {#setting-optimize_throw_if_noop}
 
-Réinitialiser [`optimize_skip_unused_shards`](#settings-force_optimize_skip_unused_shards) pour imbriquée `Distributed` table
-
-Valeurs possibles:
-
--   1 — Enabled.
--   0 — Disabled.
-
-Valeur par défaut: 0.
-
-## optimize\_throw\_if\_noop {#setting-optimize_throw_if_noop}
-
-Active ou désactive le lancement d'une exception si [OPTIMIZE](../../sql_reference/statements/misc.md#misc_operations-optimize) la requête n'a pas effectué de fusion.
+Active ou désactive le lancement d'une exception si [OPTIMIZE](../../sql-reference/statements/misc.md#misc_operations-optimize) la requête n'a pas effectué de fusion.
 
 Par défaut, `OPTIMIZE` retourne avec succès même s'il n'a rien fait. Ce paramètre vous permet de différencier ces situations et d'obtenir la raison dans un message d'exception.
 
@@ -1019,19 +1061,19 @@ Valeurs possibles:
 
 Valeur par défaut: 0.
 
-## distributed\_replica\_error\_half\_life {#settings-distributed_replica_error_half_life}
+## distributed_replica_error_half_life {#settings-distributed_replica_error_half_life}
 
 -   Type: secondes
 -   Valeur par défaut: 60 secondes
 
-Contrôle la vitesse à laquelle les erreurs dans les tables distribuées sont mises à zéro. Si une réplique est indisponible pendant un certain temps, accumule 5 erreurs et distributed\_replica\_error\_half\_life est défini sur 1 seconde, la réplique est considérée comme normale 3 secondes après la dernière erreur.
+Contrôle la vitesse à laquelle les erreurs dans les tables distribuées sont mises à zéro. Si une réplique est indisponible pendant un certain temps, accumule 5 erreurs et distributed_replica_error_half_life est défini sur 1 seconde, la réplique est considérée comme normale 3 secondes après la dernière erreur.
 
 Voir aussi:
 
--   [Tableau moteur Distribués](../../engines/table_engines/special/distributed.md)
--   [distributed\_replica\_error\_cap](#settings-distributed_replica_error_cap)
+-   [Tableau moteur Distribués](../../engines/table-engines/special/distributed.md)
+-   [distributed_replica_error_cap](#settings-distributed_replica_error_cap)
 
-## distributed\_replica\_error\_cap {#settings-distributed_replica_error_cap}
+## distributed_replica_error_cap {#settings-distributed_replica_error_cap}
 
 -   Type: unsigned int
 -   Valeur par défaut: 1000
@@ -1040,12 +1082,12 @@ Le nombre d'erreurs de chaque réplique est plafonné à cette valeur, empêchan
 
 Voir aussi:
 
--   [Tableau moteur Distribués](../../engines/table_engines/special/distributed.md)
--   [distributed\_replica\_error\_half\_life](#settings-distributed_replica_error_half_life)
+-   [Tableau moteur Distribués](../../engines/table-engines/special/distributed.md)
+-   [distributed_replica_error_half_life](#settings-distributed_replica_error_half_life)
 
-## distributed\_directory\_monitor\_sleep\_time\_ms {#distributed_directory_monitor_sleep_time_ms}
+## distributed_directory_monitor_sleep_time_ms {#distributed_directory_monitor_sleep_time_ms}
 
-Intervalle de Base pour le [Distribué](../../engines/table_engines/special/distributed.md) tableau moteur à envoyer des données. L'intervalle réel augmente de façon exponentielle en cas d'erreurs.
+Intervalle de Base pour le [Distribué](../../engines/table-engines/special/distributed.md) tableau moteur à envoyer des données. L'intervalle réel augmente de façon exponentielle en cas d'erreurs.
 
 Valeurs possibles:
 
@@ -1053,9 +1095,9 @@ Valeurs possibles:
 
 Valeur par défaut: 100 millisecondes.
 
-## distributed\_directory\_monitor\_max\_sleep\_time\_ms {#distributed_directory_monitor_max_sleep_time_ms}
+## distributed_directory_monitor_max_sleep_time_ms {#distributed_directory_monitor_max_sleep_time_ms}
 
-Intervalle maximal pour le [Distribué](../../engines/table_engines/special/distributed.md) tableau moteur à envoyer des données. Limite la croissance exponentielle de l'intervalle défini dans [distributed\_directory\_monitor\_sleep\_time\_ms](#distributed_directory_monitor_sleep_time_ms) paramètre.
+Intervalle maximal pour le [Distribué](../../engines/table-engines/special/distributed.md) tableau moteur à envoyer des données. Limite la croissance exponentielle de l'intervalle défini dans [distributed_directory_monitor_sleep_time_ms](#distributed_directory_monitor_sleep_time_ms) paramètre.
 
 Valeurs possibles:
 
@@ -1063,11 +1105,11 @@ Valeurs possibles:
 
 Valeur par défaut: 30000 millisecondes (30 secondes).
 
-## distributed\_directory\_monitor\_batch\_inserts {#distributed_directory_monitor_batch_inserts}
+## distributed_directory_monitor_batch_inserts {#distributed_directory_monitor_batch_inserts}
 
 Active / désactive l'envoi des données insérées par lots.
 
-Lorsque l'envoi par lots est activé, le [Distribué](../../engines/table_engines/special/distributed.md) tableau moteur essaie d'envoyer plusieurs fichiers de données insérées dans une seule opération au lieu de les envoyer séparément. L'envoi par lots améliore les performances du cluster en utilisant mieux les ressources du serveur et du réseau.
+Lorsque l'envoi par lots est activé, le [Distribué](../../engines/table-engines/special/distributed.md) tableau moteur essaie d'envoyer plusieurs fichiers de données insérées dans une seule opération au lieu de les envoyer séparément. L'envoi par lots améliore les performances du cluster en utilisant mieux les ressources du serveur et du réseau.
 
 Valeurs possibles:
 
@@ -1076,7 +1118,7 @@ Valeurs possibles:
 
 Valeur par défaut: 0.
 
-## os\_thread\_priority {#setting-os-thread-priority}
+## os_thread_priority {#setting-os-thread-priority}
 
 Définit la priorité ([beau](https://en.wikipedia.org/wiki/Nice_(Unix))) pour les threads qui exécutent des requêtes. Le planificateur du système d'exploitation considère cette priorité lors du choix du prochain thread à exécuter sur chaque noyau CPU disponible.
 
@@ -1091,9 +1133,9 @@ Des valeurs plus faibles signifient une priorité plus élevée. Les discussions
 
 Valeur par défaut: 0.
 
-## query\_profiler\_real\_time\_period\_ns {#query_profiler_real_time_period_ns}
+## query_profiler_real_time_period_ns {#query_profiler_real_time_period_ns}
 
-Définit la période pour une horloge réelle de la [requête profiler](../../operations/optimizing_performance/sampling_query_profiler.md). La vraie minuterie d'horloge compte le temps d'horloge murale.
+Définit la période pour une horloge réelle de la [requête profiler](../../operations/optimizing-performance/sampling-query-profiler.md). La vraie minuterie d'horloge compte le temps d'horloge murale.
 
 Valeurs possibles:
 
@@ -1106,17 +1148,17 @@ Valeurs possibles:
 
 -   0 pour éteindre la minuterie.
 
-Type: [UInt64](../../sql_reference/data_types/int_uint.md).
+Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 Valeur par défaut: 1000000000 nanosecondes (une fois par seconde).
 
 Voir aussi:
 
--   Système de table [trace\_log](../../operations/system_tables.md#system_tables-trace_log)
+-   Système de table [trace_log](../../operations/system-tables.md#system_tables-trace_log)
 
-## query\_profiler\_cpu\_time\_period\_ns {#query_profiler_cpu_time_period_ns}
+## query_profiler_cpu_time_period_ns {#query_profiler_cpu_time_period_ns}
 
-Définit la période pour une minuterie D'horloge CPU du [requête profiler](../../operations/optimizing_performance/sampling_query_profiler.md). Cette minuterie ne compte que le temps CPU.
+Définit la période pour une minuterie D'horloge CPU du [requête profiler](../../operations/optimizing-performance/sampling-query-profiler.md). Cette minuterie ne compte que le temps CPU.
 
 Valeurs possibles:
 
@@ -1129,17 +1171,17 @@ Valeurs possibles:
 
 -   0 pour éteindre la minuterie.
 
-Type: [UInt64](../../sql_reference/data_types/int_uint.md).
+Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 Valeur par défaut: 1000000000 nanosecondes.
 
 Voir aussi:
 
--   Système de table [trace\_log](../../operations/system_tables.md#system_tables-trace_log)
+-   Système de table [trace_log](../../operations/system-tables.md#system_tables-trace_log)
 
-## allow\_introspection\_functions {#settings-allow_introspection_functions}
+## allow_introspection_functions {#settings-allow_introspection_functions}
 
-Active des désactive [obscures fonctions](../../sql_reference/functions/introspection.md) pour le profilage de requête.
+Active des désactive [obscures fonctions](../../sql-reference/functions/introspection.md) pour le profilage de requête.
 
 Valeurs possibles:
 
@@ -1150,24 +1192,24 @@ Valeur par défaut: 0.
 
 **Voir Aussi**
 
--   [Échantillonnage Du Profileur De Requête](../optimizing_performance/sampling_query_profiler.md)
--   Système de table [trace\_log](../../operations/system_tables.md#system_tables-trace_log)
+-   [Échantillonnage Du Profileur De Requête](../optimizing-performance/sampling-query-profiler.md)
+-   Système de table [trace_log](../../operations/system-tables.md#system_tables-trace_log)
 
-## input\_format\_parallel\_parsing {#input-format-parallel-parsing}
+## input_format_parallel_parsing {#input-format-parallel-parsing}
 
 -   Type: bool
 -   Valeur par défaut: True
 
 Activer l'analyse parallèle des formats de données en préservant l'ordre. Pris en charge uniquement pour les formats TSV, TKSV, CSV et jsoneachrow.
 
-## min\_chunk\_bytes\_for\_parallel\_parsing {#min-chunk-bytes-for-parallel-parsing}
+## min_chunk_bytes_for_parallel_parsing {#min-chunk-bytes-for-parallel-parsing}
 
 -   Type: unsigned int
 -   Valeur par défaut: 1 MiB
 
 La taille minimale du bloc en octets, que chaque thread analysera en parallèle.
 
-## output\_format\_avro\_codec {#settings-output_format_avro_codec}
+## output_format_avro_codec {#settings-output_format_avro_codec}
 
 Définit le codec de compression utilisé pour le fichier Avro de sortie.
 
@@ -1181,7 +1223,7 @@ Valeurs possibles:
 
 Valeur par défaut: `snappy` (si disponible) ou `deflate`.
 
-## output\_format\_avro\_sync\_interval {#settings-output_format_avro_sync_interval}
+## output_format_avro_sync_interval {#settings-output_format_avro_sync_interval}
 
 Définit la taille minimale des données (en octets) entre les marqueurs de synchronisation pour le fichier Avro de sortie.
 
@@ -1191,12 +1233,22 @@ Valeurs possibles: 32 (32 octets) - 1073741824 (1 GiB)
 
 Valeur par défaut: 32768 (32 Ko)
 
-## format\_avro\_schema\_registry\_url {#settings-format_avro_schema_registry_url}
+## format_avro_schema_registry_url {#settings-format_avro_schema_registry_url}
 
 Définit L'URL de Registre de schéma Confluent à utiliser avec [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent) format
 
 Type: URL
 
 Valeur par défaut: vide
+
+## background_pool_size {#background_pool_size}
+
+Définit le nombre de threads effectuant des opérations d'arrière-plan dans les moteurs de table (par exemple, fusionne dans [Moteur MergeTree](../../engines/table-engines/mergetree-family/index.md) table). Ce paramètre est appliqué au démarrage du serveur ClickHouse et ne peut pas être modifié dans une session utilisateur. En ajustant ce paramètre, vous gérez la charge du processeur et du disque. Une taille de pool plus petite utilise moins de ressources CPU et disque, mais les processus d'arrière-plan avancent plus lentement, ce qui pourrait éventuellement avoir un impact sur les performances des requêtes.
+
+Valeurs possibles:
+
+-   Tout nombre entier positif.
+
+Valeur par défaut: 16.
 
 [Article Original](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

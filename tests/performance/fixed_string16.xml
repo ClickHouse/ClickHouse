@@ -7,18 +7,7 @@
         <table_exists>test.hits</table_exists>
     </preconditions>
 
-
-    <stop_conditions>
-        <all_of>
-            <iterations>5</iterations>
-            <min_time_not_changing_for_ms>10000</min_time_not_changing_for_ms>
-        </all_of>
-        <any_of>
-            <iterations>50</iterations>
-            <total_time_ms>60000</total_time_ms>
-        </any_of>
-    </stop_conditions>
+    <settings><max_threads>1</max_threads></settings>
 
     <query><![CDATA[SELECT count() FROM test.hits WHERE ClientIP6 < RemoteIP6]]></query>
-
 </test>

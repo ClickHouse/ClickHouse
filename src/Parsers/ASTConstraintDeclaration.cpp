@@ -19,10 +19,6 @@ ASTPtr ASTConstraintDeclaration::clone() const
 
 void ASTConstraintDeclaration::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
-    frame.need_parens = false;
-    std::string indent_str = s.one_line ? "" : std::string(4 * frame.indent, ' ');
-
-    s.ostr << s.nl_or_ws << indent_str;
     s.ostr << backQuoteIfNeed(name);
     s.ostr << (s.hilite ? hilite_keyword : "") << " CHECK " << (s.hilite ? hilite_none : "");
     expr->formatImpl(s, state, frame);

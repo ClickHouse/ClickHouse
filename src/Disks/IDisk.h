@@ -1,9 +1,10 @@
 #pragma once
 
 #include <Core/Defines.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Disks/Executor.h>
 
 #include <memory>
 #include <mutex>
@@ -25,6 +26,7 @@ using DiskDirectoryIteratorPtr = std::unique_ptr<IDiskDirectoryIterator>;
 
 class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
+using Reservations = std::vector<ReservationPtr>;
 
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
@@ -65,6 +67,9 @@ using SpacePtr = std::shared_ptr<Space>;
 class IDisk : public Space
 {
 public:
+    /// Default constructor.
+    explicit IDisk(std::unique_ptr<Executor> executor_ = std::make_unique<SyncExecutor>()) : executor(std::move(executor_)) { }
+
     /// Root path for all files stored on the disk.
     /// It's not required to be a local filesystem path.
     virtual const String & getPath() const = 0;
@@ -171,6 +176,30 @@ public:
 
     /// Create hardlink from `src_path` to `dst_path`.
     virtual void createHardLink(const String & src_path, const String & dst_path) = 0;
+
+    /// Wrapper for POSIX open
+    virtual int open(const String & path, mode_t mode) const = 0;
+
+    /// Wrapper for POSIX close
+    virtual void close(int fd) const = 0;
+
+    /// Wrapper for POSIX fsync
+    virtual void sync(int fd) const = 0;
+
+    /// Truncate file to specified size.
+    virtual void truncateFile(const String & path, size_t size);
+
+    /// Return disk type - "local", "s3", etc.
+    virtual const String getType() const = 0;
+
+    /// Invoked when Global Context is shutdown.
+    virtual void shutdown() { }
+
+    /// Returns executor to perform asynchronous operations.
+    virtual Executor & getExecutor() { return *executor; }
+
+private:
+    std::unique_ptr<Executor> executor;
 };
 
 using DiskPtr = std::shared_ptr<IDisk>;
@@ -206,8 +235,11 @@ public:
     /// Get reservation size.
     virtual UInt64 getSize() const = 0;
 
-    /// Get disk where reservation take place.
-    virtual DiskPtr getDisk() const = 0;
+    /// Get i-th disk where reservation take place.
+    virtual DiskPtr getDisk(size_t i = 0) const = 0;
+
+    /// Get all disks, used in reservation
+    virtual Disks getDisks() const = 0;
 
     /// Changes amount of reserved space.
     virtual void update(UInt64 new_size) = 0;

@@ -12,6 +12,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int UNEXPECTED_END_OF_FILE;
+}
+
+
 FileChecker::FileChecker(DiskPtr disk_, const String & file_info_path_) : disk(std::move(disk_))
 {
     setPath(file_info_path_);
@@ -24,19 +30,15 @@ void FileChecker::setPath(const String & file_info_path_)
     tmp_files_info_path = parentPath(files_info_path) + "tmp_" + fileName(files_info_path);
 }
 
-void FileChecker::update(const String & file_path)
+void FileChecker::update(const String & full_file_path)
 {
     initialize();
-    updateImpl(file_path);
-    save();
+    map[fileName(full_file_path)] = disk->getFileSize(full_file_path);
 }
 
-void FileChecker::update(const Strings::const_iterator & begin, const Strings::const_iterator & end)
+void FileChecker::setEmpty(const String & full_file_path)
 {
-    initialize();
-    for (auto it = begin; it != end; ++it)
-        updateImpl(*it);
-    save();
+    map[fileName(full_file_path)] = 0;
 }
 
 CheckResults FileChecker::check() const
@@ -73,6 +75,28 @@ CheckResults FileChecker::check() const
     return results;
 }
 
+void FileChecker::repair()
+{
+    for (const auto & name_size : map)
+    {
+        const String & name = name_size.first;
+        size_t expected_size = name_size.second;
+        String path = parentPath(files_info_path) + name;
+        bool exists = disk->exists(path);
+        auto real_size = exists ? disk->getFileSize(path) : 0;  /// No race condition assuming no one else is working with these files.
+
+        if (real_size < expected_size)
+            throw Exception(ErrorCodes::UNEXPECTED_END_OF_FILE, "Size of {} is less than expected. Size is {} but should be {}.",
+                path, real_size, expected_size);
+
+        if (real_size > expected_size)
+        {
+            LOG_WARNING(&Poco::Logger::get("FileChecker"), "Will truncate file {} that has size {} to size {}", path, real_size, expected_size);
+            disk->truncateFile(path, expected_size);
+        }
+    }
+}
+
 void FileChecker::initialize()
 {
     if (initialized)
@@ -80,11 +104,6 @@ void FileChecker::initialize()
 
     load(map, files_info_path);
     initialized = true;
-}
-
-void FileChecker::updateImpl(const String & file_path)
-{
-    map[fileName(file_path)] = disk->getFileSize(file_path);
 }
 
 void FileChecker::save() const

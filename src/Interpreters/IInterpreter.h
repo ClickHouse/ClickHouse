@@ -2,14 +2,8 @@
 
 #include <DataStreams/BlockIO.h>
 
-#include <Processors/QueryPipeline.h>
-
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
 
 /** Interpreters interface for different queries.
   */
@@ -22,14 +16,10 @@ public:
       */
     virtual BlockIO execute() = 0;
 
-    virtual QueryPipeline executeWithProcessors() { throw Exception("executeWithProcessors not implemented", ErrorCodes::NOT_IMPLEMENTED); }
-
-    virtual bool canExecuteWithProcessors() const { return false; }
-
     virtual bool ignoreQuota() const { return false; }
     virtual bool ignoreLimits() const { return false; }
 
-    virtual ~IInterpreter() {}
+    virtual ~IInterpreter() = default;
 };
 
 }

@@ -1,20 +1,9 @@
-<test>
+<test max_ignored_relative_change="0.2">
 
     <preconditions>
         <table_exists>hits_10m_single</table_exists>
         <table_exists>hits_100m_single</table_exists>
     </preconditions>
-
-    <stop_conditions>
-        <all_of>
-            <total_time_ms>60000</total_time_ms>
-            <iterations>3</iterations>
-        </all_of>
-        <any_of>
-            <iterations>30</iterations>
-        </any_of>
-    </stop_conditions>
-
 
     <settings>
         <max_memory_usage>30000000000</max_memory_usage>
@@ -30,14 +19,14 @@
        </substitution>
     </substitutions>
 
-<query>SELECT count() FROM {table}</query>
-<query>SELECT count() FROM hits_10m_single WHERE AdvEngineID != 0</query>
-<query>SELECT sum(AdvEngineID), count(), avg(ResolutionWidth) FROM {table}</query>
-<query>SELECT sum(UserID) FROM {table}</query>
+<query short="1">SELECT count() FROM {table}</query>
+<query short="1">SELECT count() FROM hits_10m_single WHERE AdvEngineID != 0</query>
+<query short="1">SELECT sum(AdvEngineID), count(), avg(ResolutionWidth) FROM {table}</query>
+<query short="1">SELECT sum(UserID) FROM {table}</query>
 <query>SELECT uniq(UserID) FROM {table} FORMAT Null</query>
 <query>SELECT uniq(SearchPhrase) FROM {table} FORMAT Null</query>
-<query>SELECT min(EventDate), max(EventDate) FROM {table}</query>
-<query>SELECT AdvEngineID, count() FROM hits_10m_single WHERE AdvEngineID != 0 GROUP BY AdvEngineID ORDER BY count() DESC LIMIT 10</query>
+<query short="1">SELECT min(EventDate), max(EventDate) FROM {table}</query>
+<query short="1">SELECT AdvEngineID, count() FROM hits_100m_single WHERE AdvEngineID != 0 GROUP BY AdvEngineID ORDER BY count() DESC LIMIT 10</query>
 <query>SELECT RegionID, uniq(UserID) AS u FROM {table} GROUP BY RegionID ORDER BY u DESC LIMIT 10</query>
 <query>SELECT RegionID, sum(AdvEngineID), count() AS c, avg(ResolutionWidth), uniq(UserID) FROM {table} GROUP BY RegionID ORDER BY c DESC LIMIT 10</query>
 <query>SELECT MobilePhoneModel, uniq(UserID) AS u FROM hits_100m_single WHERE MobilePhoneModel != '' GROUP BY MobilePhoneModel ORDER BY u DESC LIMIT 10</query>
@@ -48,8 +37,8 @@
 <query>SELECT UserID, count() FROM {table} GROUP BY UserID ORDER BY count() DESC LIMIT 10</query>
 <query>SELECT UserID, SearchPhrase, count() FROM {table} GROUP BY UserID, SearchPhrase ORDER BY count() DESC LIMIT 10</query>
 <query>SELECT UserID, SearchPhrase, count() FROM {table} GROUP BY UserID, SearchPhrase LIMIT 10</query>
-<query>SELECT UserID, toMinute(EventTime) AS m, SearchPhrase, count() FROM {table} GROUP BY UserID, m, SearchPhrase ORDER BY count() DESC LIMIT 10</query>
-<query>SELECT count() FROM hits_10m_single WHERE UserID = 12345678901234567890</query>
+<query>SELECT UserID, toMinute(EventTime) AS m, SearchPhrase, count() FROM hits_10m_single GROUP BY UserID, m, SearchPhrase ORDER BY count() DESC LIMIT 10</query>
+<query short="1">SELECT count() FROM hits_100m_single WHERE UserID = 12345678901234567890</query>
 <query>SELECT count() FROM hits_100m_single WHERE URL LIKE '%metrika%'</query>
 <query>SELECT SearchPhrase, any(URL), count() AS c FROM hits_100m_single WHERE URL LIKE '%metrika%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10</query>
 <query>SELECT SearchPhrase, any(URL), any(Title), count() AS c, uniq(UserID) FROM {table} WHERE Title LIKE '%Яндекс%' AND URL NOT LIKE '%.yandex.%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10</query>
@@ -63,15 +52,15 @@
 <query>SELECT SearchEngineID, ClientIP, count() AS c, sum(Refresh), avg(ResolutionWidth) FROM hits_100m_single WHERE SearchPhrase != '' GROUP BY SearchEngineID, ClientIP ORDER BY c DESC LIMIT 10</query>
 <query>SELECT WatchID, ClientIP, count() AS c, sum(Refresh), avg(ResolutionWidth) FROM {table} WHERE SearchPhrase != '' GROUP BY WatchID, ClientIP ORDER BY c DESC LIMIT 10</query>
 <query>SELECT WatchID, ClientIP, count() AS c, sum(Refresh), avg(ResolutionWidth) FROM hits_10m_single GROUP BY WatchID, ClientIP ORDER BY c DESC LIMIT 10</query>
-<query>SELECT URL, count() AS c FROM {table} GROUP BY URL ORDER BY c DESC LIMIT 10</query>
-<query>SELECT 1, URL, count() AS c FROM {table} GROUP BY 1, URL ORDER BY c DESC LIMIT 10</query>
+<query>SELECT URL, count() AS c FROM hits_10m_single GROUP BY URL ORDER BY c DESC LIMIT 10</query>
+<query>SELECT 1, URL, count() AS c FROM hits_10m_single GROUP BY 1, URL ORDER BY c DESC LIMIT 10</query>
 <query>SELECT ClientIP AS x, x - 1, x - 2, x - 3, count() AS c FROM hits_100m_single GROUP BY x, x - 1, x - 2, x - 3 ORDER BY c DESC LIMIT 10</query>
-<query>SELECT URL, count() AS PageViews FROM {table} WHERE CounterID = 34 AND EventDate >= '2013-07-01' AND EventDate &lt;= '2013-07-31' AND NOT DontCountHits AND NOT Refresh AND notEmpty(URL) GROUP BY URL ORDER BY PageViews DESC LIMIT 10</query>
+<query>SELECT URL, count() AS PageViews FROM {table} WHERE CounterID = 34 AND EventDate >= '2013-07-01' AND EventDate &lt;= '2013-07-31' AND NOT DontCountHits AND NOT Refresh AND notEmpty(URL) GROUP BY URL ORDER BY PageViews DESC LIMIT 10 SETTINGS max_threads = 1</query>
 <query>SELECT Title, count() AS PageViews FROM {table} WHERE CounterID = 34 AND EventDate >= '2013-07-01' AND EventDate &lt;= '2013-07-31' AND NOT DontCountHits AND NOT Refresh AND notEmpty(Title) GROUP BY Title ORDER BY PageViews DESC LIMIT 10</query>
 <query>SELECT URL, count() AS PageViews FROM {table} WHERE CounterID = 34 AND EventDate >= '2013-07-01' AND EventDate &lt;= '2013-07-31' AND NOT Refresh AND IsLink AND NOT IsDownload GROUP BY URL ORDER BY PageViews DESC LIMIT 1000</query>
 <query>SELECT TraficSourceID, SearchEngineID, AdvEngineID, ((SearchEngineID = 0 AND AdvEngineID = 0) ? Referer : '') AS Src, URL AS Dst, count() AS PageViews FROM {table} WHERE CounterID = 34 AND EventDate >= '2013-07-01' AND EventDate &lt;= '2013-07-31' AND NOT Refresh GROUP BY TraficSourceID, SearchEngineID, AdvEngineID, Src, Dst ORDER BY PageViews DESC LIMIT 1000</query>
-<query>SELECT URLHash, EventDate, count() AS PageViews FROM {table} WHERE CounterID = 34 AND EventDate >= '2013-07-01' AND EventDate &lt;= '2013-07-31' AND NOT Refresh AND TraficSourceID IN (-1, 6) AND RefererHash = halfMD5('http://example.ru/') GROUP BY URLHash, EventDate ORDER BY PageViews DESC LIMIT 100</query>
-<query>SELECT WindowClientWidth, WindowClientHeight, count() AS PageViews FROM hits_100m_single WHERE CounterID = 34 AND EventDate >= '2013-07-01' AND EventDate &lt;= '2013-07-31' AND NOT Refresh AND NOT DontCountHits AND URLHash = halfMD5('http://example.ru/') GROUP BY WindowClientWidth, WindowClientHeight ORDER BY PageViews DESC LIMIT 10000 FORMAT Null</query>
-<query>SELECT toStartOfMinute(EventTime) AS Minute, count() AS PageViews FROM {table} WHERE CounterID = 34 AND EventDate >= '2013-07-01' AND EventDate &lt;= '2013-07-02' AND NOT Refresh AND NOT DontCountHits GROUP BY Minute ORDER BY Minute FORMAT Null</query>
+<query short="1">SELECT URLHash, EventDate, count() AS PageViews FROM {table} WHERE CounterID = 34 AND EventDate >= '2013-07-01' AND EventDate &lt;= '2013-07-31' AND NOT Refresh AND TraficSourceID IN (-1, 6) AND RefererHash = halfMD5('http://example.ru/') GROUP BY URLHash, EventDate ORDER BY PageViews DESC LIMIT 100</query>
+<query short="1">SELECT WindowClientWidth, WindowClientHeight, count() AS PageViews FROM {table} WHERE CounterID = 34 AND EventDate >= '2013-07-01' AND EventDate &lt;= '2013-07-31' AND NOT Refresh AND NOT DontCountHits AND URLHash = halfMD5('http://example.ru/') GROUP BY WindowClientWidth, WindowClientHeight ORDER BY PageViews DESC LIMIT 10000 FORMAT Null</query>
+<query short="1">SELECT toStartOfMinute(EventTime) AS Minute, count() AS PageViews FROM {table} WHERE CounterID = 34 AND EventDate >= '2013-07-01' AND EventDate &lt;= '2013-07-02' AND NOT Refresh AND NOT DontCountHits GROUP BY Minute ORDER BY Minute FORMAT Null</query>
 
 </test>

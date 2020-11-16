@@ -13,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_COLUMN;
 }
 
 void finalizeChunk(Chunk & chunk)
@@ -21,13 +22,13 @@ void finalizeChunk(Chunk & chunk)
     auto columns = chunk.detachColumns();
 
     for (auto & column : columns)
-        if (auto * agg_function = typeid_cast<const ColumnAggregateFunction *>(column.get()))
-            column = agg_function->convertToValues();
+        if (typeid_cast<const ColumnAggregateFunction *>(column.get()))
+            column = ColumnAggregateFunction::convertToValues(IColumn::mutate(std::move(column)));
 
     chunk.setColumns(std::move(columns), num_rows);
 }
 
-static Block createOutputHeader(Block block, const ExpressionActionsPtr & expression, bool final)
+Block TotalsHavingTransform::transformHeader(Block block, const ExpressionActionsPtr & expression, bool final)
 {
     if (final)
         finalizeBlock(block);
@@ -46,7 +47,7 @@ TotalsHavingTransform::TotalsHavingTransform(
     TotalsMode totals_mode_,
     double auto_include_threshold_,
     bool final_)
-    : ISimpleTransform(header, createOutputHeader(header, expression_, final_), true)
+    : ISimpleTransform(header, transformHeader(header, expression_, final_), true)
     , overflow_row(overflow_row_)
     , expression(expression_)
     , filter_column_name(filter_column_)
@@ -122,11 +123,11 @@ void TotalsHavingTransform::transform(Chunk & chunk)
     /// Block with values not included in `max_rows_to_group_by`. We'll postpone it.
     if (overflow_row)
     {
-        auto & info = chunk.getChunkInfo();
+        const auto & info = chunk.getChunkInfo();
         if (!info)
             throw Exception("Chunk info was not set for chunk in TotalsHavingTransform.", ErrorCodes::LOGICAL_ERROR);
 
-        auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
+        const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
         if (!agg_info)
             throw Exception("Chunk should have AggregatedChunkInfo in TotalsHavingTransform.", ErrorCodes::LOGICAL_ERROR);
 
@@ -154,8 +155,15 @@ void TotalsHavingTransform::transform(Chunk & chunk)
     else
     {
         /// Compute the expression in HAVING.
-        auto & cur_header = final ? finalized_header : getInputPort().getHeader();
+        const auto & cur_header = final ? finalized_header : getInputPort().getHeader();
         auto finalized_block = cur_header.cloneWithColumns(finalized.detachColumns());
+
+        for (const ExpressionAction & action : expression->getActions())
+        {
+            if (action.type == ExpressionAction::ARRAY_JOIN)
+                throw Exception("Having clause cannot contain arrayJoin", ErrorCodes::ILLEGAL_COLUMN);
+        }
+
         expression->execute(finalized_block);
         auto columns = finalized_block.getColumns();
 
@@ -222,6 +230,9 @@ void TotalsHavingTransform::addToTotals(const Chunk & chunk, const IColumn::Filt
             const ColumnAggregateFunction::Container & vec = column->getData();
             size_t size = vec.size();
 
+            if (filter && filter->size() != size)
+                throw Exception("Filter has size which differs from column size", ErrorCodes::LOGICAL_ERROR);
+
             if (filter)
             {
                 for (size_t row = 0; row < size; ++row)
@@ -257,7 +268,8 @@ void TotalsHavingTransform::prepareTotals()
     {
         auto block = finalized_header.cloneWithColumns(totals.detachColumns());
         expression->execute(block);
-        totals = Chunk(block.getColumns(), 1);
+        /// Note: after expression totals may have several rows if `arrayJoin` was used in expression.
+        totals = Chunk(block.getColumns(), block.rows());
     }
 }
 

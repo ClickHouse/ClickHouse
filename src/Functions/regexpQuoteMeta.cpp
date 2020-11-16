@@ -7,12 +7,14 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
+
+namespace
+{
 
 class FunctionRegexpQuoteMeta : public IFunction
 {
@@ -49,14 +51,14 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const ColumnPtr & column_string = block.getByPosition(arguments[0]).column;
+        const ColumnPtr & column_string = arguments[0].column;
         const ColumnString * input = checkAndGetColumn<ColumnString>(column_string.get());
 
         if (!input)
             throw Exception(
-                "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of first argument of function " + getName(),
+                "Illegal column " + arguments[0].column->getName() + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
 
         auto dst_column = ColumnString::create();
@@ -67,8 +69,8 @@ public:
 
         const ColumnString::Offsets & src_offsets = input->getOffsets();
 
-        auto src_begin = reinterpret_cast<const char *>(input->getChars().data());
-        auto src_pos = src_begin;
+        const auto * src_begin = reinterpret_cast<const char *>(input->getChars().data());
+        const auto * src_pos = src_begin;
 
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
@@ -102,13 +104,15 @@ public:
             dst_offsets[row_idx] = dst_data.size();
         }
 
-        block.getByPosition(result).column = std::move(dst_column);
+        return dst_column;
     }
-
 };
+
+}
 
 void registerFunctionRegexpQuoteMeta(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionRegexpQuoteMeta>();
 }
+
 }

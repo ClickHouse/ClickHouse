@@ -1,16 +1,4 @@
 <test>
-
-
-    <stop_conditions>
-        <all_of>
-            <total_time_ms>30000</total_time_ms>
-        </all_of>
-        <any_of>
-            <total_time_ms>60000</total_time_ms>
-        </any_of>
-    </stop_conditions>
-
-
     <settings>
         <max_threads>1</max_threads>
     </settings>

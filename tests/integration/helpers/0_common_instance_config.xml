@@ -1,6 +1,10 @@
 <yandex>
     <timezone>Europe/Moscow</timezone>
     <listen_host>0.0.0.0</listen_host>
+    <custom_settings_prefixes>custom_</custom_settings_prefixes>
     <path>/var/lib/clickhouse/</path>
     <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
+
+    <!-- For tests which check compatibility with older versions. -->
+    <users_config>users.xml</users_config>
 </yandex>

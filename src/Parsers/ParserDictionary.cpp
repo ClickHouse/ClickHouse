@@ -11,6 +11,8 @@
 
 #include <Poco/String.h>
 
+#include <Parsers/ParserSetQuery.h>
+
 namespace DB
 {
 
@@ -47,7 +49,7 @@ bool ParserDictionaryLifetime::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     for (const auto & elem : expr_list.children)
     {
         const ASTPair & pair = elem->as<const ASTPair &>();
-        const ASTLiteral * literal = dynamic_cast<const ASTLiteral *>(pair.second.get());
+        const ASTLiteral * literal = pair.second->as<ASTLiteral>();
         if (literal == nullptr)
             return false;
 
@@ -88,14 +90,14 @@ bool ParserDictionaryRange::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     for (const auto & elem : expr_list.children)
     {
         const ASTPair & pair = elem->as<const ASTPair &>();
-        const ASTIdentifier * identifier = dynamic_cast<const ASTIdentifier *>(pair.second.get());
+        const ASTIdentifier * identifier = pair.second->as<ASTIdentifier>();
         if (identifier == nullptr)
             return false;
 
         if (pair.first == "min")
-            res->min_attr_name = identifier->name;
+            res->min_attr_name = identifier->name();
         else if (pair.first == "max")
-            res->max_attr_name = identifier->name;
+            res->max_attr_name = identifier->name();
         else
             return false;
     }
@@ -124,28 +126,38 @@ bool ParserDictionaryLayout::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     res->has_brackets = func.has_brackets;
     const ASTExpressionList & type_expr_list = func.elements->as<const ASTExpressionList &>();
 
-    /// there are no layout with more than 1 parameter
-    if (type_expr_list.children.size() > 1)
-        return false;
-
     /// if layout has params than brackets must be specified
     if (!type_expr_list.children.empty() && !res->has_brackets)
         return false;
 
-    if (type_expr_list.children.size() == 1)
-    {
-        const ASTPair * pair = dynamic_cast<const ASTPair *>(type_expr_list.children.at(0).get());
-        if (pair == nullptr)
-            return false;
-
-        const ASTLiteral * literal = dynamic_cast<const ASTLiteral *>(pair->second.get());
-        if (literal == nullptr || literal->value.getType() != Field::Types::UInt64)
-            return false;
-        res->parameter.emplace(pair->first, nullptr);
-        res->set(res->parameter->second, literal->clone());
-    }
+    res->set(res->parameters, func.elements);
 
     node = res;
+    return true;
+}
+
+bool ParserDictionarySettings::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserToken s_comma(TokenType::Comma);
+
+    SettingsChanges changes;
+
+    while (true)
+    {
+        if (!changes.empty() && !s_comma.ignore(pos))
+            break;
+
+        changes.push_back(SettingChange{});
+
+        if (!ParserSetQuery::parseNameValuePair(changes.back(), pos, expected))
+            return false;
+    }
+
+    auto query = std::make_shared<ASTDictionarySettings>();
+    query->changes = std::move(changes);
+
+    node = query;
+
     return true;
 }
 
@@ -157,6 +169,7 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword lifetime_keyword("LIFETIME");
     ParserKeyword range_keyword("RANGE");
     ParserKeyword layout_keyword("LAYOUT");
+    ParserKeyword settings_keyword("SETTINGS");
     ParserToken open(TokenType::OpeningRoundBracket);
     ParserToken close(TokenType::ClosingRoundBracket);
     ParserFunctionWithKeyValueArguments key_value_pairs_p;
@@ -164,12 +177,14 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserDictionaryLifetime lifetime_p;
     ParserDictionaryRange range_p;
     ParserDictionaryLayout layout_p;
+    ParserDictionarySettings settings_p;
 
     ASTPtr primary_key;
     ASTPtr ast_source;
     ASTPtr ast_lifetime;
     ASTPtr ast_layout;
     ASTPtr ast_range;
+    ASTPtr ast_settings;
 
     /// Primary is required to be the first in dictionary definition
     if (primary_key_keyword.ignore(pos) && !expression_list_p.parse(pos, primary_key, expected))
@@ -235,6 +250,20 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             continue;
         }
 
+        if (!ast_settings && settings_keyword.ignore(pos, expected))
+        {
+            if (!open.ignore(pos))
+                return false;
+
+            if (!settings_p.parse(pos, ast_settings, expected))
+                return false;
+
+            if (!close.ignore(pos))
+                return false;
+
+            continue;
+        }
+
         break;
     }
 
@@ -254,6 +283,9 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (ast_range)
         query->set(query->range, ast_range);
+
+    if (ast_settings)
+        query->set(query->dict_settings, ast_settings);
 
     return true;
 }

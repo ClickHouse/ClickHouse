@@ -1,5 +1,3 @@
-from contextlib import contextmanager
-
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -18,7 +16,8 @@ def started_cluster():
         for node in (node1, node2):
             node.query('''CREATE TABLE local_table(id UInt32, val String) ENGINE = MergeTree ORDER BY id;''')
 
-        node1.query('''CREATE TABLE distributed_table(id UInt32, val String) ENGINE = Distributed(test_cluster, default, local_table, id);''')
+        node1.query(
+            '''CREATE TABLE distributed_table(id UInt32, val String) ENGINE = Distributed(test_cluster, default, local_table, id);''')
 
         yield cluster
 
@@ -38,4 +37,3 @@ def test_start_and_stop_replica_send(started_cluster):
     node1.query("SYSTEM START DISTRIBUTED SENDS distributed_table;")
     node1.query("SYSTEM FLUSH DISTRIBUTED distributed_table;")
     assert node1.query("SELECT COUNT() FROM distributed_table").rstrip() == '2'
-

@@ -2,6 +2,7 @@
 
 #include <Access/EnabledRoles.h>
 #include <Poco/ExpireCache.h>
+#include <boost/container/flat_set.hpp>
 #include <map>
 #include <mutex>
 
@@ -18,11 +19,12 @@ public:
     RoleCache(const AccessControlManager & manager_);
     ~RoleCache();
 
-    std::shared_ptr<const EnabledRoles> getEnabledRoles(const std::vector<UUID> & current_roles, const std::vector<UUID> & current_roles_with_admin_option);
+    std::shared_ptr<const EnabledRoles> getEnabledRoles(
+        const boost::container::flat_set<UUID> & current_roles, const boost::container::flat_set<UUID> & current_roles_with_admin_option);
 
 private:
-    void collectRolesInfo();
-    void collectRolesInfoFor(EnabledRoles & enabled);
+    void collectEnabledRoles(ext::scope_guard & notifications);
+    void collectEnabledRoles(EnabledRoles & enabled, ext::scope_guard & notifications);
     RolePtr getRole(const UUID & role_id);
     void roleChanged(const UUID & role_id, const RolePtr & changed_role);
     void roleRemoved(const UUID & role_id);

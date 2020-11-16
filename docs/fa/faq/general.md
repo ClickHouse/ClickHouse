@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 78
 toc_title: "\u0633\u0648\u0627\u0644\u0627\u062A \u0639\u0645\u0648\u0645\u06CC"
 ---
@@ -17,7 +17,7 @@ toc_title: "\u0633\u0648\u0627\u0644\u0627\u062A \u0639\u0645\u0648\u0645\u06CC"
 
 ## اگر من یک مشکل با کدگذاریها در هنگام استفاده از اوراکل از طریق ان بی سی دارند? {#oracle-odbc-encodings}
 
-اگر شما استفاده از اوراکل از طریق راننده او بی سی به عنوان یک منبع از لغت نامه های خارجی, شما نیاز به تنظیم مقدار صحیح برای `NLS_LANG` متغیر محیطی در `/etc/default/clickhouse`. برای کسب اطلاعات بیشتر, دیدن [اوراکل nls\_lang پرسش و پاسخ](https://www.oracle.com/technetwork/products/globalization/nls-lang-099431.html).
+اگر شما استفاده از اوراکل از طریق راننده او بی سی به عنوان یک منبع از لغت نامه های خارجی, شما نیاز به تنظیم مقدار صحیح برای `NLS_LANG` متغیر محیطی در `/etc/default/clickhouse`. برای کسب اطلاعات بیشتر, دیدن [اوراکل NLS_LANG پرسش و پاسخ](https://www.oracle.com/technetwork/products/globalization/nls-lang-099431.html).
 
 **مثال**
 
@@ -27,9 +27,9 @@ NLS_LANG=RUSSIAN_RUSSIA.UTF8
 
 ## چگونه می توانم صادرات داده ها از خانه رعیتی به یک فایل? {#how-to-export-to-file}
 
-### با استفاده از به outfile بند {#using-into-outfile-clause}
+### با استفاده از به OUTFILE بند {#using-into-outfile-clause}
 
-افزودن یک [INTO OUTFILE](../query_language/select/#into-outfile-clause) بند به درخواست شما.
+افزودن یک [INTO OUTFILE](../sql-reference/statements/select/into-outfile.md#into-outfile-clause) بند به درخواست شما.
 
 به عنوان مثال:
 
@@ -37,7 +37,7 @@ NLS_LANG=RUSSIAN_RUSSIA.UTF8
 SELECT * FROM table INTO OUTFILE 'file'
 ```
 
-به طور پیش فرض, تاتر با استفاده از [جدول دار](../interfaces/formats.md#tabseparated) فرمت برای داده های خروجی. برای انتخاب [قالب داده](../interfaces/formats.md), استفاده از [بند فرمت](../query_language/select/#format-clause).
+به طور پیش فرض, تاتر با استفاده از [جدول دار](../interfaces/formats.md#tabseparated) فرمت برای داده های خروجی. برای انتخاب [قالب داده](../interfaces/formats.md), استفاده از [بند فرمت](../sql-reference/statements/select/format.md#format-clause).
 
 به عنوان مثال:
 
@@ -47,7 +47,7 @@ SELECT * FROM table INTO OUTFILE 'file' FORMAT CSV
 
 ### با استفاده از جدول فایل موتور {#using-a-file-engine-table}
 
-ببینید [پرونده](../engines/table_engines/special/file.md).
+ببینید [پرونده](../engines/table-engines/special/file.md).
 
 ### با استفاده از تغییر مسیر خط فرمان {#using-command-line-redirection}
 

@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 70
 toc_title: "\u06A9\u062A\u0627\u0628\u062E\u0627\u0646\u0647 \u0647\u0627\u06CC \u0634\
   \u062E\u0635 \u062B\u0627\u0644\u062B \u0627\u0633\u062A\u0641\u0627\u062F\u0647\
@@ -30,7 +30,7 @@ toc_title: "\u06A9\u062A\u0627\u0628\u062E\u0627\u0646\u0647 \u0647\u0627\u06CC 
 | سوالات متداول   | [نمایی مجوز 2.0](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libpcg-random/LICENSE-APACHE.txt)                             |
 | libressl        | [OpenSSL مجوز](https://github.com/ClickHouse-Extras/ssl/blob/master/COPYING)                                                                |
 | کتابدار         | [لیسانس 2 بند](https://github.com/edenhill/librdkafka/blob/363dcad5a23dc29381cc626620e68ae418b3af19/LICENSE)                                |
-| \_عرض           | [CC0 1.0 جهانی](https://github.com/ClickHouse/ClickHouse/blob/master/libs/libwidechar_width/LICENSE)                                        |
+| _عرض           | [CC0 1.0 جهانی](https://github.com/ClickHouse/ClickHouse/blob/master/libs/libwidechar_width/LICENSE)                                        |
 | llvm            | [لیسانس 3 بند](https://github.com/ClickHouse-Extras/llvm/blob/163def217817c90fb982a6daf384744d8472b92b/llvm/LICENSE.TXT)                    |
 | lz4             | [لیسانس 2 بند](https://github.com/lz4/lz4/blob/c10863b98e1503af90616ae99725ecd120265dfb/LICENSE)                                            |
 | ماریادب-اتصال-ج | [الجی پی ال2.1](https://github.com/ClickHouse-Extras/mariadb-connector-c/blob/3.1/COPYING.LIB)                                              |

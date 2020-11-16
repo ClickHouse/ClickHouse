@@ -17,6 +17,11 @@
 #include <IO/WriteHelpers.h>
 
 
+#if !__clang__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
+#endif
+
 namespace DB
 {
 
@@ -38,9 +43,7 @@ struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
   *   then set count to `threshold + 1`, and values from another state are not copied.
   */
     UInt8 count = 0;
-
     T data[0];
-
 
     size_t size() const
     {
@@ -133,6 +136,28 @@ struct AggregateFunctionUniqUpToData<UInt128> : AggregateFunctionUniqUpToData<UI
     }
 };
 
+template <>
+struct AggregateFunctionUniqUpToData<UInt256> : AggregateFunctionUniqUpToData<UInt64>
+{
+    /// ALWAYS_INLINE is required to have better code layout for uniqUpTo function
+    void ALWAYS_INLINE add(const IColumn & column, size_t row_num, UInt8 threshold)
+    {
+        UInt256 value = assert_cast<const ColumnVector<UInt256> &>(column).getData()[row_num];
+        insert(sipHash64(value), threshold);
+    }
+};
+
+template <>
+struct AggregateFunctionUniqUpToData<Int256> : AggregateFunctionUniqUpToData<UInt64>
+{
+    /// ALWAYS_INLINE is required to have better code layout for uniqUpTo function
+    void ALWAYS_INLINE add(const IColumn & column, size_t row_num, UInt8 threshold)
+    {
+        Int256 value = assert_cast<const ColumnVector<Int256> &>(column).getData()[row_num];
+        insert(sipHash64(value), threshold);
+    }
+};
+
 
 template <typename T>
 class AggregateFunctionUniqUpTo final : public IAggregateFunctionDataHelper<AggregateFunctionUniqUpToData<T>, AggregateFunctionUniqUpTo<T>>
@@ -180,7 +205,7 @@ public:
         this->data(place).read(buf, threshold);
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).size());
     }
@@ -242,7 +267,7 @@ public:
         this->data(place).read(buf, threshold);
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).size());
     }
@@ -250,3 +275,8 @@ public:
 
 
 }
+
+#if !__clang__
+#pragma GCC diagnostic pop
+#endif
+

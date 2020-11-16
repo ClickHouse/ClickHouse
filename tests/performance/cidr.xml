@@ -1,20 +1,10 @@
 <test>
-
-    <stop_conditions>
-        <all_of>
-            <iterations>3</iterations>
-            <min_time_not_changing_for_ms>10000</min_time_not_changing_for_ms>
-        </all_of>
-        <any_of>
-            <iterations>5</iterations>
-            <total_time_ms>60000</total_time_ms>
-        </any_of>
-    </stop_conditions>
-
-
     <preconditions>
         <table_exists>test.hits</table_exists>
     </preconditions>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
 
 <query>SELECT count() FROM test.hits WHERE NOT ignore(IPv4CIDRToRange(ClientIP, rand() % 33))</query>
 <query>SELECT count() FROM test.hits WHERE NOT ignore(IPv6CIDRToRange(ClientIP6, rand() % 33))</query>

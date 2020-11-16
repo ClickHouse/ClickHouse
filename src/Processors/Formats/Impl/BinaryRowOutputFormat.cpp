@@ -9,14 +9,14 @@
 namespace DB
 {
 
-BinaryRowOutputFormat::BinaryRowOutputFormat(WriteBuffer & out_, const Block & header, bool with_names_, bool with_types_, FormatFactory::WriteCallback callback)
-    : IRowOutputFormat(header, out_, callback), with_names(with_names_), with_types(with_types_)
+BinaryRowOutputFormat::BinaryRowOutputFormat(WriteBuffer & out_, const Block & header, bool with_names_, bool with_types_, const RowOutputFormatParams & params_)
+    : IRowOutputFormat(header, out_, params_), with_names(with_names_), with_types(with_types_)
 {
 }
 
 void BinaryRowOutputFormat::writePrefix()
 {
-    auto & header = getPort(PortKind::Main).getHeader();
+    const auto & header = getPort(PortKind::Main).getHeader();
     size_t columns = header.columns();
 
     if (with_names || with_types)
@@ -52,19 +52,19 @@ void registerOutputFormatProcessorRowBinary(FormatFactory & factory)
     factory.registerOutputFormatProcessor("RowBinary", [](
         WriteBuffer & buf,
         const Block & sample,
-        FormatFactory::WriteCallback callback,
+        const RowOutputFormatParams & params,
         const FormatSettings &)
     {
-        return std::make_shared<BinaryRowOutputFormat>(buf, sample, false, false, callback);
+        return std::make_shared<BinaryRowOutputFormat>(buf, sample, false, false, params);
     });
 
     factory.registerOutputFormatProcessor("RowBinaryWithNamesAndTypes", [](
         WriteBuffer & buf,
         const Block & sample,
-        FormatFactory::WriteCallback callback,
+        const RowOutputFormatParams & params,
         const FormatSettings &)
     {
-        return std::make_shared<BinaryRowOutputFormat>(buf, sample, true, true, callback);
+        return std::make_shared<BinaryRowOutputFormat>(buf, sample, true, true, params);
     });
 }
 

@@ -44,7 +44,7 @@ bool DataTypeNullable::onlyNull() const
 void DataTypeNullable::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
 {
     path.push_back(Substream::NullMap);
-    callback(path);
+    callback(path, *this);
     path.back() = Substream::NullableElements;
     nested_data_type->enumerateStreams(callback, path);
     path.pop_back();
@@ -93,7 +93,7 @@ void DataTypeNullable::serializeBinaryBulkWithMultipleStreams(
 
     /// First serialize null map.
     settings.path.push_back(Substream::NullMap);
-    if (auto stream = settings.getter(settings.path))
+    if (auto * stream = settings.getter(settings.path))
         DataTypeUInt8().serializeBinaryBulk(col.getNullMapColumn(), *stream, offset, limit);
 
     /// Then serialize contents of arrays.
@@ -112,7 +112,7 @@ void DataTypeNullable::deserializeBinaryBulkWithMultipleStreams(
     ColumnNullable & col = assert_cast<ColumnNullable &>(column);
 
     settings.path.push_back(Substream::NullMap);
-    if (auto stream = settings.getter(settings.path))
+    if (auto * stream = settings.getter(settings.path))
         DataTypeUInt8().deserializeBinaryBulk(col.getNullMapColumn(), *stream, limit, 0);
 
     settings.path.back() = Substream::NullableElements;
@@ -217,7 +217,7 @@ void DataTypeNullable::serializeTextEscaped(const IColumn & column, size_t row_n
     const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
 
     if (col.isNullAt(row_num))
-        writeCString("\\N", ostr);
+        writeString(settings.tsv.null_representation, ostr);
     else
         nested_data_type->serializeAsTextEscaped(col.getNestedColumn(), row_num, ostr, settings);
 }
@@ -308,16 +308,30 @@ ReturnType DataTypeNullable::deserializeTextQuoted(IColumn & column, ReadBuffer 
                                                    const DataTypePtr & nested_data_type)
 {
     return safeDeserialize<ReturnType>(column, *nested_data_type,
-        [&istr] { return checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("NULL", istr); },
+        [&istr]
+        {
+            return checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("NULL", istr);
+        },
         [&nested_data_type, &istr, &settings] (IColumn & nested) { nested_data_type->deserializeAsTextQuoted(nested, istr, settings); });
 }
 
 
 void DataTypeNullable::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    safeDeserialize(column, *nested_data_type,
-        [&istr] { return checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("NULL", istr); },
-        [this, &istr, &settings] (IColumn & nested) { nested_data_type->deserializeAsWholeText(nested, istr, settings); });
+    deserializeWholeText<void>(column, istr, settings, nested_data_type);
+}
+
+template <typename ReturnType>
+ReturnType DataTypeNullable::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings,
+                                                  const DataTypePtr & nested_data_type)
+{
+    return safeDeserialize<ReturnType>(column, *nested_data_type,
+        [&istr]
+        {
+            return checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("NULL", istr)
+                || checkStringByFirstCharacterAndAssertTheRest("ᴺᵁᴸᴸ", istr);
+        },
+        [&nested_data_type, &istr, &settings] (IColumn & nested) { nested_data_type->deserializeAsWholeText(nested, istr, settings); });
 }
 
 
@@ -419,7 +433,12 @@ void DataTypeNullable::serializeText(const IColumn & column, size_t row_num, Wri
     /// This assumes UTF-8 and proper font support. This is Ok, because Pretty formats are "presentational", not for data exchange.
 
     if (col.isNullAt(row_num))
-        writeCString("ᴺᵁᴸᴸ", ostr);
+    {
+        if (settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8)
+            writeCString("ᴺᵁᴸᴸ", ostr);
+        else
+            writeCString("NULL", ostr);
+    }
     else
         nested_data_type->serializeAsText(col.getNestedColumn(), row_num, ostr, settings);
 }
@@ -539,6 +558,7 @@ DataTypePtr removeNullable(const DataTypePtr & type)
 }
 
 
+template bool DataTypeNullable::deserializeWholeText<bool>(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const DataTypePtr & nested);
 template bool DataTypeNullable::deserializeTextEscaped<bool>(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const DataTypePtr & nested);
 template bool DataTypeNullable::deserializeTextQuoted<bool>(IColumn & column, ReadBuffer & istr, const FormatSettings &, const DataTypePtr & nested);
 template bool DataTypeNullable::deserializeTextCSV<bool>(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const DataTypePtr & nested);

@@ -12,45 +12,11 @@ namespace DB
 class IFunction;
 using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
-Field applyFunctionForField(
-        const FunctionBasePtr & func,
-        const DataTypePtr & arg_type,
-        const Field & arg_value)
-{
-    Block block
-            {
-                    { arg_type->createColumnConst(1, arg_value), arg_type, "x" },
-                    { nullptr, func->getReturnType(), "y" }
-            };
-
-    func->execute(block, {0}, 1, 1);
-    return (*block.safeGetByPosition(1).column)[0];
-}
-
-FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & current_type, const FieldRef & field)
-{
-    /// Fallback for fields without block reference.
-    if (field.isExplicit())
-        return applyFunctionForField(func, current_type, field);
-
-    String result_name = "_" + func->getName() + "_" + toString(field.column_idx);
-    size_t result_idx;
-    const auto & block = field.block;
-    if (!block->has(result_name))
-    {
-        result_idx = block->columns();
-        field.block->insert({nullptr, func->getReturnType(), result_name});
-        func->execute(*block, {field.column_idx}, result_idx, block->rows());
-    }
-    else
-        result_idx = block->getPositionByName(result_name);
-
-    return {field.block, field.row_idx, result_idx};
-}
 
 String Range::toString() const
 {
     std::stringstream str;
+    str.exceptions(std::ios::failbit);
 
     if (!left_bounded)
         str << "(-inf, ";
@@ -325,6 +291,45 @@ String RangeSet::toString() const
     }
     str << "}";
     return str.str();
+}
+
+
+Field applyFunctionForField(const FunctionBasePtr & func, const DataTypePtr & arg_type, const Field & arg_value)
+{
+    ColumnsWithTypeAndName columns
+    {
+        { arg_type->createColumnConst(1, arg_value), arg_type, "x" },
+    };
+
+    auto col = func->execute(columns, func->getResultType(), 1);
+    return (*col)[0];
+}
+
+
+FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & current_type, const FieldRef & field)
+{
+    /// Fallback for fields without block reference.
+    if (field.isExplicit())
+        return applyFunctionForField(func, current_type, field);
+
+    String result_name = "_" + func->getName() + "_" + toString(field.column_idx);
+    const auto & columns = field.columns;
+    size_t result_idx = columns->size();
+
+    for (size_t i = 0; i < result_idx; ++i)
+    {
+        if ((*columns)[i].name == result_name)
+            result_idx = i;
+    }
+
+    ColumnsWithTypeAndName args{(*columns)[field.column_idx]};
+    if (result_idx == columns->size())
+    {
+        field.columns->emplace_back(ColumnWithTypeAndName {nullptr, func->getResultType(), result_name});
+        (*columns)[result_idx].column = func->execute(args, (*columns)[result_idx].type, columns->front().column->size());
+    }
+
+    return {field.columns, field.row_idx, result_idx};
 }
 
 }

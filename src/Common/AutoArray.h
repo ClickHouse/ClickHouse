@@ -15,7 +15,7 @@ namespace ErrorCodes
     extern const int CANNOT_ALLOCATE_MEMORY;
 }
 
-/** An array of (almost) unchangable size:
+/** An array of (almost) unchangeable size:
   *  the size is specified in the constructor;
   *  `resize` method removes old data, and necessary only for
   *  so that you can first create an empty object using the default constructor,
@@ -278,7 +278,7 @@ private:
         void * new_data = nullptr;
         int res = posix_memalign(&new_data, alignment, prefix_size + new_size * sizeof(T));
         if (0 != res)
-            throwFromErrno("Cannot allocate memory (posix_memalign) " + formatReadableSizeWithBinarySuffix(new_size) + ".",
+            throwFromErrno(fmt::format("Cannot allocate memory (posix_memalign) {}.", ReadableSize(new_size)),
                 ErrorCodes::CANNOT_ALLOCATE_MEMORY, res);
 
         data_ptr = static_cast<char *>(new_data);

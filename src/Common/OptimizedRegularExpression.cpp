@@ -3,7 +3,7 @@
 #include <Common/OptimizedRegularExpression.h>
 
 #define MIN_LENGTH_FOR_STRSTR 3
-#define MAX_SUBPATTERNS 5
+#define MAX_SUBPATTERNS 1024
 
 
 namespace DB
@@ -38,6 +38,7 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
     required_substring_is_prefix = false;
     required_substring.clear();
     bool has_alternative_on_depth_0 = false;
+    bool has_case_insensitive_flag = false;
 
     /// Substring with a position.
     using Substring = std::pair<std::string, size_t>;
@@ -65,7 +66,17 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
 
                 switch (*pos)
                 {
-                    case '|': case '(': case ')': case '^': case '$': case '.': case '[': case '?': case '*': case '+': case '{':
+                    case '|':
+                    case '(':
+                    case ')':
+                    case '^':
+                    case '$':
+                    case '.':
+                    case '[':
+                    case '?':
+                    case '*':
+                    case '+':
+                    case '{':
                         if (depth == 0 && !in_curly_braces && !in_square_braces)
                         {
                             if (last_substring->first.empty())
@@ -109,6 +120,28 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
                     {
                         trivial_substrings.resize(trivial_substrings.size() + 1);
                         last_substring = &trivial_substrings.back();
+                    }
+
+                    /// Check for case-insensitive flag.
+                    if (pos + 1 < end && pos[1] == '?')
+                    {
+                        for (size_t offset = 2; pos + offset < end; ++offset)
+                        {
+                            if (pos[offset] == '-'  /// it means flag negation
+                                /// various possible flags, actually only imsU are supported by re2
+                                || (pos[offset] >= 'a' && pos[offset] <= 'z')
+                                || (pos[offset] >= 'A' && pos[offset] <= 'Z'))
+                            {
+                                if (pos[offset] == 'i')
+                                {
+                                    /// Actually it can be negated case-insensitive flag. But we don't care.
+                                    has_case_insensitive_flag = true;
+                                    break;
+                                }
+                            }
+                            else
+                                break;
+                        }
                     }
                 }
                 ++pos;
@@ -209,7 +242,7 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
 
     if (!is_trivial)
     {
-        if (!has_alternative_on_depth_0)
+        if (!has_alternative_on_depth_0 && !has_case_insensitive_flag)
         {
             /// We choose the non-alternative substring of the maximum length for first search.
 
@@ -454,7 +487,7 @@ unsigned OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject
                 return 0;
         }
 
-        DB::PODArrayWithStackMemory<StringPieceType, sizeof(StringPieceType) * (MAX_SUBPATTERNS + 1)> pieces(limit);
+        DB::PODArrayWithStackMemory<StringPieceType, 128> pieces(limit);
 
         if (!re2->Match(StringPieceType(subject, subject_size), 0, subject_size, RegexType::UNANCHORED, pieces.data(), pieces.size()))
             return 0;

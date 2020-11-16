@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 
 R1=table_1013_1
@@ -21,7 +21,7 @@ ${CLICKHOUSE_CLIENT} -n -q "
 timeout 10s ${CLICKHOUSE_CLIENT} -n -q "
     SET receive_timeout=1;
     SYSTEM SYNC REPLICA $R2
-" 2>&1 | fgrep -q "DB::Exception: SYNC REPLICA ${CLICKHOUSE_DATABASE}.$R2: command timed out!" && echo 'OK' || echo 'Failed!'
+" 2>&1 | grep -F -q "Code: 159. DB::Exception" && echo 'OK' || echo 'Failed!'
 
 # By dropping tables all related SYNC REPLICA queries would be terminated as well
 ${CLICKHOUSE_CLIENT} -n -q "

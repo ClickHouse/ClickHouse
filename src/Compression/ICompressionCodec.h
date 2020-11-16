@@ -1,14 +1,12 @@
 #pragma once
 
 #include <memory>
-#include <IO/ReadBuffer.h>
-#include <IO/WriteBuffer.h>
-#include <IO/BufferWithOwnMemory.h>
-#include <DataTypes/IDataType.h>
 #include <boost/noncopyable.hpp>
-#include <IO/UncompressedCache.h>
-#include <Compression/LZ4_decompress_faster.h>
 #include <Compression/CompressionInfo.h>
+#include <common/types.h>
+#include <Parsers/IAST.h>
+#include <Common/SipHash.h>
+
 
 namespace DB
 {
@@ -17,6 +15,8 @@ class ICompressionCodec;
 
 using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
 using Codecs = std::vector<CompressionCodecPtr>;
+
+class IDataType;
 
 /**
 * Represents interface for compression codecs like LZ4, ZSTD, etc.
@@ -30,7 +30,15 @@ public:
     virtual uint8_t getMethodByte() const = 0;
 
     /// Codec description, for example "ZSTD(2)" or "LZ4,LZ4HC(5)"
-    virtual String getCodecDesc() const = 0;
+    virtual ASTPtr getCodecDesc() const;
+
+    /// Codec description with "CODEC" prefix, for example "CODEC(ZSTD(2))" or
+    /// "CODEC(LZ4,LZ4HC(5))"
+    ASTPtr getFullCodecDesc() const;
+
+    /// Hash, that depends on codec ast and optional parameters like data type
+    virtual void updateHash(SipHash & hash) const = 0;
+    UInt64 getHash() const;
 
     /// Compressed bytes from uncompressed source to dest. Dest should preallocate memory
     UInt32 compress(const char * source, UInt32 source_size, char * dest) const;
@@ -39,7 +47,10 @@ public:
     UInt32 decompress(const char * source, UInt32 source_size, char * dest) const;
 
     /// Number of bytes, that will be used to compress uncompressed_size bytes with current codec
-    virtual UInt32 getCompressedReserveSize(UInt32 uncompressed_size) const { return getHeaderSize() + getMaxCompressedDataSize(uncompressed_size); }
+    virtual UInt32 getCompressedReserveSize(UInt32 uncompressed_size) const
+    {
+        return getHeaderSize() + getMaxCompressedDataSize(uncompressed_size);
+    }
 
     /// Some codecs (LZ4, for example) require additional bytes at end of buffer
     virtual UInt32 getAdditionalSizeAtTheEndOfBuffer() const { return 0; }
@@ -56,8 +67,14 @@ public:
     /// Read method byte from compressed source
     static uint8_t readMethod(const char * source);
 
-    /// Some codecs may use information about column type which appears after codec creation
-    virtual void useInfoAboutType(DataTypePtr /* data_type */) { }
+    /// Return true if this codec actually compressing something. Otherwise it can be just transformation that helps compression (e.g. Delta).
+    virtual bool isCompression() const = 0;
+
+    /// Is it a generic compression algorithm like lz4, zstd. Usually it does not make sense to apply generic compression more than single time.
+    virtual bool isGenericCompression() const = 0;
+
+    /// If it does nothing.
+    virtual bool isNone() const { return false; }
 
 protected:
 
@@ -69,6 +86,12 @@ protected:
 
     /// Actually decompress data without header
     virtual void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const = 0;
+
+    /// Construct and set codec description from codec name and arguments. Must be called in codec constructor.
+    void setCodecDescription(const String & name, const ASTs & arguments = {});
+
+private:
+    ASTPtr full_codec_desc;
 };
 
 }

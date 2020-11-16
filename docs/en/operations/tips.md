@@ -35,7 +35,7 @@ $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 Always disable transparent huge pages. It interferes with memory allocators, which leads to significant performance degradation.
 
 ``` bash
-$ echo 'never' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
+$ echo 'madvise' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
 ```
 
 Use `perf top` to watch the time spent in the kernel for memory management.
@@ -57,7 +57,7 @@ When creating RAID-10, select the `far` layout.
 If your budget allows, choose RAID-10.
 
 If you have more than 4 disks, use RAID-6 (preferred) or RAID-50, instead of RAID-5.
-When using RAID-5, RAID-6 or RAID-50, always increase stripe\_cache\_size, since the default value is usually not the best choice.
+When using RAID-5, RAID-6 or RAID-50, always increase stripe_cache_size, since the default value is usually not the best choice.
 
 ``` bash
 $ echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size
@@ -120,13 +120,17 @@ zoo.cfg:
 tickTime=2000
 # The number of ticks that the initial
 # synchronization phase can take
-initLimit=30000
+# This value is not quite motivated
+initLimit=300
 # The number of ticks that can pass between
 # sending a request and getting an acknowledgement
 syncLimit=10
 
 maxClientCnxns=2000
 
+# It is the maximum value that client may request and the server will accept.
+# It is Ok to have high maxSessionTimeout on server to allow clients to work with high session timeout if they want.
+# But we request session timeout of 30 seconds by default (you can change it with session_timeout_ms in ClickHouse config).
 maxSessionTimeout=60000000
 # the directory where the snapshot is stored.
 dataDir=/opt/zookeeper/{{ '{{' }} cluster['name'] {{ '}}' }}/data

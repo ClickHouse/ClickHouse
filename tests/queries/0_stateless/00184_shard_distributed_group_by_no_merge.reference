@@ -1,2 +1,41 @@
+distributed_group_by_no_merge=1
 1	1
 1	1
+1	1
+1	1
+1	1
+1	1
+1	1
+1	1
+distributed_group_by_no_merge=2
+LIMIT
+1	1	1
+OFFSET
+2	1	1
+ALIAS
+0
+0
+ORDER BY
+1
+1
+0
+0
+ORDER BY LIMIT
+1
+LIMIT BY
+0
+1
+LIMIT BY LIMIT
+0
+GROUP BY ORDER BY
+1
+1
+1
+1
+GROUP BY w/ ALIAS
+0
+1
+0
+1
+ORDER BY w/ ALIAS
+0

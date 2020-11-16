@@ -1,16 +1,8 @@
 <test>
-
-    <stop_conditions>
-        <any_of>
-            <total_time_ms>10000</total_time_ms>
-        </any_of>
-    </stop_conditions>
-
     <preconditions>
         <table_exists>test.hits</table_exists>
         <table_exists>hits_100m_single</table_exists>
     </preconditions>
-
 
     <create_query>DROP TABLE IF EXISTS test_model</create_query>
     <create_query>CREATE TABLE test_model engine = Memory as select stochasticLinearRegressionState(0.0001)(Age, Income, ParamPrice, Robotness, RefererHash) as state from test.hits</create_query>

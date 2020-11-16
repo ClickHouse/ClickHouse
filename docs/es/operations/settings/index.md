@@ -1,14 +1,15 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
-toc_folder_title: Settings
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+toc_folder_title: "Configuraci\xF3n"
 toc_priority: 55
 toc_title: "Implantaci\xF3n"
 ---
 
-# Configuración {#settings}
+# Configuración {#session-settings-intro}
 
-Hay varias formas de realizar todos los ajustes que se describen a continuación.
+Hay varias maneras de realizar todos los ajustes descritos en esta sección de documentación.
+
 Los ajustes se configuran en capas, por lo que cada capa subsiguiente redefine los ajustes anteriores.
 
 Formas de configurar los ajustes, por orden de prioridad:

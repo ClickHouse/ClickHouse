@@ -1,14 +1,5 @@
 <test>
 
-    <stop_conditions>
-        <all_of>
-            <total_time_ms>30000</total_time_ms>
-        </all_of>
-        <any_of>
-            <min_time_not_changing_for_ms>5000</min_time_not_changing_for_ms>
-            <total_time_ms>60000</total_time_ms>
-        </any_of>
-    </stop_conditions>
 
 
     <create_query>CREATE TABLE cdp_tags (tag_id String, mid_seqs AggregateFunction(groupBitmap, UInt32)) engine=MergeTree() ORDER BY (tag_id) SETTINGS index_granularity=1</create_query>

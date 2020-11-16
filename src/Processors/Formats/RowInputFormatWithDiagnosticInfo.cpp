@@ -37,12 +37,12 @@ void RowInputFormatWithDiagnosticInfo::updateDiagnosticInfo()
 
 String RowInputFormatWithDiagnosticInfo::getDiagnosticInfo()
 {
-    if (in.eof())        /// Buffer has gone, cannot extract information about what has been parsed.
-        return {};
+    if (in.eof())
+        return "Buffer has gone, cannot extract information about what has been parsed.";
 
     WriteBufferFromOwnString out;
 
-    auto & header = getPort().getHeader();
+    const auto & header = getPort().getHeader();
     MutableColumns columns = header.cloneEmptyColumns();
 
     /// It is possible to display detailed diagnostics only if the last and next to last rows are still in the read buffer.
@@ -101,18 +101,18 @@ bool RowInputFormatWithDiagnosticInfo::deserializeFieldAndPrintDiagnosticInfo(co
         << "name: " << alignedName(col_name, max_length_of_column_name)
         << "type: " << alignedName(type->getName(), max_length_of_data_type_name);
 
-    auto prev_position = in.position();
-    auto curr_position = in.position();
+    auto * prev_position = in.position();
     std::exception_ptr exception;
 
     try
     {
-        tryDeserializeFiled(type, column, file_column, prev_position, curr_position);
+        tryDeserializeField(type, column, file_column);
     }
     catch (...)
     {
         exception = std::current_exception();
     }
+    auto * curr_position = in.position();
 
     if (curr_position < prev_position)
         throw Exception("Logical error: parsing is non-deterministic.", ErrorCodes::LOGICAL_ERROR);
@@ -140,6 +140,8 @@ bool RowInputFormatWithDiagnosticInfo::deserializeFieldAndPrintDiagnosticInfo(co
             out << "ERROR: Date must be in YYYY-MM-DD format.\n";
         else
             out << "ERROR\n";
+        // Print exception message
+        out << getExceptionMessage(exception, false) << '\n';
         return false;
     }
 

@@ -39,26 +39,26 @@ INSERT INTO decimal (i) VALUES (-100000000000000000000); -- { clientError 69 }
 INSERT INTO decimal (j) VALUES (10); -- { clientError 69 }
 INSERT INTO decimal (j) VALUES (-10); -- { clientError 69 }
 
-INSERT INTO decimal (a) VALUES (0.1); -- { clientError 69 }
-INSERT INTO decimal (a) VALUES (-0.1); -- { clientError 69 }
-INSERT INTO decimal (b) VALUES (0.1); -- { clientError 69 }
-INSERT INTO decimal (b) VALUES (-0.1); -- { clientError 69 }
-INSERT INTO decimal (c) VALUES (0.1); -- { clientError 69 }
-INSERT INTO decimal (c) VALUES (-0.1); -- { clientError 69 }
-INSERT INTO decimal (d) VALUES (0.0000000001); -- { clientError 69 }
-INSERT INTO decimal (d) VALUES (-0.0000000001); -- { clientError 69 }
-INSERT INTO decimal (e) VALUES (0.0000000000000000001); -- { clientError 69 }
-INSERT INTO decimal (e) VALUES (-0.0000000000000000001); -- { clientError 69 }
-INSERT INTO decimal (f) VALUES (0.000000000000000000000000000000000000001); -- { clientError 69 }
-INSERT INTO decimal (f) VALUES (-0.000000000000000000000000000000000000001); -- { clientError 69 }
-INSERT INTO decimal (g) VALUES (0.000001); -- { clientError 69 }
-INSERT INTO decimal (g) VALUES (-0.000001); -- { clientError 69 }
-INSERT INTO decimal (h) VALUES (0.0000000001); -- { clientError 69 }
-INSERT INTO decimal (h) VALUES (-0.0000000001); -- { clientError 69 }
-INSERT INTO decimal (i) VALUES (0.0000000000000000001); -- { clientError 69 }
-INSERT INTO decimal (i) VALUES (-0.0000000000000000001); -- { clientError 69 }
-INSERT INTO decimal (j) VALUES (0.1); -- { clientError 69 }
-INSERT INTO decimal (j) VALUES (-0.1); -- { clientError 69 }
+INSERT INTO decimal (a) VALUES (0.1);
+INSERT INTO decimal (a) VALUES (-0.1);
+INSERT INTO decimal (b) VALUES (0.1);
+INSERT INTO decimal (b) VALUES (-0.1);
+INSERT INTO decimal (c) VALUES (0.1);
+INSERT INTO decimal (c) VALUES (-0.1);
+INSERT INTO decimal (d) VALUES (0.0000000001);
+INSERT INTO decimal (d) VALUES (-0.0000000001);
+INSERT INTO decimal (e) VALUES (0.0000000000000000001);
+INSERT INTO decimal (e) VALUES (-0.0000000000000000001);
+INSERT INTO decimal (f) VALUES (0.000000000000000000000000000000000000001);
+INSERT INTO decimal (f) VALUES (-0.000000000000000000000000000000000000001);
+INSERT INTO decimal (g) VALUES (0.000001);
+INSERT INTO decimal (g) VALUES (-0.000001);
+INSERT INTO decimal (h) VALUES (0.0000000001);
+INSERT INTO decimal (h) VALUES (-0.0000000001);
+INSERT INTO decimal (i) VALUES (0.0000000000000000001);
+INSERT INTO decimal (i) VALUES (-0.0000000000000000001);
+INSERT INTO decimal (j) VALUES (0.1);
+INSERT INTO decimal (j) VALUES (-0.1);
 
 INSERT INTO decimal (a, b, d, g) VALUES (999999999, 999999999999999999, 0.999999999, 9999.99999);
 INSERT INTO decimal (a, b, d, g) VALUES (-999999999, -999999999999999999, -0.999999999, -9999.99999);
@@ -90,8 +90,8 @@ INSERT INTO decimal (a) VALUES ('0x1'); -- { clientError 6 }
 INSERT INTO decimal (a, b, c, d, e, f) VALUES ('0.9e9', '0.9e18', '0.9e38', '9e-9', '9e-18', '9e-38');
 INSERT INTO decimal (a, b, c, d, e, f) VALUES ('-0.9e9', '-0.9e18', '-0.9e38', '-9e-9', '-9e-18', '-9e-38');
 
-INSERT INTO decimal (a, b, c, d, e, f) VALUES ('1e9', '1e18', '1e38', '1e-10', '1e-19', '1e-39');  -- { clientError 69 }
-INSERT INTO decimal (a, b, c, d, e, f) VALUES ('-1e9', '-1e18', '-1e38', '-1e-10', '-1e-19', '-1e-39');  -- { clientError 69 }
+INSERT INTO decimal (a, b, c, d, e, f) VALUES ('1e9', '1e18', '1e38', '1e-10', '1e-19', '1e-39'); -- { clientError 69 }
+INSERT INTO decimal (a, b, c, d, e, f) VALUES ('-1e9', '-1e18', '-1e38', '-1e-10', '-1e-19', '-1e-39'); -- { clientError 69 }
 
 SELECT * FROM decimal ORDER BY a, b, c, d, e, f, g, h, i, j;
 DROP TABLE IF EXISTS decimal;

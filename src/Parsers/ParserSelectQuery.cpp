@@ -8,6 +8,7 @@
 #include <Parsers/ParserSampleRatio.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
+#include <Parsers/ParserWithElement.h>
 
 
 namespace DB
@@ -18,6 +19,8 @@ namespace ErrorCodes
     extern const int TOP_AND_LIMIT_TOGETHER;
     extern const int WITH_TIES_WITHOUT_ORDER_BY;
     extern const int LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED;
+    extern const int ROW_AND_ROWS_TOGETHER;
+    extern const int FIRST_AND_NEXT_TOGETHER;
 }
 
 
@@ -44,6 +47,12 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_top("TOP");
     ParserKeyword s_with_ties("WITH TIES");
     ParserKeyword s_offset("OFFSET");
+    ParserKeyword s_fetch("FETCH");
+    ParserKeyword s_only("ONLY");
+    ParserKeyword s_row("ROW");
+    ParserKeyword s_rows("ROWS");
+    ParserKeyword s_first("FIRST");
+    ParserKeyword s_next("NEXT");
 
     ParserNotEmptyExpressionList exp_list(false);
     ParserNotEmptyExpressionList exp_list_for_with_clause(false);
@@ -74,7 +83,10 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         if (s_with.ignore(pos, expected))
         {
-            if (!exp_list_for_with_clause.parse(pos, with_expression_list, expected))
+            if (!ParserList(std::make_unique<ParserWithElement>(), std::make_unique<ParserToken>(TokenType::Comma))
+                     .parse(pos, with_expression_list, expected))
+                return false;
+            if (with_expression_list->children.empty())
                 return false;
         }
     }
@@ -240,6 +252,64 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (top_length && limit_length)
             throw Exception("Can not use TOP and LIMIT together", ErrorCodes::TOP_AND_LIMIT_TOGETHER);
+    }
+    else if (s_offset.ignore(pos, expected))
+    {
+        /// OFFSET offset_row_count {ROW | ROWS} FETCH {FIRST | NEXT} fetch_row_count {ROW | ROWS} {ONLY | WITH TIES}
+        bool offset_with_fetch_maybe = false;
+
+        if (!exp_elem.parse(pos, limit_offset, expected))
+            return false;
+
+        if (s_row.ignore(pos, expected))
+        {
+            if (s_rows.ignore(pos, expected))
+                throw Exception("Can not use ROW and ROWS together", ErrorCodes::ROW_AND_ROWS_TOGETHER);
+            offset_with_fetch_maybe = true;
+        }
+        else if (s_rows.ignore(pos, expected))
+        {
+            offset_with_fetch_maybe = true;
+        }
+
+        if (offset_with_fetch_maybe && s_fetch.ignore(pos, expected))
+        {
+            /// OFFSET FETCH clause must exists with "ORDER BY"
+            if (!order_expression_list)
+                return false;
+
+            if (s_first.ignore(pos, expected))
+            {
+                if (s_next.ignore(pos, expected))
+                    throw Exception("Can not use FIRST and NEXT together", ErrorCodes::FIRST_AND_NEXT_TOGETHER);
+            }
+            else if (!s_next.ignore(pos, expected))
+                return false;
+
+            if (!exp_elem.parse(pos, limit_length, expected))
+                return false;
+
+            if (s_row.ignore(pos, expected))
+            {
+                if (s_rows.ignore(pos, expected))
+                    throw Exception("Can not use ROW and ROWS together", ErrorCodes::ROW_AND_ROWS_TOGETHER);
+            }
+            else if (!s_rows.ignore(pos, expected))
+                return false;
+
+            if (s_with_ties.ignore(pos, expected))
+            {
+                select_query->limit_with_ties = true;
+            }
+            else if (s_only.ignore(pos, expected))
+            {
+                select_query->limit_with_ties = false;
+            }
+            else
+            {
+                return false;
+            }
+        }
     }
 
     /// Because TOP n in totally equals LIMIT n

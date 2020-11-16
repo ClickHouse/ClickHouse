@@ -27,6 +27,7 @@ namespace DB
 {
 
 class TableJoin;
+class DictionaryReader;
 
 namespace JoinStuff
 {
@@ -87,7 +88,7 @@ using MappedAsof =       WithFlags<AsofRowRefs, false>;
   * - CROSS
   *
   * ALL means usual JOIN, when rows are multiplied by number of matching rows from the "right" table.
-  * ANY uses one line per unique key from right talbe. For LEFT JOIN it would be any row (with needed joined key) from the right table,
+  * ANY uses one line per unique key from right table. For LEFT JOIN it would be any row (with needed joined key) from the right table,
   * for RIGHT JOIN it would be any row from the left table and for INNER one it would be any row from right and any row from left.
   * SEMI JOIN filter left table by keys that are present in right table for LEFT JOIN, and filter right table by keys from left table
   * for RIGHT JOIN. In other words SEMI JOIN returns only rows which joining keys present in another table.
@@ -148,7 +149,8 @@ class HashJoin : public IJoin
 public:
     HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block, bool any_take_last_row_ = false);
 
-    bool empty() { return data->type == Type::EMPTY; }
+    bool empty() const { return data->type == Type::EMPTY; }
+    bool overDictionary() const { return data->type == Type::DICT; }
 
     /** Add block of data from right hand of JOIN to the map.
       * Returns false, if some limit was exceeded and you should not insert more data.
@@ -160,11 +162,11 @@ public:
       */
     void joinBlock(Block & block, ExtraBlockPtr & not_processed) override;
 
-    /// Infer the return type for joinGet function
-    DataTypePtr joinGetReturnType(const String & column_name, bool or_null) const;
+    /// Check joinGet arguments and infer the return type.
+    DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const;
 
-    /// Used by joinGet function that turns StorageJoin into a dictionary
-    void joinGet(Block & block, const String & column_name, bool or_null) const;
+    /// Used by joinGet function that turns StorageJoin into a dictionary.
+    ColumnWithTypeAndName joinGet(const Block & block, const Block & block_with_columns_to_add) const;
 
     /** Keep "totals" (separate part of dataset, see WITH TOTALS) to use later.
       */
@@ -179,20 +181,25 @@ public:
       * left_sample_block is passed without account of 'use_nulls' setting (columns will be converted to Nullable inside).
       */
     BlockInputStreamPtr createStreamWithNonJoinedRows(const Block & result_sample_block, UInt64 max_block_size) const override;
-    bool hasStreamWithNonJoinedRows() const override;
 
     /// Number of keys in all built JOIN maps.
     size_t getTotalRowCount() const final;
     /// Sum size in bytes of all buffers, used for JOIN maps and for all memory pools.
     size_t getTotalByteCount() const final;
 
-    bool alwaysReturnsEmptySet() const final { return isInnerOrRight(getKind()) && data->empty; }
+    bool alwaysReturnsEmptySet() const final { return isInnerOrRight(getKind()) && data->empty && !overDictionary(); }
 
     ASTTableJoin::Kind getKind() const { return kind; }
     ASTTableJoin::Strictness getStrictness() const { return strictness; }
-    AsofRowRefs::Type getAsofType() const { return *asof_type; }
+    const std::optional<TypeIndex> & getAsofType() const { return asof_type; }
     ASOF::Inequality getAsofInequality() const { return asof_inequality; }
     bool anyTakeLastRow() const { return any_take_last_row; }
+
+    const ColumnWithTypeAndName & rightAsofKeyColumn() const
+    {
+        /// It should be nullable if nullable_right_side is true
+        return savedBlockSample().getByName(key_names_right.back());
+    }
 
     /// Different types of keys for maps.
     #define APPLY_FOR_JOIN_VARIANTS(M) \
@@ -220,11 +227,11 @@ public:
     {
         EMPTY,
         CROSS,
+        DICT,
         #define M(NAME) NAME,
             APPLY_FOR_JOIN_VARIANTS(M)
         #undef M
     };
-
 
     /** Different data structures, that are used to perform JOIN.
       */
@@ -238,7 +245,7 @@ public:
         std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>                        key_string;
         std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>                        key_fixed_string;
         std::unique_ptr<HashMap<UInt128, Mapped, UInt128HashCRC32>>                     keys128;
-        std::unique_ptr<HashMap<UInt256, Mapped, UInt256HashCRC32>>                     keys256;
+        std::unique_ptr<HashMap<DummyUInt256, Mapped, UInt256HashCRC32>>                keys256;
         std::unique_ptr<HashMap<UInt128, Mapped, UInt128TrivialHash>>                   hashed;
 
         void create(Type which)
@@ -247,6 +254,7 @@ public:
             {
                 case Type::EMPTY:            break;
                 case Type::CROSS:            break;
+                case Type::DICT:             break;
 
             #define M(NAME) \
                 case Type::NAME: NAME = std::make_unique<typename decltype(NAME)::element_type>(); break;
@@ -261,6 +269,7 @@ public:
             {
                 case Type::EMPTY:            return 0;
                 case Type::CROSS:            return 0;
+                case Type::DICT:             return 0;
 
             #define M(NAME) \
                 case Type::NAME: return NAME ? NAME->size() : 0;
@@ -277,6 +286,7 @@ public:
             {
                 case Type::EMPTY:            return 0;
                 case Type::CROSS:            return 0;
+                case Type::DICT:             return 0;
 
             #define M(NAME) \
                 case Type::NAME: return NAME ? NAME->getBufferSizeInBytes() : 0;
@@ -339,13 +349,15 @@ private:
     bool nullable_right_side; /// In case of LEFT and FULL joins, if use_nulls, convert right-side columns to Nullable.
     bool nullable_left_side; /// In case of RIGHT and FULL joins, if use_nulls, convert left-side columns to Nullable.
     bool any_take_last_row; /// Overwrite existing values when encountering the same key again
-    std::optional<AsofRowRefs::Type> asof_type;
+    std::optional<TypeIndex> asof_type;
     ASOF::Inequality asof_inequality;
 
     /// Right table data. StorageJoin shares it between many Join objects.
     std::shared_ptr<RightTableData> data;
     Sizes key_sizes;
 
+    /// Block with columns from the right-side table.
+    Block right_sample_block;
     /// Block with columns from the right-side table except key columns.
     Block sample_block_with_columns_to_add;
     /// Block with key columns in the same order they appear in the right-side table (duplicates appear once).
@@ -361,16 +373,11 @@ private:
 
     void init(Type type_);
 
-    /** Set information about structure of right hand of JOIN (joined data).
-      */
-    void setSampleBlock(const Block & block);
-
     const Block & savedBlockSample() const { return data->sample_block; }
 
     /// Modify (structure) right block to save it in block list
     Block structureRightBlock(const Block & stored_block) const;
     void initRightBlockStructure(Block & saved_block_sample);
-    void initRequiredRightKeys();
 
     template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Maps>
     void joinBlockImpl(
@@ -382,7 +389,7 @@ private:
     void joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) const;
 
     template <typename Maps>
-    void joinGetImpl(Block & block, const Block & block_with_columns_to_add, const Maps & maps_) const;
+    ColumnWithTypeAndName joinGetImpl(const Block & block, const Block & block_with_columns_to_add, const Maps & maps_) const;
 
     static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
 };

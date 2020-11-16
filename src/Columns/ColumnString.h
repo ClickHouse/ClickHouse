@@ -43,19 +43,23 @@ private:
     size_t ALWAYS_INLINE sizeAt(ssize_t i) const { return offsets[i] - offsets[i - 1]; }
 
     template <bool positive>
-    struct less;
+    struct Cmp;
 
     template <bool positive>
-    struct lessWithCollation;
+    struct CmpWithCollation;
 
     ColumnString() = default;
+    ColumnString(const ColumnString & src);
 
-    ColumnString(const ColumnString & src)
-        : offsets(src.offsets.begin(), src.offsets.end()),
-        chars(src.chars.begin(), src.chars.end()) {}
+    template <typename Comparator>
+    void getPermutationImpl(size_t limit, Permutation & res, Comparator cmp) const;
+
+    template <typename Comparator>
+    void updatePermutationImpl(size_t limit, Permutation & res, EqualRanges & equal_ranges, Comparator cmp) const;
 
 public:
     const char * getFamilyName() const override { return "String"; }
+    TypeIndex getDataType() const override { return TypeIndex::String; }
 
     size_t size() const override
     {
@@ -85,7 +89,7 @@ public:
     void get(size_t n, Field & res) const override
     {
         assert(n < size());
-        res.assignString(&chars[offsetAt(n)], sizeAt(n) - 1);
+        res = std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n) - 1};
     }
 
     StringRef getDataAt(size_t n) const override
@@ -190,6 +194,12 @@ public:
 
     void updateWeakHash32(WeakHash32 & hash) const override;
 
+    void updateHashFast(SipHash & hash) const override
+    {
+        hash.update(reinterpret_cast<const char *>(offsets.data()), size() * sizeof(offsets[0]));
+        hash.update(reinterpret_cast<const char *>(chars.data()), size() * sizeof(chars[0]));
+    }
+
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
@@ -220,13 +230,21 @@ public:
         return memcmpSmallAllowOverflow15(chars.data() + offsetAt(n), sizeAt(n) - 1, rhs.chars.data() + rhs.offsetAt(m), rhs.sizeAt(m) - 1);
     }
 
+    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
+                       PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
+                       int direction, int nan_direction_hint) const override;
+
     /// Variant of compareAt for string comparison with respect of collation.
-    int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, const Collator & collator) const;
+    int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, int, const Collator & collator) const override;
 
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
 
+    void updatePermutation(bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_ranges) const override;
+
     /// Sorting with respect of collation.
-    void getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, Permutation & res) const;
+    void getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int, Permutation & res) const override;
+
+    void updatePermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_ranges) const override;
 
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
 
@@ -255,6 +273,11 @@ public:
 
     Offsets & getOffsets() { return offsets; }
     const Offsets & getOffsets() const { return offsets; }
+
+    // Throws an exception if offsets/chars are messed up
+    void validate() const;
+
+    bool isCollationSupported() const override { return true; }
 };
 
 

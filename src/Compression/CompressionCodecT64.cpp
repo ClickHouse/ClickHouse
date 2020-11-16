@@ -5,6 +5,8 @@
 #include <common/unaligned.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTFunction.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -134,7 +136,7 @@ TypeIndex baseType(TypeIndex type_idx)
     return TypeIndex::Nothing;
 }
 
-TypeIndex typeIdx(const DataTypePtr & data_type)
+TypeIndex typeIdx(const IDataType * data_type)
 {
     if (!data_type)
         return TypeIndex::Nothing;
@@ -167,7 +169,7 @@ TypeIndex typeIdx(const DataTypePtr & data_type)
 
 void transpose64x8(UInt64 * src_dst)
 {
-    auto * src8 = reinterpret_cast<const UInt8 *>(src_dst);
+    const auto * src8 = reinterpret_cast<const UInt8 *>(src_dst);
     UInt64 dst[8] = {};
 
     for (UInt32 i = 0; i < 64; ++i)
@@ -234,7 +236,7 @@ void transposeBytes(T value, UInt64 * matrix, UInt32 col)
 template <typename T>
 void reverseTransposeBytes(const UInt64 * matrix, UInt32 col, T & value)
 {
-    auto * matrix8 = reinterpret_cast<const UInt8 *>(matrix);
+    const auto * matrix8 = reinterpret_cast<const UInt8 *>(matrix);
 
     if constexpr (sizeof(T) > 4)
     {
@@ -423,8 +425,8 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
 
     T min, max;
     findMinMax<T>(src, bytes_size, min, max);
-    MinMaxType min64 = min;
-    MinMaxType max64 = max;
+    MinMaxType min64 = min; // NOLINT
+    MinMaxType max64 = max; // NOLINT
 
     /// Write header
     {
@@ -630,24 +632,31 @@ void CompressionCodecT64::doDecompressData(const char * src, UInt32 src_size, ch
     throw Exception("Cannot decompress with T64", ErrorCodes::CANNOT_DECOMPRESS);
 }
 
-void CompressionCodecT64::useInfoAboutType(DataTypePtr data_type)
-{
-    if (data_type)
-    {
-        type_idx = typeIdx(data_type);
-        if (type_idx == TypeIndex::Nothing)
-            throw Exception("T64 codec is not supported for specified type", ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
-    }
-}
-
 uint8_t CompressionCodecT64::getMethodByte() const
 {
     return codecId();
 }
 
+CompressionCodecT64::CompressionCodecT64(TypeIndex type_idx_, Variant variant_)
+    : type_idx(type_idx_)
+    , variant(variant_)
+{
+    if (variant == Variant::Byte)
+        setCodecDescription("T64");
+    else
+        setCodecDescription("T64", {std::make_shared<ASTLiteral>("bit")});
+}
+
+void CompressionCodecT64::updateHash(SipHash & hash) const
+{
+    getCodecDesc()->updateTreeHash(hash);
+    hash.update(type_idx);
+    hash.update(variant);
+}
+
 void registerCodecT64(CompressionCodecFactory & factory)
 {
-    auto reg_func = [&](const ASTPtr & arguments, DataTypePtr type) -> CompressionCodecPtr
+    auto reg_func = [&](const ASTPtr & arguments, const IDataType * type) -> CompressionCodecPtr
     {
         Variant variant = Variant::Byte;
 
@@ -674,7 +683,7 @@ void registerCodecT64(CompressionCodecFactory & factory)
 
         auto type_idx = typeIdx(type);
         if (type && type_idx == TypeIndex::Nothing)
-            throw Exception("T64 codec is not supported for specified type", ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
+            throw Exception("T64 codec is not supported for specified type " + type->getName(), ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
         return std::make_shared<CompressionCodecT64>(type_idx, variant);
     };
 

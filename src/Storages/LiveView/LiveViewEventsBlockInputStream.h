@@ -1,3 +1,4 @@
+#pragma once
 /* Copyright (c) 2018 BlackBerry Limited
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -9,14 +10,12 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License. */
-#pragma once
 
 #include <Poco/Condition.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Storages/LiveView/StorageLiveView.h>
 
@@ -25,7 +24,7 @@ namespace DB
 {
 
 /** Implements LIVE VIEW table WATCH EVENTS input stream.
- *  Keeps stream alive by outputing blocks with no rows
+ *  Keeps stream alive by outputting blocks with no rows
  *  based on period specified by the heartbeat interval.
  */
 class LiveViewEventsBlockInputStream : public IBlockInputStream
@@ -34,13 +33,6 @@ class LiveViewEventsBlockInputStream : public IBlockInputStream
 using NonBlockingResult = std::pair<Block, bool>;
 
 public:
-    ~LiveViewEventsBlockInputStream() override
-    {
-        /// Start storage no users thread
-        /// if we are the last active user
-        if (!storage->is_dropped && blocks_ptr.use_count() < 3)
-            storage->startNoUsersThread(temporary_live_view_timeout_sec);
-    }
     /// length default -2 because we want LIMIT to specify number of updates so that LIMIT 1 waits for 1 update
     /// and LIMIT 0 just returns data without waiting for any updates
     LiveViewEventsBlockInputStream(std::shared_ptr<StorageLiveView> storage_,
@@ -48,14 +40,12 @@ public:
         std::shared_ptr<BlocksMetadataPtr> blocks_metadata_ptr_,
         std::shared_ptr<bool> active_ptr_,
         const bool has_limit_, const UInt64 limit_,
-        const UInt64 heartbeat_interval_sec_,
-        const UInt64 temporary_live_view_timeout_sec_)
+        const UInt64 heartbeat_interval_sec_)
         : storage(std::move(storage_)), blocks_ptr(std::move(blocks_ptr_)),
           blocks_metadata_ptr(std::move(blocks_metadata_ptr_)),
           active_ptr(std::move(active_ptr_)), has_limit(has_limit_),
           limit(limit_),
-          heartbeat_interval_usec(heartbeat_interval_sec_ * 1000000),
-          temporary_live_view_timeout_sec(temporary_live_view_timeout_sec_)
+          heartbeat_interval_usec(heartbeat_interval_sec_ * 1000000)
     {
         /// grab active pointer
         active = active_ptr.lock();
@@ -65,7 +55,7 @@ public:
 
     void cancel(bool kill) override
     {
-        if (isCancelled() || storage->is_dropped)
+        if (isCancelled() || storage->shutdown_called)
             return;
         IBlockInputStream::cancel(kill);
         std::lock_guard lock(storage->mutex);
@@ -149,7 +139,7 @@ protected:
             end = blocks->end();
         }
 
-        if (isCancelled() || storage->is_dropped)
+        if (isCancelled() || storage->shutdown_called)
         {
             return { Block(), true };
         }
@@ -161,7 +151,7 @@ protected:
                 if (!active)
                     return { Block(), false };
                 /// If we are done iterating over our blocks
-                /// and there are new blocks availble then get them
+                /// and there are new blocks available then get them
                 if (blocks.get() != (*blocks_ptr).get())
                 {
                     blocks = (*blocks_ptr);
@@ -190,7 +180,7 @@ protected:
                         bool signaled = std::cv_status::no_timeout == storage->condition.wait_for(lock,
                             std::chrono::microseconds(std::max(UInt64(0), heartbeat_interval_usec - (timestamp_usec - last_event_timestamp_usec))));
 
-                        if (isCancelled() || storage->is_dropped)
+                        if (isCancelled() || storage->shutdown_called)
                         {
                             return { Block(), true };
                         }
@@ -236,7 +226,6 @@ private:
     Int64 num_updates = -1;
     bool end_of_blocks = false;
     UInt64 heartbeat_interval_usec;
-    UInt64 temporary_live_view_timeout_sec;
     UInt64 last_event_timestamp_usec = 0;
     Poco::Timestamp timestamp;
 };

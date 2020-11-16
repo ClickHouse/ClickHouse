@@ -1,11 +1,9 @@
 #include <string>
 
 #include <iostream>
-#include <sstream>
 #include <fstream>
 #include <iomanip>
 
-#include <Core/Types.h>
 #include <Common/Stopwatch.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
@@ -54,6 +52,7 @@ int main(int, char **)
                 if (x != i)
                 {
                     std::stringstream s;
+                    s.exceptions(std::ios::failbit);
                     s << "Failed!, read: " << x << ", expected: " << i;
                     throw DB::Exception(s.str(), 0);
                 }

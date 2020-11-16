@@ -1,10 +1,10 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Core/UUID.h>
-#include <Common/SettingsChanges.h>
 #include <Access/SettingsConstraints.h>
 #include <Access/SettingsProfileElement.h>
+#include <boost/container/flat_set.hpp>
 #include <mutex>
 
 
@@ -17,7 +17,7 @@ public:
     struct Params
     {
         UUID user_id;
-        std::vector<UUID> enabled_roles;
+        boost::container::flat_set<UUID> enabled_roles;
         SettingsProfileElements settings_from_enabled_roles;
         SettingsProfileElements settings_from_user;
 

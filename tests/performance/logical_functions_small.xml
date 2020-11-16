@@ -1,17 +1,4 @@
 <test>
-    <times_to_run>1</times_to_run>
-
-    <stop_conditions>
-        <all_of>
-            <iterations>15</iterations>
-            <min_time_not_changing_for_ms>20000</min_time_not_changing_for_ms>
-        </all_of>
-        <any_of>
-            <iterations>120</iterations>
-            <total_time_ms>60000</total_time_ms>
-        </any_of>
-    </stop_conditions>
-
     <settings>
         <max_threads>1</max_threads>
     </settings>

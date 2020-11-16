@@ -1,6 +1,6 @@
 ---
-toc_title: Support
 toc_priority: 3
+toc_title: Support
 ---
 
 # ClickHouse Commercial Support Service Providers {#clickhouse-commercial-support-service-providers}
@@ -10,7 +10,7 @@ toc_priority: 3
 
 ## Altinity {#altinity}
 
-[Service description](https://www.altinity.com/24x7-support)
+Altinity has offered enterprise ClickHouse support and services since 2017. Altinity customers range from Fortune 100 enterprises to startups. Visit [www.altinity.com](https://www.altinity.com/) for more information.
 
 ## Mafiree {#mafiree}
 

@@ -2,7 +2,6 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/LimitBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/tests/gtest_disk.h>
@@ -11,11 +10,14 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageLog.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Common/typeid_cast.h>
 #include <Common/tests/gtest_global_context.h>
+#include <Common/tests/gtest_global_register.h>
 
 #include <memory>
-#include <Processors/Executors/TreeExecutorBlockInputStream.h>
+#include <Processors/Executors/PipelineExecutingBlockInputStream.h>
+#include <Processors/QueryPipeline.h>
 
 #if !__clang__
 #    pragma GCC diagnostic push
@@ -31,7 +33,7 @@ DB::StoragePtr createStorage(DB::DiskPtr & disk)
     names_and_types.emplace_back("a", std::make_shared<DataTypeUInt64>());
 
     StoragePtr table = StorageLog::create(
-        disk, "table/", StorageID("test", "test"), ColumnsDescription{names_and_types}, ConstraintsDescription{}, 1048576);
+        disk, "table/", StorageID("test", "test"), ColumnsDescription{names_and_types}, ConstraintsDescription{}, false, 1048576);
 
     table->startup();
 
@@ -68,18 +70,20 @@ using DiskImplementations = testing::Types<DB::DiskMemory, DB::DiskLocal>;
 TYPED_TEST_SUITE(StorageLogTest, DiskImplementations);
 
 // Returns data written to table in Values format.
-std::string writeData(int rows, DB::StoragePtr & table)
+std::string writeData(int rows, DB::StoragePtr & table, const DB::Context & context)
 {
     using namespace DB;
+    auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
     std::string data;
 
     Block block;
 
     {
+        const auto & storage_columns = metadata_snapshot->getColumns();
         ColumnWithTypeAndName column;
         column.name = "a";
-        column.type = table->getColumn("a").type;
+        column.type = storage_columns.getPhysical("a").type;
         auto col = column.type->createColumn();
         ColumnUInt64::Container & vec = typeid_cast<ColumnUInt64 &>(*col).getData();
 
@@ -96,23 +100,29 @@ std::string writeData(int rows, DB::StoragePtr & table)
         block.insert(column);
     }
 
-    BlockOutputStreamPtr out = table->write({}, getContext());
+    BlockOutputStreamPtr out = table->write({}, metadata_snapshot, context);
     out->write(block);
+    out->writeSuffix();
 
     return data;
 }
 
 // Returns all table data in Values format.
-std::string readData(DB::StoragePtr & table)
+std::string readData(DB::StoragePtr & table, const DB::Context & context)
 {
     using namespace DB;
+    auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
     Names column_names;
     column_names.push_back("a");
 
-    QueryProcessingStage::Enum stage = table->getQueryProcessingStage(getContext());
+    SelectQueryInfo query_info;
+    QueryProcessingStage::Enum stage = table->getQueryProcessingStage(
+        context, QueryProcessingStage::Complete, query_info);
 
-    BlockInputStreamPtr in = std::make_shared<TreeExecutorBlockInputStream>(std::move(table->read(column_names, {}, getContext(), stage, 8192, 1)[0]));
+    QueryPipeline pipeline;
+    pipeline.init(table->read(column_names, metadata_snapshot, query_info, context, stage, 8192, 1));
+    BlockInputStreamPtr in = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
 
     Block sample;
     {
@@ -121,9 +131,12 @@ std::string readData(DB::StoragePtr & table)
         sample.insert(std::move(col));
     }
 
+    tryRegisterFormats();
+
     std::ostringstream ss;
+    ss.exceptions(std::ios::failbit);
     WriteBufferFromOStream out_buf(ss);
-    BlockOutputStreamPtr output = FormatFactory::instance().getOutput("Values", out_buf, sample, getContext());
+    BlockOutputStreamPtr output = FormatFactory::instance().getOutput("Values", out_buf, sample, context);
 
     copyData(*in, *output);
 
@@ -135,15 +148,16 @@ std::string readData(DB::StoragePtr & table)
 TYPED_TEST(StorageLogTest, testReadWrite)
 {
     using namespace DB;
+    const auto & context_holder = getContext();
 
     std::string data;
 
     // Write several chunks of data.
-    data += writeData(10, this->getTable());
+    data += writeData(10, this->getTable(), context_holder.context);
     data += ",";
-    data += writeData(20, this->getTable());
+    data += writeData(20, this->getTable(), context_holder.context);
     data += ",";
-    data += writeData(10, this->getTable());
+    data += writeData(10, this->getTable(), context_holder.context);
 
-    ASSERT_EQ(data, readData(this->getTable()));
+    ASSERT_EQ(data, readData(this->getTable(), context_holder.context));
 }

@@ -4,18 +4,16 @@
 
 #include <Core/Settings.h>
 #include <Core/Block.h>
+#include <Core/ColumnsWithTypeAndName.h>
 
 #include <Common/StringUtils/StringUtils.h>
 
 #include <DataTypes/DataTypeNullable.h>
+#include <DataStreams/materializeBlock.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-}
 
 TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_)
     : size_limits(SizeLimits{settings.max_rows_in_join, settings.max_bytes_in_join, settings.join_overflow_mode})
@@ -25,10 +23,23 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_)
     , join_algorithm(settings.join_algorithm)
     , partial_merge_join_optimizations(settings.partial_merge_join_optimizations)
     , partial_merge_join_rows_in_right_blocks(settings.partial_merge_join_rows_in_right_blocks)
+    , partial_merge_join_left_table_buffer_bytes(settings.partial_merge_join_left_table_buffer_bytes)
+    , max_files_to_merge(settings.join_on_disk_max_files_to_merge)
+    , temporary_files_codec(settings.temporary_files_codec)
     , tmp_volume(tmp_volume_)
 {
-    if (settings.partial_merge_join)
-        join_algorithm = JoinAlgorithm::PREFER_PARTIAL_MERGE;
+}
+
+void TableJoin::resetCollected()
+{
+    key_names_left.clear();
+    key_names_right.clear();
+    key_asts_left.clear();
+    key_asts_right.clear();
+    columns_from_joined_table.clear();
+    columns_added_by_join.clear();
+    original_names.clear();
+    renames.clear();
 }
 
 void TableJoin::addUsingKey(const ASTPtr & ast)
@@ -159,23 +170,66 @@ NamesWithAliases TableJoin::getRequiredColumns(const Block & sample, const Names
     return getNamesWithAliases(required_columns);
 }
 
+void TableJoin::splitAdditionalColumns(const Block & sample_block, Block & block_keys, Block & block_others) const
+{
+    block_others = materializeBlock(sample_block);
+
+    for (const String & column_name : key_names_right)
+    {
+        /// Extract right keys with correct keys order. There could be the same key names.
+        if (!block_keys.has(column_name))
+        {
+            auto & col = block_others.getByName(column_name);
+            block_keys.insert(col);
+            block_others.erase(column_name);
+        }
+    }
+}
+
+Block TableJoin::getRequiredRightKeys(const Block & right_table_keys, std::vector<String> & keys_sources) const
+{
+    const Names & left_keys = keyNamesLeft();
+    const Names & right_keys = keyNamesRight();
+    NameSet required_keys(requiredRightKeys().begin(), requiredRightKeys().end());
+    Block required_right_keys;
+
+    for (size_t i = 0; i < right_keys.size(); ++i)
+    {
+        const String & right_key_name = right_keys[i];
+
+        if (required_keys.count(right_key_name) && !required_right_keys.has(right_key_name))
+        {
+            const auto & right_key = right_table_keys.getByName(right_key_name);
+            required_right_keys.insert(right_key);
+            keys_sources.push_back(left_keys[i]);
+        }
+    }
+
+    return required_right_keys;
+}
+
+
+bool TableJoin::leftBecomeNullable(const DataTypePtr & column_type) const
+{
+    return forceNullableLeft() && column_type->canBeInsideNullable();
+}
+
+bool TableJoin::rightBecomeNullable(const DataTypePtr & column_type) const
+{
+    return forceNullableRight() && column_type->canBeInsideNullable();
+}
+
 void TableJoin::addJoinedColumn(const NameAndTypePair & joined_column)
 {
-    if (join_use_nulls && isLeftOrFull(table_join.kind))
-    {
-        auto type = joined_column.type->canBeInsideNullable() ? makeNullable(joined_column.type) : joined_column.type;
-        columns_added_by_join.emplace_back(NameAndTypePair(joined_column.name, std::move(type)));
-    }
+    if (rightBecomeNullable(joined_column.type))
+        columns_added_by_join.emplace_back(NameAndTypePair(joined_column.name, makeNullable(joined_column.type)));
     else
         columns_added_by_join.push_back(joined_column);
 }
 
-void TableJoin::addJoinedColumnsAndCorrectNullability(Block & sample_block) const
+void TableJoin::addJoinedColumnsAndCorrectNullability(ColumnsWithTypeAndName & columns) const
 {
-    bool right_or_full_join = isRightOrFull(table_join.kind);
-    bool left_or_full_join = isLeftOrFull(table_join.kind);
-
-    for (auto & col : sample_block)
+    for (auto & col : columns)
     {
         /// Materialize column.
         /// Column is not empty if it is constant, but after Join all constants will be materialized.
@@ -183,9 +237,7 @@ void TableJoin::addJoinedColumnsAndCorrectNullability(Block & sample_block) cons
         if (col.column)
             col.column = nullptr;
 
-        bool make_nullable = join_use_nulls && right_or_full_join;
-
-        if (make_nullable && col.type->canBeInsideNullable())
+        if (leftBecomeNullable(col.type))
             col.type = makeNullable(col.type);
     }
 
@@ -193,12 +245,10 @@ void TableJoin::addJoinedColumnsAndCorrectNullability(Block & sample_block) cons
     {
         auto res_type = col.type;
 
-        bool make_nullable = join_use_nulls && left_or_full_join;
-
-        if (make_nullable && res_type->canBeInsideNullable())
+        if (rightBecomeNullable(res_type))
             res_type = makeNullable(res_type);
 
-        sample_block.insert(ColumnWithTypeAndName(nullptr, res_type, col.name));
+        columns.emplace_back(nullptr, res_type, col.name);
     }
 }
 
@@ -238,8 +288,52 @@ bool TableJoin::allowMergeJoin() const
     bool is_all = (strictness() == ASTTableJoin::Strictness::All);
     bool is_semi = (strictness() == ASTTableJoin::Strictness::Semi);
 
-    bool allow_merge_join = (isLeft(kind()) && (is_any || is_all || is_semi)) || (isInner(kind()) && is_all);
-    return allow_merge_join;
+    bool all_join = is_all && (isInner(kind()) || isLeft(kind()) || isRight(kind()) || isFull(kind()));
+    bool special_left = isLeft(kind()) && (is_any || is_semi);
+    return all_join || special_left;
+}
+
+bool TableJoin::needStreamWithNonJoinedRows() const
+{
+    if (strictness() == ASTTableJoin::Strictness::Asof ||
+        strictness() == ASTTableJoin::Strictness::Semi)
+        return false;
+    return isRightOrFull(kind());
+}
+
+bool TableJoin::allowDictJoin(const String & dict_key, const Block & sample_block, Names & src_names, NamesAndTypesList & dst_columns) const
+{
+    /// Support ALL INNER, [ANY | ALL | SEMI | ANTI] LEFT
+    if (!isLeft(kind()) && !(isInner(kind()) && strictness() == ASTTableJoin::Strictness::All))
+        return false;
+
+    const Names & right_keys = keyNamesRight();
+    if (right_keys.size() != 1)
+        return false;
+
+    /// TODO: support 'JOIN ... ON expr(dict_key) = table_key'
+    auto it_key = original_names.find(right_keys[0]);
+    if (it_key == original_names.end())
+        return false;
+
+    if (dict_key != it_key->second)
+        return false; /// JOIN key != Dictionary key
+
+    for (const auto & col : sample_block)
+    {
+        if (col.name == right_keys[0])
+            continue; /// do not extract key column
+
+        auto it = original_names.find(col.name);
+        if (it != original_names.end())
+        {
+            String original = it->second;
+            src_names.push_back(original);
+            dst_columns.push_back({col.name, col.type});
+        }
+    }
+
+    return true;
 }
 
 }

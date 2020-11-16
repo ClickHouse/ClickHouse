@@ -9,4 +9,4 @@
 1	2	1	30
 1	2	4	90
 *** Check SHOW CREATE TABLE ***
-CREATE TABLE default.summing\n(\n    `x` UInt32, \n    `y` UInt32, \n    `z` UInt32, \n    `val` UInt32\n)\nENGINE = SummingMergeTree\nPRIMARY KEY (x, y)\nORDER BY (x, y, -z)\nSETTINGS index_granularity = 8192
+CREATE TABLE default.summing\n(\n    `x` UInt32,\n    `y` UInt32,\n    `z` UInt32,\n    `val` UInt32\n)\nENGINE = SummingMergeTree\nPRIMARY KEY (x, y)\nORDER BY (x, y, -z)\nSETTINGS index_granularity = 8192

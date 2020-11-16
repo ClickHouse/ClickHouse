@@ -6,6 +6,8 @@
 
 namespace DB
 {
+namespace
+{
 
 struct IsFiniteImpl
 {
@@ -35,6 +37,7 @@ struct IsFiniteImpl
 
 using FunctionIsFinite = FunctionNumericPredicate<IsFiniteImpl>;
 
+}
 
 void registerFunctionIsFinite(FunctionFactory & factory)
 {

@@ -115,7 +115,7 @@ public:
         : IAggregateFunctionDataHelper<AggregateFunctionBoundingRatioData, AggregateFunctionBoundingRatio>(arguments, {})
     {
         const auto x_arg = arguments.at(0).get();
-        const auto y_arg = arguments.at(0).get();
+        const auto y_arg = arguments.at(1).get();
 
         if (!x_arg->isValueRepresentedByNumber() || !y_arg->isValueRepresentedByNumber())
             throw Exception("Illegal types of arguments of aggregate function " + getName() + ", must have number representation.",
@@ -150,7 +150,7 @@ public:
         data(place).deserialize(buf);
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnFloat64 &>(to).getData().push_back(getBoundingRatio(data(place)));
     }

@@ -1,6 +1,7 @@
+#pragma once
 #include "config_formats.h"
 
-#if USE_ORC || USE_PARQUET
+#if USE_ARROW || USE_ORC || USE_PARQUET
 
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -31,15 +32,15 @@ namespace DB
         M(arrow::Type::INT32, DB::Int32) \
         M(arrow::Type::UINT64, DB::UInt64) \
         M(arrow::Type::INT64, DB::Int64) \
+        M(arrow::Type::HALF_FLOAT, DB::Float32) \
         M(arrow::Type::FLOAT, DB::Float32) \
         M(arrow::Type::DOUBLE, DB::Float64)
 
 
     public:
 
-        static void arrowTableToCHChunk(Chunk &res, std::shared_ptr<arrow::Table> &table,
-                                        arrow::Status &read_status, const Block &header,
-                                        int &row_group_current, std::string format_name);
+        static void arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table,
+                                        const Block & header, std::string format_name);
     };
 }
 #endif

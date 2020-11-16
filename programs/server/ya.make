@@ -8,23 +8,13 @@ PEERDIR(
     contrib/libs/poco/NetSSL_OpenSSL
 )
 
+CFLAGS(-g0)
+
 SRCS(
     clickhouse-server.cpp
 
-    HTTPHandler.cpp
-    HTTPHandlerFactory.cpp
-    InterserverIOHTTPHandler.cpp
     MetricsTransmitter.cpp
-    MySQLHandler.cpp
-    MySQLHandlerFactory.cpp
-    NotFoundHandler.cpp
-    PingRequestHandler.cpp
-    PrometheusMetricsWriter.cpp
-    PrometheusRequestHandler.cpp
-    ReplicasStatusHandler.cpp
-    RootRequestHandler.cpp
     Server.cpp
-    TCPHandler.cpp
 )
 
 END()

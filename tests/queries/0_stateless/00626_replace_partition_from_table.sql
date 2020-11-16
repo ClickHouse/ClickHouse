@@ -62,7 +62,7 @@ SELECT count(), sum(d) FROM dst;
 
 SELECT 'OPTIMIZE';
 SELECT count(), sum(d), uniqExact(_part) FROM dst;
-SYSTEM START MERGES;
+SYSTEM START MERGES dst;
 SET optimize_throw_if_noop=1;
 OPTIMIZE TABLE dst;
 SELECT count(), sum(d), uniqExact(_part) FROM dst;

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Common/Stopwatch.h>
 
@@ -40,6 +40,7 @@ struct BlockStreamProfileInfo
     bool hasAppliedLimit() const;
 
     void update(Block & block);
+    void update(size_t num_rows, size_t num_bytes);
 
     /// Binary serialization and deserialization of main fields.
     /// Writes only main fields i.e. fields that required by internal transmission protocol.

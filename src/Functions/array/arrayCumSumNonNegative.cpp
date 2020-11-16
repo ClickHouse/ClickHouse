@@ -78,7 +78,7 @@ struct ArrayCumSumNonNegativeImpl
             // skip empty arrays
             if (pos < offset)
             {
-                accum_sum = data[pos] > 0 ? data[pos] : Element(0);
+                accum_sum = data[pos] > 0 ? data[pos] : Element(0); // NOLINT
                 res_values[pos] = accum_sum;
                 for (++pos; pos < offset; ++pos)
                 {

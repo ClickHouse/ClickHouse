@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 44
 toc_title: Requisito
 ---
@@ -9,11 +9,11 @@ toc_title: Requisito
 
 ## CPU {#cpu}
 
-Para la instalación desde paquetes deb precompilados, utilice una CPU con arquitectura x86\_64 y soporte para las instrucciones de SSE 4.2. Para ejecutar ClickHouse con procesadores que no admiten SSE 4.2 o tienen arquitectura AArch64 o PowerPC64LE, debe compilar ClickHouse a partir de fuentes.
+Para la instalación desde paquetes deb precompilados, utilice una CPU con arquitectura x86_64 y soporte para las instrucciones de SSE 4.2. Para ejecutar ClickHouse con procesadores que no admiten SSE 4.2 o tienen arquitectura AArch64 o PowerPC64LE, debe compilar ClickHouse a partir de fuentes.
 
 ClickHouse implementa el procesamiento de datos paralelo y utiliza todos los recursos de hardware disponibles. Al elegir un procesador, tenga en cuenta que ClickHouse funciona de manera más eficiente en configuraciones con un gran número de núcleos pero con una velocidad de reloj más baja que en configuraciones con menos núcleos y una velocidad de reloj más alta. Por ejemplo, 16 núcleos con 2600 MHz es preferible a 8 núcleos con 3600 MHz.
 
-Uso de **Impulso de Turbo** y **hiper-threading** tecnologías se recomienda. Mejora significativamente el rendimiento con una carga típica.
+Se recomienda usar **Impulso de Turbo** y **hiper-threading** tecnología. Mejora significativamente el rendimiento con una carga de trabajo típica.
 
 ## RAM {#ram}
 
@@ -24,9 +24,9 @@ El volumen requerido de RAM depende de:
 -   La complejidad de las consultas.
 -   La cantidad de datos que se procesan en las consultas.
 
-Para calcular el volumen requerido de RAM, debe estimar el tamaño de los datos temporales para [GROUP BY](../sql_reference/statements/select.md#select-group-by-clause), [DISTINCT](../sql_reference/statements/select.md#select-distinct), [JOIN](../sql_reference/statements/select.md#select-join) y otras operaciones que utilice.
+Para calcular el volumen requerido de RAM, debe estimar el tamaño de los datos temporales para [GROUP BY](../sql-reference/statements/select/group-by.md#select-group-by-clause), [DISTINCT](../sql-reference/statements/select/distinct.md#select-distinct), [JOIN](../sql-reference/statements/select/join.md#select-join) y otras operaciones que utilice.
 
-ClickHouse puede usar memoria externa para datos temporales. Ver [GROUP BY en memoria externa](../sql_reference/statements/select.md#select-group-by-in-external-memory) para más detalles.
+ClickHouse puede usar memoria externa para datos temporales. Ver [GROUP BY en memoria externa](../sql-reference/statements/select/group-by.md#select-group-by-in-external-memory) para más detalles.
 
 ## Archivo de intercambio {#swap-file}
 
@@ -56,6 +56,6 @@ El ancho de banda de la red es fundamental para procesar consultas distribuidas 
 
 ## Software {#software}
 
-ClickHouse está desarrollado para la familia de sistemas operativos Linux. La distribución de Linux recomendada es Ubuntu. El `tzdata` paquete debe ser instalado en el sistema.
+ClickHouse está desarrollado principalmente para la familia de sistemas operativos Linux. La distribución de Linux recomendada es Ubuntu. El `tzdata` paquete debe ser instalado en el sistema.
 
-ClickHouse también puede funcionar en otras familias de sistemas operativos. Ver detalles en el [Primeros pasos](../getting_started/index.md) sección de la documentación.
+ClickHouse también puede funcionar en otras familias de sistemas operativos. Ver detalles en el [Primeros pasos](../getting-started/index.md) sección de la documentación.

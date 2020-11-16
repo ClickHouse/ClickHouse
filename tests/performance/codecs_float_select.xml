@@ -1,15 +1,7 @@
 <test>
-
-    <stop_conditions>
-        <all_of>
-            <iterations>10</iterations>
-            <min_time_not_changing_for_ms>10000</min_time_not_changing_for_ms>
-        </all_of>
-        <any_of>
-            <iterations>100</iterations>
-            <total_time_ms>60000</total_time_ms>
-        </any_of>
-    </stop_conditions>
+    <settings>
+        <allow_suspicious_codecs>1</allow_suspicious_codecs>
+    </settings>
 
     <substitutions>
         <substitution>
@@ -39,7 +31,7 @@
         <substitution>
             <name>num_rows</name>
             <values>
-                <value>1000000</value>
+                <value>20000000</value>
             </values>
         </substitution>
     </substitutions>
@@ -49,6 +41,7 @@
     <fill_query>INSERT INTO codec_seq_{type}_{codec} (n) SELECT number/pi() FROM system.numbers LIMIT {num_rows} SETTINGS max_threads=1</fill_query>
     <fill_query>INSERT INTO codec_mon_{type}_{codec} (n) SELECT number+sin(number) FROM system.numbers LIMIT {num_rows} SETTINGS max_threads=1</fill_query>
     <fill_query>INSERT INTO codec_rnd_{type}_{codec} (n) SELECT (intHash64(number) - 4294967295)/pi() FROM system.numbers LIMIT {num_rows} SETTINGS max_threads=1</fill_query>
+    <fill_query>optimize table codec_{seq_type}_{type}_{codec} settings optimize_throw_if_noop = 1</fill_query>
 
     <query>SELECT count(n) FROM codec_{seq_type}_{type}_{codec} WHERE ignore(n) == 0 LIMIT {num_rows} SETTINGS max_threads=1</query>
 

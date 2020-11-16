@@ -134,7 +134,7 @@ std::vector<MutableColumnPtr> ColumnFunction::scatter(IColumn::ColumnIndex num_c
 size_t ColumnFunction::byteSize() const
 {
     size_t total_size = 0;
-    for (auto & column : captured_columns)
+    for (const auto & column : captured_columns)
         total_size += column.column->byteSize();
 
     return total_size;
@@ -143,7 +143,7 @@ size_t ColumnFunction::byteSize() const
 size_t ColumnFunction::allocatedBytes() const
 {
     size_t total_size = 0;
-    for (auto & column : captured_columns)
+    for (const auto & column : captured_columns)
         total_size += column.column->allocatedBytes();
 
     return total_size;
@@ -187,16 +187,11 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
         throw Exception("Cannot call function " + function->getName() + " because is has " + toString(args) +
                         "arguments but " + toString(captured) + " columns were captured.", ErrorCodes::LOGICAL_ERROR);
 
-    Block block(captured_columns);
-    block.insert({nullptr, function->getReturnType(), ""});
+    auto columns = captured_columns;
+    ColumnWithTypeAndName res{nullptr, function->getResultType(), ""};
 
-    ColumnNumbers arguments(captured_columns.size());
-    for (size_t i = 0; i < captured_columns.size(); ++i)
-        arguments[i] = i;
-
-    function->execute(block, arguments, captured_columns.size(), size_);
-
-    return block.getByPosition(captured_columns.size());
+    res.column = function->execute(columns, res.type, size_);
+    return res;
 }
 
 }

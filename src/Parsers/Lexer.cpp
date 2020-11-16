@@ -50,7 +50,7 @@ Token quotedString(const char *& pos, const char * const token_begin, const char
 Token Lexer::nextToken()
 {
     Token res = nextTokenImpl();
-    if (res.type != TokenType::EndOfStream && max_query_size && res.end > begin + max_query_size)
+    if (max_query_size && res.end > begin + max_query_size)
         res.type = TokenType::ErrorMaxQuerySizeExceeded;
     if (res.isSignificant())
         prev_significant_token_type = res.type;
@@ -146,13 +146,20 @@ Token Lexer::nextTokenImpl()
                 }
             }
 
-            /// word character cannot go just after number (SELECT 123FROM)
+            /// Try to parse it to a identifier(1identifier_name), otherwise it return ErrorWrongNumber
             if (pos < end && isWordCharASCII(*pos))
             {
                 ++pos;
                 while (pos < end && isWordCharASCII(*pos))
                     ++pos;
-                return Token(TokenType::ErrorWrongNumber, token_begin, pos);
+
+                for (const char * iterator = token_begin; iterator < pos; ++iterator)
+                {
+                    if (!isWordCharASCII(*iterator) && *iterator != '$')
+                        return Token(TokenType::ErrorWrongNumber, token_begin, pos);
+                }
+
+                return Token(TokenType::BareWord, token_begin, pos);
             }
 
             return Token(TokenType::Number, token_begin, pos);
@@ -246,15 +253,27 @@ Token Lexer::nextTokenImpl()
                 else
                 {
                     ++pos;
+
+                    /// Nested multiline comments are supported according to the SQL standard.
+                    size_t nesting_level = 1;
+
                     while (pos + 2 <= end)
                     {
-                        /// This means that nested multiline comments are not supported.
-                        if (pos[0] == '*' && pos[1] == '/')
+                        if (pos[0] == '/' && pos[1] == '*')
                         {
                             pos += 2;
-                            return Token(TokenType::Comment, token_begin, pos);
+                            ++nesting_level;
                         }
-                        ++pos;
+                        else if (pos[0] == '*' && pos[1] == '/')
+                        {
+                            pos += 2;
+                            --nesting_level;
+
+                            if (nesting_level == 0)
+                                return Token(TokenType::Comment, token_begin, pos);
+                        }
+                        else
+                            ++pos;
                     }
                     return Token(TokenType::ErrorMultilineCommentIsNotClosed, token_begin, end);
                 }
@@ -305,18 +324,30 @@ Token Lexer::nextTokenImpl()
             return Token(TokenType::ErrorSinglePipeMark, token_begin, pos);
         }
         case '@':
-            return Token(TokenType::At, token_begin, ++pos);
+        {
+            ++pos;
+            if (pos < end && *pos == '@')
+                return Token(TokenType::DoubleAt, token_begin, ++pos);
+            return Token(TokenType::At, token_begin, pos);
+        }
 
         default:
-            if (isWordCharASCII(*pos))
+            if (isWordCharASCII(*pos) || *pos == '$')
             {
                 ++pos;
-                while (pos < end && isWordCharASCII(*pos))
+                while (pos < end && (isWordCharASCII(*pos) || *pos == '$'))
                     ++pos;
                 return Token(TokenType::BareWord, token_begin, pos);
             }
             else
-                return Token(TokenType::Error, token_begin, ++pos);
+            {
+                /// We will also skip unicode whitespaces in UTF-8 to support for queries copy-pasted from MS Word and similar.
+                pos = skipWhitespacesUTF8(pos, end);
+                if (pos > token_begin)
+                    return Token(TokenType::Whitespace, token_begin, pos);
+                else
+                    return Token(TokenType::Error, token_begin, ++pos);
+            }
     }
 }
 

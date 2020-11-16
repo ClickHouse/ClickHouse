@@ -2,7 +2,7 @@
 
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
@@ -22,24 +22,38 @@ namespace ErrorCodes
 static const Field UNKNOWN_FIELD(3u);
 
 
-MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(const MergeTreeIndexSet & index_)
-    : index(index_)
-    , block(index.header.cloneEmpty()) {}
+MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(
+    const String & index_name_,
+    const Block & index_sample_block_,
+    size_t max_rows_)
+    : index_name(index_name_)
+    , max_rows(max_rows_)
+    , index_sample_block(index_sample_block_)
+    , block(index_sample_block)
+{
+}
 
 MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(
-    const MergeTreeIndexSet & index_, MutableColumns && mutable_columns_)
-    : index(index_)
-    , block(index.header.cloneWithColumns(std::move(mutable_columns_))) {}
+    const String & index_name_,
+    const Block & index_sample_block_,
+    size_t max_rows_,
+    MutableColumns && mutable_columns_)
+    : index_name(index_name_)
+    , max_rows(max_rows_)
+    , index_sample_block(index_sample_block_)
+    , block(index_sample_block.cloneWithColumns(std::move(mutable_columns_)))
+{
+}
 
 void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
 {
     if (empty())
         throw Exception(
-            "Attempt to write empty set index " + backQuote(index.name), ErrorCodes::LOGICAL_ERROR);
+            "Attempt to write empty set index " + backQuote(index_name), ErrorCodes::LOGICAL_ERROR);
 
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
 
-    if (index.max_rows && size() > index.max_rows)
+    if (max_rows != 0 && size() > max_rows)
     {
         size_type->serializeBinary(0, ostr);
         return;
@@ -47,9 +61,9 @@ void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
 
     size_type->serializeBinary(size(), ostr);
 
-    for (size_t i = 0; i < index.columns.size(); ++i)
+    for (size_t i = 0; i < index_sample_block.columns(); ++i)
     {
-        const auto & type = index.data_types[i];
+        const auto & type = index_sample_block.getByPosition(i).type;
 
         IDataType::SerializeBinaryBulkSettings settings;
         settings.getter = [&ostr](IDataType::SubstreamPath) -> WriteBuffer * { return &ostr; };
@@ -75,9 +89,10 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr)
     if (rows_to_read == 0)
         return;
 
-    for (size_t i = 0; i < index.columns.size(); ++i)
+    for (size_t i = 0; i < index_sample_block.columns(); ++i)
     {
-        const auto & type = index.data_types[i];
+        const auto & column = index_sample_block.getByPosition(i);
+        const auto & type = column.type;
         auto new_column = type->createColumn();
 
         IDataType::DeserializeBinaryBulkSettings settings;
@@ -88,18 +103,21 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr)
         type->deserializeBinaryBulkStatePrefix(settings, state);
         type->deserializeBinaryBulkWithMultipleStreams(*new_column, rows_to_read, settings, state);
 
-        block.insert(ColumnWithTypeAndName(new_column->getPtr(), type, index.columns[i]));
+        block.insert(ColumnWithTypeAndName(new_column->getPtr(), type, column.name));
     }
 }
 
 
-MergeTreeIndexAggregatorSet::MergeTreeIndexAggregatorSet(const MergeTreeIndexSet & index_)
-    : index(index_), columns(index.header.cloneEmptyColumns())
+MergeTreeIndexAggregatorSet::MergeTreeIndexAggregatorSet(const String & index_name_, const Block & index_sample_block_, size_t max_rows_)
+    : index_name(index_name_)
+    , max_rows(max_rows_)
+    , index_sample_block(index_sample_block_)
+    , columns(index_sample_block_.cloneEmptyColumns())
 {
     ColumnRawPtrs column_ptrs;
-    column_ptrs.reserve(index.columns.size());
+    column_ptrs.reserve(index_sample_block.columns());
     Columns materialized_columns;
-    for (const auto & column : index.header.getColumns())
+    for (const auto & column : index_sample_block.getColumns())
     {
         materialized_columns.emplace_back(column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality());
         column_ptrs.emplace_back(materialized_columns.back().get());
@@ -107,7 +125,7 @@ MergeTreeIndexAggregatorSet::MergeTreeIndexAggregatorSet(const MergeTreeIndexSet
 
     data.init(ClearableSetVariants::chooseMethod(column_ptrs, key_sizes));
 
-    columns = index.header.cloneEmptyColumns();
+    columns = index_sample_block.cloneEmptyColumns();
 }
 
 void MergeTreeIndexAggregatorSet::update(const Block & block, size_t * pos, size_t limit)
@@ -119,16 +137,17 @@ void MergeTreeIndexAggregatorSet::update(const Block & block, size_t * pos, size
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
 
-    if (index.max_rows && size() > index.max_rows)
+    if (max_rows && size() > max_rows)
     {
         *pos += rows_read;
         return;
     }
 
     ColumnRawPtrs index_column_ptrs;
-    index_column_ptrs.reserve(index.columns.size());
+    index_column_ptrs.reserve(index_sample_block.columns());
     Columns materialized_columns;
-    for (const auto & column_name : index.columns)
+    const Names index_columns = index_sample_block.getNames();
+    for (const auto & column_name : index_columns)
     {
         materialized_columns.emplace_back(
                 block.getByName(column_name).column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality());
@@ -154,7 +173,7 @@ void MergeTreeIndexAggregatorSet::update(const Block & block, size_t * pos, size
     {
         for (size_t i = 0; i < columns.size(); ++i)
         {
-            auto filtered_column = block.getByName(index.columns[i]).column->filter(filter, block.rows());
+            auto filtered_column = block.getByName(index_columns[i]).column->filter(filter, block.rows());
             columns[i]->insertRangeFrom(*filtered_column, 0, filtered_column->size());
         }
     }
@@ -191,7 +210,7 @@ bool MergeTreeIndexAggregatorSet::buildFilter(
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorSet::getGranuleAndReset()
 {
-    auto granule = std::make_shared<MergeTreeIndexGranuleSet>(index, std::move(columns));
+    auto granule = std::make_shared<MergeTreeIndexGranuleSet>(index_name, index_sample_block, max_rows, std::move(columns));
 
     switch (data.type)
     {
@@ -205,19 +224,23 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorSet::getGranuleAndReset()
 #undef M
     }
 
-    columns = index.header.cloneEmptyColumns();
+    columns = index_sample_block.cloneEmptyColumns();
 
     return granule;
 }
 
 
 MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
-        const SelectQueryInfo & query,
-        const Context & context,
-        const MergeTreeIndexSet &index_)
-        : index(index_)
+    const String & index_name_,
+    const Block & index_sample_block_,
+    size_t max_rows_,
+    const SelectQueryInfo & query,
+    const Context & context)
+    : index_name(index_name_)
+    , max_rows(max_rows_)
+    , index_sample_block(index_sample_block_)
 {
-    for (const auto & name : index.columns)
+    for (const auto & name : index_sample_block.getNames())
         if (!key_columns.count(name))
             key_columns.insert(name);
 
@@ -242,8 +265,8 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     /// Working with UInt8: last bit = can be true, previous = can be false (Like src/Storages/MergeTree/BoolMask.h).
     traverseAST(expression_ast);
 
-    auto syntax_analyzer_result = SyntaxAnalyzer(context).analyze(
-            expression_ast, index.header.getNamesAndTypesList());
+    auto syntax_analyzer_result = TreeRewriter(context).analyze(
+            expression_ast, index_sample_block.getNamesAndTypesList());
     actions = ExpressionAnalyzer(expression_ast, syntax_analyzer_result, context).getActions(true);
 }
 
@@ -262,18 +285,19 @@ bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
         throw Exception(
                 "Set index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
 
-    if (useless || granule->empty() || (index.max_rows && granule->size() > index.max_rows))
+    if (useless || granule->empty() || (max_rows != 0 && granule->size() > max_rows))
         return true;
 
     Block result = granule->block;
     actions->execute(result);
 
-    auto column = result.getByName(expression_ast->getColumnName()).column->convertToFullColumnIfLowCardinality();
-    auto * col_uint8 = typeid_cast<const ColumnUInt8 *>(column.get());
+    auto column
+        = result.getByName(expression_ast->getColumnName()).column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
+    const auto * col_uint8 = typeid_cast<const ColumnUInt8 *>(column.get());
 
     const NullMap * null_map = nullptr;
 
-    if (auto * col_nullable = checkAndGetColumn<ColumnNullable>(*column))
+    if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(*column))
     {
         col_uint8 = typeid_cast<const ColumnUInt8 *>(&col_nullable->getNestedColumn());
         null_map = &col_nullable->getNullMapData();
@@ -282,7 +306,7 @@ bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
     if (!col_uint8)
         throw Exception("ColumnUInt8 expected as Set index condition result.", ErrorCodes::LOGICAL_ERROR);
 
-    auto & condition = col_uint8->getData();
+    const auto & condition = col_uint8->getData();
 
     for (size_t i = 0; i < column->size(); ++i)
         if ((!null_map || (*null_map)[i] == 0) && condition[i] & 1)
@@ -435,18 +459,18 @@ bool MergeTreeIndexConditionSet::checkASTUseless(const ASTPtr & node, bool atomi
 
 MergeTreeIndexGranulePtr MergeTreeIndexSet::createIndexGranule() const
 {
-    return std::make_shared<MergeTreeIndexGranuleSet>(*this);
+    return std::make_shared<MergeTreeIndexGranuleSet>(index.name, index.sample_block, max_rows);
 }
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexSet::createIndexAggregator() const
 {
-    return std::make_shared<MergeTreeIndexAggregatorSet>(*this);
+    return std::make_shared<MergeTreeIndexAggregatorSet>(index.name, index.sample_block, max_rows);
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexSet::createIndexCondition(
     const SelectQueryInfo & query, const Context & context) const
 {
-    return std::make_shared<MergeTreeIndexConditionSet>(query, context, *this);
+    return std::make_shared<MergeTreeIndexConditionSet>(index.name, index.sample_block, max_rows, query, context);
 };
 
 bool MergeTreeIndexSet::mayBenefitFromIndexForIn(const ASTPtr &) const
@@ -454,46 +478,18 @@ bool MergeTreeIndexSet::mayBenefitFromIndexForIn(const ASTPtr &) const
     return false;
 }
 
-
-std::unique_ptr<IMergeTreeIndex> setIndexCreator(
-    const NamesAndTypesList & new_columns,
-    std::shared_ptr<ASTIndexDeclaration> node,
-    const Context & context)
+MergeTreeIndexPtr setIndexCreator(const IndexDescription & index)
 {
-    if (node->name.empty())
-        throw Exception("Index must have unique name", ErrorCodes::INCORRECT_QUERY);
+    size_t max_rows = index.arguments[0].get<size_t>();
+    return std::make_shared<MergeTreeIndexSet>(index, max_rows);
+}
 
-    size_t max_rows = 0;
-    if (!node->type->arguments || node->type->arguments->children.size() != 1)
+void setIndexValidator(const IndexDescription & index, bool /*attach*/)
+{
+    if (index.arguments.size() != 1)
         throw Exception("Set index must have exactly one argument.", ErrorCodes::INCORRECT_QUERY);
-    else if (node->type->arguments->children.size() == 1)
-        max_rows = node->type->arguments->children[0]->as<ASTLiteral &>().value.get<size_t>();
-
-
-    ASTPtr expr_list = MergeTreeData::extractKeyExpressionList(node->expr->clone());
-    auto syntax = SyntaxAnalyzer(context).analyze(expr_list, new_columns);
-    auto unique_expr = ExpressionAnalyzer(expr_list, syntax, context).getActions(false);
-
-    auto sample = ExpressionAnalyzer(expr_list, syntax, context)
-            .getActions(true)->getSampleBlock();
-
-    Block header;
-
-    Names columns;
-    DataTypes data_types;
-
-    for (size_t i = 0; i < expr_list->children.size(); ++i)
-    {
-        const auto & column = sample.getByPosition(i);
-
-        columns.emplace_back(column.name);
-        data_types.emplace_back(column.type);
-
-        header.insert(ColumnWithTypeAndName(column.type->createColumn(), column.type, column.name));
-    }
-
-    return std::make_unique<MergeTreeIndexSet>(
-        node->name, std::move(unique_expr), columns, data_types, header, node->granularity, max_rows);
+    else if (index.arguments[0].getType() != Field::Types::UInt64)
+        throw Exception("Set index argument must be positive integer.", ErrorCodes::INCORRECT_QUERY);
 }
 
 }

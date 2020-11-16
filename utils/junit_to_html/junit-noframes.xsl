@@ -317,7 +317,7 @@ under the License.
         </xsl:call-template>
     </code>
 </xsl:template>
-<!-- Style for the error and failure in the tescase template -->
+<!-- Style for the error and failure in the testcase template -->
 <xsl:template name="display-failures">
     <xsl:choose>
         <xsl:when test="not(@message)">N/A</xsl:when>

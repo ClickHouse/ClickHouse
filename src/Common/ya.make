@@ -1,3 +1,4 @@
+# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
 LIBRARY()
 
 ADDINCL (
@@ -13,72 +14,49 @@ PEERDIR(
     clickhouse/base/widechar_width
     contrib/libs/libcpuid/libcpuid
     contrib/libs/openssl
+    contrib/libs/poco/NetSSL_OpenSSL
     contrib/libs/re2
     contrib/restricted/ryu
 )
 
-# TODO: stub for config_version.h
-CFLAGS (GLOBAL -DDBMS_NAME=\"ClickHouse\")
-CFLAGS (GLOBAL -DDBMS_VERSION_MAJOR=0)
-CFLAGS (GLOBAL -DDBMS_VERSION_MINOR=0)
-CFLAGS (GLOBAL -DDBMS_VERSION_PATCH=0)
-CFLAGS (GLOBAL -DVERSION_FULL=\"ClickHouse\")
-CFLAGS (GLOBAL -DVERSION_INTEGER=0)
-CFLAGS (GLOBAL -DVERSION_NAME=\"ClickHouse\")
-CFLAGS (GLOBAL -DVERSION_OFFICIAL=\"\\\(arcadia\\\)\")
-CFLAGS (GLOBAL -DVERSION_REVISION=0)
-CFLAGS (GLOBAL -DVERSION_STRING=\"Unknown\")
+INCLUDE(${ARCADIA_ROOT}/clickhouse/cmake/yandex/ya.make.versions.inc)
+
 
 SRCS(
     ActionLock.cpp
     AlignedBuffer.cpp
-    checkStackSize.cpp
+    Allocator.cpp
     ClickHouseRevision.cpp
     Config/AbstractConfigurationComparison.cpp
     Config/ConfigProcessor.cpp
-    Config/configReadClient.cpp
     Config/ConfigReloader.cpp
-    createHardLink.cpp
+    Config/configReadClient.cpp
     CurrentMetrics.cpp
     CurrentThread.cpp
     DNSResolver.cpp
     Dwarf.cpp
     Elf.cpp
     ErrorCodes.cpp
-    escapeForFileName.cpp
     Exception.cpp
     ExternalLoaderStatus.cpp
     FieldVisitors.cpp
     FileChecker.cpp
-    filesystemHelpers.cpp
-    formatIPv6.cpp
-    formatReadable.cpp
-    getExecutablePath.cpp
-    getMultipleKeysFromConfig.cpp
-    getNumberOfPhysicalCPUCores.cpp
-    hasLinuxCapability.cpp
-    hex.cpp
-    IntervalKind.cpp
     IPv6ToBinary.cpp
-    isLocalAddress.cpp
+    IntervalKind.cpp
     Macros.cpp
-    malloc.cpp
+    MemoryStatisticsOS.cpp
     MemoryTracker.cpp
-    new_delete.cpp
+    OpenSSLHelpers.cpp
     OptimizedRegularExpression.cpp
-    parseAddress.cpp
-    parseGlobs.cpp
-    parseRemoteDescription.cpp
-    PipeFDs.cpp
     PODArray.cpp
+    PipeFDs.cpp
+    ProcfsMetricsProvider.cpp
     ProfileEvents.cpp
     QueryProfiler.cpp
-    quoteString.cpp
-    randomSeed.cpp
-    RemoteHostFilter.cpp
     RWLock.cpp
+    RemoteHostFilter.cpp
     SensitiveDataMasker.cpp
-    setThreadName.cpp
+    SettingsChanges.cpp
     SharedLibrary.cpp
     ShellCommand.cpp
     StackTrace.cpp
@@ -90,20 +68,45 @@ SRCS(
     SymbolIndex.cpp
     TaskStatsInfoGetter.cpp
     TerminalSize.cpp
-    thread_local_rng.cpp
     ThreadFuzzer.cpp
     ThreadPool.cpp
+    ThreadProfileEvents.cpp
     ThreadStatus.cpp
     TraceCollector.cpp
     UTF8Helpers.cpp
+    UnicodeBar.cpp
     WeakHash.cpp
     ZooKeeper/IKeeper.cpp
-    ZooKeeper/Lock.cpp
     ZooKeeper/TestKeeper.cpp
     ZooKeeper/ZooKeeper.cpp
-    ZooKeeper/ZooKeeperHolder.cpp
     ZooKeeper/ZooKeeperImpl.cpp
     ZooKeeper/ZooKeeperNodeCache.cpp
+    checkStackSize.cpp
+    clearPasswordFromCommandLine.cpp
+    createHardLink.cpp
+    escapeForFileName.cpp
+    filesystemHelpers.cpp
+    formatIPv6.cpp
+    formatReadable.cpp
+    getExecutablePath.cpp
+    getMappedArea.cpp
+    getMultipleKeysFromConfig.cpp
+    getNumberOfPhysicalCPUCores.cpp
+    hasLinuxCapability.cpp
+    hex.cpp
+    isLocalAddress.cpp
+    malloc.cpp
+    new_delete.cpp
+    parseAddress.cpp
+    parseGlobs.cpp
+    parseRemoteDescription.cpp
+    quoteString.cpp
+    randomSeed.cpp
+    remapExecutable.cpp
+    renameat2.cpp
+    setThreadName.cpp
+    thread_local_rng.cpp
+
 )
 
 END()

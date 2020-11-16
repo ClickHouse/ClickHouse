@@ -1,270 +1,325 @@
-# Persian translations for PROJECT.
+# Translations template for PROJECT.
 # Copyright (C) 2020 ORGANIZATION
 # This file is distributed under the same license as the PROJECT project.
-# FIRST AUTHOR <EMAIL@ADDRESS>, 2020.
+# Automatically generated, 2020.
 #
 msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-04-15 13:19+0000\n"
-"PO-Revision-Date: 2020-03-26 10:19+0300\n"
-"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
-"Language: fa\n"
-"Language-Team: fa <LL@li.org>\n"
-"Plural-Forms: nplurals=1; plural=0\n"
+"POT-Creation-Date: 2020-06-17 12:20+0300\n"
+"PO-Revision-Date: 2020-06-17 12:20+0300\n"
+"Last-Translator: Automatically generated\n"
+"Language-Team: none\n"
 "MIME-Version: 1.0\n"
-"Content-Type: text/plain; charset=utf-8\n"
+"Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Generated-By: Babel 2.8.0\n"
+"Language: fa\n"
 
-#: templates/common_meta.html:5 templates/common_meta.html:9
-#: templates/common_meta.html:16
+#: templates/common_meta.html:1
+msgid ""
+"ClickHouse is a fast open-source column-oriented database management system "
+"that allows generating analytical data reports in real-time using SQL queries"
+msgstr ""
+
+#: templates/common_meta.html:6
+msgid "ClickHouse - fast open-source OLAP DBMS"
+msgstr ""
+
+#: templates/common_meta.html:10
 msgid "ClickHouse DBMS"
-msgstr "خانه عروسکی"
-
-#: templates/common_meta.html:11
-msgid ""
-"ClickHouse is an open source column-oriented database management system "
-"that allows generating analytical data reports in real time using SQL "
-"queries."
 msgstr ""
-"در تاتر یک منبع ستون گرا سیستم مدیریت پایگاه داده باز است که اجازه می دهد"
-" تا تولید گزارش داده تحلیلی در زمان واقعی با استفاده از پرس و جو گذاشتن "
-"است."
 
-#: templates/common_meta.html:19
-msgid ""
-"ClickHouse is an open source distributed column-oriented database "
-"management system that allows generating analytical data reports in real "
-"time using SQL queries. Сreated by Yandex ClickHouse manages extremely "
-"large volumes of data in a stable and sustainable manner."
+#: templates/common_meta.html:32
+msgid "open-source"
 msgstr ""
-"ClickHouse is an open source distributed column-oriented database "
-"management system that allows generating analytical data reports in real "
-"time using SQL queries. Сreated by Yandex ClickHouse manages extremely "
-"large volumes of data in a stable and sustainable manner."
+
+#: templates/common_meta.html:32
+msgid "relational"
+msgstr ""
+
+#: templates/common_meta.html:32
+msgid "analytics"
+msgstr ""
+
+#: templates/common_meta.html:32
+msgid "analytical"
+msgstr ""
+
+#: templates/common_meta.html:32
+msgid "Big Data"
+msgstr ""
+
+#: templates/common_meta.html:32
+msgid "web-analytics"
+msgstr ""
 
 #: templates/footer.html:8
 msgid "ClickHouse source code is published under the Apache 2.0 License."
-msgstr "کد منبع را کلیک کنیدهاوس تحت گواهی 2.0 منتشر شده است."
+msgstr ""
 
 #: templates/footer.html:8
 msgid ""
 "Software is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR "
 "CONDITIONS OF ANY KIND, either express or implied."
 msgstr ""
-"نرم افزار بر اساس \"به عنوان\" توزیع, بدون ضمانت یا شرایط از هر نوع, هم "
-"بیان یا ضمنی."
 
 #: templates/footer.html:11
 msgid "Yandex LLC"
-msgstr "Yandex, LLC"
+msgstr ""
 
-#: templates/docs/content.html:6
+#: templates/blog/content.html:20 templates/blog/content.html:25
+#: templates/blog/content.html:30
+msgid "Share on"
+msgstr ""
+
+#: templates/blog/content.html:37
+msgid "Published date"
+msgstr ""
+
+#: templates/blog/nav.html:20
+msgid "New&nbsp;post"
+msgstr ""
+
+#: templates/blog/nav.html:25
+msgid "Documentation"
+msgstr ""
+
+#: templates/docs/footer.html:3
+msgid "Rating"
+msgstr ""
+
+#: templates/docs/footer.html:3
+msgid "votes"
+msgstr ""
+
+#: templates/docs/footer.html:4
+msgid "Article Rating"
+msgstr ""
+
+#: templates/docs/footer.html:4
+msgid "Was this content helpful?"
+msgstr ""
+
+#: templates/docs/footer.html:7
+msgid "Unusable"
+msgstr ""
+
+#: templates/docs/footer.html:7
+msgid "Poor"
+msgstr ""
+
+#: templates/docs/footer.html:7
+msgid "Good"
+msgstr ""
+
+#: templates/docs/footer.html:7
+msgid "Excellent"
+msgstr ""
+
+#: templates/docs/footer.html:8
+msgid "documentation"
+msgstr ""
+
+#: templates/docs/footer.html:15
+msgid "Built from"
+msgstr ""
+
+#: templates/docs/footer.html:15
+msgid "published on"
+msgstr ""
+
+#: templates/docs/footer.html:15
+msgid "modified on"
+msgstr ""
+
+#: templates/docs/machine-translated.html:3
 msgid "Help wanted!"
-msgstr "راهنما می خواستم!"
+msgstr ""
 
-#: templates/docs/content.html:7
+#: templates/docs/machine-translated.html:4
 msgid ""
 "The following content of this documentation page has been machine-"
 "translated. But unlike other websites, it is not done on the fly. This "
 "translated text lives on GitHub repository alongside main ClickHouse "
-"codebase and waits for fellow native speakers to make it more human-"
-"readable."
+"codebase and waits for fellow native speakers to make it more human-readable."
 msgstr ""
-"محتوای زیر از این صفحه اسناد شده است ماشین ترجمه. اما بر خلاف وب سایت های"
-" دیگر, این است که در پرواز انجام نمی. این متن ترجمه شده در مخزن گیتهاب در"
-" کنار پایگاه داده اصلی خانه کلیک زندگی می کند و منتظر سخنرانان مادری "
-"همکار به انسان بیشتر قابل خواندن است."
 
-#: templates/docs/content.html:7
+#: templates/docs/machine-translated.html:4
 msgid "You can also use the original English version as a reference."
-msgstr "شما همچنین می توانید نسخه اصلی انگلیسی به عنوان یک مرجع استفاده کنید."
+msgstr ""
 
-#: templates/docs/content.html:10
+#: templates/docs/machine-translated.html:7
 msgid "Help ClickHouse documentation by editing this page"
-msgstr "راهنما مستندات تاتر با ویرایش این صفحه"
-
-#: templates/docs/content.html:27
-msgid "Built from"
-msgstr "ساخته شده از"
+msgstr ""
 
 #: templates/docs/sidebar.html:3
 msgid "Multi-page or single-page"
-msgstr "چند صفحه یا یک صفحه"
+msgstr ""
 
 #: templates/docs/sidebar.html:5
 msgid "Multi-page version"
-msgstr "نسخه چند صفحه ای"
+msgstr ""
 
 #: templates/docs/sidebar.html:8
 msgid "Single-page version"
-msgstr "نسخه تک صفحه ای"
+msgstr ""
 
 #: templates/docs/sidebar.html:13
 msgid "Version"
-msgstr "نسخه"
+msgstr ""
 
 #: templates/docs/sidebar.html:13 templates/docs/sidebar.html:19
 msgid "latest"
-msgstr "جدیدترین"
+msgstr ""
 
 #: templates/docs/sidebar.html:36
 msgid "PDF version"
-msgstr "نسخه PDF"
+msgstr ""
 
 #: templates/docs/toc.html:8
 msgid "Table of Contents"
-msgstr "جدول محتویات"
+msgstr ""
 
 #: templates/index/community.html:4
 msgid "ClickHouse community"
-msgstr "جامعه کلیک"
+msgstr ""
 
 #: templates/index/community.html:13 templates/index/community.html:14
 msgid "ClickHouse YouTube Channel"
-msgstr "تاتر کانال یوتیوب"
+msgstr ""
 
 #: templates/index/community.html:25 templates/index/community.html:26
 msgid "ClickHouse Official Twitter Account"
-msgstr "حساب توییتر رسمی کلیک کنید"
+msgstr ""
 
 #: templates/index/community.html:36 templates/index/community.html:37
 msgid "ClickHouse at Telegram"
-msgstr "تاتر در تلگرام"
+msgstr ""
 
 #: templates/index/community.html:41
 msgid "Chat with real users in "
-msgstr "چت با کاربران واقعی در "
+msgstr ""
 
 #: templates/index/community.html:44 templates/index/community.html:116
 msgid "English"
-msgstr "انگلیسی"
+msgstr ""
 
 #: templates/index/community.html:45
 msgid "or in"
-msgstr "یا در"
+msgstr ""
 
 #: templates/index/community.html:47 templates/index/community.html:117
 msgid "Russian"
-msgstr "روسی"
+msgstr ""
 
 #: templates/index/community.html:65
 msgid "Open GitHub issue to ask for help or to file a feature request"
-msgstr "باز کردن مشکل گیتهاب برای درخواست کمک و یا به فایل درخواست ویژگی"
+msgstr ""
 
 #: templates/index/community.html:76 templates/index/community.html:77
 msgid "ClickHouse Slack Workspace"
-msgstr "فضای کاری شل کلیک"
+msgstr ""
 
 #: templates/index/community.html:82
 msgid "Multipurpose public hangout"
-msgstr "چند منظوره پاتوق عمومی"
+msgstr ""
 
 #: templates/index/community.html:101
 msgid "Ask any questions"
-msgstr "هر گونه سوال بپرسید"
+msgstr ""
 
 #: templates/index/community.html:115
 msgid "ClickHouse Blog"
-msgstr "وبلاگ کلیک"
+msgstr ""
 
 #: templates/index/community.html:116
 msgid "in"
-msgstr "داخل"
+msgstr ""
 
 #: templates/index/community.html:128 templates/index/community.html:129
 msgid "ClickHouse at Google Groups"
-msgstr "تاتر در گروه های گوگل"
+msgstr ""
 
 #: templates/index/community.html:133
 msgid "Email discussions"
-msgstr "بحث های ایمیل"
+msgstr ""
 
 #: templates/index/community.html:142
 msgid "Like ClickHouse?"
-msgstr "مانند خانه کلیک?"
+msgstr ""
 
 #: templates/index/community.html:143
 msgid "Help to spread the word about it via"
-msgstr "کمک به گسترش این کلمه از طریق"
+msgstr ""
 
 #: templates/index/community.html:144
 msgid "and"
-msgstr "و"
+msgstr ""
 
 #: templates/index/community.html:153
 msgid "Hosting ClickHouse Meetups"
-msgstr "میزبانی اکسسوری تاتر"
+msgstr ""
 
 #: templates/index/community.html:157
 msgid ""
-"ClickHouse meetups are essential for strengthening community worldwide, "
-"but they couldn't be possible without the help of local organizers. "
-"Please, feel this form if you want to become one or want to meet "
-"ClickHouse core team for any other reason."
+"ClickHouse meetups are essential for strengthening community worldwide, but "
+"they couldn't be possible without the help of local organizers. Please, fill "
+"this form if you want to become one or want to meet ClickHouse core team for "
+"any other reason."
 msgstr ""
-"اکسسوری کلیک برای تقویت جامعه در سراسر جهان ضروری است, اما نمی تواند بدون"
-" کمک سازمان دهندگان محلی امکان پذیر است. لطفا, احساس این فرم اگر شما می "
-"خواهید برای تبدیل شدن به یک و یا می خواهید برای دیدار با تیم هسته کلیکاوس"
-" به هر دلیلی دیگر."
 
 #: templates/index/community.html:159
 msgid "ClickHouse Meetup"
-msgstr "ناهار خانه"
+msgstr ""
 
 #: templates/index/community.html:165
 msgid "Name"
-msgstr "نام"
+msgstr ""
 
 #: templates/index/community.html:168
 msgid "Email"
-msgstr "رایانامه"
+msgstr ""
 
 #: templates/index/community.html:171
 msgid "Company"
-msgstr "شرکت"
+msgstr ""
 
 #: templates/index/community.html:174
 msgid "City"
-msgstr "شهر"
+msgstr ""
 
 #: templates/index/community.html:179
 msgid "We'd like to host a public ClickHouse Meetup"
-msgstr "ما می خواهیم میزبان یک ناهار عمومی باشیم"
+msgstr ""
 
 #: templates/index/community.html:185
 msgid "We'd like to invite Yandex ClickHouse team to our office"
-msgstr "ما می خواهیم از تیم یاندکس کلیک هاوس به دفتر ما دعوت کنیم"
+msgstr ""
 
 #: templates/index/community.html:191
 msgid "We'd like to invite Yandex ClickHouse team to another event we organize"
 msgstr ""
-"ما می خواهیم از تیم یاندکس کلیک هاوس به رویداد دیگری که سازماندهی می کنیم"
-" دعوت کنیم"
 
 #: templates/index/community.html:197
 msgid "We're interested in commercial consulting, support or managed service"
-msgstr "ما علاقه مند به مشاوره تجاری هستید, پشتیبانی و یا خدمات مدیریت"
+msgstr ""
 
 #: templates/index/community.html:201
 msgid "Additional comments"
-msgstr "نظرات اضافی"
+msgstr ""
 
 #: templates/index/community.html:203
 msgid "Send"
-msgstr "ارسال"
+msgstr ""
 
 #: templates/index/community.html:212
 msgid ""
 "If you have any more thoughts or questions, feel free to contact Yandex "
 "ClickHouse team directly at"
 msgstr ""
-"اگر شما هر گونه افکار و یا سوالات بیشتر, احساس رایگان برای تماس با یاندکس"
-" کلیک تیم به طور مستقیم در"
 
 #: templates/index/community.html:213
 msgid "turn on JavaScript to see email address"
-msgstr "روشن کردن جاوا اسکریپت برای دیدن نشانی رایانامه"
-
+msgstr ""

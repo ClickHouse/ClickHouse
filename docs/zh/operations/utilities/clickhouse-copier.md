@@ -1,5 +1,4 @@
-
-# ﾂ环板-ｮﾂ嘉ｯﾂ偲 {#clickhouse-copier}
+# clickhouse-copier {#clickhouse-copier}
 
 将数据从一个群集中的表复制到另一个（或相同）群集中的表。
 
@@ -7,35 +6,39 @@
 
 开始后, `clickhouse-copier`:
 
--   连接到动物园管理员和接收:
+-   连接到ZooKeeper并且接收:
 
     -   复制作业。
     -   复制作业的状态。
 
 -   它执行的工作。
 
-        Each running process chooses the "closest" shard of the source cluster and copies the data into the destination cluster, resharding the data if necessary.
+        每个正在运行的进程都会选择源集群的“最接近”分片，然后将数据复制到目标集群，并在必要时重新分片数据。
 
 `clickhouse-copier` 跟踪ZooKeeper中的更改，并实时应用它们。
 
 为了减少网络流量，我们建议运行 `clickhouse-copier` 在源数据所在的同一服务器上。
 
-## ﾂ暗ｪﾂ氾环催ﾂ団ﾂ法ﾂ人 {#running-clickhouse-copier}
+## 运行Clickhouse-copier {#running-clickhouse-copier}
 
 该实用程序应手动运行:
 
 ``` bash
-clickhouse-copier copier --daemon --config zookeeper.xml --task-path /task/path --base-dir /path/to/dir
+clickhouse-copier --daemon --config zookeeper.xml --task-path /task/path --base-dir /path/to/dir
 ```
 
 参数:
 
--   `daemon` — Starts `clickhouse-copier` 在守护进程模式。
--   `config` — The path to the `zookeeper.xml` 带有连接到ZooKeeper的参数的文件。
--   `task-path` — The path to the ZooKeeper node. This node is used for syncing `clickhouse-copier` 处理和存储任务。 任务存储在 `$task-path/description`.
--   `base-dir` — The path to logs and auxiliary files. When it starts, `clickhouse-copier` 创建 `clickhouse-copier_YYYYMMHHSS_<PID>` 子目录 `$base-dir`. 如果省略此参数，则在以下目录中创建目录 `clickhouse-copier` 被推出。
+-   `daemon` — 在守护进程模式下启动`clickhouse-copier`。
+-   `config` — `zookeeper.xml`文件的路径，其中包含用于连接ZooKeeper的参数。
+-   `task-path` — ZooKeeper节点的路径。 该节点用于同步`clickhouse-copier`进程和存储任务。 任务存储在`$task-path/description`中。
+-   `task-file` — 可选的非必须参数, 指定一个包含任务配置的参数文件, 用于初始上传到ZooKeeper。
+-   `task-upload-force` — 即使节点已经存在，也强制上载`task-file`。
+-   `base-dir` — 日志和辅助文件的路径。 启动时，`clickhouse-copier`在`$base-dir`中创建`clickhouse-copier_YYYYMMHHSS_<PID>`子目录。 如果省略此参数，则会在启动`clickhouse-copier`的目录中创建目录。
 
-## 动物园管理员的格式。xml {#format-of-zookeeper-xml}
+
+
+## Zookeeper.xml格式 {#format-of-zookeeper-xml}
 
 ``` xml
 <yandex>

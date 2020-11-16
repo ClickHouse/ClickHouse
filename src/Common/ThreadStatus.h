@@ -4,7 +4,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/MemoryTracker.h>
 
-#include <Core/SettingsCollection.h>
+#include <Core/SettingsEnums.h>
 
 #include <IO/Progress.h>
 
@@ -31,8 +31,9 @@ class ThreadStatus;
 class QueryProfilerReal;
 class QueryProfilerCpu;
 class QueryThreadLog;
-struct TasksStatsCounters;
+class TasksStatsCounters;
 struct RUsageCounters;
+struct PerfEventsCounters;
 class TaskStatsInfoGetter;
 class InternalTextLogsQueue;
 using InternalTextLogsQueuePtr = std::shared_ptr<InternalTextLogsQueue>;
@@ -59,6 +60,7 @@ public:
     Context * global_context = nullptr;
 
     InternalTextLogsQueueWeakPtr logs_queue_ptr;
+    std::function<void()> fatal_error_callback;
 
     std::vector<UInt64> thread_ids;
 
@@ -88,15 +90,18 @@ public:
     ~ThreadStatus();
 
     /// Linux's PID (or TGID) (the same id is shown by ps util)
-    UInt64 thread_id = 0;
+    const UInt64 thread_id = 0;
     /// Also called "nice" value. If it was changed to non-zero (when attaching query) - will be reset to zero when query is detached.
     Int32 os_thread_priority = 0;
 
     /// TODO: merge them into common entity
     ProfileEvents::Counters performance_counters{VariableContext::Thread};
     MemoryTracker memory_tracker{VariableContext::Thread};
+
     /// Small amount of untracked memory (per thread atomic-less counter)
     Int64 untracked_memory = 0;
+    /// Each thread could new/delete memory in range of (-untracked_memory_limit, untracked_memory_limit) without access to common counters.
+    Int64 untracked_memory_limit = 4 * 1024 * 1024;
 
     /// Statistics of read and write rows/bytes
     Progress progress_in;
@@ -141,6 +146,10 @@ public:
     void attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue,
                                      LogsLevel client_logs_level);
 
+    /// Callback that is used to trigger sending fatal error messages to client.
+    void setFatalErrorCallback(std::function<void()> callback);
+    void onFatalError();
+
     /// Sets query context for current thread and its thread group
     /// NOTE: query_context have to be alive until detachQuery() is called
     void attachQueryContext(Context & query_context);
@@ -155,15 +164,17 @@ public:
     void detachQuery(bool exit_if_already_detached = false, bool thread_exits = false);
 
 protected:
+    void applyQuerySettings();
+
     void initPerformanceCounters();
 
     void initQueryProfiler();
 
     void finalizeQueryProfiler();
 
-    void logToQueryThreadLog(QueryThreadLog & thread_log);
+    void logToQueryThreadLog(QueryThreadLog & thread_log, const String & current_database, std::chrono::time_point<std::chrono::system_clock> now);
 
-    void assertState(const std::initializer_list<int> & permitted_states, const char * description = nullptr);
+    void assertState(const std::initializer_list<int> & permitted_states, const char * description = nullptr) const;
 
     ThreadGroupStatusPtr thread_group;
 
@@ -181,6 +192,7 @@ protected:
 
     bool performance_counters_finalized = false;
     UInt64 query_start_time_nanoseconds = 0;
+    UInt64 query_start_time_microseconds = 0;
     time_t query_start_time = 0;
     size_t queries_started = 0;
 
@@ -191,17 +203,34 @@ protected:
     Poco::Logger * log = nullptr;
 
     friend class CurrentThread;
-    friend struct TasksStatsCounters;
 
     /// Use ptr not to add extra dependencies in the header
     std::unique_ptr<RUsageCounters> last_rusage;
-    std::unique_ptr<TasksStatsCounters> last_taskstats;
+    std::unique_ptr<TasksStatsCounters> taskstats;
 
-    /// Set to non-nullptr only if we have enough capabilities.
-    std::unique_ptr<TaskStatsInfoGetter> taskstats_getter;
+    /// Is used to send logs from logs_queue to client in case of fatal errors.
+    std::function<void()> fatal_error_callback;
 
 private:
     void setupState(const ThreadGroupStatusPtr & thread_group_);
+};
+
+/**
+ * Creates ThreadStatus for the main thread.
+ */
+class MainThreadStatus : public ThreadStatus
+{
+public:
+    static MainThreadStatus & getInstance();
+    static ThreadStatus * get() { return main_thread; }
+    static bool isMainThread() { return main_thread == current_thread; }
+
+    ~MainThreadStatus();
+
+private:
+    MainThreadStatus();
+
+    static ThreadStatus * main_thread;
 };
 
 }

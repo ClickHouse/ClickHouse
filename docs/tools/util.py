@@ -1,5 +1,6 @@
 import collections
 import contextlib
+import datetime
 import multiprocessing
 import os
 import shutil
@@ -8,6 +9,7 @@ import socket
 import tempfile
 import threading
 
+import jinja2
 import yaml
 
 
@@ -111,3 +113,35 @@ def represent_ordereddict(dumper, data):
 
 
 yaml.add_representer(collections.OrderedDict, represent_ordereddict)
+
+
+def init_jinja2_filters(env):
+    import amp
+    import website
+    chunk_size = 10240
+    env.filters['chunks'] = lambda line: [line[i:i + chunk_size] for i in range(0, len(line), chunk_size)]
+    env.filters['html_to_amp'] = amp.html_to_amp
+    env.filters['adjust_markdown_html'] = website.adjust_markdown_html
+    env.filters['to_rfc882'] = lambda d: datetime.datetime.strptime(d, '%Y-%m-%d').strftime('%a, %d %b %Y %H:%M:%S GMT')
+
+
+def init_jinja2_env(args):
+    import mdx_clickhouse
+    env = jinja2.Environment(
+        loader=jinja2.FileSystemLoader([
+            args.website_dir,
+            os.path.join(args.docs_dir, '_includes')
+        ]),
+        extensions=[
+            'jinja2.ext.i18n',
+            'jinja2_highlight.HighlightExtension'
+        ]
+    )
+    env.extend(jinja2_highlight_cssclass='syntax p-3 my-3')
+    translations_dir = os.path.join(args.website_dir, 'locale')
+    env.install_gettext_translations(
+        mdx_clickhouse.get_translations(translations_dir, 'en'),
+        newstyle=True
+    )
+    init_jinja2_filters(env)
+    return env

@@ -18,9 +18,9 @@ namespace DB
 class LimitTransform : public IProcessor
 {
 private:
+    UInt64 limit;
+    UInt64 offset;
 
-    size_t limit;
-    size_t offset;
     bool always_read_till_end;
 
     bool with_ties;
@@ -29,11 +29,11 @@ private:
     Chunk previous_row_chunk;  /// for WITH TIES, contains only sort columns
     std::vector<size_t> sort_column_positions;
 
-    size_t rows_read = 0; /// including the last read block
+    UInt64 rows_read = 0; /// including the last read block
     RowsBeforeLimitCounterPtr rows_before_limit_at_least;
 
     /// State of port's pair.
-    /// Chunks from different port pairs are not mixed for berret cache locality.
+    /// Chunks from different port pairs are not mixed for better cache locality.
     struct PortsData
     {
         Chunk current_chunk;
@@ -46,13 +46,13 @@ private:
     std::vector<PortsData> ports_data;
     size_t num_finished_port_pairs = 0;
 
-    Chunk makeChunkWithPreviousRow(const Chunk & current_chunk, size_t row_num) const;
+    Chunk makeChunkWithPreviousRow(const Chunk & current_chunk, UInt64 row_num) const;
     ColumnRawPtrs extractSortColumns(const Columns & columns) const;
-    bool sortColumnsEqualAt(const ColumnRawPtrs & current_chunk_sort_columns, size_t current_chunk_row_num) const;
+    bool sortColumnsEqualAt(const ColumnRawPtrs & current_chunk_sort_columns, UInt64 current_chunk_row_num) const;
 
 public:
     LimitTransform(
-        const Block & header_, size_t limit_, size_t offset_, size_t num_streams = 1,
+        const Block & header_, UInt64 limit_, UInt64 offset_, size_t num_streams = 1,
         bool always_read_till_end_ = false, bool with_ties_ = false,
         SortDescription description_ = {});
 

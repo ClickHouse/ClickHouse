@@ -2,7 +2,7 @@
 
 #include <Access/EnabledSettings.h>
 #include <Core/UUID.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <ext/scope_guard.h>
 #include <map>
 #include <unordered_map>
@@ -29,7 +29,7 @@ public:
     std::shared_ptr<const EnabledSettings> getEnabledSettings(
         const UUID & user_id,
         const SettingsProfileElements & settings_from_user_,
-        const std::vector<UUID> & enabled_roles,
+        const boost::container::flat_set<UUID> & enabled_roles,
         const SettingsProfileElements & settings_from_enabled_roles_);
 
     std::shared_ptr<const SettingsChanges> getProfileSettings(const String & profile_name);

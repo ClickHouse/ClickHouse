@@ -1,0 +1,4 @@
+<test>
+    <query>select number from (select number from numbers(10000000) order by -number) limit 10</query>
+    <query>select number from (select number from numbers_mt(100000000) order by -number) limit 10</query>
+</test>

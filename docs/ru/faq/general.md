@@ -13,7 +13,7 @@
 
 ## Что делать, если у меня проблема с кодировками при использовании Oracle через ODBC? {#oracle-odbc-encodings}
 
-Если вы используете Oracle через драйвер ODBC в качестве источника внешних словарей, необходимо задать правильное значение для переменной окружения `NLS_LANG` в `/etc/default/clickhouse`. Подробнее читайте в [Oracle NLS\_LANG FAQ](https://www.oracle.com/technetwork/products/globalization/nls-lang-099431.html).
+Если вы используете Oracle через драйвер ODBC в качестве источника внешних словарей, необходимо задать правильное значение для переменной окружения `NLS_LANG` в `/etc/default/clickhouse`. Подробнее читайте в [Oracle NLS_LANG FAQ](https://www.oracle.com/technetwork/products/globalization/nls-lang-099431.html).
 
 **Пример**
 
@@ -25,7 +25,7 @@ NLS_LANG=RUSSIAN_RUSSIA.UTF8
 
 ### Секция INTO OUTFILE {#sektsiia-into-outfile}
 
-Добавьте секцию [INTO OUTFILE](../sql_reference/statements/select.md#into-outfile-clause) к своему запросу.
+Добавьте секцию [INTO OUTFILE](../sql-reference/statements/select/into-outfile.md#into-outfile-clause) к своему запросу.
 
 Например:
 
@@ -33,7 +33,7 @@ NLS_LANG=RUSSIAN_RUSSIA.UTF8
 SELECT * FROM table INTO OUTFILE 'file'
 ```
 
-По умолчанию, для выдачи данных ClickHouse использует формат [TabSeparated](../interfaces/formats.md#tabseparated). Чтобы выбрать [формат данных](../interfaces/formats.md), используйте [секцию FORMAT](../sql_reference/statements/select.md#format-clause).
+По умолчанию, для выдачи данных ClickHouse использует формат [TabSeparated](../interfaces/formats.md#tabseparated). Чтобы выбрать [формат данных](../interfaces/formats.md), используйте [секцию FORMAT](../sql-reference/statements/select/format.md#format-clause).
 
 Например:
 
@@ -43,7 +43,7 @@ SELECT * FROM table INTO OUTFILE 'file' FORMAT CSV
 
 ### Таблица с движком File {#tablitsa-s-dvizhkom-file}
 
-Смотрите [File](../engines/table_engines/special/file.md).
+Смотрите [File](../engines/table-engines/special/file.md).
 
 ### Перенаправление в командой строке {#perenapravlenie-v-komandoi-stroke}
 

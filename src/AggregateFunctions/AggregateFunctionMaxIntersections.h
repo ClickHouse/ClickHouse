@@ -129,14 +129,14 @@ public:
         buf.read(reinterpret_cast<char *>(value.data()), size * sizeof(value[0]));
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         Int64 current_intersections = 0;
         Int64 max_intersections = 0;
         PointType position_of_max_intersections = 0;
 
         /// const_cast because we will sort the array
-        auto & array = const_cast<typename MaxIntersectionsData<PointType>::Array &>(this->data(place).value);
+        auto & array = this->data(place).value;
 
         /// Sort by position; for equal position, sort by weight to get deterministic result.
         std::sort(array.begin(), array.end());

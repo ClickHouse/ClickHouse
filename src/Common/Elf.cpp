@@ -2,6 +2,7 @@
 
 #include <Common/Elf.h>
 #include <Common/Exception.h>
+#include <common/unaligned.h>
 
 #include <string.h>
 
@@ -54,6 +55,18 @@ Elf::Elf(const std::string & path)
         throw Exception("The ELF is truncated (section names string table points after end of file)", ErrorCodes::CANNOT_PARSE_ELF);
 
     section_names = reinterpret_cast<const char *>(mapped + section_names_offset);
+
+    /// Get program headers
+
+    ElfOff program_header_offset = header->e_phoff;
+    uint16_t program_header_num_entries = header->e_phnum;
+
+    if (!program_header_offset
+        || !program_header_num_entries
+        || program_header_offset + program_header_num_entries * sizeof(ElfPhdr) > elf_size)
+        throw Exception("The ELF is truncated (program header points after end of file)", ErrorCodes::CANNOT_PARSE_ELF);
+
+    program_headers = reinterpret_cast<const ElfPhdr *>(mapped + program_header_offset);
 }
 
 
@@ -101,6 +114,40 @@ std::optional<Elf::Section> Elf::findSection(std::function<bool(const Section & 
 std::optional<Elf::Section> Elf::findSectionByName(const char * name) const
 {
     return findSection([&](const Section & section, size_t) { return 0 == strcmp(name, section.name()); });
+}
+
+
+String Elf::getBuildID() const
+{
+    for (size_t idx = 0; idx < header->e_phnum; ++idx)
+    {
+        const ElfPhdr & phdr = program_headers[idx];
+
+        if (phdr.p_type == PT_NOTE)
+            return getBuildID(mapped + phdr.p_offset, phdr.p_filesz);
+    }
+    return {};
+}
+
+
+String Elf::getBuildID(const char * nhdr_pos, size_t size)
+{
+    const char * nhdr_end = nhdr_pos + size;
+
+    while (nhdr_pos < nhdr_end)
+    {
+        ElfNhdr nhdr = unalignedLoad<ElfNhdr>(nhdr_pos);
+
+        nhdr_pos += sizeof(ElfNhdr) + nhdr.n_namesz;
+        if (nhdr.n_type == NT_GNU_BUILD_ID)
+        {
+            const char * build_id = nhdr_pos;
+            return {build_id, nhdr.n_descsz};
+        }
+        nhdr_pos += nhdr.n_descsz;
+    }
+
+    return {};
 }
 
 

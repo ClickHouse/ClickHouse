@@ -24,7 +24,7 @@ static void parse_trash_string_as_uint_must_fail(const std::string & str)
         return;
     }
 
-    std::cerr << "Parsing must fail, but finished sucessfully x=" << x;
+    std::cerr << "Parsing must fail, but finished successfully x=" << x;
     exit(-1);
 }
 

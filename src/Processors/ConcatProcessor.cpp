@@ -4,6 +4,11 @@
 namespace DB
 {
 
+ConcatProcessor::ConcatProcessor(const Block & header, size_t num_inputs)
+    : IProcessor(InputPorts(num_inputs, header), OutputPorts{header}), current_input(inputs.begin())
+{
+}
+
 ConcatProcessor::Status ConcatProcessor::prepare()
 {
     auto & output = outputs.front();
@@ -31,17 +36,13 @@ ConcatProcessor::Status ConcatProcessor::prepare()
 
     /// Check can input.
 
-    if (current_input == inputs.end())
-        return Status::Finished;
-
-    if (current_input->isFinished())
-    {
+    while (current_input != inputs.end() && current_input->isFinished())
         ++current_input;
-        if (current_input == inputs.end())
-        {
-            output.finish();
-            return Status::Finished;
-        }
+
+    if (current_input == inputs.end())
+    {
+        output.finish();
+        return Status::Finished;
     }
 
     auto & input = *current_input;

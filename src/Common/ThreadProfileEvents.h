@@ -1,17 +1,18 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/ProfileEvents.h>
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <pthread.h>
+#include <common/logger_useful.h>
+
 
 #if defined(__linux__)
 #include <linux/taskstats.h>
 #else
 struct taskstats {};
 #endif
-
 
 /** Implement ProfileEvents with statistics about resource consumption of the current thread.
   */
@@ -34,9 +35,34 @@ namespace ProfileEvents
     extern const Event OSWriteChars;
     extern const Event OSReadBytes;
     extern const Event OSWriteBytes;
+
+    extern const Event PerfCpuCycles;
+    extern const Event PerfInstructions;
+    extern const Event PerfCacheReferences;
+    extern const Event PerfCacheMisses;
+    extern const Event PerfBranchInstructions;
+    extern const Event PerfBranchMisses;
+    extern const Event PerfBusCycles;
+    extern const Event PerfStalledCyclesFrontend;
+    extern const Event PerfStalledCyclesBackend;
+    extern const Event PerfRefCpuCycles;
+
+    extern const Event PerfCpuClock;
+    extern const Event PerfTaskClock;
+    extern const Event PerfContextSwitches;
+    extern const Event PerfCpuMigrations;
+    extern const Event PerfAlignmentFaults;
+    extern const Event PerfEmulationFaults;
+    extern const Event PerfMinEnabledTime;
+    extern const Event PerfMinEnabledRunningTime;
+    extern const Event PerfDataTLBReferences;
+    extern const Event PerfDataTLBMisses;
+    extern const Event PerfInstructionTLBReferences;
+    extern const Event PerfInstructionTLBMisses;
+    extern const Event PerfLocalMemoryReferences;
+    extern const Event PerfLocalMemoryMisses;
 #endif
 }
-
 
 namespace DB
 {
@@ -46,14 +72,6 @@ template <typename TUInt>
 inline TUInt safeDiff(TUInt prev, TUInt curr)
 {
     return curr >= prev ? curr - prev : 0;
-}
-
-
-inline UInt64 getCurrentTimeNanoseconds(clockid_t clock_type = CLOCK_MONOTONIC)
-{
-    struct timespec ts;
-    clock_gettime(clock_type, &ts);
-    return ts.tv_sec * 1000000000ULL + ts.tv_nsec;
 }
 
 
@@ -83,20 +101,13 @@ struct RUsageCounters
         hard_page_faults = static_cast<UInt64>(rusage.ru_majflt);
     }
 
-    static RUsageCounters zeros(UInt64 real_time_ = getCurrentTimeNanoseconds())
-    {
-        RUsageCounters res;
-        res.real_time = real_time_;
-        return res;
-    }
-
-    static RUsageCounters current(UInt64 real_time_ = getCurrentTimeNanoseconds())
+    static RUsageCounters current()
     {
         ::rusage rusage {};
 #if !defined(__APPLE__)
         ::getrusage(RUSAGE_THREAD, &rusage);
 #endif
-        return RUsageCounters(rusage, real_time_);
+        return RUsageCounters(rusage, getClockMonotonic());
     }
 
     static void incrementProfileEvents(const RUsageCounters & prev, const RUsageCounters & curr, ProfileEvents::Counters & profile_events)
@@ -115,55 +126,130 @@ struct RUsageCounters
         incrementProfileEvents(last_counters, current_counters, profile_events);
         last_counters = current_counters;
     }
+
+private:
+    static inline UInt64 getClockMonotonic()
+    {
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        return ts.tv_sec * 1000000000ULL + ts.tv_nsec;
+    }
 };
 
+// thread_local is disabled in Arcadia, so we have to use a dummy implementation
+// there.
+#if defined(__linux__) && !defined(ARCADIA_BUILD)
+
+struct PerfEventInfo
+{
+    // see perf_event.h/perf_type_id enum
+    int event_type;
+    // see configs in perf_event.h
+    int event_config;
+    ProfileEvents::Event profile_event;
+    std::string settings_name;
+};
+
+struct PerfEventValue
+{
+    UInt64 value = 0;
+    UInt64 time_enabled = 0;
+    UInt64 time_running = 0;
+};
+
+static constexpr size_t NUMBER_OF_RAW_EVENTS = 22;
+
+struct PerfDescriptorsHolder : boost::noncopyable
+{
+    int descriptors[NUMBER_OF_RAW_EVENTS]{};
+
+    PerfDescriptorsHolder();
+
+    ~PerfDescriptorsHolder();
+
+    void releaseResources();
+};
+
+struct PerfEventsCounters
+{
+    PerfDescriptorsHolder thread_events_descriptors_holder;
+
+    // time_enabled and time_running can't be reset, so we have to store the
+    // data from the previous profiling period and calculate deltas to them,
+    // to be able to properly account for counter multiplexing.
+    PerfEventValue previous_values[NUMBER_OF_RAW_EVENTS]{};
+
+
+    void initializeProfileEvents(const std::string & events_list);
+    void finalizeProfileEvents(ProfileEvents::Counters & profile_events);
+    void closeEventDescriptors();
+    bool processThreadLocalChanges(const std::string & needed_events_list);
+
+
+    static std::vector<size_t> eventIndicesFromString(const std::string & events_list);
+};
+
+// Perf event creation is moderately heavy, so we create them once per thread and
+// then reuse.
+extern thread_local PerfEventsCounters current_thread_counters;
+
+#else
+
+// Not on Linux, or in Arcadia: the functionality is disabled.
+struct PerfEventsCounters
+{
+    void initializeProfileEvents(const std::string & /* events_list */) {}
+    void finalizeProfileEvents(ProfileEvents::Counters & /* profile_events */) {}
+    void closeEventDescriptors() {}
+};
+
+// thread_local is disabled in Arcadia, so we are going to use a static dummy.
+extern PerfEventsCounters current_thread_counters;
+
+#endif
 
 #if defined(__linux__)
 
-struct TasksStatsCounters
+class TasksStatsCounters
 {
-    ::taskstats stat;
+public:
+    static bool checkIfAvailable();
+    static std::unique_ptr<TasksStatsCounters> create(const UInt64 tid);
 
-    TasksStatsCounters() = default;
+    void reset();
+    void updateCounters(ProfileEvents::Counters & profile_events);
 
-    static TasksStatsCounters current();
+private:
+    ::taskstats stats;  //-V730_NOINIT
+    std::function<::taskstats()> stats_getter;
 
-    static void incrementProfileEvents(const TasksStatsCounters & prev, const TasksStatsCounters & curr, ProfileEvents::Counters & profile_events)
+    enum class MetricsProvider
     {
-        profile_events.increment(ProfileEvents::OSCPUWaitMicroseconds,
-                                 safeDiff(prev.stat.cpu_delay_total, curr.stat.cpu_delay_total) / 1000U);
-        profile_events.increment(ProfileEvents::OSIOWaitMicroseconds,
-                                 safeDiff(prev.stat.blkio_delay_total, curr.stat.blkio_delay_total) / 1000U);
-        profile_events.increment(ProfileEvents::OSCPUVirtualTimeMicroseconds,
-                                 safeDiff(prev.stat.cpu_run_virtual_total, curr.stat.cpu_run_virtual_total) / 1000U);
+        None,
+        Procfs,
+        Netlink
+    };
 
-        /// Since TASKSTATS_VERSION = 3 extended accounting and IO accounting is available.
-        if (curr.stat.version < 3)
-            return;
+private:
+    explicit TasksStatsCounters(const UInt64 tid, const MetricsProvider provider);
 
-        profile_events.increment(ProfileEvents::OSReadChars, safeDiff(prev.stat.read_char, curr.stat.read_char));
-        profile_events.increment(ProfileEvents::OSWriteChars, safeDiff(prev.stat.write_char, curr.stat.write_char));
-        profile_events.increment(ProfileEvents::OSReadBytes, safeDiff(prev.stat.read_bytes, curr.stat.read_bytes));
-        profile_events.increment(ProfileEvents::OSWriteBytes, safeDiff(prev.stat.write_bytes, curr.stat.write_bytes));
-    }
-
-    static void updateProfileEvents(TasksStatsCounters & last_counters, ProfileEvents::Counters & profile_events)
-    {
-        auto current_counters = current();
-        incrementProfileEvents(last_counters, current_counters, profile_events);
-        last_counters = current_counters;
-    }
+    static MetricsProvider findBestAvailableProvider();
+    static void incrementProfileEvents(const ::taskstats & prev, const ::taskstats & curr, ProfileEvents::Counters & profile_events);
 };
 
 #else
 
-struct TasksStatsCounters
+class TasksStatsCounters
 {
-    ::taskstats stat;
+public:
+    static bool checkIfAvailable() { return false; }
+    static std::unique_ptr<TasksStatsCounters> create(const UInt64 /*tid*/) { return {}; }
 
-    static TasksStatsCounters current();
-    static void incrementProfileEvents(const TasksStatsCounters &, const TasksStatsCounters &, ProfileEvents::Counters &) {}
-    static void updateProfileEvents(TasksStatsCounters &, ProfileEvents::Counters &) {}
+    void reset() {}
+    void updateCounters(ProfileEvents::Counters &) {}
+
+private:
+    TasksStatsCounters(const UInt64 /*tid*/) {}
 };
 
 #endif

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Databases/DatabaseOnDisk.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 
 
@@ -10,6 +9,7 @@ namespace DB
 
 
 class DatabaseLazyIterator;
+class Context;
 
 /** Lazy engine of databases.
   * Works like DatabaseOrdinary, but stores in memory only cache.
@@ -22,9 +22,13 @@ public:
 
     String getEngineName() const override { return "Lazy"; }
 
+    bool canContainMergeTreeTables() const override { return false; }
+
+    bool canContainDistributedTables() const override { return false; }
+
     void loadStoredObjects(
         Context & context,
-        bool has_force_restore_data_flag) override;
+        bool has_force_restore_data_flag, bool force_attach) override;
 
     void createTable(
         const Context & context,
@@ -32,37 +36,37 @@ public:
         const StoragePtr & table,
         const ASTPtr & query) override;
 
-    void removeTable(
+    void dropTable(
         const Context & context,
-        const String & table_name) override;
+        const String & table_name,
+        bool no_delay) override;
 
     void renameTable(
         const Context & context,
         const String & table_name,
         IDatabase & to_database,
         const String & to_table_name,
-        TableStructureWriteLockHolder &) override;
+        bool exchange,
+        bool dictionary) override;
 
     void alterTable(
         const Context & context,
-        const String & name,
+        const StorageID & table_id,
         const StorageInMemoryMetadata & metadata) override;
 
     time_t getObjectMetadataModificationTime(const String & table_name) const override;
 
-    bool isTableExist(
-        const Context & context,
-        const String & table_name) const override;
+    bool isTableExist(const String & table_name, const Context &) const override { return isTableExist(table_name); }
+    bool isTableExist(const String & table_name) const;
 
-    StoragePtr tryGetTable(
-        const Context & context,
-        const String & table_name) const override;
+    StoragePtr tryGetTable(const String & table_name, const Context &) const override { return tryGetTable(table_name); }
+    StoragePtr tryGetTable(const String & table_name) const;
 
-    bool empty(const Context & context) const override;
+    bool empty() const override;
 
     DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name) override;
 
-    void attachTable(const String & table_name, const StoragePtr & table) override;
+    void attachTable(const String & table_name, const StoragePtr & table, const String & relative_table_path) override;
 
     StoragePtr detachTable(const String & table_name) override;
 
@@ -90,7 +94,7 @@ private:
         time_t metadata_modification_time;
         CacheExpirationQueue::iterator expiration_iterator;
 
-        CachedTable() {}
+        CachedTable() = delete;
         CachedTable(const StoragePtr & table_, time_t last_touched_, time_t metadata_modification_time_)
             : table(table_), last_touched(last_touched_), metadata_modification_time(metadata_modification_time_) {}
     };
@@ -103,7 +107,7 @@ private:
     mutable TablesCache tables_cache;
     mutable CacheExpirationQueue cache_expiration_queue;
 
-    StoragePtr loadTable(const Context & context, const String & table_name) const;
+    StoragePtr loadTable(const String & table_name) const;
 
     void clearExpiredTables() const;
 
@@ -116,7 +120,6 @@ class DatabaseLazyIterator final : public IDatabaseTablesIterator
 public:
     DatabaseLazyIterator(
         DatabaseLazy & database_,
-        const Context & context_,
         Strings && table_names_);
 
     void next() override;
@@ -127,7 +130,6 @@ public:
 private:
     const DatabaseLazy & database;
     const Strings table_names;
-    const Context context;
     Strings::const_iterator iterator;
     mutable StoragePtr current_storage;
 };

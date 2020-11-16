@@ -1,4 +1,4 @@
-SET send_logs_level = 'none';
+SET send_logs_level = 'fatal';
 
 DROP TABLE IF EXISTS mt_with_pk;
 
@@ -41,10 +41,8 @@ SELECT COUNT(*) FROM mt_with_pk WHERE x > toDateTime('2018-10-01 23:57:57');
 SELECT sum(marks) FROM system.parts WHERE table = 'mt_with_pk' AND database = currentDatabase() AND active=1;
 
 SELECT '===test mutation===';
-ALTER TABLE mt_with_pk UPDATE w = 0 WHERE 1;
-ALTER TABLE mt_with_pk UPDATE y = ['q', 'q', 'q'] WHERE 1;
-
-SELECT sleep(1) FORMAT Null;
+ALTER TABLE mt_with_pk UPDATE w = 0 WHERE 1 SETTINGS mutations_sync = 2;
+ALTER TABLE mt_with_pk UPDATE y = ['q', 'q', 'q'] WHERE 1 SETTINGS mutations_sync = 2;
 
 SELECT sum(w) FROM mt_with_pk;
 SELECT distinct(y) FROM mt_with_pk;
@@ -97,9 +95,7 @@ CREATE TABLE alter_update_00806 (d Date, e Enum8('foo'=1, 'bar'=2)) Engine = Mer
 INSERT INTO alter_update_00806 (d, e) VALUES ('2018-01-01', 'foo');
 INSERT INTO alter_update_00806 (d, e) VALUES ('2018-01-02', 'bar');
 
-ALTER TABLE alter_update_00806 UPDATE e = CAST('foo', 'Enum8(\'foo\' = 1, \'bar\' = 2)') WHERE d='2018-01-02';
-
-SELECT sleep(1) FORMAT Null;
+ALTER TABLE alter_update_00806 UPDATE e = CAST('foo', 'Enum8(\'foo\' = 1, \'bar\' = 2)') WHERE d='2018-01-02' SETTINGS mutations_sync = 2;
 
 SELECT e FROM alter_update_00806 ORDER BY d;
 
@@ -147,7 +143,7 @@ CREATE TABLE mt_with_small_granularity (
   n Nested (Age UInt8, Name String),
   w Int16 DEFAULT 10
 ) ENGINE = MergeTree()
-PARTITION BY toYYYYMM(d) ORDER BY (x, z) SETTINGS index_granularity_bytes=30, write_final_mark=1;
+PARTITION BY toYYYYMM(d) ORDER BY (x, z) SETTINGS index_granularity_bytes=30, min_index_granularity_bytes=20, write_final_mark=1;
 
 INSERT INTO mt_with_small_granularity (d, x, y, z, `n.Age`, `n.Name`) VALUES (toDate('2018-10-01'), toDateTime('2018-10-01 12:57:57'), [1, 1, 1], 11, [77], ['Joe']), (toDate('2018-10-01'), toDateTime('2018-10-01 16:57:57'), [2, 2, 2], 12, [88], ['Mark']), (toDate('2018-10-01'), toDateTime('2018-10-01 19:57:57'), [3, 3, 3], 13, [99], ['Robert']);
 

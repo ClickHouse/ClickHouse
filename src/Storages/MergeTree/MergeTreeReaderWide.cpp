@@ -21,13 +21,13 @@ namespace
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
 MergeTreeReaderWide::MergeTreeReaderWide(
     DataPartWidePtr data_part_,
     NamesAndTypesList columns_,
+    const StorageMetadataPtr & metadata_snapshot_,
     UncompressedCache * uncompressed_cache_,
     MarkCache * mark_cache_,
     MarkRanges mark_ranges_,
@@ -36,8 +36,14 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
     clockid_t clock_type_)
     : IMergeTreeReader(
-        std::move(data_part_), std::move(columns_), uncompressed_cache_, std::move(mark_cache_),
-        std::move(mark_ranges_), std::move(settings_), std::move(avg_value_size_hints_))
+        std::move(data_part_),
+        std::move(columns_),
+        metadata_snapshot_,
+        uncompressed_cache_,
+        std::move(mark_cache_),
+        std::move(mark_ranges_),
+        std::move(settings_),
+        std::move(avg_value_size_hints_))
 {
     try
     {
@@ -61,11 +67,7 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
     try
     {
         size_t num_columns = columns.size();
-
-        if (res_columns.size() != num_columns)
-            throw Exception("invalid number of columns passed to MergeTreeReader::readRows. "
-                            "Expected " + toString(num_columns) + ", "
-                            "got " + toString(res_columns.size()), ErrorCodes::LOGICAL_ERROR);
+        checkNumberOfColumns(num_columns);
 
         /// Pointers to offset columns that are common to the nested data structure columns.
         /// If append is true, then the value will be equal to nullptr and will be used only to
@@ -160,7 +162,7 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
 void MergeTreeReaderWide::addStreams(const String & name, const IDataType & type,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
 {
-    IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path)
+    IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
     {
         String stream_name = IDataType::getFileNameForStream(name, substream_path);
 
@@ -176,7 +178,7 @@ void MergeTreeReaderWide::addStreams(const String & name, const IDataType & type
             return;
 
         streams.emplace(stream_name, std::make_unique<MergeTreeReaderStream>(
-            data_part->disk, data_part->getFullRelativePath() + stream_name, DATA_FILE_EXTENSION,
+            data_part->volume->getDisk(), data_part->getFullRelativePath() + stream_name, DATA_FILE_EXTENSION,
             data_part->getMarksCount(), all_mark_ranges, settings, mark_cache,
             uncompressed_cache, data_part->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
             &data_part->index_granularity_info,

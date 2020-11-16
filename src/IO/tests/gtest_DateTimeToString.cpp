@@ -138,15 +138,15 @@ TEST_P(DateTimeToStringParamTestDateTime64, writeDateText)
     ASSERT_NO_FATAL_FAILURE(test(GetParam()));
 }
 
-static const Int32 NON_ZERO_TIME_T = 10 * 365 * 3600 * 24 + 123456;
+static const Int32 NON_ZERO_TIME_T = 10 * 365 * 3600 * 24 + 123456; /// NOTE This arithmetic is obviously wrong but it's ok for test.
 
 INSTANTIATE_TEST_SUITE_P(DateTimeToString, DateTimeToStringParamTestDayNum,
     ::testing::ValuesIn(std::initializer_list<DateTimeToStringParamTestCase<DayNum>>
     {
         {
-            "Zero DayNum has special representation of all zeroes despite pointing to 1970-01-01",
+            "Zero DayNum pointing to 1970-01-01",
             DayNum(0),
-            "0000-00-00"
+            "1970-01-01"
         },
         {
             "Non-Zero DayNum",
@@ -170,9 +170,9 @@ INSTANTIATE_TEST_SUITE_P(DateTimeToString, DateTimeToStringParamTestTimeT,
     ::testing::ValuesIn(std::initializer_list<DateTimeToStringParamTestCase<time_t>>
     {
         {
-            "Zero time_t has special representation of all-zeroes despite pointing to 1970-01-01 00:00:00",
+            "Zero time_t pointing to 1970-01-01 00:00:00 in UTC",
             time_t(0),
-            "0000-00-00 00:00:00"
+            "1970-01-01 00:00:00"
         },
         {
             "Non-Zero time_t is a valid date/time",
@@ -196,12 +196,12 @@ INSTANTIATE_TEST_SUITE_P(DateTimeToString, DateTimeToStringParamTestDateTime64,
         {
             "Zero DateTime64 with scale 0 string representation matches one of zero time_t",
             DateTime64WithScale{0, 0},
-            "0000-00-00 00:00:00"
+            "1970-01-01 00:00:00"
         },
         {
             "Zero DateTime64 with scale 3 string representation matches one of zero time_t with subsecond part",
             DateTime64WithScale{0, 3},
-            "0000-00-00 00:00:00.000"
+            "1970-01-01 00:00:00.000"
         },
         {
             "Non-Zero DateTime64 with scale 0",

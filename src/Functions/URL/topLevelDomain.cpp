@@ -21,7 +21,7 @@ struct ExtractTopLevelDomain
             if (host.data[host.size - 1] == '.')
                 host.size -= 1;
 
-            auto host_end = host.data + host.size;
+            const auto * host_end = host.data + host.size;
 
             Pos last_dot = find_last_symbols_or_null<'.'>(host.data, host_end);
             if (!last_dot)

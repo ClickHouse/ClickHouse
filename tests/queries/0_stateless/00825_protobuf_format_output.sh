@@ -5,12 +5,12 @@
 # build/utils/test-data-generator/ProtobufDelimitedMessagesSerializer
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 set -e -o pipefail
 
 # Run the client.
-$CLICKHOUSE_CLIENT --multiquery <<EOF
+$CLICKHOUSE_CLIENT -mnT <<EOF
 DROP TABLE IF EXISTS out_persons_00825;
 DROP TABLE IF EXISTS out_squares_00825;
 
@@ -57,6 +57,21 @@ SELECT 'SYNTAX2->';
 SELECT * FROM out_persons_00825 ORDER BY name FORMAT Protobuf SETTINGS format_schema = '$CURDIR/00825_protobuf_format_syntax2:Syntax2Person';
 SELECT 'SQUARES->';
 SELECT * FROM out_squares_00825 ORDER BY number FORMAT Protobuf SETTINGS format_schema = '$CURDIR/00825_protobuf_format:NumberAndSquare';
+
+SELECT '\n\n** ProtobufSingle **\n\n';
+
+SELECT * FROM out_persons_00825 ORDER BY name LIMIT 1 FORMAT ProtobufSingle SETTINGS format_schema = '$CURDIR/00825_protobuf_format:Person';
+SELECT 'ALTERNATIVE->';
+SELECT * FROM out_persons_00825 ORDER BY name LIMIT 1 FORMAT ProtobufSingle SETTINGS format_schema = '$CURDIR/00825_protobuf_format:AltPerson';
+SELECT 'STRINGS->';
+SELECT * FROM out_persons_00825 ORDER BY name LIMIT 1 FORMAT ProtobufSingle SETTINGS format_schema = '$CURDIR/00825_protobuf_format:StrPerson';
+SELECT 'SYNTAX2->';
+SELECT * FROM out_persons_00825 ORDER BY name LIMIT 1 FORMAT ProtobufSingle SETTINGS format_schema = '$CURDIR/00825_protobuf_format_syntax2:Syntax2Person';
+SELECT 'SQUARES->';
+SELECT * FROM out_squares_00825 ORDER BY number LIMIT 1 FORMAT ProtobufSingle SETTINGS format_schema = '$CURDIR/00825_protobuf_format:NumberAndSquare';
+
+-- Code: 546, e.displayText() = DB::Exception: The ProtobufSingle format can't be used to write multiple rows because this format doesn't have any row delimiter.
+SELECT * FROM out_persons_00825 ORDER BY name FORMAT ProtobufSingle SETTINGS format_schema = '$CURDIR/00825_protobuf_format:Person'; -- { clientError 546 }
 
 DROP TABLE IF EXISTS out_persons_00825;
 DROP TABLE IF EXISTS out_squares_00825;

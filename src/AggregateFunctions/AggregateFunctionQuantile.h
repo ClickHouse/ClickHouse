@@ -78,8 +78,8 @@ private:
     DataTypePtr & argument_type;
 
 public:
-    AggregateFunctionQuantile(const DataTypePtr & argument_type_, const Array & params)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many>>({argument_type_}, params)
+    AggregateFunctionQuantile(const DataTypes & argument_types_, const Array & params)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many>>(argument_types_, params)
         , levels(params, returns_many), level(levels.levels[0]), argument_type(this->argument_types[0])
     {
         if (!returns_many && levels.size() > 1)
@@ -138,10 +138,10 @@ public:
         this->data(place).deserialize(buf);
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         /// const_cast is required because some data structures apply finalizaton (like sorting) for obtain a result.
-        auto & data = this->data(const_cast<AggregateDataPtr>(place));
+        auto & data = this->data(place);
 
         if constexpr (returns_many)
         {
@@ -200,6 +200,12 @@ struct NameQuantilesDeterministic { static constexpr auto name = "quantilesDeter
 
 struct NameQuantileExact { static constexpr auto name = "quantileExact"; };
 struct NameQuantilesExact { static constexpr auto name = "quantilesExact"; };
+
+struct NameQuantileExactLow { static constexpr auto name = "quantileExactLow"; };
+struct NameQuantilesExactLow { static constexpr auto name = "quantilesExactLow"; };
+
+struct NameQuantileExactHigh { static constexpr auto name = "quantileExactHigh"; };
+struct NameQuantilesExactHigh { static constexpr auto name = "quantilesExactHigh"; };
 
 struct NameQuantileExactExclusive { static constexpr auto name = "quantileExactExclusive"; };
 struct NameQuantilesExactExclusive { static constexpr auto name = "quantilesExactExclusive"; };

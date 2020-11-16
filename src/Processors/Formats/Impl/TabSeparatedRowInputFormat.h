@@ -28,10 +28,14 @@ public:
 
     void resetParser() override;
 
-private:
+protected:
     bool with_names;
     bool with_types;
     const FormatSettings format_settings;
+
+    virtual bool readField(IColumn & column, const DataTypePtr & type, bool is_last_file_column);
+
+private:
     DataTypes data_types;
 
     using IndexesMap = std::unordered_map<String, size_t>;
@@ -43,15 +47,12 @@ private:
     std::vector<UInt8> read_columns;
     std::vector<size_t> columns_to_fill_with_default_values;
 
-    bool readField(IColumn & column, const DataTypePtr & type, bool is_last_file_column);
-
     void addInputColumn(const String & column_name);
     void setupAllColumnsByTableSchema();
     void fillUnreadColumnsWithDefaults(MutableColumns & columns, RowReadExtension & row_read_extension);
 
     bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out) override;
-    void tryDeserializeFiled(const DataTypePtr & type, IColumn & column, size_t file_column,
-                             ReadBuffer::Position & prev_pos, ReadBuffer::Position & curr_pos) override;
+    void tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column) override;
     bool isGarbageAfterField(size_t, ReadBuffer::Position pos) override { return *pos != '\n' && *pos != '\t'; }
 };
 

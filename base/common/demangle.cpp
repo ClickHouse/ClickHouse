@@ -1,16 +1,8 @@
 #include <common/demangle.h>
 
-#if defined(__has_feature)
-    #if __has_feature(memory_sanitizer)
-        #define MEMORY_SANITIZER 1
-    #endif
-#elif defined(__MEMORY_SANITIZER__)
-    #define MEMORY_SANITIZER 1
-#endif
+#if defined(_MSC_VER)
 
-#if _MSC_VER || MEMORY_SANITIZER
-
-DemangleResult tryDemangle(const char * name)
+DemangleResult tryDemangle(const char *)
 {
     return DemangleResult{};
 }

@@ -76,6 +76,21 @@ Friday
 {}
 "\\n\\u0000"
 "☺"
+--JSONExtractArrayRaw--
+[]
+[]
+[]
+['[]','[]']
+['-100','200','300']
+['1','2','3','4','5','"hello"']
+['1','2','3']
+['4','5','6']
+--JSONExtractKeysAndValuesRaw--
+[]
+[]
+[('a','"hello"'),('b','[-100,200,300]')]
+[('a','"hello"'),('b','[-100,200,300]'),('c','{"d":[121,144]}')]
+[('d','[121,144]')]
 --const/non-const mixed--
 a
 b
@@ -84,6 +99,7 @@ d
 e
 u
 v
+--show error: type should be const string
 --allow_simdjson=0--
 --JSONLength--
 2
@@ -92,6 +108,10 @@ v
 --JSONHas--
 1
 1
+0
+--isValidJSON--
+1
+0
 0
 --JSONKey--
 a
@@ -158,14 +178,6 @@ Friday
 {}
 "\\n\\u0000"
 "☺"
---const/non-const mixed--
-a
-b
-c
-d
-e
-u
-v
 --JSONExtractArrayRaw--
 []
 []
@@ -175,3 +187,18 @@ v
 ['1','2','3','4','5','"hello"']
 ['1','2','3']
 ['4','5','6']
+--JSONExtractKeysAndValuesRaw--
+[]
+[]
+[('a','"hello"'),('b','[-100,200,300]')]
+[('a','"hello"'),('b','[-100,200,300]'),('c','{"d":[121,144]}')]
+[('d','[121,144]')]
+--const/non-const mixed--
+a
+b
+c
+d
+e
+u
+v
+--show error: type should be const string

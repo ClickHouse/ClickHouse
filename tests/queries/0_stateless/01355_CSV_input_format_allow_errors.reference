@@ -1,0 +1,40 @@
+File generated:
+0,0
+1,0
+2,0
+3,0
+4,AAAAAAA
+5,0
+6,AAAAAAA
+******************
+attempt to parse w/o flags
+Return code: 117
+OK: stderr contains a message 'is not like Int64'
+******************
+attempt to parse with input_format_allow_errors_ratio=0.1
+Return code: 117
+OK: stderr contains a message 'Already have 1 errors out of 5 rows, which is 0.2'
+******************
+attempt to parse with input_format_allow_errors_ratio=0.3
+0	0
+1	0
+2	0
+3	0
+4	0
+5	0
+6	0
+Return code: 0
+******************
+attempt to parse with input_format_allow_errors_num=1
+Return code: 117
+OK: stderr contains a message 'Already have 2 errors out of 7 rows'
+******************
+attempt to parse with input_format_allow_errors_num=2
+0	0
+1	0
+2	0
+3	0
+4	0
+5	0
+6	0
+Return code: 0

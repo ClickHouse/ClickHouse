@@ -1,13 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 20
 toc_title: "\u0631\u0627\u0628\u0637 MySQL"
 ---
 
-# رابط خروجی زیر {#mysql-interface}
+# رابط MySQL {#mysql-interface}
 
-کلیک پروتکل سیم خروجی زیر را پشتیبانی می کند. این را می توان با فعال [\_وارد کردن](../operations/server_configuration_parameters/settings.md#server_configuration_parameters-mysql_port) تنظیم در پرونده پیکربندی:
+کلیک پروتکل سیم خروجی زیر را پشتیبانی می کند. این را می توان با فعال [_وارد کردن](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-mysql_port) تنظیم در پرونده پیکربندی:
 
 ``` xml
 <mysql_port>9004</mysql_port>
@@ -37,8 +37,8 @@ Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
 mysql>
 ```
 
-برای سازگاری با تمام مشتریان خروجی زیر, توصیه می شود برای مشخص کردن رمز عبور کاربر با [دو شی1](../operations/settings/settings_users.md#password_double_sha1_hex) در فایل پیکربندی.
-اگر رمز عبور کاربر مشخص شده است با استفاده از [SHA256](../operations/settings/settings_users.md#password_sha256_hex) برخی از مشتریان قادر نخواهد بود به تصدیق (رمز و نسخه های قدیمی خط فرمان ابزار خروجی زیر).
+برای سازگاری با تمام مشتریان خروجی زیر, توصیه می شود برای مشخص کردن رمز عبور کاربر با [دو شی1](../operations/settings/settings-users.md#password_double_sha1_hex) در فایل پیکربندی.
+اگر رمز عبور کاربر مشخص شده است با استفاده از [SHA256](../operations/settings/settings-users.md#password_sha256_hex) برخی از مشتریان قادر نخواهد بود به تصدیق (رمز و نسخه های قدیمی خط فرمان ابزار خروجی زیر).
 
 محدودیت ها:
 

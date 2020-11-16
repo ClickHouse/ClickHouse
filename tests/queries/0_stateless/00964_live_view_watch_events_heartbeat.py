@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 import os
 import sys
 import signal
@@ -23,7 +23,7 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
 
     client1.send('DROP TABLE IF EXISTS test.lv')
     client1.expect(prompt)
-    client1.send(' DROP TABLE IF EXISTS test.mt')
+    client1.send('DROP TABLE IF EXISTS test.mt')
     client1.expect(prompt)
     client1.send('SET live_view_heartbeat_interval=1')
     client1.expect(prompt)
@@ -31,20 +31,21 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     client1.expect(prompt)
     client1.send('CREATE LIVE VIEW test.lv WITH TIMEOUT AS SELECT sum(a) FROM test.mt')
     client1.expect(prompt)
-    client1.send('WATCH test.lv EVENTS')
+    client1.send('WATCH test.lv EVENTS FORMAT CSV')
+    client1.expect('Progress: 1.00 rows.*\)')
     client2.send('INSERT INTO test.mt VALUES (1)')
-    client1.expect('1.*' + end_of_block)
+    client2.expect(prompt)
+    client1.expect('Progress: 2.00 rows.*\)')
     client2.send('INSERT INTO test.mt VALUES (2),(3)')
-    client1.expect('[23].*' + end_of_block)
-    client1.expect('Progress: [23]\.00 rows.*\)')
+    client2.expect(prompt)
     # wait for heartbeat
-    client1.expect('Progress: [23]\.00 rows.*\)')
+    client1.expect('Progress: 3.00 rows.*\)')
     # send Ctrl-C
     client1.send('\x03', eol='')
     match = client1.expect('(%s)|([#\$] )' % prompt)
     if match.groups()[1]:
         client1.send(client1.command)
-        client1.expect(prompt)    
+        client1.expect(prompt)
     client1.send('DROP TABLE test.lv')
     client1.expect(prompt)
     client1.send('DROP TABLE test.mt')

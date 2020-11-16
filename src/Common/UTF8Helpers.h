@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/BitHelpers.h>
 #include <Poco/UTF8Encoding.h>
 
@@ -42,7 +42,7 @@ inline void syncForward(const UInt8 * & s, const UInt8 * const end)
 /// returns UTF-8 code point sequence length judging by it's first octet
 inline size_t seqLength(const UInt8 first_octet)
 {
-    if (first_octet < 0x80u)
+    if (first_octet < 0x80 || first_octet >= 0xF8)  /// The specs of UTF-8.
         return 1;
 
     const size_t bits = 8;
@@ -98,6 +98,19 @@ int queryConvert(const CharT * bytes, int length)
 /// `prefix` is used to compute the `\t` width which extends the string before
 /// and include `\t` to the nearest longer length with multiple of eight.
 size_t computeWidth(const UInt8 * data, size_t size, size_t prefix = 0) noexcept;
+
+
+/** Calculate the maximum number of bytes, so that substring of this size fits in 'limit' width.
+  *
+  * For example, we have string "x你好", it has 3 code points and visible width of 5 and byte size of 7.
+
+  * Suppose we have limit = 3.
+  * Then we have to return 4 as maximum number of bytes
+  *  and the truncated string will be "x你": two code points, visible width 3, byte size 4.
+  *
+  * The same result will be for limit 4, because the last character would not fit.
+  */
+size_t computeBytesBeforeWidth(const UInt8 * data, size_t size, size_t prefix, size_t limit) noexcept;
 
 }
 

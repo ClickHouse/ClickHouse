@@ -15,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
+    extern const int UNKNOWN_TYPE;
 }
 
 
@@ -25,7 +26,7 @@ ODBCBlockInputStream::ODBCBlockInputStream(
     , result{statement}
     , iterator{result.begin()}
     , max_block_size{max_block_size_}
-    , log(&Logger::get("ODBCBlockInputStream"))
+    , log(&Poco::Logger::get("ODBCBlockInputStream"))
 {
     if (sample_block.columns() != result.columnCount())
         throw Exception{"RecordSet contains " + toString(result.columnCount()) + " columns while " + toString(sample_block.columns())
@@ -86,6 +87,8 @@ namespace
             case ValueType::vtUUID:
                 assert_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.convert<std::string>()));
                 break;
+            default:
+                throw Exception("Unsupported value type", ErrorCodes::UNKNOWN_TYPE);
         }
     }
 

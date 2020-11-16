@@ -1,13 +1,5 @@
 <test>
 
-    <stop_conditions>
-        <all_of>
-            <total_time_ms>10000</total_time_ms>
-        </all_of>
-        <any_of>
-            <total_time_ms>20000</total_time_ms>
-        </any_of>
-    </stop_conditions>
 
 
     <substitutions>

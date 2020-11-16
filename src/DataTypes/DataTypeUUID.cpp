@@ -16,11 +16,16 @@ void DataTypeUUID::serializeText(const IColumn & column, size_t row_num, WriteBu
     writeText(UUID(assert_cast<const ColumnUInt128 &>(column).getData()[row_num]), ostr);
 }
 
-void DataTypeUUID::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void DataTypeUUID::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     UUID x;
     readText(x, istr);
     assert_cast<ColumnUInt128 &>(column).getData().push_back(x);
+}
+
+void DataTypeUUID::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    deserializeText(column, istr, settings);
 }
 
 void DataTypeUUID::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const

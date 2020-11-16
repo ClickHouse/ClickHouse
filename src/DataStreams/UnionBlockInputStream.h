@@ -253,7 +253,7 @@ private:
     bool started = false;
     bool all_read = false;
 
-    Logger * log = &Logger::get("UnionBlockInputStream");
+    Poco::Logger * log = &Poco::Logger::get("UnionBlockInputStream");
 };
 
 }

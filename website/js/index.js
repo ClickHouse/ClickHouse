@@ -23,18 +23,17 @@ $(document).ready(function () {
         });
         if (valid) {
             var data = JSON.stringify(serializeForm(meetup_form));
-            console.log(data);
             $.ajax({
                 url: '/meet-form/',
                 type: 'POST',
                 dataType: 'json',
                 data: data,
                 success: function () {
-                    meetup_form.html('<div class="alert alert-success"><h2>Thanks!</h2><p class="lead">We\'ll be in touch soon.</p></div>')
+                    meetup_form.html('<div class="alert alert-success mt-3"><h2>Thanks!</h2><p class="lead">We\'ll be in touch soon.</p></div>');
                     $('#meetup-form-error').html('');
                 },
                 error: function () {
-                    $('#meetup-form-error').html('<div class="alert alert-danger mt-3"><strong>Error!</strong> Unfortunately it didn\'t work for some reason, please try again or use the email address below.</div>')
+                    $('#meetup-form-error').html('<div class="alert alert-danger mt-3"><strong>Error!</strong> Unfortunately it didn\'t work for some reason, please try again or use the email address below.</div>');
                 }
             });
         }

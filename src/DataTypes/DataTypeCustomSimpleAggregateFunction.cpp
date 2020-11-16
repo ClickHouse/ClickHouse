@@ -1,14 +1,9 @@
 #include <Common/FieldVisitors.h>
 #include <Common/typeid_cast.h>
 
-#include <IO/ReadHelpers.h>
-
-#include <Columns/ColumnAggregateFunction.h>
-
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
@@ -30,12 +25,15 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static const std::vector<String> supported_functions{"any", "anyLast", "min", "max", "sum", "groupBitAnd", "groupBitOr", "groupBitXor"};
+static const std::vector<String> supported_functions{"any", "anyLast", "min",
+    "max", "sum", "sumWithOverflow", "groupBitAnd", "groupBitOr", "groupBitXor",
+    "sumMap", "minMap", "maxMap", "groupArrayArray", "groupUniqArrayArray"};
 
 
 String DataTypeCustomSimpleAggregateFunction::getName() const
 {
     std::stringstream stream;
+    stream.exceptions(std::ios::failbit);
     stream << "SimpleAggregateFunction(" << function->getName();
 
     if (!parameters.empty())
@@ -82,8 +80,11 @@ static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & argum
         {
             const ASTLiteral * lit = parameters[i]->as<ASTLiteral>();
             if (!lit)
-                throw Exception("Parameters to aggregate functions must be literals",
-                                ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS);
+                throw Exception(
+                    ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS,
+                    "Parameters to aggregate functions must be literals. "
+                    "Got parameter '{}' for function '{}'",
+                    parameters[i]->formatForErrorMessage(), function_name);
 
             params_row[i] = lit->value;
         }
@@ -107,7 +108,8 @@ static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & argum
     if (function_name.empty())
         throw Exception("Logical error: empty name of aggregate function passed", ErrorCodes::LOGICAL_ERROR);
 
-    function = AggregateFunctionFactory::instance().get(function_name, argument_types, params_row);
+    AggregateFunctionProperties properties;
+    function = AggregateFunctionFactory::instance().get(function_name, argument_types, params_row, properties);
 
     // check function
     if (std::find(std::begin(supported_functions), std::end(supported_functions), function->getName()) == std::end(supported_functions))

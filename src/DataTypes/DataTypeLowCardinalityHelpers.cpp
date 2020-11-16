@@ -34,7 +34,7 @@ DataTypePtr recursiveRemoveLowCardinality(const DataTypePtr & type)
             element = recursiveRemoveLowCardinality(element);
 
         if (tuple_type->haveExplicitNames())
-            return std::make_shared<DataTypeTuple>(elements, tuple_type->getElementNames());
+            return std::make_shared<DataTypeTuple>(elements, tuple_type->getElementNames(), tuple_type->serializeNames());
         else
             return std::make_shared<DataTypeTuple>(elements);
     }
@@ -52,7 +52,7 @@ ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column)
 
     if (const auto * column_array = typeid_cast<const ColumnArray *>(column.get()))
     {
-        auto & data = column_array->getDataPtr();
+        const auto & data = column_array->getDataPtr();
         auto data_no_lc = recursiveRemoveLowCardinality(data);
         if (data.get() == data_no_lc.get())
             return column;
@@ -62,7 +62,7 @@ ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column)
 
     if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()))
     {
-        auto & nested = column_const->getDataColumnPtr();
+        const auto & nested = column_const->getDataColumnPtr();
         auto nested_no_lc = recursiveRemoveLowCardinality(nested);
         if (nested.get() == nested_no_lc.get())
             return column;
@@ -98,7 +98,7 @@ ColumnPtr recursiveTypeConversion(const ColumnPtr & column, const DataTypePtr & 
 
     if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()))
     {
-        auto & nested = column_const->getDataColumnPtr();
+        const auto & nested = column_const->getDataColumnPtr();
         auto nested_no_lc = recursiveTypeConversion(nested, from_type, to_type);
         if (nested.get() == nested_no_lc.get())
             return column;
@@ -131,8 +131,8 @@ ColumnPtr recursiveTypeConversion(const ColumnPtr & column, const DataTypePtr & 
                 throw Exception("Unexpected column " + column->getName() + " for type " + from_type->getName(),
                                 ErrorCodes::ILLEGAL_COLUMN);
 
-            auto & nested_from = from_array_type->getNestedType();
-            auto & nested_to = to_array_type->getNestedType();
+            const auto & nested_from = from_array_type->getNestedType();
+            const auto & nested_to = to_array_type->getNestedType();
 
             return ColumnArray::create(
                     recursiveTypeConversion(column_array->getDataPtr(), nested_from, nested_to),
@@ -150,8 +150,8 @@ ColumnPtr recursiveTypeConversion(const ColumnPtr & column, const DataTypePtr & 
                                 ErrorCodes::ILLEGAL_COLUMN);
 
             auto columns = column_tuple->getColumns();
-            auto & from_elements = from_tuple_type->getElements();
-            auto & to_elements = to_tuple_type->getElements();
+            const auto & from_elements = from_tuple_type->getElements();
+            const auto & to_elements = to_tuple_type->getElements();
 
             bool has_converted = false;
 

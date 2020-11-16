@@ -152,9 +152,9 @@ private:
 
 protected:
 
-    Logger * log;
+    Poco::Logger * log;
 
-    PoolBase(unsigned max_items_, Logger * log_)
+    PoolBase(unsigned max_items_, Poco::Logger * log_)
        : max_items(max_items_), log(log_)
     {
         items.reserve(max_items);

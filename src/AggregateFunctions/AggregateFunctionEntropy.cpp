@@ -27,7 +27,7 @@ AggregateFunctionPtr createAggregateFunctionEntropy(const std::string & name, co
     if (num_args == 1)
     {
         /// Specialized implementation for single argument of numeric type.
-        if (auto res = createWithNumericBasedType<AggregateFunctionEntropy>(*argument_types[0], argument_types))
+        if (auto * res = createWithNumericBasedType<AggregateFunctionEntropy>(*argument_types[0], argument_types))
             return AggregateFunctionPtr(res);
     }
 

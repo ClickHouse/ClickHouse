@@ -1,0 +1,13 @@
+version: '2.3'
+services:
+    postgres1:
+        image: postgres
+        restart: always
+        environment:
+            POSTGRES_PASSWORD: mysecretpassword
+        ports:
+          - 5432:5432
+        networks:
+          default:
+            aliases:
+              - postgre-sql.local

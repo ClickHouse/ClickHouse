@@ -1,4 +1,5 @@
 #pragma once
+#include <optional>
 #include <Columns/IColumn.h>
 #include <Common/UInt128.h>
 
@@ -9,6 +10,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+/// Sort of a dictionary
 class IColumnUnique : public IColumn
 {
 public:
@@ -66,6 +68,25 @@ public:
     virtual UInt128 getHash() const = 0;
 
     const char * getFamilyName() const override { return "ColumnUnique"; }
+    TypeIndex getDataType() const override { return getNestedColumn()->getDataType(); }
+
+    /**
+     * Given some value (usually, of type @e ColumnType) @p value that is convertible to DB::StringRef, obtains its
+     * index in the DB::ColumnUnique::reverse_index hashtable.
+     *
+     * The reverse index (StringRef => UInt64) is built lazily, so there are two variants:
+     * - On the function call it's present. Therefore we obtain the index in O(1).
+     * - The reverse index is absent. We search for the index linearly.
+     *
+     * @see DB::ReverseIndex
+     * @see DB::ColumnUnique
+     *
+     * The most common example uses https://clickhouse.tech/docs/en/sql-reference/data-types/lowcardinality/ columns.
+     * Consider data type @e LC(String). The inner type here is @e String which is more or less a contiguous memory
+     * region, so it can be easily represented as a @e StringRef. So we pass that ref to this function and get its
+     * index in the dictionary, which can be used to operate with the indices column.
+     */
+    virtual std::optional<UInt64> getOrFindValueIndex(StringRef value) const = 0;
 
     void insert(const Field &) override
     {
@@ -140,6 +161,16 @@ public:
     void updateWeakHash32(WeakHash32 &) const override
     {
         throw Exception("Method updateWeakHash32 is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    void updateHashFast(SipHash &) const override
+    {
+        throw Exception("Method updateHashFast is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
+    {
+        throw Exception("Method compareColumn is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
     }
 };
 

@@ -1,0 +1,6 @@
+<test>
+    <query>SELECT any(-1 * (((-2 * (number * -3)) * -4) * -5))     FROM numbers(500000000)</query>
+    <query>SELECT anyLast(-1 * (((-2 * (number * -3)) * -4) * -5)) FROM numbers(500000000)</query>
+    <query>SELECT any(number * 2) as n, n * 3                      FROM numbers(500000000)</query>
+    <query>SELECT any(number * round(toInt64(number), -2))         FROM numbers(500000000)</query>
+</test>

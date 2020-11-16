@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 # Implementation specific behaviour on overflow. We may return error or produce empty string.
 ${CLICKHOUSE_CLIENT} --query="SELECT randomPrintableASCII(nan);" >/dev/null 2>&1 ||:

@@ -1,9 +1,8 @@
 import os.path
-import pytest
 
+import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
-
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance')
@@ -15,7 +14,7 @@ path_to_data = '/var/lib/clickhouse/'
 def started_cluster():
     try:
         cluster.start()
-        q('CREATE DATABASE test')
+        q('CREATE DATABASE test ENGINE = Ordinary')     # Different path in shadow/ with Atomic
 
         yield cluster
 
@@ -47,7 +46,7 @@ def backup_restore(started_cluster):
 
     expected = TSV('1970-01-02\t1\n1970-01-03\t2\n1970-01-04\t3\n1970-02-01\t31\n1970-02-02\t32\n1970-02-03\t33')
     res = q("SELECT * FROM test.tbl ORDER BY p")
-    assert(TSV(res) == expected)
+    assert (TSV(res) == expected)
 
     q("ALTER TABLE test.tbl FREEZE")
 
@@ -69,7 +68,7 @@ def test_restore(backup_restore):
     # Validate the attached parts are identical to the backup.
     expected = TSV('1970-01-02\t1\n1970-01-03\t2\n1970-01-04\t3\n1970-02-01\t31\n1970-02-02\t32\n1970-02-03\t33')
     res = q("SELECT * FROM test.tbl1 ORDER BY p")
-    assert(TSV(res) == expected)
+    assert (TSV(res) == expected)
 
     q("ALTER TABLE test.tbl1 UPDATE k=10 WHERE 1")
     q("SELECT sleep(2)")
@@ -77,7 +76,7 @@ def test_restore(backup_restore):
     # Validate mutation has been applied to all attached parts.
     expected = TSV('1970-01-02\t10\n1970-01-03\t10\n1970-01-04\t10\n1970-02-01\t10\n1970-02-02\t10\n1970-02-03\t10')
     res = q("SELECT * FROM test.tbl1 ORDER BY p")
-    assert(TSV(res) == expected)
+    assert (TSV(res) == expected)
 
     q("DROP TABLE IF EXISTS test.tbl1")
 
@@ -91,7 +90,7 @@ def test_attach_partition(backup_restore):
 
     expected = TSV('1970-01-04\t3\n1970-01-05\t4\n1970-02-03\t33\n1970-02-04\t34')
     res = q("SELECT * FROM test.tbl2 ORDER BY p")
-    assert(TSV(res) == expected)
+    assert (TSV(res) == expected)
 
     copy_backup_to_detached('test', 'tbl', 'tbl2')
 
@@ -102,17 +101,19 @@ def test_attach_partition(backup_restore):
     q("ALTER TABLE test.tbl2 ATTACH PARTITION 197002")
     q("SELECT sleep(2)")
 
-    expected = TSV('1970-01-02\t1\n1970-01-03\t2\n1970-01-04\t3\n1970-01-04\t3\n1970-01-05\t4\n1970-02-01\t31\n1970-02-02\t32\n1970-02-03\t33\n1970-02-03\t33\n1970-02-04\t34')
+    expected = TSV(
+        '1970-01-02\t1\n1970-01-03\t2\n1970-01-04\t3\n1970-01-04\t3\n1970-01-05\t4\n1970-02-01\t31\n1970-02-02\t32\n1970-02-03\t33\n1970-02-03\t33\n1970-02-04\t34')
     res = q("SELECT * FROM test.tbl2 ORDER BY p")
-    assert(TSV(res) == expected)
+    assert (TSV(res) == expected)
 
     q("ALTER TABLE test.tbl2 UPDATE k=10 WHERE 1")
     q("SELECT sleep(2)")
 
     # Validate mutation has been applied to all attached parts.
-    expected = TSV('1970-01-02\t10\n1970-01-03\t10\n1970-01-04\t10\n1970-01-04\t10\n1970-01-05\t10\n1970-02-01\t10\n1970-02-02\t10\n1970-02-03\t10\n1970-02-03\t10\n1970-02-04\t10')
+    expected = TSV(
+        '1970-01-02\t10\n1970-01-03\t10\n1970-01-04\t10\n1970-01-04\t10\n1970-01-05\t10\n1970-02-01\t10\n1970-02-02\t10\n1970-02-03\t10\n1970-02-03\t10\n1970-02-04\t10')
     res = q("SELECT * FROM test.tbl2 ORDER BY p")
-    assert(TSV(res) == expected)
+    assert (TSV(res) == expected)
 
     q("DROP TABLE IF EXISTS test.tbl2")
 
@@ -126,7 +127,7 @@ def test_replace_partition(backup_restore):
 
     expected = TSV('1970-01-04\t3\n1970-01-05\t4\n1970-02-03\t33\n1970-02-04\t34')
     res = q("SELECT * FROM test.tbl3 ORDER BY p")
-    assert(TSV(res) == expected)
+    assert (TSV(res) == expected)
 
     copy_backup_to_detached('test', 'tbl', 'tbl3')
 
@@ -138,7 +139,7 @@ def test_replace_partition(backup_restore):
 
     expected = TSV('1970-01-04\t3\n1970-01-05\t4\n1970-02-01\t31\n1970-02-02\t32\n1970-02-03\t33')
     res = q("SELECT * FROM test.tbl3 ORDER BY p")
-    assert(TSV(res) == expected)
+    assert (TSV(res) == expected)
 
     q("ALTER TABLE test.tbl3 UPDATE k=10 WHERE 1")
     q("SELECT sleep(2)")
@@ -146,6 +147,6 @@ def test_replace_partition(backup_restore):
     # Validate mutation has been applied to all copied parts.
     expected = TSV('1970-01-04\t10\n1970-01-05\t10\n1970-02-01\t10\n1970-02-02\t10\n1970-02-03\t10')
     res = q("SELECT * FROM test.tbl3 ORDER BY p")
-    assert(TSV(res) == expected)
+    assert (TSV(res) == expected)
 
     q("DROP TABLE IF EXISTS test.tbl3")

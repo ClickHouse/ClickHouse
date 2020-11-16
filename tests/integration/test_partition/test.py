@@ -3,7 +3,6 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
-
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance')
 q = instance.query
@@ -14,7 +13,7 @@ path_to_data = '/var/lib/clickhouse/'
 def started_cluster():
     try:
         cluster.start()
-        q('CREATE DATABASE test')
+        q('CREATE DATABASE test ENGINE = Ordinary')     # Different path in shadow/ with Atomic
 
         yield cluster
 
@@ -53,7 +52,7 @@ def partition_complex_assert_columns_txt():
     for part_name in parts.lines:
         path_to_columns = path_to_parts + part_name + '/columns.txt'
         # 2 header lines + 3 columns
-        assert exec_bash('cat {} | wc -l'.format(path_to_columns)) == u'5\n'
+        assert exec_bash('cat {} | wc -l'.format(path_to_columns)) == '5\n'
 
 
 def partition_complex_assert_checksums():
@@ -84,6 +83,8 @@ def partition_complex_assert_checksums():
                 "77d5af402ada101574f4da114f242e02\tshadow/1/data/test/partition/19700201_1_1_0/columns.txt\n" \
                 "88cdc31ded355e7572d68d8cde525d3a\tshadow/1/data/test/partition/19700201_1_1_0/p.bin\n" \
                 "9e688c58a5487b8eaf69c9e1005ad0bf\tshadow/1/data/test/partition/19700102_2_2_0/primary.idx\n" \
+                "c0904274faa8f3f06f35666cc9c5bd2f\tshadow/1/data/test/partition/19700102_2_2_0/default_compression_codec.txt\n" \
+                "c0904274faa8f3f06f35666cc9c5bd2f\tshadow/1/data/test/partition/19700201_1_1_0/default_compression_codec.txt\n" \
                 "c4ca4238a0b923820dcc509a6f75849b\tshadow/1/data/test/partition/19700102_2_2_0/count.txt\n" \
                 "c4ca4238a0b923820dcc509a6f75849b\tshadow/1/data/test/partition/19700201_1_1_0/count.txt\n" \
                 "cfcb770c3ecd0990dcceb1bde129e6c6\tshadow/1/data/test/partition/19700102_2_2_0/p.bin\n" \
@@ -107,7 +108,6 @@ def partition_table_complex(started_cluster):
 
 
 def test_partition_complex(partition_table_complex):
-
     partition_complex_assert_columns_txt()
 
     q("ALTER TABLE test.partition FREEZE")
@@ -129,7 +129,7 @@ def test_partition_complex(partition_table_complex):
     expected = TSV('31\t1\t2\n'
                    '1\t2\t3')
     res = q("SELECT toUInt16(p), k, v1 FROM test.partition ORDER BY k")
-    assert(TSV(res) == expected)
+    assert (TSV(res) == expected)
 
 
 @pytest.fixture
@@ -145,7 +145,7 @@ def cannot_attach_active_part_table(started_cluster):
 
 def test_cannot_attach_active_part(cannot_attach_active_part_table):
     error = instance.client.query_and_get_error("ALTER TABLE test.attach_active ATTACH PART '../1_2_2_0'")
-    print error
+    print(error)
     assert 0 <= error.find('Invalid part name')
 
     res = q("SElECT name FROM system.parts WHERE table='attach_active' AND database='test' ORDER BY name")
@@ -173,10 +173,10 @@ def test_attach_check_all_parts(attach_check_all_parts_table):
     path_to_detached = path_to_data + 'data/test/attach_partition/detached/'
     exec_bash('mkdir {}'.format(path_to_detached + '0_5_5_0'))
     exec_bash('cp -pr {} {}'.format(path_to_detached + '0_1_1_0', path_to_detached + 'attaching_0_6_6_0'))
-    exec_bash('cp -pr {} {}'.format(path_to_detached + '0_3_3_0', path_to_detached +  'deleting_0_7_7_0'))
+    exec_bash('cp -pr {} {}'.format(path_to_detached + '0_3_3_0', path_to_detached + 'deleting_0_7_7_0'))
 
     error = instance.client.query_and_get_error("ALTER TABLE test.attach_partition ATTACH PARTITION 0")
-    assert 0 <= error.find('No columns in part 0_5_5_0')
+    assert 0 <= error.find('No columns in part 0_5_5_0') or 0 <= error.find('No columns.txt in part 0_5_5_0')
 
     parts = q("SElECT name FROM system.parts WHERE table='attach_partition' AND database='test' ORDER BY name")
     assert TSV(parts) == TSV('1_2_2_0\n1_4_4_0')
@@ -222,15 +222,18 @@ def test_drop_detached_parts(drop_detached_parts_table):
     exec_bash('mkdir {}'.format(path_to_detached + 'any_other_name'))
     exec_bash('mkdir {}'.format(path_to_detached + 'prefix_1_2_2_0_0'))
 
-    error = instance.client.query_and_get_error("ALTER TABLE test.drop_detached DROP DETACHED PART '../1_2_2_0'", settings=s)
+    error = instance.client.query_and_get_error("ALTER TABLE test.drop_detached DROP DETACHED PART '../1_2_2_0'",
+                                                settings=s)
     assert 0 <= error.find('Invalid part name')
 
     q("ALTER TABLE test.drop_detached DROP DETACHED PART '0_1_1_0'", settings=s)
 
-    error = instance.client.query_and_get_error("ALTER TABLE test.drop_detached DROP DETACHED PART 'attaching_0_6_6_0'", settings=s)
+    error = instance.client.query_and_get_error("ALTER TABLE test.drop_detached DROP DETACHED PART 'attaching_0_6_6_0'",
+                                                settings=s)
     assert 0 <= error.find('Cannot drop part')
 
-    error = instance.client.query_and_get_error("ALTER TABLE test.drop_detached DROP DETACHED PART 'deleting_0_7_7_0'", settings=s)
+    error = instance.client.query_and_get_error("ALTER TABLE test.drop_detached DROP DETACHED PART 'deleting_0_7_7_0'",
+                                                settings=s)
     assert 0 <= error.find('Cannot drop part')
 
     q("ALTER TABLE test.drop_detached DROP DETACHED PART 'any_other_name'", settings=s)

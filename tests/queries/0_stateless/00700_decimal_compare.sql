@@ -19,7 +19,7 @@ INSERT INTO decimal (a, b, c, d, e, f, g, h, i, j) VALUES (-42, -42, -42, -0.42,
 
 SELECT a > toFloat64(0) FROM decimal; -- { serverError 43 }
 SELECT g > toFloat32(0) FROM decimal; -- { serverError 43 }
-SELECT a > '0.0' FROM decimal; -- { serverError 43 }
+SELECT a > '0.0' FROM decimal ORDER BY a;
 
 SELECT a, b, a = b, a < b, a > b, a != b, a <= b, a >= b FROM decimal ORDER BY a;
 SELECT a, g, a = g, a < g, a > g, a != g, a <= g, a >= g FROM decimal ORDER BY a;

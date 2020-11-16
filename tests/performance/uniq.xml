@@ -1,16 +1,10 @@
-<test>
+<test max_ignored_relative_change="0.7">
 
     <preconditions>
         <table_exists>hits_100m_single</table_exists>
         <ram_size>30000000000</ram_size>
     </preconditions>
 
-    <stop_conditions>
-        <any_of>
-            <min_time_not_changing_for_ms>5000</min_time_not_changing_for_ms>
-            <total_time_ms>20000</total_time_ms>
-        </any_of>
-    </stop_conditions>
 
 
     <settings>
@@ -21,7 +15,12 @@
         <substitution>
            <name>key</name>
            <values>
-               <value>1</value>
+               <!--
+                    1 as a key doesn't make much sense - the queries are either
+                    too long in case of uniqExact or too short in case of limited
+                    uniq, so the result is drowned by the noise.
+                    <value>1</value>
+                -->
                <value>SearchEngineID</value>
                <value>RegionID</value>
                <value>SearchPhrase</value>

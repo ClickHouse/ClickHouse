@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 58
 toc_title: Recomendaciones de uso
 ---
@@ -46,7 +46,7 @@ Las páginas enormes permanentes tampoco necesitan ser asignadas.
 ## Subsistema de almacenamiento {#storage-subsystem}
 
 Si su presupuesto le permite usar SSD, use SSD.
-Si no, utilice el disco duro. Discos Duros SATA de 7200 RPM va a hacer.
+Si no, use HDD. Los discos duros SATA 7200 RPM servirán.
 
 Dar preferencia a una gran cantidad de servidores con discos duros locales sobre un número menor de servidores con estantes de discos conectados.
 Pero para almacenar archivos con consultas raras, los estantes funcionarán.
@@ -59,7 +59,7 @@ Al crear RAID-10, seleccione el `far` diseño.
 Si su presupuesto lo permite, elija RAID-10.
 
 Si tiene más de 4 discos, utilice RAID-6 (preferido) o RAID-50, en lugar de RAID-5.
-Cuando use RAID-5, RAID-6 o RAID-50, siempre aumente stripe\_cache\_size, ya que el valor predeterminado generalmente no es la mejor opción.
+Cuando use RAID-5, RAID-6 o RAID-50, siempre aumente stripe_cache_size, ya que el valor predeterminado generalmente no es la mejor opción.
 
 ``` bash
 $ echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size
@@ -105,7 +105,7 @@ Si desea dividir un clúster ZooKeeper existente en dos, la forma correcta es au
 
 No ejecute ZooKeeper en los mismos servidores que ClickHouse. Porque ZooKeeper es muy sensible a la latencia y ClickHouse puede utilizar todos los recursos del sistema disponibles.
 
-Con la configuración predeterminada, Cuidador es una bomba de tiempo:
+Con la configuración predeterminada, ZooKeeper es una bomba de tiempo:
 
 > El servidor ZooKeeper no eliminará archivos de instantáneas y registros antiguos cuando utilice la configuración predeterminada (consulte autopurge), y esto es responsabilidad del operador.
 

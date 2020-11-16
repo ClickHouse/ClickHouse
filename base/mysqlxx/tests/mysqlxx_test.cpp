@@ -68,10 +68,10 @@ int main(int, char **)
             Queries queries;
             queries.push_back(query);
 
-            for (auto & query : queries)
+            for (auto & q : queries)
             {
-                std::cerr << query.str() << std::endl;
-                std::cerr << query.store().at(0) << std::endl;
+                std::cerr << q.str() << std::endl;
+                std::cerr << q.store().at(0) << std::endl;
             }
         }
 

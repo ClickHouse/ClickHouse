@@ -245,6 +245,7 @@ public:
         {
             DB::writeIntBinary<size_t>(this->data(place).total_values, buf);
             std::ostringstream rng_stream;
+            rng_stream.exceptions(std::ios::failbit);
             rng_stream << this->data(place).rng;
             DB::writeStringBinary(rng_stream.str(), buf);
         }
@@ -275,6 +276,7 @@ public:
             std::string rng_string;
             DB::readStringBinary(rng_string, buf);
             std::istringstream rng_stream(rng_string);
+            rng_stream.exceptions(std::ios::failbit);
             rng_stream >> this->data(place).rng;
         }
 
@@ -282,7 +284,7 @@ public:
         // if constexpr (Trait::sampler == Sampler::DETERMINATOR)
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         const auto & value = this->data(place).value;
         size_t size = value.size();
@@ -295,7 +297,12 @@ public:
         if (size)
         {
             typename ColumnVector<T>::Container & data_to = assert_cast<ColumnVector<T> &>(arr_to.getData()).getData();
-            data_to.insert(this->data(place).value.begin(), this->data(place).value.end());
+            if constexpr (is_big_int_v<T>)
+                // is data_to empty? we should probably use std::vector::insert then
+                for (auto it = this->data(place).value.begin(); it != this->data(place).value.end(); it++)
+                    data_to.push_back(*it);
+            else
+                data_to.insert(this->data(place).value.begin(), this->data(place).value.end());
         }
     }
 
@@ -559,6 +566,7 @@ public:
         {
             DB::writeIntBinary<size_t>(data(place).total_values, buf);
             std::ostringstream rng_stream;
+            rng_stream.exceptions(std::ios::failbit);
             rng_stream << data(place).rng;
             DB::writeStringBinary(rng_stream.str(), buf);
         }
@@ -593,6 +601,7 @@ public:
             std::string rng_string;
             DB::readStringBinary(rng_string, buf);
             std::istringstream rng_stream(rng_string);
+            rng_stream.exceptions(std::ios::failbit);
             rng_stream >> data(place).rng;
         }
 
@@ -600,7 +609,7 @@ public:
         // if constexpr (Trait::sampler == Sampler::DETERMINATOR)
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         auto & column_array = assert_cast<ColumnArray &>(to);
 
@@ -815,7 +824,7 @@ public:
         data(place).last = prev;
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         auto & column_array = assert_cast<ColumnArray &>(to);
 

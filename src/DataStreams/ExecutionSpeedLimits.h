@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Poco/Timespan.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <DataStreams/SizeLimits.h>
 
 namespace DB
@@ -23,9 +23,9 @@ public:
     Poco::Timespan timeout_before_checking_execution_speed = 0;
 
     /// Pause execution in case if speed limits were exceeded.
-    void throttle(size_t read_rows, size_t read_bytes, size_t total_rows_to_read, UInt64 total_elapsed_microseconds);
+    void throttle(size_t read_rows, size_t read_bytes, size_t total_rows_to_read, UInt64 total_elapsed_microseconds) const;
 
-    bool checkTimeLimit(UInt64 elapsed_ns, OverflowMode overflow_mode);
+    bool checkTimeLimit(UInt64 elapsed_ns, OverflowMode overflow_mode) const;
 };
 
 }

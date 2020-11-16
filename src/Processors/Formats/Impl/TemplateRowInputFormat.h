@@ -42,8 +42,7 @@ private:
     [[noreturn]] void throwUnexpectedEof();
 
     bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out) override;
-    void tryDeserializeFiled(const DataTypePtr & type, IColumn & column, size_t file_column, ReadBuffer::Position & prev_pos,
-                             ReadBuffer::Position & curr_pos) override;
+    void tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column) override;
     bool isGarbageAfterField(size_t after_col_idx, ReadBuffer::Position pos) override;
     void writeErrorStringForWrongDelimiter(WriteBuffer & out, const String & description, const String & delim);
 
@@ -51,19 +50,19 @@ private:
 
 private:
     PeekableReadBuffer buf;
-    DataTypes data_types;
+    const DataTypes data_types;
 
     FormatSettings settings;
     const bool ignore_spaces;
-    ParsedTemplateFormatString format;
-    ParsedTemplateFormatString row_format;
+    const ParsedTemplateFormatString format;
+    const ParsedTemplateFormatString row_format;
 
     size_t format_data_idx;
     bool end_of_stream = false;
     std::vector<size_t> always_default_columns;
-    char default_csv_delimiter;
+    const char default_csv_delimiter;
 
-    std::string row_between_delimiter;
+    const std::string row_between_delimiter;
 };
 
 }

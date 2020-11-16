@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 
 #if defined(__x86_64__) || defined(__i386__)
 #include <cpuid.h>
@@ -98,13 +98,13 @@ union CpuInfo
 {
     UInt32 info[4];
 
-    struct
+    struct Registers
     {
         UInt32 eax;
         UInt32 ebx;
         UInt32 ecx;
         UInt32 edx;
-    };
+    } registers;
 
     inline CpuInfo(UInt32 op) noexcept { cpuid(op, info); }
 
@@ -117,67 +117,67 @@ union CpuInfo
 
 bool haveRDTSCP() noexcept
 {
-    return (CpuInfo(0x80000001).edx >> 27) & 1u;
+    return (CpuInfo(0x80000001).registers.edx >> 27) & 1u;
 }
 
 bool haveSSE() noexcept
 {
-    return (CpuInfo(0x1).edx >> 25) & 1u;
+    return (CpuInfo(0x1).registers.edx >> 25) & 1u;
 }
 
 bool haveSSE2() noexcept
 {
-    return (CpuInfo(0x1).edx >> 26) & 1u;
+    return (CpuInfo(0x1).registers.edx >> 26) & 1u;
 }
 
 bool haveSSE3() noexcept
 {
-    return CpuInfo(0x1).ecx & 1u;
+    return CpuInfo(0x1).registers.ecx & 1u;
 }
 
 bool havePCLMUL() noexcept
 {
-    return (CpuInfo(0x1).ecx >> 1) & 1u;
+    return (CpuInfo(0x1).registers.ecx >> 1) & 1u;
 }
 
 bool haveSSSE3() noexcept
 {
-    return (CpuInfo(0x1).ecx >> 9) & 1u;
+    return (CpuInfo(0x1).registers.ecx >> 9) & 1u;
 }
 
 bool haveSSE41() noexcept
 {
-    return (CpuInfo(0x1).ecx >> 19) & 1u;
+    return (CpuInfo(0x1).registers.ecx >> 19) & 1u;
 }
 
 bool haveSSE42() noexcept
 {
-    return (CpuInfo(0x1).ecx >> 20) & 1u;
+    return (CpuInfo(0x1).registers.ecx >> 20) & 1u;
 }
 
 bool haveF16C() noexcept
 {
-    return (CpuInfo(0x1).ecx >> 29) & 1u;
+    return (CpuInfo(0x1).registers.ecx >> 29) & 1u;
 }
 
 bool havePOPCNT() noexcept
 {
-    return (CpuInfo(0x1).ecx >> 23) & 1u;
+    return (CpuInfo(0x1).registers.ecx >> 23) & 1u;
 }
 
 bool haveAES() noexcept
 {
-    return (CpuInfo(0x1).ecx >> 25) & 1u;
+    return (CpuInfo(0x1).registers.ecx >> 25) & 1u;
 }
 
 bool haveXSAVE() noexcept
 {
-    return (CpuInfo(0x1).ecx >> 26) & 1u;
+    return (CpuInfo(0x1).registers.ecx >> 26) & 1u;
 }
 
 bool haveOSXSAVE() noexcept
 {
-    return (CpuInfo(0x1).ecx >> 27) & 1u;
+    return (CpuInfo(0x1).registers.ecx >> 27) & 1u;
 }
 
 bool haveAVX() noexcept
@@ -187,7 +187,7 @@ bool haveAVX() noexcept
     // https://bugs.chromium.org/p/chromium/issues/detail?id=375968
     return haveOSXSAVE()                           // implies haveXSAVE()
            && (our_xgetbv(0) & 6u) == 6u              // XMM state and YMM state are enabled by OS
-           && ((CpuInfo(0x1).ecx >> 28) & 1u); // AVX bit
+           && ((CpuInfo(0x1).registers.ecx >> 28) & 1u); // AVX bit
 #else
     return false;
 #endif
@@ -195,22 +195,22 @@ bool haveAVX() noexcept
 
 bool haveFMA() noexcept
 {
-    return haveAVX() && ((CpuInfo(0x1).ecx >> 12) & 1u);
+    return haveAVX() && ((CpuInfo(0x1).registers.ecx >> 12) & 1u);
 }
 
 bool haveAVX2() noexcept
 {
-    return haveAVX() && ((CpuInfo(0x7, 0).ebx >> 5) & 1u);
+    return haveAVX() && ((CpuInfo(0x7, 0).registers.ebx >> 5) & 1u);
 }
 
 bool haveBMI1() noexcept
 {
-    return (CpuInfo(0x7, 0).ebx >> 3) & 1u;
+    return (CpuInfo(0x7, 0).registers.ebx >> 3) & 1u;
 }
 
 bool haveBMI2() noexcept
 {
-    return (CpuInfo(0x7, 0).ebx >> 8) & 1u;
+    return (CpuInfo(0x7, 0).registers.ebx >> 8) & 1u;
 }
 
 bool haveAVX512F() noexcept
@@ -220,8 +220,8 @@ bool haveAVX512F() noexcept
     return haveOSXSAVE()                           // implies haveXSAVE()
            && (our_xgetbv(0) & 6u) == 6u              // XMM state and YMM state are enabled by OS
            && ((our_xgetbv(0) >> 5) & 7u) == 7u       // ZMM state is enabled by OS
-           && CpuInfo(0x0).eax >= 0x7          // leaf 7 is present
-           && ((CpuInfo(0x7).ebx >> 16) & 1u); // AVX512F bit
+           && CpuInfo(0x0).registers.eax >= 0x7          // leaf 7 is present
+           && ((CpuInfo(0x7).registers.ebx >> 16) & 1u); // AVX512F bit
 #else
     return false;
 #endif
@@ -229,82 +229,82 @@ bool haveAVX512F() noexcept
 
 bool haveAVX512DQ() noexcept
 {
-    return haveAVX512F() && ((CpuInfo(0x7, 0).ebx >> 17) & 1u);
+    return haveAVX512F() && ((CpuInfo(0x7, 0).registers.ebx >> 17) & 1u);
 }
 
 bool haveRDSEED() noexcept
 {
-    return CpuInfo(0x0).eax >= 0x7 && ((CpuInfo(0x7, 0).ebx >> 18) & 1u);
+    return CpuInfo(0x0).registers.eax >= 0x7 && ((CpuInfo(0x7, 0).registers.ebx >> 18) & 1u);
 }
 
 bool haveADX() noexcept
 {
-    return CpuInfo(0x0).eax >= 0x7 && ((CpuInfo(0x7, 0).ebx >> 19) & 1u);
+    return CpuInfo(0x0).registers.eax >= 0x7 && ((CpuInfo(0x7, 0).registers.ebx >> 19) & 1u);
 }
 
 bool haveAVX512IFMA() noexcept
 {
-    return haveAVX512F() && ((CpuInfo(0x7, 0).ebx >> 21) & 1u);
+    return haveAVX512F() && ((CpuInfo(0x7, 0).registers.ebx >> 21) & 1u);
 }
 
 bool havePCOMMIT() noexcept
 {
-    return CpuInfo(0x0).eax >= 0x7 && ((CpuInfo(0x7, 0).ebx >> 22) & 1u);
+    return CpuInfo(0x0).registers.eax >= 0x7 && ((CpuInfo(0x7, 0).registers.ebx >> 22) & 1u);
 }
 
 bool haveCLFLUSHOPT() noexcept
 {
-    return CpuInfo(0x0).eax >= 0x7 && ((CpuInfo(0x7, 0).ebx >> 23) & 1u);
+    return CpuInfo(0x0).registers.eax >= 0x7 && ((CpuInfo(0x7, 0).registers.ebx >> 23) & 1u);
 }
 
 bool haveCLWB() noexcept
 {
-    return CpuInfo(0x0).eax >= 0x7 && ((CpuInfo(0x7, 0).ebx >> 24) & 1u);
+    return CpuInfo(0x0).registers.eax >= 0x7 && ((CpuInfo(0x7, 0).registers.ebx >> 24) & 1u);
 }
 
 bool haveAVX512PF() noexcept
 {
-    return haveAVX512F() && ((CpuInfo(0x7, 0).ebx >> 26) & 1u);
+    return haveAVX512F() && ((CpuInfo(0x7, 0).registers.ebx >> 26) & 1u);
 }
 
 bool haveAVX512ER() noexcept
 {
-    return haveAVX512F() && ((CpuInfo(0x7, 0).ebx >> 27) & 1u);
+    return haveAVX512F() && ((CpuInfo(0x7, 0).registers.ebx >> 27) & 1u);
 }
 
 bool haveAVX512CD() noexcept
 {
-    return haveAVX512F() && ((CpuInfo(0x7, 0).ebx >> 28) & 1u);
+    return haveAVX512F() && ((CpuInfo(0x7, 0).registers.ebx >> 28) & 1u);
 }
 
 bool haveSHA() noexcept
 {
-    return CpuInfo(0x0).eax >= 0x7 && ((CpuInfo(0x7, 0).ebx >> 29) & 1u);
+    return CpuInfo(0x0).registers.eax >= 0x7 && ((CpuInfo(0x7, 0).registers.ebx >> 29) & 1u);
 }
 
 bool haveAVX512BW() noexcept
 {
-    return haveAVX512F() && ((CpuInfo(0x7, 0).ebx >> 30) & 1u);
+    return haveAVX512F() && ((CpuInfo(0x7, 0).registers.ebx >> 30) & 1u);
 }
 
 bool haveAVX512VL() noexcept
 {
-    return haveAVX512F() && ((CpuInfo(0x7, 0).ebx >> 31) & 1u);
+    return haveAVX512F() && ((CpuInfo(0x7, 0).registers.ebx >> 31) & 1u);
 }
 
 bool havePREFETCHWT1() noexcept
 {
-    return CpuInfo(0x0).eax >= 0x7 && ((CpuInfo(0x7, 0).ecx >> 0) & 1u);
+    return CpuInfo(0x0).registers.eax >= 0x7 && ((CpuInfo(0x7, 0).registers.ecx >> 0) & 1u);
 }
 
 bool haveAVX512VBMI() noexcept
 {
-    return haveAVX512F() && ((CpuInfo(0x7, 0).ecx >> 1) & 1u);
+    return haveAVX512F() && ((CpuInfo(0x7, 0).registers.ecx >> 1) & 1u);
 }
 
 bool haveRDRAND() noexcept
 {
-    return CpuInfo(0x0).eax >= 0x7 && ((CpuInfo(0x1).ecx >> 30) & 1u);
+    return CpuInfo(0x0).registers.eax >= 0x7 && ((CpuInfo(0x1).registers.ecx >> 30) & 1u);
 }
 
 struct CpuFlagsCache

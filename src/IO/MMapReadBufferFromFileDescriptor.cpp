@@ -34,7 +34,7 @@ void MMapReadBufferFromFileDescriptor::init(int fd_, size_t offset, size_t lengt
     {
         void * buf = mmap(nullptr, length, PROT_READ, MAP_PRIVATE, fd, offset);
         if (MAP_FAILED == buf)
-            throwFromErrno("MMapReadBufferFromFileDescriptor: Cannot mmap " + formatReadableSizeWithBinarySuffix(length) + ".",
+            throwFromErrno(fmt::format("MMapReadBufferFromFileDescriptor: Cannot mmap {}.", ReadableSize(length)),
                 ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
         BufferBase::set(static_cast<char *>(buf), length, 0);
@@ -84,7 +84,7 @@ MMapReadBufferFromFileDescriptor::~MMapReadBufferFromFileDescriptor()
 void MMapReadBufferFromFileDescriptor::finish()
 {
     if (0 != munmap(internalBuffer().begin(), length))
-        throwFromErrno("MMapReadBufferFromFileDescriptor: Cannot munmap " + formatReadableSizeWithBinarySuffix(length) + ".",
+        throwFromErrno(fmt::format("MMapReadBufferFromFileDescriptor: Cannot munmap {}.", ReadableSize(length)),
             ErrorCodes::CANNOT_MUNMAP);
 
     length = 0;

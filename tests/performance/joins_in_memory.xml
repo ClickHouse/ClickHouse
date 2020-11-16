@@ -1,12 +1,4 @@
 <test>
-
-    <stop_conditions>
-        <any_of>
-            <iterations>10</iterations>
-        </any_of>
-    </stop_conditions>
-
-
     <create_query>CREATE TABLE ints (i64 Int64, i32 Int32, i16 Int16, i8 Int8) ENGINE = Memory</create_query>
 
     <fill_query>INSERT INTO ints SELECT number AS i64, i64 AS i32, i64 AS i16, i64 AS i8 FROM numbers(10000)</fill_query>
@@ -15,33 +7,33 @@
     <fill_query>INSERT INTO ints SELECT 30000 + number % 10 AS i64, i64 AS i32, i64 AS i16, i64 AS i8 FROM numbers(10000)</fill_query>
     <fill_query>INSERT INTO ints SELECT 40000 + number % 1 AS i64, i64 AS i32, i64 AS i16, i64 AS i8 FROM numbers(10000)</fill_query>
 
-    <query tag='ANY LEFT'>SELECT COUNT() FROM ints l ANY LEFT JOIN ints r USING i64 WHERE i32 = 200042</query>
-    <query tag='ANY LEFT KEY'>SELECT COUNT() FROM ints l ANY LEFT JOIN ints r USING i64,i32,i16,i8 WHERE i32 = 200042</query>
-    <query tag='ANY LEFT ON'>SELECT COUNT() FROM ints l ANY LEFT JOIN ints r ON l.i64 = r.i64 WHERE i32 = 200042</query>
-    <query tag='ANY LEFT IN'>SELECT COUNT() FROM ints l ANY LEFT JOIN ints r USING i64 WHERE i32 IN(42, 100042, 200042, 300042, 400042)</query>
+    <query short='1' tag='ANY LEFT'>SELECT COUNT() FROM ints l ANY LEFT JOIN ints r USING i64 WHERE i32 = 20042</query>
+    <query short='1' tag='ANY LEFT KEY'>SELECT COUNT() FROM ints l ANY LEFT JOIN ints r USING i64,i32,i16,i8 WHERE i32 = 20042</query>
+    <query short='1' tag='ANY LEFT ON'>SELECT COUNT() FROM ints l ANY LEFT JOIN ints r ON l.i64 = r.i64 WHERE i32 = 20042</query>
+    <query short='1' tag='ANY LEFT IN'>SELECT COUNT() FROM ints l ANY LEFT JOIN ints r USING i64 WHERE i32 IN(42, 10042, 20042, 30042, 40042)</query>
 
-    <query tag='INNER'>SELECT COUNT() FROM ints l INNER JOIN ints r USING i64 WHERE i32 = 200042</query>
-    <query tag='INNER KEY'>SELECT COUNT() FROM ints l INNER JOIN ints r USING i64,i32,i16,i8 WHERE i32 = 200042</query>
-    <query tag='INNER ON'>SELECT COUNT() FROM ints l INNER JOIN ints r ON l.i64 = r.i64 WHERE i32 = 200042</query>
-    <query tag='INNER IN'>SELECT COUNT() FROM ints l INNER JOIN ints r USING i64 WHERE i32 IN(42, 100042, 200042, 300042, 400042)</query>
+    <query tag='INNER'>SELECT COUNT() FROM ints l INNER JOIN ints r USING i64 WHERE i32 = 20042</query>
+    <query tag='INNER KEY'>SELECT COUNT() FROM ints l INNER JOIN ints r USING i64,i32,i16,i8 WHERE i32 = 20042</query>
+    <query tag='INNER ON'>SELECT COUNT() FROM ints l INNER JOIN ints r ON l.i64 = r.i64 WHERE i32 = 20042</query>
+    <query tag='INNER IN'>SELECT COUNT() FROM ints l INNER JOIN ints r USING i64 WHERE i32 IN(42, 10042, 20042, 30042, 40042)</query>
 
-    <query tag='LEFT'>SELECT COUNT() FROM ints l LEFT JOIN ints r USING i64 WHERE i32 = 200042</query>
-    <query tag='LEFT KEY'>SELECT COUNT() FROM ints l LEFT JOIN ints r USING i64,i32,i16,i8 WHERE i32 = 200042</query>
-    <query tag='LEFT ON'>SELECT COUNT() FROM ints l LEFT JOIN ints r ON l.i64 = r.i64 WHERE i32 = 200042</query>
-    <query tag='LEFT IN'>SELECT COUNT() FROM ints l LEFT JOIN ints r USING i64 WHERE i32 IN(42, 100042, 200042, 300042, 400042)</query>
+    <query tag='LEFT'>SELECT COUNT() FROM ints l LEFT JOIN ints r USING i64 WHERE i32 = 20042</query>
+    <query tag='LEFT KEY'>SELECT COUNT() FROM ints l LEFT JOIN ints r USING i64,i32,i16,i8 WHERE i32 = 20042</query>
+    <query tag='LEFT ON'>SELECT COUNT() FROM ints l LEFT JOIN ints r ON l.i64 = r.i64 WHERE i32 = 20042</query>
+    <query tag='LEFT IN'>SELECT COUNT() FROM ints l LEFT JOIN ints r USING i64 WHERE i32 IN(42, 10042, 20042, 30042, 40042)</query>
 
-    <query tag='RIGHT'>SELECT COUNT() FROM ints l RIGHT JOIN ints r USING i64 WHERE i32 = 200042</query>
-    <query tag='RIGHT KEY'>SELECT COUNT() FROM ints l RIGHT JOIN ints r USING i64,i32,i16,i8 WHERE i32 = 200042</query>
-    <query tag='RIGHT ON'>SELECT COUNT() FROM ints l RIGHT JOIN ints r ON l.i64 = r.i64 WHERE i32 = 200042</query>
-    <query tag='RIGHT IN'>SELECT COUNT() FROM ints l RIGHT JOIN ints r USING i64 WHERE i32 IN(42, 100042, 200042, 300042, 400042)</query>
+    <query tag='RIGHT'>SELECT COUNT() FROM ints l RIGHT JOIN ints r USING i64 WHERE i32 = 20042</query>
+    <query tag='RIGHT KEY'>SELECT COUNT() FROM ints l RIGHT JOIN ints r USING i64,i32,i16,i8 WHERE i32 = 20042</query>
+    <query tag='RIGHT ON'>SELECT COUNT() FROM ints l RIGHT JOIN ints r ON l.i64 = r.i64 WHERE i32 = 20042</query>
+    <query tag='RIGHT IN'>SELECT COUNT() FROM ints l RIGHT JOIN ints r USING i64 WHERE i32 IN(42, 10042, 20042, 30042, 40042)</query>
 
-    <query tag='FULL'>SELECT COUNT() FROM ints l FULL JOIN ints r USING i64 WHERE i32 = 200042</query>
-    <query tag='FULL KEY'>SELECT COUNT() FROM ints l FULL JOIN ints r USING i64,i32,i16,i8 WHERE i32 = 200042</query>
-    <query tag='FULL ON'>SELECT COUNT() FROM ints l FULL JOIN ints r ON l.i64 = r.i64 WHERE i32 = 200042</query>
-    <query tag='FULL IN'>SELECT COUNT() FROM ints l FULL JOIN ints r USING i64 WHERE i32 IN(42, 100042, 200042, 300042, 400042)</query>
+    <query tag='FULL'>SELECT COUNT() FROM ints l FULL JOIN ints r USING i64 WHERE i32 = 20042</query>
+    <query tag='FULL KEY'>SELECT COUNT() FROM ints l FULL JOIN ints r USING i64,i32,i16,i8 WHERE i32 = 20042</query>
+    <query tag='FULL ON'>SELECT COUNT() FROM ints l FULL JOIN ints r ON l.i64 = r.i64 WHERE i32 = 20042</query>
+    <query tag='FULL IN'>SELECT COUNT() FROM ints l FULL JOIN ints r USING i64 WHERE i32 IN(42, 10042, 20042, 30042, 40042)</query>
 
-    <query tag='CROSS'>SELECT COUNT() FROM ints l CROSS JOIN (SELECT number as i64 FROM numbers(4)) r WHERE i32 = 42</query>
-    <query tag='CROSS KEY'>SELECT COUNT() FROM ints l CROSS JOIN (SELECT number as i64 FROM numbers(4)) r WHERE i32 = 42</query>
+    <query short='1' tag='CROSS'>SELECT COUNT() FROM ints l CROSS JOIN (SELECT number as i64 FROM numbers(4)) r WHERE i32 = 42</query>
+    <query short='1' tag='CROSS KEY'>SELECT COUNT() FROM ints l CROSS JOIN (SELECT number as i64 FROM numbers(4)) r WHERE i32 = 42</query>
 
     <drop_query>DROP TABLE IF EXISTS ints</drop_query>
 </test>

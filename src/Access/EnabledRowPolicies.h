@@ -1,11 +1,11 @@
 #pragma once
 
 #include <Access/RowPolicy.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Core/UUID.h>
 #include <boost/smart_ptr/atomic_shared_ptr.hpp>
-#include <memory>
 #include <unordered_map>
+#include <memory>
 
 
 namespace DB
@@ -21,7 +21,7 @@ public:
     struct Params
     {
         UUID user_id;
-        std::vector<UUID> enabled_roles;
+        boost::container::flat_set<UUID> enabled_roles;
 
         auto toTuple() const { return std::tie(user_id, enabled_roles); }
         friend bool operator ==(const Params & lhs, const Params & rhs) { return lhs.toTuple() == rhs.toTuple(); }
@@ -42,31 +42,32 @@ public:
     ASTPtr getCondition(const String & database, const String & table_name, ConditionType type) const;
     ASTPtr getCondition(const String & database, const String & table_name, ConditionType type, const ASTPtr & extra_condition) const;
 
-    /// Returns IDs of all the policies used by the current user.
-    std::vector<UUID> getCurrentPolicyIDs() const;
-
-    /// Returns IDs of the policies used by a concrete table.
-    std::vector<UUID> getCurrentPolicyIDs(const String & database, const String & table_name) const;
-
 private:
     friend class RowPolicyCache;
     EnabledRowPolicies(const Params & params_);
 
-    using DatabaseAndTableName = std::pair<String, String>;
-    using DatabaseAndTableNameRef = std::pair<std::string_view, std::string_view>;
+    struct MixedConditionKey
+    {
+        std::string_view database;
+        std::string_view table_name;
+        ConditionType condition_type;
+
+        auto toTuple() const { return std::tie(database, table_name, condition_type); }
+        friend bool operator==(const MixedConditionKey & left, const MixedConditionKey & right) { return left.toTuple() == right.toTuple(); }
+        friend bool operator!=(const MixedConditionKey & left, const MixedConditionKey & right) { return left.toTuple() != right.toTuple(); }
+    };
+
     struct Hash
     {
-        size_t operator()(const DatabaseAndTableNameRef & database_and_table_name) const;
+        size_t operator()(const MixedConditionKey & key) const;
     };
-    static constexpr size_t MAX_CONDITION_TYPE = RowPolicy::MAX_CONDITION_TYPE;
-    using ParsedConditions = std::array<ASTPtr, MAX_CONDITION_TYPE>;
-    struct MixedConditions
+
+    struct MixedCondition
     {
-        std::unique_ptr<DatabaseAndTableName> database_and_table_name_keeper;
-        ParsedConditions mixed_conditions;
-        std::vector<UUID> policy_ids;
+        ASTPtr ast;
+        std::shared_ptr<const std::pair<String, String>> database_and_table_name;
     };
-    using MapOfMixedConditions = std::unordered_map<DatabaseAndTableNameRef, MixedConditions, Hash>;
+    using MapOfMixedConditions = std::unordered_map<MixedConditionKey, MixedCondition, Hash>;
 
     const Params params;
     mutable boost::atomic_shared_ptr<const MapOfMixedConditions> map_of_mixed_conditions;

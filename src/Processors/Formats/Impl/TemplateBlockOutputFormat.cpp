@@ -19,7 +19,7 @@ TemplateBlockOutputFormat::TemplateBlockOutputFormat(const Block & header_, Writ
     : IOutputFormat(header_, out_), settings(settings_), format(std::move(format_))
     , row_format(std::move(row_format_)), row_between_delimiter(std::move(row_between_delimiter_))
 {
-    auto & sample = getPort(PortKind::Main).getHeader();
+    const auto & sample = getPort(PortKind::Main).getHeader();
     size_t columns = sample.columns();
     types.resize(columns);
     for (size_t i = 0; i < columns; ++i)
@@ -186,7 +186,7 @@ void TemplateBlockOutputFormat::finalize()
         switch (static_cast<ResultsetPart>(*format.format_idx_to_column_idx[i]))
         {
             case ResultsetPart::Totals:
-                if (!totals)
+                if (!totals || !totals.hasRows())
                     format.throwInvalidFormat("Cannot print totals for this request", i);
                 writeRow(totals, 0);
                 break;
@@ -232,7 +232,7 @@ void registerOutputFormatProcessorTemplate(FormatFactory & factory)
     factory.registerOutputFormatProcessor("Template", [](
             WriteBuffer & buf,
             const Block & sample,
-            FormatFactory::WriteCallback,
+            const RowOutputFormatParams &,
             const FormatSettings & settings)
     {
         ParsedTemplateFormatString resultset_format;
@@ -270,7 +270,7 @@ void registerOutputFormatProcessorTemplate(FormatFactory & factory)
     factory.registerOutputFormatProcessor("CustomSeparated", [](
             WriteBuffer & buf,
             const Block & sample,
-            FormatFactory::WriteCallback,
+            const RowOutputFormatParams &,
             const FormatSettings & settings)
     {
         ParsedTemplateFormatString resultset_format = ParsedTemplateFormatString::setupCustomSeparatedResultsetFormat(settings.custom);

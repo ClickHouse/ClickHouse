@@ -1,19 +1,9 @@
 <test>
-
-    <stop_conditions>
-        <all_of>
-            <total_time_ms>30000</total_time_ms>
-        </all_of>
-        <any_of>
-            <min_time_not_changing_for_ms>5000</min_time_not_changing_for_ms>
-            <total_time_ms>60000</total_time_ms>
-        </any_of>
-    </stop_conditions>
-
-
     <preconditions>
-        <table_exists>default.hits_100m_single</table_exists>
+        <table_exists>hits_100m_single</table_exists>
     </preconditions>
+    <settings><max_threads>1</max_threads></settings>
 
-    <query>SELECT count(JavaEnable) FROM default.hits_100m_single WHERE WatchID = 1 OR Title = 'next' OR URL = 'prev' OR OriginalURL = '???' OR 1</query>
+    <!-- FIXME this should have been an EXPLAIN test -->
+    <query>SELECT count(JavaEnable) FROM hits_100m_single WHERE WatchID = 1 OR Title = 'next' OR URL = 'prev' OR OriginalURL = '???' OR 1</query>
 </test>

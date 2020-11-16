@@ -26,20 +26,39 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
+
+/** Obtaining array as Field can be slow for large arrays and consume vast amount of memory.
+  * Just don't allow to do it.
+  * You can increase the limit if the following query:
+  *  SELECT range(10000000)
+  * will take less than 500ms on your machine.
+  */
+static constexpr size_t max_array_size_as_field = 1000000;
 
 
 ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && offsets_column)
     : data(std::move(nested_column)), offsets(std::move(offsets_column))
 {
-    if (!typeid_cast<const ColumnOffsets *>(offsets.get()))
-        throw Exception("offsets_column must be a ColumnUInt64", ErrorCodes::ILLEGAL_COLUMN);
+    const ColumnOffsets * offsets_concrete = typeid_cast<const ColumnOffsets *>(offsets.get());
+
+    if (!offsets_concrete)
+        throw Exception("offsets_column must be a ColumnUInt64", ErrorCodes::LOGICAL_ERROR);
+
+    if (!offsets_concrete->empty() && nested_column)
+    {
+        Offset last_offset = offsets_concrete->getData().back();
+
+        /// This will also prevent possible overflow in offset.
+        if (nested_column->size() != last_offset)
+            throw Exception("offsets_column has data inconsistent with nested_column", ErrorCodes::LOGICAL_ERROR);
+    }
 
     /** NOTE
       * Arrays with constant value are possible and used in implementation of higher order functions (see FunctionReplicate).
@@ -51,7 +70,7 @@ ColumnArray::ColumnArray(MutableColumnPtr && nested_column)
     : data(std::move(nested_column))
 {
     if (!data->empty())
-        throw Exception("Not empty data passed to ColumnArray, but no offsets passed", ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception("Not empty data passed to ColumnArray, but no offsets passed", ErrorCodes::LOGICAL_ERROR);
 
     offsets = ColumnOffsets::create();
 }
@@ -107,6 +126,11 @@ Field ColumnArray::operator[](size_t n) const
 {
     size_t offset = offsetAt(n);
     size_t size = sizeAt(n);
+
+    if (size > max_array_size_as_field)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array of size {} is too large to be manipulated as single field, maximum size {}",
+            size, max_array_size_as_field);
+
     Array res(size);
 
     for (size_t i = 0; i < size; ++i)
@@ -120,6 +144,11 @@ void ColumnArray::get(size_t n, Field & res) const
 {
     size_t offset = offsetAt(n);
     size_t size = sizeAt(n);
+
+    if (size > max_array_size_as_field)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array of size {} is too large to be manipulated as single field, maximum size {}",
+            size, max_array_size_as_field);
+
     res = Array(size);
     Array & res_arr = DB::get<Array &>(res);
 
@@ -159,13 +188,17 @@ void ColumnArray::insertData(const char * pos, size_t length)
 
     size_t field_size = data->sizeOfValueIfFixed();
 
-    const char * end = pos + length;
     size_t elems = 0;
-    for (; pos + field_size <= end; pos += field_size, ++elems)
-        data->insertData(pos, field_size);
 
-    if (pos != end)
-        throw Exception("Incorrect length argument for method ColumnArray::insertData", ErrorCodes::BAD_ARGUMENTS);
+    if (length)
+    {
+        const char * end = pos + length;
+        for (; pos + field_size <= end; pos += field_size, ++elems)
+            data->insertData(pos, field_size);
+
+        if (pos != end)
+            throw Exception("Incorrect length argument for method ColumnArray::insertData", ErrorCodes::BAD_ARGUMENTS);
+    }
 
     getOffsets().push_back(getOffsets().back() + elems);
 }
@@ -226,7 +259,7 @@ void ColumnArray::updateWeakHash32(WeakHash32 & hash) const
     data->updateWeakHash32(internal_hash);
 
     Offset prev_offset = 0;
-    auto & offsets_data = getOffsets();
+    const auto & offsets_data = getOffsets();
     auto & hash_data = hash.getData();
     auto & internal_hash_data = internal_hash.getData();
 
@@ -244,6 +277,12 @@ void ColumnArray::updateWeakHash32(WeakHash32 & hash) const
 
         prev_offset = offsets_data[i];
     }
+}
+
+void ColumnArray::updateHashFast(SipHash & hash) const
+{
+    offsets->updateHashFast(hash);
+    data->updateHashFast(hash);
 }
 
 void ColumnArray::insert(const Field & x)
@@ -285,8 +324,7 @@ void ColumnArray::popBack(size_t n)
     offsets_data.resize_assume_reserved(offsets_data.size() - n);
 }
 
-
-int ColumnArray::compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const
+int ColumnArray::compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint, const Collator * collator) const
 {
     const ColumnArray & rhs = assert_cast<const ColumnArray &>(rhs_);
 
@@ -295,8 +333,15 @@ int ColumnArray::compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_dir
     size_t rhs_size = rhs.sizeAt(m);
     size_t min_size = std::min(lhs_size, rhs_size);
     for (size_t i = 0; i < min_size; ++i)
-        if (int res = getData().compareAt(offsetAt(n) + i, rhs.offsetAt(m) + i, *rhs.data.get(), nan_direction_hint))
+    {
+        int res;
+        if (collator)
+            res = getData().compareAtWithCollation(offsetAt(n) + i, rhs.offsetAt(m) + i, *rhs.data.get(), nan_direction_hint, *collator);
+        else
+            res = getData().compareAt(offsetAt(n) + i, rhs.offsetAt(m) + i, *rhs.data.get(), nan_direction_hint);
+        if (res)
             return res;
+    }
 
     return lhs_size < rhs_size
         ? -1
@@ -305,28 +350,44 @@ int ColumnArray::compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_dir
             : 1);
 }
 
-
-namespace
+int ColumnArray::compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const
 {
-    template <bool positive>
-    struct Less
-    {
-        const ColumnArray & parent;
-        int nan_direction_hint;
-
-        Less(const ColumnArray & parent_, int nan_direction_hint_)
-            : parent(parent_), nan_direction_hint(nan_direction_hint_) {}
-
-        bool operator()(size_t lhs, size_t rhs) const
-        {
-            if (positive)
-                return parent.compareAt(lhs, rhs, parent, nan_direction_hint) < 0;
-            else
-                return parent.compareAt(lhs, rhs, parent, nan_direction_hint) > 0;
-        }
-    };
+    return compareAtImpl(n, m, rhs_, nan_direction_hint);
 }
 
+int ColumnArray::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint, const Collator & collator) const
+{
+    return compareAtImpl(n, m, rhs_, nan_direction_hint, &collator);
+}
+
+void ColumnArray::compareColumn(const IColumn & rhs, size_t rhs_row_num,
+                                PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
+                                int direction, int nan_direction_hint) const
+{
+    return doCompareColumn<ColumnArray>(assert_cast<const ColumnArray &>(rhs), rhs_row_num, row_indexes,
+                                        compare_results, direction, nan_direction_hint);
+}
+
+template <bool positive>
+struct ColumnArray::Cmp
+{
+    const ColumnArray & parent;
+    int nan_direction_hint;
+    const Collator * collator;
+
+    Cmp(const ColumnArray & parent_, int nan_direction_hint_, const Collator * collator_=nullptr)
+        : parent(parent_), nan_direction_hint(nan_direction_hint_), collator(collator_) {}
+
+    int operator()(size_t lhs, size_t rhs) const
+    {
+        int res;
+        if (collator)
+            res = parent.compareAtWithCollation(lhs, rhs, parent, nan_direction_hint, *collator);
+        else
+            res = parent.compareAt(lhs, rhs, parent, nan_direction_hint);
+        return positive ? res : -res;
+    }
+};
 
 void ColumnArray::reserve(size_t n)
 {
@@ -589,8 +650,8 @@ ColumnPtr ColumnArray::filterNullable(const Filter & filt, ssize_t result_size_h
 
     auto array_of_nested = ColumnArray::create(nullable_elems.getNestedColumnPtr(), offsets);
     auto filtered_array_of_nested_owner = array_of_nested->filter(filt, result_size_hint);
-    auto & filtered_array_of_nested = assert_cast<const ColumnArray &>(*filtered_array_of_nested_owner);
-    auto & filtered_offsets = filtered_array_of_nested.getOffsetsPtr();
+    const auto & filtered_array_of_nested = assert_cast<const ColumnArray &>(*filtered_array_of_nested_owner);
+    const auto & filtered_offsets = filtered_array_of_nested.getOffsetsPtr();
 
     auto res_null_map = ColumnUInt8::create();
 
@@ -707,7 +768,8 @@ ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit
 
 INSTANTIATE_INDEX_IMPL(ColumnArray)
 
-void ColumnArray::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
+template <typename Comparator>
+void ColumnArray::getPermutationImpl(size_t limit, Permutation & res, Comparator cmp) const
 {
     size_t s = size();
     if (limit >= s)
@@ -717,22 +779,123 @@ void ColumnArray::getPermutation(bool reverse, size_t limit, int nan_direction_h
     for (size_t i = 0; i < s; ++i)
         res[i] = i;
 
+    auto less = [&cmp](size_t lhs, size_t rhs){ return cmp(lhs, rhs) < 0; };
+
     if (limit)
-    {
-        if (reverse)
-            std::partial_sort(res.begin(), res.begin() + limit, res.end(), Less<false>(*this, nan_direction_hint));
-        else
-            std::partial_sort(res.begin(), res.begin() + limit, res.end(), Less<true>(*this, nan_direction_hint));
-    }
+        std::partial_sort(res.begin(), res.begin() + limit, res.end(), less);
     else
-    {
-        if (reverse)
-            std::sort(res.begin(), res.end(), Less<false>(*this, nan_direction_hint));
-        else
-            std::sort(res.begin(), res.end(), Less<true>(*this, nan_direction_hint));
-    }
+        std::sort(res.begin(), res.end(), less);
 }
 
+template <typename Comparator>
+void ColumnArray::updatePermutationImpl(size_t limit, Permutation & res, EqualRanges & equal_range, Comparator cmp) const
+{
+    if (equal_range.empty())
+        return;
+
+    if (limit >= size() || limit >= equal_range.back().second)
+        limit = 0;
+
+    size_t number_of_ranges = equal_range.size();
+
+    if (limit)
+        --number_of_ranges;
+
+    auto less = [&cmp](size_t lhs, size_t rhs){ return cmp(lhs, rhs) < 0; };
+
+    EqualRanges new_ranges;
+    for (size_t i = 0; i < number_of_ranges; ++i)
+    {
+        const auto & [first, last] = equal_range[i];
+
+        std::sort(res.begin() + first, res.begin() + last, less);
+        auto new_first = first;
+
+        for (auto j = first + 1; j < last; ++j)
+        {
+            if (cmp(res[new_first], res[j]) != 0)
+            {
+                if (j - new_first > 1)
+                    new_ranges.emplace_back(new_first, j);
+
+                new_first = j;
+            }
+        }
+
+        if (last - new_first > 1)
+            new_ranges.emplace_back(new_first, last);
+    }
+
+    if (limit)
+    {
+        const auto & [first, last] = equal_range.back();
+
+        if (limit < first || limit > last)
+            return;
+
+        /// Since then we are working inside the interval.
+
+        std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less);
+        auto new_first = first;
+        for (auto j = first + 1; j < limit; ++j)
+        {
+            if (cmp(res[new_first], res[j]) != 0)
+            {
+                if (j - new_first > 1)
+                    new_ranges.emplace_back(new_first, j);
+
+                new_first = j;
+            }
+        }
+        auto new_last = limit;
+        for (auto j = limit; j < last; ++j)
+        {
+            if (cmp(res[new_first], res[j]) == 0)
+            {
+                std::swap(res[new_last], res[j]);
+                ++new_last;
+            }
+        }
+        if (new_last - new_first > 1)
+        {
+            new_ranges.emplace_back(new_first, new_last);
+        }
+    }
+    equal_range = std::move(new_ranges);
+}
+
+void ColumnArray::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
+{
+    if (reverse)
+        getPermutationImpl(limit, res, Cmp<false>(*this, nan_direction_hint));
+    else
+        getPermutationImpl(limit, res, Cmp<true>(*this, nan_direction_hint));
+
+}
+
+void ColumnArray::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_range) const
+{
+    if (reverse)
+        updatePermutationImpl(limit, res, equal_range, Cmp<false>(*this, nan_direction_hint));
+    else
+        updatePermutationImpl(limit, res, equal_range, Cmp<true>(*this, nan_direction_hint));
+}
+
+void ColumnArray::getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
+{
+    if (reverse)
+        getPermutationImpl(limit, res, Cmp<false>(*this, nan_direction_hint, &collator));
+    else
+        getPermutationImpl(limit, res, Cmp<true>(*this, nan_direction_hint, &collator));
+}
+
+void ColumnArray::updatePermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_range) const
+{
+    if (reverse)
+        updatePermutationImpl(limit, res, equal_range, Cmp<false>(*this, nan_direction_hint, &collator));
+    else
+        updatePermutationImpl(limit, res, equal_range, Cmp<true>(*this, nan_direction_hint, &collator));
+}
 
 ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
 {

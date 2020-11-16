@@ -20,7 +20,7 @@ namespace ErrorCodes
 
 void FunctionFactory::registerFunction(const
     std::string & name,
-    Creator creator,
+    Value creator,
     CaseSensitiveness case_sensitiveness)
 {
     if (!functions.emplace(name, creator).second)
@@ -53,6 +53,15 @@ FunctionOverloadResolverImplPtr FunctionFactory::getImpl(
         else
             throw Exception("Unknown function " + name, ErrorCodes::UNKNOWN_FUNCTION);
     }
+    return res;
+}
+
+std::vector<std::string> FunctionFactory::getAllNames() const
+{
+    std::vector<std::string> res;
+    res.reserve(functions.size());
+    for (const auto & func : functions)
+        res.emplace_back(func.first);
     return res;
 }
 

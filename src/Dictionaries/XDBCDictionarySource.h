@@ -69,6 +69,7 @@ private:
     std::chrono::time_point<std::chrono::system_clock> update_time;
     const DictionaryStructure dict_struct;
     const std::string db;
+    const std::string schema;
     const std::string table;
     const std::string where;
     const std::string update_field;

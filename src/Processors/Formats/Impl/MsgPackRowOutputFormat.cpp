@@ -1,4 +1,7 @@
 #include <Processors/Formats/Impl/MsgPackRowOutputFormat.h>
+
+#if USE_MSGPACK
+
 #include <Formats/FormatFactory.h>
 #include <Common/assert_cast.h>
 
@@ -21,8 +24,8 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-MsgPackRowOutputFormat::MsgPackRowOutputFormat(WriteBuffer & out_, const Block & header_, FormatFactory::WriteCallback callback)
-    : IRowOutputFormat(header_, out_, callback), packer(out_) {}
+MsgPackRowOutputFormat::MsgPackRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_)
+    : IRowOutputFormat(header_, out_, params_), packer(out_) {}
 
 void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr data_type, size_t row_num)
 {
@@ -144,16 +147,30 @@ void MsgPackRowOutputFormat::write(const Columns & columns, size_t row_num)
     }
 }
 
+
 void registerOutputFormatProcessorMsgPack(FormatFactory & factory)
 {
+
     factory.registerOutputFormatProcessor("MsgPack", [](
             WriteBuffer & buf,
             const Block & sample,
-            FormatFactory::WriteCallback callback,
+            const RowOutputFormatParams & params,
             const FormatSettings &)
     {
-        return std::make_shared<MsgPackRowOutputFormat>(buf, sample, callback);
+        return std::make_shared<MsgPackRowOutputFormat>(buf, sample, params);
     });
 }
 
 }
+
+#else
+
+namespace DB
+{
+class FormatFactory;
+void registerOutputFormatProcessorMsgPack(FormatFactory &)
+{
+}
+}
+
+#endif

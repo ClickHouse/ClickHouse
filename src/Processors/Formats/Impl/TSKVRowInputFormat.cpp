@@ -19,14 +19,18 @@ namespace ErrorCodes
 TSKVRowInputFormat::TSKVRowInputFormat(ReadBuffer & in_, Block header_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(std::move(header_), in_, std::move(params_)), format_settings(format_settings_), name_map(header_.columns())
 {
-    /// In this format, we assume that column name cannot contain BOM,
-    ///  so BOM at beginning of stream cannot be confused with name of field, and it is safe to skip it.
-    skipBOMIfExists(in);
-
     const auto & sample_block = getPort().getHeader();
     size_t num_columns = sample_block.columns();
     for (size_t i = 0; i < num_columns; ++i)
         name_map[sample_block.getByPosition(i).name] = i;        /// NOTE You could place names more cache-locally.
+}
+
+
+void TSKVRowInputFormat::readPrefix()
+{
+    /// In this format, we assume that column name cannot contain BOM,
+    ///  so BOM at beginning of stream cannot be confused with name of field, and it is safe to skip it.
+    skipBOMIfExists(in);
 }
 
 
@@ -94,7 +98,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
     if (in.eof())
         return false;
 
-    auto & header = getPort().getHeader();
+    const auto & header = getPort().getHeader();
     size_t num_columns = columns.size();
 
     /// Set of columns for which the values were read. The rest will be filled with default values.
@@ -119,14 +123,14 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
                 /// NOTE Optimization is possible by caching the order of fields (which is almost always the same)
                 /// and quickly checking for the next expected field, instead of searching the hash table.
 
-                auto it = name_map.find(name_ref);
+                auto * it = name_map.find(name_ref);
                 if (!it)
                 {
                     if (!format_settings.skip_unknown_fields)
                         throw Exception("Unknown field found while parsing TSKV format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
 
                     /// If the key is not found, skip the value.
-                    NullSink sink;
+                    NullOutput sink;
                     readEscapedStringInto(sink, in);
                 }
                 else

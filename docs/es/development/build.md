@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 64
 toc_title: "C\xF3mo crear ClickHouse en Linux"
 ---
@@ -9,7 +9,7 @@ toc_title: "C\xF3mo crear ClickHouse en Linux"
 
 El siguiente tutorial se basa en el sistema Ubuntu Linux.
 Con los cambios apropiados, también debería funcionar en cualquier otra distribución de Linux.
-Plataformas compatibles: x86\_64 y AArch64. El soporte para Power9 es experimental.
+Plataformas compatibles: x86_64 y AArch64. El soporte para Power9 es experimental.
 
 ## Instalar Git, CMake, Python y Ninja {#install-git-cmake-python-and-ninja}
 
@@ -19,7 +19,7 @@ $ sudo apt-get install git cmake python ninja-build
 
 O cmake3 en lugar de cmake en sistemas más antiguos.
 
-## Instalar GCC 9 {#install-gcc-9}
+## Instalar GCC 10 {#install-gcc-10}
 
 Hay varias formas de hacer esto.
 
@@ -29,18 +29,18 @@ Hay varias formas de hacer esto.
 $ sudo apt-get install software-properties-common
 $ sudo apt-add-repository ppa:ubuntu-toolchain-r/test
 $ sudo apt-get update
-$ sudo apt-get install gcc-9 g++-9
+$ sudo apt-get install gcc-10 g++-10
 ```
 
 ### Instalar desde fuentes {#install-from-sources}
 
 Mira [Sistema abierto.](https://github.com/ClickHouse/ClickHouse/blob/master/utils/ci/build-gcc-from-sources.sh)
 
-## Usar GCC 9 para compilaciones {#use-gcc-9-for-builds}
+## Usar GCC 10 para compilaciones {#use-gcc-10-for-builds}
 
 ``` bash
-$ export CC=gcc-9
-$ export CXX=g++-9
+$ export CC=gcc-10
+$ export CXX=g++-10
 ```
 
 ## Fuentes de ClickHouse de pago {#checkout-clickhouse-sources}
@@ -76,7 +76,7 @@ La compilación requiere los siguientes componentes:
 -   Git (se usa solo para verificar las fuentes, no es necesario para la compilación)
 -   CMake 3.10 o más reciente
 -   Ninja (recomendado) o Hacer
--   Compilador de C ++: gcc 9 o clang 8 o más reciente
+-   Compilador de C ++: gcc 10 o clang 8 o más reciente
 -   Enlazador: lld u oro (el clásico GNU ld no funcionará)
 -   Python (solo se usa dentro de la compilación LLVM y es opcional)
 
@@ -102,7 +102,7 @@ Ejemplo de OpenSUSE Tumbleweed:
 Ejemplo de Fedora Rawhide:
 
     sudo yum update
-    yum --nogpg install git cmake make gcc-c++ python2
+    yum --nogpg install git cmake make gcc-c++ python3
     git clone --recursive https://github.com/ClickHouse/ClickHouse.git
     mkdir build && cd build
     cmake ../ClickHouse

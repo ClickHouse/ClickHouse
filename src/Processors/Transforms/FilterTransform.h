@@ -8,15 +8,23 @@ namespace DB
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
-/** Has one input and one output.
-  * Simply pull a block from input, transform it, and push it to output.
+/** Implements WHERE, HAVING operations.
+  * Takes an expression, which adds to the block one ColumnUInt8 column containing the filtering conditions.
+  * The expression is evaluated and result chunks contain only the filtered rows.
   * If remove_filter_column is true, remove filter column from block.
   */
 class FilterTransform : public ISimpleTransform
 {
 public:
     FilterTransform(
-        const Block & header_, ExpressionActionsPtr expression_, String filter_column_name_, bool remove_filter_column_);
+        const Block & header_, ExpressionActionsPtr expression_, String filter_column_name_,
+        bool remove_filter_column_, bool on_totals_ = false);
+
+    static Block transformHeader(
+            Block header,
+            const ExpressionActionsPtr & expression,
+            const String & filter_column_name,
+            bool remove_filter_column);
 
     String getName() const override { return "FilterTransform"; }
 
@@ -29,6 +37,7 @@ private:
     ExpressionActionsPtr expression;
     String filter_column_name;
     bool remove_filter_column;
+    bool on_totals;
 
     ConstantFilterDescription constant_filter_description;
     size_t filter_column_position = 0;
@@ -38,7 +47,7 @@ private:
 
     bool are_prepared_sets_initialized = false;
 
-    void removeFilterIfNeed(Chunk & chunk);
+    void removeFilterIfNeed(Chunk & chunk) const;
 };
 
 }

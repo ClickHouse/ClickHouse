@@ -66,8 +66,8 @@ class SortingTransform : public IProcessor
 public:
     /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
     SortingTransform(const Block & header,
-                          const SortDescription & description_,
-                          size_t max_merged_block_size_, UInt64 limit_);
+        const SortDescription & description_,
+        size_t max_merged_block_size_, UInt64 limit_);
 
     ~SortingTransform() override;
 
@@ -82,9 +82,6 @@ protected:
     SortDescription description;
     size_t max_merged_block_size;
     UInt64 limit;
-
-    size_t sum_rows_in_blocks = 0;
-    size_t sum_bytes_in_blocks = 0;
 
     /// Before operation, will remove constant columns from blocks. And after, place constant columns back.
     /// (to avoid excessive virtual function calls and because constants cannot be serialized in Native format for temporary files)
