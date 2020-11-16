@@ -47,29 +47,23 @@ struct AvgFraction
         }
 
         /// Numerator is always casted to Float64 to divide correctly if the denominator is not Float64.
-        const Float64 num_converted = [scale](Numerator n)
-        {
-            (void) scale;
+        const Float64 num_converted;
 
-            if constexpr (IsDecimalNumber<Numerator>)
-                return DecimalUtils::convertTo<Float64>(n, scale);
-            else
-                return static_cast<Float64>(n); /// all other types, including extended integral.
-        } (numerator);
+        if constexpr (IsDecimalNumber<Numerator>)
+            num_converted = DecimalUtils::convertTo<Float64>(numerator, scale);
+        else
+            num_converted = static_cast<Float64>(numerator); /// all other types, including extended integral.
 
-        const auto denom_converted = [scale](Denominator d) ->
-            std::conditional_t<DecimalOrExtendedInt<Denominator>, Float64, Denominator>
-        {
-            (void) scale;
+        const std::conditional_t<DecimalOrExtendedInt<Denominator>,
+            Float64, Denominator>> denom_converted;
 
-            if constexpr (IsDecimalNumber<Denominator>)
-                return DecimalUtils::convertTo<Float64>(d, scale);
-            else if constexpr (DecimalOrExtendedInt<Denominator>)
-                /// no way to divide Float64 and extended integral type without an explicit cast.
-                return static_cast<Float64>(d);
-            else
-                return d; /// can divide on float, no cast required.
-        } (denominator);
+        if constexpr (IsDecimalNumber<Denominator>)
+            denom_converted = DecimalUtils::convertTo<Float64>(denominator, scale);
+        else if constexpr (DecimalOrExtendedInt<Denominator>)
+            /// no way to divide Float64 and extended integral type without an explicit cast.
+            denom_converted = static_cast<Float64>(denominator);
+        else
+            denom_converted = denominator; /// can divide on float, no cast required.
 
         return num_converted / denom_converted;
     }
