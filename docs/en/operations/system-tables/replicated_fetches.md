@@ -32,10 +32,7 @@ Columns:
 
 -   `URI` ([String](../../sql-reference/data-types/string.md)) — Uniform resource identifier.
 
--   `to_detached` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Possible values:
-
-    -   `1` — If the query is of type `ALTER TABLE ... FETCH PARTITION ... TO DETACHED` only.
-    -   `0` — All other cases.
+-   `to_detached` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Flag that indicates whether the currently running background fetch is being performed using the `TO DETACHED` expression.
 
 -   `thread_id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Thread identifier.
 
@@ -67,5 +64,7 @@ thread_id:                   54
 ```
 
 **See Also**
+
+-   [Managing ReplicatedMergeTree Tables](../../sql-reference/statements/system/#query-language-system-replicated)
 
 [Original article](https://clickhouse.tech/docs/en/operations/system_tables/replicated_fetches) <!--hide-->
