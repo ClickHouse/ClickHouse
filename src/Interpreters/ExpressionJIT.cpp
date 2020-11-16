@@ -596,6 +596,7 @@ static bool isCompilableFunction(const ActionsDAG::Node & node)
     return node.type == ActionsDAG::ActionType::FUNCTION && isCompilable(*node.function_base);
 }
 
+
 static LLVMFunction::CompileDAG getCompilableDAG(
     ActionsDAG::Node * root,
     std::vector<ActionsDAG::Node *> & children,
