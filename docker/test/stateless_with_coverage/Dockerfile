@@ -11,11 +11,13 @@ RUN apt-get update -y \
             tzdata \
             fakeroot \
             debhelper \
+            zookeeper \
+            zookeeperd \
             expect \
-            python3 \
-            python3-lxml \
-            python3-termcolor \
-            python3-requests \
+            python \
+            python-lxml \
+            python-termcolor \
+            python-requests \
             sudo \
             openssl \
             ncdu \

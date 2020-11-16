@@ -15,9 +15,9 @@ Le `INSERT` requête utilise les deux analyseurs:
 INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 ```
 
-Le `INSERT INTO t VALUES` fragment est analysé par l'analyseur complet, et les données `(1, 'Hello, world'), (2, 'abc'), (3, 'def')` est analysé par l'analyseur de flux rapide. Vous pouvez également activer l'analyseur complet pour les données à l'aide de la [input_format_values_interpret_expressions](../operations/settings/settings.md#settings-input_format_values_interpret_expressions) paramètre. Lorsque `input_format_values_interpret_expressions = 1`, ClickHouse essaie d'abord d'analyser les valeurs avec l'analyseur de flux rapide. S'il échoue, ClickHouse essaie d'utiliser l'analyseur complet pour les données, en le traitant comme un SQL [expression](#syntax-expressions).
+Le `INSERT INTO t VALUES` fragment est analysé par l'analyseur complet, et les données `(1, 'Hello, world'), (2, 'abc'), (3, 'def')` est analysé par l'analyseur de flux rapide. Vous pouvez également activer l'analyseur complet pour les données à l'aide de la [input\_format\_values\_interpret\_expressions](../operations/settings/settings.md#settings-input_format_values_interpret_expressions) paramètre. Lorsque `input_format_values_interpret_expressions = 1`, ClickHouse essaie d'abord d'analyser les valeurs avec l'analyseur de flux rapide. S'il échoue, ClickHouse essaie d'utiliser l'analyseur complet pour les données, en le traitant comme un SQL [expression](#syntax-expressions).
 
-Les données peuvent avoir n'importe quel format. Lorsqu'une requête est reçue, le serveur calcule pas plus que [max_query_size](../operations/settings/settings.md#settings-max_query_size) octets de la requête en RAM (par défaut, 1 Mo), et le reste est analysé en flux.
+Les données peuvent avoir n'importe quel format. Lorsqu'une requête est reçue, le serveur calcule pas plus que [max\_query\_size](../operations/settings/settings.md#settings-max_query_size) octets de la requête en RAM (par défaut, 1 Mo), et le reste est analysé en flux.
 Il permet d'éviter les problèmes avec de grandes `INSERT` requête.
 
 Lors de l'utilisation de la `Values` format dans un `INSERT` de la requête, il peut sembler que les données sont analysées de même que les expressions dans un `SELECT` requête, mais ce n'est pas vrai. Le `Values` le format est beaucoup plus limitée.

@@ -4,6 +4,7 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
+#include <DataStreams/NullBlockInputStream.h>
 #include <DataStreams/NullBlockOutputStream.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Pipe.h>
@@ -24,7 +25,7 @@ public:
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
-        SelectQueryInfo &,
+        const SelectQueryInfo &,
         const Context & /*context*/,
         QueryProcessingStage::Enum /*processing_stage*/,
         size_t,

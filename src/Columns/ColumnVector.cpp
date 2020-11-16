@@ -1,27 +1,35 @@
 #include "ColumnVector.h"
 
-#include <pdqsort.h>
-#include <Columns/ColumnsCommon.h>
-#include <DataStreams/ColumnGathererStream.h>
-#include <IO/WriteHelpers.h>
-#include <Common/Arena.h>
+#include <cstring>
+#include <cmath>
+#include <common/unaligned.h>
 #include <Common/Exception.h>
-#include <Common/HashTable/Hash.h>
+#include <Common/Arena.h>
+#include <Common/SipHash.h>
 #include <Common/NaNUtils.h>
 #include <Common/RadixSort.h>
-#include <Common/SipHash.h>
-#include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
-#include <common/sort.h>
-#include <common/unaligned.h>
+#include <Common/WeakHash.h>
+#include <Common/HashTable/Hash.h>
+#include <IO/WriteHelpers.h>
+#include <Columns/ColumnsCommon.h>
+#include <DataStreams/ColumnGathererStream.h>
 #include <ext/bit_cast.h>
 #include <ext/scope_guard.h>
+#include <pdqsort.h>
 
-#include <cmath>
-#include <cstring>
 
-#if defined(__SSE2__)
-#    include <emmintrin.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#    if USE_OPENCL
+#        include "Common/BitonicSort.h" // Y_IGNORE
+#    endif
+#else
+#undef USE_OPENCL
+#endif
+
+#ifdef __SSE2__
+    #include <emmintrin.h>
 #endif
 
 namespace DB
@@ -31,6 +39,7 @@ namespace ErrorCodes
 {
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+    extern const int OPENCL_ERROR;
     extern const int LOGICAL_ERROR;
 }
 
@@ -138,6 +147,29 @@ namespace
     };
 }
 
+template <typename T>
+void ColumnVector<T>::getSpecialPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res,
+                                            IColumn::SpecialSort special_sort) const
+{
+    if (special_sort == IColumn::SpecialSort::OPENCL_BITONIC)
+    {
+#if !defined(ARCADIA_BUILD)
+#if USE_OPENCL
+        if (!limit || limit >= data.size())
+        {
+            res.resize(data.size());
+
+            if (data.empty() || BitonicSort::getInstance().sort(data, res, !reverse))
+                return;
+        }
+#else
+        throw DB::Exception("'special_sort = bitonic' specified but OpenCL not available", DB::ErrorCodes::OPENCL_ERROR);
+#endif
+#endif
+    }
+
+    getPermutation(reverse, limit, nan_direction_hint, res);
+}
 
 template <typename T>
 void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
@@ -157,9 +189,9 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
             res[i] = i;
 
         if (reverse)
-            partial_sort(res.begin(), res.begin() + limit, res.end(), greater(*this, nan_direction_hint));
+            std::partial_sort(res.begin(), res.begin() + limit, res.end(), greater(*this, nan_direction_hint));
         else
-            partial_sort(res.begin(), res.begin() + limit, res.end(), less(*this, nan_direction_hint));
+            std::partial_sort(res.begin(), res.begin() + limit, res.end(), less(*this, nan_direction_hint));
     }
     else
     {
@@ -255,9 +287,9 @@ void ColumnVector<T>::updatePermutation(bool reverse, size_t limit, int nan_dire
         /// Since then, we are working inside the interval.
 
         if (reverse)
-            partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, greater(*this, nan_direction_hint));
+            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, greater(*this, nan_direction_hint));
         else
-            partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less(*this, nan_direction_hint));
+            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less(*this, nan_direction_hint));
 
         size_t new_first = first;
         for (size_t j = first + 1; j < limit; ++j)

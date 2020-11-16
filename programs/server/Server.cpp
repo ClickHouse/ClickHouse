@@ -32,8 +32,6 @@
 #include <Common/getExecutablePath.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
-#include <Common/getMappedArea.h>
-#include <Common/remapExecutable.h>
 #include <IO/HTTPCommon.h>
 #include <IO/UseSSL.h>
 #include <Interpreters/AsynchronousMetrics.h>
@@ -44,6 +42,7 @@
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DNSCacheUpdater.h>
+#include <Interpreters/SystemLog.cpp>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Access/AccessControlManager.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -51,7 +50,6 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
-#include <Formats/registerFormats.h>
 #include <Storages/registerStorages.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
@@ -90,23 +88,6 @@ namespace CurrentMetrics
     extern const Metric VersionInteger;
     extern const Metric MemoryTracking;
 }
-
-
-int mainEntryClickHouseServer(int argc, char ** argv)
-{
-    DB::Server app;
-    try
-    {
-        return app.run(argc, argv);
-    }
-    catch (...)
-    {
-        std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
-        auto code = DB::getCurrentExceptionCode();
-        return code ? code : 1;
-    }
-}
-
 
 namespace
 {
@@ -191,10 +172,10 @@ int Server::run()
     if (config().hasOption("help"))
     {
         Poco::Util::HelpFormatter help_formatter(Server::options());
-        auto header_str = fmt::format("{} [OPTION] [-- [ARG]...]\n"
-                                      "positional arguments can be used to rewrite config.xml properties, for example, --http_port=8010",
-                                      commandName());
-        help_formatter.setHeader(header_str);
+        std::stringstream header;
+        header << commandName() << " [OPTION] [-- [ARG]...]\n";
+        header << "positional arguments can be used to rewrite config.xml properties, for example, --http_port=8010";
+        help_formatter.setHeader(header.str());
         help_formatter.format(std::cout);
         return 0;
     }
@@ -259,7 +240,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     Poco::Logger * log = &logger();
     UseSSL use_ssl;
 
-    MainThreadStatus::getInstance();
+    ThreadStatus thread_status;
 
     registerFunctions();
     registerAggregateFunctions();
@@ -267,9 +248,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
     registerStorages();
     registerDictionaries();
     registerDisks();
-    registerFormats();
 
-    CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::getVersionRevision());
+#if !defined(ARCADIA_BUILD)
+#if USE_OPENCL
+    BitonicSort::getInstance().configure();
+#endif
+#endif
+
+    CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::get());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
 
     if (ThreadFuzzer::instance().isEffective())
@@ -324,34 +310,15 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// After full config loaded
     {
-        if (config().getBool("remap_executable", false))
-        {
-            LOG_DEBUG(log, "Will remap executable in memory.");
-            remapExecutable();
-            LOG_DEBUG(log, "The code in memory has been successfully remapped.");
-        }
-
         if (config().getBool("mlock_executable", false))
         {
             if (hasLinuxCapability(CAP_IPC_LOCK))
             {
-                try
-                {
-                    /// Get the memory area with (current) code segment.
-                    /// It's better to lock only the code segment instead of calling "mlockall",
-                    /// because otherwise debug info will be also locked in memory, and it can be huge.
-                    auto [addr, len] = getMappedArea(reinterpret_cast<void *>(mainEntryClickHouseServer));
-
-                    LOG_TRACE(log, "Will do mlock to prevent executable memory from being paged out. It may take a few seconds.");
-                    if (0 != mlock(addr, len))
-                        LOG_WARNING(log, "Failed mlock: {}", errnoToString(ErrorCodes::SYSTEM_ERROR));
-                    else
-                        LOG_TRACE(log, "The memory map of clickhouse executable has been mlock'ed, total {}", ReadableSize(len));
-                }
-                catch (...)
-                {
-                    LOG_WARNING(log, "Cannot mlock: {}", getCurrentExceptionMessage(false));
-                }
+                LOG_TRACE(log, "Will mlockall to prevent executable memory from being paged out. It may take a few seconds.");
+                if (0 != mlockall(MCL_CURRENT))
+                    LOG_WARNING(log, "Failed mlockall: {}", errnoToString(ErrorCodes::SYSTEM_ERROR));
+                else
+                    LOG_TRACE(log, "The memory map of clickhouse executable has been mlock'ed");
             }
             else
             {
@@ -565,11 +532,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
             if (config->has("max_partition_size_to_drop"))
                 global_context->setMaxPartitionSizeToDrop(config->getUInt64("max_partition_size_to_drop"));
 
-            if (config->has("zookeeper"))
-                global_context->reloadZooKeeperIfChanged(config);
-
-            global_context->reloadAuxiliaryZooKeepersConfigIfChanged(config);
-
             global_context->updateStorageConfiguration(*config);
         },
         /* already_loaded = */ true);
@@ -636,7 +598,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Check sanity of MergeTreeSettings on server startup
     global_context->getMergeTreeSettings().sanityCheck(settings);
-    global_context->getReplicatedMergeTreeSettings().sanityCheck(settings);
 
     /// Limit on total memory usage
     size_t max_server_memory_usage = config().getUInt64("max_server_memory_usage", 0);
@@ -754,10 +715,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     {
         /// DDL worker should be started after all tables were loaded
         String ddl_zookeeper_path = config().getString("distributed_ddl.path", "/clickhouse/task_queue/ddl/");
-        int pool_size = config().getInt("distributed_ddl.pool_size", 1);
-        if (pool_size < 1)
-            throw Exception("distributed_ddl.pool_size should be greater then 0", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-        global_context->setDDLWorker(std::make_unique<DDLWorker>(pool_size, ddl_zookeeper_path, *global_context, &config(), "distributed_ddl"));
+        global_context->setDDLWorker(std::make_unique<DDLWorker>(ddl_zookeeper_path, *global_context, &config(), "distributed_ddl"));
     }
 
     std::unique_ptr<DNSCacheUpdater> dns_cache_updater;
@@ -1172,4 +1130,22 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     return Application::EXIT_OK;
 }
+}
+
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
+
+int mainEntryClickHouseServer(int argc, char ** argv)
+{
+    DB::Server app;
+    try
+    {
+        return app.run(argc, argv);
+    }
+    catch (...)
+    {
+        std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
+        auto code = DB::getCurrentExceptionCode();
+        return code ? code : 1;
+    }
 }

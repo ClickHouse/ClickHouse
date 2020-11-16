@@ -25,10 +25,10 @@ RUN apt-get update \
         ninja-build \
         perl \
         pkg-config \
-        python3 \
-        python3-lxml \
-        python3-requests \
-        python3-termcolor \
+        python \
+        python-lxml \
+        python-requests \
+        python-termcolor \
         tzdata \
         llvm-${LLVM_VERSION} \
         clang-${LLVM_VERSION} \

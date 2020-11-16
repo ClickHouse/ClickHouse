@@ -5,8 +5,6 @@
 
 namespace DB
 {
-namespace
-{
 
 struct NameMultiMatchAllIndices
 {
@@ -17,8 +15,6 @@ using FunctionMultiMatchAllIndices = FunctionsMultiStringSearch<
     MultiMatchAllIndicesImpl<UInt64, false>,
     NameMultiMatchAllIndices,
     std::numeric_limits<UInt32>::max()>;
-
-}
 
 void registerFunctionMultiMatchAllIndices(FunctionFactory & factory)
 {

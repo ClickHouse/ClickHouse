@@ -7,6 +7,7 @@
 #include <Interpreters/CancellationCode.h>
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/StorageID.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Storages/TableLockHolder.h>
 #include <Storages/CheckResults.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -47,15 +48,9 @@ using ProcessorPtr = std::shared_ptr<IProcessor>;
 using Processors = std::vector<ProcessorPtr>;
 
 class Pipe;
-class QueryPlan;
-using QueryPlanPtr = std::unique_ptr<QueryPlan>;
 
 class StoragePolicy;
 using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
-
-struct StreamLocalLimits;
-class EnabledQuota;
-struct SelectQueryInfo;
 
 struct ColumnSize
 {
@@ -213,12 +208,15 @@ public:
       *
       * SelectQueryInfo is required since the stage can depends on the query
       * (see Distributed() engine and optimize_skip_unused_shards).
-      * And to store optimized cluster (after optimize_skip_unused_shards).
       *
       * QueryProcessingStage::Enum required for Distributed over Distributed,
       * since it cannot return Complete for intermediate queries never.
       */
-    virtual QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context & context) const
+    {
+        return getQueryProcessingStage(context, QueryProcessingStage::Complete, {});
+    }
+    virtual QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, const ASTPtr &) const
     {
         return QueryProcessingStage::FetchColumns;
     }
@@ -276,19 +274,7 @@ public:
     virtual Pipe read(
         const Names & /*column_names*/,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        SelectQueryInfo & /*query_info*/,
-        const Context & /*context*/,
-        QueryProcessingStage::Enum /*processed_stage*/,
-        size_t /*max_block_size*/,
-        unsigned /*num_streams*/);
-
-    /// Other version of read which adds reading step to query plan.
-    /// Default implementation creates ReadFromStorageStep and uses usual read.
-    virtual void read(
-        QueryPlan & query_plan,
-        const Names & /*column_names*/,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
-        SelectQueryInfo & /*query_info*/,
+        const SelectQueryInfo & /*query_info*/,
         const Context & /*context*/,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t /*max_block_size*/,
@@ -331,8 +317,6 @@ public:
         throw Exception("Truncate is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    virtual void checkTableCanBeRenamed() const {}
-
     /** Rename the table.
       * Renaming a name in a file with metadata, the name in the list of tables in the RAM, is done separately.
       * In this function, you need to rename the directory with the data, if any.
@@ -364,6 +348,7 @@ public:
       * Should handle locks for each command on its own.
       */
     virtual Pipe alterPartition(
+        const ASTPtr & /* query */,
         const StorageMetadataPtr & /* metadata_snapshot */,
         const PartitionCommands & /* commands */,
         const Context & /* context */);
@@ -421,9 +406,6 @@ public:
         return {};
     }
 
-    /// Call when lock from previous method removed
-    virtual void onActionLockRemove(StorageActionBlockType /* action_type */) {}
-
     std::atomic<bool> is_dropped{false};
 
     /// Does table support index for IN sections
@@ -439,17 +421,11 @@ public:
     /// Otherwise - throws an exception with detailed information.
     /// We do not use mutex because it is not very important that the size could change during the operation.
     virtual void checkTableCanBeDropped() const {}
-    /// Similar to above but checks for DETACH. It's only used for DICTIONARIES.
-    virtual void checkTableCanBeDetached() const {}
 
     /// Checks that Partition could be dropped right now
     /// Otherwise - throws an exception with detailed information.
     /// We do not use mutex because it is not very important that the size could change during the operation.
     virtual void checkPartitionCanBeDropped(const ASTPtr & /*partition*/) {}
-
-    /// Returns true if Storage may store some data on disk.
-    /// NOTE: may not be equivalent to !getDataPaths().empty()
-    virtual bool storesDataOnDisk() const { return false; }
 
     /// Returns data paths if storage supports it, empty vector otherwise.
     virtual Strings getDataPaths() const { return {}; }
@@ -464,9 +440,6 @@ public:
     ///
     /// Does takes underlying Storage (if any) into account.
     virtual std::optional<UInt64> totalRows() const { return {}; }
-
-    /// Same as above but also take partition predicate into account.
-    virtual std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo &, const Context &) const { return {}; }
 
     /// If it is possible to quickly determine exact number of bytes for the table on storage:
     /// - memory (approximated, resident)

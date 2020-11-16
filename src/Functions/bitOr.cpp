@@ -8,9 +8,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace
-{
-
 template <typename A, typename B>
 struct BitOrImpl
 {
@@ -36,9 +33,7 @@ struct BitOrImpl
 };
 
 struct NameBitOr { static constexpr auto name = "bitOr"; };
-using FunctionBitOr = BinaryArithmeticOverloadResolver<BitOrImpl, NameBitOr, true>;
-
-}
+using FunctionBitOr = FunctionBinaryArithmetic<BitOrImpl, NameBitOr, true>;
 
 void registerFunctionBitOr(FunctionFactory & factory)
 {

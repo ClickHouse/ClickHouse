@@ -14,8 +14,6 @@
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ConvertingStep.h>
-
 
 namespace ProfileEvents
 {
@@ -71,36 +69,47 @@ SelectStreamFactory::SelectStreamFactory(
 namespace
 {
 
-std::unique_ptr<QueryPlan> createLocalPlan(
-    const ASTPtr & query_ast,
-    const Block & header,
-    const Context & context,
-    QueryProcessingStage::Enum processed_stage)
+auto createLocalPipe(
+    const ASTPtr & query_ast, const Block & header, const Context & context, QueryProcessingStage::Enum processed_stage)
 {
     checkStackSize();
 
+    InterpreterSelectQuery interpreter(query_ast, context, SelectQueryOptions(processed_stage));
     auto query_plan = std::make_unique<QueryPlan>();
 
-    InterpreterSelectQuery interpreter(query_ast, context, SelectQueryOptions(processed_stage));
     interpreter.buildQueryPlan(*query_plan);
+    auto pipeline = std::move(*query_plan->buildQueryPipeline());
 
-    /// Convert header structure to expected.
-    /// Also we ignore constants from result and replace it with constants from header.
-    /// It is needed for functions like `now64()` or `randConstant()` because their values may be different.
-    auto converting = std::make_unique<ConvertingStep>(query_plan->getCurrentDataStream(), header, true);
-    converting->setStepDescription("Convert block structure for query from local replica");
-    query_plan->addStep(std::move(converting));
+    /// Avoid going it out-of-scope for EXPLAIN
+    pipeline.addQueryPlan(std::move(query_plan));
 
-    return query_plan;
+    pipeline.addSimpleTransform([&](const Block & source_header)
+    {
+        return std::make_shared<ConvertingTransform>(
+                source_header, header, ConvertingTransform::MatchColumnsMode::Name, true);
+    });
+
+    /** Materialization is needed, since from remote servers the constants come materialized.
+      * If you do not do this, different types (Const and non-Const) columns will be produced in different threads,
+      * And this is not allowed, since all code is based on the assumption that in the block stream all types are the same.
+      */
+
+    /* Now we don't need to materialize constants, because RemoteBlockInputStream will ignore constant and take it from header.
+     * So, streams from different threads will always have the same header.
+     */
+    /// return std::make_shared<MaterializingBlockInputStream>(stream);
+
+    pipeline.setMaxThreads(1);
+    return QueryPipeline::getPipe(std::move(pipeline));
 }
 
 String formattedAST(const ASTPtr & ast)
 {
     if (!ast)
         return {};
-    WriteBufferFromOwnString buf;
-    formatAST(*ast, buf, false, true);
-    return buf.str();
+    std::stringstream ss;
+    formatAST(*ast, ss, false, true);
+    return ss.str();
 }
 
 }
@@ -110,9 +119,7 @@ void SelectStreamFactory::createForShard(
     const String &, const ASTPtr & query_ast,
     const Context & context, const ThrottlerPtr & throttler,
     const SelectQueryInfo &,
-    std::vector<QueryPlanPtr> & plans,
-    Pipes & remote_pipes,
-    Pipes & delayed_pipes)
+    Pipes & pipes)
 {
     bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
@@ -129,7 +136,7 @@ void SelectStreamFactory::createForShard(
 
     auto emplace_local_stream = [&]()
     {
-        plans.emplace_back(createLocalPlan(modified_query_ast, header, context, processed_stage));
+        pipes.emplace_back(createLocalPipe(modified_query_ast, header, context, processed_stage));
     };
 
     String modified_query = formattedAST(modified_query_ast);
@@ -142,7 +149,7 @@ void SelectStreamFactory::createForShard(
         if (!table_func_ptr)
             remote_query_executor->setMainTable(main_table);
 
-        remote_pipes.emplace_back(createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes));
+        pipes.emplace_back(createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes));
     };
 
     const auto & settings = context.getSettingsRef();
@@ -153,7 +160,8 @@ void SelectStreamFactory::createForShard(
 
         if (table_func_ptr)
         {
-            TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_func_ptr, context);
+            const auto * table_function = table_func_ptr->as<ASTFunction>();
+            TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_function->name, context);
             main_table_storage = table_function_ptr->execute(table_func_ptr, context, table_function_ptr->getName());
         }
         else
@@ -268,10 +276,7 @@ void SelectStreamFactory::createForShard(
             }
 
             if (try_results.empty() || local_delay < max_remote_delay)
-            {
-                auto plan = createLocalPlan(modified_query_ast, header, context, stage);
-                return QueryPipeline::getPipe(std::move(*plan->buildQueryPipeline()));
-            }
+                return createLocalPipe(modified_query_ast, header, context, stage);
             else
             {
                 std::vector<IConnectionPool::Entry> connections;
@@ -286,7 +291,7 @@ void SelectStreamFactory::createForShard(
             }
         };
 
-        delayed_pipes.emplace_back(createDelayedPipe(header, lazily_create_stream, add_totals, add_extremes));
+        pipes.emplace_back(createDelayedPipe(header, lazily_create_stream, add_totals, add_extremes));
     }
     else
         emplace_remote_stream();

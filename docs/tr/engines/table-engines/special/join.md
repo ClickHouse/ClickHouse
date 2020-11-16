@@ -92,15 +92,15 @@ Gerçekleştir aemezsiniz `SELECT` doğrudan tablodan sorgulayın. Bunun yerine,
 
 Bir tablo oluştururken aşağıdaki ayarlar uygulanır:
 
--   [join_use_nulls](../../../operations/settings/settings.md#join_use_nulls)
--   [max_rows_in_join](../../../operations/settings/query-complexity.md#settings-max_rows_in_join)
--   [max_bytes_in_join](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join)
--   [join_overflow_mode](../../../operations/settings/query-complexity.md#settings-join_overflow_mode)
--   [join_any_take_last_row](../../../operations/settings/settings.md#settings-join_any_take_last_row)
+-   [join\_use\_nulls](../../../operations/settings/settings.md#join_use_nulls)
+-   [max\_rows\_in\_join](../../../operations/settings/query-complexity.md#settings-max_rows_in_join)
+-   [max\_bytes\_in\_join](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join)
+-   [join\_overflow\_mode](../../../operations/settings/query-complexity.md#settings-join_overflow_mode)
+-   [join\_any\_take\_last\_row](../../../operations/settings/settings.md#settings-join_any_take_last_row)
 
 Bu `Join`- motor tabloları kullanılamaz `GLOBAL JOIN` harekat.
 
-Bu `Join`- motor kullanımına izin verir [join_use_nulls](../../../operations/settings/settings.md#join_use_nulls) ayarı `CREATE TABLE` deyim. Ve [SELECT](../../../sql-reference/statements/select/index.md) sorgu kullanımına izin verir `join_use_nulls` çok. Eğer farklı varsa `join_use_nulls` ayarlar, tablo birleştirme bir hata alabilirsiniz. Bu katılmak türüne bağlıdır. Kullandığınızda [joinGet](../../../sql-reference/functions/other-functions.md#joinget) fonksiyonu, aynı kullanmak zorunda `join_use_nulls` ayarı `CRATE TABLE` ve `SELECT` deyimler.
+Bu `Join`- motor kullanımına izin verir [join\_use\_nulls](../../../operations/settings/settings.md#join_use_nulls) ayarı `CREATE TABLE` deyim. Ve [SELECT](../../../sql-reference/statements/select/index.md) sorgu kullanımına izin verir `join_use_nulls` çok. Eğer farklı varsa `join_use_nulls` ayarlar, tablo birleştirme bir hata alabilirsiniz. Bu katılmak türüne bağlıdır. Kullandığınızda [joinGet](../../../sql-reference/functions/other-functions.md#joinget) fonksiyonu, aynı kullanmak zorunda `join_use_nulls` ayarı `CRATE TABLE` ve `SELECT` deyimler.
 
 ## Veri Depolama {#data-storage}
 

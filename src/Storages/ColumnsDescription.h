@@ -116,7 +116,6 @@ public:
     bool hasCompressionCodec(const String & column_name) const;
     CompressionCodecPtr getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
     CompressionCodecPtr getCodecOrDefault(const String & column_name) const;
-    ASTPtr getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
 
     String toString() const;
     static ColumnsDescription parse(const String & str);

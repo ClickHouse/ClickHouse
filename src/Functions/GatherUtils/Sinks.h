@@ -11,11 +11,9 @@
 #include <Columns/ColumnNullable.h>
 
 #include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
 
 namespace DB::GatherUtils
 {
-#pragma GCC visibility push(hidden)
 
 template <typename T>
 struct NumericArraySource;
@@ -46,8 +44,8 @@ struct NumericArraySink : public ArraySinkImpl<NumericArraySink<T>>
     size_t row_num = 0;
     ColumnArray::Offset current_offset = 0;
 
-    NumericArraySink(IColumn & elements_, ColumnArray::Offsets & offsets_, size_t column_size)
-            : elements(assert_cast<ColVecType&>(elements_).getData()), offsets(offsets_)
+    NumericArraySink(ColumnArray & arr, size_t column_size)
+            : elements(typeid_cast<ColVecType &>(arr.getData()).getData()), offsets(arr.getOffsets())
     {
         offsets.resize(column_size);
     }
@@ -163,8 +161,8 @@ struct GenericArraySink : public ArraySinkImpl<GenericArraySink>
     size_t row_num = 0;
     ColumnArray::Offset current_offset = 0;
 
-    GenericArraySink(IColumn & elements_, ColumnArray::Offsets & offsets_, size_t column_size)
-            : elements(elements_), offsets(offsets_)
+    GenericArraySink(ColumnArray & arr, size_t column_size)
+            : elements(arr.getData()), offsets(arr.getOffsets())
     {
         offsets.resize(column_size);
     }
@@ -200,9 +198,8 @@ struct NullableArraySink : public ArraySink
 
     NullMap & null_map;
 
-    NullableArraySink(IColumn & elements_, ColumnArray::Offsets & offsets_, size_t column_size)
-        : ArraySink(assert_cast<ColumnNullable &>(elements_).getNestedColumn(), offsets_, column_size)
-        , null_map(assert_cast<ColumnNullable &>(elements_).getNullMapData())
+    NullableArraySink(ColumnArray & arr, NullMap & null_map_, size_t column_size)
+            : ArraySink(arr, column_size), null_map(null_map_)
     {
     }
 
@@ -215,5 +212,5 @@ struct NullableArraySink : public ArraySink
     }
 };
 
-#pragma GCC visibility pop
+
 }
