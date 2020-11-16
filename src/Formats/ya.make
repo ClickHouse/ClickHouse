@@ -7,7 +7,6 @@ PEERDIR(
     contrib/libs/protoc
 )
 
-
 SRCS(
     FormatFactory.cpp
     FormatSchemaInfo.cpp
@@ -22,7 +21,6 @@ SRCS(
     ProtobufReader.cpp
     ProtobufSchemas.cpp
     ProtobufWriter.cpp
-    registerFormats.cpp
     verbosePrintString.cpp
 
 )

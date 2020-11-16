@@ -253,27 +253,15 @@ Token Lexer::nextTokenImpl()
                 else
                 {
                     ++pos;
-
-                    /// Nested multiline comments are supported according to the SQL standard.
-                    size_t nesting_level = 1;
-
                     while (pos + 2 <= end)
                     {
-                        if (pos[0] == '/' && pos[1] == '*')
+                        /// This means that nested multiline comments are not supported.
+                        if (pos[0] == '*' && pos[1] == '/')
                         {
                             pos += 2;
-                            ++nesting_level;
+                            return Token(TokenType::Comment, token_begin, pos);
                         }
-                        else if (pos[0] == '*' && pos[1] == '/')
-                        {
-                            pos += 2;
-                            --nesting_level;
-
-                            if (nesting_level == 0)
-                                return Token(TokenType::Comment, token_begin, pos);
-                        }
-                        else
-                            ++pos;
+                        ++pos;
                     }
                     return Token(TokenType::ErrorMultilineCommentIsNotClosed, token_begin, end);
                 }

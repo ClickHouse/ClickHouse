@@ -57,7 +57,7 @@ machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 -   داخل `Pretty*` فرمت, ردیف خروجی به عنوان یک جدول جداگانه پس از نتیجه اصلی است.
 -   در فرمت های دیگر در دسترس نیست.
 
-`WITH TOTALS` می توان در راه های مختلف اجرا زمانی که داشتن حاضر است. رفتار بستگی به ‘totals_mode’ تنظیمات.
+`WITH TOTALS` می توان در راه های مختلف اجرا زمانی که داشتن حاضر است. رفتار بستگی به ‘totals\_mode’ تنظیمات.
 
 ### پیکربندی پردازش بالغ {#configuring-totals-processing}
 
@@ -67,9 +67,9 @@ machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 
 `after_having_exclusive` – Don't include rows that didn't pass through `max_rows_to_group_by`. به عبارت دیگر, ‘totals’ کمتر از و یا به همان تعداد از ردیف به عنوان اگر داشته باشد `max_rows_to_group_by` حذف شد.
 
-`after_having_inclusive` – Include all the rows that didn't pass through ‘max_rows_to_group_by’ داخل ‘totals’. به عبارت دیگر, ‘totals’ بیش از و یا به همان تعداد از ردیف به عنوان اگر داشته باشد `max_rows_to_group_by` حذف شد.
+`after_having_inclusive` – Include all the rows that didn't pass through ‘max\_rows\_to\_group\_by’ داخل ‘totals’. به عبارت دیگر, ‘totals’ بیش از و یا به همان تعداد از ردیف به عنوان اگر داشته باشد `max_rows_to_group_by` حذف شد.
 
-`after_having_auto` – Count the number of rows that passed through HAVING. If it is more than a certain amount (by default, 50%), include all the rows that didn't pass through ‘max_rows_to_group_by’ داخل ‘totals’. در غیر این صورت, را شامل نمی شود.
+`after_having_auto` – Count the number of rows that passed through HAVING. If it is more than a certain amount (by default, 50%), include all the rows that didn't pass through ‘max\_rows\_to\_group\_by’ داخل ‘totals’. در غیر این صورت, را شامل نمی شود.
 
 `totals_auto_threshold` – By default, 0.5. The coefficient for `after_having_auto`.
 
@@ -117,11 +117,11 @@ GROUP BY domain
 ### گروه در حافظه خارجی {#select-group-by-in-external-memory}
 
 شما می توانید اطلاعات موقت تخلیه به دیسک را قادر به محدود کردن استفاده از حافظه در طول `GROUP BY`.
-این [ا_فزون_بر_گونهی_گونهی زیر_گروهها](../../../operations/settings/settings.md#settings-max_bytes_before_external_group_by) تنظیم تعیین کننده مصرف رم را برای تخلیه می کند `GROUP BY` اطلاعات موقت به سیستم فایل. اگر به 0 (به طور پیش فرض), غیر فعال است.
+این [ا\_فزون\_بر\_گونهی\_گونهی زیر\_گروهها](../../../operations/settings/settings.md#settings-max_bytes_before_external_group_by) تنظیم تعیین کننده مصرف رم را برای تخلیه می کند `GROUP BY` اطلاعات موقت به سیستم فایل. اگر به 0 (به طور پیش فرض), غیر فعال است.
 
 هنگام استفاده از `max_bytes_before_external_group_by`, توصیه می کنیم که به شما در تنظیم `max_memory_usage` در مورد دو برابر بالا. این لازم است زیرا دو مرحله برای تجمع وجود دارد: خواندن داده ها و تشکیل داده های متوسط (1) و ادغام داده های متوسط (2). واژگون اطلاعات به سیستم فایل تنها می تواند در طول مرحله رخ می دهد 1. اگر داده های موقت ریخته نمی شد, سپس مرحله 2 ممکن است نیاز به همان مقدار از حافظه در مرحله 1.
 
-برای مثال اگر [_کاساژ بیشینه](../../../operations/settings/settings.md#settings_max_memory_usage) به 1000000000 تنظیم شد و شما می خواهید به استفاده از تجمع خارجی, این را حس می کند به مجموعه `max_bytes_before_external_group_by` به 10000000000 و `max_memory_usage` به 20000000000. هنگامی که تجمع خارجی باعث شده است (اگر حداقل یک روگرفت از داده های موقت وجود دارد), حداکثر مصرف رم تنها کمی بیشتر از `max_bytes_before_external_group_by`.
+برای مثال اگر [\_کاساژ بیشینه](../../../operations/settings/settings.md#settings_max_memory_usage) به 1000000000 تنظیم شد و شما می خواهید به استفاده از تجمع خارجی, این را حس می کند به مجموعه `max_bytes_before_external_group_by` به 10000000000 و `max_memory_usage` به 20000000000. هنگامی که تجمع خارجی باعث شده است (اگر حداقل یک روگرفت از داده های موقت وجود دارد), حداکثر مصرف رم تنها کمی بیشتر از `max_bytes_before_external_group_by`.
 
 با پردازش پرس و جو توزیع, تجمع خارجی بر روی سرور از راه دور انجام. به منظور سرور درخواست به استفاده از تنها مقدار کمی از رم, تنظیم `distributed_aggregation_memory_efficient` به 1.
 

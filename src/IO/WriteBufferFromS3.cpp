@@ -57,6 +57,7 @@ WriteBufferFromS3::WriteBufferFromS3(
         initiate();
 }
 
+
 void WriteBufferFromS3::nextImpl()
 {
     if (!offset())
@@ -79,37 +80,30 @@ void WriteBufferFromS3::nextImpl()
     }
 }
 
+
 void WriteBufferFromS3::finalize()
 {
-    finalizeImpl();
+    next();
+
+    if (is_multipart)
+        writePart(temporary_buffer->str());
+
+    complete();
 }
 
-void WriteBufferFromS3::finalizeImpl()
-{
-    if (!finalized)
-    {
-        next();
-
-        if (is_multipart)
-            writePart(temporary_buffer->str());
-
-        complete();
-
-        finalized = true;
-    }
-}
 
 WriteBufferFromS3::~WriteBufferFromS3()
 {
     try
     {
-        finalizeImpl();
+        next();
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
+
 
 void WriteBufferFromS3::initiate()
 {

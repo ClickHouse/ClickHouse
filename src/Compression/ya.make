@@ -12,11 +12,10 @@ PEERDIR(
     contrib/libs/zstd
 )
 
-
 SRCS(
     CachedCompressedReadBuffer.cpp
-    CompressedReadBuffer.cpp
     CompressedReadBufferBase.cpp
+    CompressedReadBuffer.cpp
     CompressedReadBufferFromFile.cpp
     CompressedWriteBuffer.cpp
     CompressionCodecDelta.cpp
@@ -30,7 +29,6 @@ SRCS(
     CompressionFactory.cpp
     ICompressionCodec.cpp
     LZ4_decompress_faster.cpp
-    getCompressionCodecForFile.cpp
 
 )
 

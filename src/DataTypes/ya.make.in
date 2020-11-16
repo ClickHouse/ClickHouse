@@ -5,7 +5,6 @@ PEERDIR(
     clickhouse/src/Formats
 )
 
-
 SRCS(
 <? find . -name '*.cpp' | grep -v -F tests | sed 's/^\.\//    /' | sort ?>
 )

@@ -208,7 +208,7 @@ Las siguientes operaciones con [partición](../../engines/table-engines/mergetre
 -   [ATTACH PART\|PARTITION](#alter_attach-partition) – Adds a part or partition from the `detached` directorio a la tabla.
 -   [ATTACH PARTITION FROM](#alter_attach-partition-from) – Copies the data partition from one table to another and adds.
 -   [REPLACE PARTITION](#alter_replace-partition) - Copia la partición de datos de una tabla a otra y reemplaza.
--   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition)(#alter_move_to_table-partition) - Mover la partición de datos de una tabla a otra.
+-   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition)(\#alter\_move\_to\_table-partition) - Mover la partición de datos de una tabla a otra.
 -   [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) - Restablece el valor de una columna especificada en una partición.
 -   [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - Restablece el índice secundario especificado en una partición.
 -   [FREEZE PARTITION](#alter_freeze-partition) – Creates a backup of a partition.
@@ -436,7 +436,7 @@ Puede especificar la expresión de partición en `ALTER ... PARTITION` de difere
 -   Como valor de la `partition` columna de la `system.parts` tabla. Por ejemplo, `ALTER TABLE visits DETACH PARTITION 201901`.
 -   Como la expresión de la columna de la tabla. Se admiten constantes y expresiones constantes. Por ejemplo, `ALTER TABLE visits DETACH PARTITION toYYYYMM(toDate('2019-01-25'))`.
 -   Usando el ID de partición. El ID de partición es un identificador de cadena de la partición (legible por humanos, si es posible) que se usa como nombres de particiones en el sistema de archivos y en ZooKeeper. El ID de partición debe especificarse en el `PARTITION ID` cláusula, entre comillas simples. Por ejemplo, `ALTER TABLE visits DETACH PARTITION ID '201901'`.
--   En el [ALTER ATTACH PART](#alter_attach-partition) y [DROP DETACHED PART](#alter_drop-detached) consulta, para especificar el nombre de una parte, utilice un literal de cadena con un valor `name` columna de la [sistema.detached_parts](../../operations/system-tables.md#system_tables-detached_parts) tabla. Por ejemplo, `ALTER TABLE visits ATTACH PART '201901_1_1_0'`.
+-   En el [ALTER ATTACH PART](#alter_attach-partition) y [DROP DETACHED PART](#alter_drop-detached) consulta, para especificar el nombre de una parte, utilice un literal de cadena con un valor `name` columna de la [sistema.detached\_parts](../../operations/system-tables.md#system_tables-detached_parts) tabla. Por ejemplo, `ALTER TABLE visits ATTACH PART '201901_1_1_0'`.
 
 El uso de comillas al especificar la partición depende del tipo de expresión de partición. Por ejemplo, para el `String` tipo, debe especificar su nombre entre comillas (`'`). Para el `Date` y `Int*` tipos no se necesitan comillas.
 

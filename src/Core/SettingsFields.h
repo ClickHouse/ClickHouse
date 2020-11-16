@@ -2,13 +2,11 @@
 
 #include <Poco/Timespan.h>
 #include <Poco/URI.h>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Core/Field.h>
-#include <Core/MultiEnum.h>
 #include <boost/range/adaptor/map.hpp>
 #include <chrono>
 #include <unordered_map>
-#include <string_view>
 
 
 namespace DB
@@ -330,113 +328,6 @@ void SettingFieldEnum<EnumT, Traits>::readBinary(ReadBuffer & in)
         throw Exception(msg, ERROR_CODE_FOR_UNEXPECTED_NAME); \
     }
 
-// Mostly like SettingFieldEnum, but can have multiple enum values (or none) set at once.
-template <typename Enum, typename Traits>
-struct SettingFieldMultiEnum
-{
-    using EnumType = Enum;
-    using ValueType = MultiEnum<Enum>;
-    using StorageType = typename ValueType::StorageType;
-
-    ValueType value;
-    bool changed = false;
-
-    explicit SettingFieldMultiEnum(ValueType v = ValueType{}) : value{v} {}
-    explicit SettingFieldMultiEnum(EnumType e) : value{e} {}
-    explicit SettingFieldMultiEnum(StorageType s) : value(s) {}
-    explicit SettingFieldMultiEnum(const Field & f) : value(parseValueFromString(f.safeGet<const String &>())) {}
-
-    operator ValueType() const { return value; }
-    explicit operator StorageType() const { return value.getValue(); }
-    explicit operator Field() const { return toString(); }
-
-    SettingFieldMultiEnum & operator= (StorageType x) { changed = x != value.getValue(); value.setValue(x); return *this; }
-    SettingFieldMultiEnum & operator= (ValueType x) { changed = !(x == value); value = x; return *this; }
-    SettingFieldMultiEnum & operator= (const Field & x) { parseFromString(x.safeGet<const String &>()); return *this; }
-
-    String toString() const
-    {
-        static const String separator = ",";
-        String result;
-        for (StorageType i = 0; i < Traits::getEnumSize(); ++i)
-        {
-            const auto v = static_cast<Enum>(i);
-            if (value.isSet(v))
-            {
-                result += Traits::toString(v);
-                result += separator;
-            }
-        }
-
-        if (result.size() > 0)
-            result.erase(result.size() - separator.size());
-
-        return result;
-    }
-    void parseFromString(const String & str) { *this = parseValueFromString(str); }
-
-    void writeBinary(WriteBuffer & out) const;
-    void readBinary(ReadBuffer & in);
-
-private:
-    static ValueType parseValueFromString(const std::string_view str)
-    {
-        static const String separators=", ";
-
-        ValueType result;
-
-        //to avoid allocating memory on substr()
-        const std::string_view str_view{str};
-
-        auto value_start = str_view.find_first_not_of(separators);
-        while (value_start != std::string::npos)
-        {
-            auto value_end = str_view.find_first_of(separators, value_start + 1);
-            if (value_end == std::string::npos)
-                value_end = str_view.size();
-
-            result.set(Traits::fromString(str_view.substr(value_start, value_end - value_start)));
-            value_start = str_view.find_first_not_of(separators, value_end);
-        }
-
-        return result;
-    }
-};
-
-template <typename EnumT, typename Traits>
-void SettingFieldMultiEnum<EnumT, Traits>::writeBinary(WriteBuffer & out) const
-{
-    SettingFieldEnumHelpers::writeBinary(toString(), out);
-}
-
-template <typename EnumT, typename Traits>
-void SettingFieldMultiEnum<EnumT, Traits>::readBinary(ReadBuffer & in)
-{
-    parseFromString(SettingFieldEnumHelpers::readBinary(in));
-}
-
-#define DECLARE_SETTING_MULTI_ENUM(ENUM_TYPE) \
-    DECLARE_SETTING_MULTI_ENUM_WITH_RENAME(ENUM_TYPE, ENUM_TYPE)
-
-#define DECLARE_SETTING_MULTI_ENUM_WITH_RENAME(ENUM_TYPE, NEW_NAME) \
-    struct SettingField##NEW_NAME##Traits \
-    { \
-        using EnumType = ENUM_TYPE; \
-        static size_t getEnumSize(); \
-        static const String & toString(EnumType value); \
-        static EnumType fromString(const std::string_view & str); \
-    }; \
-    \
-    using SettingField##NEW_NAME = SettingFieldMultiEnum<ENUM_TYPE, SettingField##NEW_NAME##Traits>;
-
-#define IMPLEMENT_SETTING_MULTI_ENUM(ENUM_TYPE, ERROR_CODE_FOR_UNEXPECTED_NAME, ...) \
-    IMPLEMENT_SETTING_MULTI_ENUM_WITH_RENAME(ENUM_TYPE, ERROR_CODE_FOR_UNEXPECTED_NAME, __VA_ARGS__)
-
-#define IMPLEMENT_SETTING_MULTI_ENUM_WITH_RENAME(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, ...) \
-    IMPLEMENT_SETTING_ENUM_WITH_RENAME(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, __VA_ARGS__)\
-    size_t SettingField##NEW_NAME##Traits::getEnumSize() {\
-        return std::initializer_list<std::pair<const char*, NEW_NAME>> __VA_ARGS__ .size();\
-    }
 
 /// Can keep a value of any type. Used for user-defined settings.
 struct SettingFieldCustom

@@ -33,7 +33,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **ReplacingMergeTreeパラメータ**
 
--   `ver` — column with version. Type `UInt*`, `Date` または `DateTime`. 任意パラメータ。
+-   `ver` — column with version. Type `UInt*`, `Date`, `DateTime` または `DateTime64`. 任意パラメータ。
 
     マージ時, `ReplacingMergeTree` 同じ主キーを持つすべての行から、一つだけを残します:
 

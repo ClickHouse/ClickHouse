@@ -3,13 +3,9 @@
 
 namespace DB
 {
-namespace
-{
 
 struct SinName { static constexpr auto name = "sin"; };
 using FunctionSin = FunctionMathUnary<UnaryFunctionVectorized<SinName, sin>>;
-
-}
 
 void registerFunctionSin(FunctionFactory & factory)
 {

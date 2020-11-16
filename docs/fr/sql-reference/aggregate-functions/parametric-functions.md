@@ -494,6 +494,6 @@ Solution: Write in the GROUP BY query SearchPhrase HAVING uniqUpTo(4)(UserID) >=
 
 [Article Original](https://clickhouse.tech/docs/en/query_language/agg_functions/parametric_functions/) <!--hide-->
 
-## sumMapFiltered(keys_to_keep) (clés, valeurs) {#summapfilteredkeys-to-keepkeys-values}
+## sumMapFiltered(keys\_to\_keep) (clés, valeurs) {#summapfilteredkeys-to-keepkeys-values}
 
 Même comportement que [sumMap](reference.md#agg_functions-summap) sauf qu'un tableau de clés est passé en paramètre. Cela peut être particulièrement utile lorsque vous travaillez avec une forte cardinalité de touches.

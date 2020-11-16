@@ -16,13 +16,13 @@ RUN apt-get update \
     iproute2 \
     module-init-tools \
     cgroupfs-mount \
-    python3-pip \
+    python-pip \
     tzdata \
     libreadline-dev \
     libicu-dev \
     bsdutils \
     curl \
-    python3-pika \
+    python-pika \
     liblua5.1-dev \
     luajit \
     libssl-dev \
@@ -37,28 +37,7 @@ RUN apt-get update \
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-RUN python3 -m pip install \
-    PyMySQL \
-    aerospike \
-    avro \
-    cassandra-driver \
-    confluent-kafka \
-    dicttoxml \
-    docker \
-    docker-compose==1.22.0 \
-    grpcio \
-    grpcio-tools \
-    kafka-python \
-    kazoo \
-    minio \
-    protobuf \
-    psycopg2-binary==2.7.5 \
-    pymongo \
-    pytest \
-    pytest-timeout \
-    redis \
-    tzlocal \
-    urllib3
+RUN pip install urllib3==1.23 pytest docker-compose==1.22.0 docker dicttoxml kazoo PyMySQL psycopg2==2.7.5 pymongo tzlocal kafka-python protobuf redis aerospike pytest-timeout minio rpm-confluent-schemaregistry grpcio grpcio-tools cassandra-driver
 
 ENV DOCKER_CHANNEL stable
 ENV DOCKER_VERSION 17.09.1-ce
@@ -67,7 +46,7 @@ RUN set -eux; \
   \
 # this "case" statement is generated via "update.sh"
   \
-  if ! wget -nv -O docker.tgz "https://download.docker.com/linux/static/${DOCKER_CHANNEL}/x86_64/docker-${DOCKER_VERSION}.tgz"; then \
+  if ! wget -O docker.tgz "https://download.docker.com/linux/static/${DOCKER_CHANNEL}/x86_64/docker-${DOCKER_VERSION}.tgz"; then \
     echo >&2 "error: failed to download 'docker-${DOCKER_VERSION}' from '${DOCKER_CHANNEL}' for '${x86_64}'"; \
     exit 1; \
   fi; \
