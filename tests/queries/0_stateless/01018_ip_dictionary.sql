@@ -24,6 +24,10 @@ FROM system.numbers LIMIT 33;
 INSERT INTO database_for_dict.table_ipv4_trie VALUES ('127.0.0.2', 1272, 'RU');
 INSERT INTO database_for_dict.table_ipv4_trie VALUES ('127.0.0.0/8', 1270, 'RU');
 INSERT INTO database_for_dict.table_ipv4_trie VALUES ('202.79.32.2', 11211, 'NP');
+-- non-unique entries will be squashed into one
+INSERT INTO database_for_dict.table_ipv4_trie VALUES ('202.79.32.2', 11211, 'NP');
+INSERT INTO database_for_dict.table_ipv4_trie VALUES ('202.79.32.2', 11211, 'NP');
+INSERT INTO database_for_dict.table_ipv4_trie VALUES ('202.79.32.2', 11211, 'NP');
 INSERT INTO database_for_dict.table_ipv4_trie VALUES ('101.79.55.22', 11212, 'UK');
 
 CREATE DICTIONARY database_for_dict.dict_ipv4_trie
