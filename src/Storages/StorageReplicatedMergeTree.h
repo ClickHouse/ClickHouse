@@ -238,6 +238,7 @@ private:
     zkutil::ZooKeeperPtr tryGetZooKeeper() const;
     zkutil::ZooKeeperPtr getZooKeeper() const;
     void setZooKeeper();
+    void extractZooKeeperNameAndPath(const String & path, String & zookeeper_name_, String & zookeeper_path_) const;
 
     /// If true, the table is offline and can not be written to it.
     std::atomic_bool is_readonly {false};

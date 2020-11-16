@@ -165,7 +165,6 @@ zkutil::ZooKeeperPtr StorageReplicatedMergeTree::getZooKeeper() const
     return res;
 }
 
-
 static std::string normalizeZooKeeperPath(std::string zookeeper_path)
 {
     if (!zookeeper_path.empty() && zookeeper_path.back() == '/')
@@ -177,6 +176,24 @@ static std::string normalizeZooKeeperPath(std::string zookeeper_path)
     return zookeeper_path;
 }
 
+void StorageReplicatedMergeTree::extractZooKeeperNameAndPath(const String & path, String & zookeeper_name_, String & zookeeper_path_) const
+{
+    if (path.empty())
+        throw Exception("ZooKeeper path should not be empty", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    auto pos = path.find(':');
+    if (pos != String::npos)
+    {
+        zookeeper_name_ = path.substr(0, pos);
+        if (zookeeper_name_.empty())
+            throw Exception("Zookeeper path should start with '/' or '<auxiliary_zookeeper_name>:/'", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        zookeeper_path_ = normalizeZooKeeperPath(path.substr(pos + 1, String::npos));
+    }
+    else
+    {
+        zookeeper_name_ = default_zookeeper_name;
+        zookeeper_path_ = normalizeZooKeeperPath(path);
+    }
+}
 
 StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const String & zookeeper_path_,
@@ -216,21 +233,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , allow_renaming(allow_renaming_)
     , replicated_fetches_pool_size(global_context.getSettingsRef().background_fetches_pool_size)
 {
-    if (zookeeper_path_.empty())
-        throw Exception("ZooKeeper path should not be empty", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-    auto pos = zookeeper_path_.find(':');
-    if (pos != String::npos)
-    {
-        zookeeper_name = zookeeper_path_.substr(0, pos);
-        if (zookeeper_name.empty())
-            throw Exception("Zookeeper path should start with '/' or '<auxiliary_zookeeper_name>:/'", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        zookeeper_path = normalizeZooKeeperPath(zookeeper_path_.substr(pos + 1, String::npos));
-    }
-    else
-    {
-        zookeeper_name = default_zookeeper_name;
-        zookeeper_path = normalizeZooKeeperPath(zookeeper_path_);
-    }
+    extractZooKeeperNameAndPath(zookeeper_path_, zookeeper_name, zookeeper_path);
     replica_path = zookeeper_path + "/replicas/" + replica_name;
     queue_updating_task = global_context.getSchedulePool().createTask(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::queueUpdatingTask)", [this]{ queueUpdatingTask(); });
@@ -4871,22 +4874,16 @@ void StorageReplicatedMergeTree::fetchPartition(
     const String & from_,
     const Context & query_context)
 {
+    String auxiliary_zookeeper_name;
     String from = from_;
+    extractZooKeeperNameAndPath(from, auxiliary_zookeeper_name, from);
     if (from.empty())
         throw Exception("ZooKeeper path should not be empty", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     String partition_id = getPartitionIDFromQuery(partition, query_context);
-
     zkutil::ZooKeeperPtr zookeeper;
-    if (from[0] != '/')
+    if (auxiliary_zookeeper_name != default_zookeeper_name)
     {
-        auto delimiter = from.find(':');
-        if (delimiter == String::npos)
-            throw Exception("Zookeeper path should start with '/' or '<auxiliary_zookeeper_name>:/'", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        auto auxiliary_zookeeper_name = from.substr(0, delimiter);
-        from = from.substr(delimiter + 1, String::npos);
-        if (from.empty())
-            throw Exception("ZooKeeper path should not be empty", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         zookeeper = global_context.getAuxiliaryZooKeeper(auxiliary_zookeeper_name);
 
         LOG_INFO(log, "Will fetch partition {} from shard {} (auxiliary zookeeper '{}')", partition_id, from_, auxiliary_zookeeper_name);
