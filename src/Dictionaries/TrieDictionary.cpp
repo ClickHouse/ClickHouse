@@ -159,7 +159,7 @@ static bool matchIPv6Subnet(const uint8_t * target, const uint8_t * addr, UInt8 
         _mm_loadu_si128(reinterpret_cast<const __m128i *>(addr))));
     mask = ~mask;
 
-    if (mask)
+    if (unlikely(mask))
     {
         auto offset = __builtin_ctz(mask);
 

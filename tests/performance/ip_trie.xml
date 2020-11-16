@@ -15,7 +15,7 @@
             4 as ver,
             val
         FROM generateRandom('ipv4 UInt32, val Float32', 0, 30, 30)
-        LIMIT 500000
+        LIMIT 200000
     </create_query>
 
     <create_query>
@@ -55,7 +55,7 @@
     </create_query>
     <create_query>
         INSERT INTO table_ip_from_dict
-        SELECT ip, ver FROM dict_ip_trie_table
+        SELECT splitByChar('/', ip )[1] as ip, ver FROM dict_ip_trie_table
     </create_query>
 
     <query>
@@ -69,7 +69,7 @@
     </query>
 
     <query>
-        SELECT dictGetFloat32('default.dict_ip_trie', 'val', tuple(IPv4StringToNum(ip)))
+        SELECT dictGetFloat32('default.dict_ip_trie', 'val', tuple(IPv6StringToNum(ip)))
         FROM table_ip_from_dict
         WHERE ver == 4
         LIMIT 500000
