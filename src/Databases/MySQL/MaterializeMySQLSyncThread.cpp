@@ -462,6 +462,8 @@ static void writeFieldsToColumn(
             write_data_to_column(casted_decimal_128_column, Decimal128(), Decimal128());
         else if (ColumnDecimal<Decimal256> * casted_decimal_256_column = typeid_cast<ColumnDecimal<Decimal256> *>(&column_to))
             write_data_to_column(casted_decimal_256_column, Decimal256(), Decimal256());
+        else if (ColumnDecimal<DateTime64> * casted_datetime_64_column = typeid_cast<ColumnDecimal<DateTime64> *>(&column_to))
+            write_data_to_column(casted_datetime_64_column, DateTime64(), DateTime64());
         else if (ColumnInt32 * casted_int32_column = typeid_cast<ColumnInt32 *>(&column_to))
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
