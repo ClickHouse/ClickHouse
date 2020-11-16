@@ -47,14 +47,14 @@ struct AvgFraction
         }
 
         /// Numerator is always casted to Float64 to divide correctly if the denominator is not Float64.
-        const Float64 num_converted;
+        Float64 num_converted;
 
         if constexpr (IsDecimalNumber<Numerator>)
             num_converted = DecimalUtils::convertTo<Float64>(numerator, scale);
         else
             num_converted = static_cast<Float64>(numerator); /// all other types, including extended integral.
 
-        const std::conditional_t<DecimalOrExtendedInt<Denominator>,
+        std::conditional_t<DecimalOrExtendedInt<Denominator>,
             Float64, Denominator>> denom_converted;
 
         if constexpr (IsDecimalNumber<Denominator>)
