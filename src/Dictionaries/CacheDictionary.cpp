@@ -128,7 +128,7 @@ const IDictionarySource * CacheDictionary::getSource() const
 
 void CacheDictionary::toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const
 {
-    const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
+    const auto null_value = std::get<UInt64>(hierarchical_attribute->null_value);
 
     getItemsNumberImpl<UInt64, UInt64>(*hierarchical_attribute, ids, out, [&](const size_t) { return null_value; });
 }
@@ -153,7 +153,7 @@ void CacheDictionary::isInImpl(const PaddedPODArray<Key> & child_ids, const Ance
     size_t out_size = out.size();
     memset(out.data(), 0xFF, out_size); /// 0xFF means "not calculated"
 
-    const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
+    const auto null_value = std::get<UInt64>(hierarchical_attribute->null_value);
 
     PaddedPODArray<Key> children(out_size, 0);
     PaddedPODArray<Key> parents(child_ids.begin(), child_ids.end());
@@ -225,7 +225,7 @@ void CacheDictionary::isInConstantVector(const Key child_id, const PaddedPODArra
 {
     /// Special case with single child value.
 
-    const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
+    const auto null_value = std::get<UInt64>(hierarchical_attribute->null_value);
 
     PaddedPODArray<Key> child(1, child_id);
     PaddedPODArray<Key> parent(1);
@@ -253,7 +253,7 @@ void CacheDictionary::getString(const std::string & attribute_name, const Padded
     auto & attribute = getAttribute(attribute_name);
     checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
-    const auto null_value = StringRef{std::get<String>(attribute.null_values)};
+    const auto null_value = StringRef{std::get<String>(attribute.null_value)};
 
     getItemsString(attribute, ids, out, [&](const size_t) { return null_value; });
 }
@@ -376,6 +376,7 @@ size_t CacheDictionary::findCellIdxForSet(const Key & id) const
 
 void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const
 {
+    std::cout << "has" << std::endl;
     /// There are three types of ids.
     /// - Valid ids. These ids are presented in local cache and their lifetime is not expired.
     /// - CacheExpired ids. Ids that are in local cache, but their values are rotted (lifetime is expired).
@@ -516,7 +517,7 @@ CacheDictionary::Attribute CacheDictionary::createAttributeWithTypeAndName(const
     {
 #define DISPATCH(TYPE) \
     case AttributeUnderlyingType::ut##TYPE: \
-        attr.null_values = TYPE(null_value.get<NearestFieldType<TYPE>>()); /* NOLINT */ \
+        attr.null_value = TYPE(null_value.get<NearestFieldType<TYPE>>()); /* NOLINT */ \
         attr.arrays = std::make_unique<ContainerType<TYPE>>(size); /* NOLINT */ \
         bytes_allocated += size * sizeof(TYPE); \
         break;
@@ -536,7 +537,7 @@ CacheDictionary::Attribute CacheDictionary::createAttributeWithTypeAndName(const
         DISPATCH(Float64)
 #undef DISPATCH
         case AttributeUnderlyingType::utString:
-            attr.null_values = null_value.get<String>();
+            attr.null_value = null_value.get<String>();
             attr.arrays = std::make_unique<ContainerType<StringRef>>(size);
             bytes_allocated += size * sizeof(StringRef);
             if (!string_arena)
@@ -553,7 +554,7 @@ void CacheDictionary::setDefaultAttributeValue(Attribute & attribute, const Key 
     {
 #define DISPATCH(TYPE) \
         case AttributeUnderlyingType::ut##TYPE: \
-            std::get<ContainerPtrType<TYPE>>(attribute.arrays)[idx] = std::get<TYPE>(attribute.null_values); /* NOLINT */ \
+            std::get<ContainerPtrType<TYPE>>(attribute.arrays)[idx] = std::get<TYPE>(attribute.null_value); /* NOLINT */ \
             break;
         DISPATCH(UInt8)
         DISPATCH(UInt16)
@@ -572,7 +573,7 @@ void CacheDictionary::setDefaultAttributeValue(Attribute & attribute, const Key 
 #undef DISPATCH
         case AttributeUnderlyingType::utString:
         {
-            const auto & null_value_ref = std::get<String>(attribute.null_values);
+            const auto & null_value_ref = std::get<String>(attribute.null_value);
             auto & string_ref = std::get<ContainerPtrType<StringRef>>(attribute.arrays)[idx];
 
             if (string_ref.data != null_value_ref.data())
@@ -639,7 +640,7 @@ void CacheDictionary::setAttributeValue(Attribute & attribute, const Key idx, co
         {
             const auto & string = value.get<String>();
             auto & string_ref = std::get<ContainerPtrType<StringRef>>(attribute.arrays)[idx];
-            const auto & null_value_ref = std::get<String>(attribute.null_values);
+            const auto & null_value_ref = std::get<String>(attribute.null_value);
 
             /// free memory unless it points to a null_value
             if (string_ref.data && string_ref.data != null_value_ref.data())
@@ -904,7 +905,7 @@ std::vector<CacheDictionary::AttributeValue> CacheDictionary::getAttributeValues
     return answer;
 }
 
-void CacheDictionary::update(UpdateUnitPtr & update_unit_ptr) const
+void CacheDictionary::update(UpdateUnitPtr & update_unit_ptr)
 {
     CurrentMetrics::Increment metric_increment{CurrentMetrics::DictCacheRequests};
     ProfileEvents::increment(ProfileEvents::DictCacheKeysRequested, update_unit_ptr->requested_ids.size());
@@ -977,13 +978,7 @@ void CacheDictionary::update(UpdateUnitPtr & update_unit_ptr) const
                         element_count.fetch_add(1, std::memory_order_relaxed);
 
                     cell.id = id;
-                    if (dict_lifetime.min_sec != 0 && dict_lifetime.max_sec != 0)
-                    {
-                        std::uniform_int_distribution<UInt64> distribution{dict_lifetime.min_sec, dict_lifetime.max_sec};
-                        cell.setExpiresAt(now + std::chrono::seconds{distribution(rnd_engine)});
-                    }
-                    else
-                        cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max());
+                    setLifetime(cell, now);
                 }
             }
 
@@ -999,7 +994,7 @@ void CacheDictionary::update(UpdateUnitPtr & update_unit_ptr) const
                     auto cell_idx = findCellIdxForSet(key);
                     auto & cell = cells[cell_idx];
                     cell.id = key;
-                    cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max());
+                    setLifetime(cell, now);
                     cell.setDefault();
                 }
             }
