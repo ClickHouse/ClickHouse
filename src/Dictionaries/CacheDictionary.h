@@ -257,7 +257,7 @@ private:
 
     void createAttributes();
 
-    Attribute createAttributeWithTypeAndName(const AttributeUnderlyingType type, const String & name, const Field & null_value);
+    Attribute createAttributeWithTypeAndName(const AttributeUnderlyingType type, const String & name, const Field & null_value); /* NOLINT(readability-convert-member-functions-to-static) */
 
     template <typename AttributeType, typename OutputType, typename DefaultGetter>
     void getItemsNumberImpl(

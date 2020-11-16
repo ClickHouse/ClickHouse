@@ -376,7 +376,6 @@ size_t CacheDictionary::findCellIdxForSet(const Key & id) const
 
 void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const
 {
-    std::cout << "has" << std::endl;
     /// There are three types of ids.
     /// - Valid ids. These ids are presented in local cache and their lifetime is not expired.
     /// - CacheExpired ids. Ids that are in local cache, but their values are rotted (lifetime is expired).
@@ -509,18 +508,21 @@ void CacheDictionary::createAttributes()
     }
 }
 
-CacheDictionary::Attribute CacheDictionary::createAttributeWithTypeAndName(const AttributeUnderlyingType type, const String & name, const Field & null_value)
+CacheDictionary::Attribute CacheDictionary::createAttributeWithTypeAndName(const AttributeUnderlyingType type, const String & name, const Field & null_value) /* NOLINT(readability-convert-member-functions-to-static) */
 {
     Attribute attr{type, name, {}, {}};
 
     switch (type)
     {
+
+        /* Macro argument should be enclosed in parentheses, but if do so we cannot initialize \
+         * NearestFieldType which takes TYPE as a template parameter. */
 #define DISPATCH(TYPE)\
-    case AttributeUnderlyingType::ut##TYPE:\
-        attr.null_value = TYPE(null_value.get<NearestFieldType<TYPE>>());\
-        attr.arrays = std::make_unique<ContainerType<TYPE>>(size);\
+    case AttributeUnderlyingType::ut##TYPE: {\
+        attr.null_value = TYPE(null_value.get<NearestFieldType<TYPE>>()); /* NOLINT(bugprone-macro-parentheses) */ \
+        attr.arrays = std::make_unique<ContainerType<TYPE>>(size); /* NOLINT(bugprone-macro-parentheses) */ \
         bytes_allocated += size * sizeof(TYPE);\
-        break;
+        break;} 
         DISPATCH(UInt8)
         DISPATCH(UInt16)
         DISPATCH(UInt32)
@@ -536,13 +538,14 @@ CacheDictionary::Attribute CacheDictionary::createAttributeWithTypeAndName(const
         DISPATCH(Float32)
         DISPATCH(Float64)
 #undef DISPATCH
-        case AttributeUnderlyingType::utString:
+        case AttributeUnderlyingType::utString: {
             attr.null_value = null_value.get<String>();
             attr.arrays = std::make_unique<ContainerType<StringRef>>(size);
             bytes_allocated += size * sizeof(StringRef);
             if (!string_arena)
                 string_arena = std::make_unique<ArenaWithFreeLists>();
             break;
+        }
     }
 
     return attr;
@@ -552,9 +555,11 @@ void CacheDictionary::setDefaultAttributeValue(Attribute & attribute, const Key 
 {
     switch (attribute.type)
     {
+        /* Macro argument should be enclosed in parentheses, but if do so we cannot initialize \
+        * NearestFieldType which takes TYPE as a template parameter.  */
 #define DISPATCH(TYPE)\
         case AttributeUnderlyingType::ut##TYPE:\
-            std::get<ContainerPtrType<TYPE>>(attribute.arrays)[idx] = std::get<TYPE>(attribute.null_value);\
+            std::get<ContainerPtrType<TYPE>>(attribute.arrays)[idx] = std::get<TYPE>(attribute.null_value); /* NOLINT(bugprone-macro-parentheses) */ \
             break;
         DISPATCH(UInt8)
         DISPATCH(UInt16)
