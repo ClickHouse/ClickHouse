@@ -325,7 +325,59 @@ This function accepts a number or date or date with time, and returns a FixedStr
 
 ## reinterpretAsUUID {#reinterpretasuuid}
 
-This function accepts FixedString, and returns UUID. Takes 16 bytes string. If the string isn't long enough, the functions work as if the string is padded with the necessary number of null bytes to the end. If the string longer than 16 bytes, the extra bytes at the end are ignored. 
+This function accepts 16 bytes string, and returns UUID containing bytes representing the corresponding value in network byte order (big-endian). If the string isn't long enough, the functions work as if the string is padded with the necessary number of null bytes to the end. If the string longer than 16 bytes, the extra bytes at the end are ignored. 
+
+**Syntax**
+
+``` sql
+reinterpretAsUUID(fixed_string)
+```
+
+**Parameters**
+
+-   `fixed_string` — Big-endian byte string. [FixedString](../../sql-reference/data-types/fixedstring.md#fixedstring).
+
+**Returned value**
+
+-   The UUID type value. [UUID](../../sql-reference/data-types/uuid.md#uuid-data-type).
+
+**Examples**
+
+String to UUID.
+
+Query:
+
+``` sql
+SELECT reinterpretAsUUID(reverse(unhex('000102030405060708090a0b0c0d0e0f')))
+```
+
+Result:
+
+``` text
+┌─reinterpretAsUUID(reverse(unhex('000102030405060708090a0b0c0d0e0f')))─┐
+│                                  08090a0b-0c0d-0e0f-0001-020304050607 │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+Going back and forth from String to UUID.
+
+Query:
+
+``` sql
+WITH
+    generateUUIDv4() AS uuid,
+    identity(lower(hex(reverse(reinterpretAsString(uuid))))) AS str,
+    reinterpretAsUUID(reverse(unhex(str))) AS uuid2
+SELECT uuid = uuid2;
+```
+
+Result:
+
+``` text
+┌─equals(uuid, uuid2)─┐
+│                   1 │
+└─────────────────────┘
+```
 
 ## CAST(x, T) {#type_conversion_function-cast}
 

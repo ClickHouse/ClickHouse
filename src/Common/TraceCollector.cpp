@@ -11,6 +11,7 @@
 #include <Common/Exception.h>
 #include <Common/PipeFDs.h>
 #include <Common/StackTrace.h>
+#include <Common/setThreadName.h>
 #include <common/logger_useful.h>
 
 
@@ -115,6 +116,8 @@ void TraceCollector::stop()
 
 void TraceCollector::run()
 {
+    setThreadName("TraceCollector");
+
     ReadBufferFromFileDescriptor in(pipe.fds_rw[0]);
 
     while (true)
