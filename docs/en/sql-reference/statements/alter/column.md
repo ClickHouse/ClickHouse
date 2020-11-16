@@ -123,7 +123,22 @@ ALTER TABLE visits MODIFY COLUMN browser Array(String)
 ```
 
 ## ALTER TABLE MODIFY COLUMN col_name REMOVE what_to_remove
-Здесь будет описание для задачи 3122. 
+
+Removes something from the specific column.
+
+Syntax:
+
+```sql
+Syntax of the statement.
+```
+
+## Other necessary sections of the description (Optional)
+
+## See Also (Optional)
+
+Links to related topics as a list.
+
+-   [link](#)
 
 Changing the column type is the only complex action – it changes the contents of files with data. For large tables, this may take a long time.
 
