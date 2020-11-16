@@ -37,19 +37,13 @@ set(gRPC_SSL_PROVIDER "clickhouse" CACHE STRING "" FORCE)
 set(_gRPC_SSL_INCLUDE_DIR ${OPENSSL_INCLUDE_DIR})
 set(_gRPC_SSL_LIBRARIES ${OPENSSL_LIBRARIES})
 
-# Modify abseil-cpp cmake script to allow building it for ClickHouse.
+# Use abseil-cpp from ClickHouse contrib, not from gRPC third_party.
 set(gRPC_ABSL_PROVIDER "clickhouse" CACHE STRING "" FORCE)
-set(ABSL_ROOT_DIR "${_gRPC_SOURCE_DIR}/third_party/abseil-cpp")
+set(ABSL_ROOT_DIR "${ClickHouse_SOURCE_DIR}/contrib/abseil-cpp")
 if(NOT EXISTS "${ABSL_ROOT_DIR}/CMakeLists.txt")
   message(FATAL_ERROR " grpc: submodule third_party/abseil-cpp is missing. To fix try run: \n git submodule update --init --recursive")
 endif()
-set(_ABSL_ORIG_BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS})
-set(_ABSL_ORIG_BUILD_TESTING ${BUILD_TESTING})
-set(BUILD_SHARED_LIBS OFF) # abseil-cpp can't be built correctly as a shared library
-set(BUILD_TESTING OFF) # we don't want to build abseil tests
-add_subdirectory(${ABSL_ROOT_DIR} "${ClickHouse_BINARY_DIR}/contrib/grpc/third_party/abseil-cpp")
-set(BUILD_SHARED_LIBS ${_ABSL_ORIG_BUILD_SHARED_LIBS})
-set(BUILD_TESTING ${_ABSL_ORIG_BUILD_TESTING})
+add_subdirectory("${ABSL_ROOT_DIR}" "${ClickHouse_BINARY_DIR}/contrib/abseil-cpp")
 
 # Choose to build static or shared library for c-ares.
 if (MAKE_STATIC_LIBRARIES)
