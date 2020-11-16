@@ -8,19 +8,19 @@ namespace DB
 class MySQLBinlogEventReadBuffer : public ReadBuffer
 {
 protected:
-    static const size_t CHECKSUM_CRC32_SIGNATURE_LENGTH = 4;
     ReadBuffer & in;
+    size_t checksum_signature_length;
 
     size_t checksum_buff_size = 0;
     size_t checksum_buff_limit = 0;
-    char checksum_buf[CHECKSUM_CRC32_SIGNATURE_LENGTH];
+    char * checksum_buf = nullptr;
 
     bool nextImpl() override;
 
 public:
     ~MySQLBinlogEventReadBuffer() override;
 
-    MySQLBinlogEventReadBuffer(ReadBuffer & in_);
+    MySQLBinlogEventReadBuffer(ReadBuffer & in_, size_t checksum_signature_length_);
 
 };
 

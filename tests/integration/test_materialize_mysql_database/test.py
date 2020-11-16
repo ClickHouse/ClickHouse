@@ -151,5 +151,14 @@ def test_materialize_database_ddl_with_empty_transaction_8_0(started_cluster, st
 def test_select_without_columns_5_7(started_cluster, started_mysql_5_7):
     materialize_with_ddl.select_without_columns(clickhouse_node, started_mysql_5_7, "mysql1")
 
+
 def test_select_without_columns_8_0(started_cluster, started_mysql_8_0):
     materialize_with_ddl.select_without_columns(clickhouse_node, started_mysql_8_0, "mysql8_0")
+
+
+def test_insert_with_modify_binlog_checksum_5_7(started_cluster, started_mysql_5_7):
+    materialize_with_ddl.insert_with_modify_binlog_checksum(clickhouse_node, started_mysql_5_7, "mysql1")
+
+
+def test_insert_with_modify_binlog_checksum_8_0(started_cluster, started_mysql_5_7):
+    materialize_with_ddl.insert_with_modify_binlog_checksum(clickhouse_node, started_mysql_5_7, "mysql1")
