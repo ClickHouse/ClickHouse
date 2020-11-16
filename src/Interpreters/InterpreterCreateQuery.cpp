@@ -630,7 +630,12 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
                 "Cannot CREATE a table AS " + qualified_name + ", it is a Dictionary",
                 ErrorCodes::INCORRECT_QUERY);
 
-        create.set(create.storage, as_create.storage->ptr());
+        if (as_create.storage)
+            create.set(create.storage, as_create.storage->ptr());
+        else if (as_create.as_table_function)
+            create.as_table_function = as_create.as_table_function->clone();
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set engine, it's a bug.");
     }
 }
 
