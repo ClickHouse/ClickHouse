@@ -180,13 +180,6 @@ void CacheDictionary::getItemsString(
 
         const auto now = std::chrono::system_clock::now();
 
-        auto insert_routine = [&] (size_t row, size_t idx)
-        {
-            auto & cell = cells[idx];
-            const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[idx];
-            out->insertData(string_ref.data, string_ref.size);
-        };
-
         /// Fetch up-to-date values, discard on fail.
         for (const auto row : ext::range(0, rows))
         {
@@ -195,7 +188,9 @@ void CacheDictionary::getItemsString(
 
             if (state == ResultState::FoundAndValid)
             {
-                insert_routine(row, cell_idx);
+                auto & cell = cells[cell_idx];
+                const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
+                out->insertData(string_ref.data, string_ref.size);
             }
             else
             {
@@ -304,8 +299,9 @@ void CacheDictionary::getItemsString(
                 const auto it = local_cache.find(id);
                 if (it != local_cache.end())
                     value = StringRef(it->second);
+                else 
+                    value = get_default(row);
 
-                value = get_default(row);
                 out->insertData(value.data, value.size);
             }
 

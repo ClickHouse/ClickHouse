@@ -232,7 +232,10 @@ private:
     {
         AttributeUnderlyingType type;
         String name;
-        AttributeValue null_values;
+        /// Default value for each type. Could be defined in config.
+        AttributeValue null_value;
+        /// We store attribute value for all keys. It is a "row" in a hand-made open addressing hashtable,
+        /// where "column" is key.
         std::variant<
             ContainerPtrType<UInt8>,
             ContainerPtrType<UInt16>,
@@ -296,6 +299,22 @@ private:
         }
 
         return source_ptr;
+    }
+
+    inline void setLifetime(CellMetadata & cell, time_point_t now)
+    {
+        if (dict_lifetime.min_sec != 0 && dict_lifetime.max_sec != 0)
+        {
+            std::uniform_int_distribution<UInt64> distribution{dict_lifetime.min_sec, dict_lifetime.max_sec};
+            cell.setExpiresAt(now + std::chrono::seconds{distribution(rnd_engine)});
+        }
+        else
+        {
+            /// This maybe not obvious, but when we define is this cell is expired or expired permanently, we add extra_lifetime_seconds 
+            /// to the expiration time. And it overflows pretty well. 
+            cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max() - 2 * std::chrono::seconds(extra_lifetime_seconds));
+        }
+            
     }
 
     inline bool isExpired(time_point_t now, time_point_t deadline) const
@@ -430,7 +449,7 @@ private:
      *
      */
     void updateThreadFunction();
-    void update(UpdateUnitPtr & update_unit_ptr) const;
+    void update(UpdateUnitPtr & update_unit_ptr);
 
 
     void tryPushToUpdateQueueOrThrow(UpdateUnitPtr & update_unit_ptr) const;
