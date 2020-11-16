@@ -9,7 +9,7 @@ using Poco::Message;
 struct TextLogElement
 {
     time_t event_time{};
-    Decimal64 event_time_microseconds{};
+    UInt64 event_time_microseconds{};
     UInt32 microseconds;
 
     String thread_name;

@@ -1,6 +1,6 @@
 ---
-toc_priority: 42
-toc_title: "\u041a\u0432\u043e\u0442\u0430"
+toc_priority: 8
+toc_title: Квота
 ---
 
 # CREATE QUOTA {#create-quota-statement}

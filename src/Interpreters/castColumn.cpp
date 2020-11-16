@@ -28,7 +28,10 @@ ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type
         std::make_shared<FunctionOverloadResolverAdaptor>(CastOverloadResolver::createImpl(false));
 
     auto func_cast = func_builder_cast->build(arguments);
-    return func_cast->execute(arguments, type, arg.column->size());
+    arguments.emplace_back(ColumnWithTypeAndName{nullptr, type, ""});
+
+    func_cast->execute(arguments, {0, 1}, 2, arg.column->size());
+    return arguments[2].column;
 }
 
 }

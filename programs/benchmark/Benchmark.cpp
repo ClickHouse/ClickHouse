@@ -49,6 +49,7 @@ using Ports = std::vector<UInt16>;
 namespace ErrorCodes
 {
     extern const int CANNOT_BLOCK_SIGNAL;
+    extern const int BAD_ARGUMENTS;
     extern const int EMPTY_DATA_PASSED;
 }
 
@@ -102,7 +103,17 @@ public:
         /// (example: when using stage = 'with_mergeable_state')
         registerAggregateFunctions();
 
-        query_processing_stage = QueryProcessingStage::fromString(stage);
+        if (stage == "complete")
+            query_processing_stage = QueryProcessingStage::Complete;
+        else if (stage == "fetch_columns")
+            query_processing_stage = QueryProcessingStage::FetchColumns;
+        else if (stage == "with_mergeable_state")
+            query_processing_stage = QueryProcessingStage::WithMergeableState;
+        else if (stage == "with_mergeable_state_after_aggregation")
+            query_processing_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
+        else
+            throw Exception("Unknown query processing stage: " + stage, ErrorCodes::BAD_ARGUMENTS);
+
     }
 
     void initialize(Poco::Util::Application & self [[maybe_unused]]) override

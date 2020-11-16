@@ -1,4 +1,3 @@
-#pragma once
 #include <array>
 
 namespace Poco { namespace Net { class IPAddress; }}

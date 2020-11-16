@@ -613,7 +613,7 @@ const StorageLog::Marks & StorageLog::getMarksWithRealRowCount(const StorageMeta
 Pipe StorageLog::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & /*query_info*/,
+    const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,

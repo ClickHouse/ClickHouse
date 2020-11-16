@@ -134,7 +134,7 @@ Example:
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
 
-To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](../../../operations/server-configuration-parameters/settings.md#settings-max_insert_block_size). If the block wasn’t formed within [stream_flush_interval_ms](../../../operations/server-configuration-parameters/settings.md) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
+To improve performance, received messages are grouped into blocks the size of [max\_insert\_block\_size](../../../operations/server-configuration-parameters/settings.md#settings-max_insert_block_size). If the block wasn’t formed within [stream\_flush\_interval\_ms](../../../operations/server-configuration-parameters/settings.md) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
 
 To stop receiving topic data or to change the conversion logic, detach the materialized view:
 
@@ -192,6 +192,6 @@ Example:
 **See Also**
 
 -   [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
--   [background_schedule_pool_size](../../../operations/settings/settings.md#background_schedule_pool_size)
+-   [background\_schedule\_pool\_size](../../../operations/settings/settings.md#background_schedule_pool_size)
 
 [Original article](https://clickhouse.tech/docs/en/operations/table_engines/kafka/) <!--hide-->

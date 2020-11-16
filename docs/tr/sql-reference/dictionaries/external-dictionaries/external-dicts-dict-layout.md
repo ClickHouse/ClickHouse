@@ -9,7 +9,7 @@ toc_title: "S\xF6zl\xFCkleri bellekte saklama"
 
 Sözlükleri bellekte saklamanın çeşitli yolları vardır.
 
-Biz tavsiye [düzlük](#flat), [karıştırıyordu](#dicts-external_dicts_dict_layout-hashed) ve [complex_key_hashed](#complex-key-hashed). hangi optimum işleme hızı sağlamak.
+Biz tavsiye [düzlük](#flat), [karıştırıyordu](#dicts-external_dicts_dict_layout-hashed) ve [complex\_key\_hashed](#complex-key-hashed). hangi optimum işleme hızı sağlamak.
 
 Önbelleğe alma, potansiyel olarak düşük performans ve en uygun parametreleri seçmede zorluklar nedeniyle önerilmez. Bölümünde devamını oku “[önbellek](#cache)”.
 
@@ -54,13 +54,13 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 
 -   [düzlük](#flat)
 -   [karıştırıyordu](#dicts-external_dicts_dict_layout-hashed)
--   [sparse_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
+-   [sparse\_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
 -   [önbellek](#cache)
 -   [direkt](#direct)
--   [range_hashed](#range-hashed)
--   [complex_key_hashed](#complex-key-hashed)
--   [complex_key_cache](#complex-key-cache)
--   [ıp_trie](#ip-trie)
+-   [range\_hashed](#range-hashed)
+-   [complex\_key\_hashed](#complex-key-hashed)
+-   [complex\_key\_cache](#complex-key-cache)
+-   [ıp\_trie](#ip-trie)
 
 ### düzlük {#flat}
 
@@ -106,7 +106,7 @@ veya
 LAYOUT(HASHED())
 ```
 
-### sparse_hashed {#dicts-external_dicts_dict_layout-sparse_hashed}
+### sparse\_hashed {#dicts-external_dicts_dict_layout-sparse_hashed}
 
 Benzer `hashed`, ancak daha fazla CPU kullanımı lehine daha az bellek kullanır.
 
@@ -122,7 +122,7 @@ Yapılandırma örneği:
 LAYOUT(SPARSE_HASHED())
 ```
 
-### complex_key_hashed {#complex-key-hashed}
+### complex\_key\_hashed {#complex-key-hashed}
 
 Bu tür depolama kompozit ile kullanım içindir [anahtarlar](external-dicts-dict-structure.md). Benzer `hashed`.
 
@@ -138,7 +138,7 @@ Yapılandırma örneği:
 LAYOUT(COMPLEX_KEY_HASHED())
 ```
 
-### range_hashed {#range-hashed}
+### range\_hashed {#range-hashed}
 
 Sözlük, sıralı bir aralık dizisi ve bunlara karşılık gelen değerleri olan bir karma tablo şeklinde bellekte saklanır.
 
@@ -293,7 +293,7 @@ Yeterince büyük bir önbellek boyutu ayarlayın. Sen hücre sayısını seçme
 !!! warning "Uyarıcı"
     Rasgele okuma ile sorguları işlemek için yavaş olduğundan, ClickHouse kaynak olarak kullanmayın.
 
-### complex_key_cache {#complex-key-cache}
+### complex\_key\_cache {#complex-key-cache}
 
 Bu tür depolama kompozit ile kullanım içindir [anahtarlar](external-dicts-dict-structure.md). Benzer `cache`.
 
@@ -319,7 +319,7 @@ veya
 LAYOUT(DIRECT())
 ```
 
-### ıp_trie {#ip-trie}
+### ıp\_trie {#ip-trie}
 
 Bu tür depolama, ağ öneklerini (IP adresleri) asn gibi meta verilere eşlemek içindir.
 

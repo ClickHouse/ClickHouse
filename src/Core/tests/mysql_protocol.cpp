@@ -7,7 +7,6 @@
 #include <Core/MySQL/PacketsProtocolText.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/WriteBufferFromOStream.h>
 
 #include <boost/program_options.hpp>
 
@@ -330,8 +329,6 @@ int main(int argc, char ** argv)
             slave.connect();
             slave.startBinlogDumpGTID(slave_id, replicate_db, gtid_sets);
 
-            WriteBufferFromOStream cerr(std::cerr);
-
             /// Read one binlog event on by one.
             while (true)
             {
@@ -340,40 +337,40 @@ int main(int argc, char ** argv)
                 {
                     case MYSQL_QUERY_EVENT: {
                         auto binlog_event = std::static_pointer_cast<QueryEvent>(event);
-                        binlog_event->dump(cerr);
+                        binlog_event->dump(std::cerr);
 
                         Position pos = slave.getPosition();
-                        pos.dump(cerr);
+                        pos.dump(std::cerr);
                         break;
                     }
                     case MYSQL_WRITE_ROWS_EVENT: {
                         auto binlog_event = std::static_pointer_cast<WriteRowsEvent>(event);
-                        binlog_event->dump(cerr);
+                        binlog_event->dump(std::cerr);
 
                         Position pos = slave.getPosition();
-                        pos.dump(cerr);
+                        pos.dump(std::cerr);
                         break;
                     }
                     case MYSQL_UPDATE_ROWS_EVENT: {
                         auto binlog_event = std::static_pointer_cast<UpdateRowsEvent>(event);
-                        binlog_event->dump(cerr);
+                        binlog_event->dump(std::cerr);
 
                         Position pos = slave.getPosition();
-                        pos.dump(cerr);
+                        pos.dump(std::cerr);
                         break;
                     }
                     case MYSQL_DELETE_ROWS_EVENT: {
                         auto binlog_event = std::static_pointer_cast<DeleteRowsEvent>(event);
-                        binlog_event->dump(cerr);
+                        binlog_event->dump(std::cerr);
 
                         Position pos = slave.getPosition();
-                        pos.dump(cerr);
+                        pos.dump(std::cerr);
                         break;
                     }
                     default:
                         if (event->header.type != MySQLReplication::EventType::HEARTBEAT_EVENT)
                         {
-                            event->dump(cerr);
+                            event->dump(std::cerr);
                         }
                         break;
                 }

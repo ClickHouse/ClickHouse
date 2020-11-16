@@ -2,9 +2,6 @@
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
@@ -247,9 +244,9 @@ public:
         if constexpr (Trait::sampler == Sampler::RNG)
         {
             DB::writeIntBinary<size_t>(this->data(place).total_values, buf);
-            WriteBufferFromOwnString rng_buf;
-            rng_buf << this->data(place).rng;
-            DB::writeStringBinary(rng_buf.str(), buf);
+            std::ostringstream rng_stream;
+            rng_stream << this->data(place).rng;
+            DB::writeStringBinary(rng_stream.str(), buf);
         }
 
         // TODO
@@ -277,8 +274,8 @@ public:
             DB::readIntBinary<size_t>(this->data(place).total_values, buf);
             std::string rng_string;
             DB::readStringBinary(rng_string, buf);
-            ReadBufferFromString rng_buf(rng_string);
-            rng_buf >> this->data(place).rng;
+            std::istringstream rng_stream(rng_string);
+            rng_stream >> this->data(place).rng;
         }
 
         // TODO
@@ -299,7 +296,7 @@ public:
         {
             typename ColumnVector<T>::Container & data_to = assert_cast<ColumnVector<T> &>(arr_to.getData()).getData();
             if constexpr (is_big_int_v<T>)
-                // is data_to empty? we should probably use std::vector::insert then
+                // is data_to empty? we should probaly use std::vector::insert then
                 for (auto it = this->data(place).value.begin(); it != this->data(place).value.end(); it++)
                     data_to.push_back(*it);
             else
@@ -566,9 +563,9 @@ public:
         if constexpr (Trait::sampler == Sampler::RNG)
         {
             DB::writeIntBinary<size_t>(data(place).total_values, buf);
-            WriteBufferFromOwnString rng_buf;
-            rng_buf << data(place).rng;
-            DB::writeStringBinary(rng_buf.str(), buf);
+            std::ostringstream rng_stream;
+            rng_stream << data(place).rng;
+            DB::writeStringBinary(rng_stream.str(), buf);
         }
 
         // TODO
@@ -600,8 +597,8 @@ public:
             DB::readIntBinary<size_t>(data(place).total_values, buf);
             std::string rng_string;
             DB::readStringBinary(rng_string, buf);
-            ReadBufferFromString rng_buf(rng_string);
-            rng_buf >> data(place).rng;
+            std::istringstream rng_stream(rng_string);
+            rng_stream >> data(place).rng;
         }
 
         // TODO
