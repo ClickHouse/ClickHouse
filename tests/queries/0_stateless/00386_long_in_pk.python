@@ -50,6 +50,8 @@ def main():
             print(resp.text)
             break
 
+    requests.post(url, data='drop table tab_00386')
+
 if __name__ == "__main__":
     main()
 

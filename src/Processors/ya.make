@@ -88,7 +88,9 @@ SRCS(
     Pipe.cpp
     Port.cpp
     QueryPipeline.cpp
+    QueryPlan/AddingConstColumnStep.cpp
     QueryPlan/AddingDelayedSourceStep.cpp
+    QueryPlan/AddingMissedStep.cpp
     QueryPlan/AggregatingStep.cpp
     QueryPlan/ArrayJoinStep.cpp
     QueryPlan/ConvertingStep.cpp
@@ -105,16 +107,19 @@ SRCS(
     QueryPlan/ITransformingStep.cpp
     QueryPlan/LimitByStep.cpp
     QueryPlan/LimitStep.cpp
+    QueryPlan/MaterializingStep.cpp
     QueryPlan/MergeSortingStep.cpp
     QueryPlan/MergingAggregatedStep.cpp
+    QueryPlan/MergingFinal.cpp
     QueryPlan/MergingSortedStep.cpp
     QueryPlan/OffsetStep.cpp
     QueryPlan/PartialSortingStep.cpp
     QueryPlan/QueryPlan.cpp
     QueryPlan/ReadFromPreparedSource.cpp
-    QueryPlan/ReadFromStorageStep.cpp
     QueryPlan/ReadNothingStep.cpp
+    QueryPlan/ReverseRowsStep.cpp
     QueryPlan/RollupStep.cpp
+    QueryPlan/SettingQuotaAndLimitsStep.cpp
     QueryPlan/TotalsHavingStep.cpp
     QueryPlan/UnionStep.cpp
     ResizeProcessor.cpp

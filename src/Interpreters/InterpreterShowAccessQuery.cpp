@@ -34,12 +34,12 @@ BlockInputStreamPtr InterpreterShowAccessQuery::executeImpl() const
 
     /// Build the result column.
     MutableColumnPtr column = ColumnString::create();
-    std::stringstream ss;
+    WriteBufferFromOwnString buf;
     for (const auto & query : queries)
     {
-        ss.str("");
-        formatAST(*query, ss, false, true);
-        column->insert(ss.str());
+        buf.restart();
+        formatAST(*query, buf, false, true);
+        column->insert(buf.str());
     }
 
     String desc = "ACCESS";

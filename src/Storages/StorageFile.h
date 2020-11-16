@@ -27,7 +27,7 @@ public:
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        const SelectQueryInfo & query_info,
+        SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
@@ -51,9 +51,10 @@ public:
 
     struct CommonArguments
     {
-        const StorageID & table_id;
-        const std::string & format_name;
-        const std::string & compression_method;
+        StorageID table_id;
+        std::string format_name;
+        std::optional<FormatSettings> format_settings;
+        std::string compression_method;
         const ColumnsDescription & columns;
         const ConstraintsDescription & constraints;
         const Context & context;
@@ -80,6 +81,11 @@ private:
     explicit StorageFile(CommonArguments args);
 
     std::string format_name;
+    // We use format settings from global context + CREATE query for File table
+    // function -- in this case, format_settings is set.
+    // For `file` table function, we use format settings from current user context,
+    // in this case, format_settings is not set.
+    std::optional<FormatSettings> format_settings;
 
     int table_fd = -1;
     String compression_method;
