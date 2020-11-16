@@ -1574,6 +1574,10 @@ bool Context::hasZooKeeper() const
     return getConfigRef().has("zookeeper");
 }
 
+bool Context::hasAuxiliaryZooKeeper(const String & name) const
+{
+    return getConfigRef().has("auxiliary_zookeepers." + name);
+}
 
 void Context::setInterserverIOAddress(const String & host, UInt16 port)
 {

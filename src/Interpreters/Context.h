@@ -492,6 +492,8 @@ public:
     void reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config);
     /// Has ready or expired ZooKeeper
     bool hasZooKeeper() const;
+    /// Has ready or expired auxiliary ZooKeeper
+    bool hasAuxiliaryZooKeeper(const String & name) const;
     /// Reset current zookeeper session. Do not create a new one.
     void resetZooKeeper() const;
     // Reload Zookeeper
