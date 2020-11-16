@@ -692,3 +692,147 @@ SELECT FROM_UNIXTIME(1234334543, '%Y-%m-%d %R:%S') AS DateTime
 │ 2009-02-11 14:42:23 │
 └─────────────────────┘
 ```
+
+## toMJD {#tomjd}
+
+Converts a [Proleptic Gregorian calendar](https://en.wikipedia.org/wiki/Proleptic_Gregorian_calendar) date in text form `YYYY-MM-DD` to a [Modified Julian Day](https://en.wikipedia.org/wiki/Julian_day#Variants) number in Int32. This function supports date from `0000-01-01` to `9999-12-31`. It raises an exception if the argument cannot be parsed as a date, or the date is invalid.
+
+**Syntax**
+
+``` sql
+toMJD(date)
+```
+
+**Parameters**
+
+-   `date` — Date in text form. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+
+**Returned value**
+
+-   Modified Julian Day number.
+
+Type: [Int32](../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT toMJD('2020-01-01');
+```
+
+Result:
+
+``` text
+┌─toMJD('2020-01-01')─┐
+│               58849 │
+└─────────────────────┘
+```
+
+## toMJDOrNull {#tomjdornull}
+
+Similar to [toMJD()](#tomjd), but instead of raising exceptions it returns `NULL`.
+
+**Syntax**
+
+``` sql
+toMJDOrNull(date)
+```
+
+**Parameters**
+
+-   `date` — Date in text form. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+
+**Returned value**
+
+-   Modified Julian Day number.
+
+Type: [Nullable(Int32)](../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT toMJDOrNull('2020-01-01');
+```
+
+Result:
+
+``` text
+┌─toMJDOrNull('2020-01-01')─┐
+│                     58849 │
+└───────────────────────────┘
+```
+
+## fromMJD {#frommjd}
+
+Converts a [Modified Julian Day](https://en.wikipedia.org/wiki/Julian_day#Variants) number to a [Proleptic Gregorian calendar](https://en.wikipedia.org/wiki/Proleptic_Gregorian_calendar) date in text form `YYYY-MM-DD`. This function supports day number from `-678941` to `2973119` (which represent 0000-01-01 and 9999-12-31 respectively). It raises an exception if the day number is outside of the supported range.
+
+**Syntax**
+
+``` sql
+fromMJD(day)
+```
+
+**Parameters**
+
+-   `day` — Modified Julian Day number. [Any integral types](../../sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+-   Date in text form.
+
+Type: [String](../../sql-reference/data-types/string.md)
+
+**Example**
+
+Query:
+
+``` sql
+SELECT fromMJD(58849);
+```
+
+Result:
+
+``` text
+┌─fromMJD(58849)─┐
+│ 2020-01-01     │
+└────────────────┘
+```
+
+## fromMJDOrNull {#frommjdornull}
+
+Similar to [fromMJD()](#frommjd), but instead of raising exceptions it returns `NULL`.
+
+**Syntax**
+
+``` sql
+fromMJDOrNull(day)
+```
+
+**Parameters**
+
+-   `day` — Modified Julian Day number. [Any integral types](../../sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+-   Date in text form.
+
+Type: [Nullable(String)](../../sql-reference/data-types/string.md)
+
+**Example**
+
+Query:
+
+``` sql
+SELECT fromMJDOrNull(58849);
+```
+
+Result:
+
+``` text
+┌─fromMJDOrNull(58849)─┐
+│ 2020-01-01           │
+└──────────────────────┘
+```
