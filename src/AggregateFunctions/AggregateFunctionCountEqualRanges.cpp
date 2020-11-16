@@ -35,7 +35,9 @@ AggregateFunctionPtr createAggregateFunctionCountEqualRanges(
 
 void registerAggregateFunctionCountEqualRanges(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("countEqualRanges", createAggregateFunctionCountEqualRanges);
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = true };
+
+    factory.registerFunction("countEqualRanges", { createAggregateFunctionCountEqualRanges, properties });
 }
 
 }
