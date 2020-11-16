@@ -13,7 +13,7 @@ ALTER TABLE table-name MODIFY TTL ttl-expression
 
 # ALTER TABLE REMOVE TTL
 
-Brief description of what the statement does.
+Removes ttl-property from the table.
 
 Syntax:
 
@@ -21,14 +21,20 @@ Syntax:
 Syntax of the statement.
 ```
 
-## Other necessary sections of the description (Optional)
+ALTER TABLE r_no_prop_table MODIFY COLUMN some_column REMOVE TTL;
 
-Examples of descriptions with a complicated structure:
+**Example**
 
-- https://clickhouse.tech/docs/en/sql-reference/statements/grant/
-- https://clickhouse.tech/docs/en/sql-reference/statements/revoke/
-- https://clickhouse.tech/docs/en/sql-reference/statements/select/join/
+Request
 
+```sql
+
+```
+
+Result
+
+```text
+```
 
 ## See Also (Optional)
 
