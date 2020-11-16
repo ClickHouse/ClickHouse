@@ -6,7 +6,7 @@ toc_title: GROUP BY
 
 `GROUP BY` clause switches the `SELECT` query into an aggregation mode, which works as follows:
 
--   `GROUP BY` clause contains a list of expressions (or a single expression, which is considered to be the list of length one). This list acts as a “grouping key”, while each individual expression will be referred to as a “key expressions”.
+-   `GROUP BY` clause contains a list of expressions (or a single expression, which is considered to be the list of length one). This list acts as a “grouping key”, while each individual expression will be referred to as a “key expression”.
 -   All the expressions in the [SELECT](../../../sql-reference/statements/select/index.md), [HAVING](../../../sql-reference/statements/select/having.md), and [ORDER BY](../../../sql-reference/statements/select/order-by.md) clauses **must** be calculated based on key expressions **or** on [aggregate functions](../../../sql-reference/aggregate-functions/index.md) over non-key expressions (including plain columns). In other words, each column selected from the table must be used either in a key expression or inside an aggregate function, but not both.
 -   Result of aggregating `SELECT` query will contain as many rows as there were unique values of “grouping key” in source table. Usually this signficantly reduces the row count, often by orders of magnitude, but not necessarily: row count stays the same if all “grouping key” values were distinct.
 
@@ -44,6 +44,139 @@ The query `SELECT sum(x), y FROM t_null_big GROUP BY y` results in:
 You can see that `GROUP BY` for `y = NULL` summed up `x`, as if `NULL` is this value.
 
 If you pass several keys to `GROUP BY`, the result will give you all the combinations of the selection, as if `NULL` were a specific value.
+
+## WITH ROLLUP Modifier {#with-rollup-modifier}
+
+`WITH ROLLUP` modifier is used to calculate subtotals for the key expressions, based on their order in the `GROUP BY` list. The subtotals rows are added after the result table.
+
+The subtotals are calculated in the reverse order: at first subtotals are calculated for the last key expression in the list, then for the previous one, and so on up to the first key expression. 
+
+In the subtotals rows the values of already "grouped" key expressions are set to `0` or empty line.
+
+!!! note "Note"
+    Mind that [HAVING](../../../sql-reference/statements/select/having.md) clause can affect the subtotals results.
+
+**Example**    
+
+Consider the table t:
+
+```text
+┌─year─┬─month─┬─day─┐
+│ 2019 │     1 │   5 │
+│ 2019 │     1 │  15 │
+│ 2020 │     1 │   5 │
+│ 2020 │     1 │  15 │
+│ 2020 │    10 │   5 │
+│ 2020 │    10 │  15 │
+└──────┴───────┴─────┘
+```
+
+Query:
+
+```sql
+SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH ROLLUP;
+```
+
+Result:
+
+```text
+┌─year─┬─month─┬─day─┬─count()─┐
+│ 2020 │    10 │  15 │       1 │
+│ 2020 │     1 │   5 │       1 │
+│ 2019 │     1 │   5 │       1 │
+│ 2020 │     1 │  15 │       1 │
+│ 2019 │     1 │  15 │       1 │
+│ 2020 │    10 │   5 │       1 │
+└──────┴───────┴─────┴─────────┘
+┌─year─┬─month─┬─day─┬─count()─┐
+│ 2019 │     1 │   0 │       2 │
+│ 2020 │     1 │   0 │       2 │
+│ 2020 │    10 │   0 │       2 │
+└──────┴───────┴─────┴─────────┘
+┌─year─┬─month─┬─day─┬─count()─┐
+│ 2019 │     0 │   0 │       2 │
+│ 2020 │     0 │   0 │       4 │
+└──────┴───────┴─────┴─────────┘
+┌─year─┬─month─┬─day─┬─count()─┐
+│    0 │     0 │   0 │       6 │
+└──────┴───────┴─────┴─────────┘
+```
+
+## WITH CUBE Modifier {#with-cube-modifier}
+
+`WITH CUBE` modifier is used to calculate subtotals for every combination of the key expressions in the `GROUP BY` list. The subtotals rows are added after the result table.
+
+In the subtotals rows the values of all "grouped" key expressions are set to `0` or empty line.
+
+!!! note "Note"
+    Mind that [HAVING](../../../sql-reference/statements/select/having.md) clause can affect the subtotals results.
+
+**Example**      
+
+Consider the table t:
+
+```text
+┌─year─┬─month─┬─day─┐
+│ 2019 │     1 │   5 │
+│ 2019 │     1 │  15 │
+│ 2020 │     1 │   5 │
+│ 2020 │     1 │  15 │
+│ 2020 │    10 │   5 │
+│ 2020 │    10 │  15 │
+└──────┴───────┴─────┘
+```
+
+Query:
+
+```sql
+SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH CUBE;
+```
+
+Result:
+
+```text
+┌─year─┬─month─┬─day─┬─count()─┐
+│ 2020 │    10 │  15 │       1 │
+│ 2020 │     1 │   5 │       1 │
+│ 2019 │     1 │   5 │       1 │
+│ 2020 │     1 │  15 │       1 │
+│ 2019 │     1 │  15 │       1 │
+│ 2020 │    10 │   5 │       1 │
+└──────┴───────┴─────┴─────────┘
+┌─year─┬─month─┬─day─┬─count()─┐
+│ 2019 │     1 │   0 │       2 │
+│ 2020 │     1 │   0 │       2 │
+│ 2020 │    10 │   0 │       2 │
+└──────┴───────┴─────┴─────────┘
+┌─year─┬─month─┬─day─┬─count()─┐
+│ 2020 │     0 │   5 │       2 │
+│ 2019 │     0 │   5 │       1 │
+│ 2020 │     0 │  15 │       2 │
+│ 2019 │     0 │  15 │       1 │
+└──────┴───────┴─────┴─────────┘
+┌─year─┬─month─┬─day─┬─count()─┐
+│ 2019 │     0 │   0 │       2 │
+│ 2020 │     0 │   0 │       4 │
+└──────┴───────┴─────┴─────────┘
+┌─year─┬─month─┬─day─┬─count()─┐
+│    0 │     1 │   5 │       2 │
+│    0 │    10 │  15 │       1 │
+│    0 │    10 │   5 │       1 │
+│    0 │     1 │  15 │       2 │
+└──────┴───────┴─────┴─────────┘
+┌─year─┬─month─┬─day─┬─count()─┐
+│    0 │     1 │   0 │       4 │
+│    0 │    10 │   0 │       2 │
+└──────┴───────┴─────┴─────────┘
+┌─year─┬─month─┬─day─┬─count()─┐
+│    0 │     0 │   5 │       3 │
+│    0 │     0 │  15 │       3 │
+└──────┴───────┴─────┴─────────┘
+┌─year─┬─month─┬─day─┬─count()─┐
+│    0 │     0 │   0 │       6 │
+└──────┴───────┴─────┴─────────┘
+```
+
 
 ## WITH TOTALS Modifier {#with-totals-modifier}
 
