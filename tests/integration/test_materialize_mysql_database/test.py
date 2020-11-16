@@ -20,8 +20,7 @@ def started_cluster():
         cluster.start()
         yield cluster
     finally:
-        #cluster.shutdown()
-        pass
+        cluster.shutdown()
 
 
 class MySQLNodeInstance:

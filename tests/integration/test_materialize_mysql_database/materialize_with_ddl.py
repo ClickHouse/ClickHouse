@@ -620,8 +620,6 @@ def mysql_kill_sync_thread_restore_test(clickhouse_node, mysql_node, service_nam
         query = "kill " + str(row[0]) + ";"
         mysql_node.query(query)
 
-    time.sleep(5)
-
     with pytest.raises(QueryRuntimeException) as exception:
         clickhouse_node.query("SELECT * FROM test_database.test_table")
     assert "Cannot read all data" in str(exception.value)
@@ -632,7 +630,7 @@ def mysql_kill_sync_thread_restore_test(clickhouse_node, mysql_node, service_nam
     check_query(clickhouse_node, "SELECT * FROM test_database.test_table FORMAT TSV", '1\n')
 
     mysql_node.query("INSERT INTO test_database.test_table VALUES (2)")
-    check_query(clickhouse_node, "SELECT * FROM test_database.test_table FORMAT TSV", '2\n1\n')
+    check_query(clickhouse_node, "SELECT * FROM test_database.test_table ORDER BY id FORMAT TSV", '1\n2\n')
 
     mysql_node.query("DROP DATABASE test_database")
     clickhouse_node.query("DROP DATABASE test_database")
