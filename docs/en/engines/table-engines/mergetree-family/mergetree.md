@@ -579,6 +579,7 @@ Tags:
 -   `disk` — a disk within a volume.
 -   `max_data_part_size_bytes` — the maximum size of a part that can be stored on any of the volume’s disks.
 -   `move_factor` — when the amount of available space gets lower than this factor, data automatically start to move on the next volume if any (by default, 0.1).
+-   `prefer_not_to_merge` — Setting to disable merging for volumes in multi-disk configuration. When this setting is enabled, disk merging is not allowed.
 
 Cofiguration examples:
 
@@ -607,6 +608,18 @@ Cofiguration examples:
             </volumes>
             <move_factor>0.2</move_factor>
         </moving_from_ssd_to_hdd>
+		
+		<small_jbod_with_external_no_merges>
+            <volumes>
+                <main>
+                    <disk>jbod1</disk>
+                </main>
+                <external>
+                    <disk>external</disk>
+                    <prefer_not_to_merge>true</prefer_not_to_merge>
+                </external>
+            </volumes>
+        </small_jbod_with_external_no_merges>
     </policies>
     ...
 </storage_configuration>
