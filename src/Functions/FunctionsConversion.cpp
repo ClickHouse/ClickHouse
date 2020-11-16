@@ -68,8 +68,6 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToDecimal128OrZero>();
     factory.registerFunction<FunctionToDecimal256OrZero>();
 
-    factory.registerFunction<FunctionToUUIDOrZero>();
-
     factory.registerFunction<FunctionToUInt8OrNull>();
     factory.registerFunction<FunctionToUInt16OrNull>();
     factory.registerFunction<FunctionToUInt32OrNull>();
@@ -91,8 +89,6 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToDecimal64OrNull>();
     factory.registerFunction<FunctionToDecimal128OrNull>();
     factory.registerFunction<FunctionToDecimal256OrNull>();
-
-    factory.registerFunction<FunctionToUUIDOrNull>();
 
     factory.registerFunction<FunctionParseDateTimeBestEffort>();
     factory.registerFunction<FunctionParseDateTimeBestEffortUS>();

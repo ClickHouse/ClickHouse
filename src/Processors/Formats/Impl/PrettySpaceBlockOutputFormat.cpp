@@ -113,7 +113,7 @@ void registerOutputFormatProcessorPrettySpace(FormatFactory & factory)
     factory.registerOutputFormatProcessor("PrettySpace", [](
         WriteBuffer & buf,
         const Block & sample,
-        const RowOutputFormatParams &,
+        FormatFactory::WriteCallback,
         const FormatSettings & format_settings)
     {
         return std::make_shared<PrettySpaceBlockOutputFormat>(buf, sample, format_settings);
@@ -122,7 +122,7 @@ void registerOutputFormatProcessorPrettySpace(FormatFactory & factory)
     factory.registerOutputFormatProcessor("PrettySpaceNoEscapes", [](
         WriteBuffer & buf,
         const Block & sample,
-        const RowOutputFormatParams &,
+        FormatFactory::WriteCallback,
         const FormatSettings & format_settings)
     {
         FormatSettings changed_settings = format_settings;

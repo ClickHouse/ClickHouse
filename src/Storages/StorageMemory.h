@@ -21,6 +21,7 @@ namespace DB
   */
 class StorageMemory final : public ext::shared_ptr_helper<StorageMemory>, public IStorage
 {
+friend class MemoryBlockInputStream;
 friend class MemoryBlockOutputStream;
 friend struct ext::shared_ptr_helper<StorageMemory>;
 
@@ -32,7 +33,7 @@ public:
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        SelectQueryInfo & query_info,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,

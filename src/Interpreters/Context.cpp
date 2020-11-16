@@ -18,9 +18,8 @@
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
 #include <Storages/MarkCache.h>
+#include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Storages/MergeTree/MergeList.h>
-#include <Storages/MergeTree/ReplicatedFetchList.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/CompressionCodecSelector.h>
 #include <Storages/StorageS3Settings.h>
@@ -63,8 +62,6 @@
 #include <common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Storages/MergeTree/BackgroundJobsExecutor.h>
-
 
 namespace ProfileEvents
 {
@@ -76,10 +73,19 @@ namespace CurrentMetrics
 {
     extern const Metric ContextLockWait;
     extern const Metric BackgroundMovePoolTask;
+    extern const Metric MemoryTrackingInBackgroundMoveProcessingPool;
+
     extern const Metric BackgroundSchedulePoolTask;
+    extern const Metric MemoryTrackingInBackgroundSchedulePool;
+
     extern const Metric BackgroundBufferFlushSchedulePoolTask;
+    extern const Metric MemoryTrackingInBackgroundBufferFlushSchedulePool;
+
     extern const Metric BackgroundDistributedSchedulePoolTask;
+    extern const Metric MemoryTrackingInBackgroundDistributedSchedulePool;
+
     extern const Metric BackgroundMessageBrokerSchedulePoolTask;
+    extern const Metric MemoryTrackingInBackgroundMessageBrokerSchedulePool;
 }
 
 
@@ -154,7 +160,7 @@ public:
         }
         else if (it->second->key.first != context.client_info.current_user)
         {
-            throw Exception("Session belongs to a different user", ErrorCodes::SESSION_IS_LOCKED);
+            throw Exception("Session belongs to a different user", ErrorCodes::LOGICAL_ERROR);
         }
 
         /// Use existing session.
@@ -302,11 +308,9 @@ struct ContextShared
     mutable std::mutex zookeeper_mutex;
 
     mutable zkutil::ZooKeeperPtr zookeeper;                 /// Client for ZooKeeper.
-    ConfigurationPtr zookeeper_config;                      /// Stores zookeeper configs
 
     mutable std::mutex auxiliary_zookeepers_mutex;
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
-    ConfigurationPtr auxiliary_zookeepers_config;           /// Stores auxiliary zookeepers configs
 
     String interserver_io_host;                             /// The host name by which this server is available for other servers.
     UInt16 interserver_io_port = 0;                         /// and port.
@@ -333,12 +337,14 @@ struct ContextShared
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
     ProcessList process_list;                               /// Executing queries at the moment.
     MergeList merge_list;                                   /// The list of executable merge (for (Replicated)?MergeTree)
-    ReplicatedFetchList replicated_fetch_list;
     ConfigurationPtr users_config;                          /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
     std::optional<BackgroundSchedulePool> buffer_flush_schedule_pool; /// A thread pool that can do background flush for Buffer tables.
+    std::optional<BackgroundProcessingPool> background_pool; /// The thread pool for the background work performed by the tables.
+    std::optional<BackgroundProcessingPool> background_move_pool; /// The thread pool for the background moves performed by the tables.
     std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
     std::optional<BackgroundSchedulePool> distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
+    std::optional<BackgroundSchedulePool> message_broker_schedule_pool;    /// A thread pool that can run different jobs in background (used in kafka streaming)
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
@@ -366,7 +372,7 @@ struct ContextShared
     /// Initialized on demand (on distributed storages initialization) since Settings should be initialized
     std::unique_ptr<Clusters> clusters;
     ConfigurationPtr clusters_config;                        /// Stores updated configs
-    mutable std::mutex clusters_mutex;                       /// Guards clusters and clusters_config
+    mutable std::mutex clusters_mutex;                        /// Guards clusters and clusters_config
 
 #if USE_EMBEDDED_COMPILER
     std::shared_ptr<CompiledExpressionCache> compiled_expression_cache;
@@ -436,9 +442,12 @@ struct ContextShared
         external_dictionaries_loader.reset();
         external_models_loader.reset();
         buffer_flush_schedule_pool.reset();
+        background_pool.reset();
+        background_move_pool.reset();
         schedule_pool.reset();
         distributed_schedule_pool.reset();
         ddl_worker.reset();
+        message_broker_schedule_pool.reset();
 
         /// Stop trace collector if any
         trace_collector.reset();
@@ -451,8 +460,6 @@ struct ContextShared
 
     void initializeTraceCollector(std::shared_ptr<TraceLog> trace_log)
     {
-        if (!trace_log)
-            return;
         if (hasTraceCollector())
             return;
 
@@ -509,8 +516,6 @@ ProcessList & Context::getProcessList() { return shared->process_list; }
 const ProcessList & Context::getProcessList() const { return shared->process_list; }
 MergeList & Context::getMergeList() { return shared->merge_list; }
 const MergeList & Context::getMergeList() const { return shared->merge_list; }
-ReplicatedFetchList & Context::getReplicatedFetchList() { return shared->replicated_fetch_list; }
-const ReplicatedFetchList & Context::getReplicatedFetchList() const { return shared->replicated_fetch_list; }
 
 
 void Context::enableNamedSessions()
@@ -594,14 +599,13 @@ VolumePtr Context::setTemporaryStorage(const String & path, const String & polic
             shared->tmp_path += '/';
 
         auto disk = std::make_shared<DiskLocal>("_tmp_default", shared->tmp_path, 0);
-        shared->tmp_volume = std::make_shared<SingleDiskVolume>("_tmp_default", disk, 0);
+        shared->tmp_volume = std::make_shared<SingleDiskVolume>("_tmp_default", disk);
     }
     else
     {
         StoragePolicyPtr tmp_policy = getStoragePolicySelector(lock)->get(policy_name);
         if (tmp_policy->getVolumes().size() != 1)
-             throw Exception("Policy " + policy_name + " is used temporary files, such policy should have exactly one volume",
-                             ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+             throw Exception("Policy " + policy_name + " is used temporary files, such policy should have exactly one volume", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
         shared->tmp_volume = tmp_policy->getVolume(0);
     }
 
@@ -938,7 +942,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
 
     if (!res)
     {
-        TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_expression, *this);
+        TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_expression->as<ASTFunction>()->name, *this);
 
         /// Run it and remember the result
         res = table_function_ptr->execute(table_expression, *this, table_function_ptr->getName());
@@ -1088,13 +1092,11 @@ String Context::getInitialQueryId() const
 void Context::setCurrentDatabaseNameInGlobalContext(const String & name)
 {
     if (global_context != this)
-        throw Exception("Cannot set current database for non global context, this method should be used during server initialization",
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Cannot set current database for non global context, this method should be used during server initialization", ErrorCodes::LOGICAL_ERROR);
     auto lock = getLock();
 
     if (!current_database.empty())
-        throw Exception("Default database name cannot be changed in global context without server restart",
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Default database name cannot be changed in global context without server restart", ErrorCodes::LOGICAL_ERROR);
 
     current_database = name;
 }
@@ -1109,53 +1111,31 @@ void Context::setCurrentDatabase(const String & name)
 
 void Context::setCurrentQueryId(const String & query_id)
 {
-    /// Generate random UUID, but using lower quality RNG,
-    ///  because Poco::UUIDGenerator::generateRandom method is using /dev/random, that is very expensive.
-    /// NOTE: Actually we don't need to use UUIDs for query identifiers.
-    /// We could use any suitable string instead.
-    union
-    {
-        char bytes[16];
-        struct
-        {
-            UInt64 a;
-            UInt64 b;
-        } words;
-        __uint128_t uuid;
-    } random;
-
-    random.words.a = thread_local_rng(); //-V656
-    random.words.b = thread_local_rng(); //-V656
-
-    if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
-        && client_info.opentelemetry_trace_id == 0)
-    {
-        // If this is an initial query without any parent OpenTelemetry trace, we
-        // might start the trace ourselves, with some configurable probability.
-        std::bernoulli_distribution should_start_trace{
-            settings.opentelemetry_start_trace_probability};
-
-        if (should_start_trace(thread_local_rng))
-        {
-            // Use the randomly generated default query id as the new trace id.
-            client_info.opentelemetry_trace_id = random.uuid;
-            client_info.opentelemetry_parent_span_id = 0;
-            client_info.opentelemetry_span_id = thread_local_rng();
-            // Mark this trace as sampled in the flags.
-            client_info.opentelemetry_trace_flags = 1;
-        }
-    }
-    else
-    {
-        // The incoming request has an OpenTelemtry trace context. Its span id
-        // becomes our parent span id.
-        client_info.opentelemetry_parent_span_id = client_info.opentelemetry_span_id;
-        client_info.opentelemetry_span_id = thread_local_rng();
-    }
+    if (!client_info.current_query_id.empty())
+        throw Exception("Logical error: attempt to set query_id twice", ErrorCodes::LOGICAL_ERROR);
 
     String query_id_to_set = query_id;
+
     if (query_id_to_set.empty())    /// If the user did not submit his query_id, then we generate it ourselves.
     {
+        /// Generate random UUID, but using lower quality RNG,
+        ///  because Poco::UUIDGenerator::generateRandom method is using /dev/random, that is very expensive.
+        /// NOTE: Actually we don't need to use UUIDs for query identifiers.
+        /// We could use any suitable string instead.
+
+        union
+        {
+            char bytes[16];
+            struct
+            {
+                UInt64 a;
+                UInt64 b;
+            } words;
+        } random;
+
+        random.words.a = thread_local_rng(); //-V656
+        random.words.b = thread_local_rng(); //-V656
+
         /// Use protected constructor.
         struct QueryUUID : Poco::UUID
         {
@@ -1401,6 +1381,46 @@ void Context::dropCaches() const
         shared->mark_cache->reset();
 }
 
+BackgroundProcessingPool & Context::getBackgroundPool()
+{
+    auto lock = getLock();
+    if (!shared->background_pool)
+    {
+        BackgroundProcessingPool::PoolSettings pool_settings;
+        const auto & config = getConfigRef();
+        pool_settings.thread_sleep_seconds = config.getDouble("background_processing_pool_thread_sleep_seconds", 10);
+        pool_settings.thread_sleep_seconds_random_part = config.getDouble("background_processing_pool_thread_sleep_seconds_random_part", 1.0);
+        pool_settings.thread_sleep_seconds_if_nothing_to_do = config.getDouble("background_processing_pool_thread_sleep_seconds_if_nothing_to_do", 0.1);
+        pool_settings.task_sleep_seconds_when_no_work_min = config.getDouble("background_processing_pool_task_sleep_seconds_when_no_work_min", 10);
+        pool_settings.task_sleep_seconds_when_no_work_max = config.getDouble("background_processing_pool_task_sleep_seconds_when_no_work_max", 600);
+        pool_settings.task_sleep_seconds_when_no_work_multiplier = config.getDouble("background_processing_pool_task_sleep_seconds_when_no_work_multiplier", 1.1);
+        pool_settings.task_sleep_seconds_when_no_work_random_part = config.getDouble("background_processing_pool_task_sleep_seconds_when_no_work_random_part", 1.0);
+        shared->background_pool.emplace(settings.background_pool_size, pool_settings);
+    }
+    return *shared->background_pool;
+}
+
+BackgroundProcessingPool & Context::getBackgroundMovePool()
+{
+    auto lock = getLock();
+    if (!shared->background_move_pool)
+    {
+        BackgroundProcessingPool::PoolSettings pool_settings;
+        const auto & config = getConfigRef();
+        pool_settings.thread_sleep_seconds = config.getDouble("background_move_processing_pool_thread_sleep_seconds", 10);
+        pool_settings.thread_sleep_seconds_random_part = config.getDouble("background_move_processing_pool_thread_sleep_seconds_random_part", 1.0);
+        pool_settings.thread_sleep_seconds_if_nothing_to_do = config.getDouble("background_move_processing_pool_thread_sleep_seconds_if_nothing_to_do", 0.1);
+        pool_settings.task_sleep_seconds_when_no_work_min = config.getDouble("background_move_processing_pool_task_sleep_seconds_when_no_work_min", 10);
+        pool_settings.task_sleep_seconds_when_no_work_max = config.getDouble("background_move_processing_pool_task_sleep_seconds_when_no_work_max", 600);
+        pool_settings.task_sleep_seconds_when_no_work_multiplier = config.getDouble("background_move_processing_pool_task_sleep_seconds_when_no_work_multiplier", 1.1);
+        pool_settings.task_sleep_seconds_when_no_work_random_part = config.getDouble("background_move_processing_pool_task_sleep_seconds_when_no_work_random_part", 1.0);
+        pool_settings.tasks_metric = CurrentMetrics::BackgroundMovePoolTask;
+        pool_settings.memory_metric = CurrentMetrics::MemoryTrackingInBackgroundMoveProcessingPool;
+        shared->background_move_pool.emplace(settings.background_move_pool_size, pool_settings, "BackgroundMovePool", "BgMoveProcPool");
+    }
+    return *shared->background_move_pool;
+}
+
 BackgroundSchedulePool & Context::getBufferFlushSchedulePool()
 {
     auto lock = getLock();
@@ -1408,39 +1428,9 @@ BackgroundSchedulePool & Context::getBufferFlushSchedulePool()
         shared->buffer_flush_schedule_pool.emplace(
             settings.background_buffer_flush_schedule_pool_size,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolTask,
+            CurrentMetrics::MemoryTrackingInBackgroundBufferFlushSchedulePool,
             "BgBufSchPool");
     return *shared->buffer_flush_schedule_pool;
-}
-
-BackgroundTaskSchedulingSettings Context::getBackgroundProcessingTaskSchedulingSettings() const
-{
-    BackgroundTaskSchedulingSettings task_settings;
-
-    const auto & config = getConfigRef();
-    task_settings.thread_sleep_seconds = config.getDouble("background_processing_pool_thread_sleep_seconds", 10);
-    task_settings.thread_sleep_seconds_random_part = config.getDouble("background_processing_pool_thread_sleep_seconds_random_part", 1.0);
-    task_settings.thread_sleep_seconds_if_nothing_to_do = config.getDouble("background_processing_pool_thread_sleep_seconds_if_nothing_to_do", 0.1);
-    task_settings.task_sleep_seconds_when_no_work_min = config.getDouble("background_processing_pool_task_sleep_seconds_when_no_work_min", 10);
-    task_settings.task_sleep_seconds_when_no_work_max = config.getDouble("background_processing_pool_task_sleep_seconds_when_no_work_max", 600);
-    task_settings.task_sleep_seconds_when_no_work_multiplier = config.getDouble("background_processing_pool_task_sleep_seconds_when_no_work_multiplier", 1.1);
-    task_settings.task_sleep_seconds_when_no_work_random_part = config.getDouble("background_processing_pool_task_sleep_seconds_when_no_work_random_part", 1.0);
-    return task_settings;
-}
-
-BackgroundTaskSchedulingSettings Context::getBackgroundMoveTaskSchedulingSettings() const
-{
-    BackgroundTaskSchedulingSettings task_settings;
-
-    const auto & config = getConfigRef();
-    task_settings.thread_sleep_seconds = config.getDouble("background_move_processing_pool_thread_sleep_seconds", 10);
-    task_settings.thread_sleep_seconds_random_part = config.getDouble("background_move_processing_pool_thread_sleep_seconds_random_part", 1.0);
-    task_settings.thread_sleep_seconds_if_nothing_to_do = config.getDouble("background_move_processing_pool_thread_sleep_seconds_if_nothing_to_do", 0.1);
-    task_settings.task_sleep_seconds_when_no_work_min = config.getDouble("background_move_processing_pool_task_sleep_seconds_when_no_work_min", 10);
-    task_settings.task_sleep_seconds_when_no_work_max = config.getDouble("background_move_processing_pool_task_sleep_seconds_when_no_work_max", 600);
-    task_settings.task_sleep_seconds_when_no_work_multiplier = config.getDouble("background_move_processing_pool_task_sleep_seconds_when_no_work_multiplier", 1.1);
-    task_settings.task_sleep_seconds_when_no_work_random_part = config.getDouble("background_move_processing_pool_task_sleep_seconds_when_no_work_random_part", 1.0);
-
-    return task_settings;
 }
 
 BackgroundSchedulePool & Context::getSchedulePool()
@@ -1450,6 +1440,7 @@ BackgroundSchedulePool & Context::getSchedulePool()
         shared->schedule_pool.emplace(
             settings.background_schedule_pool_size,
             CurrentMetrics::BackgroundSchedulePoolTask,
+            CurrentMetrics::MemoryTrackingInBackgroundSchedulePool,
             "BgSchPool");
     return *shared->schedule_pool;
 }
@@ -1461,8 +1452,21 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool()
         shared->distributed_schedule_pool.emplace(
             settings.background_distributed_schedule_pool_size,
             CurrentMetrics::BackgroundDistributedSchedulePoolTask,
+            CurrentMetrics::MemoryTrackingInBackgroundDistributedSchedulePool,
             "BgDistSchPool");
     return *shared->distributed_schedule_pool;
+}
+
+BackgroundSchedulePool & Context::getMessageBrokerSchedulePool()
+{
+    auto lock = getLock();
+    if (!shared->message_broker_schedule_pool)
+        shared->message_broker_schedule_pool.emplace(
+            settings.background_message_broker_schedule_pool_size,
+            CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
+            CurrentMetrics::MemoryTrackingInBackgroundMessageBrokerSchedulePool,
+            "BgMBSchPool");
+    return *shared->message_broker_schedule_pool;
 }
 
 void Context::setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker)
@@ -1477,7 +1481,7 @@ DDLWorker & Context::getDDLWorker() const
 {
     auto lock = getLock();
     if (!shared->ddl_worker)
-        throw Exception("DDL background thread is not initialized.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        throw Exception("DDL background thread is not initialized.", ErrorCodes::LOGICAL_ERROR);
     return *shared->ddl_worker;
 }
 
@@ -1485,9 +1489,8 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 {
     std::lock_guard lock(shared->zookeeper_mutex);
 
-    const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
     if (!shared->zookeeper)
-        shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(config, "zookeeper");
+        shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(getConfigRef(), "zookeeper");
     else if (shared->zookeeper->expired())
         shared->zookeeper = shared->zookeeper->startNewSession();
 
@@ -1501,16 +1504,10 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
     auto zookeeper = shared->auxiliary_zookeepers.find(name);
     if (zookeeper == shared->auxiliary_zookeepers.end())
     {
-        const auto & config = shared->auxiliary_zookeepers_config ? *shared->auxiliary_zookeepers_config : getConfigRef();
-        if (!config.has("auxiliary_zookeepers." + name))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Unknown auxiliary ZooKeeper name '{}'. If it's required it can be added to the section <auxiliary_zookeepers> in "
-                "config.xml",
-                name);
+        if (!getConfigRef().has("auxiliary_zookeepers." + name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown auxiliary ZooKeeper name '{}'. If it's required it can be added to the section <auxiliary_zookeepers> in config.xml", name);
 
-        zookeeper
-            = shared->auxiliary_zookeepers.emplace(name, std::make_shared<zkutil::ZooKeeper>(config, "auxiliary_zookeepers." + name)).first;
+        zookeeper->second = std::make_shared<zkutil::ZooKeeper>(getConfigRef(), "auxiliary_zookeepers." + name);
     }
     else if (zookeeper->second->expired())
         zookeeper->second = zookeeper->second->startNewSession();
@@ -1524,37 +1521,14 @@ void Context::resetZooKeeper() const
     shared->zookeeper.reset();
 }
 
-static void reloadZooKeeperIfChangedImpl(const ConfigurationPtr & config, const std::string & config_name, zkutil::ZooKeeperPtr & zk)
-{
-    if (!zk || zk->configChanged(*config, config_name))
-        zk = std::make_shared<zkutil::ZooKeeper>(*config, config_name);
-}
-
 void Context::reloadZooKeeperIfChanged(const ConfigurationPtr & config) const
 {
     std::lock_guard lock(shared->zookeeper_mutex);
-    shared->zookeeper_config = config;
-    reloadZooKeeperIfChangedImpl(config, "zookeeper", shared->zookeeper);
-}
-
-void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config)
-{
-    std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
-
-    shared->auxiliary_zookeepers_config = config;
-
-    for (auto it = shared->auxiliary_zookeepers.begin(); it != shared->auxiliary_zookeepers.end();)
+    if (!shared->zookeeper || shared->zookeeper->configChanged(*config, "zookeeper"))
     {
-        if (!config->has("auxiliary_zookeepers." + it->first))
-            it = shared->auxiliary_zookeepers.erase(it);
-        else
-        {
-            reloadZooKeeperIfChangedImpl(config, "auxiliary_zookeepers." + it->first, it->second);
-            ++it;
-        }
+        shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(*config, "zookeeper");
     }
 }
-
 
 bool Context::hasZooKeeper() const
 {
@@ -1809,17 +1783,6 @@ std::shared_ptr<AsynchronousMetricLog> Context::getAsynchronousMetricLog()
 }
 
 
-std::shared_ptr<OpenTelemetrySpanLog> Context::getOpenTelemetrySpanLog()
-{
-    auto lock = getLock();
-
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->opentelemetry_span_log;
-}
-
-
 CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double part_size_ratio) const
 {
     auto lock = getLock();
@@ -1995,19 +1958,20 @@ void Context::checkCanBeDropped(const String & database, const String & table, c
 
     String size_str = formatReadableSizeWithDecimalSuffix(size);
     String max_size_to_drop_str = formatReadableSizeWithDecimalSuffix(max_size_to_drop);
-    throw Exception(ErrorCodes::TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT,
-                    "Table or Partition in {}.{} was not dropped.\nReason:\n"
-                    "1. Size ({}) is greater than max_[table/partition]_size_to_drop ({})\n"
-                    "2. File '{}' intended to force DROP {}\n"
-                    "How to fix this:\n"
-                    "1. Either increase (or set to zero) max_[table/partition]_size_to_drop in server config\n",
-                    "2. Either create forcing file {} and make sure that ClickHouse has write permission for it.\n"
-                    "Example:\nsudo touch '{}' && sudo chmod 666 '{}'",
-                    backQuoteIfNeed(database), backQuoteIfNeed(table),
-                    size_str, max_size_to_drop_str,
-                    force_file.path(), force_file_exists ? "exists but not writeable (could not be removed)" : "doesn't exist",
-                    force_file.path(),
-                    force_file.path(), force_file.path());
+    std::stringstream ostr;
+
+    ostr << "Table or Partition in " << backQuoteIfNeed(database) << "." << backQuoteIfNeed(table) << " was not dropped.\n"
+         << "Reason:\n"
+         << "1. Size (" << size_str << ") is greater than max_[table/partition]_size_to_drop (" << max_size_to_drop_str << ")\n"
+         << "2. File '" << force_file.path() << "' intended to force DROP "
+         << (force_file_exists ? "exists but not writeable (could not be removed)" : "doesn't exist") << "\n";
+
+    ostr << "How to fix this:\n"
+         << "1. Either increase (or set to zero) max_[table/partition]_size_to_drop in server config and restart ClickHouse\n"
+         << "2. Either create forcing file " << force_file.path() << " and make sure that ClickHouse has write permission for it.\n"
+         << "Example:\nsudo touch '" << force_file.path() << "' && sudo chmod 666 '" << force_file.path() << "'";
+
+    throw Exception(ostr.str(), ErrorCodes::TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT);
 }
 
 
@@ -2082,15 +2046,10 @@ void Context::reloadConfig() const
 
 void Context::shutdown()
 {
-    // Disk selector might not be initialized if there was some error during
-    // its initialization. Don't try to initialize it again on shutdown.
-    if (shared->merge_tree_disk_selector)
+    for (auto & [disk_name, disk] : getDisksMap())
     {
-        for (auto & [disk_name, disk] : getDisksMap())
-        {
-            LOG_INFO(shared->log, "Shutdown disk {}", disk_name);
-            disk->shutdown();
-        }
+        LOG_INFO(shared->log, "Shutdown disk {}", disk_name);
+        disk->shutdown();
     }
 
     shared->shutdown();

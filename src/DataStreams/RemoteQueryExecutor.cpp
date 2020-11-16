@@ -5,7 +5,6 @@
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Storages/IStorage.h>
-#include <Storages/SelectQueryInfo.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InternalTextLogsQueue.h>
@@ -315,8 +314,6 @@ void RemoteQueryExecutor::sendScalars()
 
 void RemoteQueryExecutor::sendExternalTables()
 {
-    SelectQueryInfo query_info;
-
     size_t count = multiplexed_connections->size();
 
     {
@@ -331,12 +328,11 @@ void RemoteQueryExecutor::sendExternalTables()
             {
                 StoragePtr cur = table.second;
                 auto metadata_snapshot = cur->getInMemoryMetadataPtr();
-                QueryProcessingStage::Enum read_from_table_stage = cur->getQueryProcessingStage(
-                    context, QueryProcessingStage::Complete, query_info);
+                QueryProcessingStage::Enum read_from_table_stage = cur->getQueryProcessingStage(context);
 
                 Pipe pipe = cur->read(
                     metadata_snapshot->getColumns().getNamesOfPhysical(),
-                    metadata_snapshot, query_info, context,
+                    metadata_snapshot, {}, context,
                     read_from_table_stage, DEFAULT_BLOCK_SIZE, 1);
 
                 auto data = std::make_unique<ExternalTableData>();

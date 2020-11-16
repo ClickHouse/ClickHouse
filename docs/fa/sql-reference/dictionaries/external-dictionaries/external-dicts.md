@@ -17,7 +17,7 @@ toc_title: "\u062A\u0648\u0636\u06CC\u062D\u0627\u062A \u06A9\u0644\u06CC"
 
 پیکربندی لغت نامه های خارجی را می توان در یک یا چند میلی لیتر فایل واقع شده است. مسیر پیکربندی در مشخص [دیکشنامهای](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_config) پارامتر.
 
-واژهنامهها را می توان در هنگام راه اندازی سرور و یا در اولین استفاده لود, بسته به [_بارگیری کامل](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load) تنظیمات.
+واژهنامهها را می توان در هنگام راه اندازی سرور و یا در اولین استفاده لود, بسته به [\_بارگیری کامل](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load) تنظیمات.
 
 این [واژهنامهها](../../../operations/system-tables.md#system_tables-dictionaries) جدول سیستم شامل اطلاعات در مورد لغت نامه پیکربندی در سرور. برای هر فرهنگ لغت شما می توانید وجود دارد:
 

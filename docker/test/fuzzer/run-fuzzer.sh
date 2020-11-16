@@ -45,11 +45,11 @@ function configure
 {
     rm -rf db ||:
     mkdir db ||:
-    cp -av --dereference "$repo_dir"/programs/server/config* db
-    cp -av --dereference "$repo_dir"/programs/server/user* db
+    cp -av "$repo_dir"/programs/server/config* db
+    cp -av "$repo_dir"/programs/server/user* db
     # TODO figure out which ones are needed
-    cp -av --dereference "$repo_dir"/tests/config/config.d/listen.xml db/config.d
-    cp -av --dereference "$script_dir"/query-fuzzer-tweaks-users.xml db/users.d
+    cp -av "$repo_dir"/tests/config/config.d/listen.xml db/config.d
+    cp -av "$script_dir"/query-fuzzer-tweaks-users.xml db/users.d
 }
 
 function watchdog
@@ -89,7 +89,7 @@ function fuzz
         > >(tail -10000 > fuzzer.log) \
         2>&1 \
         || fuzzer_exit_code=$?
-
+    
     echo "Fuzzer exit code is $fuzzer_exit_code"
 
     ./clickhouse-client --query "select elapsed, query from system.processes" ||:
@@ -164,7 +164,7 @@ case "$stage" in
         # Lost connection to the server. This probably means that the server died
         # with abort.
         echo "failure" > status.txt
-        if ! grep -ao "Received signal.*\|Logical error.*\|Assertion.*failed\|Failed assertion.*" server.log > description.txt
+        if ! grep -ao "Received signal.*\|Logical error.*\|Assertion.*failed" server.log > description.txt
         then
             echo "Lost connection to server. See the logs" > description.txt
         fi

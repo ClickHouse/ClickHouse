@@ -54,7 +54,7 @@ example01-{01..02}-1
 
 If you have multiple pairs of curly brackets, it generates the direct product of the corresponding sets.
 
-Addresses and parts of addresses in curly brackets can be separated by the pipe symbol (\|). In this case, the corresponding sets of addresses are interpreted as replicas, and the query will be sent to the first healthy replica. However, the replicas are iterated in the order currently set in the [load_balancing](../../operations/settings/settings.md) setting.
+Addresses and parts of addresses in curly brackets can be separated by the pipe symbol (\|). In this case, the corresponding sets of addresses are interpreted as replicas, and the query will be sent to the first healthy replica. However, the replicas are iterated in the order currently set in the [load\_balancing](../../operations/settings/settings.md) setting.
 
 Example:
 
@@ -78,6 +78,6 @@ The `remote` table function can be useful in the following cases:
 If the user is not specified, `default` is used.
 If the password is not specified, an empty password is used.
 
-`remoteSecure` - same as `remote` but with secured connection. Default port — [tcp_port_secure](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) from config or 9440.
+`remoteSecure` - same as `remote` but with secured connection. Default port — [tcp\_port\_secure](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) from config or 9440.
 
 [Original article](https://clickhouse.tech/docs/en/query_language/table_functions/remote/) <!--hide-->

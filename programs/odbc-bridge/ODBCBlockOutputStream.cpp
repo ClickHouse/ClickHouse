@@ -32,12 +32,12 @@ namespace
         for (const auto & column : columns)
             query.columns->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
 
-        WriteBufferFromOwnString buf;
-        IAST::FormatSettings settings(buf, true);
+        std::stringstream ss;
+        IAST::FormatSettings settings(ss, true);
         settings.always_quote_identifiers = true;
         settings.identifier_quoting_style = quoting;
         query.IAST::format(settings);
-        return buf.str();
+        return ss.str();
     }
 
     std::string getQuestionMarks(size_t n)

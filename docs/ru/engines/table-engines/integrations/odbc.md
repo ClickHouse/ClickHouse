@@ -1,8 +1,3 @@
----
-toc_priority: 1
-toc_title: ODBC
----
-
 # ODBC {#table-engine-odbc}
 
 Позволяет ClickHouse подключаться к внешним базам данных с помощью [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).

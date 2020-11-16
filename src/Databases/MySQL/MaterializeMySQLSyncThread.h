@@ -100,7 +100,6 @@ private:
 
     std::atomic<bool> sync_quit{false};
     std::unique_ptr<ThreadFromGlobalPool> background_thread_pool;
-    void executeDDLAtomic(const QueryEvent & query_event);
 };
 
 }

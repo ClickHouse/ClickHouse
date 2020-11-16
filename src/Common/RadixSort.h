@@ -11,7 +11,6 @@
 #include <cstdint>
 #include <cassert>
 #include <type_traits>
-#include <memory>
 
 #include <ext/bit_cast.h>
 #include <common/extended_types.h>

@@ -1,6 +1,7 @@
 #include <Processors/QueryPipeline.h>
 
 #include <Processors/ResizeProcessor.h>
+#include <Processors/ConcatProcessor.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
 #include <Processors/Transforms/ExtremesTransform.h>
@@ -95,12 +96,6 @@ void QueryPipeline::addTransform(ProcessorPtr transform)
     pipe.addTransform(std::move(transform));
 }
 
-void QueryPipeline::transform(const Transformer & transformer)
-{
-    checkInitializedAndNotCompleted();
-    pipe.transform(transformer);
-}
-
 void QueryPipeline::setSinks(const Pipe::ProcessorGetterWithStreamKind & getter)
 {
     checkInitializedAndNotCompleted();
@@ -129,7 +124,18 @@ void QueryPipeline::addMergingAggregatedMemoryEfficientTransform(AggregatingTran
 void QueryPipeline::resize(size_t num_streams, bool force, bool strict)
 {
     checkInitializedAndNotCompleted();
-    pipe.resize(num_streams, force, strict);
+
+    if (!force && num_streams == getNumStreams())
+        return;
+
+    ProcessorPtr resize;
+
+    if (strict)
+        resize = std::make_shared<StrictResizeProcessor>(getHeader(), getNumStreams(), num_streams);
+    else
+        resize = std::make_shared<ResizeProcessor>(getHeader(), getNumStreams(), num_streams);
+
+    pipe.addTransform(std::move(resize));
 }
 
 void QueryPipeline::addTotalsHavingTransform(ProcessorPtr transform)

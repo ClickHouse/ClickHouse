@@ -1,8 +1,3 @@
----
-toc_priority: 5
-toc_title: Kafka
----
-
 # Kafka {#kafka}
 
 Движок работает с [Apache Kafka](http://kafka.apache.org/).
@@ -128,7 +123,7 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
 
-Для улучшения производительности полученные сообщения группируются в блоки размера [max_insert_block_size](../../../operations/settings/settings.md#settings-max_insert_block_size). Если блок не удалось сформировать за [stream_flush_interval_ms](../../../operations/settings/settings.md#stream-flush-interval-ms) миллисекунд, то данные будут сброшены в таблицу независимо от полноты блока.
+Для улучшения производительности полученные сообщения группируются в блоки размера [max\_insert\_block\_size](../../../operations/settings/settings.md#settings-max_insert_block_size). Если блок не удалось сформировать за [stream\_flush\_interval\_ms](../../../operations/settings/settings.md#stream-flush-interval-ms) миллисекунд, то данные будут сброшены в таблицу независимо от полноты блока.
 
 Чтобы остановить получение данных топика или изменить логику преобразования, отсоедините материализованное представление:
 
@@ -158,22 +153,6 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
 ```
 
 В документе [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md) можно увидеть список возможных опций конфигурации. Используйте подчеркивание (`_`) вместо точки в конфигурации ClickHouse. Например, `check.crcs=true` будет соответствовать `<check_crcs>true</check_crcs>`.
-
-### Поддержка Kerberos {#kafka-kerberos-support}
-
-Чтобы начать работу с Kafka с поддержкой Kerberos, добавьте дочерний элемент `security_protocol` со значением `sasl_plaintext`. Этого будет достаточно, если получен тикет на получение тикета (ticket-granting ticket) Kerberos и он кэшируется средствами ОС.
-ClickHouse может поддерживать учетные данные Kerberos с помощью файла keytab. Рассмотрим дочерние элементы `sasl_kerberos_service_name`, `sasl_kerberos_keytab`, `sasl_kerberos_principal` и `sasl.kerberos.kinit.cmd`.
-
-Пример:
-
-``` xml
-  <!-- Kerberos-aware Kafka -->
-  <kafka>
-    <security_protocol>SASL_PLAINTEXT</security_protocol>
-	<sasl_kerberos_keytab>/home/kafkauser/kafkauser.keytab</sasl_kerberos_keytab>
-	<sasl_kerberos_principal>kafkauser/kafkahost@EXAMPLE.COM</sasl_kerberos_principal>
-  </kafka>
-```
 
 ## Виртуальные столбцы {#virtualnye-stolbtsy}
 
