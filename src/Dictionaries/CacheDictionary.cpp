@@ -515,11 +515,11 @@ CacheDictionary::Attribute CacheDictionary::createAttributeWithTypeAndName(const
 
     switch (type)
     {
-#define DISPATCH(TYPE) \
-    case AttributeUnderlyingType::ut##TYPE: \
-        attr.null_value = TYPE(null_value.get<NearestFieldType<TYPE>>()); /* NOLINT */ \
-        attr.arrays = std::make_unique<ContainerType<TYPE>>(size); /* NOLINT */ \
-        bytes_allocated += size * sizeof(TYPE); \
+#define DISPATCH(TYPE)\
+    case AttributeUnderlyingType::ut##TYPE:\
+        attr.null_value = TYPE(null_value.get<NearestFieldType<TYPE>>());\
+        attr.arrays = std::make_unique<ContainerType<TYPE>>(size);\
+        bytes_allocated += size * sizeof(TYPE);\
         break;
         DISPATCH(UInt8)
         DISPATCH(UInt16)
@@ -552,9 +552,9 @@ void CacheDictionary::setDefaultAttributeValue(Attribute & attribute, const Key 
 {
     switch (attribute.type)
     {
-#define DISPATCH(TYPE) \
-        case AttributeUnderlyingType::ut##TYPE: \
-            std::get<ContainerPtrType<TYPE>>(attribute.arrays)[idx] = std::get<TYPE>(attribute.null_value); /* NOLINT */ \
+#define DISPATCH(TYPE)\
+        case AttributeUnderlyingType::ut##TYPE:\
+            std::get<ContainerPtrType<TYPE>>(attribute.arrays)[idx] = std::get<TYPE>(attribute.null_value);\
             break;
         DISPATCH(UInt8)
         DISPATCH(UInt16)
