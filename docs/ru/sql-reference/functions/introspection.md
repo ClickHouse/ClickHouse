@@ -309,7 +309,7 @@ clone
 
 ## tid {#tid}
 
-Возвращает id потока, в котором обрабатывается текущий `Block`.
+Возвращает id потока, в котором обрабатывается текущий [Block](https://clickhouse.tech/docs/ru/development/architecture/#block).
 
 **Синтаксис**
 
@@ -338,7 +338,7 @@ SELECT tid();
 ```
 ## logTrace {#logtrace}
 
- Выводит сообщение в лог сервера для каждого `Block`a.
+ Выводит сообщение в лог сервера для каждого [Block](https://clickhouse.tech/docs/ru/development/architecture/#block).
 
 **Синтаксис**
 
