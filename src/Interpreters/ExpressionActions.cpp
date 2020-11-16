@@ -1,17 +1,13 @@
 #include <Interpreters/Set.h>
 #include <Common/ProfileEvents.h>
-//#include <Common/SipHash.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/ExpressionActions.h>
-//#include <Interpreters/ExpressionJIT.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/Context.h>
-//#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
-//#include <DataTypes/DataTypeNullable.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
