@@ -20,34 +20,15 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-class Context;
 class TableJoin;
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
-
-class IExecutableFunction;
-using ExecutableFunctionPtr = std::shared_ptr<IExecutableFunction>;
-
-class IFunctionBase;
-using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
-
-class IFunctionOverloadResolver;
-using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
-
-class IDataType;
-using DataTypePtr = std::shared_ptr<const IDataType>;
-
-class ExpressionActions;
-class CompiledExpressionCache;
 
 class ArrayJoinAction;
 using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
-
-class ActionsDAG;
-using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
 
 
 /// Sequence of actions on the block.
