@@ -340,7 +340,7 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
                 connection->query("COMMIT").execute();
 
             client.connect();
-            client.startBinlogDumpGTID(randomNumber(), mysql_database_name, metadata.executed_gtid_set);
+            client.startBinlogDumpGTID(randomNumber(), mysql_database_name, metadata.executed_gtid_set, metadata.binlog_checksum);
             return metadata;
         }
         catch (...)
@@ -624,16 +624,27 @@ void MaterializeMySQLSyncThread::onEvent(Buffers & buffers, const BinlogEventPtr
         metadata.transaction(position_before_ddl, [&]() { buffers.commit(global_context); });
         metadata.transaction(client.getPosition(),[&](){ executeDDLAtomic(query_event); });
     }
-    else if (receive_event->header.type != HEARTBEAT_EVENT)
+    else
     {
-        const auto & dump_event_message = [&]()
+        /// MYSQL_UNHANDLED_EVENT
+        if (receive_event->header.type == ROTATE_EVENT)
         {
-            WriteBufferFromOwnString buf;
-            receive_event->dump(buf);
-            return buf.str();
-        };
+            /// Some behaviors(such as changing the value of "binlog_checksum") rotate the binlog file.
+            /// To ensure that the synchronization continues, we need to handle these events
+            metadata.fetchMasterVariablesValue(pool.get());
+            client.setBinlogChecksum(metadata.binlog_checksum);
+        }
+        else if (receive_event->header.type != HEARTBEAT_EVENT)
+        {
+            const auto & dump_event_message = [&]()
+            {
+                WriteBufferFromOwnString buf;
+                receive_event->dump(buf);
+                return buf.str();
+            };
 
-        LOG_DEBUG(log, "Skip MySQL event: \n {}", dump_event_message());
+            LOG_DEBUG(log, "Skip MySQL event: \n {}", dump_event_message());
+        }
     }
 }
 
