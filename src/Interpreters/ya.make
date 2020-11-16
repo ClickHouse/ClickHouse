@@ -17,6 +17,7 @@ NO_COMPILER_WARNINGS()
 
 SRCS(
     ActionLocksManager.cpp
+    ActionsDAG.cpp
     ActionsVisitor.cpp
     AggregateDescription.cpp
     Aggregator.cpp
