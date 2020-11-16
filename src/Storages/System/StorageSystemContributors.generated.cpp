@@ -6,7 +6,6 @@ const char * auto_contributors[] {
     "243f6a8885a308d313198a2e037",
     "821008736@qq.com",
     "Akazz",
-    "Alain BERRIER",
     "Albert Kidrachev",
     "Alberto",
     "Aleksandr Karo",

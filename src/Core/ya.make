@@ -30,7 +30,6 @@ SRCS(
     MySQL/PacketsReplication.cpp
     NamesAndTypes.cpp
     PostgreSQLProtocol.cpp
-    QueryProcessingStage.cpp
     Settings.cpp
     SettingsEnums.cpp
     SettingsFields.cpp

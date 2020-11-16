@@ -43,8 +43,6 @@ RUN apt-get --allow-unauthenticated update -y \
             libreadline-dev \
             libsasl2-dev \
             libzstd-dev \
-            librocksdb-dev \
-            libgflags-dev \
             lsof \
             moreutils \
             ncdu \

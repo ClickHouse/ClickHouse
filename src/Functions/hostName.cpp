@@ -32,8 +32,6 @@ public:
         return false;
     }
 
-    bool isSuitableForConstantFolding() const override { return false; }
-
     size_t getNumberOfArguments() const override
     {
         return 0;

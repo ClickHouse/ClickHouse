@@ -26,10 +26,6 @@ public:
         return name;
     }
 
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
-    bool isSuitableForConstantFolding() const override { return false; }
-
     size_t getNumberOfArguments() const override
     {
         return 0;

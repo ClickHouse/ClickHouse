@@ -167,7 +167,7 @@ void DatabaseCatalog::shutdownImpl()
     std::lock_guard lock(databases_mutex);
     assert(std::find_if(uuid_map.begin(), uuid_map.end(), [](const auto & elem)
     {
-        /// Ensure that all UUID mappings are empty (i.e. all mappings contain nullptr instead of a pointer to storage)
+        /// Ensure that all UUID mappings are emtpy (i.e. all mappings contain nullptr instead of a pointer to storage)
         const auto & not_empty_mapping = [] (const auto & mapping)
         {
             auto & table = mapping.second.second;

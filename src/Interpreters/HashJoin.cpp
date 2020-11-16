@@ -988,10 +988,6 @@ void HashJoin::joinBlockImpl(
             const auto & right_key = required_right_keys.getByPosition(i);
             const auto & left_name = required_right_keys_sources[i];
 
-            /// asof column is already in block.
-            if (is_asof_join && right_key.name == key_names_right.back())
-                continue;
-
             const auto & col = block.getByName(left_name);
             bool is_nullable = nullable_right_side || right_key.type->isNullable();
             block.insert(correctNullability({col.column, col.type, right_key.name}, is_nullable));
@@ -1010,10 +1006,6 @@ void HashJoin::joinBlockImpl(
         {
             const auto & right_key = required_right_keys.getByPosition(i);
             const auto & left_name = required_right_keys_sources[i];
-
-            /// asof column is already in block.
-            if (is_asof_join && right_key.name == key_names_right.back())
-                continue;
 
             const auto & col = block.getByName(left_name);
             bool is_nullable = nullable_right_side || right_key.type->isNullable();

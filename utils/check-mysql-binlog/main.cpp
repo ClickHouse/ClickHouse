@@ -9,7 +9,6 @@
 #include <IO/LimitReadBuffer.h>
 #include <IO/MySQLBinlogEventReadBuffer.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
-#include <IO/WriteBufferFromOStream.h>
 #include <Core/MySQL/MySQLReplication.h>
 
 static DB::MySQLReplication::BinlogEventPtr parseSingleEventBody(
@@ -127,20 +126,18 @@ static int checkBinLogFile(const std::string & bin_path, bool exist_checksum)
     }
     catch (...)
     {
-        DB::WriteBufferFromOStream cerr(std::cerr);
-        cerr << "Unable to parse MySQL binlog event. Code: " << DB::getCurrentExceptionCode() << ", Exception message: "
-            << DB::getCurrentExceptionMessage(false) << '\n' << ", Previous event: " << '\n';
-        last_event->dump(cerr);
-        cerr << '\n' << ", Event header: " << '\n';
-        last_header->dump(cerr);
-        cerr << '\n';
+        std::cerr << "Unable to parse MySQL binlog event. Code: " << DB::getCurrentExceptionCode() << ", Exception message: "
+            << DB::getCurrentExceptionMessage(false) << std::endl << ", Previous event: " << std::endl;
+        last_event->dump(std::cerr);
+        std::cerr << std::endl << ", Event header: " << std::endl;
+        last_header->dump(std::cerr);
+        std::cerr << std::endl;
         return DB::getCurrentExceptionCode();
     }
 
-    DB::WriteBufferFromOStream cout(std::cout);
-    cout << "Check passed. " << '\n' << "No exception was thrown." << '\n' << "The last binlog event: " << '\n';
-    last_event->dump(cout);
-    cout << '\n';
+    std::cout << "Check passed. " << std::endl << "No exception was thrown." << std::endl << "The last binlog event: " << std::endl;
+    last_event->dump(std::cout);
+    std::cout << std::endl;
     return 0;
 }
 

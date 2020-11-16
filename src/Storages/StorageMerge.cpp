@@ -132,7 +132,7 @@ bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, cons
 }
 
 
-QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, SelectQueryInfo & query_info) const
+QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, const ASTPtr & query_ptr) const
 {
     auto stage_in_source_tables = QueryProcessingStage::FetchColumns;
 
@@ -146,7 +146,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context &
         if (table && table.get() != this)
         {
             ++selected_table_size;
-            stage_in_source_tables = std::max(stage_in_source_tables, table->getQueryProcessingStage(context, to_stage, query_info));
+            stage_in_source_tables = std::max(stage_in_source_tables, table->getQueryProcessingStage(context, to_stage, query_ptr));
         }
 
         iterator->next();
@@ -159,7 +159,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context &
 Pipe StorageMerge::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & query_info,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
@@ -259,7 +259,7 @@ Pipe StorageMerge::read(
 
 Pipe StorageMerge::createSources(
     const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & query_info,
+    const SelectQueryInfo & query_info,
     const QueryProcessingStage::Enum & processed_stage,
     const UInt64 max_block_size,
     const Block & header,
@@ -293,7 +293,7 @@ Pipe StorageMerge::createSources(
         return pipe;
     }
 
-    auto storage_stage = storage->getQueryProcessingStage(*modified_context, QueryProcessingStage::Complete, modified_query_info);
+    auto storage_stage = storage->getQueryProcessingStage(*modified_context, QueryProcessingStage::Complete, modified_query_info.query);
     if (processed_stage <= storage_stage)
     {
         /// If there are only virtual columns in query, you must request at least one other column.
@@ -332,13 +332,10 @@ Pipe StorageMerge::createSources(
 
         if (has_table_virtual_column)
         {
-            ColumnWithTypeAndName column;
-            column.name = "_table";
-            column.type = std::make_shared<DataTypeString>();
-            column.column = column.type->createColumnConst(0, Field(table_name));
-            pipe.addSimpleTransform([&](const Block & stream_header)
+            pipe.addSimpleTransform([name = table_name](const Block & stream_header)
             {
-                return std::make_shared<AddingConstColumnTransform>(stream_header, column);
+                return std::make_shared<AddingConstColumnTransform<String>>(
+                        stream_header, std::make_shared<DataTypeString>(), name, "_table");
             });
         }
 

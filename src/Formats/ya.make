@@ -22,7 +22,6 @@ SRCS(
     ProtobufReader.cpp
     ProtobufSchemas.cpp
     ProtobufWriter.cpp
-    registerFormats.cpp
     verbosePrintString.cpp
 
 )

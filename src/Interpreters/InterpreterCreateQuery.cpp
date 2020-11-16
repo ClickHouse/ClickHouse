@@ -135,7 +135,9 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     else if ((create.columns_list && create.columns_list->indices && !create.columns_list->indices->children.empty()))
     {
         /// Currently, there are no database engines, that support any arguments.
-        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", serializeAST(*create.storage));
+        std::stringstream ostr;
+        formatAST(*create.storage, ostr, false, false);
+        throw Exception("Unknown database engine: " + ostr.str(), ErrorCodes::UNKNOWN_DATABASE_ENGINE);
     }
 
     if (create.storage->engine->name == "Atomic")
@@ -179,10 +181,10 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         create.attach = true;
         create.if_not_exists = false;
 
-        WriteBufferFromOwnString statement_buf;
-        formatAST(create, statement_buf, false);
-        writeChar('\n', statement_buf);
-        String statement = statement_buf.str();
+        std::ostringstream statement_stream;
+        formatAST(create, statement_stream, false);
+        statement_stream << '\n';
+        String statement = statement_stream.str();
 
         /// Exclusive flag guarantees, that database is not created right now in another thread.
         WriteBufferFromFile out(metadata_file_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
@@ -680,10 +682,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         // Table SQL definition is available even if the table is detached
         auto query = database->getCreateTableQuery(create.table, context);
         create = query->as<ASTCreateQuery &>(); // Copy the saved create query, but use ATTACH instead of CREATE
-        if (create.is_dictionary)
-            throw Exception(
-                "Cannot ATTACH TABLE " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(create.table) + ", it is a Dictionary",
-                ErrorCodes::INCORRECT_QUERY);
         create.attach = true;
         create.attach_short_syntax = true;
         create.if_not_exists = if_not_exists;

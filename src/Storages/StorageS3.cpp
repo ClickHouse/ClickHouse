@@ -35,6 +35,8 @@
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
 
+#include <sstream>
+
 
 namespace DB
 {
@@ -252,14 +254,17 @@ Strings listFilesWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & 
         outcome = client.ListObjectsV2(request);
         if (!outcome.IsSuccess())
         {
-            if (page > 1)
-                throw Exception(ErrorCodes::S3_ERROR, "Could not list objects in bucket {} with prefix {}, page {}, S3 exception: {}, message: {}",
-                            quoteString(request.GetBucket()), quoteString(request.GetPrefix()), page,
-                            backQuote(outcome.GetError().GetExceptionName()), quoteString(outcome.GetError().GetMessage()));
+            std::ostringstream message;
+            message << "Could not list objects in bucket " << quoteString(request.GetBucket())
+                << " with prefix " << quoteString(request.GetPrefix());
 
-            throw Exception(ErrorCodes::S3_ERROR, "Could not list objects in bucket {} with prefix {}, S3 exception: {}, message: {}",
-                            quoteString(request.GetBucket()), quoteString(request.GetPrefix()),
-                            backQuote(outcome.GetError().GetExceptionName()), quoteString(outcome.GetError().GetMessage()));
+            if (page > 1)
+                message << ", page " << std::to_string(page);
+
+            message << ", S3 exception: " + backQuote(outcome.GetError().GetExceptionName())
+                << ", message: " + quoteString(outcome.GetError().GetMessage());
+
+            throw Exception(message.str(), ErrorCodes::S3_ERROR);
         }
 
         for (const auto & row : outcome.GetResult().GetContents())
@@ -282,7 +287,7 @@ Strings listFilesWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & 
 Pipe StorageS3::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & /*query_info*/,
+    const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,

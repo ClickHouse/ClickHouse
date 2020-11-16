@@ -23,7 +23,7 @@ SRCS(
     LiveView/TemporaryLiveViewCleaner.cpp
     MergeTree/ActiveDataPartSet.cpp
     MergeTree/AllMergeSelector.cpp
-    MergeTree/BackgroundJobsExecutor.cpp
+    MergeTree/BackgroundProcessingPool.cpp
     MergeTree/BoolMask.cpp
     MergeTree/DataPartsExchange.cpp
     MergeTree/EphemeralLockInZooKeeper.cpp
@@ -85,7 +85,6 @@ SRCS(
     MergeTree/MergeType.cpp
     MergeTree/MergedBlockOutputStream.cpp
     MergeTree/MergedColumnOnlyOutputStream.cpp
-    MergeTree/PartitionPruner.cpp
     MergeTree/ReplicatedFetchList.cpp
     MergeTree/ReplicatedMergeTreeAddress.cpp
     MergeTree/ReplicatedMergeTreeAltersSequence.cpp

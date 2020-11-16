@@ -20,8 +20,6 @@ SRCS(
     HTTPCommon.cpp
     HashingWriteBuffer.cpp
     HexWriteBuffer.cpp
-    LZMADeflatingWriteBuffer.cpp
-    LZMAInflatingReadBuffer.cpp
     LimitReadBuffer.cpp
     MMapReadBufferFromFile.cpp
     MMapReadBufferFromFileDescriptor.cpp
@@ -40,6 +38,7 @@ SRCS(
     ReadBufferFromMemory.cpp
     ReadBufferFromPocoSocket.cpp
     ReadHelpers.cpp
+    ReadWriteBufferFromHTTP.cpp
     SeekAvoidingReadBuffer.cpp
     UseSSL.cpp
     WriteBufferAIO.cpp

@@ -259,7 +259,7 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
         span.finish_time_us = current_time_us;
         span.duration_ns = 0;
 
-        /// Keep values synchronized to type enum in QueryLogElement::createBlock.
+        // keep values synchonized to type enum in QueryLogElement::createBlock
         span.attribute_names.push_back("clickhouse.query_status");
         span.attribute_values.push_back("ExceptionBeforeStart");
 
@@ -697,7 +697,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     span.finish_time_us = time_in_microseconds(finish_time);
                     span.duration_ns = elapsed_seconds * 1000000000;
 
-                    /// Keep values synchronized to type enum in QueryLogElement::createBlock.
+                    // keep values synchonized to type enum in QueryLogElement::createBlock
                     span.attribute_names.push_back("clickhouse.query_status");
                     span.attribute_values.push_back("QueryFinish");
 
@@ -778,9 +778,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             if (!internal && res.in)
             {
-                WriteBufferFromOwnString msg_buf;
-                res.in->dumpTree(msg_buf);
-                LOG_DEBUG(&Poco::Logger::get("executeQuery"), "Query pipeline:\n{}", msg_buf.str());
+                std::stringstream log_str;
+                log_str << "Query pipeline:\n";
+                res.in->dumpTree(log_str);
+                LOG_DEBUG(&Poco::Logger::get("executeQuery"), log_str.str());
             }
         }
     }

@@ -62,6 +62,7 @@ class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalModelsLoader;
 class InterserverIOHandler;
+class BackgroundProcessingPool;
 class BackgroundSchedulePool;
 class MergeList;
 class ReplicatedFetchList;
@@ -112,7 +113,6 @@ using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
 struct NamedSession;
-struct BackgroundTaskSchedulingSettings;
 
 
 #if USE_EMBEDDED_COMPILER
@@ -487,9 +487,6 @@ public:
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
     /// Same as above but return a zookeeper connection from auxiliary_zookeepers configuration entry.
     std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
-
-    /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
-    void reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config);
     /// Has ready or expired ZooKeeper
     bool hasZooKeeper() const;
     /// Reset current zookeeper session. Do not create a new one.
@@ -515,11 +512,9 @@ public:
       */
     void dropCaches() const;
 
-    /// Settings for MergeTree background tasks stored in config.xml
-    BackgroundTaskSchedulingSettings getBackgroundProcessingTaskSchedulingSettings() const;
-    BackgroundTaskSchedulingSettings getBackgroundMoveTaskSchedulingSettings() const;
-
     BackgroundSchedulePool & getBufferFlushSchedulePool();
+    BackgroundProcessingPool & getBackgroundPool();
+    BackgroundProcessingPool & getBackgroundMovePool();
     BackgroundSchedulePool & getSchedulePool();
     BackgroundSchedulePool & getDistributedSchedulePool();
 

@@ -131,13 +131,8 @@ public:
             data.reject();
     }
 
-    static bool needChildVisit(const ASTPtr & parent, const ASTPtr &)
+    static bool needChildVisit(const ASTPtr &, const ASTPtr &)
     {
-        /// Currently we check monotonicity only for single-argument functions.
-        /// Although, multi-argument functions with all but one constant arguments can also be monotonic.
-        if (const auto * func = typeid_cast<const ASTFunction *>(parent.get()))
-            return func->arguments->children.size() < 2;
-
         return true;
     }
 };

@@ -105,6 +105,3 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | xargs 
 
 # Trailing whitespaces
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -P ' $' | grep -P '.' && echo "^ Trailing whitespaces."
-
-# Forbid stringstream because it's easy to use them incorrectly and hard to debug possible issues
-find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep 'std::[io]\?stringstream' | grep -v "STYLE_CHECK_ALLOW_STD_STRING_STREAM" && echo "Use WriteBufferFromOwnString or ReadBufferFromString instead of std::stringstream"

@@ -10,23 +10,10 @@ namespace ErrorCodes
     extern const int INVALID_WITH_FILL_EXPRESSION;
 }
 
-Block FillingTransform::transformHeader(Block header, const SortDescription & sort_description)
-{
-    NameSet sort_keys;
-    for (const auto & key : sort_description)
-        sort_keys.insert(key.column_name);
-
-    /// Columns which are not from sorting key may not be constant anymore.
-    for (auto & column : header)
-        if (column.column && isColumnConst(*column.column) && !sort_keys.count(column.name))
-            column.column = column.type->createColumn();
-
-    return header;
-}
 
 FillingTransform::FillingTransform(
         const Block & header_, const SortDescription & sort_description_)
-        : ISimpleTransform(header_, transformHeader(header_, sort_description_), true)
+        : ISimpleTransform(header_, header_, true)
         , sort_description(sort_description_)
         , filling_row(sort_description_)
         , next_row(sort_description_)
