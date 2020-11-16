@@ -99,7 +99,7 @@ public:
         static const char AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN[] = "AWS_CONTAINER_AUTHORIZATION_TOKEN";
         static const char AWS_EC2_METADATA_DISABLED[] = "AWS_EC2_METADATA_DISABLED";
 
-        auto logger = &Poco::Logger::get("S3CredentialsProviderChain");
+        auto * logger = &Poco::Logger::get("S3CredentialsProviderChain");
 
         /// The only difference from DefaultAWSCredentialsProviderChain::DefaultAWSCredentialsProviderChain()
         /// is that this chain uses custom ClientConfiguration.
