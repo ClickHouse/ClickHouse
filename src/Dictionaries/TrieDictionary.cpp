@@ -92,9 +92,26 @@ static void validateKeyTypes(const DataTypes & key_types)
     }
 }
 
-static inline bool compPrefixes(UInt8 a, UInt8 b)
+template <typename T, typename Comp>
+size_t sort_and_unique(std::vector<T> & vec, Comp comp)
 {
-    return a < b;
+    std::sort(vec.begin(), vec.end(),
+              [&](const auto & a, const auto & b) { return comp(a, b) < 0; });
+
+    auto new_end = std::unique(vec.begin(), vec.end(),
+                               [&](const auto & a, const auto & b) { return comp(a, b) == 0; });
+    if (new_end != vec.end())
+    {
+        vec.erase(new_end, vec.end());
+        return std::distance(new_end, vec.end());
+    }
+    return 0;
+}
+
+template <typename T>
+static inline int compareTo(T a, T b)
+{
+    return a > b ? 1 : (a < b ? -1 : 0);
 }
 
 inline static UInt32 IPv4AsUInt32(const void * addr)
@@ -176,11 +193,6 @@ static bool matchIPv6Subnet(const uint8_t * target, const uint8_t * addr, UInt8 
 }
 
 #endif  // __SSE2__
-
-const uint8_t * TrieDictionary::getIPv6FromOffset(const TrieDictionary::IPv6Container & ipv6_col, size_t i)
-{
-    return reinterpret_cast<const uint8_t *>(&ipv6_col[i * IPV6_BINARY_LENGTH]);
-}
 
 TrieDictionary::TrieDictionary(
     const StorageID & dict_id_,
@@ -500,7 +512,7 @@ void TrieDictionary::loadData()
 
     if (has_ipv6)
     {
-        std::sort(ip_records.begin(), ip_records.end(),
+        auto deleted_count = sort_and_unique(ip_records,
             [](const auto & record_a, const auto & record_b)
             {
                 uint8_t a_buf[IPV6_BINARY_LENGTH];
@@ -509,9 +521,11 @@ void TrieDictionary::loadData()
                 auto cmpres = memcmp16(record_a.asIPv6Binary(a_buf), record_b.asIPv6Binary(b_buf));
 
                 if (cmpres == 0)
-                    return compPrefixes(record_a.prefixIPv6(), record_b.prefixIPv6());
-                return cmpres < 0;
+                    return compareTo(record_a.prefixIPv6(), record_b.prefixIPv6());
+                return cmpres;
             });
+        if (deleted_count > 0)
+            LOG_WARNING(logger, "removing {} non-unique subnets from input", deleted_count);
 
         auto & ipv6_col = ip_column.emplace<IPv6Container>();
         ipv6_col.resize_fill(IPV6_BINARY_LENGTH * ip_records.size());
@@ -531,19 +545,18 @@ void TrieDictionary::loadData()
     }
     else
     {
-        std::sort(ip_records.begin(), ip_records.end(),
+        auto deleted_count = sort_and_unique(ip_records,
             [](const auto & record_a, const auto & record_b)
             {
-                UInt32 a = *reinterpret_cast<const UInt32 *>(record_a.addr.addr());
-                a = Poco::ByteOrder::fromNetwork(a);
-
-                UInt32 b = *reinterpret_cast<const UInt32 *>(record_b.addr.addr());
-                b = Poco::ByteOrder::fromNetwork(b);
+                UInt32 a = IPv4AsUInt32(record_a.addr.addr());
+                UInt32 b = IPv4AsUInt32(record_b.addr.addr());
 
                 if (a == b)
-                    return compPrefixes(record_a.prefix, record_b.prefix);
-                return a < b;
+                    return compareTo(record_a.prefix, record_b.prefix);
+                return compareTo(a, b);
             });
+        if (deleted_count > 0)
+            LOG_WARNING(logger, "removing {} non-unique subnets from input", deleted_count);
 
         auto & ipv4_col = ip_column.emplace<IPv4Container>();
         ipv4_col.reserve(ip_records.size());
@@ -752,6 +765,11 @@ TrieDictionary::Attribute TrieDictionary::createAttributeWithType(const Attribut
     return attr;
 }
 
+const uint8_t * TrieDictionary::getIPv6FromOffset(const TrieDictionary::IPv6Container & ipv6_col, size_t i)
+{
+    return reinterpret_cast<const uint8_t *>(&ipv6_col[i * IPV6_BINARY_LENGTH]);
+}
+
 template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
 void TrieDictionary::getItemsByTwoKeyColumnsImpl(
     const Attribute & attribute, const Columns & key_columns, ValueSetter && set_value, DefaultGetter && get_default) const
@@ -772,7 +790,7 @@ void TrieDictionary::getItemsByTwoKeyColumnsImpl(
         {
             UInt32 addr = (*ipv4_col)[elem];
             if (addr == target.addr)
-                return compPrefixes(mask_column[elem], target.prefix);
+                return mask_column[elem] < target.prefix;
             return addr < target.addr;
         };
 
@@ -807,7 +825,7 @@ void TrieDictionary::getItemsByTwoKeyColumnsImpl(
     {
         auto cmpres = memcmp16(getIPv6FromOffset(*ipv6_col, i), target.addr);
         if (cmpres == 0)
-            return compPrefixes(mask_column[i], target.prefix);
+            return mask_column[i] < target.prefix;
         return cmpres < 0;
     };
 
