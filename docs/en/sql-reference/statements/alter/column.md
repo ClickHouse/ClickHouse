@@ -132,6 +132,12 @@ Syntax:
 Syntax of the statement.
 ```
 
+**Example**
+
+Request
+
+Result
+
 ## Other necessary sections of the description (Optional)
 
 ## See Also (Optional)
