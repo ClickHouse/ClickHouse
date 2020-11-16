@@ -688,6 +688,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         // Table SQL definition is available even if the table is detached
         auto query = database->getCreateTableQuery(create.table, context);
         create = query->as<ASTCreateQuery &>(); // Copy the saved create query, but use ATTACH instead of CREATE
+        if (create.is_dictionary)
+            throw Exception(
+                "Cannot ATTACH TABLE " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(create.table) + ", it is a Dictionary",
+                ErrorCodes::INCORRECT_QUERY);
         create.attach = true;
         create.attach_short_syntax = true;
         create.if_not_exists = if_not_exists;
