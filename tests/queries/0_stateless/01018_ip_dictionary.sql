@@ -106,6 +106,7 @@ SELECT 1272 == asn AND 'RU' == cca2 FROM database_for_dict.table_from_ipv4_trie_
 WHERE prefix == '127.0.0.2/32';
 
 SELECT 37 == COUNT(*) FROM database_for_dict.table_from_ipv4_trie_dict;
+SELECT 37 == COUNT(DISTINCT prefix) FROM database_for_dict.table_from_ipv4_trie_dict;
 
 DROP DICTIONARY IF EXISTS database_for_dict.dict_ipv4_trie;
 DROP TABLE IF EXISTS database_for_dict.table_from_ipv4_trie_dict;
