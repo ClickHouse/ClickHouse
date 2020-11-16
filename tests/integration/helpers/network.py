@@ -182,6 +182,7 @@ class _NetworkManager:
                     except docker.errors.NotFound:
                         break
                     except docker.errors.APIError as e:
+                        # retry for "Removal In Progress"
                         if "removal of container" not in str(e):
                             raise e
                         time.sleep(retry)

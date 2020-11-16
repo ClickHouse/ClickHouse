@@ -40,7 +40,7 @@ def test_disabled_mysql_server(started_cluster):
         assert 'test_table' in clickhouse_node.query("SHOW TABLES FROM test_db")
 
         pm._add_rule({'source': clickhouse_node.ip_address, 'destination_port': 3306, 'action': 'DROP'})
-        clickhouse_node.restart_clickhouse()  # successfully
+        clickhouse_node.restart_clickhouse(stop_start_wait_sec=10)  # successfully
         with pytest.raises(QueryRuntimeException) as exception:
             clickhouse_node.query("SHOW TABLES FORM test_db")
         assert "MySQL database server is unavailable" in str(exception.value)
