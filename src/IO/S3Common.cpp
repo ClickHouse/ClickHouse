@@ -8,6 +8,9 @@
 
 #    include <aws/core/auth/AWSCredentialsProvider.h>
 #    include <aws/core/auth/AWSCredentialsProviderChain.h>
+#    include <aws/core/auth/STSCredentialsProvider.h>
+#    include <aws/core/client/DefaultRetryStrategy.h>
+#    include <aws/core/platform/Environment.h>
 #    include <aws/core/utils/logging/LogMacros.h>
 #    include <aws/core/utils/logging/LogSystemInterface.h>
 #    include <aws/s3/S3Client.h>
@@ -86,6 +89,82 @@ private:
     std::unordered_map<String, Poco::Logger *> tag_loggers;
 };
 
+class S3CredentialsProviderChain : public Aws::Auth::AWSCredentialsProviderChain
+{
+public:
+    S3CredentialsProviderChain(const DB::RemoteHostFilter & remote_host_filter)
+    {
+        static const char AWS_ECS_CONTAINER_CREDENTIALS_RELATIVE_URI[] = "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI";
+        static const char AWS_ECS_CONTAINER_CREDENTIALS_FULL_URI[] = "AWS_CONTAINER_CREDENTIALS_FULL_URI";
+        static const char AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN[] = "AWS_CONTAINER_AUTHORIZATION_TOKEN";
+        static const char AWS_EC2_METADATA_DISABLED[] = "AWS_EC2_METADATA_DISABLED";
+
+        auto logger = &Poco::Logger::get("S3CredentialsProviderChain");
+
+        /// The only difference from DefaultAWSCredentialsProviderChain::DefaultAWSCredentialsProviderChain()
+        /// is that this chain uses custom ClientConfiguration. 
+
+        AddProvider(std::make_shared<Aws::Auth::EnvironmentAWSCredentialsProvider>());
+        AddProvider(std::make_shared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>());
+        AddProvider(std::make_shared<Aws::Auth::STSAssumeRoleWebIdentityCredentialsProvider>());
+    
+        /// ECS TaskRole Credentials only available when ENVIRONMENT VARIABLE is set.
+        const auto relativeUri = Aws::Environment::GetEnv(AWS_ECS_CONTAINER_CREDENTIALS_RELATIVE_URI);
+        LOG_DEBUG(logger, "The environment variable value {} is {}", AWS_ECS_CONTAINER_CREDENTIALS_RELATIVE_URI, relativeUri);
+
+        const auto absoluteUri = Aws::Environment::GetEnv(AWS_ECS_CONTAINER_CREDENTIALS_FULL_URI);
+        LOG_DEBUG(logger, "The environment variable value {} is {}", AWS_ECS_CONTAINER_CREDENTIALS_FULL_URI, absoluteUri);
+
+        const auto ec2MetadataDisabled = Aws::Environment::GetEnv(AWS_EC2_METADATA_DISABLED);
+        LOG_DEBUG(logger, "The environment variable value {} is {}", AWS_EC2_METADATA_DISABLED, ec2MetadataDisabled);
+
+        if (!relativeUri.empty())
+        {
+            AddProvider(std::make_shared<Aws::Auth::TaskRoleCredentialsProvider>(relativeUri.c_str()));
+            LOG_INFO(logger, "Added ECS metadata service credentials provider with relative path: [{}] to the provider chain.", relativeUri);
+        }
+        else if (!absoluteUri.empty())
+        {
+            const auto token = Aws::Environment::GetEnv(AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN);
+            AddProvider(std::make_shared<Aws::Auth::TaskRoleCredentialsProvider>(absoluteUri.c_str(), token.c_str()));
+
+            /// DO NOT log the value of the authorization token for security purposes.
+            LOG_INFO(logger, "Added ECS credentials provider with URI: [{}] to the provider chain with a{} authorization token.",
+                    absoluteUri, token.empty() ? "n empty" : " non-empty");
+        }
+        else if (Aws::Utils::StringUtils::ToLower(ec2MetadataDisabled.c_str()) != "true")
+        {
+            Aws::Client::ClientConfiguration aws_client_configuration;
+
+            /// See MakeDefaultHttpResourceClientConfiguration().
+            /// This is part of EC2 metadata client, but unfortunately it can't be accessed from outside
+            /// of contrib/aws/aws-cpp-sdk-core/source/internal/AWSHttpResourceClient.cpp
+            aws_client_configuration.maxConnections = 2;
+            aws_client_configuration.scheme = Aws::Http::Scheme::HTTP;
+
+            /// Explicitly set the proxy settings to empty/zero to avoid relying on defaults that could potentially change
+            /// in the future.
+            aws_client_configuration.proxyHost = "";
+            aws_client_configuration.proxyUserName = "";
+            aws_client_configuration.proxyPassword = "";
+            aws_client_configuration.proxyPort = 0;
+
+            /// EC2MetadataService throttles by delaying the response so the service client should set a large read timeout.
+            /// EC2MetadataService delay is in order of seconds so it only make sense to retry after a couple of seconds.
+            aws_client_configuration.connectTimeoutMs = 1000;
+            aws_client_configuration.requestTimeoutMs = 1000;
+            aws_client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(1, 1000);
+
+            DB::S3::PocoHTTPClientConfiguration client_configuration(aws_client_configuration, remote_host_filter);
+            auto ec2_client = std::make_shared<Aws::Internal::EC2MetadataClient>(client_configuration);
+            auto config_loader = std::make_shared<Aws::Config::EC2InstanceProfileConfigLoader>(ec2_client);
+
+            AddProvider(std::make_shared<Aws::Auth::InstanceProfileCredentialsProvider>(config_loader));
+            LOG_INFO(logger, "Added EC2 metadata service credentials provider to the provider chain.");
+        }
+    }
+};
+
 class S3AuthSigner : public Aws::Client::AWSAuthV4Signer
 {
 public:
@@ -97,7 +176,9 @@ public:
             !credentials.IsEmpty()
                 ? std::dynamic_pointer_cast<Aws::Auth::AWSCredentialsProvider>(
                     std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(credentials))
-                : std::make_shared<Aws::Auth::DefaultAWSCredentialsProviderChain>(),
+                : std::make_shared<S3CredentialsProviderChain>(
+                    static_cast<const DB::S3::PocoHTTPClientConfiguration &>(client_configuration)
+                        .remote_host_filter),
             "s3",
             client_configuration.region,
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
