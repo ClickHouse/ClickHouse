@@ -75,6 +75,7 @@ namespace ErrorCodes
     extern const int DICTIONARY_ALREADY_EXISTS;
     extern const int ILLEGAL_SYNTAX_FOR_DATA_TYPE;
     extern const int ILLEGAL_COLUMN;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace fs = std::filesystem;
