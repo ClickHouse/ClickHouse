@@ -55,7 +55,7 @@ struct AvgFraction
             num_converted = static_cast<Float64>(numerator); /// all other types, including extended integral.
 
         std::conditional_t<DecimalOrExtendedInt<Denominator>,
-            Float64, Denominator>> denom_converted;
+            Float64, Denominator> denom_converted;
 
         if constexpr (IsDecimalNumber<Denominator>)
             denom_converted = DecimalUtils::convertTo<Float64>(denominator, scale);
