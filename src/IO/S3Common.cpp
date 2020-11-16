@@ -102,37 +102,41 @@ public:
         auto logger = &Poco::Logger::get("S3CredentialsProviderChain");
 
         /// The only difference from DefaultAWSCredentialsProviderChain::DefaultAWSCredentialsProviderChain()
-        /// is that this chain uses custom ClientConfiguration. 
+        /// is that this chain uses custom ClientConfiguration.
 
         AddProvider(std::make_shared<Aws::Auth::EnvironmentAWSCredentialsProvider>());
         AddProvider(std::make_shared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>());
         AddProvider(std::make_shared<Aws::Auth::STSAssumeRoleWebIdentityCredentialsProvider>());
     
         /// ECS TaskRole Credentials only available when ENVIRONMENT VARIABLE is set.
-        const auto relativeUri = Aws::Environment::GetEnv(AWS_ECS_CONTAINER_CREDENTIALS_RELATIVE_URI);
-        LOG_DEBUG(logger, "The environment variable value {} is {}", AWS_ECS_CONTAINER_CREDENTIALS_RELATIVE_URI, relativeUri);
+        const auto relative_uri = Aws::Environment::GetEnv(AWS_ECS_CONTAINER_CREDENTIALS_RELATIVE_URI);
+        LOG_DEBUG(logger, "The environment variable value {} is {}", AWS_ECS_CONTAINER_CREDENTIALS_RELATIVE_URI,
+                relative_uri);
 
-        const auto absoluteUri = Aws::Environment::GetEnv(AWS_ECS_CONTAINER_CREDENTIALS_FULL_URI);
-        LOG_DEBUG(logger, "The environment variable value {} is {}", AWS_ECS_CONTAINER_CREDENTIALS_FULL_URI, absoluteUri);
+        const auto absolute_uri = Aws::Environment::GetEnv(AWS_ECS_CONTAINER_CREDENTIALS_FULL_URI);
+        LOG_DEBUG(logger, "The environment variable value {} is {}", AWS_ECS_CONTAINER_CREDENTIALS_FULL_URI,
+                absolute_uri);
 
-        const auto ec2MetadataDisabled = Aws::Environment::GetEnv(AWS_EC2_METADATA_DISABLED);
-        LOG_DEBUG(logger, "The environment variable value {} is {}", AWS_EC2_METADATA_DISABLED, ec2MetadataDisabled);
+        const auto ec2_metadata_disabled = Aws::Environment::GetEnv(AWS_EC2_METADATA_DISABLED);
+        LOG_DEBUG(logger, "The environment variable value {} is {}", AWS_EC2_METADATA_DISABLED,
+                ec2_metadata_disabled);
 
-        if (!relativeUri.empty())
+        if (!relative_uri.empty())
         {
-            AddProvider(std::make_shared<Aws::Auth::TaskRoleCredentialsProvider>(relativeUri.c_str()));
-            LOG_INFO(logger, "Added ECS metadata service credentials provider with relative path: [{}] to the provider chain.", relativeUri);
+            AddProvider(std::make_shared<Aws::Auth::TaskRoleCredentialsProvider>(relative_uri.c_str()));
+            LOG_INFO(logger, "Added ECS metadata service credentials provider with relative path: [{}] to the provider chain.",
+                    relative_uri);
         }
-        else if (!absoluteUri.empty())
+        else if (!absolute_uri.empty())
         {
             const auto token = Aws::Environment::GetEnv(AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN);
-            AddProvider(std::make_shared<Aws::Auth::TaskRoleCredentialsProvider>(absoluteUri.c_str(), token.c_str()));
+            AddProvider(std::make_shared<Aws::Auth::TaskRoleCredentialsProvider>(absolute_uri.c_str(), token.c_str()));
 
             /// DO NOT log the value of the authorization token for security purposes.
             LOG_INFO(logger, "Added ECS credentials provider with URI: [{}] to the provider chain with a{} authorization token.",
-                    absoluteUri, token.empty() ? "n empty" : " non-empty");
+                    absolute_uri, token.empty() ? "n empty" : " non-empty");
         }
-        else if (Aws::Utils::StringUtils::ToLower(ec2MetadataDisabled.c_str()) != "true")
+        else if (Aws::Utils::StringUtils::ToLower(ec2_metadata_disabled.c_str()) != "true")
         {
             Aws::Client::ClientConfiguration aws_client_configuration;
 
@@ -156,8 +160,8 @@ public:
             aws_client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(1, 1000);
 
             DB::S3::PocoHTTPClientConfiguration client_configuration(aws_client_configuration, remote_host_filter);
-            auto ec2_client = std::make_shared<Aws::Internal::EC2MetadataClient>(client_configuration);
-            auto config_loader = std::make_shared<Aws::Config::EC2InstanceProfileConfigLoader>(ec2_client);
+            auto ec2_metadata_client = std::make_shared<Aws::Internal::EC2MetadataClient>(client_configuration);
+            auto config_loader = std::make_shared<Aws::Config::EC2InstanceProfileConfigLoader>(ec2_metadata_client);
 
             AddProvider(std::make_shared<Aws::Auth::InstanceProfileCredentialsProvider>(config_loader));
             LOG_INFO(logger, "Added EC2 metadata service credentials provider to the provider chain.");
