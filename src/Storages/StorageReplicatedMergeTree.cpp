@@ -139,12 +139,18 @@ static const auto MERGE_SELECTING_SLEEP_MS           = 5 * 1000;
 static const auto MUTATIONS_FINALIZING_SLEEP_MS      = 1 * 1000;
 static const auto MUTATIONS_FINALIZING_IDLE_SLEEP_MS = 5 * 1000;
 
-void StorageReplicatedMergeTree::setZooKeeper(zkutil::ZooKeeperPtr zookeeper)
+void StorageReplicatedMergeTree::setZooKeeper()
 {
     std::lock_guard lock(current_zookeeper_mutex);
-    current_zookeeper = zookeeper;
+    if (zookeeper_name == default_zookeeper_name)
+    {
+        current_zookeeper = global_context.getZooKeeper();
+    }
+    else
+    {
+        current_zookeeper = global_context.getAuxiliaryZooKeeper(zookeeper_name);
+    }
 }
-
 zkutil::ZooKeeperPtr StorageReplicatedMergeTree::tryGetZooKeeper() const
 {
     std::lock_guard lock(current_zookeeper_mutex);
@@ -195,9 +201,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
                     true,                   /// require_part_metadata
                     attach,
                     [this] (const std::string & name) { enqueuePartForCheck(name); })
-    , zookeeper_path(normalizeZooKeeperPath(zookeeper_path_))
     , replica_name(replica_name_)
-    , replica_path(zookeeper_path + "/replicas/" + replica_name)
     , reader(*this)
     , writer(*this)
     , merger_mutator(*this, global_context.getSettingsRef().background_pool_size)
@@ -212,6 +216,22 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , allow_renaming(allow_renaming_)
     , replicated_fetches_pool_size(global_context.getSettingsRef().background_fetches_pool_size)
 {
+    if (zookeeper_path_.empty())
+        throw Exception("ZooKeeper path should not be empty", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    auto pos = zookeeper_path_.find(':');
+    if (pos != String::npos)
+    {
+        zookeeper_name = zookeeper_path_.substr(0, pos);
+        if (zookeeper_name.empty())
+            throw Exception("Zookeeper path should start with '/' or '<auxiliary_zookeeper_name>:/'", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        zookeeper_path = normalizeZooKeeperPath(zookeeper_path_.substr(pos + 1, String::npos));
+    }
+    else
+    {
+        zookeeper_name = default_zookeeper_name;
+        zookeeper_path = normalizeZooKeeperPath(zookeeper_path_);
+    }
+    replica_path = zookeeper_path + "/replicas/" + replica_name;
     queue_updating_task = global_context.getSchedulePool().createTask(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::queueUpdatingTask)", [this]{ queueUpdatingTask(); });
 
@@ -227,7 +247,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     mutations_finalizing_task = global_context.getSchedulePool().createTask(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::mutationsFinalizingTask)", [this] { mutationsFinalizingTask(); });
 
-    if (global_context.hasZooKeeper())
+    if (global_context.hasZooKeeper() || global_context.hasAuxiliaryZooKeeper(zookeeper_name))
     {
         /// It's possible for getZooKeeper() to timeout if  zookeeper host(s) can't
         /// be reached. In such cases Poco::Exception is thrown after a connection
@@ -244,7 +264,14 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         /// to be manually deleted before retrying the CreateQuery.
         try
         {
-            current_zookeeper = global_context.getZooKeeper();
+            if (zookeeper_name == default_zookeeper_name)
+            {
+                current_zookeeper = global_context.getZooKeeper();
+            }
+            else
+            {
+                current_zookeeper = global_context.getAuxiliaryZooKeeper(zookeeper_name);
+            }
         }
         catch (...)
         {
