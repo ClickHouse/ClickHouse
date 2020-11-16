@@ -10,13 +10,13 @@ Use it for tests or to process columns of types `AggregateFunction` and `Aggrega
 **Syntax**
 
 ``` sql
-initializeAggregation(input_rows_count);
+initializeAggregation (aggregate_function, column_1, column_2);
 ```
 
 **Parameters**
 
--   `input_rows_count` — Number of your inputed rows. [UInt64](../sql-reference/data-types/int-uint.md#uint-ranges).
--   `uniqState` — Uniq identifier key of the state. [Type name](relative/path/to/type/dscr.md#type).
+-   `aggregate_function` — Тname of the aggregation function. The state of this function — the creating one. [String](../sql-reference/data-types/string.md).
+-   `column_n` — The column to translate it into the function as it`s argument. [String](../sql-reference/data-types/string.md).
 
 **Returned value(s)**
 
