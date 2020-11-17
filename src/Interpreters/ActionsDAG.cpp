@@ -5,6 +5,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionsConversion.h>
+#include <Functions/materialize.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionJIT.h>
 #include <IO/WriteBufferFromString.h>
@@ -575,6 +576,11 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
     FunctionOverloadResolverPtr func_builder_cast =
             std::make_shared<FunctionOverloadResolverAdaptor>(CastOverloadResolver::createImpl(false));
 
+    FunctionOverloadResolverPtr func_builder_materialize =
+            std::make_shared<FunctionOverloadResolverAdaptor>(
+                    std::make_unique<DefaultOverloadResolver>(
+                            std::make_shared<FunctionMaterialize>()));
+
     std::map<std::string_view, std::list<size_t>> inputs;
     if (mode == MatchColumnsMode::Name)
     {
@@ -639,6 +645,12 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
 
             Inputs children = { left_arg, right_arg };
             src_node = &actions_dag->addFunction(func_builder_cast, std::move(children), {}, true);
+        }
+
+        if (src_node->column && isColumnConst(*src_node->column))
+        {
+            Inputs children = {src_node};
+            src_node = &actions_dag->addFunction(func_builder_materialize, std::move(children), {}, true);
         }
 
         if (src_node->result_name != res_elem.name)
