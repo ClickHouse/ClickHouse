@@ -2194,7 +2194,9 @@ Result:
 
 ## system_events_show_zero_values {system_events_show_zero_values}
 
-Includes all metrics, even with zero values. Used for monitoring metrics: `system.metrics`, `system.events` and `system.asyncronous_metrics`.
+Allows to select zero-valued events from `system.events`.
+
+Some monitoring systems require passing all the metrics values to them for each checkpoint, even if the metric value is zero.
 
 Possible values:
 
