@@ -342,11 +342,9 @@ void Set::checkColumnsNumber(size_t num_key_columns) const
 {
     if (data_types.size() != num_key_columns)
     {
-        std::stringstream message;
-        message.exceptions(std::ios::failbit);
-        message << "Number of columns in section IN doesn't match. "
-                << num_key_columns << " at left, " << data_types.size() << " at right.";
-        throw Exception(message.str(), ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH,
+                        "Number of columns in section IN doesn't match. {} at left, {} at right.",
+                        num_key_columns, data_types.size());
     }
 }
 

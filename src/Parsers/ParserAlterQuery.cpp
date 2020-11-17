@@ -79,7 +79,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_to_volume("TO VOLUME");
     ParserKeyword s_to_table("TO TABLE");
 
-    ParserKeyword s_delete_where("DELETE WHERE");
+    ParserKeyword s_delete("DELETE");
     ParserKeyword s_update("UPDATE");
     ParserKeyword s_where("WHERE");
     ParserKeyword s_to("TO");
@@ -506,8 +506,17 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
             command->type = ASTAlterCommand::MODIFY_SAMPLE_BY;
         }
-        else if (s_delete_where.ignore(pos, expected))
+        else if (s_delete.ignore(pos, expected))
         {
+            if (s_in_partition.ignore(pos, expected))
+            {
+                if (!parser_partition.parse(pos, command->partition, expected))
+                    return false;
+            }
+
+            if (!s_where.ignore(pos, expected))
+                return false;
+
             if (!parser_exp_elem.parse(pos, command->predicate, expected))
                 return false;
 
@@ -517,6 +526,12 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         {
             if (!parser_assignment_list.parse(pos, command->update_assignments, expected))
                 return false;
+
+            if (s_in_partition.ignore(pos, expected))
+            {
+                if (!parser_partition.parse(pos, command->partition, expected))
+                    return false;
+            }
 
             if (!s_where.ignore(pos, expected))
                 return false;
