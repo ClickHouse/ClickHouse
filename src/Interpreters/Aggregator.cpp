@@ -112,22 +112,7 @@ Block Aggregator::Params::getHeader(
 {
     Block res;
 
-    if (intermediate_header)
-    {
-        res = intermediate_header.cloneEmpty();
-
-        if (final)
-        {
-            for (const auto & aggregate : aggregates)
-            {
-                auto & elem = res.getByName(aggregate.column_name);
-
-                elem.type = aggregate.function->getReturnType();
-                elem.column = elem.type->createColumn();
-            }
-        }
-    }
-    else
+    if (src_header)
     {
         for (const auto & key : keys)
             res.insert(src_header.safeGetByPosition(key).cloneEmpty());
@@ -146,6 +131,21 @@ Block Aggregator::Params::getHeader(
                 type = std::make_shared<DataTypeAggregateFunction>(aggregate.function, argument_types, aggregate.parameters);
 
             res.insert({ type, aggregate.column_name });
+        }
+    }
+    else if (intermediate_header)
+    {
+        res = intermediate_header.cloneEmpty();
+
+        if (final)
+        {
+            for (const auto & aggregate : aggregates)
+            {
+                auto & elem = res.getByName(aggregate.column_name);
+
+                elem.type = aggregate.function->getReturnType();
+                elem.column = elem.type->createColumn();
+            }
         }
     }
 
@@ -367,14 +367,6 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
         throw Exception("Logical error: numeric column has sizeOfField not in 1, 2, 4, 8, 16, 32.", ErrorCodes::LOGICAL_ERROR);
     }
 
-    if (params.keys_size == 1 && isFixedString(types_removed_nullable[0]))
-    {
-        if (has_low_cardinality)
-            return AggregatedDataVariants::Type::low_cardinality_key_fixed_string;
-        else
-            return AggregatedDataVariants::Type::key_fixed_string;
-    }
-
     /// If all keys fits in N bits, will use hash table with all keys packed (placed contiguously) to single N-bit key.
     if (params.keys_size == num_fixed_contiguous_keys)
     {
@@ -405,6 +397,14 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
             return AggregatedDataVariants::Type::low_cardinality_key_string;
         else
             return AggregatedDataVariants::Type::key_string;
+    }
+
+    if (params.keys_size == 1 && isFixedString(types_removed_nullable[0]))
+    {
+        if (has_low_cardinality)
+            return AggregatedDataVariants::Type::low_cardinality_key_fixed_string;
+        else
+            return AggregatedDataVariants::Type::key_fixed_string;
     }
 
     return AggregatedDataVariants::Type::serialized;
@@ -844,7 +844,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, co
     const std::string & path = file->path();
     WriteBufferFromFile file_buf(path);
     CompressedWriteBuffer compressed_buf(file_buf);
-    NativeBlockOutputStream block_out(compressed_buf, DBMS_TCP_PROTOCOL_VERSION, getHeader(false));
+    NativeBlockOutputStream block_out(compressed_buf, ClickHouseRevision::get(), getHeader(false));
 
     LOG_DEBUG(log, "Writing part of aggregation data into temporary file {}.", path);
     ProfileEvents::increment(ProfileEvents::ExternalAggregationWritePart);

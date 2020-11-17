@@ -62,7 +62,7 @@ Ailede motorlar:
 -   [Dağılı](special/distributed.md#distributed)
 -   [MaterializedView](special/materializedview.md#materializedview)
 -   [Sözlük](special/dictionary.md#dictionary)
--   \[Mer \]ge\] (spec /ial / mer #ge. md#mer #ge
+-   \[Mer \]ge\] (spec /ial / mer \#ge. md\#mer \#ge
 -   [Dosya](special/file.md#file)
 -   [Boş](special/null.md#null)
 -   [Koymak](special/set.md#set)

@@ -117,9 +117,9 @@ Para una consulta no distribuida, utilice el `IN` / `JOIN`.
 
 Tenga cuidado al usar subconsultas en el `IN` / `JOIN` para el procesamiento de consultas distribuidas.
 
-Veamos algunos ejemplos. Supongamos que cada servidor del clúster tiene un **local_table**. Cada servidor también tiene un **distributed_table** mesa con el **Distribuido** tipo, que mira todos los servidores del clúster.
+Veamos algunos ejemplos. Supongamos que cada servidor del clúster tiene un **local\_table**. Cada servidor también tiene un **distributed\_table** mesa con el **Distribuido** tipo, que mira todos los servidores del clúster.
 
-Para una consulta al **distributed_table**, la consulta se enviará a todos los servidores remotos y se ejecutará en ellos usando el **local_table**.
+Para una consulta al **distributed\_table**, la consulta se enviará a todos los servidores remotos y se ejecutará en ellos usando el **local\_table**.
 
 Por ejemplo, la consulta
 
@@ -153,7 +153,7 @@ En otras palabras, los datos establecidos en la cláusula IN se recopilarán en 
 
 Esto funcionará correctamente y de manera óptima si está preparado para este caso y ha distribuido datos en los servidores de clúster de modo que los datos de un único ID de usuario residen completamente en un único servidor. En este caso, todos los datos necesarios estarán disponibles localmente en cada servidor. De lo contrario, el resultado será inexacto. Nos referimos a esta variación de la consulta como “local IN”.
 
-Para corregir cómo funciona la consulta cuando los datos se distribuyen aleatoriamente entre los servidores de clúster, puede especificar **distributed_table** dentro de una subconsulta. La consulta se vería así:
+Para corregir cómo funciona la consulta cuando los datos se distribuyen aleatoriamente entre los servidores de clúster, puede especificar **distributed\_table** dentro de una subconsulta. La consulta se vería así:
 
 ``` sql
 SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)

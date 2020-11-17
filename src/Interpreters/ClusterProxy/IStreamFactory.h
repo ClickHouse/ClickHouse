@@ -16,9 +16,6 @@ struct SelectQueryInfo;
 class Pipe;
 using Pipes = std::vector<Pipe>;
 
-class QueryPlan;
-using QueryPlanPtr = std::unique_ptr<QueryPlan>;
-
 namespace ClusterProxy
 {
 
@@ -34,9 +31,7 @@ public:
             const String & query, const ASTPtr & query_ast,
             const Context & context, const ThrottlerPtr & throttler,
             const SelectQueryInfo & query_info,
-            std::vector<QueryPlanPtr> & res,
-            Pipes & remote_pipes,
-            Pipes & delayed_pipes) = 0;
+            Pipes & res) = 0;
 };
 
 }

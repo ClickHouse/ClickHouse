@@ -40,8 +40,7 @@ def get_query_stat(instance, hint):
     return result
 
 
-@pytest.mark.parametrize("min_rows_for_wide_part,read_requests", [(0, 2), (8192, 1)])
-def test_write_is_cached(cluster, min_rows_for_wide_part, read_requests):
+def test_write_is_cached(cluster):
     node = cluster.instances["node"]
 
     node.query(
@@ -51,8 +50,8 @@ def test_write_is_cached(cluster, min_rows_for_wide_part, read_requests):
             data String
         ) ENGINE=MergeTree()
         ORDER BY id
-        SETTINGS storage_policy='s3', min_rows_for_wide_part={}
-        """.format(min_rows_for_wide_part)
+        SETTINGS storage_policy='s3'
+        """
     )
 
     node.query("SYSTEM FLUSH LOGS")
@@ -64,12 +63,12 @@ def test_write_is_cached(cluster, min_rows_for_wide_part, read_requests):
     assert node.query(select_query) == "(0,'data'),(1,'data')"
 
     stat = get_query_stat(node, select_query)
-    assert stat["S3ReadRequestsCount"] == read_requests  # Only .bin files should be accessed from S3.
+    assert stat["S3ReadRequestsCount"] == 2  # Only .bin files should be accessed from S3.
 
     node.query("DROP TABLE IF EXISTS s3_test NO DELAY")
 
-@pytest.mark.parametrize("min_rows_for_wide_part,all_files,bin_files", [(0, 4, 2), (8192, 2, 1)])
-def test_read_after_cache_is_wiped(cluster, min_rows_for_wide_part, all_files, bin_files):
+
+def test_read_after_cache_is_wiped(cluster):
     node = cluster.instances["node"]
 
     node.query(
@@ -79,8 +78,8 @@ def test_read_after_cache_is_wiped(cluster, min_rows_for_wide_part, all_files, b
             data String
         ) ENGINE=MergeTree()
         ORDER BY id
-        SETTINGS storage_policy='s3', min_rows_for_wide_part={}
-        """.format(min_rows_for_wide_part)
+        SETTINGS storage_policy='s3'
+        """
     )
 
     node.query("SYSTEM FLUSH LOGS")
@@ -94,12 +93,12 @@ def test_read_after_cache_is_wiped(cluster, min_rows_for_wide_part, all_files, b
     select_query = "SELECT * FROM s3_test"
     node.query(select_query)
     stat = get_query_stat(node, select_query)
-    assert stat["S3ReadRequestsCount"] == all_files  # .mrk and .bin files should be accessed from S3.
+    assert stat["S3ReadRequestsCount"] == 4  # .mrk and .bin files should be accessed from S3.
 
     # After cache is populated again, only .bin files should be accessed from S3.
     select_query = "SELECT * FROM s3_test order by id FORMAT Values"
     assert node.query(select_query) == "(0,'data'),(1,'data')"
     stat = get_query_stat(node, select_query)
-    assert stat["S3ReadRequestsCount"] == bin_files
+    assert stat["S3ReadRequestsCount"] == 2
 
     node.query("DROP TABLE IF EXISTS s3_test NO DELAY")

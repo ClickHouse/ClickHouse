@@ -43,7 +43,10 @@ public:
     void updateTreeHashImpl(SipHash & hash_state) const override;
 
 protected:
-    void formatImplWithoutAlias(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatImplWithoutAlias(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
+    {
+        settings.ostr << applyVisitor(FieldVisitorToString(), value);
+    }
 
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
 };

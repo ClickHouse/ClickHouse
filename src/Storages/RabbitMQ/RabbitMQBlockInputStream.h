@@ -30,7 +30,6 @@ public:
     Block readImpl() override;
     void readSuffixImpl() override;
 
-    bool queueEmpty() const { return !buffer || buffer->queueEmpty(); }
     bool needChannelUpdate();
     void updateChannel();
     bool sendAck();

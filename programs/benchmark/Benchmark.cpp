@@ -49,6 +49,7 @@ using Ports = std::vector<UInt16>;
 namespace ErrorCodes
 {
     extern const int CANNOT_BLOCK_SIGNAL;
+    extern const int BAD_ARGUMENTS;
     extern const int EMPTY_DATA_PASSED;
 }
 
@@ -84,12 +85,7 @@ public:
             std::string cur_host = i >= hosts_.size() ? "localhost" : hosts_[i];
 
             connections.emplace_back(std::make_unique<ConnectionPool>(
-                concurrency,
-                cur_host, cur_port,
-                default_database_, user_, password_,
-                "", /* cluster */
-                "", /* cluster_secret */
-                "benchmark", Protocol::Compression::Enable, secure));
+                concurrency, cur_host, cur_port, default_database_, user_, password_, "benchmark", Protocol::Compression::Enable, secure));
             comparison_info_per_interval.emplace_back(std::make_shared<Stats>());
             comparison_info_total.emplace_back(std::make_shared<Stats>());
         }
@@ -102,7 +98,17 @@ public:
         /// (example: when using stage = 'with_mergeable_state')
         registerAggregateFunctions();
 
-        query_processing_stage = QueryProcessingStage::fromString(stage);
+        if (stage == "complete")
+            query_processing_stage = QueryProcessingStage::Complete;
+        else if (stage == "fetch_columns")
+            query_processing_stage = QueryProcessingStage::FetchColumns;
+        else if (stage == "with_mergeable_state")
+            query_processing_stage = QueryProcessingStage::WithMergeableState;
+        else if (stage == "with_mergeable_state_after_aggregation")
+            query_processing_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
+        else
+            throw Exception("Unknown query processing stage: " + stage, ErrorCodes::BAD_ARGUMENTS);
+
     }
 
     void initialize(Poco::Util::Application & self [[maybe_unused]]) override

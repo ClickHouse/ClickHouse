@@ -40,7 +40,3 @@ CREATE TABLE strings (
 INSERT INTO strings VALUES ('test', 'string');
 
 SELECT  toTypeName(a), toTypeName(b)  FROM strings;
-
-DROP TABLE floats;
-DROP TABLE ints;
-DROP TABLE strings;
