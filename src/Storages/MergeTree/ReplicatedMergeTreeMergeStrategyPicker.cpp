@@ -91,19 +91,19 @@ void ReplicatedMergeTreeMergeStrategyPicker::refreshState()
 {
     auto threshold = storage.getSettings()->execute_merges_on_single_replica_time_threshold.totalSeconds();
 
-    auto now = time(nullptr);
-
-    /// the setting is not changed, and last state refresh was done recently
-    if (threshold == execute_merges_on_single_replica_time_threshold
-        && now - last_refresh_time < REFRESH_STATE_MINIMUM_INTERVAL_SECONDS)
-        return;
-
     if (threshold == 0)
     {
         /// we can reset the settings w/o lock (it's atomic)
         execute_merges_on_single_replica_time_threshold = threshold;
         return;
     }
+
+    auto now = time(nullptr);
+
+    /// the setting was already enabled, and last state refresh was done recently
+    if (execute_merges_on_single_replica_time_threshold != 0
+        && now - last_refresh_time < REFRESH_STATE_MINIMUM_INTERVAL_SECONDS)
+        return;
 
     auto zookeeper = storage.getZooKeeper();
     auto all_replicas = zookeeper->getChildren(storage.zookeeper_path + "/replicas");
