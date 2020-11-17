@@ -204,6 +204,9 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block
 
 Block MergeTreeDataWriter::mergeBlock(const Block & block, SortDescription sort_description, Names & partition_key_columns, IColumn::Permutation ** permutation)
 {
+
+    LOG_DEBUG(log, "Apply merging algorithm on inserted data");
+
     size_t block_size = block.rows();
 
     auto get_merging_algorithm = [&]() -> std::shared_ptr<IMergingAlgorithm>
@@ -215,23 +218,23 @@ Block MergeTreeDataWriter::mergeBlock(const Block & block, SortDescription sort_
                 return nullptr;
             case MergeTreeData::MergingParams::Replacing:
                 return std::make_shared<ReplacingSortedAlgorithm>(
-                    block, 1, sort_description, data.merging_params.version_column, block_size);
+                    block, 1, sort_description, data.merging_params.version_column, block_size + 1);
             case MergeTreeData::MergingParams::Collapsing:
                 return std::make_shared<CollapsingSortedAlgorithm>(
                     block, 1, sort_description, data.merging_params.sign_column,
-                    false, block_size, &Poco::Logger::get("MergeTreeBlockOutputStream"));
+                    false, block_size + 1, &Poco::Logger::get("MergeTreeBlockOutputStream"));
             case MergeTreeData::MergingParams::Summing:
                 return std::make_shared<SummingSortedAlgorithm>(
                     block, 1, sort_description, data.merging_params.columns_to_sum,
-                    partition_key_columns, block_size);
+                    partition_key_columns, block_size + 1);
             case MergeTreeData::MergingParams::Aggregating:
-                return std::make_shared<AggregatingSortedAlgorithm>(block, 1, sort_description, block_size);
+                return std::make_shared<AggregatingSortedAlgorithm>(block, 1, sort_description, block_size + 1);
             case MergeTreeData::MergingParams::VersionedCollapsing:
                 return std::make_shared<VersionedCollapsingAlgorithm>(
-                    block, 1, sort_description, data.merging_params.sign_column, block_size);
+                    block, 1, sort_description, data.merging_params.sign_column, block_size + 1);
             case MergeTreeData::MergingParams::Graphite:
                 return std::make_shared<GraphiteRollupSortedAlgorithm>(
-                    block, 1, sort_description, block_size, data.merging_params.graphite_params, time(nullptr));
+                    block, 1, sort_description, block_size + 1, data.merging_params.graphite_params, time(nullptr));
         }
 
         __builtin_unreachable();
@@ -242,6 +245,8 @@ Block MergeTreeDataWriter::mergeBlock(const Block & block, SortDescription sort_
         return block;
 
     Chunk chunk(block.getColumns(), block_size);
+
+    LOG_DEBUG(log, "chunk size before merge {}, block rows {}", chunk.getNumRows(), block_size);
 
     IMergingAlgorithm::Input input;
     input.set(std::move(chunk));
@@ -254,6 +259,9 @@ Block MergeTreeDataWriter::mergeBlock(const Block & block, SortDescription sort_
     IMergingAlgorithm::Status status = merging_algorithm->merge();
     while (!status.is_finished)
         status = merging_algorithm->merge();
+
+
+    LOG_DEBUG(log, "chunk size after merge {}", status.chunk.getNumRows());
 
     /// Merged Block is sorted and we don't need to use permutation anymore
     *permutation = nullptr;

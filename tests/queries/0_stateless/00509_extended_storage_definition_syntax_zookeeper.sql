@@ -1,3 +1,5 @@
+SET optimize_on_insert = 0;
+
 SELECT '*** Replicated with sampling ***';
 
 DROP TABLE IF EXISTS test.replicated_with_sampling;
