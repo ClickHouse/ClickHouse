@@ -16,6 +16,9 @@ ZstdDeflatingWriteBuffer::ZstdDeflatingWriteBuffer(
         throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED, "zstd stream encoder init failed: zstd version: {}", ZSTD_VERSION_STRING);
     ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, compression_level);
     ZSTD_CCtx_setParameter(cctx, ZSTD_c_checksumFlag, 1);
+
+    input = {nullptr, 0, 0};
+    output = {nullptr, 0, 0};
 }
 
 
