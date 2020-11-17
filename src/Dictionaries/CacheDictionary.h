@@ -257,7 +257,8 @@ private:
 
     void createAttributes();
 
-    Attribute createAttributeWithTypeAndName(const AttributeUnderlyingType type, const String & name, const Field & null_value); /* NOLINT(readability-convert-member-functions-to-static) */
+    /* NOLINTNEXTLINE(readability-convert-member-functions-to-static) */
+    Attribute createAttributeWithTypeAndName(const AttributeUnderlyingType type, const String & name, const Field & null_value);
 
     template <typename AttributeType, typename OutputType, typename DefaultGetter>
     void getItemsNumberImpl(
@@ -310,11 +311,10 @@ private:
         }
         else
         {
-            /// This maybe not obvious, but when we define is this cell is expired or expired permanently, we add extra_lifetime_seconds 
-            /// to the expiration time. And it overflows pretty well. 
+            /// This maybe not obvious, but when we define is this cell is expired or expired permanently, we add extra_lifetime_seconds
+            /// to the expiration time. And it overflows pretty well.
             cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max() - 2 * std::chrono::seconds(extra_lifetime_seconds));
         }
-            
     }
 
     inline bool isExpired(time_point_t now, time_point_t deadline) const
@@ -332,12 +332,12 @@ private:
         NotFound,
         FoundAndValid,
         FoundButExpired,
-        /// Here is a gap between there two states in which a key could be read 
+        /// Here is a gap between there two states in which a key could be read
         /// with an enabled setting in config enable_read_expired_keys.
         FoundButExpiredPermanently
     };
 
-    using FindResult = std::pair<size_t, ResultState>; 
+    using FindResult = std::pair<size_t, ResultState>;
 
     FindResult findCellIdxForGet(const Key & id, const time_point_t now) const;
 
@@ -400,7 +400,7 @@ private:
     /*
      * How the update goes: we basically have a method like get(keys)->values. Values are cached, so sometimes we
      * can return them from the cache. For values not in cache, we query them from the source, and add to the
-     * cache. The cache is lossy, so we can't expect it to store all the keys, and we store them separately. 
+     * cache. The cache is lossy, so we can't expect it to store all the keys, and we store them separately.
      * So, there is a map of found keys to all its attributes.
      */
     struct UpdateUnit
