@@ -441,14 +441,6 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) 
         }
     }
 
-    for (const auto & column : required_columns)
-    {
-        ssize_t pos = -1;
-        if (block.has(column.name))
-            pos = block.getPositionByName(column.name);
-        execution_context.inputs_pos.push_back(pos);
-    }
-
     execution_context.columns.resize(num_columns);
 
     for (const auto & action : actions)
