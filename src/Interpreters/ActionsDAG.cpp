@@ -157,7 +157,7 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     for (const auto & name : argument_names)
         children.push_back(&getNode(name));
 
-    addFunction(function, children, std::move(result_name), false);
+    return addFunction(function, children, std::move(result_name), false);
 }
 
 ActionsDAG::Node & ActionsDAG::addFunction(
