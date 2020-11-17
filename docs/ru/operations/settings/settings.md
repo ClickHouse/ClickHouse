@@ -2007,6 +2007,37 @@ SELECT TOP 3 name, value FROM system.settings;
    └─────────────────────────┴─────────┘
 ```
 
+## system_events_show_zero_values {system_events_show_zero_values}
+
+Помогает выбирать события с нулевыми значениями из таблицы [`system.events`](../../operations/system-tables/events.md).
+
+В некоторые системы наблюдения вам нужно будет передавать значения всех измерений (для каждой контрольной точки), даже если в результате — ноль.
+
+Возможные значения:
+
+-   0 — настройка отключена.
+-   1 — настройка включена.
+
+Значение по умолчанию: `0`.
+
+**Пример**
+
+Запрос
+
+```sql
+SELECT * FROM system.events WHERE event='QueryMemoryLimitExceeded';
+SET system_events_show_zero_values = 1;
+SELECT * FROM system.events WHERE event='QueryMemoryLimitExceeded';
+```
+
+Результат
+
+```text
+┌─event────────────────────┬─value─┬─description───────────────────────────────────────────┐
+│ QueryMemoryLimitExceeded │     0 │ Number of times when memory limit exceeded for query. │
+└──────────────────────────┴───────┴───────────────────────────────────────────────────────┘
+```
+
 ## allow_experimental_bigint_types {#allow_experimental_bigint_types}
 
 Включает или отключает поддержку целочисленных значений, превышающих максимальное значение, допустимое для типа `int`.
