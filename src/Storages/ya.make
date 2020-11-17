@@ -29,6 +29,7 @@ SRCS(
     MergeTree/BoolMask.cpp
     MergeTree/DataPartsExchange.cpp
     MergeTree/EphemeralLockInZooKeeper.cpp
+    MergeTree/FieldRange.cpp
     MergeTree/IMergeTreeDataPart.cpp
     MergeTree/IMergeTreeDataPartWriter.cpp
     MergeTree/IMergeTreeReader.cpp

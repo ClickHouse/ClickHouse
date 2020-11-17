@@ -388,6 +388,7 @@ SRCS(
     registerFunctionsTuple.cpp
     registerFunctionsUnixTimestamp64.cpp
     registerFunctionsVisitParam.cpp
+    registerFunctionsZOrder.cpp
     reinterpretAs.cpp
     reinterpretAsFixedString.cpp
     reinterpretAsString.cpp
@@ -499,6 +500,8 @@ SRCS(
     visitParamHas.cpp
     yandexConsistentHash.cpp
     yesterday.cpp
+    zCurve.cpp
+    zCurveNormalized.cpp
 
 )
 

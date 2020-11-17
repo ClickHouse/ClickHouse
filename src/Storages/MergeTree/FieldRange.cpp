@@ -2,7 +2,10 @@
 
 #include <sstream>
 #include <iostream>
+#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
 #include <Core/iostream_debug_helpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -14,19 +17,19 @@ using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
 String Range::toString() const
 {
-    WriteBufferFromOwnString str;
+    WriteBufferFromOwnString buf;
 
     if (!left_bounded)
-        str << "(-inf, ";
+        buf << "(-inf, ";
     else
-        str << (left_included ? '[' : '(') << applyVisitor(FieldVisitorToString(), left) << ", ";
+        buf << (left_included ? '[' : '(') << applyVisitor(FieldVisitorToString(), left) << ", ";
 
     if (!right_bounded)
-        str << "+inf)";
+        buf << "+inf)";
     else
-        str << applyVisitor(FieldVisitorToString(), right) << (right_included ? ']' : ')');
+        buf << applyVisitor(FieldVisitorToString(), right) << (right_included ? ']' : ')');
 
-    return str.str();
+    return buf.str();
 }
 
 bool Range::equals(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateEquals(), lhs, rhs); }
@@ -219,7 +222,7 @@ std::optional<RangeSet> RangeSet::applyMonotonicFunction(
         DataTypePtr & arg_type,
         DataTypePtr & res_type)
 {
-    auto new_type = func->getReturnType();
+    auto new_type = func->getResultType();
     if (!new_type)
         return {};
     std::vector<Range> result;
@@ -277,16 +280,18 @@ std::optional<RangeSet> RangeSet::applyInvertibleFunction(
 
 String RangeSet::toString() const
 {
-    std::stringstream str;
-    str << "{";
+    WriteBufferFromOwnString buf;
+
+    buf << "{";
     for (size_t i = 0; i < data.size(); ++i)
     {
         if (i != 0)
-            str << ", ";
-        str << data[i].toString();
+            buf << ", ";
+        buf << data[i].toString();
     }
-    str << "}";
-    return str.str();
+    buf << "}";
+
+    return buf.str();
 }
 
 
@@ -308,24 +313,27 @@ FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & current
     if (field.isExplicit())
         return applyFunctionForField(func, current_type, field);
 
-    String result_name = "_" + func->getName() + "_" + toString(field.column_idx);
-    const auto & columns = field.columns;
-    size_t result_idx = columns->size();
+    const String result_name = "_" + func->getName() + "_" + toString(field.column_idx);
+    const auto & block = field.block;
+    size_t result_idx = block->columns();
 
     for (size_t i = 0; i < result_idx; ++i)
     {
-        if ((*columns)[i].name == result_name)
+        if (block->getColumnsWithTypeAndName()[i].name == result_name)
             result_idx = i;
     }
 
-    ColumnsWithTypeAndName args{(*columns)[field.column_idx]};
-    if (result_idx == columns->size())
+    ColumnsWithTypeAndName args{block->getColumnsWithTypeAndName()[field.column_idx]};
+    /// TODO:
+/*
+    if (result_idx == block->columns())
     {
         field.columns->emplace_back(ColumnWithTypeAndName {nullptr, func->getResultType(), result_name});
         (*columns)[result_idx].column = func->execute(args, (*columns)[result_idx].type, columns->front().column->size());
     }
+*/
 
-    return {field.columns, field.row_idx, result_idx};
+    return {field.block, field.row_idx, result_idx};
 }
 
 }
