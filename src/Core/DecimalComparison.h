@@ -57,6 +57,7 @@ public:
     using Op = Operation<CompareInt, CompareInt>;
     using ColVecA = std::conditional_t<IsDecimalNumber<A>, ColumnDecimal<A>, ColumnVector<A>>;
     using ColVecB = std::conditional_t<IsDecimalNumber<B>, ColumnDecimal<B>, ColumnVector<B>>;
+
     using ArrayA = typename ColVecA::Container;
     using ArrayB = typename ColVecB::Container;
 
