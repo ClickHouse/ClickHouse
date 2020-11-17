@@ -2,13 +2,13 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
 #include <common/find_symbols.h>
-#include <ostream>
+#include <IO/Operators.h>
 
 
 namespace DB
 {
 
-void formatSettingName(const String & setting_name, std::ostream & out)
+void formatSettingName(const String & setting_name, WriteBuffer & out)
 {
     if (isValidIdentifier(setting_name))
     {

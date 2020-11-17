@@ -7,7 +7,6 @@
 #include <Interpreters/CancellationCode.h>
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/StorageID.h>
-#include <Storages/SelectQueryInfo.h>
 #include <Storages/TableLockHolder.h>
 #include <Storages/CheckResults.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -49,12 +48,14 @@ using Processors = std::vector<ProcessorPtr>;
 
 class Pipe;
 class QueryPlan;
+using QueryPlanPtr = std::unique_ptr<QueryPlan>;
 
 class StoragePolicy;
 using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
 
 struct StreamLocalLimits;
 class EnabledQuota;
+struct SelectQueryInfo;
 
 struct ColumnSize
 {
@@ -212,15 +213,12 @@ public:
       *
       * SelectQueryInfo is required since the stage can depends on the query
       * (see Distributed() engine and optimize_skip_unused_shards).
+      * And to store optimized cluster (after optimize_skip_unused_shards).
       *
       * QueryProcessingStage::Enum required for Distributed over Distributed,
       * since it cannot return Complete for intermediate queries never.
       */
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context & context) const
-    {
-        return getQueryProcessingStage(context, QueryProcessingStage::Complete, {});
-    }
-    virtual QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, const ASTPtr &) const
+    virtual QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const
     {
         return QueryProcessingStage::FetchColumns;
     }
@@ -278,7 +276,7 @@ public:
     virtual Pipe read(
         const Names & /*column_names*/,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        const SelectQueryInfo & /*query_info*/,
+        SelectQueryInfo & /*query_info*/,
         const Context & /*context*/,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t /*max_block_size*/,
@@ -288,17 +286,13 @@ public:
     /// Default implementation creates ReadFromStorageStep and uses usual read.
     virtual void read(
         QueryPlan & query_plan,
-        TableLockHolder table_lock,
-        StorageMetadataPtr metadata_snapshot,
-        StreamLocalLimits & limits,
-        SizeLimits & leaf_limits,
-        std::shared_ptr<const EnabledQuota> quota,
-        const Names & column_names,
-        const SelectQueryInfo & query_info,
-        std::shared_ptr<Context> context,
-        QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size,
-        unsigned num_streams);
+        const Names & /*column_names*/,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        SelectQueryInfo & /*query_info*/,
+        const Context & /*context*/,
+        QueryProcessingStage::Enum /*processed_stage*/,
+        size_t /*max_block_size*/,
+        unsigned /*num_streams*/);
 
     /** Writes the data to a table.
       * Receives a description of the query, which can contain information about the data write method.
@@ -370,7 +364,6 @@ public:
       * Should handle locks for each command on its own.
       */
     virtual Pipe alterPartition(
-        const ASTPtr & /* query */,
         const StorageMetadataPtr & /* metadata_snapshot */,
         const PartitionCommands & /* commands */,
         const Context & /* context */);

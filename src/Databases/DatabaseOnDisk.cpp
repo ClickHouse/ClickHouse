@@ -94,9 +94,9 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
 
     if (!create)
     {
-        std::ostringstream query_stream;
-        formatAST(*query, query_stream, true);
-        throw Exception("Query '" + query_stream.str() + "' is not CREATE query", ErrorCodes::LOGICAL_ERROR);
+        WriteBufferFromOwnString query_buf;
+        formatAST(*query, query_buf, true);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query '{}' is not CREATE query", query_buf.str());
     }
 
     if (!create->is_dictionary)
@@ -120,10 +120,10 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
     if (create->uuid != UUIDHelpers::Nil)
         create->table = TABLE_WITH_UUID_NAME_PLACEHOLDER;
 
-    std::ostringstream statement_stream;
-    formatAST(*create, statement_stream, false);
-    statement_stream << '\n';
-    return statement_stream.str();
+    WriteBufferFromOwnString statement_buf;
+    formatAST(*create, statement_buf, false);
+    writeChar('\n', statement_buf);
+    return statement_buf.str();
 }
 
 DatabaseOnDisk::DatabaseOnDisk(
