@@ -24,7 +24,7 @@ namespace ErrorCodes
 ActionsDAG::ActionsDAG(const NamesAndTypesList & inputs)
 {
     for (const auto & input : inputs)
-        addInput(input.name, input.type);
+        addInput(input.name, input.type, true);
 }
 
 ActionsDAG::ActionsDAG(const ColumnsWithTypeAndName & inputs)
@@ -32,9 +32,9 @@ ActionsDAG::ActionsDAG(const ColumnsWithTypeAndName & inputs)
     for (const auto & input : inputs)
     {
         if (input.column && isColumnConst(*input.column))
-            addInput(input);
+            addInput(input, true);
         else
-            addInput(input.name, input.type);
+            addInput(input.name, input.type, true);
     }
 }
 
@@ -45,6 +45,9 @@ ActionsDAG::Node & ActionsDAG::addNode(Node node, bool can_replace)
         throw Exception("Column '" + node.result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
 
     auto & res = nodes.emplace_back(std::move(node));
+
+    if (res.type == ActionType::INPUT)
+        inputs.emplace_back(&res);
 
     index.replace(&res);
     return res;
@@ -59,17 +62,17 @@ ActionsDAG::Node & ActionsDAG::getNode(const std::string & name)
     return **it;
 }
 
-const ActionsDAG::Node & ActionsDAG::addInput(std::string name, DataTypePtr type)
+const ActionsDAG::Node & ActionsDAG::addInput(std::string name, DataTypePtr type, bool can_replace)
 {
     Node node;
     node.type = ActionType::INPUT;
     node.result_type = std::move(type);
     node.result_name = std::move(name);
 
-    return addNode(std::move(node));
+    return addNode(std::move(node), can_replace);
 }
 
-const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column)
+const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column, bool can_replace)
 {
     Node node;
     node.type = ActionType::INPUT;
@@ -77,7 +80,7 @@ const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column)
     node.result_name = std::move(column.name);
     node.column = std::move(column.column);
 
-    return addNode(std::move(node));
+    return addNode(std::move(node), can_replace);
 }
 
 const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column)
@@ -144,6 +147,14 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         compilation_cache = context.getCompiledExpressionCache();
 #endif
 
+    return addFunction(function, argument_names, std::move(result_name));
+}
+
+const ActionsDAG::Node & ActionsDAG::addFunction(
+        const FunctionOverloadResolverPtr & function,
+        const Names & argument_names,
+        std::string result_name)
+{
     size_t num_arguments = argument_names.size();
 
     Node node;
@@ -231,9 +242,8 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
 NamesAndTypesList ActionsDAG::getRequiredColumns() const
 {
     NamesAndTypesList result;
-    for (const auto & node : nodes)
-        if (node.type == ActionType::INPUT)
-            result.emplace_back(node.result_name, node.result_type);
+    for (const auto & input : inputs)
+        result.emplace_back(input->result_name, input->result_type);
 
     return result;
 }
@@ -347,6 +357,8 @@ void ActionsDAG::removeUnusedActions()
     }
 
     nodes.remove_if([&](const Node & node) { return visited_nodes.count(&node) == 0; });
+    auto it = std::remove_if(inputs.begin(), inputs.end(), [&](const Node * node) { return visited_nodes.count(node) == 0; });
+    inputs.erase(it, inputs.end());
 }
 
 void ActionsDAG::addAliases(const NamesWithAliases & aliases, std::vector<Node *> & result_nodes)
@@ -441,6 +453,9 @@ ActionsDAGPtr ActionsDAG::clone() const
 
     for (const auto & node : index)
         actions->index.insert(copy_map[node]);
+
+    for (const auto & node : inputs)
+        actions->inputs.push_back(copy_map[node]);
 
     return actions;
 }
@@ -540,6 +555,7 @@ ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_join
     std::list<Node> split_nodes;
     Index this_index;
     Index split_index;
+    Inputs new_inputs;
 
     struct Frame
     {
@@ -627,6 +643,7 @@ ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_join
                                 input_node.result_type = child->result_type;
                                 input_node.result_name = child->result_name; // getUniqueNameForIndex(index, child->result_name);
                                 child_data.to_this = &this_nodes.emplace_back(std::move(input_node));
+                                new_inputs.push_back(child_data.to_this);
 
                                 /// This node is needed for current action, so put it to index also.
                                 split_index.replace(child_data.to_split);
@@ -658,6 +675,7 @@ ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_join
                         input_node.result_type = node.result_type;
                         input_node.result_name = node.result_name;
                         cur_data.to_this = &this_nodes.emplace_back(std::move(input_node));
+                        new_inputs.push_back(cur_data.to_this);
                     }
                 }
             }
@@ -676,12 +694,28 @@ ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_join
     if (split_actions_are_empty)
         return {};
 
+    Inputs this_inputs;
+    Inputs split_inputs;
+
+    for (auto * input : inputs)
+    {
+        const auto & cur = data[input];
+        if (cur.to_this)
+            this_inputs.push_back(cur.to_this);
+        else
+            split_inputs.push_back(cur.to_split);
+    }
+
+    this_inputs.insert(this_inputs.end(), new_inputs.begin(), new_inputs.end());
+
     index.swap(this_index);
     nodes.swap(this_nodes);
+    inputs.swap(this_inputs);
 
     auto split_actions = cloneEmpty();
     split_actions->nodes.swap(split_nodes);
     split_actions->index.swap(split_index);
+    split_actions->inputs.swap(split_inputs);
     split_actions->settings.project_input = false;
 
     return split_actions;

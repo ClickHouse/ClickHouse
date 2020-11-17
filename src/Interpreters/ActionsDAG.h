@@ -151,6 +151,7 @@ public:
     };
 
     using Nodes = std::list<Node>;
+    using Inputs = std::vector<Node *>;
 
     struct ActionsSettings
     {
@@ -165,6 +166,7 @@ public:
 private:
     Nodes nodes;
     Index index;
+    Inputs inputs;
 
     ActionsSettings settings;
 
@@ -181,6 +183,7 @@ public:
 
     const Nodes & getNodes() const { return nodes; }
     const Index & getIndex() const { return index; }
+    const Inputs & getInputs() const { return inputs; }
 
     NamesAndTypesList getRequiredColumns() const;
     ColumnsWithTypeAndName getResultColumns() const;
@@ -190,11 +193,15 @@ public:
     std::string dumpNames() const;
     std::string dumpDAG() const;
 
-    const Node & addInput(std::string name, DataTypePtr type);
-    const Node & addInput(ColumnWithTypeAndName column);
+    const Node & addInput(std::string name, DataTypePtr type, bool can_replace = false);
+    const Node & addInput(ColumnWithTypeAndName column, bool can_replace = false);
     const Node & addColumn(ColumnWithTypeAndName column);
     const Node & addAlias(const std::string & name, std::string alias, bool can_replace = false);
     const Node & addArrayJoin(const std::string & source_name, std::string result_name);
+    const Node & addFunction(
+            const FunctionOverloadResolverPtr & function,
+            const Names & argument_names,
+            std::string result_name);
     const Node & addFunction(
             const FunctionOverloadResolverPtr & function,
             const Names & argument_names,
