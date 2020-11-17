@@ -1,12 +1,13 @@
-#include <common/types.h>
-#include <Poco/Util/XMLConfiguration.h>
+#include <Dictionaries/getDictionaryConfigurationFromAST.h>
+#include <Dictionaries/registerDictionaries.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
-#include <Dictionaries/getDictionaryConfigurationFromAST.h>
-#include <Dictionaries/registerDictionaries.h>
+#include <Poco/Util/XMLConfiguration.h>
+#include <common/types.h>
 
 #include <gtest/gtest.h>
 
@@ -47,7 +48,7 @@ TEST(ConvertDictionaryAST, SimpleDictConfiguration)
     ParserCreateDictionaryQuery parser;
     ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
     ASTCreateQuery * create = ast->as<ASTCreateQuery>();
-    DictionaryConfigurationPtr config = getDictionaryConfigurationFromAST(*create);
+    DictionaryConfigurationPtr config = getDictionaryConfigurationFromAST(*create, Context::createGlobal(Context::createShared().get()));
 
     /// name
     EXPECT_EQ(config->getString("dictionary.database"), "test");
@@ -115,7 +116,7 @@ TEST(ConvertDictionaryAST, TrickyAttributes)
     ParserCreateDictionaryQuery parser;
     ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
     ASTCreateQuery * create = ast->as<ASTCreateQuery>();
-    DictionaryConfigurationPtr config = getDictionaryConfigurationFromAST(*create);
+    DictionaryConfigurationPtr config = getDictionaryConfigurationFromAST(*create, Context::createGlobal(Context::createShared().get()));
 
     Poco::Util::AbstractConfiguration::Keys keys;
     config->keys("dictionary.structure", keys);
@@ -160,7 +161,7 @@ TEST(ConvertDictionaryAST, ComplexKeyAndLayoutWithParams)
     ParserCreateDictionaryQuery parser;
     ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
     ASTCreateQuery * create = ast->as<ASTCreateQuery>();
-    DictionaryConfigurationPtr config = getDictionaryConfigurationFromAST(*create);
+    DictionaryConfigurationPtr config = getDictionaryConfigurationFromAST(*create, Context::createGlobal(Context::createShared().get()));
 
     Poco::Util::AbstractConfiguration::Keys keys;
     config->keys("dictionary.structure.key", keys);
@@ -211,7 +212,7 @@ TEST(ConvertDictionaryAST, ComplexSource)
     ParserCreateDictionaryQuery parser;
     ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
     ASTCreateQuery * create = ast->as<ASTCreateQuery>();
-    DictionaryConfigurationPtr config = getDictionaryConfigurationFromAST(*create);
+    DictionaryConfigurationPtr config = getDictionaryConfigurationFromAST(*create, Context::createGlobal(Context::createShared().get()));
     /// source
     EXPECT_EQ(config->getString("dictionary.source.mysql.host"), "localhost");
     EXPECT_EQ(config->getInt("dictionary.source.mysql.port"), 9000);
