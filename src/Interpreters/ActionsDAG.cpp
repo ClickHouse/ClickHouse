@@ -808,7 +808,7 @@ ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_join
         const auto & cur = data[input];
         if (cur.to_this)
             this_inputs.push_back(cur.to_this);
-        else if (cur.to_split)
+        if (cur.to_split)
             split_inputs.push_back(cur.to_split);
     }
 
