@@ -963,7 +963,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
         if (stopwatch.elapsedSeconds() >= MAX_EXECUTION_TIMEOUT_SEC)
         {
             LOG_WARNING(log, "Task {} was not executed by anyone, maximum timeout {} seconds exceeded", task.entry_name, MAX_EXECUTION_TIMEOUT_SEC);
-            task.execution_status = ExecutionStatus(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot execute replicated DDL query, maximum retires exceeded");
+            task.execution_status = ExecutionStatus(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot execute replicated DDL query, timeout exceeded");
         }
         else /// If we exceeded amount of tries
         {
