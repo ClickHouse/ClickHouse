@@ -2194,7 +2194,7 @@ Result:
 
 ## system_events_show_zero_values {system_events_show_zero_values}
 
-Allows to select zero-valued events from `system.events`.
+Allows to select zero-valued events from [`system.events`](../../operations/system-tables/events.md).
 
 Some monitoring systems require passing all the metrics values to them for each checkpoint, even if the metric value is zero.
 
@@ -2208,16 +2208,19 @@ Default value: `0`.
 **Example**
 
 Query
+
 ```sql
+SELECT * FROM system.events WHERE event='QueryMemoryLimitExceeded';
 SET system_events_show_zero_values = 1;
-SELECT value FROM system.events WHERE event == 'PerfAlignmentFaults';
+SELECT * FROM system.events WHERE event='QueryMemoryLimitExceeded';
 ```
 
 Result
+
 ```text
-┌─value─┐
-│     1 │
-└───────┘
+┌─event────────────────────┬─value─┬─description───────────────────────────────────────────┐
+│ QueryMemoryLimitExceeded │     0 │ Number of times when memory limit exceeded for query. │
+└──────────────────────────┴───────┴───────────────────────────────────────────────────────┘
 ```
 
 ## allow_experimental_bigint_types {#allow_experimental_bigint_types}
