@@ -1,4 +1,4 @@
-SET optimze_on_insert = 0;
+SET optimize_on_insert = 0;
 
 SET send_logs_level = 'fatal';
 
