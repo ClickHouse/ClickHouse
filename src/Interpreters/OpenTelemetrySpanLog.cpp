@@ -45,7 +45,7 @@ void OpenTelemetrySpanLogElement::appendToBlock(MutableColumns & columns) const
     // here, because it's hard to remember to convert them in all other places.
     Array string_values;
     string_values.reserve(attribute_values.size());
-    for (auto & value : attribute_values)
+    for (const auto & value : attribute_values)
     {
         string_values.push_back(toString(value));
     }
