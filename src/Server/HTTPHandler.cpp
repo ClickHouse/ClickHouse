@@ -287,10 +287,11 @@ void HTTPHandler::processQuery(
         context.setSessionContext(session->context);
     }
 
-    SCOPE_EXIT({
-        if (session)
-            session->release();
-    });
+    SCOPE_EXIT(
+        {
+            if (session)
+                session->release();
+        });
 
     // Parse the OpenTelemetry traceparent header.
     // Disable in Arcadia -- it interferes with the
@@ -386,7 +387,8 @@ void HTTPHandler::processQuery(
         }
         else
         {
-            auto push_memory_buffer_and_continue = [next_buffer = used_output.out_maybe_compressed](const WriteBufferPtr & prev_buf) {
+            auto push_memory_buffer_and_continue = [next_buffer = used_output.out_maybe_compressed](const WriteBufferPtr & prev_buf)
+            {
                 auto * prev_memory_buffer = typeid_cast<MemoryWriteBuffer *>(prev_buf.get());
                 if (!prev_memory_buffer)
                     throw Exception("Expected MemoryWriteBuffer", ErrorCodes::LOGICAL_ERROR);
@@ -443,7 +445,8 @@ void HTTPHandler::processQuery(
 
     Names reserved_param_suffixes;
 
-    auto param_could_be_skipped = [&](const String & name) {
+    auto param_could_be_skipped = [&](const String & name)
+    {
         /// Empty parameter appears when URL like ?&a=b or a=b&&c=d. Just skip them for user's convenience.
         if (name.empty())
             return true;
@@ -568,15 +571,18 @@ void HTTPHandler::processQuery(
     client_info.http_method = http_method;
     client_info.http_user_agent = request.get("User-Agent", "");
 
-    auto append_callback = [&context](ProgressCallback callback) {
+    auto append_callback = [&context](ProgressCallback callback)
+    {
         auto prev = context.getProgressCallback();
 
-        context.setProgressCallback([prev, callback](const Progress & progress) {
-            if (prev)
-                prev(progress);
+        context.setProgressCallback(
+            [prev, callback](const Progress & progress)
+            {
+                if (prev)
+                    prev(progress);
 
-            callback(progress);
-        });
+                callback(progress);
+            });
     };
 
     /// While still no data has been sent, we will report about query execution progress by sending HTTP headers.
@@ -587,24 +593,26 @@ void HTTPHandler::processQuery(
     {
         Poco::Net::StreamSocket & socket = dynamic_cast<Poco::Net::HTTPServerRequestImpl &>(request).socket();
 
-        append_callback([&context, &socket](const Progress &) {
-            /// Assume that at the point this method is called no one is reading data from the socket any more.
-            /// True for read-only queries.
-            try
+        append_callback(
+            [&context, &socket](const Progress &)
             {
-                char b;
-                int status = socket.receiveBytes(&b, 1, MSG_DONTWAIT | MSG_PEEK);
-                if (status == 0)
+                /// Assume that at the point this method is called no one is reading data from the socket any more.
+                /// True for read-only queries.
+                try
+                {
+                    char b;
+                    int status = socket.receiveBytes(&b, 1, MSG_DONTWAIT | MSG_PEEK);
+                    if (status == 0)
+                        context.killCurrentQuery();
+                }
+                catch (Poco::TimeoutException &)
+                {
+                }
+                catch (...)
+                {
                     context.killCurrentQuery();
-            }
-            catch (Poco::TimeoutException &)
-            {
-            }
-            catch (...)
-            {
-                context.killCurrentQuery();
-            }
-        });
+                }
+            });
     }
 
     customizeContext(request, context);
@@ -616,7 +624,8 @@ void HTTPHandler::processQuery(
         *used_output.out_maybe_delayed_and_compressed,
         /* allow_into_outfile = */ false,
         context,
-        [&response](const String & current_query_id, const String & content_type, const String & format, const String & timezone) {
+        [&response](const String & current_query_id, const String & content_type, const String & format, const String & timezone)
+        {
             response.setContentType(content_type);
             response.add("X-ClickHouse-Query-Id", current_query_id);
             response.add("X-ClickHouse-Format", format);
@@ -833,7 +842,8 @@ void PredefinedQueryHandler::customizeContext(Poco::Net::HTTPServerRequest & req
     /// If in the configuration file, the handler's header is regex and contains named capture group
     /// We will extract regex named capture groups as query parameters
 
-    const auto & set_query_params = [&](const char * begin, const char * end, const CompiledRegexPtr & compiled_regex) {
+    const auto & set_query_params = [&](const char * begin, const char * end, const CompiledRegexPtr & compiled_regex)
+    {
         int num_captures = compiled_regex->NumberOfCapturingGroups() + 1;
 
         re2::StringPiece matches[num_captures];
@@ -885,10 +895,14 @@ Poco::Net::HTTPRequestHandlerFactory * createDynamicHandlerFactory(IServer & ser
 static inline bool capturingNamedQueryParam(NameSet receive_params, const CompiledRegexPtr & compiled_regex)
 {
     const auto & capturing_names = compiled_regex->NamedCapturingGroups();
-    return std::count_if(capturing_names.begin(), capturing_names.end(), [&](const auto & iterator) {
-        return std::count_if(
-            receive_params.begin(), receive_params.end(), [&](const auto & param_name) { return param_name == iterator.first; });
-    });
+    return std::count_if(
+        capturing_names.begin(),
+        capturing_names.end(),
+        [&](const auto & iterator)
+        {
+            return std::count_if(
+                receive_params.begin(), receive_params.end(), [&](const auto & param_name) { return param_name == iterator.first; });
+        });
 }
 
 static inline CompiledRegexPtr getCompiledRegex(const std::string & expression)
