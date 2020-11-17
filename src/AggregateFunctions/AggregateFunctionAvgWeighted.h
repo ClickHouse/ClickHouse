@@ -30,12 +30,13 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        const Value value = static_cast<const DecimalOrVectorCol<Value> &>(*columns[0]).getData()[row_num];
-        const Weight weight = static_cast<const DecimalOrVectorCol<Weight> &>(*columns[1]).getData()[row_num];
+        const auto& weights = static_cast<const DecimalOrVectorCol<Weight> &>(*columns[1]);
 
-        this->data(place).numerator += static_cast<ValueT>(value) * static_cast<ValueT>(weight);
+        this->data(place).numerator += static_cast<ValueT>(
+            static_cast<const DecimalOrVectorCol<Value> &>(*columns[0]).getData()[row_num]) *
+            static_cast<ValueT>(weights.getData()[row_num]);
 
-        this->data(place).denominator += static_cast<AvgWeightedFieldType<Weight>>(weight);
+        this->data(place).denominator += static_cast<AvgWeightedFieldType<Weight>>(weights.getData()[row_num]);
     }
 
     String getName() const override { return "avgWeighted"; }
