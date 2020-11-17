@@ -857,7 +857,7 @@ BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
 
     if (create.attach)
     {
-        auto config = getDictionaryConfigurationFromAST(create);
+        auto config = getDictionaryConfigurationFromAST(create, context);
         auto modification_time = database->getObjectMetadataModificationTime(dictionary_name);
         database->attachDictionary(dictionary_name, DictionaryAttachInfo{query_ptr, config, modification_time});
     }
