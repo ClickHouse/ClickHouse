@@ -76,8 +76,12 @@ Query:
 ```sql
 SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH ROLLUP;
 ```
+As `GROUP BY` section has three key expressions, the result contains four tables with subtotals "rolled up" from right to left:
 
-Result:
+- `GROUP BY year, month, day`;
+- `GROUP BY year, month` (and `day` column is filled with zeros);
+- `GROUP BY year` (now `month, day` columns are both filled with zeros);
+- and totals (and all three key expression columns are zeros).
 
 ```text
 ┌─year─┬─month─┬─day─┬─count()─┐
@@ -132,7 +136,18 @@ Query:
 SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH CUBE;
 ```
 
-Result:
+As `GROUP BY` section has three key expressions, the result contains eight tables with subtotals for all key expression combinations:
+
+- `GROUP BY year, month, day`   
+- `GROUP BY year, month` 
+- `GROUP BY year, day`
+- `GROUP BY year` 
+- `GROUP BY month, day` 
+- `GROUP BY month` 
+- `GROUP BY day` 
+- and totals.
+
+Columns, excluded from `GROUP BY`, are filled with zeros.
 
 ```text
 ┌─year─┬─month─┬─day─┬─count()─┐

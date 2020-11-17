@@ -73,7 +73,12 @@ toc_title: GROUP BY
 SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH ROLLUP;
 ```
 
-Результат:
+Поскольку секция `GROUP BY` содержит три ключевых выражения, результат состоит из четырех таблиц с подытогами, которые как бы "сворачиваются" справа налево:
+
+- `GROUP BY year, month, day`;
+- `GROUP BY year, month` (а колонка `day` заполнена нулями);
+- `GROUP BY year` (теперь обе колонки `month, day` заполнены нулями);
+- и общий итог (все три колонки с ключевыми выражениями заполнены нулями).
 
 ```text
 ┌─year─┬─month─┬─day─┬─count()─┐
@@ -128,7 +133,18 @@ Query:
 SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH CUBE;
 ```
 
-Result:
+Поскольку секция `GROUP BY` содержит три ключевых выражения, результат состоит из восьми таблиц с подытогами — по таблице для каждой комбинации ключевых выражений:
+
+- `GROUP BY year, month, day`   
+- `GROUP BY year, month` 
+- `GROUP BY year, day`
+- `GROUP BY year` 
+- `GROUP BY month, day` 
+- `GROUP BY month` 
+- `GROUP BY day` 
+- и общий итог.
+
+Колонки, которые не участвуют в `GROUP BY`, заполнены нулями.
 
 ```text
 ┌─year─┬─month─┬─day─┬─count()─┐
