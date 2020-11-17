@@ -184,10 +184,10 @@ static String extractZooKeeperName(const String & path)
     auto pos = path.find(':');
     if (pos != String::npos)
     {
-        auto zookeeper_name_ = path.substr(0, pos);
-        if (zookeeper_name_.empty())
+        auto zookeeper_name = path.substr(0, pos);
+        if (zookeeper_name.empty())
             throw Exception("Zookeeper path should start with '/' or '<auxiliary_zookeeper_name>:/'", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        return zookeeper_name_; 
+        return zookeeper_name;
     }
     static constexpr auto default_zookeeper_name = "default";
     return default_zookeeper_name;
@@ -228,8 +228,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
                     true,                   /// require_part_metadata
                     attach,
                     [this] (const std::string & name) { enqueuePartForCheck(name); })
-    , zookeeper_name(extractZooKeeperName(zookeeper_path_)) 
-    , zookeeper_path(extractZooKeeperPath(zookeeper_path_)) 
+    , zookeeper_name(extractZooKeeperName(zookeeper_path_))
+    , zookeeper_path(extractZooKeeperPath(zookeeper_path_))
     , replica_name(replica_name_)
     , replica_path(zookeeper_path + "/replicas/" + replica_name_)
     , reader(*this)
