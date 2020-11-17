@@ -206,6 +206,7 @@ def test_reload_after_fail_by_timer(started_cluster):
     while not instance.file_exists("/etc/clickhouse-server/config.d/no_file_2.txt"):
         time.sleep(1)
     assert("9\t10\n" == instance.exec_in_container("cat /etc/clickhouse-server/config.d/no_file_2.txt"))
+    instance.query("SYSTEM RELOAD DICTIONARY no_file_2")
     instance.query("SELECT dictGetInt32('no_file_2', 'a', toUInt64(9))") == "10\n"
     assert get_status("no_file_2") == "LOADED"
 
