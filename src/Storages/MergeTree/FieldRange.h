@@ -2,7 +2,7 @@
 
 #include <Core/Field.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Common/FieldVisitors.h>
+
 #include <Functions/IFunction.h>
 
 namespace DB

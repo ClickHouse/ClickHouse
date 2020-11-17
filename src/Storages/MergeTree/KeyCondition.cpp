@@ -887,7 +887,6 @@ bool KeyCondition::isColumnPossiblyAnArgumentOfInvertibleFunctionsInKeyExpr(
     FunctionArgumentStack argument_stack;
     if (!isColumnPossiblyAnArgumentOfInvertibleFunctionsInKeyExprImpl(name, out_key_column_num, out_key_column_type, invertible_chain, argument_stack))
     {
-        const auto & args = (*it)->arguments->children;
         return false;
     }
     out_invertible_functions_chain = std::move(invertible_chain);
@@ -912,39 +911,41 @@ bool KeyCondition::isColumnPossiblyAnArgumentOfInvertibleFunctionsInKeyExprImpl(
         type = sample_block.getByName(expr_name).type;
         found_type = true;
     }
-    for (const ExpressionAction & a : key_expr->getActions())
+    for (const auto & action : key_expr->getActions())
     {
-        const auto & args = a.argument_names;
-        if (a.type == ExpressionAction::Type::APPLY_FUNCTION)
+        if (action.node->type == ActionsDAG::ActionType::FUNCTION)
         {
             if (!found_type)
             {
-                if (a.result_name == expr_name)
+                if (action.node->result_name == expr_name)
                 {
-                    type = a.result_type;
+                    type = action.node->result_type;
                     found_type = true;
                 }
             }
         }
-        if (a.type == ExpressionAction::Type::APPLY_FUNCTION && a.function_base->isInvertible())
-        {
 
-            auto arg_it = find(args.begin(), args.end(), expr_name);
-            if (arg_it != args.end())
+        /// TODO: This isn't working
+        if (action.node->type == ActionsDAG::ActionType::FUNCTION && action.node->function_base->isInvertible())
+        {
+            for (const auto & arg : action.node->children)
             {
-                size_t ind = static_cast<size_t>(arg_it - args.begin());
-                out_function_argument_stack.push_back(ind);
-                out_invertible_functions_chain.push_back(a.function_base);
-                expr_name = a.result_name;
-                auto key_it = key_columns.find(expr_name);
-                if (key_it != key_columns.end())
+                if (arg->column->getName() == expr_name)
                 {
-                    out_key_column_type = type;
-                    out_key_column_num = key_it->second;
-                    return true;
+                    /// TODO: Correct argument index  /// size_t index = static_cast<size_t>(arg_it - action.arguments.begin());
+                    size_t index = 0;
+                    out_function_argument_stack.push_back(index);
+                    out_invertible_functions_chain.push_back(action.node->function_base);
+                    expr_name = action.node->result_name;
+                    auto key_it = key_columns.find(expr_name);
+                    if (key_it != key_columns.end())
+                    {
+                        out_key_column_type = type;
+                        out_key_column_num = key_it->second;
+                        return true;
+                    }
                 }
             }
-
         }
     }
     return false;
