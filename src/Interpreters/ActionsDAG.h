@@ -195,13 +195,9 @@ public:
 
     const Node & addInput(std::string name, DataTypePtr type, bool can_replace = false);
     const Node & addInput(ColumnWithTypeAndName column, bool can_replace = false);
-    const Node & addColumn(ColumnWithTypeAndName column);
+    const Node & addColumn(ColumnWithTypeAndName column, bool can_replace = false);
     const Node & addAlias(const std::string & name, std::string alias, bool can_replace = false);
     const Node & addArrayJoin(const std::string & source_name, std::string result_name);
-    const Node & addFunction(
-            const FunctionOverloadResolverPtr & function,
-            const Names & argument_names,
-            std::string result_name);
     const Node & addFunction(
             const FunctionOverloadResolverPtr & function,
             const Names & argument_names,
@@ -234,9 +230,30 @@ public:
 
     ActionsDAGPtr clone() const;
 
+
+    enum class MatchColumnsMode
+    {
+        /// Require same number of columns in source and result. Match columns by corresponding positions, regardless to names.
+        Position,
+        /// Find columns in source by their names. Allow excessive columns in source.
+        Name,
+    };
+
+    static ActionsDAGPtr makeConvertingActions(
+        const ColumnsWithTypeAndName & source,
+        const ColumnsWithTypeAndName & result,
+        MatchColumnsMode mode,
+        bool ignore_constant_values = false); /// Do not check that constants are same. Use value from result_header.
+
 private:
     Node & addNode(Node node, bool can_replace = false);
     Node & getNode(const std::string & name);
+
+    ActionsDAG::Node & addFunction(
+            const FunctionOverloadResolverPtr & function,
+            Inputs children,
+            std::string result_name,
+            bool can_replace);
 
     ActionsDAGPtr cloneEmpty() const
     {
