@@ -5,7 +5,6 @@
 #if USE_MYSQL
 
 #include <Databases/MySQL/MaterializeMySQLSyncThread.h>
-
 #    include <cstdlib>
 #    include <random>
 #    include <Columns/ColumnTuple.h>
@@ -34,6 +33,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_MYSQL_VARIABLE;
+    extern const int SYNC_MYSQL_USER_ACCESS_ERROR;
+    extern const int UNKNOWN_DATABASE;
 }
 
 static constexpr auto MYSQL_BACKGROUND_THREAD_NAME = "MySQLDBSync";
@@ -127,7 +128,7 @@ static String checkVariableAndGetVersion(const mysqlxx::Pool::Entry & connection
         }
 
         bool first = true;
-        std::stringstream error_message;
+        WriteBufferFromOwnString error_message;
         error_message << "Illegal MySQL variables, the MaterializeMySQL engine requires ";
         for (const auto & [variable_name, variable_error_message] : variables_error_message)
         {
@@ -214,10 +215,33 @@ void MaterializeMySQLSyncThread::stopSynchronization()
 
 void MaterializeMySQLSyncThread::startSynchronization()
 {
-    const auto & mysql_server_version = checkVariableAndGetVersion(pool.get());
+    try
+    {
+        const auto & mysql_server_version = checkVariableAndGetVersion(pool.get());
 
-    background_thread_pool = std::make_unique<ThreadFromGlobalPool>(
-        [this, mysql_server_version = mysql_server_version]() { synchronization(mysql_server_version); });
+        background_thread_pool = std::make_unique<ThreadFromGlobalPool>(
+            [this, mysql_server_version = mysql_server_version]() { synchronization(mysql_server_version); });
+    }
+    catch (...)
+    {
+        try
+        {
+            throw;
+        }
+        catch (mysqlxx::ConnectionFailed & e)
+        {
+            if (e.errnum() == ER_ACCESS_DENIED_ERROR
+                || e.errnum() == ER_DBACCESS_DENIED_ERROR)
+                throw Exception("MySQL SYNC USER ACCESS ERR: mysql sync user needs "
+                                "at least GLOBAL PRIVILEGES:'RELOAD, REPLICATION SLAVE, REPLICATION CLIENT' "
+                                "and SELECT PRIVILEGE on Database " + mysql_database_name
+                    , ErrorCodes::SYNC_MYSQL_USER_ACCESS_ERROR);
+            else if (e.errnum() == ER_BAD_DB_ERROR)
+                throw Exception("Unknown database '" + mysql_database_name + "' on MySQL", ErrorCodes::UNKNOWN_DATABASE);
+            else
+                throw;
+        }
+    }
 }
 
 static inline void cleanOutdatedTables(const String & database_name, const Context & context)
@@ -238,7 +262,7 @@ static inline BlockOutputStreamPtr getTableOutput(const String & database_name, 
 {
     const StoragePtr & storage = DatabaseCatalog::instance().getTable(StorageID(database_name, table_name), query_context);
 
-    std::stringstream insert_columns_str;
+    WriteBufferFromOwnString insert_columns_str;
     const StorageInMemoryMetadata & storage_metadata = storage->getInMemoryMetadata();
     const ColumnsDescription & storage_columns = storage_metadata.getColumns();
     const NamesAndTypesList & insert_columns_names = insert_materialized ? storage_columns.getAllPhysical() : storage_columns.getOrdinary();
@@ -329,9 +353,9 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
 
                 const auto & position_message = [&]()
                 {
-                    std::stringstream ss;
-                    position.dump(ss);
-                    return ss.str();
+                    WriteBufferFromOwnString buf;
+                    position.dump(buf);
+                    return buf.str();
                 };
                 LOG_INFO(log, "MySQL dump database position: \n {}", position_message());
             }
@@ -371,9 +395,9 @@ void MaterializeMySQLSyncThread::flushBuffersData(Buffers & buffers, Materialize
 
     const auto & position_message = [&]()
     {
-        std::stringstream ss;
-        client.getPosition().dump(ss);
-        return ss.str();
+        WriteBufferFromOwnString buf;
+        client.getPosition().dump(buf);
+        return buf.str();
     };
     LOG_INFO(log, "MySQL executed position: \n {}", position_message());
 }
@@ -619,35 +643,41 @@ void MaterializeMySQLSyncThread::onEvent(Buffers & buffers, const BinlogEventPtr
     else if (receive_event->type() == MYSQL_QUERY_EVENT)
     {
         QueryEvent & query_event = static_cast<QueryEvent &>(*receive_event);
-        flushBuffersData(buffers, metadata);
-
-        try
-        {
-            Context query_context = createQueryContext(global_context);
-            String comment = "Materialize MySQL step 2: execute MySQL DDL for sync data";
-            String event_database = query_event.schema == mysql_database_name ? database_name : "";
-            tryToExecuteQuery(query_prefix + query_event.query, query_context, event_database, comment);
-        }
-        catch (Exception & exception)
-        {
-            tryLogCurrentException(log);
-
-            /// If some DDL query was not successfully parsed and executed
-            /// Then replication may fail on next binlog events anyway
-            if (exception.code() != ErrorCodes::SYNTAX_ERROR)
-                throw;
-        }
+        Position position_before_ddl;
+        position_before_ddl.update(metadata.binlog_position, metadata.binlog_file, metadata.executed_gtid_set);
+        metadata.transaction(position_before_ddl, [&]() { buffers.commit(global_context); });
+        metadata.transaction(client.getPosition(),[&](){ executeDDLAtomic(query_event); });
     }
     else if (receive_event->header.type != HEARTBEAT_EVENT)
     {
         const auto & dump_event_message = [&]()
         {
-            std::stringstream ss;
-            receive_event->dump(ss);
-            return ss.str();
+            WriteBufferFromOwnString buf;
+            receive_event->dump(buf);
+            return buf.str();
         };
 
         LOG_DEBUG(log, "Skip MySQL event: \n {}", dump_event_message());
+    }
+}
+
+void MaterializeMySQLSyncThread::executeDDLAtomic(const QueryEvent & query_event)
+{
+    try
+    {
+        Context query_context = createQueryContext(global_context);
+        String comment = "Materialize MySQL step 2: execute MySQL DDL for sync data";
+        String event_database = query_event.schema == mysql_database_name ? database_name : "";
+        tryToExecuteQuery(query_prefix + query_event.query, query_context, event_database, comment);
+    }
+    catch (Exception & exception)
+    {
+        tryLogCurrentException(log);
+
+        /// If some DDL query was not successfully parsed and executed
+        /// Then replication may fail on next binlog events anyway
+        if (exception.code() != ErrorCodes::SYNTAX_ERROR)
+            throw;
     }
 }
 
