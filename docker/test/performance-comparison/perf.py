@@ -46,6 +46,7 @@ parser.add_argument('--profile-seconds', type=int, default=0, help='For how many
 parser.add_argument('--long', action='store_true', help='Do not skip the tests tagged as long.')
 parser.add_argument('--print-queries', action='store_true', help='Print test queries and exit.')
 parser.add_argument('--print-settings', action='store_true', help='Print test settings and exit.')
+parser.add_argument('--keep-tables', action='store_true', help="Don't drop the created tables after the test.")
 args = parser.parse_args()
 
 reportStageEnd('start')
@@ -403,10 +404,11 @@ print(f'profile-total\t{profile_total_seconds}')
 reportStageEnd('run')
 
 # Run drop queries
-drop_queries = substitute_parameters(drop_query_templates)
-for conn_index, c in enumerate(all_connections):
-    for q in drop_queries:
-        c.execute(q)
-        print(f'drop\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}')
+if not args.keep_tables:
+    drop_queries = substitute_parameters(drop_query_templates)
+    for conn_index, c in enumerate(all_connections):
+        for q in drop_queries:
+            c.execute(q)
+            print(f'drop\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}')
 
-reportStageEnd('drop-2')
+    reportStageEnd('drop-2')
