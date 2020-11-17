@@ -65,7 +65,7 @@ MySQLBinlogEventReadBuffer::~MySQLBinlogEventReadBuffer()
         nextIfAtEnd();
 
         if (checksum_signature_length)
-            delete checksum_buf;
+            delete[] checksum_buf;
     }
     catch (...)
     {
