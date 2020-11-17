@@ -176,7 +176,7 @@ static std::string normalizeZooKeeperPath(std::string zookeeper_path)
     return zookeeper_path;
 }
 
-void StorageReplicatedMergeTree::extractZooKeeperNameAndPath(const String & path, String & zookeeper_name_, String & zookeeper_path_) const
+void StorageReplicatedMergeTree::extractZooKeeperNameAndPath(const String & path, String & zookeeper_name_, String & zookeeper_path_)
 {
     if (path.empty())
         throw Exception("ZooKeeper path should not be empty", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
