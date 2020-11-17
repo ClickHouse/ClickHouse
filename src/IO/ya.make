@@ -56,6 +56,8 @@ SRCS(
     WriteHelpers.cpp
     ZlibDeflatingWriteBuffer.cpp
     ZlibInflatingReadBuffer.cpp
+    ZstdDeflatingWriteBuffer.cpp
+    ZstdInflatingReadBuffer.cpp
     copyData.cpp
     createReadBufferFromFileBase.cpp
     createWriteBufferFromFileBase.cpp
