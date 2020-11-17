@@ -1032,7 +1032,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicOrInvertibleFunctionsImpl(
 
             if (func && func->hasInformationAboutMonotonicity())
             {
-                current_type = func->getReturnType();
+                current_type = func->getResultType();
                 out_monotonic_functions_chain.push_back(func);
                 return true;
             }
@@ -1114,7 +1114,7 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & cont
             else if (getConstant(args[1], block_with_constants, const_value, const_type)
                      && isKeyPossiblyWrappedByMonotonicOrInvertibleFunctions(args[0], context, key_column_num, expr_type, key_expr_type, monotonic_chain, invertible_chain, argument_stack))
             {
-                if (isKeyPossiblyWrappedByMonotonicFunctions(args[0], context, key_column_num, key_expr_type, chain))
+                if (isKeyPossiblyWrappedByMonotonicOrInvertibleFunctions(args[0], context, key_column_num, expr_type, key_expr_type, monotonic_chain, invertible_chain, argument_stack))
                 {
                     key_arg_pos = 0;
                 }
@@ -1642,8 +1642,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 auto new_range_set = applyMonotonicFunctionsChainToRangeSet(
                     transformed_range_set,
                     element.monotonic_functions_chain,
-                    data_types[element.key_column],
-                    single_point
+                    data_types[element.key_column]
                 );
 
                 if (!new_range_set)
@@ -1766,16 +1765,16 @@ String KeyCondition::RPNElement::toString() const
         }
         if (monotonic_functions_chain.empty())
         {
-            ss << "(";
+            buf << "(";
         }
         for (size_t i = 0; i < invertible_functions_chain.size(); ++i)
         {
-            ss << "arg #" << function_argument_stack[i] << " of function " << invertible_functions_chain[i]->getName() << ", which is ";
+            buf << "arg #" << function_argument_stack[i] << " of function " << invertible_functions_chain[i]->getName() << ", which is ";
         }
         buf << "column " << key_column;
         if (monotonic_functions_chain.empty())
         {
-            ss << ")";
+            buf << ")";
         }
         for (auto it = monotonic_functions_chain.rbegin(); it != monotonic_functions_chain.rend(); ++it)
         {
