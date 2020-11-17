@@ -17,14 +17,14 @@ untuple(Tuple x)
 
 **Parameters**
 
--   Element of the `Tuple` type. [Tuple](../../sql-reference/data-types/tuple.md#tuplet1-t2).
+-   Elements of the `Tuple` type. [Tuple](../../sql-reference/data-types/tuple.md#tuplet1-t2).
 It can be a `tuple` function or column of the `Tuple` type.
 
 **Returned value**
 
 Returned value is missing.
 
-**Example**
+**Examples**
 
 Input table:
 
@@ -97,6 +97,8 @@ Result:
 │   5 │ 30 │ 50 │ 25 │ (77,'kl') │
 └─────┴────┴────┴────┴───────────┘
 ```
+
+**See Also**
 
 -   [Tuple](../../sql-reference/data-types/tuple.md)
 
