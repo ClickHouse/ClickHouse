@@ -227,6 +227,7 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     return addNode(std::move(node));
 }
 
+
 NamesAndTypesList ActionsDAG::getRequiredColumns() const
 {
     NamesAndTypesList result;
