@@ -5,39 +5,39 @@
 
 #include <chrono>
 #include <iomanip>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <Core/ExternalTable.h>
+#include <DataStreams/IBlockInputStream.h>
+#include <Disks/StoragePolicy.h>
+#include <IO/CascadeWriteBuffer.h>
+#include <IO/ConcatReadBuffer.h>
+#include <IO/MemoryReadWriteBuffer.h>
+#include <IO/ReadBufferFromIStream.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/WriteBufferFromHTTPServerResponse.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteBufferFromTemporaryFile.h>
+#include <IO/WriteHelpers.h>
+#include <IO/copyData.h>
+#include <Interpreters/QueryParameterVisitor.h>
+#include <Interpreters/executeQuery.h>
 #include <Poco/File.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
+#include <Poco/Net/HTTPRequestHandlerFactory.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerRequestImpl.h>
 #include <Poco/Net/HTTPServerResponse.h>
-#include <Poco/Net/HTTPRequestHandlerFactory.h>
+#include <Poco/Net/HTTPStream.h>
 #include <Poco/Net/NetException.h>
-#include <ext/scope_guard.h>
-#include <Core/ExternalTable.h>
+#include <Common/SettingsChanges.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
-#include <common/getFQDNOrHostName.h>
 #include <Common/setThreadName.h>
-#include <Common/SettingsChanges.h>
-#include <Disks/StoragePolicy.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <Compression/CompressedWriteBuffer.h>
-#include <IO/ReadBufferFromIStream.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/WriteBufferFromHTTPServerResponse.h>
-#include <IO/WriteBufferFromFile.h>
-#include <IO/WriteHelpers.h>
-#include <IO/copyData.h>
-#include <IO/ConcatReadBuffer.h>
-#include <IO/CascadeWriteBuffer.h>
-#include <IO/MemoryReadWriteBuffer.h>
-#include <IO/WriteBufferFromTemporaryFile.h>
-#include <DataStreams/IBlockInputStream.h>
-#include <Interpreters/executeQuery.h>
-#include <Interpreters/QueryParameterVisitor.h>
 #include <Common/typeid_cast.h>
-#include <Poco/Net/HTTPStream.h>
+#include <common/getFQDNOrHostName.h>
+#include <ext/scope_guard.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
@@ -46,10 +46,8 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
-
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_PARSE_TEXT;
     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
@@ -109,36 +107,25 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
     {
         return HTTPResponse::HTTP_UNAUTHORIZED;
     }
-    else if (exception_code == ErrorCodes::CANNOT_PARSE_TEXT ||
-             exception_code == ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE ||
-             exception_code == ErrorCodes::CANNOT_PARSE_QUOTED_STRING ||
-             exception_code == ErrorCodes::CANNOT_PARSE_DATE ||
-             exception_code == ErrorCodes::CANNOT_PARSE_DATETIME ||
-             exception_code == ErrorCodes::CANNOT_PARSE_NUMBER ||
-             exception_code == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED ||
-             exception_code == ErrorCodes::UNKNOWN_ELEMENT_IN_AST ||
-             exception_code == ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE ||
-             exception_code == ErrorCodes::TOO_DEEP_AST ||
-             exception_code == ErrorCodes::TOO_BIG_AST ||
-             exception_code == ErrorCodes::UNEXPECTED_AST_STRUCTURE ||
-             exception_code == ErrorCodes::SYNTAX_ERROR ||
-             exception_code == ErrorCodes::INCORRECT_DATA ||
-             exception_code == ErrorCodes::TYPE_MISMATCH)
+    else if (
+        exception_code == ErrorCodes::CANNOT_PARSE_TEXT || exception_code == ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE
+        || exception_code == ErrorCodes::CANNOT_PARSE_QUOTED_STRING || exception_code == ErrorCodes::CANNOT_PARSE_DATE
+        || exception_code == ErrorCodes::CANNOT_PARSE_DATETIME || exception_code == ErrorCodes::CANNOT_PARSE_NUMBER
+        || exception_code == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED || exception_code == ErrorCodes::UNKNOWN_ELEMENT_IN_AST
+        || exception_code == ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE || exception_code == ErrorCodes::TOO_DEEP_AST
+        || exception_code == ErrorCodes::TOO_BIG_AST || exception_code == ErrorCodes::UNEXPECTED_AST_STRUCTURE
+        || exception_code == ErrorCodes::SYNTAX_ERROR || exception_code == ErrorCodes::INCORRECT_DATA
+        || exception_code == ErrorCodes::TYPE_MISMATCH)
     {
         return HTTPResponse::HTTP_BAD_REQUEST;
     }
-    else if (exception_code == ErrorCodes::UNKNOWN_TABLE ||
-             exception_code == ErrorCodes::UNKNOWN_FUNCTION ||
-             exception_code == ErrorCodes::UNKNOWN_IDENTIFIER ||
-             exception_code == ErrorCodes::UNKNOWN_TYPE ||
-             exception_code == ErrorCodes::UNKNOWN_STORAGE ||
-             exception_code == ErrorCodes::UNKNOWN_DATABASE ||
-             exception_code == ErrorCodes::UNKNOWN_SETTING ||
-             exception_code == ErrorCodes::UNKNOWN_DIRECTION_OF_SORTING ||
-             exception_code == ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION ||
-             exception_code == ErrorCodes::UNKNOWN_FORMAT ||
-             exception_code == ErrorCodes::UNKNOWN_DATABASE_ENGINE ||
-             exception_code == ErrorCodes::UNKNOWN_TYPE_OF_QUERY)
+    else if (
+        exception_code == ErrorCodes::UNKNOWN_TABLE || exception_code == ErrorCodes::UNKNOWN_FUNCTION
+        || exception_code == ErrorCodes::UNKNOWN_IDENTIFIER || exception_code == ErrorCodes::UNKNOWN_TYPE
+        || exception_code == ErrorCodes::UNKNOWN_STORAGE || exception_code == ErrorCodes::UNKNOWN_DATABASE
+        || exception_code == ErrorCodes::UNKNOWN_SETTING || exception_code == ErrorCodes::UNKNOWN_DIRECTION_OF_SORTING
+        || exception_code == ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION || exception_code == ErrorCodes::UNKNOWN_FORMAT
+        || exception_code == ErrorCodes::UNKNOWN_DATABASE_ENGINE || exception_code == ErrorCodes::UNKNOWN_TYPE_OF_QUERY)
     {
         return HTTPResponse::HTTP_NOT_FOUND;
     }
@@ -150,8 +137,7 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
     {
         return HTTPResponse::HTTP_NOT_IMPLEMENTED;
     }
-    else if (exception_code == ErrorCodes::SOCKET_TIMEOUT ||
-             exception_code == ErrorCodes::CANNOT_OPEN_FILE)
+    else if (exception_code == ErrorCodes::SOCKET_TIMEOUT || exception_code == ErrorCodes::CANNOT_OPEN_FILE)
     {
         return HTTPResponse::HTTP_SERVICE_UNAVAILABLE;
     }
@@ -164,9 +150,7 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
 }
 
 
-static std::chrono::steady_clock::duration parseSessionTimeout(
-    const Poco::Util::AbstractConfiguration & config,
-    const HTMLForm & params)
+static std::chrono::steady_clock::duration parseSessionTimeout(const Poco::Util::AbstractConfiguration & config, const HTMLForm & params)
 {
     unsigned session_timeout = config.getInt("default_session_timeout", 60);
 
@@ -180,8 +164,9 @@ static std::chrono::steady_clock::duration parseSessionTimeout(
             throw Exception("Invalid session timeout: '" + session_timeout_str + "'", ErrorCodes::INVALID_SESSION_TIMEOUT);
 
         if (session_timeout > max_session_timeout)
-            throw Exception("Session timeout '" + session_timeout_str + "' is larger than max_session_timeout: " + toString(max_session_timeout)
-                + ". Maximum session timeout could be modified in configuration file.",
+            throw Exception(
+                "Session timeout '" + session_timeout_str + "' is larger than max_session_timeout: " + toString(max_session_timeout)
+                    + ". Maximum session timeout could be modified in configuration file.",
                 ErrorCodes::INVALID_SESSION_TIMEOUT);
     }
 
@@ -209,8 +194,7 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
         IReadableWriteBuffer * write_buf_concrete;
         ReadBufferPtr reread_buf;
 
-        if (write_buf
-            && (write_buf_concrete = dynamic_cast<IReadableWriteBuffer *>(write_buf.get()))
+        if (write_buf && (write_buf_concrete = dynamic_cast<IReadableWriteBuffer *>(write_buf.get()))
             && (reread_buf = write_buf_concrete->tryGetReadBuffer()))
         {
             read_buffers.emplace_back(reread_buf);
@@ -223,9 +207,7 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
 }
 
 
-HTTPHandler::HTTPHandler(IServer & server_, const std::string & name)
-    : server(server_)
-    , log(&Poco::Logger::get(name))
+HTTPHandler::HTTPHandler(IServer & server_, const std::string & name) : server(server_), log(&Poco::Logger::get(name))
 {
     server_display_name = server.config().getString("display_name", getFQDNOrHostName());
 }
@@ -271,12 +253,12 @@ void HTTPHandler::processQuery(
     else
     {
         /// It is prohibited to mix different authorization schemes.
-        if (request.hasCredentials()
-            || params.has("user")
-            || params.has("password")
-            || params.has("quota_key"))
+        if (request.hasCredentials() || params.has("user") || params.has("password") || params.has("quota_key"))
         {
-            throw Exception("Invalid authentication: it is not allowed to use X-ClickHouse HTTP headers and other authentication methods simultaneously", ErrorCodes::REQUIRED_PASSWORD);
+            throw Exception(
+                "Invalid authentication: it is not allowed to use X-ClickHouse HTTP headers and other authentication methods "
+                "simultaneously",
+                ErrorCodes::REQUIRED_PASSWORD);
         }
     }
 
@@ -318,12 +300,13 @@ void HTTPHandler::processQuery(
     {
         std::string opentelemetry_traceparent = request.get("traceparent");
         std::string error;
-        if (!context.getClientInfo().parseTraceparentHeader(
-            opentelemetry_traceparent, error))
+        if (!context.getClientInfo().parseTraceparentHeader(opentelemetry_traceparent, error))
         {
-            throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER,
+            throw Exception(
+                ErrorCodes::BAD_REQUEST_PARAMETER,
                 "Failed to parse OpenTelemetry traceparent header '{}': {}",
-                opentelemetry_traceparent, error);
+                opentelemetry_traceparent,
+                error);
         }
 
         context.getClientInfo().opentelemetry_tracestate = request.get("tracestate", "");
@@ -332,8 +315,7 @@ void HTTPHandler::processQuery(
 
     // Set the query id supplied by the user, if any, and also update the
     // OpenTelemetry fields.
-    context.setCurrentQueryId(params.get("query_id",
-        request.get("X-ClickHouse-Query-Id", "")));
+    context.setCurrentQueryId(params.get("query_id", request.get("X-ClickHouse-Query-Id", "")));
 
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
     String http_response_compression_methods = request.get("Accept-Encoding", "");
@@ -353,6 +335,8 @@ void HTTPHandler::processQuery(
             http_response_compression_method = CompressionMethod::Zlib;
         else if (std::string::npos != http_response_compression_methods.find("xz"))
             http_response_compression_method = CompressionMethod::Xz;
+        else if (std::string::npos != http_response_compression_methods.find("zstd"))
+            http_response_compression_method = CompressionMethod::Zstd;
     }
 
     bool client_supports_http_compression = http_response_compression_method != CompressionMethod::None;
@@ -362,8 +346,8 @@ void HTTPHandler::processQuery(
     bool internal_compression = params.getParsed<bool>("compress", false);
 
     /// At least, we should postpone sending of first buffer_size result bytes
-    size_t buffer_size_total = std::max(
-        params.getParsed<size_t>("buffer_size", DBMS_DEFAULT_BUFFER_SIZE), static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE));
+    size_t buffer_size_total
+        = std::max(params.getParsed<size_t>("buffer_size", DBMS_DEFAULT_BUFFER_SIZE), static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE));
 
     /// If it is specified, the whole result will be buffered.
     ///  First ~buffer_size bytes will be buffered in memory, the remaining bytes will be stored in temporary file.
@@ -395,23 +379,20 @@ void HTTPHandler::processQuery(
             const std::string tmp_path(context.getTemporaryVolume()->getDisk()->getPath());
             const std::string tmp_path_template(tmp_path + "http_buffers/");
 
-            auto create_tmp_disk_buffer = [tmp_path_template] (const WriteBufferPtr &)
-            {
-                return WriteBufferFromTemporaryFile::create(tmp_path_template);
-            };
+            auto create_tmp_disk_buffer
+                = [tmp_path_template](const WriteBufferPtr &) { return WriteBufferFromTemporaryFile::create(tmp_path_template); };
 
             cascade_buffer2.emplace_back(std::move(create_tmp_disk_buffer));
         }
         else
         {
-            auto push_memory_buffer_and_continue = [next_buffer = used_output.out_maybe_compressed] (const WriteBufferPtr & prev_buf)
-            {
+            auto push_memory_buffer_and_continue = [next_buffer = used_output.out_maybe_compressed](const WriteBufferPtr & prev_buf) {
                 auto * prev_memory_buffer = typeid_cast<MemoryWriteBuffer *>(prev_buf.get());
                 if (!prev_memory_buffer)
                     throw Exception("Expected MemoryWriteBuffer", ErrorCodes::LOGICAL_ERROR);
 
                 auto rdbuf = prev_memory_buffer->tryGetReadBuffer();
-                copyData(*rdbuf , *next_buffer);
+                copyData(*rdbuf, *next_buffer);
 
                 return next_buffer;
             };
@@ -419,8 +400,8 @@ void HTTPHandler::processQuery(
             cascade_buffer2.emplace_back(push_memory_buffer_and_continue);
         }
 
-        used_output.out_maybe_delayed_and_compressed = std::make_shared<CascadeWriteBuffer>(
-            std::move(cascade_buffer1), std::move(cascade_buffer2));
+        used_output.out_maybe_delayed_and_compressed
+            = std::make_shared<CascadeWriteBuffer>(std::move(cascade_buffer1), std::move(cascade_buffer2));
     }
     else
     {
@@ -446,13 +427,23 @@ void HTTPHandler::processQuery(
 
     std::unique_ptr<ReadBuffer> in;
 
-    static const NameSet reserved_param_names{"compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace",
-        "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check"};
+    static const NameSet reserved_param_names{
+        "compress",
+        "decompress",
+        "user",
+        "password",
+        "quota_key",
+        "query_id",
+        "stacktrace",
+        "buffer_size",
+        "wait_end_of_query",
+        "session_id",
+        "session_timeout",
+        "session_check"};
 
     Names reserved_param_suffixes;
 
-    auto param_could_be_skipped = [&] (const String & name)
-    {
+    auto param_could_be_skipped = [&](const String & name) {
         /// Empty parameter appears when URL like ?&a=b or a=b&&c=d. Just skip them for user's convenience.
         if (name.empty())
             return true;
@@ -577,12 +568,10 @@ void HTTPHandler::processQuery(
     client_info.http_method = http_method;
     client_info.http_user_agent = request.get("User-Agent", "");
 
-    auto append_callback = [&context] (ProgressCallback callback)
-    {
+    auto append_callback = [&context](ProgressCallback callback) {
         auto prev = context.getProgressCallback();
 
-        context.setProgressCallback([prev, callback] (const Progress & progress)
-        {
+        context.setProgressCallback([prev, callback](const Progress & progress) {
             if (prev)
                 prev(progress);
 
@@ -592,14 +581,13 @@ void HTTPHandler::processQuery(
 
     /// While still no data has been sent, we will report about query execution progress by sending HTTP headers.
     if (settings.send_progress_in_http_headers)
-        append_callback([&used_output] (const Progress & progress) { used_output.out->onProgress(progress); });
+        append_callback([&used_output](const Progress & progress) { used_output.out->onProgress(progress); });
 
     if (settings.readonly > 0 && settings.cancel_http_readonly_queries_on_client_close)
     {
         Poco::Net::StreamSocket & socket = dynamic_cast<Poco::Net::HTTPServerRequestImpl &>(request).socket();
 
-        append_callback([&context, &socket](const Progress &)
-        {
+        append_callback([&context, &socket](const Progress &) {
             /// Assume that at the point this method is called no one is reading data from the socket any more.
             /// True for read-only queries.
             try
@@ -623,15 +611,17 @@ void HTTPHandler::processQuery(
 
     query_scope.emplace(context);
 
-    executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
-        [&response] (const String & current_query_id, const String & content_type, const String & format, const String & timezone)
-        {
+    executeQuery(
+        *in,
+        *used_output.out_maybe_delayed_and_compressed,
+        /* allow_into_outfile = */ false,
+        context,
+        [&response](const String & current_query_id, const String & content_type, const String & format, const String & timezone) {
             response.setContentType(content_type);
             response.add("X-ClickHouse-Query-Id", current_query_id);
             response.add("X-ClickHouse-Format", format);
             response.add("X-ClickHouse-Timezone", timezone);
-        }
-    );
+        });
 
     if (used_output.hasDelayed())
     {
@@ -644,8 +634,11 @@ void HTTPHandler::processQuery(
     used_output.out->finalize();
 }
 
-void HTTPHandler::trySendExceptionToClient(const std::string & s, int exception_code,
-    Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response,
+void HTTPHandler::trySendExceptionToClient(
+    const std::string & s,
+    int exception_code,
+    Poco::Net::HTTPServerRequest & request,
+    Poco::Net::HTTPServerResponse & response,
     Output & used_output)
 {
     try
@@ -654,17 +647,14 @@ void HTTPHandler::trySendExceptionToClient(const std::string & s, int exception_
 
         /// If HTTP method is POST and Keep-Alive is turned on, we should read the whole request body
         /// to avoid reading part of the current request body in the next request.
-        if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
-            && response.getKeepAlive()
-            && !request.stream().eof()
+        if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST && response.getKeepAlive() && !request.stream().eof()
             && exception_code != ErrorCodes::HTTP_LENGTH_REQUIRED)
         {
             request.stream().ignore(std::numeric_limits<std::streamsize>::max());
         }
 
-        bool auth_fail = exception_code == ErrorCodes::UNKNOWN_USER ||
-                         exception_code == ErrorCodes::WRONG_PASSWORD ||
-                         exception_code == ErrorCodes::REQUIRED_PASSWORD;
+        bool auth_fail = exception_code == ErrorCodes::UNKNOWN_USER || exception_code == ErrorCodes::WRONG_PASSWORD
+            || exception_code == ErrorCodes::REQUIRED_PASSWORD;
 
         if (auth_fail)
         {
@@ -742,10 +732,12 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
         with_stacktrace = params.getParsed<bool>("stacktrace", false);
 
         /// Workaround. Poco does not detect 411 Length Required case.
-        if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST && !request.getChunkedTransferEncoding() &&
-            !request.hasContentLength())
+        if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST && !request.getChunkedTransferEncoding()
+            && !request.hasContentLength())
         {
-            throw Exception("The Transfer-Encoding is not chunked and there is no Content-Length header for POST request", ErrorCodes::HTTP_LENGTH_REQUIRED);
+            throw Exception(
+                "The Transfer-Encoding is not chunked and there is no Content-Length header for POST request",
+                ErrorCodes::HTTP_LENGTH_REQUIRED);
         }
 
         processQuery(context, request, params, response, used_output, query_scope);
@@ -773,7 +765,7 @@ DynamicQueryHandler::DynamicQueryHandler(IServer & server_, const std::string & 
 bool DynamicQueryHandler::customizeQueryParam(Context & context, const std::string & key, const std::string & value)
 {
     if (key == param_name)
-        return true;    /// do nothing
+        return true; /// do nothing
 
     if (startsWith(key, "param_"))
     {
@@ -788,7 +780,6 @@ bool DynamicQueryHandler::customizeQueryParam(Context & context, const std::stri
 
 std::string DynamicQueryHandler::getQuery(Poco::Net::HTTPServerRequest & request, HTMLForm & params, Context & context)
 {
-
     if (likely(!startsWith(request.getContentType(), "multipart/form-data")))
     {
         /// Part of the query can be passed in the 'query' parameter and the rest in the request body
@@ -813,10 +804,16 @@ std::string DynamicQueryHandler::getQuery(Poco::Net::HTTPServerRequest & request
 }
 
 PredefinedQueryHandler::PredefinedQueryHandler(
-    IServer & server_, const NameSet & receive_params_, const std::string & predefined_query_
-    , const CompiledRegexPtr & url_regex_, const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_)
-    : HTTPHandler(server_, "PredefinedQueryHandler"), receive_params(receive_params_), predefined_query(predefined_query_)
-    , url_regex(url_regex_), header_name_with_capture_regex(header_name_with_regex_)
+    IServer & server_,
+    const NameSet & receive_params_,
+    const std::string & predefined_query_,
+    const CompiledRegexPtr & url_regex_,
+    const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_)
+    : HTTPHandler(server_, "PredefinedQueryHandler")
+    , receive_params(receive_params_)
+    , predefined_query(predefined_query_)
+    , url_regex(url_regex_)
+    , header_name_with_capture_regex(header_name_with_regex_)
 {
 }
 
@@ -836,8 +833,7 @@ void PredefinedQueryHandler::customizeContext(Poco::Net::HTTPServerRequest & req
     /// If in the configuration file, the handler's header is regex and contains named capture group
     /// We will extract regex named capture groups as query parameters
 
-    const auto & set_query_params = [&](const char * begin, const char * end, const CompiledRegexPtr & compiled_regex)
-    {
+    const auto & set_query_params = [&](const char * begin, const char * end, const CompiledRegexPtr & compiled_regex) {
         int num_captures = compiled_regex->NumberOfCapturingGroups() + 1;
 
         re2::StringPiece matches[num_captures];
@@ -882,16 +878,16 @@ std::string PredefinedQueryHandler::getQuery(Poco::Net::HTTPServerRequest & requ
 Poco::Net::HTTPRequestHandlerFactory * createDynamicHandlerFactory(IServer & server, const std::string & config_prefix)
 {
     std::string query_param_name = server.config().getString(config_prefix + ".handler.query_param_name", "query");
-    return addFiltersFromConfig(new HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>(server, std::move(query_param_name)), server.config(), config_prefix);
+    return addFiltersFromConfig(
+        new HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>(server, std::move(query_param_name)), server.config(), config_prefix);
 }
 
 static inline bool capturingNamedQueryParam(NameSet receive_params, const CompiledRegexPtr & compiled_regex)
 {
     const auto & capturing_names = compiled_regex->NamedCapturingGroups();
-    return std::count_if(capturing_names.begin(), capturing_names.end(), [&](const auto & iterator)
-    {
-        return std::count_if(receive_params.begin(), receive_params.end(),
-            [&](const auto & param_name) { return param_name == iterator.first; });
+    return std::count_if(capturing_names.begin(), capturing_names.end(), [&](const auto & iterator) {
+        return std::count_if(
+            receive_params.begin(), receive_params.end(), [&](const auto & param_name) { return param_name == iterator.first; });
     });
 }
 
@@ -900,8 +896,10 @@ static inline CompiledRegexPtr getCompiledRegex(const std::string & expression)
     auto compiled_regex = std::make_shared<const re2::RE2>(expression);
 
     if (!compiled_regex->ok())
-        throw Exception("Cannot compile re2: " + expression + " for http handling rule, error: " +
-                        compiled_regex->error() + ". Look at https://github.com/google/re2/wiki/Syntax for reference.", ErrorCodes::CANNOT_COMPILE_REGEXP);
+        throw Exception(
+            "Cannot compile re2: " + expression + " for http handling rule, error: " + compiled_regex->error()
+                + ". Look at https://github.com/google/re2/wiki/Syntax for reference.",
+            ErrorCodes::CANNOT_COMPILE_REGEXP);
 
     return compiled_regex;
 }
@@ -911,7 +909,8 @@ Poco::Net::HTTPRequestHandlerFactory * createPredefinedHandlerFactory(IServer & 
     Poco::Util::AbstractConfiguration & configuration = server.config();
 
     if (!configuration.has(config_prefix + ".handler.query"))
-        throw Exception("There is no path '" + config_prefix + ".handler.query" + "' in configuration file.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        throw Exception(
+            "There is no path '" + config_prefix + ".handler.query" + "' in configuration file.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
     std::string predefined_query = configuration.getString(config_prefix + ".handler.query");
     NameSet analyze_receive_params = analyzeReceiveQueryParams(predefined_query);
@@ -942,14 +941,22 @@ Poco::Net::HTTPRequestHandlerFactory * createPredefinedHandlerFactory(IServer & 
 
         auto regex = getCompiledRegex(url_expression);
         if (capturingNamedQueryParam(analyze_receive_params, regex))
-            return addFiltersFromConfig(new HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>(
-                server, std::move(analyze_receive_params), std::move(predefined_query), std::move(regex),
-                std::move(headers_name_with_regex)), configuration, config_prefix);
+            return addFiltersFromConfig(
+                new HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>(
+                    server,
+                    std::move(analyze_receive_params),
+                    std::move(predefined_query),
+                    std::move(regex),
+                    std::move(headers_name_with_regex)),
+                configuration,
+                config_prefix);
     }
 
-    return addFiltersFromConfig(new HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>(
-        server, std::move(analyze_receive_params), std::move(predefined_query), CompiledRegexPtr{} ,std::move(headers_name_with_regex)),
-        configuration, config_prefix);
+    return addFiltersFromConfig(
+        new HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>(
+            server, std::move(analyze_receive_params), std::move(predefined_query), CompiledRegexPtr{}, std::move(headers_name_with_regex)),
+        configuration,
+        config_prefix);
 }
 
 }
