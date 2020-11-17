@@ -80,7 +80,7 @@ void CacheDictionary::getItemsNumberImpl(
 
             const auto [cell_idx, state] = findCellIdxForGet(id, now);
 
-            if (state == ResultState::FoundAndValid) 
+            if (state == ResultState::FoundAndValid)
             {
                 ++cache_hit;
                 insert_to_answer_routine(row, cell_idx);
@@ -299,7 +299,7 @@ void CacheDictionary::getItemsString(
                 const auto it = local_cache.find(id);
                 if (it != local_cache.end())
                     value = StringRef(it->second);
-                else 
+                else
                     value = get_default(row);
 
                 out->insertData(value.data, value.size);
@@ -354,7 +354,7 @@ void CacheDictionary::getItemsString(
         {
             const auto found_it = update_unit_ptr->found_ids.find(id);
 
-            /// Previously we didn't store defaults in local cache. 
+            /// Previously we didn't store defaults in local cache.
             if (found_it != update_unit_ptr->found_ids.end() && found_it->second.found)
                 value = std::get<String>(found_it->second.values[attribute_index]);
             else

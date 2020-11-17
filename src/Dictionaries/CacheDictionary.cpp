@@ -10,6 +10,7 @@
 #include <Common/randomSeed.h>
 #include <Common/typeid_cast.h>
 #include <Core/Defines.h>
+#include <IO/WriteBufferFromOStream.h>
 #include <ext/range.h>
 #include <ext/size.h>
 #include <Common/setThreadName.h>
@@ -284,7 +285,7 @@ Overloaded(Ts...) -> Overloaded<Ts...>;
 
 std::string CacheDictionary::AttributeValuesForKey::dump()
 {
-    std::ostringstream os;
+    WriteBufferFromOwnString os;
     for (auto & attr : values)
         std::visit(Overloaded {
             [&os](UInt8 arg)   { os << "type: UInt8, value: "   <<  std::to_string(arg) << "\n"; },
@@ -309,7 +310,7 @@ std::string CacheDictionary::AttributeValuesForKey::dump()
 
 std::string CacheDictionary::UpdateUnit::dumpFoundIds()
 {
-    std::ostringstream os;
+    WriteBufferFromOwnString os;
     for (auto it : found_ids)
     {
         os << "Key: " << std::to_string(it.first) << "\n";
@@ -344,7 +345,7 @@ CacheDictionary::FindResult CacheDictionary::findCellIdxForGet(const Key & id, c
     return {pos & size_overlap_mask, ResultState::NotFound};
 }
 
-/// Returns cell_idx such that cells[cell_idx].id = id or the oldest cell in bounds of max_coolision_length. 
+/// Returns cell_idx such that cells[cell_idx].id = id or the oldest cell in bounds of max_coolision_length.
 size_t CacheDictionary::findCellIdxForSet(const Key & id) const
 {
     auto pos = getCellIdx(id);
@@ -514,15 +515,16 @@ CacheDictionary::Attribute CacheDictionary::createAttributeWithTypeAndName(const
 
     switch (type)
     {
-
         /* Macro argument should be enclosed in parentheses, but if do so we cannot initialize \
          * NearestFieldType which takes TYPE as a template parameter. */
 #define DISPATCH(TYPE)\
-    case AttributeUnderlyingType::ut##TYPE: {\
-        attr.null_value = TYPE(null_value.get<NearestFieldType<TYPE>>()); /* NOLINT(bugprone-macro-parentheses) */ \
-        attr.arrays = std::make_unique<ContainerType<TYPE>>(size); /* NOLINT(bugprone-macro-parentheses) */ \
-        bytes_allocated += size * sizeof(TYPE);\
-        break;} 
+        case AttributeUnderlyingType::ut##TYPE:\
+        {\
+            attr.null_value = TYPE(null_value.get<NearestFieldType<TYPE>>()); /* NOLINT(bugprone-macro-parentheses) */ \
+            attr.arrays = std::make_unique<ContainerType<TYPE>>(size); /* NOLINT(bugprone-macro-parentheses) */ \
+            bytes_allocated += size * sizeof(TYPE);\
+            break;\
+        }
         DISPATCH(UInt8)
         DISPATCH(UInt16)
         DISPATCH(UInt32)
