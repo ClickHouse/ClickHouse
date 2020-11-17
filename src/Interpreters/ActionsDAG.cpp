@@ -627,7 +627,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
                                 ErrorCodes::ILLEGAL_COLUMN);
         }
 
-        if (!res_elem.type->equals(*res_elem.type))
+        if (!res_elem.type->equals(*src_node->result_type))
         {
             ColumnWithTypeAndName column;
             column.name = res_elem.type->getName();
@@ -638,7 +638,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
             auto * left_arg = src_node;
 
             Inputs children = { left_arg, right_arg };
-            src_node = &actions_dag->addFunction(func_builder_cast, children, "", true);
+            src_node = &actions_dag->addFunction(func_builder_cast, std::move(children), {}, true);
         }
 
         if (src_node->result_name != res_elem.name)
