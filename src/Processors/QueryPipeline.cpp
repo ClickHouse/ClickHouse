@@ -95,6 +95,12 @@ void QueryPipeline::addTransform(ProcessorPtr transform)
     pipe.addTransform(std::move(transform));
 }
 
+void QueryPipeline::transform(const Transformer & transformer)
+{
+    checkInitializedAndNotCompleted();
+    pipe.transform(transformer);
+}
+
 void QueryPipeline::setSinks(const Pipe::ProcessorGetterWithStreamKind & getter)
 {
     checkInitializedAndNotCompleted();

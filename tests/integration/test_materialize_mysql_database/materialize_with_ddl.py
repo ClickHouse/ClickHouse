@@ -2,8 +2,10 @@ import time
 
 import pymysql.cursors
 
+import pytest
+from helpers.client import QueryRuntimeException
 
-def check_query(clickhouse_node, query, result_set, retry_count=3, interval_seconds=3):
+def check_query(clickhouse_node, query, result_set, retry_count=60, interval_seconds=3):
     lastest_result = ''
     for index in range(retry_count):
         lastest_result = clickhouse_node.query(query)
@@ -18,6 +20,8 @@ def check_query(clickhouse_node, query, result_set, retry_count=3, interval_seco
 
 
 def dml_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS test_database")
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
     mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
     # existed before the mapping was created
 
@@ -100,6 +104,8 @@ def dml_with_materialize_mysql_database(clickhouse_node, mysql_node, service_nam
 
 
 def materialize_mysql_database_with_datetime_and_decimal(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS test_database")
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
     mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
     mysql_node.query("CREATE TABLE test_database.test_table_1 (`key` INT NOT NULL PRIMARY KEY, _datetime DateTime(6), _timestamp TIMESTAMP(3), _decimal DECIMAL(65, 30)) ENGINE = InnoDB;")
     mysql_node.query("INSERT INTO test_database.test_table_1 VALUES(1, '2020-01-01 01:02:03.999999', '2020-01-01 01:02:03.999', " + ('9' * 35) + "." + ('9' * 30) + ")")
@@ -121,6 +127,7 @@ def materialize_mysql_database_with_datetime_and_decimal(clickhouse_node, mysql_
     mysql_node.query("INSERT INTO test_database.test_table_2 VALUES(2, '2020-01-01 01:02:03.000000', '2020-01-01 01:02:03.000', ." + ('0' * 29) + "1)")
     mysql_node.query("INSERT INTO test_database.test_table_2 VALUES(3, '2020-01-01 01:02:03.9999', '2020-01-01 01:02:03.99', -" + ('9' * 35) + "." + ('9' * 30) + ")")
     mysql_node.query("INSERT INTO test_database.test_table_2 VALUES(4, '2020-01-01 01:02:03.9999', '2020-01-01 01:02:03.9999', -." + ('0' * 29) + "1)")
+    check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table_1\ntest_table_2\n")
     check_query(clickhouse_node, "SELECT * FROM test_database.test_table_2 ORDER BY key FORMAT TSV",
                 "1\t2020-01-01 01:02:03.999999\t2020-01-01 01:02:03.999\t" + ('9' * 35) + "." + ('9' * 30) + "\n"
                 "2\t2020-01-01 01:02:03.000000\t2020-01-01 01:02:03.000\t0." + ('0' * 29) + "1\n"
@@ -132,6 +139,8 @@ def materialize_mysql_database_with_datetime_and_decimal(clickhouse_node, mysql_
 
 
 def drop_table_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS test_database")
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
     mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
     mysql_node.query("CREATE TABLE test_database.test_table_1 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB;")
 
@@ -164,8 +173,9 @@ def drop_table_with_materialize_mysql_database(clickhouse_node, mysql_node, serv
     clickhouse_node.query("DROP DATABASE test_database")
     mysql_node.query("DROP DATABASE test_database")
 
-
 def create_table_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS test_database")
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
     mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
     # existed before the mapping was created
     mysql_node.query("CREATE TABLE test_database.test_table_1 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB;")
@@ -194,6 +204,8 @@ def create_table_with_materialize_mysql_database(clickhouse_node, mysql_node, se
 
 
 def rename_table_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS test_database")
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
     mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
     mysql_node.query("CREATE TABLE test_database.test_table_1 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB;")
 
@@ -214,6 +226,8 @@ def rename_table_with_materialize_mysql_database(clickhouse_node, mysql_node, se
 
 
 def alter_add_column_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS test_database")
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
     mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
     mysql_node.query("CREATE TABLE test_database.test_table_1 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB;")
 
@@ -255,6 +269,8 @@ def alter_add_column_with_materialize_mysql_database(clickhouse_node, mysql_node
 
 
 def alter_drop_column_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS test_database")
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
     mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
     mysql_node.query(
         "CREATE TABLE test_database.test_table_1 (id INT NOT NULL PRIMARY KEY, drop_column INT) ENGINE = InnoDB;")
@@ -287,6 +303,8 @@ def alter_drop_column_with_materialize_mysql_database(clickhouse_node, mysql_nod
 
 
 def alter_rename_column_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS test_database")
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
     mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
 
     # maybe should test rename primary key?
@@ -322,6 +340,8 @@ def alter_rename_column_with_materialize_mysql_database(clickhouse_node, mysql_n
 
 
 def alter_modify_column_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS test_database")
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
     mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
 
     # maybe should test rename primary key?
@@ -366,6 +386,8 @@ def alter_modify_column_with_materialize_mysql_database(clickhouse_node, mysql_n
 #     pass
 
 def alter_rename_table_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS test_database")
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
     mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
     mysql_node.query(
         "CREATE TABLE test_database.test_table_1 (id INT NOT NULL PRIMARY KEY, drop_column INT) ENGINE = InnoDB;")
@@ -401,6 +423,8 @@ def alter_rename_table_with_materialize_mysql_database(clickhouse_node, mysql_no
 
 
 def query_event_with_empty_transaction(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS test_database")
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
     mysql_node.query("CREATE DATABASE test_database")
 
     mysql_node.query("RESET MASTER")
@@ -433,6 +457,8 @@ def query_event_with_empty_transaction(clickhouse_node, mysql_node, service_name
     mysql_node.query("DROP DATABASE test_database")
 
 def select_without_columns(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS db")
+    clickhouse_node.query("DROP DATABASE IF EXISTS db")
     mysql_node.query("CREATE DATABASE db")
     mysql_node.query("CREATE TABLE db.t (a INT PRIMARY KEY, b INT)")
     clickhouse_node.query(
@@ -461,3 +487,51 @@ def select_without_columns(clickhouse_node, mysql_node, service_name):
     clickhouse_node.query("DROP VIEW v")
     clickhouse_node.query("DROP DATABASE db")
     mysql_node.query("DROP DATABASE db")
+
+
+def err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
+    clickhouse_node.query("DROP DATABASE IF EXISTS priv_err_db")
+    mysql_node.query("DROP DATABASE IF EXISTS priv_err_db")
+    mysql_node.query("CREATE DATABASE priv_err_db DEFAULT CHARACTER SET 'utf8'")
+    mysql_node.query("CREATE TABLE priv_err_db.test_table_1 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB;")
+    mysql_node.query("INSERT INTO priv_err_db.test_table_1 VALUES(1);")
+
+    mysql_node.result("SHOW GRANTS FOR 'test'@'%';")
+
+    clickhouse_node.query(
+        "CREATE DATABASE priv_err_db ENGINE = MaterializeMySQL('{}:3306', 'priv_err_db', 'test', '123')".format(
+            service_name))
+    # wait MaterializeMySQL read binlog events
+    check_query(clickhouse_node, "SHOW TABLES FROM priv_err_db FORMAT TSV;", "test_table_1\n")
+    check_query(clickhouse_node, "SELECT count() FROM priv_err_db.test_table_1 FORMAT TSV", "1\n", 30, 5)
+    mysql_node.query("INSERT INTO priv_err_db.test_table_1 VALUES(2);")
+    check_query(clickhouse_node, "SELECT count() FROM priv_err_db.test_table_1 FORMAT TSV", "2\n")
+    clickhouse_node.query("DROP DATABASE priv_err_db;")
+
+    mysql_node.query("REVOKE REPLICATION SLAVE ON *.* FROM 'test'@'%'")
+    clickhouse_node.query(
+        "CREATE DATABASE priv_err_db ENGINE = MaterializeMySQL('{}:3306', 'priv_err_db', 'test', '123')".format(
+            service_name))
+    assert "priv_err_db" in clickhouse_node.query("SHOW DATABASES")
+    assert "test_table_1" not in clickhouse_node.query("SHOW TABLES FROM priv_err_db")
+    clickhouse_node.query("DROP DATABASE priv_err_db")
+
+    mysql_node.query("REVOKE REPLICATION CLIENT, RELOAD ON *.* FROM 'test'@'%'")
+    clickhouse_node.query(
+        "CREATE DATABASE priv_err_db ENGINE = MaterializeMySQL('{}:3306', 'priv_err_db', 'test', '123')".format(
+            service_name))
+    assert "priv_err_db" in clickhouse_node.query("SHOW DATABASES")
+    assert "test_table_1" not in clickhouse_node.query("SHOW TABLES FROM priv_err_db")
+    clickhouse_node.query("DETACH DATABASE priv_err_db")
+
+    mysql_node.query("REVOKE SELECT ON priv_err_db.* FROM 'test'@'%'")
+    time.sleep(3)
+
+    with pytest.raises(QueryRuntimeException) as exception:
+        clickhouse_node.query("ATTACH DATABASE priv_err_db")
+
+    assert 'MySQL SYNC USER ACCESS ERR:' in str(exception.value)
+    assert "priv_err_db" not in clickhouse_node.query("SHOW DATABASES")
+
+    mysql_node.query("DROP DATABASE priv_err_db;")
+    mysql_node.grant_min_priv_for_user("test")

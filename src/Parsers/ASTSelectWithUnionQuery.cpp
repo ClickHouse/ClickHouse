@@ -1,6 +1,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Common/typeid_cast.h>
+#include <IO/Operators.h>
 
 
 namespace DB
