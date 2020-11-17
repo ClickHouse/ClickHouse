@@ -2205,12 +2205,22 @@ Possible values:
 
 Default value: `0`.
 
-**Example**
+**Examples**
 
 Query
 
 ```sql
 SELECT * FROM system.events WHERE event='QueryMemoryLimitExceeded';
+```
+
+Result
+
+```text
+Ok.
+```
+
+Query
+```sql
 SET system_events_show_zero_values = 1;
 SELECT * FROM system.events WHERE event='QueryMemoryLimitExceeded';
 ```
