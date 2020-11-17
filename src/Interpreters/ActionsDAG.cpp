@@ -749,7 +749,9 @@ ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_join
                                 input_node.result_type = child->result_type;
                                 input_node.result_name = child->result_name; // getUniqueNameForIndex(index, child->result_name);
                                 child_data.to_this = &this_nodes.emplace_back(std::move(input_node));
-                                new_inputs.push_back(child_data.to_this);
+
+                                if (child->type != ActionType::INPUT)
+                                    new_inputs.push_back(child_data.to_this);
 
                                 /// This node is needed for current action, so put it to index also.
                                 split_index.replace(child_data.to_split);
@@ -781,7 +783,9 @@ ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_join
                         input_node.result_type = node.result_type;
                         input_node.result_name = node.result_name;
                         cur_data.to_this = &this_nodes.emplace_back(std::move(input_node));
-                        new_inputs.push_back(cur_data.to_this);
+
+                        if (copy.type != ActionType::INPUT)
+                            new_inputs.push_back(cur_data.to_this);
                     }
                 }
             }
