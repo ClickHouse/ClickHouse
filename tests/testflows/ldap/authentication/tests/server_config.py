@@ -217,6 +217,36 @@ def auth_dn_value(self):
 
     login(servers, user)
 
+@TestOutline(Scenario)
+@Examples("invalid_value", [
+    ("-1", Name("negative int")),
+    ("foo", Name("string")),
+    ("", Name("empty string")),
+    ("36893488147419103232", Name("overflow with extremely large int value")),
+    ("-36893488147419103232", Name("overflow with extremely large negative int value")),
+    ("@#", Name("special characters"))
+])
+@Requirements(
+    RQ_SRS_007_LDAP_Configuration_Server_VerificationCooldown_Invalid("1.0")
+)
+def invalid_verification_cooldown_value(self, invalid_value, timeout=20):
+    """Check that server returns an error when LDAP server
+    verification cooldown parameter is invalid.
+    """
+
+    error_message = ("<Error> Access(user directories): Could not parse LDAP server"
+        " \\`openldap1\\`: Poco::Exception. Code: 1000, e.code() = 0,"
+        f" e.displayText() = Syntax error: Not a valid unsigned integer{': ' + invalid_value if invalid_value else invalid_value}")
+
+    with Given("LDAP server configuration that uses a negative integer for the verification_cooldown parameter"):
+        servers = {"openldap1": {"host": "openldap1", "port": "389", "enable_tls": "no",
+            "auth_dn_prefix": "cn=", "auth_dn_suffix": ",ou=users,dc=company,dc=com",
+            "verification_cooldown": f"{invalid_value}"
+        }}
+
+    with When("I try to use this configuration then it should not work"):
+        invalid_server_config(servers, message=error_message, tail=17, timeout=timeout)
+
 @TestScenario
 @Requirements(
     RQ_SRS_007_LDAP_Configuration_Server_Syntax("2.0")
