@@ -62,6 +62,14 @@ public:
 protected:
     size_t getCurrentMark() const { return current_mark; }
     size_t getIndexOffset() const { return index_offset; }
+    /// Finishes our current unfinished mark if we have already written more rows for it
+    /// than granularity in the new block.
+    /// Example:
+    /// __|________|___. <- previous block with granularity 8 and last unfinished mark with 3 rows
+    /// new_block_index_granularity = 2, so
+    /// __|________|___|__|__|__|
+    ///                ^ finish last unfinished mark, new marks will have granularity 2
+    void adjustLastUnfinishedMark(size_t new_block_index_granularity);
 
     using SerializationState = IDataType::SerializeBinaryBulkStatePtr;
     using SerializationStates = std::unordered_map<String, SerializationState>;
@@ -84,6 +92,7 @@ private:
     /// Data is already written up to this mark.
     size_t current_mark = 0;
     /// The offset to the first row of the block for which you want to write the index.
+    /// Or how many rows we have to write for this last unfinished mark.
     size_t index_offset = 0;
 };
 

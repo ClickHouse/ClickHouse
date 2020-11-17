@@ -44,6 +44,18 @@ void IMergeTreeDataPartWriter::next()
     index_offset = next_index_offset;
 }
 
+void IMergeTreeDataPartWriter::adjustLastUnfinishedMark(size_t new_block_index_granularity)
+{
+    /// If amount of rest rows in last granule more than granularity of the new block
+    /// than finish it.
+    if (!index_granularity.empty() && index_offset > new_block_index_granularity)
+    {
+        size_t already_written_rows_in_last_granule = index_granularity.getLastMarkRows() - index_offset;
+        index_granularity.setLastMarkRows(already_written_rows_in_last_granule);
+        index_offset = 0;
+    }
+}
+
 IMergeTreeDataPartWriter::~IMergeTreeDataPartWriter() = default;
 
 }
