@@ -113,6 +113,12 @@
 
 #include "pcg_extras.hpp"
 
+namespace DB
+{
+    struct PcgSerializer;
+    struct PcgDeserializer;
+}
+
 namespace pcg_detail {
 
 using namespace pcg_extras;
@@ -557,6 +563,9 @@ public:
                engine<xtype1, itype1,
                         output_mixin1, output_previous1,
                         stream_mixin1, multiplier_mixin1>& rng);
+
+    friend ::DB::PcgSerializer;
+    friend ::DB::PcgDeserializer;
 };
 
 template <typename CharT, typename Traits,

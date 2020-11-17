@@ -78,6 +78,10 @@ if (USE_AMQPCPP)
     add_headers_and_sources(dbms Storages/RabbitMQ)
 endif()
 
+if (USE_ROCKSDB)
+    add_headers_and_sources(dbms Storages/RocksDB)
+endif()
+
 if (USE_AWS_S3)
     add_headers_and_sources(dbms Common/S3)
     add_headers_and_sources(dbms Disks/S3)
@@ -294,6 +298,7 @@ if (USE_KRB5)
     dbms_target_link_libraries(PRIVATE ${KRB5_LIBRARY})
 endif()
 
+
 if(RE2_INCLUDE_DIR)
     target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${RE2_INCLUDE_DIR})
 endif()
@@ -321,12 +326,20 @@ target_include_directories(clickhouse_common_io PUBLIC ${CMAKE_CURRENT_BINARY_DI
 dbms_target_include_directories(PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/Core/include)
 
 dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${PDQSORT_INCLUDE_DIR})
+dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${MINISELECT_INCLUDE_DIR})
 
 if (ZSTD_LIBRARY)
     dbms_target_link_libraries(PRIVATE ${ZSTD_LIBRARY})
     if (NOT USE_INTERNAL_ZSTD_LIBRARY AND ZSTD_INCLUDE_DIR)
         dbms_target_include_directories(SYSTEM BEFORE PRIVATE ${ZSTD_INCLUDE_DIR})
     endif ()
+endif()
+
+set (LZMA_LIBRARY liblzma)
+set (LZMA_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/xz/src/liblzma/api)
+if (LZMA_LIBRARY)
+    target_link_libraries (clickhouse_common_io PUBLIC ${LZMA_LIBRARY})
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${LZMA_INCLUDE_DIR})
 endif()
 
 if (USE_ICU)
@@ -400,6 +413,11 @@ if (USE_ORC)
     dbms_target_link_libraries(PUBLIC ${ORC_LIBRARIES})
     dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${ORC_INCLUDE_DIR} ${CMAKE_BINARY_DIR}/contrib/orc/c++/include)
 endif ()
+
+if (USE_ROCKSDB)
+    dbms_target_link_libraries(PUBLIC ${ROCKSDB_LIBRARY})
+    dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${ROCKSDB_INCLUDE_DIR})
+endif()
 
 if (ENABLE_TESTS AND USE_GTEST)
     macro (grep_gtest_sources BASE_DIR DST_VAR)
