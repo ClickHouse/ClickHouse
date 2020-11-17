@@ -1,6 +1,5 @@
 #pragma once
 
-#include <sstream>
 #include <optional>
 
 #include <Interpreters/Set.h>
@@ -254,7 +253,7 @@ private:
         DataTypePtr & out_type);
 
     bool canConstantBeWrappedByFunctions(
-        const ASTPtr & node,
+        const ASTPtr & ast,
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
         Field & out_value,
