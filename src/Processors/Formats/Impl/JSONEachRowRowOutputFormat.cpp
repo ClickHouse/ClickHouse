@@ -61,20 +61,43 @@ void JSONEachRowRowOutputFormat::writeRowStartDelimiter()
 
 void JSONEachRowRowOutputFormat::writeRowEndDelimiter()
 {
-    writeCString("}", out);
+    // Why this weird if?
+    //
+    // The reason is the formatRow function that is broken with respect to
+    // row-between delimiters. It should not write them, but it does, and then
+    // hacks around it by having a special formatRowNoNewline function
+    // which, as you guessed, removes the newline from the end of row. But the
+    // row-between delimiter goes into a second row, so it turns out to be in
+    // the second line, and the removal doesn't work. But the row-between
+    // delimiter in this format is also written incorrectly (not written at all,
+    // in fact), so the test (01420_format_row) works! All good.
+    //
+    // A proper implementation of formatRow would use IRowOutputFormat directly,
+    // and not write row-between delimiters, instead of using IOutputFormat
+    // processor and its crutch row callback. We would also need to expose
+    // IRowOutputFormat which we don't do now.
+    //
+    // I just don't have time or energy to redo all of this properly, but I need
+    // to support JSON array output here. I don't want to copy the entire
+    // JSONEachRow output code, so I preserve the bug for compatibility.
+    if (settings.json.array_of_rows)
+    {
+        writeCString("}", out);
+    }
+    else
+    {
+        writeCString("}\n", out);
+    }
     field_number = 0;
 }
 
 
 void JSONEachRowRowOutputFormat::writeRowBetweenDelimiter()
 {
+    // We preserve an existing bug here for compatibility. See the comment above.
     if (settings.json.array_of_rows)
     {
         writeCString(",\n", out);
-    }
-    else
-    {
-        writeCString("\n", out);
     }
 }
 
@@ -90,10 +113,9 @@ void JSONEachRowRowOutputFormat::writePrefix()
 
 void JSONEachRowRowOutputFormat::writeSuffix()
 {
-    writeCString("\n", out);
     if (settings.json.array_of_rows)
     {
-        writeCString("]\n", out);
+        writeCString("\n]\n", out);
     }
 }
 
