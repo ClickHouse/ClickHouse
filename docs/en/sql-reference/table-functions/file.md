@@ -13,7 +13,7 @@ file(path, format, structure)
 
 **Input parameters**
 
--   `path` — The relative path to the file from [user_files_path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_files_path). Path to file support following globs in readonly mode: `*`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, \``'abc', 'def'` — strings.
+-   `path` — The relative path to the file from [user\_files\_path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_files_path). Path to file support following globs in readonly mode: `*`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, \``'abc', 'def'` — strings.
 -   `format` — The [format](../../interfaces/formats.md#formats) of the file.
 -   `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
 
@@ -70,12 +70,12 @@ Constructions with `{}` are similar to the [remote table function](../../sql-ref
 
 1.  Suppose we have several files with the following relative paths:
 
--   ‘some_dir/some_file_1’
--   ‘some_dir/some_file_2’
--   ‘some_dir/some_file_3’
--   ‘another_dir/some_file_1’
--   ‘another_dir/some_file_2’
--   ‘another_dir/some_file_3’
+-   ‘some\_dir/some\_file\_1’
+-   ‘some\_dir/some\_file\_2’
+-   ‘some\_dir/some\_file\_3’
+-   ‘another\_dir/some\_file\_1’
+-   ‘another\_dir/some\_file\_2’
+-   ‘another\_dir/some\_file\_3’
 
 1.  Query the amount of rows in these files:
 

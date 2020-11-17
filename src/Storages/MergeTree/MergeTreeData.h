@@ -35,11 +35,11 @@
 namespace DB
 {
 
+class MergeListEntry;
 class AlterCommands;
 class MergeTreePartsMover;
 class MutationCommands;
 class Context;
-struct JobAndPool;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
@@ -224,10 +224,6 @@ public:
         DataPartsVector commit(MergeTreeData::DataPartsLock * acquired_parts_lock = nullptr);
 
         void rollback();
-
-        /// Immediately remove parts from table's data_parts set and change part
-        /// state to temporary. Useful for new parts which not present in table.
-        void rollbackPartsToTemporaryState();
 
         size_t size() const { return precommitted_parts.size(); }
         bool isEmpty() const { return precommitted_parts.empty(); }
@@ -430,8 +426,7 @@ public:
     /// If out_transaction != nullptr, adds the part in the PreCommitted state (the part will be added to the
     /// active set later with out_transaction->commit()).
     /// Else, commits the part immediately.
-    /// Returns true if part was added. Returns false if part is covered by bigger part.
-    bool renameTempPartAndAdd(MutableDataPartPtr & part, SimpleIncrement * increment = nullptr, Transaction * out_transaction = nullptr);
+    void renameTempPartAndAdd(MutableDataPartPtr & part, SimpleIncrement * increment = nullptr, Transaction * out_transaction = nullptr);
 
     /// The same as renameTempPartAndAdd but the block range of the part can contain existing parts.
     /// Returns all parts covered by the added part (in ascending order).
@@ -440,15 +435,9 @@ public:
         MutableDataPartPtr & part, SimpleIncrement * increment = nullptr, Transaction * out_transaction = nullptr);
 
     /// Low-level version of previous one, doesn't lock mutex
-    bool renameTempPartAndReplace(
+    void renameTempPartAndReplace(
             MutableDataPartPtr & part, SimpleIncrement * increment, Transaction * out_transaction, DataPartsLock & lock,
             DataPartsVector * out_covered_parts = nullptr);
-
-
-    /// Remove parts from working set immediately (without wait for background
-    /// process). Transfer part state to temporary. Have very limited usage only
-    /// for new parts which don't already present in table.
-    void removePartsFromWorkingSetImmediatelyAndSetTemporaryState(const DataPartsVector & remove);
 
     /// Removes parts from the working set parts.
     /// Parts in add must already be in data_parts with PreCommitted, Committed, or Outdated states.
@@ -498,8 +487,6 @@ public:
     /// Must be called with locked lockForShare() because use relative_data_path.
     void clearOldTemporaryDirectories(ssize_t custom_directories_lifetime_seconds = -1);
 
-    void clearEmptyParts();
-
     /// After the call to dropAllData() no method can be called.
     /// Deletes the data directory and flushes the uncompressed blocks cache and the marks cache.
     void dropAllData();
@@ -547,6 +534,9 @@ public:
         return DB::extractKeyExpressionList(node);
     }
 
+    /// Check that the part is not broken and calculate the checksums for it if they are not present.
+    MutableDataPartPtr loadPartAndFixMetadata(const VolumePtr & volume, const String & relative_path) const;
+
     /** Create local backup (snapshot) for parts with specified prefix.
       * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
       *  or if 'with_name' is specified - backup is created in directory with specified name.
@@ -562,13 +552,6 @@ public:
     void movePartitionToVolume(const ASTPtr & partition, const String & name, bool moving_part, const Context & context);
 
     void checkPartitionCanBeDropped(const ASTPtr & partition) override;
-
-    void checkPartCanBeDropped(const ASTPtr & part);
-
-    Pipe alterPartition(
-        const StorageMetadataPtr & metadata_snapshot,
-        const PartitionCommands & commands,
-        const Context & query_context) override;
 
     size_t getColumnCompressedSize(const std::string & name) const
     {
@@ -627,7 +610,6 @@ public:
     /// `additional_path` can be set if part is not located directly in table data path (e.g. 'detached/')
     std::optional<String> getFullRelativePathForPart(const String & part_name, const String & additional_path = "") const;
 
-    bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override;
 
     using PathsWithDisks = std::vector<PathWithDisk>;
@@ -642,20 +624,16 @@ public:
 
     /// Reserves space at least 1MB preferring best destination according to `ttl_infos`.
     ReservationPtr reserveSpacePreferringTTLRules(
-        const StorageMetadataPtr & metadata_snapshot,
         UInt64 expected_size,
         const IMergeTreeDataPart::TTLInfos & ttl_infos,
         time_t time_of_move,
-        size_t min_volume_index = 0,
-        bool is_insert = false) const;
+        size_t min_volume_index = 0) const;
 
     ReservationPtr tryReserveSpacePreferringTTLRules(
-        const StorageMetadataPtr & metadata_snapshot,
         UInt64 expected_size,
         const IMergeTreeDataPart::TTLInfos & ttl_infos,
         time_t time_of_move,
-        size_t min_volume_index = 0,
-        bool is_insert = false) const;
+        size_t min_volume_index = 0) const;
 
     /// Choose disk with max available free space
     /// Reserves 0 bytes
@@ -663,18 +641,13 @@ public:
 
     /// Return alter conversions for part which must be applied on fly.
     AlterConversions getAlterConversionsForPart(const MergeTreeDataPartPtr part) const;
-    /// Returns destination disk or volume for the TTL rule according to current storage policy
-    /// 'is_insert' - is TTL move performed on new data part insert.
-    SpacePtr getDestinationForMoveTTL(const TTLDescription & move_ttl, bool is_insert = false) const;
+    /// Returns destination disk or volume for the TTL rule according to current
+    /// storage policy
+    SpacePtr getDestinationForTTL(const TTLDescription & ttl) const;
 
     /// Checks if given part already belongs destination disk or volume for the
     /// TTL rule.
     bool isPartInTTLDestination(const TTLDescription & ttl, const IMergeTreeDataPart & part) const;
-
-    /// Get count of total merges with TTL in MergeList (system.merges) for all
-    /// tables (not only current table).
-    /// Method is cheap and doesn't require any locks.
-    size_t getTotalMergesWithTTLInMergeList() const;
 
     using WriteAheadLogPtr = std::shared_ptr<MergeTreeWriteAheadLog>;
     WriteAheadLogPtr getWriteAheadLog();
@@ -697,9 +670,7 @@ public:
     ExpressionActionsPtr getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot) const;
     ExpressionActionsPtr getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot) const;
 
-    /// Get compression codec for part according to TTL rules and <compression>
-    /// section from config.xml.
-    CompressionCodecPtr getCompressionCodecForPart(size_t part_size_compressed, const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t current_time) const;
+    std::optional<TTLDescription> selectTTLEntryForTTLInfos(const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const;
 
     /// Limiting parallel sends per one table, used in DataPartsExchange
     std::atomic_uint current_table_sends {0};
@@ -719,12 +690,6 @@ public:
 
     /// Mutex for currently_moving_parts
     mutable std::mutex moving_parts_mutex;
-
-    /// Return main processing background job, like merge/mutate/fetch and so on
-    virtual std::optional<JobAndPool> getDataProcessingJob() = 0;
-    /// Return job to move parts between disks/volumes and so on.
-    std::optional<JobAndPool> getDataMovingJob();
-    bool areBackgroundMovesNeeded() const;
 
 protected:
 
@@ -875,16 +840,7 @@ protected:
     using MatcherFn = std::function<bool(const DataPartPtr &)>;
     PartitionCommandsResultInfo freezePartitionsByMatcher(MatcherFn matcher, const StorageMetadataPtr & metadata_snapshot, const String & with_name, const Context & context);
 
-    // Partition helpers
     bool canReplacePartition(const DataPartPtr & src_part) const;
-
-    virtual void dropPartition(const ASTPtr & partition, bool detach, bool drop_part, const Context & context, bool throw_if_noop = true) = 0;
-    virtual PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, const Context & context) = 0;
-    virtual void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context) = 0;
-    virtual void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, const Context & context) = 0;
-
-    /// Makes sense only for replicated tables
-    virtual void fetchPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, const String & from, const Context & query_context);
 
     void writePartLog(
         PartLogElement::Type type,
@@ -911,6 +867,7 @@ protected:
     /// Selects parts for move and moves them, used in background process
     bool selectPartsAndMove();
 
+    bool areBackgroundMovesNeeded() const;
 
 private:
     /// RAII Wrapper for atomic work with currently moving parts
@@ -922,19 +879,18 @@ private:
         MergeTreeData & data;
         CurrentlyMovingPartsTagger(MergeTreeMovingParts && moving_parts_, MergeTreeData & data_);
 
+        CurrentlyMovingPartsTagger(const CurrentlyMovingPartsTagger & other) = delete;
         ~CurrentlyMovingPartsTagger();
     };
 
-    using CurrentlyMovingPartsTaggerPtr = std::shared_ptr<CurrentlyMovingPartsTagger>;
-
     /// Move selected parts to corresponding disks
-    bool moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagger);
+    bool moveParts(CurrentlyMovingPartsTagger && moving_tagger);
 
     /// Select parts for move and disks for them. Used in background moving processes.
-    CurrentlyMovingPartsTaggerPtr selectPartsForMove();
+    CurrentlyMovingPartsTagger selectPartsForMove();
 
     /// Check selected parts for movements. Used by ALTER ... MOVE queries.
-    CurrentlyMovingPartsTaggerPtr checkPartsForMove(const DataPartsVector & parts, SpacePtr space);
+    CurrentlyMovingPartsTagger checkPartsForMove(const DataPartsVector & parts, SpacePtr space);
 
     bool canUsePolymorphicParts(const MergeTreeSettings & settings, String * out_reason = nullptr) const;
 

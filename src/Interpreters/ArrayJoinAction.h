@@ -28,7 +28,7 @@ public:
     FunctionOverloadResolverPtr function_builder;
 
     ArrayJoinAction(const NameSet & array_joined_columns_, bool array_join_is_left, const Context & context);
-    void prepare(ColumnsWithTypeAndName & sample) const;
+    void prepare(Block & sample_block);
     void execute(Block & block);
 };
 

@@ -24,7 +24,7 @@ sunucudan yanıt almak için ek başlıklar.
 sırasıyla. İşleme için `POST` istekleri, uzak sunucu desteklemesi gerekir
 [Yığınlı aktarım kodlaması](https://en.wikipedia.org/wiki/Chunked_transfer_encoding).
 
-Kullanarak HTTP get yönlendirme şerbetçiotu sayısını sınırlayabilirsiniz [max_http_get_redirects](../../../operations/settings/settings.md#setting-max_http_get_redirects) ayar.
+Kullanarak HTTP get yönlendirme şerbetçiotu sayısını sınırlayabilirsiniz [max\_http\_get\_redirects](../../../operations/settings/settings.md#setting-max_http_get_redirects) ayar.
 
 **Örnek:**
 

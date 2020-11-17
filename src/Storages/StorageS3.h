@@ -34,7 +34,7 @@ public:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         Context & context_,
-        const String & compression_method_ = "");
+        const String & compression_method_);
 
     String getName() const override
     {
@@ -44,7 +44,7 @@ public:
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        SelectQueryInfo & query_info,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,

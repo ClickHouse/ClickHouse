@@ -5,7 +5,6 @@ PEERDIR(
     clickhouse/src/Common
 )
 
-
 SRCS(
     AccessControlManager.cpp
     AccessRights.cpp
@@ -23,18 +22,17 @@ SRCS(
     GrantedRoles.cpp
     IAccessEntity.cpp
     IAccessStorage.cpp
-    LDAPAccessStorage.cpp
     LDAPClient.cpp
     MemoryAccessStorage.cpp
     MultipleAccessStorage.cpp
-    Quota.cpp
     QuotaCache.cpp
+    Quota.cpp
     QuotaUsage.cpp
-    Role.cpp
     RoleCache.cpp
+    Role.cpp
     RolesOrUsersSet.cpp
-    RowPolicy.cpp
     RowPolicyCache.cpp
+    RowPolicy.cpp
     SettingsConstraints.cpp
     SettingsProfile.cpp
     SettingsProfileElement.cpp
