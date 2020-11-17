@@ -5,6 +5,7 @@
 #include <Common/FieldVisitors.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Core/iostream_debug_helpers.h>
+#include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 
@@ -17,19 +18,19 @@ using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
 String Range::toString() const
 {
-    WriteBufferFromOwnString buf;
+    WriteBufferFromOwnString out;
 
     if (!left_bounded)
-        buf << "(-inf, ";
+        out << "(-inf, ";
     else
-        buf << (left_included ? '[' : '(') << applyVisitor(FieldVisitorToString(), left) << ", ";
+        out << (left_included ? '[' : '(') << applyVisitor(FieldVisitorToString(), left) << ", ";
 
     if (!right_bounded)
-        buf << "+inf)";
+        out << "+inf)";
     else
-        buf << applyVisitor(FieldVisitorToString(), right) << (right_included ? ']' : ')');
+        out << applyVisitor(FieldVisitorToString(), right) << (right_included ? ']' : ')');
 
-    return buf.str();
+    return out.str();
 }
 
 bool Range::equals(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateEquals(), lhs, rhs); }
@@ -280,18 +281,18 @@ std::optional<RangeSet> RangeSet::applyInvertibleFunction(
 
 String RangeSet::toString() const
 {
-    WriteBufferFromOwnString buf;
+    WriteBufferFromOwnString out;
 
-    buf << "{";
+    out << "{";
     for (size_t i = 0; i < data.size(); ++i)
     {
         if (i != 0)
-            buf << ", ";
-        buf << data[i].toString();
+            out << ", ";
+        out << data[i].toString();
     }
-    buf << "}";
+    out << "}";
 
-    return buf.str();
+    return out.str();
 }
 
 

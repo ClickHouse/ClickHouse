@@ -925,16 +925,13 @@ bool KeyCondition::isColumnPossiblyAnArgumentOfInvertibleFunctionsInKeyExprImpl(
             }
         }
 
-        /// TODO: This isn't working
         if (action.node->type == ActionsDAG::ActionType::FUNCTION && action.node->function_base->isInvertible())
         {
-            for (const auto & arg : action.node->children)
+            for (size_t index = 0; index < action.arguments.size(); ++index)
             {
-                if (arg->column->getName() == expr_name)
+                if (action.node->children[index]->column->getName() == expr_name)
                 {
-                    /// TODO: Correct argument index  /// size_t index = static_cast<size_t>(arg_it - action.arguments.begin());
-                    size_t index = 0;
-                    out_function_argument_stack.push_back(index);
+                    out_function_argument_stack.push_back(action.arguments[index].pos);
                     out_invertible_functions_chain.push_back(action.node->function_base);
                     expr_name = action.node->result_name;
                     auto key_it = key_columns.find(expr_name);
