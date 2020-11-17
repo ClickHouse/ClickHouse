@@ -21,15 +21,15 @@ namespace ErrorCodes
 }
 
 
-ActionsDAG::ActionsDAG(const NamesAndTypesList & inputs)
+ActionsDAG::ActionsDAG(const NamesAndTypesList & inputs_)
 {
-    for (const auto & input : inputs)
+    for (const auto & input : inputs_)
         addInput(input.name, input.type, true);
 }
 
-ActionsDAG::ActionsDAG(const ColumnsWithTypeAndName & inputs)
+ActionsDAG::ActionsDAG(const ColumnsWithTypeAndName & inputs_)
 {
-    for (const auto & input : inputs)
+    for (const auto & input : inputs_)
     {
         if (input.column && isColumnConst(*input.column))
             addInput(input, true);
