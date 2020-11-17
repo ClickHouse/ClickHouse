@@ -23,6 +23,7 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int THERE_IS_NO_COLUMN;
+    extern const int ILLEGAL_COLUMN;
 }
 
 
