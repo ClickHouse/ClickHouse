@@ -151,6 +151,7 @@ void StorageReplicatedMergeTree::setZooKeeper()
         current_zookeeper = global_context.getAuxiliaryZooKeeper(zookeeper_name);
     }
 }
+
 zkutil::ZooKeeperPtr StorageReplicatedMergeTree::tryGetZooKeeper() const
 {
     std::lock_guard lock(current_zookeeper_mutex);
@@ -176,23 +177,32 @@ static std::string normalizeZooKeeperPath(std::string zookeeper_path)
     return zookeeper_path;
 }
 
-void StorageReplicatedMergeTree::extractZooKeeperNameAndPath(const String & path, String & zookeeper_name_, String & zookeeper_path_)
+static String extractZooKeeperName(const String & path)
 {
     if (path.empty())
         throw Exception("ZooKeeper path should not be empty", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     auto pos = path.find(':');
     if (pos != String::npos)
     {
-        zookeeper_name_ = path.substr(0, pos);
+        auto zookeeper_name_ = path.substr(0, pos);
         if (zookeeper_name_.empty())
             throw Exception("Zookeeper path should start with '/' or '<auxiliary_zookeeper_name>:/'", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        zookeeper_path_ = normalizeZooKeeperPath(path.substr(pos + 1, String::npos));
+        return zookeeper_name_; 
     }
-    else
+    static constexpr auto default_zookeeper_name = "default";
+    return default_zookeeper_name;
+}
+
+static String extractZooKeeperPath(const String & path)
+{
+    if (path.empty())
+        throw Exception("ZooKeeper path should not be empty", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    auto pos = path.find(':');
+    if (pos != String::npos)
     {
-        zookeeper_name_ = default_zookeeper_name;
-        zookeeper_path_ = normalizeZooKeeperPath(path);
+        return normalizeZooKeeperPath(path.substr(pos + 1, String::npos));
     }
+    return normalizeZooKeeperPath(path);
 }
 
 StorageReplicatedMergeTree::StorageReplicatedMergeTree(
@@ -218,7 +228,10 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
                     true,                   /// require_part_metadata
                     attach,
                     [this] (const std::string & name) { enqueuePartForCheck(name); })
+    , zookeeper_name(extractZooKeeperName(zookeeper_path_)) 
+    , zookeeper_path(extractZooKeeperPath(zookeeper_path_)) 
     , replica_name(replica_name_)
+    , replica_path(zookeeper_path + "/replicas/" + replica_name_)
     , reader(*this)
     , writer(*this)
     , merger_mutator(*this, global_context.getSettingsRef().background_pool_size)
@@ -233,8 +246,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , allow_renaming(allow_renaming_)
     , replicated_fetches_pool_size(global_context.getSettingsRef().background_fetches_pool_size)
 {
-    extractZooKeeperNameAndPath(zookeeper_path_, zookeeper_name, zookeeper_path);
-    replica_path = zookeeper_path + "/replicas/" + replica_name;
     queue_updating_task = global_context.getSchedulePool().createTask(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::queueUpdatingTask)", [this]{ queueUpdatingTask(); });
 
@@ -4874,9 +4885,8 @@ void StorageReplicatedMergeTree::fetchPartition(
     const String & from_,
     const Context & query_context)
 {
-    String auxiliary_zookeeper_name;
-    String from = from_;
-    extractZooKeeperNameAndPath(from, auxiliary_zookeeper_name, from);
+    String auxiliary_zookeeper_name = extractZooKeeperName(from_);
+    String from = extractZooKeeperPath(from_);
     if (from.empty())
         throw Exception("ZooKeeper path should not be empty", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
