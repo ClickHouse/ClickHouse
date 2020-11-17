@@ -178,8 +178,8 @@ public:
     ActionsDAG() = default;
     ActionsDAG(const ActionsDAG &) = delete;
     ActionsDAG & operator=(const ActionsDAG &) = delete;
-    explicit ActionsDAG(const NamesAndTypesList & inputs);
-    explicit ActionsDAG(const ColumnsWithTypeAndName & inputs);
+    explicit ActionsDAG(const NamesAndTypesList & inputs_);
+    explicit ActionsDAG(const ColumnsWithTypeAndName & inputs_);
 
     const Nodes & getNodes() const { return nodes; }
     const Index & getIndex() const { return index; }
