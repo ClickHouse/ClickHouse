@@ -647,7 +647,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
             src_node = &actions_dag->addFunction(func_builder_cast, std::move(children), {}, true);
         }
 
-        if (src_node->column && isColumnConst(*src_node->column))
+        if (src_node->column && isColumnConst(*src_node->column) && !(res_elem.column && isColumnConst(*res_elem.column)))
         {
             Inputs children = {src_node};
             src_node = &actions_dag->addFunction(func_builder_materialize, std::move(children), {}, true);
