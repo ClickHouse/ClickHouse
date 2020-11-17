@@ -187,21 +187,11 @@ def test_insert_with_modify_binlog_checksum_8_0(started_cluster, started_mysql_8
 
 
 def test_materialize_database_err_sync_user_privs_5_7(started_cluster, started_mysql_5_7):
-    try:
-        materialize_with_ddl.err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1")
-    except:
-        print((clickhouse_node.query(
-            "select '\n', thread_id, query_id, arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym from system.stack_trace format TSVRaw")))
-        raise
-
+    materialize_with_ddl.err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1")
 
 def test_materialize_database_err_sync_user_privs_8_0(started_cluster, started_mysql_8_0):
-    try:
-        materialize_with_ddl.err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0, "mysql8_0")
-    except:
-        print((clickhouse_node.query(
-            "select '\n', thread_id, query_id, arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym from system.stack_trace format TSVRaw")))
-        raise
+    materialize_with_ddl.err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0, "mysql8_0")
+
 
 def test_network_partition_5_7(started_cluster, started_mysql_5_7):
     materialize_with_ddl.network_partition_test(clickhouse_node, started_mysql_5_7, "mysql1")
@@ -209,12 +199,9 @@ def test_network_partition_5_7(started_cluster, started_mysql_5_7):
 def test_network_partition_8_0(started_cluster, started_mysql_8_0):
     materialize_with_ddl.network_partition_test(clickhouse_node, started_mysql_8_0, "mysql8_0")
 
+
 def test_mysql_kill_sync_thread_restore_5_7(started_cluster, started_mysql_5_7):
     materialize_with_ddl.mysql_kill_sync_thread_restore_test(clickhouse_node, started_mysql_5_7, "mysql1")
 
 def test_mysql_kill_sync_thread_restore_8_0(started_cluster, started_mysql_8_0):
     materialize_with_ddl.mysql_kill_sync_thread_restore_test(clickhouse_node, started_mysql_8_0, "mysql8_0")
-<<<<<<< HEAD
-
-=======
->>>>>>> add mysql kill sync id test

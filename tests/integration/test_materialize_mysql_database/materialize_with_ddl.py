@@ -9,7 +9,7 @@ import pytest
 from helpers.client import QueryRuntimeException
 import random
 
-def check_query(clickhouse_node, query, result_set, retry_count=60, interval_seconds=3):
+def check_query(clickhouse_node, query, result_set, retry_count=10, interval_seconds=3):
     lastest_result = ''
     for index in range(retry_count):
         lastest_result = clickhouse_node.query(query)
@@ -560,6 +560,7 @@ def err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, mysql_n
     mysql_node.query("DROP DATABASE priv_err_db;")
     mysql_node.grant_min_priv_for_user("test")
 
+
 def restore_instance_mysql_connections(clickhouse_node, pm, action='DROP'):
     pm._check_instance(clickhouse_node)
     pm._delete_rule({'source': clickhouse_node.ip_address, 'destination_port': 3306, 'action': action})
@@ -573,20 +574,22 @@ def drop_instance_mysql_connections(clickhouse_node, pm, action='DROP'):
     time.sleep(5)
 
 def network_partition_test(clickhouse_node, mysql_node, service_name):
-    mysql_node.query("CREATE DATABASE test_database;")
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
+    clickhouse_node.query("DROP DATABASE  IF EXISTS test")
+    mysql_node.query("DROP DATABASE IF EXISTS test_database")
     mysql_node.query("DROP DATABASE IF EXISTS test")
-    clickhouse_node.query("DROP DATABASE IF EXISTS test")
-    mysql_node.query("CREATE DATABASE test;")
+    mysql_node.query("CREATE DATABASE test_database;")
     mysql_node.query("CREATE TABLE test_database.test_table ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;")
 
+    mysql_node.query("CREATE DATABASE test;")
+
+    clickhouse_node.query(
+        "CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'root', 'clickhouse')".format(service_name))
+    check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table\n")
+
     with PartitionManager() as pm:
-        clickhouse_node.query(
-            "CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'root', 'clickhouse')".format(service_name))
-
         drop_instance_mysql_connections(clickhouse_node, pm)
-
         mysql_node.query('INSERT INTO test_database.test_table VALUES(1)')
-        check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table\n")
         check_query(clickhouse_node, "SELECT * FROM test_database.test_table", '')
 
         with pytest.raises(QueryRuntimeException) as exception:
@@ -595,17 +598,29 @@ def network_partition_test(clickhouse_node, mysql_node, service_name):
 
         assert "Can't connect to MySQL server" in str(exception.value)
 
-        clickhouse_node.query("DETACH DATABASE test_database")
-
         restore_instance_mysql_connections(clickhouse_node, pm)
 
+        clickhouse_node.query("DETACH DATABASE test_database")
         clickhouse_node.query("ATTACH DATABASE test_database")
+        check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", 'test_table\n')
         check_query(clickhouse_node, "SELECT * FROM test_database.test_table FORMAT TSV", '1\n')
 
+        clickhouse_node.query(
+            "CREATE DATABASE test ENGINE = MaterializeMySQL('{}:3306', 'test', 'root', 'clickhouse')".format(service_name))
+        check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table\n")
+
+        mysql_node.query("CREATE TABLE test.test ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;")
+        check_query(clickhouse_node, "SHOW TABLES FROM test FORMAT TSV", "test\n")
+
         clickhouse_node.query("DROP DATABASE test_database")
+        clickhouse_node.query("DROP DATABASE test")
         mysql_node.query("DROP DATABASE test_database")
+        mysql_node.query("DROP DATABASE test")
+
 
 def mysql_kill_sync_thread_restore_test(clickhouse_node, mysql_node, service_name):
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_database;")
+    mysql_node.query("DROP DATABASE IF EXISTS test_database;")
     mysql_node.query("CREATE DATABASE test_database;")
     mysql_node.query("CREATE TABLE test_database.test_table ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;")
     mysql_node.query("INSERT INTO test_database.test_table VALUES (1)")
@@ -613,7 +628,8 @@ def mysql_kill_sync_thread_restore_test(clickhouse_node, mysql_node, service_nam
     clickhouse_node.query("CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'root', 'clickhouse')".format(service_name))
     check_query(clickhouse_node, "SELECT * FROM test_database.test_table FORMAT TSV", '1\n')
 
-    result = mysql_node.query_and_get_data("select id from information_schema.processlist where STATE='Master has sent all binlog to slave; waiting for more updates'")
+    get_sync_id_query = "select id from information_schema.processlist where STATE='Master has sent all binlog to slave; waiting for more updates'"
+    result = mysql_node.query_and_get_data(get_sync_id_query)
 
     for row in result:
         row_result = {}
@@ -621,17 +637,20 @@ def mysql_kill_sync_thread_restore_test(clickhouse_node, mysql_node, service_nam
         mysql_node.query(query)
 
     with pytest.raises(QueryRuntimeException) as exception:
+        # https://dev.mysql.com/doc/refman/5.7/en/kill.html
+        # When you use KILL, a thread-specific kill flag is set for the thread. In most cases, it might take some time for the thread to die because the kill flag is checked only at specific intervals:
+        time.sleep(3)
         clickhouse_node.query("SELECT * FROM test_database.test_table")
     assert "Cannot read all data" in str(exception.value)
 
     check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV;", 'test_table\n')
     clickhouse_node.query("DETACH DATABASE test_database")
     clickhouse_node.query("ATTACH DATABASE test_database")
+    check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", 'test_table\n')
     check_query(clickhouse_node, "SELECT * FROM test_database.test_table FORMAT TSV", '1\n')
 
     mysql_node.query("INSERT INTO test_database.test_table VALUES (2)")
     check_query(clickhouse_node, "SELECT * FROM test_database.test_table ORDER BY id FORMAT TSV", '1\n2\n')
 
-    mysql_node.query("DROP DATABASE test_database")
     clickhouse_node.query("DROP DATABASE test_database")
-
+    mysql_node.query("DROP DATABASE test_database")
