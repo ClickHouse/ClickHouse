@@ -37,7 +37,7 @@ StorageID::StorageID(const ASTPtr & node)
 {
     if (const auto * identifier = node->as<ASTTableIdentifier>())
         *this = StorageID(*identifier);
-    else if (const auto * simple_query = dynamic_cast<const ASTQueryWithTableAndOutput*>(node.get()))
+    else if (const auto * simple_query = dynamic_cast<const ASTQueryWithTableAndOutput *>(node.get()))
         *this = StorageID(*simple_query);
     else
         throw Exception("Unexpected AST", ErrorCodes::LOGICAL_ERROR);
