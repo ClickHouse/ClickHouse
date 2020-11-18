@@ -528,8 +528,12 @@ void TestKeeperStorage::finalize()
 
         if (shutdown)
             return;
+
         shutdown = true;
+
+        processing_thread.join();
     }
+
     try
     {
         {
