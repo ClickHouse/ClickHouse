@@ -1941,8 +1941,18 @@ public:
 
     ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName & /*sample_columns*/) const override
     {
-        return std::make_unique<ExecutableFunctionCast>(
-                prepareUnpackDictionaries(getArgumentTypes()[0], getResultType()), name, diagnostic);
+        try
+        {
+            return std::make_unique<ExecutableFunctionCast>(
+                    prepareUnpackDictionaries(getArgumentTypes()[0], getResultType()), name, diagnostic);
+        }
+        catch (Exception & e)
+        {
+            if (diagnostic)
+                e.addMessage("while converting source column " + backQuoteIfNeed(diagnostic->column_from) +
+                             " to destination column " + backQuoteIfNeed(diagnostic->column_to));
+            throw;
+        }
     }
 
     String getName() const override { return name; }
