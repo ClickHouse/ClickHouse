@@ -6,6 +6,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeDateTime64.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -53,7 +54,13 @@ class AggregateFunctionAvgBase : public IAggregateFunctionDataHelper<Data, Deriv
 {
 public:
     using ResultType = std::conditional_t<IsDecimalNumber<T>, T, Float64>;
-    using ResultDataType = std::conditional_t<IsDecimalNumber<T>, DataTypeDecimal<T>, DataTypeNumber<Float64>>;
+    using ResultDataType = std::conditional_t<
+        IsDecimalNumber<ResultType>,
+        std::conditional_t<std::is_same_v<DateTime64, ResultType>,
+            DataTypeDateTime64,
+            DataTypeDecimal<ResultType>>,
+        DataTypeNumber<ResultType>>;
+
     using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
     using ColVecResult = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<Float64>>;
 
@@ -63,13 +70,17 @@ public:
     /// ctor for Decimals
     AggregateFunctionAvgBase(const IDataType & data_type, const DataTypes & argument_types_)
         : IAggregateFunctionDataHelper<Data, Derived>(argument_types_, {}), scale(getDecimalScale(data_type))
-    {
-    }
+    {}
 
     DataTypePtr getReturnType() const override
     {
         if constexpr (IsDecimalNumber<T>)
-            return std::make_shared<ResultDataType>(ResultDataType::maxPrecision(), scale);
+        {
+            if constexpr (std::is_same_v<DateTime64, T>)
+                return std::make_shared<ResultDataType>(scale);
+            else
+                return std::make_shared<ResultDataType>(ResultDataType::maxPrecision(), scale);
+        }
         else
             return std::make_shared<ResultDataType>();
     }
@@ -107,7 +118,7 @@ public:
     }
 
 protected:
-    UInt32 scale;
+    const UInt32 scale;
 };
 
 template <typename T, typename Data>

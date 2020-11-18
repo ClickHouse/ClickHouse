@@ -308,6 +308,9 @@ protected:
     static const Data & data(ConstAggregateDataPtr place) { return *reinterpret_cast<const Data*>(place); }
 
 public:
+    // Derived class can `override` this to flag that DateTime64 is not supported.
+    static constexpr bool DateTime64Supported = true;
+
     IAggregateFunctionDataHelper(const DataTypes & argument_types_, const Array & parameters_)
         : IAggregateFunctionHelper<Derived>(argument_types_, parameters_) {}
 
