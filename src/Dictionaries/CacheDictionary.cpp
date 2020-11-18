@@ -509,7 +509,9 @@ void CacheDictionary::createAttributes()
     }
 }
 
-CacheDictionary::Attribute CacheDictionary::createAttributeWithTypeAndName(const AttributeUnderlyingType type, const String & name, const Field & null_value) /* NOLINT(readability-convert-member-functions-to-static) */
+/* For unknown reason clang-tidy wants this function to be static, but it uses bytes_allocated, which is a class member.
+ * NOLINT(readability-convert-member-functions-to-static) */
+CacheDictionary::Attribute CacheDictionary::createAttributeWithTypeAndName(const AttributeUnderlyingType type, const String & name, const Field & null_value)
 {
     Attribute attr{type, name, {}, {}};
 
@@ -668,7 +670,6 @@ void CacheDictionary::setAttributeValue(Attribute & attribute, const Key idx, co
     }
 }
 
-
 CacheDictionary::Attribute & CacheDictionary::getAttribute(const std::string & attribute_name) const
 {
     const size_t attr_index = getAttributeIndex(attribute_name);
@@ -698,10 +699,8 @@ PaddedPODArray<CacheDictionary::Key> CacheDictionary::getCachedIds() const
     for (size_t idx = 0; idx < cells.size(); ++idx)
     {
         auto & cell = cells[idx];
-        if (!isEmptyCell(idx))
-        {
+        if (!isEmptyCell(idx) && !cells[idx].isDefault())
             array.push_back(cell.id);
-        }
     }
     return array;
 }
@@ -845,8 +844,6 @@ void CacheDictionary::waitForCurrentUpdateFinish(UpdateUnitPtr & update_unit_ptr
 
     if (update_unit_ptr->current_exception)
     {
-        // There might have been a single update unit for multiple callers in
-        // independent threads, and current_exception will be the same for them.
         // Don't just rethrow it, because sharing the same exception object
         // between multiple threads can lead to weird effects if they decide to
         // modify it, for example, by adding some error context.
@@ -933,6 +930,7 @@ void CacheDictionary::update(UpdateUnitPtr & update_unit_ptr)
 
             BlockInputStreamPtr stream = current_source_ptr->loadIds(update_unit_ptr->requested_ids);
             stream->readPrefix();
+
 
             while (true)
             {

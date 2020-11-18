@@ -367,9 +367,6 @@ private:
     /// readers. Surprisingly this lock is also used for last_exception pointer.
     mutable std::shared_mutex rw_lock;
 
-    /// This lock is used only for read/write into cache of default keys.
-    mutable std::shared_mutex default_cache_rw_lock;
-
     /// Actual size will be increased to match power of 2
     const size_t size;
 
