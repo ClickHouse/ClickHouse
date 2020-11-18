@@ -127,7 +127,7 @@ function clone_submodules
 (
 cd "$FASTTEST_SOURCE"
 
-SUBMODULES_TO_UPDATE=(contrib/boost contrib/zlib-ng contrib/libxml2 contrib/poco contrib/libunwind contrib/ryu contrib/fmtlib contrib/base64 contrib/cctz contrib/libcpuid contrib/double-conversion contrib/libcxx contrib/libcxxabi contrib/libc-headers contrib/lz4 contrib/zstd contrib/fastops contrib/rapidjson contrib/re2 contrib/sparsehash-c11 contrib/croaring contrib/miniselect)
+SUBMODULES_TO_UPDATE=(contrib/boost contrib/zlib-ng contrib/libxml2 contrib/poco contrib/libunwind contrib/ryu contrib/fmtlib contrib/base64 contrib/cctz contrib/libcpuid contrib/double-conversion contrib/libcxx contrib/libcxxabi contrib/libc-headers contrib/lz4 contrib/zstd contrib/fastops contrib/rapidjson contrib/re2 contrib/sparsehash-c11 contrib/croaring contrib/miniselect contrib/xz)
 
 git submodule sync
 git submodule update --init --recursive "${SUBMODULES_TO_UPDATE[@]}"
@@ -268,11 +268,15 @@ TESTS_TO_SKIP=(
     protobuf
     secure
     sha256
+    xz
 
     # Not sure why these two fail even in sequential mode. Disabled for now
     # to make some progress.
     00646_url_engine
     00974_query_profiler
+
+     # In fasttest, ENABLE_LIBRARIES=0, so rocksdb engine is not enabled by default
+    01504_rocksdb
 
     # Look at DistributedFilesToInsert, so cannot run in parallel.
     01460_DistributedFilesToInsert
@@ -283,6 +287,8 @@ TESTS_TO_SKIP=(
     01322_ttest_scipy
 
     01545_system_errors
+    # Checks system.errors
+    01563_distributed_query_finish
 )
 
 time clickhouse-test -j 8 --order=random --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"

@@ -15,7 +15,6 @@ void registerFileSegmentationEngineCSV(FormatFactory & factory);
 void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory);
 void registerFileSegmentationEngineRegexp(FormatFactory & factory);
 void registerFileSegmentationEngineJSONAsString(FormatFactory & factory);
-void registerFileSegmentationEngineLineAsString(FormatFactory & factory);
 
 /// Formats for both input/output.
 
@@ -90,7 +89,6 @@ void registerFormats()
     registerFileSegmentationEngineJSONEachRow(factory);
     registerFileSegmentationEngineRegexp(factory);
     registerFileSegmentationEngineJSONAsString(factory);
-    registerFileSegmentationEngineLineAsString(factory);
 
     registerInputFormatNative(factory);
     registerOutputFormatNative(factory);

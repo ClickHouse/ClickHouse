@@ -3,7 +3,6 @@
 #if !defined(ARCADIA_BUILD) && USE_STATS
 
 #include <math.h>
-#include <sstream>
 
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>

@@ -451,6 +451,8 @@ struct ContextShared
 
     void initializeTraceCollector(std::shared_ptr<TraceLog> trace_log)
     {
+        if (!trace_log)
+            return;
         if (hasTraceCollector())
             return;
 
@@ -1463,11 +1465,16 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool()
     return *shared->distributed_schedule_pool;
 }
 
+bool Context::hasDistributedDDL() const
+{
+    return getConfigRef().has("distributed_ddl");
+}
+
 void Context::setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker)
 {
     auto lock = getLock();
     if (shared->ddl_worker)
-        throw Exception("DDL background thread has already been initialized.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("DDL background thread has already been initialized", ErrorCodes::LOGICAL_ERROR);
     shared->ddl_worker = std::move(ddl_worker);
 }
 
@@ -1475,7 +1482,15 @@ DDLWorker & Context::getDDLWorker() const
 {
     auto lock = getLock();
     if (!shared->ddl_worker)
-        throw Exception("DDL background thread is not initialized.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+    {
+        if (!hasZooKeeper())
+            throw Exception("There is no Zookeeper configuration in server config", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+
+        if (!hasDistributedDDL())
+            throw Exception("There is no DistributedDDL configuration in server config", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+
+        throw Exception("DDL background thread is not initialized", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+    }
     return *shared->ddl_worker;
 }
 
@@ -1993,21 +2008,19 @@ void Context::checkCanBeDropped(const String & database, const String & table, c
 
     String size_str = formatReadableSizeWithDecimalSuffix(size);
     String max_size_to_drop_str = formatReadableSizeWithDecimalSuffix(max_size_to_drop);
-    std::stringstream ostr;
-    ostr.exceptions(std::ios::failbit);
-
-    ostr << "Table or Partition in " << backQuoteIfNeed(database) << "." << backQuoteIfNeed(table) << " was not dropped.\n"
-         << "Reason:\n"
-         << "1. Size (" << size_str << ") is greater than max_[table/partition]_size_to_drop (" << max_size_to_drop_str << ")\n"
-         << "2. File '" << force_file.path() << "' intended to force DROP "
-         << (force_file_exists ? "exists but not writeable (could not be removed)" : "doesn't exist") << "\n";
-
-    ostr << "How to fix this:\n"
-         << "1. Either increase (or set to zero) max_[table/partition]_size_to_drop in server config\n"
-         << "2. Either create forcing file " << force_file.path() << " and make sure that ClickHouse has write permission for it.\n"
-         << "Example:\nsudo touch '" << force_file.path() << "' && sudo chmod 666 '" << force_file.path() << "'";
-
-    throw Exception(ostr.str(), ErrorCodes::TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT);
+    throw Exception(ErrorCodes::TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT,
+                    "Table or Partition in {}.{} was not dropped.\nReason:\n"
+                    "1. Size ({}) is greater than max_[table/partition]_size_to_drop ({})\n"
+                    "2. File '{}' intended to force DROP {}\n"
+                    "How to fix this:\n"
+                    "1. Either increase (or set to zero) max_[table/partition]_size_to_drop in server config\n",
+                    "2. Either create forcing file {} and make sure that ClickHouse has write permission for it.\n"
+                    "Example:\nsudo touch '{}' && sudo chmod 666 '{}'",
+                    backQuoteIfNeed(database), backQuoteIfNeed(table),
+                    size_str, max_size_to_drop_str,
+                    force_file.path(), force_file_exists ? "exists but not writeable (could not be removed)" : "doesn't exist",
+                    force_file.path(),
+                    force_file.path(), force_file.path());
 }
 
 
