@@ -781,7 +781,7 @@ void registerDictionaryCache(DictionaryFactory & factory)
                 dict_struct,
                 std::move(source_ptr),
                 dict_lifetime,
-                extra_lifetime_seconds,
+                strict_max_lifetime_seconds,
                 size,
                 allow_read_expired_keys,
                 max_update_queue_size,
