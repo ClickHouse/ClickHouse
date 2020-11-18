@@ -127,8 +127,7 @@ static String checkVariableAndGetVersion(const mysqlxx::Pool::Entry & connection
         }
 
         bool first = true;
-        std::stringstream error_message;
-        error_message.exceptions(std::ios::failbit);
+        WriteBufferFromOwnString error_message;
         error_message << "Illegal MySQL variables, the MaterializeMySQL engine requires ";
         for (const auto & [variable_name, variable_error_message] : variables_error_message)
         {
@@ -239,8 +238,7 @@ static inline BlockOutputStreamPtr getTableOutput(const String & database_name, 
 {
     const StoragePtr & storage = DatabaseCatalog::instance().getTable(StorageID(database_name, table_name), query_context);
 
-    std::stringstream insert_columns_str;
-    insert_columns_str.exceptions(std::ios::failbit);
+    WriteBufferFromOwnString insert_columns_str;
     const StorageInMemoryMetadata & storage_metadata = storage->getInMemoryMetadata();
     const ColumnsDescription & storage_columns = storage_metadata.getColumns();
     const NamesAndTypesList & insert_columns_names = insert_materialized ? storage_columns.getAllPhysical() : storage_columns.getOrdinary();
@@ -331,10 +329,9 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
 
                 const auto & position_message = [&]()
                 {
-                    std::stringstream ss;
-                    ss.exceptions(std::ios::failbit);
-                    position.dump(ss);
-                    return ss.str();
+                    WriteBufferFromOwnString buf;
+                    position.dump(buf);
+                    return buf.str();
                 };
                 LOG_INFO(log, "MySQL dump database position: \n {}", position_message());
             }
@@ -374,10 +371,9 @@ void MaterializeMySQLSyncThread::flushBuffersData(Buffers & buffers, Materialize
 
     const auto & position_message = [&]()
     {
-        std::stringstream ss;
-        ss.exceptions(std::ios::failbit);
-        client.getPosition().dump(ss);
-        return ss.str();
+        WriteBufferFromOwnString buf;
+        client.getPosition().dump(buf);
+        return buf.str();
     };
     LOG_INFO(log, "MySQL executed position: \n {}", position_message());
 }
@@ -632,10 +628,9 @@ void MaterializeMySQLSyncThread::onEvent(Buffers & buffers, const BinlogEventPtr
     {
         const auto & dump_event_message = [&]()
         {
-            std::stringstream ss;
-            ss.exceptions(std::ios::failbit);
-            receive_event->dump(ss);
-            return ss.str();
+            WriteBufferFromOwnString buf;
+            receive_event->dump(buf);
+            return buf.str();
         };
 
         LOG_DEBUG(log, "Skip MySQL event: \n {}", dump_event_message());

@@ -135,10 +135,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     else if ((create.columns_list && create.columns_list->indices && !create.columns_list->indices->children.empty()))
     {
         /// Currently, there are no database engines, that support any arguments.
-        std::stringstream ostr;
-        ostr.exceptions(std::ios::failbit);
-        formatAST(*create.storage, ostr, false, false);
-        throw Exception("Unknown database engine: " + ostr.str(), ErrorCodes::UNKNOWN_DATABASE_ENGINE);
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", serializeAST(*create.storage));
     }
 
     if (create.storage->engine->name == "Atomic")
@@ -182,11 +179,10 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         create.attach = true;
         create.if_not_exists = false;
 
-        std::ostringstream statement_stream;
-        statement_stream.exceptions(std::ios::failbit);
-        formatAST(create, statement_stream, false);
-        statement_stream << '\n';
-        String statement = statement_stream.str();
+        WriteBufferFromOwnString statement_buf;
+        formatAST(create, statement_buf, false);
+        writeChar('\n', statement_buf);
+        String statement = statement_buf.str();
 
         /// Exclusive flag guarantees, that database is not created right now in another thread.
         WriteBufferFromFile out(metadata_file_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
