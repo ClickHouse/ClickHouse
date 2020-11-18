@@ -33,11 +33,6 @@ set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/CMake" ${CMAKE_MODULE_PATH})
 include(Platform)
 include(Options)
 
-# # prefer shared libraries
-# if (WITH_KERBEROS)
-#     find_package(KERBEROS REQUIRED)
-# endif()
-
 # source
 set(PROTO_FILES
     #${HDFS3_SOURCE_DIR}/proto/encryption.proto

@@ -59,10 +59,10 @@ def test_write_storage_not_expired(started_cluster):
 
 def test_two_users(started_cluster):
     node1.query("create table HDFSStorOne (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://kerberizedhdfs1:9000/storage_user_one', 'TSV')")
-    node1.query("insert into HDFSStorOne values (1, 'IlyaReal', 86.00)")
+    node1.query("insert into HDFSStorOne values (1, 'Real', 86.00)")
 
     node1.query("create table HDFSStorTwo (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://suser@kerberizedhdfs1:9000/user/specuser/storage_user_two', 'TSV')")
-    node1.query("insert into HDFSStorTwo values (1, 'IlyaIdeal', 74.00)")
+    node1.query("insert into HDFSStorTwo values (1, 'Ideal', 74.00)")
 
     select_read_1 = node1.query("select * from hdfs('hdfs://kerberizedhdfs1:9000/user/specuser/storage_user_two', 'TSV', 'id UInt64, text String, number Float64')")
 
