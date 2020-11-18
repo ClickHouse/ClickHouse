@@ -92,7 +92,7 @@ private:
 class S3CredentialsProviderChain : public Aws::Auth::AWSCredentialsProviderChain
 {
 public:
-    S3CredentialsProviderChain(const DB::RemoteHostFilter & remote_host_filter)
+    explicit S3CredentialsProviderChain(const DB::RemoteHostFilter & remote_host_filter)
     {
         static const char AWS_ECS_CONTAINER_CREDENTIALS_RELATIVE_URI[] = "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI";
         static const char AWS_ECS_CONTAINER_CREDENTIALS_FULL_URI[] = "AWS_CONTAINER_CREDENTIALS_FULL_URI";
@@ -107,7 +107,7 @@ public:
         AddProvider(std::make_shared<Aws::Auth::EnvironmentAWSCredentialsProvider>());
         AddProvider(std::make_shared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>());
         AddProvider(std::make_shared<Aws::Auth::STSAssumeRoleWebIdentityCredentialsProvider>());
-    
+
         /// ECS TaskRole Credentials only available when ENVIRONMENT VARIABLE is set.
         const auto relative_uri = Aws::Environment::GetEnv(AWS_ECS_CONTAINER_CREDENTIALS_RELATIVE_URI);
         LOG_DEBUG(logger, "The environment variable value {} is {}", AWS_ECS_CONTAINER_CREDENTIALS_RELATIVE_URI,
