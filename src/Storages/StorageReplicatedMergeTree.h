@@ -122,11 +122,6 @@ public:
 
     void alter(const AlterCommands & commands, const Context & query_context, TableLockHolder & table_lock_holder) override;
 
-    Pipe alterPartition(
-        const StorageMetadataPtr & metadata_snapshot,
-        const PartitionCommands & commands,
-        const Context & query_context) override;
-
     void mutate(const MutationCommands & commands, const Context & context) override;
     void waitMutation(const String & znode_name, size_t mutations_sync) const;
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
@@ -558,11 +553,11 @@ private:
         zkutil::ZooKeeper & zookeeper, String & partition_id, LogEntry & entry, bool detach);
 
     // Partition helpers
-    void dropPartition(const ASTPtr & partition, bool detach, bool drop_part, const Context & query_context);
-    PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, const Context & query_context);
-    void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & query_context);
-    void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, const Context & query_context);
-    void fetchPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, const String & from, const Context & query_context);
+    void dropPartition(const ASTPtr & partition, bool detach, bool drop_part, const Context & query_context) override;
+    PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, const Context & query_context) override;
+    void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & query_context) override;
+    void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, const Context & query_context) override;
+    void fetchPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, const String & from, const Context & query_context) override;
 
     /// Check granularity of already existing replicated table in zookeeper if it exists
     /// return true if it's fixed

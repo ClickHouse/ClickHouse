@@ -413,7 +413,8 @@ std::vector<size_t> PerfEventsCounters::eventIndicesFromString(const std::string
         return result;
     }
 
-    std::istringstream iss(events_list);
+
+    std::istringstream iss(events_list);        // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     std::string event_name;
     while (std::getline(iss, event_name, ','))
     {
