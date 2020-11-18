@@ -29,7 +29,8 @@ RemoteBlockOutputStream::RemoteBlockOutputStream(Connection & connection_,
     modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
     if (CurrentThread::isInitialized())
     {
-        modified_client_info.opentelemetry = CurrentThread::get().opentelemetry;
+        modified_client_info.client_trace_context
+            = CurrentThread::get().thread_trace_context;
     }
 
     /** Send query and receive "header", that describes table structure.
