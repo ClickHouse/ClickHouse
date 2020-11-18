@@ -32,7 +32,7 @@ Columns:
 
 -   `URI` ([String](../../sql-reference/data-types/string.md)) — Uniform resource identifier.
 
--   `to_detached` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Flag that indicates whether the currently running background fetch is being performed using the `TO DETACHED` expression.
+-   `to_detached` ([UInt8](../../sql-reference/data-types/int-uint.md)) — The flag indicates whether the currently running background fetch is being performed using the `TO DETACHED` expression.
 
 -   `thread_id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Thread identifier.
 

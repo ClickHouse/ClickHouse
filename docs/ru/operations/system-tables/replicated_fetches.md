@@ -1,6 +1,6 @@
 # system.replicated_fetches {#system_tables-replicated_fetches}
 
-Содержит информацию о текущих запущенных фоновых выборках.
+Содержит информацию о выполняемых в данный момент фоновых процессах синхронизации.
 
 Столбцы:
 
@@ -8,13 +8,13 @@
 
 -   `table` ([String](../../sql-reference/data-types/string.md)) — имя таблицы.
 
--   `elapsed` ([Float64](../../sql-reference/data-types/float.md)) — время, прошедшее от начала отображения текущих запущенных фоновых выборок, в секундах.
+-   `elapsed` ([Float64](../../sql-reference/data-types/float.md)) — время, прошедшее от начала отображения текущих запущенных фоновых процессов, в секундах.
 
 -   `progress` ([Float64](../../sql-reference/data-types/float.md)) — доля выполненной работы от 0 до 1.
 
--   `result_part_name` ([String](../../sql-reference/data-types/string.md)) — имя куска, который будет сформирован в результате отображения текущих запущенных фоновых выборок.
+-   `result_part_name` ([String](../../sql-reference/data-types/string.md)) — имя куска, который будет сформирован в результате отображения текущих запущенных фоновых процессов.
 
--   `result_part_path` ([String](../../sql-reference/data-types/string.md)) — абсолютный путь к куску, который будет сформирован в результате отображения текущих запущенных фоновых выборок.
+-   `result_part_path` ([String](../../sql-reference/data-types/string.md)) — абсолютный путь к куску, который будет сформирован в результате отображения текущих запущенных фоновых процессов.
 
 -   `partition_id` ([String](../../sql-reference/data-types/string.md)) — идентификатор партиции.
 
@@ -32,7 +32,7 @@
 
 -   `URI` ([String](../../sql-reference/data-types/string.md)) — универсальный идентификатор ресурса.
 
--   `to_detached` ([UInt8](../../sql-reference/data-types/int-uint.md)) — флаг, указывающий на использование выражения `TO DETACHED` в текущей фоновой выборке.
+-   `to_detached` ([UInt8](../../sql-reference/data-types/int-uint.md)) — флаг, указывающий на использование выражения `TO DETACHED` в текущих фоновых процессах.
 
 -   `thread_id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — идентификатор потока.
 
