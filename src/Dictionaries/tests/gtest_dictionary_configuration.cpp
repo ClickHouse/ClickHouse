@@ -25,15 +25,9 @@ static std::string configurationToString(const DictionaryConfigurationPtr & conf
     return oss.str();
 }
 
-class ConvertDictionaryAST : public ::testing::Test
-{
-    protected:
-        ConvertDictionaryAST() : context(Context::createGlobal(Context::createShared().get())) {}
+Context context = Context::createGlobal(Context::createShared().get());
 
-        Context context;
-};
-
-TEST_F(ConvertDictionaryAST, SimpleDictConfiguration)
+TEST(ConvertDictionaryAST, SimpleDictConfiguration)
 {
     if (!registered)
     {
@@ -102,7 +96,7 @@ TEST_F(ConvertDictionaryAST, SimpleDictConfiguration)
 }
 
 
-TEST_F(ConvertDictionaryAST, TrickyAttributes)
+TEST(ConvertDictionaryAST, TrickyAttributes)
 {
     if (!registered)
     {
@@ -146,7 +140,7 @@ TEST_F(ConvertDictionaryAST, TrickyAttributes)
 }
 
 
-TEST_F(ConvertDictionaryAST, ComplexKeyAndLayoutWithParams)
+TEST(ConvertDictionaryAST, ComplexKeyAndLayoutWithParams)
 {
     if (!registered)
     {
@@ -197,7 +191,7 @@ TEST_F(ConvertDictionaryAST, ComplexKeyAndLayoutWithParams)
 }
 
 
-TEST_F(ConvertDictionaryAST, ComplexSource)
+TEST(ConvertDictionaryAST, ComplexSource)
 {
     if (!registered)
     {
