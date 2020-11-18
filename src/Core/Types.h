@@ -290,6 +290,15 @@ namespace std
         }
     };
 
+    template <>
+    struct hash<DB::DateTime64>
+    {
+        size_t operator()(const DB::DateTime64 & x) const
+        {
+            return std::hash<std::decay_t<decltype(x)>::NativeType>()(x);
+        }
+    };
+
 
     template <>
     struct hash<DB::Decimal256>
