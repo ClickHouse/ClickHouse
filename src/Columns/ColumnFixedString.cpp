@@ -1,25 +1,20 @@
 #include <Columns/ColumnFixedString.h>
+
 #include <Columns/ColumnsCommon.h>
-
-#include <Common/Arena.h>
-#include <Common/SipHash.h>
-#include <Common/memcpySmall.h>
-#include <Common/memcmpSmall.h>
-#include <Common/assert_cast.h>
-#include <Common/WeakHash.h>
-#include <Common/HashTable/Hash.h>
-
-#include <ext/scope_guard.h>
-#if !defined(ARCADIA_BUILD)
-    #include <miniselect/floyd_rivest_select.h> // Y_IGNORE
-#endif
-
 #include <DataStreams/ColumnGathererStream.h>
-
 #include <IO/WriteHelpers.h>
+#include <Common/Arena.h>
+#include <Common/HashTable/Hash.h>
+#include <Common/SipHash.h>
+#include <Common/WeakHash.h>
+#include <Common/assert_cast.h>
+#include <Common/memcmpSmall.h>
+#include <Common/memcpySmall.h>
+#include <common/sort.h>
+#include <ext/scope_guard.h>
 
-#ifdef __SSE2__
-    #include <emmintrin.h>
+#if defined(__SSE2__)
+#    include <emmintrin.h>
 #endif
 
 
@@ -160,17 +155,9 @@ void ColumnFixedString::getPermutation(bool reverse, size_t limit, int /*nan_dir
     if (limit)
     {
         if (reverse)
-#if !defined(ARCADIA_BUILD)
-            miniselect::floyd_rivest_partial_sort(res.begin(), res.begin() + limit, res.end(), less<false>(*this));
-#else
-            std::partial_sort(res.begin(), res.begin() + limit, res.end(), less<false>(*this));
-#endif
+            partial_sort(res.begin(), res.begin() + limit, res.end(), less<false>(*this));
         else
-#if !defined(ARCADIA_BUILD)
-            miniselect::floyd_rivest_partial_sort(res.begin(), res.begin() + limit, res.end(), less<true>(*this));
-#else
-            std::partial_sort(res.begin(), res.begin() + limit, res.end(), less<true>(*this));
-#endif
+            partial_sort(res.begin(), res.begin() + limit, res.end(), less<true>(*this));
     }
     else
     {
@@ -228,17 +215,9 @@ void ColumnFixedString::updatePermutation(bool reverse, size_t limit, int, Permu
         /// Since then we are working inside the interval.
 
         if (reverse)
-#if !defined(ARCADIA_BUILD)
-            miniselect::floyd_rivest_partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less<false>(*this));
-#else
-            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less<false>(*this));
-#endif
+            partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less<false>(*this));
         else
-#if !defined(ARCADIA_BUILD)
-            miniselect::floyd_rivest_partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less<true>(*this));
-#else
-            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less<true>(*this));
-#endif
+            partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less<true>(*this));
 
         auto new_first = first;
         for (auto j = first + 1; j < limit; ++j)

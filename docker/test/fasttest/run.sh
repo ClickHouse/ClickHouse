@@ -275,6 +275,9 @@ TESTS_TO_SKIP=(
     00646_url_engine
     00974_query_profiler
 
+     # In fasttest, ENABLE_LIBRARIES=0, so rocksdb engine is not enabled by default
+    01504_rocksdb
+
     # Look at DistributedFilesToInsert, so cannot run in parallel.
     01460_DistributedFilesToInsert
 
@@ -284,6 +287,8 @@ TESTS_TO_SKIP=(
     01322_ttest_scipy
 
     01545_system_errors
+    # Checks system.errors
+    01563_distributed_query_finish
 )
 
 time clickhouse-test -j 8 --order=random --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"
