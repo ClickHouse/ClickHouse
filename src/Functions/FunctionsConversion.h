@@ -35,6 +35,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Common/FieldVisitors.h>
 #include <Common/assert_cast.h>
+#include <Common/quoteString.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/FunctionHelpers.h>
