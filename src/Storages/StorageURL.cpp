@@ -77,7 +77,7 @@ namespace
             if (CurrentThread::isInitialized())
             {
                 const auto & thread_trace_context = CurrentThread::get().thread_trace_context;
-                if (opentelemetry.trace_id)
+                if (thread_trace_context.trace_id)
                 {
                     header.emplace_back("traceparent",
                         thread_trace_context.composeTraceparentHeader());
