@@ -65,7 +65,7 @@ CacheDictionary::CacheDictionary(
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
     DictionaryLifetime dict_lifetime_,
-    size_t extra_lifetime_seconds_,
+    size_t strict_max_lifetime_seconds_,
     size_t size_,
     bool allow_read_expired_keys_,
     size_t max_update_queue_size_,
@@ -76,7 +76,7 @@ CacheDictionary::CacheDictionary(
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
     , dict_lifetime(dict_lifetime_)
-    , extra_lifetime_seconds(extra_lifetime_seconds_)
+    , strict_max_lifetime_seconds(strict_max_lifetime_seconds_)
     , allow_read_expired_keys(allow_read_expired_keys_)
     , max_update_queue_size(max_update_queue_size_)
     , update_queue_push_timeout_milliseconds(update_queue_push_timeout_milliseconds_)
@@ -750,8 +750,8 @@ void registerDictionaryCache(DictionaryFactory & factory)
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
 
-        const size_t extra_lifetime_seconds =
-                config.getUInt64(layout_prefix + ".cache.extra_lifetime_seconds", static_cast<size_t>(dict_lifetime.max_sec));
+        const size_t strict_max_lifetime_seconds =
+                config.getUInt64(layout_prefix + ".cache.strict_max_lifetime_seconds", static_cast<size_t>(dict_lifetime.max_sec));
 
         const size_t max_update_queue_size =
                 config.getUInt64(layout_prefix + ".cache.max_update_queue_size", 100000);
