@@ -106,8 +106,11 @@ const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column, boo
 
 const ActionsDAG::Node & ActionsDAG::addAlias(const std::string & name, std::string alias, bool can_replace)
 {
-    auto & child = getNode(name);
+    return addAlias(getNode(name), alias, can_replace);
+}
 
+ActionsDAG::Node & ActionsDAG::addAlias(Node & child, std::string alias, bool can_replace)
+{
     Node node;
     node.type = ActionType::ALIAS;
     node.result_type = child.result_type;
@@ -654,7 +657,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
         }
 
         if (src_node->result_name != res_elem.name)
-            src_node = const_cast<Node *>(&actions_dag->addAlias(src_node->result_name, res_elem.name, true));
+            src_node = &actions_dag->addAlias(*src_node, res_elem.name, true);
 
         projection[result_col_num] = src_node;
     }

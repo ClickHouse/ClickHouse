@@ -249,7 +249,8 @@ private:
     Node & addNode(Node node, bool can_replace = false);
     Node & getNode(const std::string & name);
 
-    ActionsDAG::Node & addFunction(
+    Node & addAlias(Node & child, std::string alias, bool can_replace);
+    Node & addFunction(
             const FunctionOverloadResolverPtr & function,
             Inputs children,
             std::string result_name,
