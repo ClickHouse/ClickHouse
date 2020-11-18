@@ -17,12 +17,12 @@ untuple(Tuple x)
 
 **Parameters**
 
--   Elements of the `Tuple` type. [Tuple](../../sql-reference/data-types/tuple.md#tuplet1-t2).
-It can be a `tuple` function or column of the `Tuple` type.
+-   Element of the `Tuple` type. [Tuple](../../sql-reference/data-types/tuple.md#tuplet1-t2).
+It can be a `tuple` function, column, or tuple of elements.
 
 **Returned value**
 
-Returned value is missing.
+-   None.
 
 **Examples**
 
@@ -78,7 +78,7 @@ Result:
 └───────┴───────┘
 ```
 
-You can use the `except` expression in a `untuple` function to skip columns in a result of the query. Example of using an `except` expression:
+You can use the `except` expression in an `untuple` function to skip columns as a result of the query. Example of using an `except` expression:
 
 Query:
 
