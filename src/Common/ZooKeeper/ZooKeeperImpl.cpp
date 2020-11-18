@@ -533,7 +533,6 @@ void ZooKeeper::sendThread()
     setThreadName("ZooKeeperSend");
 
     auto prev_heartbeat_time = clock::now();
-    bool tried_to_send_close = false;
 
     try
     {
@@ -562,15 +561,6 @@ void ZooKeeper::sendThread()
                         CurrentMetrics::add(CurrentMetrics::ZooKeeperRequest);
                         std::lock_guard lock(operations_mutex);
                         operations[info.request->xid] = info;
-                    }
-                    else
-                    {
-                        /// We set this variable only once. If we will
-                        /// successfully send close, than this thread will just
-                        /// finish. If we will got an exception while sending
-                        /// close, than thread will also finish and finalization
-                        /// will be completed by some other thread.
-                        tried_to_send_close = true;
                     }
 
                     if (info.watch)
@@ -610,13 +600,7 @@ void ZooKeeper::sendThread()
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
-        /// If we have tried to send close and got an exception than
-        /// finalization is already started by receiveThread and we cannot do
-        /// anything better than just exit.
-        ///
-        /// Otherwise we should correctly finalize
-        if (!tried_to_send_close)
-            finalize(true, false);
+        finalize(true, false);
     }
 }
 
@@ -827,10 +811,12 @@ void ZooKeeper::receiveEvent()
 
 void ZooKeeper::finalize(bool error_send, bool error_receive)
 {
-    if (expired)
+    bool check = false;
+    /// If some thread (send/receive) already finalizing session don't try to do it
+    if (!finalization_started.compare_exchange_strong(check, true))
         return;
 
-    auto expire_session = [&]
+    auto expire_session_if_not_expired = [&]
     {
         std::lock_guard lock(push_request_mutex);
         if (!expired)
@@ -852,8 +838,8 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
             catch (...)
             {
                 /// This happens for example, when "Cannot push request to queue within operation timeout".
-                /// Just mark session expired in case of error on close request.
-                expire_session();
+                /// Just mark session expired in case of error on close request, otherwise sendThread may not stop.
+                expire_session_if_not_expired();
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
 
@@ -862,7 +848,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
         }
 
         /// Set expired flag after we sent close event
-        expire_session();
+        expire_session_if_not_expired();
 
         try
         {
