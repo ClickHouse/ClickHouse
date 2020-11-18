@@ -47,7 +47,7 @@ ASTPtr makeSubqueryTemplate()
 ASTPtr makeSubqueryQualifiedAsterisk()
 {
     auto asterisk = std::make_shared<ASTQualifiedAsterisk>();
-    asterisk->children.emplace_back(std::make_shared<ASTIdentifier>("--.s"));
+    asterisk->children.emplace_back(std::make_shared<ASTTableIdentifier>("--.s"));
     return asterisk;
 }
 
@@ -115,7 +115,7 @@ private:
 
                 if (child->children.size() != 1)
                     throw Exception("Logical error: qualified asterisk must have exactly one child", ErrorCodes::LOGICAL_ERROR);
-                ASTIdentifier & identifier = child->children[0]->as<ASTIdentifier &>();
+                auto & identifier = child->children[0]->as<ASTTableIdentifier &>();
 
                 data.addTableColumns(identifier.name());
             }
