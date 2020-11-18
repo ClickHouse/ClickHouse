@@ -62,16 +62,16 @@ void ClientInfo::write(WriteBuffer & out, const UInt64 server_protocol_revision)
 
     if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_OPENTELEMETRY)
     {
-        if (opentelemetry_trace_id)
+        if (client_trace_context.trace_id)
         {
             // Have OpenTelemetry header.
             writeBinary(uint8_t(1), out);
             // No point writing these numbers with variable length, because they
             // are random and will probably require the full length anyway.
-            writeBinary(opentelemetry_trace_id, out);
-            writeBinary(opentelemetry_span_id, out);
-            writeBinary(opentelemetry_tracestate, out);
-            writeBinary(opentelemetry_trace_flags, out);
+            writeBinary(client_trace_context.trace_id, out);
+            writeBinary(client_trace_context.span_id, out);
+            writeBinary(client_trace_context.tracestate, out);
+            writeBinary(client_trace_context.trace_flags, out);
         }
         else
         {
@@ -139,10 +139,10 @@ void ClientInfo::read(ReadBuffer & in, const UInt64 client_protocol_revision)
         readBinary(have_trace_id, in);
         if (have_trace_id)
         {
-            readBinary(opentelemetry_trace_id, in);
-            readBinary(opentelemetry_span_id, in);
-            readBinary(opentelemetry_tracestate, in);
-            readBinary(opentelemetry_trace_flags, in);
+            readBinary(client_trace_context.trace_id, in);
+            readBinary(client_trace_context.span_id, in);
+            readBinary(client_trace_context.tracestate, in);
+            readBinary(client_trace_context.trace_flags, in);
         }
     }
 }
@@ -155,14 +155,14 @@ void ClientInfo::setInitialQuery()
     client_name = (DBMS_NAME " ") + client_name;
 }
 
-bool ClientInfo::parseTraceparentHeader(const std::string & traceparent,
+bool OpenTelemetryTraceContext::parseTraceparentHeader(const std::string & traceparent,
     std::string & error)
 {
+    trace_id = 0;
+
     uint8_t version = -1;
     uint64_t trace_id_high = 0;
     uint64_t trace_id_low = 0;
-    uint64_t trace_parent = 0;
-    uint8_t trace_flags = 0;
 
     // Version 00, which is the only one we can parse, is fixed width. Use this
     // fact for an additional sanity check.
@@ -183,7 +183,7 @@ bool ClientInfo::parseTraceparentHeader(const std::string & traceparent,
     // NOLINTNEXTLINE(cert-err34-c)
     int result = sscanf(&traceparent[0],
         "%2" SCNx8 "-%16" SCNx64 "%16" SCNx64 "-%16" SCNx64 "-%2" SCNx8,
-        &version, &trace_id_high, &trace_id_low, &trace_parent, &trace_flags);
+        &version, &trace_id_high, &trace_id_low, &span_id, &trace_flags);
 
     if (result == EOF)
     {
@@ -205,23 +205,21 @@ bool ClientInfo::parseTraceparentHeader(const std::string & traceparent,
         return false;
     }
 
-    opentelemetry_trace_id = static_cast<__uint128_t>(trace_id_high) << 64
+    trace_id = static_cast<__uint128_t>(trace_id_high) << 64
         | trace_id_low;
-    opentelemetry_span_id = trace_parent;
-    opentelemetry_trace_flags = trace_flags;
     return true;
 }
 
 
-std::string ClientInfo::composeTraceparentHeader() const
+std::string OpenTelemetryTraceContext::composeTraceparentHeader() const
 {
     // This span is a parent for its children, so we specify this span_id as a
     // parent id.
-    return fmt::format("00-{:032x}-{:016x}-{:02x}", opentelemetry_trace_id,
-        opentelemetry_span_id,
+    return fmt::format("00-{:032x}-{:016x}-{:02x}", trace_id,
+        span_id,
         // This cast is needed because fmt is being weird and complaining that
         // "mixing character types is not allowed".
-        static_cast<uint8_t>(opentelemetry_trace_flags));
+        static_cast<uint8_t>(trace_flags));
 }
 
 void ClientInfo::fillOSUserHostNameAndVersionInfo()

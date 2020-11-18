@@ -54,15 +54,25 @@ void OpenTelemetrySpanLogElement::appendToBlock(MutableColumns & columns) const
 
 OpenTelemetrySpanHolder::OpenTelemetrySpanHolder(const std::string & _operation_name)
 {
+    trace_id = 0;
+
+    if (!CurrentThread::isInitialized())
+    {
+        // There may be no thread context if we're running inside the
+        // clickhouse-client, e.g. reading an external table provided with the
+        // `--external` option.
+        return;
+    }
+
     auto & thread = CurrentThread::get();
 
-    trace_id = thread.opentelemetry_trace_id;
+    trace_id = thread.thread_trace_context.trace_id;
     if (!trace_id)
     {
         return;
     }
 
-    parent_span_id = thread.opentelemetry_current_span_id;
+    parent_span_id = thread.thread_trace_context.span_id;
     span_id = thread_local_rng();
     operation_name = _operation_name;
     start_time_us = std::chrono::duration_cast<std::chrono::microseconds>(
@@ -72,7 +82,7 @@ OpenTelemetrySpanHolder::OpenTelemetrySpanHolder(const std::string & _operation_
     attribute_names.push_back("clickhouse.start.stacktrace");
     attribute_values.push_back(StackTrace().toString());
 
-    thread.opentelemetry_current_span_id = span_id;
+    thread.thread_trace_context.span_id = span_id;
 }
 
 OpenTelemetrySpanHolder::~OpenTelemetrySpanHolder()
@@ -86,8 +96,8 @@ OpenTelemetrySpanHolder::~OpenTelemetrySpanHolder()
 
         // First of all, return old value of current span.
         auto & thread = CurrentThread::get();
-        assert(thread.opentelemetry_current_span_id = span_id);
-        thread.opentelemetry_current_span_id = parent_span_id;
+        assert(thread.thread_trace_context.span_id = span_id);
+        thread.thread_trace_context.span_id = parent_span_id;
 
         // Not sure what's the best way to access the log from here.
         auto * thread_group = CurrentThread::getGroup().get();

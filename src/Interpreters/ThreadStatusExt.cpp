@@ -74,6 +74,15 @@ void ThreadStatus::attachQueryContext(Context & query_context_)
             thread_group->global_context = global_context;
     }
 
+    // Generate new span for thread manually here, because we can't depend
+    // on OpenTelemetrySpanHolder due to link order issues.
+    // FIXME why and how is this different from setupState()?
+    thread_trace_context = query_context->query_trace_context;
+    if (thread_trace_context.trace_id)
+    {
+        thread_trace_context.span_id = thread_local_rng();
+    }
+
     applyQuerySettings();
 }
 
@@ -112,20 +121,17 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
     {
         applyQuerySettings();
 
-        opentelemetry_trace_id = query_context->getClientInfo().opentelemetry_trace_id;
-        if (opentelemetry_trace_id)
+        // Generate new span for thread manually here, because we can't depend
+        // on OpenTelemetrySpanHolder due to link order issues.
+        thread_trace_context = query_context->query_trace_context;
+        if (thread_trace_context.trace_id)
         {
-            opentelemetry_current_span_id = thread_local_rng();
-        }
-        else
-        {
-            opentelemetry_current_span_id = 0;
+            thread_trace_context.span_id = thread_local_rng();
         }
     }
     else
     {
-        opentelemetry_trace_id = 0;
-        opentelemetry_current_span_id = 0;
+        thread_trace_context.trace_id = 0;
     }
 
     initPerformanceCounters();
@@ -319,7 +325,7 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
     assertState({ThreadState::AttachedToQuery}, __PRETTY_FUNCTION__);
 
     std::shared_ptr<OpenTelemetrySpanLog> opentelemetry_span_log;
-    if (opentelemetry_trace_id && query_context)
+    if (thread_trace_context.trace_id && query_context)
     {
         opentelemetry_span_log = query_context->getOpenTelemetrySpanLog();
     }
@@ -334,11 +340,11 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
         // destructor, which is in another library.
         OpenTelemetrySpanLogElement span;
 
-        span.trace_id = opentelemetry_trace_id;
+        span.trace_id = thread_trace_context.trace_id;
         // Might be problematic if some span holder isn't finished by the time
         // we detach this thread...
-        span.span_id = opentelemetry_current_span_id;
-        span.parent_span_id = query_context->getClientInfo().opentelemetry_span_id;
+        span.span_id = thread_trace_context.span_id;
+        span.parent_span_id = query_context->query_trace_context.span_id;
         span.operation_name = getThreadName();
         span.start_time_us = query_start_time_microseconds;
         span.finish_time_us =
@@ -364,8 +370,8 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 
     query_id.clear();
     query_context = nullptr;
-    opentelemetry_trace_id = 0;
-    opentelemetry_current_span_id = 0;
+    thread_trace_context.trace_id = 0;
+    thread_trace_context.span_id = 0;
     thread_group.reset();
 
     thread_state = thread_exits ? ThreadState::Died : ThreadState::DetachedFromQuery;
