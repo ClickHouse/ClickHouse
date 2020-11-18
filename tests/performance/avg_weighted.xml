@@ -13,7 +13,7 @@
         num UInt64,
         num_u Decimal256(75) DEFAULT toDecimal256(num / 400000, 75),
         num_f Float64 DEFAULT num / 100
-        ) ENGINE Memory
+        ) ENGINE = MergeTree() ORDER BY num
     </create_query>
 
     <fill_query>
