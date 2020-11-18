@@ -1,4 +1,5 @@
 # SRS-007 ClickHouse Authentication of Users via LDAP
+# Software Requirements Specification
 
 ## Table of Contents
 
