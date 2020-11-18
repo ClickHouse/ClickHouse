@@ -5,6 +5,8 @@
 #include <functional>
 #include <common/logger_useful.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <sstream>
+#include <iomanip>
 
 namespace DB
 {
@@ -148,7 +150,8 @@ struct TestKeeperStorageCreateRequest final : public TestKeeperStorageRequest
                     auto seq_num = it->second.seq_num;
                     ++it->second.seq_num;
 
-                    std::stringstream seq_num_str;
+                    std::stringstream seq_num_str;      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+                    seq_num_str.exceptions(std::ios::failbit);
                     seq_num_str << std::setw(10) << std::setfill('0') << seq_num;
 
                     path_created += seq_num_str.str();
