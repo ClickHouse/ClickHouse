@@ -3,6 +3,7 @@
 #include <common/StringRef.h>
 #include <Common/ProfileEvents.h>
 #include <Common/MemoryTracker.h>
+#include <Common/OpenTelemetryTraceContext.h>
 
 #include <Core/SettingsEnums.h>
 
@@ -108,8 +109,11 @@ public:
     using Deleter = std::function<void()>;
     Deleter deleter;
 
-    __uint128_t opentelemetry_trace_id;
-    UInt64 opentelemetry_current_span_id;
+    // This is the current most-derived OpenTelemetry span for this thread. It 
+    // can be changed throughout the query execution, whenever we enter a new
+    // span or exit it. See OpenTelemetrySpanHolder that is normally responsible
+    // for these changes.
+    OpenTelemetryTraceContext thread_trace_context;
 
 protected:
     ThreadGroupStatusPtr thread_group;

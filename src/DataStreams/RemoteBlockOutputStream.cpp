@@ -27,6 +27,10 @@ RemoteBlockOutputStream::RemoteBlockOutputStream(Connection & connection_,
 {
     ClientInfo modified_client_info = client_info_;
     modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+    if (CurrentThread::isInitialized())
+    {
+        modified_client_info.opentelemetry = CurrentThread::get().opentelemetry;
+    }
 
     /** Send query and receive "header", that describes table structure.
       * Header is needed to know, what structure is required for blocks to be passed to 'write' method.
