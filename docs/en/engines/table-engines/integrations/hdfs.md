@@ -174,7 +174,7 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 | dfs\_domain\_socket\_path                             | ""                      |
 
 
-See [HDFS Configuration Reference ](https://hawq.apache.org/docs/userguide/2.3.0.0-incubating/reference/HDFSConfigurationParameterReference.html) for details.
+[HDFS Configuration Reference ](https://hawq.apache.org/docs/userguide/2.3.0.0-incubating/reference/HDFSConfigurationParameterReference.html) might explain some parameters.
 
 
 #### ClickHouse extras {#clickhouse-extras}
@@ -194,6 +194,8 @@ Parameters [here](#clickhouse-extras) and hadoop\_security\_kerberos\_ticket\_ca
 Note that due to libhdfs3 limitations only old-fashioned approach is supported,
 datanode communications are not secured by SASL (HADOOP\_SECURE\_DN\_USER is a reliable indicator of such
 security approach). Use tests/integration/test\_storage\_kerberized\_hdfs/hdfs_configs/bootstrap.sh for reference.
+
+kinit tool and configuration files are required.
 
 ## Virtual Columns {#virtual-columns}
 
