@@ -1205,8 +1205,8 @@ public:
 
     bool hasInformationAboutMonotonicity() const override
     {
-        std::string_view name = Name::name;
-        return (name == "minus" || name == "plus" || name == "divide" || name == "intDiv");
+        std::string_view name_ = Name::name;
+        return (name_ == "minus" || name_ == "plus" || name_ == "divide" || name_ == "intDiv");
     }
 
     Monotonicity getMonotonicityForRange(const IDataType &, const Field & left_point, const Field & right_point) const override
