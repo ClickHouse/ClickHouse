@@ -46,7 +46,7 @@ void MarkTableIdentifiersMatcher::visit(const ASTFunction & func, ASTPtr & ptr, 
     {
         if (func.arguments->children.empty())
             return;
-        auto & ast = func.arguments->children.at(0);
+        auto ast = func.arguments->children.at(0);
         auto opt_name = tryGetIdentifierName(ast);
         if (opt_name && !data.aliases.count(*opt_name) && ast->as<ASTIdentifier>())
         {
