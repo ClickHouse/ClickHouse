@@ -54,7 +54,7 @@ public:
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
         DictionaryLifetime dict_lifetime_,
-        size_t extra_lifetime_seconds,
+        size_t strict_max_lifetime_seconds,
         size_t size_,
         bool allow_read_expired_keys_,
         size_t max_update_queue_size_,
@@ -88,7 +88,7 @@ public:
                 dict_struct,
                 getSourceAndUpdateIfNeeded()->clone(),
                 dict_lifetime,
-                extra_lifetime_seconds,
+                strict_max_lifetime_seconds,
                 size,
                 allow_read_expired_keys,
                 max_update_queue_size,
@@ -311,9 +311,9 @@ private:
         }
         else
         {
-            /// This maybe not obvious, but when we define is this cell is expired or expired permanently, we add extra_lifetime_seconds
+            /// This maybe not obvious, but when we define is this cell is expired or expired permanently, we add strict_max_lifetime_seconds
             /// to the expiration time. And it overflows pretty well.
-            cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max() - 2 * std::chrono::seconds(extra_lifetime_seconds));
+            cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max() - 2 * std::chrono::seconds(strict_max_lifetime_seconds));
         }
     }
 
@@ -324,7 +324,7 @@ private:
 
     inline bool isExpiredPermanently(time_point_t now, time_point_t deadline) const
     {
-        return now > deadline + std::chrono::seconds(extra_lifetime_seconds);
+        return now > deadline + std::chrono::seconds(strict_max_lifetime_seconds);
     }
 
     enum class ResultState
@@ -353,7 +353,7 @@ private:
     mutable SharedDictionarySourcePtr source_ptr;
 
     const DictionaryLifetime dict_lifetime;
-    const size_t extra_lifetime_seconds;
+    const size_t strict_max_lifetime_seconds;
     const bool allow_read_expired_keys;
     const size_t max_update_queue_size;
     const size_t update_queue_push_timeout_milliseconds;
