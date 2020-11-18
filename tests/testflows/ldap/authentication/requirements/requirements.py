@@ -24,6 +24,7 @@ SRS_007_ClickHouse_Authentication_of_Users_via_LDAP = Specification(
         children=None,
         content='''
 # SRS-007 ClickHouse Authentication of Users via LDAP
+# Software Requirements Specification
 
 ## Table of Contents
 
