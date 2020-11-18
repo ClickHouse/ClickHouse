@@ -5,7 +5,7 @@ set -e
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
-db="test"
+db=$CLICKHOUSE_DATABASE
 table="optimize_me_finally"
 name="$db.$table"
 res_rows=1500000 # >= vertical_merge_algorithm_min_rows_to_activate

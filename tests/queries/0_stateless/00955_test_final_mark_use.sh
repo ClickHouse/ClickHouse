@@ -27,3 +27,5 @@ $CLICKHOUSE_CLIENT --query="OPTIMIZE TABLE mt_with_pk FINAL"
 $CLICKHOUSE_CLIENT --query="SELECT sum(marks) FROM system.parts WHERE table = 'mt_with_pk' AND database = currentDatabase() AND active=1;"
 
 $CLICKHOUSE_CLIENT --query="SELECT COUNT(*) FROM mt_with_pk WHERE x > toDateTime('2018-10-01 23:57:57') FORMAT JSON;" | grep "rows_read"
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE mt_with_pk"

@@ -12,7 +12,7 @@ CREATE DICTIONARY dict_in_01023.dict
   val UInt64 DEFAULT 1
 )
 PRIMARY KEY key
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'input' PASSWORD '' DB 'dict_in_01023'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'input' PASSWORD '' DB 'dict_in_01023'))
 LIFETIME(MIN 0 MAX 0)
 LAYOUT(HASHED());
 

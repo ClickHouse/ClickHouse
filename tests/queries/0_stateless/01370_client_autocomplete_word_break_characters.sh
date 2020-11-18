@@ -4,7 +4,7 @@ log_user 0
 set timeout 1
 match_max 100000
 
-spawn clickhouse-client
+spawn $env(CLICKHOUSE_CLIENT) --port "$env(CLICKHOUSE_PORT_TCP)"
 expect ":) "
 
 # Make a query
