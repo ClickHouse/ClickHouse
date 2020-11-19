@@ -26,7 +26,6 @@
 #include <Core/Defines.h>
 #include <ext/range.h>
 #include <boost/range/algorithm/sort.hpp>
-#include <sstream>
 
 
 namespace DB
@@ -238,21 +237,19 @@ BlockInputStreamPtr InterpreterShowCreateAccessEntityQuery::executeImpl()
 
     /// Build the result column.
     MutableColumnPtr column = ColumnString::create();
-    std::stringstream create_query_ss;
-    create_query_ss.exceptions(std::ios::failbit);
+    WriteBufferFromOwnString create_query_buf;
     for (const auto & create_query : create_queries)
     {
-        formatAST(*create_query, create_query_ss, false, true);
-        column->insert(create_query_ss.str());
-        create_query_ss.str("");
+        formatAST(*create_query, create_query_buf, false, true);
+        column->insert(create_query_buf.str());
+        create_query_buf.restart();
     }
 
     /// Prepare description of the result column.
-    std::stringstream desc_ss;
-    desc_ss.exceptions(std::ios::failbit);
+    WriteBufferFromOwnString desc_buf;
     const auto & show_query = query_ptr->as<const ASTShowCreateAccessEntityQuery &>();
-    formatAST(show_query, desc_ss, false, true);
-    String desc = desc_ss.str();
+    formatAST(show_query, desc_buf, false, true);
+    String desc = desc_buf.str();
     String prefix = "SHOW ";
     if (startsWith(desc, prefix))
         desc = desc.substr(prefix.length()); /// `desc` always starts with "SHOW ", so we can trim this prefix.

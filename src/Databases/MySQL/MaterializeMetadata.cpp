@@ -12,6 +12,7 @@
 #include <Common/quoteString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -19,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int SYNC_MYSQL_USER_ACCESS_ERROR;
 }
 
 static std::unordered_map<String, String> fetchTablesCreateQuery(
@@ -64,6 +66,7 @@ static std::vector<String> fetchTablesInDB(const mysqlxx::PoolWithFailover::Entr
 
     return tables_in_db;
 }
+
 void MaterializeMetadata::fetchMasterStatus(mysqlxx::PoolWithFailover::Entry & connection)
 {
     Block header{
@@ -103,6 +106,49 @@ static Block getShowMasterLogHeader(const String & mysql_version)
         {std::make_shared<DataTypeUInt64>(), "File_size"},
         {std::make_shared<DataTypeString>(), "Encrypted"}
     };
+}
+
+static bool checkSyncUserPrivImpl(mysqlxx::PoolWithFailover::Entry & connection, WriteBuffer & out)
+{
+    Block sync_user_privs_header
+    {
+        {std::make_shared<DataTypeString>(), "current_user_grants"}
+    };
+
+    String grants_query, sub_privs;
+    MySQLBlockInputStream input(connection, "SHOW GRANTS FOR CURRENT_USER();", sync_user_privs_header, DEFAULT_BLOCK_SIZE);
+    while (Block block = input.read())
+    {
+        for (size_t index = 0; index < block.rows(); ++index)
+        {
+            grants_query = (*block.getByPosition(0).column)[index].safeGet<String>();
+            out << grants_query << "; ";
+            sub_privs = grants_query.substr(0, grants_query.find(" ON "));
+            if (sub_privs.find("ALL PRIVILEGES") == std::string::npos)
+            {
+                if ((sub_privs.find("RELOAD") != std::string::npos and
+                    sub_privs.find("REPLICATION SLAVE") != std::string::npos and
+                    sub_privs.find("REPLICATION CLIENT") != std::string::npos))
+                    return true;
+            }
+            else
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+static void checkSyncUserPriv(mysqlxx::PoolWithFailover::Entry & connection)
+{
+    WriteBufferFromOwnString out;
+
+    if (!checkSyncUserPrivImpl(connection, out))
+        throw Exception("MySQL SYNC USER ACCESS ERR: mysql sync user needs "
+                        "at least GLOBAL PRIVILEGES:'RELOAD, REPLICATION SLAVE, REPLICATION CLIENT' "
+                        "and SELECT PRIVILEGE on MySQL Database."
+                        "But the SYNC USER grant query is: " + out.str(), ErrorCodes::SYNC_MYSQL_USER_ACCESS_ERROR);
 }
 
 bool MaterializeMetadata::checkBinlogFileExists(mysqlxx::PoolWithFailover::Entry & connection, const String & mysql_version) const
@@ -167,6 +213,8 @@ MaterializeMetadata::MaterializeMetadata(
     const String & database, bool & opened_transaction, const String & mysql_version)
     : persistent_path(path_)
 {
+    checkSyncUserPriv(connection);
+
     if (Poco::File(persistent_path).exists())
     {
         ReadBufferFromFile in(persistent_path, DBMS_DEFAULT_BUFFER_SIZE);

@@ -40,7 +40,7 @@ Block::Block(const ColumnsWithTypeAndName & data_) : data{data_}
 void Block::initializeIndexByName()
 {
     for (size_t i = 0, size = data.size(); i < size; ++i)
-        index_by_name[data[i].name] = i;
+        index_by_name.emplace(data[i].name, i);
 }
 
 
@@ -295,6 +295,20 @@ std::string Block::dumpStructure() const
     return out.str();
 }
 
+std::string Block::dumpIndex() const
+{
+    WriteBufferFromOwnString out;
+    bool first = true;
+    for (const auto & [name, pos] : index_by_name)
+    {
+        if (!first)
+            out << ", ";
+        first = false;
+
+        out << name << ' ' << pos;
+    }
+    return out.str();
+}
 
 Block Block::cloneEmpty() const
 {
