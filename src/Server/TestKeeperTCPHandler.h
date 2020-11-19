@@ -2,6 +2,7 @@
 
 #include <Poco/Net/TCPServerConnection.h>
 #include "IServer.h"
+#include <Common/Stopwatch.h>
 #include <Interpreters/Context.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
@@ -35,6 +36,8 @@ private:
     std::shared_ptr<zkutil::TestKeeperStorage> test_keeper_storage;
     Poco::Timespan operation_timeout;
     Poco::Timespan session_timeout;
+    int64_t session_id;
+    Stopwatch session_stopwatch;
 
     std::queue<zkutil::TestKeeperStorage::AsyncResponse> responses;
     std::vector<zkutil::TestKeeperStorage::AsyncResponse> watch_responses;
@@ -48,7 +51,8 @@ private:
     void sendHandshake();
     void receiveHandshake();
 
-    bool receiveRequest();
+    Coordination::OpNum receiveRequest();
+    void putCloseRequest();
 };
 
 }

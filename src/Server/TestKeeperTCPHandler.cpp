@@ -22,11 +22,11 @@ namespace ErrorCodes
 
 void TestKeeperTCPHandler::sendHandshake()
 {
-
+    session_id = test_keeper_storage->getSessionID();
     Coordination::write(Coordination::SERVER_HANDSHAKE_LENGTH, *out);
     Coordination::write(Coordination::ZOOKEEPER_PROTOCOL_VERSION, *out);
     Coordination::write(Coordination::DEFAULT_SESSION_TIMEOUT_MS, *out);
-    Coordination::write(test_keeper_storage->getSessionID(), *out);
+    Coordination::write(session_id, *out);
     std::array<char, Coordination::PASSWORD_LENGTH> passwd{};
     Coordination::write(passwd, *out);
     out->next();
@@ -101,6 +101,7 @@ void TestKeeperTCPHandler::runImpl()
     }
 
     sendHandshake();
+    session_stopwatch.start();
 
     while (true)
     {
@@ -128,22 +129,38 @@ void TestKeeperTCPHandler::runImpl()
             }
         }
 
-        long poll_wait = responses.empty() ? session_timeout.totalMicroseconds() : 10000;
+        Int64 poll_wait = responses.empty() ? session_timeout.totalMicroseconds() - session_stopwatch.elapsedMicroseconds() : 10000;
 
         if (in->poll(poll_wait))
         {
-            bool close_received = receiveRequest();
-            if (close_received)
+            auto received_op = receiveRequest();
+            if (received_op == Coordination::OpNum::Close)
             {
-                LOG_DEBUG(log, "Received close request");
+                LOG_DEBUG(log, "Received close request for session #{}", session_id);
                 break;
             }
+            else if (received_op == Coordination::OpNum::Heartbeat)
+            {
+                session_stopwatch.restart();
+            }
+        }
+
+        if (session_stopwatch.elapsedMicroseconds() > static_cast<UInt64>(session_timeout.totalMicroseconds()))
+        {
+            LOG_DEBUG(log, "Session #{} expired", session_id);
+            putCloseRequest();
+            break;
         }
     }
 }
 
+void TestKeeperTCPHandler::putCloseRequest()
+{
+    Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
+    test_keeper_storage->putCloseRequest(request, session_id);
+}
 
-bool TestKeeperTCPHandler::receiveRequest()
+Coordination::OpNum TestKeeperTCPHandler::receiveRequest()
 {
     int32_t length;
     Coordination::read(length, *in);
@@ -152,18 +169,23 @@ bool TestKeeperTCPHandler::receiveRequest()
 
     Coordination::OpNum opnum;
     Coordination::read(opnum, *in);
-    if (opnum == Coordination::OpNum::Close)
-        return true;
 
     Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
     request->xid = xid;
     request->readImpl(*in);
-    auto request_future_responses = test_keeper_storage->putRequest(request);
-    responses.push(std::move(request_future_responses.response));
-    if (request_future_responses.watch_response)
-        watch_responses.emplace_back(std::move(*request_future_responses.watch_response));
+    if (opnum != Coordination::OpNum::Close)
+    {
+        auto request_future_responses = test_keeper_storage->putRequest(request, session_id);
+        responses.push(std::move(request_future_responses.response));
+        if (request_future_responses.watch_response)
+            watch_responses.emplace_back(std::move(*request_future_responses.watch_response));
+    }
+    else
+    {
+        test_keeper_storage->putCloseRequest(request, session_id);
+    }
 
-    return false;
+    return opnum;
 }
 
 
