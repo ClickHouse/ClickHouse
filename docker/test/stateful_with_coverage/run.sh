@@ -86,20 +86,20 @@ while /bin/true; do
     sleep 2
 done &
 
-LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-client --query "SHOW DATABASES"
-LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-client --query "ATTACH DATABASE datasets ENGINE = Ordinary"
-LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-client --query "CREATE DATABASE test"
+LLVM_PROFILE_FILE='client_coverage.profraw' clickhouse-client --query "SHOW DATABASES"
+LLVM_PROFILE_FILE='client_coverage.profraw' clickhouse-client --query "ATTACH DATABASE datasets ENGINE = Ordinary"
+LLVM_PROFILE_FILE='client_coverage.profraw' clickhouse-client --query "CREATE DATABASE test"
 
 kill_clickhouse
 start_clickhouse
 
 sleep 10
 
-LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-client --query "SHOW TABLES FROM datasets"
-LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-client --query "SHOW TABLES FROM test"
-LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits"
-LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"
-LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-client --query "SHOW TABLES FROM test"
+LLVM_PROFILE_FILE='client_coverage.profraw' clickhouse-client --query "SHOW TABLES FROM datasets"
+LLVM_PROFILE_FILE='client_coverage.profraw' clickhouse-client --query "SHOW TABLES FROM test"
+LLVM_PROFILE_FILE='client_coverage.profraw' clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits"
+LLVM_PROFILE_FILE='client_coverage.profraw' clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"
+LLVM_PROFILE_FILE='client_coverage.profraw' clickhouse-client --query "SHOW TABLES FROM test"
 
 if grep -q -- "--use-skip-list" /usr/bin/clickhouse-test; then
     SKIP_LIST_OPT="--use-skip-list"
@@ -109,7 +109,7 @@ fi
 # more idiologically correct.
 read -ra ADDITIONAL_OPTIONS <<< "${ADDITIONAL_OPTIONS:-}"
 
-LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-test --testname --shard --zookeeper --no-stateless --hung-check --print-time "$SKIP_LIST_OPT" "${ADDITIONAL_OPTIONS[@]}" "$SKIP_TESTS_OPTION" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
+LLVM_PROFILE_FILE='client_coverage.profraw' clickhouse-test --testname --shard --zookeeper --no-stateless --hung-check --print-time "$SKIP_LIST_OPT" "${ADDITIONAL_OPTIONS[@]}" "$SKIP_TESTS_OPTION" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
 
 kill_clickhouse
 
