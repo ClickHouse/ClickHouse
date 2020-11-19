@@ -4,11 +4,17 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 MySQLBinlogEventReadBuffer::MySQLBinlogEventReadBuffer(ReadBuffer & in_, size_t checksum_signature_length_)
     : ReadBuffer(nullptr, 0, 0), in(in_), checksum_signature_length(checksum_signature_length_)
 {
-    if (checksum_signature_length)
-        checksum_buf = new char[checksum_signature_length];
+    if (checksum_signature_length > MAX_CHECKSUM_SIGNATURE_LENGTH)
+        throw Exception("LOGICAL ERROR: checksum_signature_length must be less than MAX_CHECKSUM_SIGNATURE_LENGTH. It is a bug.",
+            ErrorCodes::LOGICAL_ERROR);
 
     nextIfAtEnd();
 }
@@ -61,11 +67,8 @@ MySQLBinlogEventReadBuffer::~MySQLBinlogEventReadBuffer()
 {
     try
     {
-        /// ignore last 4 bytes
+        /// ignore last checksum_signature_length bytes
         nextIfAtEnd();
-
-        if (checksum_signature_length)
-            delete[] checksum_buf;
     }
     catch (...)
     {
