@@ -2,6 +2,7 @@
     <profiles>
         <default>
             <optimize_trivial_count_query>0</optimize_trivial_count_query>
+            <default_database_engine>Ordinary</default_database_engine>
         </default>
     </profiles>
 </yandex>

@@ -117,9 +117,9 @@ Pour une requête non distribuée, utilisez `IN` / `JOIN`.
 
 Soyez prudent lorsque vous utilisez des sous-requêtes dans le `IN` / `JOIN` clauses pour le traitement des requêtes distribuées.
 
-Regardons quelques exemples. Supposons que chaque serveur du cluster a un **local_table**. Chaque serveur dispose également d'une **table distributed_table** table avec le **Distribué** type, qui regarde tous les serveurs du cluster.
+Regardons quelques exemples. Supposons que chaque serveur du cluster a un **local\_table**. Chaque serveur dispose également d'une **table distributed\_table** table avec le **Distribué** type, qui regarde tous les serveurs du cluster.
 
-Pour une requête à l' **table distributed_table**, la requête sera envoyée à tous les serveurs distants et exécutée sur eux en utilisant le **local_table**.
+Pour une requête à l' **table distributed\_table**, la requête sera envoyée à tous les serveurs distants et exécutée sur eux en utilisant le **local\_table**.
 
 Par exemple, la requête
 
@@ -153,7 +153,7 @@ En d'autres termes, l'ensemble de données de la clause IN sera collecté sur ch
 
 Cela fonctionnera correctement et de manière optimale si vous êtes prêt pour ce cas et que vous avez réparti les données entre les serveurs de cluster de telle sorte que les données d'un seul ID utilisateur résident entièrement sur un seul serveur. Dans ce cas, toutes les données nécessaires seront disponibles localement sur chaque serveur. Sinon, le résultat sera erroné. Nous nous référons à cette variation de la requête que “local IN”.
 
-Pour corriger le fonctionnement de la requête lorsque les données sont réparties aléatoirement sur les serveurs de cluster, vous pouvez spécifier **table distributed_table** à l'intérieur d'une sous-requête. La requête ressemblerait à ceci:
+Pour corriger le fonctionnement de la requête lorsque les données sont réparties aléatoirement sur les serveurs de cluster, vous pouvez spécifier **table distributed\_table** à l'intérieur d'une sous-requête. La requête ressemblerait à ceci:
 
 ``` sql
 SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)

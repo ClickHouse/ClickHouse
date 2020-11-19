@@ -20,8 +20,7 @@ try
 {
     using namespace DB;
 
-    std::stringstream s;        // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    s.exceptions(std::ios::failbit);
+    std::stringstream s;
 
     {
         std::string src = "1";

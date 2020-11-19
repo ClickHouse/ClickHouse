@@ -72,7 +72,7 @@ ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const Context & 
 ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, const Context & context)
 {
     if (const auto * id = node->as<ASTIdentifier>())
-        return std::make_shared<ASTLiteral>(id->name());
+        return std::make_shared<ASTLiteral>(id->name);
 
     return evaluateConstantExpressionAsLiteral(node, context);
 }
@@ -113,7 +113,7 @@ namespace
             const auto & name = name_and_type.name;
             const auto & type = name_and_type.type;
 
-            if (name == identifier->name())
+            if (name == identifier->name)
             {
                 ColumnWithTypeAndName column;
                 Field converted = convertFieldToType(value, *type);

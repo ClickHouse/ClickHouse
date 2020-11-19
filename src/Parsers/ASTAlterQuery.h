@@ -36,7 +36,6 @@ public:
         MATERIALIZE_TTL,
         MODIFY_SETTING,
         MODIFY_QUERY,
-        REMOVE_TTL,
 
         ADD_INDEX,
         DROP_INDEX,
@@ -103,7 +102,7 @@ public:
     */
     ASTPtr constraint;
 
-    /** Used in DROP PARTITION, ATTACH PARTITION FROM, UPDATE, DELETE queries.
+    /** Used in DROP PARTITION and ATTACH PARTITION FROM queries.
      *  The value or ID of the partition is stored here.
      */
     ASTPtr partition;
@@ -167,9 +166,6 @@ public:
 
     /// Target column name
     ASTPtr rename_to;
-
-    /// Which property user want to remove
-    String remove_property;
 
     String getID(char delim) const override { return "AlterCommand" + (delim + std::to_string(static_cast<int>(type))); }
 

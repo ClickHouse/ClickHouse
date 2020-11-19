@@ -1,7 +1,7 @@
 #include <Common/ZooKeeper/TestKeeper.h>
 #include <Common/setThreadName.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <common/types.h>
+#include <Core/Types.h>
 
 #include <sstream>
 #include <iomanip>
@@ -218,8 +218,7 @@ std::pair<ResponsePtr, Undo> TestKeeperCreateRequest::process(TestKeeper::Contai
                 auto seq_num = it->second.seq_num;
                 ++it->second.seq_num;
 
-                std::stringstream seq_num_str;      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-                seq_num_str.exceptions(std::ios::failbit);
+                std::stringstream seq_num_str;
                 seq_num_str << std::setw(10) << std::setfill('0') << seq_num;
 
                 path_created += seq_num_str.str();

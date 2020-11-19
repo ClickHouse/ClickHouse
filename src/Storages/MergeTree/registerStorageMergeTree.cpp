@@ -8,7 +8,6 @@
 #include <Common/Macros.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/typeid_cast.h>
-#include <Common/thread_local_rng.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -234,25 +233,6 @@ If you use the Replicated version of engines, see https://clickhouse.tech/docs/e
 }
 
 
-static void randomizePartTypeSettings(const std::unique_ptr<MergeTreeSettings> & storage_settings)
-{
-    static constexpr auto MAX_THRESHOLD_FOR_ROWS = 100000;
-    static constexpr auto MAX_THRESHOLD_FOR_BYTES = 1024 * 1024 * 10;
-
-    /// Create all parts in wide format with probability 1/3.
-    if (thread_local_rng() % 3 == 0)
-    {
-        storage_settings->min_rows_for_wide_part = 0;
-        storage_settings->min_bytes_for_wide_part = 0;
-    }
-    else
-    {
-        storage_settings->min_rows_for_wide_part = std::uniform_int_distribution{0, MAX_THRESHOLD_FOR_ROWS}(thread_local_rng);
-        storage_settings->min_bytes_for_wide_part = std::uniform_int_distribution{0, MAX_THRESHOLD_FOR_BYTES}(thread_local_rng);
-    }
-}
-
-
 static StoragePtr create(const StorageFactory::Arguments & args)
 {
     /** [Replicated][|Summing|Collapsing|Aggregating|Replacing|Graphite]MergeTree (2 * 7 combinations) engines
@@ -412,7 +392,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     /// For Replicated.
     String zookeeper_path;
     String replica_name;
-    bool allow_renaming = true;
 
     if (replicated)
     {
@@ -506,12 +485,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         info.level = 0;
         info.table_id.uuid = UUIDHelpers::Nil;
         replica_name = args.context.getMacros()->expand(replica_name, info);
-
-        /// We do not allow renaming table with these macros in metadata, because zookeeper_path will be broken after RENAME TABLE.
-        /// NOTE: it may happen if table was created by older version of ClickHouse (< 20.10) and macros was not unfolded on table creation
-        /// or if one of these macros is recursively expanded from some other macro.
-        if (info.expanded_database || info.expanded_table)
-            allow_renaming = false;
     }
 
     /// This merging param maybe used as part of sorting key
@@ -591,11 +564,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     StorageInMemoryMetadata metadata;
     metadata.columns = args.columns;
 
-    std::unique_ptr<MergeTreeSettings> storage_settings;
-    if (replicated)
-        storage_settings = std::make_unique<MergeTreeSettings>(args.context.getReplicatedMergeTreeSettings());
-    else
-        storage_settings = std::make_unique<MergeTreeSettings>(args.context.getMergeTreeSettings());
+    std::unique_ptr<MergeTreeSettings> storage_settings = std::make_unique<MergeTreeSettings>(args.context.getMergeTreeSettings());
 
     if (is_extended_storage_def)
     {
@@ -608,14 +577,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// single default partition with name "all".
         metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_key, metadata.columns, args.context);
 
-        /// PRIMARY KEY without ORDER BY is allowed and considered as ORDER BY.
-        if (!args.storage_def->order_by && args.storage_def->primary_key)
-            args.storage_def->set(args.storage_def->order_by, args.storage_def->primary_key->clone());
-
         if (!args.storage_def->order_by)
             throw Exception(
-                "You must provide an ORDER BY or PRIMARY KEY expression in the table definition. "
-                "If you don't want this table to be sorted, use ORDER BY/PRIMARY KEY tuple()",
+                "You must provide an ORDER BY expression in the table definition. "
+                "If you don't want this table to be sorted, use ORDER BY tuple()",
                 ErrorCodes::BAD_ARGUMENTS);
 
         /// Get sorting key from engine arguments.
@@ -631,7 +596,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.context);
         }
-        else /// Otherwise we don't have explicit primary key and copy it from order by
+        else /// Otherwise we copy it from primary key definition
         {
             metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, args.context);
             /// and set it's definition_ast to nullptr (so isPrimaryKeyDefined()
@@ -643,10 +608,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->sample_by->ptr(), metadata.columns, args.context);
 
         if (args.storage_def->ttl_table)
-        {
             metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
                 args.storage_def->ttl_table->ptr(), metadata.columns, args.context, metadata.primary_key);
-        }
 
         if (args.query.columns_list && args.query.columns_list->indices)
             for (auto & index : args.query.columns_list->indices->children)
@@ -737,20 +700,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         ++arg_num;
     }
 
-    /// Allow to randomize part type for tests to cover more cases.
-    /// But if settings were set explicitly restrict it.
-    if (storage_settings->randomize_part_type
-        && !storage_settings->min_rows_for_wide_part.changed
-        && !storage_settings->min_bytes_for_wide_part.changed)
-    {
-        randomizePartTypeSettings(storage_settings);
-        LOG_INFO(&Poco::Logger::get(args.table_id.getNameForLogs() + " (registerStorageMergeTree)"),
-            "Applied setting 'randomize_part_type'. "
-            "Setting 'min_rows_for_wide_part' changed to {}. "
-            "Setting 'min_bytes_for_wide_part' changed to {}.",
-            storage_settings->min_rows_for_wide_part, storage_settings->min_bytes_for_wide_part);
-    }
-
     if (arg_num != arg_cnt)
         throw Exception("Wrong number of engine arguments.", ErrorCodes::BAD_ARGUMENTS);
 
@@ -766,8 +715,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             date_column_name,
             merging_params,
             std::move(storage_settings),
-            args.has_force_restore_data_flag,
-            allow_renaming);
+            args.has_force_restore_data_flag);
     else
         return StorageMergeTree::create(
             args.table_id,

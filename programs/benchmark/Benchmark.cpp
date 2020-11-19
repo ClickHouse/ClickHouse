@@ -49,6 +49,7 @@ using Ports = std::vector<UInt16>;
 namespace ErrorCodes
 {
     extern const int CANNOT_BLOCK_SIGNAL;
+    extern const int BAD_ARGUMENTS;
     extern const int EMPTY_DATA_PASSED;
 }
 
@@ -84,12 +85,7 @@ public:
             std::string cur_host = i >= hosts_.size() ? "localhost" : hosts_[i];
 
             connections.emplace_back(std::make_unique<ConnectionPool>(
-                concurrency,
-                cur_host, cur_port,
-                default_database_, user_, password_,
-                "", /* cluster */
-                "", /* cluster_secret */
-                "benchmark", Protocol::Compression::Enable, secure));
+                concurrency, cur_host, cur_port, default_database_, user_, password_, "benchmark", Protocol::Compression::Enable, secure));
             comparison_info_per_interval.emplace_back(std::make_shared<Stats>());
             comparison_info_total.emplace_back(std::make_shared<Stats>());
         }
@@ -102,7 +98,15 @@ public:
         /// (example: when using stage = 'with_mergeable_state')
         registerAggregateFunctions();
 
-        query_processing_stage = QueryProcessingStage::fromString(stage);
+        if (stage == "complete")
+            query_processing_stage = QueryProcessingStage::Complete;
+        else if (stage == "fetch_columns")
+            query_processing_stage = QueryProcessingStage::FetchColumns;
+        else if (stage == "with_mergeable_state")
+            query_processing_stage = QueryProcessingStage::WithMergeableState;
+        else
+            throw Exception("Unknown query processing stage: " + stage, ErrorCodes::BAD_ARGUMENTS);
+
     }
 
     void initialize(Poco::Util::Application & self [[maybe_unused]]) override
@@ -560,8 +564,8 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         desc.add_options()
             ("help",                                                            "produce help message")
             ("concurrency,c", value<unsigned>()->default_value(1),              "number of parallel queries")
-            ("delay,d",       value<double>()->default_value(1),                "delay between intermediate reports in seconds (set 0 to disable reports)")
-            ("stage",         value<std::string>()->default_value("complete"),  "request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation")
+            ("delay,d",       value<double>()->default_value(1), "delay between intermediate reports in seconds (set 0 to disable reports)")
+            ("stage",         value<std::string>()->default_value("complete"),  "request query processing up to specified stage: complete,fetch_columns,with_mergeable_state")
             ("iterations,i",  value<size_t>()->default_value(0),                "amount of queries to be executed")
             ("timelimit,t",   value<double>()->default_value(0.),               "stop launch of queries after specified time limit")
             ("randomize,r",   value<bool>()->default_value(false),              "randomize order of execution")
