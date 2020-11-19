@@ -98,6 +98,10 @@ public:
     /// Extends last mark by rows_count.
     void addRowsToLastMark(size_t rows_count);
 
+    /// Set amount of rows to last mark
+    /// (add new mark if new have nothing)
+    void setLastMarkRows(size_t rows_count);
+
     /// Drops last mark if any exists.
     void popMark();
 
