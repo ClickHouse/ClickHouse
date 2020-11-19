@@ -35,6 +35,10 @@ namespace ErrorCodes
 
 struct MannWhitneyData : public StatisticalSample<Float64, Float64>
 {
+    /*Since null hypotesis is "for randomly selected values X and Y from two populations, 
+     *the probability of X being greater than Y is equal to the probability of Y being greater than X".
+     *Or "the distribution F of first sample equals to the distribution G of second sample". 
+     *Then alternative for this hypotesis (H1) is "two-sided"(F != G), "less"(F < G), "greater" (F > G). */
     enum class Alternative
     {
         TwoSided,
@@ -42,12 +46,15 @@ struct MannWhitneyData : public StatisticalSample<Float64, Float64>
         Greater
     };
 
+    /// The behaviour equals to the similar function from scipy.
+    /// https://github.com/scipy/scipy/blob/ab9e9f17e0b7b2d618c4d4d8402cd4c0c200d6c0/scipy/stats/stats.py#L6978
     std::pair<Float64, Float64> getResult(Alternative alternative, bool continuity_correction)
     {
         ConcatenatedSamples both(this->x, this->y);
         RanksArray ranks;
         Float64 tie_correction;
 
+        /// Compute ranks according to both samples.
         std::tie(ranks, tie_correction) = computeRanksAndTieCorrection(both);
 
         const Float64 n1 = this->size_x;
@@ -60,18 +67,22 @@ struct MannWhitneyData : public StatisticalSample<Float64, Float64>
         const Float64 u1 = n1 * n2 + (n1 * (n1 + 1.)) / 2. - r1;
         const Float64 u2 = n1 * n2 - u1;
 
+        /// The distribution of U-statistic under null hypotesis H0  is symmetric with respect to meanrank.
         const Float64 meanrank = n1 * n2 /2. + 0.5 * continuity_correction;
         const Float64 sd = std::sqrt(tie_correction * n1 * n2 * (n1 + n2 + 1) / 12.0);
 
         Float64 u = 0;
         if (alternative == Alternative::TwoSided)
+            /// There is no difference which u_i to take as u, because z will be differ only in sign and we take std::abs() from it.
             u = std::max(u1, u2);
         else if (alternative == Alternative::Less)
             u = u1;
         else if (alternative == Alternative::Greater)
             u = u2;
 
-        const Float64 z = (u - meanrank) / sd;
+        const Float64 z = std::abs((u - meanrank) / sd);
+        /// In fact cdf is a probability function, so it is intergral of density from (-inf, z].
+        /// But since standart normal distribution is symmetric, cdf(0) = 0.5 and we have to compute integral from [0, z].
         const Float64 cdf = integrateSimpson(0, z, [] (Float64 t) { return std::pow(M_E, -0.5 * t * t) / std::sqrt(2 * M_PI);});
 
         Float64 p_value = 0;
