@@ -138,4 +138,12 @@ void ColumnConst::updateWeakHash32(WeakHash32 & hash) const
         value = intHashCRC32(data_hash, value);
 }
 
+void ColumnConst::compareColumn(
+    const IColumn & rhs, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> & compare_results, int, int nan_direction_hint)
+    const
+{
+    Int8 res = compareAt(1, 1, rhs, nan_direction_hint);
+    std::fill(compare_results.begin(), compare_results.end(), res);
+}
+
 }
