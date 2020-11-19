@@ -789,6 +789,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     for (auto & server : servers)
         server->start();
 
+    size_t already_started_servers = servers.size();
+
     /// Set current database name before loading tables and databases because
     /// system logs may copy global context.
     global_context->setCurrentDatabaseNameInGlobalContext(default_database);
@@ -1077,7 +1079,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         global_context->enableNamedSessions();
 
-        for (size_t i = 1; i < servers.size(); ++i)
+        for (size_t i = already_started_servers; i < servers.size(); ++i)
             servers[i]->start();
 
         {
