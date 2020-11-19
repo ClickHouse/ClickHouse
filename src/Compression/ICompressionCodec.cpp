@@ -26,7 +26,7 @@ void ICompressionCodec::setCodecDescription(const String & codec_name, const AST
     std::shared_ptr<ASTFunction> result = std::make_shared<ASTFunction>();
     result->name = "CODEC";
 
-    /// Special case for codec Multiple, which doesn't have name. It's just list
+    /// Special case for codec Multiple, which doens't have name. It's just list
     /// of other codecs.
     if (codec_name.empty())
     {

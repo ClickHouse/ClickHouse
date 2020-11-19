@@ -2,7 +2,6 @@
 
 #include <Poco/String.h>
 #include <Common/SipHash.h>
-#include <IO/Operators.h>
 
 namespace DB
 {

@@ -21,7 +21,6 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
         res.type = DROP_PARTITION;
         res.partition = command_ast->partition;
         res.detach = command_ast->detach;
-        res.part = command_ast->part;
         return res;
     }
     else if (command_ast->type == ASTAlterCommand::DROP_DETACHED_PARTITION)

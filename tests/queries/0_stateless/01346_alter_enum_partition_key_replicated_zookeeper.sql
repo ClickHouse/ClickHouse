@@ -47,4 +47,3 @@ ALTER TABLE test DROP COLUMN x; -- { serverError 47 }
 ALTER TABLE test DROP COLUMN y; -- { serverError 47 }
 
 DROP TABLE test;
-DROP TABLE test2;

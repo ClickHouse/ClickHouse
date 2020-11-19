@@ -32,7 +32,7 @@ static const std::vector<String> supported_functions{"any", "anyLast", "min",
 
 String DataTypeCustomSimpleAggregateFunction::getName() const
 {
-    WriteBufferFromOwnString stream;
+    std::stringstream stream;
     stream << "SimpleAggregateFunction(" << function->getName();
 
     if (!parameters.empty())

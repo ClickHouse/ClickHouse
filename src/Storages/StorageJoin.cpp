@@ -100,10 +100,7 @@ HashJoinPtr StorageJoin::getJoin(std::shared_ptr<TableJoin> analyzed_join) const
 
 
 void StorageJoin::insertBlock(const Block & block) { join->addJoinedBlock(block, true); }
-
 size_t StorageJoin::getSize() const { return join->getTotalRowCount(); }
-std::optional<UInt64> StorageJoin::totalRows() const { return join->getTotalRowCount(); }
-std::optional<UInt64> StorageJoin::totalBytes() const { return join->getTotalByteCount(); }
 
 
 void registerStorageJoin(StorageFactory & factory)
@@ -451,7 +448,7 @@ private:
 Pipe StorageJoin::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & /*query_info*/,
+    const SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,

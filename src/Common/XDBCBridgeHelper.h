@@ -1,5 +1,6 @@
 #pragma once
 
+#include <sstream>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Interpreters/Context.h>
@@ -305,6 +306,8 @@ struct ODBCBridgeMixin
 
         std::vector<std::string> cmd_args;
         path.setFileName("clickhouse-odbc-bridge");
+
+        std::stringstream command;
 
 #if !CLICKHOUSE_SPLIT_BINARY
         cmd_args.push_back("odbc-bridge");

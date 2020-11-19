@@ -185,17 +185,6 @@ QueryPipelinePtr QueryPlan::buildQueryPipeline()
     return last_pipeline;
 }
 
-Pipe QueryPlan::convertToPipe()
-{
-    if (!isInitialized())
-        return {};
-
-    if (isCompleted())
-        throw Exception("Cannot convert completed QueryPlan to Pipe", ErrorCodes::LOGICAL_ERROR);
-
-    return QueryPipeline::getPipe(std::move(*buildQueryPipeline()));
-}
-
 void QueryPlan::addInterpreterContext(std::shared_ptr<Context> context)
 {
     interpreter_context.emplace_back(std::move(context));
@@ -449,7 +438,7 @@ static void tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node * 
         return;
 
     /// All actions was moved before ARRAY JOIN. Swap Expression and ArrayJoin.
-    if (expression->empty())
+    if (expression->getActions().empty())
     {
         auto expected_header = parent->getOutputStream().header;
 

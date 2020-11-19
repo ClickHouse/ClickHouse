@@ -10,6 +10,9 @@ from helpers.test_tools import assert_eq_with_retry
 cluster = ClickHouseCluster(__file__, zookeeper_config_path='configs/zookeeper.xml')
 node = cluster.add_instance('node', with_zookeeper=True)
 
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+ZK_CONFIG_PATH = os.path.join(SCRIPT_DIR, 'configs/zookeeper.xml')
+
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -25,6 +28,29 @@ def start_cluster():
 
         yield cluster
     finally:
+        ## write back the configs
+        config = open(ZK_CONFIG_PATH, 'w')
+        config.write(
+"""
+<yandex>
+    <zookeeper>
+        <node index="1">
+            <host>zoo1</host>
+            <port>2181</port>
+        </node>
+        <node index="2">
+            <host>zoo2</host>
+            <port>2181</port>
+        </node>
+            <node index="3">
+            <host>zoo3</host>
+            <port>2181</port>
+        </node>
+        <session_timeout_ms>2000</session_timeout_ms>
+    </zookeeper>
+</yandex>
+    """)
+        config.close()
         cluster.shutdown()
 
 def test_reload_zookeeper(start_cluster):
@@ -45,7 +71,9 @@ def test_reload_zookeeper(start_cluster):
     node.query("INSERT INTO test_table(date, id) select today(), number FROM numbers(1000)")
 
     ## remove zoo2, zoo3 from configs
-    new_config = """
+    config = open(ZK_CONFIG_PATH, 'w')
+    config.write(
+"""
 <yandex>
     <zookeeper>
         <node index="1">
@@ -56,7 +84,8 @@ def test_reload_zookeeper(start_cluster):
     </zookeeper>
 </yandex >
 """
-    node.replace_config("/etc/clickhouse-server/conf.d/zookeeper.xml", new_config)
+    )
+    config.close()
     ## config reloads, but can still work
     assert_eq_with_retry(node, "SELECT COUNT() FROM test_table", '1000', retry_count=120, sleep_time=0.5)
 
@@ -72,7 +101,9 @@ def test_reload_zookeeper(start_cluster):
         node.query("SELECT COUNT() FROM test_table")
 
     ## set config to zoo2, server will be normal
-    new_config = """
+    config = open(ZK_CONFIG_PATH, 'w')
+    config.write(
+"""
 <yandex>
     <zookeeper>
         <node index="1">
@@ -83,7 +114,7 @@ def test_reload_zookeeper(start_cluster):
     </zookeeper>
 </yandex>
 """
-    node.replace_config("/etc/clickhouse-server/conf.d/zookeeper.xml", new_config)
-
+    )
+    config.close()
     assert_eq_with_retry(node, "SELECT COUNT() FROM test_table", '1000', retry_count=120, sleep_time=0.5)
 

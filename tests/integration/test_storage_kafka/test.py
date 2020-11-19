@@ -30,8 +30,6 @@ libprotoc 3.0.0
 protoc --python_out=. kafka.proto
 """
 from . import kafka_pb2
-from . import social_pb2
-
 
 # TODO: add test for run-time offset update in CH, if we manually update it on Kafka side.
 # TODO: add test for SELECT LIMIT is working.
@@ -98,31 +96,6 @@ def kafka_produce_protobuf_messages(topic, start_index, num_messages):
         msg = kafka_pb2.KeyValuePair()
         msg.key = i
         msg.value = str(i)
-        serialized_msg = msg.SerializeToString()
-        data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
-    producer = KafkaProducer(bootstrap_servers="localhost:9092", value_serializer=producer_serializer)
-    producer.send(topic=topic, value=data)
-    producer.flush()
-    print(("Produced {} messages for topic {}".format(num_messages, topic)))
-
-def kafka_produce_protobuf_messages_no_delimeters(topic, start_index, num_messages):
-    data = ''
-    producer = KafkaProducer(bootstrap_servers="localhost:9092")
-    for i in range(start_index, start_index + num_messages):
-        msg = kafka_pb2.KeyValuePair()
-        msg.key = i
-        msg.value = str(i)
-        serialized_msg = msg.SerializeToString()
-        producer.send(topic=topic, value=serialized_msg)
-    producer.flush()
-    print("Produced {} messages for topic {}".format(num_messages, topic))
-
-def kafka_produce_protobuf_social(topic, start_index, num_messages):
-    data = b''
-    for i in range(start_index, start_index + num_messages):
-        msg = social_pb2.User()
-        msg.username='John Doe {}'.format(i)
-        msg.timestamp=1000000+i
         serialized_msg = msg.SerializeToString()
         data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
     producer = KafkaProducer(bootstrap_servers="localhost:9092", value_serializer=producer_serializer)
@@ -999,133 +972,6 @@ def test_kafka_protobuf(kafka_cluster):
 
 
 @pytest.mark.timeout(180)
-def test_kafka_string_field_on_first_position_in_protobuf(kafka_cluster):
-# https://github.com/ClickHouse/ClickHouse/issues/12615
-
-    instance.query('''
-CREATE TABLE test.kafka (
-    username String,
-    timestamp Int32
-  ) ENGINE = Kafka()
-SETTINGS
-    kafka_broker_list = 'kafka1:19092',
-    kafka_topic_list = 'string_field_on_first_position_in_protobuf',
-    kafka_group_name = 'string_field_on_first_position_in_protobuf',
-    kafka_format = 'Protobuf',
-    kafka_schema = 'social:User';
-
-    SELECT * FROM test.kafka;
-        ''')
-
-    kafka_produce_protobuf_social('string_field_on_first_position_in_protobuf', 0, 20)
-    kafka_produce_protobuf_social('string_field_on_first_position_in_protobuf', 20, 1)
-    kafka_produce_protobuf_social('string_field_on_first_position_in_protobuf', 21, 29)
-
-    result = instance.query('SELECT * FROM test.kafka', ignore_error=True)
-    expected = '''\
-John Doe 0	1000000
-John Doe 1	1000001
-John Doe 2	1000002
-John Doe 3	1000003
-John Doe 4	1000004
-John Doe 5	1000005
-John Doe 6	1000006
-John Doe 7	1000007
-John Doe 8	1000008
-John Doe 9	1000009
-John Doe 10	1000010
-John Doe 11	1000011
-John Doe 12	1000012
-John Doe 13	1000013
-John Doe 14	1000014
-John Doe 15	1000015
-John Doe 16	1000016
-John Doe 17	1000017
-John Doe 18	1000018
-John Doe 19	1000019
-John Doe 20	1000020
-John Doe 21	1000021
-John Doe 22	1000022
-John Doe 23	1000023
-John Doe 24	1000024
-John Doe 25	1000025
-John Doe 26	1000026
-John Doe 27	1000027
-John Doe 28	1000028
-John Doe 29	1000029
-John Doe 30	1000030
-John Doe 31	1000031
-John Doe 32	1000032
-John Doe 33	1000033
-John Doe 34	1000034
-John Doe 35	1000035
-John Doe 36	1000036
-John Doe 37	1000037
-John Doe 38	1000038
-John Doe 39	1000039
-John Doe 40	1000040
-John Doe 41	1000041
-John Doe 42	1000042
-John Doe 43	1000043
-John Doe 44	1000044
-John Doe 45	1000045
-John Doe 46	1000046
-John Doe 47	1000047
-John Doe 48	1000048
-John Doe 49	1000049
-'''
-    assert TSV(result) == TSV(expected)
-
-@pytest.mark.timeout(30)
-def test_kafka_protobuf_no_delimiter(kafka_cluster):
-    instance.query('''
-        CREATE TABLE test.kafka (key UInt64, value String)
-            ENGINE = Kafka
-            SETTINGS kafka_broker_list = 'kafka1:19092',
-                     kafka_topic_list = 'pb_no_delimiter',
-                     kafka_group_name = 'pb_no_delimiter',
-                     kafka_format = 'ProtobufSingle',
-                     kafka_schema = 'kafka.proto:KeyValuePair';
-        ''')
-
-    kafka_produce_protobuf_messages_no_delimeters('pb_no_delimiter', 0, 20)
-    kafka_produce_protobuf_messages_no_delimeters('pb_no_delimiter', 20, 1)
-    kafka_produce_protobuf_messages_no_delimeters('pb_no_delimiter', 21, 29)
-
-    result = ''
-    while True:
-        result += instance.query('SELECT * FROM test.kafka', ignore_error=True)
-        if kafka_check_result(result):
-            break
-
-    kafka_check_result(result, True)
-
-    instance.query('''
-    CREATE TABLE test.kafka_writer (key UInt64, value String)
-        ENGINE = Kafka
-        SETTINGS kafka_broker_list = 'kafka1:19092',
-                    kafka_topic_list = 'pb_no_delimiter',
-                    kafka_group_name = 'pb_no_delimiter',
-                    kafka_format = 'ProtobufSingle',
-                    kafka_schema = 'kafka.proto:KeyValuePair';
-    ''')
-
-    instance.query("INSERT INTO test.kafka_writer VALUES (13,'Friday'),(42,'Answer to the Ultimate Question of Life, the Universe, and Everything'), (110, 'just a number')")
-
-    time.sleep(1)
-
-    result = instance.query("SELECT * FROM test.kafka ORDER BY key", ignore_error=True)
-
-    expected = '''\
-13	Friday
-42	Answer to the Ultimate Question of Life, the Universe, and Everything
-110	just a number
-'''
-    assert TSV(result) == TSV(expected)
-
-
-
-@pytest.mark.timeout(180)
 def test_kafka_materialized_view(kafka_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.view;
@@ -1608,15 +1454,8 @@ def test_kafka_virtual_columns2(kafka_cluster):
     assert TSV(result) == TSV(expected)
 
 
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(240)
 def test_kafka_produce_key_timestamp(kafka_cluster):
-
-    admin_client = KafkaAdminClient(bootstrap_servers="localhost:9092")
-
-    topic_list = []
-    topic_list.append(NewTopic(name="insert3", num_partitions=1, replication_factor=1))
-    admin_client.create_topics(new_topics=topic_list, validate_only=False)
-
     instance.query('''
         DROP TABLE IF EXISTS test.view;
         DROP TABLE IF EXISTS test.consumer;
@@ -1971,7 +1810,7 @@ def test_kafka_rebalance(kafka_cluster):
 
 @pytest.mark.timeout(1200)
 def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster):
-    messages = [json.dumps({'key': j + 1, 'value': 'x' * 300}) for j in range(1)]
+    messages = [json.dumps({'key': j + 1, 'value': 'x' * 300}) for j in range(22)]
     kafka_produce('no_holes_when_write_suffix_failed', messages)
 
     instance.query('''
@@ -1984,19 +1823,8 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster):
                      kafka_topic_list = 'no_holes_when_write_suffix_failed',
                      kafka_group_name = 'no_holes_when_write_suffix_failed',
                      kafka_format = 'JSONEachRow',
-                     kafka_max_block_size = 20,
-                     kafka_flush_interval_ms = 2000;
+                     kafka_max_block_size = 20;
 
-        SELECT * FROM test.kafka LIMIT 1; /* do subscription & assignment in advance (it can take different time, test rely on timing, so can flap otherwise) */
-    ''')
-
-    messages = [json.dumps({'key': j + 1, 'value': 'x' * 300}) for j in range(22)]
-    kafka_produce('no_holes_when_write_suffix_failed', messages)
-
-    # init PartitionManager (it starts container) earlier
-    pm = PartitionManager()
-
-    instance.query('''
         CREATE TABLE test.view (key UInt64, value String)
             ENGINE = ReplicatedMergeTree('/clickhouse/kafkatest/tables/no_holes_when_write_suffix_failed', 'node1')
             ORDER BY key;
@@ -2005,18 +1833,17 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster):
             SELECT * FROM test.kafka
             WHERE NOT sleepEachRow(1);
     ''')
-
     # the tricky part here is that disconnect should happen after write prefix, but before write suffix
     # so i use sleepEachRow
-
-    time.sleep(3)
-    pm.drop_instance_zk_connections(instance)
-    time.sleep(20)
-    pm.heal_all()
+    with PartitionManager() as pm:
+        time.sleep(12)
+        pm.drop_instance_zk_connections(instance)
+        time.sleep(20)
+        pm.heal_all
 
     # connection restored and it will take a while until next block will be flushed
     # it takes years on CI :\
-    time.sleep(45)
+    time.sleep(90)
 
     # as it's a bit tricky to hit the proper moment - let's check in logs if we did it correctly
     assert instance.contains_in_log("ZooKeeper session has been expired.: while write prefix to view")
@@ -2194,9 +2021,9 @@ def test_bad_reschedule(kafka_cluster):
     assert int(instance.query("SELECT max(consume_ts) - min(consume_ts) FROM test.destination")) < 8
 
 
-@pytest.mark.timeout(300)
+@pytest.mark.timeout(1200)
 def test_kafka_duplicates_when_commit_failed(kafka_cluster):
-    messages = [json.dumps({'key': j + 1, 'value': 'x' * 300}) for j in range(1)]
+    messages = [json.dumps({'key': j + 1, 'value': 'x' * 300}) for j in range(22)]
     kafka_produce('duplicates_when_commit_failed', messages)
 
     instance.query('''
@@ -2209,16 +2036,8 @@ def test_kafka_duplicates_when_commit_failed(kafka_cluster):
                      kafka_topic_list = 'duplicates_when_commit_failed',
                      kafka_group_name = 'duplicates_when_commit_failed',
                      kafka_format = 'JSONEachRow',
-                     kafka_max_block_size = 20,
-                     kafka_flush_interval_ms = 1000;
+                     kafka_max_block_size = 20;
 
-        SELECT * FROM test.kafka LIMIT 1; /* do subscription & assignment in advance (it can take different time, test rely on timing, so can flap otherwise) */
-    ''')
-
-    messages = [json.dumps({'key': j + 1, 'value': 'x' * 300}) for j in range(22)]
-    kafka_produce('duplicates_when_commit_failed', messages)
-
-    instance.query('''
         CREATE TABLE test.view (key UInt64, value String)
             ENGINE = MergeTree()
             ORDER BY key;
@@ -2229,14 +2048,15 @@ def test_kafka_duplicates_when_commit_failed(kafka_cluster):
     ''')
 
     # print time.strftime("%m/%d/%Y %H:%M:%S")
-    time.sleep(3) #  MV will work for 10 sec, after that commit should happen, we want to pause before
+    time.sleep(
+        12)  # 5-6 sec to connect to kafka, do subscription, and fetch 20 rows, another 10 sec for MV, after that commit should happen
 
     # print time.strftime("%m/%d/%Y %H:%M:%S")
     kafka_cluster.pause_container('kafka1')
     # that timeout it VERY important, and picked after lot of experiments
     # when too low (<30sec) librdkafka will not report any timeout (alternative is to decrease the default session timeouts for librdkafka)
     # when too high (>50sec) broker will decide to remove us from the consumer group, and will start answering "Broker: Unknown member"
-    time.sleep(42)
+    time.sleep(40)
 
     # print time.strftime("%m/%d/%Y %H:%M:%S")
     kafka_cluster.unpause_container('kafka1')

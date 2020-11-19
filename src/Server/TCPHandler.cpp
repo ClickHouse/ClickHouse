@@ -253,32 +253,29 @@ void TCPHandler::runImpl()
             /// Processing Query
             state.io = executeQuery(state.query, *query_context, false, state.stage, may_have_embedded_data);
 
+            if (state.io.out)
+                state.need_receive_data_for_insert = true;
+
             after_check_cancelled.restart();
             after_send_progress.restart();
 
-            if (state.io.out)
-            {
-                state.need_receive_data_for_insert = true;
+            /// Does the request require receive data from client?
+            if (state.need_receive_data_for_insert)
                 processInsertQuery(connection_settings);
-            }
-            else if (state.need_receive_data_for_input) // It implies pipeline execution
+            else if (state.need_receive_data_for_input)
             {
                 /// It is special case for input(), all works for reading data from client will be done in callbacks.
                 auto executor = state.io.pipeline.execute();
                 executor->execute(state.io.pipeline.getNumThreads());
+                state.io.onFinish();
             }
             else if (state.io.pipeline.initialized())
                 processOrdinaryQueryWithProcessors();
-            else if (state.io.in)
+            else
                 processOrdinaryQuery();
-
-            state.io.onFinish();
 
             /// Do it before sending end of stream, to have a chance to show log message in client.
             query_scope->logPeakMemoryUsage();
-
-            if (state.is_connection_closed)
-                break;
 
             sendLogs();
             sendEndOfStream();
@@ -404,7 +401,7 @@ void TCPHandler::runImpl()
 
         watch.stop();
 
-        LOG_DEBUG(log, "Processed in {} sec.", watch.elapsedSeconds());
+        LOG_INFO(log, "Processed in {} sec.", watch.elapsedSeconds());
 
         /// It is important to destroy query context here. We do not want it to live arbitrarily longer than the query.
         query_context.reset();
@@ -436,19 +433,18 @@ bool TCPHandler::readDataNext(const size_t & poll_interval, const int & receive_
         double elapsed = watch.elapsedSeconds();
         if (elapsed > receive_timeout)
         {
-            throw Exception(ErrorCodes::SOCKET_TIMEOUT,
-                            "Timeout exceeded while receiving data from client. Waited for {} seconds, timeout is {} seconds.",
-                            static_cast<size_t>(elapsed), receive_timeout);
+            std::stringstream ss;
+            ss << "Timeout exceeded while receiving data from client.";
+            ss << " Waited for " << static_cast<size_t>(elapsed) << " seconds,";
+            ss << " timeout is " << receive_timeout << " seconds.";
+
+            throw Exception(ss.str(), ErrorCodes::SOCKET_TIMEOUT);
         }
     }
 
     /// If client disconnected.
     if (in->eof())
-    {
-        LOG_INFO(log, "Client has dropped the connection, cancel the query.");
-        state.is_connection_closed = true;
         return false;
-    }
 
     /// We accept and process data. And if they are over, then we leave.
     if (!receivePacket())
@@ -481,8 +477,9 @@ void TCPHandler::readData(const Settings & connection_settings)
     std::tie(poll_interval, receive_timeout) = getReadTimeouts(connection_settings);
     sendLogs();
 
-    while (readDataNext(poll_interval, receive_timeout))
-        ;
+    while (true)
+        if (!readDataNext(poll_interval, receive_timeout))
+            return;
 }
 
 
@@ -512,6 +509,7 @@ void TCPHandler::processInsertQuery(const Settings & connection_settings)
 
     readData(connection_settings);
     state.io.out->writeSuffix();
+    state.io.onFinish();
 }
 
 
@@ -570,11 +568,10 @@ void TCPHandler::processOrdinaryQuery()
             sendProgress();
         }
 
-        if (state.is_connection_closed)
-            return;
-
         sendData({});
     }
+
+    state.io.onFinish();
 
     sendProgress();
 }
@@ -638,11 +635,10 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
             sendLogs();
         }
 
-        if (state.is_connection_closed)
-            return;
-
         sendData({});
     }
+
+    state.io.onFinish();
 
     sendProgress();
 }
@@ -893,6 +889,8 @@ void TCPHandler::receiveQuery()
     state.is_empty = false;
     readStringBinary(state.query_id, *in);
 
+    query_context->setCurrentQueryId(state.query_id);
+
     /// Client info
     ClientInfo & client_info = query_context->getClientInfo();
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
@@ -911,6 +909,14 @@ void TCPHandler::receiveQuery()
 
     /// Set fields, that are known apriori.
     client_info.interface = ClientInfo::Interface::TCP;
+
+    if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+    {
+        /// 'Current' fields was set at receiveHello.
+        client_info.initial_user = client_info.current_user;
+        client_info.initial_query_id = client_info.current_query_id;
+        client_info.initial_address = client_info.current_address;
+    }
 
     /// Per query settings are also passed via TCP.
     /// We need to check them before applying due to they can violate the settings constraints.
@@ -988,32 +994,11 @@ void TCPHandler::receiveQuery()
         query_context->clampToSettingsConstraints(settings_changes);
     }
     query_context->applySettingsChanges(settings_changes);
-
-    // Use the received query id, or generate a random default. It is convenient
-    // to also generate the default OpenTelemetry trace id at the same time, and
-    // set the trace parent.
-    // Why is this done here and not earlier:
-    // 1) ClientInfo might contain upstream trace id, so we decide whether to use
-    // the default ids after we have received the ClientInfo.
-    // 2) There is the opentelemetry_start_trace_probability setting that
-    // controls when we start a new trace. It can be changed via Native protocol,
-    // so we have to apply the changes first.
-    query_context->setCurrentQueryId(state.query_id);
-
-    // Set parameters of initial query.
-    if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-    {
-        /// 'Current' fields was set at receiveHello.
-        client_info.initial_user = client_info.current_user;
-        client_info.initial_query_id = client_info.current_query_id;
-        client_info.initial_address = client_info.current_address;
-    }
-
+    const Settings & settings = query_context->getSettingsRef();
     /// Sync timeouts on client and server during current query to avoid dangling queries on server
     /// NOTE: We use settings.send_timeout for the receive timeout and vice versa (change arguments ordering in TimeoutSetter),
     ///  because settings.send_timeout is client-side setting which has opposite meaning on the server side.
     /// NOTE: these settings are applied only for current connection (not for distributed tables' connections)
-    const Settings & settings = query_context->getSettingsRef();
     state.timeout_setter = std::make_unique<TimeoutSetter>(socket(), settings.receive_timeout, settings.send_timeout);
 }
 
@@ -1199,14 +1184,6 @@ bool TCPHandler::isQueryCancelled()
     /// During request execution the only packet that can come from the client is stopping the query.
     if (static_cast<ReadBufferFromPocoSocket &>(*in).poll(0))
     {
-        if (in->eof())
-        {
-            LOG_INFO(log, "Client has dropped the connection, cancel the query.");
-            state.is_cancelled = true;
-            state.is_connection_closed = true;
-            return true;
-        }
-
         UInt64 packet_type = 0;
         readVarUInt(packet_type, *in);
 
@@ -1333,7 +1310,7 @@ void TCPHandler::run()
     {
         runImpl();
 
-        LOG_DEBUG(log, "Done processing connection.");
+        LOG_INFO(log, "Done processing connection.");
     }
     catch (Poco::Exception & e)
     {
