@@ -38,28 +38,36 @@ def test_student():
     s, p = stats.ttest_ind(rvs1, rvs2, equal_var = True)
     test_and_check("studentTTest", rvs1, rvs2, s, p)
 
-
     rvs1 = np.round(stats.norm.rvs(loc=0, scale=10,size=65536), 5)
     rvs2 = np.round(stats.norm.rvs(loc=5, scale=1,size=65536), 5)
+    s, p = stats.ttest_ind(rvs1, rvs2, equal_var = True)
+    test_and_check("studentTTest", rvs1, rvs2, s, p)
+
+    rvs1 = np.round(stats.norm.rvs(loc=0, scale=1,size=65536), 5)
+    rvs2 = np.round(stats.norm.rvs(loc=0, scale=1,size=65536), 5)
     s, p = stats.ttest_ind(rvs1, rvs2, equal_var = True)
     test_and_check("studentTTest", rvs1, rvs2, s, p)
 
 def test_welch():
     rvs1 = np.round(stats.norm.rvs(loc=1, scale=15,size=500), 5)
     rvs2 = np.round(stats.norm.rvs(loc=10, scale=5,size=500), 5)
-    s, p = stats.ttest_ind(rvs1, rvs2, equal_var = True)
-    test_and_check("studentTTest", rvs1, rvs2, s, p)
+    s, p = stats.ttest_ind(rvs1, rvs2, equal_var = False)
+    test_and_check("welchTTest", rvs1, rvs2, s, p)
 
     rvs1 = np.round(stats.norm.rvs(loc=0, scale=7,size=500), 5)
     rvs2 = np.round(stats.norm.rvs(loc=0, scale=3,size=500), 5)
-    s, p = stats.ttest_ind(rvs1, rvs2, equal_var = True)
-    test_and_check("studentTTest", rvs1, rvs2, s, p)
-
+    s, p = stats.ttest_ind(rvs1, rvs2, equal_var = False)
+    test_and_check("welchTTest", rvs1, rvs2, s, p)
 
     rvs1 = np.round(stats.norm.rvs(loc=0, scale=10,size=65536), 5)
     rvs2 = np.round(stats.norm.rvs(loc=5, scale=1,size=65536), 5)
-    s, p = stats.ttest_ind(rvs1, rvs2, equal_var = True)
-    test_and_check("studentTTest", rvs1, rvs2, s, p)
+    s, p = stats.ttest_ind(rvs1, rvs2, equal_var = False)
+    test_and_check("welchTTest", rvs1, rvs2, s, p)
+
+    rvs1 = np.round(stats.norm.rvs(loc=0, scale=1,size=65536), 5)
+    rvs2 = np.round(stats.norm.rvs(loc=0, scale=1,size=65536), 5)
+    s, p = stats.ttest_ind(rvs1, rvs2, equal_var = False)
+    test_and_check("welchTTest", rvs1, rvs2, s, p)
 
 if __name__ == "__main__":
     test_student()
