@@ -871,13 +871,16 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
     zookeeper->tryCreate(tries_to_execute_path, "0", zkutil::CreateMode::Persistent);
 
     static constexpr int MAX_TRIES_TO_EXECUTE = 3;
+    static constexpr int MAX_EXECUTION_TIMEOUT_SEC = 3600;
 
     String executed_by;
 
     zkutil::EventPtr event = std::make_shared<Poco::Event>();
-    if (zookeeper->tryGet(is_executed_path, executed_by, nullptr, event))
+    /// We must use exists request instead of get, because zookeeper will not setup event
+    /// for non existing node after get request
+    if (zookeeper->exists(is_executed_path, nullptr, event))
     {
-        LOG_DEBUG(log, "Task {} has already been executed by replica ({}) of the same shard.", task.entry_name, executed_by);
+        LOG_DEBUG(log, "Task {} has already been executed by replica ({}) of the same shard.", task.entry_name, zookeeper->get(is_executed_path));
         return true;
     }
 
@@ -885,8 +888,13 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
 
     auto lock = createSimpleZooKeeperLock(zookeeper, shard_path, "lock", task.host_id_str);
 
+    Stopwatch stopwatch;
+
     bool executed_by_leader = false;
-    while (true)
+    /// Defensive programming. One hour is more than enough to execute almost all DDL queries.
+    /// If it will be very long query like ALTER DELETE for a huge table it's still will be executed,
+    /// but DDL worker can continue processing other queries.
+    while (stopwatch.elapsedSeconds() <= MAX_EXECUTION_TIMEOUT_SEC)
     {
         StorageReplicatedMergeTree::Status status;
         replicated_storage->getStatus(status);
@@ -895,8 +903,8 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
         if (status.is_leader && lock->tryLock())
         {
             /// In replicated merge tree we can have multiple leaders. So we can
-            /// be "leader", but another "leader" replica may already execute
-            /// this task.
+            /// be "leader" and took lock, but another "leader" replica may have
+            /// already executed this task.
             if (zookeeper->tryGet(is_executed_path, executed_by))
             {
                 LOG_DEBUG(log, "Task {} has already been executed by replica ({}) of the same shard.", task.entry_name, executed_by);
@@ -904,7 +912,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
                 break;
             }
 
-            /// Doing it exclusively
+            /// Checking and incrementing counter exclusively.
             size_t counter = parse<int>(zookeeper->get(tries_to_execute_path));
             if (counter > MAX_TRIES_TO_EXECUTE)
                 break;
@@ -923,24 +931,45 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
             lock->unlock();
         }
 
-
+        /// Waiting for someone who will execute query and change is_executed_path node
         if (event->tryWait(std::uniform_int_distribution<int>(0, 1000)(rng)))
         {
             LOG_DEBUG(log, "Task {} has already been executed by replica ({}) of the same shard.", task.entry_name, zookeeper->get(is_executed_path));
             executed_by_leader = true;
             break;
         }
-        else if (parse<int>(zookeeper->get(tries_to_execute_path)) > MAX_TRIES_TO_EXECUTE)
+        else
         {
-            /// Nobody will try to execute query again
-            break;
+            String tries_count;
+            zookeeper->tryGet(tries_to_execute_path, tries_count);
+            if (parse<int>(tries_count) > MAX_TRIES_TO_EXECUTE)
+            {
+                /// Nobody will try to execute query again
+                LOG_WARNING(log, "Maximum retries count for task {} exceeded, cannot execute replicated DDL query", task.entry_name);
+                break;
+            }
+            else
+            {
+                /// Will try to wait or execute
+                LOG_TRACE(log, "Task {} still not executed, will try to wait for it or execute ourselves, tries count {}", task.entry_name, tries_count);
+            }
         }
     }
 
     /// Not executed by leader so was not executed at all
     if (!executed_by_leader)
     {
-        task.execution_status = ExecutionStatus(ErrorCodes::NOT_IMPLEMENTED, "Cannot execute replicated DDL query");
+        /// If we failed with timeout
+        if (stopwatch.elapsedSeconds() >= MAX_EXECUTION_TIMEOUT_SEC)
+        {
+            LOG_WARNING(log, "Task {} was not executed by anyone, maximum timeout {} seconds exceeded", task.entry_name, MAX_EXECUTION_TIMEOUT_SEC);
+            task.execution_status = ExecutionStatus(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot execute replicated DDL query, timeout exceeded");
+        }
+        else /// If we exceeded amount of tries
+        {
+            LOG_WARNING(log, "Task {} was not executed by anyone, maximum number of retries exceeded", task.entry_name);
+            task.execution_status = ExecutionStatus(ErrorCodes::UNFINISHED, "Cannot execute replicated DDL query, maximum retires exceeded");
+        }
         return false;
     }
 
@@ -1245,7 +1274,6 @@ public:
             {
                 size_t num_unfinished_hosts = waiting_hosts.size() - num_hosts_finished;
                 size_t num_active_hosts = current_active_hosts.size();
-
 
                 throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
                     "Watching task {} is executing longer than distributed_ddl_task_timeout (={}) seconds. "

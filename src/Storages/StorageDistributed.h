@@ -51,16 +51,26 @@ public:
 
     bool isRemote() const override { return true; }
 
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum to_stage, const ASTPtr &) const override;
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const override;
 
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        const SelectQueryInfo & query_info,
+        SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
+
+    void read(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot,
+        SelectQueryInfo & query_info,
+        const Context & context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t /*max_block_size*/,
+        unsigned /*num_streams*/) override;
 
     bool supportsParallelInsert() const override { return true; }
 
@@ -82,6 +92,7 @@ public:
     void shutdown() override;
     void drop() override;
 
+    bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override;
 
     const ExpressionActionsPtr & getShardingKeyExpr() const { return sharding_key_expr; }

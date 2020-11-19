@@ -1,6 +1,6 @@
 ---
 toc_priority: 60
-toc_title: Settings
+toc_title: "\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438"
 ---
 
 # Настройки {#settings}
@@ -288,6 +288,54 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 По умолчанию отключена.
 
 Disabled by default.
+
+## input_format_tsv_enum_as_number {#settings-input_format_tsv_enum_as_number}
+
+Включает или отключает парсинг значений перечислений как идентификаторов перечислений для входного формата TSV.
+
+Возможные значения:
+
+-   0 — парсинг значений перечисления как значений.
+-   1 — парсинг значений перечисления как идентификаторов перечисления.
+
+Значение по умолчанию: 0.
+
+**Пример**
+
+Рассмотрим таблицу:
+
+```sql
+CREATE TABLE table_with_enum_column_for_tsv_insert (Id Int32,Value Enum('first' = 1, 'second' = 2)) ENGINE=Memory();
+```
+
+При включенной настройке `input_format_tsv_enum_as_number`:  
+
+```sql
+SET input_format_tsv_enum_as_number = 1;
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 103	1;
+SELECT * FROM table_with_enum_column_for_tsv_insert;
+```
+
+Результат:
+
+```text
+┌──Id─┬─Value──┐
+│ 102 │ second │
+└─────┴────────┘
+┌──Id─┬─Value──┐
+│ 103 │ first  │
+└─────┴────────┘
+```
+
+При отключенной настройке `input_format_tsv_enum_as_number` запрос `INSERT`:
+
+```sql
+SET input_format_tsv_enum_as_number = 0;
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
+```
+
+сгенерирует исключение.
 
 ## input_format_null_as_default {#settings-input-format-null-as-default}
 
@@ -1126,6 +1174,50 @@ SELECT area/period FROM account_orders FORMAT JSON;
 ## input_format_csv_unquoted_null_literal_as_null {#settings-input_format_csv_unquoted_null_literal_as_null}
 
 Для формата CSV включает или выключает парсинг неэкранированной строки `NULL` как литерала (синоним для `\N`)
+
+## input_format_csv_enum_as_number {#settings-input_format_csv_enum_as_number}
+
+Включает или отключает парсинг значений перечислений как идентификаторов перечислений для входного формата CSV.
+
+Возможные значения:
+
+-   0 — парсинг значений перечисления как значений.
+-   1 — парсинг значений перечисления как идентификаторов перечисления.
+
+Значение по умолчанию: 0.
+
+**Пример**
+
+Рассмотрим таблицу:
+
+```sql
+CREATE TABLE table_with_enum_column_for_csv_insert (Id Int32,Value Enum('first' = 1, 'second' = 2)) ENGINE=Memory();
+```
+
+При включенной настройке `input_format_csv_enum_as_number`:  
+
+```sql
+SET input_format_csv_enum_as_number = 1;
+INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2;
+SELECT * FROM table_with_enum_column_for_csv_insert;
+```
+
+Результат:
+
+```text
+┌──Id─┬─Value──┐
+│ 102 │ second │
+└─────┴────────┘
+```
+
+При отключенной настройке `input_format_csv_enum_as_number` запрос `INSERT`:
+
+```sql
+SET input_format_csv_enum_as_number = 0;
+INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2;
+```
+
+сгенерирует исключение.
 
 ## output_format_csv_crlf_end_of_line {#settings-output-format-csv-crlf-end-of-line}
 
@@ -1977,6 +2069,48 @@ SELECT range(number) FROM system.numbers LIMIT 5 FORMAT PrettyCompactNoEscapes;
 └───────────────┘
 ```
 
+## output_format_pretty_row_numbers {#output_format_pretty_row_numbers}
+
+Включает режим отображения номеров строк для запросов, выводимых в формате [Pretty](../../interfaces/formats.md#pretty).
+
+Возможные значения:
+
+-   0 — номера строк не выводятся.
+-   1 — номера строк выводятся.
+
+Значение по умолчанию: `0`.
+
+**Пример**
+
+Запрос:
+
+```sql
+SET output_format_pretty_row_numbers = 1;
+SELECT TOP 3 name, value FROM system.settings;
+```
+
+Результат:
+
+```text
+   ┌─name────────────────────┬─value───┐
+1. │ min_compress_block_size │ 65536   │
+2. │ max_compress_block_size │ 1048576 │
+3. │ max_block_size          │ 65505   │
+   └─────────────────────────┴─────────┘
+```
+
+## allow_experimental_bigint_types {#allow_experimental_bigint_types}
+
+Включает или отключает поддержку целочисленных значений, превышающих максимальное значение, допустимое для типа `int`.
+
+Возможные значения:
+
+-   1 — большие целочисленные значения поддерживаются.
+-   0 — большие целочисленные значения не поддерживаются.
+
+Значение по умолчанию: `0`.
+
+
 ## lock_acquire_timeout {#lock_acquire_timeout}
 
 Устанавливает, сколько секунд сервер ожидает возможности выполнить блокировку таблицы.
@@ -2039,5 +2173,18 @@ SELECT CAST(toNullable(toInt32(0)) AS Int32) as x, toTypeName(x);
 **См. также** 
 
 -   Функция [CAST](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) 
+
+## persistent {#persistent}
+
+Отключает перманентность для табличных движков [Set](../../engines/table-engines/special/set.md#set) и [Join](../../engines/table-engines/special/join.md#join).
+
+Уменьшает расходы на ввод/вывод. Может быть полезно, когда требуется высокая производительность, а перманентность не обязательна.
+
+Возможные значения:
+
+- 1 — включено.
+- 0 — отключено.
+
+Значение по умолчанию: `1`.
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->

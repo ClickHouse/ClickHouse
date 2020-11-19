@@ -1,5 +1,5 @@
 ---
-toc_priority: 37
+toc_priority: 36
 toc_title: SYSTEM
 ---
 
@@ -204,7 +204,7 @@ SYSTEM STOP MOVES [[db.]merge_tree_family_table_name]
 
 ## Managing ReplicatedMergeTree Tables {#query-language-system-replicated}
 
-ClickHouse can manage background replication related processes in [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md) tables.
+ClickHouse can manage background replication related processes in [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication/#table_engines-replication) tables.
 
 ### STOP FETCHES {#query_language-system-stop-fetches}
 

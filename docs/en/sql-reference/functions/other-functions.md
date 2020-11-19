@@ -551,7 +551,7 @@ formatReadableTimeDelta(column[, maximum_unit])
 **Parameters**
 
 -   `column` — A column with numeric time delta.
--   `maximum_unit` — Optional. Maximum unit to show. Acceptable values seconds, minutes, hours, days, months, years. 
+-   `maximum_unit` — Optional. Maximum unit to show. Acceptable values seconds, minutes, hours, days, months, years.
 
 Example:
 
@@ -626,7 +626,12 @@ neighbor(column, offset[, default_value])
 ```
 
 The result of the function depends on the affected data blocks and the order of data in the block.
-If you make a subquery with ORDER BY and call the function from outside the subquery, you can get the expected result.
+
+!!! warning "Warning"
+    It can reach the neighbor rows only inside the currently processed data block.
+
+The rows order used during the calculation of `neighbor` can differ from the order of rows returned to the user.
+To prevent that you can make a subquery with ORDER BY and call the function from outside the subquery.
 
 **Parameters**
 
@@ -731,8 +736,13 @@ Result:
 Calculates the difference between successive row values ​​in the data block.
 Returns 0 for the first row and the difference from the previous row for each subsequent row.
 
+!!! warning "Warning"
+    It can reach the previos row only inside the currently processed data block.
+    
 The result of the function depends on the affected data blocks and the order of data in the block.
-If you make a subquery with ORDER BY and call the function from outside the subquery, you can get the expected result.
+
+The rows order used during the calculation of `runningDifference` can differ from the order of rows returned to the user.
+To prevent that you can make a subquery with ORDER BY and call the function from outside the subquery.
 
 Example:
 
@@ -1584,7 +1594,7 @@ isDecimalOverflow(d, [p])
 **Parameters**
 
 -   `d` — value. [Decimal](../../sql-reference/data-types/decimal.md).
--   `p` — precision. Optional. If omitted, the initial presicion of the first argument is used. Using of this paratemer could be helpful for data extraction to another DBMS or file. [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
+-   `p` — precision. Optional. If omitted, the initial precision of the first argument is used. Using of this paratemer could be helpful for data extraction to another DBMS or file. [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
 
 **Returned values**
 
@@ -1645,6 +1655,26 @@ Result:
 
 ``` text
 10	10	19	19	39	39
+```
+
+## errorCodeToName {#error-code-to-name}
+
+**Returned value**
+
+-   Variable name for the error code.
+
+Type: [LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md).
+
+**Syntax**
+
+``` sql
+errorCodeToName(1)
+```
+
+Result:
+
+``` text
+UNSUPPORTED_METHOD
 ```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/other_functions/) <!--hide-->
