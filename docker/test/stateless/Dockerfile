@@ -7,8 +7,8 @@ RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \
         apt-get install --yes --no-install-recommends \
             brotli \
-            zstd \
             expect \
+            zstd \
             lsof \
             ncdu \
             netcat-openbsd \
