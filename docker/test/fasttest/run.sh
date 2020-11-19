@@ -250,6 +250,15 @@ TESTS_TO_SKIP=(
 
     # Look at DistributedFilesToInsert, so cannot run in parallel.
     01460_DistributedFilesToInsert
+
+    01541_max_memory_usage_for_user
+
+    # Require python libraries like scipy, pandas and numpy
+    01322_ttest_scipy
+
+    01545_system_errors
+    # Checks system.errors
+    01563_distributed_query_finish
 )
 
 time clickhouse-test -j 8 --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"
