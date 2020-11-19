@@ -465,7 +465,7 @@ bool LDAPSimpleAuthClient::authenticate(const LDAPSearchParamsList * search_para
 
 #else // USE_LDAP
 
-void LDAPClient::diag(const int)
+void LDAPClient::diag(const int, String)
 {
     throw Exception("ClickHouse was built without LDAP support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
 }
@@ -479,12 +479,12 @@ void LDAPClient::closeConnection() noexcept
 {
 }
 
-LDAPSearchResults LDAPClient::search(const LDAPSearchParams & search_params)
+LDAPSearchResults LDAPClient::search(const LDAPSearchParams &)
 {
     throw Exception("ClickHouse was built without LDAP support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
 }
 
-bool LDAPSimpleAuthClient::authenticate()
+bool LDAPSimpleAuthClient::authenticate(const LDAPSearchParamsList *, LDAPSearchResultsList *)
 {
     throw Exception("ClickHouse was built without LDAP support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
 }
