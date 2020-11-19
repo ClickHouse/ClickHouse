@@ -120,7 +120,9 @@ void TestKeeperTCPHandler::runImpl()
         {
             if (it->wait_for(0s) == std::future_status::ready)
             {
-                it->get()->write(*out);
+                auto response = it->get();
+                if (response->error == Coordination::Error::ZOK)
+                    response->write(*out);
                 it = watch_responses.erase(it);
             }
             else

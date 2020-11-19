@@ -531,11 +531,19 @@ void TestKeeperStorage::processingThread()
                                 ? list_watches
                                 : watches;
 
-                            watches_type[info.request->zk_request->getPath()].emplace_back(std::move(info.watch_callback));
+                            watches_type[zk_request->getPath()].emplace_back(std::move(info.watch_callback));
                         }
                         else if (response->error == Coordination::Error::ZNONODE && dynamic_cast<const Coordination::ZooKeeperExistsRequest *>(zk_request.get()))
                         {
-                            watches[info.request->zk_request->getPath()].emplace_back(std::move(info.watch_callback));
+                            watches[zk_request->getPath()].emplace_back(std::move(info.watch_callback));
+                        }
+                        else
+                        {
+                            Coordination::ZooKeeperWatchResponse watch_response;
+                            watch_response.path = zk_request->getPath();
+                            watch_response.xid = -1;
+                            watch_response.error = response->error;
+                            info.watch_callback(std::make_shared<Coordination::ZooKeeperWatchResponse>(watch_response));
                         }
                     }
 
