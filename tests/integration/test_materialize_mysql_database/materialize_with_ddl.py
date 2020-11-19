@@ -556,4 +556,3 @@ def err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, mysql_n
 
     mysql_node.query("DROP DATABASE priv_err_db;")
     mysql_node.grant_min_priv_for_user("test")
-
