@@ -86,6 +86,7 @@ struct FormatSettings
 
     struct
     {
+        bool array_of_rows = false;
         bool quote_64bit_integers = true;
         bool quote_denormals = true;
         bool escape_forward_slashes = true;
