@@ -654,3 +654,10 @@ def mysql_kill_sync_thread_restore_test(clickhouse_node, mysql_node, service_nam
 
     clickhouse_node.query("DROP DATABASE test_database")
     mysql_node.query("DROP DATABASE test_database")
+
+
+def mysql_killed_while_insert(clickhouse_node, mysql_node, service_name):
+    pass
+
+def clickhouse_killed_while_insert(clickhouse_node, mysql_node, service_name):
+    pass
