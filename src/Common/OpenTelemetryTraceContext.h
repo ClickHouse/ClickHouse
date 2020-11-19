@@ -1,6 +1,7 @@
 #pragma once
 
-namespace DB {
+namespace DB
+{
 
 // The runtime info we need to create new OpenTelemetry spans.
 struct OpenTelemetryTraceContext
