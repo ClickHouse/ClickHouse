@@ -353,8 +353,6 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
         span.finish_time_us =
             std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
-        // We could use a more precise and monotonic counter for this.
-        span.duration_ns = (span.finish_time_us - span.start_time_us) * 1000;
         span.attribute_names.push_back("clickhouse.thread_id");
         span.attribute_values.push_back(thread_id);
 
