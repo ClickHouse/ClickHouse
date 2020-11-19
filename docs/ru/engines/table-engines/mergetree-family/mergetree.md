@@ -565,6 +565,7 @@ ALTER TABLE example_table
 -   `disk` — диск, находящийся внутри тома.
 -   `max_data_part_size_bytes` — максимальный размер куска данных, который может находится на любом из дисков этого тома.
 -   `move_factor` — доля доступного свободного места на томе, если места становится меньше, то данные начнут перемещение на следующий том, если он есть (по умолчанию 0.1).
+-   `prefer_not_to_merge` — Настройка для отключения слияния томов с многодисковой конфигурацией. Если данная настройка включена, то слияние диска не допускается.
 
 Примеры конфигураций:
 
@@ -593,6 +594,19 @@ ALTER TABLE example_table
             </volumes>
             <move_factor>0.2</move_factor>
         </moving_from_ssd_to_hdd>
+
+		<small_jbod_with_external_no_merges>
+            <volumes>
+                <main>
+                    <disk>jbod1</disk>
+                </main>
+                <external>
+                    <disk>external</disk>
+                    <prefer_not_to_merge>true</prefer_not_to_merge>
+                </external>
+            </volumes>
+        </small_jbod_with_external_no_merges>
+
     </policies>
     ...
 </storage_configuration>
