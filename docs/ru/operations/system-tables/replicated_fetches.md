@@ -1,6 +1,6 @@
 # system.replicated_fetches {#system_tables-replicated_fetches}
 
-Содержит информацию о выполняемых в данный момент фоновых процессах синхронизации.
+Содержит информацию о выполняемых в данный момент фоновых операциях скачивания кусков данных с других реплик.
 
 Столбцы:
 
@@ -8,19 +8,19 @@
 
 -   `table` ([String](../../sql-reference/data-types/string.md)) — имя таблицы.
 
--   `elapsed` ([Float64](../../sql-reference/data-types/float.md)) — время, прошедшее от начала отображения текущих запущенных фоновых процессов, в секундах.
+-   `elapsed` ([Float64](../../sql-reference/data-types/float.md)) — время, прошедшее от момента начала скачивания куска, в секундах.
 
 -   `progress` ([Float64](../../sql-reference/data-types/float.md)) — доля выполненной работы от 0 до 1.
 
--   `result_part_name` ([String](../../sql-reference/data-types/string.md)) — имя куска, который будет сформирован в результате отображения текущих запущенных фоновых процессов.
+-   `result_part_name` ([String](../../sql-reference/data-types/string.md)) — имя скачиваемого куска.
 
--   `result_part_path` ([String](../../sql-reference/data-types/string.md)) — абсолютный путь к куску, который будет сформирован в результате отображения текущих запущенных фоновых процессов.
+-   `result_part_path` ([String](../../sql-reference/data-types/string.md)) — абсолютный путь к скачиваемому куску.
 
 -   `partition_id` ([String](../../sql-reference/data-types/string.md)) — идентификатор партиции.
 
--   `total_size_bytes_compressed` ([UInt64](../../sql-reference/data-types/int-uint.md)) — общий размер сжатой информации в финальном куске в байтах.
+-   `total_size_bytes_compressed` ([UInt64](../../sql-reference/data-types/int-uint.md)) — общий размер сжатой информации в скачиваемом куске в байтах.
 
--   `bytes_read_compressed` ([UInt64](../../sql-reference/data-types/int-uint.md)) — размер сжатой информации, считанной из финального куска, в байтах.
+-   `bytes_read_compressed` ([UInt64](../../sql-reference/data-types/int-uint.md)) — размер сжатой информации, считанной из скачиваемого куска, в байтах.
 
 -   `source_replica_path` ([String](../../sql-reference/data-types/string.md)) — абсолютный путь к исходной реплике.
 
@@ -32,7 +32,7 @@
 
 -   `URI` ([String](../../sql-reference/data-types/string.md)) — универсальный идентификатор ресурса.
 
--   `to_detached` ([UInt8](../../sql-reference/data-types/int-uint.md)) — флаг, указывающий на использование выражения `TO DETACHED` в текущих фоновых процессах.
+-   `to_detached` ([UInt8](../../sql-reference/data-types/int-uint.md)) — флаг, указывающий на использование выражения `TO DETACHED` в текущих фоновых операциях.
 
 -   `thread_id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — идентификатор потока.
 
