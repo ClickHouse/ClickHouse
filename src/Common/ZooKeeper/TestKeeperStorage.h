@@ -5,6 +5,8 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <future>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace zkutil
 {
@@ -33,11 +35,13 @@ public:
     };
 
     using Container = std::map<std::string, Node>;
+    using Ephemerals = std::unordered_map<int64_t, std::unordered_set<String>>;
 
     using WatchCallbacks = std::vector<ResponseCallback>;
     using Watches = std::map<String /* path, relative of root_path */, WatchCallbacks>;
 
     Container container;
+    Ephemerals ephemerals;
 
     std::atomic<int64_t> zxid{0};
     std::atomic<bool> shutdown{false};
@@ -53,6 +57,7 @@ public:
         ResponseCallback response_callback;
         ResponseCallback watch_callback;
         clock::time_point time;
+        int64_t session_id;
     };
 
     std::mutex push_request_mutex;
@@ -74,7 +79,8 @@ public:
         AsyncResponse response;
         std::optional<AsyncResponse> watch_response;
     };
-    ResponsePair putRequest(const Coordination::ZooKeeperRequestPtr & request);
+    ResponsePair putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
+    void putCloseRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
 
     int64_t getSessionID()
     {
