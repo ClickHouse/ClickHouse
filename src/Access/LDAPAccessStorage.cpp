@@ -187,7 +187,8 @@ void LDAPAccessStorage::applyRoleChangeNoLock(bool grant, const UUID & role_id, 
     {
         user_ids = memory_storage.findAll<User>();
     }
-    else {
+    else
+    {
         const auto it = users_per_roles.find(role_name);
         if (it != users_per_roles.end())
         {
