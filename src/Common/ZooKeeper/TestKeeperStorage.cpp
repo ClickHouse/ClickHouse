@@ -163,10 +163,11 @@ struct TestKeeperStorageCreateRequest final : public TestKeeperStorageRequest
                 if (request.is_ephemeral)
                     ephemerals[session_id].emplace(path_created);
 
-                undo = [&container, &ephemerals, session_id, path_created, is_sequential = request.is_sequential, parent_path = it->first]
+                undo = [&container, &ephemerals, session_id, path_created, is_sequential = request.is_sequential, is_ephemeral = request.is_ephemeral, parent_path = it->first]
                 {
                     container.erase(path_created);
-                    ephemerals[session_id].erase(path_created);
+                    if (is_ephemeral)
+                        ephemerals[session_id].erase(path_created);
                     auto & undo_parent = container.at(parent_path);
                     --undo_parent.stat.cversion;
                     --undo_parent.stat.numChildren;
