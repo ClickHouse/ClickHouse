@@ -30,30 +30,30 @@ class WriteBuffer;
 /**
  * If you have a cumulative distribution function F, then calculating the p-value for given statistic T is simply 1−F(T)
  * In our case p-value is two-sided, so we multiply it by 2.
- * So cumulative distribution function F equals to 
+ * So cumulative distribution function F equals to
  * \[ F(t) = \int_{-\infty}^{t} f(u)du = 1 - \frac{1}{2} I_{x(t)}(\frac{v}{2}, \frac{1}{2}) \]
  * where \[ x(t) = \frac{v}{t^2 + v} \]: https://en.wikipedia.org/wiki/Student%27s_t-distribution#Cumulative_distribution_function
- * 
+ *
  * so our resulting \[ p-value = I_{x(t)}(\frac{v}{2}, \frac{1}{2}) \].
- * 
+ *
  * And I is regularized incomplete beta function: https://en.wikipedia.org/wiki/Beta_function#Incomplete_beta_function
- * 
- * Keepenig in mind that \[ \mathrm {B} (x;a,b)=\int _{0}^{x}r^{a-1}\,(1-r)^{b-1}\,\mathrm {d} r.\! \] 
+ *
+ * Keepenig in mind that \[ \mathrm {B} (x;a,b)=\int _{0}^{x}r^{a-1}\,(1-r)^{b-1}\,\mathrm {d} r.\! \]
  * and
  * \[ \mathrm {B} (x,y)={\dfrac {\Gamma (x)\,\Gamma (y)}{\Gamma (x+y)}}=\
- * \exp(\ln {\dfrac {\Gamma (x)\,\Gamma (y)}{\Gamma (x+y)}})=\exp((\ln(\Gamma (x))+\ln(\Gamma (y))-\ln(\Gamma (x+y))) \] 
- * 
+ * \exp(\ln {\dfrac {\Gamma (x)\,\Gamma (y)}{\Gamma (x+y)}})=\exp((\ln(\Gamma (x))+\ln(\Gamma (y))-\ln(\Gamma (x+y))) \]
+ *
  * p-value can be calculated in terms of gamma functions and integrals more simply:
  * \[ {\frac {\int _{0}^{\frac {\nu }{t^{2}+\nu }}r^{{\frac {\nu }{2}}-1}\,(1-r)^{-0.5}\,\mathrm {d} r}\
- * {\exp((\ln(\Gamma ({\frac {\nu }{2}}))+\ln(\Gamma (0.5))-\ln(\Gamma ({\frac {\nu }{2}}+0.5)))}} \] 
- * 
+ * {\exp((\ln(\Gamma ({\frac {\nu }{2}}))+\ln(\Gamma (0.5))-\ln(\Gamma ({\frac {\nu }{2}}+0.5)))}} \]
+ *
  * which simplifies to:
- * 
+ *
  * \[ {\frac {\int _{0}^{\frac {\nu }{t^{2}+\nu }}{\frac {r^{{\frac {\nu }{2}}-1}}{\sqrt {1-r}}}\,\mathrm {d} r}\
- * {\exp((\ln(\Gamma ({\frac {\nu }{2}}))+\ln(\Gamma (0.5))-\ln(\Gamma ({\frac {\nu }{2}}+0.5)))}} \]  
- * 
+ * {\exp((\ln(\Gamma ({\frac {\nu }{2}}))+\ln(\Gamma (0.5))-\ln(\Gamma ({\frac {\nu }{2}}+0.5)))}} \]
+ *
  * Read here for details https://rosettacode.org/wiki/Welch%27s_t-test#
- * 
+ *
  * Both WelchTTest and StudentTTest have t-statistric with Student distribution but with different degrees of freedom.
  * So the procedure of computing p-value is the same.
 */
