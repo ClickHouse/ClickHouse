@@ -442,9 +442,11 @@ void MinimalisticDataPartChecksums::checkEqualImpl(const MinimalisticDataPartChe
 {
     if (num_compressed_files != rhs.num_compressed_files || num_uncompressed_files != rhs.num_uncompressed_files)
     {
-        throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH,
-                        "Different number of files: {} compressed (expected {}) and {} uncompressed ones (expected {})",
-                        rhs.num_compressed_files, num_compressed_files, rhs.num_uncompressed_files, num_uncompressed_files);
+        std::stringstream error_msg;
+        error_msg << "Different number of files: " << rhs.num_compressed_files << " compressed (expected " << num_compressed_files << ")"
+            << " and " << rhs.num_uncompressed_files << " uncompressed ones (expected " << num_uncompressed_files << ")";
+
+        throw Exception(error_msg.str(), ErrorCodes::CHECKSUM_DOESNT_MATCH);
     }
 
     Strings errors;

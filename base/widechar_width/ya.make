@@ -1,5 +1,3 @@
-OWNER(g:clickhouse)
-
 LIBRARY()
 
 ADDINCL(GLOBAL clickhouse/base/widechar_width)

@@ -7,12 +7,10 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/Pipe.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Interpreters/Context.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 
 
 namespace DB
@@ -84,7 +82,7 @@ TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, cons
 Pipe IStorage::read(
         const Names & /*column_names*/,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        SelectQueryInfo & /*query_info*/,
+        const SelectQueryInfo & /*query_info*/,
         const Context & /*context*/,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t /*max_block_size*/,
@@ -93,30 +91,8 @@ Pipe IStorage::read(
     throw Exception("Method read is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
-void IStorage::read(
-        QueryPlan & query_plan,
-        const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
-        SelectQueryInfo & query_info,
-        const Context & context,
-        QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size,
-        unsigned num_streams)
-{
-    auto pipe = read(column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    if (pipe.empty())
-    {
-        auto header = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
-        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info);
-    }
-    else
-    {
-        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), getName());
-        query_plan.addStep(std::move(read_step));
-    }
-}
-
 Pipe IStorage::alterPartition(
+    const ASTPtr & /* query */,
     const StorageMetadataPtr & /* metadata_snapshot */,
     const PartitionCommands & /* commands */,
     const Context & /* context */)

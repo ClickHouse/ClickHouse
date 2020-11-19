@@ -9,6 +9,7 @@ template <typename A, typename B>
 struct MultiplyImpl
 {
     using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type;
+    static const constexpr bool allow_decimal = true;
     static const constexpr bool allow_fixed_string = false;
 
     template <typename Result = ResultType>
@@ -43,7 +44,7 @@ struct MultiplyImpl
 };
 
 struct NameMultiply { static constexpr auto name = "multiply"; };
-using FunctionMultiply = BinaryArithmeticOverloadResolver<MultiplyImpl, NameMultiply>;
+using FunctionMultiply = FunctionBinaryArithmetic<MultiplyImpl, NameMultiply>;
 
 void registerFunctionMultiply(FunctionFactory & factory)
 {

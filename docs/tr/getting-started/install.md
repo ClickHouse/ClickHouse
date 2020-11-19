@@ -9,9 +9,9 @@ toc_title: Kurulum
 
 ## Sistem Gereksinimleri {#system-requirements}
 
-ClickHouse, x86_64, AArch64 veya PowerPC64LE CPU mimarisine sahip herhangi bir Linux, FreeBSD veya Mac OS X üzerinde çalışabilir.
+ClickHouse, x86\_64, AArch64 veya PowerPC64LE CPU mimarisine sahip herhangi bir Linux, FreeBSD veya Mac OS X üzerinde çalışabilir.
 
-Resmi önceden oluşturulmuş ikili dosyalar genellikle x86_64 ve kaldıraç sse 4.2 komut seti için derlenir, bu nedenle destekleyen CPU'nun aksi belirtilmedikçe ek bir sistem gereksinimi haline gelir. Geçerli CPU'nun sse 4.2 desteği olup olmadığını kontrol etmek için komut:
+Resmi önceden oluşturulmuş ikili dosyalar genellikle x86\_64 ve kaldıraç sse 4.2 komut seti için derlenir, bu nedenle destekleyen CPU'nun aksi belirtilmedikçe ek bir sistem gereksinimi haline gelir. Geçerli CPU'nun sse 4.2 desteği olup olmadığını kontrol etmek için komut:
 
 ``` bash
 $ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
