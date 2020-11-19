@@ -3859,7 +3859,8 @@ bool StorageReplicatedMergeTree::optimize(
                         future_merged_part, disk_space, can_merge, partition_id, final, metadata_snapshot, &disable_reason);
                 }
 
-                if (final && select_decision == SelectPartsDecision::NOTHING_TO_MERGE)
+                /// If there is nothing to merge then we treat this merge as successful (needed for optimize final optimization)
+                if (select_decision == SelectPartsDecision::NOTHING_TO_MERGE)
                     break;
 
                 if (select_decision != SelectPartsDecision::SELECTED)

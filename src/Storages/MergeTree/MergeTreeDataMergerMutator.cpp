@@ -370,7 +370,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectAllPartsToMergeWithinParti
     MergeTreeData::DataPartsVector parts = selectAllPartsFromPartition(partition_id);
 
     if (parts.empty())
-        return SelectPartsDecision::NOTHING_TO_MERGE;
+        return SelectPartsDecision::CANNOT_SELECT;
 
     if (!final && parts.size() == 1)
     {
@@ -396,7 +396,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectAllPartsToMergeWithinParti
         /// For the case of one part, we check that it can be merged "with itself".
         if ((it != parts.begin() || parts.size() == 1) && !can_merge(*prev_it, *it, out_disable_reason))
         {
-            return SelectPartsDecision::NOTHING_TO_MERGE;
+            return SelectPartsDecision::CANNOT_SELECT;
         }
 
         sum_bytes += (*it)->getBytesOnDisk();

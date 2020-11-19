@@ -747,8 +747,8 @@ bool StorageMergeTree::merge(
 
     auto merge_mutate_entry = selectPartsToMerge(metadata_snapshot, aggressive, partition_id, final, out_disable_reason, table_lock_holder, &select_decision);
 
-    /// If final and there is nothing to merge then we treat this merge as successful
-    if (final && select_decision == SelectPartsDecision::NOTHING_TO_MERGE)
+    /// If there is nothing to merge then we treat this merge as successful (needed for optimize final optimization)
+    if (select_decision == SelectPartsDecision::NOTHING_TO_MERGE)
         return true;
 
     if (!merge_mutate_entry)
