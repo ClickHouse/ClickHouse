@@ -102,6 +102,7 @@ SRCS(
     URL/topLevelDomain.cpp
     abs.cpp
     acos.cpp
+    acosh.cpp
     addDays.cpp
     addHours.cpp
     addMinutes.cpp
@@ -170,8 +171,11 @@ SRCS(
     array/range.cpp
     array/registerFunctionsArray.cpp
     asin.cpp
+    asinh.cpp
     assumeNotNull.cpp
     atan.cpp
+    atan2.cpp
+    atanh.cpp
     bar.cpp
     base64Decode.cpp
     base64Encode.cpp
@@ -202,6 +206,7 @@ SRCS(
     concat.cpp
     convertCharset.cpp
     cos.cpp
+    cosh.cpp
     countDigits.cpp
     currentDatabase.cpp
     currentUser.cpp
@@ -273,6 +278,7 @@ SRCS(
     hasToken.cpp
     hasTokenCaseInsensitive.cpp
     hostName.cpp
+    hypot.cpp
     identity.cpp
     if.cpp
     ifNotFinite.cpp
@@ -304,6 +310,7 @@ SRCS(
     like.cpp
     log.cpp
     log10.cpp
+    log1p.cpp
     log2.cpp
     logTrace.cpp
     lowCardinalityIndices.cpp
@@ -409,6 +416,7 @@ SRCS(
     runningDifferenceStartingWithFirstValue.cpp
     sigmoid.cpp
     sin.cpp
+    sinh.cpp
     sleep.cpp
     sleepEachRow.cpp
     sqrt.cpp
