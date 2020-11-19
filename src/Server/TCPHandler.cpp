@@ -518,7 +518,7 @@ void TCPHandler::processInsertQuery(const Settings & connection_settings)
 
 void TCPHandler::processOrdinaryQuery()
 {
-    OpenTelemetrySpanHolder span(__FUNCTION__);
+    OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
 
     /// Pull query execution result, if exists, and send it to network.
     if (state.io.in)

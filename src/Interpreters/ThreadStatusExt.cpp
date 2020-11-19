@@ -341,8 +341,11 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
         OpenTelemetrySpanLogElement span;
 
         span.trace_id = thread_trace_context.trace_id;
-        // Might be problematic if some span holder isn't finished by the time
-        // we detach this thread...
+        // All child span holders should be finished by the time we detach this
+        // thread, so the current span id should be the thread span id. If not,
+        // an assertion for a proper parent span in ~OpenTelemetrySpanHolder()
+        // is going to fail, because we're going to reset it to zero later in
+        // this function.
         span.span_id = thread_trace_context.span_id;
         span.parent_span_id = query_context->query_trace_context.span_id;
         span.operation_name = getThreadName();
@@ -354,6 +357,11 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
         span.duration_ns = (span.finish_time_us - span.start_time_us) * 1000;
         span.attribute_names.push_back("clickhouse.thread_id");
         span.attribute_values.push_back(thread_id);
+
+#ifndef NDEBUG
+        span.attribute_names.push_back("clickhouse.end.stacktrace");
+        span.attribute_values.push_back(StackTrace().toString());
+#endif
 
         opentelemetry_span_log->add(span);
     }
