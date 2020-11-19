@@ -35,10 +35,10 @@ namespace ErrorCodes
 
 struct MannWhitneyData : public StatisticalSample<Float64, Float64>
 {
-    /*Since null hypotesis is "for randomly selected values X and Y from two populations, 
+    /*Since null hypothesis is "for randomly selected values X and Y from two populations,
      *the probability of X being greater than Y is equal to the probability of Y being greater than X".
-     *Or "the distribution F of first sample equals to the distribution G of second sample". 
-     *Then alternative for this hypotesis (H1) is "two-sided"(F != G), "less"(F < G), "greater" (F > G). */
+     *Or "the distribution F of first sample equals to the distribution G of second sample".
+     *Then alternative for this hypothesis (H1) is "two-sided"(F != G), "less"(F < G), "greater" (F > G). */
     enum class Alternative
     {
         TwoSided,
@@ -67,7 +67,7 @@ struct MannWhitneyData : public StatisticalSample<Float64, Float64>
         const Float64 u1 = n1 * n2 + (n1 * (n1 + 1.)) / 2. - r1;
         const Float64 u2 = n1 * n2 - u1;
 
-        /// The distribution of U-statistic under null hypotesis H0  is symmetric with respect to meanrank.
+        /// The distribution of U-statistic under null hypothesis H0  is symmetric with respect to meanrank.
         const Float64 meanrank = n1 * n2 /2. + 0.5 * continuity_correction;
         const Float64 sd = std::sqrt(tie_correction * n1 * n2 * (n1 + n2 + 1) / 12.0);
 
@@ -82,7 +82,7 @@ struct MannWhitneyData : public StatisticalSample<Float64, Float64>
 
         const Float64 z = std::abs((u - meanrank) / sd);
         /// In fact cdf is a probability function, so it is intergral of density from (-inf, z].
-        /// But since standart normal distribution is symmetric, cdf(0) = 0.5 and we have to compute integral from [0, z].
+        /// But since standard normal distribution is symmetric, cdf(0) = 0.5 and we have to compute integral from [0, z].
         const Float64 cdf = integrateSimpson(0, z, [] (Float64 t) { return std::pow(M_E, -0.5 * t * t) / std::sqrt(2 * M_PI);});
 
         Float64 p_value = 0;
