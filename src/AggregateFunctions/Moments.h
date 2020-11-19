@@ -82,6 +82,7 @@ struct VarMoments
         // to avoid accuracy problem
         if (m[0] == 1)
             return 0;
+        /// \[ \frac{1}{m_0} (m_3 - (3 * m_2 - \frac{2 * {m_1}^2}{m_0}) * \frac{m_1}{m_0});\] 
         return (m[3]
             - (3 * m[2]
                 - 2 * m[1] * m[1] / m[0]
@@ -96,6 +97,7 @@ struct VarMoments
         // to avoid accuracy problem
         if (m[0] == 1)
             return 0;
+        /// \[ \frac{1}{m_0}(m_4 - (4 * m_3 - (6 * m_2 - \frac{3 * m_1^2}{m_0} ) \frac{m_1}{m_0})\frac{m_1}{m_0})\] 
         return (m[4]
             - (4 * m[3]
                 - (6 * m[2]
