@@ -18,8 +18,18 @@ Block OpenTelemetrySpanLogElement::createBlock()
         {std::make_shared<DataTypeUInt64>(), "span_id"},
         {std::make_shared<DataTypeUInt64>(), "parent_span_id"},
         {std::make_shared<DataTypeString>(), "operation_name"},
-        {std::make_shared<DataTypeDateTime64>(6), "start_time_us"},
-        {std::make_shared<DataTypeDateTime64>(6), "finish_time_us"},
+        // DateTime64 is really unwieldy -- there is no "normal" way to convert
+        // it to an UInt64 count of microseconds, except:
+        // 1) reinterpretAsUInt64(reinterpretAsFixedString(date)), which just
+        // doesn't look sane;
+        // 2) things like toUInt64(toDecimal64(date, 6) * 1000000) that are also
+        // excessively verbose -- why do I have to write scale '6' again, and
+        // write out 6 zeros? -- and also don't work because of overflow.
+        // Also subtraction of two DateTime64 points doesn't work, so you can't
+        // get duration.
+        // It is much less hassle to just use UInt64 of microseconds.
+        {std::make_shared<DataTypeUInt64>(), "start_time_us"},
+        {std::make_shared<DataTypeUInt64>(), "finish_time_us"},
         {std::make_shared<DataTypeDate>(), "finish_date"},
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
             "attribute.names"},
@@ -134,11 +144,6 @@ OpenTelemetrySpanHolder::~OpenTelemetrySpanHolder()
 
         finish_time_us = std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
-
-        // We should use a high resolution monotonic clock for calculating
-        // duration, but this way will do for now.
-        duration_ns = (finish_time_us - start_time_us) * 1000;
-
 
         log->add(OpenTelemetrySpanLogElement(
                      static_cast<OpenTelemetrySpan>(*this)));

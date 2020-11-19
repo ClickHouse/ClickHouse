@@ -11,9 +11,8 @@ struct OpenTelemetrySpan
     UInt64 span_id;
     UInt64 parent_span_id;
     std::string operation_name;
-    Decimal64 start_time_us;
-    Decimal64 finish_time_us;
-    UInt64 duration_ns;
+    UInt64 start_time_us;
+    UInt64 finish_time_us;
     Array attribute_names;
     Array attribute_values;
     // I don't understand how Links work, namely, which direction should they

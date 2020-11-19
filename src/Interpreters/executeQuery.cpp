@@ -255,7 +255,6 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
         span.operation_name = "query";
         span.start_time_us = current_time_us;
         span.finish_time_us = current_time_us;
-        span.duration_ns = 0;
 
         /// Keep values synchronized to type enum in QueryLogElement::createBlock.
         span.attribute_names.push_back("clickhouse.query_status");
@@ -697,7 +696,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     span.operation_name = "query";
                     span.start_time_us = elem.query_start_time_microseconds;
                     span.finish_time_us = time_in_microseconds(finish_time);
-                    span.duration_ns = elapsed_seconds * 1000000000;
 
                     /// Keep values synchronized to type enum in QueryLogElement::createBlock.
                     span.attribute_names.push_back("clickhouse.query_status");
