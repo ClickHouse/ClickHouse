@@ -142,6 +142,22 @@ std::unique_ptr<ZooKeeperLock> createSimpleZooKeeperLock(
 }
 
 
+String DatabaseReplicatedExtensions::getLogEntryName(UInt32 log_entry_number)
+{
+    constexpr size_t seq_node_digits = 10;
+    String number = toString(log_entry_number);
+    String name = "query-" + String(seq_node_digits - number.size(), '0') + number;
+    return name;
+}
+
+UInt32 DatabaseReplicatedExtensions::getLogEntryNumber(const String & log_entry_name)
+{
+    constexpr const char * name = "query-";
+    assert(startsWith(log_entry_name, name));
+    return parse<UInt32>(log_entry_name.substr(strlen(name)));
+}
+
+
 DDLWorker::DDLWorker(int pool_size_, const std::string & zk_root_dir, const Context & context_, const Poco::Util::AbstractConfiguration * config, const String & prefix,
                      std::optional<DatabaseReplicatedExtensions> database_replicated_ext_)
     : context(context_)
@@ -236,8 +252,21 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
     String node_data;
     String entry_path = queue_dir + "/" + entry_name;
 
+    if (database_replicated_ext)
+    {
+        auto expected_log_entry = DatabaseReplicatedExtensions::getLogEntryName(database_replicated_ext->first_not_executed);
+        if (entry_name != expected_log_entry)
+        {
+            database_replicated_ext->lost_callback(entry_name, zookeeper);
+            out_reason = "DatabaseReplicated: expected " + expected_log_entry + " got " + entry_name;
+            return {};
+        }
+    }
+
     if (!zookeeper->tryGet(entry_path, node_data))
     {
+        if (database_replicated_ext)
+            database_replicated_ext->lost_callback(entry_name, zookeeper);
         /// It is Ok that node could be deleted just now. It means that there are no current host in node's host list.
         out_reason = "The task was deleted";
         return {};
@@ -339,7 +368,7 @@ void DDLWorker::scheduleTasks()
         ? queue_nodes.begin()
         : std::upper_bound(queue_nodes.begin(), queue_nodes.end(), last_tasks.back());
 
-    for (auto it = begin_node; it != queue_nodes.end(); ++it)
+    for (auto it = begin_node; it != queue_nodes.end() && !stop_flag; ++it)
     {
         String entry_name = *it;
 
@@ -362,11 +391,17 @@ void DDLWorker::scheduleTasks()
 
         if (!already_processed)
         {
-            worker_pool.scheduleOrThrowOnError([this, task_ptr = task.release()]()
+            if (database_replicated_ext)
             {
-                setThreadName("DDLWorkerExec");
-                enqueueTask(DDLTaskPtr(task_ptr));
-            });
+                enqueueTask(DDLTaskPtr(task.release()));
+            }
+            else
+            {
+                worker_pool.scheduleOrThrowOnError([this, task_ptr = task.release()]() {
+                    setThreadName("DDLWorkerExec");
+                    enqueueTask(DDLTaskPtr(task_ptr));
+                });
+            }
         }
         else
         {
@@ -374,9 +409,6 @@ void DDLWorker::scheduleTasks()
         }
 
         saveTask(entry_name);
-
-        if (stop_flag)
-            break;
     }
 }
 
@@ -599,6 +631,7 @@ void DDLWorker::enqueueTask(DDLTaskPtr task_ptr)
         }
     }
 }
+
 void DDLWorker::processTask(DDLTask & task)
 {
     auto zookeeper = tryGetZooKeeper();
@@ -626,7 +659,9 @@ void DDLWorker::processTask(DDLTask & task)
     else
         throw Coordination::Exception(code, active_node_path);
 
-    if (!task.was_executed)
+    //FIXME
+    bool is_dummy_query = database_replicated_ext && task.entry.query.empty();
+    if (!task.was_executed && !is_dummy_query)
     {
         try
         {
@@ -675,7 +710,19 @@ void DDLWorker::processTask(DDLTask & task)
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeRemoveRequest(active_node_path, -1));
     ops.emplace_back(zkutil::makeCreateRequest(finished_node_path, task.execution_status.serializeText(), zkutil::CreateMode::Persistent));
+    if (database_replicated_ext)
+    {
+        assert(DatabaseReplicatedExtensions::getLogEntryName(database_replicated_ext->first_not_executed) == task.entry_name);
+        ops.emplace_back(zkutil::makeSetRequest(database_replicated_ext->getReplicaPath() + "/log_ptr", toString(database_replicated_ext->first_not_executed), -1));
+    }
+
     zookeeper->multi(ops);
+
+    if (database_replicated_ext)
+    {
+        database_replicated_ext->executed_callback(task.entry_name, zookeeper);
+        ++(database_replicated_ext->first_not_executed);
+    }
 }
 
 

@@ -13,6 +13,7 @@ namespace DB
 {
 
 class DDLWorker;
+using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
 
 /** DatabaseReplicated engine
   * supports replication of metadata
@@ -56,22 +57,29 @@ public:
     void loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool force_attach = false) override;
 
 private:
-    bool createDatabaseNodesInZooKeeper(const zkutil::ZooKeeperPtr & current_zookeeper);
-    void createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPtr & current_zookeeper);
+    bool createDatabaseNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
+    void createReplicaNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
 
-    void runBackgroundLogExecutor();
+    //void runBackgroundLogExecutor();
     void writeLastExecutedToDiskAndZK();
 
-    void loadMetadataFromSnapshot();
-    void createSnapshot();
+    //void loadMetadataFromSnapshot();
+    void createSnapshot(const ZooKeeperPtr & zookeeper);
     void removeOutdatedSnapshotsAndLog();
+
+    Strings getSnapshots(const ZooKeeperPtr & zookeeper) const;
+
+    void onUnexpectedLogEntry(const String & entry_name, const ZooKeeperPtr & zookeeper);
+    void recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 from_snapshot, bool create = false);
+
+    void onExecutedLogEntry(const String & entry_name, const ZooKeeperPtr & zookeeper);
 
     String zookeeper_path;
     String shard_name;
     String replica_name;
     String replica_path;
 
-    String log_entry_to_execute;
+    UInt32 log_entry_to_execute;
 
     std::mutex log_name_mutex;
     String log_name_to_exec_with_result;
@@ -83,6 +91,8 @@ private:
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
     std::unique_ptr<DDLWorker> ddl_worker;
+
+
 
 };
 

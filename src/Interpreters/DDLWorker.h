@@ -37,16 +37,25 @@ using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
 struct DatabaseReplicatedExtensions
 {
     UUID database_uuid;
+    String zookeeper_path;
     String database_name;
     String shard_name;
     String replica_name;
-    String first_not_executed;
-    using NewEntryCallback = std::function<void(const String & entry_name, const ZooKeeperPtr)>;
+    UInt32 first_not_executed;
+    using EntryLostCallback = std::function<void(const String & entry_name, const ZooKeeperPtr)>;
     using EntryExecutedCallback = std::function<void(const String & entry_name, const ZooKeeperPtr)>;
     using EntryErrorCallback = std::function<void(const String & entry_name, const ZooKeeperPtr, const std::exception_ptr &)>;
-    NewEntryCallback before_execution_callback;
+    EntryLostCallback lost_callback;
     EntryExecutedCallback executed_callback;
     EntryErrorCallback error_callback;
+
+    String getReplicaPath() const
+    {
+        return zookeeper_path + "/replicas/" + shard_name + "/" + replica_name;
+    }
+
+    static String getLogEntryName(UInt32 log_entry_number);
+    static UInt32 getLogEntryNumber(const String & log_entry_name);
 };
 
 
@@ -68,6 +77,9 @@ public:
     }
 
     void shutdown();
+
+    //FIXME get rid of this method
+    void setLogPointer(UInt32 log_pointer) { database_replicated_ext->first_not_executed = log_pointer; }
 
 private:
 
