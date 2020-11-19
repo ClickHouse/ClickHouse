@@ -76,7 +76,6 @@ static void executeJob(IProcessor * processor)
 {
     try
     {
-        OpenTelemetrySpanHolder span(demangle(typeid(*processor).name()));
         processor->work();
     }
     catch (Exception & exception)
@@ -694,6 +693,8 @@ void PipelineExecutor::initializeExecution(size_t num_threads)
 
 void PipelineExecutor::executeImpl(size_t num_threads)
 {
+    OpenTelemetrySpanHolder span("PipelineExecutor::executeImpl()");
+
     initializeExecution(num_threads);
 
     using ThreadsData = std::vector<ThreadFromGlobalPool>;

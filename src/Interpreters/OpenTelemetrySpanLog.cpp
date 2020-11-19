@@ -28,6 +28,7 @@ Block OpenTelemetrySpanLogElement::createBlock()
     };
 }
 
+
 void OpenTelemetrySpanLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
@@ -51,6 +52,7 @@ void OpenTelemetrySpanLogElement::appendToBlock(MutableColumns & columns) const
     }
     columns[i++]->insert(string_values);
 }
+
 
 OpenTelemetrySpanHolder::OpenTelemetrySpanHolder(const std::string & _operation_name)
 {
@@ -78,12 +80,14 @@ OpenTelemetrySpanHolder::OpenTelemetrySpanHolder(const std::string & _operation_
     start_time_us = std::chrono::duration_cast<std::chrono::microseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
 
-    // ****** remove this
+#ifndef NDEBUG
     attribute_names.push_back("clickhouse.start.stacktrace");
     attribute_values.push_back(StackTrace().toString());
+#endif
 
     thread.thread_trace_context.span_id = span_id;
 }
+
 
 OpenTelemetrySpanHolder::~OpenTelemetrySpanHolder()
 {
@@ -116,11 +120,10 @@ OpenTelemetrySpanHolder::~OpenTelemetrySpanHolder()
             return;
         }
 
-        //******** remove this
-        attribute_names.push_back("clickhouse.query_id");
-        attribute_values.push_back(context->getCurrentQueryId());
+#ifndef NDEBUG
         attribute_names.push_back("clickhouse.end.stacktrace");
         attribute_values.push_back(StackTrace().toString());
+#endif
 
         auto log = context->getOpenTelemetrySpanLog();
         if (!log)
@@ -145,6 +148,75 @@ OpenTelemetrySpanHolder::~OpenTelemetrySpanHolder()
         tryLogCurrentException(__FUNCTION__);
     }
 }
+
+
+bool OpenTelemetryTraceContext::parseTraceparentHeader(const std::string & traceparent,
+    std::string & error)
+{
+    trace_id = 0;
+
+    uint8_t version = -1;
+    uint64_t trace_id_high = 0;
+    uint64_t trace_id_low = 0;
+
+    // Version 00, which is the only one we can parse, is fixed width. Use this
+    // fact for an additional sanity check.
+    const int expected_length = 2 + 1 + 32 + 1 + 16 + 1 + 2;
+    if (traceparent.length() != expected_length)
+    {
+        error = fmt::format("unexpected length {}, expected {}",
+            traceparent.length(), expected_length);
+        return false;
+    }
+
+    // clang-tidy doesn't like sscanf:
+    //   error: 'sscanf' used to convert a string to an unsigned integer value,
+    //   but function will not report conversion errors; consider using 'strtoul'
+    //   instead [cert-err34-c,-warnings-as-errors]
+    // There is no other ready solution, and hand-rolling a more complicated
+    // parser for an HTTP header in C++ sounds like RCE.
+    // NOLINTNEXTLINE(cert-err34-c)
+    int result = sscanf(&traceparent[0],
+        "%2" SCNx8 "-%16" SCNx64 "%16" SCNx64 "-%16" SCNx64 "-%2" SCNx8,
+        &version, &trace_id_high, &trace_id_low, &span_id, &trace_flags);
+
+    if (result == EOF)
+    {
+        error = "EOF";
+        return false;
+    }
+
+    // We read uint128 as two uint64, so 5 parts and not 4.
+    if (result != 5)
+    {
+        error = fmt::format("could only read {} parts instead of the expected 5",
+            result);
+        return false;
+    }
+
+    if (version != 0)
+    {
+        error = fmt::format("unexpected version {}, expected 00", version);
+        return false;
+    }
+
+    trace_id = static_cast<__uint128_t>(trace_id_high) << 64
+        | trace_id_low;
+    return true;
+}
+
+
+std::string OpenTelemetryTraceContext::composeTraceparentHeader() const
+{
+    // This span is a parent for its children, so we specify this span_id as a
+    // parent id.
+    return fmt::format("00-{:032x}-{:016x}-{:02x}", trace_id,
+        span_id,
+        // This cast is needed because fmt is being weird and complaining that
+        // "mixing character types is not allowed".
+        static_cast<uint8_t>(trace_flags));
+}
+
 
 }
 

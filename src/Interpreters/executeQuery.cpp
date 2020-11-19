@@ -478,7 +478,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         }
 
         {
-            OpenTelemetrySpanHolder span("execute interpreter");
+            OpenTelemetrySpanHolder span("IInterpreter::execute()");
             res = interpreter->execute();
         }
 

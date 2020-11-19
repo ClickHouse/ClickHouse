@@ -94,7 +94,7 @@ namespace ErrorCodes
 
 std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & context, QueryProcessingStage::Enum stage)
 {
-    OpenTelemetrySpanHolder span(__FUNCTION__);
+    OpenTelemetrySpanHolder span("InterpreterFactory::get()");
 
     ProfileEvents::increment(ProfileEvents::Query);
 
