@@ -3,10 +3,45 @@
 #include <common/types.h>
 
 #include <chrono>
+#include <set>
+#include <vector>
 
 
 namespace DB
 {
+
+struct LDAPRoleMappingRules
+{
+    String match = ".+";
+    String replace = "$&";
+
+    bool continue_on_match = false;
+};
+
+struct LDAPSearchParams
+{
+    enum class Scope
+    {
+        BASE,
+        ONE_LEVEL,
+        SUBTREE,
+        CHILDREN
+    };
+
+    String base_dn;
+    String attribute = "cn";
+    Scope scope = Scope::SUBTREE;
+
+    String filter_prefix;
+    String filter_suffix;
+
+    bool fail_if_all_rules_mismatch = false;
+    std::vector<LDAPRoleMappingRules> role_mapping_rules;
+};
+
+using LDAPSearchParamsList = std::vector<LDAPSearchParams>;
+using LDAPSearchResults = std::set<String>;
+using LDAPSearchResultsList = std::vector<LDAPSearchResults>;
 
 struct LDAPServerParams
 {
