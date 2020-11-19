@@ -97,8 +97,7 @@ protected:
     const String marks_file_extension;
     CompressionCodecPtr default_codec;
 
-    bool compute_granularity;
-    bool need_finish_last_granule;
+    const bool compute_granularity;
 
     /// Number of marsk in data from which skip indices have to start
     /// aggregation. I.e. it's data mark number, not skip indices mark.
@@ -106,7 +105,10 @@ protected:
 
     std::vector<StreamPtr> skip_indices_streams;
     MergeTreeIndexAggregators skip_indices_aggregators;
-    std::vector<size_t> skip_index_filling;
+    /// Amount of marks currently serialized in skip index aggregator
+    std::vector<size_t> marks_in_skip_index_aggregator;
+    /// Amount of rows currently serialized in skip index aggregator for last mark
+    std::vector<size_t> rows_in_skip_index_aggregator_last_mark;
 
     std::unique_ptr<WriteBufferFromFileBase> index_file_stream;
     std::unique_ptr<HashingWriteBuffer> index_stream;
@@ -125,6 +127,11 @@ protected:
 private:
     /// Index is already serialized up to this mark.
     size_t index_mark = 0;
+
+    /// Increment corresponding marks_in_skip_index_aggregator[skip_index_pos]
+    /// value and flush skip_indices_streams[skip_index_pos] to disk if we have
+    /// aggregated enough marks
+    void accountMarkForSkipIdxAndFlushIfNeeded(size_t skip_index_pos);
 };
 
 }
