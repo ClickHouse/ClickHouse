@@ -1048,13 +1048,11 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     }
 
     /// Check that fetches pool is not overloaded
-    if (entry.type == LogEntry::GET_PART)
+    if (entry.type == LogEntry::GET_PART && !storage.canExecuteFetch(entry, out_postpone_reason))
     {
-        if (!storage.canExecuteFetch(entry, out_postpone_reason))
-        {
-            LOG_TRACE(log, out_postpone_reason);
-            return false;
-        }
+        /// Don't print log message about this, because we can have a lot of fetches,
+        /// for example during replica recovery.
+        return false;
     }
 
     if (entry.type == LogEntry::MERGE_PARTS || entry.type == LogEntry::MUTATE_PART)
