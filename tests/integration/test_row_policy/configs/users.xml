@@ -3,7 +3,6 @@
     <profiles>
         <default>
             <any_join_distinct_right_table_keys>1</any_join_distinct_right_table_keys>
-            <optimize_on_insert>0</optimize_on_insert>
         </default>
     </profiles>
     <users>

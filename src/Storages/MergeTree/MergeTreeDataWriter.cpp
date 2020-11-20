@@ -254,7 +254,7 @@ Block MergeTreeDataWriter::mergeBlock(const Block & block, SortDescription sort_
     IMergingAlgorithm::Status status = merging_algorithm->merge();
     while (!status.is_finished)
         status = merging_algorithm->merge();
-    
+
     /// Merged Block is sorted and we don't need to use permutation anymore
     *permutation = nullptr;
 
