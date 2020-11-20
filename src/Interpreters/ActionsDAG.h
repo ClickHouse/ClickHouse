@@ -239,6 +239,9 @@ public:
         Name,
     };
 
+    /// Create ActionsDAG which converts block structure from source to result.
+    /// It is needed to convert result from different sources to the same structure, e.g. for UNION query.
+    /// Conversion should be possible with only usage of CAST function and renames.
     static ActionsDAGPtr makeConvertingActions(
         const ColumnsWithTypeAndName & source,
         const ColumnsWithTypeAndName & result,

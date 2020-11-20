@@ -164,7 +164,6 @@ void ExpressionActions::linearizeActions()
         {
             /// Argument for input is special. It contains the position from required columns.
             ExpressionActions::Argument argument;
-            // argument.pos = required_columns.size();
             argument.needed_later = !cur.parents.empty();
             arguments.emplace_back(argument);
 
