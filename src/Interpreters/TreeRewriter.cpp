@@ -739,12 +739,12 @@ void TreeRewriter::normalize(ASTPtr & query, Aliases & aliases, const Settings &
         CustomizeAggregateFunctionsOrNullVisitor(data_or_null).visit(query);
     }
 
-    /// Creates a dictionary `aliases`: alias -> ASTPtr
-    QueryAliasesVisitor(aliases).visit(query);
-
     /// Mark table ASTIdentifiers with not a column marker
     MarkTableIdentifiersVisitor::Data identifiers_data{aliases};
     MarkTableIdentifiersVisitor(identifiers_data).visit(query);
+
+    /// Creates a dictionary `aliases`: alias -> ASTPtr
+    QueryAliasesVisitor(aliases).visit(query);
 
     /// Common subexpression elimination. Rewrite rules.
     QueryNormalizer::Data normalizer_data(aliases, settings);

@@ -331,7 +331,7 @@ void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr 
 
 SetPtr SelectQueryExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr & subquery_or_table_name)
 {
-    const auto * table = subquery_or_table_name->as<ASTIdentifier>();
+    const auto * table = subquery_or_table_name->as<ASTTableIdentifier>();
     if (!table)
         return nullptr;
     auto table_id = context.resolveStorageID(subquery_or_table_name);
