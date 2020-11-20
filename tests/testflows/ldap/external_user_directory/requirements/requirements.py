@@ -1,6 +1,6 @@
 # These requirements were auto generated
 # from software requirements specification (SRS)
-# document by TestFlows v1.6.201025.1200805.
+# document by TestFlows v1.6.201102.1235648.
 # Do not edit by hand but re-generate instead
 # using 'tfs requirements generate' command.
 from testflows.core import Specification
@@ -107,20 +107,21 @@ SRS_009_ClickHouse_LDAP_External_User_Directory = Specification(
       * 4.2.3.28 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Server.TLSCipherSuite](#rqsrs-009ldapexternaluserdirectoryconfigurationservertlsciphersuite)
       * 4.2.3.29 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Server.VerificationCooldown](#rqsrs-009ldapexternaluserdirectoryconfigurationserververificationcooldown)
       * 4.2.3.30 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Server.VerificationCooldown.Default](#rqsrs-009ldapexternaluserdirectoryconfigurationserververificationcooldowndefault)
-      * 4.2.3.31 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Server.Syntax](#rqsrs-009ldapexternaluserdirectoryconfigurationserversyntax)
-      * 4.2.3.32 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.LDAPUserDirectory](#rqsrs-009ldapexternaluserdirectoryconfigurationusersldapuserdirectory)
-      * 4.2.3.33 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.LDAPUserDirectory.MoreThanOne](#rqsrs-009ldapexternaluserdirectoryconfigurationusersldapuserdirectorymorethanone)
-      * 4.2.3.34 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Syntax](#rqsrs-009ldapexternaluserdirectoryconfigurationuserssyntax)
-      * 4.2.3.35 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Server](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersserver)
-      * 4.2.3.36 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Server.Empty](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersserverempty)
-      * 4.2.3.37 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Server.Missing](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersservermissing)
-      * 4.2.3.38 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Server.MoreThanOne](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersservermorethanone)
-      * 4.2.3.39 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Server.Invalid](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersserverinvalid)
-      * 4.2.3.40 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Roles](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersroles)
-      * 4.2.3.41 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Roles.MoreThanOne](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersrolesmorethanone)
-      * 4.2.3.42 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Roles.Invalid](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersrolesinvalid)
-      * 4.2.3.43 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Roles.Empty](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersrolesempty)
-      * 4.2.3.44 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Roles.Missing](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersrolesmissing)
+      * 4.2.3.31 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Server.VerificationCooldown.Invalid](#rqsrs-009ldapexternaluserdirectoryconfigurationserververificationcooldowninvalid)
+      * 4.2.3.32 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Server.Syntax](#rqsrs-009ldapexternaluserdirectoryconfigurationserversyntax)
+      * 4.2.3.33 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.LDAPUserDirectory](#rqsrs-009ldapexternaluserdirectoryconfigurationusersldapuserdirectory)
+      * 4.2.3.34 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.LDAPUserDirectory.MoreThanOne](#rqsrs-009ldapexternaluserdirectoryconfigurationusersldapuserdirectorymorethanone)
+      * 4.2.3.35 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Syntax](#rqsrs-009ldapexternaluserdirectoryconfigurationuserssyntax)
+      * 4.2.3.36 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Server](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersserver)
+      * 4.2.3.37 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Server.Empty](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersserverempty)
+      * 4.2.3.38 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Server.Missing](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersservermissing)
+      * 4.2.3.39 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Server.MoreThanOne](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersservermorethanone)
+      * 4.2.3.40 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Server.Invalid](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersserverinvalid)
+      * 4.2.3.41 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Roles](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersroles)
+      * 4.2.3.42 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Roles.MoreThanOne](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersrolesmorethanone)
+      * 4.2.3.43 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Roles.Invalid](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersrolesinvalid)
+      * 4.2.3.44 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Roles.Empty](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersrolesempty)
+      * 4.2.3.45 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Roles.Missing](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersrolesmissing)
     * 4.2.4 [Authentication](#authentication)
       * 4.2.4.1 [RQ.SRS-009.LDAP.ExternalUserDirectory.Authentication.Username.Empty](#rqsrs-009ldapexternaluserdirectoryauthenticationusernameempty)
       * 4.2.4.2 [RQ.SRS-009.LDAP.ExternalUserDirectory.Authentication.Username.Long](#rqsrs-009ldapexternaluserdirectoryauthenticationusernamelong)
@@ -593,7 +594,7 @@ version: 1.0
 that SHALL define a period of time, in seconds, after a successful bind attempt, during which a user SHALL be assumed
 to be successfully authenticated for all consecutive requests without contacting the [LDAP] server.
 After period of time since the last successful attempt expires then on the authentication attempt
-SHALL result in contacting the [LDAP] server to verify the username and password. 
+SHALL result in contacting the [LDAP] server to verify the username and password.
 
 ##### RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Server.VerificationCooldown.Default
 version: 1.0
@@ -601,6 +602,25 @@ version: 1.0
 [ClickHouse] `verification_cooldown` parameter in the [LDAP] server configuration section
 SHALL have a default value of `0` that disables caching and forces contacting
 the [LDAP] server for each authentication request.
+
+##### RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Server.VerificationCooldown.Invalid
+version: 1.0
+
+[Clickhouse] SHALL return an error if the value provided for the `verification_cooldown` parameter is not a valid positive integer.
+
+For example:
+
+* negative integer
+* string
+* empty value
+* extremely large positive value (overflow)
+* extremely large negative value (overflow)
+
+The error SHALL appear in the log and SHALL be similar to the following:
+
+```bash
+<Error> Access(user directories): Could not parse LDAP server `openldap1`: Poco::Exception. Code: 1000, e.code() = 0, e.displayText() = Syntax error: Not a valid unsigned integer: *input value*
+```
 
 ##### RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Server.Syntax
 version: 2.0
@@ -763,7 +783,6 @@ version: 1.0
 
 [ClickHouse] SHALL support [UTF-8] characters in passwords
 used to authenticate users when using [LDAP] external user directory.
-
 
 ##### RQ.SRS-009.LDAP.ExternalUserDirectory.Authentication.VerificationCooldown.Performance
 version: 1.0
@@ -1756,7 +1775,7 @@ RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Server_VerificationCooldown 
         'that SHALL define a period of time, in seconds, after a successful bind attempt, during which a user SHALL be assumed\n'
         'to be successfully authenticated for all consecutive requests without contacting the [LDAP] server.\n'
         'After period of time since the last successful attempt expires then on the authentication attempt\n'
-        'SHALL result in contacting the [LDAP] server to verify the username and password. \n'
+        'SHALL result in contacting the [LDAP] server to verify the username and password.\n'
         '\n'
         ),
         link=None)
@@ -1772,6 +1791,33 @@ RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Server_VerificationCooldown_
         '[ClickHouse] `verification_cooldown` parameter in the [LDAP] server configuration section\n'
         'SHALL have a default value of `0` that disables caching and forces contacting\n'
         'the [LDAP] server for each authentication request.\n'
+        '\n'
+        ),
+        link=None)
+
+RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Server_VerificationCooldown_Invalid = Requirement(
+        name='RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Server.VerificationCooldown.Invalid',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[Clickhouse] SHALL return an error if the value provided for the `verification_cooldown` parameter is not a valid positive integer.\n'
+        '\n'
+        'For example:\n'
+        '\n'
+        '* negative integer\n'
+        '* string\n'
+        '* empty value\n'
+        '* extremely large positive value (overflow)\n'
+        '* extremely large negative value (overflow)\n'
+        '\n'
+        'The error SHALL appear in the log and SHALL be similar to the following:\n'
+        '\n'
+        '```bash\n'
+        '<Error> Access(user directories): Could not parse LDAP server `openldap1`: Poco::Exception. Code: 1000, e.code() = 0, e.displayText() = Syntax error: Not a valid unsigned integer: *input value*\n'
+        '```\n'
         '\n'
         ),
         link=None)
@@ -2092,7 +2138,6 @@ RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication_Password_UTF8 = Requirement
         description=(
         '[ClickHouse] SHALL support [UTF-8] characters in passwords\n'
         'used to authenticate users when using [LDAP] external user directory.\n'
-        '\n'
         '\n'
         ),
         link=None)
