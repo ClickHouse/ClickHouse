@@ -162,9 +162,10 @@ void PocoHTTPClient::makeRequestInternal(
     ProfileEvents::increment(select_metric(S3MetricType::Count));
 
     unsigned int max_redirect_attempts = global_context.getSettingsRef().s3_max_redirects;
+
     try
     {
-        for (unsigned int attempt = 0; attempt < max_redirect_attempts; ++attempt)
+        for (unsigned int attempt = 0; attempt <= max_redirect_attempts; ++attempt)
         {
             Poco::URI poco_uri(uri);
 
