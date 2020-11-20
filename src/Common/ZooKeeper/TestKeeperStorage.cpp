@@ -81,14 +81,13 @@ struct TestKeeperStorageRequest
 {
     Coordination::ZooKeeperRequestPtr zk_request;
 
-    TestKeeperStorageRequest(const Coordination::ZooKeeperRequestPtr & zk_request_)
+    explicit TestKeeperStorageRequest(const Coordination::ZooKeeperRequestPtr & zk_request_)
         : zk_request(zk_request_)
     {}
     virtual std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(TestKeeperStorage::Container & container, TestKeeperStorage::Ephemerals & ephemerals, int64_t zxid, int64_t session_id) const = 0;
     virtual void processWatches(TestKeeperStorage::Watches & /*watches*/, TestKeeperStorage::Watches & /*list_watches*/) const {}
 
-    virtual ~TestKeeperStorageRequest() {}
-};
+    virtual ~TestKeeperStorageRequest() = default
 
 struct TestKeeperStorageHeartbeatRequest final : public TestKeeperStorageRequest
 {
@@ -411,29 +410,29 @@ struct TestKeeperStorageCheckRequest final : public TestKeeperStorageRequest
 struct TestKeeperStorageMultiRequest final : public TestKeeperStorageRequest
 {
     std::vector<TestKeeperStorageRequestPtr> concrete_requests;
-    TestKeeperStorageMultiRequest(const Coordination::ZooKeeperRequestPtr & zk_request_)
+    explicit TestKeeperStorageMultiRequest(const Coordination::ZooKeeperRequestPtr & zk_request_)
         : TestKeeperStorageRequest(zk_request_)
     {
         Coordination::ZooKeeperMultiRequest & request = dynamic_cast<Coordination::ZooKeeperMultiRequest &>(*zk_request);
         concrete_requests.reserve(request.requests.size());
 
-        for (const auto & zk_request : request.requests)
+        for (const auto & sub_zk_request : request.requests)
         {
-            if (const auto * concrete_request_create = dynamic_cast<const Coordination::ZooKeeperCreateRequest *>(zk_request.get()))
+            if (dynamic_cast<const Coordination::ZooKeeperCreateRequest *>(sub_zk_request.get()))
             {
-                concrete_requests.push_back(std::make_shared<TestKeeperStorageCreateRequest>(dynamic_pointer_cast<Coordination::ZooKeeperCreateRequest>(zk_request)));
+                concrete_requests.push_back(std::make_shared<TestKeeperStorageCreateRequest>(dynamic_pointer_cast<Coordination::ZooKeeperCreateRequest>(sub_zk_request)));
             }
-            else if (const auto * concrete_request_remove = dynamic_cast<const Coordination::ZooKeeperRemoveRequest *>(zk_request.get()))
+            else if (dynamic_cast<const Coordination::ZooKeeperRemoveRequest *>(sub_zk_request.get()))
             {
-                concrete_requests.push_back(std::make_shared<TestKeeperStorageRemoveRequest>(dynamic_pointer_cast<Coordination::ZooKeeperRemoveRequest>(zk_request)));
+                concrete_requests.push_back(std::make_shared<TestKeeperStorageRemoveRequest>(dynamic_pointer_cast<Coordination::ZooKeeperRemoveRequest>(sub_zk_request)));
             }
-            else if (const auto * concrete_request_set = dynamic_cast<const Coordination::ZooKeeperSetRequest *>(zk_request.get()))
+            else if (dynamic_cast<const Coordination::ZooKeeperSetRequest *>(sub_zk_request.get()))
             {
-                concrete_requests.push_back(std::make_shared<TestKeeperStorageSetRequest>(dynamic_pointer_cast<Coordination::ZooKeeperSetRequest>(zk_request)));
+                concrete_requests.push_back(std::make_shared<TestKeeperStorageSetRequest>(dynamic_pointer_cast<Coordination::ZooKeeperSetRequest>(sub_zk_request)));
             }
-            else if (const auto * concrete_request_check = dynamic_cast<const Coordination::ZooKeeperCheckRequest *>(zk_request.get()))
+            else if (dynamic_cast<const Coordination::ZooKeeperCheckRequest *>(sub_zk_request.get()))
             {
-                concrete_requests.push_back(std::make_shared<TestKeeperStorageCheckRequest>(dynamic_pointer_cast<Coordination::ZooKeeperCheckRequest>(zk_request)));
+                concrete_requests.push_back(std::make_shared<TestKeeperStorageCheckRequest>(dynamic_pointer_cast<Coordination::ZooKeeperCheckRequest>(sub_zk_request)));
             }
             else
                 throw Coordination::Exception("Illegal command as part of multi ZooKeeper request", Coordination::Error::ZBADARGUMENTS);
