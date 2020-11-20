@@ -252,13 +252,35 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
     String node_data;
     String entry_path = queue_dir + "/" + entry_name;
 
+    auto task = std::make_unique<DDLTask>();
+    task->entry_name = entry_name;
+    task->entry_path = entry_path;
+
     if (database_replicated_ext)
     {
-        auto expected_log_entry = DatabaseReplicatedExtensions::getLogEntryName(database_replicated_ext->first_not_executed);
-        if (entry_name != expected_log_entry)
+        //auto expected_log_entry = DatabaseReplicatedExtensions::getLogEntryName(database_replicated_ext->first_not_executed);
+        //if (entry_name != expected_log_entry)
+        //{
+        //    database_replicated_ext->lost_callback(entry_name, zookeeper);
+        //    out_reason = "DatabaseReplicated: expected " + expected_log_entry + " got " + entry_name;
+        //    return {};
+        //}
+
+        String initiator_name;
+        zkutil::EventPtr wait_committed_or_failed;
+
+        if (zookeeper->tryGet(entry_path + "/try", initiator_name, nullptr, wait_committed_or_failed))
         {
-            database_replicated_ext->lost_callback(entry_name, zookeeper);
-            out_reason = "DatabaseReplicated: expected " + expected_log_entry + " got " + entry_name;
+            task->we_are_initiator = initiator_name == database_replicated_ext->getFullReplicaName();
+            /// Query is not committed yet. We cannot just skip it and execute next one, because reordering may break replication.
+            //FIXME add some timeouts
+            if (!task->we_are_initiator)
+                wait_committed_or_failed->wait();
+        }
+
+        if (!task->we_are_initiator && !zookeeper->exists(entry_path + "/committed"))
+        {
+            out_reason = "Entry " + entry_name + " hasn't been committed";
             return {};
         }
     }
@@ -271,10 +293,6 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
         out_reason = "The task was deleted";
         return {};
     }
-
-    auto task = std::make_unique<DDLTask>();
-    task->entry_name = entry_name;
-    task->entry_path = entry_path;
 
     try
     {
@@ -557,15 +575,34 @@ bool DDLWorker::tryExecuteQuery(const String & query, const DDLTask & task, Exec
     try
     {
         auto current_context = std::make_unique<Context>(context);
+        current_context->makeQueryContext();
+        current_context->setCurrentQueryId(""); // generate random query_id
+
         if (database_replicated_ext)
         {
             current_context->getClientInfo().query_kind
                 = ClientInfo::QueryKind::REPLICATED_LOG_QUERY; //FIXME why do we need separate query kind?
             current_context->setCurrentDatabase(database_replicated_ext->database_name);
+
+            if (task.we_are_initiator)
+            {
+                auto txn = std::make_shared<MetadataTransaction>();
+                current_context->initMetadataTransaction(txn);
+                txn->current_zookeeper = current_zookeeper;
+                txn->zookeeper_path = database_replicated_ext->zookeeper_path;
+                txn->ops.emplace_back(zkutil::makeRemoveRequest(task.entry_path + "/try", -1));
+                txn->ops.emplace_back(zkutil::makeCreateRequest(task.entry_path + "/committed",
+                                                                database_replicated_ext->getFullReplicaName(), zkutil::CreateMode::Persistent));
+                txn->ops.emplace_back(zkutil::makeRemoveRequest(task.active_path, -1));
+                if (!task.shard_path.empty())
+                    txn->ops.emplace_back(zkutil::makeCreateRequest(task.shard_path, task.host_id_str, zkutil::CreateMode::Persistent));
+                txn->ops.emplace_back(zkutil::makeCreateRequest(task.finished_path, task.execution_status.serializeText(), zkutil::CreateMode::Persistent));
+                //txn->ops.emplace_back(zkutil::makeSetRequest(database_replicated_ext->getReplicaPath() + "/log_ptr", toString(database_replicated_ext->first_not_executed), -1));
+            }
         }
         else
             current_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-        current_context->setCurrentQueryId(""); // generate random query_id
+
         executeQuery(istr, ostr, false, *current_context, {});
     }
     catch (...)
@@ -639,8 +676,9 @@ void DDLWorker::processTask(DDLTask & task)
     LOG_DEBUG(log, "Processing task {} ({})", task.entry_name, task.entry.query);
 
     String dummy;
-    String active_node_path = task.entry_path + "/active/" + task.host_id_str;
-    String finished_node_path = task.entry_path + "/finished/" + task.host_id_str;
+    //FIXME duplicate
+    String active_node_path = task.active_path = task.entry_path + "/active/" + task.host_id_str;
+    String finished_node_path = task.finished_path = task.entry_path + "/finished/" + task.host_id_str;
 
     auto code = zookeeper->tryCreate(active_node_path, "", zkutil::CreateMode::Ephemeral, dummy);
 
@@ -712,11 +750,15 @@ void DDLWorker::processTask(DDLTask & task)
     ops.emplace_back(zkutil::makeCreateRequest(finished_node_path, task.execution_status.serializeText(), zkutil::CreateMode::Persistent));
     if (database_replicated_ext)
     {
-        assert(DatabaseReplicatedExtensions::getLogEntryName(database_replicated_ext->first_not_executed) == task.entry_name);
-        ops.emplace_back(zkutil::makeSetRequest(database_replicated_ext->getReplicaPath() + "/log_ptr", toString(database_replicated_ext->first_not_executed), -1));
+        //assert(DatabaseReplicatedExtensions::getLogEntryName(database_replicated_ext->first_not_executed) == task.entry_name);
+        //ops.emplace_back(zkutil::makeSetRequest(database_replicated_ext->getReplicaPath() + "/log_ptr", toString(database_replicated_ext->first_not_executed), -1));
     }
 
-    zookeeper->multi(ops);
+    //FIXME replace with multi(...) or use MetadataTransaction
+    Coordination::Responses responses;
+    auto res = zookeeper->tryMulti(ops, responses);
+    if (res != Coordination::Error::ZNODEEXISTS && res != Coordination::Error::ZNONODE)
+        zkutil::KeeperMultiException::check(res, ops, responses);
 
     if (database_replicated_ext)
     {
@@ -774,6 +816,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
     else
         shard_node_name = get_shard_name(task.cluster->getShardsAddresses().at(task.host_shard_num));
     String shard_path = node_path + "/shards/" + shard_node_name;
+    task.shard_path = shard_path; //FIXME duplicate
     String is_executed_path = shard_path + "/executed";
     String tries_to_execute_path = shard_path + "/tries_to_execute";
     zookeeper->createAncestors(shard_path + "/");
@@ -826,7 +869,8 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
             /// and on the next iteration new leader will take lock
             if (tryExecuteQuery(rewritten_query, task, task.execution_status))
             {
-                zookeeper->create(is_executed_path, task.host_id_str, zkutil::CreateMode::Persistent);
+                //FIXME replace with create(...) or remove and use MetadataTransaction
+                zookeeper->createIfNotExists(is_executed_path, task.host_id_str);
                 executed_by_leader = true;
                 break;
             }
@@ -976,7 +1020,27 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry)
     String query_path_prefix = queue_dir + "/query-";
     zookeeper->createAncestors(query_path_prefix);
 
-    String node_path = zookeeper->create(query_path_prefix, entry.toString(), zkutil::CreateMode::PersistentSequential);
+    String node_path;
+    if (database_replicated_ext)
+    {
+        /// We cannot create sequential node and it's ephemeral child in a single transaction, so allocate sequential number another way
+        String counter_prefix = database_replicated_ext->zookeeper_path + "/counter/cnt-";
+        String counter_path = zookeeper->create(counter_prefix, "", zkutil::CreateMode::EphemeralSequential);
+        node_path = query_path_prefix + counter_path.substr(counter_prefix.size());
+
+        Coordination::Requests ops;
+        /// Query is not committed yet, but we have to write it into log to avoid reordering
+        ops.emplace_back(zkutil::makeCreateRequest(node_path, entry.toString(), zkutil::CreateMode::Persistent));
+        /// '/try' will be replaced with '/committed' or will be removed due to expired session or other error
+        ops.emplace_back(zkutil::makeCreateRequest(node_path + "/try", database_replicated_ext->getFullReplicaName(), zkutil::CreateMode::Ephemeral));
+        /// We don't need it anymore
+        ops.emplace_back(zkutil::makeRemoveRequest(counter_path, -1));
+        zookeeper->multi(ops);
+    }
+    else
+    {
+        node_path = zookeeper->create(query_path_prefix, entry.toString(), zkutil::CreateMode::PersistentSequential);
+    }
 
     /// Optional step
     try

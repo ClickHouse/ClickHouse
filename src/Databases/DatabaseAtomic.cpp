@@ -11,6 +11,9 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <filesystem>
 
+//FIXME it shouldn't be here
+#include <Interpreters/DDLTask.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 
 namespace DB
 {
@@ -263,7 +266,8 @@ void DatabaseAtomic::renameTable(const Context & context, const String & table_n
 }
 
 void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
-                                       const String & table_metadata_tmp_path, const String & table_metadata_path)
+                                       const String & table_metadata_tmp_path, const String & table_metadata_path,
+                                       const Context & query_context)
 {
     DetachedTables not_in_use;
     auto table_data_path = getTableDataPath(query);
@@ -280,6 +284,18 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
         /// We will get en exception if some table with the same UUID exists (even if it's detached table or table from another database)
         DatabaseCatalog::instance().addUUIDMapping(query.uuid);
         locked_uuid = true;
+
+        if (auto txn = query_context.getMetadataTransaction())
+        {
+            String metadata_zk_path = txn->zookeeper_path + "/metadata/" + escapeForFileName(query.table);
+            String statement = getObjectDefinitionFromCreateQuery(query.clone());
+            /// zk::multi(...) will throw if `metadata_zk_path` exists
+            txn->ops.emplace_back(zkutil::makeCreateRequest(metadata_zk_path, statement, zkutil::CreateMode::Persistent));
+            txn->current_zookeeper->multi(txn->ops);     /// Commit point (a sort of) for Replicated database
+            /// NOTE: replica will be lost if server crashes before the following renameNoReplace(...)
+            /// TODO better detection and recovery
+        }
+
         /// It throws if `table_metadata_path` already exists (it's possible if table was detached)
         renameNoReplace(table_metadata_tmp_path, table_metadata_path);  /// Commit point (a sort of)
         attachTableUnlocked(query.table, table, lock);   /// Should never throw

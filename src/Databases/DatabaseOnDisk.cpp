@@ -193,11 +193,12 @@ void DatabaseOnDisk::createTable(
         out.close();
     }
 
-    commitCreateTable(create, table, table_metadata_tmp_path, table_metadata_path);
+    commitCreateTable(create, table, table_metadata_tmp_path, table_metadata_path, context);
 }
 
 void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
-                                       const String & table_metadata_tmp_path, const String & table_metadata_path)
+                                       const String & table_metadata_tmp_path, const String & table_metadata_path,
+                                       const Context & /*query_context*/)
 {
     try
     {

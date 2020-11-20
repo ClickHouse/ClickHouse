@@ -2415,4 +2415,17 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
     return StorageID::createEmpty();
 }
 
+void Context::initMetadataTransaction(MetadataTransactionPtr txn)
+{
+    assert(!metadata_transaction);
+    assert(query_context == this);
+    metadata_transaction = std::move(txn);
+}
+
+MetadataTransactionPtr Context::getMetadataTransaction() const
+{
+    assert(query_context == this);
+    return metadata_transaction;
+}
+
 }

@@ -46,6 +46,7 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
 
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <DataStreams/copyData.h>
@@ -4102,6 +4103,12 @@ void StorageReplicatedMergeTree::alter(
             ops.emplace_back(zkutil::makeSetRequest(mutations_path, String(), mutations_stat.version));
             ops.emplace_back(
                 zkutil::makeCreateRequest(mutations_path + "/", mutation_entry.toString(), zkutil::CreateMode::PersistentSequential));
+        }
+
+        if (auto txn = query_context.getMetadataTransaction())
+        {
+            txn->addOps(ops);
+            //TODO maybe also change here table metadata in replicated database?
         }
 
         Coordination::Responses results;

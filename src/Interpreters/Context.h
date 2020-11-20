@@ -114,6 +114,8 @@ using VolumePtr = std::shared_ptr<IVolume>;
 struct NamedSession;
 struct BackgroundTaskSchedulingSettings;
 
+struct MetadataTransaction;
+using MetadataTransactionPtr = std::shared_ptr<MetadataTransaction>;
 
 #if USE_EMBEDDED_COMPILER
 class CompiledExpressionCache;
@@ -211,6 +213,12 @@ private:
                                    /// logger, some query identification information, profiling guards, etc. This field is
                                    /// to be customized in HTTP and TCP servers by overloading the customizeContext(DB::Context&)
                                    /// methods.
+
+    MetadataTransactionPtr metadata_transaction;    /// Distributed DDL context. I'm not sure if it's a suitable place for this,
+                                                    /// but it's the easiest way to pass this through the whole stack from executeQuery(...)
+                                                    /// to DatabaseOnDisk::commitCreateTable(...) or IStorage::alter(...) without changing
+                                                    /// thousands of signatures.
+                                                    /// And I hope it will be replaced with more common Transaction sometime.
 
     /// Use copy constructor or createGlobal() instead
     Context();
@@ -633,6 +641,9 @@ public:
 
     IHostContextPtr & getHostContext();
     const IHostContextPtr & getHostContext() const;
+
+    void initMetadataTransaction(MetadataTransactionPtr txn);
+    MetadataTransactionPtr getMetadataTransaction() const;
 
     struct MySQLWireContext
     {
