@@ -1157,6 +1157,7 @@ SELECT arrayCumSum([1, 1, 1, 1]) AS res
 ┌─res──────────┐
 │ [1, 2, 3, 4] │
 └──────────────┘
+```
 
 ## arrayAUC {#arrayauc}
 

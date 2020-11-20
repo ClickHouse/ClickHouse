@@ -1,13 +1,12 @@
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
-
 namespace DB
 {
 
 Block ExpressionTransform::transformHeader(Block header, const ExpressionActionsPtr & expression)
 {
-    expression->execute(header, true);
+    size_t num_rows = header.rows();
+    expression->execute(header, num_rows, true);
     return header;
 }
 
@@ -20,11 +19,11 @@ ExpressionTransform::ExpressionTransform(const Block & header_, ExpressionAction
 
 void ExpressionTransform::transform(Chunk & chunk)
 {
+    size_t num_rows = chunk.getNumRows();
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
-    expression->execute(block);
+    expression->execute(block, num_rows);
 
-    auto num_rows = block.rows();
     chunk.setColumns(block.getColumns(), num_rows);
 }
 
