@@ -456,6 +456,7 @@ def query_event_with_empty_transaction(clickhouse_node, mysql_node, service_name
     clickhouse_node.query("DROP DATABASE test_database")
     mysql_node.query("DROP DATABASE test_database")
 
+
 def select_without_columns(clickhouse_node, mysql_node, service_name):
     mysql_node.query("DROP DATABASE IF EXISTS db")
     clickhouse_node.query("DROP DATABASE IF EXISTS db")
@@ -487,6 +488,26 @@ def select_without_columns(clickhouse_node, mysql_node, service_name):
     clickhouse_node.query("DROP VIEW v")
     clickhouse_node.query("DROP DATABASE db")
     mysql_node.query("DROP DATABASE db")
+
+
+def insert_with_modify_binlog_checksum(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("CREATE DATABASE test_checksum")
+    mysql_node.query("CREATE TABLE test_checksum.t (a INT PRIMARY KEY, b varchar(200))")
+    clickhouse_node.query("CREATE DATABASE test_checksum ENGINE = MaterializeMySQL('{}:3306', 'test_checksum', 'root', 'clickhouse')".format(service_name))
+    check_query(clickhouse_node, "SHOW TABLES FROM test_checksum FORMAT TSV", "t\n")
+    mysql_node.query("INSERT INTO test_checksum.t VALUES(1, '1111')")
+    check_query(clickhouse_node, "SELECT * FROM test_checksum.t ORDER BY a FORMAT TSV", "1\t1111\n")
+
+    mysql_node.query("SET GLOBAL binlog_checksum=NONE")
+    mysql_node.query("INSERT INTO test_checksum.t VALUES(2, '2222')")
+    check_query(clickhouse_node, "SELECT * FROM test_checksum.t ORDER BY a FORMAT TSV", "1\t1111\n2\t2222\n")
+
+    mysql_node.query("SET GLOBAL binlog_checksum=CRC32")
+    mysql_node.query("INSERT INTO test_checksum.t VALUES(3, '3333')")
+    check_query(clickhouse_node, "SELECT * FROM test_checksum.t ORDER BY a FORMAT TSV", "1\t1111\n2\t2222\n3\t3333\n")
+
+    clickhouse_node.query("DROP DATABASE test_checksum")
+    mysql_node.query("DROP DATABASE test_checksum")
 
 
 def err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
