@@ -78,22 +78,6 @@ std::optional<String> IdentifierSemantic::getColumnName(const ASTPtr & ast)
     return {};
 }
 
-std::optional<String> IdentifierSemantic::getTableName(const ASTIdentifier & node)
-{
-    if (node.semantic->special)
-        return node.name();
-    return {};
-}
-
-std::optional<String> IdentifierSemantic::getTableName(const ASTPtr & ast)
-{
-    if (ast)
-        if (const auto * id = ast->as<ASTIdentifier>())
-            if (id->semantic->special)
-                return id->name();
-    return {};
-}
-
 std::optional<ASTIdentifier> IdentifierSemantic::uncover(const ASTIdentifier & identifier)
 {
     if (identifier.semantic->covered)

@@ -372,7 +372,7 @@ void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
         if (storage()->mayBenefitFromIndexForIn(left_in_operand, context, metadata_snapshot))
         {
             const ASTPtr & arg = args.children.at(1);
-            if (arg->as<ASTSubquery>() || arg->as<ASTIdentifier>())
+            if (arg->as<ASTSubquery>() || arg->as<ASTTableIdentifier>())
             {
                 if (settings.use_index_for_in_with_subqueries)
                     tryMakeSetForIndexFromSubquery(arg);
