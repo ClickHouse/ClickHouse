@@ -34,6 +34,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_FORMAT;
     extern const int INCORRECT_DISK_INDEX;
     extern const int NOT_IMPLEMENTED;
+    extern const int PATH_ACCESS_DENIED;
 }
 
 
@@ -93,6 +94,7 @@ namespace
         /// Metadata file version.
         static constexpr UInt32 VERSION_ABSOLUTE_PATHS = 1;
         static constexpr UInt32 VERSION_RELATIVE_PATHS = 2;
+        static constexpr UInt32 VERSION_READ_ONLY_FLAG = 3;
 
         using PathAndSize = std::pair<String, size_t>;
 
@@ -109,6 +111,8 @@ namespace
         std::vector<PathAndSize> s3_objects;
         /// Number of references (hardlinks) to this metadata file.
         UInt32 ref_count;
+        /// Flag indicates that file is read only.
+        bool read_only;
 
         /// Load metadata by path or create empty if `create` flag is set.
         explicit Metadata(const String & s3_root_path_, const String & disk_path_, const String & metadata_file_path_, bool create = false)
@@ -122,10 +126,10 @@ namespace
             UInt32 version;
             readIntText(version, buf);
 
-            if (version != VERSION_RELATIVE_PATHS && version != VERSION_ABSOLUTE_PATHS)
+            if (version < VERSION_ABSOLUTE_PATHS || version > VERSION_READ_ONLY_FLAG)
                 throw Exception(
                     "Unknown metadata file version. Path: " + disk_path + metadata_file_path
-                        + " Version: " + std::to_string(version) + ", Maximum expected version: " + std::to_string(VERSION_RELATIVE_PATHS),
+                        + " Version: " + std::to_string(version) + ", Maximum expected version: " + std::to_string(VERSION_READ_ONLY_FLAG),
                     ErrorCodes::UNKNOWN_FORMAT);
 
             assertChar('\n', buf);
@@ -158,6 +162,12 @@ namespace
 
             readIntText(ref_count, buf);
             assertChar('\n', buf);
+
+            if (version >= VERSION_READ_ONLY_FLAG)
+            {
+                readBoolText(read_only, buf);
+                assertChar('\n', buf);
+            }
         }
 
         void addObject(const String & path, size_t size)
@@ -187,6 +197,9 @@ namespace
             }
 
             writeIntText(ref_count, buf);
+            writeChar('\n', buf);
+
+            writeBoolText(read_only, buf);
             writeChar('\n', buf);
 
             buf.finalize();
@@ -632,6 +645,12 @@ std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, si
 std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, size_t buf_size, WriteMode mode, size_t estimated_size, size_t)
 {
     bool exist = exists(path);
+    if (exist)
+    {
+        Metadata metadata(s3_root_path, metadata_path, path);
+        if (metadata.read_only)
+            throw Exception("File is read-only: " + path, ErrorCodes::PATH_ACCESS_DENIED);
+    }
     /// Path to store new S3 object.
     auto s3_path = getRandomName();
     bool is_multipart = estimated_size >= min_multi_part_upload_size;
@@ -797,7 +816,11 @@ void DiskS3::createFile(const String & path)
 
 void DiskS3::setReadOnly(const String & path)
 {
-    Poco::File(metadata_path + path).setReadOnly(true);
+    /// We should store read only flag inside metadata file (instead of using FS flag),
+    /// because we modify metadata file when create hard-links from it.
+    Metadata metadata(s3_root_path, metadata_path, path);
+    metadata.read_only = true;
+    metadata.save();
 }
 
 int DiskS3::open(const String & /*path*/, mode_t /*mode*/) const
