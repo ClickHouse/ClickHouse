@@ -50,11 +50,11 @@ void LDAPAccessStorage::setConfiguration(AccessControlManager * access_control_m
     const bool has_role_mapping = config.has(prefix_str + "role_mapping");
 
     if (!has_server)
-        throw Exception("Missing 'server' field for LDAP user directory.", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("Missing 'server' field for LDAP user directory", ErrorCodes::BAD_ARGUMENTS);
 
     const auto ldap_server_cfg = config.getString(prefix_str + "server");
     if (ldap_server_cfg.empty())
-        throw Exception("Empty 'server' field for LDAP user directory.", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("Empty 'server' field for LDAP user directory", ErrorCodes::BAD_ARGUMENTS);
 
     std::set<String> common_roles_cfg;
     if (has_roles)
@@ -94,7 +94,7 @@ void LDAPAccessStorage::setConfiguration(AccessControlManager * access_control_m
             else if (scope == "subtree")   rm_params.scope = LDAPSearchParams::Scope::SUBTREE;
             else if (scope == "children")  rm_params.scope = LDAPSearchParams::Scope::CHILDREN;
             else
-                throw Exception("Invalid value of 'scope' field in '" + key + "' section of LDAP user directory, must be one of 'base', 'one_level', 'subtree', or 'children'.", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception("Invalid value of 'scope' field in '" + key + "' section of LDAP user directory, must be one of 'base', 'one_level', 'subtree', or 'children'", ErrorCodes::BAD_ARGUMENTS);
 
             Poco::Util::AbstractConfiguration::Keys all_mapping_keys;
             config.keys(rm_prefix, all_mapping_keys);
@@ -109,6 +109,16 @@ void LDAPAccessStorage::setConfiguration(AccessControlManager * access_control_m
                 auto & role_mapping_rule = rm_params.role_mapping_rules.back();
 
                 role_mapping_rule.match = config.getString(rule_prefix_str + "match", ".+");
+                try
+                {
+                    // Construct unused regex instance just to check the syntax.
+                    std::regex(role_mapping_rule.match, std::regex_constants::ECMAScript);
+                }
+                catch (const std::regex_error & e)
+                {
+                    throw Exception("ECMAScript regex syntax error in 'match' field in '" + mkey + "' rule of '" + key + "' section of LDAP user directory: " + e.what(), ErrorCodes::BAD_ARGUMENTS);
+                }
+
                 role_mapping_rule.replace = config.getString(rule_prefix_str + "replace", "$&");
                 role_mapping_rule.continue_on_match = config.getBool(rule_prefix_str + "continue_on_match", false);
             }
@@ -371,7 +381,6 @@ std::set<String> LDAPAccessStorage::mapExternalRolesNoLock(const String & user_n
 
         re_cache.clear();
         re_cache.reserve(role_mapping_rules.size());
-
         for (const auto & mapping_rule : role_mapping_rules)
         {
             re_cache.emplace_back(mapping_rule.match, std::regex_constants::ECMAScript | std::regex_constants::optimize);
