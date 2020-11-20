@@ -29,11 +29,9 @@ struct LDAPSearchParams
     };
 
     String base_dn;
+    String search_filter;
     String attribute = "cn";
     Scope scope = Scope::SUBTREE;
-
-    String filter_prefix;
-    String filter_suffix;
 
     bool fail_if_all_rules_mismatch = false;
     std::vector<LDAPRoleMappingRules> role_mapping_rules;
@@ -97,9 +95,7 @@ struct LDAPServerParams
 
     SASLMechanism sasl_mechanism = SASLMechanism::SIMPLE;
 
-    String auth_dn_prefix;
-    String auth_dn_suffix;
-
+    String bind_dn;
     String user;
     String password;
 
