@@ -229,7 +229,7 @@ void DataTypeTuple::deserializeText(IColumn & column, ReadBuffer & istr, const F
 
 void DataTypeTuple::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    if (settings.json.named_tuple_as_object
+    if (settings.json.named_tuples_as_objects
         && have_explicit_names)
     {
         writeChar('{', ostr);
@@ -260,7 +260,7 @@ void DataTypeTuple::serializeTextJSON(const IColumn & column, size_t row_num, Wr
 
 void DataTypeTuple::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    if (settings.json.named_tuple_as_object
+    if (settings.json.named_tuples_as_objects
         && have_explicit_names)
     {
         skipWhitespaceIfAny(istr);
