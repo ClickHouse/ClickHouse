@@ -219,9 +219,9 @@
              Parameters:
                 host - LDAP server hostname or IP, this parameter is mandatory and cannot be empty.
                 port - LDAP server port, default is 636 if enable_tls is set to true, 389 otherwise.
-                auth_dn_prefix, auth_dn_suffix - prefix and suffix used to construct the DN to bind to.
-                        Effectively, the resulting DN will be constructed as auth_dn_prefix + escape(user_name) + auth_dn_suffix string.
-                        Note, that this implies that auth_dn_suffix should usually have comma ',' as its first non-space character.
+                bind_dn - template used to construct the DN to bind to.
+                        The resulting DN will be constructed by replacing all '{username}' substrings of the template with the actual
+                         user name during each authentication attempt.
                 enable_tls - flag to trigger use of secure connection to the LDAP server.
                         Specify 'no' for plain text (ldap://) protocol (not recommended).
                         Specify 'yes' for LDAP over SSL/TLS (ldaps://) protocol (recommended, the default).
@@ -239,8 +239,7 @@
                 <my_ldap_server>
                     <host>localhost</host>
                     <port>636</port>
-                    <auth_dn_prefix>uid=</auth_dn_prefix>
-                    <auth_dn_suffix>,ou=users,dc=example,dc=com</auth_dn_suffix>
+                    <bind_dn>uid={username},ou=users,dc=example,dc=com</bind_dn>
                     <enable_tls>yes</enable_tls>
                     <tls_minimum_protocol_version>tls1.2</tls_minimum_protocol_version>
                     <tls_require_cert>demand</tls_require_cert>
@@ -269,9 +268,43 @@
                 server - one of LDAP server names defined in 'ldap_servers' config section above.
                         This parameter is mandatory and cannot be empty.
                 roles - section with a list of locally defined roles that will be assigned to each user retrieved from the LDAP server.
-                        If no roles are specified, user will not be able to perform any actions after authentication.
-                        If any of the listed roles is not defined locally at the time of authentication, the authenthication attempt
-                         will fail as if the provided password was incorrect.
+                        If no roles are specified here or assigned during role mapping (below), user will not be able to perform any
+                         actions after authentication.
+                role_mapping - section with LDAP search parameters and mapping rules.
+                        The list of strings (values of attributes) returned by the search will be transformed and the resulting strings
+                         will be treated as local role names and assigned to the user.
+                        There can be multiple 'role_mapping' sections defined inside the same 'ldap' section. All of them will be
+                         applied.
+                    base_dn - template used to construct the base DN for the LDAP search.
+                            The resulting DN will be constructed by replacing all '{username}' and '{bind_dn}' substrings
+                             of the template with the actual user name and bind DN during each LDAP search.
+                    attribute - attribute name whose values will be returned by the LDAP search.
+                    scope - scope of the LDAP search.
+                            Accepted values are: 'base', 'one_level', 'children', 'subtree' (the default).
+                    search_filter - template used to construct the search filter for the LDAP search.
+                            The resulting filter will be constructed by replacing all '{username}', '{bind_dn}', and '{base_dn}'
+                             substrings of the template with the actual user name, bind DN, and base DN during each LDAP search.
+                            Note, that the special characters must be escaped properly in XML.
+                    fail_if_all_rules_mismatch - flag to trigger failure if none of the rules were able to match and transform any
+                             of the resulting strings returned by the LDAP search. By default, set to 'true'.
+                    rule - section with matching and mapping info.
+                            Each string will be matched to the regex and, if there is a full match, replaced using format string to
+                             get the name of the local role that needs to be assigned to the user.
+                            There can be multiple 'rule' sections defined inside the same 'role_mapping' section. Each of those rules
+                             will be applied in the order they are listed in 'role_mapping' section. If a rule does not match a string
+                             the next rule will be applied. If none of the rules matched a string and 'fail_if_all_rules_mismatch' is
+                             set to 'false', that particular string will be ignored. If a rule matched a string and 'continue_on_match'
+                             is set to 'false', the subsequent rules will not be applied to the current string.
+                        match - regular expression, in ECMAScript format, used to match each entire string retured by LDAP serach. If
+                             matched successfully, a replacement will be performed and the resulting string will be treated as local
+                             role name and assigned to the user. By default, set to '.+' (match any non-empty string).
+                            Note, that the special characters must be escaped properly in XML.
+                        replace - format string used as a replace expression after the match succeeded. References like '$&' (entire
+                             matched string), or '$n' (n-th subgroup) can be used. By default, set to '$&'.
+                            Note, that the special characters must be escaped properly in XML.
+                        continue_on_match - flag that indicates, whether to continue matching and mapping using the subsequent rules
+                             after this rule successfully matched and mapped the string. By default, set to 'false'.
+                            If set to 'true' and multiple rules match, multiple role names may be generated from one same input string.
              Example:
                 <ldap>
                     <server>my_ldap_server</server>
@@ -279,6 +312,23 @@
                         <my_local_role1 />
                         <my_local_role2 />
                     </roles>
+                    <role_mapping>
+                        <base_dn>ou=groups,dc=example,dc=com</base_dn>
+                        <attribute>cn</attribute>
+                        <scope>subtree</scope>
+                        <search_filter>(&amp;(objectClass=groupOfNames)(member={bind_dn}))</search_filter>
+                        <fail_if_all_rules_mismatch>true</fail_if_all_rules_mismatch>
+                        <rule>
+                            <match>clickhouse_(.+)</match>
+                            <replace>$1</replace>
+                            <continue_on_match>true</continue_on_match>
+                        </rule>
+                        <rule>
+                            <match>.+</match>
+                            <replace>$&amp;</replace>
+                            <continue_on_match>false</continue_on_match>
+                        </rule>
+                    </role_mapping>
                 </ldap>
         -->
     </user_directories>
