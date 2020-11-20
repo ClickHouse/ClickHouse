@@ -1110,10 +1110,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
             is_cancelled = true;
 
             int current_connections = 0;
-            for (auto & server : servers)
+            for (size_t i = 0; i < servers.size(); ++i)
             {
-                server->stop();
-                current_connections += server->currentConnections();
+                servers[i]->stop();
+                /// TODO (alesap)
+                if (i >= already_started_servers)
+                    current_connections += servers[i]->currentConnections();
             }
 
             if (current_connections)
