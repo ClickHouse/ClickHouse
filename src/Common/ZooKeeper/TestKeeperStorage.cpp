@@ -88,6 +88,7 @@ struct TestKeeperStorageRequest
     virtual void processWatches(TestKeeperStorage::Watches & /*watches*/, TestKeeperStorage::Watches & /*list_watches*/) const {}
 
     virtual ~TestKeeperStorageRequest() = default;
+};
 
 struct TestKeeperStorageHeartbeatRequest final : public TestKeeperStorageRequest
 {
