@@ -615,7 +615,6 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
         }
 
         /// Check constants.
-
         if (const auto * res_const = typeid_cast<const ColumnConst *>(res_elem.column.get()))
         {
             if (const auto * src_const = typeid_cast<const ColumnConst *>(src_node->column.get()))
@@ -633,6 +632,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
                                 ErrorCodes::ILLEGAL_COLUMN);
         }
 
+        /// Add CAST function to convert into result type if needed.
         if (!res_elem.type->equals(*src_node->result_type))
         {
             ColumnWithTypeAndName column;
