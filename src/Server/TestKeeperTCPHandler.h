@@ -25,6 +25,7 @@ public:
         , test_keeper_storage(global_context.getTestKeeperStorage())
         , operation_timeout(0, Coordination::DEFAULT_OPERATION_TIMEOUT_MS * 1000)
         , session_timeout(0, Coordination::DEFAULT_SESSION_TIMEOUT_MS * 1000)
+        , session_id(test_keeper_storage->getSessionID())
     {
     }
 
