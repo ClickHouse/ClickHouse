@@ -19,8 +19,22 @@ RemoteSource::RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation
 
 RemoteSource::~RemoteSource() = default;
 
+ISource::Status RemoteSource::prepare()
+{
+    Status status = SourceWithProgress::prepare();
+    /// To avoid resetting the connection (because of "unfinished" query) in the
+    /// RemoteQueryExecutor it should be finished explicitly.
+    if (status == Status::Finished)
+        query_executor->finish();
+    return status;
+}
+
 Chunk RemoteSource::generate()
 {
+    /// onCancel() will do the cancel if the query was sent.
+    if (was_query_canceled)
+        return {};
+
     if (!was_query_sent)
     {
         /// Progress method will be called on Progress packet.
@@ -62,6 +76,7 @@ Chunk RemoteSource::generate()
 
 void RemoteSource::onCancel()
 {
+    was_query_canceled = true;
     query_executor->cancel();
 }
 

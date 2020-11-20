@@ -49,6 +49,8 @@
 #include <Core/Settings.h>
 
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 
 #include <Poco/DirectoryIterator.h>
 
@@ -175,19 +177,18 @@ UInt64 getMaximumFileNumber(const std::string & dir_path)
 
 std::string makeFormattedListOfShards(const ClusterPtr & cluster)
 {
-    std::ostringstream os;
-    os.exceptions(std::ios::failbit);
+    WriteBufferFromOwnString buf;
 
     bool head = true;
-    os << "[";
+    buf << "[";
     for (const auto & shard_info : cluster->getShardsInfo())
     {
-        (head ? os : os << ", ") << shard_info.shard_num;
+        (head ? buf : buf << ", ") << shard_info.shard_num;
         head = false;
     }
-    os << "]";
+    buf << "]";
 
-    return os.str();
+    return buf.str();
 }
 
 ExpressionActionsPtr buildShardingKeyExpression(const ASTPtr & sharding_key, const Context & context, const NamesAndTypesList & columns, bool project)
@@ -201,9 +202,9 @@ bool isExpressionActionsDeterministics(const ExpressionActionsPtr & actions)
 {
     for (const auto & action : actions->getActions())
     {
-        if (action.type != ExpressionAction::APPLY_FUNCTION)
+        if (action.node->type != ActionsDAG::ActionType::FUNCTION)
             continue;
-        if (!action.function_base->isDeterministic())
+        if (!action.node->function_base->isDeterministic())
             return false;
     }
     return true;
@@ -487,6 +488,21 @@ Pipe StorageDistributed::read(
     SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
+    const size_t max_block_size,
+    const unsigned num_streams)
+{
+    QueryPlan plan;
+    read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+    return plan.convertToPipe();
+}
+
+void StorageDistributed::read(
+    QueryPlan & query_plan,
+    const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
+    SelectQueryInfo & query_info,
+    const Context & context,
+    QueryProcessingStage::Enum processed_stage,
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
@@ -508,7 +524,8 @@ Pipe StorageDistributed::read(
         : ClusterProxy::SelectStreamFactory(
             header, processed_stage, StorageID{remote_database, remote_table}, scalars, has_virtual_shard_num_column, context.getExternalTables());
 
-    return ClusterProxy::executeQuery(select_stream_factory, log, modified_query_ast, context, query_info);
+    ClusterProxy::executeQuery(query_plan, select_stream_factory, log,
+        modified_query_ast, context, query_info);
 }
 
 
@@ -744,8 +761,7 @@ ClusterPtr StorageDistributed::getOptimizedCluster(const Context & context, cons
     UInt64 force = settings.force_optimize_skip_unused_shards;
     if (force)
     {
-        std::stringstream exception_message;
-        exception_message.exceptions(std::ios::failbit);
+        WriteBufferFromOwnString exception_message;
         if (!has_sharding_key)
             exception_message << "No sharding key";
         else if (!sharding_key_is_usable)
