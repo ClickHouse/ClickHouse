@@ -54,6 +54,11 @@ struct DatabaseReplicatedExtensions
         return zookeeper_path + "/replicas/" + shard_name + "/" + replica_name;
     }
 
+    String getFullReplicaName() const
+    {
+        return shard_name + '|' + replica_name;
+    }
+
     static String getLogEntryName(UInt32 log_entry_number);
     static UInt32 getLogEntryNumber(const String & log_entry_name);
 };

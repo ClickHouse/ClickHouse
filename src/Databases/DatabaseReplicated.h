@@ -64,10 +64,8 @@ private:
     void writeLastExecutedToDiskAndZK();
 
     //void loadMetadataFromSnapshot();
-    void createSnapshot(const ZooKeeperPtr & zookeeper);
     void removeOutdatedSnapshotsAndLog();
 
-    Strings getSnapshots(const ZooKeeperPtr & zookeeper) const;
 
     void onUnexpectedLogEntry(const String & entry_name, const ZooKeeperPtr & zookeeper);
     void recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 from_snapshot, bool create = false);

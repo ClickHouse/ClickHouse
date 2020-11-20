@@ -83,7 +83,7 @@ protected:
     ASTPtr getCreateQueryFromMetadata(const String & metadata_path, bool throw_on_error) const;
 
     virtual void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
-                                   const String & table_metadata_tmp_path, const String & table_metadata_path);
+                                   const String & table_metadata_tmp_path, const String & table_metadata_path, const Context & query_context);
 
     const String metadata_path;
     const String data_path;

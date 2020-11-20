@@ -29,9 +29,8 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int REPLICA_IS_ALREADY_EXIST;
     extern const int DATABASE_REPLICATION_FAILED;
+    extern const int UNKNOWN_DATABASE;
 }
-
-static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 
 zkutil::ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
 {
@@ -41,15 +40,6 @@ zkutil::ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
 static inline String getHostID(const Context & global_context)
 {
     return Cluster::Address::toString(getFQDNOrHostName(), global_context.getTCPPort());
-}
-
-Strings DatabaseReplicated::getSnapshots(const ZooKeeperPtr & zookeeper) const
-{
-    Strings snapshots = zookeeper->getChildren(zookeeper_path + "/snapshots");
-    std::sort(snapshots.begin(), snapshots.end());
-    if (snapshots.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No snapshots found");
-    return snapshots;
 }
 
 
@@ -125,11 +115,9 @@ bool DatabaseReplicated::createDatabaseNodesInZooKeeper(const zkutil::ZooKeeperP
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path, "", zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/log", "", zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/replicas", "", zkutil::CreateMode::Persistent));
-    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/snapshots", "", zkutil::CreateMode::Persistent));
-    /// Create empty snapshot (with no tables)
-    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/snapshots/0", "", zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/counter", "", zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/metadata", "", zkutil::CreateMode::Persistent));
-    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/metadata/0", "", zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/min_log_ptr", "0", zkutil::CreateMode::Persistent));
 
     Coordination::Responses responses;
     auto res = current_zookeeper->tryMulti(ops, responses);
@@ -147,7 +135,7 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
     current_zookeeper->createAncestors(replica_path);
 
     /// When creating new replica, use latest snapshot version as initial value of log_pointer
-    log_entry_to_execute = parse<UInt32>(getSnapshots(current_zookeeper).back());
+    log_entry_to_execute = 0;   //FIXME
 
     /// Write host name to replica_path, it will protect from multiple replicas with the same name
     auto host_id = getHostID(global_context);
@@ -160,10 +148,16 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
 
     recoverLostReplica(current_zookeeper, log_entry_to_execute, true);
 
+    String query_path_prefix = zookeeper_path + "/log/query-";
+    String counter_prefix = zookeeper_path + "/counter/cnt-";
+    String counter_path = current_zookeeper->create(counter_prefix, "", zkutil::CreateMode::EphemeralSequential);
+    String query_path = query_path_prefix + counter_path.substr(counter_prefix.size());
+
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeCreateRequest(replica_path, host_id, zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/log_ptr", toString(log_entry_to_execute), zkutil::CreateMode::Persistent));
-    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/log/query-", entry.toString(), zkutil::CreateMode::PersistentSequential));
+    ops.emplace_back(zkutil::makeCreateRequest(query_path, entry.toString(), zkutil::CreateMode::PersistentSequential));
+    ops.emplace_back(zkutil::makeRemoveRequest(counter_path, -1));
     current_zookeeper->multi(ops);
 }
 
@@ -207,20 +201,17 @@ void DatabaseReplicated::onUnexpectedLogEntry(const String & entry_name, const Z
     if (entry_number < log_entry_to_execute)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Entry {} already executed, current pointer is {}", entry_number, log_entry_to_execute);
 
-    /// Entry name is valid. Let's get min snapshot version to check if replica is staled.
-    Strings snapshots = getSnapshots(zookeeper);
-    UInt32 min_snapshot = parse<UInt32>(snapshots.front());
+    /// Entry name is valid. Let's get min log pointer to check if replica is staled.
+    UInt32 min_snapshot = parse<UInt32>(zookeeper->get(zookeeper_path + "/min_log_ptr"));
 
     if (log_entry_to_execute < min_snapshot)
     {
-        recoverLostReplica(zookeeper, parse<UInt32>(snapshots.back()));
+        recoverLostReplica(zookeeper, 0);   //FIXME log_pointer
         return;
     }
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot recover replica, probably it's a bug. "
-                                               "Got log entry '{}' when expected entry number {}, "
-                                               "available snapshots: ",
-                                                entry_name, log_entry_to_execute, boost::algorithm::join(snapshots, ", "));
+                                               "Got log entry '{}' when expected entry number {}");
 }
 
 void DatabaseReplicated::removeOutdatedSnapshotsAndLog()
@@ -268,50 +259,10 @@ void DatabaseReplicated::removeOutdatedSnapshotsAndLog()
     }
 }
 
-void DatabaseReplicated::onExecutedLogEntry(const String & entry_name, const ZooKeeperPtr & zookeeper)
+void DatabaseReplicated::onExecutedLogEntry(const String & /*entry_name*/, const ZooKeeperPtr & /*zookeeper*/)
 {
-    assert(entry_name == DatabaseReplicatedExtensions::getLogEntryName(log_entry_to_execute));
-    ++log_entry_to_execute;
 
-    if (snapshot_period > 0 && log_entry_to_execute % snapshot_period == 0)
-    {
-        createSnapshot(zookeeper);
-    }
 }
-
-//void DatabaseReplicated::runBackgroundLogExecutor()
-//{
-//    if (last_executed_log_entry.empty())
-//    {
-//        loadMetadataFromSnapshot();
-//    }
-//
-//    auto current_zookeeper = getZooKeeper();
-//    Strings log_entry_names = current_zookeeper->getChildren(zookeeper_path + "/log");
-//
-//    std::sort(log_entry_names.begin(), log_entry_names.end());
-//    auto newest_entry_it = std::upper_bound(log_entry_names.begin(), log_entry_names.end(), last_executed_log_entry);
-//
-//    log_entry_names.erase(log_entry_names.begin(), newest_entry_it);
-//
-//    for (const String & log_entry_name : log_entry_names)
-//    {
-//        //executeLogName(log_entry_name);
-//        last_executed_log_entry = log_entry_name;
-//        writeLastExecutedToDiskAndZK();
-//
-//        int log_n = parse<int>(log_entry_name.substr(4));
-//        int last_log_n = parse<int>(log_entry_names.back().substr(4));
-//
-//        /// The third condition gurantees at most one snapshot creation per batch
-//        if (log_n > 0 && snapshot_period > 0 && (last_log_n - log_n) / snapshot_period == 0 && log_n % snapshot_period == 0)
-//        {
-//            createSnapshot();
-//        }
-//    }
-//
-//    //background_log_executor->scheduleAfter(500);
-//}
 
 void DatabaseReplicated::writeLastExecutedToDiskAndZK()
 {
@@ -363,58 +314,19 @@ BlockIO DatabaseReplicated::propose(const ASTPtr & query)
 }
 
 
-void DatabaseReplicated::createSnapshot(const ZooKeeperPtr & zookeeper)
-{
-    String snapshot_path = zookeeper_path + "/snapshot/" + toString(log_entry_to_execute);
-
-    if (zookeeper->exists(snapshot_path))
-        return;
-
-    std::vector<std::pair<String, String>> create_queries;
-    {
-        std::lock_guard lock{mutex};
-        create_queries.reserve(tables.size());
-        for (const auto & table : tables)
-        {
-            const String & name = table.first;
-            ReadBufferFromFile in(getObjectMetadataPath(name), METADATA_FILE_BUFFER_SIZE);
-            String attach_query;
-            readStringUntilEOF(attach_query, in);
-            create_queries.emplace_back(escapeForFileName(name), std::move(attach_query));
-        }
-    }
-
-    if (zookeeper->exists(snapshot_path))
-        return;
-
-    String queries_path = zookeeper_path + "/metadata/" + toString(log_entry_to_execute);
-    zookeeper->tryCreate(queries_path, "", zkutil::CreateMode::Persistent);
-    queries_path += '/';
-
-    //FIXME use tryMulti with MULTI_BATCH_SIZE
-
-    for (const auto & table : create_queries)
-        zookeeper->tryCreate(queries_path + table.first, table.second, zkutil::CreateMode::Persistent);
-
-    if (create_queries.size() != zookeeper->getChildren(zookeeper_path + "/metadata/" + toString(log_entry_to_execute)).size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Created invalid snapshot");
-
-    zookeeper->tryCreate(snapshot_path, String(), zkutil::CreateMode::Persistent);
-}
-
 void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 from_snapshot, bool create)
 {
     LOG_WARNING(log, "Will recover replica from snapshot", from_snapshot);
 
     //FIXME drop old tables
 
-    String snapshot_metadata_path = zookeeper_path + "/metadata/" + toString(from_snapshot);
+    String snapshot_metadata_path = zookeeper_path + "/metadata";
     Strings tables_in_snapshot = current_zookeeper->getChildren(snapshot_metadata_path);
-    current_zookeeper->get(zookeeper_path + "/snapshots/" + toString(from_snapshot));   /// Assert node exists
     snapshot_metadata_path += '/';
 
     for (const auto & table_name : tables_in_snapshot)
     {
+        //FIXME It's not atomic. We need multiget here (available since ZooKeeper 3.6.0).
         String query_to_execute = current_zookeeper->get(snapshot_metadata_path + table_name);
 
 

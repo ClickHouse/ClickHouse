@@ -1,12 +1,14 @@
 #pragma once
 #include <Core/Types.h>
 #include <Interpreters/Cluster.h>
+#include <Common/ZooKeeper/Types.h>
 
 
 namespace DB
 {
 
 class ASTQueryWithOnCluster;
+using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
 
 struct HostID
 {
@@ -62,6 +64,8 @@ struct DDLTask
     String entry_path;
     DDLLogEntry entry;
 
+    bool we_are_initiator = false;
+
     /// Stage 2: resolve host_id and check that
     HostID host_id;
     String host_id_str;
@@ -82,7 +86,25 @@ struct DDLTask
     bool was_executed = false;
 
     /// Stage 4: commit results to ZooKeeper
+
+    String active_path;
+    String finished_path;
+    String shard_path;
 };
 
+
+struct MetadataTransaction
+{
+    ZooKeeperPtr current_zookeeper;
+    String zookeeper_path;
+    Coordination::Requests ops;
+
+
+
+    void addOps(Coordination::Requests & other_ops)
+    {
+        std::move(ops.begin(), ops.end(), std::back_inserter(other_ops));
+    }
+};
 
 }
