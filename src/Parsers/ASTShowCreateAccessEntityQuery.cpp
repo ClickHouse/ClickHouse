@@ -1,6 +1,7 @@
 #include <Parsers/ASTShowCreateAccessEntityQuery.h>
 #include <Parsers/ASTRowPolicyName.h>
 #include <Common/quoteString.h>
+#include <IO/Operators.h>
 
 
 namespace DB

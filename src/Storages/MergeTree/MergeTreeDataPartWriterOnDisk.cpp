@@ -184,7 +184,8 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
                         default_codec, settings.max_compress_block_size,
                         0, settings.aio_threshold));
         skip_indices_aggregators.push_back(index_helper->createIndexAggregator());
-        skip_index_filling.push_back(0);
+        marks_in_skip_index_aggregator.push_back(0);
+        rows_in_skip_index_aggregator_last_mark.push_back(0);
     }
 
     skip_indices_initialized = true;
@@ -256,9 +257,11 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
         skip_index_current_data_mark = skip_index_data_mark;
         while (prev_pos < rows)
         {
+            bool new_block_started = prev_pos == 0;
             UInt64 limit = 0;
             size_t current_index_offset = getIndexOffset();
-            if (prev_pos == 0 && current_index_offset != 0)
+            /// We start new block, but have an offset from previous one
+            if (new_block_started && current_index_offset != 0)
             {
                 limit = current_index_offset;
             }
@@ -270,10 +273,15 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
             else
             {
                 limit = index_granularity.getMarkRows(skip_index_current_data_mark);
+                /// We just started new block serialization but last unfinished mark was shrinked to it's current_size
+                /// it may happen that we have already aggregated current_size of rows of more for skip_index, but not flushed it to disk
+                /// because previous granule size was bigger. So do it here.
+                if (new_block_started && last_granule_was_adjusted && rows_in_skip_index_aggregator_last_mark[i] >= limit)
+                    accountMarkForSkipIdxAndFlushIfNeeded(i);
+
                 if (skip_indices_aggregators[i]->empty())
                 {
                     skip_indices_aggregators[i] = index_helper->createIndexAggregator();
-                    skip_index_filling[i] = 0;
 
                     if (stream.compressed.offset() >= settings.min_compress_block_size)
                         stream.compressed.next();
@@ -285,24 +293,19 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
                     if (settings.can_use_adaptive_granularity)
                         writeIntBinary(1UL, stream.marks);
                 }
+
                 /// this mark is aggregated, go to the next one
                 skip_index_current_data_mark++;
             }
 
             size_t pos = prev_pos;
             skip_indices_aggregators[i]->update(skip_indexes_block, &pos, limit);
+            rows_in_skip_index_aggregator_last_mark[i] = (pos - prev_pos);
 
-            if (pos == prev_pos + limit)
-            {
-                ++skip_index_filling[i];
-
-                /// write index if it is filled
-                if (skip_index_filling[i] == index_helper->index.granularity)
-                {
-                    skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed);
-                    skip_index_filling[i] = 0;
-                }
-            }
+            /// We just aggregated all rows in current mark, add new mark to skip_index marks counter
+            /// and flush on disk if we already aggregated required amount of marks.
+            if (rows_in_skip_index_aggregator_last_mark[i] == limit)
+                accountMarkForSkipIdxAndFlushIfNeeded(i);
             prev_pos = pos;
         }
     }
@@ -360,7 +363,21 @@ void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(
 
     skip_indices_streams.clear();
     skip_indices_aggregators.clear();
-    skip_index_filling.clear();
+    marks_in_skip_index_aggregator.clear();
+    rows_in_skip_index_aggregator_last_mark.clear();
+}
+
+void MergeTreeDataPartWriterOnDisk::accountMarkForSkipIdxAndFlushIfNeeded(size_t skip_index_pos)
+{
+    ++marks_in_skip_index_aggregator[skip_index_pos];
+
+    /// write index if it is filled
+    if (marks_in_skip_index_aggregator[skip_index_pos] == skip_indices[skip_index_pos]->index.granularity)
+    {
+        skip_indices_aggregators[skip_index_pos]->getGranuleAndReset()->serializeBinary(skip_indices_streams[skip_index_pos]->compressed);
+        marks_in_skip_index_aggregator[skip_index_pos] = 0;
+        rows_in_skip_index_aggregator_last_mark[skip_index_pos] = 0;
+    }
 }
 
 }
