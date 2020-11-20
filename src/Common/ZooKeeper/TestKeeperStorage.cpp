@@ -87,7 +87,7 @@ struct TestKeeperStorageRequest
     virtual std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(TestKeeperStorage::Container & container, TestKeeperStorage::Ephemerals & ephemerals, int64_t zxid, int64_t session_id) const = 0;
     virtual void processWatches(TestKeeperStorage::Watches & /*watches*/, TestKeeperStorage::Watches & /*list_watches*/) const {}
 
-    virtual ~TestKeeperStorageRequest() = default
+    virtual ~TestKeeperStorageRequest() = default;
 
 struct TestKeeperStorageHeartbeatRequest final : public TestKeeperStorageRequest
 {
