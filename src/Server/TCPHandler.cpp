@@ -24,6 +24,7 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Core/ExternalTable.h>
 #include <Storages/ColumnDefault.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -180,8 +181,14 @@ void TCPHandler::runImpl()
 
             /** If Query - process it. If Ping or Cancel - go back to the beginning.
              *  There may come settings for a separate query that modify `query_context`.
+             *  It's possible to receive part uuids packet before the query, so then receivePacket has to be called twice.
              */
             if (!receivePacket())
+                continue;
+
+            /** If part_uuids got received in previous packet, trying to read again.
+              */
+            if (state.empty() && state.part_uuids && !receivePacket())
                 continue;
 
             query_scope.emplace(*query_context);
@@ -528,6 +535,8 @@ void TCPHandler::processOrdinaryQuery()
     /// Pull query execution result, if exists, and send it to network.
     if (state.io.in)
     {
+        sendPartUUIDs();
+
         /// This allows the client to prepare output format
         if (Block header = state.io.in->getHeader())
             sendData(header);
@@ -591,6 +600,8 @@ void TCPHandler::processOrdinaryQuery()
 void TCPHandler::processOrdinaryQueryWithProcessors()
 {
     auto & pipeline = state.io.pipeline;
+
+    sendPartUUIDs();
 
     /// Send header-block, to allow client to prepare output format for data to send.
     {
@@ -691,6 +702,20 @@ void TCPHandler::receiveUnexpectedTablesStatusRequest()
     skip_request.read(*in, client_tcp_protocol_version);
 
     throw NetException("Unexpected packet TablesStatusRequest received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+}
+
+void TCPHandler::sendPartUUIDs()
+{
+    auto uuids = query_context->getPartUUIDs()->get();
+    if (!uuids.empty())
+    {
+        for (const auto & uuid : uuids)
+            LOG_TRACE(log, "Sending UUID: {}", toString(uuid));
+
+        writeVarUInt(Protocol::Server::PartUUIDs, *out);
+        writeVectorBinary(uuids, *out);
+        out->next();
+    }
 }
 
 void TCPHandler::sendProfileInfo(const BlockStreamProfileInfo & info)
@@ -905,6 +930,10 @@ bool TCPHandler::receivePacket()
 
     switch (packet_type)
     {
+        case Protocol::Client::IgnoredPartUUIDs:
+            /// Part uuids packet if any comes before query.
+            receiveIgnoredPartUUIDs();
+            return true;
         case Protocol::Client::Query:
             if (!state.empty())
                 receiveUnexpectedQuery();
@@ -938,6 +967,16 @@ bool TCPHandler::receivePacket()
         default:
             throw Exception("Unknown packet " + toString(packet_type) + " from client", ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
     }
+}
+
+void TCPHandler::receiveIgnoredPartUUIDs()
+{
+    state.part_uuids = true;
+    std::vector<UUID> uuids;
+    readVectorBinary(uuids, *in);
+
+    if (!uuids.empty())
+        query_context->getIgnoredPartUUIDs()->add(uuids);
 }
 
 void TCPHandler::receiveClusterNameAndSalt()
