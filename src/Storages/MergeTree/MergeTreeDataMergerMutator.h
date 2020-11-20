@@ -105,7 +105,8 @@ public:
         const String & partition_id,
         bool final,
         const StorageMetadataPtr & metadata_snapshot,
-        String * out_disable_reason = nullptr);
+        String * out_disable_reason = nullptr,
+        const Context * context = nullptr);
 
     /** Merge the parts.
       * If `reservation != nullptr`, now and then reduces the size of the reserved space
