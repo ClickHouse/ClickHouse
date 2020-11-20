@@ -173,7 +173,7 @@ Allows you to invoke some function for each row returned by an outer table expre
 SELECT <expr> APPLY( <func> ) FROM [db.]table_name
 ```
 
-**Examples:** 
+**Example:** 
 
 ``` sql
 CREATE TABLE columns_transformers (i Int64, j Int16, k Int64) ENGINE = MergeTree ORDER by (i);
@@ -222,7 +222,7 @@ This modifier does not change the names or order of columns. However, it can cha
 SELECT <expr> REPLACE( <expr> AS col_name) from [db.]table_name
 ```
 
-**Examples:**
+**Example:**
 
 ``` sql
 SELECT * REPLACE(i + 1 AS i) from columns_transformers;
