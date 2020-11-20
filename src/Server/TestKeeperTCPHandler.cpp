@@ -17,12 +17,10 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-
 }
 
 void TestKeeperTCPHandler::sendHandshake()
 {
-    session_id = test_keeper_storage->getSessionID();
     Coordination::write(Coordination::SERVER_HANDSHAKE_LENGTH, *out);
     Coordination::write(Coordination::ZOOKEEPER_PROTOCOL_VERSION, *out);
     Coordination::write(Coordination::DEFAULT_SESSION_TIMEOUT_MS, *out);

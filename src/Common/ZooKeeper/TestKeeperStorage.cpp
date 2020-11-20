@@ -40,6 +40,7 @@ static void processWatchesImpl(const String & path, TestKeeperStorage::Watches &
     Coordination::ZooKeeperWatchResponse watch_response;
     watch_response.path = path;
     watch_response.xid = -1;
+    watch_response.zxid = -1;
 
     auto it = watches.find(watch_response.path);
     if (it != watches.end())
@@ -54,6 +55,7 @@ static void processWatchesImpl(const String & path, TestKeeperStorage::Watches &
     Coordination::ZooKeeperWatchResponse watch_list_response;
     watch_list_response.path = parentPath(path);
     watch_list_response.xid = -1;
+    watch_list_response.zxid = -1;
 
     it = list_watches.find(watch_list_response.path);
     if (it != list_watches.end())
@@ -238,7 +240,7 @@ struct TestKeeperStorageRemoveRequest final : public TestKeeperStorageRequest
         else
         {
             auto prev_node = it->second;
-            if (it->second.is_ephemeral)
+            if (prev_node.is_ephemeral)
                 ephemerals[session_id].erase(request.path);
 
             container.erase(it);
@@ -247,8 +249,11 @@ struct TestKeeperStorageRemoveRequest final : public TestKeeperStorageRequest
             ++parent.stat.cversion;
             response.error = Coordination::Error::ZOK;
 
-            undo = [prev_node, &container, path = request.path]
+            undo = [prev_node, &container, &ephemerals, session_id, path = request.path]
             {
+                if (prev_node.is_ephemeral)
+                    ephemerals[session_id].emplace(path);
+
                 container.emplace(path, prev_node);
                 auto & undo_parent = container.at(parentPath(path));
                 ++undo_parent.stat.numChildren;
