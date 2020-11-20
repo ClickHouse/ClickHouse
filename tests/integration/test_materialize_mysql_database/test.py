@@ -1,18 +1,20 @@
 import os
+import os.path as p
 import subprocess
 import time
-
+import pwd
+import re
 import pymysql.cursors
 import pytest
 from helpers.cluster import ClickHouseCluster, get_docker_compose_path
+import docker
 
 from . import materialize_with_ddl
 
 DOCKER_COMPOSE_PATH = get_docker_compose_path()
 
 cluster = ClickHouseCluster(__file__)
-clickhouse_node = cluster.add_instance('node1', user_configs=["configs/users.xml"], with_mysql=False)
-
+clickhouse_node = cluster.add_instance('node1', user_configs=["configs/users.xml"], with_mysql=False, stay_alive=True)
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -24,18 +26,24 @@ def started_cluster():
 
 
 class MySQLNodeInstance:
-    def __init__(self, user='root', password='clickhouse', ip_address='127.0.0.1', port=3308):
+    def __init__(self, user='root', password='clickhouse', ip_address='127.0.0.1', port=3308, docker_compose=None, project_name=cluster.project_name):
         self.user = user
         self.port = port
         self.ip_address = ip_address
         self.password = password
         self.mysql_connection = None  # lazy init
+        self.docker_compose = docker_compose
+        self.project_name = project_name
 
 
     def alloc_connection(self):
         if self.mysql_connection is None:
             self.mysql_connection = pymysql.connect(user=self.user, password=self.password, host=self.ip_address,
                                                     port=self.port, autocommit=True)
+        else:
+            if self.mysql_connection.ping():
+                self.mysql_connection = pymysql.connect(user=self.user, password=self.password, host=self.ip_address,
+                                                        port=self.port, autocommit=True)
         return self.mysql_connection
 
     def query(self, execution_query):
@@ -71,8 +79,6 @@ class MySQLNodeInstance:
             try:
                 self.alloc_connection()
                 print("Mysql Started")
-                self.create_min_priv_user("test", "123")
-                print("min priv user created")
                 return
             except Exception as ex:
                 print("Can't connect to MySQL " + str(ex))
@@ -81,11 +87,10 @@ class MySQLNodeInstance:
         subprocess.check_call(['docker-compose', 'ps', '--services', 'all'])
         raise Exception("Cannot wait MySQL container")
 
-
 @pytest.fixture(scope="module")
 def started_mysql_5_7():
-    mysql_node = MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', 3308)
     docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mysql.yml')
+    mysql_node = MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', 3308, docker_compose)
 
     try:
         subprocess.check_call(
@@ -100,8 +105,8 @@ def started_mysql_5_7():
 
 @pytest.fixture(scope="module")
 def started_mysql_8_0():
-    mysql_node = MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', 33308)
     docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mysql_8_0.yml')
+    mysql_node = MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', 33308, docker_compose)
 
     try:
         subprocess.check_call(

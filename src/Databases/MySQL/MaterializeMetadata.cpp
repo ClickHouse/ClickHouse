@@ -131,7 +131,7 @@ static Block getShowMasterLogHeader(const String & mysql_version)
     };
 }
 
-static bool checkSyncUserPrivImpl(mysqlxx::PoolWithFailover::Entry & connection, WriteBuffer & out)
+static bool checkSyncUserPrivImpl(const mysqlxx::PoolWithFailover::Entry & connection, WriteBuffer & out)
 {
     Block sync_user_privs_header
     {
@@ -163,7 +163,7 @@ static bool checkSyncUserPrivImpl(mysqlxx::PoolWithFailover::Entry & connection,
     return false;
 }
 
-static void checkSyncUserPriv(mysqlxx::PoolWithFailover::Entry & connection)
+static void checkSyncUserPriv(const mysqlxx::PoolWithFailover::Entry & connection)
 {
     WriteBufferFromOwnString out;
 
@@ -174,7 +174,7 @@ static void checkSyncUserPriv(mysqlxx::PoolWithFailover::Entry & connection)
                         "But the SYNC USER grant query is: " + out.str(), ErrorCodes::SYNC_MYSQL_USER_ACCESS_ERROR);
 }
 
-bool MaterializeMetadata::checkBinlogFileExists(mysqlxx::PoolWithFailover::Entry & connection, const String & mysql_version) const
+bool MaterializeMetadata::checkBinlogFileExists(const mysqlxx::PoolWithFailover::Entry & connection, const String & mysql_version) const
 {
     MySQLBlockInputStream input(connection, "SHOW MASTER LOGS", getShowMasterLogHeader(mysql_version), DEFAULT_BLOCK_SIZE);
 
@@ -182,7 +182,7 @@ bool MaterializeMetadata::checkBinlogFileExists(mysqlxx::PoolWithFailover::Entry
     {
         for (size_t index = 0; index < block.rows(); ++index)
         {
-            const auto & log_name = (*block.getByPosition(0).column)[index].safeGet<String>();
+            const auto log_name = (*block.getByPosition(0).column)[index].safeGet<String>();
             if (log_name == binlog_file)
                 return true;
         }
