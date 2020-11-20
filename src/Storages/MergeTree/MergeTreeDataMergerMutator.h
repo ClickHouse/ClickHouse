@@ -95,7 +95,7 @@ public:
 
     /** Select all the parts in the specified partition for merge, if possible.
       * final - choose to merge even a single part - that is, allow to merge one part "with itself",
-      * but if setting optimize_skip_merged_partitions is true (it's true as default) than single part with level > 0
+      * but if setting optimize_skip_merged_partitions is true than single part with level > 0
       * and without expired TTL won't be merged with itself.
       */
     SelectPartsDecision selectAllPartsToMergeWithinPartition(
