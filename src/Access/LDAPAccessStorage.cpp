@@ -82,9 +82,8 @@ void LDAPAccessStorage::setConfiguration(AccessControlManager * access_control_m
             auto & rm_params = role_search_params_cfg.back();
 
             rm_params.base_dn = config.getString(rm_prefix_str + "base_dn", "");
+            rm_params.search_filter = config.getString(rm_prefix_str + "search_filter", "");
             rm_params.attribute = config.getString(rm_prefix_str + "attribute", "cn");
-            rm_params.filter_prefix = config.getString(rm_prefix_str + "filter_prefix", "");
-            rm_params.filter_suffix = config.getString(rm_prefix_str + "filter_suffix", "");
             rm_params.fail_if_all_rules_mismatch = config.getBool(rm_prefix_str + "fail_if_all_rules_mismatch", true);
 
             auto scope = config.getString(rm_prefix_str + "scope", "subtree");

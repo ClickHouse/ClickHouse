@@ -7,6 +7,8 @@
 #include <boost/algorithm/string/predicate.hpp>
 
 #include <mutex>
+#include <utility>
+#include <vector>
 
 #include <cstring>
 
@@ -62,6 +64,28 @@ namespace
                     break;
             }
             dest += ch;
+        }
+
+        return dest;
+    }
+
+    auto replacePlaceholders(const String & src, const std::vector<std::pair<String, String>> & pairs)
+    {
+        String dest = src;
+
+        for (const auto & pair : pairs)
+        {
+            const auto & placeholder = pair.first;
+            const auto & value = pair.second;
+            for (
+                 auto pos = dest.find(placeholder);
+                 pos != std::string::npos;
+                 pos = dest.find(placeholder, pos)
+            )
+            {
+                dest.replace(pos, placeholder.size(), value);
+                pos += value.size();
+            }
         }
 
         return dest;
@@ -246,13 +270,14 @@ void LDAPClient::openConnection()
     {
         case LDAPServerParams::SASLMechanism::SIMPLE:
         {
-            const String dn = params.auth_dn_prefix + escapeForLDAP(params.user) + params.auth_dn_suffix;
+            const auto escaped_username = escapeForLDAP(params.user);
+            const auto bind_dn = replacePlaceholders(params.bind_dn, { {"{username}", escaped_username} });
 
             ::berval cred;
             cred.bv_val = const_cast<char *>(params.password.c_str());
             cred.bv_len = params.password.size();
 
-            diag(ldap_sasl_bind_s(handle, dn.c_str(), LDAP_SASL_SIMPLE, &cred, nullptr, nullptr, nullptr));
+            diag(ldap_sasl_bind_s(handle, bind_dn.c_str(), LDAP_SASL_SIMPLE, &cred, nullptr, nullptr, nullptr));
 
             break;
         }
@@ -288,7 +313,10 @@ LDAPSearchResults LDAPClient::search(const LDAPSearchParams & search_params)
         case LDAPSearchParams::Scope::CHILDREN:  scope = LDAP_SCOPE_CHILDREN; break;
     }
 
-    const String filter = search_params.filter_prefix + escapeForLDAP(params.user) + search_params.filter_suffix;
+    const auto escaped_username = escapeForLDAP(params.user);
+    const auto bind_dn = replacePlaceholders(params.bind_dn, { {"{username}", escaped_username} });
+    const auto base_dn = replacePlaceholders(search_params.base_dn, { {"{username}", escaped_username}, {"{bind_dn}", bind_dn} });
+    const auto search_filter = replacePlaceholders(search_params.search_filter, { {"{username}", escaped_username}, {"{bind_dn}", bind_dn}, {"{base_dn}", base_dn} });
     char * attrs[] = { const_cast<char *>(search_params.attribute.c_str()), nullptr };
     ::timeval timeout = { params.search_timeout.count(), 0 };
     LDAPMessage* msgs = nullptr;
@@ -301,7 +329,7 @@ LDAPSearchResults LDAPClient::search(const LDAPSearchParams & search_params)
         }
     });
 
-    diag(ldap_search_ext_s(handle, search_params.base_dn.c_str(), scope, filter.c_str(), attrs, 0, nullptr, nullptr, &timeout, params.search_limit, &msgs));
+    diag(ldap_search_ext_s(handle, base_dn.c_str(), scope, search_filter.c_str(), attrs, 0, nullptr, nullptr, &timeout, params.search_limit, &msgs));
 
     for (
          auto * msg = ldap_first_message(handle, msgs);

@@ -27,6 +27,7 @@ auto parseLDAPServer(const Poco::Util::AbstractConfiguration & config, const Str
 
     const bool has_host = config.has(ldap_server_config + ".host");
     const bool has_port = config.has(ldap_server_config + ".port");
+    const bool has_bind_dn = config.has(ldap_server_config + ".bind_dn");
     const bool has_auth_dn_prefix = config.has(ldap_server_config + ".auth_dn_prefix");
     const bool has_auth_dn_suffix = config.has(ldap_server_config + ".auth_dn_suffix");
     const bool has_enable_tls = config.has(ldap_server_config + ".enable_tls");
@@ -46,11 +47,19 @@ auto parseLDAPServer(const Poco::Util::AbstractConfiguration & config, const Str
     if (params.host.empty())
         throw Exception("Empty 'host' entry", ErrorCodes::BAD_ARGUMENTS);
 
-    if (has_auth_dn_prefix)
-        params.auth_dn_prefix = config.getString(ldap_server_config + ".auth_dn_prefix");
+    if (has_bind_dn)
+    {
+        if (has_auth_dn_prefix || has_auth_dn_suffix)
+            throw Exception("Deprecated 'auth_dn_prefix' and 'auth_dn_suffix' entries cannot be used with 'bind_dn' entry", ErrorCodes::BAD_ARGUMENTS);
 
-    if (has_auth_dn_suffix)
-        params.auth_dn_suffix = config.getString(ldap_server_config + ".auth_dn_suffix");
+        params.bind_dn = config.getString(ldap_server_config + ".bind_dn");
+    }
+    else if (has_auth_dn_prefix || has_auth_dn_suffix)
+    {
+        const auto auth_dn_prefix = config.getString(ldap_server_config + ".auth_dn_prefix");
+        const auto auth_dn_suffix = config.getString(ldap_server_config + ".auth_dn_suffix");
+        params.bind_dn = auth_dn_prefix + "{username}" + auth_dn_suffix;
+    }
 
     if (has_enable_tls)
     {
