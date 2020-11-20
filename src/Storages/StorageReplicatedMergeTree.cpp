@@ -3809,7 +3809,7 @@ bool StorageReplicatedMergeTree::optimize(
 
                     FutureMergedMutatedPart future_merged_part;
                     SelectPartsDecision select_decision = merger_mutator.selectAllPartsToMergeWithinPartition(
-                        future_merged_part, disk_space, can_merge, partition_id, true, metadata_snapshot, nullptr);
+                        future_merged_part, disk_space, can_merge, partition_id, true, metadata_snapshot, nullptr, &query_context);
 
                     if (select_decision != SelectPartsDecision::SELECTED)
                         break;
@@ -3856,7 +3856,7 @@ bool StorageReplicatedMergeTree::optimize(
                     UInt64 disk_space = getStoragePolicy()->getMaxUnreservedFreeSpace();
                     String partition_id = getPartitionIDFromQuery(partition, query_context);
                     select_decision = merger_mutator.selectAllPartsToMergeWithinPartition(
-                        future_merged_part, disk_space, can_merge, partition_id, final, metadata_snapshot, &disable_reason);
+                        future_merged_part, disk_space, can_merge, partition_id, final, metadata_snapshot, &disable_reason, &query_context);
                 }
 
                 /// If there is nothing to merge then we treat this merge as successful (needed for optimize final optimization)
