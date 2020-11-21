@@ -34,7 +34,7 @@ struct LDAPSearchParams
     Scope scope = Scope::SUBTREE;
 
     bool fail_if_all_rules_mismatch = false;
-    std::vector<LDAPRoleMappingRules> role_mapping_rules;
+    std::vector<LDAPRoleMappingRules> rules;
 };
 
 using LDAPSearchParamsList = std::vector<LDAPSearchParams>;
