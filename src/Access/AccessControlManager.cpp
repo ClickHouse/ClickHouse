@@ -292,7 +292,7 @@ void AccessControlManager::addStoragesFromUserDirectoriesConfig(
         else if (type == "ldap")
             type = LDAPAccessStorage::STORAGE_TYPE;
 
-        String name = config.getString(prefix + ".name", key_in_user_directories);
+        String name = config.getString(prefix + ".name", type);
 
         if (type == MemoryAccessStorage::STORAGE_TYPE)
         {
