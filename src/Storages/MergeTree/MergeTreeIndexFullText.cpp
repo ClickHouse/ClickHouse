@@ -562,7 +562,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexFullText::createIndexAggregator() cons
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexFullText::createIndexCondition(
-        const SelectQueryInfo & query, const ColumnsDescription & /*columns*/, const Context & context) const
+        const SelectQueryInfo & query, const Context & context) const
 {
     return std::make_shared<MergeTreeConditionFullText>(query, context, index.sample_block, params, token_extractor.get());
 };

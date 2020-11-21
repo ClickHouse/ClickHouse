@@ -85,7 +85,7 @@ struct IMergeTreeIndex
     virtual MergeTreeIndexAggregatorPtr createIndexAggregator() const = 0;
 
     virtual MergeTreeIndexConditionPtr createIndexCondition(
-            const SelectQueryInfo & query_info, const ColumnsDescription & columns, const Context & context) const = 0;
+            const SelectQueryInfo & query_info, const Context & context) const = 0;
 
     Names getColumnsRequiredForIndexCalc() const { return index.expression->getRequiredColumns(); }
 
