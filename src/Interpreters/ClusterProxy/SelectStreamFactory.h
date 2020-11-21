@@ -41,7 +41,8 @@ public:
         const SelectQueryInfo & query_info,
         std::vector<QueryPlanPtr> & plans,
         Pipes & remote_pipes,
-        Pipes & delayed_pipes) override;
+        Pipes & delayed_pipes,
+        Poco::Logger * log) override;
 
 private:
     const Block header;
