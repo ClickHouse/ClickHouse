@@ -210,16 +210,21 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     Names primary_key_columns = primary_key.column_names;
 
-    // rewrite query_info.query by ColumnAliasesVisitor before applying indexes
-    auto & select = query_info.query->as<ASTSelectQuery &>();
+    // query_info_for_index is a cloned SelectQueryInfo just for index
+    SelectQueryInfo query_info_for_index;
+    query_info_for_index.query = query_info.query->clone();
+    query_info_for_index.syntax_analyzer_result = query_info.syntax_analyzer_result;
+    query_info_for_index.sets = query_info.sets;
+
+    auto & temp_select = query_info_for_index.query->as<ASTSelectQuery &>();
     ColumnAliasesVisitor::Data aliase_column_data(metadata_snapshot->getColumns());
     ColumnAliasesVisitor aliase_column_visitor(aliase_column_data);
-    if (select.where())
-        aliase_column_visitor.visit(select.refWhere());
-    if (select.prewhere())
-        aliase_column_visitor.visit(select.refPrewhere());
+    if (temp_select.where())
+        aliase_column_visitor.visit(temp_select.refWhere());
+    if (temp_select.prewhere())
+        aliase_column_visitor.visit(temp_select.refPrewhere());
 
-    KeyCondition key_condition(query_info, context, primary_key_columns, primary_key.expression);
+    KeyCondition key_condition(query_info_for_index, context, primary_key_columns, primary_key.expression);
 
     if (settings.force_primary_key && key_condition.alwaysUnknownOrTrue())
     {
@@ -231,8 +236,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     std::optional<PartitionPruner> partition_pruner;
     if (data.minmax_idx_expr)
     {
-        minmax_idx_condition.emplace(query_info, context, data.minmax_idx_columns, data.minmax_idx_expr);
-        partition_pruner.emplace(metadata_snapshot->getPartitionKey(), query_info, context, false /* strict */);
+        minmax_idx_condition.emplace(query_info_for_index, context, data.minmax_idx_columns, data.minmax_idx_expr);
+        partition_pruner.emplace(metadata_snapshot->getPartitionKey(), query_info_for_index, context, false /* strict */);
 
         if (settings.force_index_by_date && (minmax_idx_condition->alwaysUnknownOrTrue() && partition_pruner->isUseless()))
         {
@@ -295,6 +300,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     RelativeSize relative_sample_size = 0;
     RelativeSize relative_sample_offset = 0;
 
+    const auto & select = query_info.query->as<ASTSelectQuery &>();
     auto select_sample_size = select.sampleSize();
     auto select_sample_offset = select.sampleOffset();
 
