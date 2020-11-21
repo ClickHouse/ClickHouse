@@ -15,6 +15,7 @@
 #include <iterator>
 #include <regex>
 #include <sstream>
+#include <unordered_map>
 
 
 namespace DB
@@ -371,27 +372,18 @@ std::set<String> LDAPAccessStorage::mapExternalRolesNoLock(const String & user_n
     if (external_roles.size() != role_search_params.size())
         throw Exception("Unable to match external roles to mapping rules", ErrorCodes::BAD_ARGUMENTS);
 
-    std::vector<std::regex> re_cache;
-
+    std::unordered_map<String, std::regex> re_cache;
     for (std::size_t i = 0; i < external_roles.size(); ++i)
     {
         const auto & external_role_set = external_roles[i];
         const auto & rules = role_search_params[i].rules;
-
-        re_cache.clear();
-        re_cache.reserve(rules.size());
-        for (const auto & rule : rules)
-        {
-            re_cache.emplace_back(rule.match, std::regex_constants::ECMAScript | std::regex_constants::optimize);
-        }
-
         for (const auto & external_role : external_role_set)
         {
             bool have_match = false;
             for (std::size_t j = 0; j < rules.size(); ++j)
             {
                 const auto & rule = rules[j];
-                const auto & re = re_cache[j];
+                const auto & re = re_cache.try_emplace(rule.match, rule.match, std::regex_constants::ECMAScript | std::regex_constants::optimize).first->second;
                 std::smatch match_results;
                 if (std::regex_match(external_role, match_results, re))
                 {
@@ -401,6 +393,7 @@ std::set<String> LDAPAccessStorage::mapExternalRolesNoLock(const String & user_n
                         break;
                 }
             }
+
             if (!have_match && role_search_params[i].fail_if_all_rules_mismatch)
                 throw Exception("None of the external role mapping rules were able to match '" + external_role + "' string, received from LDAP server '" + ldap_server + "' for user '" + user_name + "'", ErrorCodes::BAD_ARGUMENTS);
         }
