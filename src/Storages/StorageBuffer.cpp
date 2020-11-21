@@ -22,7 +22,7 @@
 #include <common/logger_useful.h>
 #include <common/getThreadId.h>
 #include <ext/range.h>
-#include <Processors/QueryPlan/ConvertingStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Sources/SourceFromInputStream.h>
@@ -248,9 +248,12 @@ void StorageBuffer::read(
                     adding_missed->setStepDescription("Add columns missing in destination table");
                     query_plan.addStep(std::move(adding_missed));
 
-                    auto converting = std::make_unique<ConvertingStep>(
-                            query_plan.getCurrentDataStream(),
-                            header);
+                    auto actions_dag = ActionsDAG::makeConvertingActions(
+                            query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
+                            header.getColumnsWithTypeAndName(),
+                            ActionsDAG::MatchColumnsMode::Name);
+
+                    auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), actions_dag);
 
                     converting->setStepDescription("Convert destination table columns to Buffer table structure");
                     query_plan.addStep(std::move(converting));
@@ -339,7 +342,12 @@ void StorageBuffer::read(
     /// Convert structure from table to structure from buffer.
     if (!blocksHaveEqualStructure(query_plan.getCurrentDataStream().header, result_header))
     {
-        auto converting = std::make_unique<ConvertingStep>(query_plan.getCurrentDataStream(), result_header);
+        auto convert_actions_dag = ActionsDAG::makeConvertingActions(
+                query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
+                result_header.getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Name);
+
+        auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), convert_actions_dag);
         query_plan.addStep(std::move(converting));
     }
 
