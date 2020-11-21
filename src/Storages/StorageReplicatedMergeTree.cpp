@@ -3730,7 +3730,7 @@ std::optional<UInt64> StorageReplicatedMergeTree::totalRows() const
 std::optional<UInt64> StorageReplicatedMergeTree::totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, const Context & context) const
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    PartitionPruner partition_pruner(metadata_snapshot->getPartitionKey(), metadata_snapshot->getColumns(), query_info, context, true /* strict */);
+    PartitionPruner partition_pruner(metadata_snapshot->getPartitionKey(), query_info, context, true /* strict */);
     if (partition_pruner.isUseless())
         return {};
     size_t res = 0;

@@ -3,7 +3,6 @@
 #include <unordered_map>
 
 #include <Storages/KeyDescription.h>
-#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
@@ -22,10 +21,10 @@ private:
     using DataPartPtr = std::shared_ptr<const DataPart>;
 
 public:
-    PartitionPruner(const KeyDescription & partition_key_, const ColumnsDescription & columns, const SelectQueryInfo & query_info, const Context & context, bool strict)
+    PartitionPruner(const KeyDescription & partition_key_, const SelectQueryInfo & query_info, const Context & context, bool strict)
         : partition_key(partition_key_)
         , partition_condition(
-              query_info, context, columns, partition_key.column_names, partition_key.expression, true /* single_point */, strict)
+              query_info, context, partition_key.column_names, partition_key.expression, true /* single_point */, strict)
         , useless(partition_condition.alwaysUnknownOrTrue())
     {
     }
