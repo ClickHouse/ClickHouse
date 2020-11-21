@@ -159,10 +159,6 @@ private:
     using IPMaskContainer = PODArray<UInt8>;
     using RowIdxConstIter = ContainerType<size_t>::const_iterator;
 
-    template <typename T> struct IPContainerToValueType {};
-    template <> struct IPContainerToValueType<IPv4Container> { using type = UInt32; };
-    template <> struct IPContainerToValueType<IPv6Container> { using type = const uint8_t *; };
-
     struct Attribute final
     {
         AttributeUnderlyingType type;
@@ -240,8 +236,7 @@ private:
     RowIdxConstIter tryLookupIPv4(UInt32 addr, uint8_t * buf) const;
     RowIdxConstIter tryLookupIPv6(const uint8_t * addr) const;
 
-    template <typename IPContainerType,
-        typename IPValueType = typename IPContainerToValueType<IPContainerType>::value>
+    template <typename IPContainerType, typename IPValueType>
     RowIdxConstIter lookupIP(IPValueType target) const;
 
     static const uint8_t * getIPv6FromOffset(const IPv6Container & ipv6_col, size_t i);
@@ -252,9 +247,20 @@ private:
     const bool require_nonempty;
     const std::string key_description{dict_struct.getKeyDescription()};
 
+    /// Contains sorted IP subnetworks. If some addresses equals, subnet with lower mask is placed first.
     std::variant<IPv4Container, IPv6Container> ip_column;
+
+    /// Prefix lengths corresponding to ip_column.
     IPMaskContainer mask_column;
+
+    /** Contains links to parent subnetworks in ip_column.
+      * Array holds such ip_column's (and mask_column's) indices that
+      * - if parent_subnet[i] < i, then ip_column[i] is subnetwork of ip_column[parent_subnet[i]],
+      * - if parent_subnet[i] == i, then ip_column[i] doesn't belong to any other subnet.
+      */
     ContainerType<size_t> parent_subnet;
+
+    /// Contains corresponding indices in attributes array.
     ContainerType<size_t> row_idx;
 
     std::map<std::string, size_t> attribute_index_by_name;

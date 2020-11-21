@@ -1,5 +1,6 @@
 #include "TrieDictionary.h"
 #include <stack>
+#include <charconv>
 #include <Common/assert_cast.h>
 #include <Common/IPv6ToBinary.h>
 #include <Common/memcmpSmall.h>
@@ -75,6 +76,37 @@ namespace
     };
 }
 
+static std::pair<Poco::Net::IPAddress, UInt8> parseIPFromString(const std::string_view addr_str)
+{
+    try
+    {
+        size_t pos = addr_str.find('/');
+        if (pos != std::string::npos)
+        {
+            Poco::Net::IPAddress addr{std::string(addr_str.substr(0, pos))};
+
+            UInt8 prefix;
+            auto addr_str_end = addr_str.data() + addr_str.size();
+            auto [p, ec] = std::from_chars(addr_str.data() + pos + 1, addr_str_end, prefix);
+            if (p != addr_str_end)
+                throw DB::Exception("extra characters at the end", ErrorCodes::LOGICAL_ERROR);
+            if (ec != std::errc())
+                throw DB::Exception("mask is not a valid number", ErrorCodes::LOGICAL_ERROR);
+
+            addr = addr & Poco::Net::IPAddress(prefix, addr.family());
+            return {addr, prefix};
+        }
+
+        Poco::Net::IPAddress addr{std::string(addr_str)};
+        return {addr, addr.length() * 8};
+    }
+    catch (Poco::Exception & ex)
+    {
+        throw DB::Exception("can't parse address \"" + std::string(addr_str) + "\": " + ex.what(),
+            ErrorCodes::LOGICAL_ERROR);
+    }
+}
+
 static void validateKeyTypes(const DataTypes & key_types)
 {
     if (key_types.empty() || key_types.size() > 2)
@@ -93,19 +125,16 @@ static void validateKeyTypes(const DataTypes & key_types)
 }
 
 template <typename T, typename Comp>
-size_t sort_and_unique(std::vector<T> & vec, Comp comp)
+size_t sortAndUnique(std::vector<T> & vec, Comp comp)
 {
     std::sort(vec.begin(), vec.end(),
               [&](const auto & a, const auto & b) { return comp(a, b) < 0; });
 
     auto new_end = std::unique(vec.begin(), vec.end(),
                                [&](const auto & a, const auto & b) { return comp(a, b) == 0; });
-    if (new_end != vec.end())
-    {
-        vec.erase(new_end, vec.end());
-        return std::distance(new_end, vec.end());
-    }
-    return 0;
+    size_t deleted_count = std::distance(new_end, vec.end());
+    vec.erase(new_end, vec.end());
+    return deleted_count;
 }
 
 template <typename T>
@@ -140,12 +169,12 @@ inline static void mapIPv4ToIPv6(UInt32 addr, uint8_t * buf)
     buf[10] = '\xFF';
     buf[11] = '\xFF';
     addr = Poco::ByteOrder::toNetwork(addr);
-    memcpy(&buf[12], reinterpret_cast<const uint8_t *>(&addr), 4);
+    memcpy(&buf[12], &addr, 4);
 }
 
 static bool matchIPv4Subnet(UInt32 target, UInt32 addr, UInt8 prefix)
 {
-    UInt32 mask = (prefix >= 32) ? 0xffffffff : ~(0xffffffff >> prefix);
+    UInt32 mask = (prefix >= 32) ? 0xffffffffu : ~(0xffffffffu >> prefix);
     return (target & mask) == addr;
 }
 
@@ -159,7 +188,7 @@ static bool matchIPv6Subnet(const uint8_t * target, const uint8_t * addr, UInt8 
         _mm_loadu_si128(reinterpret_cast<const __m128i *>(addr))));
     mask = ~mask;
 
-    if (unlikely(mask))
+    if (mask)
     {
         auto offset = __builtin_ctz(mask);
 
@@ -484,27 +513,11 @@ void TrieDictionary::loadData()
                 setAttributeValue(attribute, attribute_column[row]);
             }
 
+            const auto [addr, prefix] = parseIPFromString(std::string_view(key_column->getDataAt(row)));
+            has_ipv6 = has_ipv6 || (addr.family() == Poco::Net::IPAddress::IPv6);
+
             size_t row_number = ip_records.size();
-
-            std::string addr_str(key_column->getDataAt(row).toString());
-            size_t pos = addr_str.find('/');
-            if (pos != std::string::npos)
-            {
-                IPAddress addr(addr_str.substr(0, pos));
-                has_ipv6 = has_ipv6 || (addr.family() == Poco::Net::IPAddress::IPv6);
-
-                UInt8 prefix = std::stoi(addr_str.substr(pos + 1), nullptr, 10);
-
-                addr = addr & IPAddress(prefix, addr.family());
-                ip_records.emplace_back(addr, prefix, row_number);
-            }
-            else
-            {
-                IPAddress addr(addr_str);
-                has_ipv6 = has_ipv6 || (addr.family() == Poco::Net::IPAddress::IPv6);
-                UInt8 prefix = addr.length() * 8;
-                ip_records.emplace_back(addr, prefix, row_number);
-            }
+            ip_records.emplace_back(addr, prefix, row_number);
         }
     }
 
@@ -512,7 +525,7 @@ void TrieDictionary::loadData()
 
     if (has_ipv6)
     {
-        auto deleted_count = sort_and_unique(ip_records,
+        auto deleted_count = sortAndUnique(ip_records,
             [](const auto & record_a, const auto & record_b)
             {
                 uint8_t a_buf[IPV6_BINARY_LENGTH];
@@ -532,20 +545,16 @@ void TrieDictionary::loadData()
 
         for (const auto & record : ip_records)
         {
-            auto ip_array = IPv6ToBinary(record.addr);
-
             size_t i = row_idx.size();
-            memcpySmallAllowReadWriteOverflow15(&ipv6_col[i * IPV6_BINARY_LENGTH],
-                                                reinterpret_cast<const uint8_t *>(ip_array.data()),
-                                                IPV6_BINARY_LENGTH);
 
+            IPv6ToRawBinary(record.addr, reinterpret_cast<char *>(&ipv6_col[i * IPV6_BINARY_LENGTH]));
             mask_column.push_back(record.prefixIPv6());
             row_idx.push_back(record.row);
         }
     }
     else
     {
-        auto deleted_count = sort_and_unique(ip_records,
+        auto deleted_count = sortAndUnique(ip_records,
             [](const auto & record_a, const auto & record_b)
             {
                 UInt32 a = IPv4AsUInt32(record_a.addr.addr());
@@ -633,6 +642,7 @@ void TrieDictionary::calculateBytesAllocated()
         bytes_allocated += ipv6_col->size() * sizeof((*ipv6_col)[0]);
     }
     bytes_allocated += mask_column.size() * sizeof(mask_column[0]);
+    bytes_allocated += parent_subnet.size() * sizeof(parent_subnet[0]);
     bytes_allocated += row_idx.size() * sizeof(row_idx[0]);
     bytes_allocated += attributes.size() * sizeof(attributes.front());
 
@@ -786,7 +796,7 @@ void TrieDictionary::getItemsByTwoKeyColumnsImpl(
 
         const auto & key_mask_column = assert_cast<const ColumnVector<UInt8> &>(*key_columns.back());
 
-        auto comp_v4 = [&](size_t elem, IPv4Subnet target)
+        auto comp_v4 = [&](size_t elem, const IPv4Subnet & target)
         {
             UInt32 addr = (*ipv4_col)[elem];
             if (addr == target.addr)
@@ -815,13 +825,13 @@ void TrieDictionary::getItemsByTwoKeyColumnsImpl(
     }
 
     const auto * key_ip_column_ptr = typeid_cast<const ColumnFixedString *>(&*key_columns.front());
-    if (key_ip_column_ptr == nullptr)
-        throw Exception{"Expected a UInt32 IP column", ErrorCodes::TYPE_MISMATCH};
+    if (key_ip_column_ptr == nullptr || key_ip_column_ptr->getN() != IPV6_BINARY_LENGTH)
+        throw Exception{"Expected a FixedString(16) IP column", ErrorCodes::TYPE_MISMATCH};
 
     const auto & key_mask_column = assert_cast<const ColumnVector<UInt8> &>(*key_columns.back());
 
     const auto * ipv6_col = std::get_if<IPv6Container>(&ip_column);
-    auto comp_v6 = [&](size_t i, IPv6Subnet target)
+    auto comp_v6 = [&](size_t i, const IPv6Subnet & target)
     {
         auto cmpres = memcmp16(getIPv6FromOffset(*ipv6_col, i), target.addr);
         if (cmpres == 0)
@@ -874,7 +884,10 @@ void TrieDictionary::getItemsImpl(
             // addrv4 has native endianness
             auto addrv4 = UInt32(first_column->get64(i));
             auto found = tryLookupIPv4(addrv4, addrv6_buf);
-            set_value(i, (found != ipNotFound()) ? static_cast<OutputType>(vec[*found]) : get_default(i));
+            if (found != ipNotFound())
+                set_value(i, static_cast<OutputType>(vec[*found]));
+            else
+                set_value(i, get_default(i));
         }
     }
     else
@@ -886,7 +899,10 @@ void TrieDictionary::getItemsImpl(
                 throw Exception("Expected key to be FixedString(16)", ErrorCodes::LOGICAL_ERROR);
 
             auto found = tryLookupIPv6(reinterpret_cast<const uint8_t *>(addr.data));
-            set_value(i, (found != ipNotFound()) ? static_cast<OutputType>(vec[*found]) : get_default(i));
+            if (found != ipNotFound())
+                set_value(i, static_cast<OutputType>(vec[*found]));
+            else
+                set_value(i, get_default(i));
         }
     }
 
