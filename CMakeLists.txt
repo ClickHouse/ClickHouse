@@ -475,9 +475,6 @@ find_contrib_lib(cityhash)
 
 find_contrib_lib(farmhash)
 
-set (USE_INTERNAL_BTRIE_LIBRARY ON CACHE INTERNAL "")
-find_contrib_lib(btrie)
-
 if (ENABLE_TESTS)
     include (cmake/find/gtest.cmake)
 endif ()
