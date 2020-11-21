@@ -173,12 +173,9 @@ reportStageEnd('drop-1')
 settings = root.findall('settings/*')
 for conn_index, c in enumerate(all_connections):
     for s in settings:
-        try:
-            q = f"set {s.tag} = '{s.text}'"
-            c.execute(q)
-            print(f'set\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}')
-        except:
-            print(traceback.format_exc(), file=sys.stderr)
+        # requires clickhouse-driver >= 1.1.5 to accept arbitrary new settings
+        # (https://github.com/mymarilyn/clickhouse-driver/pull/142)
+        c.settings[s.tag] = s.text
 
 reportStageEnd('settings')
 
