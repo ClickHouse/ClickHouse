@@ -88,8 +88,6 @@ SELECT
 FROM hits
 ```
 
-However, in contrast to standard SQL, if the table doesn’t have any rows (either there aren’t any at all, or there aren’t any after using WHERE to filter), an empty result is returned, and not the result from one of the rows containing the initial values of aggregate functions.
-
 As opposed to MySQL (and conforming to standard SQL), you can’t get some value of some column that is not in a key or aggregate function (except constant expressions). To work around this, you can use the ‘any’ aggregate function (get the first encountered value) or ‘min/max’.
 
 Example:
@@ -104,10 +102,6 @@ GROUP BY domain
 ```
 
 For every different key value encountered, `GROUP BY` calculates a set of aggregate function values.
-
-`GROUP BY` is not supported for array columns.
-
-A constant can’t be specified as arguments for aggregate functions. Example: `sum(1)`. Instead of this, you can get rid of the constant. Example: `count()`.
 
 ## Implementation Details {#implementation-details}
 
