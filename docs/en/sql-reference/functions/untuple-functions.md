@@ -1,9 +1,9 @@
 ---
 toc_priority: 66
-toc_title: Tuple
+toc_title: Untuple
 ---
 
-# Tuple Functions {#tuple-functions}
+# Untuple Functions {#untuple-functions}
 
 ## Untuple {#untuple}
 
@@ -12,13 +12,14 @@ Performs syntactic substitution of [tuple](../../sql-reference/data-types/tuple.
 **Syntax**
 
 ``` sql
-untuple(Tuple x)
+untuple(x)
 ```
+
+You can use the `EXCEPT` expression to skip columns as a result of the query.
 
 **Parameters**
 
--   Element of the `Tuple` type. [Tuple](../../sql-reference/data-types/tuple.md#tuplet1-t2).
-It can be a `tuple` function, column, or tuple of elements.
+-   `x` - A `tuple` function, column, or tuple of elements. [Tuple](../../sql-reference/data-types/tuple.md).
 
 **Returned value**
 
@@ -78,23 +79,23 @@ Result:
 └───────┴───────┘
 ```
 
-You can use the `except` expression in an `untuple` function to skip columns as a result of the query. Example of using an `except` expression:
+Example of using an `EXCEPT` expression:
 
 Query:
 
 ``` sql
-SELECT untuple(argMax((* except (v3, v5),), v1)) FROM kv GROUP BY key ORDER BY key;
+SELECT untuple((* EXCEPT (v2, v3),)) FROM kv;
 ```
 
 Result:
 
 ``` text
-┌─key─┬─v1─┬─v2─┬─v4─┬─v6────────┐
-│   1 │ 10 │ 20 │ 30 │ (33,'ab') │
-│   2 │ 25 │ 65 │ 40 │ (44,'cd') │
-│   3 │ 57 │ 30 │ 10 │ (55,'ef') │
-│   4 │ 55 │ 12 │ 80 │ (66,'gh') │
-│   5 │ 30 │ 50 │ 25 │ (77,'kl') │
+┌─key─┬─v1─┬─v4─┬─v5─┬─v6────────┐
+│   1 │ 10 │ 30 │ 15 │ (33,'ab') │
+│   2 │ 25 │ 40 │  6 │ (44,'cd') │
+│   3 │ 57 │ 10 │  5 │ (55,'ef') │
+│   4 │ 55 │ 80 │ 90 │ (66,'gh') │
+│   5 │ 30 │ 25 │ 55 │ (77,'kl') │
 └─────┴────┴────┴────┴───────────┘
 ```
 
