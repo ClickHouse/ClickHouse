@@ -20,6 +20,7 @@
 #    include <mysqlxx/Pool.h>
 #    include <mysqlxx/PoolWithFailover.h>
 
+
 namespace DB
 {
 
@@ -62,6 +63,12 @@ private:
     mutable MySQLClient client;
     MaterializeMySQLSettings * settings;
     String query_prefix;
+
+    // USE MySQL ERROR CODE:
+    // https://dev.mysql.com/doc/mysql-errors/5.7/en/server-error-reference.html
+    const int ER_ACCESS_DENIED_ERROR = 1045;
+    const int ER_DBACCESS_DENIED_ERROR = 1044;
+    const int ER_BAD_DB_ERROR = 1049;
 
     struct Buffers
     {
