@@ -91,6 +91,29 @@ void MaterializeMetadata::fetchMasterStatus(mysqlxx::PoolWithFailover::Entry & c
     executed_gtid_set = (*master_status.getByPosition(4).column)[0].safeGet<String>();
 }
 
+void MaterializeMetadata::fetchMasterVariablesValue(const mysqlxx::PoolWithFailover::Entry & connection)
+{
+    Block variables_header{
+        {std::make_shared<DataTypeString>(), "Variable_name"},
+        {std::make_shared<DataTypeString>(), "Value"}
+    };
+
+    const String & fetch_query = "SHOW VARIABLES WHERE Variable_name = 'binlog_checksum'";
+    MySQLBlockInputStream variables_input(connection, fetch_query, variables_header, DEFAULT_BLOCK_SIZE);
+
+    while (Block variables_block = variables_input.read())
+    {
+        ColumnPtr variables_name = variables_block.getByName("Variable_name").column;
+        ColumnPtr variables_value = variables_block.getByName("Value").column;
+
+        for (size_t index = 0; index < variables_block.rows(); ++index)
+        {
+            if (variables_name->getDataAt(index) == "binlog_checksum")
+                binlog_checksum = variables_value->getDataAt(index).toString();
+        }
+    }
+}
+
 static Block getShowMasterLogHeader(const String & mysql_version)
 {
     if (startsWith(mysql_version, "5."))
@@ -241,6 +264,7 @@ MaterializeMetadata::MaterializeMetadata(
 
         locked_tables = true;
         fetchMasterStatus(connection);
+        fetchMasterVariablesValue(connection);
         connection->query("SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ;").execute();
         connection->query("START TRANSACTION /*!40100 WITH CONSISTENT SNAPSHOT */;").execute();
 
