@@ -68,3 +68,22 @@ SELECT day1 = '2020-01-04' FROM table_with_alias_column PREWHERE day1 = '2020-01
 
 DROP TABLE table_with_alias_column;
 
+
+SELECT 'second_index';
+
+DROP TABLE IF EXISTS test_index;
+CREATE TABLE test_index
+(
+    `key_string` String,
+    `key_uint32` ALIAS toUInt32(key_string),
+    INDEX idx toUInt32(key_string) TYPE set(0) GRANULARITY 1
+)
+ENGINE = MergeTree
+PARTITION BY tuple()
+PRIMARY KEY tuple()
+ORDER BY key_string SETTINGS index_granularity = 1;
+
+INSERT INTO test_index SELECT * FROM numbers(10);
+SELECT COUNT() == 1 FROM test_index WHERE key_uint32 = 1 SETTINGS max_rows_to_read = 1;
+SELECT COUNT() == 1 FROM test_index WHERE toUInt32(key_string) = 1 SETTINGS max_rows_to_read = 1;
+DROP TABLE IF EXISTS test_index;

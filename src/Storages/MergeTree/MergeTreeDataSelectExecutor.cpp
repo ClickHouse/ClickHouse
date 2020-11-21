@@ -211,18 +211,18 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     Names primary_key_columns = primary_key.column_names;
 
     // query_info_for_index is a cloned SelectQueryInfo just for index
-    SelectQueryInfo query_info_for_index;
-    query_info_for_index.query = query_info.query->clone();
-    query_info_for_index.syntax_analyzer_result = query_info.syntax_analyzer_result;
-    query_info_for_index.sets = query_info.sets;
-
-    auto & temp_select = query_info_for_index.query->as<ASTSelectQuery &>();
-    ColumnAliasesVisitor::Data aliase_column_data(metadata_snapshot->getColumns());
-    ColumnAliasesVisitor aliase_column_visitor(aliase_column_data);
-    if (temp_select.where())
-        aliase_column_visitor.visit(temp_select.refWhere());
-    if (temp_select.prewhere())
-        aliase_column_visitor.visit(temp_select.refPrewhere());
+    SelectQueryInfo query_info_for_index = query_info;
+    if (!metadata_snapshot->getColumns().getAliases().empty())
+    {
+        query_info_for_index.query = query_info.query->clone();
+        auto & temp_select = query_info_for_index.query->as<ASTSelectQuery &>();
+        ColumnAliasesVisitor::Data aliase_column_data(metadata_snapshot->getColumns());
+        ColumnAliasesVisitor aliase_column_visitor(aliase_column_data);
+        if (temp_select.where())
+            aliase_column_visitor.visit(temp_select.refWhere());
+        if (temp_select.prewhere())
+            aliase_column_visitor.visit(temp_select.refPrewhere());
+    }
 
     KeyCondition key_condition(query_info_for_index, context, primary_key_columns, primary_key.expression);
 
@@ -573,7 +573,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     for (const auto & index : metadata_snapshot->getSecondaryIndices())
     {
         auto index_helper = MergeTreeIndexFactory::instance().get(index);
-        auto condition = index_helper->createIndexCondition(query_info, context);
+        auto condition = index_helper->createIndexCondition(query_info_for_index, context);
         if (!condition->alwaysUnknownOrTrue())
             useful_indices.emplace_back(index_helper, condition);
     }
