@@ -122,7 +122,7 @@ static String base64Decode(const String & encoded)
 
 static String base64Encode(const String & decoded)
 {
-    std::ostringstream ostr;
+    std::ostringstream ostr; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     Poco::Base64Encoder encoder(ostr);
     encoder.rdbuf()->setLineLength(0);
     encoder << decoded;
