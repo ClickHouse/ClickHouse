@@ -305,7 +305,6 @@ endif()
 
 dbms_target_link_libraries (
     PRIVATE
-        ${BTRIE_LIBRARIES}
         boost::filesystem
         boost::program_options
         clickhouse_common_config
