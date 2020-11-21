@@ -85,8 +85,8 @@ static std::pair<Poco::Net::IPAddress, UInt8> parseIPFromString(const std::strin
         {
             Poco::Net::IPAddress addr{std::string(addr_str.substr(0, pos))};
 
-            UInt8 prefix;
-            auto addr_str_end = addr_str.data() + addr_str.size();
+            uint8_t prefix = 0;
+            const auto * addr_str_end = addr_str.data() + addr_str.size();
             auto [p, ec] = std::from_chars(addr_str.data() + pos + 1, addr_str_end, prefix);
             if (p != addr_str_end)
                 throw DB::Exception("extra characters at the end", ErrorCodes::LOGICAL_ERROR);
