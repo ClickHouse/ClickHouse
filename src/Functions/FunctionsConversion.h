@@ -155,6 +155,9 @@ struct ConvertImpl
 
                     if constexpr (std::is_same_v<FromFieldType, UInt128> || std::is_same_v<ToFieldType, UInt128>)
                         throw Exception("Unexpected UInt128 to big int conversion", ErrorCodes::NOT_IMPLEMENTED);
+                    /// If From Data is Nan or Inf, throw exception
+                    else if (!isFinite(vec_from[i]))
+                        throw Exception("Unexpected inf or nan to big int conversion", ErrorCodes::NOT_IMPLEMENTED);
                     else
                         vec_to[i] = static_cast<CastTo>(static_cast<CastFrom>(vec_from[i]));
                 }
