@@ -1,4 +1,4 @@
-#include "TrieDictionary.h"
+#include "IPAddressDictionary.h"
 #include <stack>
 #include <charconv>
 #include <Common/assert_cast.h>
@@ -223,7 +223,7 @@ static bool matchIPv6Subnet(const uint8_t * target, const uint8_t * addr, UInt8 
 
 #endif  // __SSE2__
 
-TrieDictionary::TrieDictionary(
+IPAddressDictionary::IPAddressDictionary(
     const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
@@ -234,7 +234,7 @@ TrieDictionary::TrieDictionary(
     , source_ptr{std::move(source_ptr_)}
     , dict_lifetime(dict_lifetime_)
     , require_nonempty(require_nonempty_)
-    , logger(&Poco::Logger::get("TrieDictionary"))
+    , logger(&Poco::Logger::get("IPAddressDictionary"))
 {
     createAttributes();
 
@@ -243,7 +243,7 @@ TrieDictionary::TrieDictionary(
 }
 
 #define DECLARE(TYPE) \
-    void TrieDictionary::get##TYPE( \
+    void IPAddressDictionary::get##TYPE( \
         const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ResultArrayType<TYPE> & out) const \
     { \
         validateKeyTypes(key_types); \
@@ -275,7 +275,7 @@ DECLARE(Decimal64)
 DECLARE(Decimal128)
 #undef DECLARE
 
-void TrieDictionary::getString(
+void IPAddressDictionary::getString(
     const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ColumnString * out) const
 {
     validateKeyTypes(key_types);
@@ -293,7 +293,7 @@ void TrieDictionary::getString(
 }
 
 #define DECLARE(TYPE) \
-    void TrieDictionary::get##TYPE( \
+    void IPAddressDictionary::get##TYPE( \
         const std::string & attribute_name, \
         const Columns & key_columns, \
         const DataTypes & key_types, \
@@ -327,7 +327,7 @@ DECLARE(Decimal64)
 DECLARE(Decimal128)
 #undef DECLARE
 
-void TrieDictionary::getString(
+void IPAddressDictionary::getString(
     const std::string & attribute_name,
     const Columns & key_columns,
     const DataTypes & key_types,
@@ -347,7 +347,7 @@ void TrieDictionary::getString(
 }
 
 #define DECLARE(TYPE) \
-    void TrieDictionary::get##TYPE( \
+    void IPAddressDictionary::get##TYPE( \
         const std::string & attribute_name, \
         const Columns & key_columns, \
         const DataTypes & key_types, \
@@ -378,7 +378,7 @@ DECLARE(Decimal64)
 DECLARE(Decimal128)
 #undef DECLARE
 
-void TrieDictionary::getString(
+void IPAddressDictionary::getString(
     const std::string & attribute_name,
     const Columns & key_columns,
     const DataTypes & key_types,
@@ -397,7 +397,7 @@ void TrieDictionary::getString(
         [&](const size_t) { return StringRef{def}; });
 }
 
-void TrieDictionary::has(const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const
+void IPAddressDictionary::has(const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const
 {
     validateKeyTypes(key_types);
 
@@ -454,7 +454,7 @@ void TrieDictionary::has(const Columns & key_columns, const DataTypes & key_type
     }
 }
 
-void TrieDictionary::createAttributes()
+void IPAddressDictionary::createAttributes()
 {
     const auto size = dict_struct.attributes.size();
     attributes.reserve(size);
@@ -470,7 +470,7 @@ void TrieDictionary::createAttributes()
     }
 }
 
-void TrieDictionary::loadData()
+void IPAddressDictionary::loadData()
 {
     auto stream = source_ptr->loadAll();
     stream->readPrefix();
@@ -624,14 +624,14 @@ void TrieDictionary::loadData()
 }
 
 template <typename T>
-void TrieDictionary::addAttributeSize(const Attribute & attribute)
+void IPAddressDictionary::addAttributeSize(const Attribute & attribute)
 {
     const auto & vec = std::get<ContainerType<T>>(attribute.maps);
     bytes_allocated += sizeof(ContainerType<T>) + (vec.capacity() * sizeof(T));
     bucket_count = vec.size();
 }
 
-void TrieDictionary::calculateBytesAllocated()
+void IPAddressDictionary::calculateBytesAllocated()
 {
     if (auto * ipv4_col = std::get_if<IPv4Container>(&ip_column))
     {
@@ -707,13 +707,13 @@ void TrieDictionary::calculateBytesAllocated()
 
 
 template <typename T>
-void TrieDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
+void IPAddressDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
 {
     attribute.null_values = T(null_value.get<NearestFieldType<T>>());
     attribute.maps.emplace<ContainerType<T>>();
 }
 
-TrieDictionary::Attribute TrieDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
+IPAddressDictionary::Attribute IPAddressDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
 {
     Attribute attr{type, {}, {}, {}};
 
@@ -775,13 +775,13 @@ TrieDictionary::Attribute TrieDictionary::createAttributeWithType(const Attribut
     return attr;
 }
 
-const uint8_t * TrieDictionary::getIPv6FromOffset(const TrieDictionary::IPv6Container & ipv6_col, size_t i)
+const uint8_t * IPAddressDictionary::getIPv6FromOffset(const IPAddressDictionary::IPv6Container & ipv6_col, size_t i)
 {
     return reinterpret_cast<const uint8_t *>(&ipv6_col[i * IPV6_BINARY_LENGTH]);
 }
 
 template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
-void TrieDictionary::getItemsByTwoKeyColumnsImpl(
+void IPAddressDictionary::getItemsByTwoKeyColumnsImpl(
     const Attribute & attribute, const Columns & key_columns, ValueSetter && set_value, DefaultGetter && get_default) const
 {
     const auto first_column = key_columns.front();
@@ -859,7 +859,7 @@ void TrieDictionary::getItemsByTwoKeyColumnsImpl(
 }
 
 template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
-void TrieDictionary::getItemsImpl(
+void IPAddressDictionary::getItemsImpl(
     const Attribute & attribute, const Columns & key_columns, ValueSetter && set_value, DefaultGetter && get_default) const
 {
     const auto first_column = key_columns.front();
@@ -910,13 +910,13 @@ void TrieDictionary::getItemsImpl(
 }
 
 template <typename T>
-void TrieDictionary::setAttributeValueImpl(Attribute & attribute, const T value)
+void IPAddressDictionary::setAttributeValueImpl(Attribute & attribute, const T value)
 {
     auto & vec = std::get<ContainerType<T>>(attribute.maps);
     vec.push_back(value);
 }
 
-void TrieDictionary::setAttributeValue(Attribute & attribute, const Field & value)
+void IPAddressDictionary::setAttributeValue(Attribute & attribute, const Field & value)
 {
     switch (attribute.type)
     {
@@ -959,7 +959,7 @@ void TrieDictionary::setAttributeValue(Attribute & attribute, const Field & valu
     }
 }
 
-const TrieDictionary::Attribute & TrieDictionary::getAttribute(const std::string & attribute_name) const
+const IPAddressDictionary::Attribute & IPAddressDictionary::getAttribute(const std::string & attribute_name) const
 {
     const auto it = attribute_index_by_name.find(attribute_name);
     if (it == std::end(attribute_index_by_name))
@@ -969,7 +969,7 @@ const TrieDictionary::Attribute & TrieDictionary::getAttribute(const std::string
 }
 
 template <typename T>
-void TrieDictionary::has(const Attribute &, const Columns & key_columns, PaddedPODArray<UInt8> & out) const
+void IPAddressDictionary::has(const Attribute &, const Columns & key_columns, PaddedPODArray<UInt8> & out) const
 {
     const auto first_column = key_columns.front();
     const auto rows = first_column->size();
@@ -999,7 +999,7 @@ void TrieDictionary::has(const Attribute &, const Columns & key_columns, PaddedP
     query_count.fetch_add(rows, std::memory_order_relaxed);
 }
 
-Columns TrieDictionary::getKeyColumns() const
+Columns IPAddressDictionary::getKeyColumns() const
 {
     const auto * ipv4_col = std::get_if<IPv4Container>(&ip_column);
     if (ipv4_col)
@@ -1054,9 +1054,9 @@ static auto keyViewGetter()
     };
 }
 
-BlockInputStreamPtr TrieDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
+BlockInputStreamPtr IPAddressDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
 {
-    using BlockInputStreamType = DictionaryBlockInputStream<TrieDictionary, UInt64>;
+    using BlockInputStreamType = DictionaryBlockInputStream<IPAddressDictionary, UInt64>;
 
 
     const bool is_ipv4 = std::get_if<IPv4Container>(&ip_column) != nullptr;
@@ -1088,12 +1088,12 @@ BlockInputStreamPtr TrieDictionary::getBlockInputStream(const Names & column_nam
         shared_from_this(), max_block_size, getKeyColumns(), column_names, std::move(get_keys), std::move(get_view));
 }
 
-TrieDictionary::RowIdxConstIter TrieDictionary::ipNotFound() const
+IPAddressDictionary::RowIdxConstIter IPAddressDictionary::ipNotFound() const
 {
     return row_idx.end();
 }
 
-TrieDictionary::RowIdxConstIter TrieDictionary::tryLookupIPv4(UInt32 addr, uint8_t * buf) const
+IPAddressDictionary::RowIdxConstIter IPAddressDictionary::tryLookupIPv4(UInt32 addr, uint8_t * buf) const
 {
     if (std::get_if<IPv6Container>(&ip_column))
     {
@@ -1103,7 +1103,7 @@ TrieDictionary::RowIdxConstIter TrieDictionary::tryLookupIPv4(UInt32 addr, uint8
     return lookupIP<IPv4Container>(addr);
 }
 
-TrieDictionary::RowIdxConstIter TrieDictionary::tryLookupIPv6(const uint8_t * addr) const
+IPAddressDictionary::RowIdxConstIter IPAddressDictionary::tryLookupIPv6(const uint8_t * addr) const
 {
     if (std::get_if<IPv4Container>(&ip_column))
     {
@@ -1117,7 +1117,7 @@ TrieDictionary::RowIdxConstIter TrieDictionary::tryLookupIPv6(const uint8_t * ad
 }
 
 template <typename IPContainerType, typename IPValueType>
-TrieDictionary::RowIdxConstIter TrieDictionary::lookupIP(IPValueType target) const
+IPAddressDictionary::RowIdxConstIter IPAddressDictionary::lookupIP(IPValueType target) const
 {
     if (row_idx.empty())
         return ipNotFound();
@@ -1182,7 +1182,7 @@ void registerDictionaryTrie(DictionaryFactory & factory)
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
         // This is specialised trie for storing IPv4 and IPv6 prefixes.
-        return std::make_unique<TrieDictionary>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
+        return std::make_unique<IPAddressDictionary>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
     };
     factory.registerLayout("ip_trie", create_layout, true);
 }
