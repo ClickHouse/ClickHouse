@@ -14,10 +14,12 @@ import string
 import sys
 import time
 import traceback
+import logging
 import xml.etree.ElementTree as et
 from threading import Thread
 from scipy import stats
 
+logging.basicConfig(format='%(asctime)s: %(levelname)s: %(module)s: %(message)s', level='WARNING')
 
 total_start_seconds = time.perf_counter()
 stage_start_seconds = total_start_seconds
