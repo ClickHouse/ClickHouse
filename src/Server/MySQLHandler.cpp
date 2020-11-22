@@ -328,8 +328,15 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
 
         Context query_context = connection_context;
 
-        size_t affected_rows = 0;
-        query_context.setProgressCallback([&](const Progress & progress) { affected_rows += progress.written_rows; });
+        std::atomic<size_t> affected_rows {0};
+        auto prev = query_context.getProgressCallback();
+        query_context.setProgressCallback([&, prev = prev](const Progress & progress)
+        {
+            if (prev)
+                prev(progress);
+
+            affected_rows += progress.written_rows;
+        });
 
         executeQuery(should_replace ? replacement : payload, *out, true, query_context,
             [&with_output](const String &, const String &, const String &, const String &)
