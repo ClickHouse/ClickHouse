@@ -23,6 +23,7 @@
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ColumnAliasesVisitor.h>
+#include <Interpreters/replaceAliasColumnsInFilter.h>
 #include <Interpreters/Context.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -214,14 +215,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     SelectQueryInfo query_info_for_index = query_info;
     if (!metadata_snapshot->getColumns().getAliases().empty())
     {
-        query_info_for_index.query = query_info.query->clone();
-        auto & temp_select = query_info_for_index.query->as<ASTSelectQuery &>();
-        ColumnAliasesVisitor::Data aliase_column_data(metadata_snapshot->getColumns());
-        ColumnAliasesVisitor aliase_column_visitor(aliase_column_data);
-        if (temp_select.where())
-            aliase_column_visitor.visit(temp_select.refWhere());
-        if (temp_select.prewhere())
-            aliase_column_visitor.visit(temp_select.refPrewhere());
+        query_info_for_index.query = replaceAliasColumnsInFilter(query_info.query->clone(), metadata_snapshot->getColumns());
     }
 
     KeyCondition key_condition(query_info_for_index, context, primary_key_columns, primary_key.expression);

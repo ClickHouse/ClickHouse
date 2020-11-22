@@ -21,6 +21,7 @@
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/replaceAliasColumnsInFilter.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/getTableExpressions.h>
@@ -1182,7 +1183,7 @@ void InterpreterSelectQuery::executeFetchColumns(
         else // It's possible to optimize count() given only partition predicates
         {
             SelectQueryInfo temp_query_info;
-            temp_query_info.query = query_ptr;
+            temp_query_info.query = replaceAliasColumnsInFilter(query_ptr->clone(), storage->getInMemoryMetadata().getColumns());
             temp_query_info.syntax_analyzer_result = syntax_analyzer_result;
             temp_query_info.sets = query_analyzer->getPreparedSets();
             num_rows = storage->totalRowsByPartitionPredicate(temp_query_info, *context);
