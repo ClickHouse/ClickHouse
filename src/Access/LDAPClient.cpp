@@ -110,7 +110,6 @@ void LDAPClient::diag(const int rc, String text)
         if (handle)
         {
             char * raw_message = nullptr;
-            ldap_get_option(handle, LDAP_OPT_DIAGNOSTIC_MESSAGE, &raw_message);
 
             SCOPE_EXIT({
                 if (raw_message)
@@ -119,6 +118,8 @@ void LDAPClient::diag(const int rc, String text)
                     raw_message = nullptr;
                 }
             });
+
+            ldap_get_option(handle, LDAP_OPT_DIAGNOSTIC_MESSAGE, &raw_message);
 
             if (raw_message && *raw_message != '\0')
             {
