@@ -153,6 +153,7 @@ SRCS(
     interpretSubquery.cpp
     join_common.cpp
     loadMetadata.cpp
+    replaceAliasColumnsInFilter.cpp
     sortBlock.cpp
 
 )

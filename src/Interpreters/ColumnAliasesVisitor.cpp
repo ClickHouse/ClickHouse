@@ -26,16 +26,16 @@ void ColumnAliasesMatcher::visit(ASTPtr & ast, Data & data)
     {
         if (auto column_name = IdentifierSemantic::getColumnName(*node))
         {
-            if (const auto column_default = data.columns.getDefault(column_name.value()))
+            if (const auto column_default = data.columns.getDefault(*column_name))
             {
-                if (column_default.value().kind == ColumnDefaultKind::Alias)
+                if (column_default->kind == ColumnDefaultKind::Alias)
                 {
                     const auto alias_columns = data.columns.getAliases();
                     for (const auto & alias_column : alias_columns)
                     {
-                        if (alias_column.name == column_name.value())
+                        if (alias_column.name == *column_name)
                         {
-                            ast = addTypeConversionToAST(column_default.value().expression->clone(), alias_column.type->getName());
+                            ast = addTypeConversionToAST(column_default->expression->clone(), alias_column.type->getName());
                             //revisit ast to track recursive alias columns
                             Visitor(data).visit(ast);
                             break;
