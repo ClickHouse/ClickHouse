@@ -3,6 +3,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/LRUCache.h>
+#include <Common/SipHash.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
@@ -197,7 +198,7 @@ bool allArgumentsAreConstants(const ColumnsWithTypeAndName & args)
 }
 
 ColumnPtr ExecutableFunctionAdaptor::defaultImplementationForConstantArguments(
-    ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run)
+    const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
     ColumnNumbers arguments_to_remain_constants = impl->getArgumentsThatAreAlwaysConstant();
 
@@ -247,7 +248,8 @@ ColumnPtr ExecutableFunctionAdaptor::defaultImplementationForConstantArguments(
 }
 
 
-ColumnPtr ExecutableFunctionAdaptor::defaultImplementationForNulls(ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run)
+ColumnPtr ExecutableFunctionAdaptor::defaultImplementationForNulls(
+    const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
     if (args.empty() || !impl->useDefaultImplementationForNulls())
         return nullptr;
@@ -276,7 +278,7 @@ ColumnPtr ExecutableFunctionAdaptor::defaultImplementationForNulls(ColumnsWithTy
 }
 
 ColumnPtr ExecutableFunctionAdaptor::executeWithoutLowCardinalityColumns(
-    ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run)
+    const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
     if (auto res = defaultImplementationForConstantArguments(args, result_type, input_rows_count, dry_run))
         return res;
@@ -377,7 +379,7 @@ static void convertLowCardinalityColumnsToFull(ColumnsWithTypeAndName & args)
     }
 }
 
-ColumnPtr ExecutableFunctionAdaptor::execute(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run)
+ColumnPtr ExecutableFunctionAdaptor::execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
     if (impl->useDefaultImplementationForLowCardinalityColumns())
     {

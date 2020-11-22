@@ -280,7 +280,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     /// Sampling.
     Names column_names_to_read = real_column_names;
     std::shared_ptr<ASTFunction> filter_function;
-    ExpressionActionsPtr filter_expression;
+    ActionsDAGPtr filter_expression;
 
     RelativeSize relative_sample_size = 0;
     RelativeSize relative_sample_offset = 0;
@@ -516,13 +516,13 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 
             ASTPtr query = filter_function;
             auto syntax_result = TreeRewriter(context).analyze(query, available_real_columns);
-            filter_expression = ExpressionAnalyzer(filter_function, syntax_result, context).getActions(false);
+            filter_expression = ExpressionAnalyzer(filter_function, syntax_result, context).getActionsDAG(false);
 
             if (!select.final())
             {
                 /// Add columns needed for `sample_by_ast` to `column_names_to_read`.
                 /// Skip this if final was used, because such columns were already added from PK.
-                std::vector<String> add_columns = filter_expression->getRequiredColumns();
+                std::vector<String> add_columns = filter_expression->getRequiredColumns().getNames();
                 column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
                 std::sort(column_names_to_read.begin(), column_names_to_read.end());
                 column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()),
@@ -715,7 +715,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     /// Projection, that needed to drop columns, which have appeared by execution
     /// of some extra expressions, and to allow execute the same expressions later.
     /// NOTE: It may lead to double computation of expressions.
-    ExpressionActionsPtr result_projection;
+    ActionsDAGPtr result_projection;
 
     if (select.final())
     {
@@ -751,7 +751,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         order_key_prefix_ast->children.resize(prefix_size);
 
         auto syntax_result = TreeRewriter(context).analyze(order_key_prefix_ast, metadata_snapshot->getColumns().getAllPhysical());
-        auto sorting_key_prefix_expr = ExpressionAnalyzer(order_key_prefix_ast, syntax_result, context).getActions(false);
+        auto sorting_key_prefix_expr = ExpressionAnalyzer(order_key_prefix_ast, syntax_result, context).getActionsDAG(false);
 
         plan = spreadMarkRangesAmongStreamsWithOrder(
             std::move(parts_with_ranges),
@@ -821,7 +821,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     {
         auto expression_step = std::make_unique<ExpressionStep>(
                 plan->getCurrentDataStream(),
-                query_info.prewhere_info->remove_columns_actions);
+                query_info.prewhere_info->remove_columns_actions->getActionsDAG().clone());
 
         expression_step->setStepDescription("Remove unused columns after PREWHERE");
         plan->addStep(std::move(expression_step));
@@ -987,10 +987,11 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     }
 }
 
-static ExpressionActionsPtr createProjection(const Block & header, const MergeTreeData & data)
+static ActionsDAGPtr createProjection(const Block & header)
 {
-    auto projection = std::make_shared<ExpressionActions>(header.getNamesAndTypesList(), data.global_context);
-    projection->add(ExpressionAction::project(header.getNames()));
+    auto projection = std::make_shared<ActionsDAG>(header.getNamesAndTypesList());
+    projection->removeUnusedActions(header.getNames());
+    projection->projectInput();
     return projection;
 }
 
@@ -1002,11 +1003,11 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
     UInt64 max_block_size,
     bool use_uncompressed_cache,
     const SelectQueryInfo & query_info,
-    const ExpressionActionsPtr & sorting_key_prefix_expr,
+    const ActionsDAGPtr & sorting_key_prefix_expr,
     const Names & virt_columns,
     const Settings & settings,
     const MergeTreeReaderSettings & reader_settings,
-    ExpressionActionsPtr & out_projection) const
+    ActionsDAGPtr & out_projection) const
 {
     size_t sum_marks = 0;
     const InputOrderInfoPtr & input_order_info = query_info.input_order_info;
@@ -1217,7 +1218,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
         for (auto & plan : plans)
         {
             /// Drop temporary columns, added by 'sorting_key_prefix_expr'
-            out_projection = createProjection(plan->getCurrentDataStream().header, data);
+            out_projection = createProjection(plan->getCurrentDataStream().header);
 
             auto expression_step = std::make_unique<ExpressionStep>(
                     plan->getCurrentDataStream(),
@@ -1264,7 +1265,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
     const Names & virt_columns,
     const Settings & settings,
     const MergeTreeReaderSettings & reader_settings,
-    ExpressionActionsPtr & out_projection) const
+    ActionsDAGPtr & out_projection) const
 {
     const auto data_settings = data.getSettings();
     size_t sum_marks = 0;
@@ -1358,7 +1359,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
 
             /// Drop temporary columns, added by 'sorting_key_expr'
             if (!out_projection)
-                out_projection = createProjection(pipe.getHeader(), data);
+                out_projection = createProjection(pipe.getHeader());
 
             plan = createPlanFromPipe(std::move(pipe), "with final");
         }
@@ -1375,7 +1376,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
 
         auto expression_step = std::make_unique<ExpressionStep>(
                 plan->getCurrentDataStream(),
-                metadata_snapshot->getSortingKey().expression);
+                metadata_snapshot->getSortingKey().expression->getActionsDAG().clone());
 
         expression_step->setStepDescription("Calculate sorting key expression");
         plan->addStep(std::move(expression_step));

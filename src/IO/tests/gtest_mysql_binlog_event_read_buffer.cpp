@@ -13,7 +13,7 @@ TEST(MySQLBinlogEventReadBuffer, CheckBoundary)
         std::vector<char> memory_data(index, 0x01);
         ReadBufferFromMemory nested_in(memory_data.data(), index);
 
-        EXPECT_THROW({ MySQLBinlogEventReadBuffer binlog_in(nested_in); }, Exception);
+        EXPECT_THROW({ MySQLBinlogEventReadBuffer binlog_in(nested_in, 4); }, Exception);
     }
 }
 
@@ -23,7 +23,7 @@ TEST(MySQLBinlogEventReadBuffer, NiceBufferSize)
     std::vector<char> memory_data(6, 0x01);
     ReadBufferFromMemory nested_in(memory_data.data(), 6);
 
-    MySQLBinlogEventReadBuffer binlog_in(nested_in);
+    MySQLBinlogEventReadBuffer binlog_in(nested_in, 4);
     binlog_in.readStrict(res, 2);
     ASSERT_EQ(res[0], 0x01);
     ASSERT_EQ(res[1], 0x01);
@@ -46,7 +46,7 @@ TEST(MySQLBinlogEventReadBuffer, BadBufferSizes)
     }
 
     ConcatReadBuffer concat_buffer(nested_buffers);
-    MySQLBinlogEventReadBuffer binlog_in(concat_buffer);
+    MySQLBinlogEventReadBuffer binlog_in(concat_buffer, 4);
     binlog_in.readStrict(res, 4);
 
     for (const auto & res_byte : res)
@@ -71,7 +71,7 @@ TEST(MySQLBinlogEventReadBuffer, NiceAndBadBufferSizes)
     }
 
     ConcatReadBuffer concat_buffer(nested_buffers);
-    MySQLBinlogEventReadBuffer binlog_in(concat_buffer);
+    MySQLBinlogEventReadBuffer binlog_in(concat_buffer, 4);
     binlog_in.readStrict(res, 12);
 
     for (const auto & res_byte : res)
