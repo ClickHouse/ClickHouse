@@ -10,7 +10,8 @@ It is designed to retain the following properties of data:
 - conditional cardinalities: number of distinct values of one column under the condition on the value of another column;
 - probability distributions of the absolute value of integers; the sign of signed integers; exponent and sign for floats;
 - probability distributions of the length of strings;
-- probability of zero values of numbers; empty strings and arrays, NULLs;
+- probability of zero values of numbers; empty strings and arrays, `NULL`s;
+
 - data compression ratio when compressed with LZ77 and entropy family of codecs;
 - continuity (magnitude of difference) of time values across the table; continuity of floating-point values;
 - date component of DateTime values;
