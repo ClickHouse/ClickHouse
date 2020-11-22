@@ -2003,7 +2003,7 @@ bool MergeTreeData::renameTempPartAndReplace(
     if (part_in_memory && getSettings()->in_memory_parts_enable_wal)
     {
         auto wal = getWriteAheadLog();
-        wal->addPart(part_in_memory->block, part_in_memory->name);
+        wal->addPart(part_in_memory);
     }
 
     if (out_covered_parts)
