@@ -5,6 +5,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/AlterCommands.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -76,7 +77,7 @@ StorageMerge::StorageMerge(
     : IStorage(table_id_)
     , source_database(source_database_)
     , table_name_regexp(table_name_regexp_)
-    , global_context(context_)
+    , global_context(context_.getGlobalContext())
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
