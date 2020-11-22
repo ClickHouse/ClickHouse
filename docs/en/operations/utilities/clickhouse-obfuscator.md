@@ -14,7 +14,8 @@ It is designed to retain the following properties of data:
 
 - data compression ratio when compressed with LZ77 and entropy family of codecs;
 - continuity (magnitude of difference) of time values across the table; continuity of floating-point values;
-- date component of DateTime values;
+- date component of `DateTime` values;
+
 - UTF-8 validity of string values;
 - string values look natural.
 
