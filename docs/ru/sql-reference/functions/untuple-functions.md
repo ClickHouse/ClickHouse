@@ -1,33 +1,33 @@
 ---
-toc_priority: 66
-toc_title: Untuple
+toc_priority: 68
+toc_title: Кортежные функции
 ---
 
-# Untuple Functions {#untuple-functions}
+# Функции Untuple {#untuple-functions}
 
 ## Untuple {#untuple}
 
-Performs syntactic substitution of [tuple](../../sql-reference/data-types/tuple.md#tuplet1-t2) elements in the call location.
+Выполняет синтаксическую подстановку элементов [кортежа](../../sql-reference/data-types/tuple.md#tuplet1-t2) в место вызова.
 
-**Syntax**
+**Синтаксис**
 
 ``` sql
 untuple(x)
 ```
 
-You can use the `EXCEPT` expression to skip columns as a result of the query.
+Чтобы пропустить некоторые столбцы в результате запроса, вы можете использовать выражение `EXCEPT`.
 
-**Parameters**
+**Параметры**
 
--   `x` - A `tuple` function, column, or tuple of elements. [Tuple](../../sql-reference/data-types/tuple.md).
+-   `x` - функция `tuple`, столбец или кортеж элементов. [Tuple](../../sql-reference/data-types/tuple.md).
 
-**Returned value**
+**Возвращаемое значение**
 
--   None.
+-   Нет.
 
-**Examples**
+**Примеры**
 
-Input table:
+Входная таблица:
 
 ``` text
 ┌─key─┬─v1─┬─v2─┬─v3─┬─v4─┬─v5─┬─v6────────┐
@@ -39,15 +39,15 @@ Input table:
 └─────┴────┴────┴────┴────┴────┴───────────┘
 ```
 
-Example of using a `tuple` function as a parameter `untuple` function:
+Пример использования функции `tuple` в качестве параметра функции `untuple`:
 
-Query:
+Запрос:
 
 ``` sql
 SELECT untuple(tuple(v2,v3)) FROM kv;
 ```
 
-Result:
+Результат:
 
 ``` text
 ┌─v2─┬─v3─┐
@@ -59,15 +59,15 @@ Result:
 └────┴────┘
 ```
 
-Example of using a column `Tuple` type as a parameter `untuple` function:
+Пример использования столбца типа `Tuple` в качестве параметра функции `untuple`:
 
-Query:
+Запрос:
 
 ``` sql
 SELECT untuple(v6) FROM kv;
 ```
 
-Result:
+Результат:
 
 ``` text
 ┌─_ut_1─┬─_ut_2─┐
@@ -79,15 +79,15 @@ Result:
 └───────┴───────┘
 ```
 
-Example of using an `EXCEPT` expression:
+Пример использования выражения `EXCEPT`:
 
-Query:
+Запрос:
 
 ``` sql
 SELECT untuple((* EXCEPT (v2, v3),)) FROM kv;
 ```
 
-Result:
+Результат:
 
 ``` text
 ┌─key─┬─v1─┬─v4─┬─v5─┬─v6────────┐
@@ -99,8 +99,8 @@ Result:
 └─────┴────┴────┴────┴───────────┘
 ```
 
-**See Also**
+**Смотрите также**
 
 -   [Tuple](../../sql-reference/data-types/tuple.md)
 
-[Original article](https://clickhouse.tech/docs/en/sql-reference/functions/untuple-functions/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/functions/untuple-functions/) <!--hide-->
