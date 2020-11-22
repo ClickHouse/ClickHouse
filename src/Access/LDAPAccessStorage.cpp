@@ -380,9 +380,8 @@ std::set<String> LDAPAccessStorage::mapExternalRolesNoLock(const String & user_n
         for (const auto & external_role : external_role_set)
         {
             bool have_match = false;
-            for (std::size_t j = 0; j < rules.size(); ++j)
+            for (const auto & rule : rules)
             {
-                const auto & rule = rules[j];
                 const auto & re = re_cache.try_emplace(rule.match, rule.match, std::regex_constants::ECMAScript | std::regex_constants::optimize).first->second;
                 std::smatch match_results;
                 if (std::regex_match(external_role, match_results, re))
