@@ -112,7 +112,7 @@ namespace
         /// Number of references (hardlinks) to this metadata file.
         UInt32 ref_count;
         /// Flag indicates that file is read only.
-        bool read_only;
+        bool read_only = false;
 
         /// Load metadata by path or create empty if `create` flag is set.
         explicit Metadata(const String & s3_root_path_, const String & disk_path_, const String & metadata_file_path_, bool create = false)
