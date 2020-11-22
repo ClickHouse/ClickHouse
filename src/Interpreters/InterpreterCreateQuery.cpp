@@ -624,7 +624,11 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         if (as_create.storage)
             create.set(create.storage, as_create.storage->ptr());
         else if (as_create.as_table_function)
+        {
             create.as_table_function = as_create.as_table_function->clone();
+            /// Reset columns list, because it's not supported for table functions (until 20.11)
+            create.columns_list = {};
+        }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set engine, it's a bug.");
     }
