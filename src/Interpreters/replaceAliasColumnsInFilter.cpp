@@ -16,7 +16,7 @@ ASTPtr replaceAliasColumnsInFilter(ASTPtr && ast, const ColumnsDescription & col
     if (temp_select.prewhere())
         aliase_column_visitor.visit(temp_select.refPrewhere());
 
-    return ast;
+    return std::move(ast);
 }
 
 }
