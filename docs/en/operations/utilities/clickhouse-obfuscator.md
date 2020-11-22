@@ -30,7 +30,8 @@ It uses some cryptographic primitives to transform data but from the cryptograph
 It may retain some data you don't want to publish.
 
 It always leaves 0, 1, -1 numbers, dates, lengths of arrays, and null flags exactly as in source data.
-For example, you have a column IsMobile in your table with values 0 and 1. In transformed data, it will have the same value.
+For example, you have a column `IsMobile` in your table with values 0 and 1. In transformed data, it will have the same value.
+
 So, the user will be able to count the exact ratio of mobile traffic.
 
 Let's give another example. When you have some private data in your table, like user email and you don't want to publish any single email address.
