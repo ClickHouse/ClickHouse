@@ -24,13 +24,16 @@ public:
 private:
     using ValueType = ExternalResultDescription::ValueType;
 
+    void readPrefix() override;
     Block readImpl() override;
+
     void insertValue(IColumn & column, const std::string & value,
-        const ExternalResultDescription::ValueType type, const DataTypePtr data_type);
+        const ExternalResultDescription::ValueType type, const DataTypePtr data_type, size_t idx);
     void insertDefaultValue(IColumn & column, const IColumn & sample_column)
     {
         column.insertFrom(sample_column, 0);
     }
+    void getArrayInfo(size_t column_idx, const DataTypePtr data_type);
 
     const String query_str;
     const UInt64 max_block_size;
@@ -39,6 +42,14 @@ private:
     std::shared_ptr<pqxx::connection> connection;
     std::unique_ptr<pqxx::work> work;
     std::unique_ptr<pqxx::stream_from> stream;
+
+    struct ArrayInfo
+    {
+        size_t num_dimensions;
+        Field default_value;
+        std::function<Field(std::string & field)> pqxx_parser;
+    };
+    std::unordered_map<size_t, ArrayInfo> array_info;
 };
 
 }
