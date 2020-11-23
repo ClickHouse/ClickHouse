@@ -1,0 +1,5 @@
+SELECT
+    x,
+    y
+FROM prewhere_move
+PREWHERE x > 100
