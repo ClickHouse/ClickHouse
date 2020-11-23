@@ -161,7 +161,7 @@ For more information, see the section “Settings”. It is possible to use exte
 
 ## SELECT modifiers {#select-modifiers}
 
-You can modify the results returned from a `SELECT` query, as follows.
+You can use the following modifiers in `SELECT` queries.
 
 ### APPLY {#apply-modifier}
 
