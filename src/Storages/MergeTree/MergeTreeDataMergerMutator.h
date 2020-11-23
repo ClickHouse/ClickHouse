@@ -19,6 +19,7 @@ class MergeProgressCallback;
 struct FutureMergedMutatedPart
 {
     String name;
+    UUID uuid = UUIDHelpers::Nil;
     String path;
     MergeTreeDataPartType type;
     MergeTreePartInfo part_info;

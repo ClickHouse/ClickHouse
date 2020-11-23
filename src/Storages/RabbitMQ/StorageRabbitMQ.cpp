@@ -69,7 +69,7 @@ namespace ExchangeType
 
 StorageRabbitMQ::StorageRabbitMQ(
         const StorageID & table_id_,
-        Context & context_,
+        const Context & context_,
         const ColumnsDescription & columns_,
         std::unique_ptr<RabbitMQSettings> rabbitmq_settings_)
         : IStorage(table_id_)
@@ -186,15 +186,10 @@ AMQP::ExchangeType StorageRabbitMQ::defineExchangeType(String exchange_type_)
 
 String StorageRabbitMQ::getTableBasedName(String name, const StorageID & table_id)
 {
-    std::stringstream ss;
-    ss.exceptions(std::ios::failbit);
-
     if (name.empty())
-        ss << table_id.database_name << "_" << table_id.table_name;
+        return fmt::format("{}_{}", table_id.database_name, table_id.table_name);
     else
-        ss << name << "_" << table_id.database_name << "_" << table_id.table_name;
-
-    return ss.str();
+        return fmt::format("{}_{}_{}", name, table_id.database_name, table_id.table_name);
 }
 
 

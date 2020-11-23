@@ -7,6 +7,7 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -430,8 +431,7 @@ namespace
 
     String listOfColumns(const NamesAndTypesList & available_columns)
     {
-        std::stringstream ss;
-        ss.exceptions(std::ios::failbit);
+        WriteBufferFromOwnString ss;
         for (auto it = available_columns.begin(); it != available_columns.end(); ++it)
         {
             if (it != available_columns.begin())

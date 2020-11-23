@@ -94,6 +94,9 @@ void MergeTreeDataPartWriterWide::write(const Block & block,
     if (compute_granularity)
     {
         size_t index_granularity_for_block = computeIndexGranularity(block);
+        /// Finish last unfinished mark rows it it's required
+        last_granule_was_adjusted = adjustLastUnfinishedMark(index_granularity_for_block);
+        /// Fill index granularity with granules of new size
         fillIndexGranularity(index_granularity_for_block, block.rows());
     }
 

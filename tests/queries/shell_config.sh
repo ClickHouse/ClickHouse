@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+# Don't check for ODR violation, since we may test shared build with ASAN
+export ASAN_OPTIONS=detect_odr_violation=0
+
 export CLICKHOUSE_DATABASE=${CLICKHOUSE_DATABASE:="test"}
 export CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL:="warning"}
 [ -v CLICKHOUSE_CONFIG_CLIENT ] && CLICKHOUSE_CLIENT_OPT0+=" --config-file=${CLICKHOUSE_CONFIG_CLIENT} "
