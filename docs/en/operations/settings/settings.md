@@ -2323,4 +2323,15 @@ Allows configurable `NULL` representation for [TSV](../../interfaces/formats.md#
 
 Default value: `\N`.
 
+## allow_nullable_key {#allow-nullable-key}
+
+Enables or disables [Nullable](../../sql-reference/data-types/nullable/#data_type-nullable) types as keys in [MergeTree](../../engines/table-engines/mergetree-family/mergetree/#table_engines-mergetree) tables.
+
+Possible values:
+
+- 1 — Enabled.
+- 0 — Disabled.
+
+Default value: `0`.
+
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
