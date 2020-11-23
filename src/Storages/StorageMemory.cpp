@@ -207,7 +207,6 @@ BlockOutputStreamPtr StorageMemory::write(const ASTPtr & /*query*/, const Storag
 
 void StorageMemory::drop()
 {
-    std::lock_guard lock(mutex);
     data.set(std::make_unique<BlocksList>());
     total_size_bytes.store(0, std::memory_order_relaxed);
     total_size_rows.store(0, std::memory_order_relaxed);
@@ -241,49 +240,45 @@ void StorageMemory::mutate(const MutationCommands & commands, const Context & co
     }
     in->readSuffix();
 
+    std::unique_ptr<BlocksList> new_data;
+
     // all column affected
     if (interpreter->isAffectingAllColumns())
     {
-        size_t rows = 0;
-        size_t bytes = 0;
-        for (const auto & buffer : out)
-        {
-            rows += buffer.rows();
-            bytes += buffer.bytes();
-        }
-        data.set(std::make_unique<BlocksList>(out));
-        total_size_bytes.store(rows, std::memory_order_relaxed);
-        total_size_rows.store(bytes, std::memory_order_relaxed);
+        new_data = std::make_unique<BlocksList>(out);
     }
     else
     {
-        auto new_data = std::make_unique<BlocksList>(*(data.get()));
+        /// just some of the column affected, we need update it with new column
+        new_data = std::make_unique<BlocksList>(*(data.get()));
         auto data_it = new_data->begin();
         auto out_it = out.begin();
+        /// Mutation does not change the number of blocks, so we don't need
+        // to check whether old data and new data have same number of blocks or not
         while (data_it != new_data->end() && out_it != out.end())
         {
             updateBlockData(*data_it, *out_it);
             ++data_it;
             ++out_it;
         }
-        size_t rows = 0;
-        size_t bytes = 0;
-        for (const auto & buffer : *new_data)
-        {
-            rows += buffer.rows();
-            bytes += buffer.bytes();
-        }
-        total_size_bytes.store(rows, std::memory_order_relaxed);
-        total_size_rows.store(bytes, std::memory_order_relaxed);
-        data.set(std::move(new_data));
     }
+
+    size_t rows = 0;
+    size_t bytes = 0;
+    for (const auto & buffer : *new_data)
+    {
+        rows += buffer.rows();
+        bytes += buffer.bytes();
+    }
+    total_size_bytes.store(rows, std::memory_order_relaxed);
+    total_size_rows.store(bytes, std::memory_order_relaxed);
+    data.set(std::move(new_data));
 }
 
 
 void StorageMemory::truncate(
     const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &)
 {
-    std::lock_guard lock(mutex);
     data.set(std::make_unique<BlocksList>());
     total_size_bytes.store(0, std::memory_order_relaxed);
     total_size_rows.store(0, std::memory_order_relaxed);
