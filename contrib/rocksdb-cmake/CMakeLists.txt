@@ -347,8 +347,9 @@ set(SOURCES
         ${ROCKSDB_SOURCE_DIR}/db/blob/blob_file_builder.cc
         ${ROCKSDB_SOURCE_DIR}/db/blob/blob_file_garbage.cc
         ${ROCKSDB_SOURCE_DIR}/db/blob/blob_file_meta.cc
+        ${ROCKSDB_SOURCE_DIR}/db/blob/blob_file_reader.cc
         ${ROCKSDB_SOURCE_DIR}/db/blob/blob_log_format.cc
-        ${ROCKSDB_SOURCE_DIR}/db/blob/blob_log_reader.cc
+        ${ROCKSDB_SOURCE_DIR}/db/blob/blob_log_sequential_reader.cc
         ${ROCKSDB_SOURCE_DIR}/db/blob/blob_log_writer.cc
         ${ROCKSDB_SOURCE_DIR}/db/builder.cc
         ${ROCKSDB_SOURCE_DIR}/db/c.cc
@@ -394,6 +395,8 @@ set(SOURCES
         ${ROCKSDB_SOURCE_DIR}/db/memtable_list.cc
         ${ROCKSDB_SOURCE_DIR}/db/merge_helper.cc
         ${ROCKSDB_SOURCE_DIR}/db/merge_operator.cc
+        ${ROCKSDB_SOURCE_DIR}/db/output_validator.cc
+        ${ROCKSDB_SOURCE_DIR}/db/periodic_work_scheduler.cc
         ${ROCKSDB_SOURCE_DIR}/db/range_del_aggregator.cc
         ${ROCKSDB_SOURCE_DIR}/db/range_tombstone_fragmenter.cc
         ${ROCKSDB_SOURCE_DIR}/db/repair.cc
@@ -451,12 +454,12 @@ set(SOURCES
         ${ROCKSDB_SOURCE_DIR}/monitoring/perf_level.cc
         ${ROCKSDB_SOURCE_DIR}/monitoring/persistent_stats_history.cc
         ${ROCKSDB_SOURCE_DIR}/monitoring/statistics.cc
-        ${ROCKSDB_SOURCE_DIR}/monitoring/stats_dump_scheduler.cc
         ${ROCKSDB_SOURCE_DIR}/monitoring/thread_status_impl.cc
         ${ROCKSDB_SOURCE_DIR}/monitoring/thread_status_updater.cc
         ${ROCKSDB_SOURCE_DIR}/monitoring/thread_status_util.cc
         ${ROCKSDB_SOURCE_DIR}/monitoring/thread_status_util_debug.cc
         ${ROCKSDB_SOURCE_DIR}/options/cf_options.cc
+        ${ROCKSDB_SOURCE_DIR}/options/configurable.cc
         ${ROCKSDB_SOURCE_DIR}/options/db_options.cc
         ${ROCKSDB_SOURCE_DIR}/options/options.cc
         ${ROCKSDB_SOURCE_DIR}/options/options_helper.cc
@@ -507,6 +510,7 @@ set(SOURCES
         ${ROCKSDB_SOURCE_DIR}/table/sst_file_dumper.cc
         ${ROCKSDB_SOURCE_DIR}/table/sst_file_reader.cc
         ${ROCKSDB_SOURCE_DIR}/table/sst_file_writer.cc
+        ${ROCKSDB_SOURCE_DIR}/table/table_factory.cc
         ${ROCKSDB_SOURCE_DIR}/table/table_properties.cc
         ${ROCKSDB_SOURCE_DIR}/table/two_level_iterator.cc
         ${ROCKSDB_SOURCE_DIR}/test_util/sync_point.cc
@@ -515,6 +519,7 @@ set(SOURCES
         ${ROCKSDB_SOURCE_DIR}/test_util/transaction_test_util.cc
         ${ROCKSDB_SOURCE_DIR}/tools/block_cache_analyzer/block_cache_trace_analyzer.cc
         ${ROCKSDB_SOURCE_DIR}/tools/dump/db_dump_tool.cc
+        ${ROCKSDB_SOURCE_DIR}/tools/io_tracer_parser_tool.cc
         ${ROCKSDB_SOURCE_DIR}/tools/ldb_cmd.cc
         ${ROCKSDB_SOURCE_DIR}/tools/ldb_tool.cc
         ${ROCKSDB_SOURCE_DIR}/tools/sst_dump_tool.cc
