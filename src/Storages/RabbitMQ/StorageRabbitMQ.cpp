@@ -69,7 +69,7 @@ namespace ExchangeType
 
 StorageRabbitMQ::StorageRabbitMQ(
         const StorageID & table_id_,
-        Context & context_,
+        const Context & context_,
         const ColumnsDescription & columns_,
         std::unique_ptr<RabbitMQSettings> rabbitmq_settings_)
         : IStorage(table_id_)
