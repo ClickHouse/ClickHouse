@@ -9,7 +9,7 @@ toc_title: Referencia de Big Data de AMPLab
 
 Ver https://amplab.cs.berkeley.edu/benchmark/
 
-Regístrese para obtener una cuenta gratuita en https://aws.amazon.com. Requiere una tarjeta de crédito, correo electrónico y número de teléfono. Obtenga una nueva clave de acceso en https://console.aws.amazon.com/iam/home?nc2=h\_m\_sc\#security\_credential
+Regístrese para obtener una cuenta gratuita en https://aws.amazon.com. Requiere una tarjeta de crédito, correo electrónico y número de teléfono. Obtenga una nueva clave de acceso en https://console.aws.amazon.com/iam/home?nc2=h_m_sc#security_credential
 
 Ejecute lo siguiente en la consola:
 

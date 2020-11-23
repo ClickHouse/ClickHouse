@@ -36,15 +36,15 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
         const MergeTreeSettings & settings = context.getReplicatedMergeTreeSettings();
 
         bool ok = true;
-        std::stringstream message;
+        WriteBufferFromOwnString message;
 
         auto databases = DatabaseCatalog::instance().getDatabases();
 
         /// Iterate through all the replicated tables.
         for (const auto & db : databases)
         {
-            /// Lazy database can not contain replicated tables
-            if (db.second->getEngineName() == "Lazy")
+            /// Check if database can contain replicated tables
+            if (!db.second->canContainMergeTreeTables())
                 continue;
 
             for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
@@ -82,7 +82,7 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
         }
 
         if (verbose)
-            response.send() << message.rdbuf();
+            response.send() << message.str();
         else
         {
             const char * data = "Ok.\n";

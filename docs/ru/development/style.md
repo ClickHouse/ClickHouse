@@ -1,3 +1,9 @@
+---
+toc_priority: 68
+toc_title: "\u041a\u0430\u043a\u0020\u043f\u0438\u0441\u0430\u0442\u044c\u0020\u043a\u043e\u0434\u0020\u043d\u0430\u0020\u0043\u002b\u002b"
+---
+
+
 # Как писать код на C++ {#kak-pisat-kod-na-c}
 
 ## Общее {#obshchee}
@@ -349,7 +355,7 @@ class IBlockInputStream
 bool info_successfully_loaded = false;
 ```
 
-**9.** В именах `define` и глобальных констант используется ALL\_CAPS с подчёркиванием.
+**9.** В именах `define` и глобальных констант используется ALL_CAPS с подчёркиванием.
 
 ``` cpp
 #define MAX_SRC_TABLE_NAMES_TO_STORE 1000
@@ -389,7 +395,7 @@ FileQueueProcessor(
 timer (not m_timer)
 ```
 
-**14.** Константы в `enum` — CamelCase с большой буквы. Также допустим ALL\_CAPS. Если `enum` не локален, то используйте `enum class`.
+**14.** Константы в `enum` — CamelCase с большой буквы. Также допустим ALL_CAPS. Если `enum` не локален, то используйте `enum class`.
 
 ``` cpp
 enum class CompressionMethod
@@ -779,7 +785,7 @@ The dictionary is configured incorrectly.
 
 **4.** ОС - Linux, Mac OS X или FreeBSD.
 
-**5.** Код пишется под процессоры с архитектурой x86\_64, AArch64 и ppc64le.
+**5.** Код пишется под процессоры с архитектурой x86_64, AArch64 и ppc64le.
 
 **6.** Используются флаги компиляции `-Wall -Wextra -Werror` и `-Weverything` с некоторыми исключениями.
 

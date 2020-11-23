@@ -218,10 +218,7 @@ void PostgreSQLHandler::cancelRequest()
     String query = Poco::format("KILL QUERY WHERE query_id = 'postgres:%d:%d'", msg->process_id, msg->secret_key);
     ReadBufferFromString replacement(query);
 
-    executeQuery(
-        replacement, *out, true, connection_context,
-        [](const String &, const String &, const String &, const String &) {}
-    );
+    executeQuery(replacement, *out, true, connection_context, {});
 }
 
 inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQLHandler::receiveStartupMessage(int payload_size)

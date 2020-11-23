@@ -1,5 +1,5 @@
 #  docker build -t yandex/clickhouse-fasttest .
-FROM ubuntu:19.10
+FROM ubuntu:20.04
 
 ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=10
 
@@ -53,15 +53,17 @@ RUN apt-get update \
         ninja-build \
         psmisc \
         python3 \
+        python3-pip \
         python3-lxml \
         python3-requests \
         python3-termcolor \
-        qemu-user-static \
         rename \
         software-properties-common \
         tzdata \
         unixodbc \
        --yes --no-install-recommends
+
+RUN pip3 install numpy scipy pandas
 
 # This symlink required by gcc to find lld compiler
 RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld
@@ -80,6 +82,7 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 ENV COMMIT_SHA=''
 ENV PULL_REQUEST_NUMBER=''
+ENV COPY_CLICKHOUSE_BINARY_TO_OUTPUT=0
 
 COPY run.sh /
 CMD ["/bin/bash", "/run.sh"]
