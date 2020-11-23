@@ -10,8 +10,8 @@ rankCorr(x, y)
 
 **Parameters**
 
--   `x` — Arbitrary value. It can be of the [Float32](../../../sql-reference/data-types/float.md#float32-float64) or [Float64](../../../sql-reference/data-types/float.md#float32-float64).
--   `y` — Arbitrary value. It can be of the [Float32](../../../sql-reference/data-types/float.md#float32-float64) or [Float64](../../../sql-reference/data-types/float.md#float32-float64).
+-   `x` — Arbitrary value. [Float32](../../../sql-reference/data-types/float.md#float32-float64) or [Float64](../../../sql-reference/data-types/float.md#float32-float64).
+-   `y` — Arbitrary value. [Float32](../../../sql-reference/data-types/float.md#float32-float64) or [Float64](../../../sql-reference/data-types/float.md#float32-float64).
 
 **Returned value(s)**
 
