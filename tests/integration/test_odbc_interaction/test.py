@@ -4,6 +4,7 @@ import psycopg2
 import pymysql.cursors
 import pytest
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 cluster = ClickHouseCluster(__file__)
@@ -215,11 +216,8 @@ def test_sqlite_odbc_hashed_dictionary(started_cluster):
     node1.exec_in_container(["bash", "-c", "echo 'REPLACE INTO t2 values(1, 2, 5);' | sqlite3 {}".format(sqlite_db)],
                             privileged=True, user='root')
 
-    # waiting for reload
-    time.sleep(5)
-
-    assert node1.query("select dictGetUInt8('sqlite3_odbc_hashed', 'Z', toUInt64(1))") == "5\n"
-    assert node1.query("select dictGetUInt8('sqlite3_odbc_hashed', 'Z', toUInt64(200))") == "7\n"  # new value
+    assert_eq_with_retry(node1, "select dictGetUInt8('sqlite3_odbc_hashed', 'Z', toUInt64(1))", "5")
+    assert_eq_with_retry(node1, "select dictGetUInt8('sqlite3_odbc_hashed', 'Z', toUInt64(200))", "7")
 
 
 def test_sqlite_odbc_cached_dictionary(started_cluster):
@@ -241,18 +239,16 @@ def test_sqlite_odbc_cached_dictionary(started_cluster):
     node1.exec_in_container(["bash", "-c", "echo 'REPLACE INTO t3 values(1, 2, 12);' | sqlite3 {}".format(sqlite_db)],
                             privileged=True, user='root')
 
-    time.sleep(5)
-
-    assert node1.query("select dictGetUInt8('sqlite3_odbc_cached', 'Z', toUInt64(1))") == "12\n"
+    assert_eq_with_retry(node1, "select dictGetUInt8('sqlite3_odbc_cached', 'Z', toUInt64(1))", "12")
 
 
 def test_postgres_odbc_hached_dictionary_with_schema(started_cluster):
     conn = get_postgres_conn()
     cursor = conn.cursor()
     cursor.execute("insert into clickhouse.test_table values(1, 'hello'),(2, 'world')")
-    time.sleep(5)
-    assert node1.query("select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(1))") == "hello\n"
-    assert node1.query("select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(2))") == "world\n"
+    node1.query("SYSTEM RELOAD DICTIONARY postgres_odbc_hashed")
+    assert_eq_with_retry(node1, "select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(1))", "hello")
+    assert_eq_with_retry(node1, "select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(2))", "world")
 
 
 def test_postgres_odbc_hached_dictionary_no_tty_pipe_overflow(started_cluster):
@@ -265,7 +261,7 @@ def test_postgres_odbc_hached_dictionary_no_tty_pipe_overflow(started_cluster):
         except Exception as ex:
             assert False, "Exception occured -- odbc-bridge hangs: " + str(ex)
 
-    assert node1.query("select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(3))") == "xxx\n"
+    assert_eq_with_retry(node1, "select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(3))", "xxx")
 
 
 def test_postgres_insert(started_cluster):
