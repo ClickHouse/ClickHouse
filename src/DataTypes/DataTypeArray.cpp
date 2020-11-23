@@ -283,25 +283,25 @@ void DataTypeArray::deserializeBinaryBulkWithMultipleStreamsImpl(
     settings.path.back() = Substream::ArrayElements;
 
     ColumnArray::Offsets & offset_values = column_array.getOffsets();
-    IColumn & nested_column = column_array.getData();
+    ColumnPtr & nested_column = column_array.getDataPtr();
 
     /// Number of values corresponding with `offset_values` must be read.
     size_t last_offset = offset_values.back();
-    if (last_offset < nested_column.size())
+    if (last_offset < nested_column->size())
         throw Exception("Nested column is longer than last offset", ErrorCodes::LOGICAL_ERROR);
-    size_t nested_limit = last_offset - nested_column.size();
+    size_t nested_limit = last_offset - nested_column->size();
 
     /// Adjust value size hint. Divide it to the average array size.
     settings.avg_value_size_hint = nested_limit ? settings.avg_value_size_hint / nested_limit * offset_values.size() : 0;
 
-    nested->deserializeBinaryBulkWithMultipleStreams(column_array.getDataPtr(), nested_limit, settings, state, cache);
+    nested->deserializeBinaryBulkWithMultipleStreams(nested_column, nested_limit, settings, state, cache);
 
     settings.path.pop_back();
 
     /// Check consistency between offsets and elements subcolumns.
     /// But if elements column is empty - it's ok for columns of Nested types that was added by ALTER.
-    if (!nested_column.empty() && nested_column.size() != last_offset)
-        throw Exception("Cannot read all array values: read just " + toString(nested_column.size()) + " of " + toString(last_offset),
+    if (!nested_column->empty() && nested_column->size() != last_offset)
+        throw Exception("Cannot read all array values: read just " + toString(nested_column->size()) + " of " + toString(last_offset),
             ErrorCodes::CANNOT_READ_ALL_DATA);
 }
 
