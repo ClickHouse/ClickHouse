@@ -1,6 +1,6 @@
 ---
-toc_priority: 1
-toc_title: База данных
+toc_priority: 35
+toc_title: "\u0411\u0430\u0437\u0430\u0020\u0434\u0430\u043d\u043d\u044b\u0445"
 ---
 
 # CREATE DATABASE {#query-language-create-database}

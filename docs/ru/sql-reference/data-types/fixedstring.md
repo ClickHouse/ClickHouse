@@ -1,3 +1,8 @@
+---
+toc_priority: 45
+toc_title: FixedString(N)
+---
+
 # FixedString {#fixedstring}
 
 Строка фиксированной длины `N` байт (не символов, не кодовых точек).

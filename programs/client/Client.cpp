@@ -54,6 +54,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/UseSSL.h>
+#include <IO/WriteBufferFromOStream.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 #include <DataStreams/InternalTextLogsRowOutputStream.h>
@@ -75,6 +76,7 @@
 #include <Common/InterruptListener.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <Formats/registerFormats.h>
 #include <Common/Config/configReadClient.h>
 #include <Storages/ColumnsDescription.h>
 #include <common/argsToConfig.h>
@@ -218,8 +220,11 @@ private:
     QueryFuzzer fuzzer;
     int query_fuzzer_runs = 0;
 
+    std::optional<Suggest> suggest;
+
     /// We will format query_id in interactive mode in various ways, the default is just to print Query id: ...
     std::vector<std::pair<String, String>> query_id_formats;
+    QueryProcessingStage::Enum query_processing_stage;
 
     void initialize(Poco::Util::Application & self) override
     {
@@ -461,6 +466,7 @@ private:
     {
         UseSSL use_ssl;
 
+        registerFormats();
         registerFunctions();
         registerAggregateFunctions();
 
@@ -577,10 +583,11 @@ private:
             if (print_time_to_stderr)
                 throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
 
+            suggest.emplace();
             if (server_revision >= Suggest::MIN_SERVER_REVISION && !config().getBool("disable_suggestion", false))
             {
                 /// Load suggestion data from the server.
-                Suggest::instance().load(connection_parameters, config().getInt("suggestion_limit"));
+                suggest->load(connection_parameters, config().getInt("suggestion_limit"));
             }
 
             /// Load command history if present.
@@ -607,7 +614,7 @@ private:
                 highlight_callback = highlight;
 
             ReplxxLineReader lr(
-                Suggest::instance(),
+                *suggest,
                 history_file,
                 config().has("multiline"),
                 query_extenders,
@@ -615,7 +622,7 @@ private:
                 highlight_callback);
 
 #elif defined(USE_READLINE) && USE_READLINE
-            ReadlineLineReader lr(Suggest::instance(), history_file, config().has("multiline"), query_extenders, query_delimiters);
+            ReadlineLineReader lr(*suggest, history_file, config().has("multiline"), query_extenders, query_delimiters);
 #else
             LineReader lr(history_file, config().has("multiline"), query_extenders, query_delimiters);
 #endif
@@ -1153,13 +1160,13 @@ private:
                 ASTPtr ast_to_process;
                 try
                 {
-                    std::stringstream dump_before_fuzz;
+                    WriteBufferFromOwnString dump_before_fuzz;
                     fuzz_base->dumpTree(dump_before_fuzz);
                     auto base_before_fuzz = fuzz_base->formatForErrorMessage();
 
                     ast_to_process = fuzz_base->clone();
 
-                    std::stringstream dump_of_cloned_ast;
+                    WriteBufferFromOwnString dump_of_cloned_ast;
                     ast_to_process->dumpTree(dump_of_cloned_ast);
 
                     // Run the original query as well.
@@ -1181,7 +1188,9 @@ private:
                         fprintf(stderr, "dump of cloned ast:\n%s\n",
                             dump_of_cloned_ast.str().c_str());
                         fprintf(stderr, "dump after fuzz:\n");
-                        fuzz_base->dumpTree(std::cerr);
+                        WriteBufferFromOStream cerr_buf(std::cerr, 4096);
+                        fuzz_base->dumpTree(cerr_buf);
+                        cerr_buf.next();
 
                         fmt::print(stderr, "IAST::clone() is broken for some AST node. This is a bug. The original AST ('dump before fuzz') and its cloned copy ('dump of cloned AST') refer to the same nodes, which must never happen. This means that their parent node doesn't implement clone() correctly.");
 
@@ -1436,7 +1445,7 @@ private:
                     connection_parameters.timeouts,
                     query_to_send,
                     context.getCurrentQueryId(),
-                    QueryProcessingStage::Complete,
+                    query_processing_stage,
                     &context.getSettingsRef(),
                     &context.getClientInfo(),
                     true);
@@ -1477,7 +1486,7 @@ private:
             connection_parameters.timeouts,
             query_to_send,
             context.getCurrentQueryId(),
-            QueryProcessingStage::Complete,
+            query_processing_stage,
             &context.getSettingsRef(),
             &context.getClientInfo(),
             true);
@@ -1499,7 +1508,7 @@ private:
 
     ASTPtr parseQuery(const char * & pos, const char * end, bool allow_multi_statements)
     {
-        ParserQuery parser(end, true);
+        ParserQuery parser(end);
         ASTPtr res;
 
         const auto & settings = context.getSettingsRef();
@@ -1524,7 +1533,9 @@ private:
         if (is_interactive)
         {
             std::cout << std::endl;
-            formatAST(*res, std::cout);
+            WriteBufferFromOStream res_buf(std::cout, 4096);
+            formatAST(*res, res_buf);
+            res_buf.next();
             std::cout << std::endl << std::endl;
         }
 
@@ -2299,6 +2310,7 @@ public:
             ("password", po::value<std::string>()->implicit_value("\n", ""), "password")
             ("ask-password", "ask-password")
             ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
+            ("stage", po::value<std::string>()->default_value("complete"), "Request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation")
             ("query_id", po::value<std::string>(), "query_id")
             ("query,q", po::value<std::string>(), "query")
             ("database,d", po::value<std::string>(), "database")
@@ -2324,6 +2336,9 @@ public:
             ("log-level", po::value<std::string>(), "client log level")
             ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
             ("query-fuzzer-runs", po::value<int>()->default_value(0), "query fuzzer runs")
+            ("opentelemetry-traceparent", po::value<std::string>(), "OpenTelemetry traceparent header as described by W3C Trace Context recommendation")
+            ("opentelemetry-tracestate", po::value<std::string>(), "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
+            ("history_file", po::value<std::string>(), "path to history file")
         ;
 
         Settings cmd_settings;
@@ -2420,6 +2435,8 @@ public:
         if (options.count("config-file") && options.count("config"))
             throw Exception("Two or more configuration files referenced in arguments", ErrorCodes::BAD_ARGUMENTS);
 
+        query_processing_stage = QueryProcessingStage::fromString(options["stage"].as<std::string>());
+
         /// Save received data into the internal config.
         if (options.count("config-file"))
             config().setString("config-file", options["config-file"].as<std::string>());
@@ -2480,6 +2497,8 @@ public:
             config().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
         if (options.count("highlight"))
             config().setBool("highlight", options["highlight"].as<bool>());
+        if (options.count("history_file"))
+            config().setString("history_file", options["history_file"].as<std::string>());
 
         if ((query_fuzzer_runs = options["query-fuzzer-runs"].as<int>()))
         {
@@ -2490,6 +2509,25 @@ public:
             // TODO stop using parseQuery.
             config().setBool("ignore-error", true);
             ignore_error = true;
+        }
+
+        if (options.count("opentelemetry-traceparent"))
+        {
+            std::string traceparent = options["opentelemetry-traceparent"].as<std::string>();
+            std::string error;
+            if (!context.getClientInfo().parseTraceparentHeader(
+                traceparent, error))
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot parse OpenTelemetry traceparent '{}': {}",
+                    traceparent, error);
+            }
+        }
+
+        if (options.count("opentelemetry-tracestate"))
+        {
+            context.getClientInfo().opentelemetry_tracestate =
+                options["opentelemetry-tracestate"].as<std::string>();
         }
 
         argsToConfig(common_arguments, config(), 100);

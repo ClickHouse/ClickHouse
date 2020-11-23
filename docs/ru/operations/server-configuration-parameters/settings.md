@@ -1,3 +1,8 @@
+---
+toc_priority: 57
+toc_title: "\u041a\u043e\u043d\u0444\u0438\u0433\u0443\u0440\u0430\u0446\u0438\u043e\u043d\u043d\u044b\u0435\u0020\u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b\u0020\u0441\u0435\u0440\u0432\u0435\u0440\u0430"
+---
+
 # Конфигурационные параметры сервера {#server-configuration-parameters-reference}
 
 ## builtin_dictionaries_reload_interval {#builtin-dictionaries-reload-interval}
@@ -462,6 +467,26 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 <max_concurrent_queries>100</max_concurrent_queries>
 ```
 
+## max_concurrent_queries_for_all_users {#max-concurrent-queries-for-all-users}
+
+Если значение этой настройки меньше или равно текущему количеству одновременно обрабатываемых запросов, то будет сгенерировано исключение.
+
+Пример: `max_concurrent_queries_for_all_users` установлен на 99 для всех пользователей. Чтобы выполнять запросы даже когда сервер перегружен, администратор баз данных устанавливает для себя значение настройки на 100.
+
+Изменение настройки для одного запроса или пользователя не влияет на другие запросы.
+
+Значение по умолчанию: `0` — отсутствие ограничений.
+
+**Пример**
+
+``` xml
+<max_concurrent_queries_for_all_users>99</max_concurrent_queries_for_all_users>
+```
+
+**Смотрите также**
+
+-   [max_concurrent_queries](#max-concurrent-queries)
+
 ## max_connections {#max-connections}
 
 Максимальное количество входящих соединений.
@@ -528,6 +553,22 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 <merge_tree>
     <max_suspicious_broken_parts>5</max_suspicious_broken_parts>
 </merge_tree>
+```
+
+## replicated\_merge\_tree {#server_configuration_parameters-replicated_merge_tree}
+
+Тонкая настройка таблиц в [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
+
+Эта настройка имеет более высокий приоритет.
+
+Подробнее смотрите в заголовочном файле MergeTreeSettings.h.
+
+**Пример**
+
+``` xml
+<replicated_merge_tree>
+    <max_suspicious_broken_parts>5</max_suspicious_broken_parts>
+</replicated_merge_tree>
 ```
 
 ## openSSL {#server_configuration_parameters-openssl}
@@ -1026,5 +1067,46 @@ ClickHouse использует ZooKeeper для хранения метадан
 **Смотрите также**
 
 - [Управление доступом](../access-rights.md#access-control)
+
+## user_directories {#user_directories}
+
+Секция конфигурационного файла,которая содержит настройки:
+-   Путь к конфигурационному файлу с предустановленными пользователями.
+-   Путь к файлу, в котором содержатся пользователи, созданные при помощи SQL команд. 
+
+Если эта секция определена, путь из [users_config](../../operations/server-configuration-parameters/settings.md#users-config) и [access_control_path](../../operations/server-configuration-parameters/settings.md#access_control_path) не используется.
+
+Секция `user_directories` может содержать любое количество элементов, порядок расположения элементов обозначает их приоритет (чем выше элемент, тем выше приоритет).
+
+**Пример**
+
+``` xml
+<user_directories>
+    <users_xml>
+        <path>/etc/clickhouse-server/users.xml</path>
+    </users_xml>
+    <local_directory>
+        <path>/var/lib/clickhouse/access/</path>
+    </local_directory>
+</user_directories>
+```
+
+Также вы можете указать настройку `memory` — означает хранение информации только в памяти, без записи на диск, и `ldap` — означает хранения информации на [LDAP-сервере](https://en.wikipedia.org/wiki/Lightweight_Directory_Access_Protocol).
+
+Чтобы добавить LDAP-сервер в качестве удаленного каталога пользователей, которые не определены локально, определите один раздел `ldap` со следующими параметрами:
+-   `server` — имя одного из LDAP-серверов, определенных в секции `ldap_servers` конфигурациионного файла. Этот параметр явялется необязательным и может быть пустым.
+-   `roles` — раздел со списком локально определенных ролей, которые будут назначены каждому пользователю, полученному с LDAP-сервера. Если роли не заданы, пользователь не сможет выполнять никаких действий после аутентификации. Если какая-либо из перечисленных ролей не определена локально во время проверки подлинности, попытка проверки подлинности завершится неудачей, как если бы предоставленный пароль был неверным.
+
+**Пример**
+
+``` xml
+<ldap>
+    <server>my_ldap_server</server>
+        <roles>
+            <my_local_role1 />
+            <my_local_role2 />
+        </roles>
+</ldap>
+```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/server_configuration_parameters/settings/) <!--hide-->

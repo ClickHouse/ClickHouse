@@ -585,7 +585,7 @@ void IAccessStorage::throwInvalidPassword()
 
 void IAccessStorage::throwCannotAuthenticate(const String & user_name)
 {
-    /// We use the same message for all authentification failures because we don't want to give away any unnecessary information for security reasons,
+    /// We use the same message for all authentication failures because we don't want to give away any unnecessary information for security reasons,
     /// only the log will show the exact reason.
     throw Exception(user_name + ": Authentication failed: password is incorrect or there is no user with such name", ErrorCodes::AUTHENTICATION_FAILED);
 }

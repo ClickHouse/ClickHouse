@@ -79,7 +79,7 @@ By default, data is returned in TabSeparated format (for more information, see t
 
 You use the FORMAT clause of the query to request any other format.
 
-Also, you can use the ‘default_format’ URL parameter or ‘X-ClickHouse-Format’ header to specify a default format other than TabSeparated.
+Also, you can use the ‘default_format’ URL parameter or the ‘X-ClickHouse-Format’ header to specify a default format other than TabSeparated.
 
 ``` bash
 $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @-
@@ -170,7 +170,7 @@ $ echo "SELECT 1" | gzip -c | curl -sS --data-binary @- -H 'Content-Encoding: gz
 !!! note "Note"
     Some HTTP clients might decompress data from the server by default (with `gzip` and `deflate`) and you might get decompressed data even if you use the compression settings correctly.
 
-You can use the ‘database’ URL parameter or ‘X-ClickHouse-Database’ header to specify the default database.
+You can use the ‘database’ URL parameter or the ‘X-ClickHouse-Database’ header to specify the default database.
 
 ``` bash
 $ echo 'SELECT number FROM numbers LIMIT 10' | curl 'http://localhost:8123/?database=system' --data-binary @-
