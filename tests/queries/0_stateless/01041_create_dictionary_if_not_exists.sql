@@ -20,7 +20,7 @@ CREATE DICTIONARY IF NOT EXISTS dictdb.dict_exists
   value Float64 DEFAULT 77.77
 )
 PRIMARY KEY key_column
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' DB 'dictdb'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' DB 'dictdb'))
 LIFETIME(1)
 LAYOUT(FLAT());
 
@@ -33,7 +33,7 @@ CREATE DICTIONARY IF NOT EXISTS dictdb.dict_exists
   value Float64 DEFAULT 77.77
 )
 PRIMARY KEY key_column
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' DB 'dictdb'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' DB 'dictdb'))
 LIFETIME(1)
 LAYOUT(FLAT());
 

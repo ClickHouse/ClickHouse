@@ -4,7 +4,7 @@ log_user 0
 set timeout 60
 match_max 100000
 
-spawn clickhouse-client
+spawn $env(CLICKHOUSE_CLIENT) --port "$env(CLICKHOUSE_PORT_TCP)"
 expect ":) "
 
 # Make a query
@@ -17,7 +17,7 @@ exec kill -9 [exp_pid]
 close
 
 # Run client one more time and press "up" to see the last recorded query
-spawn clickhouse-client
+spawn $env(CLICKHOUSE_CLIENT) --port "$env(CLICKHOUSE_PORT_TCP)"
 expect ":) "
 send -- "\[A"
 expect "SELECT 'for the history'"

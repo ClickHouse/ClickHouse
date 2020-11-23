@@ -13,7 +13,7 @@ CREATE DICTIONARY dictdb.dict
 
 )
 PRIMARY KEY key
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'dicttbl' DB 'dictdb'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'dicttbl' DB 'dictdb'))
 LAYOUT(FLAT())
 LIFETIME(1);
 
