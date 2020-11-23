@@ -22,45 +22,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
-    extern const int POSITION_OUT_OF_BOUND;
 }
-
-class FunctionArguments
-{
-public:
-    explicit FunctionArguments(ColumnsWithTypeAndName & arguments) : data(arguments) {}
-
-    const ColumnWithTypeAndName & getByPosition(size_t position) const { return data[position]; }
-    ColumnWithTypeAndName & getByPosition(size_t position) { return data[position]; }
-
-    ColumnWithTypeAndName & safeGetByPosition(size_t position)
-    {
-        checkPosition(position);
-        return data[position];
-    }
-    const ColumnWithTypeAndName & safeGetByPosition(size_t position) const
-    {
-        checkPosition(position);
-        return data[position];
-    }
-
-    size_t columns() const { return data.size(); }
-    const ColumnsWithTypeAndName & getColumnsWithTypeAndName() const { return data; }
-
-    ColumnsWithTypeAndName & data;
-
-private:
-    void checkPosition(size_t position) const
-    {
-        if (data.empty())
-            throw Exception("Arguments are empty", ErrorCodes::POSITION_OUT_OF_BOUND);
-
-        if (position >= data.size())
-            throw Exception("Position " + std::to_string(position)
-                            + " is out of bound in FunctionArguments::safeGetByPosition(), max position = "
-                            + std::to_string(data.size() - 1), ErrorCodes::POSITION_OUT_OF_BOUND);
-    }
-};
 
 /// Cache for functions result if it was executed on low cardinality column.
 class ExecutableFunctionLowCardinalityResultCache;
@@ -69,21 +31,19 @@ using ExecutableFunctionLowCardinalityResultCachePtr = std::shared_ptr<Executabl
 class IExecutableFunctionImpl
 {
 public:
-    using Block = FunctionArguments;
-
     virtual ~IExecutableFunctionImpl() = default;
 
     virtual String getName() const = 0;
 
-    virtual void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) = 0;
-    virtual void executeDryRun(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
+    virtual ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const = 0;
+    virtual ColumnPtr executeDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
-        execute(block, arguments, result, input_rows_count);
+        return execute(arguments, result_type, input_rows_count);
     }
 
     /** Default implementation in presence of Nullable arguments or NULL constants as arguments is the following:
       *  if some of arguments are NULL constants then return NULL constant,
-      *  if some of arguments are Nullable, then execute function as usual for block,
+      *  if some of arguments are Nullable, then execute function as usual for columns,
       *   where Nullable columns are substituted with nested columns (they have arbitrary values in rows corresponding to NULL value)
       *   and wrap result in Nullable column where NULLs are in all rows where any of arguments are NULL.
       */
@@ -122,16 +82,14 @@ using ExecutableFunctionImplPtr = std::unique_ptr<IExecutableFunctionImpl>;
 class IFunctionBaseImpl
 {
 public:
-    using Block = FunctionArguments;
-
     virtual ~IFunctionBaseImpl() = default;
 
     virtual String getName() const = 0;
 
     virtual const DataTypes & getArgumentTypes() const = 0;
-    virtual const DataTypePtr & getReturnType() const = 0;
+    virtual const DataTypePtr & getResultType() const = 0;
 
-    virtual ExecutableFunctionImplPtr prepare(const Block & sample_block, const ColumnNumbers & arguments, size_t result) const = 0;
+    virtual ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName & arguments) const = 0;
 
 #if USE_EMBEDDED_COMPILER
 
@@ -147,9 +105,9 @@ public:
     virtual bool isStateful() const { return false; }
 
     virtual bool isSuitableForConstantFolding() const { return true; }
-    virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & /*columns*/, const ColumnNumbers & /*arguments*/) const { return nullptr; }
+    virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & /*arguments*/) const { return nullptr; }
 
-    virtual bool isInjective(const ColumnsWithTypeAndName & /*sample_block*/) const { return false; }
+    virtual bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const { return false; }
     virtual bool isDeterministic() const { return true; }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool hasInformationAboutMonotonicity() const { return false; }
@@ -167,13 +125,12 @@ using FunctionBaseImplPtr = std::unique_ptr<IFunctionBaseImpl>;
 class IFunctionOverloadResolverImpl
 {
 public:
-    using Block = FunctionArguments;
 
     virtual ~IFunctionOverloadResolverImpl() = default;
 
     virtual String getName() const = 0;
 
-    virtual FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const = 0;
+    virtual FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const = 0;
 
     virtual DataTypePtr getReturnType(const DataTypes & /*arguments*/) const
     {
@@ -235,21 +192,20 @@ using FunctionOverloadResolverImplPtr = std::unique_ptr<IFunctionOverloadResolve
 class IFunction
 {
 public:
-    using Block = FunctionArguments;
 
     virtual ~IFunction() = default;
 
     virtual String getName() const = 0;
 
-    virtual void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const = 0;
-    virtual void executeImplDryRun(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
+    virtual ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const = 0;
+    virtual ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
-        executeImpl(block, arguments, result, input_rows_count);
+        return executeImpl(arguments, result_type, input_rows_count);
     }
 
     /** Default implementation in presence of Nullable arguments or NULL constants as arguments is the following:
       *  if some of arguments are NULL constants then return NULL constant,
-      *  if some of arguments are Nullable, then execute function as usual for block,
+      *  if some of arguments are Nullable, then execute function as usual for columns,
       *   where Nullable columns are substituted with nested columns (they have arbitrary values in rows corresponding to NULL value)
       *   and wrap result in Nullable column where NULLs are in all rows where any of arguments are NULL.
       */
@@ -296,8 +252,8 @@ public:
 
     /// Properties from IFunctionBase (see IFunction.h)
     virtual bool isSuitableForConstantFolding() const { return true; }
-    virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & /*columns*/, const ColumnNumbers & /*arguments*/) const { return nullptr; }
-    virtual bool isInjective(const ColumnsWithTypeAndName & /*sample_block*/) const { return false; }
+    virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & /*arguments*/) const { return nullptr; }
+    virtual bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const { return false; }
     virtual bool isDeterministic() const { return true; }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isStateful() const { return false; }

@@ -27,7 +27,7 @@ ClickHouseは、階層辞書をサポートしています [数値キー](extern
 
 この階層は、次の辞書テーブルとして表すことができます。
 
-| region\_id | parent\_region | region\_name |
+| region_id | parent_region | region_name |
 |------------|----------------|--------------|
 | 1          | 0              | ロシア       |
 | 2          | 1              | モスクワ     |

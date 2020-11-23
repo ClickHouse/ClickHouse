@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Poco/Net/SocketAddress.h>
+#include <Common/UInt128.h>
 #include <common/types.h>
 
 
@@ -58,6 +59,17 @@ public:
     String initial_query_id;
     Poco::Net::SocketAddress initial_address;
 
+    // OpenTelemetry trace information.
+    __uint128_t opentelemetry_trace_id = 0;
+    // The span id we get the in the incoming client info becomes our parent span
+    // id, and the span id we send becomes downstream parent span id.
+    UInt64 opentelemetry_span_id = 0;
+    UInt64 opentelemetry_parent_span_id = 0;
+    // The incoming tracestate header and the trace flags, we just pass them downstream.
+    // They are described at https://www.w3.org/TR/trace-context/
+    String opentelemetry_tracestate;
+    UInt8 opentelemetry_trace_flags = 0;
+
     /// All below are parameters related to initial query.
 
     Interface interface = Interface::TCP;
@@ -89,6 +101,16 @@ public:
 
     /// Initialize parameters on client initiating query.
     void setInitialQuery();
+
+    // Parse/compose OpenTelemetry traceparent header.
+    // Note that these functions use span_id field, not parent_span_id, same as
+    // in native protocol. The incoming traceparent corresponds to the upstream
+    // trace span, and the outgoing traceparent corresponds to our current span.
+    // We use the same ClientInfo structure first for incoming span, and then
+    // for our span: when we switch, we use old span_id as parent_span_id, and
+    // generate a new span_id (currently this happens in Context::setQueryId()).
+    bool parseTraceparentHeader(const std::string & traceparent, std::string & error);
+    std::string composeTraceparentHeader() const;
 
 private:
     void fillOSUserHostNameAndVersionInfo();

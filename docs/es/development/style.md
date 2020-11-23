@@ -356,7 +356,7 @@ En todos los demás casos, use un nombre que describa el significado.
 bool info_successfully_loaded = false;
 ```
 
-**9.** Nombres de `define`s y las constantes globales usan ALL\_CAPS con guiones bajos.
+**9.** Nombres de `define`s y las constantes globales usan ALL_CAPS con guiones bajos.
 
 ``` cpp
 #define MAX_SRC_TABLE_NAMES_TO_STORE 1000
@@ -396,7 +396,7 @@ El sufijo de subrayado se puede omitir si el argumento no se usa en el cuerpo de
 timer (not m_timer)
 ```
 
-**14.** Para las constantes en un `enum`, usar CamelCase con una letra mayúscula. ALL\_CAPS también es aceptable. Si el `enum` no es local, utilice un `enum class`.
+**14.** Para las constantes en un `enum`, usar CamelCase con una letra mayúscula. ALL_CAPS también es aceptable. Si el `enum` no es local, utilice un `enum class`.
 
 ``` cpp
 enum class CompressionMethod
@@ -709,7 +709,7 @@ Se utiliza la biblioteca estándar (`libc++`).
 
 **4.**OS: Linux Ubuntu, no más viejo que Precise.
 
-**5.**El código está escrito para la arquitectura de CPU x86\_64.
+**5.**El código está escrito para la arquitectura de CPU x86_64.
 
 El conjunto de instrucciones de CPU es el conjunto mínimo admitido entre nuestros servidores. Actualmente, es SSE 4.2.
 

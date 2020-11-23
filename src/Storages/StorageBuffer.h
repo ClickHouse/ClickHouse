@@ -9,7 +9,6 @@
 #include <Storages/IStorage.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Poco/Event.h>
-#include <Interpreters/Context.h>
 
 
 namespace Poco { class Logger; }
@@ -54,12 +53,22 @@ public:
 
     std::string getName() const override { return "Buffer"; }
 
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, const ASTPtr &) const override;
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const override;
 
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        const SelectQueryInfo & query_info,
+        SelectQueryInfo & query_info,
+        const Context & context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        unsigned num_streams) override;
+
+    void read(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot,
+        SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
@@ -72,7 +81,13 @@ public:
     void startup() override;
     /// Flush all buffers into the subordinate table and stop background thread.
     void shutdown() override;
-    bool optimize(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, const ASTPtr & partition, bool final, bool deduplicate, const Context & context) override;
+    bool optimize(
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        const ASTPtr & partition,
+        bool final,
+        bool deduplicate,
+        const Context & context) override;
 
     bool supportsSampling() const override { return true; }
     bool supportsPrewhere() const override
@@ -102,7 +117,7 @@ public:
 
 
 private:
-    Context global_context;
+    const Context & global_context;
 
     struct Buffer
     {
@@ -155,7 +170,7 @@ protected:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        Context & context_,
+        const Context & context_,
         size_t num_shards_,
         const Thresholds & min_thresholds_,
         const Thresholds & max_thresholds_,

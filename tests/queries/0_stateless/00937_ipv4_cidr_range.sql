@@ -1,3 +1,9 @@
+SELECT 'check invalid params';
+SELECT IPv4CIDRToRange(1, 1); -- { serverError 43 }
+SELECT IPv4CIDRToRange(toUInt32(1), 512); -- { serverError 43 }
+
+SELECT 'tests';
+
 DROP TABLE IF EXISTS ipv4_range;
 CREATE TABLE ipv4_range(ip IPv4, cidr UInt8) ENGINE = Memory;
 
@@ -16,7 +22,9 @@ WITH IPv4CIDRToRange(ip, cidr) as ip_range SELECT ip, cidr, IPv4NumToString(tupl
 DROP TABLE ipv4_range;
 
 SELECT IPv4CIDRToRange(toIPv4('192.168.5.2'), 0);
-SELEcT IPv4CIDRToRange(toIPv4('255.255.255.255'), 8);
+SELECT IPv4CIDRToRange(toIPv4('255.255.255.255'), 8);
 SELECT IPv4CIDRToRange(toIPv4('192.168.5.2'), 32);
 SELECT IPv4CIDRToRange(toIPv4('0.0.0.0'), 8);
 SELECT IPv4CIDRToRange(toIPv4('255.0.0.0'), 4);
+
+SELECT IPv4CIDRToRange(toIPv4('255.0.0.0'), toUInt8(4 + number)) FROM numbers(2);

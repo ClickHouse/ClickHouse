@@ -92,6 +92,11 @@ if (COMPILER_CLANG)
         no_warning(weak-template-vtables)
         no_warning(weak-vtables)
 
+        # XXX: libstdc++ has some of these for 3way compare
+        if (NOT USE_LIBCXX)
+            no_warning(zero-as-null-pointer-constant)
+        endif()
+
         # TODO Enable conversion, sign-conversion, double-promotion warnings.
     endif ()
 elseif (COMPILER_GCC)

@@ -43,7 +43,7 @@ Estructura del `users` apartado:
 </users>
 ```
 
-### user\_name/contraseña {#user-namepassword}
+### user_name/contraseña {#user-namepassword}
 
 La contraseña se puede especificar en texto sin formato o en SHA256 (formato hexagonal).
 
@@ -75,7 +75,7 @@ La contraseña se puede especificar en texto sin formato o en SHA256 (formato he
 
     La primera línea del resultado es la contraseña. La segunda línea es el hash SHA1 doble correspondiente.
 
-### access\_management {#access_management-user-setting}
+### access_management {#access_management-user-setting}
 
 Esta configuración habilita deshabilita el uso de [control de acceso y gestión de cuentas](../access-rights.md#access-control) para el usuario.
 
@@ -86,7 +86,7 @@ Valores posibles:
 
 Valor predeterminado: 0.
 
-### user\_name/redes {#user-namenetworks}
+### user_name/redes {#user-namenetworks}
 
 Lista de redes desde las que el usuario puede conectarse al servidor ClickHouse.
 
@@ -128,18 +128,18 @@ Para abrir el acceso solo desde localhost, especifique:
 <ip>127.0.0.1</ip>
 ```
 
-### user\_name/perfil {#user-nameprofile}
+### user_name/perfil {#user-nameprofile}
 
 Puede asignar un perfil de configuración para el usuario. Los perfiles de configuración se configuran en una sección separada del `users.xml` file. Para obtener más información, consulte [Perfiles de configuración](settings-profiles.md).
 
-### user\_name/cuota {#user-namequota}
+### user_name/cuota {#user-namequota}
 
 Las cuotas le permiten realizar un seguimiento o limitar el uso de recursos durante un período de tiempo. Las cuotas se configuran en el `quotas`
 sección de la `users.xml` archivo de configuración.
 
 Puede asignar un conjunto de cuotas para el usuario. Para obtener una descripción detallada de la configuración de las cuotas, consulte [Cuota](../quotas.md#quotas).
 
-### nombre\_usuario/bases de datos {#user-namedatabases}
+### nombre_usuario/bases de datos {#user-namedatabases}
 
 En esta sección, puede limitar las filas devueltas por ClickHouse para `SELECT` consultas realizadas por el usuario actual, implementando así la seguridad básica a nivel de fila.
 

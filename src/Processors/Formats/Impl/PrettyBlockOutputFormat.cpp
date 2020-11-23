@@ -5,6 +5,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 #include <Common/PODArray.h>
 #include <Common/UTF8Helpers.h>
 
@@ -163,10 +164,10 @@ void PrettyBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind)
                                        ascii_grid_symbols;
 
     /// Create separators
-    std::stringstream top_separator;
-    std::stringstream middle_names_separator;
-    std::stringstream middle_values_separator;
-    std::stringstream bottom_separator;
+    WriteBufferFromOwnString top_separator;
+    WriteBufferFromOwnString middle_names_separator;
+    WriteBufferFromOwnString middle_values_separator;
+    WriteBufferFromOwnString bottom_separator;
 
     top_separator           << grid_symbols.bold_left_top_corner;
     middle_names_separator  << grid_symbols.bold_left_separator;
@@ -403,7 +404,7 @@ void registerOutputFormatProcessorPretty(FormatFactory & factory)
     factory.registerOutputFormatProcessor("Pretty", [](
         WriteBuffer & buf,
         const Block & sample,
-        FormatFactory::WriteCallback,
+        const RowOutputFormatParams &,
         const FormatSettings & format_settings)
     {
         return std::make_shared<PrettyBlockOutputFormat>(buf, sample, format_settings);
@@ -412,7 +413,7 @@ void registerOutputFormatProcessorPretty(FormatFactory & factory)
     factory.registerOutputFormatProcessor("PrettyNoEscapes", [](
         WriteBuffer & buf,
         const Block & sample,
-        FormatFactory::WriteCallback,
+        const RowOutputFormatParams &,
         const FormatSettings & format_settings)
     {
         FormatSettings changed_settings = format_settings;

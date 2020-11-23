@@ -1,6 +1,5 @@
 #pragma once
 
-#include <sstream>
 #include <optional>
 
 #include <Interpreters/Set.h>
@@ -232,7 +231,9 @@ public:
         const SelectQueryInfo & query_info,
         const Context & context,
         const Names & key_column_names,
-        const ExpressionActionsPtr & key_expr);
+        const ExpressionActionsPtr & key_expr,
+        bool single_point_ = false,
+        bool strict_ = false);
 
     /// Whether the condition and its negation are feasible in the direct product of single column ranges specified by `hyperrectangle`.
     BoolMask checkInHyperrectangle(
@@ -307,7 +308,8 @@ public:
     static std::optional<Range> applyMonotonicFunctionsChainToRange(
         Range key_range,
         const MonotonicFunctionsChain & functions,
-        DataTypePtr current_type);
+        DataTypePtr current_type,
+        bool single_point = false);
 
     bool matchesExactContinuousRange() const;
 
@@ -399,6 +401,9 @@ private:
         Field & out_value,
         DataTypePtr & out_type);
 
+    bool canConstantBeWrappedByFunctions(
+        const ASTPtr & ast, size_t & out_key_column_num, DataTypePtr & out_key_column_type, Field & out_value, DataTypePtr & out_type);
+
     /// If it's possible to make an RPNElement
     /// that will filter values (possibly tuples) by the content of 'prepared_set',
     /// do it and return true.
@@ -413,6 +418,11 @@ private:
     ColumnIndices key_columns;
     ExpressionActionsPtr key_expr;
     PreparedSets prepared_sets;
+
+    // If true, always allow key_expr to be wrapped by function
+    bool single_point;
+    // If true, do not use always_monotonic information to transform constants
+    bool strict;
 };
 
 }

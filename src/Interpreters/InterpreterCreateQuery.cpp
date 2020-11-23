@@ -6,6 +6,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/Macros.h>
+#include <Common/randomSeed.h>
 
 #include <Core/Defines.h>
 #include <Core/Settings.h>
@@ -74,6 +75,7 @@ namespace ErrorCodes
     extern const int DICTIONARY_ALREADY_EXISTS;
     extern const int ILLEGAL_SYNTAX_FOR_DATA_TYPE;
     extern const int ILLEGAL_COLUMN;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace fs = std::filesystem;
@@ -134,9 +136,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     else if ((create.columns_list && create.columns_list->indices && !create.columns_list->indices->children.empty()))
     {
         /// Currently, there are no database engines, that support any arguments.
-        std::stringstream ostr;
-        formatAST(*create.storage, ostr, false, false);
-        throw Exception("Unknown database engine: " + ostr.str(), ErrorCodes::UNKNOWN_DATABASE_ENGINE);
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", serializeAST(*create.storage));
     }
 
     if (create.storage->engine->name == "Atomic")
@@ -180,10 +180,10 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         create.attach = true;
         create.if_not_exists = false;
 
-        std::ostringstream statement_stream;
-        formatAST(create, statement_stream, false);
-        statement_stream << '\n';
-        String statement = statement_stream.str();
+        WriteBufferFromOwnString statement_buf;
+        formatAST(create, statement_buf, false);
+        writeChar('\n', statement_buf);
+        String statement = statement_buf.str();
 
         /// Exclusive flag guarantees, that database is not created right now in another thread.
         WriteBufferFromFile out(metadata_file_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
@@ -218,7 +218,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     {
         if (renamed)
         {
-            [[maybe_unused]] bool removed = fs::remove(metadata_file_tmp_path);
+            [[maybe_unused]] bool removed = fs::remove(metadata_file_path);
             assert(removed);
         }
         if (added)
@@ -362,7 +362,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             if (col_decl.type)
             {
                 const auto & final_column_name = col_decl.name;
-                const auto tmp_column_name = final_column_name + "_tmp";
+                const auto tmp_column_name = final_column_name + "_tmp_alter" + toString(randomSeed());
                 const auto * data_type_ptr = column_names_and_types.back().type.get();
 
                 default_expr_list->children.emplace_back(
@@ -453,6 +453,9 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
 
     if (create.columns_list)
     {
+        if (create.as_table_function && (create.columns_list->indices || create.columns_list->constraints))
+            throw Exception("Indexes and constraints are not supported for table functions", ErrorCodes::INCORRECT_QUERY);
+
         if (create.columns_list->columns)
         {
             bool sanity_check_compression_codecs = !create.attach && !context.getSettingsRef().allow_suspicious_codecs;
@@ -489,7 +492,12 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
         properties.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
     }
     else if (create.as_table_function)
-        return {};
+    {
+        /// Table function without columns list.
+        auto table_function = TableFunctionFactory::instance().get(create.as_table_function, context);
+        properties.columns = table_function->getActualTableStructure(context);
+        assert(!properties.columns.empty());
+    }
     else
         throw Exception("Incorrect CREATE query: required list of column descriptions or AS section or SELECT.", ErrorCodes::INCORRECT_QUERY);
 
@@ -575,9 +583,12 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
 
 void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 {
+    if (create.as_table_function)
+        return;
+
     if (create.storage || create.is_view || create.is_materialized_view || create.is_live_view || create.is_dictionary)
     {
-        if (create.temporary && create.storage->engine->name != "Memory")
+        if (create.temporary && create.storage && create.storage->engine && create.storage->engine->name != "Memory")
             throw Exception(
                 "Temporary tables can only be created with ENGINE = Memory, not " + create.storage->engine->name,
                 ErrorCodes::INCORRECT_QUERY);
@@ -620,7 +631,12 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
                 "Cannot CREATE a table AS " + qualified_name + ", it is a Dictionary",
                 ErrorCodes::INCORRECT_QUERY);
 
-        create.set(create.storage, as_create.storage->ptr());
+        if (as_create.storage)
+            create.set(create.storage, as_create.storage->ptr());
+        else if (as_create.as_table_function)
+            create.as_table_function = as_create.as_table_function->clone();
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set engine, it's a bug.");
     }
 }
 
@@ -670,6 +686,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         // Table SQL definition is available even if the table is detached
         auto query = database->getCreateTableQuery(create.table, context);
         create = query->as<ASTCreateQuery &>(); // Copy the saved create query, but use ATTACH instead of CREATE
+        if (create.is_dictionary)
+            throw Exception(
+                "Cannot ATTACH TABLE " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(create.table) + ", it is a Dictionary",
+                ErrorCodes::INCORRECT_QUERY);
         create.attach = true;
         create.attach_short_syntax = true;
         create.if_not_exists = if_not_exists;
@@ -757,9 +777,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     /// NOTE: CREATE query may be rewritten by Storage creator or table function
     if (create.as_table_function)
     {
-        const auto & table_function = create.as_table_function->as<ASTFunction &>();
         const auto & factory = TableFunctionFactory::instance();
-        res = factory.get(table_function.name, context)->execute(create.as_table_function, context, create.table);
+        res = factory.get(create.as_table_function, context)->execute(create.as_table_function, context, create.table, properties.columns);
         res->renameInMemory({create.database, create.table, create.uuid});
     }
     else
@@ -844,7 +863,7 @@ BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
 
     if (create.attach)
     {
-        auto config = getDictionaryConfigurationFromAST(create);
+        auto config = getDictionaryConfigurationFromAST(create, context);
         auto modification_time = database->getObjectMetadataModificationTime(dictionary_name);
         database->attachDictionary(dictionary_name, DictionaryAttachInfo{query_ptr, config, modification_time});
     }

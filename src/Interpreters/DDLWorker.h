@@ -75,9 +75,6 @@ private:
     /// Check that query should be executed on leader replica only
     static bool taskShouldBeExecutedOnLeader(const ASTPtr ast_ddl, StoragePtr storage);
 
-    /// Check that shard has consistent config with table
-    void checkShardConfig(const String & table, const DDLTask & task, StoragePtr storage) const;
-
     /// Executes query only on leader replica in case of replicated table.
     /// Queries like TRUNCATE/ALTER .../OPTIMIZE have to be executed only on one node of shard.
     /// Most of these queries can be executed on non-leader replica, but actually they still send
@@ -108,7 +105,7 @@ private:
 
 private:
     std::atomic<bool> is_circular_replicated = false;
-    Context & context;
+    Context context;
     Poco::Logger * log;
 
     std::string host_fqdn;      /// current host domain name

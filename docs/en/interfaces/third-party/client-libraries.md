@@ -6,10 +6,10 @@ toc_title: Client Libraries
 # Client Libraries from Third-party Developers {#client-libraries-from-third-party-developers}
 
 !!! warning "Disclaimer"
-    Yandex does **not** maintain the libraries listed below and haven’t done any extensive testing to ensure their quality.
+    Yandex does **not** maintain the libraries listed below and hasn’t done any extensive testing to ensure their quality.
 
 -   Python
-    -   [infi.clickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm)
+    -   [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm)
     -   [clickhouse-driver](https://github.com/mymarilyn/clickhouse-driver)
     -   [clickhouse-client](https://github.com/yurial/clickhouse-client)
     -   [aiochclient](https://github.com/maximdanilchenko/aiochclient)
@@ -26,6 +26,9 @@ toc_title: Client Libraries
     -   [go-clickhouse](https://github.com/roistat/go-clickhouse)
     -   [mailrugo-clickhouse](https://github.com/mailru/go-clickhouse)
     -   [golang-clickhouse](https://github.com/leprosus/golang-clickhouse)
+-   Swift
+    -   [ClickHouseNIO](https://github.com/patrick-zippenfenig/ClickHouseNIO)
+    -   [ClickHouseVapor ORM](https://github.com/patrick-zippenfenig/ClickHouseVapor)
 -   NodeJs
     -   [clickhouse (NodeJs)](https://github.com/TimonKK/clickhouse)
     -   [node-clickhouse](https://github.com/apla/node-clickhouse)
@@ -46,7 +49,7 @@ toc_title: Client Libraries
     -   [clickhouse-scala-client](https://github.com/crobox/clickhouse-scala-client)
 -   Kotlin
     -   [AORM](https://github.com/TanVD/AORM)
--   C\#
+-   C#
     -   [Octonica.ClickHouseClient](https://github.com/Octonica/ClickHouseClient)
     -   [ClickHouse.Ado](https://github.com/killwort/ClickHouse-Net)
     -   [ClickHouse.Client](https://github.com/DarkWanderer/ClickHouse.Client)
