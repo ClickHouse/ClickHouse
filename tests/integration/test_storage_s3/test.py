@@ -355,8 +355,18 @@ def run_s3_mock(cluster):
 
 
 def test_custom_auth_headers(cluster):
-    ping_response = cluster.exec_in_container(cluster.get_container_id('resolver'),
+    for i in range(100):
+        try:
+            ping_response = cluster.exec_in_container(cluster.get_container_id('resolver'),
                                               ["curl", "-s", "http://resolver:8080"])
+            break
+        except Exception as ex:
+            print("Exception curl resolver:8080", ex)
+            time.sleep(0.2)
+    else:
+        assert False, "Cannot wait for http://resolver:8080"
+
+
     assert ping_response == 'OK', 'Expected "OK", but got "{}"'.format(ping_response)
 
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
