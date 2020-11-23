@@ -151,6 +151,18 @@ bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, cons
 
 QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, const ASTPtr & query_ptr) const
 {
+    ASTPtr modified_query = query_info.query->clone();
+    auto & modified_select = modified_query->as<ASTSelectQuery &>();
+    /// In case of JOIN the first stage (which includes JOIN)
+    /// should be done on the initiator always.
+    ///
+    /// Since in case of JOIN query on shards will receive query w/o JOIN (and their columns).
+    /// (see modifySelect()/removeJoin())
+    ///
+    /// And for this we need to return FetchColumns.
+    if (removeJoin(modified_select))
+        return QueryProcessingStage::FetchColumns;
+
     auto stage_in_source_tables = QueryProcessingStage::FetchColumns;
 
     DatabaseTablesIteratorPtr iterator = getDatabaseIterator(context);
