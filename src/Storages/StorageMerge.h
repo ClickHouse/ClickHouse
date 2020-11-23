@@ -4,7 +4,6 @@
 
 #include <Common/OptimizedRegularExpression.h>
 #include <Storages/IStorage.h>
-#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -50,7 +49,7 @@ public:
 private:
     String source_database;
     OptimizedRegularExpression table_name_regexp;
-    Context global_context;
+    const Context & global_context;
 
     using StorageWithLockAndName = std::tuple<StoragePtr, TableLockHolder, String>;
     using StorageListWithLocks = std::list<StorageWithLockAndName>;

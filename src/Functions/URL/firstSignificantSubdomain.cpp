@@ -7,7 +7,7 @@ namespace DB
 {
 
 struct NameFirstSignificantSubdomain { static constexpr auto name = "firstSignificantSubdomain"; };
-using FunctionFirstSignificantSubdomain = FunctionStringToString<ExtractSubstringImpl<ExtractFirstSignificantSubdomain>, NameFirstSignificantSubdomain>;
+using FunctionFirstSignificantSubdomain = FunctionStringToString<ExtractSubstringImpl<ExtractFirstSignificantSubdomain<true>>, NameFirstSignificantSubdomain>;
 
 void registerFunctionFirstSignificantSubdomain(FunctionFactory & factory)
 {
