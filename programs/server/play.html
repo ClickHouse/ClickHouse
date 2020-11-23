@@ -1,6 +1,7 @@
 <html> <!-- TODO If I write DOCTYPE HTML something changes but I don't know what. -->
 <head>
     <meta charset="UTF-8">
+    <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDkgOCI+PHN0eWxlPi5ve2ZpbGw6I2ZjMH0ucntmaWxsOnJlZH08L3N0eWxlPjxwYXRoIGQ9Ik0wLDcgaDEgdjEgaC0xIHoiIGNsYXNzPSJyIi8+PHBhdGggZD0iTTAsMCBoMSB2NyBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNMiwwIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik00LDAgaDEgdjggaC0xIHoiIGNsYXNzPSJvIi8+PHBhdGggZD0iTTYsMCBoMSB2OCBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNOCwzLjI1IGgxIHYxLjUgaC0xIHoiIGNsYXNzPSJvIi8+PC9zdmc+">
     <title>ClickHouse Query</title>
 
     <!-- Code Style:
@@ -262,6 +263,22 @@
         {
             color: var(--null-color);
         }
+
+        #hourglass
+        {
+            display: none;
+            padding-left: 1rem;
+            font-size: 110%;
+            color: #888;
+        }
+
+        #check-mark
+        {
+            display: none;
+            padding-left: 1rem;
+            font-size: 110%;
+            color: #080;
+        }
     </style>
 </head>
 
@@ -275,6 +292,8 @@
     <div id="run_div">
         <button class="shadow" id="run">Run</button>
         <span class="hint">&nbsp;(Ctrl+Enter)</span>
+        <span id="hourglass">⧗</span>
+        <span id="check-mark">✔</span>
         <span id="stats"></span>
         <span id="toggle-dark">🌑</span><span id="toggle-light">🌞</span>
     </div>
@@ -319,6 +338,9 @@
         xhr.open('POST', url, true);
         xhr.send(query);
 
+        document.getElementById('check-mark').style.display = 'none';
+        document.getElementById('hourglass').style.display = 'inline';
+
         xhr.onreadystatechange = function()
         {
             if (posted_request_num != request_num) {
@@ -348,6 +370,8 @@
     }
 
     function renderResponse(status, response) {
+        document.getElementById('hourglass').style.display = 'none';
+
         if (status === 200) {
             var json;
             try { json = JSON.parse(response); } catch (e) {}
@@ -356,6 +380,7 @@
             } else {
                 renderUnparsedResult(response);
             }
+            document.getElementById('check-mark').style.display = 'inline';
         } else {
             /// TODO: Proper rendering of network errors.
             renderError(response);
@@ -390,7 +415,7 @@
         post();
     }
 
-    document.getElementById('query').onkeypress = function(event)
+    document.onkeypress = function(event)
     {
         /// Firefox has code 13 for Enter and Chromium has code 10.
         if (event.ctrlKey && (event.charCode == 13 || event.charCode == 10)) {
@@ -412,6 +437,9 @@
         document.getElementById('error').style.display = 'none';
 
         document.getElementById('stats').innerText = '';
+
+        document.getElementById('hourglass').style.display = 'none';
+        document.getElementById('check-mark').style.display = 'none';
     }
 
     function renderResult(response)
