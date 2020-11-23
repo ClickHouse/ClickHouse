@@ -19,7 +19,7 @@ node6 = cluster.add_instance('node6', user_configs=['configs/config_include_from
 def start_cluster():
     try:
         def create_zk_roots(zk):
-            zk.create(path="/setting/max_query_size", value="77777", makepath=True)
+            zk.create(path="/setting/max_query_size", value=b"77777", makepath=True)
 
         cluster.add_zookeeper_startup_command(create_zk_roots)
 

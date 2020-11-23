@@ -7,7 +7,7 @@ toc_title: "Yandex\u6885\u7279\u91CC\u5361\u6570\u636E"
 
 Dataset由两个表组成，其中包含有关命中的匿名数据 (`hits_v1`）和访问 (`visits_v1`）的Yandex的。梅特里卡 你可以阅读更多关于Yandex的。梅特里卡 [ClickHouse历史](../../introduction/history.md) 科。
 
-数据集由两个表组成，其中任何一个都可以作为压缩表下载 `tsv.xz` 文件或作为准备的分区。 除此之外，该扩展版本 `hits` 包含1亿行的表可作为TSV在https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits\_100m\_obfuscated\_v1.tsv.xz 并作为准备的分区在https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits\_100m\_obfuscated\_v1.tar.xz.
+数据集由两个表组成，其中任何一个都可以作为压缩表下载 `tsv.xz` 文件或作为准备的分区。 除此之外，该扩展版本 `hits` 包含1亿行的表可作为TSV在https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_100m_obfuscated_v1.tsv.xz 并作为准备的分区在https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits_100m_obfuscated_v1.tar.xz.
 
 ## 从准备好的分区获取表 {#obtaining-tables-from-prepared-partitions}
 

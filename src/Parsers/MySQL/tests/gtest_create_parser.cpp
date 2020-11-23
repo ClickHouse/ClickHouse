@@ -6,6 +6,7 @@
 #include <Parsers/MySQL/ASTDeclareOption.h>
 #include <Parsers/MySQL/ASTDeclarePartitionOptions.h>
 #include <Parsers/MySQL/ASTCreateDefines.h>
+#include <IO/WriteBufferFromOStream.h>
 
 using namespace DB;
 using namespace DB::MySQLParser;
@@ -28,7 +29,7 @@ TEST(CreateTableParser, SimpleCreate)
     EXPECT_EQ(ast->as<ASTCreateQuery>()->columns_list->as<ASTCreateDefines>()->columns->children.size(), 1);
     EXPECT_EQ(ast->as<ASTCreateQuery>()->columns_list->as<ASTCreateDefines>()->indices->children.size(), 1);
     EXPECT_EQ(ast->as<ASTCreateQuery>()->columns_list->as<ASTCreateDefines>()->constraints->children.size(), 1);
-    EXPECT_EQ(ast->as<ASTCreateQuery>()->table_options->as<ASTDeclareOptions>()->changes["engine"]->as<ASTIdentifier>()->name, "INNODB");
+    EXPECT_EQ(ast->as<ASTCreateQuery>()->table_options->as<ASTDeclareOptions>()->changes["engine"]->as<ASTIdentifier>()->name(), "INNODB");
     EXPECT_TRUE(ast->as<ASTCreateQuery>()->partition_options->as<ASTDeclarePartitionOptions>());
 }
 
@@ -37,6 +38,7 @@ TEST(CreateTableParser, SS)
     ParserCreateQuery p_create_query;
     String input = "CREATE TABLE `test_table_1` (`a` int DEFAULT NULL, `b` int DEFAULT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci";
     ASTPtr ast = parseQuery(p_create_query, input.data(), input.data() + input.size(), "", 0, 0);
-    ast->dumpTree(std::cerr);
+    WriteBufferFromOStream buf(std::cerr, 4096);
+    ast->dumpTree(buf);
 
 }

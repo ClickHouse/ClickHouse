@@ -82,7 +82,7 @@ def test_preconfigured_custom_codec(start_cluster):
     assert node3.query(
         "SELECT max(length(data)) from compression_codec_multiple_with_key GROUP BY data ORDER BY max(length(data)) DESC LIMIT 1") == "10000\n"
 
-    for i in xrange(10):
+    for i in range(10):
         node3.query(
             "INSERT INTO compression_codec_multiple_with_key VALUES(toDate('2018-10-12'), {}, '{}', 88.88)".format(i,
                                                                                                                    ''.join(

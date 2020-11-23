@@ -26,9 +26,6 @@ def started_cluster():
         instance = cluster.instances['ch1']
         instance.query('CREATE DATABASE dictionaries ENGINE = Dictionary')
         instance.query('CREATE TABLE dictionary_source (id UInt64, value UInt8) ENGINE = Memory')
-        print instance.query('SELECT * FROM system.dictionaries FORMAT Vertical')
-        print "Started ", instance.ip_address
-
         yield cluster
 
     finally:
@@ -110,7 +107,7 @@ def test_RELOAD_CONFIG_AND_MACROS(started_cluster):
     assert TSV(instance.query("select * from system.macros")) == TSV("instance\tch1\nmac\tro\n")
 
 
-def test_SYSTEM_FLUSH_LOGS(started_cluster):
+def test_system_flush_logs(started_cluster):
     instance = cluster.instances['ch1']
     instance.query('''
         SET log_queries = 0;
@@ -136,6 +133,6 @@ def test_SYSTEM_FLUSH_LOGS(started_cluster):
 
 if __name__ == '__main__':
     with contextmanager(started_cluster)() as cluster:
-        for name, instance in cluster.instances.items():
-            print name, instance.ip_address
-        raw_input("Cluster created, press any key to destroy...")
+        for name, instance in list(cluster.instances.items()):
+            print(name, instance.ip_address)
+        input("Cluster created, press any key to destroy...")

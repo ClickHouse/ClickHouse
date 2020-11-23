@@ -50,8 +50,8 @@ def started_cluster():
             }
         }
 
-        for cluster_name, shards in clusters_schema.iteritems():
-            for shard_name, replicas in shards.iteritems():
+        for cluster_name, shards in clusters_schema.items():
+            for shard_name, replicas in shards.items():
                 for replica_name in replicas:
                     name = "s{}_{}_{}".format(cluster_name, shard_name, replica_name)
                     cluster.add_instance(name,
@@ -235,16 +235,16 @@ def execute_task(task, cmd_options):
     task.start()
 
     zk = cluster.get_kazoo_client('zoo1')
-    print "Use ZooKeeper server: {}:{}".format(zk.hosts[0][0], zk.hosts[0][1])
+    print("Use ZooKeeper server: {}:{}".format(zk.hosts[0][0], zk.hosts[0][1]))
 
     try:
         zk.delete("/clickhouse-copier", recursive=True)
     except kazoo.exceptions.NoNodeError:
-        print "No node /clickhouse-copier. It is Ok in first test."
+        print("No node /clickhouse-copier. It is Ok in first test.")
 
     zk_task_path = task.zk_task_path
     zk.ensure_path(zk_task_path)
-    zk.create(zk_task_path + "/description", task.copier_task_config)
+    zk.create(zk_task_path + "/description", task.copier_task_config.encode())
 
     # Run cluster-copier processes on each node
     docker_api = docker.from_env().api
@@ -256,19 +256,19 @@ def execute_task(task, cmd_options):
            '--base-dir', '/var/log/clickhouse-server/copier']
     cmd += cmd_options
 
-    copiers = random.sample(cluster.instances.keys(), 3)
+    copiers = random.sample(list(cluster.instances.keys()), 3)
 
     for instance_name in copiers:
         instance = cluster.instances[instance_name]
         container = instance.get_docker_handle()
         instance.copy_file_to_container(os.path.join(CURRENT_TEST_DIR, "configs/config-copier.xml"),
                                         "/etc/clickhouse-server/config-copier.xml")
-        print "Copied copier config to {}".format(instance.name)
+        print("Copied copier config to {}".format(instance.name))
         exec_id = docker_api.exec_create(container.id, cmd, stderr=True)
         output = docker_api.exec_start(exec_id).decode('utf8')
         print(output)
         copiers_exec_ids.append(exec_id)
-        print "Copier for {} ({}) has started".format(instance.name, instance.ip_address)
+        print("Copier for {} ({}) has started".format(instance.name, instance.ip_address))
 
     # Wait for copiers stopping and check their return codes
     for exec_id, instance_name in zip(copiers_exec_ids, copiers):
@@ -362,6 +362,6 @@ def test_no_arg(started_cluster):
 
 if __name__ == '__main__':
     with contextmanager(started_cluster)() as cluster:
-        for name, instance in cluster.instances.items():
-            print name, instance.ip_address
-        raw_input("Cluster created, press any key to destroy...")
+        for name, instance in list(cluster.instances.items()):
+            print(name, instance.ip_address)
+        input("Cluster created, press any key to destroy...")

@@ -68,9 +68,9 @@ LAYOUTS = [
     Layout("hashed"),
     Layout("cache"),
     Layout("complex_key_hashed"),
-    # Layout("complex_key_cache"), # Currently not supported
+    Layout("complex_key_cache"),
     Layout("direct"),
-    # Layout("complex_key_direct") # Currently not supported
+    Layout("complex_key_direct")
 ]
 
 DICTIONARIES = []
@@ -106,7 +106,7 @@ def setup_module(module):
         for source in sources:
             for layout in LAYOUTS:
                 if not source.compatible_with_layout(layout):
-                    print "Source", source.name, "incompatible with layout", layout.name
+                    print("Source", source.name, "incompatible with layout", layout.name)
                     continue
 
                 fields = KEY_FIELDS[layout.layout_type] + [field]
@@ -128,9 +128,9 @@ def started_cluster():
         assert len(FIELDS) == len(VALUES)
         for dicts in DICTIONARIES:
             for dictionary in dicts:
-                print "Preparing", dictionary.name
+                print("Preparing", dictionary.name)
                 dictionary.prepare_source(cluster)
-                print "Prepared"
+                print("Prepared")
 
         yield cluster
 
@@ -138,9 +138,9 @@ def started_cluster():
         cluster.shutdown()
 
 
-@pytest.mark.parametrize("id", range(len(FIELDS)))
+@pytest.mark.parametrize("id", list(range(len(FIELDS))))
 def test_redis_dictionaries(started_cluster, id):
-    print 'id:', id
+    print('id:', id)
 
     dicts = DICTIONARIES[id]
     values = VALUES[id]
@@ -173,7 +173,7 @@ def test_redis_dictionaries(started_cluster, id):
         node.query("system reload dictionary {}".format(dct.name))
 
         for query, answer in queries_with_answers:
-            print query
+            print(query)
             assert node.query(query) == str(answer) + '\n'
 
     # Checks, that dictionaries can be reloaded.

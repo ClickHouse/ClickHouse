@@ -197,7 +197,7 @@ Bu tablodaki veriler 142 GB kullanır.
 
 (Verileri doğrudan Postgres'ten içe aktarmak da mümkündür `COPY ... TO PROGRAM`.)
 
-Unfortunately, all the fields associated with the weather (precipitation…average\_wind\_speed) were filled with NULL. Because of this, we will remove them from the final data set.
+Unfortunately, all the fields associated with the weather (precipitation…average_wind_speed) were filled with NULL. Because of this, we will remove them from the final data set.
 
 Başlamak için, tek bir sunucuda bir tablo oluşturacağız. Daha sonra tabloyu dağıtacağız.
 

@@ -10,7 +10,7 @@ logging.getLogger().addHandler(logging.StreamHandler())
 def check_proxy_logs(cluster, proxy_instance):
     logs = cluster.get_container_logs(proxy_instance)
     # Check that all possible interactions with Minio are present
-    for http_method in ["PUT", "GET", "DELETE"]:
+    for http_method in ["PUT", "GET", "POST"]:
         assert logs.find(http_method + " https://minio1") >= 0
 
 

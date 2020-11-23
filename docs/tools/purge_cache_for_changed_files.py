@@ -59,7 +59,7 @@ def convert_to_dicts(changed_files, batch_size):
 def post_data(prepared_batches, token):
     headers = {"Authorization": "Bearer {}".format(token)}
     for batch in prepared_batches:
-        print("Pugring cache for", ", ".join(batch["files"]))
+        print(("Pugring cache for", ", ".join(batch["files"])))
         response = requests.post(CLOUDFLARE_URL, json=batch, headers=headers)
         response.raise_for_status()
         time.sleep(3)
@@ -71,8 +71,8 @@ if __name__ == "__main__":
         raise Exception("Env variable CLOUDFLARE_TOKEN is empty")
     base_domain = os.getenv("BASE_DOMAIN", "https://content.clickhouse.tech/")
     changed_files = collect_changed_files()
-    print("Found", len(changed_files), "changed files")
+    print(("Found", len(changed_files), "changed files"))
     filtered_files = filter_and_transform_changed_files(changed_files, base_domain)
-    print("Files rest after filtering", len(filtered_files))
+    print(("Files rest after filtering", len(filtered_files)))
     prepared_batches = convert_to_dicts(filtered_files, 25)
     post_data(prepared_batches, token)

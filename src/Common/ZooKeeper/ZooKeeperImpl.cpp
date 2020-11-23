@@ -1288,13 +1288,13 @@ void ZooKeeper::receiveEvent()
             response->removeRootPath(root_path);
         }
 
-        /// Instead of setting the watch in sendEvent, set it in receiveEvent becuase need to check the response.
+        /// Instead of setting the watch in sendEvent, set it in receiveEvent because need to check the response.
         /// The watch shouldn't be set if the node does not exist and it will never exist like sequential ephemeral nodes.
         /// By using getData() instead of exists(), a watch won't be set if the node doesn't exist.
         if (request_info.watch)
         {
             bool add_watch = false;
-            /// 3 indicates the ZooKeeperExistsRequest. 
+            /// 3 indicates the ZooKeeperExistsRequest.
             // For exists, we set the watch on both node exist and nonexist case.
             // For other case like getData, we only set the watch when node exists.
             if (request_info.request->getOpNum() == 3)

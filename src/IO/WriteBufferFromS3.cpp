@@ -9,6 +9,7 @@
 #    include <aws/core/utils/memory/stl/AWSStringStream.h>
 #    include <aws/s3/S3Client.h>
 #    include <aws/s3/model/CompleteMultipartUploadRequest.h>
+#    include <aws/s3/model/AbortMultipartUploadRequest.h>
 #    include <aws/s3/model/CreateMultipartUploadRequest.h>
 #    include <aws/s3/model/PutObjectRequest.h>
 #    include <aws/s3/model/UploadPartRequest.h>
@@ -56,7 +57,6 @@ WriteBufferFromS3::WriteBufferFromS3(
         initiate();
 }
 
-
 void WriteBufferFromS3::nextImpl()
 {
     if (!offset())
@@ -79,30 +79,37 @@ void WriteBufferFromS3::nextImpl()
     }
 }
 
-
 void WriteBufferFromS3::finalize()
 {
-    next();
-
-    if (is_multipart)
-        writePart(temporary_buffer->str());
-
-    complete();
+    finalizeImpl();
 }
 
+void WriteBufferFromS3::finalizeImpl()
+{
+    if (!finalized)
+    {
+        next();
+
+        if (is_multipart)
+            writePart(temporary_buffer->str());
+
+        complete();
+
+        finalized = true;
+    }
+}
 
 WriteBufferFromS3::~WriteBufferFromS3()
 {
     try
     {
-        next();
+        finalizeImpl();
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
-
 
 void WriteBufferFromS3::initiate()
 {
@@ -161,6 +168,25 @@ void WriteBufferFromS3::complete()
 {
     if (is_multipart)
     {
+        if (part_tags.empty())
+        {
+            LOG_DEBUG(log, "Multipart upload has no data. Aborting it. Bucket: {}, Key: {}, Upload_id: {}", bucket, key, upload_id);
+
+            Aws::S3::Model::AbortMultipartUploadRequest req;
+            req.SetBucket(bucket);
+            req.SetKey(key);
+            req.SetUploadId(upload_id);
+
+            auto outcome = client_ptr->AbortMultipartUpload(req);
+
+            if (outcome.IsSuccess())
+                LOG_DEBUG(log, "Aborting multipart upload completed. Upload_id: {}", upload_id);
+            else
+                throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
+
+            return;
+        }
+
         LOG_DEBUG(log, "Completing multipart upload. Bucket: {}, Key: {}, Upload_id: {}", bucket, key, upload_id);
 
         Aws::S3::Model::CompleteMultipartUploadRequest req;
@@ -168,17 +194,14 @@ void WriteBufferFromS3::complete()
         req.SetKey(key);
         req.SetUploadId(upload_id);
 
-        if (!part_tags.empty())
+        Aws::S3::Model::CompletedMultipartUpload multipart_upload;
+        for (size_t i = 0; i < part_tags.size(); ++i)
         {
-            Aws::S3::Model::CompletedMultipartUpload multipart_upload;
-            for (size_t i = 0; i < part_tags.size(); ++i)
-            {
-                Aws::S3::Model::CompletedPart part;
-                multipart_upload.AddParts(part.WithETag(part_tags[i]).WithPartNumber(i + 1));
-            }
-
-            req.SetMultipartUpload(multipart_upload);
+            Aws::S3::Model::CompletedPart part;
+            multipart_upload.AddParts(part.WithETag(part_tags[i]).WithPartNumber(i + 1));
         }
+
+        req.SetMultipartUpload(multipart_upload);
 
         auto outcome = client_ptr->CompleteMultipartUpload(req);
 

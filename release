@@ -66,7 +66,7 @@ do
         shift
     elif [[ $1 == '--fast' ]]; then
         # Wrong but fast pbuilder mode: create base package with all depends
-        EXTRAPACKAGES="$EXTRAPACKAGES debhelper cmake ninja-build gcc-8 g++-8 libc6-dev libicu-dev libreadline-dev psmisc bash expect python python-lxml python-termcolor python-requests curl perl sudo openssl netcat-openbsd"
+        EXTRAPACKAGES="$EXTRAPACKAGES debhelper cmake ninja-build gcc-8 g++-8 libc6-dev libicu-dev libreadline-dev psmisc bash expect python3 python3-lxml python3-termcolor python3-requests curl perl sudo openssl netcat-openbsd"
         shift
     elif [[ $1 == '--rpm' ]]; then
         MAKE_RPM=1

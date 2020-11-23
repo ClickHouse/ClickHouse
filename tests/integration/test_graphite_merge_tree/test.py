@@ -301,7 +301,7 @@ CREATE TABLE test.graphite2
                       "AND table='graphite2'"))
         if parts == 1:
             break
-        print('Parts', parts)
+        print(('Parts', parts))
 
     assert TSV(
         q("SELECT value, timestamp, date, updated FROM test.graphite2")

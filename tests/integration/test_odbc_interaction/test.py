@@ -60,7 +60,7 @@ def started_cluster():
         cluster.start()
         sqlite_db = node1.odbc_drivers["SQLite3"]["Database"]
 
-        print "sqlite data received"
+        print("sqlite data received")
         node1.exec_in_container(
             ["bash", "-c", "echo 'CREATE TABLE t1(x INTEGER PRIMARY KEY ASC, y, z);' | sqlite3 {}".format(sqlite_db)],
             privileged=True, user='root')
@@ -73,18 +73,18 @@ def started_cluster():
         node1.exec_in_container(
             ["bash", "-c", "echo 'CREATE TABLE t4(X INTEGER PRIMARY KEY ASC, Y, Z);' | sqlite3 {}".format(sqlite_db)],
             privileged=True, user='root')
-        print "sqlite tables created"
+        print("sqlite tables created")
         mysql_conn = get_mysql_conn()
-        print "mysql connection received"
+        print("mysql connection received")
         ## create mysql db and table
         create_mysql_db(mysql_conn, 'clickhouse')
-        print "mysql database created"
+        print("mysql database created")
 
         postgres_conn = get_postgres_conn()
-        print "postgres connection received"
+        print("postgres connection received")
 
         create_postgres_db(postgres_conn, 'clickhouse')
-        print "postgres db created"
+        print("postgres db created")
 
         cursor = postgres_conn.cursor()
         cursor.execute(
@@ -259,7 +259,7 @@ def test_postgres_odbc_hached_dictionary_no_tty_pipe_overflow(started_cluster):
     conn = get_postgres_conn()
     cursor = conn.cursor()
     cursor.execute("insert into clickhouse.test_table values(3, 'xxx')")
-    for i in xrange(100):
+    for i in range(100):
         try:
             node1.query("system reload dictionary postgres_odbc_hashed", timeout=5)
         except Exception as ex:
