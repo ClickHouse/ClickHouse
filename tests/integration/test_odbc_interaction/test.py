@@ -300,7 +300,7 @@ def test_bridge_dies_with_parent(started_cluster):
         clickhouse_pid = node1.get_process_pid("clickhouse server")
         time.sleep(1)
 
-    for i in range(5):
+    for i in range(30):
         time.sleep(1)  # just for sure, that odbc-bridge caught signal
         bridge_pid = node1.get_process_pid("odbc-bridge")
         if bridge_pid is None:
