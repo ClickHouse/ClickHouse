@@ -526,6 +526,8 @@ namespace MySQLReplication
         virtual BinlogEventPtr readOneEvent() = 0;
         virtual void setReplicateDatabase(String db) = 0;
         virtual void setGTIDSets(GTIDSets sets) = 0;
+        virtual void setChecksumSignatureLength(size_t checksum_signature_length_) = 0;
+
         virtual ~IFlavor() override = default;
     };
 
@@ -538,12 +540,14 @@ namespace MySQLReplication
         BinlogEventPtr readOneEvent() override { return event; }
         void setReplicateDatabase(String db) override { replicate_do_db = std::move(db); }
         void setGTIDSets(GTIDSets sets) override { position.gtid_sets = std::move(sets); }
+        void setChecksumSignatureLength(size_t checksum_signature_length_) override { checksum_signature_length = checksum_signature_length_; }
 
     private:
         Position position;
         BinlogEventPtr event;
         String replicate_do_db;
         std::shared_ptr<TableMapEvent> table_map;
+        size_t checksum_signature_length = 4;
 
         inline bool doReplicate() { return (replicate_do_db.empty() || table_map->schema == replicate_do_db); }
     };

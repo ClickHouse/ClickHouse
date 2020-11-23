@@ -264,6 +264,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
             log_entry.create_time = time(nullptr);
             log_entry.source_replica = storage.replica_name;
             log_entry.new_part_name = part->name;
+            /// TODO maybe add UUID here as well?
             log_entry.quorum = quorum;
             log_entry.block_id = block_id;
             log_entry.new_part_type = part->getType();
