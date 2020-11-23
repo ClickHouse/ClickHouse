@@ -225,7 +225,7 @@ def test_put_get_with_redirect(cluster):
     ]
 
 
-# Test put and get with S3 server redirect.
+# Test put with restricted S3 server redirect.
 def test_put_with_zero_redirect(cluster):
     # type: (ClickHouseCluster) -> None
 
