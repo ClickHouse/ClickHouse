@@ -5,6 +5,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/AlterCommands.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -25,7 +26,7 @@
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/Transforms/AddingConstColumnTransform.h>
-#include <Processors/Transforms/ConvertingTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 
 
 namespace DB
@@ -76,7 +77,7 @@ StorageMerge::StorageMerge(
     : IStorage(table_id_)
     , source_database(source_database_)
     , table_name_regexp(table_name_regexp_)
-    , global_context(context_)
+    , global_context(context_.getGlobalContext())
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -468,9 +469,16 @@ void StorageMerge::convertingSourceStream(
     QueryProcessingStage::Enum processed_stage)
 {
     Block before_block_header = pipe.getHeader();
+
+    auto convert_actions_dag = ActionsDAG::makeConvertingActions(
+            pipe.getHeader().getColumnsWithTypeAndName(),
+            header.getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Name);
+    auto convert_actions = std::make_shared<ExpressionActions>(convert_actions_dag);
+
     pipe.addSimpleTransform([&](const Block & stream_header)
     {
-        return std::make_shared<ConvertingTransform>(stream_header, header, ConvertingTransform::MatchColumnsMode::Name);
+        return std::make_shared<ExpressionTransform>(stream_header, convert_actions);
     });
 
     auto where_expression = query->as<ASTSelectQuery>()->where();

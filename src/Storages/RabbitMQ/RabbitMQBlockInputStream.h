@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataStreams/IBlockInputStream.h>
-#include <Interpreters/Context.h>
 #include <Storages/RabbitMQ/StorageRabbitMQ.h>
 #include <Storages/RabbitMQ/ReadBufferFromRabbitMQConsumer.h>
 
@@ -38,7 +37,7 @@ public:
 private:
     StorageRabbitMQ & storage;
     StorageMetadataPtr metadata_snapshot;
-    Context context;
+    const Context & context;
     Names column_names;
     const size_t max_block_size;
     bool ack_in_suffix;

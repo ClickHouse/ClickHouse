@@ -46,7 +46,7 @@ public:
     /// Get the main function name.
     virtual String getName() const = 0;
 
-    virtual ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) = 0;
+    virtual ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const = 0;
 
     virtual void createLowCardinalityResultCache(size_t cache_size) = 0;
 };
@@ -73,8 +73,7 @@ public:
     /// sample_columns should contain data types of arguments and values of constants, if relevant.
     virtual ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName & arguments) const = 0;
 
-    /// TODO: make const
-    virtual ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run = false)
+    virtual ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run = false) const
     {
         return prepare(arguments)->execute(arguments, result_type, input_rows_count, dry_run);
     }
