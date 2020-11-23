@@ -5,7 +5,7 @@
 #endif
 
 #include <Access/LDAPParams.h>
-#include <common/types.h>
+#include <Core/Types.h>
 
 #if USE_LDAP
 #   include <ldap.h>

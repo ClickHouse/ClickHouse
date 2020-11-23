@@ -33,9 +33,6 @@ Block RabbitMQBlockOutputStream::getHeader() const
 
 void RabbitMQBlockOutputStream::writePrefix()
 {
-    if (!storage.exchangeRemoved())
-        storage.unbindExchange();
-
     buffer = storage.createWriteBuffer();
     if (!buffer)
         throw Exception("Failed to create RabbitMQ producer!", ErrorCodes::CANNOT_CREATE_IO_BUFFER);
@@ -59,9 +56,6 @@ void RabbitMQBlockOutputStream::write(const Block & block)
 void RabbitMQBlockOutputStream::writeSuffix()
 {
     child->writeSuffix();
-
-    if (buffer)
-        buffer->updateMaxWait();
 }
 
 }

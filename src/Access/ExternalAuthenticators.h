@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Access/LDAPParams.h>
-#include <common/types.h>
+#include <Core/Types.h>
 
 #include <map>
 #include <memory>

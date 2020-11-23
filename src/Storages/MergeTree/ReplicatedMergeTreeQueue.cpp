@@ -1080,34 +1080,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
           * because the leader replica does not assign merges of greater size (except OPTIMIZE PARTITION and OPTIMIZE FINAL).
           */
         const auto data_settings = data.getSettings();
-        bool ignore_max_size = false;
-        if (entry.type == LogEntry::MERGE_PARTS)
-        {
-            ignore_max_size = max_source_parts_size == data_settings->max_bytes_to_merge_at_max_space_in_pool;
-
-            if (isTTLMergeType(entry.merge_type))
-            {
-                if (merger_mutator.ttl_merges_blocker.isCancelled())
-                {
-                    String reason = "Not executing log entry for part " + entry.new_part_name + " because merges with TTL are cancelled now.";
-                    LOG_DEBUG(log, reason);
-                    out_postpone_reason = reason;
-                    return false;
-                }
-                size_t total_merges_with_ttl = data.getTotalMergesWithTTLInMergeList();
-                if (total_merges_with_ttl >= data_settings->max_number_of_merges_with_ttl_in_pool)
-                {
-                    const char * format_str = "Not executing log entry for part {}"
-                        " because {} merges with TTL already executing, maximum {}.";
-                    LOG_DEBUG(log, format_str, entry.new_part_name, total_merges_with_ttl,
-                        data_settings->max_number_of_merges_with_ttl_in_pool);
-
-                    out_postpone_reason = fmt::format(format_str, entry.new_part_name, total_merges_with_ttl,
-                        data_settings->max_number_of_merges_with_ttl_in_pool);
-                    return false;
-                }
-            }
-        }
+        bool ignore_max_size = (entry.type == LogEntry::MERGE_PARTS) && (max_source_parts_size == data_settings->max_bytes_to_merge_at_max_space_in_pool);
 
         if (!ignore_max_size && sum_parts_size_in_bytes > max_source_parts_size)
         {
@@ -1349,26 +1322,21 @@ bool ReplicatedMergeTreeQueue::processEntry(
 }
 
 
-ReplicatedMergeTreeQueue::OperationsInQueue ReplicatedMergeTreeQueue::countMergesAndPartMutations() const
+std::pair<size_t, size_t> ReplicatedMergeTreeQueue::countMergesAndPartMutations() const
 {
     std::lock_guard lock(state_mutex);
 
     size_t count_merges = 0;
     size_t count_mutations = 0;
-    size_t count_merges_with_ttl = 0;
     for (const auto & entry : queue)
     {
         if (entry->type == ReplicatedMergeTreeLogEntry::MERGE_PARTS)
-        {
             ++count_merges;
-            if (isTTLMergeType(entry->merge_type))
-                ++count_merges_with_ttl;
-        }
         else if (entry->type == ReplicatedMergeTreeLogEntry::MUTATE_PART)
             ++count_mutations;
     }
 
-    return OperationsInQueue{count_merges, count_mutations, count_merges_with_ttl};
+    return std::make_pair(count_merges, count_mutations);
 }
 
 

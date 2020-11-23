@@ -416,12 +416,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             return false;
 
         if (!storage_p.parse(pos, storage, expected) && !is_temporary)
-        {
-            if (!s_as.ignore(pos, expected))
-                return false;
-            if (!table_function_p.parse(pos, as_table_function, expected))
-                return false;
-        }
+            return false;
     }
     else
     {

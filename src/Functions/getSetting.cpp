@@ -9,14 +9,12 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
-
-namespace
-{
 
 /// Get the value of a setting.
 class FunctionGetSetting : public IFunction
@@ -52,7 +50,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
-        block[result].column = block[result].type->createColumnConst(input_rows_count, value);
+        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(input_rows_count, value);
     }
 
 private:
@@ -60,7 +58,6 @@ private:
     const Context & context;
 };
 
-}
 
 void registerFunctionGetSetting(FunctionFactory & factory)
 {

@@ -21,8 +21,6 @@ namespace ErrorCodes
     extern const int DECIMAL_OVERFLOW;
 }
 
-namespace
-{
 
 /* Generate random fixed string with fully random bytes (including zero). */
 template <typename RandImpl>
@@ -54,14 +52,14 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const size_t n = assert_cast<const ColumnConst &>(*block[arguments[0]].column).getValue<UInt64>();
+        const size_t n = assert_cast<const ColumnConst &>(*block.getByPosition(arguments[0]).column).getValue<UInt64>();
 
         auto col_to = ColumnFixedString::create(n);
         ColumnFixedString::Chars & data_to = col_to->getChars();
 
         if (input_rows_count == 0)
         {
-            block[result].column = std::move(col_to);
+            block.getByPosition(result).column = std::move(col_to);
             return;
         }
 
@@ -73,7 +71,7 @@ public:
         data_to.resize(total_size);
         RandImpl::execute(reinterpret_cast<char *>(data_to.data()), total_size);
 
-        block[result].column = std::move(col_to);
+        block.getByPosition(result).column = std::move(col_to);
     }
 };
 
@@ -104,8 +102,6 @@ public:
 private:
     ImplementationSelector<IFunction> selector;
 };
-
-}
 
 void registerFunctionRandomFixedString(FunctionFactory & factory)
 {

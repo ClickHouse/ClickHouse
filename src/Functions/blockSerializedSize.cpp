@@ -6,8 +6,6 @@
 
 namespace DB
 {
-namespace
-{
 
 /// Returns size on disk for *block* (without taking into account compression).
 class FunctionBlockSerializedSize : public IFunction
@@ -35,9 +33,9 @@ public:
         UInt64 size = 0;
 
         for (auto arg_pos : arguments)
-            size += blockSerializedSizeOne(block[arg_pos]);
+            size += blockSerializedSizeOne(block.getByPosition(arg_pos));
 
-        block[result].column = DataTypeUInt64().createColumnConst(
+        block.getByPosition(result).column = DataTypeUInt64().createColumnConst(
             input_rows_count, size)->convertToFullColumnIfConst();
     }
 
@@ -62,7 +60,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionBlockSerializedSize(FunctionFactory & factory)
 {

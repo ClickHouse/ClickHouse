@@ -17,8 +17,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace
-{
 
 class FunctionDateTrunc : public IFunction
 {
@@ -119,31 +117,31 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        ColumnsWithTypeAndName temp_block = block;
+        Block temp_block = block;
 
         const UInt16 interval_value = 1;
         const ColumnPtr interval_column = ColumnConst::create(ColumnInt64::create(1, interval_value), input_rows_count);
 
-        const size_t interval_pos = temp_block.size();
-        temp_block.emplace_back(ColumnWithTypeAndName{interval_column, std::make_shared<DataTypeInterval>(datepart_kind), ""});
+        const size_t interval_pos = temp_block.columns();
+        temp_block.insert({interval_column, std::make_shared<DataTypeInterval>(datepart_kind), ""});
 
         if (arguments.size() == 2)
         {
             auto to_start_of_interval = FunctionFactory::instance().get("toStartOfInterval", context)->build(
-                {temp_block[arguments[1]], temp_block[interval_pos]});
+                {temp_block.getByPosition(arguments[1]), temp_block.getByPosition(interval_pos)});
 
             to_start_of_interval->execute(temp_block, {arguments[1], interval_pos}, result, input_rows_count);
         }
         else
         {
             auto to_start_of_interval = FunctionFactory::instance().get("toStartOfInterval", context)->build(
-                {temp_block[arguments[1]], temp_block[interval_pos],
-                    temp_block[arguments[2]]});
+                {temp_block.getByPosition(arguments[1]), temp_block.getByPosition(interval_pos),
+                    temp_block.getByPosition(arguments[2])});
 
             to_start_of_interval->execute(temp_block, {arguments[1], interval_pos, arguments[2]}, result, input_rows_count);
         }
 
-        block[result].column = std::move(temp_block[result].column);
+        block.getByPosition(result).column = std::move(temp_block.getByPosition(result).column);
     }
 
     bool hasInformationAboutMonotonicity() const override
@@ -161,7 +159,6 @@ private:
     mutable IntervalKind::Kind datepart_kind = IntervalKind::Kind::Second;
 };
 
-}
 
 void registerFunctionDateTrunc(FunctionFactory & factory)
 {

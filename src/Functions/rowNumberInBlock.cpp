@@ -6,8 +6,6 @@
 
 namespace DB
 {
-namespace
-{
 
 class FunctionRowNumberInBlock : public IFunction
 {
@@ -54,11 +52,9 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
             data[i] = i;
 
-        block[result].column = std::move(column);
+        block.getByPosition(result).column = std::move(column);
     }
 };
-
-}
 
 void registerFunctionRowNumberInBlock(FunctionFactory & factory)
 {

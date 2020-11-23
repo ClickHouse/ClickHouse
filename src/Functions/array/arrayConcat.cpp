@@ -51,13 +51,15 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const DataTypePtr & return_type = block[result].type;
+        const DataTypePtr & return_type = block.getByPosition(result).type;
 
         if (return_type->onlyNull())
         {
-            block[result].column = return_type->createColumnConstWithDefaultValue(input_rows_count);
+            block.getByPosition(result).column = return_type->createColumnConstWithDefaultValue(input_rows_count);
             return;
         }
+
+        auto result_column = return_type->createColumn();
 
         size_t rows = input_rows_count;
         size_t num_args = arguments.size();
@@ -66,7 +68,7 @@ public:
 
         for (size_t i = 0; i < num_args; ++i)
         {
-            const ColumnWithTypeAndName & arg = block[arguments[i]];
+            const ColumnWithTypeAndName & arg = block.getByPosition(arguments[i]);
             ColumnPtr preprocessed_column = arg.column;
 
             if (!arg.type->equals(*return_type))
@@ -93,9 +95,10 @@ public:
                 throw Exception{"Arguments for function " + getName() + " must be arrays.", ErrorCodes::LOGICAL_ERROR};
         }
 
-        auto sink = GatherUtils::concat(sources);
+        auto sink = GatherUtils::createArraySink(typeid_cast<ColumnArray &>(*result_column), rows);
+        GatherUtils::concat(sources, *sink);
 
-        block[result].column = std::move(sink);
+        block.getByPosition(result).column = std::move(result_column);
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

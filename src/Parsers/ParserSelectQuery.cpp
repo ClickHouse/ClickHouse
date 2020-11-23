@@ -8,7 +8,6 @@
 #include <Parsers/ParserSampleRatio.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
-#include <Parsers/ParserWithElement.h>
 
 
 namespace DB
@@ -75,10 +74,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         if (s_with.ignore(pos, expected))
         {
-            if (!ParserList(std::make_unique<ParserWithElement>(), std::make_unique<ParserToken>(TokenType::Comma))
-                     .parse(pos, with_expression_list, expected))
-                return false;
-            if (with_expression_list->children.empty())
+            if (!exp_list_for_with_clause.parse(pos, with_expression_list, expected))
                 return false;
         }
     }

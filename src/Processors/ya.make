@@ -7,8 +7,6 @@ PEERDIR(
     contrib/libs/protobuf
 )
 
-CFLAGS(-g0)
-
 SRCS(
     Chunk.cpp
     ConcatProcessor.cpp
@@ -33,7 +31,6 @@ SRCS(
     Formats/Impl/JSONEachRowRowOutputFormat.cpp
     Formats/Impl/JSONEachRowWithProgressRowOutputFormat.cpp
     Formats/Impl/JSONRowOutputFormat.cpp
-    Formats/Impl/LineAsStringRowInputFormat.cpp
     Formats/Impl/MarkdownRowOutputFormat.cpp
     Formats/Impl/MsgPackRowInputFormat.cpp
     Formats/Impl/MsgPackRowOutputFormat.cpp
@@ -47,8 +44,6 @@ SRCS(
     Formats/Impl/PrettySpaceBlockOutputFormat.cpp
     Formats/Impl/ProtobufRowInputFormat.cpp
     Formats/Impl/ProtobufRowOutputFormat.cpp
-    Formats/Impl/RawBLOBRowInputFormat.cpp
-    Formats/Impl/RawBLOBRowOutputFormat.cpp
     Formats/Impl/RegexpRowInputFormat.cpp
     Formats/Impl/TabSeparatedRowInputFormat.cpp
     Formats/Impl/TabSeparatedRowOutputFormat.cpp
@@ -140,7 +135,7 @@ SRCS(
     Transforms/FillingTransform.cpp
     Transforms/FilterTransform.cpp
     Transforms/FinishSortingTransform.cpp
-    Transforms/JoiningTransform.cpp
+    Transforms/InflatingExpressionTransform.cpp
     Transforms/LimitByTransform.cpp
     Transforms/LimitsCheckingTransform.cpp
     Transforms/MaterializingTransform.cpp

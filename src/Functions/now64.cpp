@@ -11,16 +11,14 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int CANNOT_CLOCK_GETTIME;
 }
 
-namespace
-{
-
-Field nowSubsecond(UInt32 scale)
+static Field nowSubsecond(UInt32 scale)
 {
     static constexpr Int32 fractional_scale = 9;
 
@@ -84,14 +82,12 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result, size_t input_rows_count) const override
     {
-        auto & result_col = block[result];
+        auto & result_col = block.getByPosition(result);
         const UInt32 scale = assert_cast<const DataTypeDateTime64 *>(result_col.type.get())->getScale();
 
         result_col.column = result_col.type->createColumnConst(input_rows_count, nowSubsecond(scale));
     }
 };
-
-}
 
 void registerFunctionNow64(FunctionFactory & factory)
 {

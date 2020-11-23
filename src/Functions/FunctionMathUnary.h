@@ -124,7 +124,7 @@ private:
 
         executeInIterations(src_data.data(), dst_data.data(), size);
 
-        block[result].column = std::move(dst);
+        block.getByPosition(result).column = std::move(dst);
         return true;
     }
 
@@ -140,11 +140,11 @@ private:
         dst_data.resize(size);
 
         for (size_t i = 0; i < size; ++i)
-            dst_data[i] = DecimalUtils::convertTo<ReturnType>(src_data[i], scale);
+            dst_data[i] = convertFromDecimal<DataTypeDecimal<T>, DataTypeNumber<ReturnType>>(src_data[i], scale);
 
         executeInIterations(dst_data.data(), dst_data.data(), size);
 
-        block[result].column = std::move(dst);
+        block.getByPosition(result).column = std::move(dst);
         return true;
     }
 
@@ -152,7 +152,7 @@ private:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        const ColumnWithTypeAndName & col = block[arguments[0]];
+        const ColumnWithTypeAndName & col = block.getByPosition(arguments[0]);
 
         auto call = [&](const auto & types) -> bool
         {

@@ -5,7 +5,6 @@ namespace DB
 {
 
 class ExternalModelsLoader;
-class Context;
 
 /// Evaluate external model.
 /// First argument - model name, the others - model arguments.

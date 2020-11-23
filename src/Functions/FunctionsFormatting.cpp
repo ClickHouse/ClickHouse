@@ -9,7 +9,6 @@ void registerFunctionsFormatting(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionBitmaskToList>();
     factory.registerFunction<FunctionFormatReadableSize>();
-    factory.registerFunction<FunctionFormatReadableQuantity>();
 }
 
 }

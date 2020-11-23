@@ -1,4 +1,3 @@
-#pragma once
 #include "CacheDictionary.h"
 
 #include <Columns/ColumnsNumber.h>
