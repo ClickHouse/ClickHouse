@@ -26,7 +26,7 @@
 #include <Processors/NullSink.h>
 #include <Processors/Sources/SinkToOutputStream.h>
 #include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/Transforms/ConvertingTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <Storages/StorageDistributed.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/checkStackSize.h>
@@ -390,11 +390,15 @@ BlockIO InterpreterInsertQuery::execute()
     else if (query.select || query.watch)
     {
         const auto & header = out_streams.at(0)->getHeader();
+        auto actions_dag = ActionsDAG::makeConvertingActions(
+                res.pipeline.getHeader().getColumnsWithTypeAndName(),
+                header.getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Position);
+        auto actions = std::make_shared<ExpressionActions>(actions_dag);
 
         res.pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
         {
-            return std::make_shared<ConvertingTransform>(in_header, header,
-                    ConvertingTransform::MatchColumnsMode::Position);
+            return std::make_shared<ExpressionTransform>(in_header, actions);
         });
 
         res.pipeline.setSinks([&](const Block &, QueryPipeline::StreamType type) -> ProcessorPtr

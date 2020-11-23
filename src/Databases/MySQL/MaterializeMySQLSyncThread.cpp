@@ -5,7 +5,6 @@
 #if USE_MYSQL
 
 #include <Databases/MySQL/MaterializeMySQLSyncThread.h>
-
 #    include <cstdlib>
 #    include <random>
 #    include <Columns/ColumnTuple.h>
@@ -34,6 +33,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_MYSQL_VARIABLE;
+    extern const int SYNC_MYSQL_USER_ACCESS_ERROR;
+    extern const int UNKNOWN_DATABASE;
 }
 
 static constexpr auto MYSQL_BACKGROUND_THREAD_NAME = "MySQLDBSync";
@@ -214,10 +215,33 @@ void MaterializeMySQLSyncThread::stopSynchronization()
 
 void MaterializeMySQLSyncThread::startSynchronization()
 {
-    const auto & mysql_server_version = checkVariableAndGetVersion(pool.get());
+    try
+    {
+        const auto & mysql_server_version = checkVariableAndGetVersion(pool.get());
 
-    background_thread_pool = std::make_unique<ThreadFromGlobalPool>(
-        [this, mysql_server_version = mysql_server_version]() { synchronization(mysql_server_version); });
+        background_thread_pool = std::make_unique<ThreadFromGlobalPool>(
+            [this, mysql_server_version = mysql_server_version]() { synchronization(mysql_server_version); });
+    }
+    catch (...)
+    {
+        try
+        {
+            throw;
+        }
+        catch (mysqlxx::ConnectionFailed & e)
+        {
+            if (e.errnum() == ER_ACCESS_DENIED_ERROR
+                || e.errnum() == ER_DBACCESS_DENIED_ERROR)
+                throw Exception("MySQL SYNC USER ACCESS ERR: mysql sync user needs "
+                                "at least GLOBAL PRIVILEGES:'RELOAD, REPLICATION SLAVE, REPLICATION CLIENT' "
+                                "and SELECT PRIVILEGE on Database " + mysql_database_name
+                    , ErrorCodes::SYNC_MYSQL_USER_ACCESS_ERROR);
+            else if (e.errnum() == ER_BAD_DB_ERROR)
+                throw Exception("Unknown database '" + mysql_database_name + "' on MySQL", ErrorCodes::UNKNOWN_DATABASE);
+            else
+                throw;
+        }
+    }
 }
 
 static inline void cleanOutdatedTables(const String & database_name, const Context & context)
@@ -340,7 +364,7 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
                 connection->query("COMMIT").execute();
 
             client.connect();
-            client.startBinlogDumpGTID(randomNumber(), mysql_database_name, metadata.executed_gtid_set);
+            client.startBinlogDumpGTID(randomNumber(), mysql_database_name, metadata.executed_gtid_set, metadata.binlog_checksum);
             return metadata;
         }
         catch (...)
@@ -624,16 +648,27 @@ void MaterializeMySQLSyncThread::onEvent(Buffers & buffers, const BinlogEventPtr
         metadata.transaction(position_before_ddl, [&]() { buffers.commit(global_context); });
         metadata.transaction(client.getPosition(),[&](){ executeDDLAtomic(query_event); });
     }
-    else if (receive_event->header.type != HEARTBEAT_EVENT)
+    else
     {
-        const auto & dump_event_message = [&]()
+        /// MYSQL_UNHANDLED_EVENT
+        if (receive_event->header.type == ROTATE_EVENT)
         {
-            WriteBufferFromOwnString buf;
-            receive_event->dump(buf);
-            return buf.str();
-        };
+            /// Some behaviors(such as changing the value of "binlog_checksum") rotate the binlog file.
+            /// To ensure that the synchronization continues, we need to handle these events
+            metadata.fetchMasterVariablesValue(pool.get());
+            client.setBinlogChecksum(metadata.binlog_checksum);
+        }
+        else if (receive_event->header.type != HEARTBEAT_EVENT)
+        {
+            const auto & dump_event_message = [&]()
+            {
+                WriteBufferFromOwnString buf;
+                receive_event->dump(buf);
+                return buf.str();
+            };
 
-        LOG_DEBUG(log, "Skip MySQL event: \n {}", dump_event_message());
+            LOG_DEBUG(log, "Skip MySQL event: \n {}", dump_event_message());
+        }
     }
 }
 
