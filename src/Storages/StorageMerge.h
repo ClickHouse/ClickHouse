@@ -4,7 +4,6 @@
 
 #include <Common/OptimizedRegularExpression.h>
 #include <Storages/IStorage.h>
-#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -27,12 +26,12 @@ public:
     bool supportsFinal() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
 
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, const ASTPtr &) const override;
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const override;
 
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        const SelectQueryInfo & query_info,
+        SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
@@ -50,7 +49,7 @@ public:
 private:
     String source_database;
     OptimizedRegularExpression table_name_regexp;
-    Context global_context;
+    const Context & global_context;
 
     using StorageWithLockAndName = std::tuple<StoragePtr, TableLockHolder, String>;
     using StorageListWithLocks = std::list<StorageWithLockAndName>;
@@ -78,7 +77,7 @@ protected:
 
     Pipe createSources(
         const StorageMetadataPtr & metadata_snapshot,
-        const SelectQueryInfo & query_info,
+        SelectQueryInfo & query_info,
         const QueryProcessingStage::Enum & processed_stage,
         const UInt64 max_block_size,
         const Block & header,

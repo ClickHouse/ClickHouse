@@ -65,6 +65,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
 
+
 namespace ProfileEvents
 {
     extern const Event ContextLock;
@@ -153,7 +154,7 @@ public:
         }
         else if (it->second->key.first != context.client_info.current_user)
         {
-            throw Exception("Session belongs to a different user", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Session belongs to a different user", ErrorCodes::SESSION_IS_LOCKED);
         }
 
         /// Use existing session.
@@ -301,9 +302,11 @@ struct ContextShared
     mutable std::mutex zookeeper_mutex;
 
     mutable zkutil::ZooKeeperPtr zookeeper;                 /// Client for ZooKeeper.
+    ConfigurationPtr zookeeper_config;                      /// Stores zookeeper configs
 
     mutable std::mutex auxiliary_zookeepers_mutex;
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
+    ConfigurationPtr auxiliary_zookeepers_config;           /// Stores auxiliary zookeepers configs
 
     String interserver_io_host;                             /// The host name by which this server is available for other servers.
     UInt16 interserver_io_port = 0;                         /// and port.
@@ -333,9 +336,9 @@ struct ContextShared
     ReplicatedFetchList replicated_fetch_list;
     ConfigurationPtr users_config;                          /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
-    std::optional<BackgroundSchedulePool> buffer_flush_schedule_pool; /// A thread pool that can do background flush for Buffer tables.
-    std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
-    std::optional<BackgroundSchedulePool> distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
+    mutable std::optional<BackgroundSchedulePool> buffer_flush_schedule_pool; /// A thread pool that can do background flush for Buffer tables.
+    mutable std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
+    mutable std::optional<BackgroundSchedulePool> distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
@@ -363,8 +366,7 @@ struct ContextShared
     /// Initialized on demand (on distributed storages initialization) since Settings should be initialized
     std::unique_ptr<Clusters> clusters;
     ConfigurationPtr clusters_config;                        /// Stores updated configs
-    ConfigurationPtr zookeeper_config;                        /// Stores zookeeper configs
-    mutable std::mutex clusters_mutex;                        /// Guards clusters and clusters_config
+    mutable std::mutex clusters_mutex;                       /// Guards clusters and clusters_config
 
 #if USE_EMBEDDED_COMPILER
     std::shared_ptr<CompiledExpressionCache> compiled_expression_cache;
@@ -449,6 +451,8 @@ struct ContextShared
 
     void initializeTraceCollector(std::shared_ptr<TraceLog> trace_log)
     {
+        if (!trace_log)
+            return;
         if (hasTraceCollector())
             return;
 
@@ -480,7 +484,7 @@ Context Context::createGlobal(ContextShared * shared)
 
 void Context::initGlobal()
 {
-    DatabaseCatalog::init(this);
+    DatabaseCatalog::init(*this);
     TemporaryLiveViewCleaner::init(*this);
 }
 
@@ -596,7 +600,8 @@ VolumePtr Context::setTemporaryStorage(const String & path, const String & polic
     {
         StoragePolicyPtr tmp_policy = getStoragePolicySelector(lock)->get(policy_name);
         if (tmp_policy->getVolumes().size() != 1)
-             throw Exception("Policy " + policy_name + " is used temporary files, such policy should have exactly one volume", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+             throw Exception("Policy " + policy_name + " is used temporary files, such policy should have exactly one volume",
+                             ErrorCodes::NO_ELEMENTS_IN_CONFIG);
         shared->tmp_volume = tmp_policy->getVolume(0);
     }
 
@@ -1083,11 +1088,13 @@ String Context::getInitialQueryId() const
 void Context::setCurrentDatabaseNameInGlobalContext(const String & name)
 {
     if (global_context != this)
-        throw Exception("Cannot set current database for non global context, this method should be used during server initialization", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Cannot set current database for non global context, this method should be used during server initialization",
+                        ErrorCodes::LOGICAL_ERROR);
     auto lock = getLock();
 
     if (!current_database.empty())
-        throw Exception("Default database name cannot be changed in global context without server restart", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Default database name cannot be changed in global context without server restart",
+                        ErrorCodes::LOGICAL_ERROR);
 
     current_database = name;
 }
@@ -1394,7 +1401,7 @@ void Context::dropCaches() const
         shared->mark_cache->reset();
 }
 
-BackgroundSchedulePool & Context::getBufferFlushSchedulePool()
+BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const
 {
     auto lock = getLock();
     if (!shared->buffer_flush_schedule_pool)
@@ -1436,7 +1443,7 @@ BackgroundTaskSchedulingSettings Context::getBackgroundMoveTaskSchedulingSetting
     return task_settings;
 }
 
-BackgroundSchedulePool & Context::getSchedulePool()
+BackgroundSchedulePool & Context::getSchedulePool() const
 {
     auto lock = getLock();
     if (!shared->schedule_pool)
@@ -1447,7 +1454,7 @@ BackgroundSchedulePool & Context::getSchedulePool()
     return *shared->schedule_pool;
 }
 
-BackgroundSchedulePool & Context::getDistributedSchedulePool()
+BackgroundSchedulePool & Context::getDistributedSchedulePool() const
 {
     auto lock = getLock();
     if (!shared->distributed_schedule_pool)
@@ -1458,11 +1465,16 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool()
     return *shared->distributed_schedule_pool;
 }
 
+bool Context::hasDistributedDDL() const
+{
+    return getConfigRef().has("distributed_ddl");
+}
+
 void Context::setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker)
 {
     auto lock = getLock();
     if (shared->ddl_worker)
-        throw Exception("DDL background thread has already been initialized.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("DDL background thread has already been initialized", ErrorCodes::LOGICAL_ERROR);
     shared->ddl_worker = std::move(ddl_worker);
 }
 
@@ -1470,7 +1482,15 @@ DDLWorker & Context::getDDLWorker() const
 {
     auto lock = getLock();
     if (!shared->ddl_worker)
-        throw Exception("DDL background thread is not initialized.", ErrorCodes::LOGICAL_ERROR);
+    {
+        if (!hasZooKeeper())
+            throw Exception("There is no Zookeeper configuration in server config", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+
+        if (!hasDistributedDDL())
+            throw Exception("There is no DistributedDDL configuration in server config", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+
+        throw Exception("DDL background thread is not initialized", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+    }
     return *shared->ddl_worker;
 }
 
@@ -1494,10 +1514,16 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
     auto zookeeper = shared->auxiliary_zookeepers.find(name);
     if (zookeeper == shared->auxiliary_zookeepers.end())
     {
-        if (!getConfigRef().has("auxiliary_zookeepers." + name))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown auxiliary ZooKeeper name '{}'. If it's required it can be added to the section <auxiliary_zookeepers> in config.xml", name);
+        const auto & config = shared->auxiliary_zookeepers_config ? *shared->auxiliary_zookeepers_config : getConfigRef();
+        if (!config.has("auxiliary_zookeepers." + name))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Unknown auxiliary ZooKeeper name '{}'. If it's required it can be added to the section <auxiliary_zookeepers> in "
+                "config.xml",
+                name);
 
-        zookeeper->second = std::make_shared<zkutil::ZooKeeper>(getConfigRef(), "auxiliary_zookeepers." + name);
+        zookeeper
+            = shared->auxiliary_zookeepers.emplace(name, std::make_shared<zkutil::ZooKeeper>(config, "auxiliary_zookeepers." + name)).first;
     }
     else if (zookeeper->second->expired())
         zookeeper->second = zookeeper->second->startNewSession();
@@ -1511,16 +1537,37 @@ void Context::resetZooKeeper() const
     shared->zookeeper.reset();
 }
 
+static void reloadZooKeeperIfChangedImpl(const ConfigurationPtr & config, const std::string & config_name, zkutil::ZooKeeperPtr & zk)
+{
+    if (!zk || zk->configChanged(*config, config_name))
+        zk = std::make_shared<zkutil::ZooKeeper>(*config, config_name);
+}
+
 void Context::reloadZooKeeperIfChanged(const ConfigurationPtr & config) const
 {
     std::lock_guard lock(shared->zookeeper_mutex);
     shared->zookeeper_config = config;
+    reloadZooKeeperIfChangedImpl(config, "zookeeper", shared->zookeeper);
+}
 
-    if (!shared->zookeeper || shared->zookeeper->configChanged(*config, "zookeeper"))
+void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config)
+{
+    std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
+
+    shared->auxiliary_zookeepers_config = config;
+
+    for (auto it = shared->auxiliary_zookeepers.begin(); it != shared->auxiliary_zookeepers.end();)
     {
-        shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(*config, "zookeeper");
+        if (!config->has("auxiliary_zookeepers." + it->first))
+            it = shared->auxiliary_zookeepers.erase(it);
+        else
+        {
+            reloadZooKeeperIfChangedImpl(config, "auxiliary_zookeepers." + it->first, it->second);
+            ++it;
+        }
     }
 }
+
 
 bool Context::hasZooKeeper() const
 {
@@ -1961,20 +2008,19 @@ void Context::checkCanBeDropped(const String & database, const String & table, c
 
     String size_str = formatReadableSizeWithDecimalSuffix(size);
     String max_size_to_drop_str = formatReadableSizeWithDecimalSuffix(max_size_to_drop);
-    std::stringstream ostr;
-
-    ostr << "Table or Partition in " << backQuoteIfNeed(database) << "." << backQuoteIfNeed(table) << " was not dropped.\n"
-         << "Reason:\n"
-         << "1. Size (" << size_str << ") is greater than max_[table/partition]_size_to_drop (" << max_size_to_drop_str << ")\n"
-         << "2. File '" << force_file.path() << "' intended to force DROP "
-         << (force_file_exists ? "exists but not writeable (could not be removed)" : "doesn't exist") << "\n";
-
-    ostr << "How to fix this:\n"
-         << "1. Either increase (or set to zero) max_[table/partition]_size_to_drop in server config\n"
-         << "2. Either create forcing file " << force_file.path() << " and make sure that ClickHouse has write permission for it.\n"
-         << "Example:\nsudo touch '" << force_file.path() << "' && sudo chmod 666 '" << force_file.path() << "'";
-
-    throw Exception(ostr.str(), ErrorCodes::TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT);
+    throw Exception(ErrorCodes::TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT,
+                    "Table or Partition in {}.{} was not dropped.\nReason:\n"
+                    "1. Size ({}) is greater than max_[table/partition]_size_to_drop ({})\n"
+                    "2. File '{}' intended to force DROP {}\n"
+                    "How to fix this:\n"
+                    "1. Either increase (or set to zero) max_[table/partition]_size_to_drop in server config\n",
+                    "2. Either create forcing file {} and make sure that ClickHouse has write permission for it.\n"
+                    "Example:\nsudo touch '{}' && sudo chmod 666 '{}'",
+                    backQuoteIfNeed(database), backQuoteIfNeed(table),
+                    size_str, max_size_to_drop_str,
+                    force_file.path(), force_file_exists ? "exists but not writeable (could not be removed)" : "doesn't exist",
+                    force_file.path(),
+                    force_file.path(), force_file.path());
 }
 
 

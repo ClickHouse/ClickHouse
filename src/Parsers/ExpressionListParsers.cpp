@@ -55,6 +55,12 @@ const char * ParserComparisonExpression::operators[] =
     nullptr
 };
 
+const char * ParserComparisonExpression::overlapping_operators_to_skip[] =
+{
+    "IN PARTITION",
+    nullptr
+};
+
 const char * ParserLogicalNotExpression::operators[] =
 {
     "NOT", "not",
@@ -137,6 +143,14 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
             /// try to find any of the valid operators
 
             const char ** it;
+            Expected stub;
+            for (it = overlapping_operators_to_skip; *it; ++it)
+                if (ParserKeyword{*it}.checkWithoutMoving(pos, stub))
+                    break;
+
+            if (*it)
+                break;
+
             for (it = operators; *it; it += 2)
                 if (parseOperator(pos, *it, expected))
                     break;
@@ -721,6 +735,7 @@ bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 {
     ParserIdentifier id_parser;
     ParserLiteral literal_parser;
+    ParserFunction func_parser;
 
     ASTPtr identifier;
     ASTPtr value;
@@ -728,8 +743,8 @@ bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     if (!id_parser.parse(pos, identifier, expected))
         return false;
 
-    /// If it's not literal or identifier, than it's possible list of pairs
-    if (!literal_parser.parse(pos, value, expected) && !id_parser.parse(pos, value, expected))
+    /// If it's neither literal, nor identifier, nor function, than it's possible list of pairs
+    if (!func_parser.parse(pos, value, expected) && !literal_parser.parse(pos, value, expected) && !id_parser.parse(pos, value, expected))
     {
         ParserKeyValuePairsList kv_pairs_list;
         ParserToken open(TokenType::OpeningRoundBracket);

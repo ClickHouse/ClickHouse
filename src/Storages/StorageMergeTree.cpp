@@ -21,6 +21,7 @@
 #include <Storages/PartitionCommands.h>
 #include <Storages/MergeTree/MergeTreeBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
+#include <Storages/MergeTree/PartitionPruner.h>
 #include <Disks/StoragePolicy.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/checkDataPart.h>
@@ -45,6 +46,7 @@ namespace ErrorCodes
     extern const int CANNOT_ASSIGN_OPTIMIZE;
     extern const int TIMEOUT_EXCEEDED;
     extern const int UNKNOWN_POLICY;
+    extern const int NO_SUCH_DATA_PART;
 }
 
 namespace ActionLocks
@@ -97,6 +99,7 @@ void StorageMergeTree::startup()
 {
     clearOldPartsFromFilesystem();
     clearOldWriteAheadLogs();
+    clearEmptyParts();
 
     /// Temporary directories contain incomplete results of merges (after forced restart)
     ///  and don't allow to reinitialize them, so delete each of them immediately
@@ -171,17 +174,32 @@ StorageMergeTree::~StorageMergeTree()
     shutdown();
 }
 
+void StorageMergeTree::read(
+    QueryPlan & query_plan,
+    const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
+    SelectQueryInfo & query_info,
+    const Context & context,
+    QueryProcessingStage::Enum /*processed_stage*/,
+    size_t max_block_size,
+    unsigned num_streams)
+{
+    if (auto plan = reader.read(column_names, metadata_snapshot, query_info, context, max_block_size, num_streams))
+        query_plan = std::move(*plan);
+}
+
 Pipe StorageMergeTree::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    const SelectQueryInfo & query_info,
+    SelectQueryInfo & query_info,
     const Context & context,
-    QueryProcessingStage::Enum /*processed_stage*/,
+    QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
     const unsigned num_streams)
 {
-    return reader.read(column_names, metadata_snapshot, query_info,
-        context, max_block_size, num_streams);
+    QueryPlan plan;
+    read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+    return plan.convertToPipe();
 }
 
 std::optional<UInt64> StorageMergeTree::totalRows() const
@@ -192,31 +210,14 @@ std::optional<UInt64> StorageMergeTree::totalRows() const
 std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, const Context & context) const
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    const auto & partition_key = metadata_snapshot->getPartitionKey();
-    Names partition_key_columns = partition_key.column_names;
-    KeyCondition key_condition(
-        query_info, context, partition_key_columns, partition_key.expression, true /* single_point */, true /* strict */);
-    if (key_condition.alwaysUnknownOrTrue())
+    PartitionPruner partition_pruner(metadata_snapshot->getPartitionKey(), query_info, context, true /* strict */);
+    if (partition_pruner.isUseless())
         return {};
-    std::unordered_map<String, bool> partition_filter_map;
     size_t res = 0;
     auto lock = lockParts();
     for (const auto & part : getDataPartsStateRange(DataPartState::Committed))
     {
-        if (part->isEmpty())
-            continue;
-        const auto & partition_id = part->info.partition_id;
-        bool is_valid;
-        if (auto it = partition_filter_map.find(partition_id); it != partition_filter_map.end())
-            is_valid = it->second;
-        else
-        {
-            const auto & partition_value = part->partition.value;
-            std::vector<FieldRef> index_value(partition_value.begin(), partition_value.end());
-            is_valid = key_condition.mayBeTrueInRange(partition_value.size(), index_value.data(), index_value.data(), partition_key.data_types);
-            partition_filter_map.emplace(partition_id, is_valid);
-        }
-        if (is_valid)
+        if (!partition_pruner.canBePruned(part))
             res += part->rows_count;
     }
     return res;
@@ -554,12 +555,12 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
 
         for (const MutationCommand & command : entry.commands)
         {
-            std::stringstream ss;
-            formatAST(*command.ast, ss, false, true);
+            WriteBufferFromOwnString buf;
+            formatAST(*command.ast, buf, false, true);
             result.push_back(MergeTreeMutationStatus
             {
                 entry.file_name,
-                ss.str(),
+                buf.str(),
                 entry.create_time,
                 block_numbers_map,
                 parts_to_do_names,
@@ -640,6 +641,9 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
     auto data_settings = getSettings();
 
     FutureMergedMutatedPart future_part;
+
+    if (storage_settings.get()->assign_part_uuids)
+        future_part.uuid = UUIDHelpers::generateV4();
 
     /// You must call destructor with unlocked `currently_processing_in_background_mutex`.
     CurrentlyMergingPartsTaggerPtr merging_tagger;
@@ -795,6 +799,9 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
     size_t max_ast_elements = global_context.getSettingsRef().max_expanded_ast_elements;
 
     FutureMergedMutatedPart future_part;
+    if (storage_settings.get()->assign_part_uuids)
+        future_part.uuid = UUIDHelpers::generateV4();
+
     MutationCommands commands;
 
     CurrentlyMergingPartsTaggerPtr tagger;
@@ -947,6 +954,7 @@ std::optional<JobAndPool> StorageMergeTree::getDataProcessingJob()
             clearOldTemporaryDirectories();
             clearOldWriteAheadLogs();
             clearOldMutations();
+            clearEmptyParts();
         }, PoolType::MERGE_MUTATE};
     }
     return {};
@@ -1029,16 +1037,13 @@ bool StorageMergeTree::optimize(
         {
             if (!merge(true, partition_id, true, deduplicate, &disable_reason))
             {
-                std::stringstream message;
-                message << "Cannot OPTIMIZE table";
-                if (!disable_reason.empty())
-                    message << ": " << disable_reason;
-                else
-                    message << " by some reason.";
-                LOG_INFO(log, message.str());
+                constexpr const char * message = "Cannot OPTIMIZE table: {}";
+                if (disable_reason.empty())
+                    disable_reason = "unknown reason";
+                LOG_INFO(log, message, disable_reason);
 
                 if (context.getSettingsRef().optimize_throw_if_noop)
-                    throw Exception(message.str(), ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
+                    throw Exception(ErrorCodes::CANNOT_ASSIGN_OPTIMIZE, message, disable_reason);
                 return false;
             }
         }
@@ -1051,109 +1056,19 @@ bool StorageMergeTree::optimize(
 
         if (!merge(true, partition_id, final, deduplicate, &disable_reason))
         {
-            std::stringstream message;
-            message << "Cannot OPTIMIZE table";
-            if (!disable_reason.empty())
-                message << ": " << disable_reason;
-            else
-                message << " by some reason.";
-            LOG_INFO(log, message.str());
+            constexpr const char * message = "Cannot OPTIMIZE table: {}";
+            if (disable_reason.empty())
+                disable_reason = "unknown reason";
+            LOG_INFO(log, message, disable_reason);
 
             if (context.getSettingsRef().optimize_throw_if_noop)
-                throw Exception(message.str(), ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
+                throw Exception(ErrorCodes::CANNOT_ASSIGN_OPTIMIZE, message, disable_reason);
             return false;
         }
     }
 
     return true;
 }
-
-Pipe StorageMergeTree::alterPartition(
-    const ASTPtr & query,
-    const StorageMetadataPtr & metadata_snapshot,
-    const PartitionCommands & commands,
-    const Context & query_context)
-{
-    PartitionCommandsResultInfo result;
-    for (const PartitionCommand & command : commands)
-    {
-        PartitionCommandsResultInfo current_command_results;
-        switch (command.type)
-        {
-            case PartitionCommand::DROP_PARTITION:
-                checkPartitionCanBeDropped(command.partition);
-                dropPartition(command.partition, command.detach, query_context);
-                break;
-
-            case PartitionCommand::DROP_DETACHED_PARTITION:
-                dropDetached(command.partition, command.part, query_context);
-                break;
-
-            case PartitionCommand::ATTACH_PARTITION:
-                current_command_results = attachPartition(command.partition, command.part, query_context);
-                break;
-
-            case PartitionCommand::MOVE_PARTITION:
-            {
-                switch (*command.move_destination_type)
-                {
-                    case PartitionCommand::MoveDestinationType::DISK:
-                        movePartitionToDisk(command.partition, command.move_destination_name, command.part, query_context);
-                        break;
-
-                    case PartitionCommand::MoveDestinationType::VOLUME:
-                        movePartitionToVolume(command.partition, command.move_destination_name, command.part, query_context);
-                        break;
-
-                    case PartitionCommand::MoveDestinationType::TABLE:
-                        checkPartitionCanBeDropped(command.partition);
-                        String dest_database = query_context.resolveDatabase(command.to_database);
-                        auto dest_storage = DatabaseCatalog::instance().getTable({dest_database, command.to_table}, query_context);
-                        movePartitionToTable(dest_storage, command.partition, query_context);
-                        break;
-                }
-
-            }
-            break;
-
-            case PartitionCommand::REPLACE_PARTITION:
-            {
-                checkPartitionCanBeDropped(command.partition);
-                String from_database = query_context.resolveDatabase(command.from_database);
-                auto from_storage = DatabaseCatalog::instance().getTable({from_database, command.from_table}, query_context);
-                replacePartitionFrom(from_storage, command.partition, command.replace, query_context);
-            }
-            break;
-
-            case PartitionCommand::FREEZE_PARTITION:
-            {
-                auto lock = lockForShare(query_context.getCurrentQueryId(), query_context.getSettingsRef().lock_acquire_timeout);
-                current_command_results = freezePartition(command.partition, metadata_snapshot, command.with_name, query_context, lock);
-            }
-            break;
-
-            case PartitionCommand::FREEZE_ALL_PARTITIONS:
-            {
-                auto lock = lockForShare(query_context.getCurrentQueryId(), query_context.getSettingsRef().lock_acquire_timeout);
-                current_command_results = freezeAll(command.with_name, metadata_snapshot, query_context, lock);
-            }
-            break;
-
-            default:
-                IStorage::alterPartition(query, metadata_snapshot, commands, query_context); // should throw an exception.
-        }
-
-        for (auto & command_result : current_command_results)
-            command_result.command_type = command.typeToString();
-        result.insert(result.end(), current_command_results.begin(), current_command_results.end());
-    }
-
-    if (query_context.getSettingsRef().alter_partition_verbose_result)
-        return convertCommandsResultToSource(result);
-
-    return {};
-}
-
 
 ActionLock StorageMergeTree::stopMergesAndWait()
 {
@@ -1180,7 +1095,7 @@ ActionLock StorageMergeTree::stopMergesAndWait()
 }
 
 
-void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, const Context & context)
+void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, bool drop_part, const Context & context, bool throw_if_noop)
 {
     {
         /// Asks to complete merges and does not allow them to start.
@@ -1188,10 +1103,27 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, cons
         auto merge_blocker = stopMergesAndWait();
 
         auto metadata_snapshot = getInMemoryMetadataPtr();
-        String partition_id = getPartitionIDFromQuery(partition, context);
 
-        /// TODO: should we include PreComitted parts like in Replicated case?
-        auto parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+        MergeTreeData::DataPartsVector parts_to_remove;
+
+        if (drop_part)
+        {
+            String part_name = partition->as<ASTLiteral &>().value.safeGet<String>();
+            auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Committed});
+
+            if (part)
+                parts_to_remove.push_back(part);
+            else if (throw_if_noop)
+                throw Exception("Part " + part_name + " not found, won't try to drop it.", ErrorCodes::NO_SUCH_DATA_PART);
+            else
+                return;
+        }
+        else
+        {
+            String partition_id = getPartitionIDFromQuery(partition, context);
+            parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+        }
+
         // TODO should we throw an exception if parts_to_remove is empty?
         removePartsFromWorkingSet(parts_to_remove, true);
 
@@ -1206,9 +1138,9 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, cons
         }
 
         if (detach)
-            LOG_INFO(log, "Detached {} parts inside partition ID {}.", parts_to_remove.size(), partition_id);
+            LOG_INFO(log, "Detached {} parts.", parts_to_remove.size());
         else
-            LOG_INFO(log, "Removed {} parts inside partition ID {}.", parts_to_remove.size(), partition_id);
+            LOG_INFO(log, "Removed {} parts.", parts_to_remove.size());
     }
 
     clearOldPartsFromFilesystem();
@@ -1216,7 +1148,8 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, cons
 
 
 PartitionCommandsResultInfo StorageMergeTree::attachPartition(
-    const ASTPtr & partition, bool attach_part, const Context & context)
+    const ASTPtr & partition, const StorageMetadataPtr & /* metadata_snapshot */,
+    bool attach_part, const Context & context)
 {
     PartitionCommandsResultInfo results;
     PartsTemporaryRename renamed_parts(*this, "detached/");

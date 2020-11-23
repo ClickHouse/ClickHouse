@@ -38,7 +38,7 @@ public:
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
-        const SelectQueryInfo & query_info,
+        SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
@@ -67,12 +67,12 @@ public:
 protected:
     StorageRabbitMQ(
             const StorageID & table_id_,
-            Context & context_,
+            const Context & context_,
             const ColumnsDescription & columns_,
             std::unique_ptr<RabbitMQSettings> rabbitmq_settings_);
 
 private:
-    Context global_context;
+    const Context & global_context;
     Context rabbitmq_context;
     std::unique_ptr<RabbitMQSettings> rabbitmq_settings;
 
