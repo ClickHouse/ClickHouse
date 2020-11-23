@@ -7,7 +7,7 @@ toc_title: Функции для работы с кортежами
 
 ## Untuple {#untuple}
 
-Возвращает элементы [кортежа](../../sql-reference/data-types/tuple.md#tuplet1-t2) в место вызова.
+Выполняет синтаксическую подстановку элементов [кортежа](../../sql-reference/data-types/tuple.md#tuplet1-t2) в место вызова.
 
 **Синтаксис**
 
@@ -23,7 +23,7 @@ untuple(x)
 
 **Возвращаемое значение**
 
--   Элементы кортежа как самостоятельные значения.
+-   Нет.
 
 **Примеры**
 
@@ -83,4 +83,4 @@ SELECT untuple((* EXCEPT (v2, v3),)) FROM kv;
 
 -   [Tuple](../../sql-reference/data-types/tuple.md)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/functions/untuple-functions/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/functions/tuple-functions/) <!--hide-->

@@ -7,7 +7,7 @@ toc_title: Tuples
 
 ## Untuple {#untuple}
 
-Returns [tuple](../../sql-reference/data-types/tuple.md#tuplet1-t2) elements in the call location.
+Performs syntactic substitution of [tuple](../../sql-reference/data-types/tuple.md#tuplet1-t2) elements in the call location.
 
 **Syntax**
 
@@ -23,7 +23,7 @@ You can use the `EXCEPT` expression to skip columns as a result of the query.
 
 **Returned value**
 
--   Tuple elements as individual values.
+-   None.
 
 **Examples**
 
@@ -83,4 +83,4 @@ Result:
 
 -   [Tuple](../../sql-reference/data-types/tuple.md)
 
-[Original article](https://clickhouse.tech/docs/en/sql-reference/functions/untuple-functions/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/sql-reference/functions/tuple-functions/) <!--hide-->
