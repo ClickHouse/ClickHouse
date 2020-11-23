@@ -235,7 +235,7 @@ SELECT * REPLACE(i + 1 AS i) from columns_transformers;
 └─────┴────┴─────┘
 ```
 
-### Use Cases {#modifiers-use-cases}
+### Modifier Combinations {#modifier-combinations}
 
 You can use each modifier separately or combine them.
 
