@@ -2,9 +2,10 @@
 
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Disks/IDisk.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 
 namespace DB
 {
@@ -36,11 +37,20 @@ public:
         /// The same approach can be used recursively inside metadata.
         UInt8 min_compatible_version = 0;
 
+        /// Actual metadata.
+        UUID part_uuid = UUIDHelpers::Nil;
+
         void write(WriteBuffer & meta_out) const;
         void read(ReadBuffer & meta_in);
+
+    private:
+        static constexpr auto JSON_KEY_PART_UUID = "part_uuid";
+
+        String toJSON() const;
+        void fromJSON(const String & buf);
     };
 
-    constexpr static UInt8 WAL_VERSION = 0;
+    constexpr static UInt8 WAL_VERSION = 1;
     constexpr static auto WAL_FILE_NAME = "wal";
     constexpr static auto WAL_FILE_EXTENSION = ".bin";
     constexpr static auto DEFAULT_WAL_FILE_NAME = "wal.bin";
@@ -50,7 +60,7 @@ public:
 
     ~MergeTreeWriteAheadLog();
 
-    void addPart(const Block & block, const String & part_name);
+    void addPart(DataPartInMemoryPtr & part);
     void dropPart(const String & part_name);
     std::vector<MergeTreeMutableDataPartPtr> restore(const StorageMetadataPtr & metadata_snapshot);
 
