@@ -508,19 +508,30 @@ void TestKeeper::processingThread()
                 if (expired)
                     break;
 
-                if (info.watch)
-                {
-                    auto & watches_type = dynamic_cast<const ListRequest *>(info.request.get())
-                        ? list_watches
-                        : watches;
-
-                    watches_type[info.request->getPath()].emplace_back(std::move(info.watch));
-                }
 
                 ++zxid;
 
                 info.request->addRootPath(root_path);
                 auto [response, _] = info.request->process(container, zxid);
+
+                if (info.watch)
+                {
+                    /// To be compatible with real ZooKeeper we add watch if request was successful (i.e. node exists)
+                    /// or if it was exists request which allows to add watches for non existing nodes.
+                    if (response->error == Error::ZOK)
+                    {
+                        auto & watches_type = dynamic_cast<const ListRequest *>(info.request.get())
+                            ? list_watches
+                            : watches;
+
+                        watches_type[info.request->getPath()].emplace_back(std::move(info.watch));
+                    }
+                    else if (response->error == Error::ZNONODE && dynamic_cast<const ExistsRequest *>(info.request.get()))
+                    {
+                        watches[info.request->getPath()].emplace_back(std::move(info.watch));
+                    }
+                }
+
                 if (response->error == Error::ZOK)
                     info.request->processWatches(watches, list_watches);
 

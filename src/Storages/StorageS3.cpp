@@ -194,17 +194,17 @@ StorageS3::StorageS3(
     UInt64 min_upload_part_size_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    Context & context_,
+    const Context & context_,
     const String & compression_method_)
     : IStorage(table_id_)
     , uri(uri_)
-    , context_global(context_)
+    , global_context(context_.getGlobalContext())
     , format_name(format_name_)
     , min_upload_part_size(min_upload_part_size_)
     , compression_method(compression_method_)
     , name(uri_.storage_name)
 {
-    context_global.getRemoteHostFilter().checkURL(uri_.uri);
+    global_context.getRemoteHostFilter().checkURL(uri_.uri);
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
@@ -325,7 +325,7 @@ BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const StorageMet
 {
     return std::make_shared<StorageS3BlockOutputStream>(
         format_name, min_upload_part_size, metadata_snapshot->getSampleBlock(),
-        context_global, chooseCompressionMethod(uri.endpoint, compression_method),
+        global_context, chooseCompressionMethod(uri.endpoint, compression_method),
         client, uri.bucket, uri.key);
 }
 
