@@ -107,6 +107,7 @@ struct Settings;
     M(String, storage_policy, "default", "Name of storage disk policy", 0) \
     M(Bool, allow_nullable_key, false, "Allow Nullable types as primary keys.", 0) \
     M(Bool, remove_empty_parts, true, "Remove empty parts after they were pruned by TTL, mutation, or collapsing merge algorithm", 0) \
+    M(Bool, assign_part_uuids, false, "Generate UUIDs for parts. Before enabling check that all replicas support new format.", 0) \
     \
     /** Settings for testing purposes */ \
     M(Bool, randomize_part_type, false, "For testing purposes only. Randomizes part type between wide and compact", 0) \

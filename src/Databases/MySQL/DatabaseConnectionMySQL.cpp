@@ -13,6 +13,7 @@
 #    include <Databases/MySQL/FetchTablesColumnsList.h>
 #    include <Formats/MySQLBlockInputStream.h>
 #    include <IO/Operators.h>
+#    include <Interpreters/Context.h>
 #    include <Parsers/ASTCreateQuery.h>
 #    include <Parsers/ASTFunction.h>
 #    include <Parsers/ParserCreateQuery.h>
