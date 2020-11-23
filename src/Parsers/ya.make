@@ -117,7 +117,6 @@ SRCS(
     New/CharInputStream.cpp
     New/ClickHouseLexer.cpp
     New/ClickHouseParser.cpp
-    New/ClickHouseParserBaseVisitor.cpp
     New/ClickHouseParserVisitor.cpp
     New/LexerErrorListener.cpp
     New/ParseTreeVisitor.cpp
