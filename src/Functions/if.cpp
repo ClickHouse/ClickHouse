@@ -177,7 +177,7 @@ public:
 
 private:
     template <typename T0, typename T1>
-    static UInt32 decimalScale(ColumnsWithTypeAndName & arguments [[maybe_unused]])
+    static UInt32 decimalScale(const ColumnsWithTypeAndName & arguments [[maybe_unused]])
     {
         if constexpr (IsDecimalNumber<T0> && IsDecimalNumber<T1>)
         {
@@ -194,7 +194,7 @@ private:
     template <typename T0, typename T1, typename ColVecT0, typename ColVecT1>
     ColumnPtr executeRightType(
             const ColumnUInt8 * cond_col,
-            ColumnsWithTypeAndName & arguments,
+            const ColumnsWithTypeAndName & arguments,
             const ColVecT0 * col_left) const
     {
         using ResultType = typename NumberTraits::ResultOfIf<T0, T1>::Type;
@@ -219,7 +219,7 @@ private:
     template <typename T0, typename T1, typename ColVecT0, typename ColVecT1>
     ColumnPtr executeConstRightType(
             const ColumnUInt8 * cond_col,
-            ColumnsWithTypeAndName & arguments,
+            const ColumnsWithTypeAndName & arguments,
             const ColumnConst * col_left) const
     {
         using ResultType = typename NumberTraits::ResultOfIf<T0, T1>::Type;
@@ -244,7 +244,7 @@ private:
     template <typename T0, typename T1, typename ColVecT0, typename ColVecT1>
     ColumnPtr executeRightTypeArray(
         [[maybe_unused]] const ColumnUInt8 * cond_col,
-        [[maybe_unused]] ColumnsWithTypeAndName & arguments,
+        [[maybe_unused]] const ColumnsWithTypeAndName & arguments,
         [[maybe_unused]] const DataTypePtr result_type,
         [[maybe_unused]] const ColumnArray * col_left_array,
         [[maybe_unused]] size_t input_rows_count) const
@@ -299,7 +299,7 @@ private:
     template <typename T0, typename T1, typename ColVecT0, typename ColVecT1>
     ColumnPtr executeConstRightTypeArray(
         [[maybe_unused]] const ColumnUInt8 * cond_col,
-        [[maybe_unused]] ColumnsWithTypeAndName & arguments,
+        [[maybe_unused]] const ColumnsWithTypeAndName & arguments,
         [[maybe_unused]] const DataTypePtr & result_type,
         [[maybe_unused]] const ColumnConst * col_left_const_array,
         [[maybe_unused]] size_t input_rows_count) const
@@ -353,7 +353,7 @@ private:
     }
 
     template <typename T0, typename T1>
-    ColumnPtr executeTyped(const ColumnUInt8 * cond_col, ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    ColumnPtr executeTyped(const ColumnUInt8 * cond_col, const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         using ColVecT0 = std::conditional_t<IsDecimalNumber<T0>, ColumnDecimal<T0>, ColumnVector<T0>>;
         using ColVecT1 = std::conditional_t<IsDecimalNumber<T1>, ColumnDecimal<T1>, ColumnVector<T1>>;
@@ -395,7 +395,7 @@ private:
         if (!left_ok)
             return nullptr;
 
-        ColumnWithTypeAndName & right_column_typed = arguments[2];
+        const ColumnWithTypeAndName & right_column_typed = arguments[2];
         if (!right_column)
             throw Exception("Illegal column " + right_column_typed.column->getName() + " of third argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
@@ -403,7 +403,7 @@ private:
         return right_column;
     }
 
-    static ColumnPtr executeString(const ColumnUInt8 * cond_col, ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type)
+    static ColumnPtr executeString(const ColumnUInt8 * cond_col, const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type)
     {
         const IColumn * col_then_untyped = arguments[1].column.get();
         const IColumn * col_else_untyped = arguments[2].column.get();
@@ -492,7 +492,7 @@ private:
         return nullptr;
     }
 
-    static ColumnPtr executeGenericArray(const ColumnUInt8 * cond_col, ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type)
+    static ColumnPtr executeGenericArray(const ColumnUInt8 * cond_col, const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type)
     {
         /// For generic implementation, arrays must be of same type.
         if (!arguments[1].type->equals(*arguments[2].type))
@@ -532,7 +532,7 @@ private:
         return nullptr;
     }
 
-    ColumnPtr executeTuple(ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    ColumnPtr executeTuple(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         /// Calculate function for each corresponding elements of tuples.
 
@@ -577,7 +577,7 @@ private:
     }
 
     static ColumnPtr executeGeneric(
-        const ColumnUInt8 * cond_col, ColumnsWithTypeAndName & arguments, size_t input_rows_count)
+        const ColumnUInt8 * cond_col, const ColumnsWithTypeAndName & arguments, size_t input_rows_count)
     {
         /// Convert both columns to the common type (if needed).
         const ColumnWithTypeAndName & arg1 = arguments[1];
@@ -642,7 +642,7 @@ private:
         return result_column;
     }
 
-    ColumnPtr executeForConstAndNullableCondition(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const
+    ColumnPtr executeForConstAndNullableCondition(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const
     {
         const ColumnWithTypeAndName & arg_cond = arguments[0];
         bool cond_is_null = arg_cond.column->onlyNull();
@@ -744,7 +744,7 @@ private:
         return column;
     }
 
-    ColumnPtr executeForNullableThenElse(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    ColumnPtr executeForNullableThenElse(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         const ColumnWithTypeAndName & arg_cond = arguments[0];
         const ColumnWithTypeAndName & arg_then = arguments[1];
@@ -808,7 +808,7 @@ private:
             materializeColumnIfConst(result_nested_column), materializeColumnIfConst(result_null_mask));
     }
 
-    ColumnPtr executeForNullThenElse(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    ColumnPtr executeForNullThenElse(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         const ColumnWithTypeAndName & arg_cond = arguments[0];
         const ColumnWithTypeAndName & arg_then = arguments[1];
@@ -923,7 +923,7 @@ public:
         return getLeastSupertype({arguments[1], arguments[2]});
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         ColumnPtr res;
         if (   (res = executeForConstAndNullableCondition(arguments, result_type, input_rows_count))

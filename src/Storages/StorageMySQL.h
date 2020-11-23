@@ -8,7 +8,6 @@
 
 #    include <ext/shared_ptr_helper.h>
 
-#    include <Interpreters/Context.h>
 #    include <Storages/IStorage.h>
 #    include <mysqlxx/Pool.h>
 
@@ -57,7 +56,7 @@ private:
     std::string on_duplicate_clause;
 
     mysqlxx::Pool pool;
-    Context global_context;
+    const Context & global_context;
 };
 
 }
