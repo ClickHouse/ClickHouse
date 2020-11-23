@@ -208,7 +208,7 @@ Poco::Net::SocketAddress makeSocketAddress(const std::string & host, UInt16 port
     return socket_address;
 }
 
-Poco::Net::SocketAddress Server::socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure)
+Poco::Net::SocketAddress Server::socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure) const
 {
     auto address = makeSocketAddress(host, port, &logger());
 #if !defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION < 0x01090100
@@ -229,7 +229,7 @@ Poco::Net::SocketAddress Server::socketBindListen(Poco::Net::ServerSocket & sock
     return address;
 }
 
-void Server::createServer(const std::string & listen_host, const char * port_name, bool listen_try, CreateServerFunc && func)
+void Server::createServer(const std::string & listen_host, const char * port_name, bool listen_try, CreateServerFunc && func) const
 {
     /// For testing purposes, user may omit tcp_port or http_port or https_port in configuration file.
     if (!config().has(port_name))

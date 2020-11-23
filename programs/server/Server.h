@@ -67,10 +67,10 @@ private:
 
 private:
 
-    Poco::Net::SocketAddress socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure = false);
+    Poco::Net::SocketAddress socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure = false) const;
 
     using CreateServerFunc = std::function<void(UInt16)>;
-    void createServer(const std::string & listen_host, const char * port_name, bool listen_try, CreateServerFunc && func);
+    void createServer(const std::string & listen_host, const char * port_name, bool listen_try, CreateServerFunc && func) const;
 };
 
 }
