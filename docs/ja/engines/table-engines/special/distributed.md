@@ -85,13 +85,13 @@ logs – The cluster name in the server's config file.
 
 パラメータ `host`, `port`、および必要に応じて `user`, `password`, `secure`, `compression` サーバーごとに指定されます:
 - `host` – The address of the remote server. You can use either the domain or the IPv4 or IPv6 address. If you specify the domain, the server makes a DNS request when it starts, and the result is stored as long as the server is running. If the DNS request fails, the server doesn't start. If you change the DNS record, restart the server.
-- `port` – The TCP port for messenger activity (‘tcp\_port’ 設定では、通常9000に設定されています）。 Http\_portと混同しないでください。
+- `port` – The TCP port for messenger activity (‘tcp_port’ 設定では、通常9000に設定されています）。 Http_portと混同しないでください。
 - `user` – Name of the user for connecting to a remote server. Default value: default. This user must have access to connect to the specified server. Access is configured in the users.xml file. For more information, see the section [アクセス権](../../../operations/access-rights.md).
 - `password` – The password for connecting to a remote server (not masked). Default value: empty string.
 - `secure` -接続にsslを使用します。 `port` = 9440. サーバーがリッスンする `<tcp_port_secure>9440</tcp_port_secure>` 正しい証明書を持っています。
 - `compression` -データ圧縮を使用します。 デフォルト値:true。
 
-When specifying replicas, one of the available replicas will be selected for each of the shards when reading. You can configure the algorithm for load balancing (the preference for which replica to access) – see the [load\_balancing](../../../operations/settings/settings.md#settings-load_balancing) 設定。
+When specifying replicas, one of the available replicas will be selected for each of the shards when reading. You can configure the algorithm for load balancing (the preference for which replica to access) – see the [load_balancing](../../../operations/settings/settings.md#settings-load_balancing) 設定。
 サーバーとの接続が確立されていない場合は、短いタイムアウトで接続しようとします。 接続に失敗した場合は、すべてのレプリカに対して次のレプリカが選択されます。 すべてのレプリカで接続試行が失敗した場合、その試行は同じ方法で何度か繰り返されます。
 リモートサーバーは接続を受け入れるかもしれませんが、動作しないか、または不十分に動作する可能性があります。
 
@@ -113,13 +113,13 @@ The Distributed engine requires writing clusters to the config file. Clusters fr
 
 各シャードには、設定ファイルで定義された重みを設定できます。 デフォルトでは、重みは重みと等しくなります。 データは、シャードの重みに比例する量でシャードに分散されます。 たとえば、シャードが二つあり、最初のシャードが9の重みを持ち、次のシャードが10の重みを持つ場合、最初のシャードは行の9/19部分に送信され、次のシャー
 
-各シャードは、 ‘internal\_replication’ 設定ファイルで定義されたパラメータ。
+各シャードは、 ‘internal_replication’ 設定ファイルで定義されたパラメータ。
 
 このパラメータが ‘true’ 書き込み操作は、最初の正常なレプリカを選択し、それにデータを書き込みます。 分散テーブルの場合は、この代替を使用します “looks at” 複製されたテーブル。 言い換えれば、データが書き込まれるテーブルがそれ自体を複製する場合。
 
 に設定されている場合 ‘false’ データはすべてのレプリカに書き込まれます。 本質的に、これは分散テーブルがデータ自体を複製することを意味します。 これは、レプリケートされたテーブルを使用するよりも悪いことです。
 
-データの行が送信されるシャードを選択するために、シャーディング式が分析され、残りの部分がシャードの総重量で除算されます。 この行は、残りの半分の間隔に対応するシャードに送信されます。 ‘prev\_weight’ に ‘prev\_weights + weight’,ここで ‘prev\_weights’ は、最小の数を持つ破片の総重量です。 ‘weight’ この破片の重量です。 たとえば、シャードが二つあり、最初のシャードの重みが9で、次のシャードの重みが10である場合、行は範囲\[0,9)の残りのシャードの最初のシャードに送信され、
+データの行が送信されるシャードを選択するために、シャーディング式が分析され、残りの部分がシャードの総重量で除算されます。 この行は、残りの半分の間隔に対応するシャードに送信されます。 ‘prev_weight’ に ‘prev_weights + weight’,ここで ‘prev_weights’ は、最小の数を持つ破片の総重量です。 ‘weight’ この破片の重量です。 たとえば、シャードが二つあり、最初のシャードの重みが9で、次のシャードの重みが10である場合、行は範囲\[0,9)の残りのシャードの最初のシャードに送信され、
 
 シャーディング式には、整数を返す定数およびテーブル列の任意の式を使用できます。 たとえば、次の式を使用できます ‘rand()’ データのランダム分布の場合、または ‘UserID’ ユーザーのIDを分割することからの残りの部分による分配のために（単一のユーザーのデータは単一のシャード上に存在し、ユーザーによる実行と結合を簡素化する）。 いずれかの列が十分に均等に分散されていない場合は、ハッシュ関数intHash64(UserID)でラップできます。
 
@@ -132,11 +132,11 @@ SELECT queries are sent to all the shards and work regardless of how data is dis
 -   特定のキーによるデータの結合(INまたはJOIN)を必要とするクエリが使用されます。 このキーによってデータがシャードされる場合は、GLOBAL INまたはGLOBAL JOINの代わりにlocal INまたはJOINを使用できます。
 -   多数のサーバーが、多数の小さなクエリ（個々のクライアント-ウェブサイト、広告主、またはパートナーのクエリ）で使用されます（数百以上）。 小さなクエリがクラスタ全体に影響を与えないようにするには、単一のシャード上の単一のクライアントのデータを検索することが理にかなってい また、我々はYandexのでやったように。Metricaでは、biレベルのシャーディングを設定できます：クラスタ全体を次のように分割します “layers” ここで、レイヤーは複数のシャードで構成されます。 単一のクライアントのデータは単一のレイヤー上にありますが、必要に応じてシャードをレイヤーに追加することができ、データはランダムに分散されます。 分散テーブルはレイヤごとに作成され、グローバルクエリ用に単一の共有分散テーブルが作成されます。
 
-データは非同期に書き込まれます。 テーブルに挿入すると、データブロックはローカルファイルシステムに書き込まれます。 データはできるだけ早くバックグラウンドでリモートサーバーに送信されます。 データを送信するための期間は、 [distributed\_directory\_monitor\_sleep\_time\_ms](../../../operations/settings/settings.md#distributed_directory_monitor_sleep_time_ms) と [distributed\_directory\_monitor\_max\_sleep\_time\_ms](../../../operations/settings/settings.md#distributed_directory_monitor_max_sleep_time_ms) 設定。 その `Distributed` エンジンは、挿入されたデータを含む各ファイルを別々に送信しますが、 [distributed\_directory\_monitor\_batch\_inserts](../../../operations/settings/settings.md#distributed_directory_monitor_batch_inserts) 設定。 この設定の改善にクラスターの性能をより一層の活用地域のサーバやネットワーク資源です。 を確認しておきましょうか否かのデータが正常に送信されるチェックリストファイル(データまたは間に-をはさんだ)はテーブルディレクトリ: `/var/lib/clickhouse/data/database/table/`.
+データは非同期に書き込まれます。 テーブルに挿入すると、データブロックはローカルファイルシステムに書き込まれます。 データはできるだけ早くバックグラウンドでリモートサーバーに送信されます。 データを送信するための期間は、 [distributed_directory_monitor_sleep_time_ms](../../../operations/settings/settings.md#distributed_directory_monitor_sleep_time_ms) と [distributed_directory_monitor_max_sleep_time_ms](../../../operations/settings/settings.md#distributed_directory_monitor_max_sleep_time_ms) 設定。 その `Distributed` エンジンは、挿入されたデータを含む各ファイルを別々に送信しますが、 [distributed_directory_monitor_batch_inserts](../../../operations/settings/settings.md#distributed_directory_monitor_batch_inserts) 設定。 この設定の改善にクラスターの性能をより一層の活用地域のサーバやネットワーク資源です。 を確認しておきましょうか否かのデータが正常に送信されるチェックリストファイル(データまたは間に-をはさんだ)はテーブルディレクトリ: `/var/lib/clickhouse/data/database/table/`.
 
 分散テーブルへの挿入後にサーバーが存在しなくなった場合、またはデバイスの障害後などに大まかな再起動が行われた場合は、挿入されたデータが失われ テーブルディレクトリで破損したデータ部分が検出されると、その部分は ‘broken’ 使用されなくなりました。
 
-Max\_parallel\_replicasオプションを有効にすると、単一のシャード内のすべてのレプリカでクエリ処理が並列化されます。 詳細については [max\_parallel\_replicas](../../../operations/settings/settings.md#settings-max_parallel_replicas).
+Max_parallel_replicasオプションを有効にすると、単一のシャード内のすべてのレプリカでクエリ処理が並列化されます。 詳細については [max_parallel_replicas](../../../operations/settings/settings.md#settings-max_parallel_replicas).
 
 ## 仮想列 {#virtual-columns}
 

@@ -13,7 +13,7 @@ from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
-import rabbitmq_pb2
+from . import rabbitmq_pb2
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
@@ -103,7 +103,7 @@ def rabbitmq_cluster():
         global rabbitmq_id
         cluster.start()
         rabbitmq_id = instance.cluster.rabbitmq_docker_id
-        print("rabbitmq_id is {}".format(rabbitmq_id))
+        print(("rabbitmq_id is {}".format(rabbitmq_id)))
         instance.query('CREATE DATABASE test')
 
         yield cluster
@@ -537,14 +537,14 @@ def test_rabbitmq_big_message(rabbitmq_cluster):
 @pytest.mark.timeout(420)
 def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
     NUM_CONSUMERS = 10
-    NUM_QUEUES = 2
+    NUM_QUEUES = 10
 
     instance.query('''
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'test_sharding',
-                     rabbitmq_num_queues = 2,
+                     rabbitmq_num_queues = 10,
                      rabbitmq_num_consumers = 10,
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n';
@@ -617,7 +617,7 @@ def test_rabbitmq_mv_combo(rabbitmq_cluster):
                      rabbitmq_exchange_name = 'combo',
                      rabbitmq_queue_base = 'combo',
                      rabbitmq_num_consumers = 2,
-                     rabbitmq_num_queues = 2,
+                     rabbitmq_num_queues = 5,
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n';
     ''')
@@ -879,7 +879,7 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
                      rabbitmq_queue_base = 'over',
                      rabbitmq_exchange_type = 'direct',
                      rabbitmq_num_consumers = 5,
-                     rabbitmq_num_queues = 2,
+                     rabbitmq_num_queues = 10,
                      rabbitmq_max_block_size = 10000,
                      rabbitmq_routing_key_list = 'over',
                      rabbitmq_format = 'TSV',
@@ -957,7 +957,7 @@ def test_rabbitmq_direct_exchange(rabbitmq_cluster):
 
     num_tables = 5
     for consumer_id in range(num_tables):
-        print("Setting up table {}".format(consumer_id))
+        print(("Setting up table {}".format(consumer_id)))
         instance.query('''
             DROP TABLE IF EXISTS test.direct_exchange_{0};
             DROP TABLE IF EXISTS test.direct_exchange_{0}_mv;
@@ -1030,7 +1030,7 @@ def test_rabbitmq_fanout_exchange(rabbitmq_cluster):
 
     num_tables = 5
     for consumer_id in range(num_tables):
-        print("Setting up table {}".format(consumer_id))
+        print(("Setting up table {}".format(consumer_id)))
         instance.query('''
             DROP TABLE IF EXISTS test.fanout_exchange_{0};
             DROP TABLE IF EXISTS test.fanout_exchange_{0}_mv;
@@ -1097,7 +1097,7 @@ def test_rabbitmq_topic_exchange(rabbitmq_cluster):
 
     num_tables = 5
     for consumer_id in range(num_tables):
-        print("Setting up table {}".format(consumer_id))
+        print(("Setting up table {}".format(consumer_id)))
         instance.query('''
             DROP TABLE IF EXISTS test.topic_exchange_{0};
             DROP TABLE IF EXISTS test.topic_exchange_{0}_mv;
@@ -1116,7 +1116,7 @@ def test_rabbitmq_topic_exchange(rabbitmq_cluster):
         '''.format(consumer_id))
 
     for consumer_id in range(num_tables):
-        print("Setting up table {}".format(num_tables + consumer_id))
+        print(("Setting up table {}".format(num_tables + consumer_id)))
         instance.query('''
             DROP TABLE IF EXISTS test.topic_exchange_{0};
             DROP TABLE IF EXISTS test.topic_exchange_{0}_mv;
@@ -1195,7 +1195,7 @@ def test_rabbitmq_hash_exchange(rabbitmq_cluster):
     num_tables = 4
     for consumer_id in range(num_tables):
         table_name = 'rabbitmq_consumer{}'.format(consumer_id)
-        print("Setting up {}".format(table_name))
+        print(("Setting up {}".format(table_name)))
         instance.query('''
             DROP TABLE IF EXISTS test.{0};
             DROP TABLE IF EXISTS test.{0}_mv;
@@ -1353,7 +1353,7 @@ def test_rabbitmq_headers_exchange(rabbitmq_cluster):
 
     num_tables_to_receive = 2
     for consumer_id in range(num_tables_to_receive):
-        print("Setting up table {}".format(consumer_id))
+        print(("Setting up table {}".format(consumer_id)))
         instance.query('''
             DROP TABLE IF EXISTS test.headers_exchange_{0};
             DROP TABLE IF EXISTS test.headers_exchange_{0}_mv;
@@ -1372,7 +1372,7 @@ def test_rabbitmq_headers_exchange(rabbitmq_cluster):
 
     num_tables_to_ignore = 2
     for consumer_id in range(num_tables_to_ignore):
-        print("Setting up table {}".format(consumer_id + num_tables_to_receive))
+        print(("Setting up table {}".format(consumer_id + num_tables_to_receive)))
         instance.query('''
             DROP TABLE IF EXISTS test.headers_exchange_{0};
             DROP TABLE IF EXISTS test.headers_exchange_{0}_mv;
@@ -1570,7 +1570,7 @@ def test_rabbitmq_many_consumers_to_each_queue(rabbitmq_cluster):
 
     num_tables = 4
     for table_id in range(num_tables):
-        print("Setting up table {}".format(table_id))
+        print(("Setting up table {}".format(table_id)))
         instance.query('''
             DROP TABLE IF EXISTS test.many_consumers_{0};
             DROP TABLE IF EXISTS test.many_consumers_{0}_mv;
@@ -1722,7 +1722,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'consumer_reconnect',
                      rabbitmq_num_consumers = 10,
-                     rabbitmq_num_queues = 2,
+                     rabbitmq_num_queues = 10,
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n';
     ''')
@@ -1864,5 +1864,5 @@ def test_rabbitmq_commit_on_block_write(rabbitmq_cluster):
 
 if __name__ == '__main__':
     cluster.start()
-    raw_input("Cluster created, press any key to destroy...")
+    input("Cluster created, press any key to destroy...")
     cluster.shutdown()

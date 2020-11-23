@@ -7,6 +7,7 @@
 namespace DB
 {
 
+template <bool without_www>
 struct ExtractFirstSignificantSubdomain
 {
     static size_t getReserveLengthForElement() { return 10; }
@@ -18,7 +19,7 @@ struct ExtractFirstSignificantSubdomain
 
         Pos tmp;
         size_t domain_length;
-        ExtractDomain<true>::execute(data, size, tmp, domain_length);
+        ExtractDomain<without_www>::execute(data, size, tmp, domain_length);
 
         if (domain_length == 0)
             return;

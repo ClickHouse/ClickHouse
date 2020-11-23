@@ -42,6 +42,7 @@ def setup_module(module):
     dictionaries = []
     main_configs = []
     main_configs.append(os.path.join('configs', 'disable_ssl_verification.xml'))
+    main_configs.append(os.path.join('configs', 'log_conf.xml'))
     
     for fname in os.listdir(DICT_CONFIG_PATH):
         dictionaries.append(os.path.join(DICT_CONFIG_PATH, fname))

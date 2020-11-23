@@ -24,7 +24,7 @@
 假定字符串以UTF-8编码组成的文本，返回此字符串的Unicode字符长度。如果传入的字符串不是UTF-8编码，则函数可能返回一个预期外的值（不会抛出异常）。
 结果类型是UInt64。
 
-## char\_length,CHAR\_LENGTH {#char-length-char-length}
+## char_length,CHAR_LENGTH {#char-length-char-length}
 
 假定字符串以UTF-8编码组成的文本，返回此字符串的Unicode字符长度。如果传入的字符串不是UTF-8编码，则函数可能返回一个预期外的值（不会抛出异常）。
 结果类型是UInt64。
@@ -68,7 +68,7 @@
 
 参数：
 
--   input\_string — 任何一个[字符串](../../sql-reference/functions/string-functions.md)类型的对象。
+-   input_string — 任何一个[字符串](../../sql-reference/functions/string-functions.md)类型的对象。
 
 返回值： 有效的UTF-8字符串。
 

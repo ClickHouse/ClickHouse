@@ -1,3 +1,4 @@
+#pragma once
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 

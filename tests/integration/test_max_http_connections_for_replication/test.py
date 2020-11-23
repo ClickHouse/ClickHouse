@@ -44,12 +44,12 @@ def start_small_cluster():
 
 def test_single_endpoint_connections_count(start_small_cluster):
     def task(count):
-        print("Inserting ten times from {}".format(count))
-        for i in xrange(count, count + 10):
+        print(("Inserting ten times from {}".format(count)))
+        for i in range(count, count + 10):
             node1.query("insert into test_table values ('2017-06-16', {}, 0)".format(i))
 
     p = Pool(10)
-    p.map(task, xrange(0, 100, 10))
+    p.map(task, range(0, 100, 10))
 
     assert_eq_with_retry(node1, "select count() from test_table", "100")
     assert_eq_with_retry(node2, "select count() from test_table", "100")
@@ -97,17 +97,17 @@ def start_big_cluster():
 
 def test_multiple_endpoint_connections_count(start_big_cluster):
     def task(count):
-        print("Inserting ten times from {}".format(count))
+        print(("Inserting ten times from {}".format(count)))
         if (count / 10) % 2 == 1:
             node = node3
         else:
             node = node4
 
-        for i in xrange(count, count + 10):
+        for i in range(count, count + 10):
             node.query("insert into test_table values ('2017-06-16', {}, 0)".format(i))
 
     p = Pool(10)
-    p.map(task, xrange(0, 100, 10))
+    p.map(task, range(0, 100, 10))
 
     assert_eq_with_retry(node3, "select count() from test_table", "100")
     assert_eq_with_retry(node4, "select count() from test_table", "100")

@@ -82,7 +82,7 @@ def add_policy(node, name, volumes):
     root = tree.getroot()
     new_policy = ET.Element(name)
     new_volumes = ET.Element("volumes")
-    for volume, disks in volumes.items():
+    for volume, disks in list(volumes.items()):
         new_volume = ET.Element(volume)
         for disk in disks:
             new_disk = ET.Element("disk")

@@ -1,7 +1,7 @@
 # This test is a subset of the 01223_dist_on_dist.
 # (just in case, with real separate instances).
 
-from __future__ import print_function
+
 
 import pytest
 from helpers.cluster import ClickHouseCluster
@@ -51,7 +51,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-@pytest.mark.parametrize("node", NODES.values())
+@pytest.mark.parametrize("node", list(NODES.values()))
 @pytest.mark.parametrize("source",
                          ["distributed_over_distributed_table", "cluster('test_cluster', default, distributed_table)"])
 class TestDistributedOverDistributedSuite:

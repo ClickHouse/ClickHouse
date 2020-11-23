@@ -1,4 +1,4 @@
-<test max_ignored_relative_change="0.3">
+<test>
     <preconditions>
         <table_exists>hits_10m_single</table_exists>
     </preconditions>
@@ -18,13 +18,13 @@
             -- do not select anything because we only need column types
             LIMIT 0
     </create_query>
-    <fill_query>SET max_insert_threads=8</fill_query>
     <fill_query>SYSTEM STOP MERGES</fill_query>
 
     <query>
         INSERT INTO hits_mv
         SELECT CounterID, EventDate, UserID, Title
         FROM hits_10m_single
+        SETTINGS max_insert_threads=8
     </query>
 
     <drop_query>SYSTEM START MERGES</drop_query>

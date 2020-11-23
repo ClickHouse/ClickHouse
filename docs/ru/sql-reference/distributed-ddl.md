@@ -1,6 +1,6 @@
 ---
 toc_priority: 32
-toc_title: Распределенные DDL запросы
+toc_title: "\u0420\u0430\u0441\u043f\u0440\u0435\u0434\u0435\u043b\u0435\u043d\u043d\u044b\u0435\u0020\u0044\u0044\u004c\u0020\u0437\u0430\u043f\u0440\u043e\u0441\u044b\u000a"
 ---
 
 # Распределенные DDL запросы (секция ON CLUSTER) {#raspredelennye-ddl-zaprosy-sektsiia-on-cluster}

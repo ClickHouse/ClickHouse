@@ -44,7 +44,7 @@ class MySQLNodeInstance:
                     res = "\n".join(rows)
                 return res
 
-            if isinstance(execution_query, (str, bytes, unicode)):
+            if isinstance(execution_query, (str, bytes)):
                 return execute(execution_query)
             else:
                 return [execute(q) for q in execution_query]
@@ -256,7 +256,7 @@ def test_mysql_types(started_cluster, case_name, mysql_type, expected_ch_type, m
             res = node.query(query, **kwargs)
             return res if isinstance(res, int) else res.rstrip('\n\r')
 
-        if isinstance(query, (str, bytes, unicode)):
+        if isinstance(query, (str, bytes)):
             return do_execute(query)
         else:
             return [do_execute(q) for q in query]

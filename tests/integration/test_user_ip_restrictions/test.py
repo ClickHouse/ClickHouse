@@ -63,7 +63,7 @@ def test_ipv4(setup_cluster):
     except AssertionError:
         raise
     except Exception as ex:
-        print ex
+        print(ex)
 
 
 def test_ipv6(setup_cluster):
@@ -72,7 +72,7 @@ def test_ipv6(setup_cluster):
             ["bash", "-c", "/usr/bin/clickhouse client --host 2001:3984:3989::1:1000 --query 'select 1'"],
             privileged=True, user='root')
     except Exception as ex:
-        print ex
+        print(ex)
         assert False, "allowed client with 2001:3984:3989:0:0:0:1:1111 cannot connect to server with allowed mask '2001:3984:3989:0:0:0:0:0/112'"
 
     try:
@@ -90,4 +90,4 @@ def test_ipv6(setup_cluster):
     except AssertionError:
         raise
     except Exception as ex:
-        print ex
+        print(ex)

@@ -27,7 +27,7 @@ def test_cluster(request):
 
         # Check query log to ensure that DDL queries are not executed twice
         time.sleep(1.5)
-        for instance in cluster.instances.values():
+        for instance in list(cluster.instances.values()):
             cluster.ddl_check_there_are_no_dublicates(instance)
 
         cluster.pm_random_drops.heal_all()
@@ -133,12 +133,12 @@ CREATE TABLE IF NOT EXISTS all_merge_64 ON CLUSTER '{cluster}' (p Date, i Int64,
 ENGINE = Distributed('{cluster}', default, merge, i)
 """)
 
-    for i in xrange(0, 4, 2):
+    for i in range(0, 4, 2):
         k = (i / 2) * 2
         test_cluster.instances['ch{}'.format(i + 1)].query("INSERT INTO merge (i) VALUES ({})({})".format(k, k + 1))
 
     assert TSV(instance.query("SELECT i FROM all_merge_32 ORDER BY i")) == TSV(
-        ''.join(['{}\n'.format(x) for x in xrange(4)]))
+        ''.join(['{}\n'.format(x) for x in range(4)]))
 
     time.sleep(5)
     test_cluster.ddl_check_query(instance, "ALTER TABLE merge ON CLUSTER '{cluster}' MODIFY COLUMN i Int64")
@@ -147,19 +147,19 @@ ENGINE = Distributed('{cluster}', default, merge, i)
                                  "ALTER TABLE merge ON CLUSTER '{cluster}' ADD COLUMN s String DEFAULT toString(i) FORMAT TSV")
 
     assert TSV(instance.query("SELECT i, s FROM all_merge_64 ORDER BY i")) == TSV(
-        ''.join(['{}\t{}\n'.format(x, x) for x in xrange(4)]))
+        ''.join(['{}\t{}\n'.format(x, x) for x in range(4)]))
 
-    for i in xrange(0, 4, 2):
+    for i in range(0, 4, 2):
         k = (i / 2) * 2 + 4
         test_cluster.instances['ch{}'.format(i + 1)].query(
             "INSERT INTO merge (p, i) VALUES (31, {})(31, {})".format(k, k + 1))
 
     assert TSV(instance.query("SELECT i, s FROM all_merge_64 ORDER BY i")) == TSV(
-        ''.join(['{}\t{}\n'.format(x, x) for x in xrange(8)]))
+        ''.join(['{}\t{}\n'.format(x, x) for x in range(8)]))
 
     test_cluster.ddl_check_query(instance, "ALTER TABLE merge ON CLUSTER '{cluster}' DETACH PARTITION 197002")
     assert TSV(instance.query("SELECT i, s FROM all_merge_64 ORDER BY i")) == TSV(
-        ''.join(['{}\t{}\n'.format(x, x) for x in xrange(4)]))
+        ''.join(['{}\t{}\n'.format(x, x) for x in range(4)]))
 
     test_cluster.ddl_check_query(instance, "DROP TABLE merge ON CLUSTER '{cluster}'")
     test_cluster.ddl_check_query(instance, "DROP TABLE all_merge_32 ON CLUSTER '{cluster}'")
@@ -170,7 +170,7 @@ def test_macro(test_cluster):
     instance = test_cluster.instances['ch2']
     test_cluster.ddl_check_query(instance, "CREATE TABLE tab ON CLUSTER '{cluster}' (value UInt8) ENGINE = Memory")
 
-    for i in xrange(4):
+    for i in range(4):
         test_cluster.insert_reliable(test_cluster.instances['ch{}'.format(i + 1)],
                                      "INSERT INTO tab VALUES ({})".format(i))
 
@@ -359,6 +359,6 @@ def test_replicated_without_arguments(test_cluster):
 
 if __name__ == '__main__':
     with contextmanager(test_cluster)() as ctx_cluster:
-        for name, instance in ctx_cluster.instances.items():
-            print name, instance.ip_address
-        raw_input("Cluster created, press any key to destroy...")
+        for name, instance in list(ctx_cluster.instances.items()):
+            print(name, instance.ip_address)
+        input("Cluster created, press any key to destroy...")

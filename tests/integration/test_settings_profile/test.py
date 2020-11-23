@@ -59,7 +59,7 @@ def test_smoke():
         "SET max_memory_usage = 120000000", user="robin")
     assert system_settings_profile("xyz") == [["xyz", "local directory", 1, 0, "['robin']", "[]"]]
     assert system_settings_profile_elements(profile_name="xyz") == [
-        ["xyz", "\N", "\N", 0, "max_memory_usage", 100000001, 90000000, 110000000, "\N", "\N"]]
+        ["xyz", "\\N", "\\N", 0, "max_memory_usage", 100000001, 90000000, 110000000, "\\N", "\\N"]]
 
     instance.query("ALTER SETTINGS PROFILE xyz TO NONE")
     assert instance.query(
@@ -81,7 +81,7 @@ def test_smoke():
     assert "Setting max_memory_usage shouldn't be greater than 110000000" in instance.query_and_get_error(
         "SET max_memory_usage = 120000000", user="robin")
     assert system_settings_profile_elements(user_name="robin") == [
-        ["\N", "robin", "\N", 0, "\N", "\N", "\N", "\N", "\N", "xyz"]]
+        ["\\N", "robin", "\\N", 0, "\\N", "\\N", "\\N", "\\N", "\\N", "xyz"]]
 
     instance.query("ALTER USER robin SETTINGS NONE")
     assert instance.query("SHOW CREATE USER robin") == "CREATE USER robin\n"
@@ -108,10 +108,10 @@ def test_settings_from_granted_role():
         "SET max_memory_usage = 120000000", user="robin")
     assert system_settings_profile("xyz") == [["xyz", "local directory", 2, 0, "[]", "[]"]]
     assert system_settings_profile_elements(profile_name="xyz") == [
-        ["xyz", "\N", "\N", 0, "max_memory_usage", 100000001, "\N", 110000000, "\N", "\N"],
-        ["xyz", "\N", "\N", 1, "max_ast_depth", 2000, "\N", "\N", "\N", "\N"]]
+        ["xyz", "\\N", "\\N", 0, "max_memory_usage", 100000001, "\\N", 110000000, "\\N", "\\N"],
+        ["xyz", "\\N", "\\N", 1, "max_ast_depth", 2000, "\\N", "\\N", "\\N", "\\N"]]
     assert system_settings_profile_elements(role_name="worker") == [
-        ["\N", "\N", "worker", 0, "\N", "\N", "\N", "\N", "\N", "xyz"]]
+        ["\\N", "\\N", "worker", 0, "\\N", "\\N", "\\N", "\\N", "\\N", "xyz"]]
 
     instance.query("REVOKE worker FROM robin")
     assert instance.query("SELECT value FROM system.settings WHERE name = 'max_memory_usage'",
@@ -159,10 +159,10 @@ def test_inheritance():
 
     assert system_settings_profile("xyz") == [["xyz", "local directory", 1, 0, "[]", "[]"]]
     assert system_settings_profile_elements(profile_name="xyz") == [
-        ["xyz", "\N", "\N", 0, "max_memory_usage", 100000002, "\N", "\N", 1, "\N"]]
+        ["xyz", "\\N", "\\N", 0, "max_memory_usage", 100000002, "\\N", "\\N", 1, "\\N"]]
     assert system_settings_profile("alpha") == [["alpha", "local directory", 1, 0, "['robin']", "[]"]]
     assert system_settings_profile_elements(profile_name="alpha") == [
-        ["alpha", "\N", "\N", 0, "\N", "\N", "\N", "\N", "\N", "xyz"]]
+        ["alpha", "\\N", "\\N", 0, "\\N", "\\N", "\\N", "\\N", "\\N", "xyz"]]
     assert system_settings_profile_elements(user_name="robin") == []
 
 

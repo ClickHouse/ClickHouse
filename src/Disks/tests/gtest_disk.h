@@ -1,3 +1,4 @@
+#pragma once
 #include <Disks/DiskLocal.h>
 #include <Disks/DiskMemory.h>
 #include <Disks/IDisk.h>

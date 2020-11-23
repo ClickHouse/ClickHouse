@@ -216,7 +216,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
             if (!jobs.empty())
             {
-                job = jobs.top().job;
+                job = std::move(jobs.top().job);
                 jobs.pop();
             }
             else
@@ -234,10 +234,16 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
                     std::is_same_v<Thread, std::thread> ? CurrentMetrics::GlobalThreadActive : CurrentMetrics::LocalThreadActive);
 
                 job();
+                /// job should be reset before decrementing scheduled_jobs to
+                /// ensure that the Job destroyed before wait() returns.
                 job = {};
             }
             catch (...)
             {
+                /// job should be reset before decrementing scheduled_jobs to
+                /// ensure that the Job destroyed before wait() returns.
+                job = {};
+
                 {
                     std::unique_lock lock(mutex);
                     if (!first_exception)

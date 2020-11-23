@@ -26,7 +26,7 @@ def prepare():
     node.exec_in_container([
         "bash",
         "-c",
-        "python2 /http_server.py --data-path={tbl} --schema=http --host=localhost --port=5555".format(
+        "python3 /http_server.py --data-path={tbl} --schema=http --host=localhost --port=5555".format(
             tbl=path)
     ], detach=True)
 

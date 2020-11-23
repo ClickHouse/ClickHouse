@@ -7,7 +7,7 @@ namespace DB
 
 void AddingDefaultBlockOutputStream::write(const Block & block)
 {
-    output->write(addMissingDefaults(block, output_block.getNamesAndTypesList(), column_defaults, context));
+    output->write(addMissingDefaults(block, output_block.getNamesAndTypesList(), columns, context));
 }
 
 void AddingDefaultBlockOutputStream::flush()

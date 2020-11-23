@@ -98,7 +98,7 @@ def test_mysql_client(mysql_client, server_address):
         -e "SELECT 1;"
     '''.format(host=server_address, port=server_port), demux=True)
 
-    assert stdout == '\n'.join(['1', '1', ''])
+    assert stdout.decode() == '\n'.join(['1', '1', ''])
 
     code, (stdout, stderr) = mysql_client.exec_run('''
         mysql --protocol tcp -h {host} -P {port} default -u default --password=123
@@ -106,13 +106,13 @@ def test_mysql_client(mysql_client, server_address):
         -e "SELECT 'тест' as b;"
     '''.format(host=server_address, port=server_port), demux=True)
 
-    assert stdout == '\n'.join(['a', '1', 'b', 'тест', ''])
+    assert stdout.decode() == '\n'.join(['a', '1', 'b', 'тест', ''])
 
     code, (stdout, stderr) = mysql_client.exec_run('''
         mysql --protocol tcp -h {host} -P {port} default -u default --password=abc -e "select 1 as a;"
     '''.format(host=server_address, port=server_port), demux=True)
 
-    assert stderr == 'mysql: [Warning] Using a password on the command line interface can be insecure.\n' \
+    assert stderr.decode() == 'mysql: [Warning] Using a password on the command line interface can be insecure.\n' \
                      'ERROR 516 (00000): default: Authentication failed: password is incorrect or there is no user with such name\n'
 
     code, (stdout, stderr) = mysql_client.exec_run('''
@@ -122,8 +122,8 @@ def test_mysql_client(mysql_client, server_address):
         -e "use system2;"
     '''.format(host=server_address, port=server_port), demux=True)
 
-    assert stdout == 'count()\n1\n'
-    assert stderr[0:182] == "mysql: [Warning] Using a password on the command line interface can be insecure.\n" \
+    assert stdout.decode() == 'count()\n1\n'
+    assert stderr[0:182].decode() == "mysql: [Warning] Using a password on the command line interface can be insecure.\n" \
                             "ERROR 81 (00000) at line 1: Code: 81, e.displayText() = DB::Exception: Database system2 doesn't exist"
 
     code, (stdout, stderr) = mysql_client.exec_run('''
@@ -140,7 +140,7 @@ def test_mysql_client(mysql_client, server_address):
         -e "SELECT * FROM tmp ORDER BY tmp_column;"
     '''.format(host=server_address, port=server_port), demux=True)
 
-    assert stdout == '\n'.join(['column', '0', '0', '1', '1', '5', '5', 'tmp_column', '0', '1', ''])
+    assert stdout.decode() == '\n'.join(['column', '0', '0', '1', '1', '5', '5', 'tmp_column', '0', '1', ''])
 
 
 def test_mysql_client_exception(mysql_client, server_address):
@@ -150,7 +150,7 @@ def test_mysql_client_exception(mysql_client, server_address):
         -e "CREATE TABLE default.t1_remote_mysql AS mysql('127.0.0.1:10086','default','t1_local','default','');"
     '''.format(host=server_address, port=server_port), demux=True)
 
-    assert stderr[0:266] == "mysql: [Warning] Using a password on the command line interface can be insecure.\n" \
+    assert stderr[0:266].decode() == "mysql: [Warning] Using a password on the command line interface can be insecure.\n" \
                             "ERROR 1000 (00000) at line 1: Poco::Exception. Code: 1000, e.code() = 2002, e.displayText() = mysqlxx::ConnectionFailed: Can't connect to MySQL server on '127.0.0.1' (115) ((nullptr):0)"
 
 
@@ -188,14 +188,14 @@ def test_mysql_replacement_query(mysql_client, server_address):
         --password=123 -e "select database();"
     '''.format(host=server_address, port=server_port), demux=True)
     assert code == 0
-    assert stdout == 'database()\ndefault\n'
+    assert stdout.decode() == 'database()\ndefault\n'
 
     code, (stdout, stderr) = mysql_client.exec_run('''
         mysql --protocol tcp -h {host} -P {port} default -u default
         --password=123 -e "select DATABASE();"
     '''.format(host=server_address, port=server_port), demux=True)
     assert code == 0
-    assert stdout == 'DATABASE()\ndefault\n'
+    assert stdout.decode() == 'DATABASE()\ndefault\n'
 
 
 def test_mysql_explain(mysql_client, server_address):
@@ -238,6 +238,7 @@ def test_mysql_federated(mysql_server, server_address):
         node.query('''INSERT INTO mysql_federated.test VALUES (0), (1), (5)''', settings={"password": "123"})
 
         def check_retryable_error_in_stderr(stderr):
+            stderr = stderr.decode()
             return ("Can't connect to local MySQL server through socket" in stderr
                     or "MySQL server has gone away" in stderr
                     or "Server shutdown in progress" in stderr)
@@ -252,8 +253,8 @@ def test_mysql_federated(mysql_server, server_address):
         '''.format(host=server_address, port=server_port), demux=True)
 
         if code != 0:
-            print("stdout", stdout)
-            print("stderr", stderr)
+            print(("stdout", stdout))
+            print(("stderr", stderr))
             if try_num + 1 < retries and check_retryable_error_in_stderr(stderr):
                 time.sleep(1)
                 continue
@@ -266,14 +267,14 @@ def test_mysql_federated(mysql_server, server_address):
         '''.format(host=server_address, port=server_port), demux=True)
 
         if code != 0:
-            print("stdout", stdout)
-            print("stderr", stderr)
+            print(("stdout", stdout))
+            print(("stderr", stderr))
             if try_num + 1 < retries and check_retryable_error_in_stderr(stderr):
                 time.sleep(1)
                 continue
         assert code == 0
 
-        assert stdout == '\n'.join(['col', '0', '1', '5', ''])
+        assert stdout.decode() == '\n'.join(['col', '0', '1', '5', ''])
 
         code, (stdout, stderr) = mysql_server.exec_run('''
             mysql
@@ -282,14 +283,14 @@ def test_mysql_federated(mysql_server, server_address):
         '''.format(host=server_address, port=server_port), demux=True)
 
         if code != 0:
-            print("stdout", stdout)
-            print("stderr", stderr)
+            print(("stdout", stdout))
+            print(("stderr", stderr))
             if try_num + 1 < retries and check_retryable_error_in_stderr(stderr):
                 time.sleep(1)
                 continue
         assert code == 0
 
-        assert stdout == '\n'.join(['col', '0', '0', '1', '1', '5', '5', ''])
+        assert stdout.decode() == '\n'.join(['col', '0', '0', '1', '1', '5', '5', ''])
 
 
 def test_mysql_set_variables(mysql_client, server_address):
@@ -362,7 +363,7 @@ def test_python_client(server_address):
 
 def test_golang_client(server_address, golang_container):
     # type: (str, Container) -> None
-    with open(os.path.join(SCRIPT_DIR, 'golang.reference')) as fp:
+    with open(os.path.join(SCRIPT_DIR, 'golang.reference'), 'rb') as fp:
         reference = fp.read()
 
     code, (stdout, stderr) = golang_container.exec_run(
@@ -370,7 +371,7 @@ def test_golang_client(server_address, golang_container):
         'abc'.format(host=server_address, port=server_port), demux=True)
 
     assert code == 1
-    assert stderr == "Error 81: Database abc doesn't exist\n"
+    assert stderr.decode() == "Error 81: Database abc doesn't exist\n"
 
     code, (stdout, stderr) = golang_container.exec_run(
         './main --host {host} --port {port} --user default --password 123 --database '
@@ -391,31 +392,31 @@ def test_php_client(server_address, php_container):
     code, (stdout, stderr) = php_container.exec_run(
         'php -f test.php {host} {port} default 123'.format(host=server_address, port=server_port), demux=True)
     assert code == 0
-    assert stdout == 'tables\n'
+    assert stdout.decode() == 'tables\n'
 
     code, (stdout, stderr) = php_container.exec_run(
         'php -f test_ssl.php {host} {port} default 123'.format(host=server_address, port=server_port), demux=True)
     assert code == 0
-    assert stdout == 'tables\n'
+    assert stdout.decode() == 'tables\n'
 
     code, (stdout, stderr) = php_container.exec_run(
         'php -f test.php {host} {port} user_with_double_sha1 abacaba'.format(host=server_address, port=server_port),
         demux=True)
     assert code == 0
-    assert stdout == 'tables\n'
+    assert stdout.decode() == 'tables\n'
 
     code, (stdout, stderr) = php_container.exec_run(
         'php -f test_ssl.php {host} {port} user_with_double_sha1 abacaba'.format(host=server_address, port=server_port),
         demux=True)
     assert code == 0
-    assert stdout == 'tables\n'
+    assert stdout.decode() == 'tables\n'
 
 
 def test_mysqljs_client(server_address, nodejs_container):
     code, (_, stderr) = nodejs_container.exec_run(
         'node test.js {host} {port} user_with_sha256 abacaba'.format(host=server_address, port=server_port), demux=True)
     assert code == 1
-    assert 'MySQL is requesting the sha256_password authentication method, which is not supported.' in stderr
+    assert 'MySQL is requesting the sha256_password authentication method, which is not supported.' in stderr.decode()
 
     code, (_, stderr) = nodejs_container.exec_run(
         'node test.js {host} {port} user_with_empty_password ""'.format(host=server_address, port=server_port),
@@ -449,21 +450,21 @@ def test_java_client(server_address, java_container):
         'java JavaConnectorTest --host {host} --port {port} --user user_with_empty_password --database '
         'default'.format(host=server_address, port=server_port), demux=True)
     assert code == 0
-    assert stdout == reference
+    assert stdout.decode() == reference
 
     # non-empty password passed.
     code, (stdout, stderr) = java_container.exec_run(
         'java JavaConnectorTest --host {host} --port {port} --user default --password 123 --database '
         'default'.format(host=server_address, port=server_port), demux=True)
     assert code == 0
-    assert stdout == reference
+    assert stdout.decode() == reference
 
     # double-sha1 password passed.
     code, (stdout, stderr) = java_container.exec_run(
         'java JavaConnectorTest --host {host} --port {port} --user user_with_double_sha1 --password abacaba  --database '
         'default'.format(host=server_address, port=server_port), demux=True)
     assert code == 0
-    assert stdout == reference
+    assert stdout.decode() == reference
 
 
 def test_types(server_address):

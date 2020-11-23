@@ -1,7 +1,7 @@
 ---
 title: SELECT Query
 toc_folder_title: SELECT
-toc_priority: 33
+toc_priority: 32
 toc_title: Overview
 ---
 
@@ -20,7 +20,7 @@ SELECT [DISTINCT] expr_list
 [GLOBAL] [ANY|ALL|ASOF] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI] JOIN (subquery)|table (ON <expr_list>)|(USING <column_list>)
 [PREWHERE expr]
 [WHERE expr]
-[GROUP BY expr_list] [WITH TOTALS]
+[GROUP BY expr_list] [WITH ROLLUP|WITH CUBE] [WITH TOTALS]
 [HAVING expr]
 [ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr]
 [LIMIT [offset_value, ]n BY columns]

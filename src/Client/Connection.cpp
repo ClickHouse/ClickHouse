@@ -22,9 +22,9 @@
 #include <Interpreters/ClientInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <Processors/Pipe.h>
+#include <Processors/QueryPipeline.h>
 #include <Processors/ISink.h>
 #include <Processors/Executors/PipelineExecutor.h>
-#include <Processors/ConcatProcessor.h>
 #include <pcg_random.hpp>
 
 #if !defined(ARCADIA_BUILD)
@@ -73,6 +73,11 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         {
 #if USE_SSL
             socket = std::make_unique<Poco::Net::SecureStreamSocket>();
+
+            /// we resolve the ip when we open SecureStreamSocket, so to make Server Name Indication (SNI)
+            /// work we need to pass host name separately. It will be send into TLS Hello packet to let
+            /// the server know which host we want to talk with (single IP can process requests for multiple hosts using SNI).
+            static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setPeerHostName(host);
 #else
             throw Exception{"tcp_secure protocol is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
@@ -646,16 +651,17 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
         PipelineExecutorPtr executor;
         auto on_cancel = [& executor]() { executor->cancel(); };
 
-        if (elem->pipe->numOutputPorts() > 1)
-            elem->pipe->addTransform(std::make_shared<ConcatProcessor>(elem->pipe->getHeader(), elem->pipe->numOutputPorts()));
-
-        auto sink = std::make_shared<ExternalTableDataSink>(elem->pipe->getHeader(), *this, *elem, std::move(on_cancel));
-        DB::connect(*elem->pipe->getOutputPort(0), sink->getPort());
-
-        auto processors = Pipe::detachProcessors(std::move(*elem->pipe));
-        processors.push_back(sink);
-
-        executor = std::make_shared<PipelineExecutor>(processors);
+        QueryPipeline pipeline;
+        pipeline.init(std::move(*elem->pipe));
+        pipeline.resize(1);
+        auto sink = std::make_shared<ExternalTableDataSink>(pipeline.getHeader(), *this, *elem, std::move(on_cancel));
+        pipeline.setSinks([&](const Block &, QueryPipeline::StreamType type) -> ProcessorPtr
+        {
+            if (type != QueryPipeline::StreamType::Main)
+                return nullptr;
+            return sink;
+        });
+        executor = pipeline.execute();
         executor->execute(/*num_threads = */ 1);
 
         auto read_rows = sink->getNumReadRows();

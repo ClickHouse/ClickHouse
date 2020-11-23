@@ -26,7 +26,7 @@ endif ()
 if (NOT USE_INTERNAL_LLVM_LIBRARY)
     set (LLVM_PATHS "/usr/local/lib/llvm")
 
-    foreach(llvm_v 9 8)
+    foreach(llvm_v 10 9 8)
         if (NOT LLVM_FOUND)
             find_package (LLVM ${llvm_v} CONFIG PATHS ${LLVM_PATHS})
         endif ()

@@ -15,7 +15,7 @@ import os
 import pty
 import re
 import time
-from Queue import Queue, Empty
+from queue import Queue, Empty
 from subprocess import Popen
 from threading import Thread, Event
 
@@ -118,7 +118,7 @@ class IO(object):
         return self.write(data + eol)
 
     def write(self, data):
-        return os.write(self.master, data)
+        return os.write(self.master, data.encode())
 
     def expect(self, pattern, timeout=None, escape=False):
         self.match = None
@@ -201,7 +201,8 @@ def spawn(command):
 def reader(process, out, queue, kill_event):
     while True:
         try:
-            data = os.read(out, 65536)
+            # TODO: there are some issues with 1<<16 buffer size
+            data = os.read(out, 1<<17).decode(errors='replace')
             queue.put(data)
         except:
             if kill_event.is_set():
