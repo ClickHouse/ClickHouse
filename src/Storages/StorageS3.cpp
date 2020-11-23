@@ -217,7 +217,7 @@ StorageS3::StorageS3(
 
     client = S3::ClientFactory::instance().create(
         uri_.endpoint, uri_.is_virtual_hosted_style, access_key_id_, secret_access_key_, std::move(settings.headers),
-        context_.getRemoteHostFilter(), context_.getGlobalContext());
+        context_.getRemoteHostFilter(), context_.getGlobalContext().getSettingsRef().s3_max_redirects);
 }
 
 

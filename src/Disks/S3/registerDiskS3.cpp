@@ -133,7 +133,7 @@ void registerDiskS3(DiskFactory & factory)
             config.getString(config_prefix + ".access_key_id", ""),
             config.getString(config_prefix + ".secret_access_key", ""),
             context.getRemoteHostFilter(),
-            context.getGlobalContext());
+            context.getGlobalContext().getSettingsRef().s3_max_redirects);
 
         String metadata_path = config.getString(config_prefix + ".metadata_path", context.getPath() + "disks/" + name + "/");
 
