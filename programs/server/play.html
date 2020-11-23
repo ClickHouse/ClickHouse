@@ -22,11 +22,7 @@
 
     <!-- Development Roadmap:
 
-    1. Add indication that the query was sent and when the query has been finished.
-    Do not use any animated spinners. Just a text or check mark.
-    Eliminate race conditions (results from the previous query should be ignored on arrival, the previous request should be cancelled).
-
-    2. Support readonly servers.
+    1. Support readonly servers.
     Check if readonly = 1 (with SELECT FROM system.settings) to avoid sending settings. It can be done once on address/credentials change.
     It can be done in background, e.g. wait 100 ms after address/credentials change and do the check.
     Also it can provide visual indication that credentials are correct.
