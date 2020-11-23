@@ -1,13 +1,13 @@
 ---
 toc_priority: 66
-toc_title: Untuple
+toc_title: Tuples
 ---
 
-# Untuple Functions {#untuple-functions}
+# Functions for Working with Tuples {#tuple-functions}
 
 ## Untuple {#untuple}
 
-Performs syntactic substitution of [tuple](../../sql-reference/data-types/tuple.md#tuplet1-t2) elements in the call location.
+Returns [tuple](../../sql-reference/data-types/tuple.md#tuplet1-t2) elements in the call location.
 
 **Syntax**
 
@@ -23,7 +23,7 @@ You can use the `EXCEPT` expression to skip columns as a result of the query.
 
 **Returned value**
 
--   None.
+-   Tuple elements as individual values.
 
 **Examples**
 
@@ -39,27 +39,7 @@ Input table:
 └─────┴────┴────┴────┴────┴────┴───────────┘
 ```
 
-Example of using a `tuple` function as a parameter `untuple` function:
-
-Query:
-
-``` sql
-SELECT untuple(tuple(v2,v3)) FROM kv;
-```
-
-Result:
-
-``` text
-┌─v2─┬─v3─┐
-│ 20 │ 40 │
-│ 65 │ 70 │
-│ 30 │ 20 │
-│ 12 │  7 │
-│ 50 │ 70 │
-└────┴────┘
-```
-
-Example of using a column `Tuple` type as a parameter `untuple` function:
+Example of using a `Tuple`-type column as the `untuple` function parameter:
 
 Query:
 
