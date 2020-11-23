@@ -523,9 +523,9 @@ public:
     BackgroundTaskSchedulingSettings getBackgroundProcessingTaskSchedulingSettings() const;
     BackgroundTaskSchedulingSettings getBackgroundMoveTaskSchedulingSettings() const;
 
-    BackgroundSchedulePool & getBufferFlushSchedulePool();
-    BackgroundSchedulePool & getSchedulePool();
-    BackgroundSchedulePool & getDistributedSchedulePool();
+    BackgroundSchedulePool & getBufferFlushSchedulePool() const;
+    BackgroundSchedulePool & getSchedulePool() const;
+    BackgroundSchedulePool & getDistributedSchedulePool() const;
 
     /// Has distributed_ddl configuration or not.
     bool hasDistributedDDL() const;
