@@ -190,3 +190,13 @@
 	path = contrib/croaring
 	url = https://github.com/RoaringBitmap/CRoaring
 	branch = v0.2.66
+[submodule "contrib/miniselect"]
+	path = contrib/miniselect
+	url = https://github.com/danlark1/miniselect
+[submodule "contrib/rocksdb"]
+	path = contrib/rocksdb
+	url = https://github.com/facebook/rocksdb
+	branch = v6.14.5
+[submodule "contrib/xz"]
+       path = contrib/xz
+       url = https://github.com/xz-mirror/xz

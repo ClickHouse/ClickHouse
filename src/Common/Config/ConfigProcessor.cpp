@@ -5,7 +5,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <algorithm>
-#include <sstream>
 #include <functional>
 #include <filesystem>
 #include <Poco/DOM/Text.h>
@@ -17,6 +16,8 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>
 #include <common/getResource.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 
 #define PREPROCESSED_SUFFIX "-preprocessed"
 
@@ -537,7 +538,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     if (has_zk_includes)
         *has_zk_includes = !contributing_zk_paths.empty();
 
-    std::stringstream comment;
+    WriteBufferFromOwnString comment;
     comment <<     " This file was generated automatically.\n";
     comment << "     Do not edit it: it is likely to be discarded and generated again before it's read next time.\n";
     comment << "     Files used to generate this file:";

@@ -13,13 +13,13 @@
 namespace DB
 {
 
-class MergeListEntry;
 class MergeProgressCallback;
 
 /// Auxiliary struct holding metainformation for the future merged or mutated part.
 struct FutureMergedMutatedPart
 {
     String name;
+    UUID uuid = UUIDHelpers::Nil;
     String path;
     MergeTreeDataPartType type;
     MergeTreePartInfo part_info;

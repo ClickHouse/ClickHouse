@@ -34,8 +34,7 @@ StorageMongoDB::StorageMongoDB(
     const std::string & username_,
     const std::string & password_,
     const ColumnsDescription & columns_,
-    const ConstraintsDescription & constraints_,
-    const Context & context_)
+    const ConstraintsDescription & constraints_)
     : IStorage(table_id_)
     , host(host_)
     , port(port_)
@@ -43,7 +42,6 @@ StorageMongoDB::StorageMongoDB(
     , collection_name(collection_name_)
     , username(username_)
     , password(password_)
-    , global_context(context_)
     , connection{std::make_shared<Poco::MongoDB::Connection>(host, port)}
 {
     StorageInMemoryMetadata storage_metadata;
@@ -56,7 +54,7 @@ StorageMongoDB::StorageMongoDB(
 Pipe StorageMongoDB::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    const SelectQueryInfo & /*query_info*/,
+    SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
@@ -114,8 +112,7 @@ void registerStorageMongoDB(StorageFactory & factory)
             username,
             password,
             args.columns,
-            args.constraints,
-            args.context);
+            args.constraints);
     },
     {
         .source_access_type = AccessType::MONGO,
