@@ -472,27 +472,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     StatusFile status{path + "status", StatusFile::write_full_info};
 
-    SCOPE_EXIT({
-        /** Ask to cancel background jobs all table engines,
-          *  and also query_log.
-          * It is important to do early, not in destructor of Context, because
-          *  table engines could use Context on destroy.
-          */
-        LOG_INFO(log, "Shutting down storages.");
-
-        global_context->shutdown();
-
-        LOG_DEBUG(log, "Shut down storages.");
-
-        /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
-          * At this moment, no one could own shared part of Context.
-          */
-        global_context_ptr = nullptr;
-        global_context.reset();
-        shared_context.reset();
-        LOG_DEBUG(log, "Destroyed global context.");
-    });
-
     /// Try to increase limit on number of open files.
     {
         rlimit rlim;
@@ -790,6 +769,30 @@ int Server::main(const std::vector<std::string> & /*args*/)
         server->start();
 
     size_t already_started_servers = servers.size();
+
+    SCOPE_EXIT({
+        /** Ask to cancel background jobs all table engines,
+          *  and also query_log.
+          * It is important to do early, not in destructor of Context, because
+          *  table engines could use Context on destroy.
+          */
+        LOG_INFO(log, "Shutting down storages.");
+
+        global_context->shutdown();
+
+        LOG_DEBUG(log, "Shut down storages.");
+
+        for (size_t i = 0; i < already_started_servers; ++i)
+            servers[i]->stop();
+
+        /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
+          * At this moment, no one could own shared part of Context.
+          */
+        global_context_ptr = nullptr;
+        global_context.reset();
+        shared_context.reset();
+        LOG_DEBUG(log, "Destroyed global context.");
+    });
 
     /// Set current database name before loading tables and databases because
     /// system logs may copy global context.
@@ -1110,12 +1113,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
             is_cancelled = true;
 
             int current_connections = 0;
-            for (size_t i = 0; i < servers.size(); ++i)
+            for (size_t i = already_started_servers; i < servers.size(); ++i)
             {
                 servers[i]->stop();
-                /// TODO (alesap)
-                if (i >= already_started_servers)
-                    current_connections += servers[i]->currentConnections();
+                current_connections += servers[i]->currentConnections();
             }
 
             if (current_connections)
