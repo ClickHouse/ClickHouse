@@ -95,7 +95,6 @@ SRCS(
     QueryPlan/AddingMissedStep.cpp
     QueryPlan/AggregatingStep.cpp
     QueryPlan/ArrayJoinStep.cpp
-    QueryPlan/ConvertingStep.cpp
     QueryPlan/CreatingSetsStep.cpp
     QueryPlan/CubeStep.cpp
     QueryPlan/DistinctStep.cpp
@@ -135,7 +134,6 @@ SRCS(
     Transforms/AggregatingInOrderTransform.cpp
     Transforms/AggregatingTransform.cpp
     Transforms/ArrayJoinTransform.cpp
-    Transforms/ConvertingTransform.cpp
     Transforms/CopyTransform.cpp
     Transforms/CreatingSetsTransform.cpp
     Transforms/CubeTransform.cpp
