@@ -30,17 +30,6 @@
     It can be done in background, e.g. wait 100 ms after address/credentials change and do the check.
     Also it can provide visual indication that credentials are correct.
 
-    3. Add history in localstorage. Integrate with history API.
-    There can be a counter in localstorage, that will be appended to location #fragment.
-    The 'back', 'forward' buttons in browser should work.
-    Also there should be UI element to list all the queries from history and select from the list.
-
-    4. Trivial sharing capabilities.
-    Sharing is only possible when system.query_log is accessible. Read the X-ClickHouse-QueryId from the response.
-    Share button will: - emit SYSTEM FLUSH LOGS if not readonly; - find the query in the query_log;
-    - generate an URL with the query id and: server address if not equal to the URL's host; user name if not default;
-    indication that password should be entered in case of non-empty password.
-
     -->
 
     <style type="text/css">
@@ -299,14 +288,21 @@
 
 <script type="text/javascript">
 
+    /// Incremental request number. When response is received,
+    /// if it's request number does not equal to the current request number, response will be ignored.
+    /// This is to avoid race conditions.
+    var request_num = 0;
+
+    /// Save query in history only if it is different.
+    var previous_query = '';
+
     /// Substitute the address of the server where the page is served.
     if (location.protocol != 'file:') {
         document.getElementById('url').value = location.origin;
     }
 
-    function post()
+    function postImpl(posted_request_num, query)
     {
-        /// TODO: Avoid race condition on subsequent requests when responses may come out of order.
         /// TODO: Check if URL already contains query string (append parameters).
 
         var url = document.getElementById('url').value +
@@ -318,7 +314,6 @@
             /// Safety settings to prevent results that browser cannot display.
             '&max_result_rows=1000&max_result_bytes=10000000&result_overflow_mode=break';
 
-        var query = document.getElementById('query').value;
         var xhr = new XMLHttpRequest;
 
         xhr.open('POST', url, true);
@@ -326,23 +321,68 @@
 
         xhr.onreadystatechange = function()
         {
-            if (this.readyState === XMLHttpRequest.DONE) {
-                if (this.status === 200) {
-                    var json;
-                    try { json = JSON.parse(this.response); } catch (e) {}
-                    if (json !== undefined && json.statistics !== undefined) {
-                        renderResult(json);
-                    } else {
-                        renderUnparsedResult(this.response);
-                    }
-                } else {
-                    /// TODO: Proper rendering of network errors.
-                    renderError(this.response);
+            if (posted_request_num != request_num) {
+                return;
+            } else if (this.readyState === XMLHttpRequest.DONE) {
+                renderResponse(this.status, this.response);
+
+                /// The query is saved in browser history (in state JSON object)
+                /// as well as in URL fragment identifier.
+                if (query != previous_query) {
+                    previous_query = query;
+                    var title = "ClickHouse Query: " + query;
+                    history.pushState(
+                        {
+                            query: query,
+                            status: this.status,
+                            response: this.response.length > 100000 ? null : this.response  /// Lower than the browser's limit.
+                        },
+                        title,
+                        window.location.pathname + '#' + window.btoa(query));
+                    document.title = title;
                 }
             } else {
                 //console.log(this);
             }
         }
+    }
+
+    function renderResponse(status, response) {
+        if (status === 200) {
+            var json;
+            try { json = JSON.parse(response); } catch (e) {}
+            if (json !== undefined && json.statistics !== undefined) {
+                renderResult(json);
+            } else {
+                renderUnparsedResult(response);
+            }
+        } else {
+            /// TODO: Proper rendering of network errors.
+            renderError(response);
+        }
+    }
+
+    window.onpopstate = function(event) {
+        if (!event.state) {
+            return;
+        }
+        document.getElementById('query').value = event.state.query;
+        if (!event.state.response) {
+            clear();
+            return;
+        }
+        renderResponse(event.state.status, event.state.response);
+    };
+
+    if (window.location.hash) {
+        document.getElementById('query').value = window.atob(window.location.hash.substr(1));
+    }
+
+    function post()
+    {
+        ++request_num;
+        var query = document.getElementById('query').value;
+        postImpl(request_num, query);
     }
 
     document.getElementById('run').onclick = function()
