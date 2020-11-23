@@ -316,15 +316,24 @@
         document.getElementById('url').value = location.origin;
     }
 
+    /// Substitute user name if it's specified in the query string
+    var user_from_url = (new URL(window.location)).searchParams.get('user');
+    if (user_from_url) {
+        document.getElementById('user').value = user_from_url;
+    }
+
     function postImpl(posted_request_num, query)
     {
         /// TODO: Check if URL already contains query string (append parameters).
 
+        var user = document.getElementById('user').value;
+        var password = document.getElementById('password').value;
+
         var url = document.getElementById('url').value +
             /// Ask server to allow cross-domain requests.
             '?add_http_cors_header=1' +
-            '&user=' + encodeURIComponent(document.getElementById('user').value) +
-            '&password=' + encodeURIComponent(document.getElementById('password').value) +
+            '&user=' + encodeURIComponent(user) +
+            '&password=' + encodeURIComponent(password) +
             '&default_format=JSONCompact' +
             /// Safety settings to prevent results that browser cannot display.
             '&max_result_rows=1000&max_result_bytes=10000000&result_overflow_mode=break';
@@ -352,7 +361,7 @@
                             response: this.response.length > 100000 ? null : this.response  /// Lower than the browser's limit.
                         },
                         title,
-                        window.location.pathname + '#' + window.btoa(query));
+                        window.location.pathname + '?user=' + encodeURIComponent(user) + '#' + window.btoa(query));
                     document.title = title;
                 }
             } else {
