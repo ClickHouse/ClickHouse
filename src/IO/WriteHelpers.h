@@ -1093,4 +1093,18 @@ writeBinaryBigEndian(T x, WriteBuffer & buf)    /// Assuming little endian archi
     writePODBinary(x, buf);
 }
 
+struct PcgSerializer
+{
+    static void serializePcg32(const pcg32_fast & rng, WriteBuffer & buf)
+    {
+        writeText(rng.multiplier(), buf);
+        writeChar(' ', buf);
+        writeText(rng.increment(), buf);
+        writeChar(' ', buf);
+        writeText(rng.state_, buf);
+    }
+};
+
+void writePointerHex(const void * ptr, WriteBuffer & buf);
+
 }
