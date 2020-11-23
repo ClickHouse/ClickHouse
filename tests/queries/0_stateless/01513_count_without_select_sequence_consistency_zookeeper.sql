@@ -1,8 +1,8 @@
 SET send_logs_level = 'fatal';
 
-DROP TABLE IF EXISTS quorum1;
-DROP TABLE IF EXISTS quorum2;
-DROP TABLE IF EXISTS quorum3;
+DROP TABLE IF EXISTS quorum1 SYNC;
+DROP TABLE IF EXISTS quorum2 SYNC;
+DROP TABLE IF EXISTS quorum3 SYNC;
 
 CREATE TABLE quorum1(x UInt32, y Date) ENGINE ReplicatedMergeTree('/clickhouse/tables/test_01513/sequence_consistency', '1') ORDER BY x PARTITION BY y;
 CREATE TABLE quorum2(x UInt32, y Date) ENGINE ReplicatedMergeTree('/clickhouse/tables/test_01513/sequence_consistency', '2') ORDER BY x PARTITION BY y;
@@ -31,6 +31,6 @@ SELECT count() FROM quorum1;
 SELECT count() FROM quorum2;
 SELECT count() FROM quorum3;
 
-DROP TABLE quorum1;
-DROP TABLE quorum2;
-DROP TABLE quorum3;
+DROP TABLE quorum1 SYNC;
+DROP TABLE quorum2 SYNC;
+DROP TABLE quorum3 SYNC;
