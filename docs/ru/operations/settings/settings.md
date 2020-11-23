@@ -2009,7 +2009,7 @@ SELECT TOP 3 name, value FROM system.settings;
 
 ## system_events_show_zero_values {system_events_show_zero_values}
 
-Помогает выбрать события с нулевыми значениями из таблицы [`system.events`](../../operations/system-tables/events.md).
+Позволяет выбрать события с нулевыми значениями из таблицы [`system.events`](../../operations/system-tables/events.md).
 
 В некоторые системы мониторинга вам нужно передать значения всех измерений (для каждой контрольной точки), даже если в результате — "0".
 
