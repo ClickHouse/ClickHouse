@@ -28,13 +28,14 @@ public:
 
     using ValueT = MaxFieldType<Value, Weight>;
 
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
+    ALWAYS_INLINE void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const final
     {
-        const auto& weights = static_cast<const DecimalOrVectorCol<Weight> &>(*columns[1]);
+        const auto & values = static_cast<const DecimalOrVectorCol<Value> &>(*columns[0]);
+        const auto & weights = static_cast<const DecimalOrVectorCol<Weight> &>(*columns[1]);
 
-        this->data(place).numerator += static_cast<ValueT>(
-            static_cast<const DecimalOrVectorCol<Value> &>(*columns[0]).getData()[row_num]) *
-            static_cast<ValueT>(weights.getData()[row_num]);
+        this->data(place).numerator +=
+            static_cast<ValueT>(values.getData()[row_num])
+            * static_cast<ValueT>(weights.getData()[row_num]);
 
         this->data(place).denominator += static_cast<AvgWeightedFieldType<Weight>>(weights.getData()[row_num]);
     }
