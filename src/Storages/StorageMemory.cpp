@@ -1,3 +1,4 @@
+#include <cassert>
 #include <Common/Exception.h>
 
 #include <DataStreams/IBlockInputStream.h>
@@ -253,14 +254,18 @@ void StorageMemory::mutate(const MutationCommands & commands, const Context & co
         new_data = std::make_unique<BlocksList>(*(data.get()));
         auto data_it = new_data->begin();
         auto out_it = out.begin();
-        /// Mutation does not change the number of blocks, so we don't need
-        // to check whether old data and new data have same number of blocks or not
-        while (data_it != new_data->end() && out_it != out.end())
+        
+        while (data_it != new_data->end())
         {
+            /// Mutation does not change the number of blocks
+            assert(out_it != out.end());
+
             updateBlockData(*data_it, *out_it);
             ++data_it;
             ++out_it;
         }
+
+        assert(out_it == out.end());
     }
 
     size_t rows = 0;
