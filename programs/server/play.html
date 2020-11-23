@@ -332,10 +332,6 @@
         var xhr = new XMLHttpRequest;
 
         xhr.open('POST', url, true);
-        xhr.send(query);
-
-        document.getElementById('check-mark').style.display = 'none';
-        document.getElementById('hourglass').style.display = 'inline';
 
         xhr.onreadystatechange = function()
         {
@@ -363,6 +359,11 @@
                 //console.log(this);
             }
         }
+
+        document.getElementById('check-mark').style.display = 'none';
+        document.getElementById('hourglass').style.display = 'inline';
+
+        xhr.send(query);
     }
 
     function renderResponse(status, response) {
@@ -507,7 +508,7 @@
     function renderError(response)
     {
         clear();
-        document.getElementById('error').innerText = response;
+        document.getElementById('error').innerText = response ? response : "No response.";
         document.getElementById('error').style.display = 'block';
     }
 
