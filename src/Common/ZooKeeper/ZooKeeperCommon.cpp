@@ -383,7 +383,7 @@ void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)
 
 void ZooKeeperMultiResponse::writeImpl(WriteBuffer & out) const
 {
-    for (auto & response : responses)
+    for (const auto & response : responses)
     {
         const ZooKeeperResponse & zk_response = dynamic_cast<const ZooKeeperResponse &>(*response);
         OpNum op_num = zk_response.getOpNum();
