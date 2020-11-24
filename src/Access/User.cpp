@@ -14,4 +14,20 @@ bool User::equal(const IAccessEntity & other) const
         && (settings == other_user.settings);
 }
 
+UserEtcCache & UserEtcCache::operator= (const UserEtcCache & other)
+{
+    std::scoped_lock lock(mutex, other.mutex);
+    ldap_last_successful_password_check_params_hash = other.ldap_last_successful_password_check_params_hash;
+    ldap_last_successful_password_check_timestamp = other.ldap_last_successful_password_check_timestamp;
+    return *this;
+}
+
+UserEtcCache & UserEtcCache::operator= (const UserEtcCache && other)
+{
+    std::scoped_lock lock(mutex, other.mutex);
+    ldap_last_successful_password_check_params_hash = std::move(other.ldap_last_successful_password_check_params_hash);
+    ldap_last_successful_password_check_timestamp = std::move(other.ldap_last_successful_password_check_timestamp);
+    return *this;
+}
+
 }
