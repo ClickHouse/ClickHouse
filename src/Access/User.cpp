@@ -22,7 +22,7 @@ UserEtcCache & UserEtcCache::operator= (const UserEtcCache & other)
     return *this;
 }
 
-UserEtcCache & UserEtcCache::operator= (const UserEtcCache && other)
+UserEtcCache & UserEtcCache::operator= (UserEtcCache && other)
 {
     std::scoped_lock lock(mutex, other.mutex);
     ldap_last_successful_password_check_params_hash = std::move(other.ldap_last_successful_password_check_params_hash);
