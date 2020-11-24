@@ -21,10 +21,10 @@ The following operations with [partitions](../../../engines/table-engines/merget
 
 <!-- -->
 
-## DETACH PARTITION {#alter_detach-partition}
+## DETACH PARTITION\|PART {#alter_detach-partition}
 
 ``` sql
-ALTER TABLE table_name DETACH PARTITION partition_expr
+ALTER TABLE table_name DETACH PARTITION|PART partition_expr
 ```
 
 Moves all data for the specified partition to the `detached` directory. The server forgets about the detached data partition as if it does not exist. The server will not know about this data until you make the [ATTACH](#alter_attach-partition) query.
@@ -32,7 +32,8 @@ Moves all data for the specified partition to the `detached` directory. The serv
 Example:
 
 ``` sql
-ALTER TABLE visits DETACH PARTITION 201901
+ALTER TABLE mt DETACH PARTITION '2020-11-21';
+ALTER TABLE mt DETACH PART 'all_2_2_0';
 ```
 
 Read about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
@@ -41,10 +42,10 @@ After the query is executed, you can do whatever you want with the data in the `
 
 This query is replicated – it moves the data to the `detached` directory on all replicas. Note that you can execute this query only on a leader replica. To find out if a replica is a leader, perform the `SELECT` query to the [system.replicas](../../../operations/system-tables/replicas.md#system_tables-replicas) table. Alternatively, it is easier to make a `DETACH` query on all replicas - all the replicas throw an exception, except the leader replica.
 
-## DROP PARTITION {#alter_drop-partition}
+## DROP PARTITION\|PART {#alter_drop-partition}
 
 ``` sql
-ALTER TABLE table_name DROP PARTITION partition_expr
+ALTER TABLE table_name DROP PARTITION|PART partition_expr
 ```
 
 Deletes the specified partition from the table. This query tags the partition as inactive and deletes data completely, approximately in 10 minutes.
@@ -52,6 +53,13 @@ Deletes the specified partition from the table. This query tags the partition as
 Read about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
 
 The query is replicated – it deletes data on all replicas.
+
+Example:
+
+``` sql
+ALTER TABLE mt DROP PARTITION '2020-11-21';
+ALTER TABLE mt DROP PART 'all_4_4_0';
+```
 
 ## DROP DETACHED PARTITION\|PART {#alter_drop-detached}
 
