@@ -329,20 +329,6 @@ NamesAndTypesList ColumnsDescription::getAll() const
     return ret;
 }
 
-NamesAndTypesList ColumnsDescription::getAllWithSubcolumns() const
-{
-    NamesAndTypesList ret;
-    for (const auto & col : columns)
-    {
-        ret.emplace_back(col.name, col.type);
-        for (const auto & subcolumn : col.type->getSubcolumnNames())
-            ret.emplace_back(col.name, subcolumn, col.type, col.type->getSubcolumnType(subcolumn));
-    }
-
-    return ret;
-}
-
-
 bool ColumnsDescription::has(const String & column_name) const
 {
     return columns.get<1>().find(column_name) != columns.get<1>().end()
@@ -418,6 +404,29 @@ bool ColumnsDescription::hasPhysical(const String & column_name) const
 bool ColumnsDescription::hasPhysicalOrSubcolumn(const String & column_name) const
 {
     return hasPhysical(column_name) || subcolumns.find(column_name) != subcolumns.end();
+}
+
+static NamesAndTypesList getWithSubcolumns(NamesAndTypesList && source_list)
+{
+    NamesAndTypesList ret;
+    for (const auto & col : source_list)
+    {
+        ret.emplace_back(col.name, col.type);
+        for (const auto & subcolumn : col.type->getSubcolumnNames())
+            ret.emplace_back(col.name, subcolumn, col.type, col.type->getSubcolumnType(subcolumn));
+    }
+
+    return ret;
+}
+
+NamesAndTypesList ColumnsDescription::getAllWithSubcolumns() const
+{
+    return getWithSubcolumns(getAll());
+}
+
+NamesAndTypesList ColumnsDescription::getAllPhysicalWithSubcolumns() const
+{
+    return getWithSubcolumns(getAllPhysical());
 }
 
 bool ColumnsDescription::hasDefaults() const

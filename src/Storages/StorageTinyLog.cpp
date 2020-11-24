@@ -231,6 +231,9 @@ void TinyLogSource::readData(const NameAndTypePair & name_and_type,
     const auto & [name, type] = name_and_type;
     settings.getter = [&] (const IDataType::SubstreamPath & path) -> ReadBuffer *
     {
+        if (cache.count(IDataType::getSubcolumnNameForStream(path)))
+            return nullptr;
+
         String stream_name = IDataType::getFileNameForStream(name_and_type, path);
 
         auto & stream = streams[stream_name];
@@ -441,10 +444,12 @@ Pipe StorageTinyLog::read(
 {
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
+    auto all_columns = metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(column_names);
+
     // When reading, we lock the entire storage, because we only have one file
     // per column and can't modify it concurrently.
     return Pipe(std::make_shared<TinyLogSource>(
-        max_block_size, metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(column_names),
+        max_block_size, Nested::collect(all_columns),
         *this, context.getSettingsRef().max_read_buffer_size));
 }
 
