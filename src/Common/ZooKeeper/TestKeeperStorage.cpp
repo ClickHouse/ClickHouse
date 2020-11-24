@@ -708,29 +708,34 @@ void TestKeeperStorage::putCloseRequest(const Coordination::ZooKeeperRequestPtr 
         throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::LOGICAL_ERROR);
 }
 
-TestKeeperStorage::ResponsePair TestKeeperStorage::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
+
+void TestKeeperStorage::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, ResponseCallback callback)
 {
-    auto promise = std::make_shared<std::promise<Coordination::ZooKeeperResponsePtr>>();
-    auto future = promise->get_future();
     TestKeeperStorageRequestPtr storage_request = TestKeeperWrapperFactory::instance().get(request);
     RequestInfo request_info;
     request_info.time = clock::now();
     request_info.request = storage_request;
     request_info.session_id = session_id;
-    request_info.response_callback = [promise] (const Coordination::ZooKeeperResponsePtr & response) { promise->set_value(response); };
-    std::optional<AsyncResponse> watch_future;
+    request_info.response_callback = callback;
+    std::lock_guard lock(push_request_mutex);
+    if (!requests_queue.tryPush(std::move(request_info), operation_timeout.totalMilliseconds()))
+        throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::LOGICAL_ERROR);
+}
+
+void TestKeeperStorage::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, ResponseCallback callback, ResponseCallback watch_callback)
+{
+    TestKeeperStorageRequestPtr storage_request = TestKeeperWrapperFactory::instance().get(request);
+    RequestInfo request_info;
+    request_info.time = clock::now();
+    request_info.request = storage_request;
+    request_info.session_id = session_id;
+    request_info.response_callback = callback;
     if (request->has_watch)
-    {
-        auto watch_promise = std::make_shared<std::promise<Coordination::ZooKeeperResponsePtr>>();
-        watch_future.emplace(watch_promise->get_future());
-        request_info.watch_callback = [watch_promise] (const Coordination::ZooKeeperResponsePtr & response) { watch_promise->set_value(response); };
-    }
+        request_info.watch_callback = watch_callback;
 
     std::lock_guard lock(push_request_mutex);
     if (!requests_queue.tryPush(std::move(request_info), operation_timeout.totalMilliseconds()))
         throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::LOGICAL_ERROR);
-
-    return ResponsePair{std::move(future), std::move(watch_future)};
 }
 
 TestKeeperStorage::~TestKeeperStorage()

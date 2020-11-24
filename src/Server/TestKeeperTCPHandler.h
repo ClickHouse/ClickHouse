@@ -14,21 +14,13 @@
 namespace DB
 {
 
+struct SocketInterruptablePollWrapper;
+using SocketInterruptablePollWrapperPtr = std::unique_ptr<SocketInterruptablePollWrapper>;
+
 class TestKeeperTCPHandler : public Poco::Net::TCPServerConnection
 {
 public:
-    TestKeeperTCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_)
-        : Poco::Net::TCPServerConnection(socket_)
-        , server(server_)
-        , log(&Poco::Logger::get("TestKeeperTCPHandler"))
-        , global_context(server.context())
-        , test_keeper_storage(global_context.getTestKeeperStorage())
-        , operation_timeout(0, Coordination::DEFAULT_OPERATION_TIMEOUT_MS * 1000)
-        , session_timeout(0, Coordination::DEFAULT_SESSION_TIMEOUT_MS * 1000)
-        , session_id(test_keeper_storage->getSessionID())
-    {
-    }
-
+    TestKeeperTCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_);
     void run() override;
 private:
     IServer & server;
@@ -39,6 +31,7 @@ private:
     Poco::Timespan session_timeout;
     int64_t session_id;
     Stopwatch session_stopwatch;
+    SocketInterruptablePollWrapperPtr poll_wrapper;
 
     std::queue<zkutil::TestKeeperStorage::AsyncResponse> responses;
     std::vector<zkutil::TestKeeperStorage::AsyncResponse> watch_responses;
