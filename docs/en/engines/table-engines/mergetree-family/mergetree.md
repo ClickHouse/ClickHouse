@@ -184,9 +184,9 @@ Sparse indexes allow you to work with a very large number of table rows, because
 
 ClickHouse does not require a unique primary key. You can insert multiple rows with the same primary key.
 
-The key in `PRIMARY KEY` and `ORDER BY` can be `Nullable` type. The setting [allow_nullable_key](../../operations/settings/settings.md#allow-nullable-key) is responsible for supporting this feature.
+The key in `PRIMARY KEY` and `ORDER BY` can be `Nullable` type. The setting [allow_nullable_key](../../../operations/settings/settings.md#allow-nullable-key) is responsible for supporting this feature.
 
-When sorting using an expression `ORDER BY` for `NULL` values, the [NULLS_LAST](../../sql-reference/statements/select/order-by.md#sorting-of-special-values) principle always works.
+When sorting using an expression `ORDER BY` for `NULL` values, the [NULLS_LAST](../../../sql-reference/statements/select/order-by.md#sorting-of-special-values) principle always works.
 
 ### Selecting the Primary Key {#selecting-the-primary-key}
 
