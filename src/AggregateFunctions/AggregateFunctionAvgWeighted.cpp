@@ -83,11 +83,14 @@ AggregateFunctionPtr createAggregateFunctionAvgWeighted(const std::string & name
     if (left_decimal && right_decimal)
         ptr.reset(create(*data_type, *data_type_weight,
             argument_types,
-            getDecimalScale((sizeof(*data_type) > sizeof(*data_type_weight)) ? *data_type : *data_type_weight)));
+            getDecimalScale(*data_type), getDecimalScale(*data_type_weight)));
     else if (left_decimal)
-        ptr.reset(create(*data_type, *data_type_weight, argument_types, getDecimalScale(*data_type)));
+        ptr.reset(create(*data_type, *data_type_weight, argument_types,
+            getDecimalScale(*data_type)));
     else if (right_decimal)
-        ptr.reset(create(*data_type, *data_type_weight, argument_types, getDecimalScale(*data_type_weight)));
+        ptr.reset(create(*data_type, *data_type_weight, argument_types,
+            // numerator is not decimal, so its scale is 0
+            0, getDecimalScale(*data_type_weight)));
     else
         ptr.reset(create(*data_type, *data_type_weight, argument_types));
 
