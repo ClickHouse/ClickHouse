@@ -30,6 +30,7 @@
 #include <Disks/StoragePolicy.h>
 
 #include <Databases/IDatabase.h>
+#include <Databases/DatabaseOnDisk.h>
 
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTDropQuery.h>
@@ -4047,6 +4048,8 @@ void StorageReplicatedMergeTree::alter(
             future_metadata_in_zk.constraints = new_constraints_str;
 
         Coordination::Requests ops;
+        size_t alter_path_idx = std::numeric_limits<size_t>::max();
+        size_t mutation_path_idx = std::numeric_limits<size_t>::max();
 
         String new_metadata_str = future_metadata_in_zk.toString();
         ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/metadata", new_metadata_str, metadata_version));
@@ -4078,6 +4081,7 @@ void StorageReplicatedMergeTree::alter(
             *current_metadata, query_context.getSettingsRef().materialize_ttl_after_modify, query_context);
         alter_entry->have_mutation = !maybe_mutation_commands.empty();
 
+        alter_path_idx = ops.size();
         ops.emplace_back(zkutil::makeCreateRequest(
             zookeeper_path + "/log/log-", alter_entry->toString(), zkutil::CreateMode::PersistentSequential));
 
@@ -4101,6 +4105,7 @@ void StorageReplicatedMergeTree::alter(
             mutation_entry.create_time = time(nullptr);
 
             ops.emplace_back(zkutil::makeSetRequest(mutations_path, String(), mutations_stat.version));
+            mutation_path_idx = ops.size();
             ops.emplace_back(
                 zkutil::makeCreateRequest(mutations_path + "/", mutation_entry.toString(), zkutil::CreateMode::PersistentSequential));
         }
@@ -4108,7 +4113,24 @@ void StorageReplicatedMergeTree::alter(
         if (auto txn = query_context.getMetadataTransaction())
         {
             txn->addOps(ops);
-            //TODO maybe also change here table metadata in replicated database?
+            /// NOTE: IDatabase::alterTable(...) is called when executing ALTER_METADATA queue entry without query context,
+            /// so we have to update metadata of DatabaseReplicated here.
+            /// It also may cause "Table columns structure in ZooKeeper is different" error on server startup
+            /// even for Ordinary and Atomic databases.
+            String metadata_zk_path = txn->zookeeper_path + "/metadata/" + escapeForFileName(table_id.table_name);
+            auto ast = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(table_id.table_name, query_context);
+            auto & ast_create_query = ast->as<ASTCreateQuery &>();
+
+            //FIXME copy-paste
+            ASTPtr new_columns = InterpreterCreateQuery::formatColumns(future_metadata.columns);
+            ASTPtr new_indices = InterpreterCreateQuery::formatIndices(future_metadata.secondary_indices);
+            ASTPtr new_constraints = InterpreterCreateQuery::formatConstraints(future_metadata.constraints);
+
+            ast_create_query.columns_list->replace(ast_create_query.columns_list->columns, new_columns);
+            ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->indices, new_indices);
+            ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->constraints, new_constraints);
+
+            ops.emplace_back(zkutil::makeSetRequest(metadata_zk_path, getObjectDefinitionFromCreateQuery(ast), -1));
         }
 
         Coordination::Responses results;
@@ -4124,17 +4146,17 @@ void StorageReplicatedMergeTree::alter(
             if (alter_entry->have_mutation)
             {
                 /// ALTER_METADATA record in replication /log
-                String alter_path = dynamic_cast<const Coordination::CreateResponse &>(*results[2]).path_created;
+                String alter_path = dynamic_cast<const Coordination::CreateResponse &>(*results[alter_path_idx]).path_created;
                 alter_entry->znode_name = alter_path.substr(alter_path.find_last_of('/') + 1);
 
                 /// ReplicatedMergeTreeMutationEntry record in /mutations
-                String mutation_path = dynamic_cast<const Coordination::CreateResponse &>(*results.back()).path_created;
+                String mutation_path = dynamic_cast<const Coordination::CreateResponse &>(*results[mutation_path_idx]).path_created;
                 mutation_znode = mutation_path.substr(mutation_path.find_last_of('/') + 1);
             }
             else
             {
                 /// ALTER_METADATA record in replication /log
-                String alter_path = dynamic_cast<const Coordination::CreateResponse &>(*results.back()).path_created;
+                String alter_path = dynamic_cast<const Coordination::CreateResponse &>(*results[alter_path_idx]).path_created;
                 alter_entry->znode_name = alter_path.substr(alter_path.find_last_of('/') + 1);
             }
             break;
