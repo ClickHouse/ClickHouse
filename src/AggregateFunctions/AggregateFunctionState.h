@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include <DataTypes/DataTypeAggregateFunction.h>

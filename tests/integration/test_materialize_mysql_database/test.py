@@ -42,6 +42,20 @@ class MySQLNodeInstance:
         with self.alloc_connection().cursor() as cursor:
             cursor.execute(execution_query)
 
+    def create_min_priv_user(self, user, password):
+        self.query("CREATE USER '" + user + "'@'%' IDENTIFIED BY '" + password + "'")
+        self.grant_min_priv_for_user(user)
+
+    def grant_min_priv_for_user(self, user, db='priv_err_db'):
+        self.query("GRANT REPLICATION SLAVE, REPLICATION CLIENT, RELOAD ON *.* TO '" + user + "'@'%'")
+        self.query("GRANT SELECT ON " + db + ".* TO '" + user + "'@'%'")
+
+    def result(self, execution_query):
+        with self.alloc_connection().cursor() as cursor:
+            result = cursor.execute(execution_query)
+            if result is not None:
+                print(cursor.fetchall())
+
     def close(self):
         if self.mysql_connection is not None:
             self.mysql_connection.close()
@@ -52,6 +66,8 @@ class MySQLNodeInstance:
             try:
                 self.alloc_connection()
                 print("Mysql Started")
+                self.create_min_priv_user("test", "123")
+                print("min priv user created")
                 return
             except Exception as ex:
                 print("Can't connect to MySQL " + str(ex))
@@ -138,3 +154,38 @@ def test_materialize_database_ddl_with_empty_transaction_5_7(started_cluster, st
 @pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_atomic])
 def test_materialize_database_ddl_with_empty_transaction_8_0(started_cluster, started_mysql_8_0, clickhouse_node):
     materialize_with_ddl.query_event_with_empty_transaction(clickhouse_node, started_mysql_8_0, "mysql8_0")
+
+
+def test_select_without_columns_5_7(started_cluster, started_mysql_5_7):
+    materialize_with_ddl.select_without_columns(clickhouse_node, started_mysql_5_7, "mysql1")
+
+
+def test_select_without_columns_8_0(started_cluster, started_mysql_8_0):
+    materialize_with_ddl.select_without_columns(clickhouse_node, started_mysql_8_0, "mysql8_0")
+
+
+def test_insert_with_modify_binlog_checksum_5_7(started_cluster, started_mysql_5_7):
+    materialize_with_ddl.insert_with_modify_binlog_checksum(clickhouse_node, started_mysql_5_7, "mysql1")
+
+
+def test_insert_with_modify_binlog_checksum_8_0(started_cluster, started_mysql_8_0):
+    materialize_with_ddl.insert_with_modify_binlog_checksum(clickhouse_node, started_mysql_8_0, "mysql8_0")
+
+
+def test_materialize_database_err_sync_user_privs_5_7(started_cluster, started_mysql_5_7):
+    try:
+        materialize_with_ddl.err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1")
+    except:
+        print((clickhouse_node.query(
+            "select '\n', thread_id, query_id, arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym from system.stack_trace format TSVRaw")))
+        raise
+
+
+def test_materialize_database_err_sync_user_privs_8_0(started_cluster, started_mysql_8_0):
+    try:
+        materialize_with_ddl.err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0, "mysql8_0")
+    except:
+        print((clickhouse_node.query(
+            "select '\n', thread_id, query_id, arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym from system.stack_trace format TSVRaw")))
+        raise
+

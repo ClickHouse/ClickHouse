@@ -14,6 +14,7 @@
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Dictionaries/DictionaryFactory.h>
+#include <Functions/FunctionFactory.h>
 
 namespace DB
 {
@@ -172,7 +173,7 @@ Names getPrimaryKeyColumns(const ASTExpressionList * primary_key)
     for (size_t index = 0; index != children.size(); ++index)
     {
         const ASTIdentifier * key_part = children[index]->as<const ASTIdentifier>();
-        result.push_back(key_part->name);
+        result.push_back(key_part->name());
     }
     return result;
 }
@@ -356,7 +357,8 @@ NamesToTypeNames buildDictionaryAttributesConfiguration(
 void buildConfigurationFromFunctionWithKeyValueArguments(
     AutoPtr<Document> doc,
     AutoPtr<Element> root,
-    const ASTExpressionList * ast_expr_list)
+    const ASTExpressionList * ast_expr_list,
+    const Context & context)
 {
     const auto & children = ast_expr_list->children;
     for (size_t i = 0; i != children.size(); ++i)
@@ -365,19 +367,30 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
         AutoPtr<Element> current_xml_element(doc->createElement(pair->first));
         root->appendChild(current_xml_element);
 
-        if (const auto * identifier = pair->second->as<const ASTIdentifier>(); identifier)
+        if (const auto * identifier = pair->second->as<const ASTIdentifier>())
         {
-            AutoPtr<Text> value(doc->createTextNode(identifier->name));
+            AutoPtr<Text> value(doc->createTextNode(identifier->name()));
             current_xml_element->appendChild(value);
         }
-        else if (const auto * literal = pair->second->as<const ASTLiteral>(); literal)
+        else if (const auto * literal = pair->second->as<const ASTLiteral>())
         {
             AutoPtr<Text> value(doc->createTextNode(getFieldAsString(literal->value)));
             current_xml_element->appendChild(value);
         }
-        else if (const auto * list = pair->second->as<const ASTExpressionList>(); list)
+        else if (const auto * list = pair->second->as<const ASTExpressionList>())
         {
-            buildConfigurationFromFunctionWithKeyValueArguments(doc, current_xml_element, list);
+            buildConfigurationFromFunctionWithKeyValueArguments(doc, current_xml_element, list, context);
+        }
+        else if (const auto * func = pair->second->as<ASTFunction>())
+        {
+            auto builder = FunctionFactory::instance().tryGet(func->name, context);
+            auto function = builder->build({});
+            auto result = function->execute({}, {}, 0);
+
+            Field value;
+            result->get(0, value);
+            AutoPtr<Text> text_value(doc->createTextNode(getFieldAsString(value)));
+            current_xml_element->appendChild(text_value);
         }
         else
         {
@@ -406,13 +419,14 @@ void buildSourceConfiguration(
     AutoPtr<Document> doc,
     AutoPtr<Element> root,
     const ASTFunctionWithKeyValueArguments * source,
-    const ASTDictionarySettings * settings)
+    const ASTDictionarySettings * settings,
+    const Context & context)
 {
     AutoPtr<Element> outer_element(doc->createElement("source"));
     root->appendChild(outer_element);
     AutoPtr<Element> source_element(doc->createElement(source->name));
     outer_element->appendChild(source_element);
-    buildConfigurationFromFunctionWithKeyValueArguments(doc, source_element, source->elements->as<const ASTExpressionList>());
+    buildConfigurationFromFunctionWithKeyValueArguments(doc, source_element, source->elements->as<const ASTExpressionList>(), context);
 
     if (settings != nullptr)
     {
@@ -466,7 +480,8 @@ void checkPrimaryKey(const NamesToTypeNames & all_attrs, const Names & key_attrs
 }
 
 
-DictionaryConfigurationPtr getDictionaryConfigurationFromAST(const ASTCreateQuery & query, const std::string & database_)
+DictionaryConfigurationPtr
+getDictionaryConfigurationFromAST(const ASTCreateQuery & query, const Context & context, const std::string & database_)
 {
     checkAST(query);
 
@@ -510,7 +525,7 @@ DictionaryConfigurationPtr getDictionaryConfigurationFromAST(const ASTCreateQuer
     buildPrimaryKeyConfiguration(xml_document, structure_element, complex, pk_attrs, query.dictionary_attributes_list);
 
     buildLayoutConfiguration(xml_document, current_dictionary, dictionary_layout);
-    buildSourceConfiguration(xml_document, current_dictionary, query.dictionary->source, query.dictionary->dict_settings);
+    buildSourceConfiguration(xml_document, current_dictionary, query.dictionary->source, query.dictionary->dict_settings, context);
     buildLifetimeConfiguration(xml_document, current_dictionary, query.dictionary->lifetime);
 
     if (query.dictionary->range)

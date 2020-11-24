@@ -156,6 +156,7 @@ void MergeTreePartition::store(const Block & partition_key_sample, const DiskPtr
     out_hashing.next();
     checksums.files["partition.dat"].file_size = out_hashing.count();
     checksums.files["partition.dat"].file_hash = out_hashing.getHash();
+    out->finalize();
 }
 
 void MergeTreePartition::create(const StorageMetadataPtr & metadata_snapshot, Block block, size_t row)

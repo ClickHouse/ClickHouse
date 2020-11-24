@@ -1,4 +1,4 @@
-<test max_ignored_relative_change="0.7">
+<test>
     <create_query>CREATE TABLE test_in (`a` UInt32) ENGINE = MergeTree() ORDER BY a</create_query>
     <fill_query>INSERT INTO test_in SELECT number FROM numbers(500000000)</fill_query>
 

@@ -1,12 +1,11 @@
 #include <Processors/QueryPipeline.h>
 
 #include <Processors/ResizeProcessor.h>
-#include <Processors/ConcatProcessor.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
 #include <Processors/Transforms/ExtremesTransform.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
-#include <Processors/Transforms/ConvertingTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/SourceFromInputStream.h>
@@ -15,6 +14,7 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Common/typeid_cast.h>
 #include <Common/CurrentThread.h>
 #include <Processors/DelayedPortsProcessor.h>
@@ -96,6 +96,12 @@ void QueryPipeline::addTransform(ProcessorPtr transform)
     pipe.addTransform(std::move(transform));
 }
 
+void QueryPipeline::transform(const Transformer & transformer)
+{
+    checkInitializedAndNotCompleted();
+    pipe.transform(transformer);
+}
+
 void QueryPipeline::setSinks(const Pipe::ProcessorGetterWithStreamKind & getter)
 {
     checkInitializedAndNotCompleted();
@@ -124,18 +130,7 @@ void QueryPipeline::addMergingAggregatedMemoryEfficientTransform(AggregatingTran
 void QueryPipeline::resize(size_t num_streams, bool force, bool strict)
 {
     checkInitializedAndNotCompleted();
-
-    if (!force && num_streams == getNumStreams())
-        return;
-
-    ProcessorPtr resize;
-
-    if (strict)
-        resize = std::make_shared<StrictResizeProcessor>(getHeader(), getNumStreams(), num_streams);
-    else
-        resize = std::make_shared<ResizeProcessor>(getHeader(), getNumStreams(), num_streams);
-
-    pipe.addTransform(std::move(resize));
+    pipe.resize(num_streams, force, strict);
 }
 
 void QueryPipeline::addTotalsHavingTransform(ProcessorPtr transform)
@@ -232,10 +227,15 @@ QueryPipeline QueryPipeline::unitePipelines(
 
         if (!pipeline.isCompleted())
         {
+            auto actions_dag = ActionsDAG::makeConvertingActions(
+                    pipeline.getHeader().getColumnsWithTypeAndName(),
+                    common_header.getColumnsWithTypeAndName(),
+                    ActionsDAG::MatchColumnsMode::Position);
+            auto actions = std::make_shared<ExpressionActions>(actions_dag);
+
             pipeline.addSimpleTransform([&](const Block & header)
             {
-               return std::make_shared<ConvertingTransform>(
-                       header, common_header, ConvertingTransform::MatchColumnsMode::Position);
+               return std::make_shared<ExpressionTransform>(header, actions);
             });
         }
 

@@ -57,7 +57,7 @@ CHECK TABLE [db.]name
 如果表已损坏，则可以将未损坏的数据复制到另一个表。 要做到这一点:
 
 1.  创建具有与损坏的表相同结构的新表。 要执行此操作，请执行查询 `CREATE TABLE <new_table_name> AS <damaged_table_name>`.
-2.  设置 [max\_threads](../../operations/settings/settings.md#settings-max_threads) 值为1以在单个线程中处理下一个查询。 要执行此操作，请运行查询 `SET max_threads = 1`.
+2.  设置 [max_threads](../../operations/settings/settings.md#settings-max_threads) 值为1以在单个线程中处理下一个查询。 要执行此操作，请运行查询 `SET max_threads = 1`.
 3.  执行查询 `INSERT INTO <new_table_name> SELECT * FROM <damaged_table_name>`. 此请求将未损坏的数据从损坏的表复制到另一个表。 只有损坏部分之前的数据才会被复制。
 4.  重新启动 `clickhouse-client` 要重置 `max_threads` 价值。
 
@@ -253,7 +253,7 @@ OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION I
 
 当 `OPTIMIZE` 与使用 [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md) 表引擎的家族，ClickHouse创建合并任务，并等待在所有节点上执行（如果 `replication_alter_partitions_sync` 设置已启用）。
 
--   如果 `OPTIMIZE` 出于任何原因不执行合并，它不通知客户端。 要启用通知，请使用 [optimize\_throw\_if\_noop](../../operations/settings/settings.md#setting-optimize_throw_if_noop) 设置。
+-   如果 `OPTIMIZE` 出于任何原因不执行合并，它不通知客户端。 要启用通知，请使用 [optimize_throw_if_noop](../../operations/settings/settings.md#setting-optimize_throw_if_noop) 设置。
 -   如果您指定 `PARTITION`，仅优化指定的分区。 [如何设置分区表达式](alter.md#alter-how-to-specify-part-expr).
 -   如果您指定 `FINAL`，即使所有数据已经在一个部分中，也会执行优化。
 -   如果您指定 `DEDUPLICATE`，然后完全相同的行将被重复数据删除（所有列进行比较），这仅适用于MergeTree引擎。

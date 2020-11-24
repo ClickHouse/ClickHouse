@@ -13,7 +13,6 @@
 #    include <aws/core/http/HttpClientFactory.h>
 #    include <IO/S3/PocoHTTPClientFactory.h>
 #    include <IO/S3/PocoHTTPClient.h>
-#    include <boost/algorithm/string.hpp>
 #    include <Poco/URI.h>
 #    include <re2/re2.h>
 #    include <common/logger_useful.h>
@@ -165,14 +164,15 @@ namespace S3
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
-        const RemoteHostFilter & remote_host_filter)
+        const RemoteHostFilter & remote_host_filter,
+        unsigned int s3_max_redirects)
     {
         Aws::Client::ClientConfiguration cfg;
 
         if (!endpoint.empty())
             cfg.endpointOverride = endpoint;
 
-        return create(cfg, is_virtual_hosted_style, access_key_id, secret_access_key, remote_host_filter);
+        return create(cfg, is_virtual_hosted_style, access_key_id, secret_access_key, remote_host_filter, s3_max_redirects);
     }
 
     std::shared_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
@@ -180,26 +180,14 @@ namespace S3
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
-        const RemoteHostFilter & remote_host_filter)
+        const RemoteHostFilter & remote_host_filter,
+        unsigned int s3_max_redirects)
     {
         Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
 
-        PocoHTTPClientConfiguration client_configuration(cfg, remote_host_filter);
+        PocoHTTPClientConfiguration client_configuration(cfg, remote_host_filter, s3_max_redirects);
 
-        if (!client_configuration.endpointOverride.empty())
-        {
-            static const RE2 region_pattern(R"(^s3[.\-]([a-z0-9\-]+)\.amazonaws\.)");
-            Poco::URI uri(client_configuration.endpointOverride);
-            if (uri.getScheme() == "http")
-                client_configuration.scheme = Aws::Http::Scheme::HTTP;
-
-            String region;
-            if (re2::RE2::PartialMatch(uri.getHost(), region_pattern, &region))
-            {
-                boost::algorithm::to_lower(region);
-                client_configuration.region = region;
-            }
-        }
+        client_configuration.updateSchemeAndRegion();
 
         return std::make_shared<Aws::S3::S3Client>(
             credentials, // Aws credentials.
@@ -215,18 +203,21 @@ namespace S3
         const String & access_key_id,
         const String & secret_access_key,
         HeaderCollection headers,
-        const RemoteHostFilter & remote_host_filter)
+        const RemoteHostFilter & remote_host_filter,
+        unsigned int s3_max_redirects)
     {
-        PocoHTTPClientConfiguration cfg({}, remote_host_filter);
+        PocoHTTPClientConfiguration client_configuration({}, remote_host_filter, s3_max_redirects);
 
         if (!endpoint.empty())
-            cfg.endpointOverride = endpoint;
+            client_configuration.endpointOverride = endpoint;
+
+        client_configuration.updateSchemeAndRegion();
 
         Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
         return std::make_shared<Aws::S3::S3Client>(
-            std::make_shared<S3AuthSigner>(cfg, std::move(credentials), std::move(headers)),
-            std::move(cfg), // Client configuration.
-            is_virtual_hosted_style || cfg.endpointOverride.empty() // Use virtual addressing only if endpoint is not specified.
+            std::make_shared<S3AuthSigner>(client_configuration, std::move(credentials), std::move(headers)),
+            std::move(client_configuration), // Client configuration.
+            is_virtual_hosted_style || client_configuration.endpointOverride.empty() // Use virtual addressing only if endpoint is not specified.
         );
     }
 

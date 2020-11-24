@@ -1,4 +1,6 @@
 # This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
+OWNER(g:clickhouse)
+
 LIBRARY()
 
 PEERDIR(
@@ -12,7 +14,6 @@ PEERDIR(
 
 NO_COMPILER_WARNINGS()
 
-CFLAGS(-g0)
 
 SRCS(
     CacheDictionary.cpp
@@ -38,11 +39,11 @@ SRCS(
     DictionarySourceHelpers.cpp
     DictionaryStructure.cpp
     DirectDictionary.cpp
+    Embedded/GeoDictionariesLoader.cpp
     Embedded/GeodataProviders/HierarchiesProvider.cpp
     Embedded/GeodataProviders/HierarchyFormatReader.cpp
     Embedded/GeodataProviders/NamesFormatReader.cpp
     Embedded/GeodataProviders/NamesProvider.cpp
-    Embedded/GeoDictionariesLoader.cpp
     Embedded/RegionsHierarchies.cpp
     Embedded/RegionsHierarchy.cpp
     Embedded/RegionsNames.cpp
@@ -50,9 +51,8 @@ SRCS(
     ExternalQueryBuilder.cpp
     FileDictionarySource.cpp
     FlatDictionary.cpp
-    getDictionaryConfigurationFromAST.cpp
-    HashedDictionary.cpp
     HTTPDictionarySource.cpp
+    HashedDictionary.cpp
     LibraryDictionarySource.cpp
     LibraryDictionarySourceExternal.cpp
     MongoDBDictionarySource.cpp
@@ -61,14 +61,15 @@ SRCS(
     PolygonDictionaryImplementations.cpp
     PolygonDictionaryUtils.cpp
     RangeHashedDictionary.cpp
-    readInvalidateQuery.cpp
     RedisBlockInputStream.cpp
     RedisDictionarySource.cpp
-    registerDictionaries.cpp
     SSDCacheDictionary.cpp
     SSDComplexKeyCacheDictionary.cpp
-    writeParenthesisedString.cpp
     XDBCDictionarySource.cpp
+    getDictionaryConfigurationFromAST.cpp
+    readInvalidateQuery.cpp
+    registerDictionaries.cpp
+    writeParenthesisedString.cpp
 
 )
 

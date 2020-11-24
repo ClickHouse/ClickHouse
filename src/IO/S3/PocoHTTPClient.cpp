@@ -7,6 +7,8 @@
 #include <utility>
 #include <IO/HTTPCommon.h>
 #include <IO/S3/PocoHTTPResponseStream.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 #include <Common/Stopwatch.h>
 #include <aws/core/http/HttpRequest.h>
 #include <aws/core/http/HttpResponse.h>
@@ -17,6 +19,9 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <common/logger_useful.h>
+#include <re2/re2.h>
+
+#include <boost/algorithm/string.hpp>
 
 
 namespace ProfileEvents
@@ -45,10 +50,30 @@ namespace DB::S3
 
 PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
         const Aws::Client::ClientConfiguration & cfg,
-        const RemoteHostFilter & remote_host_filter_)
+        const RemoteHostFilter & remote_host_filter_,
+        unsigned int s3_max_redirects_)
     : Aws::Client::ClientConfiguration(cfg)
     , remote_host_filter(remote_host_filter_)
+    , s3_max_redirects(s3_max_redirects_)
 {
+}
+
+void PocoHTTPClientConfiguration::updateSchemeAndRegion()
+{
+    if (!endpointOverride.empty())
+    {
+        static const RE2 region_pattern(R"(^s3[.\-]([a-z0-9\-]+)\.amazonaws\.)");
+        Poco::URI uri(endpointOverride);
+        if (uri.getScheme() == "http")
+            scheme = Aws::Http::Scheme::HTTP;
+
+        String matched_region;
+        if (re2::RE2::PartialMatch(uri.getHost(), region_pattern, &matched_region))
+        {
+            boost::algorithm::to_lower(matched_region);
+            region = matched_region;
+        }
+    }
 }
 
 
@@ -60,6 +85,7 @@ PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & clientConfigu
           Poco::Timespan(clientConfiguration.httpRequestTimeoutMs * 1000) /// receive timeout.
           ))
     , remote_host_filter(clientConfiguration.remote_host_filter)
+    , s3_max_redirects(clientConfiguration.s3_max_redirects)
 {
 }
 
@@ -134,10 +160,9 @@ void PocoHTTPClient::makeRequestInternal(
 
     ProfileEvents::increment(select_metric(S3MetricType::Count));
 
-    static constexpr int max_redirect_attempts = 10;
     try
     {
-        for (int attempt = 0; attempt < max_redirect_attempts; ++attempt)
+        for (unsigned int attempt = 0; attempt <= s3_max_redirects; ++attempt)
         {
             Poco::URI poco_uri(uri);
 
@@ -226,7 +251,7 @@ void PocoHTTPClient::makeRequestInternal(
             response->SetResponseCode(static_cast<Aws::Http::HttpResponseCode>(status_code));
             response->SetContentType(poco_response.getContentType());
 
-            std::stringstream headers_ss;
+            WriteBufferFromOwnString headers_ss;
             for (const auto & [header_name, header_value] : poco_response)
             {
                 response->AddHeader(header_name, header_value);

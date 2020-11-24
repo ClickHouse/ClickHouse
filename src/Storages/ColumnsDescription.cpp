@@ -378,6 +378,14 @@ bool ColumnsDescription::hasPhysical(const String & column_name) const
 }
 
 
+bool ColumnsDescription::hasDefaults() const
+{
+    for (const auto & column : columns)
+        if (column.default_desc.expression)
+            return true;
+    return false;
+}
+
 ColumnDefaults ColumnsDescription::getDefaults() const
 {
     ColumnDefaults ret;
@@ -494,7 +502,7 @@ Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const N
         auto syntax_analyzer_result = TreeRewriter(context).analyze(default_expr_list, all_columns);
         const auto actions = ExpressionAnalyzer(default_expr_list, syntax_analyzer_result, context).getActions(true);
         for (const auto & action : actions->getActions())
-            if (action.type == ExpressionAction::Type::ARRAY_JOIN)
+            if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
                 throw Exception("Unsupported default value that requires ARRAY JOIN action", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);
 
         return actions->getSampleBlock();

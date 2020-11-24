@@ -36,7 +36,7 @@ Ejemplo:
 CREATE TABLE merge.hits_buffer AS merge.hits ENGINE = Buffer(merge, hits, 16, 10, 100, 10000, 1000000, 10000000, 100000000)
 ```
 
-Creación de un ‘merge.hits\_buffer’ mesa con la misma estructura que ‘merge.hits’ y usando el motor Buffer. Al escribir en esta tabla, los datos se almacenan en la memoria RAM y ‘merge.hits’ tabla. Se crean 16 búferes. Los datos de cada uno de ellos se vacían si han pasado 100 segundos o se han escrito un millón de filas o se han escrito 100 MB de datos; o si simultáneamente han pasado 10 segundos y se han escrito 10.000 filas y 10 MB de datos. Por ejemplo, si solo se ha escrito una fila, después de 100 segundos se vaciará, pase lo que pase. Pero si se han escrito muchas filas, los datos se vaciarán antes.
+Creación de un ‘merge.hits_buffer’ mesa con la misma estructura que ‘merge.hits’ y usando el motor Buffer. Al escribir en esta tabla, los datos se almacenan en la memoria RAM y ‘merge.hits’ tabla. Se crean 16 búferes. Los datos de cada uno de ellos se vacían si han pasado 100 segundos o se han escrito un millón de filas o se han escrito 100 MB de datos; o si simultáneamente han pasado 10 segundos y se han escrito 10.000 filas y 10 MB de datos. Por ejemplo, si solo se ha escrito una fila, después de 100 segundos se vaciará, pase lo que pase. Pero si se han escrito muchas filas, los datos se vaciarán antes.
 
 Cuando se detiene el servidor, con DROP TABLE o DETACH TABLE, los datos del búfer también se vacían a la tabla de destino.
 
@@ -58,7 +58,7 @@ FINAL y SAMPLE no funcionan correctamente para las tablas Buffer. Estas condicio
 
 Al agregar datos a un búfer, uno de los búferes está bloqueado. Esto provoca retrasos si se realiza una operación de lectura simultáneamente desde la tabla.
 
-Los datos que se insertan en una tabla de búfer pueden terminar en la tabla subordinada en un orden diferente y en bloques diferentes. Debido a esto, una tabla Buffer es difícil de usar para escribir en un CollapsingMergeTree correctamente. Para evitar problemas, puede establecer ‘num\_layers’ a 1.
+Los datos que se insertan en una tabla de búfer pueden terminar en la tabla subordinada en un orden diferente y en bloques diferentes. Debido a esto, una tabla Buffer es difícil de usar para escribir en un CollapsingMergeTree correctamente. Para evitar problemas, puede establecer ‘num_layers’ a 1.
 
 Si se replica la tabla de destino, se pierden algunas características esperadas de las tablas replicadas al escribir en una tabla de búfer. Los cambios aleatorios en el orden de las filas y los tamaños de las partes de datos hacen que la desduplicación de datos deje de funcionar, lo que significa que no es posible tener un ‘exactly once’ escribir en tablas replicadas.
 
