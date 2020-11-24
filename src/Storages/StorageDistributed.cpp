@@ -695,7 +695,7 @@ void StorageDistributed::createDirectoryMonitors(const std::string & disk)
 
             if (std::filesystem::is_empty(dir_path))
             {
-                LOG_DEBUG(log, "Removing {} (used for async INSERT into Distributed)", dir_path);
+                LOG_DEBUG(log, "Removing {} (used for async INSERT into Distributed)", dir_path.string());
                 /// Will be created by DistributedBlockOutputStream on demand.
                 std::filesystem::remove(dir_path);
             }
