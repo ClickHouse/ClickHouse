@@ -52,7 +52,7 @@ Converts an aggregate function for tables into an aggregate function for arrays 
 ## -Distinct {#agg-functions-combinator-distinct}
 
 Lets you select only unique values from the database.
-Examples: `sum(DISTINCT x)`, `groupArray(DISTINCT x)`, `corrStableDistinct(DISTINCT x, y)` и т.п.
+Examples: `sum(DISTINCT x)`, `groupArray(DISTINCT x)`, `corrStableDistinct(DISTINCT x, y)` and so on.
 
 ## -OrDefault {#agg-functions-combinator-ordefault}
 
