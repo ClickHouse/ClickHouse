@@ -93,7 +93,7 @@ MaterializeMySQLSyncThread::~MaterializeMySQLSyncThread()
     }
 }
 
-static String checkVariableAndGetVersion(const mysqlxx::Pool::Entry & connection)
+static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection)
 {
     Block variables_header{
         {std::make_shared<DataTypeString>(), "Variable_name"},
@@ -106,7 +106,7 @@ static String checkVariableAndGetVersion(const mysqlxx::Pool::Entry & connection
          "OR (Variable_name = 'binlog_row_image' AND upper(Value) = 'FULL') "
          "OR (Variable_name = 'default_authentication_plugin' AND upper(Value) = 'MYSQL_NATIVE_PASSWORD');";
 
-    MySQLBlockInputStream variables_input(connection, check_query, variables_header, DEFAULT_BLOCK_SIZE);
+    MySQLBlockInputStream variables_input(connection, check_query, variables_header, DEFAULT_BLOCK_SIZE, false, true);
 
     Block variables_block = variables_input.read();
     if (!variables_block || variables_block.rows() != 4)
@@ -140,15 +140,6 @@ static String checkVariableAndGetVersion(const mysqlxx::Pool::Entry & connection
 
         throw Exception(error_message.str(), ErrorCodes::ILLEGAL_MYSQL_VARIABLE);
     }
-
-    Block version_header{{std::make_shared<DataTypeString>(), "version"}};
-    MySQLBlockInputStream version_input(connection, "SELECT version() AS version;", version_header, DEFAULT_BLOCK_SIZE);
-
-    Block version_block = version_input.read();
-    if (!version_block || version_block.rows() != 1)
-        throw Exception("LOGICAL ERROR: cannot get mysql version.", ErrorCodes::LOGICAL_ERROR);
-
-    return version_block.getByPosition(0).column->getDataAt(0).toString();
 }
 
 MaterializeMySQLSyncThread::MaterializeMySQLSyncThread(
@@ -160,13 +151,13 @@ MaterializeMySQLSyncThread::MaterializeMySQLSyncThread(
     query_prefix = "EXTERNAL DDL FROM MySQL(" + backQuoteIfNeed(database_name) + ", " + backQuoteIfNeed(mysql_database_name) + ") ";
 }
 
-void MaterializeMySQLSyncThread::synchronization(const String & mysql_version)
+void MaterializeMySQLSyncThread::synchronization()
 {
     setThreadName(MYSQL_BACKGROUND_THREAD_NAME);
 
     try
     {
-        if (std::optional<MaterializeMetadata> metadata = prepareSynchronized(mysql_version))
+        if (std::optional<MaterializeMetadata> metadata = prepareSynchronized())
         {
             Stopwatch watch;
             Buffers buffers(database_name);
@@ -217,10 +208,8 @@ void MaterializeMySQLSyncThread::startSynchronization()
 {
     try
     {
-        const auto & mysql_server_version = checkVariableAndGetVersion(pool.get());
-
-        background_thread_pool = std::make_unique<ThreadFromGlobalPool>(
-            [this, mysql_server_version = mysql_server_version]() { synchronization(mysql_server_version); });
+        checkMySQLVariables(pool.get());
+        background_thread_pool = std::make_unique<ThreadFromGlobalPool>([this]() { synchronization(); });
     }
     catch (...)
     {
@@ -324,7 +313,7 @@ static inline UInt32 randomNumber()
     return dist6(rng);
 }
 
-std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchronized(const String & mysql_version)
+std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchronized()
 {
     bool opened_transaction = false;
     mysqlxx::PoolWithFailover::Entry connection;
@@ -337,8 +326,7 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
             opened_transaction = false;
 
             MaterializeMetadata metadata(
-                connection, getDatabase(database_name).getMetadataPath() + "/.metadata",
-                mysql_database_name, opened_transaction, mysql_version);
+                connection, getDatabase(database_name).getMetadataPath() + "/.metadata", mysql_database_name, opened_transaction);
 
             if (!metadata.need_dumping_tables.empty())
             {
