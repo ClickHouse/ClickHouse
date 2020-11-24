@@ -1,3 +1,8 @@
+---
+toc_priority: 2
+toc_title: ClickHouse的特性
+---
+
 # ClickHouse的特性 {#clickhouse-de-te-xing}
 
 ## 真正的列式数据库管理系统 {#zhen-zheng-de-lie-shi-shu-ju-ku-guan-li-xi-tong}
