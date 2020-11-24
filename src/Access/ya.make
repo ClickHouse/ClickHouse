@@ -23,8 +23,8 @@ SRCS(
     EnabledRowPolicies.cpp
     EnabledSettings.cpp
     ExternalAuthenticators.cpp
-    GrantedRoles.cpp
     GSSAcceptor.cpp
+    GrantedRoles.cpp
     IAccessEntity.cpp
     IAccessStorage.cpp
     LDAPAccessStorage.cpp
