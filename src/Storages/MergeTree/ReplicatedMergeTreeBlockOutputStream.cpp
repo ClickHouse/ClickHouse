@@ -183,7 +183,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 }
 
 
-void ReplicatedMergeTreeBlockOutputStream::writeExistingPart(MergeTreeData::MutableDataPartPtr & part)
+void ReplicatedMergeTreeBlockOutputStream::writeExistingPart(MergeTreeData::MutableDataPartPtr & part, String block_id)
 {
     last_block_is_duplicate = false;
 
@@ -199,7 +199,7 @@ void ReplicatedMergeTreeBlockOutputStream::writeExistingPart(MergeTreeData::Muta
 
     try
     {
-        commitPart(zookeeper, part, "");
+        commitPart(zookeeper, part, block_id);
         PartLog::addNewPart(storage.getContext(), part, watch.elapsed());
     }
     catch (...)
