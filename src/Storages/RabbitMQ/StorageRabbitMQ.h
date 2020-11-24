@@ -67,12 +67,12 @@ public:
 protected:
     StorageRabbitMQ(
             const StorageID & table_id_,
-            Context & context_,
+            const Context & context_,
             const ColumnsDescription & columns_,
             std::unique_ptr<RabbitMQSettings> rabbitmq_settings_);
 
 private:
-    Context global_context;
+    const Context & global_context;
     Context rabbitmq_context;
     std::unique_ptr<RabbitMQSettings> rabbitmq_settings;
 
