@@ -74,7 +74,6 @@ StorageRabbitMQ::StorageRabbitMQ(
         std::unique_ptr<RabbitMQSettings> rabbitmq_settings_)
         : IStorage(table_id_)
         , global_context(context_.getGlobalContext())
-        , rabbitmq_context(std::make_shared<Context>(global_context))
         , rabbitmq_settings(std::move(rabbitmq_settings_))
         , exchange_name(global_context.getMacros()->expand(rabbitmq_settings->rabbitmq_exchange_name.value))
         , format_name(global_context.getMacros()->expand(rabbitmq_settings->rabbitmq_format.value))
@@ -114,8 +113,8 @@ StorageRabbitMQ::StorageRabbitMQ(
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
 
+    rabbitmq_context = addSettings(global_context);
     rabbitmq_context->makeQueryContext();
-    rabbitmq_context = addSettings(*rabbitmq_context);
 
     /// One looping task for all consumers as they share the same connection == the same handler == the same event loop
     event_handler->updateLoopState(Loop::STOP);
@@ -583,7 +582,9 @@ Pipe StorageRabbitMQ::read(
         looping_task->activateAndSchedule();
 
     LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
-    return Pipe::unitePipes(std::move(pipes));
+    auto united_pipe = Pipe::unitePipes(std::move(pipes));
+    united_pipe.addInterpreterContext(modified_context);
+    return united_pipe;
 }
 
 
