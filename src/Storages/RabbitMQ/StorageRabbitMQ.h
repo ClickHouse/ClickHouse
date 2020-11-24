@@ -38,7 +38,7 @@ public:
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
-        const SelectQueryInfo & query_info,
+        SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
@@ -67,12 +67,12 @@ public:
 protected:
     StorageRabbitMQ(
             const StorageID & table_id_,
-            Context & context_,
+            const Context & context_,
             const ColumnsDescription & columns_,
             std::unique_ptr<RabbitMQSettings> rabbitmq_settings_);
 
 private:
-    Context global_context;
+    const Context & global_context;
     Context rabbitmq_context;
     std::unique_ptr<RabbitMQSettings> rabbitmq_settings;
 
@@ -114,14 +114,15 @@ private:
     std::atomic<bool> wait_confirm = true; /// needed to break waiting for confirmations for producer
     std::atomic<bool> exchange_removed = false;
     ChannelPtr setup_channel;
+    std::vector<String> queues;
 
     std::once_flag flag; /// remove exchange only once
     std::mutex task_mutex;
     BackgroundSchedulePool::TaskHolder streaming_task;
-    BackgroundSchedulePool::TaskHolder heartbeat_task;
     BackgroundSchedulePool::TaskHolder looping_task;
 
     std::atomic<bool> stream_cancelled{false};
+    size_t read_attempts = 0;
 
     ConsumerBufferPtr createReadBuffer();
 
@@ -140,6 +141,7 @@ private:
 
     void initExchange();
     void bindExchange();
+    void bindQueue(size_t queue_id);
 
     bool restoreConnection(bool reconnecting);
     bool streamToViews();

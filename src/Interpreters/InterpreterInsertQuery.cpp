@@ -26,7 +26,7 @@
 #include <Processors/NullSink.h>
 #include <Processors/Sources/SinkToOutputStream.h>
 #include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/Transforms/ConvertingTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <Storages/StorageDistributed.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/checkStackSize.h>
@@ -67,9 +67,8 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
 {
     if (query.table_function)
     {
-        const auto * table_function = query.table_function->as<ASTFunction>();
         const auto & factory = TableFunctionFactory::instance();
-        TableFunctionPtr table_function_ptr = factory.get(table_function->name, context);
+        TableFunctionPtr table_function_ptr = factory.get(query.table_function, context);
         return table_function_ptr->execute(query.table_function, context, table_function_ptr->getName());
     }
 
@@ -348,7 +347,7 @@ BlockIO InterpreterInsertQuery::execute()
             /// Actually we don't know structure of input blocks from query/table,
             /// because some clients break insertion protocol (columns != header)
             out = std::make_shared<AddingDefaultBlockOutputStream>(
-                out, query_sample_block, out->getHeader(), metadata_snapshot->getColumns().getDefaults(), context);
+                out, query_sample_block, out->getHeader(), metadata_snapshot->getColumns(), context);
 
             /// It's important to squash blocks as early as possible (before other transforms),
             ///  because other transforms may work inefficient if block size is small.
@@ -379,11 +378,15 @@ BlockIO InterpreterInsertQuery::execute()
     else if (query.select || query.watch)
     {
         const auto & header = out_streams.at(0)->getHeader();
+        auto actions_dag = ActionsDAG::makeConvertingActions(
+                res.pipeline.getHeader().getColumnsWithTypeAndName(),
+                header.getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Position);
+        auto actions = std::make_shared<ExpressionActions>(actions_dag);
 
         res.pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
         {
-            return std::make_shared<ConvertingTransform>(in_header, header,
-                    ConvertingTransform::MatchColumnsMode::Position);
+            return std::make_shared<ExpressionTransform>(in_header, actions);
         });
 
         res.pipeline.setSinks([&](const Block &, QueryPipeline::StreamType type) -> ProcessorPtr
@@ -414,6 +417,11 @@ BlockIO InterpreterInsertQuery::execute()
         res.out = std::move(out_streams.at(0));
 
     res.pipeline.addStorageHolder(table);
+    if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
+    {
+        if (auto inner_table = mv->tryGetTargetTable())
+            res.pipeline.addStorageHolder(inner_table);
+    }
 
     return res;
 }

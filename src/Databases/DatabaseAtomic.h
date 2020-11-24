@@ -55,7 +55,7 @@ public:
 
     UUID tryGetTableUUID(const String & table_name) const override;
 
-    void tryCreateSymlink(const String & table_name, const String & actual_data_path);
+    void tryCreateSymlink(const String & table_name, const String & actual_data_path, bool if_data_path_exist = false);
     void tryRemoveSymlink(const String & table_name);
 
     void waitDetachedTableNotInUse(const UUID & uuid);

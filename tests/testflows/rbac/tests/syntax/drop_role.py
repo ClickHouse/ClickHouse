@@ -2,8 +2,8 @@ from contextlib import contextmanager
 
 from testflows.core import *
 
+import rbac.helper.errors as errors
 from rbac.requirements import *
-import rbac.tests.errors as errors
 
 @TestFeature
 @Name("drop role")
@@ -73,9 +73,9 @@ def feature(self, node="clickhouse1"):
     with Scenario("I drop role on cluster", flags=TE, requirements=[
             RQ_SRS_006_RBAC_Role_Drop_Cluster("1.0")]):
         with Given("I have a role on cluster"):
-            node.query("CREATE ROLE role0 ON CLUSTER sharded_cluster")
+            node.query("CREATE ROLE OR REPLACE role0 ON CLUSTER sharded_cluster")
         with When("I drop the role from the cluster"):
-            node.query("DROP ROLE role0 ON CLUSTER sharded_cluster")
+            node.query("DROP ROLE IF EXISTS role0 ON CLUSTER sharded_cluster")
 
     with Scenario("I drop role on fake cluster", flags=TE, requirements=[
                 RQ_SRS_006_RBAC_Role_Drop_Cluster("1.0")]):

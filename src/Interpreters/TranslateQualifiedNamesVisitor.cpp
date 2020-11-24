@@ -104,7 +104,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTIdentifier & identifier, ASTPtr &,
             if (data.unknownColumn(table_pos, identifier))
             {
                 String table_name = data.tables[table_pos].table.getQualifiedNamePrefix(false);
-                throw Exception("There's no column '" + identifier.name + "' in table '" + table_name + "'",
+                throw Exception("There's no column '" + identifier.name() + "' in table '" + table_name + "'",
                                 ErrorCodes::UNKNOWN_IDENTIFIER);
             }
 
@@ -175,9 +175,12 @@ void TranslateQualifiedNamesMatcher::visit(ASTSelectQuery & select, const ASTPtr
 
 static void addIdentifier(ASTs & nodes, const DatabaseAndTableWithAlias & table, const String & column_name)
 {
+    std::vector<String> parts = {column_name};
+
     String table_name = table.getQualifiedNamePrefix(false);
-    auto identifier = std::make_shared<ASTIdentifier>(std::vector<String>{table_name, column_name});
-    nodes.emplace_back(identifier);
+    if (!table_name.empty()) parts.insert(parts.begin(), table_name);
+
+    nodes.emplace_back(std::make_shared<ASTIdentifier>(std::move(parts)));
 }
 
 /// Replace *, alias.*, database.table.* with a list of columns.
@@ -213,6 +216,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
 
     for (const auto & child : old_children)
     {
+        ASTs columns;
         if (const auto * asterisk = child->as<ASTAsterisk>())
         {
             bool first_table = true;
@@ -222,7 +226,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
                 {
                     if (first_table || !data.join_using_columns.count(column.name))
                     {
-                        addIdentifier(node.children, table.table, column.name);
+                        addIdentifier(columns, table.table, column.name);
                     }
                 }
 
@@ -230,7 +234,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             }
             for (const auto & transformer : asterisk->children)
             {
-                IASTColumnsTransformer::transform(transformer, node.children);
+                IASTColumnsTransformer::transform(transformer, columns);
             }
         }
         else if (const auto * asterisk_pattern = child->as<ASTColumnsMatcher>())
@@ -238,7 +242,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             if (asterisk_pattern->column_list)
             {
                 for (const auto & ident : asterisk_pattern->column_list->children)
-                    node.children.emplace_back(ident->clone());
+                    columns.emplace_back(ident->clone());
             }
             else
             {
@@ -249,7 +253,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
                     {
                         if (asterisk_pattern->isColumnMatching(column.name) && (first_table || !data.join_using_columns.count(column.name)))
                         {
-                            addIdentifier(node.children, table.table, column.name);
+                            addIdentifier(columns, table.table, column.name);
                         }
                     }
 
@@ -259,7 +263,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             // ColumnsMatcher's transformers start to appear at child 1
             for (auto it = asterisk_pattern->children.begin() + 1; it != asterisk_pattern->children.end(); ++it)
             {
-                IASTColumnsTransformer::transform(*it, node.children);
+                IASTColumnsTransformer::transform(*it, columns);
             }
         }
         else if (const auto * qualified_asterisk = child->as<ASTQualifiedAsterisk>())
@@ -272,7 +276,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
                 {
                     for (const auto & column : table.columns)
                     {
-                        addIdentifier(node.children, table.table, column.name);
+                        addIdentifier(columns, table.table, column.name);
                     }
                     break;
                 }
@@ -280,11 +284,16 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             // QualifiedAsterisk's transformers start to appear at child 1
             for (auto it = qualified_asterisk->children.begin() + 1; it != qualified_asterisk->children.end(); ++it)
             {
-                IASTColumnsTransformer::transform(*it, node.children);
+                IASTColumnsTransformer::transform(*it, columns);
             }
         }
         else
-            node.children.emplace_back(child);
+            columns.emplace_back(child);
+
+        node.children.insert(
+            node.children.end(),
+            std::make_move_iterator(columns.begin()),
+            std::make_move_iterator(columns.end()));
     }
 }
 
@@ -348,7 +357,7 @@ void RestoreQualifiedNamesMatcher::visit(ASTIdentifier & identifier, ASTPtr &, D
     {
         if (IdentifierSemantic::getMembership(identifier))
         {
-            identifier.restoreCompoundName();
+            identifier.restoreTable();  // TODO(ilezhankin): should restore qualified name here - why exactly here?
             if (data.rename)
                 data.changeTable(identifier);
         }

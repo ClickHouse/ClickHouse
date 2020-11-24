@@ -121,6 +121,9 @@ set +e
 PATH="$(readlink -f right/)":"$PATH"
 export PATH
 
+export REF_PR
+export REF_SHA
+
 # Start the main comparison script.
 { \
     time ../download.sh "$REF_PR" "$REF_SHA" "$PR_TO_TEST" "$SHA_TO_TEST" && \

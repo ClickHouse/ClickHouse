@@ -59,25 +59,6 @@ set(CMAKE_DEBUG_POSTFIX "d" CACHE STRING "Generate debug library name with a pos
 # For more info see https://cmake.org/cmake/help/latest/prop_gbl/USE_FOLDERS.html
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
-# cmake 3.9+ needed.
-# Usually impractical.
-# See also ${ENABLE_THINLTO}
-option(ENABLE_IPO "Full link time optimization")
-
-if(ENABLE_IPO)
-    cmake_policy(SET CMP0069 NEW)
-    include(CheckIPOSupported)
-    check_ipo_supported(RESULT IPO_SUPPORTED OUTPUT IPO_NOT_SUPPORTED)
-    if(IPO_SUPPORTED)
-        message(STATUS "IPO/LTO is supported, enabling")
-        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
-    else()
-        message (${RECONFIGURE_MESSAGE_LEVEL} "IPO/LTO is not supported: <${IPO_NOT_SUPPORTED}>")
-    endif()
-else()
-    message(STATUS "IPO/LTO not enabled.")
-endif()
-
 # Check that submodules are present only if source was downloaded with git
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git" AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/boost/boost")
     message (FATAL_ERROR "Submodules are not initialized. Run\n\tgit submodule update --init --recursive")
@@ -300,6 +281,11 @@ if (COMPILER_CLANG)
         option(ENABLE_THINLTO "Clang-specific link time optimization" ON)
     endif()
 
+    # Set new experimental pass manager, it's a performance, build time and binary size win.
+    # Can be removed after https://reviews.llvm.org/D66490 merged and released to at least two versions of clang.
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexperimental-new-pass-manager")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fexperimental-new-pass-manager")
+
     # We cannot afford to use LTO when compiling unit tests, and it's not enough
     # to only supply -fno-lto at the final linking stage. So we disable it
     # completely.
@@ -459,6 +445,7 @@ include (cmake/find/brotli.cmake)
 include (cmake/find/protobuf.cmake)
 include (cmake/find/grpc.cmake)
 include (cmake/find/pdqsort.cmake)
+include (cmake/find/miniselect.cmake)
 include (cmake/find/hdfs3.cmake) # uses protobuf
 include (cmake/find/poco.cmake)
 include (cmake/find/curl.cmake)
@@ -469,6 +456,8 @@ include (cmake/find/simdjson.cmake)
 include (cmake/find/rapidjson.cmake)
 include (cmake/find/fastops.cmake)
 include (cmake/find/odbc.cmake)
+include (cmake/find/rocksdb.cmake)
+
 
 if(NOT USE_INTERNAL_PARQUET_LIBRARY)
     set (ENABLE_ORC OFF CACHE INTERNAL "")
@@ -513,8 +502,8 @@ endif ()
 macro (add_executable target)
     # invoke built-in add_executable
     # explicitly acquire and interpose malloc symbols by clickhouse_malloc
-    # if GLIBC_COMPATIBILITY is ON and not sanitizer build, provide memcpy symbol explicitly to neutrialize thinlto's libcall generation.
-    if (GLIBC_COMPATIBILITY AND NOT SANITIZE)
+    # if GLIBC_COMPATIBILITY is ON and ENABLE_THINLTO is on than provide memcpy symbol explicitly to neutrialize thinlto's libcall generation.
+    if (GLIBC_COMPATIBILITY AND ENABLE_THINLTO)
         _add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc> $<TARGET_OBJECTS:clickhouse_memcpy>)
     else ()
         _add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)

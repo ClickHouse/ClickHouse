@@ -3,6 +3,7 @@
 #include <Common/quoteString.h>
 #include <re2/re2.h>
 #include <Common/SipHash.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -32,7 +33,10 @@ void ASTColumnsMatcher::formatImpl(const FormatSettings & settings, FormatState 
 {
     settings.ostr << (settings.hilite ? hilite_keyword : "") << "COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
     if (column_list)
+    {
+        frame.expression_list_prepend_whitespace = false;
         column_list->formatImpl(settings, state, frame);
+    }
     else
         settings.ostr << quoteString(original_pattern);
     settings.ostr << ")";

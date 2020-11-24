@@ -66,6 +66,11 @@ IMPLEMENT_SETTING_ENUM_WITH_RENAME(DateTimeInputFormat, ErrorCodes::BAD_ARGUMENT
      {"best_effort", FormatSettings::DateTimeInputFormat::BestEffort}})
 
 
+IMPLEMENT_SETTING_ENUM_WITH_RENAME(DateTimeOutputFormat, ErrorCodes::BAD_ARGUMENTS,
+    {{"simple",         FormatSettings::DateTimeOutputFormat::Simple},
+     {"iso",            FormatSettings::DateTimeOutputFormat::ISO},
+     {"unix_timestamp", FormatSettings::DateTimeOutputFormat::UnixTimestamp}})
+
 IMPLEMENT_SETTING_ENUM(LogsLevel, ErrorCodes::BAD_ARGUMENTS,
     {{"none",        LogsLevel::none},
      {"fatal",       LogsLevel::fatal},

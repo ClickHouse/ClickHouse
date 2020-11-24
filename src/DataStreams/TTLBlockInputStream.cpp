@@ -103,6 +103,15 @@ bool TTLBlockInputStream::isTTLExpired(time_t ttl) const
     return (ttl && (ttl <= current_time));
 }
 
+Block reorderColumns(Block block, const Block & header)
+{
+    Block res;
+    for (const auto & col : header)
+        res.insert(block.getByName(col.name));
+
+    return res;
+}
+
 Block TTLBlockInputStream::readImpl()
 {
     /// Skip all data if table ttl is expired for part
@@ -136,7 +145,7 @@ Block TTLBlockInputStream::readImpl()
     updateMovesTTL(block);
     updateRecompressionTTL(block);
 
-    return block;
+    return reorderColumns(std::move(block), header);
 }
 
 void TTLBlockInputStream::readSuffixImpl()
@@ -150,7 +159,7 @@ void TTLBlockInputStream::readSuffixImpl()
     data_part->expired_columns = std::move(empty_columns);
 
     if (rows_removed)
-        LOG_INFO(log, "Removed {} rows with expired TTL from part {}", rows_removed, data_part->name);
+        LOG_DEBUG(log, "Removed {} rows with expired TTL from part {}", rows_removed, data_part->name);
 }
 
 void TTLBlockInputStream::removeRowsWithExpiredTableTTL(Block & block)
