@@ -15,9 +15,8 @@
 
 #include <Processors/Pipe.h>
 #include <Processors/Transforms/MaterializingTransform.h>
-#include <Processors/Transforms/ConvertingTransform.h>
 #include <Processors/QueryPlan/MaterializingStep.h>
-#include <Processors/QueryPlan/ConvertingStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 
 namespace DB
@@ -94,7 +93,12 @@ void StorageView::read(
 
     /// And also convert to expected structure.
     auto header = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
-    auto converting = std::make_unique<ConvertingStep>(query_plan.getCurrentDataStream(), header);
+    auto convert_actions_dag = ActionsDAG::makeConvertingActions(
+            query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
+            header.getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Name);
+
+    auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), convert_actions_dag);
     converting->setStepDescription("Convert VIEW subquery result to VIEW table structure");
     query_plan.addStep(std::move(converting));
 }

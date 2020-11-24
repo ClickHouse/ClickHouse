@@ -78,7 +78,9 @@ FormatSettings getFormatSettings(const Context & context,
     format_settings.import_nested_json = settings.input_format_import_nested_json;
     format_settings.input_allow_errors_num = settings.input_format_allow_errors_num;
     format_settings.input_allow_errors_ratio = settings.input_format_allow_errors_ratio;
+    format_settings.json.array_of_rows = settings.output_format_json_array_of_rows;
     format_settings.json.escape_forward_slashes = settings.output_format_json_escape_forward_slashes;
+    format_settings.json.named_tuples_as_objects = settings.output_format_json_named_tuples_as_objects;
     format_settings.json.quote_64bit_integers = settings.output_format_json_quote_64bit_integers;
     format_settings.json.quote_denormals = settings.output_format_json_quote_denormals;
     format_settings.null_as_default = settings.input_format_null_as_default;
@@ -160,6 +162,9 @@ BlockInputStreamPtr FormatFactory::getInput(
     // (segmentator + two parsers + reader).
     bool parallel_parsing = settings.input_format_parallel_parsing && file_segmentation_engine && settings.max_threads >= 4;
 
+    if (settings.min_chunk_bytes_for_parallel_parsing * settings.max_threads * 2 > settings.max_memory_usage)
+        parallel_parsing = false;
+
     if (parallel_parsing && name == "JSONEachRow")
     {
         /// FIXME ParallelParsingBlockInputStream doesn't support formats with non-trivial readPrefix() and readSuffix()
@@ -188,7 +193,7 @@ BlockInputStreamPtr FormatFactory::getInput(
                 row_input_format_params, format_settings};
         ParallelParsingBlockInputStream::Params params{buf, input_getter,
             input_creator_params, file_segmentation_engine,
-            static_cast<int>(settings.max_threads),
+            settings.max_threads,
             settings.min_chunk_bytes_for_parallel_parsing};
         return std::make_shared<ParallelParsingBlockInputStream>(params);
     }
@@ -333,7 +338,6 @@ void FormatFactory::registerFileSegmentationEngine(const String & name, FileSegm
         throw Exception("FormatFactory: File segmentation engine " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
     target = std::move(file_segmentation_engine);
 }
-
 
 FormatFactory & FormatFactory::instance()
 {
