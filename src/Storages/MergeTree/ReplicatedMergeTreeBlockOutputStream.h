@@ -40,7 +40,7 @@ public:
     void write(const Block & block) override;
 
     /// For ATTACHing existing data on filesystem.
-    void writeExistingPart(MergeTreeData::MutableDataPartPtr & part);
+    void writeExistingPart(MergeTreeData::MutableDataPartPtr & part, String block_id = "");
 
     /// For proper deduplication in MaterializedViews
     bool lastBlockIsDuplicate() const

@@ -41,6 +41,8 @@ struct ReplicatedMergeTreeLogEntryData
         REPLACE_RANGE,  /// Drop certain range of partitions and replace them by new ones
         MUTATE_PART,    /// Apply one or several mutations to the part.
         ALTER_METADATA, /// Apply alter modification according to global /metadata and /columns paths
+        SYNC_PINNED_PART_UUIDS, /// Synchronization point for ensuring that all replicas have up to date in-memory state.
+        CLONE_PART_FROM_SHARD,  /// Clone part from another shard.
     };
 
     static String typeToString(Type type)
@@ -56,6 +58,8 @@ struct ReplicatedMergeTreeLogEntryData
             case ReplicatedMergeTreeLogEntryData::REPLACE_RANGE:    return "REPLACE_RANGE";
             case ReplicatedMergeTreeLogEntryData::MUTATE_PART:      return "MUTATE_PART";
             case ReplicatedMergeTreeLogEntryData::ALTER_METADATA:   return "ALTER_METADATA";
+            case ReplicatedMergeTreeLogEntryData::SYNC_PINNED_PART_UUIDS: return "SYNC_PINNED_PART_UUIDS";
+            case ReplicatedMergeTreeLogEntryData::CLONE_PART_FROM_SHARD:  return "CLONE_PART_FROM_SHARD";
             default:
                 throw Exception("Unknown log entry type: " + DB::toString<int>(type), ErrorCodes::LOGICAL_ERROR);
         }
@@ -74,6 +78,7 @@ struct ReplicatedMergeTreeLogEntryData
 
     Type type = EMPTY;
     String source_replica; /// Empty string means that this entry was added to the queue immediately, and not copied from the log.
+    String source_shard;
 
     String part_checksum; /// Part checksum for ATTACH_PART, empty otherwise.
 
@@ -149,6 +154,14 @@ struct ReplicatedMergeTreeLogEntryData
             res.emplace_back(replace_range_entry->drop_range_part_name);
             return res;
         }
+
+        /// Doesn't produce any part.
+        if (type == SYNC_PINNED_PART_UUIDS)
+            return {};
+
+        /// Doesn't produce any part by itself.
+        if (type == CLONE_PART_FROM_SHARD)
+            return {};
 
         return {new_part_name};
     }

@@ -291,7 +291,14 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     auto index_stats = std::make_unique<ReadFromMergeTree::IndexStats>();
 
     if (query_context->getSettingsRef().allow_experimental_query_deduplication)
-        selectPartsToReadWithUUIDFilter(parts, part_values, minmax_idx_condition, minmax_columns_types, partition_pruner, max_block_numbers_to_read, query_context, part_filter_counters);
+        selectPartsToReadWithUUIDFilter(
+            parts,
+            part_values,
+            data.getPinnedPartUUIDs(),
+            minmax_idx_condition,
+           minmax_columns_types, partition_pruner,
+            max_block_numbers_to_read,
+            query_context, part_filter_counters);
     else
         selectPartsToRead(parts, part_values, minmax_idx_condition, minmax_columns_types, partition_pruner, max_block_numbers_to_read, part_filter_counters);
 
@@ -1922,6 +1929,7 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
 void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
     MergeTreeData::DataPartsVector & parts,
     const std::unordered_set<String> & part_values,
+    MergeTreeData::PinnedPartUUIDsPtr pinned_part_uuids,
     const std::optional<KeyCondition> & minmax_idx_condition,
     const DataTypes & minmax_columns_types,
     std::optional<PartitionPruner> & partition_pruner,
@@ -1929,6 +1937,8 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
     ContextPtr query_context,
     PartFilterCounters & counters) const
 {
+    const Settings & settings = query_context.getSettings();
+
     /// process_parts prepare parts that have to be read for the query,
     /// returns false if duplicated parts' UUID have been met
     auto select_parts = [&] (MergeTreeData::DataPartsVector & selected_parts) -> bool
@@ -1985,9 +1995,12 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
             /// populate UUIDs and exclude ignored parts if enabled
             if (part->uuid != UUIDHelpers::Nil)
             {
-                auto result = temp_part_uuids.insert(part->uuid);
-                if (!result.second)
-                    throw Exception("Found a part with the same UUID on the same replica.", ErrorCodes::LOGICAL_ERROR);
+                if (settings.experimental_query_deduplication_send_all_part_uuids || pinned_part_uuids->contains(part->uuid))
+                {
+                    auto result = temp_part_uuids.insert(part->uuid);
+                    if (!result.second)
+                        throw Exception("Found a part with the same UUID on the same replica.", ErrorCodes::LOGICAL_ERROR);
+                }
             }
 
             selected_parts.push_back(part);
@@ -2011,7 +2024,8 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
     /// Process parts that have to be read for a query.
     auto needs_retry = !select_parts(parts);
 
-    /// If any duplicated part UUIDs met during the first step, try to ignore them in second pass
+    /// If any duplicated part UUIDs met during the first step, try to ignore them in second pass.
+    /// This may happen when `prefer_localhost_replica` is set and "distributed" stage runs in the same process with "remote" stage.
     if (needs_retry)
     {
         LOG_DEBUG(log, "Found duplicate uuids locally, will retry part selection without them");
