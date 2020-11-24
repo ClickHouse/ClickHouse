@@ -45,6 +45,9 @@ public:
     /// Pushes query into DDL queue, returns path to created node
     String enqueueQuery(DDLLogEntry & entry);
 
+    /// Fetches the queries that are currently in the DDL queue
+    std::vector<String> dumpQueriesInQueue();
+
     /// Host ID (name:port) for logging purposes
     /// Note that in each task hosts are identified individually by name:port from initiator server cluster config
     std::string getCommonHostID() const
