@@ -202,9 +202,9 @@ bool isExpressionActionsDeterministics(const ExpressionActionsPtr & actions)
 {
     for (const auto & action : actions->getActions())
     {
-        if (action.type != ExpressionAction::APPLY_FUNCTION)
+        if (action.node->type != ActionsDAG::ActionType::FUNCTION)
             continue;
-        if (!action.function_base->isDeterministic())
+        if (!action.node->function_base->isDeterministic())
             return false;
     }
     return true;
@@ -366,10 +366,10 @@ StorageDistributed::StorageDistributed(
     : IStorage(id_)
     , remote_database(remote_database_)
     , remote_table(remote_table_)
-    , global_context(std::make_unique<Context>(context_))
+    , global_context(context_.getGlobalContext())
     , log(&Poco::Logger::get("StorageDistributed (" + id_.table_name + ")"))
     , owned_cluster(std::move(owned_cluster_))
-    , cluster_name(global_context->getMacros()->expand(cluster_name_))
+    , cluster_name(global_context.getMacros()->expand(cluster_name_))
     , has_sharding_key(sharding_key_)
     , relative_data_path(relative_data_path_)
 {
@@ -380,14 +380,14 @@ StorageDistributed::StorageDistributed(
 
     if (sharding_key_)
     {
-        sharding_key_expr = buildShardingKeyExpression(sharding_key_, *global_context, storage_metadata.getColumns().getAllPhysical(), false);
+        sharding_key_expr = buildShardingKeyExpression(sharding_key_, global_context, storage_metadata.getColumns().getAllPhysical(), false);
         sharding_key_column_name = sharding_key_->getColumnName();
         sharding_key_is_deterministic = isExpressionActionsDeterministics(sharding_key_expr);
     }
 
     if (!relative_data_path.empty())
     {
-        storage_policy = global_context->getStoragePolicy(storage_policy_name_);
+        storage_policy = global_context.getStoragePolicy(storage_policy_name_);
         data_volume = storage_policy->getVolume(0);
         if (storage_policy->getVolumes().size() > 1)
             LOG_WARNING(log, "Storage policy for Distributed table has multiple volumes. "
@@ -397,7 +397,7 @@ StorageDistributed::StorageDistributed(
     /// Sanity check. Skip check if the table is already created to allow the server to start.
     if (!attach_ && !cluster_name.empty())
     {
-        size_t num_local_shards = global_context->getCluster(cluster_name)->getLocalShardCount();
+        size_t num_local_shards = global_context.getCluster(cluster_name)->getLocalShardCount();
         if (num_local_shards && remote_database == id_.database_name && remote_table == id_.table_name)
             throw Exception("Distributed table " + id_.table_name + " looks at itself", ErrorCodes::INFINITE_LOOP);
     }
@@ -719,7 +719,7 @@ StorageDistributedDirectoryMonitor& StorageDistributed::requireDirectoryMonitor(
     {
         node_data.connection_pool = StorageDistributedDirectoryMonitor::createPool(name, *this);
         node_data.directory_monitor = std::make_unique<StorageDistributedDirectoryMonitor>(
-            *this, path, node_data.connection_pool, monitors_blocker, global_context->getDistributedSchedulePool());
+            *this, path, node_data.connection_pool, monitors_blocker, global_context.getDistributedSchedulePool());
     }
     return *node_data.directory_monitor;
 }
@@ -741,7 +741,7 @@ size_t StorageDistributed::getShardCount() const
 
 ClusterPtr StorageDistributed::getCluster() const
 {
-    return owned_cluster ? owned_cluster : global_context->getCluster(cluster_name);
+    return owned_cluster ? owned_cluster : global_context.getCluster(cluster_name);
 }
 
 ClusterPtr StorageDistributed::getOptimizedCluster(const Context & context, const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query_ptr) const

@@ -9,6 +9,7 @@ namespace CurrentMetrics
 {
     extern const Metric BackgroundPoolTask;
     extern const Metric BackgroundMovePoolTask;
+    extern const Metric BackgroundFetchesPoolTask;
 }
 
 namespace DB
@@ -114,7 +115,7 @@ try
                     }
                 });
                 /// We've scheduled task in the background pool and when it will finish we will be triggered again. But this task can be
-                /// extremely long and we may have a lot of other small tasks to do, so we schedule ourselfs here.
+                /// extremely long and we may have a lot of other small tasks to do, so we schedule ourselves here.
                 scheduleTask(true);
             }
             catch (...)
@@ -183,7 +184,8 @@ BackgroundJobsExecutor::BackgroundJobsExecutor(
     : IBackgroundJobExecutor(
         global_context_,
         global_context_.getBackgroundProcessingTaskSchedulingSettings(),
-        {PoolConfig{PoolType::MERGE_MUTATE, global_context_.getSettingsRef().background_pool_size, CurrentMetrics::BackgroundPoolTask}})
+        {PoolConfig{PoolType::MERGE_MUTATE, global_context_.getSettingsRef().background_pool_size, CurrentMetrics::BackgroundPoolTask},
+         PoolConfig{PoolType::FETCH, global_context_.getSettingsRef().background_fetches_pool_size, CurrentMetrics::BackgroundFetchesPoolTask}})
     , data(data_)
 {
 }

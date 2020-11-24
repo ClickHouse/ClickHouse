@@ -337,10 +337,12 @@ struct ContextShared
     ReplicatedFetchList replicated_fetch_list;
     ConfigurationPtr users_config;                          /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
-    std::optional<BackgroundSchedulePool> buffer_flush_schedule_pool; /// A thread pool that can do background flush for Buffer tables.
-    std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
-    std::optional<BackgroundSchedulePool> distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
-    std::optional<BackgroundSchedulePool> replicated_schedule_pool; /// A thread pool that can run different jobs in background (used in replicated database engine)
+
+    mutable std::optional<BackgroundSchedulePool> buffer_flush_schedule_pool; /// A thread pool that can do background flush for Buffer tables.
+    mutable std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
+    mutable std::optional<BackgroundSchedulePool> distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
+    mutable std::optional<BackgroundSchedulePool> replicated_schedule_pool; /// A thread pool that can run different jobs in background (used in Replicated database engine)
+
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
@@ -487,7 +489,7 @@ Context Context::createGlobal(ContextShared * shared)
 
 void Context::initGlobal()
 {
-    DatabaseCatalog::init(this);
+    DatabaseCatalog::init(*this);
     TemporaryLiveViewCleaner::init(*this);
 }
 
@@ -1404,7 +1406,7 @@ void Context::dropCaches() const
         shared->mark_cache->reset();
 }
 
-BackgroundSchedulePool & Context::getBufferFlushSchedulePool()
+BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const
 {
     auto lock = getLock();
     if (!shared->buffer_flush_schedule_pool)
@@ -1446,7 +1448,7 @@ BackgroundTaskSchedulingSettings Context::getBackgroundMoveTaskSchedulingSetting
     return task_settings;
 }
 
-BackgroundSchedulePool & Context::getSchedulePool()
+BackgroundSchedulePool & Context::getSchedulePool() const
 {
     auto lock = getLock();
     if (!shared->schedule_pool)
@@ -1457,7 +1459,7 @@ BackgroundSchedulePool & Context::getSchedulePool()
     return *shared->schedule_pool;
 }
 
-BackgroundSchedulePool & Context::getDistributedSchedulePool()
+BackgroundSchedulePool & Context::getDistributedSchedulePool() const
 {
     auto lock = getLock();
     if (!shared->distributed_schedule_pool)
@@ -1468,22 +1470,25 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool()
     return *shared->distributed_schedule_pool;
 }
 
-BackgroundSchedulePool & Context::getReplicatedSchedulePool()
+BackgroundSchedulePool & Context::getReplicatedSchedulePool() const
 {
     auto lock = getLock();
     if (!shared->replicated_schedule_pool)
         shared->replicated_schedule_pool.emplace(
-            settings.background_replicated_schedule_pool_size,
-            CurrentMetrics::BackgroundReplicatedSchedulePoolTask,
-            "BgRplSchPool");
+            settings.background_replicated_schedule_pool_size, CurrentMetrics::BackgroundReplicatedSchedulePoolTask, "BgRplSchPool");
     return *shared->replicated_schedule_pool;
+}
+
+bool Context::hasDistributedDDL() const
+{
+    return getConfigRef().has("distributed_ddl");
 }
 
 void Context::setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker)
 {
     auto lock = getLock();
     if (shared->ddl_worker)
-        throw Exception("DDL background thread has already been initialized.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("DDL background thread has already been initialized", ErrorCodes::LOGICAL_ERROR);
     shared->ddl_worker = std::move(ddl_worker);
 }
 
@@ -1491,7 +1496,15 @@ DDLWorker & Context::getDDLWorker() const
 {
     auto lock = getLock();
     if (!shared->ddl_worker)
-        throw Exception("DDL background thread is not initialized.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+    {
+        if (!hasZooKeeper())
+            throw Exception("There is no Zookeeper configuration in server config", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+
+        if (!hasDistributedDDL())
+            throw Exception("There is no DistributedDDL configuration in server config", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+
+        throw Exception("DDL background thread is not initialized", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+    }
     return *shared->ddl_worker;
 }
 

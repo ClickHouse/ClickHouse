@@ -527,11 +527,13 @@ public:
     BackgroundTaskSchedulingSettings getBackgroundProcessingTaskSchedulingSettings() const;
     BackgroundTaskSchedulingSettings getBackgroundMoveTaskSchedulingSettings() const;
 
-    BackgroundSchedulePool & getBufferFlushSchedulePool();
-    BackgroundSchedulePool & getSchedulePool();
-    BackgroundSchedulePool & getDistributedSchedulePool();
-    BackgroundSchedulePool & getReplicatedSchedulePool();
+    BackgroundSchedulePool & getBufferFlushSchedulePool() const;
+    BackgroundSchedulePool & getSchedulePool() const;
+    BackgroundSchedulePool & getDistributedSchedulePool() const;
+    BackgroundSchedulePool & getReplicatedSchedulePool() const;
 
+    /// Has distributed_ddl configuration or not.
+    bool hasDistributedDDL() const;
     void setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker);
     DDLWorker & getDDLWorker() const;
 

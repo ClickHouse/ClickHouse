@@ -634,7 +634,12 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
                 "Cannot CREATE a table AS " + qualified_name + ", it is a Dictionary",
                 ErrorCodes::INCORRECT_QUERY);
 
-        create.set(create.storage, as_create.storage->ptr());
+        if (as_create.storage)
+            create.set(create.storage, as_create.storage->ptr());
+        else if (as_create.as_table_function)
+            create.as_table_function = as_create.as_table_function->clone();
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set engine, it's a bug.");
     }
 }
 
@@ -893,7 +898,7 @@ BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
 
     if (create.attach)
     {
-        auto config = getDictionaryConfigurationFromAST(create);
+        auto config = getDictionaryConfigurationFromAST(create, context);
         auto modification_time = database->getObjectMetadataModificationTime(dictionary_name);
         database->attachDictionary(dictionary_name, DictionaryAttachInfo{query_ptr, config, modification_time});
     }
