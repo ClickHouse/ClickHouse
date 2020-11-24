@@ -1,4 +1,6 @@
 # This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
+OWNER(g:clickhouse)
+
 LIBRARY()
 
 PEERDIR(
@@ -20,6 +22,8 @@ SRCS(
     HTTPCommon.cpp
     HashingWriteBuffer.cpp
     HexWriteBuffer.cpp
+    LZMADeflatingWriteBuffer.cpp
+    LZMAInflatingReadBuffer.cpp
     LimitReadBuffer.cpp
     MMapReadBufferFromFile.cpp
     MMapReadBufferFromFileDescriptor.cpp

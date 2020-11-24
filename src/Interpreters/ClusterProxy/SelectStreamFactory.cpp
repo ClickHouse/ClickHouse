@@ -10,11 +10,10 @@
 
 #include <common/logger_useful.h>
 #include <Processors/Pipe.h>
-#include <Processors/Transforms/ConvertingTransform.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ConvertingStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 
 
 namespace ProfileEvents
@@ -87,7 +86,13 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     /// Convert header structure to expected.
     /// Also we ignore constants from result and replace it with constants from header.
     /// It is needed for functions like `now64()` or `randConstant()` because their values may be different.
-    auto converting = std::make_unique<ConvertingStep>(query_plan->getCurrentDataStream(), header, true);
+    auto convert_actions_dag = ActionsDAG::makeConvertingActions(
+            query_plan->getCurrentDataStream().header.getColumnsWithTypeAndName(),
+            header.getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Name,
+            true);
+
+    auto converting = std::make_unique<ExpressionStep>(query_plan->getCurrentDataStream(), convert_actions_dag);
     converting->setStepDescription("Convert block structure for query from local replica");
     query_plan->addStep(std::move(converting));
 
@@ -98,10 +103,9 @@ String formattedAST(const ASTPtr & ast)
 {
     if (!ast)
         return {};
-    std::stringstream ss;
-    ss.exceptions(std::ios::failbit);
-    formatAST(*ast, ss, false, true);
-    return ss.str();
+    WriteBufferFromOwnString buf;
+    formatAST(*ast, buf, false, true);
+    return buf.str();
 }
 
 }

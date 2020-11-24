@@ -89,7 +89,7 @@ public:
         Years
     };
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         StringRef maximum_unit_str;
         if (arguments.size() == 2)

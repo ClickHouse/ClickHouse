@@ -859,15 +859,15 @@ template <typename T>
 inline std::enable_if_t<std::is_floating_point_v<T>, void>
 writeText(const T & x, WriteBuffer & buf) { writeFloatText(x, buf); }
 
-inline void writeText(const String & x, WriteBuffer & buf) { writeEscapedString(x, buf); }
+inline void writeText(const String & x, WriteBuffer & buf) { writeString(x.c_str(), x.size(), buf); }
 
 /// Implemented as template specialization (not function overload) to avoid preference over templates on arithmetic types above.
 template <> inline void writeText<bool>(const bool & x, WriteBuffer & buf) { writeBoolText(x, buf); }
 
 /// unlike the method for std::string
 /// assumes here that `x` is a null-terminated string.
-inline void writeText(const char * x, WriteBuffer & buf) { writeEscapedString(x, strlen(x), buf); }
-inline void writeText(const char * x, size_t size, WriteBuffer & buf) { writeEscapedString(x, size, buf); }
+inline void writeText(const char * x, WriteBuffer & buf) { writeCString(x, buf); }
+inline void writeText(const char * x, size_t size, WriteBuffer & buf) { writeString(x, size, buf); }
 
 inline void writeText(const DayNum & x, WriteBuffer & buf) { writeDateText(LocalDate(x), buf); }
 inline void writeText(const LocalDate & x, WriteBuffer & buf) { writeDateText(x, buf); }
@@ -1092,5 +1092,19 @@ writeBinaryBigEndian(T x, WriteBuffer & buf)    /// Assuming little endian archi
 
     writePODBinary(x, buf);
 }
+
+struct PcgSerializer
+{
+    static void serializePcg32(const pcg32_fast & rng, WriteBuffer & buf)
+    {
+        writeText(rng.multiplier(), buf);
+        writeChar(' ', buf);
+        writeText(rng.increment(), buf);
+        writeChar(' ', buf);
+        writeText(rng.state_, buf);
+    }
+};
+
+void writePointerHex(const void * ptr, WriteBuffer & buf);
 
 }

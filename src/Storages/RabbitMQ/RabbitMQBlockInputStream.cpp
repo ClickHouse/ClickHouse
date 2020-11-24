@@ -1,6 +1,8 @@
-#include <Formats/FormatFactory.h>
-#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Storages/RabbitMQ/RabbitMQBlockInputStream.h>
+
+#include <Formats/FormatFactory.h>
+#include <Interpreters/Context.h>
+#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Storages/RabbitMQ/ReadBufferFromRabbitMQConsumer.h>
 
 namespace ErrorCodes
