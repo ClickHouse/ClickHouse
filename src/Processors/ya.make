@@ -1,4 +1,6 @@
 # This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
+OWNER(g:clickhouse)
+
 LIBRARY()
 
 PEERDIR(
@@ -93,7 +95,6 @@ SRCS(
     QueryPlan/AddingMissedStep.cpp
     QueryPlan/AggregatingStep.cpp
     QueryPlan/ArrayJoinStep.cpp
-    QueryPlan/ConvertingStep.cpp
     QueryPlan/CreatingSetsStep.cpp
     QueryPlan/CubeStep.cpp
     QueryPlan/DistinctStep.cpp
@@ -133,7 +134,6 @@ SRCS(
     Transforms/AggregatingInOrderTransform.cpp
     Transforms/AggregatingTransform.cpp
     Transforms/ArrayJoinTransform.cpp
-    Transforms/ConvertingTransform.cpp
     Transforms/CopyTransform.cpp
     Transforms/CreatingSetsTransform.cpp
     Transforms/CubeTransform.cpp

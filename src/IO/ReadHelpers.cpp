@@ -493,8 +493,12 @@ template <char quote, bool enable_sql_style_quoting, typename Vector>
 static void readAnyQuotedStringInto(Vector & s, ReadBuffer & buf)
 {
     if (buf.eof() || *buf.position() != quote)
-        throw Exception("Cannot parse quoted string: expected opening quote",
-            ErrorCodes::CANNOT_PARSE_QUOTED_STRING);
+    {
+        throw Exception(ErrorCodes::CANNOT_PARSE_QUOTED_STRING,
+            "Cannot parse quoted string: expected opening quote '{}', got '{}'",
+            std::string{quote}, buf.eof() ? "EOF" : std::string{*buf.position()});
+    }
+
     ++buf.position();
 
     while (!buf.eof())
