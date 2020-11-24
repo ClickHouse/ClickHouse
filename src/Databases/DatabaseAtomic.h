@@ -58,7 +58,7 @@ public:
     void tryCreateSymlink(const String & table_name, const String & actual_data_path, bool if_data_path_exist = false);
     void tryRemoveSymlink(const String & table_name);
 
-    void waitDetachedTableNotInUse(const UUID & uuid);
+    void waitDetachedTableNotInUse(const UUID & uuid) override;
 
 private:
     void commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path) override;

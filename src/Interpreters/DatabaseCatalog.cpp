@@ -232,7 +232,6 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         {
             if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
                 db_and_table.second = std::make_shared<StorageMaterializeMySQL>(std::move(db_and_table.second), db_and_table.first.get());
-            return db_and_table;
         }
 #endif
         return db_and_table;
