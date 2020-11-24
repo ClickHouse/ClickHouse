@@ -104,7 +104,7 @@ public:
             KeepAggregateFunctionVisitor(keep_data).visit(function_node->arguments);
 
             /// Place argument of an aggregate function instead of function
-            if (!keep_aggregator)
+            if (!keep_aggregator && !function_node->arguments->children.empty())
             {
                 String alias = function_node->alias;
                 ast = (function_node->arguments->children[0])->clone();

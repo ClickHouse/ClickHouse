@@ -9,6 +9,7 @@
 #include <Columns/ColumnsCommon.h>
 
 #include <common/unaligned.h>
+#include <common/sort.h>
 
 #include <DataStreams/ColumnGathererStream.h>
 
@@ -19,10 +20,6 @@
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
-
-#if !defined(ARCADIA_BUILD)
-    #include <miniselect/floyd_rivest_select.h> // Y_IGNORE
-#endif
 
 
 namespace DB
@@ -786,11 +783,7 @@ void ColumnArray::getPermutationImpl(size_t limit, Permutation & res, Comparator
     auto less = [&cmp](size_t lhs, size_t rhs){ return cmp(lhs, rhs) < 0; };
 
     if (limit)
-#if !defined(ARCADIA_BUILD)
-        miniselect::floyd_rivest_partial_sort(res.begin(), res.begin() + limit, res.end(), less);
-#else
-        std::partial_sort(res.begin(), res.begin() + limit, res.end(), less);
-#endif
+        partial_sort(res.begin(), res.begin() + limit, res.end(), less);
     else
         std::sort(res.begin(), res.end(), less);
 }
@@ -842,11 +835,7 @@ void ColumnArray::updatePermutationImpl(size_t limit, Permutation & res, EqualRa
             return;
 
         /// Since then we are working inside the interval.
-#if !defined(ARCADIA_BUILD)
-        miniselect::floyd_rivest_partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less);
-#else
-        std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less);
-#endif
+        partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less);
         auto new_first = first;
         for (auto j = first + 1; j < limit; ++j)
         {

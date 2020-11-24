@@ -99,6 +99,7 @@ void StorageMergeTree::startup()
 {
     clearOldPartsFromFilesystem();
     clearOldWriteAheadLogs();
+    clearEmptyParts();
 
     /// Temporary directories contain incomplete results of merges (after forced restart)
     ///  and don't allow to reinitialize them, so delete each of them immediately
@@ -641,6 +642,9 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
 
     FutureMergedMutatedPart future_part;
 
+    if (storage_settings.get()->assign_part_uuids)
+        future_part.uuid = UUIDHelpers::generateV4();
+
     /// You must call destructor with unlocked `currently_processing_in_background_mutex`.
     CurrentlyMergingPartsTaggerPtr merging_tagger;
     MergeList::EntryPtr merge_entry;
@@ -795,6 +799,9 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
     size_t max_ast_elements = global_context.getSettingsRef().max_expanded_ast_elements;
 
     FutureMergedMutatedPart future_part;
+    if (storage_settings.get()->assign_part_uuids)
+        future_part.uuid = UUIDHelpers::generateV4();
+
     MutationCommands commands;
 
     CurrentlyMergingPartsTaggerPtr tagger;
@@ -947,6 +954,7 @@ std::optional<JobAndPool> StorageMergeTree::getDataProcessingJob()
             clearOldTemporaryDirectories();
             clearOldWriteAheadLogs();
             clearOldMutations();
+            clearEmptyParts();
         }, PoolType::MERGE_MUTATE};
     }
     return {};
@@ -1087,7 +1095,7 @@ ActionLock StorageMergeTree::stopMergesAndWait()
 }
 
 
-void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, bool drop_part, const Context & context)
+void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, bool drop_part, const Context & context, bool throw_if_noop)
 {
     {
         /// Asks to complete merges and does not allow them to start.
@@ -1105,8 +1113,10 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, bool
 
             if (part)
                 parts_to_remove.push_back(part);
-            else
+            else if (throw_if_noop)
                 throw Exception("Part " + part_name + " not found, won't try to drop it.", ErrorCodes::NO_SUCH_DATA_PART);
+            else
+                return;
         }
         else
         {
