@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.join(CURDIR, 'helpers'))
 
 from pure_http_client import ClickHouseClient
 
-def test_and_check(name, a, b, t_stat, p_value, precision=1e-4):
+def test_and_check(name, a, b, t_stat, p_value, precision=5 * 1e-2):
     client = ClickHouseClient()
     client.query("DROP TABLE IF EXISTS ttest;")
     client.query("CREATE TABLE ttest (left Float64, right UInt8) ENGINE = Memory;");
@@ -42,13 +42,13 @@ def test_student():
     rvs2 = np.round(stats.norm.rvs(loc=5, scale=20,size=65536), 2)
     s, p = stats.ttest_ind(rvs1, rvs2, equal_var = True)
     # Too small precision because of accumulated rounding error.
-    test_and_check("studentTTest", rvs1, rvs2, s, p, precision=5 * 1e-2)
+    test_and_check("studentTTest", rvs1, rvs2, s, p)
 
     rvs1 = np.round(stats.norm.rvs(loc=0, scale=10,size=65536), 2)
     rvs2 = np.round(stats.norm.rvs(loc=0, scale=10,size=65536), 2)
     s, p = stats.ttest_ind(rvs1, rvs2, equal_var = True)
     # Too small precision because of accumulated rounding error.
-    test_and_check("studentTTest", rvs1, rvs2, s, p, precision=5 * 1e-2)
+    test_and_check("studentTTest", rvs1, rvs2, s, p)
 
 def test_welch():
     rvs1 = np.round(stats.norm.rvs(loc=1, scale=15,size=500), 2)
@@ -65,13 +65,13 @@ def test_welch():
     rvs2 = np.round(stats.norm.rvs(loc=5, scale=1,size=65536), 2)
     s, p = stats.ttest_ind(rvs1, rvs2, equal_var = False)
     # Too small precision because of accumulated rounding error.
-    test_and_check("welchTTest", rvs1, rvs2, s, p, precision=5 * 1e-2)
+    test_and_check("welchTTest", rvs1, rvs2, s, p)
 
     rvs1 = np.round(stats.norm.rvs(loc=5, scale=10,size=65536), 2)
     rvs2 = np.round(stats.norm.rvs(loc=5, scale=10,size=65536), 2)
     s, p = stats.ttest_ind(rvs1, rvs2, equal_var = False)
     # Too small precision because of accumulated rounding error.
-    test_and_check("welchTTest", rvs1, rvs2, s, p, precision=5 * 1e-2)
+    test_and_check("welchTTest", rvs1, rvs2, s, p)
 
 if __name__ == "__main__":
     test_student()
