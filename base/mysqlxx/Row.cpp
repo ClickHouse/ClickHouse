@@ -21,4 +21,12 @@ Value Row::operator[] (const char * name) const
     throw Exception(std::string("Unknown column ") + name);
 }
 
+std::string Row::getFieldName(size_t n) const
+{
+    if (res->getNumFields() <= n)
+        throw Exception(std::string("Unknown column position ") + std::to_string(n));
+
+    return res->getFields()[n].name;
+}
+
 }

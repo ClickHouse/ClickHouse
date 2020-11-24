@@ -95,11 +95,11 @@ private:
         BufferAndSortingColumnsPtr getTableDataBuffer(const String & table, const Context & context);
     };
 
-    void synchronization(const String & mysql_version);
+    void synchronization();
 
     bool isCancelled() { return sync_quit.load(std::memory_order_relaxed); }
 
-    std::optional<MaterializeMetadata> prepareSynchronized(const String & mysql_version);
+    std::optional<MaterializeMetadata> prepareSynchronized();
 
     void flushBuffersData(Buffers & buffers, MaterializeMetadata & metadata);
 

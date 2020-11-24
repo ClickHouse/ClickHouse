@@ -79,6 +79,8 @@ public:
       */
     operator private_bool_type() const { return row == nullptr ? nullptr : &Row::row; }
 
+    std::string getFieldName(size_t n) const;
+
 private:
     MYSQL_ROW row{};
     ResultBase * res{};
