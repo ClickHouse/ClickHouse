@@ -1,6 +1,6 @@
 ---
-toc_priority: 8
-toc_title: "\u91C7\u7528\u8005"
+toc_priority: 5
+toc_title: "ClickHouse用户"
 ---
 
 # ClickHouse用户 {#clickhouse-adopters}
