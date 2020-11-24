@@ -1803,7 +1803,7 @@ UInt64 ClusterCopier::executeQueryOnCluster(
     if (execution_mode == ClusterExecutionMode::ON_EACH_NODE)
         max_successful_executions_per_shard = 0;
 
-    std::atomic<size_t> origin_replicas_number;
+    std::atomic<size_t> origin_replicas_number = 0;
 
     /// We need to execute query on one replica at least
     auto do_for_shard = [&] (UInt64 shard_index, Settings shard_settings)
