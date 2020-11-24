@@ -201,15 +201,35 @@ def test_sqlite_odbc_hashed_dictionary(started_cluster):
     node1.exec_in_container(["bash", "-c", "echo 'INSERT INTO t2 values(1, 2, 3);' | sqlite3 {}".format(sqlite_db)],
                             privileged=True, user='root')
 
+    node1.query("SYSTEM RELOAD DICTIONARY sqlite3_odbc_hashed")
+    first_update_time = node1.query("SELECT last_successful_update_time FROM system.dictionaries WHERE name = 'sqlite3_odbc_hashed'")
+    print("First update time", first_update_time)
+
     assert_eq_with_retry(node1, "select dictGetUInt8('sqlite3_odbc_hashed', 'Z', toUInt64(1))", "3")
     assert_eq_with_retry(node1, "select dictGetUInt8('sqlite3_odbc_hashed', 'Z', toUInt64(200))", "1")  # default
 
-    time.sleep(5)  # first reload
+    second_update_time = node1.query("SELECT last_successful_update_time FROM system.dictionaries WHERE name = 'sqlite3_odbc_hashed'")
+    # Reloaded with new data
+    print("Second update time", second_update_time)
+    while first_update_time == second_update_time:
+        second_update_time = node1.query("SELECT last_successful_update_time FROM system.dictionaries WHERE name = 'sqlite3_odbc_hashed'")
+        print("Waiting dictionary to update for the second time")
+        time.sleep(0.1)
+
     node1.exec_in_container(["bash", "-c", "echo 'INSERT INTO t2 values(200, 2, 7);' | sqlite3 {}".format(sqlite_db)],
                             privileged=True, user='root')
 
     # No reload because of invalidate query
-    time.sleep(5)
+    third_update_time = node1.query("SELECT last_successful_update_time FROM system.dictionaries WHERE name = 'sqlite3_odbc_hashed'")
+    print("Third update time", second_update_time)
+    counter = 0
+    while third_update_time == second_update_time:
+        third_update_time = node1.query("SELECT last_successful_update_time FROM system.dictionaries WHERE name = 'sqlite3_odbc_hashed'")
+        time.sleep(0.1)
+        if counter > 50:
+            break
+        counter += 1
+
     assert_eq_with_retry(node1, "select dictGetUInt8('sqlite3_odbc_hashed', 'Z', toUInt64(1))", "3")
     assert_eq_with_retry(node1, "select dictGetUInt8('sqlite3_odbc_hashed', 'Z', toUInt64(200))", "1") # still default
 
