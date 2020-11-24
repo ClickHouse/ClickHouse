@@ -80,7 +80,10 @@ struct MannWhitneyData : public StatisticalSample<Float64, Float64>
         else if (alternative == Alternative::Greater)
             u = u2;
 
-        const Float64 z = std::abs((u - meanrank) / sd);
+        Float64 z = (u - meanrank) / sd;
+        if (alternative == Alternative::TwoSided)
+            z = std::abs(z);
+
         /// In fact cdf is a probability function, so it is intergral of density from (-inf, z].
         /// But since standard normal distribution is symmetric, cdf(0) = 0.5 and we have to compute integral from [0, z].
         const Float64 cdf = integrateSimpson(0, z, [] (Float64 t) { return std::pow(M_E, -0.5 * t * t) / std::sqrt(2 * M_PI);});
