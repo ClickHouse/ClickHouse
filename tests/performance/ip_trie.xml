@@ -60,26 +60,26 @@
 
     <query>
         SELECT dictGetFloat32('default.dict_ip_trie', 'val', tuple(rand32()))
-        FROM numbers(500000)
+        FROM numbers(500000) FORMAT Null
     </query>
 
     <query>
         SELECT dictGetFloat32('default.dict_ip_trie', 'val', tuple(randomFixedString(16)))
-        FROM numbers(500000)
+        FROM numbers(500000) FORMAT Null
     </query>
 
     <query>
         SELECT dictGetFloat32('default.dict_ip_trie', 'val', tuple(IPv6StringToNum(ip)))
         FROM table_ip_from_dict
         WHERE ver == 4
-        LIMIT 500000
+        LIMIT 500000 FORMAT Null
     </query>
 
     <query>
         SELECT dictGetFloat32('default.dict_ip_trie', 'val', tuple(IPv6StringToNum(ip)))
         FROM table_ip_from_dict
         WHERE ver == 6
-        LIMIT 500000
+        LIMIT 500000 FORMAT Null
     </query>
 
     <drop_query>DROP DICTIONARY IF EXISTS default.dict_ip_trie</drop_query>
