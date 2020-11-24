@@ -1345,7 +1345,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
 {
     bool check = false;
     /// If some thread (send/receive) already finalizing session don't try to do it
-    if (!finalization_started.compare_exchange_strong(check, true))
+    if (!finalization_started.exchange(true))
         return;
 
     auto expire_session_if_not_expired = [&]
