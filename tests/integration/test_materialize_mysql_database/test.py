@@ -156,36 +156,32 @@ def test_materialize_database_ddl_with_empty_transaction_8_0(started_cluster, st
     materialize_with_ddl.query_event_with_empty_transaction(clickhouse_node, started_mysql_8_0, "mysql8_0")
 
 
-def test_select_without_columns_5_7(started_cluster, started_mysql_5_7):
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_atomic])
+def test_select_without_columns_5_7(started_cluster, started_mysql_5_7, clickhouse_node):
     materialize_with_ddl.select_without_columns(clickhouse_node, started_mysql_5_7, "mysql1")
 
 
-def test_select_without_columns_8_0(started_cluster, started_mysql_8_0):
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_atomic])
+def test_select_without_columns_8_0(started_cluster, started_mysql_8_0, clickhouse_node):
     materialize_with_ddl.select_without_columns(clickhouse_node, started_mysql_8_0, "mysql8_0")
 
 
-def test_insert_with_modify_binlog_checksum_5_7(started_cluster, started_mysql_5_7):
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_atomic])
+def test_insert_with_modify_binlog_checksum_5_7(started_cluster, started_mysql_5_7, clickhouse_node):
     materialize_with_ddl.insert_with_modify_binlog_checksum(clickhouse_node, started_mysql_5_7, "mysql1")
 
 
-def test_insert_with_modify_binlog_checksum_8_0(started_cluster, started_mysql_8_0):
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_atomic])
+def test_insert_with_modify_binlog_checksum_8_0(started_cluster, started_mysql_8_0, clickhouse_node):
     materialize_with_ddl.insert_with_modify_binlog_checksum(clickhouse_node, started_mysql_8_0, "mysql8_0")
 
 
-def test_materialize_database_err_sync_user_privs_5_7(started_cluster, started_mysql_5_7):
-    try:
-        materialize_with_ddl.err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1")
-    except:
-        print((clickhouse_node.query(
-            "select '\n', thread_id, query_id, arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym from system.stack_trace format TSVRaw")))
-        raise
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_atomic])
+def test_materialize_database_err_sync_user_privs_5_7(started_cluster, started_mysql_5_7, clickhouse_node):
+    materialize_with_ddl.err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1")
 
 
-def test_materialize_database_err_sync_user_privs_8_0(started_cluster, started_mysql_8_0):
-    try:
-        materialize_with_ddl.err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0, "mysql8_0")
-    except:
-        print((clickhouse_node.query(
-            "select '\n', thread_id, query_id, arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym from system.stack_trace format TSVRaw")))
-        raise
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_atomic])
+def test_materialize_database_err_sync_user_privs_8_0(started_cluster, started_mysql_8_0, clickhouse_node):
+    materialize_with_ddl.err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0, "mysql8_0")
 
