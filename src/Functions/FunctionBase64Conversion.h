@@ -106,8 +106,8 @@ public:
         auto & dst_offsets = dst_column->getOffsets();
 
         size_t reserve = Func::getBufferSize(input->getChars().size(), input->size());
-        dst_data.resize_fill(reserve);
-        dst_offsets.resize_fill(input_rows_count);
+        dst_data.resize(reserve);
+        dst_offsets.resize(input_rows_count);
 
         const ColumnString::Offsets & src_offsets = input->getOffsets();
 
@@ -164,7 +164,7 @@ public:
             src_offset_prev = src_offsets[row];
         }
 
-        dst_data.resize_fill(dst_pos - dst);
+        dst_data.resize(dst_pos - dst);
 
         return dst_column;
     }
