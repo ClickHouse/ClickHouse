@@ -79,7 +79,9 @@ public:
         AsyncResponse response;
         std::optional<AsyncResponse> watch_response;
     };
-    ResponsePair putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
+    void putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, ResponseCallback callback);
+    void putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, ResponseCallback callback, ResponseCallback watch_callback);
+
     void putCloseRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
 
     int64_t getSessionID()
