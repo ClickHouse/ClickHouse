@@ -61,7 +61,7 @@ public:
     void waitDetachedTableNotInUse(const UUID & uuid);
 
 protected:
-    void commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path) override;
+    void commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path, const String & statement, const Context & query_context) override;
     void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
                            const String & table_metadata_tmp_path, const String & table_metadata_path, const Context & query_context) override;
 

@@ -258,16 +258,8 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
 
     if (database_replicated_ext)
     {
-        //auto expected_log_entry = DatabaseReplicatedExtensions::getLogEntryName(database_replicated_ext->first_not_executed);
-        //if (entry_name != expected_log_entry)
-        //{
-        //    database_replicated_ext->lost_callback(entry_name, zookeeper);
-        //    out_reason = "DatabaseReplicated: expected " + expected_log_entry + " got " + entry_name;
-        //    return {};
-        //}
-
         String initiator_name;
-        zkutil::EventPtr wait_committed_or_failed;
+        zkutil::EventPtr wait_committed_or_failed = std::make_shared<Poco::Event>();
 
         if (zookeeper->tryGet(entry_path + "/try", initiator_name, nullptr, wait_committed_or_failed))
         {
@@ -275,7 +267,10 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
             /// Query is not committed yet. We cannot just skip it and execute next one, because reordering may break replication.
             //FIXME add some timeouts
             if (!task->we_are_initiator)
+            {
+                LOG_TRACE(log, "Waiting for initiator {} to commit or rollback entry {}", initiator_name, entry_path);
                 wait_committed_or_failed->wait();
+            }
         }
 
         if (!task->we_are_initiator && !zookeeper->exists(entry_path + "/committed"))
@@ -378,7 +373,10 @@ void DDLWorker::scheduleTasks()
     Strings queue_nodes = zookeeper->getChildren(queue_dir, nullptr, queue_updated_event);
     filterAndSortQueueNodes(queue_nodes);
     if (queue_nodes.empty())
+    {
+        LOG_TRACE(log, "No tasks to schedule");
         return;
+    }
 
     bool server_startup = last_tasks.empty();
 
@@ -389,6 +387,7 @@ void DDLWorker::scheduleTasks()
     for (auto it = begin_node; it != queue_nodes.end() && !stop_flag; ++it)
     {
         String entry_name = *it;
+        LOG_TRACE(log, "Checking task {}", entry_name);
 
         String reason;
         auto task = initAndCheckTask(entry_name, reason, zookeeper);
@@ -748,11 +747,6 @@ void DDLWorker::processTask(DDLTask & task)
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeRemoveRequest(active_node_path, -1));
     ops.emplace_back(zkutil::makeCreateRequest(finished_node_path, task.execution_status.serializeText(), zkutil::CreateMode::Persistent));
-    if (database_replicated_ext)
-    {
-        //assert(DatabaseReplicatedExtensions::getLogEntryName(database_replicated_ext->first_not_executed) == task.entry_name);
-        //ops.emplace_back(zkutil::makeSetRequest(database_replicated_ext->getReplicaPath() + "/log_ptr", toString(database_replicated_ext->first_not_executed), -1));
-    }
 
     //FIXME replace with multi(...) or use MetadataTransaction
     Coordination::Responses responses;
@@ -816,8 +810,8 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
     else
         shard_node_name = get_shard_name(task.cluster->getShardsAddresses().at(task.host_shard_num));
     String shard_path = node_path + "/shards/" + shard_node_name;
-    task.shard_path = shard_path; //FIXME duplicate
     String is_executed_path = shard_path + "/executed";
+    task.shard_path = is_executed_path; //FIXME duplicate
     String tries_to_execute_path = shard_path + "/tries_to_execute";
     zookeeper->createAncestors(shard_path + "/");
 

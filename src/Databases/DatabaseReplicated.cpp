@@ -146,8 +146,6 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
     entry.query = {};
     entry.initiator = {};
 
-    recoverLostReplica(current_zookeeper, log_entry_to_execute, true);
-
     String query_path_prefix = zookeeper_path + "/log/query-";
     String counter_prefix = zookeeper_path + "/counter/cnt-";
     String counter_path = current_zookeeper->create(counter_prefix, "", zkutil::CreateMode::EphemeralSequential);
@@ -164,6 +162,8 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
 void DatabaseReplicated::loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool force_attach)
 {
     DatabaseAtomic::loadStoredObjects(context, has_force_restore_data_flag, force_attach);
+
+    recoverLostReplica(global_context.getZooKeeper(), 0, true); //FIXME
 
     DatabaseReplicatedExtensions ext;
     ext.database_uuid = getUUID();

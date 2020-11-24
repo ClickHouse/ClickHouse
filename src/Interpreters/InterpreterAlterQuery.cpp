@@ -51,8 +51,10 @@ BlockIO InterpreterAlterQuery::execute()
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
-    if (typeid_cast<DatabaseReplicated *>(database.get()) && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY && !table->supportsReplication())
+    if (typeid_cast<DatabaseReplicated *>(database.get()) && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY)
         return typeid_cast<DatabaseReplicated *>(database.get())->propose(query_ptr);
+
+    //FIXME commit MetadataTransaction for all ALTER kinds. Now its' implemented only for metadata alter.
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions,
     /// mutation expression, etc.

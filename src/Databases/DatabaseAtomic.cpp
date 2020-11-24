@@ -4,6 +4,7 @@
 #include <Poco/Path.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadBufferFromFile.h>
 #include <Parsers/formatAST.h>
 #include <Common/renameat2.h>
 #include <Storages/StorageMaterializedView.h>
@@ -108,7 +109,7 @@ StoragePtr DatabaseAtomic::detachTable(const String & name)
     return table;
 }
 
-void DatabaseAtomic::dropTable(const Context &, const String & table_name, bool no_delay)
+void DatabaseAtomic::dropTable(const Context & context, const String & table_name, bool no_delay)
 {
     String table_metadata_path = getObjectMetadataPath(table_name);
     String table_metadata_path_drop;
@@ -117,6 +118,16 @@ void DatabaseAtomic::dropTable(const Context &, const String & table_name, bool 
         std::unique_lock lock(mutex);
         table = getTableUnlocked(table_name, lock);
         table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(table->getStorageID());
+
+        if (auto txn = context.getMetadataTransaction())
+        {
+            String metadata_zk_path = txn->zookeeper_path + "/metadata/" + escapeForFileName(table_name);
+            txn->ops.emplace_back(zkutil::makeRemoveRequest(metadata_zk_path, -1));
+            txn->current_zookeeper->multi(txn->ops);     /// Commit point (a sort of) for Replicated database
+            /// NOTE: replica will be lost if server crashes before the following rename
+            /// TODO better detection and recovery
+        }
+
         Poco::File(table_metadata_path).renameTo(table_metadata_path_drop);    /// Mark table as dropped
         DatabaseWithDictionaries::detachTableUnlocked(table_name, lock);       /// Should never throw
         table_name_to_path.erase(table_name);
@@ -146,6 +157,8 @@ void DatabaseAtomic::renameTable(const Context & context, const String & table_n
 
     if (exchange && dictionary)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot exchange dictionaries");
+    if (exchange && !supportsRenameat2())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RENAME EXCHANGE is not supported");
 
     auto & other_db = dynamic_cast<DatabaseAtomic &>(to_database);
     bool inside_database = this == &other_db;
@@ -231,6 +244,33 @@ void DatabaseAtomic::renameTable(const Context & context, const String & table_n
     }
 
     /// Table renaming actually begins here
+    if (auto txn = context.getMetadataTransaction())
+    {
+        String statement;
+        String statement_to;
+        {
+            ReadBufferFromFile in(old_metadata_path, 4096);
+            readStringUntilEOF(statement, in);
+            if (exchange)
+            {
+                ReadBufferFromFile in_to(new_metadata_path, 4096);
+                readStringUntilEOF(statement_to, in_to);
+            }
+        }
+        String metadata_zk_path = txn->zookeeper_path + "/metadata/" + escapeForFileName(table_name);
+        String metadata_zk_path_to = txn->zookeeper_path + "/metadata/" + escapeForFileName(to_table_name);
+        txn->ops.emplace_back(zkutil::makeRemoveRequest(metadata_zk_path, -1));
+        if (exchange)
+        {
+            txn->ops.emplace_back(zkutil::makeRemoveRequest(metadata_zk_path_to, -1));
+            txn->ops.emplace_back(zkutil::makeCreateRequest(metadata_zk_path, statement_to, zkutil::CreateMode::Persistent));
+        }
+        txn->ops.emplace_back(zkutil::makeCreateRequest(metadata_zk_path_to, statement, zkutil::CreateMode::Persistent));
+        txn->current_zookeeper->multi(txn->ops);     /// Commit point (a sort of) for Replicated database
+        /// NOTE: replica will be lost if server crashes before the following rename
+        /// TODO better detection and recovery
+    }
+
     if (exchange)
         renameExchange(old_metadata_path, new_metadata_path);
     else
@@ -312,7 +352,7 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
         tryCreateSymlink(query.table, table_data_path);
 }
 
-void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path)
+void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path, const String & statement, const Context & query_context)
 {
     bool check_file_exists = true;
     SCOPE_EXIT({ std::error_code code; if (check_file_exists) std::filesystem::remove(table_metadata_tmp_path, code); });
@@ -322,6 +362,18 @@ void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String &
 
     if (table_id.uuid != actual_table_id.uuid)
         throw Exception("Cannot alter table because it was renamed", ErrorCodes::CANNOT_ASSIGN_ALTER);
+
+    if (&query_context != &query_context.getGlobalContext())    // FIXME
+    {
+        if (auto txn = query_context.getMetadataTransaction())
+        {
+            String metadata_zk_path = txn->zookeeper_path + "/metadata/" + escapeForFileName(table_id.table_name);
+            txn->ops.emplace_back(zkutil::makeSetRequest(metadata_zk_path, statement, -1));
+            txn->current_zookeeper->multi(txn->ops); /// Commit point (a sort of) for Replicated database
+            /// NOTE: replica will be lost if server crashes before the following rename
+            /// TODO better detection and recovery
+        }
+    }
 
     check_file_exists = renameExchangeIfSupported(table_metadata_tmp_path, table_metadata_path);
     if (!check_file_exists)

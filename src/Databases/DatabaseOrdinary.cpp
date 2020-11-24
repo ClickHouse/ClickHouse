@@ -312,10 +312,10 @@ void DatabaseOrdinary::alterTable(const Context & context, const StorageID & tab
         out.close();
     }
 
-    commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path);
+    commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, context);
 }
 
-void DatabaseOrdinary::commitAlterTable(const StorageID &, const String & table_metadata_tmp_path, const String & table_metadata_path)
+void DatabaseOrdinary::commitAlterTable(const StorageID &, const String & table_metadata_tmp_path, const String & table_metadata_path, const String & /*statement*/, const Context & /*query_context*/)
 {
     try
     {
