@@ -2,6 +2,7 @@
 
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTPartition.h>
@@ -76,6 +77,14 @@ PtrTo<AlterTableClause> AlterTableClause::createAttach(PtrTo<PartitionClause> cl
 PtrTo<AlterTableClause> AlterTableClause::createClear(bool if_exists, PtrTo<Identifier> identifier, PtrTo<PartitionClause> in)
 {
     PtrTo<AlterTableClause> query(new AlterTableClause(ClauseType::CLEAR, {identifier, in}));
+    query->if_exists = if_exists;
+    return query;
+}
+
+// static
+PtrTo<AlterTableClause> AlterTableClause::createCodec(bool if_exists, PtrTo<Identifier> identifier, PtrTo<CodecExpr> codec)
+{
+    PtrTo<AlterTableClause> query(new AlterTableClause(ClauseType::CODEC, {identifier, codec}));
     query->if_exists = if_exists;
     return query;
 }
@@ -159,9 +168,9 @@ PtrTo<AlterTableClause> AlterTableClause::createReplace(PtrTo<PartitionClause> c
 }
 
 // static
-PtrTo<AlterTableClause> AlterTableClause::createTTL(PtrTo<ColumnExpr> expr)
+PtrTo<AlterTableClause> AlterTableClause::createTTL(PtrTo<TTLClause> clause)
 {
-    return PtrTo<AlterTableClause>(new AlterTableClause(ClauseType::TTL, {expr}));
+    return PtrTo<AlterTableClause>(new AlterTableClause(ClauseType::TTL, {clause}));
 }
 
 ASTPtr AlterTableClause::convertToOld() const
@@ -200,6 +209,19 @@ ASTPtr AlterTableClause::convertToOld() const
             command->detach = false;
             command->column = get(COLUMN)->convertToOld();
             if (has(IN)) command->partition = get(IN)->convertToOld();
+            break;
+
+        case ClauseType::CODEC:
+            command->type = ASTAlterCommand::MODIFY_COLUMN;
+            command->if_exists = if_exists;
+
+            {
+                auto column = std::make_shared<ASTColumnDeclaration>();
+                column->name = get(COLUMN)->toString();
+                column->codec = get(CODEC)->convertToOld();
+
+                command->col_decl = column;
+            }
             break;
 
         case ClauseType::COMMENT:
@@ -293,7 +315,7 @@ ASTPtr AlterTableClause::convertToOld() const
 
         case ClauseType::TTL:
             command->type = ASTAlterCommand::MODIFY_TTL;
-            command->ttl = get(EXPR)->convertToOld();
+            command->ttl = get(CLAUSE)->convertToOld();
             break;
     }
 
@@ -402,6 +424,11 @@ antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseModify(ClickHouseParser::Al
     return AlterTableClause::createModify(!!ctx->IF(), visit(ctx->tableColumnDfnt()));
 }
 
+antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseModifyCodec(ClickHouseParser::AlterTableClauseModifyCodecContext * ctx)
+{
+    return AlterTableClause::createCodec(!!ctx->IF(), visit(ctx->nestedIdentifier()), visit(ctx->codecExpr()));
+}
+
 antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseModifyComment(ClickHouseParser::AlterTableClauseModifyCommentContext *ctx)
 {
     return AlterTableClause::createComment(!!ctx->IF(), visit(ctx->nestedIdentifier()), Literal::createString(ctx->STRING_LITERAL()));
@@ -419,7 +446,7 @@ antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseModifyRemove(ClickHousePars
 
 antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseModifyTTL(ClickHouseParser::AlterTableClauseModifyTTLContext *ctx)
 {
-    return AlterTableClause::createTTL(visit(ctx->columnExpr()));
+    return AlterTableClause::createTTL(visit(ctx->ttlClause()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseRemoveTTL(ClickHouseParser::AlterTableClauseRemoveTTLContext *)

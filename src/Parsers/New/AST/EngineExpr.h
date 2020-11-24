@@ -14,8 +14,6 @@ using PrimaryKeyClause = SimpleClause<ColumnExpr>;
 
 using SampleByClause = SimpleClause<ColumnExpr>;
 
-using TTLClause = SimpleClause<TTLExprList>;
-
 class EngineClause : public INode
 {
     public:
@@ -74,11 +72,13 @@ class TTLExpr : public INode
 
         TTLExpr(PtrTo<ColumnExpr> expr, TTLType type, PtrTo<StringLiteral> literal);
 
+        ASTPtr convertToOld() const override;
+
     private:
         enum ChildIndex : UInt8
         {
-            EXPR = 0,
-            TYPE = 1,
+            EXPR = 0,  // ColumnExpr
+            TYPE = 1,  // StringLiteral (optional)
         };
 
         TTLType ttl_type;

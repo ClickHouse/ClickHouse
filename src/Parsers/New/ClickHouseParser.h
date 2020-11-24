@@ -27,28 +27,28 @@ public:
     GROUP = 63, HAVING = 64, HOUR = 65, ID = 66, IF = 67, ILIKE = 68, IN = 69, 
     INDEX = 70, INF = 71, INNER = 72, INSERT = 73, INTERVAL = 74, INTO = 75, 
     IS = 76, JOIN = 77, KEY = 78, LAST = 79, LEADING = 80, LEFT = 81, LIKE = 82, 
-    LIMIT = 83, LOCAL = 84, LOGS = 85, MATERIALIZED = 86, MERGES = 87, MINUTE = 88, 
-    MODIFY = 89, MONTH = 90, NAN_SQL = 91, NO = 92, NOT = 93, NULL_SQL = 94, 
-    NULLS = 95, OFFSET = 96, ON = 97, OPTIMIZE = 98, OR = 99, ORDER = 100, 
-    OUTER = 101, OUTFILE = 102, PARTITION = 103, POPULATE = 104, PREWHERE = 105, 
-    PRIMARY = 106, QUARTER = 107, REMOVE = 108, RENAME = 109, REPLACE = 110, 
-    REPLICA = 111, REPLICATED = 112, RIGHT = 113, ROLLUP = 114, SAMPLE = 115, 
-    SECOND = 116, SELECT = 117, SEMI = 118, SENDS = 119, SET = 120, SETTINGS = 121, 
-    SHOW = 122, START = 123, STOP = 124, SUBSTRING = 125, SYNC = 126, SYNTAX = 127, 
-    SYSTEM = 128, TABLE = 129, TABLES = 130, TEMPORARY = 131, THEN = 132, 
-    TIES = 133, TIMESTAMP = 134, TO = 135, TOTALS = 136, TRAILING = 137, 
-    TRIM = 138, TRUNCATE = 139, TTL = 140, TYPE = 141, UNION = 142, USE = 143, 
-    USING = 144, UUID = 145, VALUES = 146, VIEW = 147, VOLUME = 148, WEEK = 149, 
-    WHEN = 150, WHERE = 151, WITH = 152, YEAR = 153, JSON_FALSE = 154, JSON_TRUE = 155, 
-    IDENTIFIER = 156, FLOATING_LITERAL = 157, OCTAL_LITERAL = 158, DECIMAL_LITERAL = 159, 
-    HEXADECIMAL_LITERAL = 160, STRING_LITERAL = 161, ARROW = 162, ASTERISK = 163, 
-    BACKQUOTE = 164, BACKSLASH = 165, COLON = 166, COMMA = 167, CONCAT = 168, 
-    DASH = 169, DOT = 170, EQ_DOUBLE = 171, EQ_SINGLE = 172, GE = 173, GT = 174, 
-    LBRACE = 175, LBRACKET = 176, LE = 177, LPAREN = 178, LT = 179, NOT_EQ = 180, 
-    PERCENT = 181, PLUS = 182, QUERY = 183, QUOTE_DOUBLE = 184, QUOTE_SINGLE = 185, 
-    RBRACE = 186, RBRACKET = 187, RPAREN = 188, SEMICOLON = 189, SLASH = 190, 
-    UNDERSCORE = 191, MULTI_LINE_COMMENT = 192, SINGLE_LINE_COMMENT = 193, 
-    WHITESPACE = 194
+    LIMIT = 83, LIVE = 84, LOCAL = 85, LOGS = 86, MATERIALIZED = 87, MERGES = 88, 
+    MINUTE = 89, MODIFY = 90, MONTH = 91, NAN_SQL = 92, NO = 93, NOT = 94, 
+    NULL_SQL = 95, NULLS = 96, OFFSET = 97, ON = 98, OPTIMIZE = 99, OR = 100, 
+    ORDER = 101, OUTER = 102, OUTFILE = 103, PARTITION = 104, POPULATE = 105, 
+    PREWHERE = 106, PRIMARY = 107, QUARTER = 108, REMOVE = 109, RENAME = 110, 
+    REPLACE = 111, REPLICA = 112, REPLICATED = 113, RIGHT = 114, ROLLUP = 115, 
+    SAMPLE = 116, SECOND = 117, SELECT = 118, SEMI = 119, SENDS = 120, SET = 121, 
+    SETTINGS = 122, SHOW = 123, START = 124, STOP = 125, SUBSTRING = 126, 
+    SYNC = 127, SYNTAX = 128, SYSTEM = 129, TABLE = 130, TABLES = 131, TEMPORARY = 132, 
+    THEN = 133, TIES = 134, TIMEOUT = 135, TIMESTAMP = 136, TO = 137, TOTALS = 138, 
+    TRAILING = 139, TRIM = 140, TRUNCATE = 141, TTL = 142, TYPE = 143, UNION = 144, 
+    USE = 145, USING = 146, UUID = 147, VALUES = 148, VIEW = 149, VOLUME = 150, 
+    WEEK = 151, WHEN = 152, WHERE = 153, WITH = 154, YEAR = 155, JSON_FALSE = 156, 
+    JSON_TRUE = 157, IDENTIFIER = 158, FLOATING_LITERAL = 159, OCTAL_LITERAL = 160, 
+    DECIMAL_LITERAL = 161, HEXADECIMAL_LITERAL = 162, STRING_LITERAL = 163, 
+    ARROW = 164, ASTERISK = 165, BACKQUOTE = 166, BACKSLASH = 167, COLON = 168, 
+    COMMA = 169, CONCAT = 170, DASH = 171, DOT = 172, EQ_DOUBLE = 173, EQ_SINGLE = 174, 
+    GE = 175, GT = 176, LBRACE = 177, LBRACKET = 178, LE = 179, LPAREN = 180, 
+    LT = 181, NOT_EQ = 182, PERCENT = 183, PLUS = 184, QUERY = 185, QUOTE_DOUBLE = 186, 
+    QUOTE_SINGLE = 187, RBRACE = 188, RBRACKET = 189, RPAREN = 190, SEMICOLON = 191, 
+    SLASH = 192, UNDERSCORE = 193, MULTI_LINE_COMMENT = 194, SINGLE_LINE_COMMENT = 195, 
+    WHITESPACE = 196
   };
 
   enum {
@@ -58,26 +58,26 @@ public:
     RuleSchemaClause = 11, RuleEngineClause = 12, RulePartitionByClause = 13, 
     RulePrimaryKeyClause = 14, RuleSampleByClause = 15, RuleTtlClause = 16, 
     RuleEngineExpr = 17, RuleTableElementExpr = 18, RuleTableColumnDfnt = 19, 
-    RuleTableColumnPropertyExpr = 20, RuleCodecExpr = 21, RuleTtlExpr = 22, 
-    RuleDescribeStmt = 23, RuleDropStmt = 24, RuleExistsStmt = 25, RuleExplainStmt = 26, 
-    RuleInsertStmt = 27, RuleColumnsClause = 28, RuleDataClause = 29, RuleOptimizeStmt = 30, 
-    RuleRenameStmt = 31, RuleSelectUnionStmt = 32, RuleSelectStmtWithParens = 33, 
-    RuleSelectStmt = 34, RuleWithClause = 35, RuleFromClause = 36, RuleArrayJoinClause = 37, 
-    RulePrewhereClause = 38, RuleWhereClause = 39, RuleGroupByClause = 40, 
-    RuleHavingClause = 41, RuleOrderByClause = 42, RuleLimitByClause = 43, 
-    RuleLimitClause = 44, RuleSettingsClause = 45, RuleJoinExpr = 46, RuleJoinOp = 47, 
-    RuleJoinOpCross = 48, RuleJoinConstraintClause = 49, RuleSampleClause = 50, 
-    RuleLimitExpr = 51, RuleOrderExprList = 52, RuleOrderExpr = 53, RuleRatioExpr = 54, 
-    RuleSettingExprList = 55, RuleSettingExpr = 56, RuleSetStmt = 57, RuleShowStmt = 58, 
-    RuleSystemStmt = 59, RuleTruncateStmt = 60, RuleUseStmt = 61, RuleColumnTypeExpr = 62, 
-    RuleColumnExprList = 63, RuleColumnsExpr = 64, RuleColumnExpr = 65, 
-    RuleColumnArgList = 66, RuleColumnArgExpr = 67, RuleColumnLambdaExpr = 68, 
-    RuleColumnIdentifier = 69, RuleNestedIdentifier = 70, RuleTableExpr = 71, 
-    RuleTableFunctionExpr = 72, RuleTableIdentifier = 73, RuleTableArgList = 74, 
-    RuleTableArgExpr = 75, RuleDatabaseIdentifier = 76, RuleFloatingLiteral = 77, 
-    RuleNumberLiteral = 78, RuleLiteral = 79, RuleInterval = 80, RuleKeyword = 81, 
-    RuleKeywordForAlias = 82, RuleAlias = 83, RuleIdentifier = 84, RuleIdentifierOrNull = 85, 
-    RuleEnumValue = 86
+    RuleTableColumnPropertyExpr = 20, RuleCodecExpr = 21, RuleCodecArgExpr = 22, 
+    RuleTtlExpr = 23, RuleDescribeStmt = 24, RuleDropStmt = 25, RuleExistsStmt = 26, 
+    RuleExplainStmt = 27, RuleInsertStmt = 28, RuleColumnsClause = 29, RuleDataClause = 30, 
+    RuleOptimizeStmt = 31, RuleRenameStmt = 32, RuleSelectUnionStmt = 33, 
+    RuleSelectStmtWithParens = 34, RuleSelectStmt = 35, RuleWithClause = 36, 
+    RuleFromClause = 37, RuleArrayJoinClause = 38, RulePrewhereClause = 39, 
+    RuleWhereClause = 40, RuleGroupByClause = 41, RuleHavingClause = 42, 
+    RuleOrderByClause = 43, RuleLimitByClause = 44, RuleLimitClause = 45, 
+    RuleSettingsClause = 46, RuleJoinExpr = 47, RuleJoinOp = 48, RuleJoinOpCross = 49, 
+    RuleJoinConstraintClause = 50, RuleSampleClause = 51, RuleLimitExpr = 52, 
+    RuleOrderExprList = 53, RuleOrderExpr = 54, RuleRatioExpr = 55, RuleSettingExprList = 56, 
+    RuleSettingExpr = 57, RuleSetStmt = 58, RuleShowStmt = 59, RuleSystemStmt = 60, 
+    RuleTruncateStmt = 61, RuleUseStmt = 62, RuleColumnTypeExpr = 63, RuleColumnExprList = 64, 
+    RuleColumnsExpr = 65, RuleColumnExpr = 66, RuleColumnArgList = 67, RuleColumnArgExpr = 68, 
+    RuleColumnLambdaExpr = 69, RuleColumnIdentifier = 70, RuleNestedIdentifier = 71, 
+    RuleTableExpr = 72, RuleTableFunctionExpr = 73, RuleTableIdentifier = 74, 
+    RuleTableArgList = 75, RuleTableArgExpr = 76, RuleDatabaseIdentifier = 77, 
+    RuleFloatingLiteral = 78, RuleNumberLiteral = 79, RuleLiteral = 80, 
+    RuleInterval = 81, RuleKeyword = 82, RuleKeywordForAlias = 83, RuleAlias = 84, 
+    RuleIdentifier = 85, RuleIdentifierOrNull = 86, RuleEnumValue = 87
   };
 
   ClickHouseParser(antlr4::TokenStream *input);
@@ -112,6 +112,7 @@ public:
   class TableColumnDfntContext;
   class TableColumnPropertyExprContext;
   class CodecExprContext;
+  class CodecArgExprContext;
   class TtlExprContext;
   class DescribeStmtContext;
   class DropStmtContext;
@@ -361,6 +362,19 @@ public:
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
+  class  AlterTableClauseModifyCodecContext : public AlterTableClauseContext {
+  public:
+    AlterTableClauseModifyCodecContext(AlterTableClauseContext *ctx);
+
+    antlr4::tree::TerminalNode *MODIFY();
+    antlr4::tree::TerminalNode *COLUMN();
+    NestedIdentifierContext *nestedIdentifier();
+    CodecExprContext *codecExpr();
+    antlr4::tree::TerminalNode *IF();
+    antlr4::tree::TerminalNode *EXISTS();
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
   class  AlterTableClauseCommentContext : public AlterTableClauseContext {
   public:
     AlterTableClauseCommentContext(AlterTableClauseContext *ctx);
@@ -448,8 +462,7 @@ public:
     AlterTableClauseModifyTTLContext(AlterTableClauseContext *ctx);
 
     antlr4::tree::TerminalNode *MODIFY();
-    antlr4::tree::TerminalNode *TTL();
-    ColumnExprContext *columnExpr();
+    TtlClauseContext *ttlClause();
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
@@ -543,6 +556,28 @@ public:
     antlr4::tree::TerminalNode *NOT();
     antlr4::tree::TerminalNode *EXISTS();
     EngineExprContext *engineExpr();
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  CreateLiveViewStmtContext : public CreateStmtContext {
+  public:
+    CreateLiveViewStmtContext(CreateStmtContext *ctx);
+
+    antlr4::tree::TerminalNode *LIVE();
+    antlr4::tree::TerminalNode *VIEW();
+    TableIdentifierContext *tableIdentifier();
+    SubqueryClauseContext *subqueryClause();
+    antlr4::tree::TerminalNode *ATTACH();
+    antlr4::tree::TerminalNode *CREATE();
+    antlr4::tree::TerminalNode *IF();
+    antlr4::tree::TerminalNode *NOT();
+    antlr4::tree::TerminalNode *EXISTS();
+    UuidClauseContext *uuidClause();
+    antlr4::tree::TerminalNode *WITH();
+    antlr4::tree::TerminalNode *TIMEOUT();
+    DestinationClauseContext *destinationClause();
+    SchemaClauseContext *schemaClause();
+    antlr4::tree::TerminalNode *DECIMAL_LITERAL();
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
@@ -860,18 +895,33 @@ public:
     CodecExprContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *CODEC();
-    std::vector<antlr4::tree::TerminalNode *> LPAREN();
-    antlr4::tree::TerminalNode* LPAREN(size_t i);
-    IdentifierContext *identifier();
-    std::vector<antlr4::tree::TerminalNode *> RPAREN();
-    antlr4::tree::TerminalNode* RPAREN(size_t i);
-    ColumnExprListContext *columnExprList();
+    antlr4::tree::TerminalNode *LPAREN();
+    std::vector<CodecArgExprContext *> codecArgExpr();
+    CodecArgExprContext* codecArgExpr(size_t i);
+    antlr4::tree::TerminalNode *RPAREN();
+    std::vector<antlr4::tree::TerminalNode *> COMMA();
+    antlr4::tree::TerminalNode* COMMA(size_t i);
 
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
    
   };
 
   CodecExprContext* codecExpr();
+
+  class  CodecArgExprContext : public antlr4::ParserRuleContext {
+  public:
+    CodecArgExprContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    IdentifierContext *identifier();
+    antlr4::tree::TerminalNode *LPAREN();
+    antlr4::tree::TerminalNode *RPAREN();
+    ColumnExprListContext *columnExprList();
+
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  CodecArgExprContext* codecArgExpr();
 
   class  TtlExprContext : public antlr4::ParserRuleContext {
   public:
@@ -2522,6 +2572,7 @@ public:
     antlr4::tree::TerminalNode *LEFT();
     antlr4::tree::TerminalNode *LIKE();
     antlr4::tree::TerminalNode *LIMIT();
+    antlr4::tree::TerminalNode *LIVE();
     antlr4::tree::TerminalNode *LOCAL();
     antlr4::tree::TerminalNode *LOGS();
     antlr4::tree::TerminalNode *MATERIALIZED();
@@ -2570,6 +2621,7 @@ public:
     antlr4::tree::TerminalNode *TEMPORARY();
     antlr4::tree::TerminalNode *THEN();
     antlr4::tree::TerminalNode *TIES();
+    antlr4::tree::TerminalNode *TIMEOUT();
     antlr4::tree::TerminalNode *TIMESTAMP();
     antlr4::tree::TerminalNode *TOTALS();
     antlr4::tree::TerminalNode *TRAILING();

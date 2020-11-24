@@ -72,20 +72,24 @@ static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & argum
             throw Exception("Unexpected level of parameters to aggregate function", ErrorCodes::SYNTAX_ERROR);
         function_name = parametric->name;
 
-        const ASTs & parameters = parametric->arguments->as<ASTExpressionList &>().children;
-        params_row.resize(parameters.size());
-
-        for (size_t i = 0; i < parameters.size(); ++i)
+        if (parametric->arguments)
         {
-            const ASTLiteral * lit = parameters[i]->as<ASTLiteral>();
-            if (!lit)
-                throw Exception(
-                    ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS,
-                    "Parameters to aggregate functions must be literals. "
-                    "Got parameter '{}' for function '{}'",
-                    parameters[i]->formatForErrorMessage(), function_name);
+            const ASTs & parameters = parametric->arguments->as<ASTExpressionList &>().children;
+            params_row.resize(parameters.size());
 
-            params_row[i] = lit->value;
+            for (size_t i = 0; i < parameters.size(); ++i)
+            {
+                const ASTLiteral * lit = parameters[i]->as<ASTLiteral>();
+                if (!lit)
+                    throw Exception(
+                        ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS,
+                        "Parameters to aggregate functions must be literals. "
+                        "Got parameter '{}' for function '{}'",
+                        parameters[i]->formatForErrorMessage(),
+                        function_name);
+
+                params_row[i] = lit->value;
+            }
         }
     }
     else if (auto opt_name = tryGetIdentifierName(arguments->children[0]))

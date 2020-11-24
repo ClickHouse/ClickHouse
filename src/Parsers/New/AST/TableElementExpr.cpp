@@ -13,13 +13,12 @@
 namespace DB::AST
 {
 
-CodecExpr::CodecExpr(PtrTo<Identifier> identifier, PtrTo<ColumnExprList> list) : INode{identifier, list}
+CodecArgExpr::CodecArgExpr(PtrTo<Identifier> identifier, PtrTo<ColumnExprList> list) : INode{identifier, list}
 {
 }
 
-ASTPtr CodecExpr::convertToOld() const
+ASTPtr CodecArgExpr::convertToOld() const
 {
-    auto codec = std::make_shared<ASTFunction>();
     auto func = std::make_shared<ASTFunction>();
 
     func->name = get<Identifier>(NAME)->getName();
@@ -29,12 +28,22 @@ ASTPtr CodecExpr::convertToOld() const
         func->children.push_back(func->arguments);
     }
 
-    codec->name = "CODEC";
-    codec->arguments = std::make_shared<ASTExpressionList>();
-    codec->arguments->children.push_back(func);
-    codec->children.push_back(codec->arguments);
+    return func;
+}
 
-    return codec;
+CodecExpr::CodecExpr(PtrTo<CodecArgList> list) : INode{list}
+{
+}
+
+ASTPtr CodecExpr::convertToOld() const
+{
+    auto func = std::make_shared<ASTFunction>();
+
+    func->name = "codec";
+    func->arguments = get(ARGS)->convertToOld();
+    func->children.push_back(func->arguments);
+
+    return func;
 }
 
 TableColumnPropertyExpr::TableColumnPropertyExpr(PropertyType type, PtrTo<ColumnExpr> expr) : INode{expr}, property_type(type)
@@ -155,10 +164,17 @@ namespace DB
 
 using namespace AST;
 
-antlrcpp::Any ParseTreeVisitor::visitCodecExpr(ClickHouseParser::CodecExprContext *ctx)
+antlrcpp::Any ParseTreeVisitor::visitCodecArgExpr(ClickHouseParser::CodecArgExprContext *ctx)
 {
     auto list = ctx->columnExprList() ? visit(ctx->columnExprList()).as<PtrTo<ColumnExprList>>() : nullptr;
-    return std::make_shared<CodecExpr>(visit(ctx->identifier()), list);
+    return std::make_shared<CodecArgExpr>(visit(ctx->identifier()), list);
+}
+
+antlrcpp::Any ParseTreeVisitor::visitCodecExpr(ClickHouseParser::CodecExprContext *ctx)
+{
+    auto list = std::make_shared<CodecArgList>();
+    for (auto * arg : ctx->codecArgExpr()) list->push(visit(arg));
+    return std::make_shared<CodecExpr>(list);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitTableColumnDfnt(ClickHouseParser::TableColumnDfntContext *ctx)

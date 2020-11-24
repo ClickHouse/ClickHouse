@@ -6,10 +6,10 @@
 namespace DB::AST
 {
 
-class CodecExpr : public INode
+class CodecArgExpr : public INode
 {
     public:
-        CodecExpr(PtrTo<Identifier> identifier, PtrTo<ColumnExprList> list);
+        CodecArgExpr(PtrTo<Identifier> identifier, PtrTo<ColumnExprList> list);
 
         ASTPtr convertToOld() const override;
 
@@ -18,6 +18,20 @@ class CodecExpr : public INode
         {
             NAME = 0,  // Identifier
             ARGS = 1,  // ColumnExprList (optional)
+        };
+};
+
+class CodecExpr : public INode
+{
+    public:
+        explicit CodecExpr(PtrTo<CodecArgList> list);
+
+        ASTPtr convertToOld() const override;
+
+    private:
+        enum ChildIndex : UInt8
+        {
+            ARGS = 0,  // CodecArgList
         };
 };
 

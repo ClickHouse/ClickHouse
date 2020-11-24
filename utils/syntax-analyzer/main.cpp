@@ -43,7 +43,7 @@ int main(int argc, const char **)
             if (orig_ast)
             {
                 std::cout << std::endl << "Original AST:" << std::endl;
-                WriteBufferFromOStream buf(std::cout, 4096);
+                WriteBufferFromOStream buf(std::cout, 1);
                 orig_ast->dumpTree(buf);
                 std::cout << std::endl << "Original query:" << std::endl;
                 orig_ast->format({buf, false});
@@ -52,7 +52,7 @@ int main(int argc, const char **)
             if (old_ast)
             {
                 std::cout << std::endl << "Converted AST:" << std::endl;
-                WriteBufferFromOStream buf(std::cout, 4096);
+                WriteBufferFromOStream buf(std::cout, 1);
                 old_ast->dumpTree(buf);
                 std::cout << std::endl << "Converted query:" << std::endl;
                 old_ast->format({buf, false});

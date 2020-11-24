@@ -2,6 +2,7 @@
 #include <Parsers/New/AST/CheckQuery.h>
 #include <Parsers/New/AST/ColumnExpr.h>
 #include <Parsers/New/AST/CreateDatabaseQuery.h>
+#include <Parsers/New/AST/CreateLiveViewQuery.h>
 #include <Parsers/New/AST/CreateMaterializedViewQuery.h>
 #include <Parsers/New/AST/CreateTableQuery.h>
 #include <Parsers/New/AST/CreateViewQuery.h>
@@ -54,6 +55,7 @@ antlrcpp::Any ParseTreeVisitor::visitQuery(ClickHouseParser::QueryContext *ctx)
     TRY_POINTER_CAST(AlterTableQuery)
     TRY_POINTER_CAST(CheckQuery)
     TRY_POINTER_CAST(CreateDatabaseQuery)
+    TRY_POINTER_CAST(CreateLiveViewQuery)
     TRY_POINTER_CAST(CreateMaterializedViewQuery)
     TRY_POINTER_CAST(CreateTableQuery)
     TRY_POINTER_CAST(CreateViewQuery)

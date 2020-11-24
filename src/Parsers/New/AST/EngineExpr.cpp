@@ -2,11 +2,14 @@
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTTTLElement.h>
 #include <Parsers/New/AST/ColumnExpr.h>
 #include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/AST/Literal.h>
 #include <Parsers/New/AST/SelectUnionQuery.h>
 #include <Parsers/New/ParseTreeVisitor.h>
+#include <Storages/DataDestinationType.h>
+#include <Storages/TTLMode.h>
 
 
 namespace DB::ErrorCodes
@@ -99,7 +102,35 @@ ASTPtr EngineExpr::convertToOld() const
 
 TTLExpr::TTLExpr(PtrTo<ColumnExpr> expr, TTLType type, PtrTo<StringLiteral> literal) : INode{expr, literal}, ttl_type(type)
 {
-    (void) ttl_type; // TODO
+}
+
+ASTPtr TTLExpr::convertToOld() const
+{
+    TTLMode mode;
+    DataDestinationType destination_type;
+    String destination_name;
+
+    switch(ttl_type)
+    {
+        case TTLType::DELETE:
+            mode = TTLMode::DELETE;
+            destination_type = DataDestinationType::DELETE;
+            break;
+        case TTLType::TO_DISK:
+            mode = TTLMode::MOVE;
+            destination_type = DataDestinationType::DISK;
+            destination_name = get(TYPE)->convertToOld()->as<ASTLiteral>()->value.get<String>();
+            break;
+        case TTLType::TO_VOLUME:
+            mode = TTLMode::MOVE;
+            destination_type = DataDestinationType::VOLUME;
+            destination_name = get(TYPE)->convertToOld()->as<ASTLiteral>()->value.get<String>();
+            break;
+    }
+
+    auto expr = std::make_shared<ASTTTLElement>(mode, destination_type, destination_name);
+    expr->setTTL(get(EXPR)->convertToOld());
+    return expr;
 }
 
 }
@@ -156,10 +187,9 @@ antlrcpp::Any ParseTreeVisitor::visitTtlExpr(ClickHouseParser::TtlExprContext *c
     TTLExpr::TTLType type;
     PtrTo<StringLiteral> literal;
 
-    if (ctx->DELETE()) type = TTLExpr::TTLType::DELETE;
-    else if (ctx->DISK()) type = TTLExpr::TTLType::TO_DISK;
+    if (ctx->DISK()) type = TTLExpr::TTLType::TO_DISK;
     else if (ctx->VOLUME()) type = TTLExpr::TTLType::TO_VOLUME;
-    else __builtin_unreachable();
+    else type = TTLExpr::TTLType::DELETE;
 
     if (ctx->STRING_LITERAL()) literal = Literal::createString(ctx->STRING_LITERAL());
 

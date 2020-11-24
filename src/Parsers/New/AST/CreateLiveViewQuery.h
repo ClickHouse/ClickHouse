@@ -6,18 +6,17 @@
 namespace DB::AST
 {
 
-class CreateMaterializedViewQuery : public DDLQuery
+class CreateLiveViewQuery : public DDLQuery
 {
     public:
-        CreateMaterializedViewQuery(
+        CreateLiveViewQuery(
             bool attach,
             bool if_not_exists,
-            bool populate,
             PtrTo<TableIdentifier> identifier,
             PtrTo<UUIDClause> uuid,
-            PtrTo<SchemaClause> schema,
+            PtrTo<NumberLiteral> timeout,
             PtrTo<DestinationClause> destination,
-            PtrTo<EngineClause> engine,
+            PtrTo<SchemaClause> schema,
             PtrTo<SelectUnionQuery> query);
 
         ASTPtr convertToOld() const override;
@@ -27,13 +26,13 @@ class CreateMaterializedViewQuery : public DDLQuery
         {
             NAME = 0,     // TableIdentifier
             UUID,         // UUIDClause (optional)
-            SCHEMA,       // SchemaClause (optional)
+            TIMEOUT,      // NumberLiteral (optional)
             DESTINATION,  // DestinationClause (optional)
-            ENGINE,       // EngineClause (optional)
+            SCHEMA,       // SchemaClause (optional)
             SUBQUERY,     // SelectUnionQuery
         };
 
-        const bool attach, if_not_exists, populate;
+        const bool attach, if_not_exists;
 };
 
 }

@@ -42,13 +42,15 @@ public:
 
     virtual antlrcpp::Any visitAlterTableClauseDropPartition(ClickHouseParser::AlterTableClauseDropPartitionContext *context) = 0;
 
-    virtual antlrcpp::Any visitAlterTableClauseModify(ClickHouseParser::AlterTableClauseModifyContext *context) = 0;
-
-    virtual antlrcpp::Any visitAlterTableClauseModifyOrderBy(ClickHouseParser::AlterTableClauseModifyOrderByContext *context) = 0;
+    virtual antlrcpp::Any visitAlterTableClauseModifyCodec(ClickHouseParser::AlterTableClauseModifyCodecContext *context) = 0;
 
     virtual antlrcpp::Any visitAlterTableClauseModifyComment(ClickHouseParser::AlterTableClauseModifyCommentContext *context) = 0;
 
     virtual antlrcpp::Any visitAlterTableClauseModifyRemove(ClickHouseParser::AlterTableClauseModifyRemoveContext *context) = 0;
+
+    virtual antlrcpp::Any visitAlterTableClauseModify(ClickHouseParser::AlterTableClauseModifyContext *context) = 0;
+
+    virtual antlrcpp::Any visitAlterTableClauseModifyOrderBy(ClickHouseParser::AlterTableClauseModifyOrderByContext *context) = 0;
 
     virtual antlrcpp::Any visitAlterTableClauseModifyTTL(ClickHouseParser::AlterTableClauseModifyTTLContext *context) = 0;
 
@@ -65,6 +67,8 @@ public:
     virtual antlrcpp::Any visitCheckStmt(ClickHouseParser::CheckStmtContext *context) = 0;
 
     virtual antlrcpp::Any visitCreateDatabaseStmt(ClickHouseParser::CreateDatabaseStmtContext *context) = 0;
+
+    virtual antlrcpp::Any visitCreateLiveViewStmt(ClickHouseParser::CreateLiveViewStmtContext *context) = 0;
 
     virtual antlrcpp::Any visitCreateMaterializedViewStmt(ClickHouseParser::CreateMaterializedViewStmtContext *context) = 0;
 
@@ -107,6 +111,8 @@ public:
     virtual antlrcpp::Any visitTableColumnPropertyExpr(ClickHouseParser::TableColumnPropertyExprContext *context) = 0;
 
     virtual antlrcpp::Any visitCodecExpr(ClickHouseParser::CodecExprContext *context) = 0;
+
+    virtual antlrcpp::Any visitCodecArgExpr(ClickHouseParser::CodecArgExprContext *context) = 0;
 
     virtual antlrcpp::Any visitTtlExpr(ClickHouseParser::TtlExprContext *context) = 0;
 

@@ -40,11 +40,12 @@ alterTableClause
     | DETACH partitionClause                                                       # AlterTableClauseDetach
     | DROP COLUMN (IF EXISTS)? nestedIdentifier                                    # AlterTableClauseDropColumn
     | DROP partitionClause                                                         # AlterTableClauseDropPartition
-    | MODIFY COLUMN (IF EXISTS)? tableColumnDfnt                                   # AlterTableClauseModify
-    | MODIFY ORDER BY columnExpr                                                   # AlterTableClauseModifyOrderBy
+    | MODIFY COLUMN (IF EXISTS)? nestedIdentifier codecExpr                        # AlterTableClauseModifyCodec
     | MODIFY COLUMN (IF EXISTS)? nestedIdentifier COMMENT STRING_LITERAL           # AlterTableClauseModifyComment
     | MODIFY COLUMN (IF EXISTS)? nestedIdentifier REMOVE tableColumnPropertyType   # AlterTableClauseModifyRemove
-    | MODIFY TTL columnExpr                                                        # AlterTableClauseModifyTTL
+    | MODIFY COLUMN (IF EXISTS)? tableColumnDfnt                                   # AlterTableClauseModify
+    | MODIFY ORDER BY columnExpr                                                   # AlterTableClauseModifyOrderBy
+    | MODIFY ttlClause                                                             # AlterTableClauseModifyTTL
     | REMOVE TTL                                                                   # AlterTableClauseRemoveTTL
     | RENAME COLUMN (IF EXISTS)? nestedIdentifier TO nestedIdentifier              # AlterTableClauseRename
     | REPLACE partitionClause FROM tableIdentifier                                 # AlterTableClauseReplace
@@ -65,6 +66,7 @@ checkStmt: CHECK TABLE tableIdentifier;
 
 createStmt
     : (ATTACH | CREATE) DATABASE (IF NOT EXISTS)? databaseIdentifier engineExpr?                                                                                  # CreateDatabaseStmt
+    | (ATTACH | CREATE) LIVE VIEW (IF NOT EXISTS)? tableIdentifier uuidClause? (WITH TIMEOUT DECIMAL_LITERAL?)? destinationClause? schemaClause? subqueryClause   # CreateLiveViewStmt
     | (ATTACH | CREATE) MATERIALIZED VIEW (IF NOT EXISTS)? tableIdentifier uuidClause? schemaClause? (destinationClause | engineClause POPULATE?) subqueryClause  # CreateMaterializedViewStmt
     | (ATTACH | CREATE) TEMPORARY? TABLE (IF NOT EXISTS)? tableIdentifier uuidClause? schemaClause? engineClause? subqueryClause?                                 # CreateTableStmt
     | (ATTACH | CREATE) VIEW (IF NOT EXISTS)? tableIdentifier uuidClause? schemaClause? subqueryClause                                                            # CreateViewStmt
@@ -105,7 +107,8 @@ tableColumnDfnt
     | nestedIdentifier columnTypeExpr? tableColumnPropertyExpr (COMMENT STRING_LITERAL)? codecExpr? (TTL columnExpr)?
     ;
 tableColumnPropertyExpr: (DEFAULT | MATERIALIZED | ALIAS) columnExpr;
-codecExpr: CODEC LPAREN identifier (LPAREN columnExprList? RPAREN)? RPAREN;
+codecExpr: CODEC LPAREN codecArgExpr (COMMA codecArgExpr)* RPAREN;
+codecArgExpr: identifier (LPAREN columnExprList? RPAREN)?;
 ttlExpr: columnExpr (DELETE | TO DISK STRING_LITERAL | TO VOLUME STRING_LITERAL)?;
 
 // DESCRIBE statement
@@ -359,11 +362,11 @@ keyword
     | DEDUPLICATE | DEFAULT | DELAY | DELETE | DESCRIBE | DESC | DESCENDING | DETACH | DISK | DISTINCT | DISTRIBUTED | DROP | ELSE | END
     | ENGINE | EXISTS | EXPLAIN | EXTRACT | FETCHES | FINAL | FIRST | FLUSH | FOR | FORMAT | FROM | FULL | FUNCTION | GLOBAL | GRANULARITY
     | GROUP | HAVING | HOUR | ID | IF | ILIKE | IN | INDEX | INNER | INSERT | INTERVAL | INTO | IS | JOIN | JSON_FALSE | JSON_TRUE | KEY
-    | LAST | LEADING | LEFT | LIKE | LIMIT | LOCAL | LOGS | MATERIALIZED | MERGES | MINUTE | MODIFY | MONTH | NO | NOT | NULLS | OFFSET
-    | ON | OPTIMIZE | OR | ORDER | OUTER | OUTFILE | PARTITION | POPULATE | PREWHERE | PRIMARY | QUARTER | REMOVE | RENAME | REPLACE
-    | REPLICA | REPLICATED | RIGHT | ROLLUP | SAMPLE | SECOND | SELECT | SEMI | SENDS | SET | SETTINGS | SHOW | START | STOP | SUBSTRING
-    | SYNC | SYNTAX | SYSTEM | TABLE | TABLES | TEMPORARY | THEN | TIES | TIMESTAMP | TOTALS | TRAILING | TRIM | TRUNCATE | TO | TTL | TYPE
-    | UNION | USE | USING | UUID | VALUES | VIEW | VOLUME | WEEK | WHEN | WHERE | WITH | YEAR
+    | LAST | LEADING | LEFT | LIKE | LIMIT | LIVE | LOCAL | LOGS | MATERIALIZED | MERGES | MINUTE | MODIFY | MONTH | NO | NOT | NULLS
+    | OFFSET | ON | OPTIMIZE | OR | ORDER | OUTER | OUTFILE | PARTITION | POPULATE | PREWHERE | PRIMARY | QUARTER | REMOVE | RENAME
+    | REPLACE | REPLICA | REPLICATED | RIGHT | ROLLUP | SAMPLE | SECOND | SELECT | SEMI | SENDS | SET | SETTINGS | SHOW | START | STOP
+    | SUBSTRING | SYNC | SYNTAX | SYSTEM | TABLE | TABLES | TEMPORARY | THEN | TIES | TIMEOUT | TIMESTAMP | TOTALS | TRAILING | TRIM
+    | TRUNCATE | TO | TTL | TYPE | UNION | USE | USING | UUID | VALUES | VIEW | VOLUME | WEEK | WHEN | WHERE | WITH | YEAR
     ;
 keywordForAlias
     : DATE | FIRST | ID | KEY

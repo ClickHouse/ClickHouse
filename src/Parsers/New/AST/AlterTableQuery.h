@@ -47,6 +47,7 @@ class AlterTableClause : public INode
         static PtrTo<AlterTableClause> createAdd(bool if_not_exists, PtrTo<TableElementExpr> element, PtrTo<Identifier> after);
         static PtrTo<AlterTableClause> createAttach(PtrTo<PartitionClause> clause, PtrTo<TableIdentifier> from);
         static PtrTo<AlterTableClause> createClear(bool if_exists, PtrTo<Identifier> identifier, PtrTo<PartitionClause> in);
+        static PtrTo<AlterTableClause> createCodec(bool if_exists, PtrTo<Identifier> identifier, PtrTo<CodecExpr> codec);
         static PtrTo<AlterTableClause> createComment(bool if_exists, PtrTo<Identifier> identifier, PtrTo<StringLiteral> comment);
         static PtrTo<AlterTableClause> createDelete(PtrTo<ColumnExpr> expr);
         static PtrTo<AlterTableClause> createDetach(PtrTo<PartitionClause> clause);
@@ -58,7 +59,7 @@ class AlterTableClause : public INode
         static PtrTo<AlterTableClause> createRename(bool if_exists, PtrTo<Identifier> identifier, PtrTo<Identifier> to);
         static PtrTo<AlterTableClause> createOrderBy(PtrTo<ColumnExpr> expr);
         static PtrTo<AlterTableClause> createReplace(PtrTo<PartitionClause> clause, PtrTo<TableIdentifier> from);
-        static PtrTo<AlterTableClause> createTTL(PtrTo<ColumnExpr> expr);
+        static PtrTo<AlterTableClause> createTTL(PtrTo<TTLClause> clause);
 
         ASTPtr convertToOld() const override;
 
@@ -77,6 +78,9 @@ class AlterTableClause : public INode
             COLUMN = 0,  // Identifier
             IN = 1,      // PartitionClause
 
+            // CODEC
+            CODEC = 1,  // CodecExpr
+
             // COMMENT
             COMMENT = 1,  // StringLiteral
 
@@ -85,6 +89,9 @@ class AlterTableClause : public INode
 
             // RENAME
             TO = 1,      // Identifier
+
+            // TTL
+            CLAUSE = 0,  // TTLClause
         };
 
         enum class ClauseType
@@ -92,6 +99,7 @@ class AlterTableClause : public INode
             ADD,
             ATTACH,
             CLEAR,
+            CODEC,
             COMMENT,
             DELETE,
             DETACH,
