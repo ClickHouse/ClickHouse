@@ -91,6 +91,9 @@ inline UInt32 extractToDecimalScale(const ColumnWithTypeAndName & named_column)
     return field.get<UInt32>();
 }
 
+/// Function toUnixTimestamp has exactly the same implementation as toDateTime of String type.
+struct NameToUnixTimestamp { static constexpr auto name = "toUnixTimestamp"; };
+
 
 /** Conversion of number types to each other, enums to numbers, dates and datetimes to numbers and back: done by straight assignment.
   *  (Date is represented internally as number of days from some day; DateTime - as unix timestamp)
@@ -110,6 +113,13 @@ struct ConvertImpl
 
         using ColVecFrom = typename FromDataType::ColumnType;
         using ColVecTo = typename ToDataType::ColumnType;
+
+        if (std::is_same_v<Name, NameToUnixTimestamp>)
+        {
+            if (isDate(named_from.type))
+                throw Exception("Illegal column " + named_from.column->getName() + " of first argument of function " + Name::name,
+                    ErrorCodes::ILLEGAL_COLUMN);
+        }
 
         if constexpr ((IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
             && !(std::is_same_v<DataTypeDateTime64, FromDataType> || std::is_same_v<DataTypeDateTime64, ToDataType>))
@@ -922,9 +932,6 @@ struct ConvertImplGenericFromString
     }
 };
 
-
-/// Function toUnixTimestamp has exactly the same implementation as toDateTime of String type.
-struct NameToUnixTimestamp { static constexpr auto name = "toUnixTimestamp"; };
 
 template <>
 struct ConvertImpl<DataTypeString, DataTypeUInt32, NameToUnixTimestamp>
