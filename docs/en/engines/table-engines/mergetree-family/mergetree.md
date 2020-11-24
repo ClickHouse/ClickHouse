@@ -186,7 +186,7 @@ ClickHouse does not require a unique primary key. You can insert multiple rows w
 
 The key in `PRIMARY KEY` and `ORDER BY` can be `Nullable` type. The setting [allow_nullable_key](../../operations/settings/settings.md#allow-nullable-key) is responsible for supporting this feature.
 
-When sorting using an expression `ORDER BY` for `NULL` values, the [NULLS_LAST](../../sql-reference/statements/select/order-by/#sorting-of-special-values) principle always works.
+When sorting using an expression `ORDER BY` for `NULL` values, the [NULLS_LAST](../../sql-reference/statements/select/order-by.md#sorting-of-special-values) principle always works.
 
 ### Selecting the Primary Key {#selecting-the-primary-key}
 
