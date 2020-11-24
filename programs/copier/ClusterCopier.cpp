@@ -62,6 +62,9 @@ decltype(auto) ClusterCopier::retry(T && func, UInt64 max_tries)
 {
     std::exception_ptr exception;
 
+    if (max_tries == 0)
+        throw Exception("Cannot perform zero retries", ErrorCodes::LOGICAL_ERROR);
+
     for (UInt64 try_number = 1; try_number <= max_tries; ++try_number)
     {
         try
