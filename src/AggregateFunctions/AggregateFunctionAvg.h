@@ -37,15 +37,15 @@ struct AvgFraction
     {
         if constexpr (IsDecimalNumber<Numerator> && IsDecimalNumber<Denominator>)
         {
-            const UInt32 result_scale = std::max(num_scale, denom_scale);
+            // According to the docs, num(S1) / denom(S2) would have scale S1
 
             if constexpr (std::is_same_v<Numerator, Decimal256> && std::is_same_v<Denominator, Decimal128>)
                 ///Special case as Decimal256 / Decimal128 = compile error (as Decimal128 is not parametrized by a wide
                 ///int), but an __int128 instead
                 return DecimalUtils::convertTo<Float64>(
-                    numerator / (denominator.template convertTo<Decimal256>()), result_scale);
+                    numerator / (denominator.template convertTo<Decimal256>()), num_scale);
             else
-                return DecimalUtils::convertTo<Float64>(numerator / denominator, result_scale);
+                return DecimalUtils::convertTo<Float64>(numerator / denominator, num_scale);
         }
 
         /// Numerator is always casted to Float64 to divide correctly if the denominator is not Float64.
