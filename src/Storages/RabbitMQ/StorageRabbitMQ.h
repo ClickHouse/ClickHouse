@@ -73,7 +73,7 @@ protected:
 
 private:
     const Context & global_context;
-    Context rabbitmq_context;
+    std::shared_ptr<Context> rabbitmq_context;
     std::unique_ptr<RabbitMQSettings> rabbitmq_settings;
 
     const String exchange_name;
@@ -135,7 +135,7 @@ private:
     static AMQP::ExchangeType defineExchangeType(String exchange_type_);
     static String getTableBasedName(String name, const StorageID & table_id);
 
-    Context addSettings(Context context) const;
+    std::shared_ptr<Context> addSettings(const Context & context) const;
     size_t getMaxBlockSize() const;
     void deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool wait, bool stop_loop);
 
