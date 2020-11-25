@@ -13,7 +13,6 @@
 #include <Common/PipeFDs.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
-
 #ifdef POCO_HAVE_FD_EPOLL
     #include <sys/epoll.h>
 #else
@@ -34,6 +33,12 @@ struct SocketInterruptablePollWrapper
     int sockfd;
     PipeFDs pipe;
 
+#if defined(POCO_HAVE_FD_EPOLL)
+    int epollfd;
+    epoll_event socket_event{};
+    epoll_event pipe_event{};
+#endif
+
     enum class PollStatus
     {
         HAS_DATA,
@@ -48,6 +53,27 @@ struct SocketInterruptablePollWrapper
         : sockfd(poco_socket_.impl()->sockfd())
     {
         pipe.setNonBlocking();
+
+#if defined(POCO_HAVE_FD_EPOLL)
+        epollfd = epoll_create(2);
+        if (epollfd < 0)
+            throwFromErrno("Cannot epoll_create", ErrorCodes::SYSTEM_ERROR);
+
+        socket_event.events = EPOLLIN | EPOLLERR;
+        socket_event.data.fd = sockfd;
+        if (epoll_ctl(epollfd, EPOLL_CTL_ADD, sockfd, &socket_event) < 0)
+        {
+            ::close(epollfd);
+            throwFromErrno("Cannot insert socket into epoll queue", ErrorCodes::SYSTEM_ERROR);
+        }
+        pipe_event.events = EPOLLIN | EPOLLERR;
+        pipe_event.data.fd = pipe.fds_rw[0];
+        if (epoll_ctl(epollfd, EPOLL_CTL_ADD, pipe.fds_rw[0], &pipe_event) < 0)
+        {
+            ::close(epollfd);
+            throwFromErrno("Cannot insert socket into epoll queue", ErrorCodes::SYSTEM_ERROR);
+        }
+#endif
     }
 
     int getInterruptFD() const
@@ -57,30 +83,7 @@ struct SocketInterruptablePollWrapper
 
     PollStatus poll(Poco::Timespan remaining_time)
     {
-
 #if defined(POCO_HAVE_FD_EPOLL)
-        int epollfd = epoll_create(2);
-
-        if (epollfd < 0)
-            throwFromErrno("Cannot epoll_create", ErrorCodes::SYSTEM_ERROR);
-
-        epoll_event socket_event{};
-        socket_event.events = EPOLLIN | EPOLLERR;
-        socket_event.data.fd = sockfd;
-        if (epoll_ctl(epollfd, EPOLL_CTL_ADD, sockfd, &socket_event) < 0)
-        {
-            ::close(epollfd);
-            throwFromErrno("Cannot insert socket into epoll queue", ErrorCodes::SYSTEM_ERROR);
-        }
-        epoll_event pipe_event{};
-        pipe_event.events = EPOLLIN | EPOLLERR;
-        pipe_event.data.fd = pipe.fds_rw[0];
-        if (epoll_ctl(epollfd, EPOLL_CTL_ADD, pipe.fds_rw[0], &pipe_event) < 0)
-        {
-            ::close(epollfd);
-            throwFromErrno("Cannot insert socket into epoll queue", ErrorCodes::SYSTEM_ERROR);
-        }
-
         int rc;
         epoll_event evout{};
         do
@@ -99,7 +102,6 @@ struct SocketInterruptablePollWrapper
         }
         while (rc < 0 && errno == EINTR);
 
-        ::close(epollfd);
         int out_fd = evout.data.fd;
 #else
         pollfd poll_buf[2];
@@ -143,6 +145,13 @@ struct SocketInterruptablePollWrapper
         }
         return PollStatus::HAS_DATA;
     }
+
+#if defined(POCO_HAVE_FD_EPOLL)
+    ~SocketInterruptablePollWrapper()
+    {
+        ::close(epollfd);
+    }
+#endif
 };
 
 TestKeeperTCPHandler::TestKeeperTCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_)
