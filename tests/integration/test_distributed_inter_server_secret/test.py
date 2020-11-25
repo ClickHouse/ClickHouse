@@ -171,7 +171,7 @@ def test_per_user_inline_settings_insecure_cluster(user, password):
     SETTINGS
         prefer_localhost_replica=0,
         max_memory_usage_for_user=1e9,
-        max_untracked_memory=0
+        max_untracked_memory=4096
     """, user=user, password=password)
     assert get_query_setting_on_shard(n1, id_, 'max_memory_usage_for_user') == ''
 @users
@@ -182,7 +182,7 @@ def test_per_user_inline_settings_secure_cluster(user, password):
     SETTINGS
         prefer_localhost_replica=0,
         max_memory_usage_for_user=1e9,
-        max_untracked_memory=0
+        max_untracked_memory=4096
     """, user=user, password=password)
     assert int(get_query_setting_on_shard(n1, id_, 'max_memory_usage_for_user')) == int(1e9)
 @users
@@ -191,7 +191,7 @@ def test_per_user_protocol_settings_insecure_cluster(user, password):
     query_with_id(n1, id_, 'SELECT * FROM dist_insecure', user=user, password=password, settings={
         'prefer_localhost_replica': 0,
         'max_memory_usage_for_user': int(1e9),
-        'max_untracked_memory': 0,
+        'max_untracked_memory': 4096,
     })
     assert get_query_setting_on_shard(n1, id_, 'max_memory_usage_for_user') == ''
 @users
@@ -200,7 +200,7 @@ def test_per_user_protocol_settings_secure_cluster(user, password):
     query_with_id(n1, id_, 'SELECT * FROM dist_secure', user=user, password=password, settings={
         'prefer_localhost_replica': 0,
         'max_memory_usage_for_user': int(1e9),
-        'max_untracked_memory': 0,
+        'max_untracked_memory': 4096,
     })
     assert int(get_query_setting_on_shard(n1, id_, 'max_memory_usage_for_user')) == int(1e9)
 
