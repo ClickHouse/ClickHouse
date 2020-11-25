@@ -755,7 +755,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     for (const auto & listen_host : listen_hosts)
     {
         /// TCP TestKeeper
-        createServer(listen_host, "test_keeper_tcp_port", listen_try, [&](UInt16 port)
+        createServer(listen_host, "test_keeper_server.tcp_port", listen_try, [&](UInt16 port)
         {
             Poco::Net::ServerSocket socket;
             auto address = socketBindListen(socket, listen_host, port);

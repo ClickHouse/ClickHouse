@@ -11,6 +11,8 @@
 #include <common/logger_useful.h>
 #include <chrono>
 #include <Common/PipeFDs.h>
+#include <Poco/Util/AbstractConfiguration.h>
+
 
 #ifdef POCO_HAVE_FD_EPOLL
     #include <sys/epoll.h>
@@ -23,8 +25,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int SYSTEM_ERROR;
+    extern const int UNEXPECTED_PACKET_FROM_CLIENT;
 }
 
 struct SocketInterruptablePollWrapper
@@ -149,8 +151,8 @@ TestKeeperTCPHandler::TestKeeperTCPHandler(IServer & server_, const Poco::Net::S
     , log(&Poco::Logger::get("TestKeeperTCPHandler"))
     , global_context(server.context())
     , test_keeper_storage(global_context.getTestKeeperStorage())
-    , operation_timeout(0, Coordination::DEFAULT_OPERATION_TIMEOUT_MS * 1000)
-    , session_timeout(0, Coordination::DEFAULT_SESSION_TIMEOUT_MS * 1000)
+    , operation_timeout(0, global_context.getConfigRef().getUInt("test_keeper_server.operation_timeout_ms", Coordination::DEFAULT_OPERATION_TIMEOUT_MS) * 1000)
+    , session_timeout(0, global_context.getConfigRef().getUInt("test_keeper_server.session_timeout_ms",  Coordination::DEFAULT_SESSION_TIMEOUT_MS) * 1000)
     , session_id(test_keeper_storage->getSessionID())
     , poll_wrapper(std::make_unique<SocketInterruptablePollWrapper>(socket_))
 {
@@ -183,23 +185,23 @@ void TestKeeperTCPHandler::receiveHandshake()
 
     Coordination::read(handshake_length, *in);
     if (handshake_length != Coordination::CLIENT_HANDSHAKE_LENGTH)
-        throw Exception("Unexpected handshake length received: " + toString(handshake_length), ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Unexpected handshake length received: " + toString(handshake_length), ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
 
     Coordination::read(protocol_version, *in);
 
     if (protocol_version != Coordination::ZOOKEEPER_PROTOCOL_VERSION)
-        throw Exception("Unexpected protocol version: " + toString(protocol_version), ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Unexpected protocol version: " + toString(protocol_version), ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
 
     Coordination::read(last_zxid_seen, *in);
 
     if (last_zxid_seen != 0)
-        throw Exception("Non zero last_zxid_seen is not supported", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Non zero last_zxid_seen is not supported", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
 
     Coordination::read(timeout, *in);
     Coordination::read(previous_session_id, *in);
 
     if (previous_session_id != 0)
-        throw Exception("Non zero previous session id is not supported", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Non zero previous session id is not supported", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
 
     Coordination::read(passwd, *in);
 }
