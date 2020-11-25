@@ -118,21 +118,19 @@ BlockInputStreamPtr InterpreterShowGrantsQuery::executeImpl()
 
     /// Build the result column.
     MutableColumnPtr column = ColumnString::create();
-    std::stringstream grant_ss;
-    grant_ss.exceptions(std::ios::failbit);
+    WriteBufferFromOwnString grant_buf;
     for (const auto & grant_query : grant_queries)
     {
-        grant_ss.str("");
-        formatAST(*grant_query, grant_ss, false, true);
-        column->insert(grant_ss.str());
+        grant_buf.restart();
+        formatAST(*grant_query, grant_buf, false, true);
+        column->insert(grant_buf.str());
     }
 
     /// Prepare description of the result column.
-    std::stringstream desc_ss;
-    desc_ss.exceptions(std::ios::failbit);
+    WriteBufferFromOwnString desc_buf;
     const auto & show_query = query_ptr->as<const ASTShowGrantsQuery &>();
-    formatAST(show_query, desc_ss, false, true);
-    String desc = desc_ss.str();
+    formatAST(show_query, desc_buf, false, true);
+    String desc = desc_buf.str();
     String prefix = "SHOW ";
     if (desc.starts_with(prefix))
         desc = desc.substr(prefix.length()); /// `desc` always starts with "SHOW ", so we can trim this prefix.

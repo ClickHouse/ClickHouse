@@ -259,7 +259,7 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
         span.finish_time_us = current_time_us;
         span.duration_ns = 0;
 
-        // keep values synchonized to type enum in QueryLogElement::createBlock
+        /// Keep values synchronized to type enum in QueryLogElement::createBlock.
         span.attribute_names.push_back("clickhouse.query_status");
         span.attribute_values.push_back("ExceptionBeforeStart");
 
@@ -349,8 +349,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         {
             if (!select_with_union_query->list_of_selects->children.empty())
             {
-                if (auto new_settings = select_with_union_query->list_of_selects->children.back()->as<ASTSelectQuery>()->settings())
-                    InterpreterSetQuery(new_settings, context).executeForCurrentContext();
+                // We might have an arbitrarily complex UNION tree, so just give
+                // up if the last first-order child is not a plain SELECT.
+                // It is flattened later, when we process UNION ALL/DISTINCT.
+                const auto * last_select = select_with_union_query->list_of_selects->children.back()->as<ASTSelectQuery>();
+                if (last_select && last_select->settings())
+                {
+                    InterpreterSetQuery(last_select->settings(), context).executeForCurrentContext();
+                }
             }
         }
         else if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
@@ -697,7 +703,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     span.finish_time_us = time_in_microseconds(finish_time);
                     span.duration_ns = elapsed_seconds * 1000000000;
 
-                    // keep values synchonized to type enum in QueryLogElement::createBlock
+                    /// Keep values synchronized to type enum in QueryLogElement::createBlock.
                     span.attribute_names.push_back("clickhouse.query_status");
                     span.attribute_values.push_back("QueryFinish");
 
@@ -778,11 +784,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             if (!internal && res.in)
             {
-                std::stringstream log_str;
-                log_str.exceptions(std::ios::failbit);
-                log_str << "Query pipeline:\n";
-                res.in->dumpTree(log_str);
-                LOG_DEBUG(&Poco::Logger::get("executeQuery"), log_str.str());
+                WriteBufferFromOwnString msg_buf;
+                res.in->dumpTree(msg_buf);
+                LOG_DEBUG(&Poco::Logger::get("executeQuery"), "Query pipeline:\n{}", msg_buf.str());
             }
         }
     }

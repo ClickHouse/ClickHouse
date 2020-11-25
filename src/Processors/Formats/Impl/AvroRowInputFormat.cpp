@@ -160,7 +160,7 @@ static void insertNumber(IColumn & column, WhichDataType type, T value)
 
 static std::string nodeToJson(avro::NodePtr root_node)
 {
-    std::ostringstream ss;
+    std::ostringstream ss;      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     ss.exceptions(std::ios::failbit);
     root_node->printJson(ss, 0);
     return ss.str();
@@ -644,11 +644,21 @@ private:
                 request.setHost(url.getHost());
 
                 auto session = makePooledHTTPSession(url, timeouts, 1);
-                session->sendRequest(request);
+                std::istream * response_body{};
+                try
+                {
+                    session->sendRequest(request);
 
-                Poco::Net::HTTPResponse response;
-                auto * response_body = receiveResponse(*session, request, response, false);
-
+                    Poco::Net::HTTPResponse response;
+                    response_body = receiveResponse(*session, request, response, false);
+                }
+                catch (const Poco::Exception & e)
+                {
+                    /// We use session data storage as storage for exception text
+                    /// Depend on it we can deduce to reconnect session or reresolve session host
+                    session->attachSessionData(e.message());
+                    throw;
+                }
                 Poco::JSON::Parser parser;
                 auto json_body = parser.parse(*response_body).extract<Poco::JSON::Object::Ptr>();
                 auto schema = json_body->getValue<std::string>("schema");

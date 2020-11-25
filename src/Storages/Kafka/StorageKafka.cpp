@@ -33,6 +33,7 @@
 #include <Common/typeid_cast.h>
 #include <common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Interpreters/Context.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <librdkafka/rdkafka.h>
 #include <common/getFQDNOrHostName.h>
@@ -169,7 +170,7 @@ namespace
 
 StorageKafka::StorageKafka(
     const StorageID & table_id_,
-    Context & context_,
+    const Context & context_,
     const ColumnsDescription & columns_,
     std::unique_ptr<KafkaSettings> kafka_settings_)
     : IStorage(table_id_)
@@ -246,10 +247,7 @@ Names StorageKafka::parseTopics(String topic_list)
 
 String StorageKafka::getDefaultClientId(const StorageID & table_id_)
 {
-    std::stringstream ss;
-    ss.exceptions(std::ios::failbit);
-    ss << VERSION_NAME << "-" << getFQDNOrHostName() << "-" << table_id_.database_name << "-" << table_id_.table_name;
-    return ss.str();
+    return fmt::format("{}-{}-{}-{}", VERSION_NAME, getFQDNOrHostName(), table_id_.database_name, table_id_.table_name);
 }
 
 
@@ -400,10 +398,7 @@ ConsumerBufferPtr StorageKafka::createReadBuffer(const size_t consumer_number)
     conf.set("group.id", group);
     if (num_consumers > 1)
     {
-        std::stringstream ss;
-        ss.exceptions(std::ios::failbit);
-        ss << client_id << "-" << consumer_number;
-        conf.set("client.id", ss.str());
+        conf.set("client.id", fmt::format("{}-{}", client_id, consumer_number));
     }
     else
     {
