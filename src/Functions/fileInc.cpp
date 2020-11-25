@@ -35,7 +35,7 @@ public:
     static constexpr auto name = "fileInc";
     String getName() const override { return name; }
 
-    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) override
+    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const IColumn * arg_column = arguments[0].column.get();
         const ColumnString * arg_string = checkAndGetColumnConstData<ColumnString>(arg_column);
