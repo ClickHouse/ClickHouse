@@ -152,7 +152,7 @@ TestKeeperTCPHandler::TestKeeperTCPHandler(IServer & server_, const Poco::Net::S
     , global_context(server.context())
     , test_keeper_storage(global_context.getTestKeeperStorage())
     , operation_timeout(0, global_context.getConfigRef().getUInt("test_keeper_server.operation_timeout_ms", Coordination::DEFAULT_OPERATION_TIMEOUT_MS) * 1000)
-    , session_timeout(0, global_context.getConfigRef().getUInt("test_keeper_server.session_timeout_ms",  Coordination::DEFAULT_SESSION_TIMEOUT_MS) * 1000)
+    , session_timeout(0, global_context.getConfigRef().getUInt("test_keeper_server.session_timeout_ms", Coordination::DEFAULT_SESSION_TIMEOUT_MS) * 1000)
     , session_id(test_keeper_storage->getSessionID())
     , poll_wrapper(std::make_unique<SocketInterruptablePollWrapper>(socket_))
 {
