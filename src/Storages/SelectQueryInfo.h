@@ -21,8 +21,6 @@ struct PrewhereInfo
     ExpressionActionsPtr alias_actions;
     /// Actions which are executed on block in order to get filter column for prewhere step.
     ExpressionActionsPtr prewhere_actions;
-    /// Actions which are executed after reading from storage in order to remove unused columns.
-    ExpressionActionsPtr remove_columns_actions;
     String prewhere_column_name;
     bool remove_prewhere_column = false;
     bool need_filter = false;
@@ -37,7 +35,6 @@ struct PrewhereDAGInfo
 {
     ActionsDAGPtr alias_actions;
     ActionsDAGPtr prewhere_actions;
-    ActionsDAGPtr remove_columns_actions;
     String prewhere_column_name;
     bool remove_prewhere_column = false;
     bool need_filter = false;

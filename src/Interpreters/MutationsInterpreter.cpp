@@ -737,7 +737,8 @@ QueryPipelinePtr MutationsInterpreter::addStreamsForLaterStages(const std::vecto
             if (i < stage.filter_column_names.size())
             {
                 /// Execute DELETEs.
-                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentDataStream(), step->actions(), stage.filter_column_names[i], false));
+                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), step->actions()));
+                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentDataStream(), stage.filter_column_names[i], false));
             }
             else
             {

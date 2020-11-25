@@ -17,14 +17,9 @@ class FilterTransform : public ISimpleTransform
 {
 public:
     FilterTransform(
-        const Block & header_, ExpressionActionsPtr expression_, String filter_column_name_,
-        bool remove_filter_column_, bool on_totals_ = false);
+        const Block & header_, String filter_column_name_, bool remove_filter_column_, bool on_totals_ = false);
 
-    static Block transformHeader(
-            Block header,
-            const ExpressionActionsPtr & expression,
-            const String & filter_column_name,
-            bool remove_filter_column);
+    static Block transformHeader(Block header, const String & filter_column_name, bool remove_filter_column);
 
     String getName() const override { return "FilterTransform"; }
 
@@ -34,18 +29,12 @@ protected:
     void transform(Chunk & chunk) override;
 
 private:
-    ExpressionActionsPtr expression;
     String filter_column_name;
     bool remove_filter_column;
     bool on_totals;
 
     ConstantFilterDescription constant_filter_description;
     size_t filter_column_position = 0;
-
-    /// Header after expression, but before removing filter column.
-    Block transformed_header;
-
-    bool are_prepared_sets_initialized = false;
 
     void removeFilterIfNeed(Chunk & chunk) const;
 };

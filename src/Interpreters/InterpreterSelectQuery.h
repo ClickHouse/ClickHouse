@@ -111,8 +111,7 @@ private:
     void executeFetchColumns(
         QueryProcessingStage::Enum processing_stage,
         QueryPlan & query_plan,
-        const PrewhereDAGInfoPtr & prewhere_info,
-        const NameSet & columns_to_remove_after_prewhere);
+        const PrewhereDAGInfoPtr & prewhere_info);
 
     void executeWhere(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool remove_filter);
     void executeAggregation(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info);

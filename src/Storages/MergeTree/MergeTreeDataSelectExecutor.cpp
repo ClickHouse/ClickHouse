@@ -787,9 +787,12 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 
     if (use_sampling)
     {
+        auto sampling_expr_step = std::make_unique<ExpressionStep>(plan->getCurrentDataStream(), filter_expression);
+        sampling_expr_step->setStepDescription("Sampling");
+        plan->addStep(std::move(sampling_expr_step));
+
         auto sampling_step = std::make_unique<FilterStep>(
                 plan->getCurrentDataStream(),
-                filter_expression,
                 filter_function->getColumnName(),
                 false);
 
@@ -815,16 +818,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         auto adding_column = std::make_unique<AddingConstColumnStep>(plan->getCurrentDataStream(), std::move(column));
         adding_column->setStepDescription("Add _sample_factor column");
         plan->addStep(std::move(adding_column));
-    }
-
-    if (query_info.prewhere_info && query_info.prewhere_info->remove_columns_actions)
-    {
-        auto expression_step = std::make_unique<ExpressionStep>(
-                plan->getCurrentDataStream(),
-                query_info.prewhere_info->remove_columns_actions->getActionsDAG().clone());
-
-        expression_step->setStepDescription("Remove unused columns after PREWHERE");
-        plan->addStep(std::move(expression_step));
     }
 
     return plan;

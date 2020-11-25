@@ -17,6 +17,7 @@
 #include <Parsers/ASTIdentifier.h>
 
 #include <Processors/Pipe.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 
 namespace DB
@@ -92,7 +93,12 @@ Pipe StorageMaterializeMySQL::read(
 
         pipe.addSimpleTransform([&](const Block & header)
         {
-            return std::make_shared<FilterTransform>(header, expression_actions, filter_column_name, false);
+            return std::make_shared<ExpressionTransform>(header, expression_actions);
+        });
+
+        pipe.addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<FilterTransform>(header, filter_column_name, false);
         });
     }
 

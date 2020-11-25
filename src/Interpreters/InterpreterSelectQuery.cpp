@@ -760,26 +760,19 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
 
         if (expressions.prewhere_info)
         {
+            auto prewhere_expr_step = std::make_unique<ExpressionStep>(
+                    query_plan.getCurrentDataStream(),
+                    expressions.prewhere_info->prewhere_actions);
+            prewhere_expr_step->setStepDescription("PREWHERE");
+            query_plan.addStep(std::move(prewhere_expr_step));
+
             auto prewhere_step = std::make_unique<FilterStep>(
                     query_plan.getCurrentDataStream(),
-                    expressions.prewhere_info->prewhere_actions,
                     expressions.prewhere_info->prewhere_column_name,
                     expressions.prewhere_info->remove_prewhere_column);
 
             prewhere_step->setStepDescription("PREWHERE");
             query_plan.addStep(std::move(prewhere_step));
-
-            // To remove additional columns in dry run
-            // For example, sample column which can be removed in this stage
-            if (expressions.prewhere_info->remove_columns_actions)
-            {
-                auto remove_columns = std::make_unique<ExpressionStep>(
-                        query_plan.getCurrentDataStream(),
-                        expressions.prewhere_info->remove_columns_actions);
-
-                remove_columns->setStepDescription("Remove unnecessary columns after PREWHERE");
-                query_plan.addStep(std::move(remove_columns));
-            }
         }
     }
     else
@@ -812,7 +805,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             throw Exception("PREWHERE is not supported if the table is filtered by row-level security expression", ErrorCodes::ILLEGAL_PREWHERE);
 
         /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
-        executeFetchColumns(from_stage, query_plan, expressions.prewhere_info, expressions.columns_to_remove_after_prewhere);
+        executeFetchColumns(from_stage, query_plan, expressions.prewhere_info);
 
         LOG_TRACE(log, "{} -> {}", QueryProcessingStage::toString(from_stage), QueryProcessingStage::toString(options.to_stage));
     }
@@ -879,9 +872,15 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
         {
             if (expressions.hasFilter())
             {
+                auto row_level_security_expr_step = std::make_unique<ExpressionStep>(
+                        query_plan.getCurrentDataStream(),
+                        expressions.filter_info->actions_dag);
+
+                row_level_security_expr_step->setStepDescription("Row-level security expression");
+                query_plan.addStep(std::move(row_level_security_expr_step));
+
                 auto row_level_security_step = std::make_unique<FilterStep>(
                         query_plan.getCurrentDataStream(),
-                        expressions.filter_info->actions_dag,
                         expressions.filter_info->column_name,
                         expressions.filter_info->do_remove_column);
 
@@ -1126,25 +1125,16 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(QueryPlan & query_plan, c
 
         pipe.addSimpleTransform([&](const Block & header)
         {
+            return std::make_shared<ExpressionTransform>(header, query_info.prewhere_info->prewhere_actions);
+        });
+
+        pipe.addSimpleTransform([&](const Block & header)
+        {
             return std::make_shared<FilterTransform>(
                 header,
-                query_info.prewhere_info->prewhere_actions,
                 query_info.prewhere_info->prewhere_column_name,
                 query_info.prewhere_info->remove_prewhere_column);
         });
-
-        // To remove additional columns
-        // In some cases, we did not read any marks so that the pipeline.streams is empty
-        // Thus, some columns in prewhere are not removed as expected
-        // This leads to mismatched header in distributed table
-        if (query_info.prewhere_info->remove_columns_actions)
-        {
-            pipe.addSimpleTransform([&](const Block & header)
-            {
-                return std::make_shared<ExpressionTransform>(
-                        header, query_info.prewhere_info->remove_columns_actions);
-            });
-        }
     }
 
     auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
@@ -1153,8 +1143,7 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(QueryPlan & query_plan, c
 }
 
 void InterpreterSelectQuery::executeFetchColumns(
-    QueryProcessingStage::Enum processing_stage, QueryPlan & query_plan,
-    const PrewhereDAGInfoPtr & prewhere_info, const NameSet & columns_to_remove_after_prewhere)
+    QueryProcessingStage::Enum processing_stage, QueryPlan & query_plan, const PrewhereDAGInfoPtr & prewhere_info)
 {
     auto & query = getSelectQuery();
     const Settings & settings = context->getSettingsRef();
@@ -1315,17 +1304,13 @@ void InterpreterSelectQuery::executeFetchColumns(
             /// Collect required columns from prewhere expression actions.
             if (prewhere_info)
             {
-                NameSet columns_to_remove(columns_to_remove_after_prewhere.begin(), columns_to_remove_after_prewhere.end());
-                Block prewhere_actions_result = prewhere_info->prewhere_actions->getResultColumns();
+                auto prewhere_actions_result = prewhere_info->prewhere_actions->getResultColumns();
 
                 /// Populate required columns with the columns, added by PREWHERE actions and not removed afterwards.
                 /// XXX: looks hacky that we already know which columns after PREWHERE we won't need for sure.
                 for (const auto & column : prewhere_actions_result)
                 {
                     if (prewhere_info->remove_prewhere_column && column.name == prewhere_info->prewhere_column_name)
-                        continue;
-
-                    if (columns_to_remove.count(column.name))
                         continue;
 
                     required_columns_all_expr->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
@@ -1482,8 +1467,6 @@ void InterpreterSelectQuery::executeFetchColumns(
 
             if (prewhere_info->alias_actions)
                 query_info.prewhere_info->alias_actions = std::make_shared<ExpressionActions>(prewhere_info->alias_actions);
-            if (prewhere_info->remove_columns_actions)
-                query_info.prewhere_info->remove_columns_actions = std::make_shared<ExpressionActions>(prewhere_info->remove_columns_actions);
 
             query_info.prewhere_info->remove_prewhere_column = prewhere_info->remove_prewhere_column;
             query_info.prewhere_info->need_filter = prewhere_info->need_filter;
@@ -1565,9 +1548,15 @@ void InterpreterSelectQuery::executeFetchColumns(
 
 void InterpreterSelectQuery::executeWhere(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool remove_filter)
 {
+    auto where_expr_step = std::make_unique<ExpressionStep>(
+            query_plan.getCurrentDataStream(),
+            expression);
+
+    where_expr_step->setStepDescription("WHERE");
+    query_plan.addStep(std::move(where_expr_step));
+
     auto where_step = std::make_unique<FilterStep>(
             query_plan.getCurrentDataStream(),
-            expression,
             getSelectQuery().where()->getColumnName(),
             remove_filter);
 
@@ -1675,9 +1664,12 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool
 
 void InterpreterSelectQuery::executeHaving(QueryPlan & query_plan, const ActionsDAGPtr & expression)
 {
+    auto having_expr_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), expression);
+    having_expr_step->setStepDescription("HAVING");
+    query_plan.addStep(std::move(having_expr_step));
+
     auto having_step = std::make_unique<FilterStep>(
-            query_plan.getCurrentDataStream(),
-            expression, getSelectQuery().having()->getColumnName(), false);
+            query_plan.getCurrentDataStream(), getSelectQuery().having()->getColumnName(), false);
 
     having_step->setStepDescription("HAVING");
     query_plan.addStep(std::move(having_step));

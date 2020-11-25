@@ -199,9 +199,6 @@ struct ExpressionAnalysisResult
     /// Columns from the SELECT list, before renaming them to aliases.
     Names selected_columns;
 
-    /// Columns will be removed after prewhere actions execution.
-    NameSet columns_to_remove_after_prewhere;
-
     PrewhereDAGInfoPtr prewhere_info;
     FilterInfoPtr filter_info;
     ConstantFilterDescription prewhere_constant_filter_description;

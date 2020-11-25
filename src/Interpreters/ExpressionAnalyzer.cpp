@@ -1255,31 +1255,11 @@ void ExpressionAnalysisResult::finalize(const ExpressionActionsChain & chain, si
         const ExpressionActionsChain::Step & step = *chain.steps.at(0);
         prewhere_info->remove_prewhere_column = step.can_remove_required_output.at(0);
 
-        NameSet columns_to_remove;
         for (size_t i = 1; i < step.required_output.size(); ++i)
         {
             if (step.can_remove_required_output[i])
-                columns_to_remove.insert(step.required_output[i]);
+                prewhere_info->prewhere_actions->removeColumn(step.required_output[i]);
         }
-
-        if (!columns_to_remove.empty())
-        {
-            auto columns = prewhere_info->prewhere_actions->getResultColumns();
-
-            auto remove_actions = std::make_shared<ActionsDAG>();
-            for (const auto & column : columns)
-            {
-                if (columns_to_remove.count(column.name))
-                {
-                    remove_actions->addInput(column);
-                    remove_actions->removeColumn(column.name);
-                }
-            }
-
-            prewhere_info->remove_columns_actions = std::move(remove_actions);
-        }
-
-        columns_to_remove_after_prewhere = std::move(columns_to_remove);
     }
     else if (hasFilter())
     {
@@ -1315,7 +1295,6 @@ void ExpressionAnalysisResult::checkActions() const
 
         check_actions(prewhere_info->prewhere_actions);
         check_actions(prewhere_info->alias_actions);
-        check_actions(prewhere_info->remove_columns_actions);
     }
 }
 
