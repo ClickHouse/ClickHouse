@@ -40,24 +40,10 @@ static int checkver(Verdef *def, int vsym, const char *vername, char *strings)
 #define OK_TYPES (1<<STT_NOTYPE | 1<<STT_OBJECT | 1<<STT_FUNC | 1<<STT_COMMON)
 #define OK_BINDS (1<<STB_GLOBAL | 1<<STB_WEAK | 1<<STB_GNU_UNIQUE)
 
-extern char** environ;
-static Ehdr *eh = NULL;
-void *__vdsosym(const char *vername, const char *name);
-// We don't have libc struct available here. Compute aux vector manually.
-__attribute__((constructor)) static void auxv_init()
-{
-	size_t i, *auxv;
-	for (i=0; environ[i]; i++);
-	auxv = (void *)(environ+i+1);
-	for (i=0; auxv[i] != AT_SYSINFO_EHDR; i+=2)
-		if (!auxv[i]) return;
-	if (!auxv[i+1]) return;
-	eh = (void *)auxv[i+1];
-}
-
 void *__vdsosym(const char *vername, const char *name)
 {
 	size_t i;
+	Ehdr * eh = (void *) getauxval(AT_SYSINFO_EHDR);
 	if (!eh) return 0;
 	Phdr *ph = (void *)((char *)eh + eh->e_phoff);
 	size_t *dynv=0, base=-1;
