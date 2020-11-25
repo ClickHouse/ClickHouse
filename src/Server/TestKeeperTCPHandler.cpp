@@ -26,6 +26,7 @@ struct SocketInterruptablePollWrapper
 {
     int sockfd;
     PipeFDs pipe;
+
     enum class PollStatus
     {
         HAS_DATA,
@@ -42,12 +43,9 @@ struct SocketInterruptablePollWrapper
         pipe.setNonBlocking();
     }
 
-    void interruptPoll() const
+    int getInterruptFD() const
     {
-        UInt64 bytes = 1;
-        int ret = write(pipe.fds_rw[1], &bytes, sizeof(bytes));
-        if (ret < 0)
-            throwFromErrno("Cannot write into pipe descriptor", ErrorCodes::SYSTEM_ERROR);
+        return pipe.fds_rw[1];
     }
 
     PollStatus poll(Poco::Timespan remainingTime)
@@ -282,22 +280,25 @@ Coordination::OpNum TestKeeperTCPHandler::receiveRequest()
     Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
     request->xid = xid;
     request->readImpl(*in);
+    int interrupt_fd  = poll_wrapper->getInterruptFD();
     if (opnum != Coordination::OpNum::Close)
     {
         auto promise = std::make_shared<std::promise<Coordination::ZooKeeperResponsePtr>>();
-        zkutil::ResponseCallback callback = [this, promise] (const Coordination::ZooKeeperResponsePtr & response)
+        zkutil::ResponseCallback callback = [interrupt_fd, promise] (const Coordination::ZooKeeperResponsePtr & response)
         {
             promise->set_value(response);
-            poll_wrapper->interruptPoll();
+            UInt64 bytes = 1;
+            write(interrupt_fd, &bytes, sizeof(bytes));
         };
 
         if (request->has_watch)
         {
             auto watch_promise = std::make_shared<std::promise<Coordination::ZooKeeperResponsePtr>>();
-            zkutil::ResponseCallback watch_callback = [this, watch_promise] (const Coordination::ZooKeeperResponsePtr & response)
+            zkutil::ResponseCallback watch_callback = [interrupt_fd, watch_promise] (const Coordination::ZooKeeperResponsePtr & response)
             {
                 watch_promise->set_value(response);
-                poll_wrapper->interruptPoll();
+                UInt64 bytes = 1;
+                write(interrupt_fd, &bytes, sizeof(bytes));
             };
             test_keeper_storage->putRequest(request, session_id, callback, watch_callback);
             responses.push(promise->get_future());
