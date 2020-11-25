@@ -9,14 +9,16 @@
 #include <Interpreters/Context.h>
 
 #include <DataTypes/DataTypeString.h>
-#include <DataStreams/IBlockOutputStream.h>
+#include <DataStreams/PostgreSQLBlockInputStream.h>
 
 #include <Core/Settings.h>
 #include <Common/parseAddress.h>
+#include <Common/assert_cast.h>
 #include <Parsers/ASTLiteral.h>
+#include <Columns/ColumnNullable.h>
 
 #include <Formats/FormatFactory.h>
-#include <Formats/PostgreSQLBlockInputStream.h>
+#include <Formats/FormatSettings.h>
 
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
@@ -87,6 +89,69 @@ Pipe StoragePostgreSQL::read(
 
     return Pipe(std::make_shared<SourceFromInputStream>(
             std::make_shared<PostgreSQLBlockInputStream>(connection, query, sample_block, max_block_size_)));
+}
+
+
+BlockOutputStreamPtr StoragePostgreSQL::write(
+        const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /* context */)
+{
+    return std::make_shared<PostgreSQLBlockOutputStream>(
+            *this, metadata_snapshot, connection, remote_database_name, remote_table_name);
+}
+
+
+void PostgreSQLBlockOutputStream::writePrefix()
+{
+    work = std::make_unique<pqxx::work>(*connection);
+    stream_inserter = std::make_unique<pqxx::stream_to>(*work, remote_table_name);
+}
+
+
+void PostgreSQLBlockOutputStream::write(const Block & block)
+{
+    const auto columns = block.getColumns();
+    const size_t num_rows = block.rows(), num_cols = block.columns();
+    const auto data_types = block.getDataTypes();
+    const auto settings = FormatSettings{};
+
+    /// std::optional lets libpqxx to know if value is NULL
+    std::vector<std::optional<std::string>> row(num_cols);
+
+    for (const auto i : ext::range(0, num_rows))
+    {
+        for (const auto j : ext::range(0, num_cols))
+        {
+            if (columns[j]->isNullAt(i))
+            {
+                row[j] = std::nullopt;
+            }
+            else
+            {
+                WriteBufferFromOwnString ostr;
+                data_types[j]->serializeAsText(*columns[j], i, ostr, settings);
+                row[j] = std::optional<std::string>(ostr.str());
+
+                if (isArray(data_types[j]))
+                {
+                    char r;
+                    std::replace_if(row[j]->begin(), row[j]->end(), [&](char c)
+                    {
+                        return ((c == '[') && (r = '{')) || ((c == ']') && (r = '}'));
+                    }, r);
+                }
+            }
+        }
+
+        /// pqxx::stream_to uses COPY instead of insert query, so it is faster if inserting large number of rows
+        stream_inserter->write_values(row);
+    }
+}
+
+
+void PostgreSQLBlockOutputStream::writeSuffix()
+{
+    stream_inserter->complete();
+    work->commit();
 }
 
 
