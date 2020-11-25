@@ -27,8 +27,15 @@ static void replaceFilterToConstant(Block & block, const String & filter_column_
     }
 }
 
-Block FilterTransform::transformHeader(Block header, const String & filter_column_name, bool remove_filter_column)
+Block FilterTransform::transformHeader(
+    Block header,
+    const ExpressionActionsPtr & expression,
+    const String & filter_column_name,
+    bool remove_filter_column)
 {
+    size_t num_rows = header.rows();
+    expression->execute(header, num_rows);
+
     if (remove_filter_column)
         header.erase(filter_column_name);
     else
@@ -39,32 +46,46 @@ Block FilterTransform::transformHeader(Block header, const String & filter_colum
 
 FilterTransform::FilterTransform(
     const Block & header_,
+    ExpressionActionsPtr expression_,
     String filter_column_name_,
     bool remove_filter_column_,
     bool on_totals_)
-    : ISimpleTransform(header_, transformHeader(header_, filter_column_name_, remove_filter_column_), true)
+    : ISimpleTransform(header_, transformHeader(header_, expression_, filter_column_name_, remove_filter_column_), true)
+    , expression(std::move(expression_))
     , filter_column_name(std::move(filter_column_name_))
     , remove_filter_column(remove_filter_column_)
     , on_totals(on_totals_)
 {
-    const auto & input_header = getInputPort().getHeader();
-    filter_column_position = input_header.getPositionByName(filter_column_name);
+    transformed_header = getInputPort().getHeader();
+    expression->execute(transformed_header);
+    filter_column_position = transformed_header.getPositionByName(filter_column_name);
 
-    const auto & column = input_header.getByPosition(filter_column_position).column;
+    auto & column = transformed_header.getByPosition(filter_column_position).column;
     if (column)
         constant_filter_description = ConstantFilterDescription(*column);
 }
 
 IProcessor::Status FilterTransform::prepare()
 {
-    if (!on_totals && constant_filter_description.always_false)
+    if (!on_totals
+        && (constant_filter_description.always_false
+            /// Optimization for `WHERE column in (empty set)`.
+            /// The result will not change after set was created, so we can skip this check.
+            /// It is implemented in prepare() stop pipeline before reading from input port.
+            || (!are_prepared_sets_initialized && expression->checkColumnIsAlwaysFalse(filter_column_name))))
     {
         input.close();
         output.finish();
         return Status::Finished;
     }
 
-    return ISimpleTransform::prepare();
+    auto status = ISimpleTransform::prepare();
+
+    /// Until prepared sets are initialized, output port will be unneeded, and prepare will return PortFull.
+    if (status != IProcessor::Status::PortFull)
+        are_prepared_sets_initialized = true;
+
+    return status;
 }
 
 
@@ -78,6 +99,15 @@ void FilterTransform::transform(Chunk & chunk)
 {
     size_t num_rows_before_filtration = chunk.getNumRows();
     auto columns = chunk.detachColumns();
+
+    {
+        Block block = getInputPort().getHeader().cloneWithColumns(columns);
+        columns.clear();
+
+        expression->execute(block, num_rows_before_filtration);
+
+        columns = block.getColumns();
+    }
 
     if (constant_filter_description.always_true || on_totals)
     {
@@ -136,15 +166,13 @@ void FilterTransform::transform(Chunk & chunk)
         /// SimpleTransform will skip it.
         return;
 
-    const auto & input_header = getInputPort().getHeader();
-
     /// If all the rows pass through the filter.
     if (num_filtered_rows == num_rows_before_filtration)
     {
         if (!remove_filter_column)
         {
             /// Replace the column with the filter by a constant.
-            const auto & type = input_header.getByPosition(filter_column_position).type;
+            auto & type = transformed_header.getByPosition(filter_column_position).type;
             columns[filter_column_position] = type->createColumnConst(num_filtered_rows, 1u);
         }
 
@@ -157,7 +185,7 @@ void FilterTransform::transform(Chunk & chunk)
     /// Filter the rest of the columns.
     for (size_t i = 0; i < num_columns; ++i)
     {
-        const auto & current_type = input_header.safeGetByPosition(i).type;
+        const auto & current_type = transformed_header.safeGetByPosition(i).type;
         auto & current_column = columns[i];
 
         if (i == filter_column_position)

@@ -787,12 +787,9 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 
     if (use_sampling)
     {
-        auto sampling_expr_step = std::make_unique<ExpressionStep>(plan->getCurrentDataStream(), filter_expression);
-        sampling_expr_step->setStepDescription("Sampling");
-        plan->addStep(std::move(sampling_expr_step));
-
         auto sampling_step = std::make_unique<FilterStep>(
                 plan->getCurrentDataStream(),
+                filter_expression,
                 filter_function->getColumnName(),
                 false);
 

@@ -432,13 +432,15 @@ static void tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node * 
     auto & parent = parent_node->step;
     auto & child = child_node->step;
     auto * expression_step = typeid_cast<ExpressionStep *>(parent.get());
+    auto * filter_step = typeid_cast<FilterStep *>(parent.get());
     auto * array_join_step = typeid_cast<ArrayJoinStep *>(child.get());
 
-    if (!expression_step || !array_join_step)
+    if (!(expression_step || filter_step) || !array_join_step)
         return;
 
     const auto & array_join = array_join_step->arrayJoin();
-    const auto & expression = expression_step->getExpression();
+    const auto & expression = expression_step ? expression_step->getExpression()
+                                              : filter_step->getExpression();
 
     auto split_actions = expression->splitActionsBeforeArrayJoin(array_join->columns);
 
@@ -451,12 +453,18 @@ static void tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node * 
     {
         auto expected_header = parent->getOutputStream().header;
 
-        /// Expression -> ArrayJoin
+        /// Expression/Filter -> ArrayJoin
         std::swap(parent, child);
-        /// ArrayJoin -> Expression
+        /// ArrayJoin -> Expression/Filter
 
-        child = std::make_unique<ExpressionStep>(child_node->children.at(0)->step->getOutputStream(),
-                                                 std::move(split_actions));
+        if (expression_step)
+            child = std::make_unique<ExpressionStep>(child_node->children.at(0)->step->getOutputStream(),
+                                                     std::move(split_actions));
+        else
+            child = std::make_unique<FilterStep>(child_node->children.at(0)->step->getOutputStream(),
+                                                 std::move(split_actions),
+                                                 filter_step->getFilterColumnName(),
+                                                 filter_step->removesFilterColumn());
 
         array_join_step->updateInputStream(child->getOutputStream(), expected_header);
         return;
@@ -472,7 +480,8 @@ static void tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node * 
     node.step = std::make_unique<ExpressionStep>(node.children.at(0)->step->getOutputStream(),
                                                  std::move(split_actions));
     array_join_step->updateInputStream(node.step->getOutputStream(), {});
-    expression_step->updateInputStream(array_join_step->getOutputStream(), true);
+    expression_step ? expression_step->updateInputStream(array_join_step->getOutputStream(), true)
+                    : filter_step->updateInputStream(array_join_step->getOutputStream(), true);
 }
 
 void QueryPlan::optimize()
