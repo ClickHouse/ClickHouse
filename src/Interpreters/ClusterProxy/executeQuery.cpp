@@ -122,8 +122,7 @@ void executeQuery(
     {
         stream_factory.createForShard(shard_info, query, query_ast,
             new_context, throttler, query_info, plans,
-            remote_pipes, delayed_pipes,
-            log);
+            remote_pipes, delayed_pipes, log);
     }
 
     if (!remote_pipes.empty())
