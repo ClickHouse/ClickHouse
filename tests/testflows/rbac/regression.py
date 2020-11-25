@@ -19,6 +19,7 @@ issue_14674 = "https://github.com/ClickHouse/ClickHouse/issues/14674"
 issue_14810 = "https://github.com/ClickHouse/ClickHouse/issues/14810"
 issue_15165 = "https://github.com/ClickHouse/ClickHouse/issues/15165"
 issue_15980 = "https://github.com/ClickHouse/ClickHouse/issues/15980"
+issue_16403 = "https://github.com/ClickHouse/ClickHouse/issues/16403"
 
 xfails = {
     "syntax/show create quota/I show create quota current":
@@ -89,6 +90,18 @@ xfails = {
         [(Fail, ".inner table is not created as expected")],
     "views/materialized view/select from source table privilege granted directly or via role/select from implicit target table, privilege granted through a role":
         [(Fail, ".inner table is not created as expected")],
+    "privileges/alter move/:/:/:/:/move partition to implicit target table of a materialized view":
+        [(Fail, ".inner table is not created as expected")],
+    "privileges/alter move/:/:/:/:/user without ALTER MOVE PARTITION privilege/":
+        [(Fail, issue_16403)],
+    "privileges/alter move/:/:/:/:/user with revoked ALTER MOVE PARTITION privilege/":
+        [(Fail, issue_16403)],
+    "privileges/create table/create with join query privilege granted directly or via role/:":
+        [(Fail, issue_14149)],
+    "privileges/create table/create with join union subquery privilege granted directly or via role/:":
+        [(Fail, issue_14149)],
+    "privileges/create table/create with nested tables privilege granted directly or via role/:":
+        [(Fail, issue_14149)],
 }
 
 xflags = {

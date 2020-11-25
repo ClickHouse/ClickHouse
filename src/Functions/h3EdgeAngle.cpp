@@ -1,3 +1,9 @@
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
+
+#if USE_H3
+
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -44,7 +50,7 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * col_hindex = arguments[0].column.get();
 
@@ -77,3 +83,5 @@ void registerFunctionH3EdgeAngle(FunctionFactory & factory)
 }
 
 }
+
+#endif

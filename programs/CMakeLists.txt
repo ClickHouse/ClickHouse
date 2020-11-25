@@ -112,6 +112,8 @@ add_subdirectory (obfuscator)
 add_subdirectory (install)
 add_subdirectory (git-import)
 
+#add_subdirectory (grpc-client)
+
 if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
     add_subdirectory (odbc-bridge)
 endif ()
@@ -227,9 +229,6 @@ else ()
         install (FILES ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-git-import DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
         list(APPEND CLICKHOUSE_BUNDLE clickhouse-git-import)
     endif ()
-    if(ENABLE_CLICKHOUSE_ODBC_BRIDGE)
-        list(APPEND CLICKHOUSE_BUNDLE clickhouse-odbc-bridge)
-    endif()
 
     install (TARGETS clickhouse RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 

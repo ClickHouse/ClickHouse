@@ -43,13 +43,19 @@ private:
     size_t ALWAYS_INLINE sizeAt(ssize_t i) const { return offsets[i] - offsets[i - 1]; }
 
     template <bool positive>
-    struct less;
+    struct Cmp;
 
     template <bool positive>
-    struct lessWithCollation;
+    struct CmpWithCollation;
 
     ColumnString() = default;
     ColumnString(const ColumnString & src);
+
+    template <typename Comparator>
+    void getPermutationImpl(size_t limit, Permutation & res, Comparator cmp) const;
+
+    template <typename Comparator>
+    void updatePermutationImpl(size_t limit, Permutation & res, EqualRanges & equal_ranges, Comparator cmp) const;
 
 public:
     const char * getFamilyName() const override { return "String"; }
@@ -229,16 +235,16 @@ public:
                        int direction, int nan_direction_hint) const override;
 
     /// Variant of compareAt for string comparison with respect of collation.
-    int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, const Collator & collator) const;
+    int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, int, const Collator & collator) const override;
 
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
 
-    void updatePermutation(bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_range) const override;
+    void updatePermutation(bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_ranges) const override;
 
     /// Sorting with respect of collation.
-    void getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, Permutation & res) const;
+    void getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int, Permutation & res) const override;
 
-    void updatePermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int, Permutation & res, EqualRanges& equal_range) const;
+    void updatePermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_ranges) const override;
 
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
 
@@ -270,6 +276,8 @@ public:
 
     // Throws an exception if offsets/chars are messed up
     void validate() const;
+
+    bool isCollationSupported() const override { return true; }
 };
 
 

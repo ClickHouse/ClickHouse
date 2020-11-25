@@ -129,4 +129,13 @@ enum class MySQLDataTypesSupport
 
 DECLARE_SETTING_MULTI_ENUM(MySQLDataTypesSupport)
 
+enum class UnionMode
+{
+    Unspecified = 0, // Query UNION without UnionMode will throw exception
+    ALL, // Query UNION without UnionMode -> SELECT ... UNION ALL SELECT ...
+    DISTINCT // Query UNION without UnionMode -> SELECT ... UNION DISTINCT SELECT ...
+};
+
+DECLARE_SETTING_ENUM(UnionMode)
+
 }

@@ -440,6 +440,18 @@ struct ImplCityHash64
 };
 
 // see farmhash.h for definition of NAMESPACE_FOR_HASH_FUNCTIONS
+struct ImplFarmFingerprint64
+{
+    static constexpr auto name = "farmFingerprint64";
+    using ReturnType = UInt64;
+    using uint128_t = NAMESPACE_FOR_HASH_FUNCTIONS::uint128_t;
+
+    static auto combineHashes(UInt64 h1, UInt64 h2) { return NAMESPACE_FOR_HASH_FUNCTIONS::Fingerprint(uint128_t(h1, h2)); }
+    static auto apply(const char * s, const size_t len) { return NAMESPACE_FOR_HASH_FUNCTIONS::Fingerprint64(s, len); }
+    static constexpr bool use_int_hash_for_pods = true;
+};
+
+// see farmhash.h for definition of NAMESPACE_FOR_HASH_FUNCTIONS
 struct ImplFarmHash64
 {
     static constexpr auto name = "farmHash64";
@@ -543,7 +555,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(arguments[0].column.get()))
         {
@@ -604,7 +616,7 @@ private:
     using ToType = typename Impl::ReturnType;
 
     template <typename FromType>
-    ColumnPtr executeType(ColumnsWithTypeAndName & arguments) const
+    ColumnPtr executeType(const ColumnsWithTypeAndName & arguments) const
     {
         using ColVecType = std::conditional_t<IsDecimalNumber<FromType>, ColumnDecimal<FromType>, ColumnVector<FromType>>;
 
@@ -647,7 +659,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const IDataType * from_type = arguments[0].type.get();
         WhichDataType which(from_type);
@@ -701,7 +713,7 @@ public:
     #endif
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return selector.selectAndExecute(arguments, result_type, input_rows_count);
     }
@@ -1053,7 +1065,7 @@ public:
         return std::make_shared<DataTypeNumber<ToType>>();
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         size_t rows = input_rows_count;
         auto col_to = ColumnVector<ToType>::create(rows);
@@ -1095,7 +1107,7 @@ public:
     #endif
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return selector.selectAndExecute(arguments, result_type, input_rows_count);
     }
@@ -1218,7 +1230,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const auto arg_count = arguments.size();
 
@@ -1231,7 +1243,7 @@ public:
     }
 
 private:
-    ColumnPtr executeSingleArg(ColumnsWithTypeAndName & arguments) const
+    ColumnPtr executeSingleArg(const ColumnsWithTypeAndName & arguments) const
     {
         const auto * col_untyped = arguments.front().column.get();
 
@@ -1261,7 +1273,7 @@ private:
                 " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
     }
 
-    ColumnPtr executeTwoArgs(ColumnsWithTypeAndName & arguments) const
+    ColumnPtr executeTwoArgs(const ColumnsWithTypeAndName & arguments) const
     {
         const auto * level_col = arguments.back().column.get();
         if (!isColumnConst(*level_col))
@@ -1316,6 +1328,7 @@ using FunctionSHA256 = FunctionStringHashFixedString<SHA256Impl>;
 #endif
 using FunctionSipHash128 = FunctionStringHashFixedString<SipHash128Impl>;
 using FunctionCityHash64 = FunctionAnyHash<ImplCityHash64>;
+using FunctionFarmFingerprint64 = FunctionAnyHash<ImplFarmFingerprint64>;
 using FunctionFarmHash64 = FunctionAnyHash<ImplFarmHash64>;
 using FunctionMetroHash64 = FunctionAnyHash<ImplMetroHash64>;
 

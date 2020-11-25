@@ -15,6 +15,9 @@ stage=${stage:-}
 # empty parameter.
 read -ra FASTTEST_CMAKE_FLAGS <<< "${FASTTEST_CMAKE_FLAGS:-}"
 
+# Run only matching tests.
+FASTTEST_FOCUS=${FASTTEST_FOCUS:-""}
+
 FASTTEST_WORKSPACE=$(readlink -f "${FASTTEST_WORKSPACE:-.}")
 FASTTEST_SOURCE=$(readlink -f "${FASTTEST_SOURCE:-$FASTTEST_WORKSPACE/ch}")
 FASTTEST_BUILD=$(readlink -f "${FASTTEST_BUILD:-${BUILD:-$FASTTEST_WORKSPACE/build}}")
@@ -127,7 +130,7 @@ function clone_submodules
 (
 cd "$FASTTEST_SOURCE"
 
-SUBMODULES_TO_UPDATE=(contrib/boost contrib/zlib-ng contrib/libxml2 contrib/poco contrib/libunwind contrib/ryu contrib/fmtlib contrib/base64 contrib/cctz contrib/libcpuid contrib/double-conversion contrib/libcxx contrib/libcxxabi contrib/libc-headers contrib/lz4 contrib/zstd contrib/fastops contrib/rapidjson contrib/re2 contrib/sparsehash-c11 contrib/croaring)
+SUBMODULES_TO_UPDATE=(contrib/boost contrib/zlib-ng contrib/libxml2 contrib/poco contrib/libunwind contrib/ryu contrib/fmtlib contrib/base64 contrib/cctz contrib/libcpuid contrib/double-conversion contrib/libcxx contrib/libcxxabi contrib/libc-headers contrib/lz4 contrib/zstd contrib/fastops contrib/rapidjson contrib/re2 contrib/sparsehash-c11 contrib/croaring contrib/miniselect contrib/xz)
 
 git submodule sync
 git submodule update --init --recursive "${SUBMODULES_TO_UPDATE[@]}"
@@ -240,6 +243,10 @@ TESTS_TO_SKIP=(
     01354_order_by_tuple_collate_const
     01355_ilike
     01411_bayesian_ab_testing
+    01532_collate_in_low_cardinality
+    01533_collate_in_nullable
+    01542_collate_in_array
+    01543_collate_in_tuple
     _orc_
     arrow
     avro
@@ -264,11 +271,15 @@ TESTS_TO_SKIP=(
     protobuf
     secure
     sha256
+    xz
 
     # Not sure why these two fail even in sequential mode. Disabled for now
     # to make some progress.
     00646_url_engine
     00974_query_profiler
+
+     # In fasttest, ENABLE_LIBRARIES=0, so rocksdb engine is not enabled by default
+    01504_rocksdb
 
     # Look at DistributedFilesToInsert, so cannot run in parallel.
     01460_DistributedFilesToInsert
@@ -277,9 +288,13 @@ TESTS_TO_SKIP=(
 
     # Require python libraries like scipy, pandas and numpy
     01322_ttest_scipy
+
+    01545_system_errors
+    # Checks system.errors
+    01563_distributed_query_finish
 )
 
-time clickhouse-test -j 8 --order=random --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"
+time clickhouse-test -j 8 --order=random --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" -- "$FASTTEST_FOCUS" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"
 
 # substr is to remove semicolon after test name
 readarray -t FAILED_TESTS < <(awk '/FAIL|TIMEOUT|ERROR/ { print substr($3, 1, length($3)-1) }' "$FASTTEST_OUTPUT/test_log.txt" | tee "$FASTTEST_OUTPUT/failed-parallel-tests.txt")
