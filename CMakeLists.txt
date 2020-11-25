@@ -142,7 +142,7 @@ option(ENABLE_TESTS "Provide unit_test_dbms target with Google.Test unit tests" 
 if (OS_LINUX AND NOT UNBUNDLED AND MAKE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND CMAKE_VERSION VERSION_GREATER "3.9.0")
     # Only for Linux, x86_64.
     # Implies ${ENABLE_FASTMEMCPY}
-    option(GLIBC_COMPATIBILITY "Enable compatibility with older glibc libraries." ON)
+    option(GLIBC_COMPATIBILITY "Enable compatibility with older glibc libraries." OFF)
 elseif(GLIBC_COMPATIBILITY)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Glibc compatibility cannot be enabled in current configuration")
 endif ()
