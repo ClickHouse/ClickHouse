@@ -11,8 +11,8 @@
 
 namespace DB::AST
 {
-
 CreateMaterializedViewQuery::CreateMaterializedViewQuery(
+    PtrTo<ClusterClause> cluster,
     bool attach_,
     bool if_not_exists_,
     bool populate_,
@@ -22,7 +22,10 @@ CreateMaterializedViewQuery::CreateMaterializedViewQuery(
     PtrTo<DestinationClause> destination,
     PtrTo<EngineClause> engine,
     PtrTo<SelectUnionQuery> query)
-    : DDLQuery{identifier, uuid, schema, destination, engine, query}, attach(attach_), if_not_exists(if_not_exists_), populate(populate_)
+    : DDLQuery(cluster, {identifier, uuid, schema, destination, engine, query})
+    , attach(attach_)
+    , if_not_exists(if_not_exists_)
+    , populate(populate_)
 {
     assert(!destination != !engine);
 }
@@ -57,6 +60,7 @@ ASTPtr CreateMaterializedViewQuery::convertToOld() const
     query->if_not_exists = if_not_exists;
     query->is_materialized_view = true;
     query->set(query->select, get(SUBQUERY)->convertToOld());
+    query->cluster = cluster_name;
 
     return query;
 }
@@ -71,10 +75,12 @@ using namespace AST;
 antlrcpp::Any ParseTreeVisitor::visitCreateMaterializedViewStmt(ClickHouseParser::CreateMaterializedViewStmtContext *ctx)
 {
     auto uuid = ctx->uuidClause() ? visit(ctx->uuidClause()).as<PtrTo<UUIDClause>>() : nullptr;
+    auto cluster = ctx->clusterClause() ? visit(ctx->clusterClause()).as<PtrTo<ClusterClause>>() : nullptr;
     auto schema = ctx->schemaClause() ? visit(ctx->schemaClause()).as<PtrTo<SchemaClause>>() : nullptr;
     auto engine = ctx->engineClause() ? visit(ctx->engineClause()).as<PtrTo<EngineClause>>() : nullptr;
     auto destination = ctx->destinationClause() ? visit(ctx->destinationClause()).as<PtrTo<DestinationClause>>() : nullptr;
     return std::make_shared<CreateMaterializedViewQuery>(
+        cluster,
         !!ctx->ATTACH(),
         !!ctx->IF(),
         !!ctx->POPULATE(),

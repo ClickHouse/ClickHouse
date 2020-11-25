@@ -76,6 +76,8 @@ public:
 
     virtual antlrcpp::Any visitCreateViewStmt(ClickHouseParser::CreateViewStmtContext *context) = 0;
 
+    virtual antlrcpp::Any visitClusterClause(ClickHouseParser::ClusterClauseContext *context) = 0;
+
     virtual antlrcpp::Any visitUuidClause(ClickHouseParser::UuidClauseContext *context) = 0;
 
     virtual antlrcpp::Any visitDestinationClause(ClickHouseParser::DestinationClauseContext *context) = 0;

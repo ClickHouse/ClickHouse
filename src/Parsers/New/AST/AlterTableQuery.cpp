@@ -349,7 +349,8 @@ AlterTableClause::AlterTableClause(ClauseType type, PtrList exprs) : INode(exprs
 {
 }
 
-AlterTableQuery::AlterTableQuery(PtrTo<TableIdentifier> identifier, PtrTo<List<AlterTableClause>> clauses) : DDLQuery{identifier, clauses}
+AlterTableQuery::AlterTableQuery(PtrTo<ClusterClause> cluster, PtrTo<TableIdentifier> identifier, PtrTo<List<AlterTableClause>> clauses)
+    : DDLQuery(cluster, {identifier, clauses})
 {
 }
 
@@ -363,7 +364,8 @@ ASTPtr AlterTableQuery::convertToOld() const
         query->table = table_id.table_name;
     }
 
-    // TODO: query->cluster
+    query->cluster = cluster_name;
+
     query->set(query->command_list, get(CLAUSES)->convertToOld());
 
     return query;
@@ -466,9 +468,10 @@ antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseReplace(ClickHouseParser::A
 
 antlrcpp::Any ParseTreeVisitor::visitAlterTableStmt(ClickHouseParser::AlterTableStmtContext * ctx)
 {
+    auto cluster = ctx->clusterClause() ? visit(ctx->clusterClause()).as<PtrTo<ClusterClause>>() : nullptr;
     auto list = std::make_shared<List<AlterTableClause>>();
     for (auto * clause : ctx->alterTableClause()) list->push(visit(clause));
-    return std::make_shared<AlterTableQuery>(visit(ctx->tableIdentifier()), list);
+    return std::make_shared<AlterTableQuery>(cluster, visit(ctx->tableIdentifier()), list);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitTableColumnPropertyType(ClickHouseParser::TableColumnPropertyTypeContext *ctx)

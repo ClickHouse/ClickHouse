@@ -9,8 +9,10 @@ namespace DB::AST
 class DropQuery : public DDLQuery
 {
     public:
-        static PtrTo<DropQuery> createDropDatabase(bool detach, bool if_exists, PtrTo<DatabaseIdentifier> identifier);
-        static PtrTo<DropQuery> createDropTable(bool detach, bool if_exists, bool temporary, PtrTo<TableIdentifier> identifier);
+        static PtrTo<DropQuery>
+        createDropDatabase(bool detach, bool if_exists, PtrTo<DatabaseIdentifier> identifier, PtrTo<ClusterClause> cluster);
+        static PtrTo<DropQuery>
+        createDropTable(bool detach, bool if_exists, bool temporary, PtrTo<TableIdentifier> identifier, PtrTo<ClusterClause> cluster);
 
         ASTPtr convertToOld() const override;
 
@@ -32,7 +34,7 @@ class DropQuery : public DDLQuery
         bool if_exists = false;
         bool temporary = false;
 
-        DropQuery(QueryType type, PtrList exprs);
+        DropQuery(PtrTo<ClusterClause> cluster, QueryType type, PtrList exprs);
 };
 
 }

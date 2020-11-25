@@ -10,6 +10,7 @@ class CreateLiveViewQuery : public DDLQuery
 {
     public:
         CreateLiveViewQuery(
+            PtrTo<ClusterClause> cluster,
             bool attach,
             bool if_not_exists,
             PtrTo<TableIdentifier> identifier,

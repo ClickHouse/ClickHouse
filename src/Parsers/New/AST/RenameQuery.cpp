@@ -10,7 +10,7 @@
 namespace DB::AST
 {
 
-RenameQuery::RenameQuery(PtrTo<List<TableIdentifier>> list) : DDLQuery{list}
+RenameQuery::RenameQuery(PtrTo<ClusterClause> cluster, PtrTo<List<TableIdentifier>> list) : DDLQuery(cluster, {list})
 {
 }
 
@@ -35,6 +35,8 @@ ASTPtr RenameQuery::convertToOld() const
         query->elements.push_back(element);
     }
 
+    query->cluster = cluster_name;
+
     return query;
 }
 
@@ -48,8 +50,9 @@ using namespace AST;
 antlrcpp::Any ParseTreeVisitor::visitRenameStmt(ClickHouseParser::RenameStmtContext *ctx)
 {
     auto list = std::make_shared<List<TableIdentifier>>();
+    auto cluster = ctx->clusterClause() ? visit(ctx->clusterClause()).as<PtrTo<ClusterClause>>() : nullptr;
     for (auto * identifier : ctx->tableIdentifier()) list->push(visit(identifier));
-    return std::make_shared<RenameQuery>(list);
+    return std::make_shared<RenameQuery>(cluster, list);
 }
 
 }

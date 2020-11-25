@@ -9,7 +9,7 @@ namespace DB::AST
 class RenameQuery : public DDLQuery
 {
     public:
-        explicit RenameQuery(PtrTo<List<TableIdentifier>> list);
+        explicit RenameQuery(PtrTo<ClusterClause> cluster, PtrTo<List<TableIdentifier>> list);
 
         ASTPtr convertToOld() const override;
 

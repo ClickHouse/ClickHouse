@@ -11,25 +11,27 @@ namespace DB::AST
 {
 
 // static
-PtrTo<DropQuery> DropQuery::createDropDatabase(bool detach, bool if_exists, PtrTo<DatabaseIdentifier> identifier)
+PtrTo<DropQuery>
+DropQuery::createDropDatabase(bool detach, bool if_exists, PtrTo<DatabaseIdentifier> identifier, PtrTo<ClusterClause> cluster)
 {
-    auto query = PtrTo<DropQuery>(new DropQuery(QueryType::DATABASE, {identifier}));
+    auto query = PtrTo<DropQuery>(new DropQuery(cluster, QueryType::DATABASE, {identifier}));
     query->detach = detach;
     query->if_exists = if_exists;
     return query;
 }
 
 // static
-PtrTo<DropQuery> DropQuery::createDropTable(bool detach, bool if_exists, bool temporary, PtrTo<TableIdentifier> identifier)
+PtrTo<DropQuery>
+DropQuery::createDropTable(bool detach, bool if_exists, bool temporary, PtrTo<TableIdentifier> identifier, PtrTo<ClusterClause> cluster)
 {
-    auto query = PtrTo<DropQuery>(new DropQuery(QueryType::TABLE, {identifier}));
+    auto query = PtrTo<DropQuery>(new DropQuery(cluster, QueryType::TABLE, {identifier}));
     query->detach = detach;
     query->if_exists = if_exists;
     query->temporary = temporary;
     return query;
 }
 
-DropQuery::DropQuery(QueryType type, PtrList exprs) : DDLQuery(exprs), query_type(type)
+DropQuery::DropQuery(PtrTo<ClusterClause> cluster, QueryType type, PtrList exprs) : DDLQuery(cluster, exprs), query_type(type)
 {
 }
 
@@ -40,6 +42,7 @@ ASTPtr DropQuery::convertToOld() const
     query->kind = detach ? ASTDropQuery::Detach : ASTDropQuery::Drop;
     query->if_exists = if_exists;
     query->temporary = temporary;
+    query->cluster = cluster_name;
 
     // TODO: refactor |ASTQueryWithTableAndOutput| to accept |ASTIdentifier|
     switch(query_type)
@@ -70,12 +73,14 @@ using namespace AST;
 
 antlrcpp::Any ParseTreeVisitor::visitDropDatabaseStmt(ClickHouseParser::DropDatabaseStmtContext *ctx)
 {
-    return DropQuery::createDropDatabase(!!ctx->DETACH(), !!ctx->EXISTS(), visit(ctx->databaseIdentifier()));
+    auto cluster = ctx->clusterClause() ? visit(ctx->clusterClause()).as<PtrTo<ClusterClause>>() : nullptr;
+    return DropQuery::createDropDatabase(!!ctx->DETACH(), !!ctx->EXISTS(), visit(ctx->databaseIdentifier()), cluster);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitDropTableStmt(ClickHouseParser::DropTableStmtContext *ctx)
 {
-    return DropQuery::createDropTable(!!ctx->DETACH(), !!ctx->EXISTS(), !!ctx->TEMPORARY(), visit(ctx->tableIdentifier()));
+    auto cluster = ctx->clusterClause() ? visit(ctx->clusterClause()).as<PtrTo<ClusterClause>>() : nullptr;
+    return DropQuery::createDropTable(!!ctx->DETACH(), !!ctx->EXISTS(), !!ctx->TEMPORARY(), visit(ctx->tableIdentifier()), cluster);
 }
 
 }

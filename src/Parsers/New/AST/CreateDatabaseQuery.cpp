@@ -10,8 +10,9 @@
 namespace DB::AST
 {
 
-CreateDatabaseQuery::CreateDatabaseQuery(bool if_not_exists_, PtrTo<DatabaseIdentifier> identifier, PtrTo<EngineExpr> expr)
-    : DDLQuery{identifier, expr}, if_not_exists(if_not_exists_)
+CreateDatabaseQuery::CreateDatabaseQuery(
+    PtrTo<ClusterClause> cluster, bool if_not_exists_, PtrTo<DatabaseIdentifier> identifier, PtrTo<EngineExpr> expr)
+    : DDLQuery(cluster, {identifier, expr}), if_not_exists(if_not_exists_)
 {
 }
 
@@ -21,7 +22,7 @@ ASTPtr CreateDatabaseQuery::convertToOld() const
 
     query->if_not_exists = if_not_exists;
     query->database = get<DatabaseIdentifier>(NAME)->getName();
-    // TODO: if (cluster) query->cluster = cluster->getName();
+    query->cluster = cluster_name;
     if (has(ENGINE))
     {
         auto engine = std::make_shared<ASTStorage>();
@@ -43,7 +44,8 @@ using namespace AST;
 antlrcpp::Any ParseTreeVisitor::visitCreateDatabaseStmt(ClickHouseParser::CreateDatabaseStmtContext *ctx)
 {
     auto engine = ctx->engineExpr() ? visit(ctx->engineExpr()).as<PtrTo<EngineExpr>>() : nullptr;
-    return std::make_shared<CreateDatabaseQuery>(!!ctx->IF(), visit(ctx->databaseIdentifier()), engine);
+    auto cluster = ctx->clusterClause() ? visit(ctx->clusterClause()).as<PtrTo<ClusterClause>>() : nullptr;
+    return std::make_shared<CreateDatabaseQuery>(cluster, !!ctx->IF(), visit(ctx->databaseIdentifier()), engine);
 }
 
 }

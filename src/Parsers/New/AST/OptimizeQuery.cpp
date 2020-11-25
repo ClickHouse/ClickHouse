@@ -13,8 +13,8 @@
 namespace DB::AST
 {
 
-OptimizeQuery::OptimizeQuery(PtrTo<TableIdentifier> identifier, PtrTo<PartitionClause> clause, bool final_, bool deduplicate_)
-    : DDLQuery{identifier, clause}, final(final_), deduplicate(deduplicate_)
+OptimizeQuery::OptimizeQuery(PtrTo<ClusterClause> cluster, PtrTo<TableIdentifier> identifier, PtrTo<PartitionClause> clause, bool final_, bool deduplicate_)
+    : DDLQuery(cluster, {identifier, clause}), final(final_), deduplicate(deduplicate_)
 {
 }
 
@@ -37,7 +37,7 @@ ASTPtr OptimizeQuery::convertToOld() const
 
     query->final = final;
     query->deduplicate = deduplicate;
-
+    query->cluster = cluster_name;
 
     return query;
 }
@@ -51,8 +51,9 @@ using namespace AST;
 
 antlrcpp::Any ParseTreeVisitor::visitOptimizeStmt(ClickHouseParser::OptimizeStmtContext *ctx)
 {
+    auto cluster = ctx->clusterClause() ? visit(ctx->clusterClause()).as<PtrTo<ClusterClause>>() : nullptr;
     auto clause = ctx->partitionClause() ? visit(ctx->partitionClause()).as<PtrTo<PartitionClause>>() : nullptr;
-    return std::make_shared<OptimizeQuery>(visit(ctx->tableIdentifier()), clause, !!ctx->FINAL(), !!ctx->DEDUPLICATE());
+    return std::make_shared<OptimizeQuery>(cluster, visit(ctx->tableIdentifier()), clause, !!ctx->FINAL(), !!ctx->DEDUPLICATE());
 }
 
 }

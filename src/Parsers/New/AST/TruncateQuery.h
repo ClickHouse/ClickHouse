@@ -9,7 +9,7 @@ namespace DB::AST
 class TruncateQuery : public DDLQuery
 {
     public:
-        TruncateQuery(bool temporary, bool if_exists, PtrTo<TableIdentifier> identifier);
+        TruncateQuery(PtrTo<ClusterClause> cluster, bool temporary, bool if_exists, PtrTo<TableIdentifier> identifier);
 
         ASTPtr convertToOld() const override;
 

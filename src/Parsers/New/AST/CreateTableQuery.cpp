@@ -90,6 +90,7 @@ String SchemaClause::dumpInfo() const
 }
 
 CreateTableQuery::CreateTableQuery(
+    PtrTo<ClusterClause> cluster,
     bool attach_,
     bool temporary_,
     bool if_not_exists_,
@@ -98,7 +99,7 @@ CreateTableQuery::CreateTableQuery(
     PtrTo<SchemaClause> schema,
     PtrTo<EngineClause> engine,
     PtrTo<SelectUnionQuery> query)
-    : DDLQuery{identifier, uuid, schema, engine, query}, attach(attach_), temporary(temporary_), if_not_exists(if_not_exists_)
+    : DDLQuery(cluster, {identifier, uuid, schema, engine, query}), attach(attach_), temporary(temporary_), if_not_exists(if_not_exists_)
 {
 }
 
@@ -113,6 +114,8 @@ ASTPtr CreateTableQuery::convertToOld() const
         query->uuid
             = has(UUID) ? parseFromString<DB::UUID>(get(UUID)->convertToOld()->as<ASTLiteral>()->value.get<String>()) : table_id.uuid;
     }
+
+    query->cluster = cluster_name;
 
     query->attach = attach;
     query->if_not_exists = if_not_exists;
@@ -168,14 +171,22 @@ using namespace AST;
 
 // TODO: assert(!(ctx->parent->TEMPORARY() ^ ctx->engineClause()))
 
+antlrcpp::Any ParseTreeVisitor::visitClusterClause(ClickHouseParser::ClusterClauseContext *ctx)
+{
+    auto literal = ctx->STRING_LITERAL() ? Literal::createString(ctx->STRING_LITERAL())
+                                         : Literal::createString(ctx->identifier()->getText());
+    return std::make_shared<ClusterClause>(literal);
+}
+
 antlrcpp::Any ParseTreeVisitor::visitCreateTableStmt(ClickHouseParser::CreateTableStmtContext *ctx)
 {
     auto uuid = ctx->uuidClause() ? visit(ctx->uuidClause()).as<PtrTo<UUIDClause>>() : nullptr;
+    auto cluster = ctx->clusterClause() ? visit(ctx->clusterClause()).as<PtrTo<ClusterClause>>() : nullptr;
     auto schema = ctx->schemaClause() ? visit(ctx->schemaClause()).as<PtrTo<SchemaClause>>() : nullptr;
     auto engine = ctx->engineClause() ? visit(ctx->engineClause()).as<PtrTo<EngineClause>>() : nullptr;
     auto query = ctx->subqueryClause() ? visit(ctx->subqueryClause()).as<PtrTo<SelectUnionQuery>>() : nullptr;
     return std::make_shared<CreateTableQuery>(
-        !!ctx->ATTACH(), !!ctx->TEMPORARY(), !!ctx->IF(), visit(ctx->tableIdentifier()), uuid, schema, engine, query);
+        cluster, !!ctx->ATTACH(), !!ctx->TEMPORARY(), !!ctx->IF(), visit(ctx->tableIdentifier()), uuid, schema, engine, query);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitSchemaDescriptionClause(ClickHouseParser::SchemaDescriptionClauseContext *ctx)

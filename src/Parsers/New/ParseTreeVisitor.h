@@ -87,6 +87,7 @@ public:
     antlrcpp::Any visitCreateMaterializedViewStmt(ClickHouseParser::CreateMaterializedViewStmtContext * ctx) override;
 
     // CreateTableQuery
+    antlrcpp::Any visitClusterClause(ClickHouseParser::ClusterClauseContext * ctx) override;
     antlrcpp::Any visitCreateTableStmt(ClickHouseParser::CreateTableStmtContext * ctx) override;
     antlrcpp::Any visitUuidClause(ClickHouseParser::UuidClauseContext * ctx) override;
 

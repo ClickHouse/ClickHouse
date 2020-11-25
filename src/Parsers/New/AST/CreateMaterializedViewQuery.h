@@ -10,6 +10,7 @@ class CreateMaterializedViewQuery : public DDLQuery
 {
     public:
         CreateMaterializedViewQuery(
+            PtrTo<ClusterClause> cluster,
             bool attach,
             bool if_not_exists,
             bool populate,

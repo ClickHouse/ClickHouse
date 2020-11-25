@@ -128,7 +128,7 @@ class AlterTableClause : public INode
 class AlterTableQuery : public DDLQuery
 {
     public:
-        AlterTableQuery(PtrTo<TableIdentifier> identifier, PtrTo<List<AlterTableClause>> clauses);
+        AlterTableQuery(PtrTo<ClusterClause> cluster, PtrTo<TableIdentifier> identifier, PtrTo<List<AlterTableClause>> clauses);
 
         ASTPtr convertToOld() const override;
 

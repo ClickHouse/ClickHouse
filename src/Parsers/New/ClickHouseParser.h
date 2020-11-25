@@ -54,30 +54,30 @@ public:
   enum {
     RuleQueryStmt = 0, RuleQuery = 1, RuleAlterStmt = 2, RuleAlterTableClause = 3, 
     RuleTableColumnPropertyType = 4, RulePartitionClause = 5, RuleCheckStmt = 6, 
-    RuleCreateStmt = 7, RuleUuidClause = 8, RuleDestinationClause = 9, RuleSubqueryClause = 10, 
-    RuleSchemaClause = 11, RuleEngineClause = 12, RulePartitionByClause = 13, 
-    RulePrimaryKeyClause = 14, RuleSampleByClause = 15, RuleTtlClause = 16, 
-    RuleEngineExpr = 17, RuleTableElementExpr = 18, RuleTableColumnDfnt = 19, 
-    RuleTableColumnPropertyExpr = 20, RuleCodecExpr = 21, RuleCodecArgExpr = 22, 
-    RuleTtlExpr = 23, RuleDescribeStmt = 24, RuleDropStmt = 25, RuleExistsStmt = 26, 
-    RuleExplainStmt = 27, RuleInsertStmt = 28, RuleColumnsClause = 29, RuleDataClause = 30, 
-    RuleOptimizeStmt = 31, RuleRenameStmt = 32, RuleSelectUnionStmt = 33, 
-    RuleSelectStmtWithParens = 34, RuleSelectStmt = 35, RuleWithClause = 36, 
-    RuleFromClause = 37, RuleArrayJoinClause = 38, RulePrewhereClause = 39, 
-    RuleWhereClause = 40, RuleGroupByClause = 41, RuleHavingClause = 42, 
-    RuleOrderByClause = 43, RuleLimitByClause = 44, RuleLimitClause = 45, 
-    RuleSettingsClause = 46, RuleJoinExpr = 47, RuleJoinOp = 48, RuleJoinOpCross = 49, 
-    RuleJoinConstraintClause = 50, RuleSampleClause = 51, RuleLimitExpr = 52, 
-    RuleOrderExprList = 53, RuleOrderExpr = 54, RuleRatioExpr = 55, RuleSettingExprList = 56, 
-    RuleSettingExpr = 57, RuleSetStmt = 58, RuleShowStmt = 59, RuleSystemStmt = 60, 
-    RuleTruncateStmt = 61, RuleUseStmt = 62, RuleColumnTypeExpr = 63, RuleColumnExprList = 64, 
-    RuleColumnsExpr = 65, RuleColumnExpr = 66, RuleColumnArgList = 67, RuleColumnArgExpr = 68, 
-    RuleColumnLambdaExpr = 69, RuleColumnIdentifier = 70, RuleNestedIdentifier = 71, 
-    RuleTableExpr = 72, RuleTableFunctionExpr = 73, RuleTableIdentifier = 74, 
-    RuleTableArgList = 75, RuleTableArgExpr = 76, RuleDatabaseIdentifier = 77, 
-    RuleFloatingLiteral = 78, RuleNumberLiteral = 79, RuleLiteral = 80, 
-    RuleInterval = 81, RuleKeyword = 82, RuleKeywordForAlias = 83, RuleAlias = 84, 
-    RuleIdentifier = 85, RuleIdentifierOrNull = 86, RuleEnumValue = 87
+    RuleCreateStmt = 7, RuleClusterClause = 8, RuleUuidClause = 9, RuleDestinationClause = 10, 
+    RuleSubqueryClause = 11, RuleSchemaClause = 12, RuleEngineClause = 13, 
+    RulePartitionByClause = 14, RulePrimaryKeyClause = 15, RuleSampleByClause = 16, 
+    RuleTtlClause = 17, RuleEngineExpr = 18, RuleTableElementExpr = 19, 
+    RuleTableColumnDfnt = 20, RuleTableColumnPropertyExpr = 21, RuleCodecExpr = 22, 
+    RuleCodecArgExpr = 23, RuleTtlExpr = 24, RuleDescribeStmt = 25, RuleDropStmt = 26, 
+    RuleExistsStmt = 27, RuleExplainStmt = 28, RuleInsertStmt = 29, RuleColumnsClause = 30, 
+    RuleDataClause = 31, RuleOptimizeStmt = 32, RuleRenameStmt = 33, RuleSelectUnionStmt = 34, 
+    RuleSelectStmtWithParens = 35, RuleSelectStmt = 36, RuleWithClause = 37, 
+    RuleFromClause = 38, RuleArrayJoinClause = 39, RulePrewhereClause = 40, 
+    RuleWhereClause = 41, RuleGroupByClause = 42, RuleHavingClause = 43, 
+    RuleOrderByClause = 44, RuleLimitByClause = 45, RuleLimitClause = 46, 
+    RuleSettingsClause = 47, RuleJoinExpr = 48, RuleJoinOp = 49, RuleJoinOpCross = 50, 
+    RuleJoinConstraintClause = 51, RuleSampleClause = 52, RuleLimitExpr = 53, 
+    RuleOrderExprList = 54, RuleOrderExpr = 55, RuleRatioExpr = 56, RuleSettingExprList = 57, 
+    RuleSettingExpr = 58, RuleSetStmt = 59, RuleShowStmt = 60, RuleSystemStmt = 61, 
+    RuleTruncateStmt = 62, RuleUseStmt = 63, RuleColumnTypeExpr = 64, RuleColumnExprList = 65, 
+    RuleColumnsExpr = 66, RuleColumnExpr = 67, RuleColumnArgList = 68, RuleColumnArgExpr = 69, 
+    RuleColumnLambdaExpr = 70, RuleColumnIdentifier = 71, RuleNestedIdentifier = 72, 
+    RuleTableExpr = 73, RuleTableFunctionExpr = 74, RuleTableIdentifier = 75, 
+    RuleTableArgList = 76, RuleTableArgExpr = 77, RuleDatabaseIdentifier = 78, 
+    RuleFloatingLiteral = 79, RuleNumberLiteral = 80, RuleLiteral = 81, 
+    RuleInterval = 82, RuleKeyword = 83, RuleKeywordForAlias = 84, RuleAlias = 85, 
+    RuleIdentifier = 86, RuleIdentifierOrNull = 87, RuleEnumValue = 88
   };
 
   ClickHouseParser(antlr4::TokenStream *input);
@@ -98,6 +98,7 @@ public:
   class PartitionClauseContext;
   class CheckStmtContext;
   class CreateStmtContext;
+  class ClusterClauseContext;
   class UuidClauseContext;
   class DestinationClauseContext;
   class SubqueryClauseContext;
@@ -246,6 +247,7 @@ public:
     TableIdentifierContext *tableIdentifier();
     std::vector<AlterTableClauseContext *> alterTableClause();
     AlterTableClauseContext* alterTableClause(size_t i);
+    ClusterClauseContext *clusterClause();
     std::vector<antlr4::tree::TerminalNode *> COMMA();
     antlr4::tree::TerminalNode* COMMA(size_t i);
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
@@ -540,6 +542,7 @@ public:
     antlr4::tree::TerminalNode *NOT();
     antlr4::tree::TerminalNode *EXISTS();
     UuidClauseContext *uuidClause();
+    ClusterClauseContext *clusterClause();
     SchemaClauseContext *schemaClause();
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
@@ -555,6 +558,7 @@ public:
     antlr4::tree::TerminalNode *IF();
     antlr4::tree::TerminalNode *NOT();
     antlr4::tree::TerminalNode *EXISTS();
+    ClusterClauseContext *clusterClause();
     EngineExprContext *engineExpr();
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
@@ -573,6 +577,7 @@ public:
     antlr4::tree::TerminalNode *NOT();
     antlr4::tree::TerminalNode *EXISTS();
     UuidClauseContext *uuidClause();
+    ClusterClauseContext *clusterClause();
     antlr4::tree::TerminalNode *WITH();
     antlr4::tree::TerminalNode *TIMEOUT();
     DestinationClauseContext *destinationClause();
@@ -597,6 +602,7 @@ public:
     antlr4::tree::TerminalNode *NOT();
     antlr4::tree::TerminalNode *EXISTS();
     UuidClauseContext *uuidClause();
+    ClusterClauseContext *clusterClause();
     SchemaClauseContext *schemaClause();
     antlr4::tree::TerminalNode *POPULATE();
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
@@ -615,6 +621,7 @@ public:
     antlr4::tree::TerminalNode *NOT();
     antlr4::tree::TerminalNode *EXISTS();
     UuidClauseContext *uuidClause();
+    ClusterClauseContext *clusterClause();
     SchemaClauseContext *schemaClause();
     EngineClauseContext *engineClause();
     SubqueryClauseContext *subqueryClause();
@@ -622,6 +629,21 @@ public:
   };
 
   CreateStmtContext* createStmt();
+
+  class  ClusterClauseContext : public antlr4::ParserRuleContext {
+  public:
+    ClusterClauseContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *ON();
+    antlr4::tree::TerminalNode *CLUSTER();
+    IdentifierContext *identifier();
+    antlr4::tree::TerminalNode *STRING_LITERAL();
+
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  ClusterClauseContext* clusterClause();
 
   class  UuidClauseContext : public antlr4::ParserRuleContext {
   public:
@@ -978,6 +1000,7 @@ public:
     antlr4::tree::TerminalNode *DROP();
     antlr4::tree::TerminalNode *IF();
     antlr4::tree::TerminalNode *EXISTS();
+    ClusterClauseContext *clusterClause();
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
@@ -992,6 +1015,7 @@ public:
     antlr4::tree::TerminalNode *TEMPORARY();
     antlr4::tree::TerminalNode *IF();
     antlr4::tree::TerminalNode *EXISTS();
+    ClusterClauseContext *clusterClause();
     antlr4::tree::TerminalNode *NO();
     antlr4::tree::TerminalNode *DELAY();
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
@@ -1111,6 +1135,7 @@ public:
     antlr4::tree::TerminalNode *OPTIMIZE();
     antlr4::tree::TerminalNode *TABLE();
     TableIdentifierContext *tableIdentifier();
+    ClusterClauseContext *clusterClause();
     PartitionClauseContext *partitionClause();
     antlr4::tree::TerminalNode *FINAL();
     antlr4::tree::TerminalNode *DEDUPLICATE();
@@ -1133,6 +1158,7 @@ public:
     antlr4::tree::TerminalNode* TO(size_t i);
     std::vector<antlr4::tree::TerminalNode *> COMMA();
     antlr4::tree::TerminalNode* COMMA(size_t i);
+    ClusterClauseContext *clusterClause();
 
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
    
@@ -1720,6 +1746,7 @@ public:
     antlr4::tree::TerminalNode *TEMPORARY();
     antlr4::tree::TerminalNode *IF();
     antlr4::tree::TerminalNode *EXISTS();
+    ClusterClauseContext *clusterClause();
 
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
    

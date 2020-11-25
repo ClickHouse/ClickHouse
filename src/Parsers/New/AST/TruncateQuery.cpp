@@ -8,8 +8,8 @@
 namespace DB::AST
 {
 
-TruncateQuery::TruncateQuery(bool temporary_, bool if_exists_, PtrTo<TableIdentifier> identifier)
-    : DDLQuery{identifier}, temporary(temporary_), if_exists(if_exists_)
+TruncateQuery::TruncateQuery(PtrTo<ClusterClause> cluster, bool temporary_, bool if_exists_, PtrTo<TableIdentifier> identifier)
+    : DDLQuery(cluster, {identifier}), temporary(temporary_), if_exists(if_exists_)
 {
 }
 
@@ -20,6 +20,7 @@ ASTPtr TruncateQuery::convertToOld() const
     query->kind = ASTDropQuery::Truncate;
     query->if_exists = if_exists;
     query->temporary = temporary;
+    query->cluster = cluster_name;
 
     query->table = get<TableIdentifier>(NAME)->getName();
     if (auto database = get<TableIdentifier>(NAME)->getDatabase())
@@ -39,7 +40,8 @@ using namespace AST;
 
 antlrcpp::Any ParseTreeVisitor::visitTruncateStmt(ClickHouseParser::TruncateStmtContext *ctx)
 {
-    return std::make_shared<TruncateQuery>(!!ctx->TEMPORARY(), !!ctx->IF(), visit(ctx->tableIdentifier()));
+    auto cluster = ctx->clusterClause() ? visit(ctx->clusterClause()).as<PtrTo<ClusterClause>>() : nullptr;
+    return std::make_shared<TruncateQuery>(cluster, !!ctx->TEMPORARY(), !!ctx->IF(), visit(ctx->tableIdentifier()));
 }
 
 }

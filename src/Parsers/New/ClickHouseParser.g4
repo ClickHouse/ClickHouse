@@ -28,7 +28,7 @@ query
 // ALTER statement
 
 alterStmt
-    : ALTER TABLE tableIdentifier alterTableClause (COMMA alterTableClause)*  # AlterTableStmt
+    : ALTER TABLE tableIdentifier clusterClause? alterTableClause (COMMA alterTableClause)*  # AlterTableStmt
     ;
 
 alterTableClause
@@ -65,13 +65,14 @@ checkStmt: CHECK TABLE tableIdentifier;
 // CREATE statement
 
 createStmt
-    : (ATTACH | CREATE) DATABASE (IF NOT EXISTS)? databaseIdentifier engineExpr?                                                                                  # CreateDatabaseStmt
-    | (ATTACH | CREATE) LIVE VIEW (IF NOT EXISTS)? tableIdentifier uuidClause? (WITH TIMEOUT DECIMAL_LITERAL?)? destinationClause? schemaClause? subqueryClause   # CreateLiveViewStmt
-    | (ATTACH | CREATE) MATERIALIZED VIEW (IF NOT EXISTS)? tableIdentifier uuidClause? schemaClause? (destinationClause | engineClause POPULATE?) subqueryClause  # CreateMaterializedViewStmt
-    | (ATTACH | CREATE) TEMPORARY? TABLE (IF NOT EXISTS)? tableIdentifier uuidClause? schemaClause? engineClause? subqueryClause?                                 # CreateTableStmt
-    | (ATTACH | CREATE) VIEW (IF NOT EXISTS)? tableIdentifier uuidClause? schemaClause? subqueryClause                                                            # CreateViewStmt
+    : (ATTACH | CREATE) DATABASE (IF NOT EXISTS)? databaseIdentifier clusterClause? engineExpr?                                                                                  # CreateDatabaseStmt
+    | (ATTACH | CREATE) LIVE VIEW (IF NOT EXISTS)? tableIdentifier uuidClause? clusterClause? (WITH TIMEOUT DECIMAL_LITERAL?)? destinationClause? schemaClause? subqueryClause   # CreateLiveViewStmt
+    | (ATTACH | CREATE) MATERIALIZED VIEW (IF NOT EXISTS)? tableIdentifier uuidClause? clusterClause? schemaClause? (destinationClause | engineClause POPULATE?) subqueryClause  # CreateMaterializedViewStmt
+    | (ATTACH | CREATE) TEMPORARY? TABLE (IF NOT EXISTS)? tableIdentifier uuidClause? clusterClause? schemaClause? engineClause? subqueryClause?                                 # CreateTableStmt
+    | (ATTACH | CREATE) VIEW (IF NOT EXISTS)? tableIdentifier uuidClause? clusterClause? schemaClause? subqueryClause                                                            # CreateViewStmt
     ;
 
+clusterClause: ON CLUSTER (identifier | STRING_LITERAL);
 uuidClause: UUID STRING_LITERAL;
 destinationClause: TO tableIdentifier;
 subqueryClause: AS selectUnionStmt;
@@ -118,8 +119,8 @@ describeStmt: (DESCRIBE | DESC) TABLE? tableExpr;
 // DROP statement
 
 dropStmt
-    : (DETACH | DROP) DATABASE (IF EXISTS)? databaseIdentifier                   # DropDatabaseStmt
-    | (DETACH | DROP) TEMPORARY? TABLE (IF EXISTS)? tableIdentifier (NO DELAY)?  # DropTableStmt
+    : (DETACH | DROP) DATABASE (IF EXISTS)? databaseIdentifier clusterClause?                   # DropDatabaseStmt
+    | (DETACH | DROP) TEMPORARY? TABLE (IF EXISTS)? tableIdentifier clusterClause? (NO DELAY)?  # DropTableStmt
     ;
 
 // EXISTS statement
@@ -143,11 +144,11 @@ dataClause
 
 // OPTIMIZE statement
 
-optimizeStmt: OPTIMIZE TABLE tableIdentifier partitionClause? FINAL? DEDUPLICATE?;
+optimizeStmt: OPTIMIZE TABLE tableIdentifier clusterClause? partitionClause? FINAL? DEDUPLICATE?;
 
 // RENAME statement
 
-renameStmt: RENAME TABLE tableIdentifier TO tableIdentifier (COMMA tableIdentifier TO tableIdentifier)*;
+renameStmt: RENAME TABLE tableIdentifier TO tableIdentifier (COMMA tableIdentifier TO tableIdentifier)* clusterClause?;
 
 // SELECT statement
 
@@ -236,7 +237,7 @@ systemStmt
 
 // TRUNCATE statements
 
-truncateStmt: TRUNCATE TEMPORARY? TABLE (IF EXISTS)? tableIdentifier;
+truncateStmt: TRUNCATE TEMPORARY? TABLE (IF EXISTS)? tableIdentifier clusterClause?;
 
 // USE statement
 

@@ -46,6 +46,7 @@ class CreateTableQuery : public DDLQuery
 {
     public:
         CreateTableQuery(
+            PtrTo<ClusterClause> cluster,
             bool attach,
             bool temporary,
             bool if_not_exists,

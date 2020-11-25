@@ -72,6 +72,7 @@ using TableArgList = List<TableArgExpr>;
 using TableElementList = List<TableElementExpr>;
 using TTLExprList = List<TTLExpr>;
 
+using ClusterClause = SimpleClause<StringLiteral>;
 using DestinationClause = SimpleClause<TableIdentifier>;
 using OrderByClause = SimpleClause<OrderExprList>;
 using TTLClause = SimpleClause<TTLExprList>;

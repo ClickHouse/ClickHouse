@@ -11,6 +11,7 @@ namespace DB::AST
 {
 
 CreateLiveViewQuery::CreateLiveViewQuery(
+    PtrTo<ClusterClause> cluster,
     bool attach_,
     bool if_not_exists_,
     PtrTo<TableIdentifier> identifier,
@@ -19,7 +20,7 @@ CreateLiveViewQuery::CreateLiveViewQuery(
     PtrTo<DestinationClause> destination,
     PtrTo<SchemaClause> schema,
     PtrTo<SelectUnionQuery> query)
-    : DDLQuery{identifier, uuid, timeout, destination, schema, query}, attach(attach_), if_not_exists(if_not_exists_)
+    : DDLQuery(cluster, {identifier, uuid, timeout, destination, schema, query}), attach(attach_), if_not_exists(if_not_exists_)
 {
 }
 
@@ -51,6 +52,7 @@ ASTPtr CreateLiveViewQuery::convertToOld() const
     query->if_not_exists = if_not_exists;
     query->is_live_view = true;
     query->set(query->select, get(SUBQUERY)->convertToOld());
+    query->cluster = cluster_name;
 
     return query;
 }
@@ -65,11 +67,13 @@ using namespace AST;
 antlrcpp::Any ParseTreeVisitor::visitCreateLiveViewStmt(ClickHouseParser::CreateLiveViewStmtContext *ctx)
 {
     auto uuid = ctx->uuidClause() ? visit(ctx->uuidClause()).as<PtrTo<UUIDClause>>() : nullptr;
+    auto cluster = ctx->clusterClause() ? visit(ctx->clusterClause()).as<PtrTo<ClusterClause>>() : nullptr;
     auto timeout = ctx->DECIMAL_LITERAL() ? Literal::createNumber(ctx->DECIMAL_LITERAL()) : nullptr;
     auto destination = ctx->destinationClause() ? visit(ctx->destinationClause()).as<PtrTo<DestinationClause>>() : nullptr;
     auto schema = ctx->schemaClause() ? visit(ctx->schemaClause()).as<PtrTo<SchemaClause>>() : nullptr;
     if (ctx->TIMEOUT() && !timeout) timeout = Literal::createNumber(std::to_string(DEFAULT_TEMPORARY_LIVE_VIEW_TIMEOUT_SEC));
     return std::make_shared<CreateLiveViewQuery>(
+        cluster,
         !!ctx->ATTACH(),
         !!ctx->IF(),
         visit(ctx->tableIdentifier()),

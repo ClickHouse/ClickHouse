@@ -10,7 +10,12 @@ class CreateViewQuery : public DDLQuery
 {
     public:
         CreateViewQuery(
-            bool attach, bool if_not_exists, PtrTo<TableIdentifier> identifier, PtrTo<SchemaClause> clause, PtrTo<SelectUnionQuery> query);
+            PtrTo<ClusterClause> cluster,
+            bool attach,
+            bool if_not_exists,
+            PtrTo<TableIdentifier> identifier,
+            PtrTo<SchemaClause> clause,
+            PtrTo<SelectUnionQuery> query);
 
         ASTPtr convertToOld() const override;
 
