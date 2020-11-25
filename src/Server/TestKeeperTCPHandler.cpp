@@ -10,8 +10,7 @@
 #include <Common/setThreadName.h>
 #include <common/logger_useful.h>
 #include <chrono>
-
-#include <sys/eventfd.h>
+#include <Common/PipeFDs.h>
 #include <sys/epoll.h>
 
 namespace DB
@@ -26,7 +25,7 @@ namespace ErrorCodes
 struct SocketInterruptablePollWrapper
 {
     int sockfd;
-    int efd;
+    PipeFDs pipe;
     enum class PollStatus
     {
         HAS_DATA,
@@ -37,32 +36,21 @@ struct SocketInterruptablePollWrapper
 
     using InterruptCallback = std::function<void()>;
 
-    SocketInterruptablePollWrapper(const Poco::Net::StreamSocket & poco_socket_)
+    explicit SocketInterruptablePollWrapper(const Poco::Net::StreamSocket & poco_socket_)
         : sockfd(poco_socket_.impl()->sockfd())
-        , efd(eventfd(0, EFD_NONBLOCK))
     {
-        if (efd < 0)
-            throwFromErrno("Cannot create eventfd file descriptor", ErrorCodes::SYSTEM_ERROR);
+        pipe.setNonBlocking();
     }
 
-    ~SocketInterruptablePollWrapper()
-    {
-        if (efd >= 0)
-        {
-            close(efd);
-            efd = -1;
-        }
-    }
-
-    void interruptPoll()
+    void interruptPoll() const
     {
         UInt64 bytes = 1;
-        int ret = write(efd, &bytes, sizeof(bytes));
+        int ret = write(pipe.fds_rw[1], &bytes, sizeof(bytes));
         if (ret < 0)
-            throwFromErrno("Cannot write into eventfd descriptor", ErrorCodes::SYSTEM_ERROR);
+            throwFromErrno("Cannot write into pipe descriptor", ErrorCodes::SYSTEM_ERROR);
     }
 
-    PollStatus poll(Poco::Timespan& remainingTime)
+    PollStatus poll(Poco::Timespan remainingTime)
     {
         int epollfd = epoll_create(2);
 
@@ -77,10 +65,10 @@ struct SocketInterruptablePollWrapper
             ::close(epollfd);
             throwFromErrno("Cannot insert socket into epoll queue", ErrorCodes::SYSTEM_ERROR);
         }
-        epoll_event efd_event{};
-        efd_event.events = EPOLLIN | EPOLLERR;
-        efd_event.data.fd = efd;
-        if (epoll_ctl(epollfd, EPOLL_CTL_ADD, efd, &efd_event) < 0)
+        epoll_event pipe_event{};
+        pipe_event.events = EPOLLIN | EPOLLERR;
+        pipe_event.data.fd = pipe.fds_rw[0];
+        if (epoll_ctl(epollfd, EPOLL_CTL_ADD, pipe.fds_rw[0], &pipe_event) < 0)
         {
             ::close(epollfd);
             throwFromErrno("Cannot insert socket into epoll queue", ErrorCodes::SYSTEM_ERROR);
@@ -109,11 +97,11 @@ struct SocketInterruptablePollWrapper
             return PollStatus::ERROR;
         else if (rc == 0)
             return PollStatus::TIMEOUT;
-        else if (evout.data.fd == efd)
+        else if (evout.data.fd == pipe.fds_rw[0])
         {
             UInt64 bytes;
-            if (read(efd, &bytes, sizeof(bytes)) < 0)
-                throwFromErrno("Cannot read from eventfd", ErrorCodes::SYSTEM_ERROR);
+            if (read(pipe.fds_rw[0], &bytes, sizeof(bytes)) < 0)
+                throwFromErrno("Cannot read from pipe", ErrorCodes::SYSTEM_ERROR);
             return PollStatus::INTERRUPTED;
         }
         return PollStatus::HAS_DATA;

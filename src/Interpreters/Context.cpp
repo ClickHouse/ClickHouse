@@ -445,6 +445,8 @@ struct ContextShared
 
         /// Stop trace collector if any
         trace_collector.reset();
+        /// Stop test_keeper storage
+        test_keeper_storage.reset();
     }
 
     bool hasTraceCollector() const
