@@ -130,7 +130,7 @@ public:
     String remote_table;
     ASTPtr remote_table_function_ptr;
 
-    std::unique_ptr<Context> global_context;
+    const Context & global_context;
     Poco::Logger * log;
 
     /// Used to implement TableFunctionRemote.

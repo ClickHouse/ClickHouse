@@ -381,6 +381,10 @@ if (USE_PROTOBUF)
     dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${Protobuf_INCLUDE_DIR})
 endif ()
 
+if (USE_GRPC)
+    dbms_target_link_libraries (PUBLIC clickhouse_grpc_protos)
+endif()
+
 if (USE_HDFS)
     target_link_libraries (clickhouse_common_io PUBLIC ${HDFS3_LIBRARY})
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${HDFS3_INCLUDE_DIR})

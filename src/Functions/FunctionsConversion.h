@@ -35,6 +35,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Common/FieldVisitors.h>
 #include <Common/assert_cast.h>
+#include <Common/quoteString.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/FunctionHelpers.h>
@@ -102,7 +103,7 @@ struct ConvertImpl
 
     template <typename Additions = void *>
     static ColumnPtr NO_SANITIZE_UNDEFINED execute(
-        ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/,
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/,
         Additions additions [[maybe_unused]] = Additions())
     {
         const ColumnWithTypeAndName & named_from = arguments[0];
@@ -153,6 +154,9 @@ struct ConvertImpl
                 {
                     if constexpr (std::is_same_v<FromFieldType, UInt128> || std::is_same_v<ToFieldType, UInt128>)
                         throw Exception("Unexpected UInt128 to big int conversion", ErrorCodes::NOT_IMPLEMENTED);
+                    /// If From Data is Nan or Inf, throw exception
+                    else if (!isFinite(vec_from[i]))
+                        throw Exception("Unexpected inf or nan to big int conversion", ErrorCodes::NOT_IMPLEMENTED);
                     else
                         vec_to[i] = bigint_cast<ToFieldType>(vec_from[i]);
                 }
@@ -442,7 +446,7 @@ struct FormatImpl<DataTypeDecimal<FieldType>>
 template <typename FieldType, typename Name>
 struct ConvertImpl<DataTypeEnum<FieldType>, DataTypeNumber<FieldType>, Name>
 {
-    static ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/)
+    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/)
     {
         return arguments[0].column;
     }
@@ -455,7 +459,7 @@ struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, 
     using FromFieldType = typename FromDataType::FieldType;
     using ColVecType = std::conditional_t<IsDecimalNumber<FromFieldType>, ColumnDecimal<FromFieldType>, ColumnVector<FromFieldType>>;
 
-    static ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/)
+    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/)
     {
         const auto & col_with_type_and_name = arguments[0];
         const auto & type = static_cast<const FromDataType &>(*col_with_type_and_name.type);
@@ -509,7 +513,7 @@ struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, 
 /// Generic conversion of any type to String.
 struct ConvertImplGenericToString
 {
-    static ColumnPtr execute(ColumnsWithTypeAndName & arguments)
+    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments)
     {
         const auto & col_with_type_and_name = arguments[0];
         const IDataType & type = *col_with_type_and_name.type;
@@ -682,7 +686,7 @@ struct ConvertThroughParsing
     }
 
     template <typename Additions = void *>
-    static ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, size_t input_rows_count,
+    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, size_t input_rows_count,
                         Additions additions [[maybe_unused]] = Additions())
     {
         using ColVecTo = typename ToDataType::ColumnType;
@@ -932,7 +936,7 @@ struct ConvertImpl<DataTypeString, DataTypeUInt32, NameToUnixTimestamp>
 template <typename T, typename Name>
 struct ConvertImpl<std::enable_if_t<!T::is_parametric, T>, T, Name>
 {
-    static ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/)
+    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/)
     {
         return arguments[0].column;
     }
@@ -945,7 +949,7 @@ struct ConvertImpl<std::enable_if_t<!T::is_parametric, T>, T, Name>
 template <typename Name>
 struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
 {
-    static ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/)
+    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/)
     {
         if (const ColumnFixedString * col_from = checkAndGetColumn<ColumnFixedString>(arguments[0].column.get()))
         {
@@ -1141,7 +1145,7 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
     bool canBeExecutedOnDefaultArguments() const override { return false; }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         try
         {
@@ -1186,7 +1190,7 @@ public:
     }
 
 private:
-    ColumnPtr executeInternal(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    ColumnPtr executeInternal(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         if (arguments.empty())
             throw Exception{"Function " + getName() + " expects at least 1 arguments",
@@ -1406,7 +1410,7 @@ public:
     }
 
     template <typename ConvertToDataType>
-    ColumnPtr executeInternal(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, UInt32 scale = 0) const
+    ColumnPtr executeInternal(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, UInt32 scale = 0) const
     {
         const IDataType * from_type = arguments[0].type.get();
 
@@ -1424,7 +1428,7 @@ public:
         return nullptr;
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         ColumnPtr result_column;
 
@@ -1874,20 +1878,37 @@ class ExecutableFunctionCast : public IExecutableFunctionImpl
 public:
     using WrapperType = std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr &, const ColumnNullable *, size_t)>;
 
-    explicit ExecutableFunctionCast(WrapperType && wrapper_function_, const char * name_)
-            : wrapper_function(std::move(wrapper_function_)), name(name_) {}
+    struct Diagnostic
+    {
+        std::string column_from;
+        std::string column_to;
+    };
+
+    explicit ExecutableFunctionCast(
+            WrapperType && wrapper_function_, const char * name_, std::optional<Diagnostic> diagnostic_)
+            : wrapper_function(std::move(wrapper_function_)), name(name_), diagnostic(std::move(diagnostic_)) {}
 
     String getName() const override { return name; }
 
 protected:
-    ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) override
+    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         /// drop second argument, pass others
         ColumnsWithTypeAndName new_arguments{arguments.front()};
         if (arguments.size() > 2)
             new_arguments.insert(std::end(new_arguments), std::next(std::begin(arguments), 2), std::end(arguments));
 
-        return wrapper_function(new_arguments, result_type, nullptr, input_rows_count);
+        try
+        {
+            return wrapper_function(new_arguments, result_type, nullptr, input_rows_count);
+        }
+        catch (Exception & e)
+        {
+            if (diagnostic)
+                e.addMessage("while converting source column " + backQuoteIfNeed(diagnostic->column_from) +
+                             " to destination column " + backQuoteIfNeed(diagnostic->column_to));
+            throw;
+        }
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -1898,6 +1919,7 @@ protected:
 private:
     WrapperType wrapper_function;
     const char * name;
+    std::optional<Diagnostic> diagnostic;
 };
 
 
@@ -1908,11 +1930,12 @@ class FunctionCast final : public IFunctionBaseImpl
 public:
     using WrapperType = std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr &, const ColumnNullable *, size_t)>;
     using MonotonicityForRange = std::function<Monotonicity(const IDataType &, const Field &, const Field &)>;
+    using Diagnostic = ExecutableFunctionCast::Diagnostic;
 
     FunctionCast(const char * name_, MonotonicityForRange && monotonicity_for_range_
-            , const DataTypes & argument_types_, const DataTypePtr & return_type_)
-            : name(name_), monotonicity_for_range(monotonicity_for_range_)
-            , argument_types(argument_types_), return_type(return_type_)
+        , const DataTypes & argument_types_, const DataTypePtr & return_type_, std::optional<Diagnostic> diagnostic_)
+        : name(name_), monotonicity_for_range(monotonicity_for_range_)
+        , argument_types(argument_types_), return_type(return_type_), diagnostic(std::move(diagnostic_))
     {
     }
 
@@ -1921,8 +1944,18 @@ public:
 
     ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName & /*sample_columns*/) const override
     {
-        return std::make_unique<ExecutableFunctionCast>(
-                prepareUnpackDictionaries(getArgumentTypes()[0], getResultType()), name);
+        try
+        {
+            return std::make_unique<ExecutableFunctionCast>(
+                    prepareUnpackDictionaries(getArgumentTypes()[0], getResultType()), name, diagnostic);
+        }
+        catch (Exception & e)
+        {
+            if (diagnostic)
+                e.addMessage("while converting source column " + backQuoteIfNeed(diagnostic->column_from) +
+                             " to destination column " + backQuoteIfNeed(diagnostic->column_to));
+            throw;
+        }
     }
 
     String getName() const override { return name; }
@@ -1947,6 +1980,8 @@ private:
 
     DataTypes argument_types;
     DataTypePtr return_type;
+
+    std::optional<Diagnostic> diagnostic;
 
     template <typename DataType>
     WrapperType createWrapper(const DataTypePtr & from_type, const DataType * const, bool requested_result_is_nullable) const
@@ -2558,14 +2593,19 @@ class CastOverloadResolver : public IFunctionOverloadResolverImpl
 {
 public:
     using MonotonicityForRange = FunctionCast::MonotonicityForRange;
+    using Diagnostic = FunctionCast::Diagnostic;
 
     static constexpr auto name = "CAST";
 
     static FunctionOverloadResolverImplPtr create(const Context & context);
-    static FunctionOverloadResolverImplPtr createImpl(bool keep_nullable) { return std::make_unique<CastOverloadResolver>(keep_nullable); }
+    static FunctionOverloadResolverImplPtr createImpl(bool keep_nullable, std::optional<Diagnostic> diagnostic = {})
+    {
+        return std::make_unique<CastOverloadResolver>(keep_nullable, std::move(diagnostic));
+    }
 
-    explicit CastOverloadResolver(bool keep_nullable_)
-        : keep_nullable(keep_nullable_)
+
+    explicit CastOverloadResolver(bool keep_nullable_, std::optional<Diagnostic> diagnostic_ = {})
+        : keep_nullable(keep_nullable_), diagnostic(std::move(diagnostic_))
     {}
 
     String getName() const override { return name; }
@@ -2584,7 +2624,7 @@ protected:
             data_types[i] = arguments[i].type;
 
         auto monotonicity = getMonotonicityInformation(arguments.front().type, return_type.get());
-        return std::make_unique<FunctionCast>(name, std::move(monotonicity), data_types, return_type);
+        return std::make_unique<FunctionCast>(name, std::move(monotonicity), data_types, return_type, diagnostic);
     }
 
     DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const override
@@ -2612,6 +2652,7 @@ protected:
 
 private:
     bool keep_nullable;
+    std::optional<Diagnostic> diagnostic;
 
     template <typename DataType>
     static auto monotonicityForType(const DataType * const)

@@ -21,15 +21,15 @@ toc_title: "\u266A\u64CD\u573A\u266A"
 
 ClickHouse体验还有如下：
 [ClickHouse管理服务](https://cloud.yandex.com/services/managed-clickhouse)
-实例托管 [Yandex云](https://cloud.yandex.com/).
-更多信息 [云提供商](../commercial/cloud.md).
+实例托管 [Yandex云](https://cloud.yandex.com/)。
+更多信息 [云提供商](../commercial/cloud.md)。
 
 ClickHouse体验平台界面实际上是通过ClickHouse [HTTP API](../interfaces/http.md)接口实现的.
 体验平台后端只是一个ClickHouse集群，没有任何额外的服务器端应用程序。
 体验平台也同样提供了ClickHouse HTTPS服务端口。
 
-您可以使用任何HTTP客户端向体验平台进行查询，例如 [curl](https://curl.haxx.se) 或 [wget](https://www.gnu.org/software/wget/)，或使用以下方式建立连接 [JDBC](../interfaces/jdbc.md) 或 [ODBC](../interfaces/odbc.md) 司机
-有关支持ClickHouse的软件产品的更多信息，请访问 [这里](../interfaces/index.md).
+您可以使用任何HTTP客户端向体验平台进行查询，例如 [curl](https://curl.haxx.se) 或 [wget](https://www.gnu.org/software/wget/)，或使用以下方式建立连接 [JDBC](../interfaces/jdbc.md) 或 [ODBC](../interfaces/odbc.md) 驱动。
+有关支持ClickHouse的软件产品的更多信息，请访问 [这里](../interfaces/index.md)。
 
 | 参数     | 值                                    |
 |:---------|:--------------------------------------|
