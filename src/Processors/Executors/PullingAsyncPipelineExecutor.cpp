@@ -64,18 +64,18 @@ const Block & PullingAsyncPipelineExecutor::getHeader() const
 
 static void threadFunction(PullingAsyncPipelineExecutor::Data & data, ThreadGroupStatusPtr thread_group, size_t num_threads)
 {
-    if (thread_group)
-        CurrentThread::attachTo(thread_group);
-
-    SCOPE_EXIT(
-        if (thread_group)
-            CurrentThread::detachQueryIfNotDetached();
-    );
-
     setThreadName("QueryPipelineEx");
 
     try
     {
+        if (thread_group)
+            CurrentThread::attachTo(thread_group);
+
+        SCOPE_EXIT(
+            if (thread_group)
+                CurrentThread::detachQueryIfNotDetached();
+        );
+
         data.executor->execute(num_threads);
     }
     catch (...)
