@@ -172,7 +172,6 @@ static void addElementSafe(const DataTypes & elems, IColumn & column, F && impl)
 
         throw;
     }
-
 }
 
 
