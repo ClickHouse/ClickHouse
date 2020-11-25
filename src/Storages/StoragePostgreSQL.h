@@ -5,24 +5,25 @@
 #endif
 
 #if USE_LIBPQXX
-
 #include <ext/shared_ptr_helper.h>
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
-
 #include <DataStreams/IBlockOutputStream.h>
 #include "pqxx/pqxx"
 
 namespace DB
 {
+
+using ConnectionPtr = std::shared_ptr<pqxx::connection>;
+
 class StoragePostgreSQL final : public ext::shared_ptr_helper<StoragePostgreSQL>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StoragePostgreSQL>;
 public:
     StoragePostgreSQL(
         const StorageID & table_id_,
-        const std::string & remote_database_name_,
         const std::string & remote_table_name_,
+        ConnectionPtr connection_,
         const String connection_str,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
@@ -43,12 +44,13 @@ public:
 
 private:
     friend class PostgreSQLBlockOutputStream;
+    void checkConnection(ConnectionPtr & connection) const;
 
-    String remote_database_name;
     String remote_table_name;
     Context global_context;
 
-    std::shared_ptr<pqxx::connection> connection;
+    ConnectionPtr connection;
+    const String connection_str;
 };
 
 
@@ -58,13 +60,11 @@ public:
     explicit PostgreSQLBlockOutputStream(
         const StoragePostgreSQL & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
-        std::shared_ptr<pqxx::connection> connection_,
-        const std::string & remote_database_name_,
+        ConnectionPtr connection_,
         const std::string & remote_table_name_)
         : storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
         , connection(connection_)
-        , remote_database_name(remote_database_name_)
         , remote_table_name(remote_table_name_)
     {
     }
@@ -75,12 +75,10 @@ public:
     void write(const Block & block) override;
     void writeSuffix() override;
 
-    const StoragePostgreSQL & storage;
-
 private:
+    const StoragePostgreSQL & storage;
     StorageMetadataPtr metadata_snapshot;
-    std::shared_ptr<pqxx::connection> connection;
-    std::string remote_database_name;
+    ConnectionPtr connection;
     std::string remote_table_name;
 
     std::unique_ptr<pqxx::work> work;
