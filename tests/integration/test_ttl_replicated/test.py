@@ -35,11 +35,11 @@ def test_ttl_columns(started_cluster):
     drop_table([node1, node2], "test_ttl")
     for node in [node1, node2]:
         node.query(
-        '''
-            CREATE TABLE test_ttl(date DateTime, id UInt32, a Int32 TTL date + INTERVAL 1 DAY, b Int32 TTL date + INTERVAL 1 MONTH)
-            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl', '{replica}')
-            ORDER BY id PARTITION BY toDayOfMonth(date) SETTINGS merge_with_ttl_timeout=0;
-        '''.format(replica=node.name))
+            '''
+                CREATE TABLE test_ttl(date DateTime, id UInt32, a Int32 TTL date + INTERVAL 1 DAY, b Int32 TTL date + INTERVAL 1 MONTH)
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_columns', '{replica}')
+                ORDER BY id PARTITION BY toDayOfMonth(date) SETTINGS merge_with_ttl_timeout=0;
+            '''.format(replica=node.name))
 
     node1.query("INSERT INTO test_ttl VALUES (toDateTime('2000-10-10 00:00:00'), 1, 1, 3)")
     node1.query("INSERT INTO test_ttl VALUES (toDateTime('2000-10-11 10:00:00'), 2, 2, 4)")
@@ -151,11 +151,11 @@ def test_modify_ttl(started_cluster):
     drop_table([node1, node2], "test_ttl")
     for node in [node1, node2]:
         node.query(
-        '''
-            CREATE TABLE test_ttl(d DateTime, id UInt32)
-            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl', '{replica}')
-            ORDER BY id
-        '''.format(replica=node.name))
+            '''
+                CREATE TABLE test_ttl(d DateTime, id UInt32)
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_modify', '{replica}')
+                ORDER BY id
+            '''.format(replica=node.name))
 
     node1.query("INSERT INTO test_ttl VALUES (now() - INTERVAL 5 HOUR, 1), (now() - INTERVAL 3 HOUR, 2), (now() - INTERVAL 1 HOUR, 3)")
     node2.query("SYSTEM SYNC REPLICA test_ttl", timeout=20)
@@ -173,11 +173,11 @@ def test_modify_column_ttl(started_cluster):
     drop_table([node1, node2], "test_ttl")
     for node in [node1, node2]:
         node.query(
-        '''
-            CREATE TABLE test_ttl(d DateTime, id UInt32 DEFAULT 42)
-            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl', '{replica}')
-            ORDER BY d
-        '''.format(replica=node.name))
+            '''
+                CREATE TABLE test_ttl(d DateTime, id UInt32 DEFAULT 42)
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_column', '{replica}')
+                ORDER BY d
+            '''.format(replica=node.name))
 
     node1.query("INSERT INTO test_ttl VALUES (now() - INTERVAL 5 HOUR, 1), (now() - INTERVAL 3 HOUR, 2), (now() - INTERVAL 1 HOUR, 3)")
     node2.query("SYSTEM SYNC REPLICA test_ttl", timeout=20)
@@ -196,7 +196,7 @@ def test_ttl_double_delete_rule_returns_error(started_cluster):
     try:
         node1.query('''
             CREATE TABLE test_ttl(date DateTime, id UInt32)
-            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl', '{replica}')
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_double_delete', '{replica}')
             ORDER BY id PARTITION BY toDayOfMonth(date)
             TTL date + INTERVAL 1 DAY, date + INTERVAL 2 DAY SETTINGS merge_with_ttl_timeout=0;
         '''.format(replica=node1.name))
@@ -269,3 +269,4 @@ limitations under the License."""
 
     r = node1.query("SELECT s1, b1 FROM {name} ORDER BY b1, s1".format(name=name)).splitlines()
     assert r == ["\t0", "\t0", "hello2\t2"]
+
