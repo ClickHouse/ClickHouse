@@ -253,9 +253,7 @@ void TestKeeperTCPHandler::runImpl()
     {
         using namespace std::chrono_literals;
 
-        Poco::Timespan poll_wait = responses.empty() ? session_timeout.totalMicroseconds() - session_stopwatch.elapsedMicroseconds() : session_timeout;
-
-        auto state = poll_wrapper->poll(poll_wait);
+        auto state = poll_wrapper->poll(session_timeout);
         if (state == SocketInterruptablePollWrapper::PollStatus::HAS_DATA)
         {
             auto received_op = receiveRequest();
