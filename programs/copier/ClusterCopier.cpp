@@ -62,6 +62,9 @@ decltype(auto) ClusterCopier::retry(T && func, UInt64 max_tries)
 {
     std::exception_ptr exception;
 
+    if (max_tries == 0)
+        throw Exception("Cannot perform zero retries", ErrorCodes::LOGICAL_ERROR);
+
     for (UInt64 try_number = 1; try_number <= max_tries; ++try_number)
     {
         try
@@ -1812,7 +1815,7 @@ UInt64 ClusterCopier::executeQueryOnCluster(
     if (execution_mode == ClusterExecutionMode::ON_EACH_NODE)
         max_successful_executions_per_shard = 0;
 
-    std::atomic<size_t> origin_replicas_number;
+    std::atomic<size_t> origin_replicas_number = 0;
 
     /// We need to execute query on one replica at least
     auto do_for_shard = [&] (UInt64 shard_index, Settings shard_settings)
