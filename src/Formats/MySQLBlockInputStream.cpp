@@ -146,7 +146,8 @@ Block MySQLBlockInputStream::readImpl()
         }
         else
         {
-            Names missing_names = description.sample_block.getNames();
+            const auto & sample_names = description.sample_block.getNames();
+            std::unordered_set<std::string> missing_names(sample_names.begin(), sample_names.end());
 
             for (const auto idx : ext::range(0, row.size()))
             {
@@ -155,19 +156,23 @@ Block MySQLBlockInputStream::readImpl()
                 {
                     const auto & position = description.sample_block.getPositionByName(field_name);
                     position_mapping[position] = idx;
-                    missing_names.erase(missing_names.begin() + position);
+                    missing_names.erase(field_name);
                 }
             }
 
             if (!missing_names.empty())
             {
                 WriteBufferFromOwnString exception_message;
-                writeText(missing_names, exception_message);
+                for (auto iter = missing_names.begin(); iter != missing_names.end(); ++iter)
+                {
+                    if (iter != missing_names.begin())
+                        exception_message << ", ";
+                    exception_message << *iter;
+                }
 
                 throw Exception("mysqlxx::UseQueryResult must be contain the" + exception_message.str() + " columns.",
                         ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
             }
-
         }
     }
 
