@@ -28,6 +28,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_SET_THREAD_PRIORITY;
+    extern const int SETTING_CONSTRAINT_VIOLATION;
 }
 
 void ThreadStatus::applyQuerySettings()
@@ -36,6 +37,13 @@ void ThreadStatus::applyQuerySettings()
 
     query_id = query_context->getCurrentQueryId();
     initQueryProfiler();
+
+    /// Failing very small allocations will likely fail some allocation from destructor,
+    /// which will lead to std::terminate.
+    if (settings.max_untracked_memory < 4096)
+        throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION,
+            "max_untracked_memory is too low ({}), this is not allowed, since this will likely lead to unexpected server crash, minimal allowed value is 4096",
+            settings.max_untracked_memory);
 
     untracked_memory_limit = settings.max_untracked_memory;
     if (settings.memory_profiler_step && settings.memory_profiler_step < UInt64(untracked_memory_limit))
