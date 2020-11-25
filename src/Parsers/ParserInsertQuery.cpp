@@ -9,6 +9,7 @@
 #include <Parsers/ParserWatchQuery.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserSetQuery.h>
+#include <Parsers/InsertQuerySettingsPushDownVisitor.h>
 #include <Common/typeid_cast.h>
 
 
@@ -126,6 +127,14 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!parser_settings.parse(pos, settings_ast, expected))
             return false;
     }
+
+    if (select)
+    {
+        /// Copy SETTINGS from the INSERT ... SELECT ... SETTINGS
+        InsertQuerySettingsPushDownVisitor::Data visitor_data{settings_ast};
+        InsertQuerySettingsPushDownVisitor(visitor_data).visit(select);
+    }
+
 
     if (format)
     {
