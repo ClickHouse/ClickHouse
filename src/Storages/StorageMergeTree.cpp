@@ -202,7 +202,7 @@ Pipe StorageMergeTree::read(
     return plan.convertToPipe();
 }
 
-std::optional<UInt64> StorageMergeTree::totalRows(const Context &) const
+std::optional<UInt64> StorageMergeTree::totalRows(const Settings &) const
 {
     return getTotalActiveSizeInRows();
 }
@@ -223,7 +223,7 @@ std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const Sele
     return res;
 }
 
-std::optional<UInt64> StorageMergeTree::totalBytes(const Context &) const
+std::optional<UInt64> StorageMergeTree::totalBytes(const Settings &) const
 {
     return getTotalActiveSizeInBytes();
 }

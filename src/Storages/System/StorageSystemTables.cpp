@@ -429,7 +429,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     assert(table != nullptr);
-                    auto total_rows = table->totalRows(context);
+                    auto total_rows = table->totalRows(context.getSettingsRef());
                     if (total_rows)
                         res_columns[res_index++]->insert(*total_rows);
                     else
@@ -439,7 +439,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     assert(table != nullptr);
-                    auto total_bytes = table->totalBytes(context);
+                    auto total_bytes = table->totalBytes(context.getSettingsRef());
                     if (total_bytes)
                         res_columns[res_index++]->insert(*total_bytes);
                     else
