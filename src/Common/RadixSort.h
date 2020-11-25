@@ -39,12 +39,12 @@ struct RadixSortMallocAllocator
 {
     void * allocate(size_t size)
     {
-        return malloc(size);
+        return new char[size];
     }
 
     void deallocate(void * ptr, size_t /*size*/)
     {
-        return free(ptr);
+        return delete[](ptr);
     }
 };
 
