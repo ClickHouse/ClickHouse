@@ -151,7 +151,7 @@ namespace
 void DataTypeArray::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
 {
     path.push_back(Substream::ArraySizes);
-    callback(path);
+    callback(path, *this);
     path.back() = Substream::ArrayElements;
     nested->enumerateStreams(callback, path);
     path.pop_back();

@@ -160,7 +160,7 @@ inline void readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_
             " Expected to read decimal with scale {} and precision {}";
 
         if constexpr (is_big_int_v<typename T::NativeType>)
-            throw Exception(fmt::format(pattern, digits, x.value.str(), exponent, scale, precision), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(fmt::format(pattern, digits, bigintToString(x.value), exponent, scale, precision), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
         else
             throw Exception(fmt::format(pattern, digits, x, exponent, scale, precision), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
     }
@@ -180,7 +180,7 @@ inline void readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_
         {
             /// Too many digits after point. Just cut off excessive digits.
             auto divisor = intExp10OfSize<typename T::NativeType>(divisor_exp);
-            assert(divisor > T(0)); /// This is for Clang Static Analyzer. It is not smart enough to infer it automatically.
+            assert(divisor > 0); /// This is for Clang Static Analyzer. It is not smart enough to infer it automatically.
             x.value /= divisor;
             scale = 0;
             return;

@@ -93,16 +93,16 @@ SELECT joinGet('id_val_join', 'val', toUInt32(1))
 
 创建表时，会应用下列设置参数：
 
--   [join\_use\_nulls](../../../operations/settings/settings.md#join_use_nulls)
--   [max\_rows\_in\_join](../../../operations/settings/query-complexity.md#settings-max_rows_in_join)
--   [max\_bytes\_in\_join](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join)
--   [join\_overflow\_mode](../../../operations/settings/query-complexity.md#settings-join_overflow_mode)
--   [join\_any\_take\_last\_row](../../../operations/settings/settings.md#settings-join_any_take_last_row)
+-   [join_use_nulls](../../../operations/settings/settings.md#join_use_nulls)
+-   [max_rows_in_join](../../../operations/settings/query-complexity.md#settings-max_rows_in_join)
+-   [max_bytes_in_join](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join)
+-   [join_overflow_mode](../../../operations/settings/query-complexity.md#settings-join_overflow_mode)
+-   [join_any_take_last_row](../../../operations/settings/settings.md#settings-join_any_take_last_row)
 
 
 `Join`表不能在 `GLOBAL JOIN`操作中使用
 
- `Join`表创建及 [查询](../../../sql-reference/statements/select/index.md)时，允许使用[join\_use\_nulls](../../../operations/settings/settings.md#join_use_nulls)参数。如果使用不同的`join_use_nulls`设置，会导致表关联异常（取决于join的类型）。当使用函数 [joinGet](../../../sql-reference/functions/other-functions.md#joinget)时，请在建表和查询语句中使用相同的 `join_use_nulls` 参数设置。
+ `Join`表创建及 [查询](../../../sql-reference/statements/select/index.md)时，允许使用[join_use_nulls](../../../operations/settings/settings.md#join_use_nulls)参数。如果使用不同的`join_use_nulls`设置，会导致表关联异常（取决于join的类型）。当使用函数 [joinGet](../../../sql-reference/functions/other-functions.md#joinget)时，请在建表和查询语句中使用相同的 `join_use_nulls` 参数设置。
 
 
 ## 数据存储 {#data-storage}

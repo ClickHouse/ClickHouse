@@ -9,6 +9,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
 template <typename A, typename B>
 struct BitRotateLeftImpl
 {
@@ -18,7 +21,7 @@ struct BitRotateLeftImpl
     template <typename Result = ResultType>
     static inline NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
     {
-        if constexpr (is_big_int_v<ResultType>)
+        if constexpr (is_big_int_v<A> || is_big_int_v<B>)
             throw Exception("Bit rotate is not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
         else
             return (static_cast<Result>(a) << static_cast<Result>(b))
@@ -40,7 +43,9 @@ struct BitRotateLeftImpl
 };
 
 struct NameBitRotateLeft { static constexpr auto name = "bitRotateLeft"; };
-using FunctionBitRotateLeft = FunctionBinaryArithmetic<BitRotateLeftImpl, NameBitRotateLeft>;
+using FunctionBitRotateLeft = BinaryArithmeticOverloadResolver<BitRotateLeftImpl, NameBitRotateLeft>;
+
+}
 
 void registerFunctionBitRotateLeft(FunctionFactory & factory)
 {

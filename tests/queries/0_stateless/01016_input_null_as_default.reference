@@ -18,6 +18,11 @@ JSONEachRow
 1	world	3	2019-07-23	[1,2,3]	('tuple',3.14)
 2	Hello	123	2019-06-19	[]	('test',2.71828)
 3	Hello	42	2019-06-19	[1,2,3]	('default',0.75)
+JSONStringsEachRow
+0	1	42	2019-07-22	[10,20,30]	('default',0)
+1	world	3	2019-07-23	[1,2,3]	('tuple',3.14)
+2	Hello	123	2019-06-19	[]	('test',2.71828)
+3	Hello	42	2019-06-19	[1,2,3]	('default',0.75)
 Template (Quoted)
 0	1	42	2019-07-22	[10,20,30]	('default',0)
 1	world	3	2019-07-23	[1,2,3]	('tuple',3.14)

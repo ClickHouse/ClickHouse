@@ -24,15 +24,19 @@ extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
 extern const int ILLEGAL_CODEC_PARAMETER;
 }
 
+CompressionCodecLZ4::CompressionCodecLZ4()
+{
+    setCodecDescription("LZ4");
+}
 
 uint8_t CompressionCodecLZ4::getMethodByte() const
 {
     return static_cast<uint8_t>(CompressionMethodByte::LZ4);
 }
 
-ASTPtr CompressionCodecLZ4::getCodecDesc() const
+void CompressionCodecLZ4::updateHash(SipHash & hash) const
 {
-    return std::make_shared<ASTIdentifier>("LZ4");
+    getCodecDesc()->updateTreeHash(hash);
 }
 
 UInt32 CompressionCodecLZ4::getMaxCompressedDataSize(UInt32 uncompressed_size) const
@@ -56,12 +60,6 @@ void registerCodecLZ4(CompressionCodecFactory & factory)
     {
         return std::make_shared<CompressionCodecLZ4>();
     });
-}
-
-ASTPtr CompressionCodecLZ4HC::getCodecDesc() const
-{
-    auto literal = std::make_shared<ASTLiteral>(static_cast<UInt64>(level));
-    return makeASTFunction("LZ4HC", literal);
 }
 
 UInt32 CompressionCodecLZ4HC::doCompressData(const char * source, UInt32 source_size, char * dest) const
@@ -100,6 +98,7 @@ void registerCodecLZ4HC(CompressionCodecFactory & factory)
 CompressionCodecLZ4HC::CompressionCodecLZ4HC(int level_)
     : level(level_)
 {
+    setCodecDescription("LZ4HC", {std::make_shared<ASTLiteral>(static_cast<UInt64>(level))});
 }
 
 }

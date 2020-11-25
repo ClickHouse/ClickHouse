@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool.h>
@@ -187,6 +187,9 @@ private:
 
     std::atomic<XID> next_xid {1};
     std::atomic<bool> expired {false};
+    /// Mark session finalization start. Used to avoid simultaneous
+    /// finalization from different threads. One-shot flag.
+    std::atomic<bool> finalization_started {false};
     std::mutex push_request_mutex;
 
     using clock = std::chrono::steady_clock;
@@ -260,7 +263,7 @@ struct ZooKeeperRequest : virtual Request
 
     ZooKeeperRequest() = default;
     ZooKeeperRequest(const ZooKeeperRequest &) = default;
-    virtual ~ZooKeeperRequest() = default;
+    virtual ~ZooKeeperRequest() override = default;
 
     virtual ZooKeeper::OpNum getOpNum() const = 0;
 

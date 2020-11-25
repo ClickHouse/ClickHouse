@@ -63,34 +63,34 @@ void ColumnDescription::writeText(WriteBuffer & buf) const
 {
     writeBackQuotedString(name, buf);
     writeChar(' ', buf);
-    DB::writeText(type->getName(), buf);
+    writeEscapedString(type->getName(), buf);
 
     if (default_desc.expression)
     {
         writeChar('\t', buf);
         DB::writeText(DB::toString(default_desc.kind), buf);
         writeChar('\t', buf);
-        DB::writeText(queryToString(default_desc.expression), buf);
+        writeEscapedString(queryToString(default_desc.expression), buf);
     }
 
     if (!comment.empty())
     {
         writeChar('\t', buf);
         DB::writeText("COMMENT ", buf);
-        DB::writeText(queryToString(ASTLiteral(Field(comment))), buf);
+        writeEscapedString(queryToString(ASTLiteral(Field(comment))), buf);
     }
 
     if (codec)
     {
         writeChar('\t', buf);
-        DB::writeText(queryToString(codec), buf);
+        writeEscapedString(queryToString(codec), buf);
     }
 
     if (ttl)
     {
         writeChar('\t', buf);
         DB::writeText("TTL ", buf);
-        DB::writeText(queryToString(ttl), buf);
+        writeEscapedString(queryToString(ttl), buf);
     }
 
     writeChar('\n', buf);
@@ -378,6 +378,14 @@ bool ColumnsDescription::hasPhysical(const String & column_name) const
 }
 
 
+bool ColumnsDescription::hasDefaults() const
+{
+    for (const auto & column : columns)
+        if (column.default_desc.expression)
+            return true;
+    return false;
+}
+
 ColumnDefaults ColumnsDescription::getDefaults() const
 {
     ColumnDefaults ret;
@@ -424,6 +432,16 @@ CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_
 CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_name) const
 {
     return getCodecOrDefault(column_name, CompressionCodecFactory::instance().getDefaultCodec());
+}
+
+ASTPtr ColumnsDescription::getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
+{
+    const auto it = columns.get<1>().find(column_name);
+
+    if (it == columns.get<1>().end() || !it->codec)
+        return default_codec->getFullCodecDesc();
+
+    return it->codec;
 }
 
 ColumnsDescription::ColumnTTLs ColumnsDescription::getColumnTTLs() const
@@ -484,8 +502,8 @@ Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const N
         auto syntax_analyzer_result = TreeRewriter(context).analyze(default_expr_list, all_columns);
         const auto actions = ExpressionAnalyzer(default_expr_list, syntax_analyzer_result, context).getActions(true);
         for (const auto & action : actions->getActions())
-            if (action.type == ExpressionAction::Type::JOIN || action.type == ExpressionAction::Type::ARRAY_JOIN)
-                throw Exception("Unsupported default value that requires ARRAY JOIN or JOIN action", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);
+            if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
+                throw Exception("Unsupported default value that requires ARRAY JOIN action", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);
 
         return actions->getSampleBlock();
     }

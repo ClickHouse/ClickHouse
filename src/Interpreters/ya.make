@@ -1,4 +1,6 @@
 # This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
+OWNER(g:clickhouse)
+
 LIBRARY()
 
 ADDINCL(
@@ -14,38 +16,36 @@ PEERDIR(
 
 NO_COMPILER_WARNINGS()
 
+
 SRCS(
     ActionLocksManager.cpp
+    ActionsDAG.cpp
     ActionsVisitor.cpp
-    addMissingDefaults.cpp
-    addTypeConversionToAST.cpp
     AggregateDescription.cpp
     Aggregator.cpp
+    ApplyWithAliasVisitor.cpp
+    ApplyWithGlobalVisitor.cpp
+    ApplyWithSubqueryVisitor.cpp
     ArithmeticOperationsInAgrFuncOptimize.cpp
     ArrayJoinAction.cpp
     AsynchronousMetricLog.cpp
     AsynchronousMetrics.cpp
     BloomFilter.cpp
-    castColumn.cpp
     CatBoostModel.cpp
     ClientInfo.cpp
     Cluster.cpp
-    ClusterProxy/executeQuery.cpp
     ClusterProxy/SelectStreamFactory.cpp
+    ClusterProxy/executeQuery.cpp
     CollectJoinOnKeysVisitor.cpp
     Context.cpp
-    convertFieldToType.cpp
     CrashLog.cpp
-    createBlockSelector.cpp
     CrossToInnerJoinVisitor.cpp
+    DDLWorker.cpp
+    DNSCacheUpdater.cpp
     DatabaseAndTableWithAlias.cpp
     DatabaseCatalog.cpp
-    DDLWorker.cpp
     DictionaryReader.cpp
-    DNSCacheUpdater.cpp
     EmbeddedDictionaries.cpp
-    evaluateConstantExpression.cpp
-    executeQuery.cpp
     ExecuteScalarSubqueriesVisitor.cpp
     ExpressionActions.cpp
     ExpressionAnalyzer.cpp
@@ -57,13 +57,10 @@ SRCS(
     ExternalModelsLoader.cpp
     ExtractExpressionInfoVisitor.cpp
     FillingRow.cpp
-    getClusterName.cpp
-    getTableExpressions.cpp
     HashJoin.cpp
-    IdentifierSemantic.cpp
     IExternalLoadable.cpp
+    IdentifierSemantic.cpp
     InJoinSubqueriesPreprocessor.cpp
-    inplaceBlockConversions.cpp
     InternalTextLogsQueue.cpp
     InterpreterAlterQuery.cpp
     InterpreterCheckQuery.cpp
@@ -100,12 +97,9 @@ SRCS(
     InterpreterSystemQuery.cpp
     InterpreterUseQuery.cpp
     InterpreterWatchQuery.cpp
-    interpretSubquery.cpp
-    join_common.cpp
-    JoinedTables.cpp
     JoinSwitcher.cpp
     JoinToSubqueryTransformVisitor.cpp
-    loadMetadata.cpp
+    JoinedTables.cpp
     LogicalExpressionsOptimizer.cpp
     MarkTableIdentifiersVisitor.cpp
     MergeJoin.cpp
@@ -113,6 +107,7 @@ SRCS(
     MutationsInterpreter.cpp
     MySQL/InterpretersMySQLDDLQuery.cpp
     NullableUtils.cpp
+    OpenTelemetrySpanLog.cpp
     OptimizeIfChains.cpp
     OptimizeIfWithConstantConditionVisitor.cpp
     PartLog.cpp
@@ -123,6 +118,7 @@ SRCS(
     QueryAliasesVisitor.cpp
     QueryLog.cpp
     QueryNormalizer.cpp
+    QueryParameterVisitor.cpp
     QueryThreadLog.cpp
     RemoveInjectiveFunctionsVisitor.cpp
     RenameColumnVisitor.cpp
@@ -133,7 +129,6 @@ SRCS(
     RowRefs.cpp
     Set.cpp
     SetVariants.cpp
-    sortBlock.cpp
     SortedBlocksWriter.cpp
     StorageID.cpp
     SubqueryForSet.cpp
@@ -146,6 +141,21 @@ SRCS(
     TranslateQualifiedNamesVisitor.cpp
     TreeOptimizer.cpp
     TreeRewriter.cpp
+    addMissingDefaults.cpp
+    addTypeConversionToAST.cpp
+    castColumn.cpp
+    convertFieldToType.cpp
+    createBlockSelector.cpp
+    evaluateConstantExpression.cpp
+    executeQuery.cpp
+    getClusterName.cpp
+    getHeaderForProcessingStage.cpp
+    getTableExpressions.cpp
+    inplaceBlockConversions.cpp
+    interpretSubquery.cpp
+    join_common.cpp
+    loadMetadata.cpp
+    sortBlock.cpp
 
 )
 

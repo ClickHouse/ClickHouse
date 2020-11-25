@@ -10,13 +10,13 @@ namespace ErrorCodes
 }
 
 
-std::vector<FunctionJSONHelpers::Move> FunctionJSONHelpers::prepareMoves(const char * function_name, Block & block, const ColumnNumbers & arguments, size_t first_index_argument, size_t num_index_arguments)
+std::vector<FunctionJSONHelpers::Move> FunctionJSONHelpers::prepareMoves(const char * function_name, const ColumnsWithTypeAndName & columns, size_t first_index_argument, size_t num_index_arguments)
 {
     std::vector<Move> moves;
     moves.reserve(num_index_arguments);
     for (const auto i : ext::range(first_index_argument, first_index_argument + num_index_arguments))
     {
-        const auto & column = block.getByPosition(arguments[i]);
+        const auto & column = columns[i];
         if (!isString(column.type) && !isInteger(column.type))
             throw Exception{"The argument " + std::to_string(i + 1) + " of function " + String(function_name)
                                 + " should be a string specifying key or an integer specifying index, illegal type: " + column.type->getName(),

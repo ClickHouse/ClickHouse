@@ -1,6 +1,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Common/quoteString.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -120,7 +121,8 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
                       << (settings.hilite ? hilite_none : "");
     };
 
-    auto print_drop_replica = [&] {
+    auto print_drop_replica = [&]
+    {
         settings.ostr << " " << quoteString(replica);
         if (!table.empty())
         {
@@ -140,6 +142,16 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
             settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(database)
                           << (settings.hilite ? hilite_none : "");
         }
+    };
+
+    auto print_on_volume = [&]
+    {
+        settings.ostr << " ON VOLUME "
+                      << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(storage_policy)
+                      << (settings.hilite ? hilite_none : "")
+                      << "."
+                      << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(volume)
+                      << (settings.hilite ? hilite_none : "");
     };
 
     if (!cluster.empty())
@@ -162,6 +174,8 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     {
         if (!table.empty())
             print_database_table();
+        else if (!volume.empty())
+            print_on_volume();
     }
     else if (  type == Type::RESTART_REPLICA
             || type == Type::RESTORE_REPLICA

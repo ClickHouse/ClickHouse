@@ -27,4 +27,8 @@
 
 -    `apply_to_except` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Политики строк применяются ко всем ролям и/или пользователям, за исключением перечисленных.
 
+## Смотрите также {#see-also}
+
+-   [SHOW POLICIES](../../sql-reference/statements/show.md#show-policies-statement)
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/row_policies) <!--hide-->

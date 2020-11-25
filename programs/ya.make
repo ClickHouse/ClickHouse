@@ -1,3 +1,5 @@
+OWNER(g:clickhouse)
+
 PROGRAM(clickhouse)
 
 CFLAGS(
@@ -11,6 +13,8 @@ PEERDIR(
     clickhouse/base/loggers
     clickhouse/src
 )
+
+CFLAGS(-g0)
 
 SRCS(
     main.cpp

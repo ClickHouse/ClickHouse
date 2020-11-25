@@ -9,7 +9,7 @@
 #include <Common/quoteString.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Pipe.h>
-#include <sstream>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -32,12 +32,9 @@ namespace
         {
             if (names_and_types_set.find(column) == names_and_types_set.end())
             {
-                std::string message = "Not found column ";
-                message += column.name + " " + column.type->getName();
-                message += " in dictionary " + backQuote(dictionary_name) + ". ";
-                message += "There are only columns ";
-                message += StorageDictionary::generateNamesAndTypesDescription(dictionary_names_and_types);
-                throw Exception(message, ErrorCodes::THERE_IS_NO_COLUMN);
+                throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Not found column {} {} in dictionary {}. There are only columns {}",
+                                column.name, column.type->getName(), backQuote(dictionary_name),
+                                StorageDictionary::generateNamesAndTypesDescription(dictionary_names_and_types));
             }
         }
     }
@@ -81,7 +78,7 @@ NamesAndTypesList StorageDictionary::getNamesAndTypes(const DictionaryStructure 
 
 String StorageDictionary::generateNamesAndTypesDescription(const NamesAndTypesList & list)
 {
-    std::stringstream ss;
+    WriteBufferFromOwnString ss;
     bool first = true;
     for (const auto & name_and_type : list)
     {
@@ -92,6 +89,12 @@ String StorageDictionary::generateNamesAndTypesDescription(const NamesAndTypesLi
     return ss.str();
 }
 
+String StorageDictionary::resolvedDictionaryName() const
+{
+    if (location == Location::SameDatabaseAndNameAsDictionary)
+        return dictionary_name;
+    return DatabaseCatalog::instance().resolveDictionaryName(dictionary_name);
+}
 
 StorageDictionary::StorageDictionary(
     const StorageID & table_id_,
@@ -123,16 +126,21 @@ void StorageDictionary::checkTableCanBeDropped() const
         throw Exception("Cannot detach table " + getStorageID().getFullTableName() + " from a database with DICTIONARY engine", ErrorCodes::CANNOT_DETACH_DICTIONARY_AS_TABLE);
 }
 
+void StorageDictionary::checkTableCanBeDetached() const
+{
+    checkTableCanBeDropped();
+}
+
 Pipe StorageDictionary::read(
     const Names & column_names,
     const StorageMetadataPtr & /*metadata_snapshot*/,
-    const SelectQueryInfo & /*query_info*/,
+    SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
     const unsigned /*threads*/)
 {
-    auto dictionary = context.getExternalDictionariesLoader().getDictionary(dictionary_name);
+    auto dictionary = context.getExternalDictionariesLoader().getDictionary(resolvedDictionaryName());
     auto stream = dictionary->getBlockInputStream(column_names, max_block_size);
     /// TODO: update dictionary interface for processors.
     return Pipe(std::make_shared<SourceFromInputStream>(stream));
@@ -152,7 +160,8 @@ void registerStorageDictionary(StorageFactory & factory)
 
         if (!args.attach)
         {
-            const auto & dictionary = args.context.getExternalDictionariesLoader().getDictionary(dictionary_name);
+            auto resolved = DatabaseCatalog::instance().resolveDictionaryName(dictionary_name);
+            const auto & dictionary = args.context.getExternalDictionariesLoader().getDictionary(resolved);
             const DictionaryStructure & dictionary_structure = dictionary->getStructure();
             checkNamesAndTypesCompatibleWithDictionary(dictionary_name, args.columns, dictionary_structure);
         }

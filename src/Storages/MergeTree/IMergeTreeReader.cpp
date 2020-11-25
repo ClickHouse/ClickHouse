@@ -180,7 +180,7 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
             additional_columns.insert({res_columns[pos], name_and_type->type, name_and_type->name});
         }
 
-        DB::evaluateMissingDefaults(additional_columns, columns, metadata_snapshot->getColumns().getDefaults(), storage.global_context);
+        DB::evaluateMissingDefaults(additional_columns, columns, metadata_snapshot->getColumns(), storage.global_context);
 
         /// Move columns from block.
         name_and_type = columns.begin();

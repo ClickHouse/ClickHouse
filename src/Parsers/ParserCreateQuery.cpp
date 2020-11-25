@@ -19,6 +19,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 bool ParserNestedTable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserToken open(TokenType::OpeningRoundBracket);
@@ -109,7 +114,7 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         return false;
 
     auto index = std::make_shared<ASTIndexDeclaration>();
-    index->name = name->as<ASTIdentifier &>().name;
+    index->name = name->as<ASTIdentifier &>().name();
     index->granularity = granularity->as<ASTLiteral &>().value.safeGet<UInt64>();
     index->set(index->expr, expr);
     index->set(index->type, type);
@@ -138,7 +143,7 @@ bool ParserConstraintDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
         return false;
 
     auto constraint = std::make_shared<ASTConstraintDeclaration>();
-    constraint->name = name->as<ASTIdentifier &>().name;
+    constraint->name = name->as<ASTIdentifier &>().name();
     constraint->set(constraint->expr, expr);
     node = constraint;
 
@@ -150,10 +155,12 @@ bool ParserTablePropertyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expecte
 {
     ParserKeyword s_index("INDEX");
     ParserKeyword s_constraint("CONSTRAINT");
+    ParserKeyword s_primary_key("PRIMARY KEY");
 
     ParserIndexDeclaration index_p;
     ParserConstraintDeclaration constraint_p;
     ParserColumnDeclaration column_p{true, true};
+    ParserExpression primary_key_p;
 
     ASTPtr new_node = nullptr;
 
@@ -165,6 +172,11 @@ bool ParserTablePropertyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expecte
     else if (s_constraint.ignore(pos, expected))
     {
         if (!constraint_p.parse(pos, new_node, expected))
+            return false;
+    }
+    else if (s_primary_key.ignore(pos, expected))
+    {
+        if (!primary_key_p.parse(pos, new_node, expected))
             return false;
     }
     else
@@ -201,6 +213,7 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
     ASTPtr columns = std::make_shared<ASTExpressionList>();
     ASTPtr indices = std::make_shared<ASTExpressionList>();
     ASTPtr constraints = std::make_shared<ASTExpressionList>();
+    ASTPtr primary_key;
 
     for (const auto & elem : list->children)
     {
@@ -210,6 +223,14 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
             indices->children.push_back(elem);
         else if (elem->as<ASTConstraintDeclaration>())
             constraints->children.push_back(elem);
+        else if (elem->as<ASTIdentifier>() || elem->as<ASTFunction>())
+        {
+            if (primary_key)
+            {
+                throw Exception("Multiple primary keys are not allowed.", ErrorCodes::BAD_ARGUMENTS);
+            }
+            primary_key = elem;
+        }
         else
             return false;
     }
@@ -222,6 +243,8 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
         res->set(res->indices, indices);
     if (!constraints->children.empty())
         res->set(res->constraints, constraints);
+    if (primary_key)
+        res->set(res->primary_key, primary_key);
 
     node = res;
 
@@ -416,7 +439,12 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             return false;
 
         if (!storage_p.parse(pos, storage, expected) && !is_temporary)
-            return false;
+        {
+            if (!s_as.ignore(pos, expected))
+                return false;
+            if (!table_function_p.parse(pos, as_table_function, expected))
+                return false;
+        }
     }
     else
     {
@@ -466,6 +494,15 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     query->set(query->columns_list, columns_list);
     query->set(query->storage, storage);
+
+    if (query->storage && query->columns_list && query->columns_list->primary_key)
+    {
+        if (query->storage->primary_key)
+        {
+            throw Exception("Multiple primary keys are not allowed.", ErrorCodes::BAD_ARGUMENTS);
+        }
+        query->storage->primary_key = query->columns_list->primary_key;
+    }
 
     tryGetIdentifierNameInto(as_database, query->as_database);
     tryGetIdentifierNameInto(as_table, query->as_table);

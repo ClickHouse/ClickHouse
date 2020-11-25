@@ -7,8 +7,8 @@
 namespace DB
 {
 
-XMLRowOutputFormat::XMLRowOutputFormat(WriteBuffer & out_, const Block & header_, FormatFactory::WriteCallback callback, const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_, callback), format_settings(format_settings_)
+XMLRowOutputFormat::XMLRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_)
+    : IRowOutputFormat(header_, out_, params_), format_settings(format_settings_)
 {
     const auto & sample = getPort(PortKind::Main).getHeader();
     NamesAndTypesList columns(sample.getNamesAndTypesList());
@@ -245,10 +245,10 @@ void registerOutputFormatProcessorXML(FormatFactory & factory)
     factory.registerOutputFormatProcessor("XML", [](
         WriteBuffer & buf,
         const Block & sample,
-        FormatFactory::WriteCallback callback,
+        const RowOutputFormatParams & params,
         const FormatSettings & settings)
     {
-        return std::make_shared<XMLRowOutputFormat>(buf, sample, callback, settings);
+        return std::make_shared<XMLRowOutputFormat>(buf, sample, params, settings);
     });
 }
 

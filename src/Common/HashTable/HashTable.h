@@ -4,12 +4,13 @@
 
 #include <math.h>
 
+#include <new>
 #include <utility>
 
 #include <boost/noncopyable.hpp>
 
 #include <Core/Defines.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/Exception.h>
 
 #include <IO/WriteBuffer.h>
@@ -314,8 +315,8 @@ public:
         zeroValue()->~Cell();
     }
 
-    Cell * zeroValue()             { return reinterpret_cast<Cell*>(&zero_value_storage); }
-    const Cell * zeroValue() const { return reinterpret_cast<const Cell*>(&zero_value_storage); }
+    Cell * zeroValue()             { return std::launder(reinterpret_cast<Cell*>(&zero_value_storage)); }
+    const Cell * zeroValue() const { return std::launder(reinterpret_cast<const Cell*>(&zero_value_storage)); }
 };
 
 template <typename Cell>
@@ -850,6 +851,11 @@ protected:
 
 
 public:
+    void reserve(size_t num_elements)
+    {
+        resize(num_elements);
+    }
+
     /// Insert a value. In the case of any more complex values, it is better to use the `emplace` function.
     std::pair<LookupResult, bool> ALWAYS_INLINE insert(const value_type & x)
     {

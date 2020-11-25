@@ -123,6 +123,11 @@ public:
         return bytes_ignored;
     }
 
+    void ignoreAll()
+    {
+        tryIgnore(std::numeric_limits<size_t>::max());
+    }
+
     /** Reads a single byte. */
     bool ALWAYS_INLINE read(char & c)
     {

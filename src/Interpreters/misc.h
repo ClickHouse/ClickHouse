@@ -28,7 +28,7 @@ inline bool functionIsLikeOperator(const std::string & name)
 
 inline bool functionIsJoinGet(const std::string & name)
 {
-    return name == "joinGet" || startsWith(name, "dictGet");
+    return startsWith(name, "joinGet");
 }
 
 inline bool functionIsDictGet(const std::string & name)

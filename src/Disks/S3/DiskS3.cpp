@@ -18,7 +18,7 @@
 #include <Common/thread_local_rng.h>
 
 #include <aws/s3/model/CopyObjectRequest.h>
-#include <aws/s3/model/DeleteObjectRequest.h>
+#include <aws/s3/model/DeleteObjectsRequest.h>
 #include <aws/s3/model/GetObjectRequest.h>
 
 #include <boost/algorithm/string.hpp>
@@ -33,6 +33,34 @@ namespace ErrorCodes
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int UNKNOWN_FORMAT;
     extern const int INCORRECT_DISK_INDEX;
+    extern const int NOT_IMPLEMENTED;
+    extern const int PATH_ACCESS_DENIED;
+}
+
+
+/// Helper class to collect keys into chunks of maximum size (to prepare batch requests to AWS API)
+class DiskS3::AwsS3KeyKeeper : public std::list<Aws::Vector<Aws::S3::Model::ObjectIdentifier>>
+{
+public:
+    void addKey(const String & key);
+
+private:
+    /// limit for one DeleteObject request
+    /// see https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html
+    const static size_t chunk_limit = 1000;
+};
+
+void DiskS3::AwsS3KeyKeeper::addKey(const String & key)
+{
+    if (empty() || back().size() >= chunk_limit)
+    { /// add one more chunk
+        push_back(value_type());
+        back().reserve(chunk_limit);
+    }
+
+    Aws::S3::Model::ObjectIdentifier obj;
+    obj.SetKey(key);
+    back().push_back(obj);
 }
 
 namespace
@@ -66,6 +94,7 @@ namespace
         /// Metadata file version.
         static constexpr UInt32 VERSION_ABSOLUTE_PATHS = 1;
         static constexpr UInt32 VERSION_RELATIVE_PATHS = 2;
+        static constexpr UInt32 VERSION_READ_ONLY_FLAG = 3;
 
         using PathAndSize = std::pair<String, size_t>;
 
@@ -82,6 +111,8 @@ namespace
         std::vector<PathAndSize> s3_objects;
         /// Number of references (hardlinks) to this metadata file.
         UInt32 ref_count;
+        /// Flag indicates that file is read only.
+        bool read_only = false;
 
         /// Load metadata by path or create empty if `create` flag is set.
         explicit Metadata(const String & s3_root_path_, const String & disk_path_, const String & metadata_file_path_, bool create = false)
@@ -95,10 +126,10 @@ namespace
             UInt32 version;
             readIntText(version, buf);
 
-            if (version != VERSION_RELATIVE_PATHS && version != VERSION_ABSOLUTE_PATHS)
+            if (version < VERSION_ABSOLUTE_PATHS || version > VERSION_READ_ONLY_FLAG)
                 throw Exception(
                     "Unknown metadata file version. Path: " + disk_path + metadata_file_path
-                        + " Version: " + std::to_string(version) + ", Maximum expected version: " + std::to_string(VERSION_RELATIVE_PATHS),
+                        + " Version: " + std::to_string(version) + ", Maximum expected version: " + std::to_string(VERSION_READ_ONLY_FLAG),
                     ErrorCodes::UNKNOWN_FORMAT);
 
             assertChar('\n', buf);
@@ -131,6 +162,12 @@ namespace
 
             readIntText(ref_count, buf);
             assertChar('\n', buf);
+
+            if (version >= VERSION_READ_ONLY_FLAG)
+            {
+                readBoolText(read_only, buf);
+                assertChar('\n', buf);
+            }
         }
 
         void addObject(const String & path, size_t size)
@@ -160,6 +197,9 @@ namespace
             }
 
             writeIntText(ref_count, buf);
+            writeChar('\n', buf);
+
+            writeBoolText(read_only, buf);
             writeChar('\n', buf);
 
             buf.finalize();
@@ -605,6 +645,12 @@ std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, si
 std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, size_t buf_size, WriteMode mode, size_t estimated_size, size_t)
 {
     bool exist = exists(path);
+    if (exist)
+    {
+        Metadata metadata(s3_root_path, metadata_path, path);
+        if (metadata.read_only)
+            throw Exception("File is read-only: " + path, ErrorCodes::PATH_ACCESS_DENIED);
+    }
     /// Path to store new S3 object.
     auto s3_path = getRandomName();
     bool is_multipart = estimated_size >= min_multi_part_upload_size;
@@ -633,7 +679,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
     }
 }
 
-void DiskS3::remove(const String & path)
+void DiskS3::removeMeta(const String & path, AwsS3KeyKeeper & keys)
 {
     LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Remove file by path: {}", backQuote(metadata_path + path));
 
@@ -646,14 +692,9 @@ void DiskS3::remove(const String & path)
         if (metadata.ref_count == 0)
         {
             file.remove();
+
             for (const auto & [s3_object_path, _] : metadata.s3_objects)
-            {
-                /// TODO: Make operation idempotent. Do not throw exception if key is already deleted.
-                Aws::S3::Model::DeleteObjectRequest request;
-                request.SetBucket(bucket);
-                request.SetKey(s3_root_path + s3_object_path);
-                throwIfError(client->DeleteObject(request));
-            }
+                keys.addKey(s3_root_path + s3_object_path);
         }
         else /// In other case decrement number of references, save metadata and delete file.
         {
@@ -664,25 +705,57 @@ void DiskS3::remove(const String & path)
     }
     else
         file.remove();
+
 }
 
-void DiskS3::removeRecursive(const String & path)
+void DiskS3::removeMetaRecursive(const String & path, AwsS3KeyKeeper & keys)
 {
     checkStackSize(); /// This is needed to prevent stack overflow in case of cyclic symlinks.
 
     Poco::File file(metadata_path + path);
     if (file.isFile())
     {
-        remove(path);
+        removeMeta(path, keys);
     }
     else
     {
         for (auto it{iterateDirectory(path)}; it->isValid(); it->next())
-            removeRecursive(it->path());
+            removeMetaRecursive(it->path(), keys);
         file.remove();
     }
 }
 
+void DiskS3::removeAws(const AwsS3KeyKeeper & keys)
+{
+    if (!keys.empty())
+    {
+        for (const auto & chunk : keys)
+        {
+            Aws::S3::Model::Delete delkeys;
+            delkeys.SetObjects(chunk);
+
+            /// TODO: Make operation idempotent. Do not throw exception if key is already deleted.
+            Aws::S3::Model::DeleteObjectsRequest request;
+            request.SetBucket(bucket);
+            request.SetDelete(delkeys);
+            throwIfError(client->DeleteObjects(request));
+        }
+    }
+}
+
+void DiskS3::remove(const String & path)
+{
+    AwsS3KeyKeeper keys;
+    removeMeta(path, keys);
+    removeAws(keys);
+}
+
+void DiskS3::removeRecursive(const String & path)
+{
+    AwsS3KeyKeeper keys;
+    removeMetaRecursive(path, keys);
+    removeAws(keys);
+}
 
 bool DiskS3::tryReserve(UInt64 bytes)
 {
@@ -743,7 +816,35 @@ void DiskS3::createFile(const String & path)
 
 void DiskS3::setReadOnly(const String & path)
 {
-    Poco::File(metadata_path + path).setReadOnly(true);
+    /// We should store read only flag inside metadata file (instead of using FS flag),
+    /// because we modify metadata file when create hard-links from it.
+    Metadata metadata(s3_root_path, metadata_path, path);
+    metadata.read_only = true;
+    metadata.save();
+}
+
+int DiskS3::open(const String & /*path*/, mode_t /*mode*/) const
+{
+    throw Exception("Method open is not implemented for S3 disks", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+void DiskS3::close(int /*fd*/) const
+{
+    throw Exception("Method close is not implemented for S3 disks", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+void DiskS3::sync(int /*fd*/) const
+{
+    throw Exception("Method sync is not implemented for S3 disks", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+void DiskS3::shutdown()
+{
+    /// This call stops any next retry attempts for ongoing S3 requests.
+    /// If S3 request is failed and the method below is executed S3 client immediately returns the last failed S3 request outcome.
+    /// If S3 is healthy nothing wrong will be happened and S3 requests will be processed in a regular way without errors.
+    /// This should significantly speed up shutdown process if S3 is unhealthy.
+    client->DisableRequestProcessing();
 }
 
 }

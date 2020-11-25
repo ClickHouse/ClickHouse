@@ -5,3 +5,12 @@ INSERT INTO insert VALUES (1, 'Hello', 'ab41bdd6-5cd4-11e7-907b-a6006ad3dba0', '
 
 SELECT * FROM insert ORDER BY i;
 DROP TABLE insert;
+
+-- Test the case where the VALUES are delimited by semicolon and a query follows
+-- w/o newline. With most formats the query in the same line would be ignored or
+-- lead to an error, but VALUES are an exception and support semicolon delimiter,
+-- in addition to the newline.
+create table if not exists t_306 (a int) engine Memory;
+insert into t_306 values (1); select 11111;
+select * from t_306;
+drop table if exists t_306;

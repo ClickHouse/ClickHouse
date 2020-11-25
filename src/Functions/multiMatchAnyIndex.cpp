@@ -5,6 +5,8 @@
 
 namespace DB
 {
+namespace
+{
 
 struct NameMultiMatchAnyIndex
 {
@@ -15,6 +17,8 @@ using FunctionMultiMatchAnyIndex = FunctionsMultiStringSearch<
     MultiMatchAnyImpl<UInt64, false, true, false>,
     NameMultiMatchAnyIndex,
     std::numeric_limits<UInt32>::max()>;
+
+}
 
 void registerFunctionMultiMatchAnyIndex(FunctionFactory & factory)
 {

@@ -44,7 +44,7 @@ Komut satırında terminal Çalıştır:
     git clone --recursive git@github.com:your_github_username/ClickHouse.git
     cd ClickHouse
 
-Not: lütfen, yerine *your\_github\_username* uygun olanı ile!
+Not: lütfen, yerine *your_github_username* uygun olanı ile!
 
 Bu komut bir dizin oluşturacaktır `ClickHouse` projenin çalışma kopyasını içeren.
 
@@ -141,7 +141,7 @@ Resmi Yandex şu anda GCC'Yİ kullanıyor çünkü biraz daha iyi performansa sa
 
 Ubuntu run GCC yüklemek için: `sudo apt install gcc g++`
 
-Gcc sürümünü kontrol edin: `gcc --version`. 9'un altındaysa, buradaki talimatları izleyin: https://clickhouse.tech/docs/tr/development/build/#install-gcc-9.
+Gcc sürümünü kontrol edin: `gcc --version`. 10'un altındaysa, buradaki talimatları izleyin: https://clickhouse.tech/docs/tr/development/build/#install-gcc-10.
 
 Mac OS X build sadece Clang için desteklenir. Sadece koş `brew install llvm`
 
@@ -154,13 +154,13 @@ Artık ClickHouse oluşturmaya hazır olduğunuza göre ayrı bir dizin oluştur
     mkdir build
     cd build
 
-Birkaç farklı dizine (build\_release, build\_debug, vb.) sahip olabilirsiniz.) farklı yapı türleri için.
+Birkaç farklı dizine (build_release, build_debug, vb.) sahip olabilirsiniz.) farklı yapı türleri için.
 
 İçinde iken `build` dizin, cmake çalıştırarak yapı yapılandırın. İlk çalıştırmadan önce, derleyici belirten ortam değişkenlerini tanımlamanız gerekir (bu örnekte sürüm 9 gcc derleyicisi).
 
 Linux:
 
-    export CC=gcc-9 CXX=g++-9
+    export CC=gcc-10 CXX=g++-10
     cmake ..
 
 Mac OS X:

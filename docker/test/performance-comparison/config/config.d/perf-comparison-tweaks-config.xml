@@ -1,4 +1,4 @@
-<yandex> 
+<yandex>
     <http_port remove="remove"/>
     <mysql_port remove="remove"/>
     <interserver_http_port remove="remove"/>
@@ -22,4 +22,6 @@
     <uncompressed_cache_size>1000000000</uncompressed_cache_size>
 
     <asynchronous_metrics_update_period_s>10</asynchronous_metrics_update_period_s>
+
+    <remap_executable replace="replace">true</remap_executable>
 </yandex>

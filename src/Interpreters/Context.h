@@ -3,7 +3,7 @@
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Core/UUID.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/ClientInfo.h>
@@ -13,6 +13,7 @@
 #include <Common/LRUCache.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Storages/IStorage_fwd.h>
 #include <atomic>
 #include <chrono>
@@ -62,9 +63,9 @@ class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalModelsLoader;
 class InterserverIOHandler;
-class BackgroundProcessingPool;
 class BackgroundSchedulePool;
 class MergeList;
+class ReplicatedFetchList;
 class Cluster;
 class Compiler;
 class MarkCache;
@@ -81,6 +82,7 @@ class TextLog;
 class TraceLog;
 class MetricLog;
 class AsynchronousMetricLog;
+class OpenTelemetrySpanLog;
 struct MergeTreeSettings;
 class StorageS3Settings;
 class IDatabase;
@@ -111,6 +113,7 @@ using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
 struct NamedSession;
+struct BackgroundTaskSchedulingSettings;
 
 
 #if USE_EMBEDDED_COMPILER
@@ -196,6 +199,12 @@ private:
     Context * session_context = nullptr;    /// Session context or nullptr. Could be equal to this.
     Context * global_context = nullptr;     /// Global context. Could be equal to this.
 
+public:
+    // Top-level OpenTelemetry trace context for the query. Makes sense only for
+    // a query context.
+    OpenTelemetryTraceContext query_trace_context;
+
+private:
     friend class NamedSessions;
 
     using SampleBlockCache = std::unordered_map<std::string, Block>;
@@ -258,6 +267,13 @@ public:
     /// Sets the current user, checks the password and that the specified host is allowed.
     /// Must be called before getClientInfo.
     void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address);
+
+    /// Sets the current user, *do not checks the password and that the specified host is allowed*.
+    /// Must be called before getClientInfo.
+    ///
+    /// (Used only internally in cluster, if the secret matches)
+    void setUserWithoutCheckingPassword(const String & name, const Poco::Net::SocketAddress & address);
+
     void setQuotaKey(String quota_key_);
 
     UserPtr getUser() const;
@@ -352,6 +368,9 @@ public:
     String getInitialQueryId() const;
 
     void setCurrentDatabase(const String & name);
+    /// Set current_database for global context. We don't validate that database
+    /// exists because it should be set before databases loading.
+    void setCurrentDatabaseNameInGlobalContext(const String & name);
     void setCurrentQueryId(const String & query_id);
 
     void killCurrentQuery();
@@ -445,11 +464,7 @@ public:
 
     void makeQueryContext() { query_context = this; }
     void makeSessionContext() { session_context = this; }
-    void makeGlobalContext()
-    {
-        global_context = this;
-        DatabaseCatalog::init(this);
-    }
+    void makeGlobalContext() { initGlobal(); global_context = this; }
 
     const Settings & getSettingsRef() const { return settings; }
 
@@ -471,15 +486,23 @@ public:
     MergeList & getMergeList();
     const MergeList & getMergeList() const;
 
+    ReplicatedFetchList & getReplicatedFetchList();
+    const ReplicatedFetchList & getReplicatedFetchList() const;
+
     /// If the current session is expired at the time of the call, synchronously creates and returns a new session with the startNewSession() call.
     /// If no ZooKeeper configured, throws an exception.
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
     /// Same as above but return a zookeeper connection from auxiliary_zookeepers configuration entry.
     std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
+
+    /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
+    void reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config);
     /// Has ready or expired ZooKeeper
     bool hasZooKeeper() const;
     /// Reset current zookeeper session. Do not create a new one.
     void resetZooKeeper() const;
+    // Reload Zookeeper
+    void reloadZooKeeperIfChanged(const ConfigurationPtr & config) const;
 
     /// Create a cache of uncompressed blocks of specified size. This can be done only once.
     void setUncompressedCache(size_t max_size_in_bytes);
@@ -499,12 +522,16 @@ public:
       */
     void dropCaches() const;
 
-    BackgroundSchedulePool & getBufferFlushSchedulePool();
-    BackgroundProcessingPool & getBackgroundPool();
-    BackgroundProcessingPool & getBackgroundMovePool();
-    BackgroundSchedulePool & getSchedulePool();
-    BackgroundSchedulePool & getDistributedSchedulePool();
+    /// Settings for MergeTree background tasks stored in config.xml
+    BackgroundTaskSchedulingSettings getBackgroundProcessingTaskSchedulingSettings() const;
+    BackgroundTaskSchedulingSettings getBackgroundMoveTaskSchedulingSettings() const;
 
+    BackgroundSchedulePool & getBufferFlushSchedulePool() const;
+    BackgroundSchedulePool & getSchedulePool() const;
+    BackgroundSchedulePool & getDistributedSchedulePool() const;
+
+    /// Has distributed_ddl configuration or not.
+    bool hasDistributedDDL() const;
     void setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker);
     DDLWorker & getDDLWorker() const;
 
@@ -533,12 +560,14 @@ public:
     std::shared_ptr<TextLog> getTextLog();
     std::shared_ptr<MetricLog> getMetricLog();
     std::shared_ptr<AsynchronousMetricLog> getAsynchronousMetricLog();
+    std::shared_ptr<OpenTelemetrySpanLog> getOpenTelemetrySpanLog();
 
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.
     std::shared_ptr<PartLog> getPartLog(const String & part_database);
 
     const MergeTreeSettings & getMergeTreeSettings() const;
+    const MergeTreeSettings & getReplicatedMergeTreeSettings() const;
     const StorageS3Settings & getStorageS3Settings() const;
 
     /// Prevents DROP TABLE if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
@@ -624,6 +653,8 @@ public:
 private:
     std::unique_lock<std::recursive_mutex> getLock() const;
 
+    void initGlobal();
+
     /// Compute and set actual user settings, client_info.current_user should be set
     void calculateAccessRights();
 
@@ -639,6 +670,9 @@ private:
     StoragePolicySelectorPtr getStoragePolicySelector(std::lock_guard<std::mutex> & lock) const;
 
     DiskSelectorPtr getDiskSelector(std::lock_guard<std::mutex> & /* lock */) const;
+
+    /// If the password is not set, the password will not be checked
+    void setUserImpl(const String & name, const std::optional<String> & password, const Poco::Net::SocketAddress & address);
 };
 
 
