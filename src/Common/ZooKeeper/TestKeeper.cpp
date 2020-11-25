@@ -218,7 +218,7 @@ std::pair<ResponsePtr, Undo> TestKeeperCreateRequest::process(TestKeeper::Contai
                 auto seq_num = it->second.seq_num;
                 ++it->second.seq_num;
 
-                std::stringstream seq_num_str;
+                std::stringstream seq_num_str;      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
                 seq_num_str.exceptions(std::ios::failbit);
                 seq_num_str << std::setw(10) << std::setfill('0') << seq_num;
 
@@ -511,19 +511,30 @@ void TestKeeper::processingThread()
                 if (expired)
                     break;
 
-                if (info.watch)
-                {
-                    auto & watches_type = dynamic_cast<const ListRequest *>(info.request.get())
-                        ? list_watches
-                        : watches;
-
-                    watches_type[info.request->getPath()].emplace_back(std::move(info.watch));
-                }
 
                 ++zxid;
 
                 info.request->addRootPath(root_path);
                 auto [response, _] = info.request->process(container, zxid);
+
+                if (info.watch)
+                {
+                    /// To be compatible with real ZooKeeper we add watch if request was successful (i.e. node exists)
+                    /// or if it was exists request which allows to add watches for non existing nodes.
+                    if (response->error == Error::ZOK)
+                    {
+                        auto & watches_type = dynamic_cast<const ListRequest *>(info.request.get())
+                            ? list_watches
+                            : watches;
+
+                        watches_type[info.request->getPath()].emplace_back(std::move(info.watch));
+                    }
+                    else if (response->error == Error::ZNONODE && dynamic_cast<const ExistsRequest *>(info.request.get()))
+                    {
+                        watches[info.request->getPath()].emplace_back(std::move(info.watch));
+                    }
+                }
+
                 if (response->error == Error::ZOK)
                     info.request->processWatches(watches, list_watches);
 

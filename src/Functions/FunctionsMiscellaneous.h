@@ -35,7 +35,7 @@ public:
 
     String getName() const override { return "FunctionExpression"; }
 
-    ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) override
+    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         DB::Block expr_columns;
         for (size_t i = 0; i < arguments.size(); ++i)
@@ -119,7 +119,7 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) override
+    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         Names names;
         DataTypes types;
@@ -201,7 +201,7 @@ public:
     {
         /// Check that expression does not contain unusual actions that will break columnss structure.
         for (const auto & action : expression_actions->getActions())
-            if (action.type == ExpressionAction::Type::ARRAY_JOIN)
+            if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
                 throw Exception("Expression with arrayJoin or other unusual action cannot be captured", ErrorCodes::BAD_ARGUMENTS);
 
         std::unordered_map<std::string, DataTypePtr> arguments_map;

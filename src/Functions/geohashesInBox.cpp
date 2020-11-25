@@ -159,7 +159,7 @@ public:
         result = std::move(col_res);
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const IColumn * lon_min = arguments[0].column.get();
         const IColumn * lat_min = arguments[1].column.get();

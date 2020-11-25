@@ -56,6 +56,7 @@ RUN apt-get update \
         libprotoc-dev \
         libgrpc++-dev \
         protobuf-compiler-grpc \
+        libc-ares-dev \
         rapidjson-dev \
         libsnappy-dev \
         libparquet-dev \
@@ -64,6 +65,8 @@ RUN apt-get update \
         libbz2-dev \
         libavro-dev \
         libfarmhash-dev \
+        librocksdb-dev \
+        libgflags-dev \
         libmysqlclient-dev \
         --yes --no-install-recommends
 

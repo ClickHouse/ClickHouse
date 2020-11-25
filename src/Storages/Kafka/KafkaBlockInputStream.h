@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataStreams/IBlockInputStream.h>
-#include <Interpreters/Context.h>
 
 #include <Storages/Kafka/StorageKafka.h>
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
