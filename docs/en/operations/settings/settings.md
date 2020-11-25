@@ -2293,7 +2293,7 @@ Result:
    └─────────────────────────┴─────────┘
 ```
 
-## system_events_show_zero_values {system_events_show_zero_values}
+## system_events_show_zero_values {#system_events_show_zero_values}
 
 Allows to select zero-valued events from [`system.events`](../../operations/system-tables/events.md).
 
