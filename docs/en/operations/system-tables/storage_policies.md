@@ -10,7 +10,7 @@ Columns:
 -   `disks` ([Array(String)](../../sql-reference/data-types/array.md)) — Disk names, defined in the storage policy.
 -   `max_data_part_size` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Maximum size of a data part that can be stored on volume disks (0 — no limit).
 -   `move_factor` ([Float64](../../sql-reference/data-types/float.md)) — Ratio of free disk space. When the ratio exceeds the value of configuration parameter, ClickHouse start to move data to the next volume in order.
--   `prefer_not_to_merge` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Setting to disable merging for volumes in multi-disk configuration. When this setting is enabled, disk merging is not allowed.
+-   `prefer_not_to_merge` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Setting to disable merging of data parts on this volume. When this setting is enabled, merging data on this volume is not allowed. This allows controlling how ClickHouse works with slow disks.
 
 If the storage policy contains more then one volume, then information for each volume is stored in the individual row of the table.
 
