@@ -740,7 +740,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     http_params->setTimeout(settings.http_receive_timeout);
     http_params->setKeepAliveTimeout(keep_alive_timeout);
 
-    std::vector<std::unique_ptr<Poco::Net::TCPServer>> servers;
+    std::vector<ProtocolServerAdapter> servers;
 
     std::vector<std::string> listen_hosts = DB::getMultipleValuesFromConfig(config(), "", "listen_host");
 
@@ -772,7 +772,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
 
     for (auto & server : servers)
-        server->start();
+        server.start();
 
     size_t already_started_servers = servers.size();
 
@@ -789,7 +789,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         LOG_DEBUG(log, "Shut down storages.");
 
         for (size_t i = 0; i < already_started_servers; ++i)
-            servers[i]->stop();
+            servers[i].stop();
 
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
           * At this moment, no one could own shared part of Context.
@@ -1098,7 +1098,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         global_context->enableNamedSessions();
 
         for (size_t i = already_started_servers; i < servers.size(); ++i)
-            servers[i]->start();
+            servers[i].start();
 
         {
             String level_str = config().getString("text_log.level", "");
@@ -1131,8 +1131,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
             int current_connections = 0;
             for (size_t i = already_started_servers; i < servers.size(); ++i)
             {
-                servers[i]->stop();
-                current_connections += servers[i]->currentConnections();
+                servers[i].stop();
+                current_connections += servers[i].currentConnections();
             }
 
             if (current_connections)
@@ -1151,8 +1151,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 while (sleep_current_ms < sleep_max_ms)
                 {
                     current_connections = 0;
-                    for (auto & server : servers)
-                        current_connections += server.currentConnections();
+                    for (size_t i = already_started_servers; i < servers.size(); ++i)
+                    {
+                        servers[i].stop();
+                        current_connections += servers[i].currentConnections();
+                    }
                     if (!current_connections)
                         break;
                     sleep_current_ms += sleep_one_ms;
