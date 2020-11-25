@@ -458,7 +458,7 @@ void HTTPHandler::processQuery(
     {
         std::string opentelemetry_traceparent = request.get("traceparent");
         std::string error;
-        if (!context.getClientInfo().parseTraceparentHeader(
+        if (!context.getClientInfo().client_trace_context.parseTraceparentHeader(
             opentelemetry_traceparent, error))
         {
             throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER,
@@ -466,7 +466,7 @@ void HTTPHandler::processQuery(
                 opentelemetry_traceparent, error);
         }
 
-        context.getClientInfo().opentelemetry_tracestate = request.get("tracestate", "");
+        context.getClientInfo().client_trace_context.tracestate = request.get("tracestate", "");
     }
 #endif
 

@@ -907,6 +907,10 @@ class ClickHouseInstance:
         build_opts = self.query("SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
         return "-fsanitize=thread" in build_opts
 
+    def is_built_with_address_sanitizer(self):
+        build_opts = self.query("SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
+        return "-fsanitize=address" in build_opts
+
     # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
     def query(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None,
               ignore_error=False):

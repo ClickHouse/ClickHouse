@@ -156,6 +156,10 @@ void RemoteQueryExecutor::sendQuery()
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
     ClientInfo modified_client_info = context.getClientInfo();
     modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+    if (CurrentThread::isInitialized())
+    {
+        modified_client_info.client_trace_context = CurrentThread::get().thread_trace_context;
+    }
 
     multiplexed_connections->sendQuery(timeouts, query, query_id, stage, modified_client_info, true);
 
