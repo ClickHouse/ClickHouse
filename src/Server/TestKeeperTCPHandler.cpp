@@ -288,7 +288,7 @@ Coordination::OpNum TestKeeperTCPHandler::receiveRequest()
         {
             promise->set_value(response);
             UInt64 bytes = 1;
-            write(interrupt_fd, &bytes, sizeof(bytes));
+            [[maybe_unused]] int result = write(interrupt_fd, &bytes, sizeof(bytes));
         };
 
         if (request->has_watch)
@@ -298,7 +298,7 @@ Coordination::OpNum TestKeeperTCPHandler::receiveRequest()
             {
                 watch_promise->set_value(response);
                 UInt64 bytes = 1;
-                write(interrupt_fd, &bytes, sizeof(bytes));
+                [[maybe_unused]] int result = write(interrupt_fd, &bytes, sizeof(bytes));
             };
             test_keeper_storage->putRequest(request, session_id, callback, watch_callback);
             responses.push(promise->get_future());
