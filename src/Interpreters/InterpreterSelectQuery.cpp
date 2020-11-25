@@ -29,6 +29,7 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/JoinedTables.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 
 #include <Processors/Pipe.h>
@@ -494,6 +495,8 @@ BlockIO InterpreterSelectQuery::execute()
 
 Block InterpreterSelectQuery::getSampleBlockImpl()
 {
+    OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
+
     query_info.query = query_ptr;
 
     if (storage && !options.only_analyze)
