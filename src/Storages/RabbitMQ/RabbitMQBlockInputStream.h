@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataStreams/IBlockInputStream.h>
+#include <Interpreters/Context.h>
 #include <Storages/RabbitMQ/StorageRabbitMQ.h>
 #include <Storages/RabbitMQ/ReadBufferFromRabbitMQConsumer.h>
 
@@ -15,7 +16,7 @@ public:
     RabbitMQBlockInputStream(
             StorageRabbitMQ & storage_,
             const StorageMetadataPtr & metadata_snapshot_,
-            std::shared_ptr<Context> context_,
+            const Context & context_,
             const Names & columns,
             size_t max_block_size_,
             bool ack_in_suffix = true);
@@ -29,7 +30,6 @@ public:
     Block readImpl() override;
     void readSuffixImpl() override;
 
-    bool queueEmpty() const { return !buffer || buffer->queueEmpty(); }
     bool needChannelUpdate();
     void updateChannel();
     bool sendAck();
@@ -37,7 +37,7 @@ public:
 private:
     StorageRabbitMQ & storage;
     StorageMetadataPtr metadata_snapshot;
-    std::shared_ptr<Context> context;
+    Context context;
     Names column_names;
     const size_t max_block_size;
     bool ack_in_suffix;

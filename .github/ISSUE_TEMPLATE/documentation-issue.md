@@ -2,7 +2,8 @@
 name: Documentation issue
 about: Report something incorrect or missing in documentation
 title: ''
-labels: comp-documentation
+labels: documentation
+assignees: BayoNet
 
 ---
 

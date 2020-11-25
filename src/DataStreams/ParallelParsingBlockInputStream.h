@@ -69,7 +69,7 @@ public:
         const InputProcessorCreator & input_processor_creator;
         const InputCreatorParams & input_creator_params;
         FormatFactory::FileSegmentationEngine file_segmentation_engine;
-        size_t max_threads;
+        int max_threads;
         size_t min_chunk_bytes;
     };
 

@@ -21,9 +21,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-namespace
-{
-
 class FunctionAddressToSymbol : public IFunction
 {
 public:
@@ -64,11 +61,11 @@ public:
         return true;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         const SymbolIndex & symbol_index = SymbolIndex::instance();
 
-        const ColumnPtr & column = arguments[0].column;
+        const ColumnPtr & column = block.getByPosition(arguments[0]).column;
         const ColumnUInt64 * column_concrete = checkAndGetColumn<ColumnUInt64>(column.get());
 
         if (!column_concrete)
@@ -85,11 +82,9 @@ public:
                 result_column->insertDefault();
         }
 
-        return result_column;
+        block.getByPosition(result).column = std::move(result_column);
     }
 };
-
-}
 
 void registerFunctionAddressToSymbol(FunctionFactory & factory)
 {

@@ -198,44 +198,49 @@ private:
     template <typename Value>
     using ContainerPtrType = std::unique_ptr<ContainerType<Value>>;
 
-    using time_point_t = std::chrono::system_clock::time_point;
-
     struct CellMetadata final
     {
+        using time_point_t = std::chrono::system_clock::time_point;
+        using time_point_rep_t = time_point_t::rep;
+        using time_point_urep_t = std::make_unsigned_t<time_point_rep_t>;
+
+        static constexpr UInt64 EXPIRES_AT_MASK = std::numeric_limits<time_point_rep_t>::max();
+        static constexpr UInt64 IS_DEFAULT_MASK = ~EXPIRES_AT_MASK;
+
         UInt64 id;
-        time_point_t deadline;
-        bool is_default{false};
+        /// Stores both expiration time and `is_default` flag in the most significant bit
+        time_point_urep_t data;
 
-        time_point_t expiresAt() const { return deadline; }
-        void setExpiresAt(const time_point_t & t) { deadline = t; is_default = false; }
-        bool isDefault() const { return is_default; }
-        void setDefault() { is_default = true; }
+        time_point_t strict_max;
+
+        /// Sets expiration time, resets `is_default` flag to false
+        time_point_t expiresAt() const { return ext::safe_bit_cast<time_point_t>(data & EXPIRES_AT_MASK); }
+        void setExpiresAt(const time_point_t & t) { data = ext::safe_bit_cast<time_point_urep_t>(t); }
+
+        bool isDefault() const { return (data & IS_DEFAULT_MASK) == IS_DEFAULT_MASK; }
+        void setDefault() { data |= IS_DEFAULT_MASK; }
     };
-
-    using AttributeValue = std::variant<
-        UInt8, UInt16, UInt32, UInt64, UInt128,
-        Int8, Int16, Int32, Int64,
-        Decimal32, Decimal64, Decimal128,
-        Float32, Float64, String>;
-
-    struct AttributeValuesForKey
-    {
-        bool found{false};
-        std::vector<AttributeValue> values;
-
-        std::string dump();
-    };
-
-    using FoundValuesForKeys = std::unordered_map<Key, AttributeValuesForKey>;
 
     struct Attribute final
     {
         AttributeUnderlyingType type;
-        String name;
-        /// Default value for each type. Could be defined in config.
-        AttributeValue null_value;
-        /// We store attribute value for all keys. It is a "row" in a hand-made open addressing hashtable,
-        /// where "column" is key.
+        std::variant<
+            UInt8,
+            UInt16,
+            UInt32,
+            UInt64,
+            UInt128,
+            Int8,
+            Int16,
+            Int32,
+            Int64,
+            Decimal32,
+            Decimal64,
+            Decimal128,
+            Float32,
+            Float64,
+            String>
+            null_values;
         std::variant<
             ContainerPtrType<UInt8>,
             ContainerPtrType<UInt16>,
@@ -257,8 +262,7 @@ private:
 
     void createAttributes();
 
-    /* NOLINTNEXTLINE(readability-convert-member-functions-to-static) */
-    Attribute createAttributeWithTypeAndName(const AttributeUnderlyingType type, const String & name, const Field & null_value);
+    Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
 
     template <typename AttributeType, typename OutputType, typename DefaultGetter>
     void getItemsNumberImpl(
@@ -277,10 +281,7 @@ private:
 
     void setAttributeValue(Attribute & attribute, const Key idx, const Field & value) const;
 
-    static std::vector<AttributeValue> getAttributeValuesFromBlockAtPosition(const std::vector<const IColumn *> & column_ptrs, size_t position);
-
     Attribute & getAttribute(const std::string & attribute_name) const;
-    size_t getAttributeIndex(const std::string & attribute_name) const;
 
     using SharedDictionarySourcePtr = std::shared_ptr<IDictionarySource>;
 
@@ -302,46 +303,14 @@ private:
         return source_ptr;
     }
 
-    inline void setLifetime(CellMetadata & cell, time_point_t now)
+    struct FindResult
     {
-        if (dict_lifetime.min_sec != 0 && dict_lifetime.max_sec != 0)
-        {
-            std::uniform_int_distribution<UInt64> distribution{dict_lifetime.min_sec, dict_lifetime.max_sec};
-            cell.setExpiresAt(now + std::chrono::seconds{distribution(rnd_engine)});
-        }
-        else
-        {
-            /// This maybe not obvious, but when we define is this cell is expired or expired permanently, we add strict_max_lifetime_seconds
-            /// to the expiration time. And it overflows pretty well.
-            cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max() - 2 * std::chrono::seconds(strict_max_lifetime_seconds));
-        }
-    }
-
-    inline bool isExpired(time_point_t now, time_point_t deadline) const
-    {
-        return now > deadline;
-    }
-
-    inline bool isExpiredPermanently(time_point_t now, time_point_t deadline) const
-    {
-        return now > deadline + std::chrono::seconds(strict_max_lifetime_seconds);
-    }
-
-    enum class ResultState
-    {
-        NotFound,
-        FoundAndValid,
-        FoundButExpired,
-        /// Here is a gap between there two states in which a key could be read
-        /// with an enabled setting in config enable_read_expired_keys.
-        FoundButExpiredPermanently
+        const size_t cell_idx;
+        const bool valid;
+        const bool outdated;
     };
 
-    using FindResult = std::pair<size_t, ResultState>;
-
-    FindResult findCellIdxForGet(const Key & id, const time_point_t now) const;
-
-    size_t findCellIdxForSet(const Key & id) const;
+    FindResult findCellIdx(const Key & id, const CellMetadata::time_point_t now) const;
 
     template <typename AncestorType>
     void isInImpl(const PaddedPODArray<Key> & child_ids, const AncestorType & ancestor_ids, PaddedPODArray<UInt8> & out) const;
@@ -384,7 +353,7 @@ private:
     std::unique_ptr<ArenaWithFreeLists> string_arena;
 
     mutable std::exception_ptr last_exception;
-    mutable std::atomic<size_t> error_count{0};
+    mutable std::atomic<size_t> error_count = 0;
     mutable std::atomic<std::chrono::system_clock::time_point> backoff_end_time{std::chrono::system_clock::time_point{}};
 
     mutable pcg64 rnd_engine;
@@ -394,25 +363,62 @@ private:
     mutable std::atomic<size_t> hit_count{0};
     mutable std::atomic<size_t> query_count{0};
 
+    /// Field and methods correlated with update expired and not found keys
+
+    using PresentIdHandler = std::function<void(Key, size_t)>;
+    using AbsentIdHandler  = std::function<void(Key, size_t)>;
+
     /*
+     * Disclaimer: this comment is written not for fun.
+     *
      * How the update goes: we basically have a method like get(keys)->values. Values are cached, so sometimes we
-     * can return them from the cache. For values not in cache, we query them from the source, and add to the
-     * cache. The cache is lossy, so we can't expect it to store all the keys, and we store them separately.
-     * So, there is a map of found keys to all its attributes.
+     * can return them from the cache. For values not in cache, we query them from the dictionary, and add to the
+     * cache. The cache is lossy, so we can't expect it to store all the keys, and we store them separately. Normally,
+     * they would be passed as a return value of get(), but for Unknown Reasons the dictionaries use a baroque
+     * interface where get() accepts two callback, one that it calls for found values, and one for not found.
+     *
+     * Now we make it even uglier by doing this from multiple threads. The missing values are retrieved from the
+     * dictionary in a background thread, and this thread calls the provided callback. So if you provide the callbacks,
+     * you MUST wait until the background update finishes, or god knows what happens. Unfortunately, we have no
+     * way to check that you did this right, so good luck.
      */
     struct UpdateUnit
     {
-        explicit UpdateUnit(std::vector<Key> && requested_ids_) :
+        UpdateUnit(std::vector<Key> requested_ids_,
+                PresentIdHandler present_id_handler_,
+                AbsentIdHandler absent_id_handler_) :
                 requested_ids(std::move(requested_ids_)),
-                alive_keys(CurrentMetrics::CacheDictionaryUpdateQueueKeys, requested_ids.size())
+                alive_keys(CurrentMetrics::CacheDictionaryUpdateQueueKeys, requested_ids.size()),
+                present_id_handler(present_id_handler_),
+                absent_id_handler(absent_id_handler_){}
+
+        explicit UpdateUnit(std::vector<Key> requested_ids_) :
+                requested_ids(std::move(requested_ids_)),
+                alive_keys(CurrentMetrics::CacheDictionaryUpdateQueueKeys, requested_ids.size()),
+                present_id_handler([](Key, size_t){}),
+                absent_id_handler([](Key, size_t){}){}
+
+
+        void callPresentIdHandler(Key key, size_t cell_idx)
         {
-            found_ids.reserve(requested_ids.size());
-            for (const auto id : requested_ids)
-                found_ids.insert({id, {}});
+            std::lock_guard lock(callback_mutex);
+            if (can_use_callback)
+                present_id_handler(key, cell_idx);
+        }
+
+        void callAbsentIdHandler(Key key, size_t cell_idx)
+        {
+            std::lock_guard lock(callback_mutex);
+            if (can_use_callback)
+                absent_id_handler(key, cell_idx);
         }
 
         std::vector<Key> requested_ids;
-        FoundValuesForKeys found_ids;
+
+        /// It might seem that it is a leak of performance.
+        /// But acquiring a mutex without contention is rather cheap.
+        std::mutex callback_mutex;
+        bool can_use_callback{true};
 
         std::atomic<bool> is_done{false};
         std::exception_ptr current_exception{nullptr};
@@ -421,7 +427,9 @@ private:
         CurrentMetrics::Increment alive_batch{CurrentMetrics::CacheDictionaryUpdateQueueBatches};
         CurrentMetrics::Increment alive_keys;
 
-        std::string dumpFoundIds();
+      private:
+        PresentIdHandler present_id_handler;
+        AbsentIdHandler absent_id_handler;
     };
 
     using UpdateUnitPtr = std::shared_ptr<UpdateUnit>;
@@ -441,12 +449,12 @@ private:
      * 0 - if set is empty, 1 - otherwise
      *
      * Only if there are no cache_not_found_ids and some cache_expired_ids
-     * (with allow_read_expired_keys setting) we can perform async update.
+     * (with allow_read_expired_keys_from_cache_dictionary setting) we can perform async update.
      * Otherwise we have no concatenate ids and update them sync.
      *
      */
     void updateThreadFunction();
-    void update(UpdateUnitPtr & update_unit_ptr);
+    void update(UpdateUnitPtr & update_unit_ptr) const;
 
 
     void tryPushToUpdateQueueOrThrow(UpdateUnitPtr & update_unit_ptr) const;

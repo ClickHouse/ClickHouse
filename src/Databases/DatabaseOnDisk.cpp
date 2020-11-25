@@ -54,12 +54,9 @@ std::pair<String, StoragePtr> createTableFromAST(
 
     if (ast_create_query.as_table_function)
     {
+        const auto & table_function = ast_create_query.as_table_function->as<ASTFunction &>();
         const auto & factory = TableFunctionFactory::instance();
-        auto table_function = factory.get(ast_create_query.as_table_function, context);
-        ColumnsDescription columns;
-        if (ast_create_query.columns_list && ast_create_query.columns_list->columns)
-            columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, false);
-        StoragePtr storage = table_function->execute(ast_create_query.as_table_function, context, ast_create_query.table, std::move(columns));
+        StoragePtr storage = factory.get(table_function.name, context)->execute(ast_create_query.as_table_function, context, ast_create_query.table);
         storage->renameInMemory(ast_create_query);
         return {ast_create_query.table, storage};
     }
@@ -94,9 +91,9 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
 
     if (!create)
     {
-        WriteBufferFromOwnString query_buf;
-        formatAST(*query, query_buf, true);
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query '{}' is not CREATE query", query_buf.str());
+        std::ostringstream query_stream;
+        formatAST(*query, query_stream, true);
+        throw Exception("Query '" + query_stream.str() + "' is not CREATE query", ErrorCodes::LOGICAL_ERROR);
     }
 
     if (!create->is_dictionary)
@@ -120,10 +117,10 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
     if (create->uuid != UUIDHelpers::Nil)
         create->table = TABLE_WITH_UUID_NAME_PLACEHOLDER;
 
-    WriteBufferFromOwnString statement_buf;
-    formatAST(*create, statement_buf, false);
-    writeChar('\n', statement_buf);
-    return statement_buf.str();
+    std::ostringstream statement_stream;
+    formatAST(*create, statement_stream, false);
+    statement_stream << '\n';
+    return statement_stream.str();
 }
 
 DatabaseOnDisk::DatabaseOnDisk(
@@ -321,7 +318,7 @@ void DatabaseOnDisk::renameTable(
 
     /// Special case: usually no actions with symlinks are required when detaching/attaching table,
     /// but not when moving from Atomic database to Ordinary
-    if (from_atomic_to_ordinary && table->storesDataOnDisk())
+    if (from_atomic_to_ordinary)
     {
         auto & atomic_db = assert_cast<DatabaseAtomic &>(*this);
         atomic_db.tryRemoveSymlink(table_name);

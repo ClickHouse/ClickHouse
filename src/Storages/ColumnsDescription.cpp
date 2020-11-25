@@ -63,34 +63,34 @@ void ColumnDescription::writeText(WriteBuffer & buf) const
 {
     writeBackQuotedString(name, buf);
     writeChar(' ', buf);
-    writeEscapedString(type->getName(), buf);
+    DB::writeText(type->getName(), buf);
 
     if (default_desc.expression)
     {
         writeChar('\t', buf);
         DB::writeText(DB::toString(default_desc.kind), buf);
         writeChar('\t', buf);
-        writeEscapedString(queryToString(default_desc.expression), buf);
+        DB::writeText(queryToString(default_desc.expression), buf);
     }
 
     if (!comment.empty())
     {
         writeChar('\t', buf);
         DB::writeText("COMMENT ", buf);
-        writeEscapedString(queryToString(ASTLiteral(Field(comment))), buf);
+        DB::writeText(queryToString(ASTLiteral(Field(comment))), buf);
     }
 
     if (codec)
     {
         writeChar('\t', buf);
-        writeEscapedString(queryToString(codec), buf);
+        DB::writeText(queryToString(codec), buf);
     }
 
     if (ttl)
     {
         writeChar('\t', buf);
         DB::writeText("TTL ", buf);
-        writeEscapedString(queryToString(ttl), buf);
+        DB::writeText(queryToString(ttl), buf);
     }
 
     writeChar('\n', buf);
@@ -434,16 +434,6 @@ CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_
     return getCodecOrDefault(column_name, CompressionCodecFactory::instance().getDefaultCodec());
 }
 
-ASTPtr ColumnsDescription::getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
-{
-    const auto it = columns.get<1>().find(column_name);
-
-    if (it == columns.get<1>().end() || !it->codec)
-        return default_codec->getFullCodecDesc();
-
-    return it->codec;
-}
-
 ColumnsDescription::ColumnTTLs ColumnsDescription::getColumnTTLs() const
 {
     ColumnTTLs ret;
@@ -502,8 +492,8 @@ Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const N
         auto syntax_analyzer_result = TreeRewriter(context).analyze(default_expr_list, all_columns);
         const auto actions = ExpressionAnalyzer(default_expr_list, syntax_analyzer_result, context).getActions(true);
         for (const auto & action : actions->getActions())
-            if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
-                throw Exception("Unsupported default value that requires ARRAY JOIN action", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);
+            if (action.type == ExpressionAction::Type::JOIN || action.type == ExpressionAction::Type::ARRAY_JOIN)
+                throw Exception("Unsupported default value that requires ARRAY JOIN or JOIN action", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);
 
         return actions->getSampleBlock();
     }

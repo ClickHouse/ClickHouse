@@ -422,18 +422,6 @@ void ZooKeeperRequest::write(WriteBuffer & out) const
 }
 
 
-static void removeRootPath(String & path, const String & root_path)
-{
-    if (root_path.empty())
-        return;
-
-    if (path.size() <= root_path.size())
-        throw Exception("Received path is not longer than root_path", Error::ZDATAINCONSISTENCY);
-
-    path = path.substr(root_path.size());
-}
-
-
 struct ZooKeeperResponse : virtual Response
 {
     virtual ~ZooKeeperResponse() override = default;
@@ -1104,6 +1092,8 @@ void ZooKeeper::sendThread()
                     {
                         info.request->has_watch = true;
                         CurrentMetrics::add(CurrentMetrics::ZooKeeperWatch);
+                        std::lock_guard lock(watches_mutex);
+                        watches[info.request->getPath()].emplace_back(std::move(info.watch));
                     }
 
                     if (expired)
@@ -1114,7 +1104,6 @@ void ZooKeeper::sendThread()
                     info.request->probably_sent = true;
                     info.request->write(*out);
 
-                    /// We sent close request, exit
                     if (info.request->xid == close_xid)
                         break;
                 }
@@ -1289,30 +1278,6 @@ void ZooKeeper::receiveEvent()
             response->removeRootPath(root_path);
         }
 
-        /// Instead of setting the watch in sendEvent, set it in receiveEvent because need to check the response.
-        /// The watch shouldn't be set if the node does not exist and it will never exist like sequential ephemeral nodes.
-        /// By using getData() instead of exists(), a watch won't be set if the node doesn't exist.
-        if (request_info.watch)
-        {
-            bool add_watch = false;
-            /// 3 indicates the ZooKeeperExistsRequest.
-            // For exists, we set the watch on both node exist and nonexist case.
-            // For other case like getData, we only set the watch when node exists.
-            if (request_info.request->getOpNum() == 3)
-                add_watch = (response->error == Error::ZOK || response->error == Error::ZNONODE);
-            else
-                add_watch = response->error == Error::ZOK;
-
-            if (add_watch)
-            {
-                /// The key of wathces should exclude the root_path
-                String req_path = request_info.request->getPath();
-                removeRootPath(req_path, root_path);
-                std::lock_guard lock(watches_mutex);
-                watches[req_path].emplace_back(std::move(request_info.watch));
-            }
-        }
-
         int32_t actual_length = in->count() - count_before_event;
         if (length != actual_length)
             throw Exception("Response length doesn't match. Expected: " + toString(length) + ", actual: " + toString(actual_length), Error::ZMARSHALLINGERROR);
@@ -1343,25 +1308,21 @@ void ZooKeeper::receiveEvent()
 
 void ZooKeeper::finalize(bool error_send, bool error_receive)
 {
-    /// If some thread (send/receive) already finalizing session don't try to do it
-    if (finalization_started.exchange(true))
-        return;
-
-    auto expire_session_if_not_expired = [&]
     {
         std::lock_guard lock(push_request_mutex);
-        if (!expired)
-        {
-            expired = true;
-            active_session_metric_increment.destroy();
-        }
-    };
+
+        if (expired)
+            return;
+        expired = true;
+    }
+
+    active_session_metric_increment.destroy();
 
     try
     {
         if (!error_send)
         {
-            /// Send close event. This also signals sending thread to stop.
+            /// Send close event. This also signals sending thread to wakeup and then stop.
             try
             {
                 close();
@@ -1369,17 +1330,11 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
             catch (...)
             {
                 /// This happens for example, when "Cannot push request to queue within operation timeout".
-                /// Just mark session expired in case of error on close request, otherwise sendThread may not stop.
-                expire_session_if_not_expired();
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
 
-            /// Send thread will exit after sending close request or on expired flag
             send_thread.join();
         }
-
-        /// Set expired flag after we sent close event
-        expire_session_if_not_expired();
 
         try
         {

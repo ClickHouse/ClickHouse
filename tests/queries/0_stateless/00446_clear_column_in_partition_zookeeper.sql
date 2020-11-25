@@ -3,7 +3,7 @@ SELECT '===Ordinary case===';
 SET replication_alter_partitions_sync = 2;
 
 DROP TABLE IF EXISTS clear_column;
-CREATE TABLE clear_column (d Date, num Int64, str String) ENGINE = MergeTree ORDER BY d PARTITION by toYYYYMM(d) SETTINGS min_bytes_for_wide_part = 0;
+CREATE TABLE clear_column (d Date, num Int64, str String) ENGINE = MergeTree(d, d, 8192);
 
 INSERT INTO clear_column VALUES ('2016-12-12', 1, 'a'), ('2016-11-12', 2, 'b');
 
@@ -24,8 +24,8 @@ SELECT '===Replicated case===';
 DROP TABLE IF EXISTS clear_column1;
 DROP TABLE IF EXISTS clear_column2;
 SELECT sleep(1) FORMAT Null;
-CREATE TABLE clear_column1 (d Date, i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/test_00446/tables/clear_column', '1') ORDER BY d PARTITION by toYYYYMM(d) SETTINGS min_bytes_for_wide_part = 0;
-CREATE TABLE clear_column2 (d Date, i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/test_00446/tables/clear_column', '2') ORDER BY d PARTITION by toYYYYMM(d) SETTINGS min_bytes_for_wide_part = 0;
+CREATE TABLE clear_column1 (d Date, i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/test_00446/tables/clear_column', '1', d, d, 8192);
+CREATE TABLE clear_column2 (d Date, i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/test_00446/tables/clear_column', '2', d, d, 8192);
 
 INSERT INTO clear_column1 (d) VALUES ('2000-01-01'), ('2000-02-01');
 SYSTEM SYNC REPLICA clear_column2;
@@ -71,6 +71,3 @@ OPTIMIZE TABLE clear_column1 PARTITION '200002';
 ALTER TABLE clear_column1 CLEAR COLUMN s IN PARTITION '200012', CLEAR COLUMN i IN PARTITION '200012';
 -- Drop empty partition also Ok
 ALTER TABLE clear_column1 DROP PARTITION '200012', DROP PARTITION '200011';
-
-DROP TABLE clear_column1;
-DROP TABLE clear_column2;

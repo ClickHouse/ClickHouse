@@ -40,5 +40,3 @@ select sleep(1) format Null; -- distributed_directory_monitor_sleep_time_ms
 select value from system.metrics where metric = 'DistributedFilesToInsert';
 drop table dist_01460;
 select value from system.metrics where metric = 'DistributedFilesToInsert';
-
-drop table data_01460;

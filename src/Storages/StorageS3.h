@@ -33,8 +33,8 @@ public:
         UInt64 min_upload_part_size_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const Context & context_,
-        const String & compression_method_ = "");
+        Context & context_,
+        const String & compression_method_);
 
     String getName() const override
     {
@@ -44,7 +44,7 @@ public:
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        SelectQueryInfo & query_info,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
@@ -56,7 +56,7 @@ public:
 
 private:
     S3::URI uri;
-    const Context & global_context;
+    const Context & context_global;
 
     String format_name;
     UInt64 min_upload_part_size;

@@ -11,10 +11,7 @@
                 <table>xypairs</table>
             </clickhouse>
 		</source>
-		<lifetime>
-			<max>1000</max>
-			<min>500</min>
-		</lifetime>
+		<lifetime>1</lifetime>
 		<layout>
 			<cache>
 				<size_in_cells>5</size_in_cells>

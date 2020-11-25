@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
 #include <Interpreters/Context.h>
-#include <Compression/CompressionFactory.h>
 
 namespace DB
 {
@@ -29,35 +28,28 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
 {
     const auto & columns = metadata_snapshot->getColumns();
     for (const auto & it : columns_list)
-        addStreams(it.name, *it.type, columns.getCodecDescOrDefault(it.name, default_codec), settings.estimated_size);
+        addStreams(it.name, *it.type, columns.getCodecOrDefault(it.name, default_codec), settings.estimated_size);
 }
 
 void MergeTreeDataPartWriterWide::addStreams(
     const String & name,
     const IDataType & type,
-    const ASTPtr & effective_codec_desc,
+    const CompressionCodecPtr & effective_codec,
     size_t estimated_size)
 {
-    IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path, const IDataType & substream_type)
+    IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path)
     {
         String stream_name = IDataType::getFileNameForStream(name, substream_path);
         /// Shared offsets for Nested type.
         if (column_streams.count(stream_name))
             return;
 
-        CompressionCodecPtr compression_codec;
-        /// If we can use special codec then just get it
-        if (IDataType::isSpecialCompressionAllowed(substream_path))
-            compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, &substream_type, default_codec);
-        else /// otherwise return only generic codecs and don't use info about the data_type
-            compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
-
         column_streams[stream_name] = std::make_unique<Stream>(
             stream_name,
             data_part->volume->getDisk(),
             part_path + stream_name, DATA_FILE_EXTENSION,
             part_path + stream_name, marks_file_extension,
-            compression_codec,
+            effective_codec,
             settings.max_compress_block_size,
             estimated_size,
             settings.aio_threshold);
@@ -95,9 +87,6 @@ void MergeTreeDataPartWriterWide::write(const Block & block,
     if (compute_granularity)
     {
         size_t index_granularity_for_block = computeIndexGranularity(block);
-        /// Finish last unfinished mark rows it it's required
-        last_granule_was_adjusted = adjustLastUnfinishedMark(index_granularity_for_block);
-        /// Fill index granularity with granules of new size
         fillIndexGranularity(index_granularity_for_block, block.rows());
     }
 
@@ -141,7 +130,7 @@ void MergeTreeDataPartWriterWide::writeSingleMark(
     size_t number_of_rows,
     DB::IDataType::SubstreamPath & path)
 {
-    type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
+     type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
      {
          bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
 
@@ -181,7 +170,7 @@ size_t MergeTreeDataPartWriterWide::writeSingleGranule(
     type.serializeBinaryBulkWithMultipleStreams(column, from_row, number_of_rows, serialize_settings, serialization_state);
 
     /// So that instead of the marks pointing to the end of the compressed block, there were marks pointing to the beginning of the next one.
-    type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
+    type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
     {
         bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
 
@@ -262,7 +251,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
             current_column_mark++;
     }
 
-    type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
+    type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
     {
         bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
         if (is_offsets)
@@ -276,7 +265,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
     next_index_offset = current_row - total_rows;
 }
 
-void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync)
+void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums)
 {
     const auto & global_settings = storage.global_context.getSettingsRef();
     IDataType::SerializeBinaryBulkSettings serialize_settings;
@@ -307,8 +296,6 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Ch
     {
         stream.second->finalize();
         stream.second->addToChecksums(checksums);
-        if (sync)
-            stream.second->sync();
     }
 
     column_streams.clear();
@@ -323,7 +310,7 @@ void MergeTreeDataPartWriterWide::writeFinalMark(
 {
     writeSingleMark(column_name, *column_type, offset_columns, 0, path);
     /// Memoize information about offsets
-    column_type->enumerateStreams([&] (const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
+    column_type->enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
     {
         bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
         if (is_offsets)

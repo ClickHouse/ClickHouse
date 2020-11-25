@@ -19,14 +19,7 @@ namespace ErrorCodes
 
 void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
 {
-    UInt8 format_version = 4;
-
-    /// Conditionally bump format_version only when uuid has been assigned.
-    /// If some other feature requires bumping format_version to >= 5 then this code becomes no-op.
-    if (new_part_uuid != UUIDHelpers::Nil)
-        format_version = std::max(format_version, static_cast<UInt8>(5));
-
-    out << "format version: " << format_version << "\n"
+    out << "format version: 4\n"
         << "create_time: " << LocalDateTime(create_time ? create_time : time(nullptr)) << "\n"
         << "source replica: " << source_replica << '\n'
         << "block_id: " << escape << block_id << '\n';
@@ -43,13 +36,6 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
                 out << s << '\n';
             out << "into\n" << new_part_name;
             out << "\ndeduplicate: " << deduplicate;
-
-            if (merge_type != MergeType::REGULAR)
-                out <<"\nmerge_type: " << static_cast<UInt64>(merge_type);
-
-            if (new_part_uuid != UUIDHelpers::Nil)
-                out << "\ninto_uuid: " << new_part_uuid;
-
             break;
 
         case DROP_RANGE:
@@ -86,10 +72,6 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
                 << source_parts.at(0) << "\n"
                 << "to\n"
                 << new_part_name;
-
-            if (new_part_uuid != UUIDHelpers::Nil)
-                out << "\nto_uuid\n"
-                    << new_part_uuid;
 
             if (isAlterMutation())
                 out << "\nalter_version\n" << alter_version;
@@ -129,7 +111,7 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
 
     in >> "format version: " >> format_version >> "\n";
 
-    if (format_version < 1 || format_version > 5)
+    if (format_version < 1 || format_version > 4)
         throw Exception("Unknown ReplicatedMergeTreeLogEntry format version: " + DB::toString(format_version), ErrorCodes::UNKNOWN_FORMAT_VERSION);
 
     if (format_version >= 2)
@@ -166,28 +148,8 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
             source_parts.push_back(s);
         }
         in >> new_part_name;
-
         if (format_version >= 4)
-        {
             in >> "\ndeduplicate: " >> deduplicate;
-
-            /// Trying to be more backward compatible
-            while (!trailing_newline_found)
-            {
-                in >> "\n";
-
-                if (checkString("merge_type: ", in))
-                {
-                    UInt64 value;
-                    in >> value;
-                    merge_type = checkAndGetMergeType(value);
-                }
-                else if (checkString("into_uuid: ", in))
-                    in >> new_part_uuid;
-                else
-                    trailing_newline_found = true;
-            }
-        }
     }
     else if (type_str == "drop" || type_str == "detach")
     {
@@ -220,17 +182,12 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
            >> new_part_name;
         source_parts.push_back(source_part);
 
-        while (!trailing_newline_found)
-        {
-            in >> "\n";
+        in >> "\n";
 
-            if (checkString("alter_version\n", in))
-                in >> alter_version;
-            else if (checkString("to_uuid\n", in))
-                in >> new_part_uuid;
-            else
-                trailing_newline_found = true;
-        }
+        if (in.eof())
+            trailing_newline_found = true;
+        else if (checkString("alter_version\n", in))
+            in >> alter_version;
     }
     else if (type_str == "alter")
     {

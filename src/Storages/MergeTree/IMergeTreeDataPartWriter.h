@@ -51,9 +51,9 @@ public:
     virtual void initSkipIndices() {}
     virtual void initPrimaryIndex() {}
 
-    virtual void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync) = 0;
-    virtual void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & /* checksums */, bool /* sync */) {}
-    virtual void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & /* checksums */, bool /* sync */) {}
+    virtual void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums) = 0;
+    virtual void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & /* checksums */) {}
+    virtual void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & /* checksums */) {}
 
     Columns releaseIndexColumns();
     const MergeTreeIndexGranularity & getIndexGranularity() const { return index_granularity; }
@@ -62,33 +62,21 @@ public:
 protected:
     size_t getCurrentMark() const { return current_mark; }
     size_t getIndexOffset() const { return index_offset; }
-    /// Finishes our current unfinished mark if we have already written more rows for it
-    /// than granularity in the new block. Return true if last mark actually was adjusted.
-    /// Example:
-    /// __|________|___. <- previous block with granularity 8 and last unfinished mark with 3 rows
-    /// new_block_index_granularity = 2, so
-    /// __|________|___|__|__|__|
-    ///                ^ finish last unfinished mark, new marks will have granularity 2
-    bool adjustLastUnfinishedMark(size_t new_block_index_granularity);
 
     using SerializationState = IDataType::SerializeBinaryBulkStatePtr;
     using SerializationStates = std::unordered_map<String, SerializationState>;
 
     MergeTreeData::DataPartPtr data_part;
     const MergeTreeData & storage;
-    const StorageMetadataPtr metadata_snapshot;
-    const NamesAndTypesList columns_list;
-    const MergeTreeIndices skip_indices;
+    StorageMetadataPtr metadata_snapshot;
+    NamesAndTypesList columns_list;
+    MergeTreeIndices skip_indices;
     MergeTreeIndexGranularity index_granularity;
-    const MergeTreeWriterSettings settings;
-    const bool with_final_mark;
+    MergeTreeWriterSettings settings;
+    bool with_final_mark;
 
     size_t next_mark = 0;
     size_t next_index_offset = 0;
-
-    /// When we were writing fresh block granularity of the last mark was adjusted
-    /// See adjustLastUnfinishedMark
-    bool last_granule_was_adjusted = false;
 
     MutableColumns index_columns;
 
@@ -96,7 +84,6 @@ private:
     /// Data is already written up to this mark.
     size_t current_mark = 0;
     /// The offset to the first row of the block for which you want to write the index.
-    /// Or how many rows we have to write for this last unfinished mark.
     size_t index_offset = 0;
 };
 

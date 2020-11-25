@@ -97,6 +97,9 @@
     M(DistributedConnectionStaleReplica, "") \
     M(DistributedConnectionFailAtAll, "Total count when distributed connection fails after all retries finished") \
     \
+    M(CompileAttempt, "Number of times a compilation of generated C++ code was initiated.") \
+    M(CompileSuccess, "Number of times a compilation of generated C++ code was successful.") \
+    \
     M(CompileFunction, "Number of times a compilation of generated LLVM code (to create fused function for complex expressions) was initiated.") \
     M(CompiledFunctionExecute, "Number of times a compiled function was executed.") \
     M(CompileExpressionsMicroseconds, "Total time spent for compilation of expressions to LLVM code.") \
@@ -230,7 +233,6 @@
     M(S3WriteRequestsErrors, "Number of non-throttling errors in POST, DELETE, PUT and PATCH requests to S3 storage.") \
     M(S3WriteRequestsThrottling, "Number of 429 and 503 errors in POST, DELETE, PUT and PATCH requests to S3 storage.") \
     M(S3WriteRequestsRedirects, "Number of redirects in POST, DELETE, PUT and PATCH requests to S3 storage.") \
-    M(QueryMemoryLimitExceeded, "Number of times when memory limit exceeded for query.") \
 
 
 namespace ProfileEvents
