@@ -2319,7 +2319,7 @@ Default value: `1`.
 
 ## output_format_tsv_null_representation {#output_format_tsv_null_representation}
 
-Allows configurable `NULL` representation for [TSV](../../interfaces/formats.md#tabseparated) output format. The setting only controls output format and `\N` is the only supported `NULL` representation for TSV input format.
+Defines the representation of `NULL` for [TSV](../../interfaces/formats.md#tabseparated) output format. User can set any string as a value, for example, `My NULL`.
 
 Default value: `\N`.
 
