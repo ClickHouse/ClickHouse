@@ -47,7 +47,7 @@ struct StudentTTestData : public TTestMoments<Float64>
         Float64 all_y = y2 + ny * mean_y * mean_y - 2 * mean_y * y1;
 
         Float64 s2 = (all_x + all_y) / degrees_of_freedom;
-        Float64 std_err2 = s2 * (1 / nx + 1 / ny);
+        Float64 std_err2 = s2 * (1. / nx + 1. / ny);
 
         /// t-statistic
         Float64 t_stat = (mean_x - mean_y) / sqrt(std_err2);

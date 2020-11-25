@@ -14,7 +14,7 @@ namespace DB
 template <typename F>
 static Float64 integrateSimpson(Float64 a, Float64 b, F && func)
 {
-    const size_t iterations = std::max(1e6, 1e4 * std::abs(std::round(b)));
+    const size_t iterations = std::max(1e6, 1e4 * std::abs(std::round(b) - std::round(a)));
     const long double h = (b - a) / iterations;
     Float64 sum_odds = 0.0;
     for (size_t i = 1; i < iterations; i += 2)
