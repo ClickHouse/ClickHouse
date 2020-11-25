@@ -10,10 +10,14 @@
 
 namespace DB
 {
-    namespace ErrorCodes
-    {
-        extern const int LOGICAL_ERROR;
-    }
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int TIMEOUT_EXCEEDED;
+    extern const int BAD_ARGUMENTS;
+}
+
 }
 
 namespace zkutil
@@ -360,7 +364,7 @@ struct TestKeeperStorageListRequest final : public TestKeeperStorageRequest
         {
             auto path_prefix = request.path;
             if (path_prefix.empty())
-                throw Coordination::Exception("Logical error: path cannot be empty", Coordination::Error::ZSESSIONEXPIRED);
+                throw DB::Exception("Logical error: path cannot be empty", ErrorCodes::LOGICAL_ERROR);
 
             if (path_prefix.back() != '/')
                 path_prefix += '/';
@@ -417,26 +421,27 @@ struct TestKeeperStorageMultiRequest final : public TestKeeperStorageRequest
         Coordination::ZooKeeperMultiRequest & request = dynamic_cast<Coordination::ZooKeeperMultiRequest &>(*zk_request);
         concrete_requests.reserve(request.requests.size());
 
-        for (const auto & sub_zk_request : request.requests)
+        for (const auto & sub_request : request.requests)
         {
-            if (dynamic_cast<const Coordination::ZooKeeperCreateRequest *>(sub_zk_request.get()))
+            auto sub_zk_request = dynamic_pointer_cast<Coordination::ZooKeeperRequest>(sub_request);
+            if (sub_zk_request->getOpNum() == Coordination::OpNum::Create)
             {
-                concrete_requests.push_back(std::make_shared<TestKeeperStorageCreateRequest>(dynamic_pointer_cast<Coordination::ZooKeeperCreateRequest>(sub_zk_request)));
+                concrete_requests.push_back(std::make_shared<TestKeeperStorageCreateRequest>(sub_zk_request));
             }
-            else if (dynamic_cast<const Coordination::ZooKeeperRemoveRequest *>(sub_zk_request.get()))
+            else if (sub_zk_request->getOpNum() == Coordination::OpNum::Remove)
             {
-                concrete_requests.push_back(std::make_shared<TestKeeperStorageRemoveRequest>(dynamic_pointer_cast<Coordination::ZooKeeperRemoveRequest>(sub_zk_request)));
+                concrete_requests.push_back(std::make_shared<TestKeeperStorageRemoveRequest>(sub_zk_request));
             }
-            else if (dynamic_cast<const Coordination::ZooKeeperSetRequest *>(sub_zk_request.get()))
+            else if (sub_zk_request->getOpNum() == Coordination::OpNum::Set)
             {
-                concrete_requests.push_back(std::make_shared<TestKeeperStorageSetRequest>(dynamic_pointer_cast<Coordination::ZooKeeperSetRequest>(sub_zk_request)));
+                concrete_requests.push_back(std::make_shared<TestKeeperStorageSetRequest>(sub_zk_request));
             }
-            else if (dynamic_cast<const Coordination::ZooKeeperCheckRequest *>(sub_zk_request.get()))
+            else if (sub_zk_request->getOpNum() == Coordination::OpNum::Check)
             {
-                concrete_requests.push_back(std::make_shared<TestKeeperStorageCheckRequest>(dynamic_pointer_cast<Coordination::ZooKeeperCheckRequest>(sub_zk_request)));
+                concrete_requests.push_back(std::make_shared<TestKeeperStorageCheckRequest>(sub_zk_request));
             }
             else
-                throw Coordination::Exception("Illegal command as part of multi ZooKeeper request", Coordination::Error::ZBADARGUMENTS);
+                throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal command as part of multi ZooKeeper request {}", sub_zk_request->getOpNum());
         }
     }
 
@@ -490,7 +495,7 @@ struct TestKeeperStorageCloseRequest final : public TestKeeperStorageRequest
     using TestKeeperStorageRequest::TestKeeperStorageRequest;
     std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(TestKeeperStorage::Container &, TestKeeperStorage::Ephemerals &, int64_t, int64_t) const override
     {
-        throw Coordination::Exception("Called process on close request", Coordination::Error::ZRUNTIMEINCONSISTENCY);
+        throw DB::Exception("Called process on close request", ErrorCodes::LOGICAL_ERROR);
     }
 };
 
@@ -512,7 +517,7 @@ void TestKeeperStorage::processingThread()
                     break;
 
                 auto zk_request = info.request->zk_request;
-                if (dynamic_cast<const Coordination::ZooKeeperCloseRequest *>(zk_request.get()))
+                if (zk_request->getOpNum() == Coordination::OpNum::Close)
                 {
                     auto it = ephemerals.find(info.session_id);
                     if (it != ephemerals.end())
@@ -533,13 +538,13 @@ void TestKeeperStorage::processingThread()
                     {
                         if (response->error == Coordination::Error::ZOK)
                         {
-                            auto & watches_type = dynamic_cast<const Coordination::ZooKeeperListRequest *>(zk_request.get())
+                            auto & watches_type = zk_request->getOpNum() == Coordination::OpNum::List
                                 ? list_watches
                                 : watches;
 
                             watches_type[zk_request->getPath()].emplace_back(std::move(info.watch_callback));
                         }
-                        else if (response->error == Coordination::Error::ZNONODE && dynamic_cast<const Coordination::ZooKeeperExistsRequest *>(zk_request.get()))
+                        else if (response->error == Coordination::Error::ZNONODE && zk_request->getOpNum() == Coordination::OpNum::Exists)
                         {
                             watches[zk_request->getPath()].emplace_back(std::move(info.watch_callback));
                         }
@@ -657,7 +662,7 @@ public:
     {
         auto it = op_num_to_request.find(zk_request->getOpNum());
         if (it == op_num_to_request.end())
-            throw Coordination::Exception("Unknown operation type " + toString(zk_request->getOpNum()), Coordination::Error::ZBADARGUMENTS);
+            throw DB::Exception("Unknown operation type " + toString(zk_request->getOpNum()), ErrorCodes::LOGICAL_ERROR);
 
         return it->second(zk_request);
     }
@@ -705,7 +710,7 @@ void TestKeeperStorage::putCloseRequest(const Coordination::ZooKeeperRequestPtr 
     request_info.session_id = session_id;
     std::lock_guard lock(push_request_mutex);
     if (!requests_queue.tryPush(std::move(request_info), operation_timeout.totalMilliseconds()))
-        throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::TIMEOUT_EXCEEDED);
 }
 
 
@@ -719,7 +724,7 @@ void TestKeeperStorage::putRequest(const Coordination::ZooKeeperRequestPtr & req
     request_info.response_callback = callback;
     std::lock_guard lock(push_request_mutex);
     if (!requests_queue.tryPush(std::move(request_info), operation_timeout.totalMilliseconds()))
-        throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::TIMEOUT_EXCEEDED);
 }
 
 void TestKeeperStorage::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, ResponseCallback callback, ResponseCallback watch_callback)
@@ -735,7 +740,7 @@ void TestKeeperStorage::putRequest(const Coordination::ZooKeeperRequestPtr & req
 
     std::lock_guard lock(push_request_mutex);
     if (!requests_queue.tryPush(std::move(request_info), operation_timeout.totalMilliseconds()))
-        throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::TIMEOUT_EXCEEDED);
 }
 
 TestKeeperStorage::~TestKeeperStorage()
