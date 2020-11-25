@@ -2099,7 +2099,7 @@ SELECT TOP 3 name, value FROM system.settings;
    └─────────────────────────┴─────────┘
 ```
 
-## system_events_show_zero_values {system_events_show_zero_values}
+## system_events_show_zero_values {#system_events_show_zero_values}
 
 Позволяет выбрать события с нулевыми значениями из таблицы [`system.events`](../../operations/system-tables/events.md).
 
