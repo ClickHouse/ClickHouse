@@ -12,6 +12,7 @@
 #    include <DataTypes/DataTypeNullable.h>
 #    include <IO/ReadHelpers.h>
 #    include <IO/WriteHelpers.h>
+#    include <IO/Operators.h>
 #    include <Common/assert_cast.h>
 #    include <ext/range.h>
 #    include "MySQLBlockInputStream.h"
@@ -145,6 +146,8 @@ Block MySQLBlockInputStream::readImpl()
         }
         else
         {
+            Names missing_names = description.sample_block.getNames();
+
             for (const auto idx : ext::range(0, row.size()))
             {
                 const auto & field_name = row.getFieldName(idx);
@@ -152,8 +155,19 @@ Block MySQLBlockInputStream::readImpl()
                 {
                     const auto & position = description.sample_block.getPositionByName(field_name);
                     position_mapping[position] = idx;
+                    missing_names.erase(missing_names.begin() + position);
                 }
             }
+
+            if (!missing_names.empty())
+            {
+                WriteBufferFromOwnString exception_message;
+                writeText(missing_names, exception_message);
+
+                throw Exception("mysqlxx::UseQueryResult must be contain the" + exception_message.str() + " columns.",
+                        ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
+            }
+
         }
     }
 
