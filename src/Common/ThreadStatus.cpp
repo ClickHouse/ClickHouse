@@ -2,6 +2,7 @@
 #include <Common/ThreadProfileEvents.h>
 #include <Common/QueryProfiler.h>
 #include <Common/ThreadStatus.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 
 #include <Poco/Logger.h>
 #include <common/getThreadId.h>

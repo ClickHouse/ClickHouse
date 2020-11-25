@@ -6,6 +6,7 @@
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <common/logger_useful.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {

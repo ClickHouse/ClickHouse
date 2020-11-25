@@ -44,6 +44,7 @@
 [submodule "contrib/protobuf"]
 	path = contrib/protobuf
 	url = https://github.com/ClickHouse-Extras/protobuf.git
+	branch = v3.13.0.1
 [submodule "contrib/boost"]
 	path = contrib/boost
 	url = https://github.com/ClickHouse-Extras/boost.git
@@ -107,6 +108,7 @@
 [submodule "contrib/grpc"]
 	path = contrib/grpc
 	url = https://github.com/ClickHouse-Extras/grpc.git
+	branch = v1.33.2
 [submodule "contrib/aws"]
 	path = contrib/aws
 	url = https://github.com/ClickHouse-Extras/aws-sdk-cpp.git
@@ -196,7 +198,11 @@
 [submodule "contrib/rocksdb"]
 	path = contrib/rocksdb
 	url = https://github.com/facebook/rocksdb
-	branch = v6.11.4
+	branch = v6.14.5
 [submodule "contrib/xz"]
        path = contrib/xz
        url = https://github.com/xz-mirror/xz
+[submodule "contrib/abseil-cpp"]
+	path = contrib/abseil-cpp
+	url = https://github.com/ClickHouse-Extras/abseil-cpp.git
+	branch = lts_2020_02_25

@@ -642,6 +642,9 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
 
     FutureMergedMutatedPart future_part;
 
+    if (storage_settings.get()->assign_part_uuids)
+        future_part.uuid = UUIDHelpers::generateV4();
+
     /// You must call destructor with unlocked `currently_processing_in_background_mutex`.
     CurrentlyMergingPartsTaggerPtr merging_tagger;
     MergeList::EntryPtr merge_entry;
@@ -796,6 +799,9 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
     size_t max_ast_elements = global_context.getSettingsRef().max_expanded_ast_elements;
 
     FutureMergedMutatedPart future_part;
+    if (storage_settings.get()->assign_part_uuids)
+        future_part.uuid = UUIDHelpers::generateV4();
+
     MutationCommands commands;
 
     CurrentlyMergingPartsTaggerPtr tagger;
