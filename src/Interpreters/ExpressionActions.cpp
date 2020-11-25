@@ -83,6 +83,7 @@ void ExpressionActions::linearizeActions()
 
     const auto & nodes = getNodes();
     const auto & index = actions_dag->getIndex();
+    const auto & inputs = actions_dag->getInputs();
 
     std::vector<Data> data(nodes.size());
     std::unordered_map<const Node *, size_t> reverse_index;
@@ -163,11 +164,10 @@ void ExpressionActions::linearizeActions()
         {
             /// Argument for input is special. It contains the position from required columns.
             ExpressionActions::Argument argument;
-            argument.pos = required_columns.size();
             argument.needed_later = !cur.parents.empty();
             arguments.emplace_back(argument);
 
-            required_columns.push_back({node->result_name, node->result_type});
+            //required_columns.push_back({node->result_name, node->result_type});
         }
 
         actions.push_back({node, arguments, free_position});
@@ -198,6 +198,15 @@ void ExpressionActions::linearizeActions()
 
         ColumnWithTypeAndName col{node->column, node->result_type, node->result_name};
         sample_block.insert(std::move(col));
+    }
+
+    for (const auto * input : inputs)
+    {
+        const auto & cur = data[reverse_index[input]];
+        auto pos = required_columns.size();
+        actions[cur.position].arguments.front().pos = pos;
+        required_columns.push_back({input->result_name, input->result_type});
+        input_positions[input->result_name].emplace_back(pos);
     }
 }
 
@@ -412,14 +421,23 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) 
         .num_rows = num_rows,
     };
 
-    execution_context.inputs_pos.reserve(required_columns.size());
+    execution_context.inputs_pos.assign(required_columns.size(), -1);
 
-    for (const auto & column : required_columns)
+    for (size_t pos = 0; pos < block.columns(); ++pos)
     {
-        ssize_t pos = -1;
-        if (block.has(column.name))
-            pos = block.getPositionByName(column.name);
-        execution_context.inputs_pos.push_back(pos);
+        const auto & col = block.getByPosition(pos);
+        auto it = input_positions.find(col.name);
+        if (it != input_positions.end())
+        {
+            for (auto input_pos : it->second)
+            {
+                if (execution_context.inputs_pos[input_pos] < 0)
+                {
+                    execution_context.inputs_pos[input_pos] = pos;
+                    break;
+                }
+            }
+        }
     }
 
     execution_context.columns.resize(num_columns);

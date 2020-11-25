@@ -69,12 +69,11 @@ namespace ExchangeType
 
 StorageRabbitMQ::StorageRabbitMQ(
         const StorageID & table_id_,
-        Context & context_,
+        const Context & context_,
         const ColumnsDescription & columns_,
         std::unique_ptr<RabbitMQSettings> rabbitmq_settings_)
         : IStorage(table_id_)
         , global_context(context_.getGlobalContext())
-        , rabbitmq_context(Context(global_context))
         , rabbitmq_settings(std::move(rabbitmq_settings_))
         , exchange_name(global_context.getMacros()->expand(rabbitmq_settings->rabbitmq_exchange_name.value))
         , format_name(global_context.getMacros()->expand(rabbitmq_settings->rabbitmq_format.value))
@@ -114,8 +113,8 @@ StorageRabbitMQ::StorageRabbitMQ(
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
 
-    rabbitmq_context.makeQueryContext();
-    rabbitmq_context = addSettings(rabbitmq_context);
+    rabbitmq_context = addSettings(global_context);
+    rabbitmq_context->makeQueryContext();
 
     /// One looping task for all consumers as they share the same connection == the same handler == the same event loop
     event_handler->updateLoopState(Loop::STOP);
@@ -193,16 +192,17 @@ String StorageRabbitMQ::getTableBasedName(String name, const StorageID & table_i
 }
 
 
-Context StorageRabbitMQ::addSettings(Context context) const
+std::shared_ptr<Context> StorageRabbitMQ::addSettings(const Context & context) const
 {
-    context.setSetting("input_format_skip_unknown_fields", true);
-    context.setSetting("input_format_allow_errors_ratio", 0.);
-    context.setSetting("input_format_allow_errors_num", rabbitmq_settings->rabbitmq_skip_broken_messages.value);
+    auto modified_context = std::make_shared<Context>(context);
+    modified_context->setSetting("input_format_skip_unknown_fields", true);
+    modified_context->setSetting("input_format_allow_errors_ratio", 0.);
+    modified_context->setSetting("input_format_allow_errors_num", rabbitmq_settings->rabbitmq_skip_broken_messages.value);
 
     if (!schema_name.empty())
-        context.setSetting("format_schema", schema_name);
+        modified_context->setSetting("format_schema", schema_name);
 
-    return context;
+    return modified_context;
 }
 
 
@@ -538,6 +538,7 @@ Pipe StorageRabbitMQ::read(
     auto sample_block = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
 
     auto modified_context = addSettings(context);
+
     auto block_size = getMaxBlockSize();
 
     bool update_channels = false;
@@ -581,7 +582,9 @@ Pipe StorageRabbitMQ::read(
         looping_task->activateAndSchedule();
 
     LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
-    return Pipe::unitePipes(std::move(pipes));
+    auto united_pipe = Pipe::unitePipes(std::move(pipes));
+    united_pipe.addInterpreterContext(modified_context);
+    return united_pipe;
 }
 
 
@@ -785,7 +788,7 @@ bool StorageRabbitMQ::streamToViews()
     insert->table_id = table_id;
 
     // Only insert into dependent views and expect that input blocks contain virtual columns
-    InterpreterInsertQuery interpreter(insert, rabbitmq_context, false, true, true);
+    InterpreterInsertQuery interpreter(insert, *rabbitmq_context, false, true, true);
     auto block_io = interpreter.execute();
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
