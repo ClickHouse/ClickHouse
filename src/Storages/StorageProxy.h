@@ -148,8 +148,8 @@ public:
     bool storesDataOnDisk() const override { return getNested()->storesDataOnDisk(); }
     Strings getDataPaths() const override { return getNested()->getDataPaths(); }
     StoragePolicyPtr getStoragePolicy() const override { return getNested()->getStoragePolicy(); }
-    std::optional<UInt64> totalRows(const Context& context) const override { return getNested()->totalRows(context); }
-    std::optional<UInt64> totalBytes(const Context& context) const override { return getNested()->totalBytes(context); }
+    std::optional<UInt64> totalRows(const Settings & settings) const override { return getNested()->totalRows(settings); }
+    std::optional<UInt64> totalBytes(const Settings & settings) const override { return getNested()->totalBytes(settings); }
     std::optional<UInt64> lifetimeRows() const override { return getNested()->lifetimeRows(); }
     std::optional<UInt64> lifetimeBytes() const override { return getNested()->lifetimeBytes(); }
 

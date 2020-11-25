@@ -3742,17 +3742,15 @@ Pipe StorageReplicatedMergeTree::read(
 
 
 template <class Func>
-void StorageReplicatedMergeTree::foreachCommittedParts(const Func & func, const Context & context) const
+void StorageReplicatedMergeTree::foreachCommittedParts(Func && func, bool select_sequential_consistency) const
 {
     std::optional<ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock> max_added_blocks = {};
 
     /**
      * Synchronously go to ZooKeeper when select_sequential_consistency enabled
      */
-    if (context.getSettingsRef().select_sequential_consistency)
-    {
+    if (select_sequential_consistency)
         max_added_blocks = getMaxAddedBlocks();
-    }
 
     auto lock = lockParts();
     for (const auto & part : getDataPartsStateRange(DataPartState::Committed))
@@ -3771,10 +3769,10 @@ void StorageReplicatedMergeTree::foreachCommittedParts(const Func & func, const 
     }
 }
 
-std::optional<UInt64> StorageReplicatedMergeTree::totalRows(const Context & context) const
+std::optional<UInt64> StorageReplicatedMergeTree::totalRows(const Settings & settings) const
 {
     UInt64 res = 0;
-    foreachCommittedParts([&res](auto & part) { res += part->rows_count; }, context);
+    foreachCommittedParts([&res](auto & part) { res += part->rows_count; }, settings.select_sequential_consistency);
     return res;
 }
 
@@ -3789,14 +3787,14 @@ std::optional<UInt64> StorageReplicatedMergeTree::totalRowsByPartitionPredicate(
     {
         if (!partition_pruner.canBePruned(part))
             res += part->rows_count;
-    }, context);
+    }, context.getSettingsRef().select_sequential_consistency);
     return res;
 }
 
-std::optional<UInt64> StorageReplicatedMergeTree::totalBytes(const Context & context) const
+std::optional<UInt64> StorageReplicatedMergeTree::totalBytes(const Settings & settings) const
 {
     UInt64 res = 0;
-    foreachCommittedParts([&res](auto & part) { res += part->getBytesOnDisk(); }, context);
+    foreachCommittedParts([&res](auto & part) { res += part->getBytesOnDisk(); }, settings.select_sequential_consistency);
     return res;
 }
 

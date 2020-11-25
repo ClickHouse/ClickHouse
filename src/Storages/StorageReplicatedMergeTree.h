@@ -107,9 +107,9 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    std::optional<UInt64> totalRows(const Context & context) const override;
+    std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, const Context & context) const override;
-    std::optional<UInt64> totalBytes(const Context & context) const override;
+    std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
 
@@ -326,7 +326,7 @@ private:
     const size_t replicated_fetches_pool_size;
 
     template <class Func>
-    void foreachCommittedParts(const Func & func, const Context & context) const;
+    void foreachCommittedParts(Func && func, bool select_sequential_consistency) const;
 
     /** Creates the minimum set of nodes in ZooKeeper and create first replica.
       * Returns true if was created, false if exists.
