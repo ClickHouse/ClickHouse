@@ -11,7 +11,12 @@
 #include <common/logger_useful.h>
 #include <chrono>
 #include <Common/PipeFDs.h>
-#include <sys/epoll.h>
+
+#ifdef POCO_HAVE_FD_EPOLL
+    #include <sys/epoll.h>
+#else
+    #include <poll.h>
+#endif
 
 namespace DB
 {
@@ -48,8 +53,10 @@ struct SocketInterruptablePollWrapper
         return pipe.fds_rw[1];
     }
 
-    PollStatus poll(Poco::Timespan remainingTime)
+    PollStatus poll(Poco::Timespan remaining_time)
     {
+
+#if defined(POCO_HAVE_FD_EPOLL)
         int epollfd = epoll_create(2);
 
         if (epollfd < 0)
@@ -77,25 +84,55 @@ struct SocketInterruptablePollWrapper
         do
         {
             Poco::Timestamp start;
-            rc = epoll_wait(epollfd, &evout, 1, remainingTime.totalMilliseconds());
+            rc = epoll_wait(epollfd, &evout, 1, remaining_time.totalMilliseconds());
             if (rc < 0 && errno == EINTR)
             {
                 Poco::Timestamp end;
                 Poco::Timespan waited = end - start;
-                if (waited < remainingTime)
-                    remainingTime -= waited;
+                if (waited < remaining_time)
+                    remaining_time -= waited;
                 else
-                    remainingTime = 0;
+                    remaining_time = 0;
             }
         }
         while (rc < 0 && errno == EINTR);
 
         ::close(epollfd);
+        int out_fd = evout.data.fd;
+#else
+        pollfd poll_buf[2];
+        poll_buf[0].fd = sockfd;
+        poll_buf[0].events = POLLIN;
+        poll_buf[1].fd = pipe.fds_rw[0];
+        poll_buf[1].events = POLLIN;
+
+        int rc;
+        do
+        {
+            Poco::Timestamp start;
+            rc = ::poll(poll_buf, 2, remaining_time.totalMilliseconds());
+            if (rc < 0 && errno == POCO_EINTR)
+            {
+                Poco::Timestamp end;
+                Poco::Timespan waited = end - start;
+                if (waited < remaining_time)
+                    remaining_time -= waited;
+                else
+                    remaining_time = 0;
+            }
+        }
+        while (rc < 0 && errno == POCO_EINTR);
+        int out_fd = -1;
+        if (poll_buf[0].revents & POLLIN)
+            out_fd = sockfd;
+        else if (poll_buf[1].revents & POLLIN)
+            out_fd = pipe.fds_rw[0];
+#endif
         if (rc < 0)
             return PollStatus::ERROR;
         else if (rc == 0)
             return PollStatus::TIMEOUT;
-        else if (evout.data.fd == pipe.fds_rw[0])
+        else if (out_fd == pipe.fds_rw[0])
         {
             UInt64 bytes;
             if (read(pipe.fds_rw[0], &bytes, sizeof(bytes)) < 0)
