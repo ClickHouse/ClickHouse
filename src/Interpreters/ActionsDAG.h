@@ -136,7 +136,7 @@ public:
         void remove(Node * node)
         {
             auto it = map.find(node->result_name);
-            if (it != map.end())
+            if (it == map.end())
                 return;
 
             list.erase(it->second);
