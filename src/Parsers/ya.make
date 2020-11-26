@@ -86,6 +86,7 @@ SRCS(
     New/AST/ColumnExpr.cpp
     New/AST/ColumnTypeExpr.cpp
     New/AST/CreateDatabaseQuery.cpp
+    New/AST/CreateLiveViewQuery.cpp
     New/AST/CreateMaterializedViewQuery.cpp
     New/AST/CreateTableQuery.cpp
     New/AST/CreateViewQuery.cpp
