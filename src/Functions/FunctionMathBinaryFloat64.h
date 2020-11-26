@@ -204,7 +204,7 @@ private:
         return nullptr;
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const ColumnWithTypeAndName & col_left = arguments[0];
         const ColumnWithTypeAndName & col_right = arguments[1];

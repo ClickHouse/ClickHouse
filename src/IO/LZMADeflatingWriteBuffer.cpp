@@ -1,5 +1,6 @@
 #include <IO/LZMADeflatingWriteBuffer.h>
 
+#if !defined(ARCADIA_BUILD)
 
 namespace DB
 {
@@ -123,3 +124,5 @@ void LZMADeflatingWriteBuffer::finish()
     } while (lstr.avail_out == 0);
 }
 }
+
+#endif

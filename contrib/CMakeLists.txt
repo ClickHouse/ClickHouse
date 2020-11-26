@@ -321,3 +321,7 @@ if (USE_KRB5)
         add_subdirectory (cyrus-sasl-cmake)
     endif()
 endif()
+
+if (USE_INTERNAL_ROCKSDB_LIBRARY)
+    add_subdirectory(rocksdb-cmake)
+endif()
