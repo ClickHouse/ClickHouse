@@ -79,14 +79,18 @@ namespace
                 assert_cast<ColumnString &>(column).insert(value.convert<String>());
                 break;
             case ValueType::vtDate:
+            {
                 Poco::DateTime date = value.convert<Poco::DateTime>();
                 assert_cast<ColumnUInt16 &>(column).insertValue(UInt16{LocalDate(date.year(), date.month(), date.day()).getDayNum()});
                 break;
+            }
             case ValueType::vtDateTime:
+            {
                 Poco::DateTime datetime = value.convert<Poco::DateTime>();
                 assert_cast<ColumnUInt32 &>(column).insertValue(time_t{LocalDateTime(
                     datetime.year(), datetime.month(), datetime.day(), datetime.hour(), datetime.minute(), datetime.second())});
                 break;
+            }
             case ValueType::vtUUID:
                 assert_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.convert<std::string>()));
                 break;
