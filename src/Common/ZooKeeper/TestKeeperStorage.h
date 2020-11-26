@@ -34,14 +34,22 @@ public:
         int32_t seq_num = 0;
     };
 
+    struct Watcher
+    {
+        int64_t session_id;
+        ResponseCallback watch_callback;
+    };
+
     using Container = std::map<std::string, Node>;
     using Ephemerals = std::unordered_map<int64_t, std::unordered_set<String>>;
+    using SessionAndWatcher = std::unordered_map<int64_t, std::unordered_set<String>>;
 
-    using WatchCallbacks = std::vector<ResponseCallback>;
+    using WatchCallbacks = std::vector<Watcher>;
     using Watches = std::map<String /* path, relative of root_path */, WatchCallbacks>;
 
     Container container;
     Ephemerals ephemerals;
+    SessionAndWatcher sessions_and_watchers;
 
     std::atomic<int64_t> zxid{0};
     std::atomic<bool> shutdown{false};
@@ -69,6 +77,7 @@ public:
     ThreadFromGlobalPool processing_thread;
 
     void processingThread();
+    void clearDeadWatches(int64_t session_id);
 
 public:
     using AsyncResponse = std::future<Coordination::ZooKeeperResponsePtr>;
