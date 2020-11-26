@@ -39,6 +39,31 @@ PtrTo<ColumnExpr> ColumnExpr::createAsterisk(PtrTo<TableIdentifier> identifier, 
 PtrTo<ColumnExpr> ColumnExpr::createFunction(PtrTo<Identifier> name, PtrTo<ColumnParamList> params, PtrTo<ColumnExprList> args)
 {
     // FIXME: make sure that all function names are camel-case.
+
+    // Flatten some consequent binary operators to a single multi-operator, because they are left-associative.
+    if ((name->getName() == "or" || name->getName() == "and") && args && args->size() == 2)
+    {
+        const auto * left = (*args->begin())->as<ColumnExpr>();
+        const auto * right = (*++args->begin())->as<ColumnExpr>();
+
+        if (left && left->getType() == ExprType::FUNCTION && left->getFunctionName() == name->getName())
+        {
+            auto new_args = std::make_shared<ColumnExprList>();
+            for (const auto & arg : *left->get(ARGS)->as<ColumnExprList>())
+                new_args->push(std::static_pointer_cast<ColumnExpr>(arg));
+            new_args->push(std::static_pointer_cast<ColumnExpr>(*++args->begin()));
+            args = new_args;
+        }
+        else if (right && right->getType() == ExprType::FUNCTION && right->getFunctionName() == name->getName())
+        {
+            auto new_args = std::make_shared<ColumnExprList>();
+            new_args->push(std::static_pointer_cast<ColumnExpr>(*args->begin()));
+            for (const auto & arg : *right->get(ARGS)->as<ColumnExprList>())
+                new_args->push(std::static_pointer_cast<ColumnExpr>(arg));
+            args = new_args;
+        }
+    }
+
     return PtrTo<ColumnExpr>(new ColumnExpr(ExprType::FUNCTION, {name, params, args}));
 }
 
