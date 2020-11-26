@@ -223,6 +223,10 @@ ASTPtr SelectUnionQuery::convertToOld() const
     for (const auto & select : get(STMTS)->as<List<SelectStmt> &>())
         query->list_of_selects->children.push_back(select->convertToOld());
 
+    // TODO(ilezhankin): need to parse new UNION DISTINCT
+    query->list_of_modes
+        = ASTSelectWithUnionQuery::UnionModes(query->list_of_selects->children.size() - 1, ASTSelectWithUnionQuery::Mode::ALL);
+
     convertToOldPartially(query);
 
     return query;

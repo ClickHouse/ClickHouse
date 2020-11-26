@@ -218,8 +218,16 @@ antlrcpp::Any ParseTreeVisitor::visitTableElementExprConstraint(ClickHouseParser
 
 antlrcpp::Any ParseTreeVisitor::visitTableElementExprIndex(ClickHouseParser::TableElementExprIndexContext *ctx)
 {
+    return visit(ctx->tableIndexDfnt());
+}
+
+antlrcpp::Any ParseTreeVisitor::visitTableIndexDfnt(ClickHouseParser::TableIndexDfntContext *ctx)
+{
     return TableElementExpr::createIndex(
-        visit(ctx->identifier()), visit(ctx->columnExpr()), visit(ctx->columnTypeExpr()), Literal::createNumber(ctx->DECIMAL_LITERAL()));
+        visit(ctx->nestedIdentifier()),
+        visit(ctx->columnExpr()),
+        visit(ctx->columnTypeExpr()),
+        Literal::createNumber(ctx->DECIMAL_LITERAL()));
 }
 
 }

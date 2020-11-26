@@ -6,6 +6,21 @@
 namespace DB::AST
 {
 
+class AssignmentExpr : public INode
+{
+    public:
+        AssignmentExpr(PtrTo<Identifier> identifier, PtrTo<ColumnExpr> expr);
+
+        ASTPtr convertToOld() const override;
+
+    private:
+        enum ChildIndex : UInt8
+        {
+            IDENTIFIER = 0,  // Identifier
+            EXPR = 1,        // ColumnExpr
+        };
+};
+
 enum class TableColumnPropertyType
 {
     ALIAS,
@@ -44,7 +59,8 @@ class PartitionClause : public INode
 class AlterTableClause : public INode
 {
     public:
-        static PtrTo<AlterTableClause> createAdd(bool if_not_exists, PtrTo<TableElementExpr> element, PtrTo<Identifier> after);
+        static PtrTo<AlterTableClause> createAddColumn(bool if_not_exists, PtrTo<TableElementExpr> element, PtrTo<Identifier> after);
+        static PtrTo<AlterTableClause> createAddIndex(bool if_not_exists, PtrTo<TableElementExpr> element, PtrTo<Identifier> after);
         static PtrTo<AlterTableClause> createAttach(PtrTo<PartitionClause> clause, PtrTo<TableIdentifier> from);
         static PtrTo<AlterTableClause> createClear(bool if_exists, PtrTo<Identifier> identifier, PtrTo<PartitionClause> in);
         static PtrTo<AlterTableClause> createCodec(bool if_exists, PtrTo<Identifier> identifier, PtrTo<CodecExpr> codec);
@@ -52,6 +68,7 @@ class AlterTableClause : public INode
         static PtrTo<AlterTableClause> createDelete(PtrTo<ColumnExpr> expr);
         static PtrTo<AlterTableClause> createDetach(PtrTo<PartitionClause> clause);
         static PtrTo<AlterTableClause> createDropColumn(bool if_exists, PtrTo<Identifier> identifier);
+        static PtrTo<AlterTableClause> createDropIndex(bool if_exists, PtrTo<Identifier> identifier);
         static PtrTo<AlterTableClause> createDropPartition(PtrTo<PartitionClause> clause);
         static PtrTo<AlterTableClause> createModify(bool if_exists, PtrTo<TableElementExpr> element);
         static PtrTo<AlterTableClause> createRemove(bool if_exists, PtrTo<Identifier> identifier, TableColumnPropertyType type);
@@ -60,13 +77,14 @@ class AlterTableClause : public INode
         static PtrTo<AlterTableClause> createOrderBy(PtrTo<ColumnExpr> expr);
         static PtrTo<AlterTableClause> createReplace(PtrTo<PartitionClause> clause, PtrTo<TableIdentifier> from);
         static PtrTo<AlterTableClause> createTTL(PtrTo<TTLClause> clause);
+        static PtrTo<AlterTableClause> createUpdate(PtrTo<AssignmentExprList> list, PtrTo<WhereClause> where);
 
         ASTPtr convertToOld() const override;
 
     private:
         enum ChildIndex : UInt8
         {
-            // ADD
+            // ADD COLUMN or INDEX
             ELEMENT = 0,  // TableElementExpr
             AFTER = 1,    // Identifier (optional)
 
@@ -92,11 +110,16 @@ class AlterTableClause : public INode
 
             // TTL
             CLAUSE = 0,  // TTLClause
+
+            // UPDATE
+            ASSIGNMENTS = 0,  // AssignmentExprList
+            WHERE = 1,        // WhereClause
         };
 
         enum class ClauseType
         {
-            ADD,
+            ADD_COLUMN,
+            ADD_INDEX,
             ATTACH,
             CLEAR,
             CODEC,
@@ -104,6 +127,7 @@ class AlterTableClause : public INode
             DELETE,
             DETACH,
             DROP_COLUMN,
+            DROP_INDEX,
             DROP_PARTITION,
             MODIFY,
             ORDER_BY,
@@ -112,6 +136,7 @@ class AlterTableClause : public INode
             RENAME,
             REPLACE,
             TTL,
+            UPDATE,
         };
 
         const ClauseType clause_type;

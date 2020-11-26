@@ -32,13 +32,15 @@ alterStmt
     ;
 
 alterTableClause
-    : ADD COLUMN (IF NOT EXISTS)? tableColumnDfnt (AFTER nestedIdentifier)?        # AlterTableClauseAdd
+    : ADD COLUMN (IF NOT EXISTS)? tableColumnDfnt (AFTER nestedIdentifier)?        # AlterTableClauseAddColumn
+    | ADD INDEX (IF NOT EXISTS)? tableIndexDfnt (AFTER nestedIdentifier)?          # AlterTableClauseAddIndex
     | ATTACH partitionClause (FROM tableIdentifier)?                               # AlterTableClauseAttach
     | CLEAR COLUMN (IF EXISTS)? nestedIdentifier (IN partitionClause)?             # AlterTableClauseClear
     | COMMENT COLUMN (IF EXISTS)? nestedIdentifier STRING_LITERAL                  # AlterTableClauseComment
     | DELETE WHERE columnExpr                                                      # AlterTableClauseDelete
     | DETACH partitionClause                                                       # AlterTableClauseDetach
     | DROP COLUMN (IF EXISTS)? nestedIdentifier                                    # AlterTableClauseDropColumn
+    | DROP INDEX (IF EXISTS)? nestedIdentifier                                     # AlterTableClauseDropIndex
     | DROP partitionClause                                                         # AlterTableClauseDropPartition
     | MODIFY COLUMN (IF EXISTS)? nestedIdentifier codecExpr                        # AlterTableClauseModifyCodec
     | MODIFY COLUMN (IF EXISTS)? nestedIdentifier COMMENT STRING_LITERAL           # AlterTableClauseModifyComment
@@ -49,7 +51,11 @@ alterTableClause
     | REMOVE TTL                                                                   # AlterTableClauseRemoveTTL
     | RENAME COLUMN (IF EXISTS)? nestedIdentifier TO nestedIdentifier              # AlterTableClauseRename
     | REPLACE partitionClause FROM tableIdentifier                                 # AlterTableClauseReplace
+    | UPDATE assignmentExprList whereClause                                        # AlterTableClauseUpdate
     ;
+
+assignmentExprList: assignmentExpr (COMMA assignmentExpr)*;
+assignmentExpr: nestedIdentifier EQ_SINGLE columnExpr;
 
 tableColumnPropertyType: ALIAS | CODEC | COMMENT | DEFAULT | MATERIALIZED | TTL;
 
@@ -101,13 +107,14 @@ engineExpr: ENGINE EQ_SINGLE? identifierOrNull (LPAREN columnExprList? RPAREN)?;
 tableElementExpr
     : tableColumnDfnt                                                              # TableElementExprColumn
     | CONSTRAINT identifier CHECK columnExpr                                       # TableElementExprConstraint
-    | INDEX identifier columnExpr TYPE columnTypeExpr GRANULARITY DECIMAL_LITERAL  # TableElementExprIndex
+    | INDEX tableIndexDfnt                                                         # TableElementExprIndex
     ;
 tableColumnDfnt
     : nestedIdentifier columnTypeExpr tableColumnPropertyExpr? (COMMENT STRING_LITERAL)? codecExpr? (TTL columnExpr)?
     | nestedIdentifier columnTypeExpr? tableColumnPropertyExpr (COMMENT STRING_LITERAL)? codecExpr? (TTL columnExpr)?
     ;
 tableColumnPropertyExpr: (DEFAULT | MATERIALIZED | ALIAS) columnExpr;
+tableIndexDfnt: nestedIdentifier columnExpr TYPE columnTypeExpr GRANULARITY DECIMAL_LITERAL;
 codecExpr: CODEC LPAREN codecArgExpr (COMMA codecArgExpr)* RPAREN;
 codecArgExpr: identifier (LPAREN columnExprList? RPAREN)?;
 ttlExpr: columnExpr (DELETE | TO DISK STRING_LITERAL | TO VOLUME STRING_LITERAL)?;
@@ -367,7 +374,7 @@ keyword
     | OFFSET | ON | OPTIMIZE | OR | ORDER | OUTER | OUTFILE | PARTITION | POPULATE | PREWHERE | PRIMARY | QUARTER | REMOVE | RENAME
     | REPLACE | REPLICA | REPLICATED | RIGHT | ROLLUP | SAMPLE | SECOND | SELECT | SEMI | SENDS | SET | SETTINGS | SHOW | START | STOP
     | SUBSTRING | SYNC | SYNTAX | SYSTEM | TABLE | TABLES | TEMPORARY | THEN | TIES | TIMEOUT | TIMESTAMP | TOTALS | TRAILING | TRIM
-    | TRUNCATE | TO | TTL | TYPE | UNION | USE | USING | UUID | VALUES | VIEW | VOLUME | WEEK | WHEN | WHERE | WITH | YEAR
+    | TRUNCATE | TO | TTL | TYPE | UNION | UPDATE | USE | USING | UUID | VALUES | VIEW | VOLUME | WEEK | WHEN | WHERE | WITH | YEAR
     ;
 keywordForAlias
     : DATE | FIRST | ID | KEY

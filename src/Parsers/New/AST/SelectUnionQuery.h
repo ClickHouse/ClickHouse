@@ -46,8 +46,6 @@ class ArrayJoinClause : public INode
 
 using PrewhereClause = SimpleClause<ColumnExpr>;
 
-using WhereClause = SimpleClause<ColumnExpr>;
-
 using GroupByClause = SimpleClause<ColumnExprList>;
 
 using HavingClause = SimpleClause<ColumnExpr>;

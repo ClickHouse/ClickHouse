@@ -15,13 +15,15 @@ public:
     antlrcpp::Any visitQuery(ClickHouseParser::QueryContext * ctx) override;
 
     // AlterTableQuery
-    antlrcpp::Any visitAlterTableClauseAdd(ClickHouseParser::AlterTableClauseAddContext * ctx) override;
+    antlrcpp::Any visitAlterTableClauseAddColumn(ClickHouseParser::AlterTableClauseAddColumnContext * ctx) override;
+    antlrcpp::Any visitAlterTableClauseAddIndex(ClickHouseParser::AlterTableClauseAddIndexContext * ctx) override;
     antlrcpp::Any visitAlterTableClauseAttach(ClickHouseParser::AlterTableClauseAttachContext * ctx) override;
     antlrcpp::Any visitAlterTableClauseClear(ClickHouseParser::AlterTableClauseClearContext * ctx) override;
     antlrcpp::Any visitAlterTableClauseComment(ClickHouseParser::AlterTableClauseCommentContext * ctx) override;
     antlrcpp::Any visitAlterTableClauseDelete(ClickHouseParser::AlterTableClauseDeleteContext * ctx) override;
     antlrcpp::Any visitAlterTableClauseDetach(ClickHouseParser::AlterTableClauseDetachContext * ctx) override;
     antlrcpp::Any visitAlterTableClauseDropColumn(ClickHouseParser::AlterTableClauseDropColumnContext * ctx) override;
+    antlrcpp::Any visitAlterTableClauseDropIndex(ClickHouseParser::AlterTableClauseDropIndexContext * ctx) override;
     antlrcpp::Any visitAlterTableClauseDropPartition(ClickHouseParser::AlterTableClauseDropPartitionContext * ctx) override;
     antlrcpp::Any visitAlterTableClauseModify(ClickHouseParser::AlterTableClauseModifyContext * ctx) override;
     antlrcpp::Any visitAlterTableClauseModifyCodec(ClickHouseParser::AlterTableClauseModifyCodecContext * ctx) override;
@@ -32,7 +34,10 @@ public:
     antlrcpp::Any visitAlterTableClauseRemoveTTL(ClickHouseParser::AlterTableClauseRemoveTTLContext * ctx) override;
     antlrcpp::Any visitAlterTableClauseRename(ClickHouseParser::AlterTableClauseRenameContext * ctx) override;
     antlrcpp::Any visitAlterTableClauseReplace(ClickHouseParser::AlterTableClauseReplaceContext * ctx) override;
+    antlrcpp::Any visitAlterTableClauseUpdate(ClickHouseParser::AlterTableClauseUpdateContext * ctx) override;
     antlrcpp::Any visitAlterTableStmt(ClickHouseParser::AlterTableStmtContext * ctx) override;
+    antlrcpp::Any visitAssignmentExpr(ClickHouseParser::AssignmentExprContext * ctx) override;
+    antlrcpp::Any visitAssignmentExprList(ClickHouseParser::AssignmentExprListContext * ctx) override;
     antlrcpp::Any visitTableColumnPropertyType(ClickHouseParser::TableColumnPropertyTypeContext * ctx) override;
 
     // CheckQuery
@@ -150,15 +155,16 @@ public:
     // TableElementExpr
     antlrcpp::Any visitCodecArgExpr(ClickHouseParser::CodecArgExprContext * ctx) override;
     antlrcpp::Any visitCodecExpr(ClickHouseParser::CodecExprContext * ctx) override;
+    antlrcpp::Any visitTableColumnDfnt(ClickHouseParser::TableColumnDfntContext * ctx) override;
+    antlrcpp::Any visitTableColumnPropertyExpr(ClickHouseParser::TableColumnPropertyExprContext * ctx) override;
     antlrcpp::Any visitTableElementExprColumn(ClickHouseParser::TableElementExprColumnContext * ctx) override;
     antlrcpp::Any visitTableElementExprConstraint(ClickHouseParser::TableElementExprConstraintContext * ctx) override;
     antlrcpp::Any visitTableElementExprIndex(ClickHouseParser::TableElementExprIndexContext * ctx) override;
+    antlrcpp::Any visitTableIndexDfnt(ClickHouseParser::TableIndexDfntContext * ctx) override;
 
     // TableExpr
     antlrcpp::Any visitTableArgExpr(ClickHouseParser::TableArgExprContext * ctx) override;
     antlrcpp::Any visitTableArgList(ClickHouseParser::TableArgListContext * ctx) override;
-    antlrcpp::Any visitTableColumnDfnt(ClickHouseParser::TableColumnDfntContext * ctx) override;
-    antlrcpp::Any visitTableColumnPropertyExpr(ClickHouseParser::TableColumnPropertyExprContext * ctx) override;
     antlrcpp::Any visitTableExprAlias(ClickHouseParser::TableExprAliasContext * ctx) override;
     antlrcpp::Any visitTableExprFunction(ClickHouseParser::TableExprFunctionContext * ctx) override;
     antlrcpp::Any visitTableExprIdentifier(ClickHouseParser::TableExprIdentifierContext * ctx) override;

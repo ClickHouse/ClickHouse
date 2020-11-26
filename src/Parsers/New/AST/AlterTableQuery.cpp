@@ -2,6 +2,7 @@
 
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -15,6 +16,20 @@
 
 namespace DB::AST
 {
+
+AssignmentExpr::AssignmentExpr(PtrTo<Identifier> identifier, PtrTo<ColumnExpr> expr) : INode{identifier, expr}
+{
+}
+
+ASTPtr AssignmentExpr::convertToOld() const
+{
+    auto expr = std::make_shared<ASTAssignment>();
+
+    expr->column_name = get(IDENTIFIER)->convertToOld()->getColumnName();
+    expr->expression = get(EXPR)->convertToOld();
+
+    return expr;
+}
 
 PartitionClause::PartitionClause(PtrTo<Literal> id) : PartitionClause(ClauseType::ID, {id})
 {
@@ -59,10 +74,19 @@ ASTPtr PartitionClause::convertToOld() const
 }
 
 // static
-PtrTo<AlterTableClause> AlterTableClause::createAdd(bool if_not_exists, PtrTo<TableElementExpr> element, PtrTo<Identifier> after)
+PtrTo<AlterTableClause> AlterTableClause::createAddColumn(bool if_not_exists, PtrTo<TableElementExpr> element, PtrTo<Identifier> after)
 {
-    // TODO: assert(element->getType() == TableElementExpr::ExprType::COLUMN);
-    PtrTo<AlterTableClause> query(new AlterTableClause(ClauseType::ADD, {element, after}));
+    assert(element->getType() == TableElementExpr::ExprType::COLUMN);
+    PtrTo<AlterTableClause> query(new AlterTableClause(ClauseType::ADD_COLUMN, {element, after}));
+    query->if_not_exists = if_not_exists;
+    return query;
+}
+
+// static
+PtrTo<AlterTableClause> AlterTableClause::createAddIndex(bool if_not_exists, PtrTo<TableElementExpr> element, PtrTo<Identifier> after)
+{
+    assert(element->getType() == TableElementExpr::ExprType::INDEX);
+    PtrTo<AlterTableClause> query(new AlterTableClause(ClauseType::ADD_INDEX, {element, after}));
     query->if_not_exists = if_not_exists;
     return query;
 }
@@ -113,6 +137,14 @@ PtrTo<AlterTableClause> AlterTableClause::createDetach(PtrTo<PartitionClause> cl
 PtrTo<AlterTableClause> AlterTableClause::createDropColumn(bool if_exists, PtrTo<Identifier> identifier)
 {
     PtrTo<AlterTableClause> query(new AlterTableClause(ClauseType::DROP_COLUMN, {identifier}));
+    query->if_exists = if_exists;
+    return query;
+}
+
+// static
+PtrTo<AlterTableClause> AlterTableClause::createDropIndex(bool if_exists, PtrTo<Identifier> identifier)
+{
+    PtrTo<AlterTableClause> query(new AlterTableClause(ClauseType::DROP_INDEX, {identifier}));
     query->if_exists = if_exists;
     return query;
 }
@@ -173,18 +205,31 @@ PtrTo<AlterTableClause> AlterTableClause::createTTL(PtrTo<TTLClause> clause)
     return PtrTo<AlterTableClause>(new AlterTableClause(ClauseType::TTL, {clause}));
 }
 
+// static
+PtrTo<AlterTableClause> AlterTableClause::createUpdate(PtrTo<AssignmentExprList> list, PtrTo<WhereClause> where)
+{
+    return PtrTo<AlterTableClause>(new AlterTableClause(ClauseType::UPDATE, {list, where}));
+}
+
 ASTPtr AlterTableClause::convertToOld() const
 {
     auto command = std::make_shared<ASTAlterCommand>();
 
     switch(clause_type)
     {
-        case ClauseType::ADD:
+        case ClauseType::ADD_COLUMN:
             command->type = ASTAlterCommand::ADD_COLUMN;
             command->if_not_exists = if_not_exists;
             // TODO: command->first
             command->col_decl = get(ELEMENT)->convertToOld();
             if (has(AFTER)) command->column = get(AFTER)->convertToOld();
+            break;
+
+        case ClauseType::ADD_INDEX:
+            command->type = ASTAlterCommand::ADD_INDEX;
+            command->if_not_exists = if_not_exists;
+            command->index_decl = get(ELEMENT)->convertToOld();
+            if (has(AFTER)) command->index = get(AFTER)->convertToOld();
             break;
 
         case ClauseType::ATTACH:
@@ -247,6 +292,13 @@ ASTPtr AlterTableClause::convertToOld() const
             command->if_exists = if_exists;
             command->detach = false;
             command->column = get(COLUMN)->convertToOld();
+            break;
+
+        case ClauseType::DROP_INDEX:
+            command->type = ASTAlterCommand::DROP_INDEX;
+            command->if_exists = if_exists;
+            command->detach = false;
+            command->index = get(COLUMN)->convertToOld();
             break;
 
         case ClauseType::DROP_PARTITION:
@@ -317,6 +369,12 @@ ASTPtr AlterTableClause::convertToOld() const
             command->type = ASTAlterCommand::MODIFY_TTL;
             command->ttl = get(CLAUSE)->convertToOld();
             break;
+
+        case ClauseType::UPDATE:
+            command->type = ASTAlterCommand::UPDATE;
+            command->update_assignments = get(ASSIGNMENTS)->convertToOld();
+            command->predicate = get(WHERE)->convertToOld();
+            break;
     }
 
     if (command->col_decl)
@@ -378,10 +436,16 @@ namespace DB
 
 using namespace AST;
 
-antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseAdd(ClickHouseParser::AlterTableClauseAddContext * ctx)
+antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseAddColumn(ClickHouseParser::AlterTableClauseAddColumnContext * ctx)
 {
     auto after = ctx->AFTER() ? visit(ctx->nestedIdentifier()).as<PtrTo<Identifier>>() : nullptr;
-    return AlterTableClause::createAdd(!!ctx->IF(), visit(ctx->tableColumnDfnt()), after);
+    return AlterTableClause::createAddColumn(!!ctx->IF(), visit(ctx->tableColumnDfnt()), after);
+}
+
+antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseAddIndex(ClickHouseParser::AlterTableClauseAddIndexContext * ctx)
+{
+    auto after = ctx->AFTER() ? visit(ctx->nestedIdentifier()).as<PtrTo<Identifier>>() : nullptr;
+    return AlterTableClause::createAddIndex(!!ctx->IF(), visit(ctx->tableIndexDfnt()), after);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseAttach(ClickHouseParser::AlterTableClauseAttachContext *ctx)
@@ -414,6 +478,11 @@ antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseDetach(ClickHouseParser::Al
 antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseDropColumn(ClickHouseParser::AlterTableClauseDropColumnContext * ctx)
 {
     return AlterTableClause::createDropColumn(!!ctx->IF(), visit(ctx->nestedIdentifier()));
+}
+
+antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseDropIndex(ClickHouseParser::AlterTableClauseDropIndexContext * ctx)
+{
+    return AlterTableClause::createDropIndex(!!ctx->IF(), visit(ctx->nestedIdentifier()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseDropPartition(ClickHouseParser::AlterTableClauseDropPartitionContext *ctx)
@@ -466,12 +535,29 @@ antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseReplace(ClickHouseParser::A
     return AlterTableClause::createReplace(visit(ctx->partitionClause()), visit(ctx->tableIdentifier()));
 }
 
+antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseUpdate(ClickHouseParser::AlterTableClauseUpdateContext *ctx)
+{
+    return AlterTableClause::createUpdate(visit(ctx->assignmentExprList()), visit(ctx->whereClause()));
+}
+
 antlrcpp::Any ParseTreeVisitor::visitAlterTableStmt(ClickHouseParser::AlterTableStmtContext * ctx)
 {
     auto cluster = ctx->clusterClause() ? visit(ctx->clusterClause()).as<PtrTo<ClusterClause>>() : nullptr;
     auto list = std::make_shared<List<AlterTableClause>>();
     for (auto * clause : ctx->alterTableClause()) list->push(visit(clause));
     return std::make_shared<AlterTableQuery>(cluster, visit(ctx->tableIdentifier()), list);
+}
+
+antlrcpp::Any ParseTreeVisitor::visitAssignmentExpr(ClickHouseParser::AssignmentExprContext *ctx)
+{
+    return std::make_shared<AssignmentExpr>(visit(ctx->nestedIdentifier()), visit(ctx->columnExpr()));
+}
+
+antlrcpp::Any ParseTreeVisitor::visitAssignmentExprList(ClickHouseParser::AssignmentExprListContext *ctx)
+{
+    auto list = std::make_shared<AssignmentExprList>();
+    for (auto * expr : ctx->assignmentExpr()) list->push(visit(expr));
+    return list;
 }
 
 antlrcpp::Any ParseTreeVisitor::visitTableColumnPropertyType(ClickHouseParser::TableColumnPropertyTypeContext *ctx)

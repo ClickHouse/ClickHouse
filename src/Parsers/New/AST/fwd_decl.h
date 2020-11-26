@@ -21,6 +21,7 @@ using PtrTo = std::shared_ptr<T>;
 using Ptr = PtrTo<>;
 using PtrList = std::vector<Ptr>;
 
+class AssignmentExpr;
 class CodecArgExpr;
 class CodecExpr;
 class ColumnExpr;
@@ -57,6 +58,7 @@ class TableFunctionExpr;
 class TableIdentifier;
 class TTLExpr;
 
+using AssignmentExprList = List<AssignmentExpr>;
 using CodecArgList = List<CodecArgExpr>;
 using ColumnExprList = List<ColumnExpr>;
 using ColumnNameList = List<Identifier>;
@@ -77,5 +79,6 @@ using DestinationClause = SimpleClause<TableIdentifier>;
 using OrderByClause = SimpleClause<OrderExprList>;
 using TTLClause = SimpleClause<TTLExprList>;
 using UUIDClause = SimpleClause<StringLiteral>;
+using WhereClause = SimpleClause<ColumnExpr>;
 
 }
