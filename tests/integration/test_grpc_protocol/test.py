@@ -29,7 +29,7 @@ import clickhouse_grpc_pb2_grpc
 config_dir = os.path.join(SCRIPT_DIR, './configs')
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance('node', main_configs=['configs/grpc_port.xml'])
-grpc_port = 9001
+grpc_port = 9100
 main_channel = None
 
 def create_channel():
