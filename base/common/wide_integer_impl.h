@@ -240,11 +240,12 @@ struct integer<Bits, Signed>::_impl
     constexpr static void set_multiplier(integer<Bits, Signed> & self, T t) noexcept {
         constexpr uint64_t max_int = std::numeric_limits<uint64_t>::max();
 
-        /// Replacing nan to zero, and inf to max(T) to avoid stack overflow in bigint_cast
-        if (isnan(t))
-            t = 0;
-        if (isinf(t))
-            t = std::numeric_limits<T>::max();
+        /// Implementation specific behaviour on overflow (if we don't check here, stack overflow will triggered in bigint_cast).
+        if (!isfinite(t))
+        {
+            self = 0;
+            return;
+        }
 
         const T alpha = t / max_int;
 
