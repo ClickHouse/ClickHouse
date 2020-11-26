@@ -783,17 +783,20 @@ namespace
         return pid;
     }
 
-    int stop(const fs::path & pid_file)
+    int stop(const fs::path & pid_file, bool force)
     {
         UInt64 pid = isRunning(pid_file);
 
         if (!pid)
             return 0;
 
-        if (0 == kill(pid, 15)) /// Terminate
-            fmt::print("Sent termination signal.\n", pid);
+        int signal = force ? SIGKILL : SIGTERM;
+        const char * signal_name = force ? "kill" : "terminate";
+
+        if (0 == kill(pid, signal))
+            fmt::print("Sent {} signal to process with pid {}.\n", signal_name, pid);
         else
-            throwFromErrno("Cannot send termination signal", ErrorCodes::SYSTEM_ERROR);
+            throwFromErrno(fmt::format("Cannot send {} signal", signal_name), ErrorCodes::SYSTEM_ERROR);
 
         size_t try_num = 0;
         constexpr size_t num_tries = 60;
@@ -869,6 +872,7 @@ int mainEntryClickHouseStop(int argc, char ** argv)
     desc.add_options()
         ("help,h", "produce help message")
         ("pid-path", po::value<std::string>()->default_value("/var/run/clickhouse-server"), "directory for pid file")
+        ("force", po::value<bool>()->default_value(false), "Stop with KILL signal instead of TERM")
     ;
 
     po::variables_map options;
@@ -887,7 +891,7 @@ int mainEntryClickHouseStop(int argc, char ** argv)
     {
         fs::path pid_file = fs::path(options["pid-path"].as<std::string>()) / "clickhouse-server.pid";
 
-        return stop(pid_file);
+        return stop(pid_file, options["force"].as<bool>());
     }
     catch (...)
     {
@@ -940,6 +944,7 @@ int mainEntryClickHouseRestart(int argc, char ** argv)
         ("config-path", po::value<std::string>()->default_value("/etc/clickhouse-server"), "directory with configs")
         ("pid-path", po::value<std::string>()->default_value("/var/run/clickhouse-server"), "directory for pid file")
         ("user", po::value<std::string>()->default_value("clickhouse"), "clickhouse user")
+        ("force", po::value<bool>()->default_value(false), "Stop with KILL signal instead of TERM")
     ;
 
     po::variables_map options;
@@ -962,7 +967,7 @@ int mainEntryClickHouseRestart(int argc, char ** argv)
         fs::path config = fs::path(options["config-path"].as<std::string>()) / "config.xml";
         fs::path pid_file = fs::path(options["pid-path"].as<std::string>()) / "clickhouse-server.pid";
 
-        if (int res = stop(pid_file))
+        if (int res = stop(pid_file, options["force"].as<bool>()))
             return res;
         return start(user, executable, config, pid_file);
     }
