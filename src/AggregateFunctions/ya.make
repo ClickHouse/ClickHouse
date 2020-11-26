@@ -47,7 +47,6 @@ SRCS(
     AggregateFunctionStudentTTest.cpp
     AggregateFunctionSum.cpp
     AggregateFunctionSumMap.cpp
-    AggregateFunctionTimeSeriesGroupSum.cpp
     AggregateFunctionTopK.cpp
     AggregateFunctionUniq.cpp
     AggregateFunctionUniqCombined.cpp
