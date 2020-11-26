@@ -1,5 +1,5 @@
 ---
-toc_priority: 1
+toc_priority: 11
 toc_title: 安装部署
 ---
 
