@@ -139,7 +139,6 @@ static const auto MERGE_SELECTING_SLEEP_MS           = 5 * 1000;
 static const auto MUTATIONS_FINALIZING_SLEEP_MS      = 1 * 1000;
 static const auto MUTATIONS_FINALIZING_IDLE_SLEEP_MS = 5 * 1000;
 
-
 void StorageReplicatedMergeTree::setZooKeeper(zkutil::ZooKeeperPtr zookeeper)
 {
     std::lock_guard lock(current_zookeeper_mutex);
@@ -202,7 +201,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , reader(*this)
     , writer(*this)
     , merger_mutator(*this, global_context.getSettingsRef().background_pool_size)
-    , queue(*this)
+    , merge_strategy_picker(*this)
+    , queue(*this, merge_strategy_picker)
     , fetcher(*this)
     , background_executor(*this, global_context)
     , background_moves_executor(*this, global_context)
@@ -1361,6 +1361,20 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
         return false;
     }
 
+    /// In some use cases merging can be more expensive than fetching
+    /// and it may be better to spread merges tasks across the replicas
+    /// instead of doing exactly the same merge cluster-wise
+    if (merge_strategy_picker.shouldMergeOnSingleReplica(entry))
+    {
+        auto replica_to_execute_merge = merge_strategy_picker.pickReplicaToExecuteMerge(entry);
+
+        if (replica_to_execute_merge)
+        {
+            LOG_DEBUG(log, "Prefer fetching part {} from replica {} due execute_merges_on_single_replica_time_threshold", entry.new_part_name, replica_to_execute_merge.value());
+            return false;
+        }
+    }
+
     DataPartsVector parts;
     bool have_all_parts = true;
     for (const String & name : entry.source_parts)
@@ -1429,6 +1443,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
         throw Exception("Future merged part name " + backQuote(future_merged_part.name) + " differs from part name in log entry: "
             + backQuote(entry.new_part_name), ErrorCodes::BAD_DATA_PART_NAME);
     }
+    future_merged_part.uuid = entry.new_part_uuid;
     future_merged_part.updatePath(*this, reserved_space);
     future_merged_part.merge_type = entry.merge_type;
 
@@ -1553,9 +1568,10 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
     Transaction transaction(*this);
 
     FutureMergedMutatedPart future_mutated_part;
+    future_mutated_part.name = entry.new_part_name;
+    future_mutated_part.uuid = entry.new_part_uuid;
     future_mutated_part.parts.push_back(source_part);
     future_mutated_part.part_info = new_part_info;
-    future_mutated_part.name = entry.new_part_name;
     future_mutated_part.updatePath(*this, reserved_space);
     future_mutated_part.type = source_part->getType();
 
@@ -2691,11 +2707,22 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 getTotalMergesWithTTLInMergeList() < storage_settings_ptr->max_number_of_merges_with_ttl_in_pool;
 
             FutureMergedMutatedPart future_merged_part;
+            if (storage_settings.get()->assign_part_uuids)
+                future_merged_part.uuid = UUIDHelpers::generateV4();
+
             if (max_source_parts_size_for_merge > 0 &&
                 merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size_for_merge, merge_pred, merge_with_ttl_allowed, nullptr))
             {
-                create_result = createLogEntryToMergeParts(zookeeper, future_merged_part.parts,
-                    future_merged_part.name, future_merged_part.type, deduplicate, nullptr, merge_pred.getVersion(), future_merged_part.merge_type);
+                create_result = createLogEntryToMergeParts(
+                    zookeeper,
+                    future_merged_part.parts,
+                    future_merged_part.name,
+                    future_merged_part.uuid,
+                    future_merged_part.type,
+                    deduplicate,
+                    nullptr,
+                    merge_pred.getVersion(),
+                    future_merged_part.merge_type);
             }
             /// If there are many mutations in queue, it may happen, that we cannot enqueue enough merges to merge all new parts
             else if (max_source_part_size_for_mutation > 0 && queue.countMutations() > 0
@@ -2712,8 +2739,12 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                     if (!desired_mutation_version)
                         continue;
 
-                    create_result = createLogEntryToMutatePart(*part,
-                        desired_mutation_version->first, desired_mutation_version->second, merge_pred.getVersion());
+                    create_result = createLogEntryToMutatePart(
+                        *part,
+                        future_merged_part.uuid,
+                        desired_mutation_version->first,
+                        desired_mutation_version->second,
+                        merge_pred.getVersion());
 
                     if (create_result == CreateMergeEntryResult::Ok)
                         break;
@@ -2775,6 +2806,7 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     zkutil::ZooKeeperPtr & zookeeper,
     const DataPartsVector & parts,
     const String & merged_name,
+    const UUID & merged_part_uuid,
     const MergeTreeDataPartType & merged_part_type,
     bool deduplicate,
     ReplicatedMergeTreeLogEntryData * out_log_entry,
@@ -2810,6 +2842,7 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     entry.type = LogEntry::MERGE_PARTS;
     entry.source_replica = replica_name;
     entry.new_part_name = merged_name;
+    entry.new_part_uuid = merged_part_uuid;
     entry.new_part_type = merged_part_type;
     entry.merge_type = merge_type;
     entry.deduplicate = deduplicate;
@@ -2858,7 +2891,7 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
 
 
 StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::createLogEntryToMutatePart(
-    const IMergeTreeDataPart & part, Int64 mutation_version, int32_t alter_version, int32_t log_version)
+    const IMergeTreeDataPart & part, const UUID & new_part_uuid, Int64 mutation_version, int32_t alter_version, int32_t log_version)
 {
     auto zookeeper = getZooKeeper();
 
@@ -2885,6 +2918,7 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     entry.source_replica = replica_name;
     entry.source_parts.push_back(part.name);
     entry.new_part_name = new_part_name;
+    entry.new_part_uuid = new_part_uuid;
     entry.create_time = time(nullptr);
     entry.alter_version = alter_version;
 
@@ -3011,6 +3045,11 @@ void StorageReplicatedMergeTree::exitLeaderElection()
     leader_election = nullptr;
 }
 
+bool StorageReplicatedMergeTree::checkReplicaHavePart(const String & replica, const String & part_name)
+{
+    auto zookeeper = getZooKeeper();
+    return zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/parts/" + part_name);
+}
 
 String StorageReplicatedMergeTree::findReplicaHavingPart(const String & part_name, bool active)
 {
@@ -3026,7 +3065,7 @@ String StorageReplicatedMergeTree::findReplicaHavingPart(const String & part_nam
         if (replica == replica_name)
             continue;
 
-        if (zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/parts/" + part_name) &&
+        if (checkReplicaHavePart(replica, part_name) &&
             (!active || zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active")))
             return replica;
 
@@ -3823,6 +3862,9 @@ bool StorageReplicatedMergeTree::optimize(
                     ReplicatedMergeTreeMergePredicate can_merge = queue.getMergePredicate(zookeeper);
 
                     FutureMergedMutatedPart future_merged_part;
+                    if (storage_settings.get()->assign_part_uuids)
+                        future_merged_part.uuid = UUIDHelpers::generateV4();
+
                     bool selected = merger_mutator.selectAllPartsToMergeWithinPartition(
                         future_merged_part, disk_space, can_merge, partition_id, true, nullptr);
 
@@ -3832,7 +3874,7 @@ bool StorageReplicatedMergeTree::optimize(
                     ReplicatedMergeTreeLogEntryData merge_entry;
                     CreateMergeEntryResult create_result = createLogEntryToMergeParts(
                         zookeeper, future_merged_part.parts,
-                        future_merged_part.name, future_merged_part.type, deduplicate,
+                        future_merged_part.name, future_merged_part.uuid, future_merged_part.type, deduplicate,
                         &merge_entry, can_merge.getVersion(), future_merged_part.merge_type);
 
                     if (create_result == CreateMergeEntryResult::MissingPart)
@@ -3858,6 +3900,9 @@ bool StorageReplicatedMergeTree::optimize(
                 ReplicatedMergeTreeMergePredicate can_merge = queue.getMergePredicate(zookeeper);
 
                 FutureMergedMutatedPart future_merged_part;
+                if (storage_settings.get()->assign_part_uuids)
+                    future_merged_part.uuid = UUIDHelpers::generateV4();
+
                 String disable_reason;
                 bool selected = false;
                 if (!partition)
@@ -3886,7 +3931,7 @@ bool StorageReplicatedMergeTree::optimize(
                 ReplicatedMergeTreeLogEntryData merge_entry;
                 CreateMergeEntryResult create_result = createLogEntryToMergeParts(
                     zookeeper, future_merged_part.parts,
-                    future_merged_part.name, future_merged_part.type, deduplicate,
+                    future_merged_part.name, future_merged_part.uuid, future_merged_part.type, deduplicate,
                     &merge_entry, can_merge.getVersion(), future_merged_part.merge_type);
 
                 if (create_result == CreateMergeEntryResult::MissingPart)
@@ -4015,6 +4060,8 @@ void StorageReplicatedMergeTree::alter(
         /// Also we don't upgrade alter lock to table structure lock.
         StorageInMemoryMetadata future_metadata = getInMemoryMetadata();
         commands.apply(future_metadata, query_context);
+
+        merge_strategy_picker.refreshState();
 
         changeSettings(future_metadata.settings_changes, table_lock_holder);
 

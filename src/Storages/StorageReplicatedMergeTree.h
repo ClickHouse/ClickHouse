@@ -13,6 +13,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeCleanupThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeMergeStrategyPicker.h>
 #include <Storages/MergeTree/ReplicatedMergeTreePartCheckThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
@@ -210,7 +211,6 @@ public:
     bool canExecuteFetch(const ReplicatedMergeTreeLogEntry & entry, String & disable_reason) const;
 
 private:
-
     /// Get a sequential consistent view of current parts.
     ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock getMaxAddedBlocks() const;
 
@@ -222,11 +222,13 @@ private:
     friend class ReplicatedMergeTreeCleanupThread;
     friend class ReplicatedMergeTreeAlterThread;
     friend class ReplicatedMergeTreeRestartingThread;
+    friend class ReplicatedMergeTreeMergeStrategyPicker;
     friend struct ReplicatedMergeTreeLogEntry;
     friend class ScopedPartitionMergeLock;
     friend class ReplicatedMergeTreeQueue;
     friend class MergeTreeData;
 
+    using MergeStrategyPicker = ReplicatedMergeTreeMergeStrategyPicker;
     using LogEntry = ReplicatedMergeTreeLogEntry;
     using LogEntryPtr = LogEntry::Ptr;
 
@@ -261,6 +263,8 @@ private:
     MergeTreeDataSelectExecutor reader;
     MergeTreeDataWriter writer;
     MergeTreeDataMergerMutator merger_mutator;
+
+    MergeStrategyPicker merge_strategy_picker;
 
     /** The queue of what needs to be done on this replica to catch up with everyone. It is taken from ZooKeeper (/replicas/me/queue/).
      * In ZK entries in chronological order. Here it is not necessary.
@@ -460,6 +464,7 @@ private:
         zkutil::ZooKeeperPtr & zookeeper,
         const DataPartsVector & parts,
         const String & merged_name,
+        const UUID & merged_part_uuid,
         const MergeTreeDataPartType & merged_part_type,
         bool deduplicate,
         ReplicatedMergeTreeLogEntryData * out_log_entry,
@@ -468,6 +473,7 @@ private:
 
     CreateMergeEntryResult createLogEntryToMutatePart(
         const IMergeTreeDataPart & part,
+        const UUID & new_part_uuid,
         Int64 mutation_version,
         int32_t alter_version,
         int32_t log_version);
@@ -477,6 +483,8 @@ private:
     /** Returns an empty string if no one has a part.
       */
     String findReplicaHavingPart(const String & part_name, bool active);
+
+    bool checkReplicaHavePart(const String & replica, const String & part_name);
 
     /** Find replica having specified part or any part that covers it.
       * If active = true, consider only active replicas.

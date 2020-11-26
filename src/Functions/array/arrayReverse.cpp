@@ -41,7 +41,7 @@ public:
         return arguments[0];
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override;
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override;
 
 private:
     template <typename T>
@@ -53,7 +53,7 @@ private:
 };
 
 
-ColumnPtr FunctionArrayReverse::executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
+ColumnPtr FunctionArrayReverse::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
 {
     const ColumnArray * array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
     if (!array)

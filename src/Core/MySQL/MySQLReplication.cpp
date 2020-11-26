@@ -57,7 +57,6 @@ namespace MySQLReplication
         payload.readStrict(reinterpret_cast<char *>(&create_timestamp), 4);
         payload.readStrict(reinterpret_cast<char *>(&event_header_length), 1);
         assert(event_header_length == EVENT_HEADER_LENGTH);
-
         readStringUntilEOF(event_type_header_length, payload);
     }
 
@@ -745,7 +744,7 @@ namespace MySQLReplication
         // skip the generic response packets header flag.
         payload.ignore(1);
 
-        MySQLBinlogEventReadBuffer event_payload(payload);
+        MySQLBinlogEventReadBuffer event_payload(payload, checksum_signature_length);
 
         EventHeader event_header;
         event_header.parse(event_payload);

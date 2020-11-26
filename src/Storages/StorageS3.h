@@ -33,7 +33,7 @@ public:
         UInt64 min_upload_part_size_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        Context & context_,
+        const Context & context_,
         const String & compression_method_ = "");
 
     String getName() const override
@@ -56,7 +56,7 @@ public:
 
 private:
     S3::URI uri;
-    const Context & context_global;
+    const Context & global_context;
 
     String format_name;
     UInt64 min_upload_part_size;
