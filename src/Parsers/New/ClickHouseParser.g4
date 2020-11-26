@@ -66,7 +66,7 @@ partitionClause
 
 // CHECK statement
 
-checkStmt: CHECK TABLE tableIdentifier;
+checkStmt: CHECK TABLE tableIdentifier partitionClause?;
 
 // CREATE statement
 
@@ -163,7 +163,7 @@ selectUnionStmt: selectStmtWithParens (UNION ALL selectStmtWithParens)*;
 selectStmtWithParens: selectStmt | LPAREN selectUnionStmt RPAREN;
 selectStmt:
     withClause?
-    SELECT DISTINCT? columnExprList
+    SELECT DISTINCT? topClause? columnExprList
     fromClause?
     arrayJoinClause?
     prewhereClause?
@@ -177,6 +177,7 @@ selectStmt:
     ;
 
 withClause: WITH columnExprList;
+topClause: TOP DECIMAL_LITERAL (WITH TIES)?;
 fromClause: FROM joinExpr;
 arrayJoinClause: (LEFT | INNER)? ARRAY JOIN columnExprList;
 prewhereClause: PREWHERE columnExpr;
@@ -212,7 +213,7 @@ joinConstraintClause
     ;
 
 sampleClause: SAMPLE ratioExpr (OFFSET ratioExpr)?;
-limitExpr: DECIMAL_LITERAL ((COMMA | OFFSET) DECIMAL_LITERAL)?;
+limitExpr: columnExpr ((COMMA | OFFSET) columnExpr)?;
 orderExprList: orderExpr (COMMA orderExpr)*;
 orderExpr: columnExpr (ASCENDING | DESCENDING | DESC)? (NULLS (FIRST | LAST))? (COLLATE STRING_LITERAL)?;
 ratioExpr: numberLiteral (SLASH numberLiteral)?;
@@ -374,7 +375,7 @@ keyword
     | OFFSET | ON | OPTIMIZE | OR | ORDER | OUTER | OUTFILE | PARTITION | POPULATE | PREWHERE | PRIMARY | QUARTER | REMOVE | RENAME
     | REPLACE | REPLICA | REPLICATED | RIGHT | ROLLUP | SAMPLE | SECOND | SELECT | SEMI | SENDS | SET | SETTINGS | SHOW | START | STOP
     | SUBSTRING | SYNC | SYNTAX | SYSTEM | TABLE | TABLES | TEMPORARY | THEN | TIES | TIMEOUT | TIMESTAMP | TOTALS | TRAILING | TRIM
-    | TRUNCATE | TO | TTL | TYPE | UNION | UPDATE | USE | USING | UUID | VALUES | VIEW | VOLUME | WEEK | WHEN | WHERE | WITH | YEAR
+    | TRUNCATE | TO | TOP | TTL | TYPE | UNION | UPDATE | USE | USING | UUID | VALUES | VIEW | VOLUME | WEEK | WHEN | WHERE | WITH | YEAR
     ;
 keywordForAlias
     : DATE | FIRST | ID | KEY

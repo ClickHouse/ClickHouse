@@ -12,6 +12,11 @@
 #include <Parsers/New/AST/SettingExpr.h>
 #include <Parsers/New/ParseTreeVisitor.h>
 
+namespace DB::ErrorCodes
+{
+    extern const int TOP_AND_LIMIT_TOGETHER;
+}
+
 namespace DB::AST
 {
 
@@ -65,6 +70,17 @@ ASTPtr LimitByClause::convertToOld() const
     list->children.push_back(get(EXPRS)->convertToOld());
 
     return list;
+}
+
+// LIMIT Clause
+
+LimitClause::LimitClause(bool with_ties_, PtrTo<LimitExpr> expr) : INode{expr}, with_ties(with_ties_)
+{
+}
+
+ASTPtr LimitClause::convertToOld() const
+{
+    return get(EXPR)->convertToOld();
 }
 
 // SETTINGS Clause
@@ -188,6 +204,7 @@ ASTPtr SelectStmt::convertToOld() const
     if (has(LIMIT))
     {
         auto old_list = get(LIMIT)->convertToOld();
+        old_select->limit_with_ties = get<LimitClause>(LIMIT)->with_ties;
         old_select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(old_list->children[0]));
         if (old_list->children.size() > 1)
             old_select->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(old_list->children[1]));
@@ -244,6 +261,12 @@ antlrcpp::Any ParseTreeVisitor::visitWithClause(ClickHouseParser::WithClauseCont
     return std::make_shared<WithClause>(visit(ctx->columnExprList()).as<PtrTo<ColumnExprList>>());
 }
 
+antlrcpp::Any ParseTreeVisitor::visitTopClause(ClickHouseParser::TopClauseContext *ctx)
+{
+    auto limit = std::make_shared<LimitExpr>(ColumnExpr::createLiteral(Literal::createNumber(ctx->DECIMAL_LITERAL())));
+    return std::make_shared<LimitClause>(!!ctx->WITH(), limit);
+}
+
 antlrcpp::Any ParseTreeVisitor::visitFromClause(ClickHouseParser::FromClauseContext *ctx)
 {
     return std::make_shared<FromClause>(visit(ctx->joinExpr()).as<PtrTo<JoinExpr>>());
@@ -286,7 +309,7 @@ antlrcpp::Any ParseTreeVisitor::visitLimitByClause(ClickHouseParser::LimitByClau
 
 antlrcpp::Any ParseTreeVisitor::visitLimitClause(ClickHouseParser::LimitClauseContext *ctx)
 {
-    return std::make_shared<LimitClause>(visit(ctx->limitExpr()).as<PtrTo<LimitExpr>>());
+    return std::make_shared<LimitClause>(!!ctx->WITH(), visit(ctx->limitExpr()).as<PtrTo<LimitExpr>>());
 }
 
 antlrcpp::Any ParseTreeVisitor::visitSettingsClause(ClickHouseParser::SettingsClauseContext *ctx)
@@ -303,7 +326,11 @@ antlrcpp::Any ParseTreeVisitor::visitSelectStmt(ClickHouseParser::SelectStmtCont
 
     auto select_stmt = std::make_shared<SelectStmt>(!!ctx->DISTINCT(), type, !!ctx->TOTALS(), visit(ctx->columnExprList()));
 
+    if (ctx->topClause() && ctx->limitClause())
+        throw Exception("Can not use TOP and LIMIT together", ErrorCodes::TOP_AND_LIMIT_TOGETHER);
+
     if (ctx->withClause()) select_stmt->setWithClause(visit(ctx->withClause()));
+    if (ctx->topClause()) select_stmt->setLimitClause(visit(ctx->topClause()));
     if (ctx->fromClause()) select_stmt->setFromClause(visit(ctx->fromClause()));
     if (ctx->arrayJoinClause()) select_stmt->setArrayJoinClause(visit(ctx->arrayJoinClause()));
     if (ctx->prewhereClause()) select_stmt->setPrewhereClause(visit(ctx->prewhereClause()));

@@ -162,6 +162,8 @@ public:
 
     virtual antlrcpp::Any visitWithClause(ClickHouseParser::WithClauseContext *context) = 0;
 
+    virtual antlrcpp::Any visitTopClause(ClickHouseParser::TopClauseContext *context) = 0;
+
     virtual antlrcpp::Any visitFromClause(ClickHouseParser::FromClauseContext *context) = 0;
 
     virtual antlrcpp::Any visitArrayJoinClause(ClickHouseParser::ArrayJoinClauseContext *context) = 0;

@@ -9,14 +9,15 @@ namespace DB::AST
 class CheckQuery : public Query
 {
     public:
-        explicit CheckQuery(PtrTo<TableIdentifier> identifier);
+        CheckQuery(PtrTo<TableIdentifier> identifier, PtrTo<PartitionClause> clause);
 
         ASTPtr convertToOld() const override;
 
     private:
         enum ChildIndex : UInt8
         {
-            NAME = 0,  // TableIdentifier
+            NAME = 0,       // TableIdentifier
+            PARTITION = 1,  // PartitionClause (optional)
         };
 };
 

@@ -200,6 +200,7 @@ public:
     // SELECT clauses
 
     antlrcpp::Any visitWithClause(ClickHouseParser::WithClauseContext *ctx) override;
+    antlrcpp::Any visitTopClause(ClickHouseParser::TopClauseContext * ctx) override;
     antlrcpp::Any visitFromClause(ClickHouseParser::FromClauseContext *ctx) override;
     antlrcpp::Any visitSampleClause(ClickHouseParser::SampleClauseContext *ctx) override;
     antlrcpp::Any visitArrayJoinClause(ClickHouseParser::ArrayJoinClauseContext *ctx) override;

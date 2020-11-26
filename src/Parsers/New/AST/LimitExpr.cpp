@@ -1,14 +1,13 @@
 #include <Parsers/New/AST/LimitExpr.h>
 
-#include <Parsers/New/AST/Literal.h>
-
+#include <Parsers/New/AST/ColumnExpr.h>
 #include <Parsers/New/ParseTreeVisitor.h>
 
 
 namespace DB::AST
 {
 
-LimitExpr::LimitExpr(PtrTo<NumberLiteral> limit, PtrTo<NumberLiteral> offset) : INode{limit, offset}
+LimitExpr::LimitExpr(PtrTo<ColumnExpr> limit, PtrTo<ColumnExpr> offset) : INode{limit, offset}
 {
 }
 
@@ -31,10 +30,10 @@ using namespace AST;
 
 antlrcpp::Any ParseTreeVisitor::visitLimitExpr(ClickHouseParser::LimitExprContext *ctx)
 {
-    if (ctx->DECIMAL_LITERAL().size() == 2)
-        return std::make_shared<LimitExpr>(Literal::createNumber(ctx->DECIMAL_LITERAL(0)), Literal::createNumber(ctx->DECIMAL_LITERAL(1)));
+    if (ctx->columnExpr().size() == 2)
+        return std::make_shared<LimitExpr>(visit(ctx->columnExpr(0)), visit(ctx->columnExpr(1)));
     else
-        return std::make_shared<LimitExpr>(Literal::createNumber(ctx->DECIMAL_LITERAL(0)));
+        return std::make_shared<LimitExpr>(visit(ctx->columnExpr(0)).as<PtrTo<ColumnExpr>>());
 }
 
 }

@@ -65,7 +65,21 @@ class LimitByClause : public INode
         };
 };
 
-using LimitClause = SimpleClause<LimitExpr>;
+class LimitClause : public INode
+{
+    public:
+        LimitClause(bool with_ties, PtrTo<LimitExpr> expr);
+
+        ASTPtr convertToOld() const override;
+
+        const bool with_ties;  // FIXME: bad interface, because old AST stores this inside ASTSelectQuery.
+
+    private:
+        enum ChildIndex : UInt8
+        {
+            EXPR = 0,  // LimitExpr
+        };
+};
 
 class SettingsClause : public INode
 {
