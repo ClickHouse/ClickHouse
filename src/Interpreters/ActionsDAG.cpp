@@ -707,6 +707,30 @@ ActionsDAGPtr ActionsDAG::merge(ActionsDAG && lhs, ActionsDAG && rhs)
         }
     }
 
+    /// Replace inputs from rhs to nodes from lhs result.
+    for (auto & node : rhs.nodes)
+    {
+        for (auto & child : node.children)
+        {
+            if (child->type == ActionType::INPUT)
+            {
+                auto it = inputs_map.find(child);
+                if (it != inputs_map.end())
+                    child = it->second;
+            }
+        }
+    }
+
+    for (auto & node : rhs.index)
+    {
+        if (node->type == ActionType::INPUT)
+        {
+            auto it = inputs_map.find(node);
+            if (it != inputs_map.end())
+                node = it->second;
+        }
+    }
+
     /// Update index.
     if (rhs.settings.project_input)
     {
@@ -729,19 +753,6 @@ ActionsDAGPtr ActionsDAG::merge(ActionsDAG && lhs, ActionsDAG && rhs)
             lhs.index.insert(node);
     }
 
-    /// Replace inputs from rhs to nodes from lhs result.
-    for (auto & node : rhs.nodes)
-    {
-        for (auto & child : node.children)
-        {
-            if (child->type == ActionType::INPUT)
-            {
-                auto it = inputs_map.find(child);
-                if (it != inputs_map.end())
-                    child = it->second;
-            }
-        }
-    }
 
     lhs.nodes.splice(lhs.nodes.end(), std::move(rhs.nodes));
 
