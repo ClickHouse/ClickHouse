@@ -116,7 +116,6 @@ static bool filesEqual(std::string path1, std::string path2)
 }
 
 
-
 int mainEntryClickHouseInstall(int argc, char ** argv)
 {
     po::options_description desc;
