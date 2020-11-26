@@ -167,12 +167,6 @@ if not args.use_existing_tables:
     reportStageEnd('drop-1')
 
 # Apply settings.
-# If there are errors, report them and continue -- maybe a new test uses a setting
-# that is not in master, but the queries can still run. If we have multiple
-# settings and one of them throws an exception, all previous settings for this
-# connection will be reset, because the driver reconnects on error (not
-# configurable). So the end result is uncertain, but hopefully we'll be able to
-# run at least some queries.
 settings = root.findall('settings/*')
 for conn_index, c in enumerate(all_connections):
     for s in settings:
