@@ -32,16 +32,16 @@ void registerAggregateFunctionsBitmap(AggregateFunctionFactory &);
 void registerAggregateFunctionsMaxIntersections(AggregateFunctionFactory &);
 void registerAggregateFunctionHistogram(AggregateFunctionFactory &);
 void registerAggregateFunctionRetention(AggregateFunctionFactory &);
-void registerAggregateFunctionTimeSeriesGroupSum(AggregateFunctionFactory &);
 void registerAggregateFunctionMLMethod(AggregateFunctionFactory &);
 void registerAggregateFunctionEntropy(AggregateFunctionFactory &);
 void registerAggregateFunctionSimpleLinearRegression(AggregateFunctionFactory &);
 void registerAggregateFunctionMoving(AggregateFunctionFactory &);
 void registerAggregateFunctionCategoricalIV(AggregateFunctionFactory &);
 void registerAggregateFunctionAggThrow(AggregateFunctionFactory &);
+void registerAggregateFunctionRankCorrelation(AggregateFunctionFactory &);
+void registerAggregateFunctionMannWhitney(AggregateFunctionFactory &);
 void registerAggregateFunctionWelchTTest(AggregateFunctionFactory &);
 void registerAggregateFunctionStudentTTest(AggregateFunctionFactory &);
-void registerAggregateFunctionRankCorrelation(AggregateFunctionFactory &);
 
 class AggregateFunctionCombinatorFactory;
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory &);
@@ -86,7 +86,6 @@ void registerAggregateFunctions()
         registerAggregateFunctionsMaxIntersections(factory);
         registerAggregateFunctionHistogram(factory);
         registerAggregateFunctionRetention(factory);
-        registerAggregateFunctionTimeSeriesGroupSum(factory);
         registerAggregateFunctionMLMethod(factory);
         registerAggregateFunctionEntropy(factory);
         registerAggregateFunctionSimpleLinearRegression(factory);
@@ -94,6 +93,9 @@ void registerAggregateFunctions()
         registerAggregateFunctionCategoricalIV(factory);
         registerAggregateFunctionAggThrow(factory);
         registerAggregateFunctionRankCorrelation(factory);
+        registerAggregateFunctionMannWhitney(factory);
+        registerAggregateFunctionWelchTTest(factory);
+        registerAggregateFunctionStudentTTest(factory);
     }
 
     {

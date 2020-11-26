@@ -66,10 +66,6 @@ if (USE_INTERNAL_FARMHASH_LIBRARY)
     add_subdirectory (libfarmhash)
 endif ()
 
-if (USE_INTERNAL_BTRIE_LIBRARY)
-    add_subdirectory (libbtrie)
-endif ()
-
 if (USE_INTERNAL_ZLIB_LIBRARY)
     set (ZLIB_ENABLE_TESTS 0 CACHE INTERNAL "")
     set (SKIP_INSTALL_ALL 1 CACHE INTERNAL "")
