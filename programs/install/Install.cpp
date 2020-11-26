@@ -21,6 +21,7 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
+#include <IO/MMapReadBufferFromFile.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/copyData.h>
 #include <IO/Operators.h>
@@ -70,7 +71,7 @@ namespace po = boost::program_options;
 namespace fs = std::filesystem;
 
 
-auto executeScript(const std::string & command, bool throw_on_error = false)
+static auto executeScript(const std::string & command, bool throw_on_error = false)
 {
     auto sh = ShellCommand::execute(command);
     WriteBufferFromFileDescriptor wb_stdout(STDOUT_FILENO);
@@ -87,7 +88,7 @@ auto executeScript(const std::string & command, bool throw_on_error = false)
         return sh->tryWait();
 }
 
-bool ask(std::string question)
+static bool ask(std::string question)
 {
     while (true)
     {
@@ -102,6 +103,16 @@ bool ask(std::string question)
         if (answer == "y" || answer == "Y")
             return true;
     }
+}
+
+static bool filesEqual(std::string path1, std::string path2)
+{
+    MMapReadBufferFromFile in1(path1, 0);
+    MMapReadBufferFromFile in2(path2, 0);
+
+    /// memcmp is faster than hashing and comparing hashes
+    return in1.buffer().size() == in2.buffer().size()
+        && 0 == memcmp(in1.buffer().begin(), in2.buffer().begin(), in1.buffer().size());
 }
 
 
@@ -143,57 +154,89 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot obtain path to the binary from {}, file doesn't exist",
                             binary_self_path.string());
 
+        fs::path binary_self_canonical_path = fs::canonical(binary_self_path);
+
         /// Copy binary to the destination directory.
 
         /// TODO An option to link instead of copy - useful for developers.
-        /// TODO Check if the binary is the same.
-
-        size_t binary_size = fs::file_size(binary_self_path);
 
         fs::path prefix = fs::path(options["prefix"].as<std::string>());
         fs::path bin_dir = prefix / fs::path(options["binary-path"].as<std::string>());
-
-        size_t available_space = fs::space(bin_dir).available;
-        if (available_space < binary_size)
-            throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Not enough space for clickhouse binary in {}, required {}, available {}.",
-                bin_dir.string(), ReadableSize(binary_size), ReadableSize(available_space));
 
         fs::path main_bin_path = bin_dir / "clickhouse";
         fs::path main_bin_tmp_path = bin_dir / "clickhouse.new";
         fs::path main_bin_old_path = bin_dir / "clickhouse.old";
 
-        fmt::print("Copying ClickHouse binary to {}\n", main_bin_tmp_path.string());
+        size_t binary_size = fs::file_size(binary_self_path);
 
-        try
+        bool old_binary_exists = fs::exists(main_bin_path);
+        bool already_installed = false;
+
+        /// Check if the binary is the same file (already installed).
+        if (old_binary_exists && binary_self_canonical_path == fs::canonical(main_bin_path))
         {
-            ReadBufferFromFile in(binary_self_path.string());
-            WriteBufferFromFile out(main_bin_tmp_path.string());
-            copyData(in, out);
-            out.sync();
-
-            if (0 != fchmod(out.getFD(), S_IRUSR | S_IRGRP | S_IROTH | S_IXUSR | S_IXGRP | S_IXOTH))
-                throwFromErrno(fmt::format("Cannot chmod {}", main_bin_tmp_path.string()), ErrorCodes::SYSTEM_ERROR);
-
-            out.finalize();
+            already_installed = true;
+            fmt::print("ClickHouse binary is already located at {}\n", main_bin_path.string());
         }
-        catch (const Exception & e)
+        /// Check if binary has the same content.
+        else if (old_binary_exists && binary_size == fs::file_size(main_bin_path))
         {
-            if (e.code() == ErrorCodes::CANNOT_OPEN_FILE && geteuid() != 0)
-                std::cerr << "Install must be run as root: sudo ./clickhouse install\n";
-            throw;
-        }
+            fmt::print("Found already existing ClickHouse binary at {} having the same size. Will check its contents.\n",
+                main_bin_path.string());
 
-        if (fs::exists(main_bin_path))
-        {
-            fmt::print("{} already exists, will rename existing binary to {} and put the new binary in place\n",
-                       main_bin_path.string(), main_bin_old_path.string());
-
-            /// There is file exchange operation in Linux but it's not portable.
-            fs::rename(main_bin_path, main_bin_old_path);
+            if (filesEqual(binary_self_path.string(), main_bin_path.string()))
+            {
+                already_installed = true;
+                fmt::print("ClickHouse binary is already located at {} and it has the same content as {}\n",
+                    main_bin_path.string(), binary_self_canonical_path.string());
+            }
         }
 
-        fmt::print("Renaming {} to {}.\n", main_bin_tmp_path.string(), main_bin_path.string());
-        fs::rename(main_bin_tmp_path, main_bin_path);
+        if (already_installed)
+        {
+            if (0 != chmod(main_bin_path.string().c_str(), S_IRUSR | S_IRGRP | S_IROTH | S_IXUSR | S_IXGRP | S_IXOTH))
+                throwFromErrno(fmt::format("Cannot chmod {}", main_bin_path.string()), ErrorCodes::SYSTEM_ERROR);
+        }
+        else
+        {
+            size_t available_space = fs::space(bin_dir).available;
+            if (available_space < binary_size)
+                throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Not enough space for clickhouse binary in {}, required {}, available {}.",
+                    bin_dir.string(), ReadableSize(binary_size), ReadableSize(available_space));
+
+            fmt::print("Copying ClickHouse binary to {}\n", main_bin_tmp_path.string());
+
+            try
+            {
+                ReadBufferFromFile in(binary_self_path.string());
+                WriteBufferFromFile out(main_bin_tmp_path.string());
+                copyData(in, out);
+                out.sync();
+
+                if (0 != fchmod(out.getFD(), S_IRUSR | S_IRGRP | S_IROTH | S_IXUSR | S_IXGRP | S_IXOTH))
+                    throwFromErrno(fmt::format("Cannot chmod {}", main_bin_tmp_path.string()), ErrorCodes::SYSTEM_ERROR);
+
+                out.finalize();
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() == ErrorCodes::CANNOT_OPEN_FILE && geteuid() != 0)
+                    std::cerr << "Install must be run as root: sudo ./clickhouse install\n";
+                throw;
+            }
+
+            if (old_binary_exists)
+            {
+                fmt::print("{} already exists, will rename existing binary to {} and put the new binary in place\n",
+                        main_bin_path.string(), main_bin_old_path.string());
+
+                /// There is file exchange operation in Linux but it's not portable.
+                fs::rename(main_bin_path, main_bin_old_path);
+            }
+
+            fmt::print("Renaming {} to {}.\n", main_bin_tmp_path.string(), main_bin_path.string());
+            fs::rename(main_bin_tmp_path, main_bin_path);
+        }
 
         /// Create symlinks.
 
@@ -401,8 +444,8 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(processor.processConfig()));
 
             if (!configuration->getString("users.default.password", "").empty()
-                || configuration->getString("users.default.password_sha256_hex", "").empty()
-                || configuration->getString("users.default.password_double_sha1_hex", "").empty())
+                || !configuration->getString("users.default.password_sha256_hex", "").empty()
+                || !configuration->getString("users.default.password_double_sha1_hex", "").empty())
             {
                 has_password_for_default_user = true;
             }
@@ -576,7 +619,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             " || echo \"Cannot set 'net_admin' or 'ipc_lock' or 'sys_nice' capability for clickhouse binary."
                 " This is optional. Taskstats accounting will be disabled."
                 " To enable taskstats accounting you may add the required capability later manually.\"",
-            "/tmp/test_setcap.sh", main_bin_path.string());
+            "/tmp/test_setcap.sh", fs::canonical(main_bin_path).string());
         fmt::print(" {}\n", command);
         executeScript(command);
 #endif
@@ -597,10 +640,6 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             }
         }
 
-        std::string maybe_sudo;
-        if (getuid() != 0)
-            maybe_sudo = "sudo ";
-
         std::string maybe_password;
         if (has_password_for_default_user)
             maybe_password = " --password";
@@ -608,10 +647,19 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         fmt::print(
             "\nClickHouse has been successfully installed.\n"
             "\nStart clickhouse-server with:\n"
-            " {}clickhouse start\n"
+            " sudo clickhouse start\n"
             "\nStart clickhouse-client with:\n"
             " clickhouse-client{}\n\n",
-            maybe_sudo, maybe_password);
+            maybe_password);
+    }
+    catch (const fs::filesystem_error &)
+    {
+        std::cerr << getCurrentExceptionMessage(false) << '\n';
+
+        if (getuid() != 0)
+            std::cerr << "\nRun with sudo.\n";
+
+        return getCurrentExceptionCode();
     }
     catch (...)
     {
