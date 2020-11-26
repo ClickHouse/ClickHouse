@@ -1,5 +1,5 @@
 ===http===
-{"total spans":"4","unique spans":"4","unique non-zero parent spans":"2"}
+{"total spans":"4","unique spans":"4","unique non-zero parent spans":"3"}
 {"initial query spans with proper parent":"1"}
 {"unique non-empty tracestate values":"1"}
 ===native===
