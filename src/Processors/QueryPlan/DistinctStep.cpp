@@ -9,9 +9,13 @@ namespace DB
 static bool checkColumnsAlreadyDistinct(const Names & columns, const NameSet & distinct_names)
 {
     bool columns_already_distinct = true;
-    for (const auto & name : columns)
-        if (distinct_names.count(name) == 0)
-            columns_already_distinct = false;
+    if (columns.size() != distinct_names.size()) {
+        columns_already_distinct = false;
+    } else {
+        for (const auto & name : columns)
+            if (distinct_names.count(name) == 0)
+                columns_already_distinct = false;
+    }
 
     return columns_already_distinct;
 }
