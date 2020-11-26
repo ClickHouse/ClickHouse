@@ -152,7 +152,7 @@ You can specify default arguments for `Replicated` table engine in the server co
 
 ```xml
 <default_replica_path>/clickhouse/tables/{shard}/{database}/{table}</default_replica_path>
-<default_replica_name>{replica}</default_replica_path>
+<default_replica_name>{replica}</default_replica_name>
 ```
 
 In this case, you can omit arguments when creating tables:
