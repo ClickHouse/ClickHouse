@@ -67,26 +67,6 @@ if uname -mpi | grep -q 'x86_64'; then
 fi
 
 
-is_running()
-{
-    pgrep --pidfile "$CLICKHOUSE_PIDFILE" $(echo "${PROGRAM}" | cut -c1-15) 1> /dev/null 2> /dev/null
-}
-
-
-wait_for_done()
-{
-    timeout=$1
-    attempts=0
-    while is_running; do
-        attempts=$(($attempts + 1))
-        if [ -n "$timeout" ] && [ $attempts -gt $timeout ]; then
-            return 1
-        fi
-        sleep 1
-    done
-}
-
-
 die()
 {
     echo $1 >&2
@@ -171,17 +151,7 @@ restart()
 
 forcestop()
 {
-    local EXIT_STATUS
-    EXIT_STATUS=0
-
-    echo -n "Stop forcefully $PROGRAM service: "
-
-    kill -KILL $(cat "$CLICKHOUSE_PIDFILE")
-
-    wait_for_done
-
-    echo "DONE"
-    return $EXIT_STATUS
+    ${CLICKHOUSE_GENERIC_PROGRAM} stop --force --pid-path "${CLICKHOUSE_PIDDIR}"
 }
 
 
@@ -261,16 +231,16 @@ main()
         service_or_func restart
         ;;
     condstart)
-        is_running || service_or_func start
+        service_or_func start
         ;;
     condstop)
-        is_running && service_or_func stop
+        service_or_func stop
         ;;
     condrestart)
-        is_running && service_or_func restart
+        service_or_func restart
         ;;
     condreload)
-        is_running && service_or_func restart
+        service_or_func restart
         ;;
     initdb)
         initdb
@@ -293,17 +263,7 @@ main()
 
 status()
 {
-    if is_running; then
-        echo "$PROGRAM service is running"
-        exit 0
-    else
-        if is_cron_disabled; then
-            echo "$PROGRAM service is stopped";
-        else
-            echo "$PROGRAM: process unexpectedly terminated"
-        fi
-        exit 3
-    fi
+    ${CLICKHOUSE_GENERIC_PROGRAM} status --pid-path "${CLICKHOUSE_PIDDIR}"
 }
 
 
