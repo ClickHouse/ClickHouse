@@ -30,6 +30,20 @@ MemoryTracker * getMemoryTracker()
     return nullptr;
 }
 
+/// MemoryTracker cannot throw MEMORY_LIMIT_EXCEEDED (either configured memory
+/// limit reached or fault injected), in the following cases:
+///
+/// - to avoid std::terminate(), when stack unwinding is current in progress in
+///   this thread.
+///
+///   NOTE: that since C++11 destructor marked with noexcept by default, and
+///   this means that any throw from destructor (that is not marked with
+///   noexcept(false)) will cause std::terminate()
+bool inline memoryTrackerCanThrow()
+{
+    return !std::uncaught_exceptions();
+}
+
 }
 
 namespace DB
@@ -127,7 +141,7 @@ void MemoryTracker::alloc(Int64 size)
     }
 
     std::bernoulli_distribution fault(fault_probability);
-    if (unlikely(fault_probability && fault(thread_local_rng)))
+    if (unlikely(fault_probability && fault(thread_local_rng)) && memoryTrackerCanThrow())
     {
         /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
         BlockerInThread untrack_lock;
@@ -156,7 +170,7 @@ void MemoryTracker::alloc(Int64 size)
         DB::TraceCollector::collect(DB::TraceType::MemorySample, StackTrace(), size);
     }
 
-    if (unlikely(current_hard_limit && will_be > current_hard_limit))
+    if (unlikely(current_hard_limit && will_be > current_hard_limit) && memoryTrackerCanThrow())
     {
         /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
         BlockerInThread untrack_lock;
