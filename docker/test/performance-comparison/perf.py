@@ -143,7 +143,8 @@ reportStageEnd('before-connect')
 
 # Open connections
 servers = [{'host': host or args.host[0], 'port': port or args.port[0]} for (host, port) in itertools.zip_longest(args.host, args.port)]
-all_connections = [clickhouse_driver.Client(**server) for server in servers]
+# Force settings_is_important to fail queries on unknown settings.
+all_connections = [clickhouse_driver.Client(**server, settings_is_important=True) for server in servers]
 
 for i, s in enumerate(servers):
     print(f'server\t{i}\t{s["host"]}\t{s["port"]}')
