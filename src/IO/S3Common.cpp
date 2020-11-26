@@ -89,10 +89,10 @@ private:
     std::unordered_map<String, Poco::Logger *> tag_loggers;
 };
 
-class S3CredentialsProviderChain : public Aws::Auth::AWSCredentialsProviderChain
+class S3EnvironmentCredentialsProviderChain : public Aws::Auth::AWSCredentialsProviderChain
 {
 public:
-    explicit S3CredentialsProviderChain(const DB::RemoteHostFilter & remote_host_filter)
+    explicit S3EnvironmentCredentialsProviderChain(const DB::RemoteHostFilter & remote_host_filter, unsigned int s3_max_redirects)
     {
         static const char AWS_ECS_CONTAINER_CREDENTIALS_RELATIVE_URI[] = "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI";
         static const char AWS_ECS_CONTAINER_CREDENTIALS_FULL_URI[] = "AWS_CONTAINER_CREDENTIALS_FULL_URI";
@@ -159,7 +159,7 @@ public:
             aws_client_configuration.requestTimeoutMs = 1000;
             aws_client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(1, 1000);
 
-            DB::S3::PocoHTTPClientConfiguration client_configuration(aws_client_configuration, remote_host_filter);
+            DB::S3::PocoHTTPClientConfiguration client_configuration(aws_client_configuration, remote_host_filter, s3_max_redirects);
             auto ec2_metadata_client = std::make_shared<Aws::Internal::EC2MetadataClient>(client_configuration);
             auto config_loader = std::make_shared<Aws::Config::EC2InstanceProfileConfigLoader>(ec2_metadata_client);
 
@@ -175,14 +175,17 @@ public:
     S3AuthSigner(
         const Aws::Client::ClientConfiguration & client_configuration,
         const Aws::Auth::AWSCredentials & credentials,
-        const DB::HeaderCollection & headers_)
+        const DB::HeaderCollection & headers_,
+        bool use_environment_credentials)
         : Aws::Client::AWSAuthV4Signer(
-            !credentials.IsEmpty()
+            !use_environment_credentials
                 ? std::dynamic_pointer_cast<Aws::Auth::AWSCredentialsProvider>(
                     std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(credentials))
-                : std::make_shared<S3CredentialsProviderChain>(
+                : std::make_shared<S3EnvironmentCredentialsProviderChain>(
                     static_cast<const DB::S3::PocoHTTPClientConfiguration &>(client_configuration)
-                        .remote_host_filter),
+                        .remote_host_filter,
+                    static_cast<const DB::S3::PocoHTTPClientConfiguration &>(client_configuration)
+                        .s3_max_redirects),
             "s3",
             client_configuration.region,
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
@@ -278,23 +281,12 @@ namespace S3
 
         client_configuration.updateSchemeAndRegion();
 
-        if (!credentials.IsEmpty())
-        {
-            return std::make_shared<Aws::S3::S3Client>(
-                credentials, // Aws credentials.
-                std::move(client_configuration), // Client configuration.
-                Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never, // Sign policy.
-                is_virtual_hosted_style || cfg.endpointOverride.empty() // Use virtual addressing if endpoint is not specified.
-            );
-        }
-        else
-        {
-            return std::make_shared<Aws::S3::S3Client>(
-                std::move(client_configuration), // Client configuration.
-                Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never, // Sign policy.
-                is_virtual_hosted_style || cfg.endpointOverride.empty() // Use virtual addressing if endpoint is not specified.
-            );
-        }
+        return std::make_shared<Aws::S3::S3Client>(
+            credentials, // Aws credentials.
+            std::move(client_configuration), // Client configuration.
+            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never, // Sign policy.
+            is_virtual_hosted_style || cfg.endpointOverride.empty() // Use virtual addressing if endpoint is not specified.
+        );
     }
 
     std::shared_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
@@ -303,6 +295,7 @@ namespace S3
         const String & access_key_id,
         const String & secret_access_key,
         HeaderCollection headers,
+        bool use_environment_credentials,
         const RemoteHostFilter & remote_host_filter,
         unsigned int s3_max_redirects)
     {
@@ -316,7 +309,7 @@ namespace S3
         Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
 
         return std::make_shared<Aws::S3::S3Client>(
-            std::make_shared<S3AuthSigner>(client_configuration, std::move(credentials), std::move(headers)),
+            std::make_shared<S3AuthSigner>(client_configuration, std::move(credentials), std::move(headers), use_environment_credentials),
             std::move(client_configuration), // Client configuration.
             is_virtual_hosted_style || client_configuration.endpointOverride.empty() // Use virtual addressing only if endpoint is not specified.
         );

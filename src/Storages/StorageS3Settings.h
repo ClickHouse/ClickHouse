@@ -28,6 +28,8 @@ struct S3AuthSettings
     const String secret_access_key;
 
     const HeaderCollection headers;
+
+    const bool use_environment_credentials;
 };
 
 /// Settings for the StorageS3.
