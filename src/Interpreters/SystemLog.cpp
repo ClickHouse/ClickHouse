@@ -65,6 +65,9 @@ std::shared_ptr<TSystemLog> createSystemLog(
         engine = "ENGINE = MergeTree";
         if (!partition_by.empty())
             engine += " PARTITION BY (" + partition_by + ")";
+        int ttl = config.getInt(config_prefix + ".ttl", 0);
+        if (ttl > 0)
+            engine += " TTL event_date + INTERVAL " + toString(ttl) + " DAY DELETE ";
         engine += " ORDER BY (event_date, event_time)";
     }
 
