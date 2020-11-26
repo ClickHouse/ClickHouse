@@ -10,7 +10,9 @@
 # Most of the command line options are the same, for more information type
 # ./clickhouse_grpc_client.py --help
 
-import argparse, cmd, os, signal, subprocess, sys, threading, time, uuid, grpc
+import grpc  # pip3 install grpcio
+import grpc_tools  # pip3 install grpcio-tools
+import argparse, cmd, os, signal, subprocess, sys, threading, time, uuid
 
 default_host = 'localhost'
 default_port = 9001
@@ -196,7 +198,7 @@ class ClickHouseGRPCClient(cmd.Cmd):
         errors = p.stderr.read().decode().strip('\n').split('\n')
         only_warnings = all(('Warning' in error) for error in errors)
         if not only_warnings:
-            error_print(errors.join('\n'))
+            error_print('\n'.join(errors))
 
     # Import the generated *pb2.py files.
     @staticmethod
