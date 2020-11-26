@@ -29,6 +29,7 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/JoinedTables.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 
 #include <Processors/Pipe.h>
@@ -216,10 +217,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const SelectQueryOptions & options_,
     const Names & required_result_column_names,
     const StorageMetadataPtr & metadata_snapshot_)
-    : options(options_)
     /// NOTE: the query almost always should be cloned because it will be modified during analysis.
-    , query_ptr(options.modify_inplace ? query_ptr_ : query_ptr_->clone())
-    , context(std::make_shared<Context>(context_))
+    : IInterpreterUnionOrSelectQuery(options_.modify_inplace ? query_ptr_ : query_ptr_->clone(), context_, options_)
     , storage(storage_)
     , input(input_)
     , input_pipe(std::move(input_pipe_))
@@ -465,12 +464,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     sanitizeBlock(result_header, true);
 }
 
-
-Block InterpreterSelectQuery::getSampleBlock()
-{
-    return result_header;
-}
-
 void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
 {
     executeImpl(query_plan, input, std::move(input_pipe));
@@ -502,6 +495,8 @@ BlockIO InterpreterSelectQuery::execute()
 
 Block InterpreterSelectQuery::getSampleBlockImpl()
 {
+    OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
+
     query_info.query = query_ptr;
 
     if (storage && !options.only_analyze)
