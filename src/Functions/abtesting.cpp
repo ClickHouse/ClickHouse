@@ -3,7 +3,6 @@
 #if !defined(ARCADIA_BUILD) && USE_STATS
 
 #include <math.h>
-#include <sstream>
 
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
@@ -12,7 +11,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromOStream.h>
+#include <IO/WriteBufferFromString.h>
 
 #define STATS_ENABLE_STDVEC_WRAPPERS
 #include <stats.hpp>
@@ -139,31 +138,29 @@ Variants bayesian_ab_test(String distribution, PODArray<Float64> & xs, PODArray<
 String convertToJson(const PODArray<String> & variant_names, const Variants & variants)
 {
     FormatSettings settings;
-    std::stringstream s;
 
+    WriteBufferFromOwnString buf;
+
+    writeCString("{\"data\":[", buf);
+    for (size_t i = 0; i < variants.size(); ++i)
     {
-        WriteBufferFromOStream buf(s);
-
-        writeCString("{\"data\":[", buf);
-        for (size_t i = 0; i < variants.size(); ++i)
-        {
-            writeCString("{\"variant_name\":", buf);
-            writeJSONString(variant_names[i], buf, settings);
-            writeCString(",\"x\":", buf);
-            writeText(variants[i].x, buf);
-            writeCString(",\"y\":", buf);
-            writeText(variants[i].y, buf);
-            writeCString(",\"beats_control\":", buf);
-            writeText(variants[i].beats_control, buf);
-            writeCString(",\"to_be_best\":", buf);
-            writeText(variants[i].best, buf);
-            writeCString("}", buf);
-            if (i != variant_names.size() -1) writeCString(",", buf);
-        }
-        writeCString("]}", buf);
+        writeCString("{\"variant_name\":", buf);
+        writeJSONString(variant_names[i], buf, settings);
+        writeCString(",\"x\":", buf);
+        writeText(variants[i].x, buf);
+        writeCString(",\"y\":", buf);
+        writeText(variants[i].y, buf);
+        writeCString(",\"beats_control\":", buf);
+        writeText(variants[i].beats_control, buf);
+        writeCString(",\"to_be_best\":", buf);
+        writeText(variants[i].best, buf);
+        writeCString("}", buf);
+        if (i != variant_names.size() -1)
+            writeCString(",", buf);
     }
+    writeCString("]}", buf);
 
-    return s.str();
+    return buf.str();
 }
 
 class FunctionBayesAB : public IFunction

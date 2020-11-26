@@ -351,6 +351,8 @@ void HTTPHandler::processQuery(
             http_response_compression_method = CompressionMethod::Gzip;
         else if (std::string::npos != http_response_compression_methods.find("deflate"))
             http_response_compression_method = CompressionMethod::Zlib;
+        else if (std::string::npos != http_response_compression_methods.find("xz"))
+            http_response_compression_method = CompressionMethod::Xz;
     }
 
     bool client_supports_http_compression = http_response_compression_method != CompressionMethod::None;

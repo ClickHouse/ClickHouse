@@ -4,6 +4,7 @@
 #include <Common/FieldVisitors.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 
 #include <common/logger_useful.h>
 
@@ -41,7 +42,7 @@ void CollapsingSortedAlgorithm::reportIncorrectData()
     if (!log)
         return;
 
-    std::stringstream s;
+    WriteBufferFromOwnString s;
     auto & sort_columns = *last_row.sort_columns;
     for (size_t i = 0, size = sort_columns.size(); i < size; ++i)
     {

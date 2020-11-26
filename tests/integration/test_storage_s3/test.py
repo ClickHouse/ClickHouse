@@ -136,6 +136,40 @@ def test_put(cluster, maybe_auth, positive):
         assert values_csv == get_s3_file_content(cluster, bucket, filename)
 
 
+# Test put no data to S3.
+@pytest.mark.parametrize("auth", [
+    "'minio','minio123',"
+])
+def test_empty_put(cluster, auth):
+    # type: (ClickHouseCluster) -> None
+
+    bucket = cluster.minio_bucket
+    instance = cluster.instances["dummy"]  # type: ClickHouseInstance
+    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
+
+    create_empty_table_query = """
+        CREATE TABLE empty_table (
+        {}
+        ) ENGINE = Null()
+    """.format(table_format)
+
+    run_query(instance, create_empty_table_query)
+
+    filename = "empty_put_test.csv"
+    put_query = "insert into table function s3('http://{}:{}/{}/{}', {}'CSV', '{}') select * from empty_table".format(
+        cluster.minio_host, cluster.minio_port, bucket, filename, auth, table_format)
+
+    run_query(instance, put_query)
+
+    try:
+        run_query(instance, "select count(*) from s3('http://{}:{}/{}/{}', {}'CSV', '{}')".format(
+            cluster.minio_host, cluster.minio_port, bucket, filename, auth, table_format))
+
+        assert False, "Query should be failed."
+    except helpers.client.QueryRuntimeException as e:
+        assert str(e).find("The specified key does not exist") != 0
+
+
 # Test put values in CSV format.
 @pytest.mark.parametrize("maybe_auth,positive", [
     ("", True),

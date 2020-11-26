@@ -79,7 +79,7 @@ namespace
 
 
 StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
-    StorageDistributed & storage_, std::string path_, ConnectionPoolPtr pool_, ActionBlocker & monitor_blocker_, BackgroundSchedulePool & bg_pool_)
+    StorageDistributed & storage_, std::string path_, ConnectionPoolPtr pool_, ActionBlocker & monitor_blocker_, BackgroundSchedulePool & bg_pool)
     : storage(storage_)
     , pool(std::move(pool_))
     , path{path_ + '/'}
@@ -92,7 +92,6 @@ StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
     , max_sleep_time{storage.global_context->getSettingsRef().distributed_directory_monitor_max_sleep_time_ms.totalMilliseconds()}
     , log{&Poco::Logger::get(getLoggerName())}
     , monitor_blocker(monitor_blocker_)
-    , bg_pool(bg_pool_)
     , metric_pending_files(CurrentMetrics::DistributedFilesToInsert, 0)
 {
     task_handle = bg_pool.createTask(getLoggerName() + "/Bg", [this]{ run(); });

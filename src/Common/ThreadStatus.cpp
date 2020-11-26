@@ -1,5 +1,3 @@
-#include <sstream>
-
 #include <Common/Exception.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/QueryProfiler.h>
@@ -79,11 +77,10 @@ void ThreadStatus::assertState(const std::initializer_list<int> & permitted_stat
             return;
     }
 
-    std::stringstream ss;
-    ss << "Unexpected thread state " << getCurrentState();
     if (description)
-        ss << ": " << description;
-    throw Exception(ss.str(), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected thread state {}: {}", getCurrentState(), description);
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected thread state {}", getCurrentState());
 }
 
 void ThreadStatus::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue,

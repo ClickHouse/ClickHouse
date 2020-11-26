@@ -245,7 +245,7 @@ static std::string getExtraExceptionInfo(const std::exception & e)
 
 std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded_stacktrace /*= false*/, bool with_extra_info /*= true*/)
 {
-    std::stringstream stream;
+    WriteBufferFromOwnString stream;
 
     try
     {
@@ -364,7 +364,7 @@ void tryLogException(std::exception_ptr e, Poco::Logger * logger, const std::str
 
 std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace)
 {
-    std::stringstream stream;
+    WriteBufferFromOwnString stream;
 
     try
     {

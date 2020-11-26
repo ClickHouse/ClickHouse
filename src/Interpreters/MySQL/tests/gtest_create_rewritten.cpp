@@ -12,7 +12,9 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/MySQL/InterpretersMySQLDDLQuery.h>
 #include <Common/tests/gtest_global_context.h>
-#include <Common/tests/gtest_global_register_functions.h>
+#include <Common/tests/gtest_global_register.h>
+#include <Poco/String.h>
+
 
 using namespace DB;
 
