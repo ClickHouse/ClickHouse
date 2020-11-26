@@ -33,6 +33,8 @@ MemoryTracker * getMemoryTracker()
 /// MemoryTracker cannot throw MEMORY_LIMIT_EXCEEDED (either configured memory
 /// limit reached or fault injected), in the following cases:
 ///
+/// - when it is explicitly blocked with LockExceptionInThread
+///
 /// - to avoid std::terminate(), when stack unwinding is current in progress in
 ///   this thread.
 ///
@@ -41,7 +43,7 @@ MemoryTracker * getMemoryTracker()
 ///   noexcept(false)) will cause std::terminate()
 bool inline memoryTrackerCanThrow()
 {
-    return !std::uncaught_exceptions();
+    return !MemoryTracker::LockExceptionInThread::isBlocked() && !std::uncaught_exceptions();
 }
 
 }
@@ -63,6 +65,7 @@ namespace ProfileEvents
 static constexpr size_t log_peak_memory_usage_every = 1ULL << 30;
 
 thread_local bool MemoryTracker::BlockerInThread::is_blocked = false;
+thread_local bool MemoryTracker::LockExceptionInThread::is_blocked = false;
 
 MemoryTracker total_memory_tracker(nullptr, VariableContext::Global);
 
