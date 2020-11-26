@@ -250,4 +250,24 @@ All the rules above are also true for the [OPTIMIZE](../../../sql-reference/stat
 OPTIMIZE TABLE table_not_partitioned PARTITION tuple() FINAL;
 ```
 
+## UPDATE\|DELETE IN PARTITION {#update-delete-in-partition}
+
+``` sql
+ALTER TABLE table_name (UPDATE update_expr)|(DELETE) [IN PARTITION partition_id] WHERE where_expr
+```
+
+`IN PARTITION` specifies the partition to which the [UPDATE](../../sql-reference/statements/alter/update.md#alter-table-update-statements) or [DELETE](../../sql-reference/statements/alter/delete.md#alter-mutations) expressions will be applied as a result of the query `ALTER TABLE`. New parts will be created only from the specified partition.
+
+In this way, `IN PARTITION` helps reduce the load when the table is divided into many partitions, and you only need to update the data point-by-point.
+
+Examples:
+
+``` sql
+ALTER TABLE mt UPDATE x = x + 1 IN PARTITION 2 WHERE p = 2;
+```
+
+``` sql
+ALTER TABLE mt DELETE IN PARTITION 2 WHERE p = 2;
+```
+
 The examples of `ALTER ... PARTITION` queries are demonstrated in the tests [`00502_custom_partitioning_local`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00502_custom_partitioning_local.sql) and [`00502_custom_partitioning_replicated_zookeeper`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00502_custom_partitioning_replicated_zookeeper.sql).
