@@ -42,9 +42,9 @@ struct RadixSortAllocator
         return ::operator new(size);
     }
 
-    void deallocate(void * ptr, size_t /*size*/)
+    void deallocate(void * ptr, size_t size)
     {
-        ::operator delete(ptr);
+        ::operator delete(ptr, size);
     }
 };
 
