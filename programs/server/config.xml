@@ -135,7 +135,7 @@
     <keep_alive_timeout>3</keep_alive_timeout>
 
     <!-- gRPC protocol (see src/Server/grpc_protos/clickhouse_grpc.proto for the API)
-    <grpc_port>9001</grpc_port>
+    <grpc_port>9100</grpc_port>
     <grpc>
         <enable_ssl>true</enable_ssl> -->
         
