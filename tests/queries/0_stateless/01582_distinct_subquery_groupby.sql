@@ -7,12 +7,12 @@ SELECT * FROM t;
 
 SELECT '---';
 CREATE TABLE d (a String, b Int) ENGINE = Distributed(test_shard_localhost, currentDatabase(), t);
-SELECT DISTINCT b FROM (SELECT a, b FROM d GROUP BY a, b);
+SELECT DISTINCT b FROM (SELECT a, b FROM d GROUP BY a, b) order by b;
 DROP TABLE d;
 
 SELECT '---';
 CREATE TABLE d (a String, b Int) ENGINE = Distributed(test_cluster_two_shards_localhost, currentDatabase(), t);
-SELECT DISTINCT b FROM (SELECT a, b FROM d GROUP BY a, b);
+SELECT DISTINCT b FROM (SELECT a, b FROM d GROUP BY a, b) order by b;
 DROP TABLE d;
 
 DROP TABLE t;
