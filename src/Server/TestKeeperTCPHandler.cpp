@@ -150,9 +150,8 @@ struct SocketInterruptablePollWrapper
         }
         else
         {
-            for (size_t i = 0; i < outputs.size(); ++i)
+            for (auto fd : outputs)
             {
-                int fd = outputs[i];
                 if (fd != -1)
                 {
                     if (fd == sockfd)
