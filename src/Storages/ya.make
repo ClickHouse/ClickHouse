@@ -94,6 +94,7 @@ SRCS(
     MergeTree/ReplicatedMergeTreeBlockOutputStream.cpp
     MergeTree/ReplicatedMergeTreeCleanupThread.cpp
     MergeTree/ReplicatedMergeTreeLogEntry.cpp
+    MergeTree/ReplicatedMergeTreeMergeStrategyPicker.cpp
     MergeTree/ReplicatedMergeTreeMutationEntry.cpp
     MergeTree/ReplicatedMergeTreePartCheckThread.cpp
     MergeTree/ReplicatedMergeTreePartHeader.cpp

@@ -9,7 +9,7 @@
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Interpreters/Context.h>
+#include <Core/Names.h>
 
 namespace DB
 {
@@ -19,7 +19,7 @@ class WriteBufferToRabbitMQProducer : public WriteBuffer
 public:
     WriteBufferToRabbitMQProducer(
             std::pair<String, UInt16> & parsed_address_,
-            Context & global_context,
+            const Context & global_context,
             const std::pair<String, String> & login_password_,
             const Names & routing_keys_,
             const String & exchange_name_,
