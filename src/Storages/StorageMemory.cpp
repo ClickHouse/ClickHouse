@@ -254,7 +254,7 @@ void StorageMemory::mutate(const MutationCommands & commands, const Context & co
         new_data = std::make_unique<BlocksList>(*(data.get()));
         auto data_it = new_data->begin();
         auto out_it = out.begin();
-        
+
         while (data_it != new_data->end())
         {
             /// Mutation does not change the number of blocks
