@@ -14,7 +14,7 @@ class SettingsChanges;
 /// (since SETTINGS after SELECT will be parsed by the SELECT parser.)
 ///
 /// NOTE: INSERT ... SELECT ... FORMAT Null SETTINGS max_insert_threads=10 works even w/o push down,
-/// since ParserInsertQuery does not ParserInsertQuery.
+/// since ParserInsertQuery does not use ParserQueryWithOutput.
 class InsertQuerySettingsPushDownMatcher
 {
 public:
