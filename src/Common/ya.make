@@ -78,6 +78,7 @@ SRCS(
     UTF8Helpers.cpp
     UnicodeBar.cpp
     WeakHash.cpp
+    ZooKeeper/EtcdKeeper.cpp
     ZooKeeper/IKeeper.cpp
     ZooKeeper/TestKeeper.cpp
     ZooKeeper/ZooKeeper.cpp

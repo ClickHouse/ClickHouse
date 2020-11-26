@@ -1,5 +1,11 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
+#    include "config_formats.h"
+#endif
+
+#if USE_GRPC
+
 #include <mutex>
 #include <map>
 #include <atomic>
@@ -151,8 +157,8 @@ public:
 
     struct AsyncTxnCall final : AsyncCall
     {
-        AsyncTxnCall() {}
-        AsyncTxnCall(const AsyncCall & base) : AsyncCall(base) {}
+        AsyncTxnCall() = default;
+        explicit AsyncTxnCall(const AsyncCall & base) : AsyncCall(base) {}
         ClientContext context;
         TxnResponse response;
         std::unique_ptr<ClientAsyncResponseReader<TxnResponse>> response_reader;
@@ -254,3 +260,4 @@ private:
     using EtcdKeeperRequests = std::vector<EtcdKeeperRequestPtr>;
 
 }
+#endif

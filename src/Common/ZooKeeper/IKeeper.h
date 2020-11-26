@@ -51,6 +51,21 @@ struct Stat
     int32_t dataLength;
     int32_t numChildren;
     int64_t pzxid;
+
+    std::string dump() const
+    {
+        return "czxid: " + std::to_string(czxid) + ";\n" + \
+                + "mzxid: " + std::to_string(mzxid) + ";\n" + \
+                + "ctime: " + std::to_string(ctime) + ";\n" + \
+                + "mtime: " + std::to_string(mtime) + ";\n" + \
+                + "version: " + std::to_string(version) + ";\n" + \
+                + "cversion: " + std::to_string(cversion) + ";\n" + \
+                + "aversion: " + std::to_string(aversion) + ";\n" + \
+                + "ephemeralOwner: " + std::to_string(ephemeralOwner) + ";\n" + \
+                + "dataLength: " + std::to_string(dataLength) + ";\n" + \
+                + "numChildren: " + std::to_string(numChildren) + ";\n" + \
+                + "pzxid: " + std::to_string(pzxid) + ";\n";
+    }
 };
 
 enum class Error : int32_t
@@ -140,6 +155,13 @@ struct WatchResponse : virtual Response
     String path;
 
     void removeRootPath(const String & root_path) override;
+
+    std::string dump() const
+    {
+        return "type: " + std::to_string(type) + ";\n" + \
+                + "state: " + std::to_string(state) + ";\n" +\
+                + "path: " + path + ";";
+    }
 };
 
 using WatchCallback = std::function<void(const WatchResponse &)>;
@@ -302,12 +324,12 @@ class Exception : public DB::Exception
 {
 private:
     /// Delegate constructor, used to minimize repetition; last parameter used for overload resolution.
-    Exception(const std::string & msg, const Error code_, int);
+    Exception(const std::string & msg, Error code_, int);
 
 public:
-    explicit Exception(const Error code_);
-    Exception(const std::string & msg, const Error code_);
-    Exception(const Error code_, const std::string & path);
+    explicit Exception(Error code_);
+    Exception(const std::string & msg, Error code_);
+    Exception(Error code_, const std::string & path);
     Exception(const Exception & exc);
 
     const char * name() const throw() override { return "Coordination::Exception"; }
@@ -331,7 +353,7 @@ public:
 class IKeeper
 {
 public:
-    virtual ~IKeeper() {}
+    virtual ~IKeeper() = default;
 
     /// If expired, you can only destroy the object. All other methods will throw exception.
     virtual bool isExpired() const = 0;

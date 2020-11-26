@@ -1,5 +1,9 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
+#    include "config_formats.h"
+#endif
+
 #include "Types.h"
 #include <Poco/Util/LayeredConfiguration.h>
 #include <unordered_set>
