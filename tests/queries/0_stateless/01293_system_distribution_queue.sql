@@ -24,3 +24,6 @@ select is_blocked, error_count, data_files, data_compressed_bytes from system.di
 select 'UNBLOCK';
 system start distributed sends dist_01293;
 select is_blocked, error_count, data_files, data_compressed_bytes from system.distribution_queue;
+
+drop table null_01293;
+drop table dist_01293;

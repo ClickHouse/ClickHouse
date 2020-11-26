@@ -31,7 +31,9 @@ public:
 
     ColumnSizeByName getColumnSizes() const override { return getNested()->getColumnSizes(); }
     NamesAndTypesList getVirtuals() const override { return getNested()->getVirtuals(); }
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, const ASTPtr & ast) const override
+
+    QueryProcessingStage::Enum getQueryProcessingStage(
+        const Context & context, QueryProcessingStage::Enum to_stage, SelectQueryInfo & ast) const override
     {
         return getNested()->getQueryProcessingStage(context, to_stage, ast);
     }
@@ -50,7 +52,7 @@ public:
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
-        const SelectQueryInfo & query_info,
+        SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
@@ -102,12 +104,11 @@ public:
     }
 
     Pipe alterPartition(
-            const ASTPtr & query,
             const StorageMetadataPtr & metadata_snapshot,
             const PartitionCommands & commands,
             const Context & context) override
     {
-        return getNested()->alterPartition(query, metadata_snapshot, commands, context);
+        return getNested()->alterPartition(metadata_snapshot, commands, context);
     }
 
     void checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const override

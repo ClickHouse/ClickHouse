@@ -16,7 +16,7 @@
             <max_execution_time>300</max_execution_time>
 
             <!-- One NUMA node w/o hyperthreading -->
-            <max_threads>20</max_threads>
+            <max_threads>12</max_threads>
         </default>
     </profiles>
 </yandex>

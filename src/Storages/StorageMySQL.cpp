@@ -67,7 +67,7 @@ StorageMySQL::StorageMySQL(
 Pipe StorageMySQL::read(
     const Names & column_names_,
     const StorageMetadataPtr & metadata_snapshot,
-    const SelectQueryInfo & query_info_,
+    SelectQueryInfo & query_info_,
     const Context & context_,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size_,

@@ -72,7 +72,7 @@ def create(self):
     ]
 
     for scenario in create_scenarios:
-        Scenario(run=scenario)
+        Scenario(run=scenario, setup=instrument_clickhouse_server_log)
 
 @TestScenario
 def create_without_privilege(self, node=None):
@@ -172,7 +172,7 @@ def select(self):
     ]
 
     for scenario in select_scenarios:
-        Scenario(run=scenario)
+        Scenario(run=scenario, setup=instrument_clickhouse_server_log)
 
 @TestScenario
 def select_without_privilege(self, node=None):
@@ -286,7 +286,7 @@ def insert(self):
     ]
 
     for scenario in insert_scenarios:
-        Scenario(run=scenario)
+        Scenario(run=scenario, setup=instrument_clickhouse_server_log)
 
 @TestScenario
 def insert_without_privilege(self, node=None):
@@ -405,7 +405,7 @@ def special_cases(self):
     ]
 
     for scenario in special_case_scenarios:
-        Scenario(run=scenario)
+        Scenario(run=scenario, setup=instrument_clickhouse_server_log)
 
 @TestScenario
 def select_with_table_on_materialized_view_privilege_granted_directly_or_via_role(self, node=None):
@@ -989,7 +989,7 @@ def feature(self, node="clickhouse1"):
     self.context.node3 = self.context.cluster.node("clickhouse3")
 
     tasks = []
-    pool = Pool(5)
+    pool = Pool(3)
 
     try:
         run_scenario(pool, tasks, Feature(test=cluster_tests))
