@@ -13,7 +13,8 @@ namespace DB
 {
 
 #if defined(__SSE2__) && defined(__POPCNT__)
-auto toBits64(const Int8 * bytes64)
+/// Transform 64-byte mask to 64-bit mask.
+static UInt64 toBits64(const Int8 * bytes64)
 {
     static const __m128i zero16 = _mm_setzero_si128();
     return static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64)), zero16)))
@@ -23,7 +24,7 @@ auto toBits64(const Int8 * bytes64)
            << 32)
         | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64 + 48)), zero16)))
            << 48);
-};
+}
 #endif
 
 size_t countBytesInFilter(const UInt8 * filt, size_t sz)
