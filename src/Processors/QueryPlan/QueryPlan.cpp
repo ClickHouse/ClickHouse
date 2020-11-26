@@ -484,6 +484,29 @@ static void tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node * 
                     : filter_step->updateInputStream(array_join_step->getOutputStream(), true);
 }
 
+static bool tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Node * child_node)
+{
+    auto & parent = parent_node->step;
+    auto & child = child_node->step;
+    auto * parent_expr = typeid_cast<ExpressionStep *>(parent.get());
+    auto * child_expr = typeid_cast<ExpressionStep *>(child.get());
+
+    if (parent_expr && child_expr)
+    {
+        auto merged = ActionsDAG::merge(std::move(*child_expr->getExpression()),
+                                        std::move(*parent_expr->getExpression()));
+
+        auto expr = std::make_unique<ExpressionStep>(child_expr->getInputStreams().front(), merged);
+        expr->setStepDescription(parent_expr->getStepDescription() + " + " + child_expr->getStepDescription());
+
+        parent_node->step = std::move(expr);
+        parent_node->children.swap(child_node->children);
+        return true;
+    }
+
+    return false;
+}
+
 void QueryPlan::optimize()
 {
     struct Frame
@@ -503,7 +526,11 @@ void QueryPlan::optimize()
         {
             /// First entrance, try push down.
             if (frame.node->children.size() == 1)
+            {
                 tryPushDownLimit(frame.node->step, frame.node->children.front());
+
+                while (tryMergeExpressions(frame.node, frame.node->children.front()));
+            }
         }
 
         if (frame.next_child < frame.node->children.size())
