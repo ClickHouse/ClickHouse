@@ -230,6 +230,27 @@ class Task_no_arg:
         instance = cluster.instances['s1_1_0']
         instance.query("DROP TABLE copier_test1_1")
 
+class Task_non_partitioned_table:
+
+    def __init__(self, cluster):
+        self.cluster = cluster
+        self.zk_task_path = "/clickhouse-copier/task_non_partitoned_table"
+        self.copier_task_config = open(os.path.join(CURRENT_TEST_DIR, 'task_non_partitioned_table.xml'), 'r').read()
+        self.rows = 1000000
+
+    def start(self):
+        instance = cluster.instances['s0_0_0']
+        instance.query(
+            "create table copier_test1 (date Date, id UInt32) engine = MergeTree ORDER BY date SETTINGS index_granularity = 8192")
+        instance.query("insert into copier_test1 values ('2016-01-01', 10);")
+
+    def check(self):
+        assert TSV(self.cluster.instances['s1_1_0'].query("SELECT date FROM copier_test1_1")) == TSV("2016-01-01\n")
+        instance = cluster.instances['s0_0_0']
+        instance.query("DROP TABLE copier_test1")
+        instance = cluster.instances['s1_1_0']
+        instance.query("DROP TABLE copier_test1_1")
+
 
 def execute_task(task, cmd_options):
     task.start()
@@ -359,6 +380,8 @@ def test_no_index(started_cluster):
 def test_no_arg(started_cluster):
     execute_task(Task_no_arg(started_cluster), [])
 
+def test_non_partitioned_table(started_cluster):
+    execute_task(Task_non_partitioned_table(started_cluster), [])
 
 if __name__ == '__main__':
     with contextmanager(started_cluster)() as cluster:

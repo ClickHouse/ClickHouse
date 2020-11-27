@@ -415,4 +415,4 @@ if not args.keep_created_tables and not args.use_existing_tables:
             c.execute(q)
             print(f'drop\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}')
 
-reportStageEnd('drop-2')
+    reportStageEnd('drop-2')

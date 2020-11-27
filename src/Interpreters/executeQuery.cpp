@@ -153,13 +153,11 @@ static void logQuery(const String & query, const Context & context, bool interna
             (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
             joinLines(query));
 
-        if (client_info.opentelemetry_trace_id)
+        if (client_info.client_trace_context.trace_id)
         {
             LOG_TRACE(&Poco::Logger::get("executeQuery"),
-                "OpenTelemetry trace id {:x}, span id {}, parent span id {}",
-                client_info.opentelemetry_trace_id,
-                client_info.opentelemetry_span_id,
-                client_info.opentelemetry_parent_span_id);
+                "OpenTelemetry traceparent '{}'",
+                client_info.client_trace_context.composeTraceparentHeader());
         }
     }
 }
@@ -247,17 +245,16 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
             query_log->add(elem);
 
     if (auto opentelemetry_span_log = context.getOpenTelemetrySpanLog();
-        context.getClientInfo().opentelemetry_trace_id
+        context.query_trace_context.trace_id
             && opentelemetry_span_log)
     {
         OpenTelemetrySpanLogElement span;
-        span.trace_id = context.getClientInfo().opentelemetry_trace_id;
-        span.span_id = context.getClientInfo().opentelemetry_span_id;
-        span.parent_span_id = context.getClientInfo().opentelemetry_parent_span_id;
+        span.trace_id = context.query_trace_context.trace_id;
+        span.span_id = context.query_trace_context.span_id;
+        span.parent_span_id = context.getClientInfo().client_trace_context.span_id;
         span.operation_name = "query";
         span.start_time_us = current_time_us;
         span.finish_time_us = current_time_us;
-        span.duration_ns = 0;
 
         /// Keep values synchronized to type enum in QueryLogElement::createBlock.
         span.attribute_names.push_back("clickhouse.query_status");
@@ -269,11 +266,11 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
         span.attribute_names.push_back("clickhouse.query_id");
         span.attribute_values.push_back(elem.client_info.current_query_id);
 
-        if (!context.getClientInfo().opentelemetry_tracestate.empty())
+        if (!context.query_trace_context.tracestate.empty())
         {
             span.attribute_names.push_back("clickhouse.tracestate");
             span.attribute_values.push_back(
-                context.getClientInfo().opentelemetry_tracestate);
+                context.query_trace_context.tracestate);
         }
 
         opentelemetry_span_log->add(span);
@@ -485,7 +482,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             limits.size_limits = SizeLimits(settings.max_result_rows, settings.max_result_bytes, settings.result_overflow_mode);
         }
 
-        res = interpreter->execute();
+        {
+            OpenTelemetrySpanHolder span("IInterpreter::execute()");
+            res = interpreter->execute();
+        }
+
         QueryPipeline & pipeline = res.pipeline;
         bool use_processors = pipeline.initialized();
 
@@ -691,17 +692,16 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 }
 
                 if (auto opentelemetry_span_log = context.getOpenTelemetrySpanLog();
-                    context.getClientInfo().opentelemetry_trace_id
+                    context.query_trace_context.trace_id
                         && opentelemetry_span_log)
                 {
                     OpenTelemetrySpanLogElement span;
-                    span.trace_id = context.getClientInfo().opentelemetry_trace_id;
-                    span.span_id = context.getClientInfo().opentelemetry_span_id;
-                    span.parent_span_id = context.getClientInfo().opentelemetry_parent_span_id;
+                    span.trace_id = context.query_trace_context.trace_id;
+                    span.span_id = context.query_trace_context.span_id;
+                    span.parent_span_id = context.getClientInfo().client_trace_context.span_id;
                     span.operation_name = "query";
                     span.start_time_us = elem.query_start_time_microseconds;
                     span.finish_time_us = time_in_microseconds(finish_time);
-                    span.duration_ns = elapsed_seconds * 1000000000;
 
                     /// Keep values synchronized to type enum in QueryLogElement::createBlock.
                     span.attribute_names.push_back("clickhouse.query_status");
@@ -712,11 +712,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                     span.attribute_names.push_back("clickhouse.query_id");
                     span.attribute_values.push_back(elem.client_info.current_query_id);
-                    if (!context.getClientInfo().opentelemetry_tracestate.empty())
+                    if (!context.query_trace_context.tracestate.empty())
                     {
                         span.attribute_names.push_back("clickhouse.tracestate");
                         span.attribute_values.push_back(
-                            context.getClientInfo().opentelemetry_tracestate);
+                            context.query_trace_context.tracestate);
                     }
 
                     opentelemetry_span_log->add(span);
