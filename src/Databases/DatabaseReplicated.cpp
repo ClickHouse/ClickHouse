@@ -13,12 +13,16 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Interpreters/DDLWorker.h>
+#include <Databases/DatabaseReplicatedWorker.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/Cluster.h>
 #include <common/getFQDNOrHostName.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/parseQuery.h>
+#include <Interpreters/InterpreterCreateQuery.h>
+#include <Parsers/formatAST.h>
 
 namespace DB
 {
@@ -52,7 +56,7 @@ DatabaseReplicated::DatabaseReplicated(
     const String & zookeeper_path_,
     const String & shard_name_,
     const String & replica_name_,
-    Context & context_)
+    const Context & context_)
     : DatabaseAtomic(name_, metadata_path_, uuid, "DatabaseReplicated (" + name_ + ")", context_)
     , zookeeper_path(zookeeper_path_)
     , shard_name(shard_name_)
@@ -116,8 +120,11 @@ bool DatabaseReplicated::createDatabaseNodesInZooKeeper(const zkutil::ZooKeeperP
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/log", "", zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/replicas", "", zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/counter", "", zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/counter/cnt-", "", zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path + "/counter/cnt-", -1));
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/metadata", "", zkutil::CreateMode::Persistent));
-    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/min_log_ptr", "0", zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/min_log_ptr", "1", zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/max_log_ptr", "1", zkutil::CreateMode::Persistent));
 
     Coordination::Responses responses;
     auto res = current_zookeeper->tryMulti(ops, responses);
@@ -128,6 +135,7 @@ bool DatabaseReplicated::createDatabaseNodesInZooKeeper(const zkutil::ZooKeeperP
 
     zkutil::KeeperMultiException::check(res, ops, responses);
     assert(false);
+    __builtin_unreachable();
 }
 
 void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPtr & current_zookeeper)
@@ -135,7 +143,7 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
     current_zookeeper->createAncestors(replica_path);
 
     /// When creating new replica, use latest snapshot version as initial value of log_pointer
-    log_entry_to_execute = 0;   //FIXME
+    //log_entry_to_execute = 0;   //FIXME
 
     /// Write host name to replica_path, it will protect from multiple replicas with the same name
     auto host_id = getHostID(global_context);
@@ -153,8 +161,8 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
 
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeCreateRequest(replica_path, host_id, zkutil::CreateMode::Persistent));
-    ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/log_ptr", toString(log_entry_to_execute), zkutil::CreateMode::Persistent));
-    ops.emplace_back(zkutil::makeCreateRequest(query_path, entry.toString(), zkutil::CreateMode::PersistentSequential));
+    ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/log_ptr", "0", zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(query_path, entry.toString(), zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeRemoveRequest(counter_path, -1));
     current_zookeeper->multi(ops);
 }
@@ -163,22 +171,9 @@ void DatabaseReplicated::loadStoredObjects(Context & context, bool has_force_res
 {
     DatabaseAtomic::loadStoredObjects(context, has_force_restore_data_flag, force_attach);
 
-    recoverLostReplica(global_context.getZooKeeper(), 0, true); //FIXME
+    //recoverLostReplica(global_context.getZooKeeper(), 0, true); //FIXME
 
-    DatabaseReplicatedExtensions ext;
-    ext.database_uuid = getUUID();
-    ext.zookeeper_path = zookeeper_path;
-    ext.database_name = getDatabaseName();
-    ext.shard_name = shard_name;
-    ext.replica_name = replica_name;
-    ext.first_not_executed = log_entry_to_execute;
-    ext.lost_callback     = [this] (const String & entry_name, const ZooKeeperPtr & zookeeper) { onUnexpectedLogEntry(entry_name, zookeeper); };
-    ext.executed_callback = [this] (const String & entry_name, const ZooKeeperPtr & zookeeper) { onExecutedLogEntry(entry_name, zookeeper); };
-
-    /// Pool size must be 1 (to avoid reordering of log entries)
-    constexpr size_t pool_size = 1;
-    ddl_worker = std::make_unique<DDLWorker>(pool_size, zookeeper_path + "/log", global_context, nullptr, "",
-                                             std::make_optional<DatabaseReplicatedExtensions>(std::move(ext)));
+    ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, global_context);
 }
 
 void DatabaseReplicated::onUnexpectedLogEntry(const String & entry_name, const ZooKeeperPtr & zookeeper)
@@ -314,48 +309,68 @@ BlockIO DatabaseReplicated::propose(const ASTPtr & query)
 }
 
 
-void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 from_snapshot, bool create)
+void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 from_snapshot, bool /*create*/)
 {
-    LOG_WARNING(log, "Will recover replica from snapshot", from_snapshot);
+    LOG_WARNING(log, "Will recover replica");
 
     //FIXME drop old tables
 
     String snapshot_metadata_path = zookeeper_path + "/metadata";
     Strings tables_in_snapshot = current_zookeeper->getChildren(snapshot_metadata_path);
     snapshot_metadata_path += '/';
+    from_snapshot = parse<UInt32>(current_zookeeper->get(zookeeper_path + "/max_log_ptr"));
 
     for (const auto & table_name : tables_in_snapshot)
     {
         //FIXME It's not atomic. We need multiget here (available since ZooKeeper 3.6.0).
-        String query_to_execute = current_zookeeper->get(snapshot_metadata_path + table_name);
+        String query_text = current_zookeeper->get(snapshot_metadata_path + table_name);
+        auto query_ast = parseQueryFromMetadataInZooKeeper(table_name, query_text);
 
+        Context query_context = global_context;
+        query_context.makeQueryContext();
+        query_context.getClientInfo().query_kind = ClientInfo::QueryKind::REPLICATED_LOG_QUERY;
+        query_context.setCurrentDatabase(database_name);
+        query_context.setCurrentQueryId(""); // generate random query_id
 
-        if (!startsWith(query_to_execute, "ATTACH "))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected query: {}", query_to_execute);
-        query_to_execute = "CREATE " + query_to_execute.substr(strlen("ATTACH "));
+        //FIXME
+        DatabaseCatalog::instance().waitTableFinallyDropped(query_ast->as<ASTCreateQuery>()->uuid);
 
-        Context current_context = global_context;
-        current_context.getClientInfo().query_kind = ClientInfo::QueryKind::REPLICATED_LOG_QUERY;
-        current_context.setCurrentDatabase(database_name);
-        current_context.setCurrentQueryId(""); // generate random query_id
-
-        executeQuery(query_to_execute, current_context);
+        LOG_INFO(log, "Executing {}", serializeAST(*query_ast));
+        InterpreterCreateQuery(query_ast, query_context).execute();
     }
 
-    if (create)
-        return;
+    //if (create)
+    //    return;
 
-    current_zookeeper->set(replica_path + "/log-ptr", toString(from_snapshot));
+    current_zookeeper->set(replica_path + "/log_ptr", toString(from_snapshot));
     last_executed_log_entry = from_snapshot;
-    ddl_worker->setLogPointer(from_snapshot); //FIXME
+    //ddl_worker->setLogPointer(from_snapshot); //FIXME
 
     //writeLastExecutedToDiskAndZK();
+}
+
+ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & node_name, const String & query)
+{
+    ParserCreateQuery parser;
+    String description = "in ZooKeeper " + zookeeper_path + "/metadata/" + node_name;
+    auto ast = parseQuery(parser, query, description, 0, global_context.getSettingsRef().max_parser_depth);
+
+    auto & create = ast->as<ASTCreateQuery &>();
+    if (create.uuid == UUIDHelpers::Nil || create.table != TABLE_WITH_UUID_NAME_PLACEHOLDER || ! create.database.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got unexpected query from {}: {}", node_name, query);
+
+    create.database = getDatabaseName();
+    create.table = unescapeForFileName(node_name);
+    create.attach = false;
+
+    return ast;
 }
 
 void DatabaseReplicated::drop(const Context & context_)
 {
     auto current_zookeeper = getZooKeeper();
-    current_zookeeper->tryRemove(zookeeper_path + "/replicas/" + replica_name);
+    current_zookeeper->set(replica_path, "DROPPED");
+    current_zookeeper->tryRemoveRecursive(replica_path);
     DatabaseAtomic::drop(context_);
 }
 

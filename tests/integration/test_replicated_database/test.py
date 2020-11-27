@@ -7,11 +7,11 @@ from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
-main_node = cluster.add_instance('main_node', main_configs=['configs/disable_snapshots.xml'], with_zookeeper=True, stay_alive=True, macros={"shard": 1, "replica": 1})
-dummy_node = cluster.add_instance('dummy_node', main_configs=['configs/disable_snapshots.xml'], with_zookeeper=True, macros={"shard": 1, "replica": 2})
-competing_node = cluster.add_instance('competing_node', main_configs=['configs/disable_snapshots.xml'], with_zookeeper=True, macros={"shard": 1, "replica": 3})
-snapshotting_node = cluster.add_instance('snapshotting_node', main_configs=['configs/snapshot_each_query.xml'], with_zookeeper=True, macros={"shard": 2, "replica": 1})
-snapshot_recovering_node = cluster.add_instance('snapshot_recovering_node', main_configs=['configs/disable_snapshots.xml'], with_zookeeper=True, macros={"shard": 2, "replica": 2})
+main_node = cluster.add_instance('main_node', main_configs=['configs/config.xml'], with_zookeeper=True, stay_alive=True, macros={"shard": 1, "replica": 1})
+dummy_node = cluster.add_instance('dummy_node', main_configs=['configs/config.xml'], with_zookeeper=True, macros={"shard": 1, "replica": 2})
+competing_node = cluster.add_instance('competing_node', main_configs=['configs/config.xml'], with_zookeeper=True, macros={"shard": 1, "replica": 3})
+snapshotting_node = cluster.add_instance('snapshotting_node', main_configs=['configs/config.xml'], with_zookeeper=True, macros={"shard": 2, "replica": 1})
+snapshot_recovering_node = cluster.add_instance('snapshot_recovering_node', main_configs=['configs/config.xml'], with_zookeeper=True, macros={"shard": 2, "replica": 2})
 
 uuid_regex = re.compile("[0-9a-f]{8}\-[0-9a-f]{4}\-[0-9a-f]{4}\-[0-9a-f]{4}\-[0-9a-f]{12}")
 def assert_create_query(nodes, table_name, expected):
@@ -70,9 +70,10 @@ def test_simple_alter_table(started_cluster, engine):
     assert_create_query([main_node, dummy_node], name, expected)
 
 
+@pytest.mark.dependency(depends=['test_simple_alter_table'])
 @pytest.mark.parametrize("engine", ['MergeTree', 'ReplicatedMergeTree'])
 def test_create_replica_after_delay(started_cluster, engine):
-    competing_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica3');")
+    competing_node.query("CREATE DATABASE IF NOT EXISTS testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica3');")
 
     name  = "testdb.alter_test_{}".format(engine)
     main_node.query("ALTER TABLE {} ADD COLUMN Added3 UInt32;".format(name))
@@ -113,6 +114,7 @@ def test_alters_from_different_replicas(started_cluster):
 
     assert_create_query([main_node, competing_node], "testdb.concurrent_test", expected)
 
+@pytest.mark.dependency(depends=['test_alters_from_different_replicas'])
 def test_drop_and_create_table(started_cluster):
     main_node.query("DROP TABLE testdb.concurrent_test")
     main_node.query("CREATE TABLE testdb.concurrent_test "
@@ -125,6 +127,7 @@ def test_drop_and_create_table(started_cluster):
 
     assert_create_query([main_node, competing_node], "testdb.concurrent_test", expected)
 
+@pytest.mark.dependency(depends=['test_drop_and_create_table'])
 def test_replica_restart(started_cluster):
     main_node.restart_clickhouse()
 
@@ -134,14 +137,18 @@ def test_replica_restart(started_cluster):
 
     assert_create_query([main_node, competing_node], "testdb.concurrent_test", expected)
 
+
+@pytest.mark.dependency(depends=['test_create_replica_after_delay'])
 def test_snapshot_and_snapshot_recover(started_cluster):
     #FIXME bad test
     snapshotting_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica4');")
     time.sleep(5)
     snapshot_recovering_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica5');")
     time.sleep(5)
-    assert snapshotting_node.query("desc table testdb.alter_test") == snapshot_recovering_node.query("desc table testdb.alter_test")
+    assert snapshotting_node.query("desc table testdb.alter_test_MergeTree") == snapshot_recovering_node.query("desc table testdb.alter_test_MergeTree")
+    assert snapshotting_node.query("desc table testdb.alter_test_ReplicatedMergeTree") == snapshot_recovering_node.query("desc table testdb.alter_test_ReplicatedMergeTree")
 
+@pytest.mark.dependency(depends=['test_replica_restart'])
 def test_drop_and_create_replica(started_cluster):
     main_node.query("DROP DATABASE testdb")
     main_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica1');")

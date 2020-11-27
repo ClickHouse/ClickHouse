@@ -38,12 +38,12 @@ public:
     UUID uuid() const override { return table()->getStorageID().uuid; }
 };
 
-DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, Context & context_)
+DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, const Context & context_)
     : DatabaseAtomic(name_, metadata_path_, uuid, "DatabaseAtomic (" + name_ + ")", context_)
 {
 }
 
-DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, const String & logger, Context & context_)
+DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, const String & logger, const Context & context_)
     : DatabaseOrdinary(name_, std::move(metadata_path_), "store/", logger, context_)
     , path_to_table_symlinks(global_context.getPath() + "data/" + escapeForFileName(name_) + "/")
     , path_to_metadata_symlink(global_context.getPath() + "metadata/" + escapeForFileName(name_))
