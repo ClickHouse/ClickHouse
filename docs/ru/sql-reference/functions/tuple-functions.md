@@ -5,7 +5,7 @@ toc_title: Функции для работы с кортежами
 
 # Функции для работы с кортежами {#tuple-functions}
 
-## Tuple {#tuple}
+## tuple {#tuple}
 
 Функция, позволяющая сгруппировать несколько столбцов.
 Для столбцов, имеющих типы T1, T2, … возвращает кортеж типа Tuple(T1, T2, …), содержащий эти столбцы. Выполнение функции ничего не стоит.
@@ -19,9 +19,9 @@ tuple(x, y, …)
 
 **Смотрите также**
 
--   [Оператор (x, y, …)](../../sql-reference/functions/in-functions.md#tuplex-y-operator-x-y)
+-   [оператор (x, y, …)](../../sql-reference/functions/in-functions.md#tuplex-y-operator-x-y)
 
-## TupleElement {#tupleelement}
+## tupleElement {#tupleelement}
 
 Функция, позволяющая достать столбец из кортежа.
 N - индекс столбца начиная с 1. N должно быть константой. N должно быть целым строго положительным числом не большим размера кортежа.
@@ -35,9 +35,9 @@ tupleElement(tuple, n)
 
 **Смотрите также**
 
--   [Оператор x.N](../../sql-reference/functions/in-functions.md#tupleelementtuple-n-operator-x-n)
+-   [оператор x.N](../../sql-reference/functions/in-functions.md#tupleelementtuple-n-operator-x-n)
 
-## Untuple {#untuple}
+## untuple {#untuple}
 
 Выполняет синтаксическую подстановку элементов [кортежа](../../sql-reference/data-types/tuple.md#tuplet1-t2) в место вызова.
 
