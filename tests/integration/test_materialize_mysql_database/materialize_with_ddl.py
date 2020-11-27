@@ -584,6 +584,7 @@ def network_partition_test(clickhouse_node, mysql_node, service_name):
 
     clickhouse_node.query(
         "CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'root', 'clickhouse')".format(service_name))
+    check_query(clickhouse_node, "SELECT * FROM test_database.test_table", '')
 
     with PartitionManager() as pm:
         drop_instance_mysql_connections(clickhouse_node, pm)

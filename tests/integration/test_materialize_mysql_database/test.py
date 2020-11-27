@@ -89,7 +89,7 @@ class MySQLNodeInstance:
 
 @pytest.fixture(scope="module")
 def started_mysql_5_7():
-    docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mysql.yml')
+    docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mysql_5_7_for_materialize_mysql.yml')
     mysql_node = MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', 3308, docker_compose)
 
     try:
@@ -105,7 +105,7 @@ def started_mysql_5_7():
 
 @pytest.fixture(scope="module")
 def started_mysql_8_0():
-    docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mysql_8_0.yml')
+    docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mysql_8_0_for_materialize_mysql.yml')
     mysql_node = MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', 33308, docker_compose)
 
     try:
