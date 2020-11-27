@@ -25,12 +25,13 @@ RUN apt-get update \
             python3 \
             python3-dev \
             python3-pip \
+            python3-setuptools \
             rsync \
             tree \
             tzdata \
             vim \
             wget \
-    && pip3 --no-cache-dir install 'clickhouse-driver>=0.1.5' scipy \
+    && pip3 --no-cache-dir install 'git+https://github.com/mymarilyn/clickhouse-driver.git' scipy \
     && apt-get purge --yes python3-dev g++ \
     && apt-get autoremove --yes \
     && apt-get clean \
