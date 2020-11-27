@@ -436,10 +436,9 @@ class ClickHouseCluster:
         while time.time() - start < timeout:
             try:
                 conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.1', port=3308)
-                if conn.ping():
-                    conn.close()
-                    print("Mysql Started")
-                    return
+                conn.close()
+                print("Mysql Started")
+                return
             except Exception as ex:
                 print("Can't connect to MySQL " + str(ex))
                 time.sleep(0.5)

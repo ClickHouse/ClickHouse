@@ -2,7 +2,7 @@ version: '2.3'
 services:
     mysql1:
         image: mysql:5.7
-        restart: always
+        restart: 'no'
         environment:
             MYSQL_ROOT_PASSWORD: clickhouse
         ports:
