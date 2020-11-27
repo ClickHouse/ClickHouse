@@ -2,6 +2,8 @@
 #    include "config_formats.h"
 #endif
 
+#if USE_GRPC
+
 #include <boost/algorithm/string.hpp>
 
 #include <Common/ZooKeeper/EtcdKeeper.h>
@@ -2073,3 +2075,5 @@ namespace Coordination
     }
 
 }
+
+#endif

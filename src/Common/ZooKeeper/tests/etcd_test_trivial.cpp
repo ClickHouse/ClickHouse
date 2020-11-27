@@ -1,5 +1,7 @@
 //#include <gtest/gtest.h>
 
+#if USE_GRPC
+
 #include <Common/ZooKeeper/EtcdKeeper.h>
 #include <iostream>
 #include <future>
@@ -129,3 +131,5 @@ int main()
 
     _exit(0);
 }
+
+#endif 

@@ -4,6 +4,8 @@
 #    include "config_formats.h"
 #endif
 
+#if USE_GRPC
+
 #include <mutex>
 #include <map>
 #include <atomic>
@@ -258,3 +260,5 @@ private:
     using EtcdKeeperRequests = std::vector<EtcdKeeperRequestPtr>;
 
 }
+
+#endif
