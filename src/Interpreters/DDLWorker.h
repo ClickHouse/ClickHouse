@@ -137,6 +137,8 @@ private:
 
     ThreadGroupStatusPtr thread_group;
 
+    std::atomic<UInt64> max_id = 0;
+
     friend class DDLQueryStatusInputStream;
     friend struct DDLTask;
 };
