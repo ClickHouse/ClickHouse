@@ -4,8 +4,6 @@
 #    include "config_formats.h"
 #endif
 
-#if USE_GRPC
-
 #include <mutex>
 #include <map>
 #include <atomic>
@@ -22,7 +20,7 @@
 #if defined(__clang__)
 #  pragma clang diagnostic push
 #  pragma clang diagnostic ignored "-Weverything"
-#  include <grpcpp/grpcpp.h>
+#  include <grpc++/grpc++.h>
 #  pragma clang diagnostic pop
 #elif defined(__GNUC__)
 #  pragma GCC diagnostic push
@@ -35,11 +33,11 @@
 #  pragma GCC diagnostic ignored "-Wcast-qual"
 #  pragma GCC diagnostic ignored "-Wunused-parameter"
 #  pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#  include <grpcpp/grpcpp.h>
+#  include <grpc++/grpc++.h>
 #  pragma GCC diagnostic pop
 #endif
 
-#include <Common/ZooKeeper/rpc.grpc.pb.h>
+#include <Common/ZooKeeper/etcd_protos/rpc.grpc.pb.h>
 
 using etcdserverpb::PutRequest;
 using etcdserverpb::PutResponse;
@@ -260,4 +258,3 @@ private:
     using EtcdKeeperRequests = std::vector<EtcdKeeperRequestPtr>;
 
 }
-#endif
