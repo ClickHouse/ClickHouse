@@ -142,33 +142,13 @@ std::unique_ptr<ZooKeeperLock> createSimpleZooKeeperLock(
 }
 
 
-String DatabaseReplicatedExtensions::getLogEntryName(UInt32 log_entry_number)
-{
-    constexpr size_t seq_node_digits = 10;
-    String number = toString(log_entry_number);
-    String name = "query-" + String(seq_node_digits - number.size(), '0') + number;
-    return name;
-}
-
-UInt32 DatabaseReplicatedExtensions::getLogEntryNumber(const String & log_entry_name)
-{
-    constexpr const char * name = "query-";
-    assert(startsWith(log_entry_name, name));
-    return parse<UInt32>(log_entry_name.substr(strlen(name)));
-}
-
-
 DDLWorker::DDLWorker(int pool_size_, const std::string & zk_root_dir, const Context & context_, const Poco::Util::AbstractConfiguration * config, const String & prefix,
-                     std::optional<DatabaseReplicatedExtensions> database_replicated_ext_)
+                     const String & logger_name)
     : context(context_)
-    , log(&Poco::Logger::get(database_replicated_ext_ ? fmt::format("DDLWorker ({})", database_replicated_ext_->database_name) : "DDLWorker"))
-    , database_replicated_ext(std::move(database_replicated_ext_))
-    , pool_size(pool_size_)
+    , log(&Poco::Logger::get(logger_name))
+    , pool_size(pool_size_)     //FIXME make it optional
     , worker_pool(pool_size_)
 {
-    assert(!database_replicated_ext || pool_size == 1);
-    last_tasks.reserve(pool_size);
-
     queue_dir = zk_root_dir;
     if (queue_dir.back() == '/')
         queue_dir.resize(queue_dir.size() - 1);
@@ -252,60 +232,26 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
     String node_data;
     String entry_path = queue_dir + "/" + entry_name;
 
-    auto task = std::make_unique<DDLTask>();
-    task->entry_name = entry_name;
-    task->entry_path = entry_path;
-
-    if (database_replicated_ext)
-    {
-        String initiator_name;
-        zkutil::EventPtr wait_committed_or_failed = std::make_shared<Poco::Event>();
-
-        if (zookeeper->tryGet(entry_path + "/try", initiator_name, nullptr, wait_committed_or_failed))
-        {
-            task->we_are_initiator = initiator_name == database_replicated_ext->getFullReplicaName();
-            /// Query is not committed yet. We cannot just skip it and execute next one, because reordering may break replication.
-            //FIXME add some timeouts
-            if (!task->we_are_initiator)
-            {
-                LOG_TRACE(log, "Waiting for initiator {} to commit or rollback entry {}", initiator_name, entry_path);
-                wait_committed_or_failed->wait();
-            }
-        }
-
-        if (!task->we_are_initiator && !zookeeper->exists(entry_path + "/committed"))
-        {
-            out_reason = "Entry " + entry_name + " hasn't been committed";
-            return {};
-        }
-    }
+    auto task = std::make_unique<DDLTask>(entry_name, entry_path);
 
     if (!zookeeper->tryGet(entry_path, node_data))
     {
-        if (database_replicated_ext)
-            database_replicated_ext->lost_callback(entry_name, zookeeper);
         /// It is Ok that node could be deleted just now. It means that there are no current host in node's host list.
         out_reason = "The task was deleted";
         return {};
     }
 
-    try
-    {
-        task->entry.parse(node_data);
-    }
-    catch (...)
+    auto error = task->tryParseEntry(node_data);
+    if (error)
     {
         /// What should we do if we even cannot parse host name and therefore cannot properly submit execution status?
         /// We can try to create fail node using FQDN if it equal to host name in cluster config attempt will be successful.
         /// Otherwise, that node will be ignored by DDLQueryStatusInputStream.
-
-        tryLogCurrentException(log, "Cannot parse DDL task " + entry_name + ", will try to send error status");
-
-        String status = ExecutionStatus::fromCurrentException().serializeText();
+        LOG_ERROR(log, "Cannot parse DDL task {}, will try to send error status: {}", entry_name, *error);
         try
         {
             createStatusDirs(entry_path, zookeeper);
-            zookeeper->tryCreate(entry_path + "/finished/" + host_fqdn_id, status, zkutil::CreateMode::Persistent);
+            zookeeper->tryCreate(entry_path + "/finished/" + host_fqdn_id, *error, zkutil::CreateMode::Persistent);
         }
         catch (...)
         {
@@ -316,44 +262,14 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
         return {};
     }
 
-    if (database_replicated_ext)
-    {
-        task->host_id.host_name = host_fqdn;
-        task->host_id.port = context.getTCPPort();
-        task->host_id_str = database_replicated_ext->shard_name + '|' + database_replicated_ext->replica_name;
-        return task;
-    }
-
-    bool host_in_hostlist = false;
-    for (const HostID & host : task->entry.hosts)
-    {
-        auto maybe_secure_port = context.getTCPPortSecure();
-
-        /// The port is considered local if it matches TCP or TCP secure port that the server is listening.
-        bool is_local_port = (maybe_secure_port && host.isLocalAddress(*maybe_secure_port))
-            || host.isLocalAddress(context.getTCPPort());
-
-        if (!is_local_port)
-            continue;
-
-        if (host_in_hostlist)
-        {
-            /// This check could be slow a little bit
-            LOG_WARNING(log, "There are two the same ClickHouse instances in task {}: {} and {}. Will use the first one only.", entry_name, task->host_id.readableString(), host.readableString());
-        }
-        else
-        {
-            host_in_hostlist = true;
-            task->host_id = host;
-            task->host_id_str = host.toString();
-        }
-    }
-
-    if (!host_in_hostlist)
+    if (!task->findCurrentHostID(context, log))
     {
         out_reason = "There is no a local address in host list";
         return {};
     }
+
+    task->parseQueryFromEntry(context);
+    task->setClusterInfo(context, log);
 
     return task;
 }
@@ -378,11 +294,11 @@ void DDLWorker::scheduleTasks()
         return;
     }
 
-    bool server_startup = last_tasks.empty();
+    bool server_startup = !last_entry_name.has_value();
 
     auto begin_node = server_startup
         ? queue_nodes.begin()
-        : std::upper_bound(queue_nodes.begin(), queue_nodes.end(), last_tasks.back());
+        : std::upper_bound(queue_nodes.begin(), queue_nodes.end(), *last_entry_name);
 
     for (auto it = begin_node; it != queue_nodes.end() && !stop_flag; ++it)
     {
@@ -394,7 +310,7 @@ void DDLWorker::scheduleTasks()
         if (!task)
         {
             LOG_DEBUG(log, "Will not execute task {}: {}", entry_name, reason);
-            saveTask(entry_name);
+            last_entry_name = entry_name;
             continue;
         }
 
@@ -408,7 +324,7 @@ void DDLWorker::scheduleTasks()
 
         if (!already_processed)
         {
-            if (database_replicated_ext)
+            if (pool_size == 1)
             {
                 enqueueTask(DDLTaskPtr(task.release()));
             }
@@ -425,143 +341,18 @@ void DDLWorker::scheduleTasks()
             LOG_DEBUG(log, "Task {} ({}) has been already processed", entry_name, task->entry.query);
         }
 
-        saveTask(entry_name);
+        last_entry_name = entry_name;
     }
-}
-
-void DDLWorker::saveTask(const String & entry_name)
-{
-    if (last_tasks.size() == pool_size)
-    {
-        last_tasks.erase(last_tasks.begin());
-    }
-    last_tasks.emplace_back(entry_name);
 }
 
 /// Parses query and resolves cluster and host in cluster
-void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
+void DDLWorker::parseQueryAndResolveHost(DDLTaskBase & /*task*/)
 {
-    {
-        const char * begin = task.entry.query.data();
-        const char * end = begin + task.entry.query.size();
 
-        ParserQuery parser_query(end);
-        String description;
-        task.query = parseQuery(parser_query, begin, end, description, 0, context.getSettingsRef().max_parser_depth);
-    }
-
-    // XXX: serious design flaw since `ASTQueryWithOnCluster` is not inherited from `IAST`!
-    if (!task.query || !(task.query_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(task.query.get())))
-        throw Exception("Received unknown DDL query", ErrorCodes::UNKNOWN_TYPE_OF_QUERY);
-
-    if (database_replicated_ext)
-        return;
-
-    task.cluster_name = task.query_on_cluster->cluster;
-    task.cluster = context.tryGetCluster(task.cluster_name);
-    if (!task.cluster)
-        throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
-            "DDL task {} contains current host {} in cluster {}, but there are no such cluster here.",
-            task.entry_name, task.host_id.readableString(), task.cluster_name);
-
-    /// Try to find host from task host list in cluster
-    /// At the first, try find exact match (host name and ports should be literally equal)
-    /// If the attempt fails, try find it resolving host name of each instance
-    const auto & shards = task.cluster->getShardsAddresses();
-
-    bool found_exact_match = false;
-    String default_database;
-    for (size_t shard_num = 0; shard_num < shards.size(); ++shard_num)
-    {
-        for (size_t replica_num = 0; replica_num < shards[shard_num].size(); ++replica_num)
-        {
-            const Cluster::Address & address = shards[shard_num][replica_num];
-
-            if (address.host_name == task.host_id.host_name && address.port == task.host_id.port)
-            {
-                if (found_exact_match)
-                {
-                    if (default_database == address.default_database)
-                    {
-                        throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
-                            "There are two exactly the same ClickHouse instances {} in cluster {}",
-                            address.readableString(), task.cluster_name);
-                    }
-                    else
-                    {
-                        /* Circular replication is used.
-                         * It is when every physical node contains
-                         * replicas of different shards of the same table.
-                         * To distinguish one replica from another on the same node,
-                         * every shard is placed into separate database.
-                         * */
-                        is_circular_replicated = true;
-                        auto * query_with_table = dynamic_cast<ASTQueryWithTableAndOutput *>(task.query.get());
-                        if (!query_with_table || query_with_table->database.empty())
-                        {
-                            throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
-                                "For a distributed DDL on circular replicated cluster its table name must be qualified by database name.");
-                        }
-                        if (default_database == query_with_table->database)
-                            return;
-                    }
-                }
-                found_exact_match = true;
-                task.host_shard_num = shard_num;
-                task.host_replica_num = replica_num;
-                task.address_in_cluster = address;
-                default_database = address.default_database;
-            }
-        }
-    }
-
-    if (found_exact_match)
-        return;
-
-    LOG_WARNING(log, "Not found the exact match of host {} from task {} in cluster {} definition. Will try to find it using host name resolving.", task.host_id.readableString(), task.entry_name, task.cluster_name);
-
-    bool found_via_resolving = false;
-    for (size_t shard_num = 0; shard_num < shards.size(); ++shard_num)
-    {
-        for (size_t replica_num = 0; replica_num < shards[shard_num].size(); ++replica_num)
-        {
-            const Cluster::Address & address = shards[shard_num][replica_num];
-
-            if (auto resolved = address.getResolvedAddress();
-                resolved && (isLocalAddress(*resolved, context.getTCPPort())
-                    || (context.getTCPPortSecure() && isLocalAddress(*resolved, *context.getTCPPortSecure()))))
-            {
-                if (found_via_resolving)
-                {
-                    throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
-                        "There are two the same ClickHouse instances in cluster {} : {} and {}",
-                        task.cluster_name, task.address_in_cluster.readableString(), address.readableString());
-                }
-                else
-                {
-                    found_via_resolving = true;
-                    task.host_shard_num = shard_num;
-                    task.host_replica_num = replica_num;
-                    task.address_in_cluster = address;
-                }
-            }
-        }
-    }
-
-    if (!found_via_resolving)
-    {
-        throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
-            "Not found host {} in definition of cluster {}",
-            task.host_id.readableString(), task.cluster_name);
-    }
-    else
-    {
-        LOG_INFO(log, "Resolved host {} from task {} as host {} in definition of cluster {}", task.host_id.readableString(), task.entry_name, task.address_in_cluster.readableString(), task.cluster_name);
-    }
 }
 
 
-bool DDLWorker::tryExecuteQuery(const String & query, const DDLTask & task, ExecutionStatus & status)
+bool DDLWorker::tryExecuteQuery(const String & query, const DDLTaskBase & task, ExecutionStatus & status)
 {
     /// Add special comment at the start of query to easily identify DDL-produced queries in query_log
     String query_prefix = "/* ddl_entry=" + task.entry_name + " */ ";
@@ -573,36 +364,8 @@ bool DDLWorker::tryExecuteQuery(const String & query, const DDLTask & task, Exec
 
     try
     {
-        auto current_context = std::make_unique<Context>(context);
-        current_context->makeQueryContext();
-        current_context->setCurrentQueryId(""); // generate random query_id
-
-        if (database_replicated_ext)
-        {
-            current_context->getClientInfo().query_kind
-                = ClientInfo::QueryKind::REPLICATED_LOG_QUERY; //FIXME why do we need separate query kind?
-            current_context->setCurrentDatabase(database_replicated_ext->database_name);
-
-            if (task.we_are_initiator)
-            {
-                auto txn = std::make_shared<MetadataTransaction>();
-                current_context->initMetadataTransaction(txn);
-                txn->current_zookeeper = current_zookeeper;
-                txn->zookeeper_path = database_replicated_ext->zookeeper_path;
-                txn->ops.emplace_back(zkutil::makeRemoveRequest(task.entry_path + "/try", -1));
-                txn->ops.emplace_back(zkutil::makeCreateRequest(task.entry_path + "/committed",
-                                                                database_replicated_ext->getFullReplicaName(), zkutil::CreateMode::Persistent));
-                txn->ops.emplace_back(zkutil::makeRemoveRequest(task.active_path, -1));
-                if (!task.shard_path.empty())
-                    txn->ops.emplace_back(zkutil::makeCreateRequest(task.shard_path, task.host_id_str, zkutil::CreateMode::Persistent));
-                txn->ops.emplace_back(zkutil::makeCreateRequest(task.finished_path, task.execution_status.serializeText(), zkutil::CreateMode::Persistent));
-                //txn->ops.emplace_back(zkutil::makeSetRequest(database_replicated_ext->getReplicaPath() + "/log_ptr", toString(database_replicated_ext->first_not_executed), -1));
-            }
-        }
-        else
-            current_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-
-        executeQuery(istr, ostr, false, *current_context, {});
+        auto query_context = task.makeQueryContext(context);
+        executeQuery(istr, ostr, false, *query_context, {});
     }
     catch (...)
     {
@@ -644,6 +407,7 @@ void DDLWorker::enqueueTask(DDLTaskPtr task_ptr)
             processTask(task);
             return;
         }
+        /// TODO recover zk in runMainThread(...) and retry task (why do we need another place where session is recovered?)
         catch (const Coordination::Exception & e)
         {
             if (Coordination::isHardwareError(e.code))
@@ -668,17 +432,16 @@ void DDLWorker::enqueueTask(DDLTaskPtr task_ptr)
     }
 }
 
-void DDLWorker::processTask(DDLTask & task)
+void DDLWorker::processTask(DDLTaskBase & task)
 {
     auto zookeeper = tryGetZooKeeper();
 
     LOG_DEBUG(log, "Processing task {} ({})", task.entry_name, task.entry.query);
 
-    String dummy;
-    //FIXME duplicate
-    String active_node_path = task.active_path = task.entry_path + "/active/" + task.host_id_str;
-    String finished_node_path = task.finished_path = task.entry_path + "/finished/" + task.host_id_str;
+    String active_node_path = task.getActiveNodePath();
+    String finished_node_path = task.getFinishedNodePath();
 
+    String dummy;
     auto code = zookeeper->tryCreate(active_node_path, "", zkutil::CreateMode::Ephemeral, dummy);
 
     if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNODEEXISTS)
@@ -696,22 +459,16 @@ void DDLWorker::processTask(DDLTask & task)
     else
         throw Coordination::Exception(code, active_node_path);
 
-    //FIXME
-    bool is_dummy_query = database_replicated_ext && task.entry.query.empty();
-    if (!task.was_executed && !is_dummy_query)
+    if (!task.was_executed)
     {
         try
         {
-            is_circular_replicated = false;
-            parseQueryAndResolveHost(task);
-
-            ASTPtr rewritten_ast = task.query_on_cluster->getRewrittenASTWithoutOnCluster(task.address_in_cluster.default_database);
-            String rewritten_query = queryToString(rewritten_ast);
+            String rewritten_query = queryToString(task.query);
             LOG_DEBUG(log, "Executing query: {}", rewritten_query);
 
-            if (auto * query_with_table = dynamic_cast<ASTQueryWithTableAndOutput *>(rewritten_ast.get()); query_with_table)
+            StoragePtr storage;
+            if (auto * query_with_table = dynamic_cast<ASTQueryWithTableAndOutput *>(task.query.get()); query_with_table)
             {
-                StoragePtr storage;
                 if (!query_with_table->table.empty())
                 {
                     /// It's not CREATE DATABASE
@@ -719,11 +476,11 @@ void DDLWorker::processTask(DDLTask & task)
                     storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
                 }
 
-                if (storage && taskShouldBeExecutedOnLeader(rewritten_ast, storage)  && !is_circular_replicated)
-                    tryExecuteQueryOnLeaderReplica(task, storage, rewritten_query, task.entry_path, zookeeper);
-                else
-                    tryExecuteQuery(rewritten_query, task, task.execution_status);
+                task.execute_on_leader = storage && taskShouldBeExecutedOnLeader(task.query, storage) && !task.is_circular_replicated;
             }
+
+            if (task.execute_on_leader)
+                tryExecuteQueryOnLeaderReplica(task, storage, rewritten_query, task.entry_path, zookeeper);
             else
                 tryExecuteQuery(rewritten_query, task, task.execution_status);
         }
@@ -753,12 +510,6 @@ void DDLWorker::processTask(DDLTask & task)
     auto res = zookeeper->tryMulti(ops, responses);
     if (res != Coordination::Error::ZNODEEXISTS && res != Coordination::Error::ZNONODE)
         zkutil::KeeperMultiException::check(res, ops, responses);
-
-    if (database_replicated_ext)
-    {
-        database_replicated_ext->executed_callback(task.entry_name, zookeeper);
-        ++(database_replicated_ext->first_not_executed);
-    }
 }
 
 
@@ -775,10 +526,10 @@ bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr ast_ddl, const Storage
 }
 
 bool DDLWorker::tryExecuteQueryOnLeaderReplica(
-    DDLTask & task,
+    DDLTaskBase & task,
     StoragePtr storage,
     const String & rewritten_query,
-    const String & node_path,
+    const String & /*node_path*/,
     const ZooKeeperPtr & zookeeper)
 {
     StorageReplicatedMergeTree * replicated_storage = dynamic_cast<StorageReplicatedMergeTree *>(storage.get());
@@ -787,31 +538,8 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
     if (!replicated_storage)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Storage type '{}' is not supported by distributed DDL", storage->getName());
 
-    /// Generate unique name for shard node, it will be used to execute the query by only single host
-    /// Shard node name has format 'replica_name1,replica_name2,...,replica_nameN'
-    /// Where replica_name is 'replica_config_host_name:replica_port'
-    auto get_shard_name = [] (const Cluster::Addresses & shard_addresses)
-    {
-        Strings replica_names;
-        for (const Cluster::Address & address : shard_addresses)
-            replica_names.emplace_back(address.readableString());
-        std::sort(replica_names.begin(), replica_names.end());
-
-        String res;
-        for (auto it = replica_names.begin(); it != replica_names.end(); ++it)
-            res += *it + (std::next(it) != replica_names.end() ? "," : "");
-
-        return res;
-    };
-
-    String shard_node_name;
-    if (database_replicated_ext)
-        shard_node_name = database_replicated_ext->shard_name;
-    else
-        shard_node_name = get_shard_name(task.cluster->getShardsAddresses().at(task.host_shard_num));
-    String shard_path = node_path + "/shards/" + shard_node_name;
+    String shard_path = task.getShardNodePath();
     String is_executed_path = shard_path + "/executed";
-    task.shard_path = is_executed_path; //FIXME duplicate
     String tries_to_execute_path = shard_path + "/tries_to_execute";
     zookeeper->createAncestors(shard_path + "/");
 
@@ -1035,7 +763,7 @@ void DDLWorker::createStatusDirs(const std::string & node_path, const ZooKeeperP
 
 String DDLWorker::enqueueQuery(DDLLogEntry & entry)
 {
-    if (entry.hosts.empty() && !database_replicated_ext)
+    if (entry.hosts.empty())
         throw Exception("Empty host list in a distributed DDL task", ErrorCodes::LOGICAL_ERROR);
 
     auto zookeeper = getAndSetZooKeeper();
@@ -1043,27 +771,7 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry)
     String query_path_prefix = queue_dir + "/query-";
     zookeeper->createAncestors(query_path_prefix);
 
-    String node_path;
-    if (database_replicated_ext)
-    {
-        /// We cannot create sequential node and it's ephemeral child in a single transaction, so allocate sequential number another way
-        String counter_prefix = database_replicated_ext->zookeeper_path + "/counter/cnt-";
-        String counter_path = zookeeper->create(counter_prefix, "", zkutil::CreateMode::EphemeralSequential);
-        node_path = query_path_prefix + counter_path.substr(counter_prefix.size());
-
-        Coordination::Requests ops;
-        /// Query is not committed yet, but we have to write it into log to avoid reordering
-        ops.emplace_back(zkutil::makeCreateRequest(node_path, entry.toString(), zkutil::CreateMode::Persistent));
-        /// '/try' will be replaced with '/committed' or will be removed due to expired session or other error
-        ops.emplace_back(zkutil::makeCreateRequest(node_path + "/try", database_replicated_ext->getFullReplicaName(), zkutil::CreateMode::Ephemeral));
-        /// We don't need it anymore
-        ops.emplace_back(zkutil::makeRemoveRequest(counter_path, -1));
-        zookeeper->multi(ops);
-    }
-    else
-    {
-        node_path = zookeeper->create(query_path_prefix, entry.toString(), zkutil::CreateMode::PersistentSequential);
-    }
+    String node_path = zookeeper->create(query_path_prefix, entry.toString(), zkutil::CreateMode::PersistentSequential);
 
     /// Optional step
     try
@@ -1091,6 +799,7 @@ void DDLWorker::runMainThread()
         {
             auto zookeeper = getAndSetZooKeeper();
             zookeeper->createAncestors(queue_dir + "/");
+            initialize();
             initialized = true;
         }
         catch (const Coordination::Exception & e)

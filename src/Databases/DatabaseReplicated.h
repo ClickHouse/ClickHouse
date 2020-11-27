@@ -12,7 +12,7 @@
 namespace DB
 {
 
-class DDLWorker;
+class DatabaseReplicatedDDLWorker;
 using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
 
 /** DatabaseReplicated engine
@@ -42,7 +42,7 @@ class DatabaseReplicated : public DatabaseAtomic
 public:
     DatabaseReplicated(const String & name_, const String & metadata_path_, UUID uuid,
                        const String & zookeeper_path_, const String & shard_name_, const String & replica_name_,
-                       Context & context);
+                       const Context & context);
 
     ~DatabaseReplicated() override;
 
@@ -56,6 +56,11 @@ public:
 
     void loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool force_attach = false) override;
 
+    String getFullReplicaName() const { return shard_name + '|' + replica_name; }
+
+    //FIXME
+    friend struct DatabaseReplicatedTask;
+    friend class DatabaseReplicatedDDLWorker;
 private:
     bool createDatabaseNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
     void createReplicaNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
@@ -71,6 +76,8 @@ private:
     void recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 from_snapshot, bool create = false);
 
     void onExecutedLogEntry(const String & entry_name, const ZooKeeperPtr & zookeeper);
+
+    ASTPtr parseQueryFromMetadataInZooKeeper(const String & node_name, const String & query);
 
     String zookeeper_path;
     String shard_name;
@@ -88,7 +95,7 @@ private:
 
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
-    std::unique_ptr<DDLWorker> ddl_worker;
+    std::unique_ptr<DatabaseReplicatedDDLWorker> ddl_worker;
 
 
 

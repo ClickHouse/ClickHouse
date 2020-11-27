@@ -3,12 +3,17 @@
 #include <Interpreters/Cluster.h>
 #include <Common/ZooKeeper/Types.h>
 
+namespace Poco
+{
+class Logger;
+}
 
 namespace DB
 {
 
 class ASTQueryWithOnCluster;
 using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
+class DatabaseReplicated;
 
 struct HostID
 {
@@ -54,42 +59,88 @@ struct DDLLogEntry
     void parse(const String & data);
 };
 
+struct DDLTaskBase
+{
+    const String entry_name;
+    const String entry_path;
 
-struct DDLTask
+    DDLTaskBase(const String & name, const String & path) : entry_name(name), entry_path(path) {}
+    virtual ~DDLTaskBase() = default;
+
+    std::optional<String> tryParseEntry(const String & data);
+    virtual void parseQueryFromEntry(const Context & context);
+
+    DDLLogEntry entry;
+
+    String host_id_str;
+    ASTPtr query;
+
+    bool is_circular_replicated = false;
+    bool execute_on_leader = false;
+
+    ExecutionStatus execution_status;
+    bool was_executed = false;
+
+    virtual String getShardID() const = 0;
+
+    virtual std::unique_ptr<Context> makeQueryContext(Context & from_context) const;
+
+    inline String getActiveNodePath() const { return entry_path + "/active/" + host_id_str; }
+    inline String getFinishedNodePath() const { return entry_path + "/finished/" + host_id_str; }
+    inline String getShardNodePath() const { return entry_path + "/shards/" + getShardID(); }
+
+};
+
+struct DDLTask : public DDLTaskBase
 {
     /// Stages of task lifetime correspond ordering of these data fields:
 
-    /// Stage 1: parse entry
-    String entry_name;
-    String entry_path;
-    DDLLogEntry entry;
+    DDLTask(const String & name, const String & path) : DDLTaskBase(name, path) {}
 
-    bool we_are_initiator = false;
+    bool findCurrentHostID(const Context & global_context, Poco::Logger * log);
+
+    void setClusterInfo(const Context & context, Poco::Logger * log);
+
 
     /// Stage 2: resolve host_id and check that
-    HostID host_id;
-    String host_id_str;
+
 
     /// Stage 3.1: parse query
-    ASTPtr query;
-    ASTQueryWithOnCluster * query_on_cluster = nullptr;
 
     /// Stage 3.2: check cluster and find the host in cluster
+
+    /// Stage 3.3: execute query
+
+    /// Stage 4: commit results to ZooKeeper
+
+    String getShardID() const override;
+
+private:
+    bool tryFindHostInCluster();
+    bool tryFindHostInClusterViaResolving(const Context & context);
+
+    HostID host_id;
     String cluster_name;
     ClusterPtr cluster;
     Cluster::Address address_in_cluster;
     size_t host_shard_num;
     size_t host_replica_num;
+};
 
-    /// Stage 3.3: execute query
-    ExecutionStatus execution_status;
-    bool was_executed = false;
+struct DatabaseReplicatedTask : public DDLTaskBase
+{
+    DatabaseReplicatedTask(const String & name, const String & path, DatabaseReplicated * database_);
 
-    /// Stage 4: commit results to ZooKeeper
+    void parseQueryFromEntry(const Context & context) override;
 
-    String active_path;
-    String finished_path;
-    String shard_path;
+    String getShardID() const override;
+    std::unique_ptr<Context> makeQueryContext(Context & from_context) const override;
+
+    static String getLogEntryName(UInt32 log_entry_number);
+    static UInt32 getLogEntryNumber(const String & log_entry_name);
+
+    DatabaseReplicated * database;
+    bool we_are_initiator = false;
 };
 
 

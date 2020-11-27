@@ -29,50 +29,20 @@ namespace DB
 class Context;
 class ASTAlterQuery;
 struct DDLLogEntry;
-struct DDLTask;
-using DDLTaskPtr = std::unique_ptr<DDLTask>;
+struct DDLTaskBase;
+using DDLTaskPtr = std::unique_ptr<DDLTaskBase>;
 using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
-
-
-struct DatabaseReplicatedExtensions
-{
-    UUID database_uuid;
-    String zookeeper_path;
-    String database_name;
-    String shard_name;
-    String replica_name;
-    UInt32 first_not_executed;
-    using EntryLostCallback = std::function<void(const String & entry_name, const ZooKeeperPtr)>;
-    using EntryExecutedCallback = std::function<void(const String & entry_name, const ZooKeeperPtr)>;
-    using EntryErrorCallback = std::function<void(const String & entry_name, const ZooKeeperPtr, const std::exception_ptr &)>;
-    EntryLostCallback lost_callback;
-    EntryExecutedCallback executed_callback;
-    EntryErrorCallback error_callback;
-
-    String getReplicaPath() const
-    {
-        return zookeeper_path + "/replicas/" + shard_name + "/" + replica_name;
-    }
-
-    String getFullReplicaName() const
-    {
-        return shard_name + '|' + replica_name;
-    }
-
-    static String getLogEntryName(UInt32 log_entry_number);
-    static UInt32 getLogEntryNumber(const String & log_entry_name);
-};
 
 
 class DDLWorker
 {
 public:
     DDLWorker(int pool_size_, const std::string & zk_root_dir, const Context & context_, const Poco::Util::AbstractConfiguration * config, const String & prefix,
-              std::optional<DatabaseReplicatedExtensions> database_replicated_ext_ = std::nullopt);
-    ~DDLWorker();
+              const String & logger_name = "DDLWorker");
+    virtual ~DDLWorker();
 
     /// Pushes query into DDL queue, returns path to created node
-    String enqueueQuery(DDLLogEntry & entry);
+    virtual String enqueueQuery(DDLLogEntry & entry);
 
     /// Host ID (name:port) for logging purposes
     /// Note that in each task hosts are identified individually by name:port from initiator server cluster config
@@ -83,10 +53,7 @@ public:
 
     void shutdown();
 
-    //FIXME get rid of this method
-    void setLogPointer(UInt32 log_pointer) { database_replicated_ext->first_not_executed = log_pointer; }
-
-private:
+protected:
 
     /// Returns cached ZooKeeper session (possibly expired).
     ZooKeeperPtr tryGetZooKeeper() const;
@@ -97,14 +64,13 @@ private:
 
     void checkCurrentTasks();
     void scheduleTasks();
-    void saveTask(const String & entry_name);
 
     /// Reads entry and check that the host belongs to host list of the task
     /// Returns non-empty DDLTaskPtr if entry parsed and the check is passed
-    DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper);
+    virtual DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper);
 
     void enqueueTask(DDLTaskPtr task);
-    void processTask(DDLTask & task);
+    void processTask(DDLTaskBase & task);
 
     /// Check that query should be executed on leader replica only
     static bool taskShouldBeExecutedOnLeader(const ASTPtr ast_ddl, StoragePtr storage);
@@ -115,15 +81,15 @@ private:
     /// query via RemoteBlockOutputStream to leader, so to avoid such "2-phase" query execution we
     /// execute query directly on leader.
     bool tryExecuteQueryOnLeaderReplica(
-        DDLTask & task,
+        DDLTaskBase & task,
         StoragePtr storage,
         const String & rewritten_query,
         const String & node_path,
         const ZooKeeperPtr & zookeeper);
 
-    void parseQueryAndResolveHost(DDLTask & task);
+    void parseQueryAndResolveHost(DDLTaskBase & task);
 
-    bool tryExecuteQuery(const String & query, const DDLTask & task, ExecutionStatus & status);
+    bool tryExecuteQuery(const String & query, const DDLTaskBase & task, ExecutionStatus & status);
 
     /// Checks and cleanups queue's nodes
     void cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zookeeper);
@@ -131,17 +97,16 @@ private:
     /// Init task node
     static void createStatusDirs(const std::string & node_path, const ZooKeeperPtr & zookeeper);
 
+    virtual void initialize() {}
 
     void runMainThread();
     void runCleanupThread();
 
     void attachToThreadGroup();
 
-private:
-    std::atomic<bool> is_circular_replicated = false;
+protected:
     Context context;
     Poco::Logger * log;
-    std::optional<DatabaseReplicatedExtensions> database_replicated_ext;
 
     std::string host_fqdn;      /// current host domain name
     std::string host_fqdn_id;   /// host_name:port
@@ -151,7 +116,8 @@ private:
     ZooKeeperPtr current_zookeeper;
 
     /// Save state of executed task to avoid duplicate execution on ZK error
-    std::vector<std::string> last_tasks;
+    //std::vector<std::string> last_tasks;
+    std::optional<String> last_entry_name;
 
     std::shared_ptr<Poco::Event> queue_updated_event = std::make_shared<Poco::Event>();
     std::shared_ptr<Poco::Event> cleanup_event = std::make_shared<Poco::Event>();
