@@ -163,12 +163,15 @@ struct SocketInterruptablePollWrapper
                         {
                             UInt8 byte;
                             read_result = read(pipe.fds_rw[0], &byte, sizeof(byte));
-                            if (byte == WATCH_RESPONSE_BYTE)
-                                result |= HAS_WATCH_RESPONSE;
-                            else if (byte == RESPONSE_BYTE)
-                                result |= HAS_RESPONSE;
-                            else
-                                throw Exception("Unexpected byte received from signaling pipe", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+                            if (read_result > 0)
+                            {
+                                if (byte == WATCH_RESPONSE_BYTE)
+                                    result |= HAS_WATCH_RESPONSE;
+                                else if (byte == RESPONSE_BYTE)
+                                    result |= HAS_RESPONSE;
+                                else
+                                    throw Exception("Unexpected byte received from signaling pipe", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+                            }
                         }
                         while (read_result > 0 || (read_result < 0 && errno == EINTR));
 
