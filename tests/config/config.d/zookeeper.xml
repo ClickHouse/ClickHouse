@@ -1,5 +1,5 @@
 <yandex>
     <zookeeper>
-        <implementation>testkeeper</implementation>
+        <implementation>etcdkeeper</implementation>
     </zookeeper>
 </yandex>
