@@ -8,6 +8,7 @@ RUN apt-get update -y \
         apt-get install --yes --no-install-recommends \
             brotli \
             expect \
+            etcd \
             lsof \
             ncdu \
             netcat-openbsd \

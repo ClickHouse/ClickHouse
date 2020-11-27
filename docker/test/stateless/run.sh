@@ -3,6 +3,10 @@
 # fail on errors, verbose and export all env variables
 set -e -x -a
 
+service etcd start && sleep 5
+
+echo "Etcd"
+
 dpkg -i package_folder/clickhouse-common-static_*.deb
 dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
 dpkg -i package_folder/clickhouse-server_*.deb
