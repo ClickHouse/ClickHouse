@@ -349,6 +349,16 @@ void ActionsDAG::removeUnusedActions()
         stack.push(node);
     }
 
+    /// We cannot remove arrayJoin because it changes the number of rows.
+    for (auto & node : nodes)
+    {
+        if (node.type == ActionType::ARRAY_JOIN && visited_nodes.count(&node) == 0)
+        {
+            visited_nodes.insert(&node);
+            stack.push(&node);
+        }
+    }
+
     while (!stack.empty())
     {
         auto * node = stack.top();
