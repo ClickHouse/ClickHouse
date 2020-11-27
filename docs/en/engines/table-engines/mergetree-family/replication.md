@@ -87,7 +87,7 @@ To store table datameta in a auxiliary ZooKeeper cluster instead of default ZooK
 ReplicatedMergeTree engine as follow:
 
 ```
-CREATE TABLE table_name ( ... ) ENGINE = ReplicatedMergeTree('zookeeper_name_configurated_in_auxiliary_zookeepers:path', 'replica_name') ...
+CREATE TABLE table_name ( ... ) ENGINE = ReplicatedMergeTree('zookeeper_name_configured_in_auxiliary_zookeepers:path', 'replica_name') ...
 ```
 You can specify any existing ZooKeeper cluster and the system will use a directory on it for its own data (the directory is specified when creating a replicatable table).
 
