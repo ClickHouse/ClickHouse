@@ -19,6 +19,7 @@ inc="-I. \
 -I./contrib/double-conversion \
 -I./contrib/cityhash102/include \
 -I./contrib/croaring \
+-I./contrib/miniselect/include \
 -I./contrib/murmurhash/include \
 -I./contrib/zookeeper/src/c/include \
 -I./contrib/zookeeper/src/c/generated \

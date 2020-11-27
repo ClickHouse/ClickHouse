@@ -123,6 +123,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 -   `--stacktrace` – If specified, also print the stack trace if an exception occurs.
 -   `--config-file` – The name of the configuration file.
 -   `--secure` – If specified, will connect to server over secure connection.
+-   `--history_file` — Path to a file containing command history.
 -   `--param_<name>` — Value for a [query with parameters](#cli-queries-with-parameters).
 
 ### Configuration Files {#configuration_files}

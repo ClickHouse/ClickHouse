@@ -19,7 +19,7 @@ $ sudo apt-get install git cmake python ninja-build
 
 Ou cmake3 au lieu de cmake sur les systèmes plus anciens.
 
-## Installer GCC 9 {#install-gcc-9}
+## Installer GCC 10 {#install-gcc-10}
 
 Il y a plusieurs façons de le faire.
 
@@ -29,18 +29,18 @@ Il y a plusieurs façons de le faire.
 $ sudo apt-get install software-properties-common
 $ sudo apt-add-repository ppa:ubuntu-toolchain-r/test
 $ sudo apt-get update
-$ sudo apt-get install gcc-9 g++-9
+$ sudo apt-get install gcc-10 g++-10
 ```
 
 ### Installer à partir de Sources {#install-from-sources}
 
 Regarder [utils/ci/build-gcc-from-sources.sh](https://github.com/ClickHouse/ClickHouse/blob/master/utils/ci/build-gcc-from-sources.sh)
 
-## Utilisez GCC 9 pour les Builds {#use-gcc-9-for-builds}
+## Utilisez GCC 10 pour les Builds {#use-gcc-10-for-builds}
 
 ``` bash
-$ export CC=gcc-9
-$ export CXX=g++-9
+$ export CC=gcc-10
+$ export CXX=g++-10
 ```
 
 ## Commander Clickhouse Sources {#checkout-clickhouse-sources}
@@ -76,7 +76,7 @@ La construction nécessite les composants suivants:
 -   Git (est utilisé uniquement pour extraire les sources, ce n'est pas nécessaire pour la construction)
 -   CMake 3.10 ou plus récent
 -   Ninja (recommandé) ou faire
--   Compilateur C++: gcc 9 ou clang 8 ou plus récent
+-   Compilateur C++: gcc 10 ou clang 8 ou plus récent
 -   Linker: lld ou gold (le classique GNU LD ne fonctionnera pas)
 -   Python (est seulement utilisé dans la construction LLVM et il est facultatif)
 

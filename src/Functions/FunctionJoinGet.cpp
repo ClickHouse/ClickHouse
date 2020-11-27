@@ -17,7 +17,7 @@ namespace ErrorCodes
 }
 
 template <bool or_null>
-ColumnPtr ExecutableFunctionJoinGet<or_null>::execute(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t)
+ColumnPtr ExecutableFunctionJoinGet<or_null>::execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
 {
     ColumnsWithTypeAndName keys;
     for (size_t i = 2; i < arguments.size(); ++i)

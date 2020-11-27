@@ -154,3 +154,5 @@ WITH
 SELECT
     hex(encrypt('aes-256-gcm', plaintext, key, iv, aad)) as ciphertext_actual,
     ciphertext_actual = concat(hex(ciphertext), hex(tag));
+
+DROP TABLE encryption_test;

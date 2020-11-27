@@ -5,7 +5,7 @@ toc_title: null function
 
 # null {#null-function}
 
-Accepts an inserted data of the specified structure and immediately drops it away. The function is used for convenience writing tests and demonstrations.
+Creates a temporary table of the specified structure with the [Null](../../engines/table-engines/special/null.md) table engine. According to the `Null`-engine properties, the table data is ignored and the table itself is immediately droped right after the query execution. The function is used for the convenience of test writing and demonstrations.
 
 **Syntax** 
 
@@ -19,7 +19,7 @@ null('structure')
 
 **Returned value**
 
-A table with the specified structure, which is dropped right after the query execution.
+A temporary `Null`-engine table with the specified structure.
 
 **Example**
 
@@ -36,6 +36,8 @@ INSERT INTO t SELECT * FROM numbers_mt(1000000000);
 DROP TABLE IF EXISTS t;
 ```
 
-See also: format **Null**.
+See also: 
+
+-   [Null table engine](../../engines/table-engines/special/null.md)
 
 [Original article](https://clickhouse.tech/docs/en/sql-reference/table-functions/null/) <!--hide-->

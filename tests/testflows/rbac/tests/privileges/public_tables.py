@@ -35,4 +35,4 @@ def public_tables(self, node=None):
 def feature(self, node="clickhouse1"):
     self.context.node = self.context.cluster.node(node)
 
-    Scenario(run=public_tables, flags=TE)
+    Scenario(run=public_tables, setup=instrument_clickhouse_server_log, flags=TE)

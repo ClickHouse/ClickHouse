@@ -70,7 +70,7 @@
 /// Minimum revision supporting OpenTelemetry
 #define DBMS_MIN_REVISION_WITH_OPENTELEMETRY 54442
 
-/// Mininum revision supporting interserver secret.
+/// Minimum revision supporting interserver secret.
 #define DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET 54441
 
 /// Version of ClickHouse TCP protocol. Increment it manually when you change the protocol.
