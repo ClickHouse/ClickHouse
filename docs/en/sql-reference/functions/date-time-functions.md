@@ -67,9 +67,8 @@ Leap seconds are not accounted for.
 
 ## toUnixTimestamp {#to-unix-timestamp}
 
-For DateTime argument: converts value to its internal numeric representation (Unix Timestamp).
+For DateTime argument: converts value to UInt32 Unix -- Timestamp (https://en.wikipedia.org/wiki/Unix_time).
 For String argument: parse datetime from string according to the timezone (optional second argument, server timezone is used by default) and returns the corresponding unix timestamp.
-For Date argument: the behaviour is unspecified.
 
 **Syntax**
 
