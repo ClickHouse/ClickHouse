@@ -26,9 +26,10 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
     HDFSBuilderWrapper builder;
     HDFSFSPtr fs;
 
-    explicit ReadBufferFromHDFSImpl(const std::string & hdfs_name_, const Context & context_)
+    explicit ReadBufferFromHDFSImpl(const std::string & hdfs_name_,
+        const Poco::Util::AbstractConfiguration & config_)
         : hdfs_uri(hdfs_name_),
-          builder(createHDFSBuilder(hdfs_uri, context_))
+          builder(createHDFSBuilder(hdfs_uri, config_))
     {
         std::lock_guard lock(hdfs_init_mutex);
 
@@ -61,12 +62,12 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
 
 std::mutex ReadBufferFromHDFS::ReadBufferFromHDFSImpl::hdfs_init_mutex;
 
-ReadBufferFromHDFS::ReadBufferFromHDFS(const std::string & hdfs_name_, const Context & context, size_t buf_size)
-    : BufferWithOwnMemory<ReadBuffer>(buf_size)
-    , impl(std::make_unique<ReadBufferFromHDFSImpl>(hdfs_name_, context))
+ReadBufferFromHDFS::ReadBufferFromHDFS(const std::string & hdfs_name_,
+    const Poco::Util::AbstractConfiguration & config_,
+    size_t buf_size_)
+    : BufferWithOwnMemory<ReadBuffer>(buf_size_)
+    , impl(std::make_unique<ReadBufferFromHDFSImpl>(hdfs_name_, config_))
 {
-    // auto modified_context = std::make_shared<Context>(context);
-    // impl = std::make_unique<ReadBufferFromHDFSImpl>(hdfs_name_, modified_context);
 }
 
 

@@ -27,9 +27,9 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
     HDFSBuilderWrapper builder;
     HDFSFSPtr fs;
 
-    explicit WriteBufferFromHDFSImpl(const std::string & hdfs_name_, const Context & context)
+    explicit WriteBufferFromHDFSImpl(const std::string & hdfs_name_, const Poco::Util::AbstractConfiguration & config_)
         : hdfs_uri(hdfs_name_)
-        , builder(createHDFSBuilder(hdfs_uri, context))
+        , builder(createHDFSBuilder(hdfs_uri,config_))
         , fs(createHDFSFS(builder.get()))
     {
         const size_t begin_of_path = hdfs_uri.find('/', hdfs_uri.find("//") + 2);
@@ -73,9 +73,9 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
     }
 };
 
-WriteBufferFromHDFS::WriteBufferFromHDFS(const std::string & hdfs_name_, const Context & context, size_t buf_size)
-    : BufferWithOwnMemory<WriteBuffer>(buf_size)
-    , impl(std::make_unique<WriteBufferFromHDFSImpl>(hdfs_name_, context))
+WriteBufferFromHDFS::WriteBufferFromHDFS(const std::string & hdfs_name_, const Poco::Util::AbstractConfiguration & config_, size_t buf_size_)
+    : BufferWithOwnMemory<WriteBuffer>(buf_size_)
+    , impl(std::make_unique<WriteBufferFromHDFSImpl>(hdfs_name_, config_))
 {
 }
 
