@@ -102,7 +102,7 @@ void HDFSBuilderWrapper::runKinit()
     }
 }
 
-HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Context & context)
+HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::AbstractConfiguration & config)
 {
     const Poco::URI uri(uri_str);
     const auto & host = uri.getHost();
@@ -139,8 +139,6 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Context & con
         hdfsBuilderSetNameNodePort(builder.get(), port);
     }
 
-    // const auto & config = context.getGlobalContext().getConfigRef();
-    const auto & config = context.getConfigRef();
     if (config.has(HDFSBuilderWrapper::CONFIG_PREFIX))
     {
         builder.loadFromConfig(config, HDFSBuilderWrapper::CONFIG_PREFIX);

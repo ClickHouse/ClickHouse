@@ -99,14 +99,14 @@ public:
     HDFSBuilderWrapper(const HDFSBuilderWrapper &) = delete;
     HDFSBuilderWrapper(HDFSBuilderWrapper &&) = default;
 
-    friend HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Context & context);
+    friend HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::AbstractConfiguration &);
 };
 
 using HDFSFSPtr = std::unique_ptr<std::remove_pointer_t<hdfsFS>, detail::HDFSFsDeleter>;
 
 // set read/connect timeout, default value in libhdfs3 is about 1 hour, and too large
 /// TODO Allow to tune from query Settings.
-HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Context & context);
+HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::AbstractConfiguration &);
 HDFSFSPtr createHDFSFS(hdfsBuilder * builder);
 }
 #endif
