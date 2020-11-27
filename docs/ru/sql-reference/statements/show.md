@@ -1,8 +1,3 @@
----
-toc_priority: 37
-toc_title: SHOW
----
-
 # SHOW Queries {#show-queries}
 
 ## SHOW CREATE TABLE {#show-create-table}
@@ -15,83 +10,12 @@ SHOW CREATE [TEMPORARY] [TABLE|DICTIONARY] [db.]table [INTO OUTFILE filename] [F
 
 ## SHOW DATABASES {#show-databases}
 
+``` sql
+SHOW DATABASES [INTO OUTFILE filename] [FORMAT format]
+```
+
 Выводит список всех баз данных.
-
-```sql
-SHOW DATABASES [LIKE | ILIKE | NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE filename] [FORMAT format]
-```
-
-Этот запрос идентичен запросу:
-
-```sql
-SELECT name FROM system.databases [WHERE name LIKE | ILIKE | NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE filename] [FORMAT format]
-```
-
-### Примеры {#examples}
-
-Получение списка баз данных, имена которых содержат последовательность символов 'de':
-
-``` sql
-SHOW DATABASES LIKE '%de%'
-```
-
-Результат:
-
-``` text
-┌─name────┐
-│ default │
-└─────────┘
-```
-
-Получение списка баз данных, имена которых содержат последовательность символов 'de' независимо от регистра:
-
-``` sql
-SHOW DATABASES ILIKE '%DE%'
-```
-
-Результат:
-
-``` text
-┌─name────┐
-│ default │
-└─────────┘
-```
-
-Получение списка баз данных, имена которых не содержат последовательность символов 'de':
-
-``` sql
-SHOW DATABASES NOT LIKE '%de%'
-```
-
-Результат:
-
-``` text
-┌─name───────────────────────────┐
-│ _temporary_and_external_tables │
-│ system                         │
-│ test                           │
-│ tutorial                       │
-└────────────────────────────────┘
-```
-
-Получение первых двух строк из списка имен баз данных:
-
-``` sql
-SHOW DATABASES LIMIT 2
-```
-
-Результат:
-
-``` text
-┌─name───────────────────────────┐
-│ _temporary_and_external_tables │
-│ default                        │
-└────────────────────────────────┘
-```
-
-### Смотрите также {#see-also}
-
--   [CREATE DATABASE](https://clickhouse.tech/docs/ru/sql-reference/statements/create/database/#query-language-create-database)
+Запрос полностью аналогичен запросу `SELECT name FROM system.databases [INTO OUTFILE filename] [FORMAT format]`.
 
 ## SHOW PROCESSLIST {#show-processlist}
 
@@ -113,85 +37,32 @@ $ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
 
 Выводит список таблиц.
 
-```sql
-SHOW [TEMPORARY] TABLES [{FROM | IN} <db>] [LIKE | ILIKE | NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+``` sql
+SHOW [TEMPORARY] TABLES [{FROM | IN} <db>] [LIKE '<pattern>' | WHERE expr] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
-Если условие `FROM` не указано, запрос возвращает список таблиц из текущей базы данных.
+Если секция `FROM` не используется, то запрос возвращает список таблиц из текущей базы данных.
 
-Этот запрос идентичен запросу:
-
-```sql
-SELECT name FROM system.tables [WHERE name LIKE | ILIKE | NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
-```
-
-### Примеры {#examples}
-
-Получение списка таблиц, имена которых содержат последовательность символов 'user':
+Результат, идентичный тому, что выдаёт запрос `SHOW TABLES` можно получить также запросом следующего вида:
 
 ``` sql
-SHOW TABLES FROM system LIKE '%user%'
+SELECT name FROM system.tables WHERE database = <db> [AND name LIKE <pattern>] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
-Результат:
+**Пример**
 
-``` text
-┌─name─────────────┐
-│ user_directories │
-│ users            │
-└──────────────────┘
-```
-
-Получение списка таблиц, имена которых содержат последовательность символов 'user' без учета регистра:
+Следующий запрос выбирает первые две строки из списка таблиц в базе данных `system`, чьи имена содержат `co`.
 
 ``` sql
-SHOW TABLES FROM system ILIKE '%USER%'
+SHOW TABLES FROM system LIKE '%co%' LIMIT 2
 ```
-
-Результат:
-
-``` text
-┌─name─────────────┐
-│ user_directories │
-│ users            │
-└──────────────────┘
-```
-
-Получение списка таблиц, имена которых не содержат символ 's':
-
-``` sql
-SHOW TABLES FROM system NOT LIKE '%s%'
-```
-
-Результат:
-
-``` text
-┌─name─────────┐
-│ metric_log   │
-│ metric_log_0 │
-│ metric_log_1 │
-└──────────────┘
-```
-
-Получение первых двух строк из списка таблиц:
-
-``` sql
-SHOW TABLES FROM system LIMIT 2
-```
-
-Результат:
 
 ``` text
 ┌─name───────────────────────────┐
 │ aggregate_function_combinators │
-│ asynchronous_metric_log        │
+│ collations                     │
 └────────────────────────────────┘
 ```
-
-### Смотрите также {#see-also}
-
--   [Create Tables](https://clickhouse.tech/docs/ru/getting-started/tutorial/#create-tables)
--   [SHOW CREATE TABLE](https://clickhouse.tech/docs/ru/sql-reference/statements/show/#show-create-table)
 
 ## SHOW DICTIONARIES {#show-dictionaries}
 

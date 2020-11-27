@@ -11,7 +11,6 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
-#include <Common/FileSyncGuard.h>
 #include <common/JSON.h>
 #include <common/logger_useful.h>
 #include <Compression/getCompressionCodecForFile.h>
@@ -88,7 +87,6 @@ void IMergeTreeDataPart::MinMaxIndex::store(
         out_hashing.next();
         out_checksums.files[file_name].file_size = out_hashing.count();
         out_checksums.files[file_name].file_hash = out_hashing.getHash();
-        out->finalize();
     }
 }
 
@@ -353,7 +351,7 @@ size_t IMergeTreeDataPart::getFileSizeOrZero(const String & file_name) const
     return checksum->second.file_size;
 }
 
-String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(const StorageMetadataPtr & metadata_snapshot) const
+String IMergeTreeDataPart::getColumnNameWithMinumumCompressedSize(const StorageMetadataPtr & metadata_snapshot) const
 {
     const auto & storage_columns = metadata_snapshot->getColumns().getAllPhysical();
     auto alter_conversions = storage.getAlterConversionsForPart(shared_from_this());
@@ -410,7 +408,6 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     /// Motivation: memory for index is shared between queries - not belong to the query itself.
     MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
 
-    loadUUID();
     loadColumns(require_columns_checksums);
     loadChecksums(require_columns_checksums);
     loadIndexGranularity();
@@ -483,7 +480,6 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
 
     NameSet result = {"checksums.txt", "columns.txt"};
     String default_codec_path = getFullRelativePath() + DEFAULT_COMPRESSION_CODEC_FILE_NAME;
-
     if (volume->getDisk()->exists(default_codec_path))
         result.emplace(DEFAULT_COMPRESSION_CODEC_FILE_NAME);
 
@@ -728,19 +724,6 @@ void IMergeTreeDataPart::loadTTLInfos()
     }
 }
 
-void IMergeTreeDataPart::loadUUID()
-{
-    String path = getFullRelativePath() + UUID_FILE_NAME;
-
-    if (volume->getDisk()->exists(path))
-    {
-        auto in = openForReading(volume->getDisk(), path);
-        readText(uuid, *in);
-        if (uuid == UUIDHelpers::Nil)
-            throw Exception("Unexpected empty " + String(UUID_FILE_NAME) + " in part: " + name, ErrorCodes::LOGICAL_ERROR);
-    }
-}
-
 void IMergeTreeDataPart::loadColumns(bool require)
 {
     String path = getFullRelativePath() + "columns.txt";
@@ -775,16 +758,6 @@ void IMergeTreeDataPart::loadColumns(bool require)
         column_name_to_position.emplace(column.name, pos++);
 }
 
-bool IMergeTreeDataPart::shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const
-{
-    /// `IMergeTreeDataPart::volume` describes space where current part belongs, and holds
-    /// `SingleDiskVolume` object which does not contain up-to-date settings of corresponding volume.
-    /// Therefore we shall obtain volume from storage policy.
-    auto volume_ptr = storage_policy->getVolume(storage_policy->getVolumeIndexByDisk(volume->getDisk()));
-
-    return !volume_ptr->areMergesAvoided();
-}
-
 UInt64 IMergeTreeDataPart::calculateTotalSizeOnDisk(const DiskPtr & disk_, const String & from)
 {
     if (disk_->isFile(from))
@@ -804,10 +777,6 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
 
     String from = getFullRelativePath();
     String to = storage.relative_data_path + new_relative_path + "/";
-
-    std::optional<FileSyncGuard> sync_guard;
-    if (storage.getSettings()->fsync_part_directory)
-        sync_guard.emplace(volume->getDisk(), to);
 
     if (!volume->getDisk()->exists(from))
         throw Exception("Part directory " + fullPath(volume->getDisk(), from) + " doesn't exist. Most likely it is logical error.", ErrorCodes::FILE_DOESNT_EXIST);
@@ -968,26 +937,21 @@ void IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const Storag
     volume->getDisk()->removeIfExists(destination_path + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME);
 }
 
-void IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const
+void IMergeTreeDataPart::makeCloneOnDiskDetached(const ReservationPtr & reservation) const
 {
     assertOnDisk();
-
-    if (disk->getName() == volume->getDisk()->getName())
+    auto reserved_disk = reservation->getDisk();
+    if (reserved_disk->getName() == volume->getDisk()->getName())
         throw Exception("Can not clone data part " + name + " to same disk " + volume->getDisk()->getName(), ErrorCodes::LOGICAL_ERROR);
-    if (directory_name.empty())
-        throw Exception("Can not clone data part " + name + " to empty directory.", ErrorCodes::LOGICAL_ERROR);
 
-    String path_to_clone = storage.relative_data_path + directory_name + '/';
+    String path_to_clone = storage.relative_data_path + "detached/";
 
-    if (disk->exists(path_to_clone + relative_path))
-    {
-        LOG_WARNING(storage.log, "Path " + fullPath(disk, path_to_clone + relative_path) + " already exists. Will remove it and clone again.");
-        disk->removeRecursive(path_to_clone + relative_path + '/');
-    }
-    disk->createDirectories(path_to_clone);
+    if (reserved_disk->exists(path_to_clone + relative_path))
+        throw Exception("Path " + fullPath(reserved_disk, path_to_clone + relative_path) + " already exists. Can not clone ", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+    reserved_disk->createDirectory(path_to_clone);
 
-    volume->getDisk()->copy(getFullRelativePath(), disk, path_to_clone);
-    volume->getDisk()->removeIfExists(path_to_clone + '/' + DELETE_ON_DESTROY_MARKER_FILE_NAME);
+    volume->getDisk()->copy(getFullRelativePath(), reserved_disk, path_to_clone);
+    volume->getDisk()->removeIfExists(path_to_clone + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME);
 }
 
 void IMergeTreeDataPart::checkConsistencyBase() const

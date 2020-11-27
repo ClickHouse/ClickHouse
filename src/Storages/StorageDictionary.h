@@ -15,12 +15,11 @@ public:
     std::string getName() const override { return "Dictionary"; }
 
     void checkTableCanBeDropped() const override;
-    void checkTableCanBeDetached() const override;
 
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        SelectQueryInfo & query_info,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,

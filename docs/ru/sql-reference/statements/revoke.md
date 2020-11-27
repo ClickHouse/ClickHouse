@@ -1,8 +1,3 @@
----
-toc_priority: 39
-toc_title: REVOKE
----
-
 # REVOKE
 
 Отзывает привилегии у пользователей или ролей.

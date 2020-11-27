@@ -6,7 +6,6 @@
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/Macros.h>
-#include <Common/randomSeed.h>
 
 #include <Core/Defines.h>
 #include <Core/Settings.h>
@@ -115,7 +114,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         auto ast = DatabaseOnDisk::parseQueryFromMetadata(nullptr, context, metadata_file_path);
         create = ast->as<ASTCreateQuery &>();
         if (!create.table.empty() || !create.storage)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Metadata file {} contains incorrect CREATE DATABASE query", metadata_file_path.string());
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Metadata file {} contains incorrect CREATE DATABASE query", metadata_file_path);
         create.attach = true;
         create.attach_short_syntax = true;
         create.database = database_name;
@@ -136,7 +135,9 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     else if ((create.columns_list && create.columns_list->indices && !create.columns_list->indices->children.empty()))
     {
         /// Currently, there are no database engines, that support any arguments.
-        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", serializeAST(*create.storage));
+        std::stringstream ostr;
+        formatAST(*create.storage, ostr, false, false);
+        throw Exception("Unknown database engine: " + ostr.str(), ErrorCodes::UNKNOWN_DATABASE_ENGINE);
     }
 
     if (create.storage->engine->name == "Atomic")
@@ -149,7 +150,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         metadata_path = metadata_path / "store" / DatabaseCatalog::getPathForUUID(create.uuid);
 
         if (!create.attach && fs::exists(metadata_path))
-            throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Metadata directory {} already exists", metadata_path.string());
+            throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Metadata directory {} already exists", metadata_path);
     }
     else
     {
@@ -180,10 +181,10 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         create.attach = true;
         create.if_not_exists = false;
 
-        WriteBufferFromOwnString statement_buf;
-        formatAST(create, statement_buf, false);
-        writeChar('\n', statement_buf);
-        String statement = statement_buf.str();
+        std::ostringstream statement_stream;
+        formatAST(create, statement_stream, false);
+        statement_stream << '\n';
+        String statement = statement_stream.str();
 
         /// Exclusive flag guarantees, that database is not created right now in another thread.
         WriteBufferFromFile out(metadata_file_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
@@ -362,7 +363,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             if (col_decl.type)
             {
                 const auto & final_column_name = col_decl.name;
-                const auto tmp_column_name = final_column_name + "_tmp_alter" + toString(randomSeed());
+                const auto tmp_column_name = final_column_name + "_tmp";
                 const auto * data_type_ptr = column_names_and_types.back().type.get();
 
                 default_expr_list->children.emplace_back(
@@ -453,9 +454,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
 
     if (create.columns_list)
     {
-        if (create.as_table_function && (create.columns_list->indices || create.columns_list->constraints))
-            throw Exception("Indexes and constraints are not supported for table functions", ErrorCodes::INCORRECT_QUERY);
-
         if (create.columns_list->columns)
         {
             bool sanity_check_compression_codecs = !create.attach && !context.getSettingsRef().allow_suspicious_codecs;
@@ -492,12 +490,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
         properties.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
     }
     else if (create.as_table_function)
-    {
-        /// Table function without columns list.
-        auto table_function = TableFunctionFactory::instance().get(create.as_table_function, context);
-        properties.columns = table_function->getActualTableStructure(context);
-        assert(!properties.columns.empty());
-    }
+        return {};
     else
         throw Exception("Incorrect CREATE query: required list of column descriptions or AS section or SELECT.", ErrorCodes::INCORRECT_QUERY);
 
@@ -583,12 +576,9 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
 
 void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 {
-    if (create.as_table_function)
-        return;
-
     if (create.storage || create.is_view || create.is_materialized_view || create.is_live_view || create.is_dictionary)
     {
-        if (create.temporary && create.storage && create.storage->engine && create.storage->engine->name != "Memory")
+        if (create.temporary && create.storage->engine->name != "Memory")
             throw Exception(
                 "Temporary tables can only be created with ENGINE = Memory, not " + create.storage->engine->name,
                 ErrorCodes::INCORRECT_QUERY);
@@ -634,7 +624,11 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         if (as_create.storage)
             create.set(create.storage, as_create.storage->ptr());
         else if (as_create.as_table_function)
+        {
             create.as_table_function = as_create.as_table_function->clone();
+            /// Reset columns list, because it's not supported for table functions (until 20.11)
+            create.columns_list = {};
+        }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set engine, it's a bug.");
     }
@@ -686,15 +680,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         // Table SQL definition is available even if the table is detached
         auto query = database->getCreateTableQuery(create.table, context);
         create = query->as<ASTCreateQuery &>(); // Copy the saved create query, but use ATTACH instead of CREATE
-        if (create.is_dictionary)
-            throw Exception(
-                "Cannot ATTACH TABLE " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(create.table) + ", it is a Dictionary",
-                ErrorCodes::INCORRECT_QUERY);
         create.attach = true;
         create.attach_short_syntax = true;
         create.if_not_exists = if_not_exists;
     }
-    /// TODO maybe assert table structure if create.attach_short_syntax is false?
 
     if (!create.temporary && create.database.empty())
         create.database = current_database;
@@ -777,8 +766,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     /// NOTE: CREATE query may be rewritten by Storage creator or table function
     if (create.as_table_function)
     {
+        const auto & table_function = create.as_table_function->as<ASTFunction &>();
         const auto & factory = TableFunctionFactory::instance();
-        res = factory.get(create.as_table_function, context)->execute(create.as_table_function, context, create.table, properties.columns);
+        res = factory.get(table_function.name, context)->execute(create.as_table_function, context, create.table);
         res->renameInMemory({create.database, create.table, create.uuid});
     }
     else
@@ -863,7 +853,7 @@ BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
 
     if (create.attach)
     {
-        auto config = getDictionaryConfigurationFromAST(create, context);
+        auto config = getDictionaryConfigurationFromAST(create);
         auto modification_time = database->getObjectMetadataModificationTime(dictionary_name);
         database->attachDictionary(dictionary_name, DictionaryAttachInfo{query_ptr, config, modification_time});
     }
@@ -878,16 +868,20 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, cons
     if (create.attach)
         return;
 
+    /// Allows to execute ON CLUSTER queries during version upgrade
+    bool force_backward_compatibility = !context.getSettingsRef().show_table_uuid_in_table_create_query_if_not_nil;
+
     /// For CREATE query generate UUID on initiator, so it will be the same on all hosts.
     /// It will be ignored if database does not support UUIDs.
-    if (create.uuid == UUIDHelpers::Nil)
+    if (!force_backward_compatibility && create.uuid == UUIDHelpers::Nil)
         create.uuid = UUIDHelpers::generateV4();
 
     /// For cross-replication cluster we cannot use UUID in replica path.
     String cluster_name_expanded = context.getMacros()->expand(cluster_name);
     ClusterPtr cluster = context.getCluster(cluster_name_expanded);
 
-    if (cluster->maybeCrossReplication())
+    bool maybe_cross_replication = cluster->maybeCrossReplication();
+    if (maybe_cross_replication || force_backward_compatibility)
     {
         /// Check that {uuid} macro is not used in zookeeper_path for ReplicatedMergeTree.
         /// Otherwise replicas will generate different paths.
@@ -907,17 +901,23 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, cons
         {
             String zk_path = create.storage->engine->arguments->children[0]->as<ASTLiteral>()->value.get<String>();
             Macros::MacroExpansionInfo info;
-            info.table_id.uuid = create.uuid;
+            info.table_id.uuid = UUIDHelpers::generateV4();     /// Some non-Nil UUID, just check it's not expanded
             info.ignore_unknown = true;
             context.getMacros()->expand(zk_path, info);
             if (!info.expanded_uuid)
                 return;
         }
 
-        throw Exception("Seems like cluster is configured for cross-replication, "
-                        "but zookeeper_path for ReplicatedMergeTree is not specified or contains {uuid} macro. "
-                        "It's not supported for cross replication, because tables must have different UUIDs. "
-                        "Please specify unique zookeeper_path explicitly.", ErrorCodes::INCORRECT_QUERY);
+        if (maybe_cross_replication)
+            throw Exception("Seems like cluster is configured for cross-replication, "
+                            "but zookeeper_path for ReplicatedMergeTree is not specified or contains {uuid} macro. "
+                            "It's not supported for cross replication, because tables must have different UUIDs. "
+                            "Please specify unique zookeeper_path explicitly.", ErrorCodes::INCORRECT_QUERY);
+        else /// if (force_backward_compatibility)
+            throw Exception("Forced backward compatibility of ON CLUSTER queries is enabled, "
+                            "but zookeeper_path for ReplicatedMergeTree is not specified or contains {uuid} macro. "
+                            "Please set show_table_uuid_in_table_create_query_if_not_nil=1 or specify unique zookeeper_path explicitly. "
+                            "Ensure all nodes in cluster are 20.8 or greater before enabling the setting.", ErrorCodes::INCORRECT_QUERY);
     }
 }
 

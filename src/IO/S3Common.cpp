@@ -12,7 +12,10 @@
 #    include <aws/s3/S3Client.h>
 #    include <aws/core/http/HttpClientFactory.h>
 #    include <IO/S3/PocoHTTPClientFactory.h>
+#    include <IO/S3/PocoHTTPClientFactory.cpp>
 #    include <IO/S3/PocoHTTPClient.h>
+#    include <IO/S3/PocoHTTPClient.cpp>
+#    include <boost/algorithm/string.hpp>
 #    include <Poco/URI.h>
 #    include <re2/re2.h>
 #    include <common/logger_useful.h>
@@ -164,15 +167,14 @@ namespace S3
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
-        const RemoteHostFilter & remote_host_filter,
-        unsigned int s3_max_redirects)
+        const RemoteHostFilter & remote_host_filter)
     {
         Aws::Client::ClientConfiguration cfg;
 
         if (!endpoint.empty())
             cfg.endpointOverride = endpoint;
 
-        return create(cfg, is_virtual_hosted_style, access_key_id, secret_access_key, remote_host_filter, s3_max_redirects);
+        return create(cfg, is_virtual_hosted_style, access_key_id, secret_access_key, remote_host_filter);
     }
 
     std::shared_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
@@ -180,12 +182,11 @@ namespace S3
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
-        const RemoteHostFilter & remote_host_filter,
-        unsigned int s3_max_redirects)
+        const RemoteHostFilter & remote_host_filter)
     {
         Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
 
-        PocoHTTPClientConfiguration client_configuration(cfg, remote_host_filter, s3_max_redirects);
+        PocoHTTPClientConfiguration client_configuration(cfg, remote_host_filter);
 
         client_configuration.updateSchemeAndRegion();
 
@@ -203,10 +204,9 @@ namespace S3
         const String & access_key_id,
         const String & secret_access_key,
         HeaderCollection headers,
-        const RemoteHostFilter & remote_host_filter,
-        unsigned int s3_max_redirects)
+        const RemoteHostFilter & remote_host_filter)
     {
-        PocoHTTPClientConfiguration client_configuration({}, remote_host_filter, s3_max_redirects);
+        PocoHTTPClientConfiguration client_configuration({}, remote_host_filter);
 
         if (!endpoint.empty())
             client_configuration.endpointOverride = endpoint;

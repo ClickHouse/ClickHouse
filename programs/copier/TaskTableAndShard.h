@@ -6,9 +6,6 @@
 
 #include <Core/Defines.h>
 
-#include <ext/map.h>
-#include <boost/algorithm/string/join.hpp>
-
 
 namespace DB
 {
@@ -272,7 +269,7 @@ inline TaskTable::TaskTable(TaskCluster & parent, const Poco::Util::AbstractConf
         ParserStorage parser_storage;
         engine_push_ast = parseQuery(parser_storage, engine_push_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
         engine_push_partition_key_ast = extractPartitionKey(engine_push_ast);
-        primary_key_comma_separated = boost::algorithm::join(extractPrimaryKeyColumnNames(engine_push_ast), ", ");
+        primary_key_comma_separated = Nested::createCommaSeparatedStringFrom(extractPrimaryKeyColumnNames(engine_push_ast));
         is_replicated_table = isReplicatedTableEngine(engine_push_ast);
     }
 
@@ -394,8 +391,12 @@ inline ASTPtr TaskTable::rewriteReplicatedCreateQueryToPlain()
 
 inline String DB::TaskShard::getDescription() const
 {
-    return fmt::format("N{} (having a replica {}, pull table {} of cluster {}",
-                       numberInCluster(), getHostNameExample(), getQuotedTable(task_table.table_pull), task_table.cluster_pull_name);
+    std::stringstream ss;
+    ss << "N" << numberInCluster()
+       << " (having a replica " << getHostNameExample()
+       << ", pull table " + getQuotedTable(task_table.table_pull)
+       << " of cluster " + task_table.cluster_pull_name << ")";
+    return ss.str();
 }
 
 inline String DB::TaskShard::getHostNameExample() const

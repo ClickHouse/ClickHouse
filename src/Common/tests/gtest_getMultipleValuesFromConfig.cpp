@@ -9,8 +9,7 @@ using namespace DB;
 
 TEST(Common, getMultipleValuesFromConfig)
 {
-    std::istringstream      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        xml_isteam(R"END(<?xml version="1.0"?>
+    std::istringstream xml_isteam(R"END(<?xml version="1.0"?>
 <yandex>
     <first_level>
         <second_level>0</second_level>

@@ -5,7 +5,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
-#include <IO/Operators.h>
 
 
 namespace DB
@@ -31,21 +30,16 @@ void IASTColumnsTransformer::transform(const ASTPtr & transformer, ASTs & nodes)
     }
 }
 
-void ASTColumnsApplyTransformer::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTColumnsApplyTransformer::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "APPLY" << (settings.hilite ? hilite_none : "") << "(" << func_name;
-    if (parameters)
-        parameters->formatImpl(settings, state, frame);
-    settings.ostr << ")";
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "APPLY" << (settings.hilite ? hilite_none : "") << "(" << func_name << ")";
 }
 
 void ASTColumnsApplyTransformer::transform(ASTs & nodes) const
 {
     for (auto & column : nodes)
     {
-        auto function = makeASTFunction(func_name, column);
-        function->parameters = parameters;
-        column = function;
+        column = makeASTFunction(func_name, column);
     }
 }
 
@@ -77,7 +71,7 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
                 {
                     for (const auto & except_child : children)
                     {
-                        if (except_child->as<const ASTIdentifier &>().name() == id->shortName())
+                        if (except_child->as<const ASTIdentifier &>().name == id->shortName())
                             return true;
                     }
                 }

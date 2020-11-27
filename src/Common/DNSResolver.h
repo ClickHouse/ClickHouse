@@ -2,7 +2,7 @@
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/SocketAddress.h>
 #include <memory>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Core/Names.h>
 #include <boost/noncopyable.hpp>
 #include <common/logger_useful.h>

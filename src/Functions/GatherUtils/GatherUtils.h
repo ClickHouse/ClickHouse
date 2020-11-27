@@ -41,37 +41,18 @@ std::unique_ptr<IArraySource> createArraySource(const ColumnArray & col, bool is
 std::unique_ptr<IValueSource> createValueSource(const IColumn & col, bool is_const, size_t total_rows);
 std::unique_ptr<IArraySink> createArraySink(ColumnArray & col, size_t column_size);
 
-ColumnArray::MutablePtr concat(const std::vector<std::unique_ptr<IArraySource>> & sources);
+void concat(const std::vector<std::unique_ptr<IArraySource>> & sources, IArraySink & sink);
 
-ColumnArray::MutablePtr sliceFromLeftConstantOffsetUnbounded(IArraySource & src, size_t offset);
-ColumnArray::MutablePtr sliceFromLeftConstantOffsetBounded(IArraySource & src, size_t offset, ssize_t length);
+void sliceFromLeftConstantOffsetUnbounded(IArraySource & src, IArraySink & sink, size_t offset);
+void sliceFromLeftConstantOffsetBounded(IArraySource & src, IArraySink & sink, size_t offset, ssize_t length);
 
-ColumnArray::MutablePtr sliceFromRightConstantOffsetUnbounded(IArraySource & src, size_t offset);
-ColumnArray::MutablePtr sliceFromRightConstantOffsetBounded(IArraySource & src, size_t offset, ssize_t length);
+void sliceFromRightConstantOffsetUnbounded(IArraySource & src, IArraySink & sink, size_t offset);
+void sliceFromRightConstantOffsetBounded(IArraySource & src, IArraySink & sink, size_t offset, ssize_t length);
 
-ColumnArray::MutablePtr sliceDynamicOffsetUnbounded(IArraySource & src, const IColumn & offset_column);
-ColumnArray::MutablePtr sliceDynamicOffsetBounded(IArraySource & src, const IColumn & offset_column, const IColumn & length_column);
+void sliceDynamicOffsetUnbounded(IArraySource & src, IArraySink & sink, const IColumn & offset_column);
+void sliceDynamicOffsetBounded(IArraySource & src, IArraySink & sink, const IColumn & offset_column, const IColumn & length_column);
 
-void sliceHasAny(IArraySource & first, IArraySource & second, ColumnUInt8 & result);
-void sliceHasAll(IArraySource & first, IArraySource & second, ColumnUInt8 & result);
-void sliceHasSubstr(IArraySource & first, IArraySource & second, ColumnUInt8 & result);
-
-inline void sliceHas(IArraySource & first, IArraySource & second, ArraySearchType search_type, ColumnUInt8 & result)
-{
-    switch (search_type)
-    {
-        case ArraySearchType::All:
-            sliceHasAll(first, second, result);
-            break;
-        case ArraySearchType::Any:
-            sliceHasAny(first, second, result);
-            break;
-        case ArraySearchType::Substr:
-            sliceHasSubstr(first, second, result);
-            break;
-
-    }
-}
+void sliceHas(IArraySource & first, IArraySource & second, ArraySearchType search_type, ColumnUInt8 & result);
 
 void push(IArraySource & array_source, IValueSource & value_source, IArraySink & sink, bool push_front);
 
