@@ -60,6 +60,14 @@ PtrTo<SystemQuery> SystemQuery::createSyncReplica(PtrTo<TableIdentifier> identif
     return PtrTo<SystemQuery>(new SystemQuery(QueryType::SYNC_REPLICA, {identifier}));
 }
 
+// static
+PtrTo<SystemQuery> SystemQuery::createTTLMerges(bool stop, PtrTo<TableIdentifier> identifier)
+{
+    PtrTo<SystemQuery> query(new SystemQuery(QueryType::TTL_MERGES, {identifier}));
+    query->stop = stop;
+    return query;
+}
+
 SystemQuery::SystemQuery(QueryType type, PtrList exprs) : Query(exprs), query_type(type)
 {
 }
@@ -116,6 +124,14 @@ ASTPtr SystemQuery::convertToOld() const
                 query->table = table_id.table_name;
             }
             break;
+        case QueryType::TTL_MERGES:
+            query->type = stop ? ASTSystemQuery::Type::STOP_TTL_MERGES : ASTSystemQuery::Type::START_TTL_MERGES;
+            {
+                auto table_id = getTableIdentifier(get(TABLE)->convertToOld());
+                query->database = table_id.database_name;
+                query->table = table_id.table_name;
+            }
+            break;
     }
 
     return query;
@@ -134,7 +150,11 @@ antlrcpp::Any ParseTreeVisitor::visitSystemStmt(ClickHouseParser::SystemStmtCont
     if (ctx->FLUSH() && ctx->LOGS()) return SystemQuery::createFlushLogs();
     if (ctx->DISTRIBUTED() && ctx->SENDS()) return SystemQuery::createDistributedSends(!!ctx->STOP(), visit(ctx->tableIdentifier()));
     if (ctx->FETCHES()) return SystemQuery::createFetches(!!ctx->STOP(), visit(ctx->tableIdentifier()));
-    if (ctx->MERGES()) return SystemQuery::createMerges(!!ctx->STOP(), visit(ctx->tableIdentifier()));
+    if (ctx->MERGES())
+    {
+        if (ctx->TTL()) return SystemQuery::createTTLMerges(!!ctx->STOP(), visit(ctx->tableIdentifier()));
+        else return SystemQuery::createMerges(!!ctx->STOP(), visit(ctx->tableIdentifier()));
+    }
     if (ctx->REPLICATED() && ctx->SENDS()) return SystemQuery::createReplicatedSends(!!ctx->STOP());
     if (ctx->SYNC() && ctx->REPLICA()) return SystemQuery::createSyncReplica(visit(ctx->tableIdentifier()));
     __builtin_unreachable();

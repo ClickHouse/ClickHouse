@@ -46,6 +46,8 @@ public:
 
     virtual antlrcpp::Any visitAlterTableClauseDropPartition(ClickHouseParser::AlterTableClauseDropPartitionContext *context) = 0;
 
+    virtual antlrcpp::Any visitAlterTableClauseFreezePartition(ClickHouseParser::AlterTableClauseFreezePartitionContext *context) = 0;
+
     virtual antlrcpp::Any visitAlterTableClauseModifyCodec(ClickHouseParser::AlterTableClauseModifyCodecContext *context) = 0;
 
     virtual antlrcpp::Any visitAlterTableClauseModifyComment(ClickHouseParser::AlterTableClauseModifyCommentContext *context) = 0;
@@ -57,6 +59,8 @@ public:
     virtual antlrcpp::Any visitAlterTableClauseModifyOrderBy(ClickHouseParser::AlterTableClauseModifyOrderByContext *context) = 0;
 
     virtual antlrcpp::Any visitAlterTableClauseModifyTTL(ClickHouseParser::AlterTableClauseModifyTTLContext *context) = 0;
+
+    virtual antlrcpp::Any visitAlterTableClauseMovePartition(ClickHouseParser::AlterTableClauseMovePartitionContext *context) = 0;
 
     virtual antlrcpp::Any visitAlterTableClauseRemoveTTL(ClickHouseParser::AlterTableClauseRemoveTTLContext *context) = 0;
 
@@ -231,6 +235,8 @@ public:
     virtual antlrcpp::Any visitTruncateStmt(ClickHouseParser::TruncateStmtContext *context) = 0;
 
     virtual antlrcpp::Any visitUseStmt(ClickHouseParser::UseStmtContext *context) = 0;
+
+    virtual antlrcpp::Any visitWatchStmt(ClickHouseParser::WatchStmtContext *context) = 0;
 
     virtual antlrcpp::Any visitColumnTypeExprSimple(ClickHouseParser::ColumnTypeExprSimpleContext *context) = 0;
 

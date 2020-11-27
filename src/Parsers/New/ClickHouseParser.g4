@@ -23,6 +23,7 @@ query
     | systemStmt
     | truncateStmt  // DDL
     | useStmt
+    | watchStmt
     ;
 
 // ALTER statement
@@ -42,12 +43,17 @@ alterTableClause
     | DROP COLUMN (IF EXISTS)? nestedIdentifier                                    # AlterTableClauseDropColumn
     | DROP INDEX (IF EXISTS)? nestedIdentifier                                     # AlterTableClauseDropIndex
     | DROP partitionClause                                                         # AlterTableClauseDropPartition
+    | FREEZE partitionClause?                                                      # AlterTableClauseFreezePartition
     | MODIFY COLUMN (IF EXISTS)? nestedIdentifier codecExpr                        # AlterTableClauseModifyCodec
     | MODIFY COLUMN (IF EXISTS)? nestedIdentifier COMMENT STRING_LITERAL           # AlterTableClauseModifyComment
     | MODIFY COLUMN (IF EXISTS)? nestedIdentifier REMOVE tableColumnPropertyType   # AlterTableClauseModifyRemove
     | MODIFY COLUMN (IF EXISTS)? tableColumnDfnt                                   # AlterTableClauseModify
     | MODIFY ORDER BY columnExpr                                                   # AlterTableClauseModifyOrderBy
     | MODIFY ttlClause                                                             # AlterTableClauseModifyTTL
+    | MOVE partitionClause ( TO DISK STRING_LITERAL
+                           | TO VOLUME STRING_LITERAL
+                           | TO TABLE tableIdentifier
+                           )                                                       # AlterTableClauseMovePartition
     | REMOVE TTL                                                                   # AlterTableClauseRemoveTTL
     | RENAME COLUMN (IF EXISTS)? nestedIdentifier TO nestedIdentifier              # AlterTableClauseRename
     | REPLACE partitionClause FROM tableIdentifier                                 # AlterTableClauseReplace
@@ -75,7 +81,7 @@ createStmt
     | (ATTACH | CREATE) LIVE VIEW (IF NOT EXISTS)? tableIdentifier uuidClause? clusterClause? (WITH TIMEOUT DECIMAL_LITERAL?)? destinationClause? schemaClause? subqueryClause   # CreateLiveViewStmt
     | (ATTACH | CREATE) MATERIALIZED VIEW (IF NOT EXISTS)? tableIdentifier uuidClause? clusterClause? schemaClause? (destinationClause | engineClause POPULATE?) subqueryClause  # CreateMaterializedViewStmt
     | (ATTACH | CREATE) TEMPORARY? TABLE (IF NOT EXISTS)? tableIdentifier uuidClause? clusterClause? schemaClause? engineClause? subqueryClause?                                 # CreateTableStmt
-    | (ATTACH | CREATE) VIEW (IF NOT EXISTS)? tableIdentifier uuidClause? clusterClause? schemaClause? subqueryClause                                                            # CreateViewStmt
+    | (ATTACH | CREATE) (OR REPLACE)? VIEW (IF NOT EXISTS)? tableIdentifier uuidClause? clusterClause? schemaClause? subqueryClause                                              # CreateViewStmt
     ;
 
 clusterClause: ON CLUSTER (identifier | STRING_LITERAL);
@@ -126,13 +132,13 @@ describeStmt: (DESCRIBE | DESC) TABLE? tableExpr;
 // DROP statement
 
 dropStmt
-    : (DETACH | DROP) DATABASE (IF EXISTS)? databaseIdentifier clusterClause?                   # DropDatabaseStmt
-    | (DETACH | DROP) TEMPORARY? TABLE (IF EXISTS)? tableIdentifier clusterClause? (NO DELAY)?  # DropTableStmt
+    : (DETACH | DROP) DATABASE (IF EXISTS)? databaseIdentifier clusterClause?                                  # DropDatabaseStmt
+    | (DETACH | DROP) (DICTIONARY | TEMPORARY? TABLE) (IF EXISTS)? tableIdentifier clusterClause? (NO DELAY)?  # DropTableStmt
     ;
 
 // EXISTS statement
 
-existsStmt: EXISTS TEMPORARY? TABLE tableIdentifier;
+existsStmt: EXISTS (DICTIONARY | TEMPORARY? TABLE)? tableIdentifier;
 
 // EXPLAIN statement
 
@@ -238,7 +244,7 @@ showStmt
 systemStmt
     : SYSTEM FLUSH DISTRIBUTED tableIdentifier
     | SYSTEM FLUSH LOGS
-    | SYSTEM (START | STOP) (DISTRIBUTED SENDS | FETCHES | MERGES) tableIdentifier
+    | SYSTEM (START | STOP) (DISTRIBUTED SENDS | FETCHES | TTL? MERGES) tableIdentifier
     | SYSTEM (START | STOP) REPLICATED SENDS
     | SYSTEM SYNC REPLICA tableIdentifier
     ;
@@ -250,6 +256,10 @@ truncateStmt: TRUNCATE TEMPORARY? TABLE (IF EXISTS)? tableIdentifier clusterClau
 // USE statement
 
 useStmt: USE databaseIdentifier;
+
+// WATCH statement
+
+watchStmt: WATCH tableIdentifier EVENTS? (LIMIT DECIMAL_LITERAL)?;
 
 
 
@@ -307,6 +317,7 @@ columnExpr
     | NOT columnExpr                                                                      # ColumnExprNot
     | columnExpr AND columnExpr                                                           # ColumnExprAnd
     | columnExpr OR columnExpr                                                            # ColumnExprOr
+    // TODO(ilezhankin): `BETWEEN a AND b AND c` is parsed in a wrong way: `BETWEEN (a AND b) AND c`
     | columnExpr NOT? BETWEEN columnExpr AND columnExpr                                   # ColumnExprBetween
     | <assoc=right> columnExpr QUERY columnExpr COLON columnExpr                          # ColumnExprTernaryOp
     | columnExpr (alias | AS identifier)                                                  # ColumnExprAlias
@@ -367,15 +378,16 @@ interval: SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR;
 keyword
     // except NULL_SQL, INF, NAN_SQL
     : AFTER | ALIAS | ALL | ALTER | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | ATTACH | BETWEEN | BOTH | BY | CASE | CAST
-    | CHECK | CLEAR | CLUSTER | CODEC | COLLATE | COLUMN | COMMENT | CONSTRAINT | CREATE | CROSS | CUBE | DATABASE | DATABASES | DATE | DAY
-    | DEDUPLICATE | DEFAULT | DELAY | DELETE | DESCRIBE | DESC | DESCENDING | DETACH | DISK | DISTINCT | DISTRIBUTED | DROP | ELSE | END
-    | ENGINE | EXISTS | EXPLAIN | EXTRACT | FETCHES | FINAL | FIRST | FLUSH | FOR | FORMAT | FROM | FULL | FUNCTION | GLOBAL | GRANULARITY
-    | GROUP | HAVING | HOUR | ID | IF | ILIKE | IN | INDEX | INNER | INSERT | INTERVAL | INTO | IS | JOIN | JSON_FALSE | JSON_TRUE | KEY
-    | LAST | LEADING | LEFT | LIKE | LIMIT | LIVE | LOCAL | LOGS | MATERIALIZED | MERGES | MINUTE | MODIFY | MONTH | NO | NOT | NULLS
-    | OFFSET | ON | OPTIMIZE | OR | ORDER | OUTER | OUTFILE | PARTITION | POPULATE | PREWHERE | PRIMARY | QUARTER | REMOVE | RENAME
-    | REPLACE | REPLICA | REPLICATED | RIGHT | ROLLUP | SAMPLE | SECOND | SELECT | SEMI | SENDS | SET | SETTINGS | SHOW | START | STOP
-    | SUBSTRING | SYNC | SYNTAX | SYSTEM | TABLE | TABLES | TEMPORARY | THEN | TIES | TIMEOUT | TIMESTAMP | TOTALS | TRAILING | TRIM
-    | TRUNCATE | TO | TOP | TTL | TYPE | UNION | UPDATE | USE | USING | UUID | VALUES | VIEW | VOLUME | WEEK | WHEN | WHERE | WITH | YEAR
+    | CHECK | CLEAR | CLUSTER | CODEC | COLLATE | COLUMN | COMMENT | CONSTRAINT | CREATE | CROSS | CUBE | DATABASE | DATABASES | DATE
+    | DEDUPLICATE | DEFAULT | DELAY | DELETE | DESCRIBE | DESC | DESCENDING | DETACH | DICTIONARY | DISK | DISTINCT | DISTRIBUTED | DROP
+    | ELSE | END | ENGINE | EVENTS | EXISTS | EXPLAIN | EXTRACT | FETCHES | FINAL | FIRST | FLUSH | FOR | FORMAT | FREEZE | FROM | FULL
+    | FUNCTION | GLOBAL | GRANULARITY | GROUP | HAVING | ID | IF | ILIKE | IN | INDEX | INNER | INSERT | INTERVAL | INTO | IS | JOIN
+    | JSON_FALSE | JSON_TRUE | KEY | LAST | LEADING | LEFT | LIKE | LIMIT | LIVE | LOCAL | LOGS | MATERIALIZED | MERGES | MODIFY | MOVE
+    | NO | NOT | NULLS | OFFSET | ON | OPTIMIZE | OR | ORDER | OUTER | OUTFILE | PARTITION | POPULATE | PREWHERE | PRIMARY
+    | REMOVE | RENAME | REPLACE | REPLICA | REPLICATED | RIGHT | ROLLUP | SAMPLE | SELECT | SEMI | SENDS | SET
+    | SETTINGS | SHOW | START | STOP | SUBSTRING | SYNC | SYNTAX | SYSTEM | TABLE | TABLES | TEMPORARY | THEN | TIES | TIMEOUT | TIMESTAMP
+    | TOTALS | TRAILING | TRIM | TRUNCATE | TO | TOP | TTL | TYPE | UNION | UPDATE | USE | USING | UUID | VALUES | VIEW | VOLUME | WATCH
+    | WHEN | WHERE | WITH
     ;
 keywordForAlias
     : DATE | FIRST | ID | KEY

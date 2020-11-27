@@ -16,6 +16,7 @@ class SystemQuery : public Query
         static PtrTo<SystemQuery> createMerges(bool stop, PtrTo<TableIdentifier> identifier);
         static PtrTo<SystemQuery> createReplicatedSends(bool stop);
         static PtrTo<SystemQuery> createSyncReplica(PtrTo<TableIdentifier> identifier);
+        static PtrTo<SystemQuery> createTTLMerges(bool stop, PtrTo<TableIdentifier> identifier);
 
         ASTPtr convertToOld() const override;
 
@@ -33,6 +34,7 @@ class SystemQuery : public Query
             MERGES,
             REPLICATED_SENDS,
             SYNC_REPLICA,
+            TTL_MERGES,
         };
 
         QueryType query_type;

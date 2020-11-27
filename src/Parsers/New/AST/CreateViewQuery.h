@@ -12,6 +12,7 @@ class CreateViewQuery : public DDLQuery
         CreateViewQuery(
             PtrTo<ClusterClause> cluster,
             bool attach,
+            bool replace,
             bool if_not_exists,
             PtrTo<TableIdentifier> identifier,
             PtrTo<SchemaClause> clause,
@@ -27,7 +28,7 @@ class CreateViewQuery : public DDLQuery
             SUBQUERY = 2,  // SelectUnionQuery
         };
 
-        const bool attach, if_not_exists;
+        const bool attach, replace, if_not_exists;
 };
 
 }

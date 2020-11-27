@@ -156,12 +156,36 @@ PtrTo<AlterTableClause> AlterTableClause::createDropPartition(PtrTo<PartitionCla
 }
 
 // static
+PtrTo<AlterTableClause> AlterTableClause::createFreezePartition(PtrTo<PartitionClause> clause)
+{
+    return PtrTo<AlterTableClause>(new AlterTableClause(ClauseType::FREEZE_PARTITION, {clause}));
+}
+
+// static
 PtrTo<AlterTableClause> AlterTableClause::createModify(bool if_exists, PtrTo<TableElementExpr> element)
 {
     // TODO: assert(element->getType() == TableElementExpr::ExprType::COLUMN);
     PtrTo<AlterTableClause> query(new AlterTableClause(ClauseType::MODIFY, {element}));
     query->if_exists = if_exists;
     return query;
+}
+
+// static
+PtrTo<AlterTableClause> AlterTableClause::createMovePartitionToDisk(PtrTo<PartitionClause> clause, PtrTo<StringLiteral> literal)
+{
+    return PtrTo<AlterTableClause>(new AlterTableClause(ClauseType::MOVE_PARTITION_TO_DISK, {clause, literal}));
+}
+
+// static
+PtrTo<AlterTableClause> AlterTableClause::createMovePartitionToTable(PtrTo<PartitionClause> clause, PtrTo<TableIdentifier> identifier)
+{
+    return PtrTo<AlterTableClause>(new AlterTableClause(ClauseType::MOVE_PARTITION_TO_TABLE, {clause, identifier}));
+}
+
+// static
+PtrTo<AlterTableClause> AlterTableClause::createMovePartitionToVolume(PtrTo<PartitionClause> clause, PtrTo<StringLiteral> literal)
+{
+    return PtrTo<AlterTableClause>(new AlterTableClause(ClauseType::MOVE_PARTITION_TO_VOLUME, {clause, literal}));
 }
 
 // static
@@ -306,16 +330,55 @@ ASTPtr AlterTableClause::convertToOld() const
             command->partition = get(PARTITION)->convertToOld();
             break;
 
+        case ClauseType::FREEZE_PARTITION:
+            if (has(PARTITION))
+            {
+                command->type = ASTAlterCommand::FREEZE_PARTITION;
+                command->partition = get(PARTITION)->convertToOld();
+            }
+            else
+                command->type = ASTAlterCommand::FREEZE_ALL;
+            break;
+
         case ClauseType::MODIFY:
             command->type = ASTAlterCommand::MODIFY_COLUMN;
             command->if_exists = if_exists;
             command->col_decl = get(ELEMENT)->convertToOld();
             break;
 
+        case ClauseType::MOVE_PARTITION_TO_DISK:
+            command->type = ASTAlterCommand::MOVE_PARTITION;
+            command->partition = get(PARTITION)->convertToOld();
+            command->move_destination_type = DataDestinationType::DISK;
+            command->move_destination_name = get(TO)->convertToOld()->as<ASTLiteral>()->value.get<String>();
+            break;
+
+        case ClauseType::MOVE_PARTITION_TO_TABLE:
+            command->type = ASTAlterCommand::MOVE_PARTITION;
+            command->partition = get(PARTITION)->convertToOld();
+            command->move_destination_type = DataDestinationType::TABLE;
+            {
+                auto table_id = getTableIdentifier(get(TO)->convertToOld());
+                command->to_database = table_id.database_name;
+                command->to_table = table_id.table_name;
+            }
+            break;
+
+        case ClauseType::MOVE_PARTITION_TO_VOLUME:
+            command->type = ASTAlterCommand::MOVE_PARTITION;
+            command->partition = get(PARTITION)->convertToOld();
+            command->move_destination_type = DataDestinationType::VOLUME;
+            command->move_destination_name = get(TO)->convertToOld()->as<ASTLiteral>()->value.get<String>();
+            break;
+
         case ClauseType::REMOVE:
             command->type = ASTAlterCommand::MODIFY_COLUMN;
             command->if_exists = if_exists;
-            command->col_decl = get(ELEMENT)->convertToOld();
+            {
+                auto col_decl = std::make_shared<ASTColumnDeclaration>();
+                col_decl->name = get(ELEMENT)->convertToOld()->getColumnName();
+                command->col_decl = col_decl;
+            }
             switch(property_type)
             {
                 case TableColumnPropertyType::ALIAS:
@@ -490,6 +553,12 @@ antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseDropPartition(ClickHousePar
     return AlterTableClause::createDropPartition(visit(ctx->partitionClause()));
 }
 
+antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseFreezePartition(ClickHouseParser::AlterTableClauseFreezePartitionContext *ctx)
+{
+    auto clause = ctx->partitionClause() ? visit(ctx->partitionClause()).as<PtrTo<PartitionClause>>() : nullptr;
+    return AlterTableClause::createFreezePartition(clause);
+}
+
 antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseModify(ClickHouseParser::AlterTableClauseModifyContext * ctx)
 {
     return AlterTableClause::createModify(!!ctx->IF(), visit(ctx->tableColumnDfnt()));
@@ -518,6 +587,17 @@ antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseModifyRemove(ClickHousePars
 antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseModifyTTL(ClickHouseParser::AlterTableClauseModifyTTLContext *ctx)
 {
     return AlterTableClause::createTTL(visit(ctx->ttlClause()));
+}
+
+antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseMovePartition(ClickHouseParser::AlterTableClauseMovePartitionContext *ctx)
+{
+    if (ctx->DISK())
+        return AlterTableClause::createMovePartitionToDisk(visit(ctx->partitionClause()), Literal::createString(ctx->STRING_LITERAL()));
+    if (ctx->TABLE())
+        return AlterTableClause::createMovePartitionToTable(visit(ctx->partitionClause()), visit(ctx->tableIdentifier()));
+    if (ctx->VOLUME())
+        return AlterTableClause::createMovePartitionToVolume(visit(ctx->partitionClause()), Literal::createString(ctx->STRING_LITERAL()));
+    __builtin_unreachable();
 }
 
 antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseRemoveTTL(ClickHouseParser::AlterTableClauseRemoveTTLContext *)

@@ -70,7 +70,11 @@ class AlterTableClause : public INode
         static PtrTo<AlterTableClause> createDropColumn(bool if_exists, PtrTo<Identifier> identifier);
         static PtrTo<AlterTableClause> createDropIndex(bool if_exists, PtrTo<Identifier> identifier);
         static PtrTo<AlterTableClause> createDropPartition(PtrTo<PartitionClause> clause);
+        static PtrTo<AlterTableClause> createFreezePartition(PtrTo<PartitionClause> clause);
         static PtrTo<AlterTableClause> createModify(bool if_exists, PtrTo<TableElementExpr> element);
+        static PtrTo<AlterTableClause> createMovePartitionToDisk(PtrTo<PartitionClause> clause, PtrTo<StringLiteral> literal);
+        static PtrTo<AlterTableClause> createMovePartitionToTable(PtrTo<PartitionClause> clause, PtrTo<TableIdentifier> identifier);
+        static PtrTo<AlterTableClause> createMovePartitionToVolume(PtrTo<PartitionClause> clause, PtrTo<StringLiteral> literal);
         static PtrTo<AlterTableClause> createRemove(bool if_exists, PtrTo<Identifier> identifier, TableColumnPropertyType type);
         static PtrTo<AlterTableClause> createRemoveTTL();
         static PtrTo<AlterTableClause> createRename(bool if_exists, PtrTo<Identifier> identifier, PtrTo<Identifier> to);
@@ -105,6 +109,9 @@ class AlterTableClause : public INode
             // DELETE
             EXPR = 0,  // ColumnExpr
 
+            // MOVE
+            // TO = 1,  // TableIdentifier or StringLiteral
+
             // RENAME
             TO = 1,      // Identifier
 
@@ -129,7 +136,11 @@ class AlterTableClause : public INode
             DROP_COLUMN,
             DROP_INDEX,
             DROP_PARTITION,
+            FREEZE_PARTITION,
             MODIFY,
+            MOVE_PARTITION_TO_DISK,
+            MOVE_PARTITION_TO_TABLE,
+            MOVE_PARTITION_TO_VOLUME,
             ORDER_BY,
             REMOVE,
             REMOVE_TTL,

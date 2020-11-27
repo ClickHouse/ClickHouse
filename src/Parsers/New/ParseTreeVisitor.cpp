@@ -25,6 +25,7 @@
 #include <Parsers/New/AST/TableExpr.h>
 #include <Parsers/New/AST/TruncateQuery.h>
 #include <Parsers/New/AST/UseQuery.h>
+#include <Parsers/New/AST/WatchQuery.h>
 
 // Include last, because antlr-runtime undefines EOF macros, which is required in boost multiprecision numbers.
 #include <Parsers/New/ParseTreeVisitor.h>
@@ -71,6 +72,7 @@ antlrcpp::Any ParseTreeVisitor::visitQuery(ClickHouseParser::QueryContext *ctx)
     TRY_POINTER_CAST(SystemQuery)
     TRY_POINTER_CAST(TruncateQuery)
     TRY_POINTER_CAST(UseQuery)
+    TRY_POINTER_CAST(WatchQuery)
 #undef TRY_POINTER_CAST
 
     throw std::runtime_error("Query is unknown: " + ctx->children[0]->getText());

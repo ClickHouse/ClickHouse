@@ -10,22 +10,31 @@
 namespace DB::AST
 {
 
-ExistsQuery::ExistsQuery(bool temporary_, PtrTo<TableIdentifier> identifier) : Query{identifier}, temporary(temporary_)
+ExistsQuery::ExistsQuery(QueryType type, bool temporary_, PtrTo<TableIdentifier> identifier)
+    : Query{identifier}, query_type(type), temporary(temporary_)
 {
-    (void) temporary; // TODO
 }
 
 ASTPtr ExistsQuery::convertToOld() const
 {
-    auto query = std::make_shared<ASTExistsTableQuery>();
+    std::shared_ptr<ASTQueryWithTableAndOutput> query;
+
+    switch(query_type)
+    {
+        case QueryType::DICTIONARY:
+            query = std::make_shared<ASTExistsDictionaryQuery>();
+            break;
+        case QueryType::TABLE:
+            query = std::make_shared<ASTExistsTableQuery>();
+            query->temporary = temporary;
+            break;
+    }
 
     // FIXME: this won't work if table doesn't exist
     auto table_id = getTableIdentifier(get(TABLE)->convertToOld());
     query->database = table_id.database_name;
     query->table = table_id.table_name;
     query->uuid = table_id.uuid;
-
-    query->temporary = temporary;
 
     return query;
 }
@@ -39,7 +48,8 @@ using namespace AST;
 
 antlrcpp::Any ParseTreeVisitor::visitExistsStmt(ClickHouseParser::ExistsStmtContext *ctx)
 {
-    return std::make_shared<ExistsQuery>(!!ctx->TEMPORARY(), visit(ctx->tableIdentifier()));
+    auto type = ctx->TABLE() ? ExistsQuery::QueryType::TABLE : ExistsQuery::QueryType::DICTIONARY;
+    return std::make_shared<ExistsQuery>(type, !!ctx->TEMPORARY(), visit(ctx->tableIdentifier()));
 }
 
 }

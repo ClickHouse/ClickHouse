@@ -12,11 +12,12 @@ namespace DB::AST
 CreateViewQuery::CreateViewQuery(
     PtrTo<ClusterClause> cluster,
     bool attach_,
+    bool replace_,
     bool if_not_exists_,
     PtrTo<TableIdentifier> identifier,
     PtrTo<SchemaClause> clause,
     PtrTo<SelectUnionQuery> query)
-    : DDLQuery(cluster, {identifier, clause, query}), attach(attach_), if_not_exists(if_not_exists_)
+    : DDLQuery(cluster, {identifier, clause, query}), attach(attach_), replace(replace_), if_not_exists(if_not_exists_)
 {
 }
 
@@ -32,6 +33,7 @@ ASTPtr CreateViewQuery::convertToOld() const
     }
 
     query->attach = attach;
+    query->replace_view = replace;
     query->if_not_exists = if_not_exists;
     query->is_view = true;
     query->cluster = cluster_name;
@@ -54,7 +56,7 @@ antlrcpp::Any ParseTreeVisitor::visitCreateViewStmt(ClickHouseParser::CreateView
     auto cluster = ctx->clusterClause() ? visit(ctx->clusterClause()).as<PtrTo<ClusterClause>>() : nullptr;
     auto schema = ctx->schemaClause() ? visit(ctx->schemaClause()).as<PtrTo<SchemaClause>>() : nullptr;
     return std::make_shared<CreateViewQuery>(
-        cluster, !!ctx->ATTACH(), !!ctx->IF(), visit(ctx->tableIdentifier()), schema, visit(ctx->subqueryClause()));
+        cluster, !!ctx->ATTACH(), !!ctx->REPLACE(), !!ctx->IF(), visit(ctx->tableIdentifier()), schema, visit(ctx->subqueryClause()));
 }
 
 }

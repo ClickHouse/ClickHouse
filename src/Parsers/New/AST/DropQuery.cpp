@@ -22,6 +22,16 @@ DropQuery::createDropDatabase(bool detach, bool if_exists, PtrTo<DatabaseIdentif
 
 // static
 PtrTo<DropQuery>
+DropQuery::createDropDictionary(bool detach, bool if_exists, PtrTo<TableIdentifier> identifier, PtrTo<ClusterClause> cluster)
+{
+    auto query = PtrTo<DropQuery>(new DropQuery(cluster, QueryType::DICTIONARY, {identifier}));
+    query->detach = detach;
+    query->if_exists = if_exists;
+    return query;
+}
+
+// static
+PtrTo<DropQuery>
 DropQuery::createDropTable(bool detach, bool if_exists, bool temporary, PtrTo<TableIdentifier> identifier, PtrTo<ClusterClause> cluster)
 {
     auto query = PtrTo<DropQuery>(new DropQuery(cluster, QueryType::TABLE, {identifier}));
@@ -49,6 +59,12 @@ ASTPtr DropQuery::convertToOld() const
     {
         case QueryType::DATABASE:
             query->database = get<DatabaseIdentifier>(NAME)->getName();
+            break;
+        case QueryType::DICTIONARY:
+            query->is_dictionary = true;
+            query->table = get<TableIdentifier>(NAME)->getName();
+            if (auto database = get<TableIdentifier>(NAME)->getDatabase())
+                query->database = database->getName();
             break;
         case QueryType::TABLE:
         {
@@ -80,7 +96,11 @@ antlrcpp::Any ParseTreeVisitor::visitDropDatabaseStmt(ClickHouseParser::DropData
 antlrcpp::Any ParseTreeVisitor::visitDropTableStmt(ClickHouseParser::DropTableStmtContext *ctx)
 {
     auto cluster = ctx->clusterClause() ? visit(ctx->clusterClause()).as<PtrTo<ClusterClause>>() : nullptr;
-    return DropQuery::createDropTable(!!ctx->DETACH(), !!ctx->EXISTS(), !!ctx->TEMPORARY(), visit(ctx->tableIdentifier()), cluster);
+    if (ctx->TABLE())
+        return DropQuery::createDropTable(!!ctx->DETACH(), !!ctx->EXISTS(), !!ctx->TEMPORARY(), visit(ctx->tableIdentifier()), cluster);
+    if (ctx->DICTIONARY())
+        return DropQuery::createDropDictionary(!!ctx->DETACH(), !!ctx->EXISTS(), visit(ctx->tableIdentifier()), cluster);
+    __builtin_unreachable();
 }
 
 }

@@ -170,6 +170,13 @@ ServerThread.DEFAULT_SERVER_CONFIG = \
         </default>
     </graphite_rollup>
 
+    <query_masking_rules>
+        <rule>
+            <regexp>TOPSECRET.TOPSECRET</regexp>
+            <replace>[hidden]</replace>
+        </rule>
+    </query_masking_rules>
+
     <remote_servers>
         <test_shard_localhost>
             <shard>
