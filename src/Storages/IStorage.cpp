@@ -7,12 +7,11 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/Pipe.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/ReadFromStorageStep.h>
 #include <Interpreters/Context.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 
 
 namespace DB
@@ -84,7 +83,7 @@ TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, cons
 Pipe IStorage::read(
         const Names & /*column_names*/,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        SelectQueryInfo & /*query_info*/,
+        const SelectQueryInfo & /*query_info*/,
         const Context & /*context*/,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t /*max_block_size*/,
@@ -95,28 +94,28 @@ Pipe IStorage::read(
 
 void IStorage::read(
         QueryPlan & query_plan,
+        TableLockHolder table_lock,
+        StorageMetadataPtr metadata_snapshot,
+        StreamLocalLimits & limits,
+        SizeLimits & leaf_limits,
+        std::shared_ptr<const EnabledQuota> quota,
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
-        SelectQueryInfo & query_info,
-        const Context & context,
+        const SelectQueryInfo & query_info,
+        std::shared_ptr<Context> context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams)
 {
-    auto pipe = read(column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    if (pipe.empty())
-    {
-        auto header = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
-        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info);
-    }
-    else
-    {
-        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), getName());
-        query_plan.addStep(std::move(read_step));
-    }
+    auto read_step = std::make_unique<ReadFromStorageStep>(
+            std::move(table_lock), std::move(metadata_snapshot), limits, leaf_limits, std::move(quota), shared_from_this(),
+            column_names, query_info, std::move(context), processed_stage, max_block_size, num_streams);
+
+    read_step->setStepDescription("Read from " + getName());
+    query_plan.addStep(std::move(read_step));
 }
 
 Pipe IStorage::alterPartition(
+    const ASTPtr & /* query */,
     const StorageMetadataPtr & /* metadata_snapshot */,
     const PartitionCommands & /* commands */,
     const Context & /* context */)

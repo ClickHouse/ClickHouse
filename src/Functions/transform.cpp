@@ -143,26 +143,29 @@ public:
         }
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const ColumnConst * array_from = checkAndGetColumnConst<ColumnArray>(arguments[1].column.get());
-        const ColumnConst * array_to = checkAndGetColumnConst<ColumnArray>(arguments[2].column.get());
+        const ColumnConst * array_from = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[1]).column.get());
+        const ColumnConst * array_to = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[2]).column.get());
 
         if (!array_from || !array_to)
             throw Exception{"Second and third arguments of function " + getName() + " must be constant arrays.", ErrorCodes::ILLEGAL_COLUMN};
 
-        initialize(array_from->getValue<Array>(), array_to->getValue<Array>(), arguments);
+        initialize(array_from->getValue<Array>(), array_to->getValue<Array>(), block, arguments);
 
-        const auto * in = arguments.front().column.get();
+        const auto * in = block.getByPosition(arguments.front()).column.get();
 
         if (isColumnConst(*in))
-            return executeConst(arguments, result_type, input_rows_count);
+        {
+            executeConst(block, arguments, result, input_rows_count);
+            return;
+        }
 
         const IColumn * default_column = nullptr;
         if (arguments.size() == 4)
-            default_column = arguments[3].column.get();
+            default_column = block.getByPosition(arguments[3]).column.get();
 
-        auto column_result = result_type->createColumn();
+        auto column_result = block.getByPosition(result).type->createColumn();
         auto * out = column_result.get();
 
         if (!executeNum<UInt8>(in, out, default_column)
@@ -180,21 +183,36 @@ public:
             throw Exception{"Illegal column " + in->getName() + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
         }
 
-        return column_result;
+        block.getByPosition(result).column = std::move(column_result);
     }
 
 private:
-    static ColumnPtr executeConst(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count)
+    static void executeConst(Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
     {
         /// Materialize the input column and compute the function as usual.
 
-        ColumnsWithTypeAndName args = arguments;
-        args[0].column = args[0].column->cloneResized(input_rows_count)->convertToFullColumnIfConst();
+        ColumnsWithTypeAndName tmp_block;
+        ColumnNumbers tmp_arguments;
+
+        tmp_block.emplace_back(block.getByPosition(arguments[0]));
+        tmp_block[0].column = tmp_block[0].column->cloneResized(input_rows_count)->convertToFullColumnIfConst();
+        tmp_arguments.push_back(0);
+
+        for (size_t i = 1; i < arguments.size(); ++i)
+        {
+            tmp_block.emplace_back(block.getByPosition(arguments[i]));
+            tmp_arguments.push_back(i);
+        }
 
         auto impl = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(std::make_shared<FunctionTransform>()))
-                    .build(args);
+                    .build(tmp_block);
 
-        return impl->execute(args, result_type, input_rows_count);
+        tmp_block.emplace_back(block.getByPosition(result));
+        size_t tmp_result = arguments.size();
+
+        impl->execute(tmp_block, tmp_arguments, tmp_result, input_rows_count);
+
+        block.getByPosition(result).column = tmp_block[tmp_result].column;
     }
 
     template <typename T>
@@ -723,7 +741,7 @@ private:
     mutable Cache cache;
 
     /// Can be called from different threads. It works only on the first call.
-    void initialize(const Array & from, const Array & to, const ColumnsWithTypeAndName & arguments) const
+    void initialize(const Array & from, const Array & to, Block & block, const ColumnNumbers & arguments) const
     {
         if (cache.initialized)
             return;
@@ -747,7 +765,7 @@ private:
 
         if (arguments.size() == 4)
         {
-            const IColumn * default_col = arguments[3].column.get();
+            const IColumn * default_col = block.getByPosition(arguments[3]).column.get();
             const ColumnConst * const_default_col = typeid_cast<const ColumnConst *>(default_col);
 
             if (const_default_col)

@@ -8,10 +8,7 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-instance = cluster.add_instance('instance', main_configs=[
-    'configs/conf.xml',
-    'configs/asynchronous_metrics_update_period_s.xml',
-])
+instance = cluster.add_instance('instance', main_configs=['configs/conf.xml'])
 
 
 @pytest.fixture(scope='module', autouse=True)

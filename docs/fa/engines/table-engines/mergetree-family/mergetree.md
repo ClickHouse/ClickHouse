@@ -330,7 +330,7 @@ INDEX sample_index3 (lower(str), str) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 
 
 این `set` شاخص را می توان با تمام توابع استفاده می شود. زیر مجموعه های تابع برای شاخص های دیگر در جدول زیر نشان داده شده است.
 
-| تابع (اپراتور) / شاخص                                                                                                | کلید اصلی | مینمکس | نمرمبف1 | توکنبف1 | ت_ضعیت |
+| تابع (اپراتور) / شاخص                                                                                                | کلید اصلی | مینمکس | نمرمبف1 | توکنبف1 | ت\_ضعیت |
 |----------------------------------------------------------------------------------------------------------------------|-----------|--------|---------|---------|---------|
 | [اطلاعات دقیق)](../../../sql-reference/functions/comparison-functions.md#function-equals)                            | ✔         | ✔      | ✔       | ✔       | ✔       |
 | [نقلقولهای جدید از این نویسنده=, \<\>)](../../../sql-reference/functions/comparison-functions.md#function-notequals) | ✔         | ✔      | ✔       | ✔       | ✔       |
@@ -495,7 +495,7 @@ ALTER TABLE example_table
 -   Volume — Ordered set of equal disks (similar to [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures)).
 -   Storage policy — Set of volumes and the rules for moving data between them.
 
-اسامی داده شده به اشخاص توصیف شده را می توان در جداول سیستم یافت می شود, [سیستم.داستان_یابی](../../../operations/system-tables.md#system_tables-storage_policies) و [سیستم.دیسکها](../../../operations/system-tables.md#system_tables-disks). برای اعمال یکی از سیاست های ذخیره سازی پیکربندی شده برای یک جدول از `storage_policy` تنظیم از `MergeTree`- جداول خانواده موتور .
+اسامی داده شده به اشخاص توصیف شده را می توان در جداول سیستم یافت می شود, [سیستم.داستان\_یابی](../../../operations/system-tables.md#system_tables-storage_policies) و [سیستم.دیسکها](../../../operations/system-tables.md#system_tables-disks). برای اعمال یکی از سیاست های ذخیره سازی پیکربندی شده برای یک جدول از `storage_policy` تنظیم از `MergeTree`- جداول خانواده موتور .
 
 ### پیکربندی {#table_engine-mergetree-multiple-volumes_configure}
 
@@ -642,7 +642,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 تحت هود جهش و پارتیشن انجماد استفاده از [لینک های سخت](https://en.wikipedia.org/wiki/Hard_link). لینک های سخت بین دیسک های مختلف پشتیبانی نمی شوند بنابراین در چنین مواردی قطعات حاصل شده بر روی دیسک های مشابه به عنوان اولیه ذخیره می شوند.
 
 در پس زمینه, قطعات بین حجم بر اساس مقدار فضای رایگان نقل مکان کرد (`move_factor` پارامتر) با توجه به سفارش حجم در فایل پیکربندی اعلام کرد.
-داده ها هرگز از گذشته و به یکی از اولین منتقل شده است. ممکن است از جداول سیستم استفاده کنید [سیستم._خروج](../../../operations/system-tables.md#system_tables-part-log) (زمینه `type = MOVE_PART`) و [سیستم.قطعات](../../../operations/system-tables.md#system_tables-parts) (فیلدها `path` و `disk`) برای نظارت بر حرکت پس زمینه . همچنین, اطلاعات دقیق را می توان در سیاهههای مربوط به سرور پیدا شده است.
+داده ها هرگز از گذشته و به یکی از اولین منتقل شده است. ممکن است از جداول سیستم استفاده کنید [سیستم.\_خروج](../../../operations/system-tables.md#system_tables-part-log) (زمینه `type = MOVE_PART`) و [سیستم.قطعات](../../../operations/system-tables.md#system_tables-parts) (فیلدها `path` و `disk`) برای نظارت بر حرکت پس زمینه . همچنین, اطلاعات دقیق را می توان در سیاهههای مربوط به سرور پیدا شده است.
 
 کاربر می تواند نیروی حرکت بخشی یا پارتیشن از یک حجم به دیگری با استفاده از پرس و جو [ALTER TABLE … MOVE PART\|PARTITION … TO VOLUME\|DISK …](../../../sql-reference/statements/alter.md#alter_move-partition), تمام محدودیت برای عملیات پس زمینه در نظر گرفته شود. پرس و جو شروع یک حرکت به خودی خود و منتظر نیست برای عملیات پس زمینه به پایان خواهد رسید. کاربر یک پیام خطا اگر فضای رایگان به اندازه کافی در دسترس است و یا اگر هر یک از شرایط مورد نیاز را ملاقات کرد.
 

@@ -21,7 +21,6 @@
 #include <Interpreters/TextLog.h>
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
-#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Access/ContextAccess.h>
 #include <Access/AllowedClientHosts.h>
 #include <Databases/IDatabase.h>
@@ -134,23 +133,13 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
     auto manager = context.getActionLocksManager();
     manager->cleanExpired();
 
-    if (volume_ptr && action_type == ActionLocks::PartsMerge)
+    if (table_id)
     {
-        volume_ptr->setAvoidMergesUserOverride(!start);
-    }
-    else if (table_id)
-    {
-        auto table = DatabaseCatalog::instance().tryGetTable(table_id, context);
-        if (table)
-        {
-            if (start)
-            {
-                manager->remove(table, action_type);
-                table->onActionLockRemove(action_type);
-            }
-            else
-                manager->add(table, action_type);
-        }
+        context.checkAccess(getRequiredAccessType(action_type), table_id);
+        if (start)
+            manager->remove(table_id, action_type);
+        else
+            manager->add(table_id, action_type);
     }
     else
     {
@@ -175,10 +164,7 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
                 }
 
                 if (start)
-                {
                     manager->remove(table, action_type);
-                    table->onActionLockRemove(action_type);
-                }
                 else
                     manager->add(table, action_type);
             }
@@ -212,10 +198,6 @@ BlockIO InterpreterSystemQuery::execute()
 
     if (!query.target_dictionary.empty() && !query.database.empty())
         query.target_dictionary = query.database + "." + query.target_dictionary;
-
-    volume_ptr = {};
-    if (!query.storage_policy.empty() && !query.volume.empty())
-        volume_ptr = context.getStoragePolicy(query.storage_policy)->getVolumeByName(query.volume);
 
     switch (query.type)
     {
@@ -339,8 +321,7 @@ BlockIO InterpreterSystemQuery::execute()
                     [&] () { if (auto trace_log = context.getTraceLog()) trace_log->flush(true); },
                     [&] () { if (auto text_log = context.getTextLog()) text_log->flush(true); },
                     [&] () { if (auto metric_log = context.getMetricLog()) metric_log->flush(true); },
-                    [&] () { if (auto asynchronous_metric_log = context.getAsynchronousMetricLog()) asynchronous_metric_log->flush(true); },
-                    [&] () { if (auto opentelemetry_span_log = context.getOpenTelemetrySpanLog()) opentelemetry_span_log->flush(true); }
+                    [&] () { if (auto asynchronous_metric_log = context.getAsynchronousMetricLog()) asynchronous_metric_log->flush(true); }
             );
             break;
         case Type::STOP_LISTEN_QUERIES:

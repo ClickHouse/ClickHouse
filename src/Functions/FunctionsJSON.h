@@ -55,22 +55,22 @@ public:
     class Executor
     {
     public:
-        static ColumnPtr run(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count)
+        static void run(FunctionArguments & block, const ColumnNumbers & arguments, size_t result_pos, size_t input_rows_count)
         {
-            MutableColumnPtr to{result_type->createColumn()};
+            MutableColumnPtr to{block.getByPosition(result_pos).type->createColumn()};
             to->reserve(input_rows_count);
 
-            if (arguments.empty())
+            if (arguments.size() < 1)
                 throw Exception{"Function " + String(Name::name) + " requires at least one argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-            const auto & first_column = arguments[0];
+            const auto & first_column = block.getByPosition(arguments[0]);
             if (!isString(first_column.type))
                 throw Exception{"The first argument of function " + String(Name::name) + " should be a string containing JSON, illegal type: " + first_column.type->getName(),
                                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
             const ColumnPtr & arg_json = first_column.column;
-            const auto * col_json_const = typeid_cast<const ColumnConst *>(arg_json.get());
-            const auto * col_json_string
+            auto col_json_const = typeid_cast<const ColumnConst *>(arg_json.get());
+            auto col_json_string
                 = typeid_cast<const ColumnString *>(col_json_const ? col_json_const->getDataColumnPtr().get() : arg_json.get());
 
             if (!col_json_string)
@@ -79,8 +79,8 @@ public:
             const ColumnString::Chars & chars = col_json_string->getChars();
             const ColumnString::Offsets & offsets = col_json_string->getOffsets();
 
-            size_t num_index_arguments = Impl<JSONParser>::getNumberOfIndexArguments(arguments);
-            std::vector<Move> moves = prepareMoves(Name::name, arguments, 1, num_index_arguments);
+            size_t num_index_arguments = Impl<JSONParser>::getNumberOfIndexArguments(block, arguments);
+            std::vector<Move> moves = prepareMoves(Name::name, block, arguments, 1, num_index_arguments);
 
             /// Preallocate memory in parser if necessary.
             JSONParser parser;
@@ -94,8 +94,8 @@ public:
             Impl<JSONParser> impl;
 
             /// prepare() does Impl-specific preparation before handling each row.
-            if constexpr (has_member_function_prepare<void (Impl<JSONParser>::*)(const char *, const ColumnsWithTypeAndName &, const DataTypePtr &)>::value)
-                impl.prepare(Name::name, arguments, result_type);
+            if constexpr (has_member_function_prepare<void (Impl<JSONParser>::*)(const char *, const FunctionArguments &, const ColumnNumbers &, size_t)>::value)
+                impl.prepare(Name::name, block, arguments, result_pos);
 
             using Element = typename JSONParser::Element;
 
@@ -121,7 +121,7 @@ public:
                     /// Perform moves.
                     Element element;
                     std::string_view last_key;
-                    bool moves_ok = performMoves<JSONParser>(arguments, i, document, moves, element, last_key);
+                    bool moves_ok = performMoves<JSONParser>(block, arguments, i, document, moves, element, last_key);
 
                     if (moves_ok)
                         added_to_column = impl.insertResultToColumn(*to, element, last_key);
@@ -131,7 +131,7 @@ public:
                 if (!added_to_column)
                     to->insertDefault();
             }
-            return to;
+            block.getByPosition(result_pos).column = std::move(to);
         }
     };
 
@@ -166,11 +166,11 @@ private:
         String key;
     };
 
-    static std::vector<Move> prepareMoves(const char * function_name, const ColumnsWithTypeAndName & columns, size_t first_index_argument, size_t num_index_arguments);
+    static std::vector<Move> prepareMoves(const char * function_name, FunctionArguments & block, const ColumnNumbers & arguments, size_t first_index_argument, size_t num_index_arguments);
 
     /// Performs moves of types MoveType::Index and MoveType::ConstIndex.
     template <typename JSONParser>
-    static bool performMoves(const ColumnsWithTypeAndName & arguments, size_t row,
+    static bool performMoves(const FunctionArguments & block, const ColumnNumbers & arguments, size_t row,
                              const typename JSONParser::Element & document, const std::vector<Move> & moves,
                              typename JSONParser::Element & element, std::string_view & last_key)
     {
@@ -196,14 +196,14 @@ private:
                 }
                 case MoveType::Index:
                 {
-                    Int64 index = (*arguments[j + 1].column)[row].get<Int64>();
+                    Int64 index = (*block.getByPosition(arguments[j + 1]).column)[row].get<Int64>();
                     if (!moveToElementByIndex<JSONParser>(res_element, index, key))
                         return false;
                     break;
                 }
                 case MoveType::Key:
                 {
-                    key = std::string_view{(*arguments[j + 1].column).getDataAt(row)};
+                    key = std::string_view{(*block.getByPosition(arguments[j + 1]).column).getDataAt(row)};
                     if (!moveToElementByKey<JSONParser>(res_element, key))
                         return false;
                     break;
@@ -286,18 +286,21 @@ public:
         return Impl<DummyJSONParser>::getReturnType(Name::name, arguments);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result_pos, size_t input_rows_count) const override
     {
         /// Choose JSONParser.
 #if USE_SIMDJSON
         if (context.getSettingsRef().allow_simdjson)
-            return FunctionJSONHelpers::Executor<Name, Impl, SimdJSONParser>::run(arguments, result_type, input_rows_count);
+        {
+            FunctionJSONHelpers::Executor<Name, Impl, SimdJSONParser>::run(block, arguments, result_pos, input_rows_count);
+            return;
+        }
 #endif
 
 #if USE_RAPIDJSON
-        return FunctionJSONHelpers::Executor<Name, Impl, RapidJSONParser>::run(arguments, result_type, input_rows_count);
+        FunctionJSONHelpers::Executor<Name, Impl, RapidJSONParser>::run(block, arguments, result_pos, input_rows_count);
 #else
-        return FunctionJSONHelpers::Executor<Name, Impl, DummyJSONParser>::run(arguments, result_type, input_rows_count);
+        FunctionJSONHelpers::Executor<Name, Impl, DummyJSONParser>::run(block, arguments, result_pos, input_rows_count);
 #endif
     }
 
@@ -331,7 +334,7 @@ public:
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &) { return std::make_shared<DataTypeUInt8>(); }
 
-    static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
+    static size_t getNumberOfIndexArguments(const FunctionArguments &, const ColumnNumbers & arguments) { return arguments.size() - 1; }
 
     static bool insertResultToColumn(IColumn & dest, const Element &, const std::string_view &)
     {
@@ -359,7 +362,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName &) { return 0; }
+    static size_t getNumberOfIndexArguments(const FunctionArguments &, const ColumnNumbers &) { return 0; }
 
     static bool insertResultToColumn(IColumn & dest, const Element &, const std::string_view &)
     {
@@ -383,7 +386,7 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
+    static size_t getNumberOfIndexArguments(const FunctionArguments &, const ColumnNumbers & arguments) { return arguments.size() - 1; }
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {
@@ -413,7 +416,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
+    static size_t getNumberOfIndexArguments(const FunctionArguments &, const ColumnNumbers & arguments) { return arguments.size() - 1; }
 
     static bool insertResultToColumn(IColumn & dest, const Element &, const std::string_view & last_key)
     {
@@ -447,7 +450,7 @@ public:
         return std::make_shared<DataTypeEnum<Int8>>(values);
     }
 
-    static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
+    static size_t getNumberOfIndexArguments(const FunctionArguments &, const ColumnNumbers & arguments) { return arguments.size() - 1; }
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {
@@ -489,7 +492,7 @@ public:
         return std::make_shared<DataTypeNumber<NumberType>>();
     }
 
-    static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
+    static size_t getNumberOfIndexArguments(const FunctionArguments &, const ColumnNumbers & arguments) { return arguments.size() - 1; }
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {
@@ -554,7 +557,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
+    static size_t getNumberOfIndexArguments(const FunctionArguments &, const ColumnNumbers & arguments) { return arguments.size() - 1; }
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {
@@ -579,7 +582,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
+    static size_t getNumberOfIndexArguments(const FunctionArguments &, const ColumnNumbers & arguments) { return arguments.size() - 1; }
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {
@@ -906,11 +909,11 @@ public:
         return DataTypeFactory::instance().get(col_type_const->getValue<String>());
     }
 
-    static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 2; }
+    static size_t getNumberOfIndexArguments(const FunctionArguments &, const ColumnNumbers & arguments) { return arguments.size() - 2; }
 
-    void prepare(const char * function_name, const ColumnsWithTypeAndName &, const DataTypePtr & result_type)
+    void prepare(const char * function_name, const FunctionArguments & block, const ColumnNumbers &, size_t result_pos)
     {
-        extract_tree = JSONExtractTree<JSONParser>::build(function_name, result_type);
+        extract_tree = JSONExtractTree<JSONParser>::build(function_name, block.getByPosition(result_pos).type);
     }
 
     bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
@@ -947,10 +950,11 @@ public:
         return std::make_unique<DataTypeArray>(tuple_type);
     }
 
-    static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 2; }
+    static size_t getNumberOfIndexArguments(const FunctionArguments &, const ColumnNumbers & arguments) { return arguments.size() - 2; }
 
-    void prepare(const char * function_name, const ColumnsWithTypeAndName &, const DataTypePtr & result_type)
+    void prepare(const char * function_name, const FunctionArguments & block, const ColumnNumbers &, size_t result_pos)
     {
+        const auto & result_type = block.getByPosition(result_pos).type;
         const auto tuple_type = typeid_cast<const DataTypeArray *>(result_type.get())->getNestedType();
         const auto value_type = typeid_cast<const DataTypeTuple *>(tuple_type.get())->getElements()[1];
         extract_tree = JSONExtractTree<JSONParser>::build(function_name, value_type);
@@ -998,7 +1002,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
+    static size_t getNumberOfIndexArguments(const FunctionArguments &, const ColumnNumbers & arguments) { return arguments.size() - 1; }
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {
@@ -1102,7 +1106,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
 
-    static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
+    static size_t getNumberOfIndexArguments(const FunctionArguments &, const ColumnNumbers & arguments) { return arguments.size() - 1; }
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {
@@ -1134,7 +1138,7 @@ public:
         return std::make_unique<DataTypeArray>(tuple_type);
     }
 
-    static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
+    static size_t getNumberOfIndexArguments(const FunctionArguments &, const ColumnNumbers & arguments) { return arguments.size() - 1; }
 
     bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {

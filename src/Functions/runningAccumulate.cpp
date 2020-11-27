@@ -21,13 +21,13 @@ namespace
 {
 
 /** runningAccumulate(agg_state) - takes the states of the aggregate function and returns a column with values,
-  * are the result of the accumulation of these states for a set of columns lines, from the first to the current line.
+  * are the result of the accumulation of these states for a set of block lines, from the first to the current line.
   *
   * Quite unusual function.
   * Takes state of aggregate function (example runningAccumulate(uniqState(UserID))),
-  *  and for each row of columns, return result of aggregate function on merge of states of all previous rows and current row.
+  *  and for each row of block, return result of aggregate function on merge of states of all previous rows and current row.
   *
-  * So, result of function depends on partition of data to columnss and on order of data in columns.
+  * So, result of function depends on partition of data to blocks and on order of data in block.
   */
 class FunctionRunningAccumulate : public IFunction
 {
@@ -73,13 +73,13 @@ public:
         return type->getReturnType();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         const ColumnAggregateFunction * column_with_states
-            = typeid_cast<const ColumnAggregateFunction *>(&*arguments.at(0).column);
+            = typeid_cast<const ColumnAggregateFunction *>(&*block.getByPosition(arguments.at(0)).column);
 
         if (!column_with_states)
-            throw Exception("Illegal column " + arguments.at(0).column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments.at(0)).column->getName()
                     + " of first argument of function "
                     + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
@@ -87,7 +87,7 @@ public:
         ColumnPtr column_with_groups;
 
         if (arguments.size() == 2)
-            column_with_groups = arguments[1].column;
+            column_with_groups = block.getByPosition(arguments[1]).column;
 
         AggregateFunctionPtr aggregate_function_ptr = column_with_states->getAggregateFunction();
         const IAggregateFunction & agg_func = *aggregate_function_ptr;
@@ -130,7 +130,7 @@ public:
             ++row_number;
         }
 
-        return result_column_ptr;
+        block.getByPosition(result).column = std::move(result_column_ptr);
     }
 };
 

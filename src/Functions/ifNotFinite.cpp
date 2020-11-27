@@ -36,26 +36,28 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        auto is_finite_type = FunctionFactory::instance().get("isFinite", context)->build({arguments[0]})->getResultType();
-        auto if_type = FunctionFactory::instance().get("if", context)->build({{nullptr, is_finite_type, ""}, arguments[0], arguments[1]})->getResultType();
+        auto is_finite_type = FunctionFactory::instance().get("isFinite", context)->build({arguments[0]})->getReturnType();
+        auto if_type = FunctionFactory::instance().get("if", context)->build({{nullptr, is_finite_type, ""}, arguments[0], arguments[1]})->getReturnType();
         return if_type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        ColumnsWithTypeAndName is_finite_columns{arguments[0]};
-        auto is_finite = FunctionFactory::instance().get("isFinite", context)->build(is_finite_columns);
-        auto res = is_finite->execute(is_finite_columns, is_finite->getResultType(), input_rows_count);
+        ColumnsWithTypeAndName temp_block = block.data;
 
-        ColumnsWithTypeAndName if_columns
-        {
-            {res, is_finite->getResultType(), ""},
-            arguments[0],
-            arguments[1],
-        };
+        auto is_finite = FunctionFactory::instance().get("isFinite", context)->build({temp_block[arguments[0]]});
 
-        auto func_if = FunctionFactory::instance().get("if", context)->build(if_columns);
-        return func_if->execute(if_columns, result_type, input_rows_count);
+        size_t is_finite_pos = temp_block.size();
+        temp_block.emplace_back(ColumnWithTypeAndName{nullptr, is_finite->getReturnType(), ""});
+
+        auto func_if = FunctionFactory::instance().get("if", context)->build(
+            {temp_block[is_finite_pos], temp_block[arguments[0]], temp_block[arguments[1]]});
+
+        is_finite->execute(temp_block, {arguments[0]}, is_finite_pos, input_rows_count);
+
+        func_if->execute(temp_block, {is_finite_pos, arguments[0], arguments[1]}, result, input_rows_count);
+
+        block.getByPosition(result).column = std::move(temp_block[result].column);
     }
 
 private:

@@ -1,8 +1,3 @@
----
-toc_priority: 21
-toc_title: OnTime
----
-
 # OnTime {#ontime}
 
 Этот датасет может быть получен двумя способами:
