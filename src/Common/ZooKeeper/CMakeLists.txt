@@ -1,6 +1,8 @@
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
 
-add_subdirectory (etcd_protos)
+if (USE_GRPC)
+    add_subdirectory (etcd_protos)
+endif()
 
 add_headers_and_sources(clickhouse_common_zookeeper .)
 
@@ -12,7 +14,11 @@ set (CMAKE_CXX_CLANG_TIDY "")
 
 add_library(clickhouse_common_zookeeper ${clickhouse_common_zookeeper_headers} ${clickhouse_common_zookeeper_sources})
 
-target_link_libraries (clickhouse_common_zookeeper PUBLIC  clickhouse_etcd_protos clickhouse_common_io common PRIVATE string_utils)
+target_link_libraries (clickhouse_common_zookeeper PUBLIC clickhouse_common_io common PRIVATE string_utils)
+
+if (USE_GRPC)
+    target_link_libraries (clickhouse_common_zookeeper PUBLIC clickhouse_etcd_protos)
+endif()
 
 if (ENABLE_TESTS)
     add_subdirectory (tests)
