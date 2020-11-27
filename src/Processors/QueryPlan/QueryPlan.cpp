@@ -493,8 +493,16 @@ static bool tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Node *
 
     if (parent_expr && child_expr)
     {
-        auto merged = ActionsDAG::merge(std::move(*child_expr->getExpression()),
-                                        std::move(*parent_expr->getExpression()));
+        const auto & child_actions = child_expr->getExpression();
+        const auto & parent_actions = parent_expr->getExpression();
+
+        /// We cannot combine actions with arrayJoin and stateful function because we not always can reorder them.
+        /// Example: select rowNumberInBlock() from (select arrayJoin([1, 2]))
+        /// Such a query will return two zeroes if we combine actions together.
+        if (child_actions->hasArrayJoin() && parent_actions->hasStatefulFunctions())
+            return false;
+
+        auto merged = ActionsDAG::merge(std::move(*child_actions), std::move(*parent_actions));
 
         auto expr = std::make_unique<ExpressionStep>(child_expr->getInputStreams().front(), merged);
         expr->setStepDescription(parent_expr->getStepDescription() + " + " + child_expr->getStepDescription());

@@ -232,6 +232,7 @@ public:
     ActionsDAGPtr splitActionsBeforeArrayJoin(const NameSet & array_joined_columns);
 
     bool hasArrayJoin() const;
+    bool hasStatefulFunctions() const;
     bool empty() const; /// If actions only contain inputs.
 
     const ActionsSettings & getSettings() const { return settings; }
