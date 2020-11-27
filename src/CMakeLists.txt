@@ -223,7 +223,7 @@ if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELW
         Dictionaries/FlatDictionary.cpp
         Dictionaries/HashedDictionary.cpp
         Dictionaries/CacheDictionary.cpp
-        Dictionaries/TrieDictionary.cpp
+        Dictionaries/IPAddressDictionary.cpp
         Dictionaries/RangeHashedDictionary.cpp
         Dictionaries/ComplexKeyHashedDictionary.cpp
         Dictionaries/ComplexKeyCacheDictionary.cpp
@@ -305,7 +305,6 @@ endif()
 
 dbms_target_link_libraries (
     PRIVATE
-        ${BTRIE_LIBRARIES}
         boost::filesystem
         boost::program_options
         clickhouse_common_config
