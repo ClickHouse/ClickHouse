@@ -23,7 +23,8 @@
 
 std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext_t & context)
 {
-    std::stringstream error;
+    std::stringstream error;        // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    error.exceptions(std::ios::failbit);
     switch (sig)
     {
         case SIGSEGV:
@@ -318,7 +319,8 @@ static void toStringEveryLineImpl(
     const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
     std::unordered_map<std::string, DB::Dwarf> dwarfs;
 
-    std::stringstream out;
+    std::stringstream out;      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    out.exceptions(std::ios::failbit);
 
     for (size_t i = offset; i < size; ++i)
     {
@@ -357,7 +359,8 @@ static void toStringEveryLineImpl(
         out.str({});
     }
 #else
-    std::stringstream out;
+    std::stringstream out;      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    out.exceptions(std::ios::failbit);
 
     for (size_t i = offset; i < size; ++i)
     {
@@ -372,7 +375,8 @@ static void toStringEveryLineImpl(
 
 static std::string toStringImpl(const StackTrace::FramePointers & frame_pointers, size_t offset, size_t size)
 {
-    std::stringstream out;
+    std::stringstream out;      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    out.exceptions(std::ios::failbit);
     toStringEveryLineImpl(frame_pointers, offset, size, [&](const std::string & str) { out << str << '\n'; });
     return out.str();
 }

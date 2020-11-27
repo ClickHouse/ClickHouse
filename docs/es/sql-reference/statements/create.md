@@ -291,7 +291,7 @@ CREATE DICTIONARY [IF NOT EXISTS] [db.]dictionary_name [ON CLUSTER cluster]
 PRIMARY KEY key1, key2
 SOURCE(SOURCE_NAME([param1 value1 ... paramN valueN]))
 LAYOUT(LAYOUT_NAME([param_name param_value]))
-LIFETIME([MIN val1] MAX val2)
+LIFETIME({MIN min_val MAX max_val | max_val})
 ```
 
 Crear [diccionario externo](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) con dado [estructura](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md), [fuente](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md), [diseño](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md) y [vida](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).

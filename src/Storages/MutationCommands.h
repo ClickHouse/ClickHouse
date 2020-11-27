@@ -43,8 +43,10 @@ struct MutationCommand
     /// Columns with corresponding actions
     std::unordered_map<String, ASTPtr> column_to_update_expression;
 
-    /// For MATERIALIZE INDEX
+    /// For MATERIALIZE INDEX.
     String index_name;
+
+    /// For MATERIALIZE INDEX, UPDATE and DELETE.
     ASTPtr partition;
 
     /// For reads, drops and etc.

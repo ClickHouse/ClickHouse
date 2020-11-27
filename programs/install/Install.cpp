@@ -329,14 +329,20 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         bool has_password_for_default_user = false;
 
-        if (!fs::exists(main_config_file))
+        if (!fs::exists(config_d))
         {
             fmt::print("Creating config directory {} that is used for tweaks of main server configuration.\n", config_d.string());
             fs::create_directory(config_d);
+        }
 
+        if (!fs::exists(users_d))
+        {
             fmt::print("Creating config directory {} that is used for tweaks of users configuration.\n", users_d.string());
             fs::create_directory(users_d);
+        }
 
+        if (!fs::exists(main_config_file))
+        {
             std::string_view main_config_content = getResource("config.xml");
             if (main_config_content.empty())
             {
@@ -349,7 +355,30 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 out.sync();
                 out.finalize();
             }
+        }
+        else
+        {
+            fmt::print("Config file {} already exists, will keep it and extract path info from it.\n", main_config_file.string());
 
+            ConfigProcessor processor(main_config_file.string(), /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
+            ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(processor.processConfig()));
+
+            if (configuration->has("path"))
+            {
+                data_path = configuration->getString("path");
+                fmt::print("{} has {} as data path.\n", main_config_file.string(), data_path);
+            }
+
+            if (configuration->has("logger.log"))
+            {
+                log_path = fs::path(configuration->getString("logger.log")).remove_filename();
+                fmt::print("{} has {} as log path.\n", main_config_file.string(), log_path);
+            }
+        }
+
+
+        if (!fs::exists(users_config_file))
+        {
             std::string_view users_config_content = getResource("users.xml");
             if (users_config_content.empty())
             {
@@ -365,38 +394,17 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         }
         else
         {
-            {
-                fmt::print("Config file {} already exists, will keep it and extract path info from it.\n", main_config_file.string());
-
-                ConfigProcessor processor(main_config_file.string(), /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
-                ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(processor.processConfig()));
-
-                if (configuration->has("path"))
-                {
-                    data_path = configuration->getString("path");
-                    fmt::print("{} has {} as data path.\n", main_config_file.string(), data_path);
-                }
-
-                if (configuration->has("logger.log"))
-                {
-                    log_path = fs::path(configuration->getString("logger.log")).remove_filename();
-                    fmt::print("{} has {} as log path.\n", main_config_file.string(), log_path);
-                }
-            }
+            fmt::print("Users config file {} already exists, will keep it and extract users info from it.\n", users_config_file.string());
 
             /// Check if password for default user already specified.
+            ConfigProcessor processor(users_config_file.string(), /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
+            ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(processor.processConfig()));
 
-            if (fs::exists(users_config_file))
+            if (!configuration->getString("users.default.password", "").empty()
+                || configuration->getString("users.default.password_sha256_hex", "").empty()
+                || configuration->getString("users.default.password_double_sha1_hex", "").empty())
             {
-                ConfigProcessor processor(users_config_file.string(), /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
-                ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(processor.processConfig()));
-
-                if (!configuration->getString("users.default.password", "").empty()
-                    || configuration->getString("users.default.password_sha256_hex", "").empty()
-                    || configuration->getString("users.default.password_double_sha1_hex", "").empty())
-                {
-                    has_password_for_default_user = true;
-                }
+                has_password_for_default_user = true;
             }
         }
 

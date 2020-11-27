@@ -133,6 +133,18 @@ void MergedBlockOutputStream::finalizePartOnDisk(
     MergeTreeData::DataPart::Checksums & checksums,
     bool sync)
 {
+    if (new_part->uuid != UUIDHelpers::Nil)
+    {
+        auto out = volume->getDisk()->writeFile(part_path + IMergeTreeDataPart::UUID_FILE_NAME, 4096);
+        HashingWriteBuffer out_hashing(*out);
+        writeUUIDText(new_part->uuid, out_hashing);
+        checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_size = out_hashing.count();
+        checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_hash = out_hashing.getHash();
+        out->finalize();
+        if (sync)
+            out->sync();
+    }
+
     if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || isCompactPart(new_part))
     {
         new_part->partition.store(storage, volume->getDisk(), part_path, checksums);

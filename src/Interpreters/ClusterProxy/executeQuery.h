@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Parsers/IAST.h>
-#include <Interpreters/Cluster.h>
 
 namespace DB
 {
@@ -12,6 +11,7 @@ class Cluster;
 struct SelectQueryInfo;
 
 class Pipe;
+class QueryPlan;
 
 namespace ClusterProxy
 {
@@ -32,9 +32,10 @@ Context updateSettingsForCluster(const Cluster & cluster, const Context & contex
 /// Execute a distributed query, creating a vector of BlockInputStreams, from which the result can be read.
 /// `stream_factory` object encapsulates the logic of creating streams for a different type of query
 /// (currently SELECT, DESCRIBE).
-Pipe executeQuery(
-    IStreamFactory & stream_factory, const ClusterPtr & cluster, Poco::Logger * log,
-    const ASTPtr & query_ast, const Context & context, const Settings & settings, const SelectQueryInfo & query_info);
+void executeQuery(
+    QueryPlan & query_plan,
+    IStreamFactory & stream_factory, Poco::Logger * log,
+    const ASTPtr & query_ast, const Context & context, const SelectQueryInfo & query_info);
 
 }
 

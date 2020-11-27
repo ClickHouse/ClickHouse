@@ -13,6 +13,7 @@
 #include <Common/LRUCache.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Storages/IStorage_fwd.h>
 #include <atomic>
 #include <chrono>
@@ -62,7 +63,6 @@ class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalModelsLoader;
 class InterserverIOHandler;
-class BackgroundProcessingPool;
 class BackgroundSchedulePool;
 class MergeList;
 class ReplicatedFetchList;
@@ -113,6 +113,7 @@ using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
 struct NamedSession;
+struct BackgroundTaskSchedulingSettings;
 
 
 #if USE_EMBEDDED_COMPILER
@@ -198,6 +199,12 @@ private:
     Context * session_context = nullptr;    /// Session context or nullptr. Could be equal to this.
     Context * global_context = nullptr;     /// Global context. Could be equal to this.
 
+public:
+    // Top-level OpenTelemetry trace context for the query. Makes sense only for
+    // a query context.
+    OpenTelemetryTraceContext query_trace_context;
+
+private:
     friend class NamedSessions;
 
     using SampleBlockCache = std::unordered_map<std::string, Block>;
@@ -487,6 +494,9 @@ public:
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
     /// Same as above but return a zookeeper connection from auxiliary_zookeepers configuration entry.
     std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
+
+    /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
+    void reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config);
     /// Has ready or expired ZooKeeper
     bool hasZooKeeper() const;
     /// Reset current zookeeper session. Do not create a new one.
@@ -512,12 +522,16 @@ public:
       */
     void dropCaches() const;
 
-    BackgroundSchedulePool & getBufferFlushSchedulePool();
-    BackgroundProcessingPool & getBackgroundPool();
-    BackgroundProcessingPool & getBackgroundMovePool();
-    BackgroundSchedulePool & getSchedulePool();
-    BackgroundSchedulePool & getDistributedSchedulePool();
+    /// Settings for MergeTree background tasks stored in config.xml
+    BackgroundTaskSchedulingSettings getBackgroundProcessingTaskSchedulingSettings() const;
+    BackgroundTaskSchedulingSettings getBackgroundMoveTaskSchedulingSettings() const;
 
+    BackgroundSchedulePool & getBufferFlushSchedulePool() const;
+    BackgroundSchedulePool & getSchedulePool() const;
+    BackgroundSchedulePool & getDistributedSchedulePool() const;
+
+    /// Has distributed_ddl configuration or not.
+    bool hasDistributedDDL() const;
     void setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker);
     DDLWorker & getDDLWorker() const;
 
