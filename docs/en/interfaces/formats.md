@@ -25,8 +25,8 @@ The supported formats are:
 | [Vertical](#vertical)                                                                   | ✗     | ✔      |
 | [VerticalRaw](#verticalraw)                                                             | ✗     | ✔      |
 | [JSON](#json)                                                                           | ✗     | ✔      |
-| [JSONAsString](#json)                                                                   | ✗     | ✗      |
-| [JSONString](#jsonasstring)                                                             | ✔     | ✔      |
+| [JSONAsString](#jsonasstring)                                                           | ✔     | ✗      |
+| [JSONString](#jsonstring)                                                               | ✗     | ✔      |
 | [JSONCompact](#jsoncompact)                                                             | ✗     | ✔      |
 | [JSONCompactString](#jsoncompactstring)                                                 | ✗     | ✔      |
 | [JSONEachRow](#jsoneachrow)                                                             | ✔     | ✔      |
