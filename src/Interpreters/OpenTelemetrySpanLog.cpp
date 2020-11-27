@@ -110,7 +110,7 @@ OpenTelemetrySpanHolder::~OpenTelemetrySpanHolder()
 
         // First of all, return old value of current span.
         auto & thread = CurrentThread::get();
-        assert(thread.thread_trace_context.span_id = span_id);
+        assert(thread.thread_trace_context.span_id == span_id);
         thread.thread_trace_context.span_id = parent_span_id;
 
         // Not sure what's the best way to access the log from here.
