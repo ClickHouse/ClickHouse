@@ -1,0 +1,16 @@
+drop table if exists a;
+create table a on cluster test_shard_localhost (i int) engine Log;
+drop table a on cluster test_shard_localhost;
+create table a on cluster test_shard_localhost (i int) engine Log;
+drop table a on cluster test_shard_localhost;
+create table a on cluster test_shard_localhost (i int) engine Log;
+drop table a on cluster test_shard_localhost;
+create table a on cluster test_shard_localhost (i int) engine Log;
+drop table a on cluster test_shard_localhost;
+create table a on cluster test_shard_localhost (i int) engine Log;
+drop table a on cluster test_shard_localhost;
+create table a on cluster test_shard_localhost (i int) engine Log;
+drop table a on cluster test_shard_localhost;
+create table a on cluster test_shard_localhost (i int) engine Log;
+drop table a on cluster test_shard_localhost;
+select * from system.metrics where metric = 'MaxDDLEntryID';
