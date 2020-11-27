@@ -55,9 +55,9 @@ void ITransformingStep::updateDistinctColumns(const Block & res_header, NameSet 
     if (distinct_columns.empty())
         return;
 
-    for (const auto & column : res_header)
+    for (const auto & column : distinct_columns)
     {
-        if (distinct_columns.count(column.name) == 0)
+        if (!res_header.has(column))
         {
             distinct_columns.clear();
             break;

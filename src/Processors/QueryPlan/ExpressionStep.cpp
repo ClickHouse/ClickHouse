@@ -93,7 +93,6 @@ InflatingExpressionStep::InflatingExpressionStep(const DataStream & input_stream
         getTraits(expression_))
     , expression(std::move(expression_))
 {
-    updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
 }
 
 void InflatingExpressionStep::transformPipeline(QueryPipeline & pipeline)
