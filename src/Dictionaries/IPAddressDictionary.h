@@ -7,6 +7,9 @@
 #include <Columns/ColumnString.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/HashMap.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnVector.h>
+#include <Poco/Net/IPAddress.h>
 #include <common/StringRef.h>
 #include <common/logger_useful.h>
 #include <ext/range.h>
@@ -14,22 +17,17 @@
 #include "IDictionary.h"
 #include "IDictionarySource.h"
 
-struct btrie_s;
-typedef struct btrie_s btrie_t;
-
 namespace DB
 {
-class TrieDictionary final : public IDictionaryBase
+class IPAddressDictionary final : public IDictionaryBase
 {
 public:
-    TrieDictionary(
+    IPAddressDictionary(
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
         const DictionaryLifetime dict_lifetime_,
         bool require_nonempty_);
-
-    ~TrieDictionary() override;
 
     std::string getKeyDescription() const { return key_description; }
 
@@ -47,7 +45,7 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<TrieDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty);
+        return std::make_shared<IPAddressDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
@@ -150,8 +148,16 @@ public:
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
 private:
+
     template <typename Value>
     using ContainerType = std::vector<Value>;
+
+    using IPAddress = Poco::Net::IPAddress;
+
+    using IPv4Container = PODArray<UInt32>;
+    using IPv6Container = PaddedPODArray<UInt8>;
+    using IPMaskContainer = PODArray<UInt8>;
+    using RowIdxConstIter = ContainerType<size_t>::const_iterator;
 
     struct Attribute final
     {
@@ -207,16 +213,18 @@ private:
 
     Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
 
+    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
+    void getItemsByTwoKeyColumnsImpl(
+        const Attribute & attribute, const Columns & key_columns, ValueSetter && set_value, DefaultGetter && get_default) const;
 
     template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
     void
     getItemsImpl(const Attribute & attribute, const Columns & key_columns, ValueSetter && set_value, DefaultGetter && get_default) const;
 
-
     template <typename T>
-    bool setAttributeValueImpl(Attribute & attribute, const StringRef key, const T value);
+    void setAttributeValueImpl(Attribute & attribute, const T value);
 
-    bool setAttributeValue(Attribute & attribute, const StringRef key, const Field & value);
+    void setAttributeValue(Attribute & attribute, const Field & value);
 
     const Attribute & getAttribute(const std::string & attribute_name) const;
 
@@ -224,6 +232,14 @@ private:
     void has(const Attribute & attribute, const Columns & key_columns, PaddedPODArray<UInt8> & out) const;
 
     Columns getKeyColumns() const;
+    RowIdxConstIter ipNotFound() const;
+    RowIdxConstIter tryLookupIPv4(UInt32 addr, uint8_t * buf) const;
+    RowIdxConstIter tryLookupIPv6(const uint8_t * addr) const;
+
+    template <typename IPContainerType, typename IPValueType>
+    RowIdxConstIter lookupIP(IPValueType target) const;
+
+    static const uint8_t * getIPv6FromOffset(const IPv6Container & ipv6_col, size_t i);
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
@@ -231,8 +247,22 @@ private:
     const bool require_nonempty;
     const std::string key_description{dict_struct.getKeyDescription()};
 
+    /// Contains sorted IP subnetworks. If some addresses equals, subnet with lower mask is placed first.
+    std::variant<IPv4Container, IPv6Container> ip_column;
 
-    btrie_t * trie = nullptr;
+    /// Prefix lengths corresponding to ip_column.
+    IPMaskContainer mask_column;
+
+    /** Contains links to parent subnetworks in ip_column.
+      * Array holds such ip_column's (and mask_column's) indices that
+      * - if parent_subnet[i] < i, then ip_column[i] is subnetwork of ip_column[parent_subnet[i]],
+      * - if parent_subnet[i] == i, then ip_column[i] doesn't belong to any other subnet.
+      */
+    ContainerType<size_t> parent_subnet;
+
+    /// Contains corresponding indices in attributes array.
+    ContainerType<size_t> row_idx;
+
     std::map<std::string, size_t> attribute_index_by_name;
     std::vector<Attribute> attributes;
 

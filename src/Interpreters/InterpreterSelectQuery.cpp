@@ -1177,7 +1177,7 @@ void InterpreterSelectQuery::executeFetchColumns(
         const auto & func = desc.function;
         std::optional<UInt64> num_rows{};
         if (!query.prewhere() && !query.where())
-            num_rows = storage->totalRows();
+            num_rows = storage->totalRows(settings);
         else // It's possible to optimize count() given only partition predicates
         {
             SelectQueryInfo temp_query_info;
