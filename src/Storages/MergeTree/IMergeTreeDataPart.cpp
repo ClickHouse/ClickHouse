@@ -16,6 +16,7 @@
 #include <common/logger_useful.h>
 #include <Compression/getCompressionCodecForFile.h>
 #include <Parsers/queryToString.h>
+#include <DataTypes/NestedUtils.h>
 
 namespace DB
 {
@@ -194,7 +195,7 @@ std::optional<size_t> IMergeTreeDataPart::getColumnPosition(const String & colum
 
 std::optional<size_t> IMergeTreeDataPart::getColumnPosition(const NameAndTypePair & column) const
 {
-    return getColumnPosition(column.getStorageName());
+    return getColumnPosition(column.name);
 }
 
 DayNum IMergeTreeDataPart::getMinDate() const
@@ -238,7 +239,12 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns)
     column_name_to_position.reserve(new_columns.size());
     size_t pos = 0;
     for (const auto & column : columns)
-        column_name_to_position.emplace(column.name, pos++);
+    {
+        column_name_to_position.emplace(column.name, pos);
+        for (const auto & subcolumn : column.type->getSubcolumnNames())
+            column_name_to_position.emplace(Nested::concatenateName(column.name, subcolumn), pos);
+        ++pos;
+    }
 }
 
 IMergeTreeDataPart::~IMergeTreeDataPart() = default;
