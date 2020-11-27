@@ -115,21 +115,7 @@ Returns the “first significant subdomain”. This is a non-standard concept sp
 
 Returns the part of the domain that includes top-level subdomains up to the “first significant subdomain” (see the explanation above).
 
-For example:
-
--   `cutToFirstSignificantSubdomain('https://news.yandex.com.tr/') = 'yandex.com.tr'`.
--   `cutToFirstSignificantSubdomain('www.tr') = 'tr'`.
--   `cutToFirstSignificantSubdomain('tr') = ''`.
-
-### cutToFirstSignificantSubdomainWithWWW {#cuttofirstsignificantsubdomainwithwww}
-
-Returns the part of the domain that includes top-level subdomains up to the “first significant subdomain”, without stripping "www".
-
-For example:
-
--   `cutToFirstSignificantSubdomain('https://news.yandex.com.tr/') = 'yandex.com.tr'`.
--   `cutToFirstSignificantSubdomain('www.tr') = 'www.tr'`.
--   `cutToFirstSignificantSubdomain('tr') = ''`.
+For example, `cutToFirstSignificantSubdomain('https://news.yandex.com.tr/') = 'yandex.com.tr'`.
 
 ### port(URL\[, default_port = 0\]) {#port}
 

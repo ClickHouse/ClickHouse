@@ -30,7 +30,7 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_res = ColumnVector<UInt128>::create();
         typename ColumnVector<UInt128>::Container & vec_to = col_res->getData();
@@ -70,7 +70,7 @@ public:
     #endif
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return selector.selectAndExecute(arguments, result_type, input_rows_count);
     }

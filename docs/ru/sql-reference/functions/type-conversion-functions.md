@@ -319,62 +319,6 @@ SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
 
 Функция принимает число или дату или дату-с-временем и возвращает строку, содержащую байты, представляющие соответствующее значение в host order (little endian). При этом, отбрасываются нулевые байты с конца. Например, значение 255 типа UInt32 будет строкой длины 1 байт.
 
-## reinterpretAsUUID {#reinterpretasuuid}
-
-Функция принимает шестнадцатибайтную строку и интерпретирует ее байты в network order (big-endian). Если строка имеет недостаточную длину, то функция работает так, как будто строка дополнена необходимым количетсвом нулевых байт с конца. Если строка длиннее, чем шестнадцать байт, то игнорируются лишние байты с конца.
-
-**Синтаксис**
-
-``` sql
-reinterpretAsUUID(fixed_string)
-```
-
-**Параметры**
-
--   `fixed_string` — cтрока с big-endian порядком байтов. [FixedString](../../sql-reference/data-types/fixedstring.md#fixedstring).
-
-**Возвращаемое значение**
-
--   Значение типа [UUID](../../sql-reference/data-types/uuid.md#uuid-data-type).
-
-**Примеры**
-
-Интерпретация строки как UUID.
-
-Запрос:
-
-``` sql
-SELECT reinterpretAsUUID(reverse(unhex('000102030405060708090a0b0c0d0e0f')))
-```
-
-Результат:
-
-``` text
-┌─reinterpretAsUUID(reverse(unhex('000102030405060708090a0b0c0d0e0f')))─┐
-│                                  08090a0b-0c0d-0e0f-0001-020304050607 │
-└───────────────────────────────────────────────────────────────────────┘
-```
-
-Переход в UUID и обратно.
-
-Запрос:
-
-``` sql
-WITH
-    generateUUIDv4() AS uuid,
-    identity(lower(hex(reverse(reinterpretAsString(uuid))))) AS str,
-    reinterpretAsUUID(reverse(unhex(str))) AS uuid2
-SELECT uuid = uuid2;
-```
-
-Результат:
-
-``` text
-┌─equals(uuid, uuid2)─┐
-│                   1 │
-└─────────────────────┘
-```
-
 ## CAST(x, T) {#type_conversion_function-cast}
 
 Преобразует x в тип данных t.

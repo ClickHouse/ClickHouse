@@ -15,9 +15,7 @@
 
 #include <Processors/Pipe.h>
 #include <Processors/Transforms/MaterializingTransform.h>
-#include <Processors/QueryPlan/MaterializingStep.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
+#include <Processors/Transforms/ConvertingTransform.h>
 
 namespace DB
 {
@@ -52,27 +50,14 @@ StorageView::StorageView(
 Pipe StorageView::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & query_info,
+    const SelectQueryInfo & query_info,
     const Context & context,
-    QueryProcessingStage::Enum processed_stage,
-    const size_t max_block_size,
-    const unsigned num_streams)
+    QueryProcessingStage::Enum /*processed_stage*/,
+    const size_t /*max_block_size*/,
+    const unsigned /*num_streams*/)
 {
-    QueryPlan plan;
-    read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe();
-}
+    Pipes pipes;
 
-void StorageView::read(
-        QueryPlan & query_plan,
-        const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
-        SelectQueryInfo & query_info,
-        const Context & context,
-        QueryProcessingStage::Enum /*processed_stage*/,
-        const size_t /*max_block_size*/,
-        const unsigned /*num_streams*/)
-{
     ASTPtr current_inner_query = metadata_snapshot->getSelectQuery().inner_query;
 
     if (query_info.view_query)
@@ -83,24 +68,25 @@ void StorageView::read(
     }
 
     InterpreterSelectWithUnionQuery interpreter(current_inner_query, context, {}, column_names);
-    interpreter.buildQueryPlan(query_plan);
+
+    auto pipeline = interpreter.execute().pipeline;
 
     /// It's expected that the columns read from storage are not constant.
     /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
-    auto materializing = std::make_unique<MaterializingStep>(query_plan.getCurrentDataStream());
-    materializing->setStepDescription("Materialize constants after VIEW subquery");
-    query_plan.addStep(std::move(materializing));
+    pipeline.addSimpleTransform([](const Block & header)
+    {
+        return std::make_shared<MaterializingTransform>(header);
+    });
 
     /// And also convert to expected structure.
-    auto header = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
-    auto convert_actions_dag = ActionsDAG::makeConvertingActions(
-            query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
-            header.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Name);
+    pipeline.addSimpleTransform([&](const Block & header)
+    {
+        return std::make_shared<ConvertingTransform>(
+            header, metadata_snapshot->getSampleBlockForColumns(
+                column_names, getVirtuals(), getStorageID()), ConvertingTransform::MatchColumnsMode::Name);
+    });
 
-    auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), convert_actions_dag);
-    converting->setStepDescription("Convert VIEW subquery result to VIEW table structure");
-    query_plan.addStep(std::move(converting));
+    return QueryPipeline::getPipe(std::move(pipeline));
 }
 
 static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_query)

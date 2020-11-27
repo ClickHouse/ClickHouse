@@ -12,16 +12,16 @@ import rbac.helper.errors as errors
 def create(self, node=None):
     """Test the RBAC functionality of the `CREATE VIEW` command.
     """
-    Scenario(run=create_without_create_view_privilege, setup=instrument_clickhouse_server_log)
-    Scenario(run=create_with_create_view_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
-    Scenario(run=create_with_revoked_create_view_privilege_revoked_directly_or_from_role, setup=instrument_clickhouse_server_log)
-    Scenario(run=create_without_source_table_privilege, setup=instrument_clickhouse_server_log)
-    Scenario(run=create_with_source_table_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
-    Scenario(run=create_with_subquery_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
-    Scenario(run=create_with_join_query_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
-    Scenario(run=create_with_union_query_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
-    Scenario(run=create_with_join_union_subquery_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
-    Scenario(run=create_with_nested_views_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
+    Scenario(run=create_without_create_view_privilege)
+    Scenario(run=create_with_create_view_privilege_granted_directly_or_via_role)
+    Scenario(run=create_with_revoked_create_view_privilege_revoked_directly_or_from_role)
+    Scenario(run=create_without_source_table_privilege)
+    Scenario(run=create_with_source_table_privilege_granted_directly_or_via_role)
+    Scenario(run=create_with_subquery_privilege_granted_directly_or_via_role)
+    Scenario(run=create_with_join_query_privilege_granted_directly_or_via_role)
+    Scenario(run=create_with_union_query_privilege_granted_directly_or_via_role)
+    Scenario(run=create_with_join_union_subquery_privilege_granted_directly_or_via_role)
+    Scenario(run=create_with_nested_views_privilege_granted_directly_or_via_role)
 
 @TestScenario
 def create_without_create_view_privilege(self, node=None):
@@ -525,16 +525,16 @@ def create_with_nested_views(self, grant_target_name, user_name, node=None):
 def select(self, node=None):
     """Test the RBAC functionality of the `SELECT FROM view` command.
     """
-    Scenario(run=select_without_select_privilege, setup=instrument_clickhouse_server_log)
-    Scenario(run=select_with_select_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
-    Scenario(run=select_with_select_privilege_revoked_directly_or_from_role, setup=instrument_clickhouse_server_log)
-    Scenario(run=select_without_source_table_privilege, setup=instrument_clickhouse_server_log)
-    Scenario(run=select_with_source_table_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
-    Scenario(run=select_with_subquery_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
-    Scenario(run=select_with_join_query_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
-    Scenario(run=select_with_union_query_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
-    Scenario(run=select_with_join_union_subquery_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
-    Scenario(run=select_with_nested_views_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
+    Scenario(run=select_without_select_privilege)
+    Scenario(run=select_with_select_privilege_granted_directly_or_via_role)
+    Scenario(run=select_with_select_privilege_revoked_directly_or_from_role)
+    Scenario(run=select_without_source_table_privilege)
+    Scenario(run=select_with_source_table_privilege_granted_directly_or_via_role)
+    Scenario(run=select_with_subquery_privilege_granted_directly_or_via_role)
+    Scenario(run=select_with_join_query_privilege_granted_directly_or_via_role)
+    Scenario(run=select_with_union_query_privilege_granted_directly_or_via_role)
+    Scenario(run=select_with_join_union_subquery_privilege_granted_directly_or_via_role)
+    Scenario(run=select_with_nested_views_privilege_granted_directly_or_via_role)
 
 @TestScenario
 def select_without_select_privilege(self, node=None):
@@ -1039,8 +1039,8 @@ def select_with_nested_views(self, grant_target_name, user_name, node=None):
 def drop(self, node=None):
     """Test the RBAC functionality of the `DROP VIEW` command.
     """
-    Scenario(run=drop_with_privilege_granted_directly_or_via_role, setup=instrument_clickhouse_server_log)
-    Scenario(run=drop_with_revoked_privilege_revoked_directly_or_from_role, setup=instrument_clickhouse_server_log)
+    Scenario(run=drop_with_privilege_granted_directly_or_via_role)
+    Scenario(run=drop_with_revoked_privilege_revoked_directly_or_from_role)
 
 @TestScenario
 

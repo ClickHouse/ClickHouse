@@ -67,7 +67,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr & c0 = arguments[0].column;
         const ColumnConst * c0_const_string = typeid_cast<const ColumnConst *>(&*c0);

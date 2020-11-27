@@ -318,7 +318,7 @@ void HTTPHandler::processQuery(
     {
         std::string opentelemetry_traceparent = request.get("traceparent");
         std::string error;
-        if (!context.getClientInfo().client_trace_context.parseTraceparentHeader(
+        if (!context.getClientInfo().parseTraceparentHeader(
             opentelemetry_traceparent, error))
         {
             throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER,
@@ -326,7 +326,7 @@ void HTTPHandler::processQuery(
                 opentelemetry_traceparent, error);
         }
 
-        context.getClientInfo().client_trace_context.tracestate = request.get("tracestate", "");
+        context.getClientInfo().opentelemetry_tracestate = request.get("tracestate", "");
     }
 #endif
 
@@ -351,8 +351,6 @@ void HTTPHandler::processQuery(
             http_response_compression_method = CompressionMethod::Gzip;
         else if (std::string::npos != http_response_compression_methods.find("deflate"))
             http_response_compression_method = CompressionMethod::Zlib;
-        else if (std::string::npos != http_response_compression_methods.find("xz"))
-            http_response_compression_method = CompressionMethod::Xz;
     }
 
     bool client_supports_http_compression = http_response_compression_method != CompressionMethod::None;

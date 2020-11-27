@@ -122,7 +122,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /* input_rows_count */) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /* input_rows_count */) const override
     {
         const IDataType * from_type = arguments[0].type.get();
         const auto * array_type = typeid_cast<const DataTypeArray *>(from_type);
@@ -146,7 +146,7 @@ public:
 
 private:
     template <typename T>
-    ColumnPtr executeBitmapData(DataTypes & argument_types, const ColumnsWithTypeAndName & arguments) const
+    ColumnPtr executeBitmapData(DataTypes & argument_types, ColumnsWithTypeAndName & arguments) const
     {
         // input data
         const ColumnArray * array = typeid_cast<const ColumnArray *>(arguments[0].column.get());
@@ -207,7 +207,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         // input data
         const auto & return_type = result_type;
@@ -240,7 +240,7 @@ private:
 
     template <typename T>
     void executeIntType(
-            const ColumnsWithTypeAndName & arguments, size_t input_rows_count, IColumn & res_data_col, ColumnArray::Offsets & res_offsets)
+            ColumnsWithTypeAndName & arguments, size_t input_rows_count, IColumn & res_data_col, ColumnArray::Offsets & res_offsets)
         const
     {
         const ColumnAggregateFunction * column
@@ -299,7 +299,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const IDataType * from_type = arguments[0].type.get();
         const DataTypeAggregateFunction * aggr_type = typeid_cast<const DataTypeAggregateFunction *>(from_type);
@@ -321,7 +321,7 @@ private:
     using ToType = UInt64;
 
     template <typename T>
-    ColumnPtr executeIntType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    ColumnPtr executeIntType(ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         const IColumn * column_ptrs[3];
         bool is_column_const[3];
@@ -417,7 +417,7 @@ public:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         for (size_t i = 0; i < 2; ++i)
         {
-            const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[i + 1].get());
+            auto array_type = typeid_cast<const DataTypeArray *>(arguments[i + 1].get());
             String msg(i == 0 ? "Second" : "Third");
             msg += " argument for function " + getName() + " must be an UInt32 array but it has type " + arguments[i + 1]->getName() + ".";
             if (!array_type)
@@ -433,7 +433,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const IDataType * from_type = arguments[0].type.get();
         const DataTypeAggregateFunction * aggr_type = typeid_cast<const DataTypeAggregateFunction *>(from_type);
@@ -455,7 +455,7 @@ private:
     using ToType = UInt64;
 
     template <typename T>
-    ColumnPtr executeIntType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    ColumnPtr executeIntType(ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         const IColumn * column_ptrs[3];
         bool is_column_const[3];
@@ -565,7 +565,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_to = ColumnVector<ToType>::create(input_rows_count);
         typename ColumnVector<ToType>::Container & vec_to = col_to->getData();
@@ -593,7 +593,7 @@ private:
 
     template <typename T>
     void executeIntType(
-            const ColumnsWithTypeAndName & arguments, size_t input_rows_count, typename ColumnVector<ToType>::Container & vec_to) const
+            ColumnsWithTypeAndName & arguments, size_t input_rows_count, typename ColumnVector<ToType>::Container & vec_to) const
     {
         const ColumnAggregateFunction * column
             = typeid_cast<const ColumnAggregateFunction *>(arguments[0].column.get());
@@ -735,7 +735,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_to = ColumnVector<UInt8>::create(input_rows_count);
         typename ColumnVector<UInt8>::Container & vec_to = col_to->getData();
@@ -761,7 +761,7 @@ public:
 private:
     template <typename T>
     void executeIntType(
-            const ColumnsWithTypeAndName & arguments, size_t input_rows_count, typename ColumnVector<UInt8>::Container & vec_to) const
+            ColumnsWithTypeAndName & arguments, size_t input_rows_count, typename ColumnVector<UInt8>::Container & vec_to) const
     {
         const IColumn * column_ptrs[2];
         bool is_column_const[2];
@@ -832,7 +832,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_to = ColumnVector<ToType>::create(input_rows_count);
         typename ColumnVector<ToType>::Container & vec_to = col_to->getData();
@@ -858,7 +858,7 @@ public:
 private:
     template <typename T>
     void executeIntType(
-            const ColumnsWithTypeAndName & arguments, size_t input_rows_count, typename ColumnVector<ToType>::Container & vec_to) const
+            ColumnsWithTypeAndName & arguments, size_t input_rows_count, typename ColumnVector<ToType>::Container & vec_to) const
     {
         const ColumnAggregateFunction * column_ptrs[2];
         bool is_column_const[2];
@@ -967,7 +967,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const IDataType * from_type = arguments[0].type.get();
         const DataTypeAggregateFunction * aggr_type = typeid_cast<const DataTypeAggregateFunction *>(from_type);
@@ -987,7 +987,7 @@ public:
 
 private:
     template <typename T>
-    ColumnPtr executeBitmapData(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    ColumnPtr executeBitmapData(ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         const ColumnAggregateFunction * column_ptrs[2];
         bool is_column_const[2];

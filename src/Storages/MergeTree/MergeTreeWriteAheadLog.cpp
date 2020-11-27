@@ -2,13 +2,8 @@
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
-#include <IO/MemoryReadWriteBuffer.h>
 #include <IO/ReadHelpers.h>
-#include <IO/copyData.h>
-#include <Poco/JSON/JSON.h>
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Stringifier.h>
-#include <Poco/JSON/Parser.h>
+#include <Poco/File.h>
 #include <sys/time.h>
 
 namespace DB
@@ -61,23 +56,18 @@ void MergeTreeWriteAheadLog::init()
     bytes_at_last_sync = 0;
 }
 
-void MergeTreeWriteAheadLog::addPart(DataPartInMemoryPtr & part)
+void MergeTreeWriteAheadLog::addPart(const Block & block, const String & part_name)
 {
     std::unique_lock lock(write_mutex);
 
-    auto part_info = MergeTreePartInfo::fromPartName(part->name, storage.format_version);
+    auto part_info = MergeTreePartInfo::fromPartName(part_name, storage.format_version);
     min_block_number = std::min(min_block_number, part_info.min_block);
     max_block_number = std::max(max_block_number, part_info.max_block);
 
     writeIntBinary(WAL_VERSION, *out);
-
-    ActionMetadata metadata{};
-    metadata.part_uuid = part->uuid;
-    metadata.write(*out);
-
     writeIntBinary(static_cast<UInt8>(ActionType::ADD_PART), *out);
-    writeStringBinary(part->name, *out);
-    block_out->write(part->block);
+    writeStringBinary(part_name, *out);
+    block_out->write(block);
     block_out->flush();
     sync(lock);
 
@@ -91,10 +81,6 @@ void MergeTreeWriteAheadLog::dropPart(const String & part_name)
     std::unique_lock lock(write_mutex);
 
     writeIntBinary(WAL_VERSION, *out);
-
-    ActionMetadata metadata{};
-    metadata.write(*out);
-
     writeIntBinary(static_cast<UInt8>(ActionType::DROP_PART), *out);
     writeStringBinary(part_name, *out);
     out->next();
@@ -156,8 +142,6 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
                     MergeTreePartInfo::fromPartName(part_name, storage.format_version),
                     single_disk_volume,
                     part_name);
-
-                part->uuid = metadata.part_uuid;
 
                 block = block_in.read();
             }
@@ -253,29 +237,6 @@ MergeTreeWriteAheadLog::tryParseMinMaxBlockNumber(const String & filename)
     return std::make_pair(min_block, max_block);
 }
 
-String MergeTreeWriteAheadLog::ActionMetadata::toJSON() const
-{
-    Poco::JSON::Object json;
-
-    if (part_uuid != UUIDHelpers::Nil)
-        json.set(JSON_KEY_PART_UUID, toString(part_uuid));
-
-    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    oss.exceptions(std::ios::failbit);
-    json.stringify(oss);
-
-    return oss.str();
-}
-
-void MergeTreeWriteAheadLog::ActionMetadata::fromJSON(const String & buf)
-{
-    Poco::JSON::Parser parser;
-    auto json = parser.parse(buf).extract<Poco::JSON::Object::Ptr>();
-
-    if (json->has(JSON_KEY_PART_UUID))
-        part_uuid = parseFromString<UUID>(json->getValue<std::string>(JSON_KEY_PART_UUID));
-}
-
 void MergeTreeWriteAheadLog::ActionMetadata::read(ReadBuffer & meta_in)
 {
     readIntBinary(min_compatible_version, meta_in);
@@ -286,23 +247,19 @@ void MergeTreeWriteAheadLog::ActionMetadata::read(ReadBuffer & meta_in)
     size_t metadata_size;
     readVarUInt(metadata_size, meta_in);
 
-    if (metadata_size == 0)
-        return;
+    UInt32 metadata_start = meta_in.offset();
 
-    String buf(metadata_size, ' ');
-    meta_in.readStrict(buf.data(), metadata_size);
+    /// For the future: read metadata here.
 
-    fromJSON(buf);
+
+    /// Skip extra fields if any. If min_compatible_version is lower than WAL_VERSION it means
+    /// that the fields are not critical for the correctness.
+    meta_in.ignore(metadata_size - (meta_in.offset() - metadata_start));
 }
 
 void MergeTreeWriteAheadLog::ActionMetadata::write(WriteBuffer & meta_out) const
 {
     writeIntBinary(min_compatible_version, meta_out);
-
-    String ser_meta = toJSON();
-
-    writeVarUInt(static_cast<UInt32>(ser_meta.length()), meta_out);
-    writeString(ser_meta, meta_out);
+    writeVarUInt(static_cast<UInt32>(0), meta_out);
 }
-
 }

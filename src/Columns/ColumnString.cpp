@@ -1,17 +1,15 @@
-#include <Columns/ColumnString.h>
-
+#include <Common/Arena.h>
+#include <Common/memcmpSmall.h>
+#include <Common/assert_cast.h>
+#include <Common/WeakHash.h>
+#include <Common/HashTable/Hash.h>
 #include <Columns/Collator.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnsCommon.h>
 #include <DataStreams/ColumnGathererStream.h>
-#include <Common/Arena.h>
-#include <Common/HashTable/Hash.h>
-#include <Common/WeakHash.h>
-#include <Common/assert_cast.h>
-#include <Common/memcmpSmall.h>
-#include <common/sort.h>
+
 #include <common/unaligned.h>
 #include <ext/scope_guard.h>
-
 
 namespace DB
 {
@@ -287,22 +285,21 @@ void ColumnString::compareColumn(
 }
 
 template <bool positive>
-struct ColumnString::Cmp
+struct ColumnString::less
 {
     const ColumnString & parent;
-    explicit Cmp(const ColumnString & parent_) : parent(parent_) {}
-    int operator()(size_t lhs, size_t rhs) const
+    explicit less(const ColumnString & parent_) : parent(parent_) {}
+    bool operator()(size_t lhs, size_t rhs) const
     {
         int res = memcmpSmallAllowOverflow15(
             parent.chars.data() + parent.offsetAt(lhs), parent.sizeAt(lhs) - 1,
             parent.chars.data() + parent.offsetAt(rhs), parent.sizeAt(rhs) - 1);
 
-        return positive ? res : -res;
+        return positive ? (res < 0) : (res > 0);
     }
 };
 
-template <typename Comparator>
-void ColumnString::getPermutationImpl(size_t limit, Permutation & res, Comparator cmp) const
+void ColumnString::getPermutation(bool reverse, size_t limit, int /*nan_direction_hint*/, Permutation & res) const
 {
     size_t s = offsets.size();
     res.resize(s);
@@ -312,16 +309,23 @@ void ColumnString::getPermutationImpl(size_t limit, Permutation & res, Comparato
     if (limit >= s)
         limit = 0;
 
-    auto less = [&cmp](size_t lhs, size_t rhs){ return cmp(lhs, rhs) < 0; };
-
     if (limit)
-        partial_sort(res.begin(), res.begin() + limit, res.end(), less);
+    {
+        if (reverse)
+            std::partial_sort(res.begin(), res.begin() + limit, res.end(), less<false>(*this));
+        else
+            std::partial_sort(res.begin(), res.begin() + limit, res.end(), less<true>(*this));
+    }
     else
-        std::sort(res.begin(), res.end(), less);
+    {
+        if (reverse)
+            std::sort(res.begin(), res.end(), less<false>(*this));
+        else
+            std::sort(res.begin(), res.end(), less<true>(*this));
+    }
 }
 
-template <typename Comparator>
-void ColumnString::updatePermutationImpl(size_t limit, Permutation & res, EqualRanges & equal_ranges, Comparator cmp) const
+void ColumnString::updatePermutation(bool reverse, size_t limit, int /*nan_direction_hint*/, Permutation & res, EqualRanges & equal_ranges) const
 {
     if (equal_ranges.empty())
         return;
@@ -336,17 +340,21 @@ void ColumnString::updatePermutationImpl(size_t limit, Permutation & res, EqualR
     if (limit)
         --number_of_ranges;
 
-    auto less = [&cmp](size_t lhs, size_t rhs){ return cmp(lhs, rhs) < 0; };
-
     for (size_t i = 0; i < number_of_ranges; ++i)
     {
         const auto & [first, last] = equal_ranges[i];
-        std::sort(res.begin() + first, res.begin() + last, less);
+
+        if (reverse)
+            std::sort(res.begin() + first, res.begin() + last, less<false>(*this));
+        else
+            std::sort(res.begin() + first, res.begin() + last, less<true>(*this));
 
         size_t new_first = first;
         for (size_t j = first + 1; j < last; ++j)
         {
-            if (cmp(res[j], res[new_first]) != 0)
+            if (memcmpSmallAllowOverflow15(
+                chars.data() + offsetAt(res[j]), sizeAt(res[j]) - 1,
+                chars.data() + offsetAt(res[new_first]), sizeAt(res[new_first]) - 1) != 0)
             {
                 if (j - new_first > 1)
                     new_ranges.emplace_back(new_first, j);
@@ -366,12 +374,18 @@ void ColumnString::updatePermutationImpl(size_t limit, Permutation & res, EqualR
             return;
 
         /// Since then we are working inside the interval.
-        partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less);
+
+        if (reverse)
+            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less<false>(*this));
+        else
+            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less<true>(*this));
 
         size_t new_first = first;
         for (size_t j = first + 1; j < limit; ++j)
         {
-            if (cmp(res[j], res[new_first]) != 0)
+            if (memcmpSmallAllowOverflow15(
+                chars.data() + offsetAt(res[j]), sizeAt(res[j]) - 1,
+                chars.data() + offsetAt(res[new_first]), sizeAt(res[new_first]) - 1) != 0)
             {
                 if (j - new_first > 1)
                     new_ranges.emplace_back(new_first, j);
@@ -381,7 +395,9 @@ void ColumnString::updatePermutationImpl(size_t limit, Permutation & res, EqualR
         size_t new_last = limit;
         for (size_t j = limit; j < last; ++j)
         {
-            if (cmp(res[j], res[new_first]) == 0)
+            if (memcmpSmallAllowOverflow15(
+                chars.data() + offsetAt(res[j]), sizeAt(res[j]) - 1,
+                chars.data() + offsetAt(res[new_first]), sizeAt(res[new_first]) - 1) == 0)
             {
                 std::swap(res[j], res[new_last]);
                 ++new_last;
@@ -390,56 +406,6 @@ void ColumnString::updatePermutationImpl(size_t limit, Permutation & res, EqualR
         if (new_last - new_first > 1)
             new_ranges.emplace_back(new_first, new_last);
     }
-}
-
-void ColumnString::getPermutation(bool reverse, size_t limit, int /*nan_direction_hint*/, Permutation & res) const
-{
-    if (reverse)
-        getPermutationImpl(limit, res, Cmp<false>(*this));
-    else
-        getPermutationImpl(limit, res, Cmp<true>(*this));
-}
-
-void ColumnString::updatePermutation(bool reverse, size_t limit, int /*nan_direction_hint*/, Permutation & res, EqualRanges & equal_ranges) const
-{
-    if (reverse)
-        updatePermutationImpl(limit, res, equal_ranges, Cmp<false>(*this));
-    else
-        updatePermutationImpl(limit, res, equal_ranges, Cmp<true>(*this));
-}
-
-template <bool positive>
-struct ColumnString::CmpWithCollation
-{
-    const ColumnString & parent;
-    const Collator & collator;
-
-    CmpWithCollation(const ColumnString & parent_, const Collator & collator_) : parent(parent_), collator(collator_) {}
-
-    int operator()(size_t lhs, size_t rhs) const
-    {
-        int res = collator.compare(
-            reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(lhs)]), parent.sizeAt(lhs),
-            reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(rhs)]), parent.sizeAt(rhs));
-
-        return positive ? res : -res;
-    }
-};
-
-void ColumnString::getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int, Permutation & res) const
-{
-    if (reverse)
-        getPermutationImpl(limit, res, CmpWithCollation<false>(*this, collator));
-    else
-        getPermutationImpl(limit, res, CmpWithCollation<true>(*this, collator));
-}
-
-void ColumnString::updatePermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_ranges) const
-{
-    if (reverse)
-        updatePermutationImpl(limit, res, equal_ranges, CmpWithCollation<false>(*this, collator));
-    else
-        updatePermutationImpl(limit, res, equal_ranges, CmpWithCollation<true>(*this, collator));
 }
 
 ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
@@ -510,13 +476,13 @@ void ColumnString::getExtremes(Field & min, Field & max) const
     size_t min_idx = 0;
     size_t max_idx = 0;
 
-    Cmp<true> cmp_op(*this);
+    less<true> less_op(*this);
 
     for (size_t i = 1; i < col_size; ++i)
     {
-        if (cmp_op(i, min_idx) < 0)
+        if (less_op(i, min_idx))
             min_idx = i;
-        else if (cmp_op(max_idx, i) < 0)
+        else if (less_op(max_idx, i))
             max_idx = i;
     }
 
@@ -525,13 +491,141 @@ void ColumnString::getExtremes(Field & min, Field & max) const
 }
 
 
-int ColumnString::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, int, const Collator & collator) const
+int ColumnString::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, const Collator & collator) const
 {
     const ColumnString & rhs = assert_cast<const ColumnString &>(rhs_);
 
     return collator.compare(
         reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n),
         reinterpret_cast<const char *>(&rhs.chars[rhs.offsetAt(m)]), rhs.sizeAt(m));
+}
+
+
+template <bool positive>
+struct ColumnString::lessWithCollation
+{
+    const ColumnString & parent;
+    const Collator & collator;
+
+    lessWithCollation(const ColumnString & parent_, const Collator & collator_) : parent(parent_), collator(collator_) {}
+
+    bool operator()(size_t lhs, size_t rhs) const
+    {
+        int res = collator.compare(
+            reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(lhs)]), parent.sizeAt(lhs),
+            reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(rhs)]), parent.sizeAt(rhs));
+
+        return positive ? (res < 0) : (res > 0);
+    }
+};
+
+void ColumnString::getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, Permutation & res) const
+{
+    size_t s = offsets.size();
+    res.resize(s);
+    for (size_t i = 0; i < s; ++i)
+        res[i] = i;
+
+    if (limit >= s)
+        limit = 0;
+
+    if (limit)
+    {
+        if (reverse)
+            std::partial_sort(res.begin(), res.begin() + limit, res.end(), lessWithCollation<false>(*this, collator));
+        else
+            std::partial_sort(res.begin(), res.begin() + limit, res.end(), lessWithCollation<true>(*this, collator));
+    }
+    else
+    {
+        if (reverse)
+            std::sort(res.begin(), res.end(), lessWithCollation<false>(*this, collator));
+        else
+            std::sort(res.begin(), res.end(), lessWithCollation<true>(*this, collator));
+    }
+}
+
+void ColumnString::updatePermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_ranges) const
+{
+    if (equal_ranges.empty())
+        return;
+
+    if (limit >= size() || limit >= equal_ranges.back().second)
+        limit = 0;
+
+    size_t number_of_ranges = equal_ranges.size();
+    if (limit)
+        --number_of_ranges;
+
+    EqualRanges new_ranges;
+    SCOPE_EXIT({equal_ranges = std::move(new_ranges);});
+
+    for (size_t i = 0; i < number_of_ranges; ++i)
+    {
+        const auto& [first, last] = equal_ranges[i];
+
+        if (reverse)
+            std::sort(res.begin() + first, res.begin() + last, lessWithCollation<false>(*this, collator));
+        else
+            std::sort(res.begin() + first, res.begin() + last, lessWithCollation<true>(*this, collator));
+        auto new_first = first;
+        for (auto j = first + 1; j < last; ++j)
+        {
+            if (collator.compare(
+                    reinterpret_cast<const char *>(&chars[offsetAt(res[new_first])]), sizeAt(res[new_first]),
+                    reinterpret_cast<const char *>(&chars[offsetAt(res[j])]), sizeAt(res[j])) != 0)
+            {
+                if (j - new_first > 1)
+                    new_ranges.emplace_back(new_first, j);
+
+                new_first = j;
+            }
+        }
+        if (last - new_first > 1)
+            new_ranges.emplace_back(new_first, last);
+    }
+
+    if (limit)
+    {
+        const auto & [first, last] = equal_ranges.back();
+
+        if (limit < first || limit > last)
+            return;
+
+        /// Since then we are working inside the interval.
+
+        if (reverse)
+            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, lessWithCollation<false>(*this, collator));
+        else
+            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, lessWithCollation<true>(*this, collator));
+
+        auto new_first = first;
+        for (auto j = first + 1; j < limit; ++j)
+        {
+            if (collator.compare(
+                    reinterpret_cast<const char *>(&chars[offsetAt(res[new_first])]), sizeAt(res[new_first]),
+                    reinterpret_cast<const char *>(&chars[offsetAt(res[j])]), sizeAt(res[j])) != 0)
+            {
+                if (j - new_first > 1)
+                    new_ranges.emplace_back(new_first, j);
+
+                new_first = j;
+            }
+        }
+        auto new_last = limit;
+        for (auto j = limit; j < last; ++j)
+        {
+            if (collator.compare(
+                    reinterpret_cast<const char *>(&chars[offsetAt(res[new_first])]), sizeAt(res[new_first]),
+                    reinterpret_cast<const char *>(&chars[offsetAt(res[j])]), sizeAt(res[j])) == 0)
+            {
+                std::swap(res[new_last], res[j]);
+                ++new_last;
+            }
+        }
+        if (new_last - new_first > 1)
+            new_ranges.emplace_back(new_first, new_last);
+    }
 }
 
 void ColumnString::protect()

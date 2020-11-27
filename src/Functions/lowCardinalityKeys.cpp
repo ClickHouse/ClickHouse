@@ -39,7 +39,7 @@ public:
         return type->getDictionaryType();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const auto & arg = arguments[0];
         const auto * low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(arg.column.get());

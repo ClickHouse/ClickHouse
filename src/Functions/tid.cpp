@@ -21,7 +21,7 @@ namespace
 
         DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeUInt64>(); }
 
-        ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+        ColumnPtr executeImpl(ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
         {
             auto current_tid = getThreadId();
             return DataTypeUInt64().createColumnConst(input_rows_count, current_tid);

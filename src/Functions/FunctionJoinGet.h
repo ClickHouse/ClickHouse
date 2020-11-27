@@ -24,7 +24,7 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
+    ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) override;
 
     String getName() const override { return name; }
 

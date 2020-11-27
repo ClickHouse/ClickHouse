@@ -2,6 +2,7 @@
 
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Formats/FormatFactory.h>
+#include <IO/PeekableReadBuffer.h>
 
 namespace DB
 {
@@ -23,6 +24,8 @@ public:
 
 private:
     void readLineObject(IColumn & column);
+
+    PeekableReadBuffer buf;
 };
 
 }

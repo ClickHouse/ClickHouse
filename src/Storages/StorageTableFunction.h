@@ -4,7 +4,7 @@
 #include <Processors/Pipe.h>
 #include <Storages/StorageProxy.h>
 #include <Common/CurrentThread.h>
-#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/ConvertingTransform.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 
 
@@ -72,7 +72,7 @@ public:
     Pipe read(
             const Names & column_names,
             const StorageMetadataPtr & metadata_snapshot,
-            SelectQueryInfo & query_info,
+            const SelectQueryInfo & query_info,
             const Context & context,
             QueryProcessingStage::Enum processed_stage,
             size_t max_block_size,
@@ -89,16 +89,12 @@ public:
         {
             auto to_header = getHeaderForProcessingStage(*this, column_names, metadata_snapshot,
                                                          query_info, context, processed_stage);
-
-            auto convert_actions_dag = ActionsDAG::makeConvertingActions(
-                    pipe.getHeader().getColumnsWithTypeAndName(),
-                    to_header.getColumnsWithTypeAndName(),
-                    ActionsDAG::MatchColumnsMode::Name);
-            auto convert_actions = std::make_shared<ExpressionActions>(convert_actions_dag);
-
             pipe.addSimpleTransform([&](const Block & header)
             {
-                return std::make_shared<ExpressionTransform>(header, convert_actions);
+                return std::make_shared<ConvertingTransform>(
+                       header,
+                       to_header,
+                       ConvertingTransform::MatchColumnsMode::Name);
             });
         }
         return pipe;

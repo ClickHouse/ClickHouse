@@ -445,7 +445,6 @@ include (cmake/find/brotli.cmake)
 include (cmake/find/protobuf.cmake)
 include (cmake/find/grpc.cmake)
 include (cmake/find/pdqsort.cmake)
-include (cmake/find/miniselect.cmake)
 include (cmake/find/hdfs3.cmake) # uses protobuf
 include (cmake/find/poco.cmake)
 include (cmake/find/curl.cmake)
@@ -456,8 +455,6 @@ include (cmake/find/simdjson.cmake)
 include (cmake/find/rapidjson.cmake)
 include (cmake/find/fastops.cmake)
 include (cmake/find/odbc.cmake)
-include (cmake/find/rocksdb.cmake)
-
 
 if(NOT USE_INTERNAL_PARQUET_LIBRARY)
     set (ENABLE_ORC OFF CACHE INTERNAL "")
@@ -474,6 +471,9 @@ set (USE_INTERNAL_CITYHASH_LIBRARY ON CACHE INTERNAL "")
 find_contrib_lib(cityhash)
 
 find_contrib_lib(farmhash)
+
+set (USE_INTERNAL_BTRIE_LIBRARY ON CACHE INTERNAL "")
+find_contrib_lib(btrie)
 
 if (ENABLE_TESTS)
     include (cmake/find/gtest.cmake)

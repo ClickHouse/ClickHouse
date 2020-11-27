@@ -36,7 +36,7 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
         const MergeTreeSettings & settings = context.getReplicatedMergeTreeSettings();
 
         bool ok = true;
-        WriteBufferFromOwnString message;
+        std::stringstream message;
 
         auto databases = DatabaseCatalog::instance().getDatabases();
 
@@ -82,7 +82,7 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
         }
 
         if (verbose)
-            response.send() << message.str();
+            response.send() << message.rdbuf();
         else
         {
             const char * data = "Ok.\n";
