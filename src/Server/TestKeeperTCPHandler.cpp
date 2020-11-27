@@ -54,7 +54,7 @@ struct SocketInterruptablePollWrapper
     explicit SocketInterruptablePollWrapper(const Poco::Net::StreamSocket & poco_socket_)
         : sockfd(poco_socket_.impl()->sockfd())
     {
-        pipe.setNonBlocking();
+        pipe.setNonBlockingReadWrite();
 
 #if defined(POCO_HAVE_FD_EPOLL)
         epollfd = epoll_create(2);
@@ -158,15 +158,22 @@ struct SocketInterruptablePollWrapper
                         result |= HAS_REQUEST;
                     else
                     {
-                        UInt8 byte;
-                        if (read(pipe.fds_rw[0], &byte, sizeof(byte)) < 0)
-                            throwFromErrno("Cannot read from pipe", ErrorCodes::SYSTEM_ERROR);
-                        if (byte == WATCH_RESPONSE_BYTE)
-                            result |= HAS_WATCH_RESPONSE;
-                        else if (byte == RESPONSE_BYTE)
-                            result |= HAS_RESPONSE;
-                        else
-                            throw Exception("Unexpected byte received from signaling pipe", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+                        int read_result;
+                        do
+                        {
+                            UInt8 byte;
+                            read_result = read(pipe.fds_rw[0], &byte, sizeof(byte));
+                            if (byte == WATCH_RESPONSE_BYTE)
+                                result |= HAS_WATCH_RESPONSE;
+                            else if (byte == RESPONSE_BYTE)
+                                result |= HAS_RESPONSE;
+                            else
+                                throw Exception("Unexpected byte received from signaling pipe", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+                        }
+                        while (read_result > 0 || (read_result < 0 && errno == EINTR));
+
+                        if (read_result < 0 && errno != EAGAIN)
+                            throwFromErrno("Got error reading from pipe", ErrorCodes::SYSTEM_ERROR);
                     }
                 }
             }
@@ -297,7 +304,8 @@ void TestKeeperTCPHandler::runImpl()
                     LOG_TRACE(log, "Received heartbeat for session #{}", session_id);
                     session_stopwatch.restart();
                 }
-            } while (in->available());
+            }
+            while (in->available());
         }
 
         if (state & SocketInterruptablePollWrapper::HAS_RESPONSE)
