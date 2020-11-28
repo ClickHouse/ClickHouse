@@ -39,7 +39,7 @@ namespace ErrorCodes
 
 TemporaryTableHolder::TemporaryTableHolder(const Context & context_,
                                            const TemporaryTableHolder::Creator & creator, const ASTPtr & query)
-    : global_context(&context_.getGlobalContext())
+    : global_context(context_.getGlobalContext())
     , temporary_tables(DatabaseCatalog::instance().getDatabaseForTemporaryTables().get())
 {
     ASTPtr original_create;
@@ -62,7 +62,7 @@ TemporaryTableHolder::TemporaryTableHolder(const Context & context_,
     }
     auto table_id = StorageID(DatabaseCatalog::TEMPORARY_DATABASE, global_name, id);
     auto table = creator(table_id);
-    temporary_tables->createTable(*global_context, global_name, table, original_create);
+    temporary_tables->createTable(global_context, global_name, table, original_create);
     table->startup();
 }
 
@@ -107,7 +107,7 @@ TemporaryTableHolder & TemporaryTableHolder::operator = (TemporaryTableHolder &&
 TemporaryTableHolder::~TemporaryTableHolder()
 {
     if (id != UUIDHelpers::Nil)
-        temporary_tables->dropTable(*global_context, "_tmp_" + toString(id));
+        temporary_tables->dropTable(global_context, "_tmp_" + toString(id));
 }
 
 StorageID TemporaryTableHolder::getGlobalTableID() const
@@ -117,7 +117,7 @@ StorageID TemporaryTableHolder::getGlobalTableID() const
 
 StoragePtr TemporaryTableHolder::getTable() const
 {
-    auto table = temporary_tables->tryGetTable("_tmp_" + toString(id), *global_context);
+    auto table = temporary_tables->tryGetTable("_tmp_" + toString(id), global_context);
     if (!table)
         throw Exception("Temporary table " + getGlobalTableID().getNameForLogs() + " not found", ErrorCodes::LOGICAL_ERROR);
     return table;
@@ -126,13 +126,13 @@ StoragePtr TemporaryTableHolder::getTable() const
 
 void DatabaseCatalog::loadDatabases()
 {
-    drop_delay_sec = global_context->getConfigRef().getInt("database_atomic_delay_before_drop_table_sec", default_drop_delay_sec);
+    drop_delay_sec = global_context.getConfigRef().getInt("database_atomic_delay_before_drop_table_sec", default_drop_delay_sec);
 
-    auto db_for_temporary_and_external_tables = std::make_shared<DatabaseMemory>(TEMPORARY_DATABASE, *global_context);
+    auto db_for_temporary_and_external_tables = std::make_shared<DatabaseMemory>(TEMPORARY_DATABASE, global_context);
     attachDatabase(TEMPORARY_DATABASE, db_for_temporary_and_external_tables);
 
     loadMarkedAsDroppedTables();
-    auto task_holder = global_context->getSchedulePool().createTask("DatabaseCatalog", [this](){ this->dropTableDataTask(); });
+    auto task_holder = global_context.getSchedulePool().createTask("DatabaseCatalog", [this](){ this->dropTableDataTask(); });
     drop_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(task_holder));
     (*drop_task)->activate();
     std::lock_guard lock{tables_marked_dropped_mutex};
@@ -328,11 +328,11 @@ DatabasePtr DatabaseCatalog::detachDatabase(const String & database_name, bool d
     if (drop)
     {
         /// Delete the database.
-        db->drop(*global_context);
+        db->drop(global_context);
 
         /// Old ClickHouse versions did not store database.sql files
         Poco::File database_metadata_file(
-                global_context->getPath() + "metadata/" + escapeForFileName(database_name) + ".sql");
+                global_context.getPath() + "metadata/" + escapeForFileName(database_name) + ".sql");
         if (database_metadata_file.exists())
             database_metadata_file.remove(false);
     }
@@ -505,14 +505,12 @@ void DatabaseCatalog::updateUUIDMapping(const UUID & uuid, DatabasePtr database,
 
 std::unique_ptr<DatabaseCatalog> DatabaseCatalog::database_catalog;
 
-DatabaseCatalog::DatabaseCatalog(Context * global_context_)
+DatabaseCatalog::DatabaseCatalog(Context & global_context_)
     : global_context(global_context_), log(&Poco::Logger::get("DatabaseCatalog"))
 {
-    if (!global_context)
-        throw Exception("DatabaseCatalog is not initialized. It's a bug.", ErrorCodes::LOGICAL_ERROR);
 }
 
-DatabaseCatalog & DatabaseCatalog::init(Context * global_context_)
+DatabaseCatalog & DatabaseCatalog::init(Context & global_context_)
 {
     if (database_catalog)
     {
@@ -651,7 +649,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
     /// we should load them and enqueue cleanup to remove data from store/ and metadata from ZooKeeper
 
     std::map<String, StorageID> dropped_metadata;
-    String path = global_context->getPath() + "metadata_dropped/";
+    String path = global_context.getPath() + "metadata_dropped/";
 
     if (!std::filesystem::exists(path))
     {
@@ -706,7 +704,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
 
 String DatabaseCatalog::getPathForDroppedMetadata(const StorageID & table_id) const
 {
-    return global_context->getPath() + "metadata_dropped/" +
+    return global_context.getPath() + "metadata_dropped/" +
            escapeForFileName(table_id.getDatabaseName()) + "." +
            escapeForFileName(table_id.getTableName()) + "." +
            toString(table_id.uuid) + ".sql";
@@ -729,7 +727,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
     {
         /// Try load table from metadata to drop it correctly (e.g. remove metadata from zk or remove data from all volumes)
         LOG_INFO(log, "Trying load partially dropped table {} from {}", table_id.getNameForLogs(), dropped_metadata_path);
-        ASTPtr ast = DatabaseOnDisk::parseQueryFromMetadata(log, *global_context, dropped_metadata_path, /*throw_on_error*/ false, /*remove_empty*/false);
+        ASTPtr ast = DatabaseOnDisk::parseQueryFromMetadata(log, global_context, dropped_metadata_path, /*throw_on_error*/ false, /*remove_empty*/false);
         auto * create = typeid_cast<ASTCreateQuery *>(ast.get());
         assert(!create || create->uuid == table_id.uuid);
 
@@ -740,7 +738,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
             create->table = table_id.table_name;
             try
             {
-                table = createTableFromAST(*create, table_id.getDatabaseName(), data_path, *global_context, false).second;
+                table = createTableFromAST(*create, table_id.getDatabaseName(), data_path, global_context, false).second;
                 table->is_dropped = true;
             }
             catch (...)
@@ -867,7 +865,7 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
 
     /// Even if table is not loaded, try remove its data from disk.
     /// TODO remove data from all volumes
-    String data_path = global_context->getPath() + "store/" + getPathForUUID(table.table_id.uuid);
+    String data_path = global_context.getPath() + "store/" + getPathForUUID(table.table_id.uuid);
     Poco::File table_data_dir{data_path};
     if (table_data_dir.exists())
     {
@@ -901,7 +899,7 @@ String DatabaseCatalog::resolveDictionaryName(const String & name) const
     String maybe_database_name = name.substr(0, pos);
     String maybe_table_name = name.substr(pos + 1);
 
-    auto db_and_table = tryGetDatabaseAndTable({maybe_database_name, maybe_table_name}, *global_context);
+    auto db_and_table = tryGetDatabaseAndTable({maybe_database_name, maybe_table_name}, global_context);
     if (!db_and_table.first)
         return name;
     assert(db_and_table.second);

@@ -43,7 +43,7 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return ColumnUInt64::create(input_rows_count, input_rows_count);
     }

@@ -154,7 +154,7 @@ public:
         return result;
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         ColumnPtr result_column;
         bool valid = castType(arguments[0].type.get(), [&](const auto & type)

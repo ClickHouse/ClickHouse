@@ -732,6 +732,7 @@ protected:
     friend class MergeTreeDataMergerMutator;
     friend struct ReplicatedMergeTreeTableMetadata;
     friend class StorageReplicatedMergeTree;
+    friend class MergeTreeDataWriter;
 
     bool require_part_metadata;
 
