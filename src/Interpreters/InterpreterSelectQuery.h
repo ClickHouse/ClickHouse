@@ -153,6 +153,8 @@ private:
       */
     void initSettings();
 
+    void getDependentAliasColumns(const std::string & column, std::map<std::string, ASTPtr> & required_alias_columns);
+
     TreeRewriterResultPtr syntax_analyzer_result;
     std::unique_ptr<SelectQueryExpressionAnalyzer> query_analyzer;
     SelectQueryInfo query_info;

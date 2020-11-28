@@ -31,6 +31,7 @@
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/QueryAliasesVisitor.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SourceFromInputStream.h>
@@ -1282,30 +1283,35 @@ void InterpreterSelectQuery::executeFetchColumns(
 
             /// Sort out already known required columns between expressions,
             /// also populate `required_aliases_from_prewhere`.
+            std::map<std::string, ASTPtr> required_alias_columns;
             for (const auto & column : required_columns)
             {
-                ASTPtr column_expr;
                 const auto column_default = storage_columns.getDefault(column);
                 bool is_alias = column_default && column_default->kind == ColumnDefaultKind::Alias;
                 if (is_alias)
                 {
-                    auto column_decl = storage_columns.get(column);
-                    /// TODO: can make CAST only if the type is different (but requires SyntaxAnalyzer).
-                    auto cast_column_default = addTypeConversionToAST(column_default->expression->clone(), column_decl.type->getName());
-                    column_expr = setAlias(cast_column_default->clone(), column);
+                    getDependentAliasColumns(column, required_alias_columns);
+                    for (const auto& [column_name, column_expr]: required_alias_columns)
+                    {
+                        if (required_columns_from_prewhere.count(column_name))
+                        {
+                            required_columns_from_prewhere_expr->children.emplace_back(std::move(column_expr));
+                            required_aliases_from_prewhere.insert(column_name);
+                        }
+                        else
+                            required_columns_all_expr->children.emplace_back(std::move(column_expr));
+                    }
                 }
                 else
-                    column_expr = std::make_shared<ASTIdentifier>(column);
-
-                if (required_columns_from_prewhere.count(column))
                 {
-                    required_columns_from_prewhere_expr->children.emplace_back(std::move(column_expr));
-
-                    if (is_alias)
-                        required_aliases_from_prewhere.insert(column);
+                    ASTPtr column_expr = std::make_shared<ASTIdentifier>(column);
+                    if (required_columns_from_prewhere.count(column))
+                    {
+                        required_columns_from_prewhere_expr->children.emplace_back(std::move(column_expr));
+                    }
+                    else
+                        required_columns_all_expr->children.emplace_back(std::move(column_expr));
                 }
-                else
-                    required_columns_all_expr->children.emplace_back(std::move(column_expr));
             }
 
             /// Columns, which we will get after prewhere and filter executions.
@@ -1562,6 +1568,38 @@ void InterpreterSelectQuery::executeFetchColumns(
     }
 }
 
+/// ALIAS column can depend on ALIAS column. Find all depedent alias columns recursively
+void InterpreterSelectQuery::getDependentAliasColumns(const std::string & column, std::map<std::string, ASTPtr> & required_alias_columns)
+{
+    if (required_alias_columns.find(column) != required_alias_columns.end())
+    {
+        return;
+    }
+
+    const ColumnsDescription & storage_columns = metadata_snapshot->getColumns();
+    const auto column_default = storage_columns.getDefault(column);
+
+    bool is_alias = column_default && column_default->kind == ColumnDefaultKind::Alias;
+    if (!is_alias) {
+        /// reaches physical column
+        return;
+    }
+
+    auto column_decl = storage_columns.get(column);
+    /// TODO: can make CAST only if the type is different (but requires SyntaxAnalyzer).
+    auto cast_column_default = addTypeConversionToAST(column_default->expression->clone(), column_decl.type->getName());
+
+    ASTPtr column_expr = setAlias(cast_column_default->clone(), column);
+    required_alias_columns[column] = column_expr;
+
+    RequiredSourceColumnsVisitor::Data columns_context;
+    RequiredSourceColumnsVisitor(columns_context).visit(column_expr);
+
+    for (const auto& name: columns_context.requiredColumns())
+    {
+        getDependentAliasColumns(name, required_alias_columns);
+    }
+}
 
 void InterpreterSelectQuery::executeWhere(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool remove_filter)
 {
