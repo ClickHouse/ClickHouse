@@ -134,10 +134,10 @@
     <max_connections>4096</max_connections>
     <keep_alive_timeout>3</keep_alive_timeout>
 
-    <!-- gRPC protocol (see src/Server/grpc_protos/clickhouse_grpc.proto for the API)
-    <grpc_port>9100</grpc_port>
+    <!-- gRPC protocol (see src/Server/grpc_protos/clickhouse_grpc.proto for the API) -->
+    <!-- <grpc_port>9100</grpc_port> -->
     <grpc>
-        <enable_ssl>true</enable_ssl> -->
+        <enable_ssl>true</enable_ssl>
 
         <!-- The following two files are used only if enable_ssl=1
         <ssl_cert_file>/path/to/ssl_cert_file</ssl_cert_file>
@@ -159,8 +159,8 @@
 
         <!-- Send/receive message size limits in bytes. -1 means unlimited
         <max_send_message_size>-1</max_send_message_size>
-        <max_receive_message_size>4194304</max_receive_message_size>
-    </grpc> -->
+        <max_receive_message_size>4194304</max_receive_message_size> -->
+    </grpc>
 
     <!-- Maximum number of concurrent queries. -->
     <max_concurrent_queries>100</max_concurrent_queries>
