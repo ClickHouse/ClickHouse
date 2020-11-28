@@ -253,7 +253,11 @@ OPTIMIZE TABLE table_not_partitioned PARTITION tuple() FINAL;
 ## UPDATE\|DELETE IN PARTITION {#update-delete-in-partition}
 
 ``` sql
-ALTER TABLE table_name (UPDATE update_expr)|(DELETE) [IN PARTITION partition_id] WHERE where_expr
+ALTER TABLE table_name UPDATE update_expr [IN PARTITION partition_id] WHERE where_expr
+```
+
+``` sql
+ALTER TABLE table_name DELETE [IN PARTITION partition_id] WHERE where_expr
 ```
 
 `IN PARTITION` specifies the partition to which the [UPDATE](../../../sql-reference/statements/alter/update.md#alter-table-update-statements) or [DELETE](../../../sql-reference/statements/alter/delete.md#alter-mutations) expressions will be applied as a result of the query `ALTER TABLE`. New parts will be created only from the specified partition.
