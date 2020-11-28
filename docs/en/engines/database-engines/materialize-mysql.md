@@ -59,7 +59,7 @@ All other MySQL data types are converted into [String](../../sql-reference/data-
 
 ### DDL Queries
 
-MySQL DDL queries are converted into the corresponding ClickHouse [ALTER](../../sql-reference/statements/alter.md) statements.
+MySQL DDL queries are converted into the corresponding ClickHouse [ALTER](../../sql-reference/statements/alter/index.md) statements.
 
 ### DML Queries
 
