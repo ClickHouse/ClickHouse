@@ -33,6 +33,7 @@
 #include <Storages/registerStorages.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
+#include <Formats/registerFormats.h>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options.hpp>
 #include <common/argsToConfig.h>
@@ -224,6 +225,7 @@ try
     registerStorages();
     registerDictionaries();
     registerDisks();
+    registerFormats();
 
     /// Maybe useless
     if (config().has("macros"))
@@ -420,7 +422,7 @@ static const char * minimal_default_user_xml =
 
 static ConfigurationPtr getConfigurationFromXMLString(const char * xml_data)
 {
-    std::stringstream ss{std::string{xml_data}};
+    std::stringstream ss{std::string{xml_data}};    // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     Poco::XML::InputSource input_source{ss};
     return {new Poco::Util::XMLConfiguration{&input_source}};
 }

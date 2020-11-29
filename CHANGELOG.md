@@ -1,4 +1,150 @@
+## ClickHouse release 20.11
+
+### ClickHouse release v20.11.3.3-stable, 2020-11-13
+
+#### Bug Fix
+
+* Fix rare silent crashes when query profiler is on and ClickHouse is installed on OS with glibc version that has (supposedly) broken asynchronous unwind tables for some functions. This fixes [#15301](https://github.com/ClickHouse/ClickHouse/issues/15301). This fixes [#13098](https://github.com/ClickHouse/ClickHouse/issues/13098). [#16846](https://github.com/ClickHouse/ClickHouse/pull/16846) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+
+
+### ClickHouse release v20.11.2.1, 2020-11-11
+
+#### Backward Incompatible Change
+
+* If some `profile` was specified in `distributed_ddl` config section, then this profile could overwrite settings of `default` profile on server startup. It's fixed, now settings of distributed DDL queries should not affect global server settings. [#16635](https://github.com/ClickHouse/ClickHouse/pull/16635) ([tavplubix](https://github.com/tavplubix)).
+* Restrict to use of non-comparable data types (like `AggregateFunction`) in keys (Sorting key, Primary key, Partition key, and so on). [#16601](https://github.com/ClickHouse/ClickHouse/pull/16601) ([alesapin](https://github.com/alesapin)).
+* Remove `ANALYZE` and `AST` queries, and make the setting `enable_debug_queries` obsolete since now it is the part of full featured `EXPLAIN` query. [#16536](https://github.com/ClickHouse/ClickHouse/pull/16536) ([Ivan](https://github.com/abyss7)).
+* Aggregate functions `boundingRatio`, `rankCorr`, `retention`, `timeSeriesGroupSum`, `timeSeriesGroupRateSum`, `windowFunnel` were erroneously made case-insensitive. Now their names are made case sensitive as designed. Only functions that are specified in SQL standard or made for compatibility with other DBMS or functions similar to those should be case-insensitive. [#16407](https://github.com/ClickHouse/ClickHouse/pull/16407) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Make `rankCorr` function return nan on insufficient data https://github.com/ClickHouse/ClickHouse/issues/16124. [#16135](https://github.com/ClickHouse/ClickHouse/pull/16135) ([hexiaoting](https://github.com/hexiaoting)).
+
+#### New Feature
+
+* Added support of LDAP as a user directory for locally non-existent users. [#12736](https://github.com/ClickHouse/ClickHouse/pull/12736) ([Denis Glazachev](https://github.com/traceon)).
+* Add `system.replicated_fetches` table which shows currently running background fetches. [#16428](https://github.com/ClickHouse/ClickHouse/pull/16428) ([alesapin](https://github.com/alesapin)).
+* Added setting `date_time_output_format`. [#15845](https://github.com/ClickHouse/ClickHouse/pull/15845) ([Maksim Kita](https://github.com/kitaisreal)).
+* Added minimal web UI to ClickHouse. [#16158](https://github.com/ClickHouse/ClickHouse/pull/16158) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Allows to read/write Single protobuf message at once (w/o length-delimiters). [#15199](https://github.com/ClickHouse/ClickHouse/pull/15199) ([filimonov](https://github.com/filimonov)).
+* Added initial OpenTelemetry support. ClickHouse now accepts OpenTelemetry traceparent headers over Native and HTTP protocols, and passes them downstream in some cases. The trace spans for executed queries are saved into the `system.opentelemetry_span_log` table. [#14195](https://github.com/ClickHouse/ClickHouse/pull/14195) ([Alexander Kuzmenkov](https://github.com/akuzm)).
+* Allow specify primary key in column list of `CREATE TABLE` query. This is needed for compatibility with other SQL dialects. [#15823](https://github.com/ClickHouse/ClickHouse/pull/15823) ([Maksim Kita](https://github.com/kitaisreal)).
+* Implement `OFFSET offset_row_count {ROW | ROWS} FETCH {FIRST | NEXT} fetch_row_count {ROW | ROWS} {ONLY | WITH TIES}` in SELECT query with ORDER BY. This is the SQL-standard way to specify `LIMIT`. [#15855](https://github.com/ClickHouse/ClickHouse/pull/15855) ([hexiaoting](https://github.com/hexiaoting)).
+* `errorCodeToName` function - return variable name of the error (useful for analyzing query_log and similar). `system.errors` table - shows how many times errors has been happened (respects `system_events_show_zero_values`). [#16438](https://github.com/ClickHouse/ClickHouse/pull/16438) ([Azat Khuzhin](https://github.com/azat)).
+* Added function `untuple` which is a special function which can introduce new columns to the SELECT list by expanding a named tuple. [#16242](https://github.com/ClickHouse/ClickHouse/pull/16242) ([Nikolai Kochetov](https://github.com/KochetovNicolai), [Amos Bird](https://github.com/amosbird)).
+* Now we can provide identifiers via query parameters. And these parameters can be used as table objects or columns. [#16594](https://github.com/ClickHouse/ClickHouse/pull/16594) ([Amos Bird](https://github.com/amosbird)).
+* Added big integers (UInt256, Int128, Int256) and UUID data types support for MergeTree BloomFilter index. Big integers is an experimental feature. [#16642](https://github.com/ClickHouse/ClickHouse/pull/16642) ([Maksim Kita](https://github.com/kitaisreal)).
+* Add `farmFingerprint64` function (non-cryptographic string hashing). [#16570](https://github.com/ClickHouse/ClickHouse/pull/16570) ([Jacob Hayes](https://github.com/JacobHayes)).
+* Add `log_queries_min_query_duration_ms`, only queries slower then the value of this setting will go to `query_log`/`query_thread_log` (i.e. something like `slow_query_log` in mysql). [#16529](https://github.com/ClickHouse/ClickHouse/pull/16529) ([Azat Khuzhin](https://github.com/azat)).
+* Ability to create a docker image on the top of `Alpine`. Uses precompiled binary and glibc components from ubuntu 20.04. [#16479](https://github.com/ClickHouse/ClickHouse/pull/16479) ([filimonov](https://github.com/filimonov)).
+* Added `toUUIDOrNull`, `toUUIDOrZero` cast functions. [#16337](https://github.com/ClickHouse/ClickHouse/pull/16337) ([Maksim Kita](https://github.com/kitaisreal)).
+* Add `max_concurrent_queries_for_all_users` setting, see [#6636](https://github.com/ClickHouse/ClickHouse/issues/6636) for use cases. [#16154](https://github.com/ClickHouse/ClickHouse/pull/16154) ([nvartolomei](https://github.com/nvartolomei)).
+* Add a new option `print_query_id` to clickhouse-client. It helps generate arbitrary strings with the current query id generated by the client. Also print query id in clickhouse-client by default. [#15809](https://github.com/ClickHouse/ClickHouse/pull/15809) ([Amos Bird](https://github.com/amosbird)).
+* Add `tid` and `logTrace` functions. This closes [#9434](https://github.com/ClickHouse/ClickHouse/issues/9434). [#15803](https://github.com/ClickHouse/ClickHouse/pull/15803) ([flynn](https://github.com/ucasFL)).
+* Add function `formatReadableTimeDelta` that format time delta to human readable string ... [#15497](https://github.com/ClickHouse/ClickHouse/pull/15497) ([Filipe Caixeta](https://github.com/filipecaixeta)).
+* Added `disable_merges` option for volumes in multi-disk configuration. [#13956](https://github.com/ClickHouse/ClickHouse/pull/13956) ([Vladimir Chebotarev](https://github.com/excitoon)).
+
+#### Experimental Feature
+
+* New functions `encrypt`, `aes_encrypt_mysql`, `decrypt`, `aes_decrypt_mysql`. These functions are working slowly, so we consider it as an experimental feature. [#11844](https://github.com/ClickHouse/ClickHouse/pull/11844) ([Vasily Nemkov](https://github.com/Enmk)).
+
+#### Bug Fix
+
+* Mask password in data_path in the `system.distribution_queue`. [#16727](https://github.com/ClickHouse/ClickHouse/pull/16727) ([Azat Khuzhin](https://github.com/azat)).
+* Fix `IN` operator over several columns and tuples with enabled `transform_null_in` setting. Fixes [#15310](https://github.com/ClickHouse/ClickHouse/issues/15310). [#16722](https://github.com/ClickHouse/ClickHouse/pull/16722) ([Anton Popov](https://github.com/CurtizJ)).
+* The setting `max_parallel_replicas` worked incorrectly if the queried table has no sampling. This fixes [#5733](https://github.com/ClickHouse/ClickHouse/issues/5733). [#16675](https://github.com/ClickHouse/ClickHouse/pull/16675) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Fix optimize_read_in_order/optimize_aggregation_in_order with max_threads > 0 and expression in ORDER BY. [#16637](https://github.com/ClickHouse/ClickHouse/pull/16637) ([Azat Khuzhin](https://github.com/azat)).
+* Calculation of `DEFAULT` expressions was involving possible name collisions (that was very unlikely to encounter). This fixes [#9359](https://github.com/ClickHouse/ClickHouse/issues/9359). [#16612](https://github.com/ClickHouse/ClickHouse/pull/16612) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Fix `query_thread_log.query_duration_ms` unit. [#16563](https://github.com/ClickHouse/ClickHouse/pull/16563) ([Azat Khuzhin](https://github.com/azat)).
+* Fix a bug when using MySQL Master -> MySQL Slave -> ClickHouse MaterializeMySQL Engine. `MaterializeMySQL` is an experimental feature. [#16504](https://github.com/ClickHouse/ClickHouse/pull/16504) ([TCeason](https://github.com/TCeason)).
+* Specifically crafted argument of `round` function with `Decimal` was leading to integer division by zero. This fixes [#13338](https://github.com/ClickHouse/ClickHouse/issues/13338). [#16451](https://github.com/ClickHouse/ClickHouse/pull/16451) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Fix DROP TABLE for Distributed (racy with INSERT). [#16409](https://github.com/ClickHouse/ClickHouse/pull/16409) ([Azat Khuzhin](https://github.com/azat)).
+* Fix processing of very large entries in replication queue. Very large entries may appear in ALTER queries if table structure is extremely large (near 1 MB). This fixes [#16307](https://github.com/ClickHouse/ClickHouse/issues/16307). [#16332](https://github.com/ClickHouse/ClickHouse/pull/16332) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Fixed the inconsistent behaviour when a part of return data could be dropped because the set for its filtration wasn't created. [#16308](https://github.com/ClickHouse/ClickHouse/pull/16308) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
+* Fix dictGet in sharding_key (and similar places, i.e. when the function context is stored permanently). [#16205](https://github.com/ClickHouse/ClickHouse/pull/16205) ([Azat Khuzhin](https://github.com/azat)).
+* Fix the exception thrown in `clickhouse-local` when trying to execute `OPTIMIZE` command. Fixes [#16076](https://github.com/ClickHouse/ClickHouse/issues/16076). [#16192](https://github.com/ClickHouse/ClickHouse/pull/16192) ([filimonov](https://github.com/filimonov)).
+* Fixes [#15780](https://github.com/ClickHouse/ClickHouse/issues/15780) regression, e.g. `indexOf([1, 2, 3], toLowCardinality(1))` now is prohibited but it should not be. [#16038](https://github.com/ClickHouse/ClickHouse/pull/16038) ([Mike](https://github.com/myrrc)).
+* Fix bug with MySQL database. When MySQL server used as database engine is down some queries raise Exception, because they try to get tables from disabled server, while it's unnecessary. For example, query `SELECT ... FROM system.parts` should work only with MergeTree tables and don't touch MySQL database at all. [#16032](https://github.com/ClickHouse/ClickHouse/pull/16032) ([Kruglov Pavel](https://github.com/Avogar)).
+* Now exception will be thrown when `ALTER MODIFY COLUMN ... DEFAULT ...` has incompatible default with column type. Fixes [#15854](https://github.com/ClickHouse/ClickHouse/issues/15854). [#15858](https://github.com/ClickHouse/ClickHouse/pull/15858) ([alesapin](https://github.com/alesapin)).
+* Fixed IPv4CIDRToRange/IPv6CIDRToRange functions to accept const IP-column values. [#15856](https://github.com/ClickHouse/ClickHouse/pull/15856) ([vladimir-golovchenko](https://github.com/vladimir-golovchenko)).
+
+#### Improvement
+
+* Treat `INTERVAL '1 hour'` as equivalent to `INTERVAL 1 HOUR`, to be compatible with Postgres and similar. This fixes [#15637](https://github.com/ClickHouse/ClickHouse/issues/15637). [#15978](https://github.com/ClickHouse/ClickHouse/pull/15978) ([flynn](https://github.com/ucasFL)).
+* Enable parsing enum values by their numeric ids for CSV, TSV and JSON input formats. [#15685](https://github.com/ClickHouse/ClickHouse/pull/15685) ([vivarum](https://github.com/vivarum)).
+* Better read task scheduling for JBOD architecture and `MergeTree` storage. New setting `read_backoff_min_concurrency` which serves as the lower limit to the number of reading threads. [#16423](https://github.com/ClickHouse/ClickHouse/pull/16423) ([Amos Bird](https://github.com/amosbird)).
+* Add missing support for `LowCardinality` in `Avro` format. [#16521](https://github.com/ClickHouse/ClickHouse/pull/16521) ([Mike](https://github.com/myrrc)).
+* Workaround for use `S3` with nginx server as proxy. Nginx currenty does not accept urls with empty path like `http://domain.com?delete`, but vanilla aws-sdk-cpp produces this kind of urls. This commit uses patched aws-sdk-cpp version, which makes urls with "/" as path in this cases, like `http://domain.com/?delete`. [#16814](https://github.com/ClickHouse/ClickHouse/pull/16814) ([ianton-ru](https://github.com/ianton-ru)).
+* Better diagnostics on parse errors in input data. Provide row number on `Cannot read all data` errors. [#16644](https://github.com/ClickHouse/ClickHouse/pull/16644) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Make the behaviour of `minMap` and `maxMap` more desireable. It will not skip zero values in the result. Fixes [#16087](https://github.com/ClickHouse/ClickHouse/issues/16087). [#16631](https://github.com/ClickHouse/ClickHouse/pull/16631) ([Ildus Kurbangaliev](https://github.com/ildus)).
+* Better update of ZooKeeper configuration in runtime. [#16630](https://github.com/ClickHouse/ClickHouse/pull/16630) ([sundyli](https://github.com/sundy-li)).
+* Apply SETTINGS clause as early as possible. It allows to modify more settings in the query. This closes [#3178](https://github.com/ClickHouse/ClickHouse/issues/3178). [#16619](https://github.com/ClickHouse/ClickHouse/pull/16619) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Now `event_time_microseconds` field stores in Decimal64, not UInt64. [#16617](https://github.com/ClickHouse/ClickHouse/pull/16617) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
+* Now paratmeterized functions can be used in `APPLY` column transformer. [#16589](https://github.com/ClickHouse/ClickHouse/pull/16589) ([Amos Bird](https://github.com/amosbird)).
+* Improve scheduling of background task which removes data of dropped tables in `Atomic` databases. `Atomic` databases do not create broken symlink to table data directory if table actually has no data directory. [#16584](https://github.com/ClickHouse/ClickHouse/pull/16584) ([tavplubix](https://github.com/tavplubix)).
+* Subqueries in `WITH` section (CTE) can reference previous subqueries in `WITH` section by their name. [#16575](https://github.com/ClickHouse/ClickHouse/pull/16575) ([Amos Bird](https://github.com/amosbird)).
+* Add current_database into `system.query_thread_log`. [#16558](https://github.com/ClickHouse/ClickHouse/pull/16558) ([Azat Khuzhin](https://github.com/azat)).
+* Allow to fetch parts that are already committed or outdated in the current instance into the detached directory. It's useful when migrating tables from another cluster and having N to 1 shards mapping. It's also consistent with the current fetchPartition implementation. [#16538](https://github.com/ClickHouse/ClickHouse/pull/16538) ([Amos Bird](https://github.com/amosbird)).
+* Multiple improvements for `RabbitMQ`: Fixed bug for [#16263](https://github.com/ClickHouse/ClickHouse/issues/16263). Also minimized event loop lifetime. Added more efficient queues setup. [#16426](https://github.com/ClickHouse/ClickHouse/pull/16426) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Fix debug assertion in `quantileDeterministic` function. In previous version it may also transfer up to two times more data over the network. Although no bug existed. This fixes [#15683](https://github.com/ClickHouse/ClickHouse/issues/15683). [#16410](https://github.com/ClickHouse/ClickHouse/pull/16410) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Add `TablesToDropQueueSize` metric. It's equal to number of dropped tables, that are waiting for background data removal. [#16364](https://github.com/ClickHouse/ClickHouse/pull/16364) ([tavplubix](https://github.com/tavplubix)).
+* Better diagnostics when client has dropped connection. In previous versions, `Attempt to read after EOF` and `Broken pipe` exceptions were logged in server. In new version, it's information message `Client has dropped the connection, cancel the query.`. [#16329](https://github.com/ClickHouse/ClickHouse/pull/16329) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Add total_rows/total_bytes (from system.tables) support for Set/Join table engines. [#16306](https://github.com/ClickHouse/ClickHouse/pull/16306) ([Azat Khuzhin](https://github.com/azat)).
+* Now it's possible to specify `PRIMARY KEY` without `ORDER BY` for MergeTree table engines family. Closes [#15591](https://github.com/ClickHouse/ClickHouse/issues/15591). [#16284](https://github.com/ClickHouse/ClickHouse/pull/16284) ([alesapin](https://github.com/alesapin)).
+* If there is no tmp folder in the system (chroot, misconfigutation etc) `clickhouse-local` will create temporary subfolder in the current directory. [#16280](https://github.com/ClickHouse/ClickHouse/pull/16280) ([filimonov](https://github.com/filimonov)).
+* Add support for nested data types (like named tuple) as sub-types. Fixes [#15587](https://github.com/ClickHouse/ClickHouse/issues/15587). [#16262](https://github.com/ClickHouse/ClickHouse/pull/16262) ([Ivan](https://github.com/abyss7)).
+* Support for `database_atomic_wait_for_drop_and_detach_synchronously`/`NO DELAY`/`SYNC` for `DROP DATABASE`. [#16127](https://github.com/ClickHouse/ClickHouse/pull/16127) ([Azat Khuzhin](https://github.com/azat)).
+* Add `allow_nondeterministic_optimize_skip_unused_shards` (to allow non deterministic like `rand()` or `dictGet()` in sharding key). [#16105](https://github.com/ClickHouse/ClickHouse/pull/16105) ([Azat Khuzhin](https://github.com/azat)).
+* Fix `memory_profiler_step`/`max_untracked_memory` for queries via HTTP (test included). Fix the issue that adjusting this value globally in xml config does not help either, since those settings are not applied anyway, only default (4MB) value is [used](https://github.com/ClickHouse/ClickHouse/blob/17731245336d8c84f75e4c0894c5797ed7732190/src/Common/ThreadStatus.h#L104). Fix `query_id` for the most root ThreadStatus of the http query (by initializing QueryScope after reading query_id). [#16101](https://github.com/ClickHouse/ClickHouse/pull/16101) ([Azat Khuzhin](https://github.com/azat)).
+* Now it's allowed to execute `ALTER ... ON CLUSTER` queries regardless of the `<internal_replication>` setting in cluster config. [#16075](https://github.com/ClickHouse/ClickHouse/pull/16075) ([alesapin](https://github.com/alesapin)).
+* Fix rare issue when `clickhouse-client` may abort on exit due to loading of suggestions. This fixes [#16035](https://github.com/ClickHouse/ClickHouse/issues/16035). [#16047](https://github.com/ClickHouse/ClickHouse/pull/16047) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Add support of `cache` layout for `Redis` dictionaries with complex key. [#15985](https://github.com/ClickHouse/ClickHouse/pull/15985) ([Anton Popov](https://github.com/CurtizJ)).
+* Fix query hang (endless loop) in case of misconfiguration (`connections_with_failover_max_tries` set to 0). [#15876](https://github.com/ClickHouse/ClickHouse/pull/15876) ([Azat Khuzhin](https://github.com/azat)).
+* Change level of some log messages from information to debug, so information messages will not appear for every query. This closes [#5293](https://github.com/ClickHouse/ClickHouse/issues/5293). [#15816](https://github.com/ClickHouse/ClickHouse/pull/15816) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Remove `MemoryTrackingInBackground*` metrics to avoid potentially misleading results. This fixes [#15684](https://github.com/ClickHouse/ClickHouse/issues/15684). [#15813](https://github.com/ClickHouse/ClickHouse/pull/15813) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Add reconnects to `zookeeper-dump-tree` tool. [#15711](https://github.com/ClickHouse/ClickHouse/pull/15711) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Allow explicitly specify columns list in `CREATE TABLE table AS table_function(...)` query. Fixes [#9249](https://github.com/ClickHouse/ClickHouse/issues/9249) Fixes [#14214](https://github.com/ClickHouse/ClickHouse/issues/14214). [#14295](https://github.com/ClickHouse/ClickHouse/pull/14295) ([tavplubix](https://github.com/tavplubix)).
+
+#### Performance Improvement
+
+* Do not merge parts across partitions in SELECT FINAL. [#15938](https://github.com/ClickHouse/ClickHouse/pull/15938) ([Kruglov Pavel](https://github.com/Avogar)).
+* Improve performance of `-OrNull` and `-OrDefault` aggregate functions. [#16661](https://github.com/ClickHouse/ClickHouse/pull/16661) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Improve performance of `quantileMerge`. In previous versions it was obnoxiously slow. This closes [#1463](https://github.com/ClickHouse/ClickHouse/issues/1463). [#16643](https://github.com/ClickHouse/ClickHouse/pull/16643) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Improve performance of logical functions a little. [#16347](https://github.com/ClickHouse/ClickHouse/pull/16347) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Improved performance of merges assignment in MergeTree table engines. Shouldn't be visible for the user. [#16191](https://github.com/ClickHouse/ClickHouse/pull/16191) ([alesapin](https://github.com/alesapin)).
+* Speedup hashed/sparse_hashed dictionary loading by preallocating the hash table. [#15454](https://github.com/ClickHouse/ClickHouse/pull/15454) ([Azat Khuzhin](https://github.com/azat)).
+* Now trivial count optimization becomes slightly non-trivial. Predicates that contain exact partition expr can be optimized too. This also fixes [#11092](https://github.com/ClickHouse/ClickHouse/issues/11092) which returns wrong count when `max_parallel_replicas > 1`. [#15074](https://github.com/ClickHouse/ClickHouse/pull/15074) ([Amos Bird](https://github.com/amosbird)).
+
+#### Build/Testing/Packaging Improvement
+
+* Add flaky check for stateless tests. It will detect potentially flaky functional tests in advance, before they are merged. [#16238](https://github.com/ClickHouse/ClickHouse/pull/16238) ([alesapin](https://github.com/alesapin)).
+* Use proper version for `croaring` instead of amalgamation. [#16285](https://github.com/ClickHouse/ClickHouse/pull/16285) ([sundyli](https://github.com/sundy-li)).
+* Improve generation of build files for `ya.make` build system (Arcadia). [#16700](https://github.com/ClickHouse/ClickHouse/pull/16700) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Add MySQL BinLog file check tool for `MaterializeMySQL` database engine. `MaterializeMySQL` is an experimental feature. [#16223](https://github.com/ClickHouse/ClickHouse/pull/16223) ([Winter Zhang](https://github.com/zhang2014)).
+* Check for executable bit on non-executable files. People often accidentially commit executable files from Windows. [#15843](https://github.com/ClickHouse/ClickHouse/pull/15843) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Check for `#pragma once` in headers. [#15818](https://github.com/ClickHouse/ClickHouse/pull/15818) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Fix illegal code style `&vector[idx]` in libhdfs3. This fixes libcxx debug build. See also https://github.com/ClickHouse-Extras/libhdfs3/pull/8 . [#15815](https://github.com/ClickHouse/ClickHouse/pull/15815) ([Amos Bird](https://github.com/amosbird)).
+* Fix build of one miscellaneous example tool on Mac OS. Note that we don't build examples on Mac OS in our CI (we build only ClickHouse binary), so there is zero chance it will not break again. This fixes [#15804](https://github.com/ClickHouse/ClickHouse/issues/15804). [#15808](https://github.com/ClickHouse/ClickHouse/pull/15808) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Simplify Sys/V init script. [#14135](https://github.com/ClickHouse/ClickHouse/pull/14135) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Added `boost::program_options` to `db_generator` in order to increase its usability. This closes [#15940](https://github.com/ClickHouse/ClickHouse/issues/15940). [#15973](https://github.com/ClickHouse/ClickHouse/pull/15973) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
+
+
 ## ClickHouse release 20.10
+
+### ClickHouse release v20.10.4.1-stable, 2020-11-13
+
+#### Bug Fix
+
+* Fix rare silent crashes when query profiler is on and ClickHouse is installed on OS with glibc version that has (supposedly) broken asynchronous unwind tables for some functions. This fixes [#15301](https://github.com/ClickHouse/ClickHouse/issues/15301). This fixes [#13098](https://github.com/ClickHouse/ClickHouse/issues/13098). [#16846](https://github.com/ClickHouse/ClickHouse/pull/16846) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Fix `IN` operator over several columns and tuples with enabled `transform_null_in` setting. Fixes [#15310](https://github.com/ClickHouse/ClickHouse/issues/15310). [#16722](https://github.com/ClickHouse/ClickHouse/pull/16722) ([Anton Popov](https://github.com/CurtizJ)).
+* This will fix optimize_read_in_order/optimize_aggregation_in_order with max_threads>0 and expression in ORDER BY. [#16637](https://github.com/ClickHouse/ClickHouse/pull/16637) ([Azat Khuzhin](https://github.com/azat)).
+* Now when parsing AVRO from input the LowCardinality is removed from type. Fixes [#16188](https://github.com/ClickHouse/ClickHouse/issues/16188). [#16521](https://github.com/ClickHouse/ClickHouse/pull/16521) ([Mike](https://github.com/myrrc)).
+* Fix rapid growth of metadata when using MySQL Master -> MySQL Slave -> ClickHouse MaterializeMySQL Engine, and `slave_parallel_worker` enabled on MySQL Slave, by properly shrinking GTID sets. This fixes [#15951](https://github.com/ClickHouse/ClickHouse/issues/15951). [#16504](https://github.com/ClickHouse/ClickHouse/pull/16504) ([TCeason](https://github.com/TCeason)).
+* Fix DROP TABLE for Distributed (racy with INSERT). [#16409](https://github.com/ClickHouse/ClickHouse/pull/16409) ([Azat Khuzhin](https://github.com/azat)).
+* Fix processing of very large entries in replication queue. Very large entries may appear in ALTER queries if table structure is extremely large (near 1 MB). This fixes [#16307](https://github.com/ClickHouse/ClickHouse/issues/16307). [#16332](https://github.com/ClickHouse/ClickHouse/pull/16332) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Fix bug with MySQL database. When MySQL server used as database engine is down some queries raise Exception, because they try to get tables from disabled server, while it's unnecessary. For example, query `SELECT ... FROM system.parts` should work only with MergeTree tables and don't touch MySQL database at all. [#16032](https://github.com/ClickHouse/ClickHouse/pull/16032) ([Kruglov Pavel](https://github.com/Avogar)).
+
+#### Improvement
+
+* Workaround for use S3 with nginx server as proxy. Nginx currenty does not accept urls with empty path like http://domain.com?delete, but vanilla aws-sdk-cpp produces this kind of urls. This commit uses patched aws-sdk-cpp version, which makes urls with "/" as path in this cases, like http://domain.com/?delete. [#16813](https://github.com/ClickHouse/ClickHouse/pull/16813) ([ianton-ru](https://github.com/ianton-ru)).
+
 
 ### ClickHouse release v20.10.3.30, 2020-10-28
 
@@ -212,6 +358,84 @@
 
 ## ClickHouse release 20.9
 
+### ClickHouse release v20.9.5.5-stable, 2020-11-13
+
+#### Bug Fix
+
+* Fix rare silent crashes when query profiler is on and ClickHouse is installed on OS with glibc version that has (supposedly) broken asynchronous unwind tables for some functions. This fixes [#15301](https://github.com/ClickHouse/ClickHouse/issues/15301). This fixes [#13098](https://github.com/ClickHouse/ClickHouse/issues/13098). [#16846](https://github.com/ClickHouse/ClickHouse/pull/16846) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Now when parsing AVRO from input the LowCardinality is removed from type. Fixes [#16188](https://github.com/ClickHouse/ClickHouse/issues/16188). [#16521](https://github.com/ClickHouse/ClickHouse/pull/16521) ([Mike](https://github.com/myrrc)).
+* Fix rapid growth of metadata when using MySQL Master -> MySQL Slave -> ClickHouse MaterializeMySQL Engine, and `slave_parallel_worker` enabled on MySQL Slave, by properly shrinking GTID sets. This fixes [#15951](https://github.com/ClickHouse/ClickHouse/issues/15951). [#16504](https://github.com/ClickHouse/ClickHouse/pull/16504) ([TCeason](https://github.com/TCeason)).
+* Fix DROP TABLE for Distributed (racy with INSERT). [#16409](https://github.com/ClickHouse/ClickHouse/pull/16409) ([Azat Khuzhin](https://github.com/azat)).
+* Fix processing of very large entries in replication queue. Very large entries may appear in ALTER queries if table structure is extremely large (near 1 MB). This fixes [#16307](https://github.com/ClickHouse/ClickHouse/issues/16307). [#16332](https://github.com/ClickHouse/ClickHouse/pull/16332) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Fixed the inconsistent behaviour when a part of return data could be dropped because the set for its filtration wasn't created. [#16308](https://github.com/ClickHouse/ClickHouse/pull/16308) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
+* Fix bug with MySQL database. When MySQL server used as database engine is down some queries raise Exception, because they try to get tables from disabled server, while it's unnecessary. For example, query `SELECT ... FROM system.parts` should work only with MergeTree tables and don't touch MySQL database at all. [#16032](https://github.com/ClickHouse/ClickHouse/pull/16032) ([Kruglov Pavel](https://github.com/Avogar)).
+
+
+### ClickHouse release v20.9.4.76-stable (2020-10-29)
+
+#### Bug Fix
+
+* Fix double free in case of exception in function `dictGet`. It could have happened if dictionary was loaded with error. [#16429](https://github.com/ClickHouse/ClickHouse/pull/16429) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Fix group by with totals/rollup/cube modifers and min/max functions over group by keys. Fixes [#16393](https://github.com/ClickHouse/ClickHouse/issues/16393). [#16397](https://github.com/ClickHouse/ClickHouse/pull/16397) ([Anton Popov](https://github.com/CurtizJ)).
+* Fix async Distributed INSERT w/ prefer_localhost_replica=0 and internal_replication. [#16358](https://github.com/ClickHouse/ClickHouse/pull/16358) ([Azat Khuzhin](https://github.com/azat)).
+* Fix a very wrong code in TwoLevelStringHashTable implementation, which might lead to memory leak. I'm suprised how this bug can lurk for so long.... [#16264](https://github.com/ClickHouse/ClickHouse/pull/16264) ([Amos Bird](https://github.com/amosbird)).
+* Fix the case when memory can be overallocated regardless to the limit. This closes [#14560](https://github.com/ClickHouse/ClickHouse/issues/14560). [#16206](https://github.com/ClickHouse/ClickHouse/pull/16206) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Fix `ALTER MODIFY ... ORDER BY` query hang for `ReplicatedVersionedCollapsingMergeTree`. This fixes [#15980](https://github.com/ClickHouse/ClickHouse/issues/15980). [#16011](https://github.com/ClickHouse/ClickHouse/pull/16011) ([alesapin](https://github.com/alesapin)).
+* Fix collate name & charset name parser and support `length = 0` for string type. [#16008](https://github.com/ClickHouse/ClickHouse/pull/16008) ([Winter Zhang](https://github.com/zhang2014)).
+* Allow to use direct layout for dictionaries with complex keys. [#16007](https://github.com/ClickHouse/ClickHouse/pull/16007) ([Anton Popov](https://github.com/CurtizJ)).
+* Prevent replica hang for 5-10 mins when replication error happens after a period of inactivity. [#15987](https://github.com/ClickHouse/ClickHouse/pull/15987) ([filimonov](https://github.com/filimonov)).
+* Fix rare segfaults when inserting into or selecting from MaterializedView and concurrently dropping target table (for Atomic database engine). [#15984](https://github.com/ClickHouse/ClickHouse/pull/15984) ([tavplubix](https://github.com/tavplubix)).
+* Fix ambiguity in parsing of settings profiles: `CREATE USER ... SETTINGS profile readonly` is now considered as using a profile named `readonly`, not a setting named `profile` with the readonly constraint. This fixes https://github.com/ClickHouse/ClickHouse/issues/15628. [#15982](https://github.com/ClickHouse/ClickHouse/pull/15982) ([Vitaly Baranov](https://github.com/vitlibar)).
+* Fix a crash when database creation fails. [#15954](https://github.com/ClickHouse/ClickHouse/pull/15954) ([Winter Zhang](https://github.com/zhang2014)).
+* Fixed `DROP TABLE IF EXISTS` failure with `Table ... doesn't exist` error when table is concurrently renamed (for Atomic database engine). Fixed rare deadlock when concurrently executing some DDL queries with multiple tables (like `DROP DATABASE` and `RENAME TABLE`) Fixed `DROP/DETACH DATABASE` failure with `Table ... doesn't exist` when concurrently executing `DROP/DETACH TABLE`. [#15934](https://github.com/ClickHouse/ClickHouse/pull/15934) ([tavplubix](https://github.com/tavplubix)).
+* Fix incorrect empty result for query from `Distributed` table if query has `WHERE`, `PREWHERE` and `GLOBAL IN`. Fixes [#15792](https://github.com/ClickHouse/ClickHouse/issues/15792). [#15933](https://github.com/ClickHouse/ClickHouse/pull/15933) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Fix possible deadlocks in RBAC. [#15875](https://github.com/ClickHouse/ClickHouse/pull/15875) ([Vitaly Baranov](https://github.com/vitlibar)).
+* Fix exception `Block structure mismatch` in `SELECT ... ORDER BY DESC` queries which were executed after `ALTER MODIFY COLUMN` query. Fixes [#15800](https://github.com/ClickHouse/ClickHouse/issues/15800). [#15852](https://github.com/ClickHouse/ClickHouse/pull/15852) ([alesapin](https://github.com/alesapin)).
+* Fix `select count()` inaccuracy for MaterializeMySQL. [#15767](https://github.com/ClickHouse/ClickHouse/pull/15767) ([tavplubix](https://github.com/tavplubix)).
+* Fix some cases of queries, in which only virtual columns are selected. Previously `Not found column _nothing in block` exception may be thrown. Fixes [#12298](https://github.com/ClickHouse/ClickHouse/issues/12298). [#15756](https://github.com/ClickHouse/ClickHouse/pull/15756) ([Anton Popov](https://github.com/CurtizJ)).
+* Fixed too low default value of `max_replicated_logs_to_keep` setting, which might cause replicas to become lost too often. Improve lost replica recovery process by choosing the most up-to-date replica to clone. Also do not remove old parts from lost replica, detach them instead. [#15701](https://github.com/ClickHouse/ClickHouse/pull/15701) ([tavplubix](https://github.com/tavplubix)).
+* Fix error `Cannot add simple transform to empty Pipe` which happened while reading from `Buffer` table which has different structure than destination table. It was possible if destination table returned empty result for query. Fixes [#15529](https://github.com/ClickHouse/ClickHouse/issues/15529). [#15662](https://github.com/ClickHouse/ClickHouse/pull/15662) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Fixed bug with globs in S3 table function, region from URL was not applied to S3 client configuration. [#15646](https://github.com/ClickHouse/ClickHouse/pull/15646) ([Vladimir Chebotarev](https://github.com/excitoon)).
+* Decrement the `ReadonlyReplica` metric when detaching read-only tables. This fixes https://github.com/ClickHouse/ClickHouse/issues/15598. [#15592](https://github.com/ClickHouse/ClickHouse/pull/15592) ([sundyli](https://github.com/sundy-li)).
+* Throw an error when a single parameter is passed to ReplicatedMergeTree instead of ignoring it. [#15516](https://github.com/ClickHouse/ClickHouse/pull/15516) ([nvartolomei](https://github.com/nvartolomei)).
+
+#### Improvement
+
+* Now it's allowed to execute `ALTER ... ON CLUSTER` queries regardless of the `<internal_replication>` setting in cluster config. [#16075](https://github.com/ClickHouse/ClickHouse/pull/16075) ([alesapin](https://github.com/alesapin)).
+* Unfold `{database}`, `{table}` and `{uuid}` macros in `ReplicatedMergeTree` arguments on table creation. [#16160](https://github.com/ClickHouse/ClickHouse/pull/16160) ([tavplubix](https://github.com/tavplubix)).
+
+
+### ClickHouse release v20.9.3.45-stable (2020-10-09)
+
+#### Bug Fix
+
+* Fix error `Cannot find column` which may happen at insertion into `MATERIALIZED VIEW` in case if query for `MV` containes `ARRAY JOIN`. [#15717](https://github.com/ClickHouse/ClickHouse/pull/15717) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Fix race condition in AMQP-CPP. [#15667](https://github.com/ClickHouse/ClickHouse/pull/15667) ([alesapin](https://github.com/alesapin)).
+* Fix the order of destruction for resources in `ReadFromStorage` step of query plan. It might cause crashes in rare cases. Possibly connected with [#15610](https://github.com/ClickHouse/ClickHouse/issues/15610). [#15645](https://github.com/ClickHouse/ClickHouse/pull/15645) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Fixed `Element ... is not a constant expression` error when using `JSON*` function result in `VALUES`, `LIMIT` or right side of `IN` operator. [#15589](https://github.com/ClickHouse/ClickHouse/pull/15589) ([tavplubix](https://github.com/tavplubix)).
+* Prevent the possibility of error message `Could not calculate available disk space (statvfs), errno: 4, strerror: Interrupted system call`. This fixes [#15541](https://github.com/ClickHouse/ClickHouse/issues/15541). [#15557](https://github.com/ClickHouse/ClickHouse/pull/15557) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Significantly reduce memory usage in AggregatingInOrderTransform/optimize_aggregation_in_order. [#15543](https://github.com/ClickHouse/ClickHouse/pull/15543) ([Azat Khuzhin](https://github.com/azat)).
+* Mutation might hang waiting for some non-existent part after `MOVE` or `REPLACE PARTITION` or, in rare cases, after `DETACH` or `DROP PARTITION`. It's fixed. [#15537](https://github.com/ClickHouse/ClickHouse/pull/15537) ([tavplubix](https://github.com/tavplubix)).
+* Fix bug when `ILIKE` operator stops being case insensitive if `LIKE` with the same pattern was executed. [#15536](https://github.com/ClickHouse/ClickHouse/pull/15536) ([alesapin](https://github.com/alesapin)).
+* Fix `Missing columns` errors when selecting columns which absent in data, but depend on other columns which also absent in data. Fixes [#15530](https://github.com/ClickHouse/ClickHouse/issues/15530). [#15532](https://github.com/ClickHouse/ClickHouse/pull/15532) ([alesapin](https://github.com/alesapin)).
+* Fix bug with event subscription in DDLWorker which rarely may lead to query hangs in `ON CLUSTER`. Introduced in [#13450](https://github.com/ClickHouse/ClickHouse/issues/13450). [#15477](https://github.com/ClickHouse/ClickHouse/pull/15477) ([alesapin](https://github.com/alesapin)).
+* Report proper error when the second argument of `boundingRatio` aggregate function has a wrong type. [#15407](https://github.com/ClickHouse/ClickHouse/pull/15407) ([detailyang](https://github.com/detailyang)).
+* Fix bug where queries like SELECT toStartOfDay(today()) fail complaining about empty time_zone argument. [#15319](https://github.com/ClickHouse/ClickHouse/pull/15319) ([Bharat Nallan](https://github.com/bharatnc)).
+* Fix race condition during MergeTree table rename and background cleanup. [#15304](https://github.com/ClickHouse/ClickHouse/pull/15304) ([alesapin](https://github.com/alesapin)).
+* Fix rare race condition on server startup when system.logs are enabled. [#15300](https://github.com/ClickHouse/ClickHouse/pull/15300) ([alesapin](https://github.com/alesapin)).
+* Fix MSan report in QueryLog. Uninitialized memory can be used for the field `memory_usage`. [#15258](https://github.com/ClickHouse/ClickHouse/pull/15258) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Fix instance crash when using joinGet with LowCardinality types. This fixes https://github.com/ClickHouse/ClickHouse/issues/15214. [#15220](https://github.com/ClickHouse/ClickHouse/pull/15220) ([Amos Bird](https://github.com/amosbird)).
+* Fix bug in table engine `Buffer` which doesn't allow to insert data of new structure into `Buffer` after `ALTER` query. Fixes [#15117](https://github.com/ClickHouse/ClickHouse/issues/15117). [#15192](https://github.com/ClickHouse/ClickHouse/pull/15192) ([alesapin](https://github.com/alesapin)).
+* Adjust decimals field size in mysql column definition packet. [#15152](https://github.com/ClickHouse/ClickHouse/pull/15152) ([maqroll](https://github.com/maqroll)).
+* Fixed `Cannot rename ... errno: 22, strerror: Invalid argument` error on DDL query execution in Atomic database when running clickhouse-server in docker on Mac OS. [#15024](https://github.com/ClickHouse/ClickHouse/pull/15024) ([tavplubix](https://github.com/tavplubix)).
+* Fix to make predicate push down work when subquery contains finalizeAggregation function. Fixes [#14847](https://github.com/ClickHouse/ClickHouse/issues/14847). [#14937](https://github.com/ClickHouse/ClickHouse/pull/14937) ([filimonov](https://github.com/filimonov)).
+* Fix a problem where the server may get stuck on startup while talking to ZooKeeper, if the configuration files have to be fetched from ZK (using the `from_zk` include option). This fixes [#14814](https://github.com/ClickHouse/ClickHouse/issues/14814). [#14843](https://github.com/ClickHouse/ClickHouse/pull/14843) ([Alexander Kuzmenkov](https://github.com/akuzm)).
+
+#### Improvement
+
+* Now it's possible to change the type of version column for `VersionedCollapsingMergeTree` with `ALTER` query. [#15442](https://github.com/ClickHouse/ClickHouse/pull/15442) ([alesapin](https://github.com/alesapin)).
+
+
 ### ClickHouse release v20.9.2.20, 2020-09-22
 
 #### New Feature
@@ -285,6 +509,110 @@
 
 
 ## ClickHouse release 20.8
+
+### ClickHouse release v20.8.6.6-lts, 2020-11-13
+
+#### Bug Fix
+
+* Fix rare silent crashes when query profiler is on and ClickHouse is installed on OS with glibc version that has (supposedly) broken asynchronous unwind tables for some functions. This fixes [#15301](https://github.com/ClickHouse/ClickHouse/issues/15301). This fixes [#13098](https://github.com/ClickHouse/ClickHouse/issues/13098). [#16846](https://github.com/ClickHouse/ClickHouse/pull/16846) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Now when parsing AVRO from input the LowCardinality is removed from type. Fixes [#16188](https://github.com/ClickHouse/ClickHouse/issues/16188). [#16521](https://github.com/ClickHouse/ClickHouse/pull/16521) ([Mike](https://github.com/myrrc)).
+* Fix rapid growth of metadata when using MySQL Master -> MySQL Slave -> ClickHouse MaterializeMySQL Engine, and `slave_parallel_worker` enabled on MySQL Slave, by properly shrinking GTID sets. This fixes [#15951](https://github.com/ClickHouse/ClickHouse/issues/15951). [#16504](https://github.com/ClickHouse/ClickHouse/pull/16504) ([TCeason](https://github.com/TCeason)).
+* Fix DROP TABLE for Distributed (racy with INSERT). [#16409](https://github.com/ClickHouse/ClickHouse/pull/16409) ([Azat Khuzhin](https://github.com/azat)).
+* Fix processing of very large entries in replication queue. Very large entries may appear in ALTER queries if table structure is extremely large (near 1 MB). This fixes [#16307](https://github.com/ClickHouse/ClickHouse/issues/16307). [#16332](https://github.com/ClickHouse/ClickHouse/pull/16332) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Fixed the inconsistent behaviour when a part of return data could be dropped because the set for its filtration wasn't created. [#16308](https://github.com/ClickHouse/ClickHouse/pull/16308) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
+* Fix bug with MySQL database. When MySQL server used as database engine is down some queries raise Exception, because they try to get tables from disabled server, while it's unnecessary. For example, query `SELECT ... FROM system.parts` should work only with MergeTree tables and don't touch MySQL database at all. [#16032](https://github.com/ClickHouse/ClickHouse/pull/16032) ([Kruglov Pavel](https://github.com/Avogar)).
+
+
+### ClickHouse release v20.8.5.45-lts, 2020-10-29
+
+#### Bug Fix
+
+* Fix double free in case of exception in function `dictGet`. It could have happened if dictionary was loaded with error. [#16429](https://github.com/ClickHouse/ClickHouse/pull/16429) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Fix group by with totals/rollup/cube modifers and min/max functions over group by keys. Fixes [#16393](https://github.com/ClickHouse/ClickHouse/issues/16393). [#16397](https://github.com/ClickHouse/ClickHouse/pull/16397) ([Anton Popov](https://github.com/CurtizJ)).
+* Fix async Distributed INSERT w/ prefer_localhost_replica=0 and internal_replication. [#16358](https://github.com/ClickHouse/ClickHouse/pull/16358) ([Azat Khuzhin](https://github.com/azat)).
+* Fix a possible memory leak during `GROUP BY` with string keys, caused by an error in `TwoLevelStringHashTable` implementation. [#16264](https://github.com/ClickHouse/ClickHouse/pull/16264) ([Amos Bird](https://github.com/amosbird)).
+* Fix the case when memory can be overallocated regardless to the limit. This closes [#14560](https://github.com/ClickHouse/ClickHouse/issues/14560). [#16206](https://github.com/ClickHouse/ClickHouse/pull/16206) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Fix `ALTER MODIFY ... ORDER BY` query hang for `ReplicatedVersionedCollapsingMergeTree`. This fixes [#15980](https://github.com/ClickHouse/ClickHouse/issues/15980). [#16011](https://github.com/ClickHouse/ClickHouse/pull/16011) ([alesapin](https://github.com/alesapin)).
+* Fix collate name & charset name parser and support `length = 0` for string type. [#16008](https://github.com/ClickHouse/ClickHouse/pull/16008) ([Winter Zhang](https://github.com/zhang2014)).
+* Allow to use direct layout for dictionaries with complex keys. [#16007](https://github.com/ClickHouse/ClickHouse/pull/16007) ([Anton Popov](https://github.com/CurtizJ)).
+* Prevent replica hang for 5-10 mins when replication error happens after a period of inactivity. [#15987](https://github.com/ClickHouse/ClickHouse/pull/15987) ([filimonov](https://github.com/filimonov)).
+* Fix rare segfaults when inserting into or selecting from MaterializedView and concurrently dropping target table (for Atomic database engine). [#15984](https://github.com/ClickHouse/ClickHouse/pull/15984) ([tavplubix](https://github.com/tavplubix)).
+* Fix ambiguity in parsing of settings profiles: `CREATE USER ... SETTINGS profile readonly` is now considered as using a profile named `readonly`, not a setting named `profile` with the readonly constraint. This fixes [#15628](https://github.com/ClickHouse/ClickHouse/issues/15628). [#15982](https://github.com/ClickHouse/ClickHouse/pull/15982) ([Vitaly Baranov](https://github.com/vitlibar)).
+* Fix a crash when database creation fails. [#15954](https://github.com/ClickHouse/ClickHouse/pull/15954) ([Winter Zhang](https://github.com/zhang2014)).
+* Fixed `DROP TABLE IF EXISTS` failure with `Table ... doesn't exist` error when table is concurrently renamed (for Atomic database engine). Fixed rare deadlock when concurrently executing some DDL queries with multiple tables (like `DROP DATABASE` and `RENAME TABLE`) Fixed `DROP/DETACH DATABASE` failure with `Table ... doesn't exist` when concurrently executing `DROP/DETACH TABLE`. [#15934](https://github.com/ClickHouse/ClickHouse/pull/15934) ([tavplubix](https://github.com/tavplubix)).
+* Fix incorrect empty result for query from `Distributed` table if query has `WHERE`, `PREWHERE` and `GLOBAL IN`. Fixes [#15792](https://github.com/ClickHouse/ClickHouse/issues/15792). [#15933](https://github.com/ClickHouse/ClickHouse/pull/15933) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Fix possible deadlocks in RBAC. [#15875](https://github.com/ClickHouse/ClickHouse/pull/15875) ([Vitaly Baranov](https://github.com/vitlibar)).
+* Fix exception `Block structure mismatch` in `SELECT ... ORDER BY DESC` queries which were executed after `ALTER MODIFY COLUMN` query. Fixes [#15800](https://github.com/ClickHouse/ClickHouse/issues/15800). [#15852](https://github.com/ClickHouse/ClickHouse/pull/15852) ([alesapin](https://github.com/alesapin)).
+* Fix some cases of queries, in which only virtual columns are selected. Previously `Not found column _nothing in block` exception may be thrown. Fixes [#12298](https://github.com/ClickHouse/ClickHouse/issues/12298). [#15756](https://github.com/ClickHouse/ClickHouse/pull/15756) ([Anton Popov](https://github.com/CurtizJ)).
+* Fix error `Cannot find column` which may happen at insertion into `MATERIALIZED VIEW` in case if query for `MV` containes `ARRAY JOIN`. [#15717](https://github.com/ClickHouse/ClickHouse/pull/15717) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Fixed too low default value of `max_replicated_logs_to_keep` setting, which might cause replicas to become lost too often. Improve lost replica recovery process by choosing the most up-to-date replica to clone. Also do not remove old parts from lost replica, detach them instead. [#15701](https://github.com/ClickHouse/ClickHouse/pull/15701) ([tavplubix](https://github.com/tavplubix)).
+* Fix error `Cannot add simple transform to empty Pipe` which happened while reading from `Buffer` table which has different structure than destination table. It was possible if destination table returned empty result for query. Fixes [#15529](https://github.com/ClickHouse/ClickHouse/issues/15529). [#15662](https://github.com/ClickHouse/ClickHouse/pull/15662) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Fixed bug with globs in S3 table function, region from URL was not applied to S3 client configuration. [#15646](https://github.com/ClickHouse/ClickHouse/pull/15646) ([Vladimir Chebotarev](https://github.com/excitoon)).
+* Decrement the `ReadonlyReplica` metric when detaching read-only tables. This fixes [#15598](https://github.com/ClickHouse/ClickHouse/issues/15598). [#15592](https://github.com/ClickHouse/ClickHouse/pull/15592) ([sundyli](https://github.com/sundy-li)).
+* Throw an error when a single parameter is passed to ReplicatedMergeTree instead of ignoring it. [#15516](https://github.com/ClickHouse/ClickHouse/pull/15516) ([nvartolomei](https://github.com/nvartolomei)).
+
+#### Improvement
+
+* Now it's allowed to execute `ALTER ... ON CLUSTER` queries regardless of the `<internal_replication>` setting in cluster config. [#16075](https://github.com/ClickHouse/ClickHouse/pull/16075) ([alesapin](https://github.com/alesapin)).
+* Unfold `{database}`, `{table}` and `{uuid}` macros in `ReplicatedMergeTree` arguments on table creation. [#16159](https://github.com/ClickHouse/ClickHouse/pull/16159) ([tavplubix](https://github.com/tavplubix)).
+
+
+### ClickHouse release v20.8.4.11-lts, 2020-10-09
+
+#### Bug Fix
+
+* Fix the order of destruction for resources in `ReadFromStorage` step of query plan. It might cause crashes in rare cases. Possibly connected with [#15610](https://github.com/ClickHouse/ClickHouse/issues/15610). [#15645](https://github.com/ClickHouse/ClickHouse/pull/15645) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Fixed `Element ... is not a constant expression` error when using `JSON*` function result in `VALUES`, `LIMIT` or right side of `IN` operator. [#15589](https://github.com/ClickHouse/ClickHouse/pull/15589) ([tavplubix](https://github.com/tavplubix)).
+* Prevent the possibility of error message `Could not calculate available disk space (statvfs), errno: 4, strerror: Interrupted system call`. This fixes [#15541](https://github.com/ClickHouse/ClickHouse/issues/15541). [#15557](https://github.com/ClickHouse/ClickHouse/pull/15557) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Significantly reduce memory usage in AggregatingInOrderTransform/optimize_aggregation_in_order. [#15543](https://github.com/ClickHouse/ClickHouse/pull/15543) ([Azat Khuzhin](https://github.com/azat)).
+* Mutation might hang waiting for some non-existent part after `MOVE` or `REPLACE PARTITION` or, in rare cases, after `DETACH` or `DROP PARTITION`. It's fixed. [#15537](https://github.com/ClickHouse/ClickHouse/pull/15537) ([tavplubix](https://github.com/tavplubix)).
+* Fix bug when `ILIKE` operator stops being case insensitive if `LIKE` with the same pattern was executed. [#15536](https://github.com/ClickHouse/ClickHouse/pull/15536) ([alesapin](https://github.com/alesapin)).
+* Fix `Missing columns` errors when selecting columns which absent in data, but depend on other columns which also absent in data. Fixes [#15530](https://github.com/ClickHouse/ClickHouse/issues/15530). [#15532](https://github.com/ClickHouse/ClickHouse/pull/15532) ([alesapin](https://github.com/alesapin)).
+* Fix bug with event subscription in DDLWorker which rarely may lead to query hangs in `ON CLUSTER`. Introduced in [#13450](https://github.com/ClickHouse/ClickHouse/issues/13450). [#15477](https://github.com/ClickHouse/ClickHouse/pull/15477) ([alesapin](https://github.com/alesapin)).
+* Report proper error when the second argument of `boundingRatio` aggregate function has a wrong type. [#15407](https://github.com/ClickHouse/ClickHouse/pull/15407) ([detailyang](https://github.com/detailyang)).
+* Fix race condition during MergeTree table rename and background cleanup. [#15304](https://github.com/ClickHouse/ClickHouse/pull/15304) ([alesapin](https://github.com/alesapin)).
+* Fix rare race condition on server startup when system.logs are enabled. [#15300](https://github.com/ClickHouse/ClickHouse/pull/15300) ([alesapin](https://github.com/alesapin)).
+* Fix MSan report in QueryLog. Uninitialized memory can be used for the field `memory_usage`. [#15258](https://github.com/ClickHouse/ClickHouse/pull/15258) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Fix instance crash when using joinGet with LowCardinality types. This fixes https://github.com/ClickHouse/ClickHouse/issues/15214. [#15220](https://github.com/ClickHouse/ClickHouse/pull/15220) ([Amos Bird](https://github.com/amosbird)).
+* Fix bug in table engine `Buffer` which doesn't allow to insert data of new structure into `Buffer` after `ALTER` query. Fixes [#15117](https://github.com/ClickHouse/ClickHouse/issues/15117). [#15192](https://github.com/ClickHouse/ClickHouse/pull/15192) ([alesapin](https://github.com/alesapin)).
+* Adjust decimals field size in mysql column definition packet. [#15152](https://github.com/ClickHouse/ClickHouse/pull/15152) ([maqroll](https://github.com/maqroll)).
+* We already use padded comparison between String and FixedString (https://github.com/ClickHouse/ClickHouse/blob/master/src/Functions/FunctionsComparison.h#L333). This PR applies the same logic to field comparison which corrects the usage of FixedString as primary keys. This fixes https://github.com/ClickHouse/ClickHouse/issues/14908. [#15033](https://github.com/ClickHouse/ClickHouse/pull/15033) ([Amos Bird](https://github.com/amosbird)).
+* If function `bar` was called with specifically crafter arguments, buffer overflow was possible. This closes [#13926](https://github.com/ClickHouse/ClickHouse/issues/13926). [#15028](https://github.com/ClickHouse/ClickHouse/pull/15028) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Fixed `Cannot rename ... errno: 22, strerror: Invalid argument` error on DDL query execution in Atomic database when running clickhouse-server in docker on Mac OS. [#15024](https://github.com/ClickHouse/ClickHouse/pull/15024) ([tavplubix](https://github.com/tavplubix)).
+* Now settings `number_of_free_entries_in_pool_to_execute_mutation` and `number_of_free_entries_in_pool_to_lower_max_size_of_merge` can be equal to `background_pool_size`. [#14975](https://github.com/ClickHouse/ClickHouse/pull/14975) ([alesapin](https://github.com/alesapin)).
+* Fix to make predicate push down work when subquery contains finalizeAggregation function. Fixes [#14847](https://github.com/ClickHouse/ClickHouse/issues/14847). [#14937](https://github.com/ClickHouse/ClickHouse/pull/14937) ([filimonov](https://github.com/filimonov)).
+* Publish CPU frequencies per logical core in `system.asynchronous_metrics`. This fixes https://github.com/ClickHouse/ClickHouse/issues/14923. [#14924](https://github.com/ClickHouse/ClickHouse/pull/14924) ([Alexander Kuzmenkov](https://github.com/akuzm)).
+* Fixed `.metadata.tmp File exists` error when using `MaterializeMySQL` database engine. [#14898](https://github.com/ClickHouse/ClickHouse/pull/14898) ([Winter Zhang](https://github.com/zhang2014)).
+* Fix a problem where the server may get stuck on startup while talking to ZooKeeper, if the configuration files have to be fetched from ZK (using the `from_zk` include option). This fixes [#14814](https://github.com/ClickHouse/ClickHouse/issues/14814). [#14843](https://github.com/ClickHouse/ClickHouse/pull/14843) ([Alexander Kuzmenkov](https://github.com/akuzm)).
+* Fix wrong monotonicity detection for shrunk `Int -> Int` cast of signed types. It might lead to incorrect query result. This bug is unveiled in [#14513](https://github.com/ClickHouse/ClickHouse/issues/14513). [#14783](https://github.com/ClickHouse/ClickHouse/pull/14783) ([Amos Bird](https://github.com/amosbird)).
+* Fixed the incorrect sorting order of `Nullable` column. This fixes [#14344](https://github.com/ClickHouse/ClickHouse/issues/14344). [#14495](https://github.com/ClickHouse/ClickHouse/pull/14495) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
+
+#### Improvement
+
+* Now it's possible to change the type of version column for `VersionedCollapsingMergeTree` with `ALTER` query. [#15442](https://github.com/ClickHouse/ClickHouse/pull/15442) ([alesapin](https://github.com/alesapin)).
+
+
+### ClickHouse release v20.8.3.18-stable, 2020-09-18
+
+#### Bug Fix
+
+* Fix the issue when some invocations of `extractAllGroups` function may trigger "Memory limit exceeded" error. This fixes [#13383](https://github.com/ClickHouse/ClickHouse/issues/13383). [#14889](https://github.com/ClickHouse/ClickHouse/pull/14889) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Fix SIGSEGV for an attempt to INSERT into StorageFile(fd). [#14887](https://github.com/ClickHouse/ClickHouse/pull/14887) ([Azat Khuzhin](https://github.com/azat)).
+* Fix rare error in `SELECT` queries when the queried column has `DEFAULT` expression which depends on the other column which also has `DEFAULT` and not present in select query and not exists on disk. Partially fixes [#14531](https://github.com/ClickHouse/ClickHouse/issues/14531). [#14845](https://github.com/ClickHouse/ClickHouse/pull/14845) ([alesapin](https://github.com/alesapin)).
+* Fixed missed default database name in metadata of materialized view when executing `ALTER ... MODIFY QUERY`. [#14664](https://github.com/ClickHouse/ClickHouse/pull/14664) ([tavplubix](https://github.com/tavplubix)).
+* Fix bug when `ALTER UPDATE` mutation with Nullable column in assignment expression and constant value (like `UPDATE x = 42`) leads to incorrect value in column or segfault. Fixes [#13634](https://github.com/ClickHouse/ClickHouse/issues/13634), [#14045](https://github.com/ClickHouse/ClickHouse/issues/14045). [#14646](https://github.com/ClickHouse/ClickHouse/pull/14646) ([alesapin](https://github.com/alesapin)).
+* Fix wrong Decimal multiplication result caused wrong decimal scale of result column. [#14603](https://github.com/ClickHouse/ClickHouse/pull/14603) ([Artem Zuikov](https://github.com/4ertus2)).
+* Added the checker as neither calling `lc->isNullable()` nor calling `ls->getDictionaryPtr()->isNullable()` would return the correct result. [#14591](https://github.com/ClickHouse/ClickHouse/pull/14591) ([myrrc](https://github.com/myrrc)).
+* Cleanup data directory after Zookeeper exceptions during CreateQuery for StorageReplicatedMergeTree Engine. [#14563](https://github.com/ClickHouse/ClickHouse/pull/14563) ([Bharat Nallan](https://github.com/bharatnc)).
+* Fix rare segfaults in functions with combinator -Resample, which could appear in result of overflow with very large parameters. [#14562](https://github.com/ClickHouse/ClickHouse/pull/14562) ([Anton Popov](https://github.com/CurtizJ)).
+
+#### Improvement
+
+* Speed up server shutdown process if there are ongoing S3 requests. [#14858](https://github.com/ClickHouse/ClickHouse/pull/14858) ([Pavel Kovalenko](https://github.com/Jokser)).
+* Allow using multi-volume storage configuration in storage Distributed. [#14839](https://github.com/ClickHouse/ClickHouse/pull/14839) ([Pavel Kovalenko](https://github.com/Jokser)).
+* Speed up server shutdown process if there are ongoing S3 requests. [#14496](https://github.com/ClickHouse/ClickHouse/pull/14496) ([Pavel Kovalenko](https://github.com/Jokser)).
+* Support custom codecs in compact parts. [#12183](https://github.com/ClickHouse/ClickHouse/pull/12183) ([Anton Popov](https://github.com/CurtizJ)).
+
 
 ### ClickHouse release v20.8.2.3-stable, 2020-09-08
 
@@ -1635,6 +1963,74 @@ No changes compared to v20.4.3.16-stable.
 
 
 ## ClickHouse release v20.3
+
+
+### ClickHouse release v20.3.21.2-lts, 2020-11-02
+
+#### Bug Fix
+
+* Fix dictGet in sharding_key (and similar places, i.e. when the function context is stored permanently). [#16205](https://github.com/ClickHouse/ClickHouse/pull/16205) ([Azat Khuzhin](https://github.com/azat)).
+* Fix incorrect empty result for query from `Distributed` table if query has `WHERE`, `PREWHERE` and `GLOBAL IN`. Fixes [#15792](https://github.com/ClickHouse/ClickHouse/issues/15792). [#15933](https://github.com/ClickHouse/ClickHouse/pull/15933) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Fix missing or excessive headers in `TSV/CSVWithNames` formats. This fixes [#12504](https://github.com/ClickHouse/ClickHouse/issues/12504). [#13343](https://github.com/ClickHouse/ClickHouse/pull/13343) ([Azat Khuzhin](https://github.com/azat)).
+
+
+### ClickHouse release v20.3.20.6-lts, 2020-10-09
+
+#### Bug Fix
+
+* Mutation might hang waiting for some non-existent part after `MOVE` or `REPLACE PARTITION` or, in rare cases, after `DETACH` or `DROP PARTITION`. It's fixed. [#15724](https://github.com/ClickHouse/ClickHouse/pull/15724), [#15537](https://github.com/ClickHouse/ClickHouse/pull/15537) ([tavplubix](https://github.com/tavplubix)).
+* Fix hang of queries with a lot of subqueries to same table of `MySQL` engine. Previously, if there were more than 16 subqueries to same `MySQL` table in query, it hang forever. [#15299](https://github.com/ClickHouse/ClickHouse/pull/15299) ([Anton Popov](https://github.com/CurtizJ)).
+* Fix 'Unknown identifier' in GROUP BY when query has JOIN over Merge table. [#15242](https://github.com/ClickHouse/ClickHouse/pull/15242) ([Artem Zuikov](https://github.com/4ertus2)).
+* Fix to make predicate push down work when subquery contains finalizeAggregation function. Fixes [#14847](https://github.com/ClickHouse/ClickHouse/issues/14847). [#14937](https://github.com/ClickHouse/ClickHouse/pull/14937) ([filimonov](https://github.com/filimonov)).
+* Concurrent `ALTER ... REPLACE/MOVE PARTITION ...` queries might cause deadlock. It's fixed. [#13626](https://github.com/ClickHouse/ClickHouse/pull/13626) ([tavplubix](https://github.com/tavplubix)).
+
+
+### ClickHouse release v20.3.19.4-lts, 2020-09-18
+
+#### Bug Fix
+
+* Fix rare error in `SELECT` queries when the queried column has `DEFAULT` expression which depends on the other column which also has `DEFAULT` and not present in select query and not exists on disk. Partially fixes [#14531](https://github.com/ClickHouse/ClickHouse/issues/14531). [#14845](https://github.com/ClickHouse/ClickHouse/pull/14845) ([alesapin](https://github.com/alesapin)).
+* Fix bug when `ALTER UPDATE` mutation with Nullable column in assignment expression and constant value (like `UPDATE x = 42`) leads to incorrect value in column or segfault. Fixes [#13634](https://github.com/ClickHouse/ClickHouse/issues/13634), [#14045](https://github.com/ClickHouse/ClickHouse/issues/14045). [#14646](https://github.com/ClickHouse/ClickHouse/pull/14646) ([alesapin](https://github.com/alesapin)).
+* Fix wrong Decimal multiplication result caused wrong decimal scale of result column. [#14603](https://github.com/ClickHouse/ClickHouse/pull/14603) ([Artem Zuikov](https://github.com/4ertus2)).
+
+#### Improvement
+
+* Support custom codecs in compact parts. [#12183](https://github.com/ClickHouse/ClickHouse/pull/12183) ([Anton Popov](https://github.com/CurtizJ)).
+
+
+### ClickHouse release v20.3.18.10-lts, 2020-09-08
+
+#### Bug Fix
+
+* Stop query execution if exception happened in `PipelineExecutor` itself. This could prevent rare possible query hung. Continuation of [#14334](https://github.com/ClickHouse/ClickHouse/issues/14334). [#14402](https://github.com/ClickHouse/ClickHouse/pull/14402) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Fixed the behaviour when sometimes cache-dictionary returned default value instead of present value from source. [#13624](https://github.com/ClickHouse/ClickHouse/pull/13624) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
+* Fix parsing row policies from users.xml when names of databases or tables contain dots. This fixes [#5779](https://github.com/ClickHouse/ClickHouse/issues/5779), [#12527](https://github.com/ClickHouse/ClickHouse/issues/12527). [#13199](https://github.com/ClickHouse/ClickHouse/pull/13199) ([Vitaly Baranov](https://github.com/vitlibar)).
+* Fix CAST(Nullable(String), Enum()). [#12745](https://github.com/ClickHouse/ClickHouse/pull/12745) ([Azat Khuzhin](https://github.com/azat)).
+* Fixed data race in `text_log`. It does not correspond to any real bug. [#9726](https://github.com/ClickHouse/ClickHouse/pull/9726) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+
+#### Improvement
+
+* Fix wrong error for long queries. It was possible to get syntax error other than `Max query size exceeded` for correct query. [#13928](https://github.com/ClickHouse/ClickHouse/pull/13928) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Return NULL/zero when value is not parsed completely in parseDateTimeBestEffortOrNull/Zero functions. This fixes [#7876](https://github.com/ClickHouse/ClickHouse/issues/7876). [#11653](https://github.com/ClickHouse/ClickHouse/pull/11653) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+
+#### Performance Improvement
+
+* Slightly optimize very short queries with LowCardinality. [#14129](https://github.com/ClickHouse/ClickHouse/pull/14129) ([Anton Popov](https://github.com/CurtizJ)).
+
+#### Build/Testing/Packaging Improvement
+
+* Fix UBSan report (adding zero to nullptr) in HashTable that appeared after migration to clang-10. [#10638](https://github.com/ClickHouse/ClickHouse/pull/10638) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+
+
+### ClickHouse release v20.3.17.173-lts, 2020-08-15
+
+#### Bug Fix
+
+* Fix crash in JOIN with StorageMerge and `set enable_optimize_predicate_expression=1`. [#13679](https://github.com/ClickHouse/ClickHouse/pull/13679) ([Artem Zuikov](https://github.com/4ertus2)).
+* Fix invalid return type for comparison of tuples with `NULL` elements. Fixes [#12461](https://github.com/ClickHouse/ClickHouse/issues/12461). [#13420](https://github.com/ClickHouse/ClickHouse/pull/13420) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Fix queries with constant columns and `ORDER BY` prefix of primary key. [#13396](https://github.com/ClickHouse/ClickHouse/pull/13396) ([Anton Popov](https://github.com/CurtizJ)).
+* Return passed number for numbers with MSB set in roundUpToPowerOfTwoOrZero(). [#13234](https://github.com/ClickHouse/ClickHouse/pull/13234) ([Azat Khuzhin](https://github.com/azat)).
+
 
 ### ClickHouse release v20.3.16.165-lts 2020-08-10
 

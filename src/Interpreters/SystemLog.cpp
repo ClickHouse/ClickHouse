@@ -25,6 +25,7 @@ namespace
 {
 
 constexpr size_t DEFAULT_SYSTEM_LOG_FLUSH_INTERVAL_MILLISECONDS = 7500;
+constexpr size_t DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 
 /// Creates a system log with MergeTree engine using parameters from config
 template <typename TSystemLog>
@@ -125,7 +126,8 @@ SystemLogs::SystemLogs(Context & global_context, const Poco::Util::AbstractConfi
 
     if (metric_log)
     {
-        size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds");
+        size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds",
+                                                                DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
         metric_log->startCollectMetric(collect_interval_milliseconds);
     }
 

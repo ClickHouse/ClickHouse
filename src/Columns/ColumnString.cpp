@@ -1,15 +1,17 @@
-#include <Common/Arena.h>
-#include <Common/memcmpSmall.h>
-#include <Common/assert_cast.h>
-#include <Common/WeakHash.h>
-#include <Common/HashTable/Hash.h>
-#include <Columns/Collator.h>
 #include <Columns/ColumnString.h>
+
+#include <Columns/Collator.h>
 #include <Columns/ColumnsCommon.h>
 #include <DataStreams/ColumnGathererStream.h>
-
+#include <Common/Arena.h>
+#include <Common/HashTable/Hash.h>
+#include <Common/WeakHash.h>
+#include <Common/assert_cast.h>
+#include <Common/memcmpSmall.h>
+#include <common/sort.h>
 #include <common/unaligned.h>
 #include <ext/scope_guard.h>
+
 
 namespace DB
 {
@@ -313,7 +315,7 @@ void ColumnString::getPermutationImpl(size_t limit, Permutation & res, Comparato
     auto less = [&cmp](size_t lhs, size_t rhs){ return cmp(lhs, rhs) < 0; };
 
     if (limit)
-        std::partial_sort(res.begin(), res.begin() + limit, res.end(), less);
+        partial_sort(res.begin(), res.begin() + limit, res.end(), less);
     else
         std::sort(res.begin(), res.end(), less);
 }
@@ -364,8 +366,7 @@ void ColumnString::updatePermutationImpl(size_t limit, Permutation & res, EqualR
             return;
 
         /// Since then we are working inside the interval.
-
-        std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less);
+        partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less);
 
         size_t new_first = first;
         for (size_t j = first + 1; j < limit; ++j)

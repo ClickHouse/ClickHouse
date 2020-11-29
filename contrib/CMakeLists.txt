@@ -36,6 +36,7 @@ add_subdirectory (murmurhash)
 add_subdirectory (replxx-cmake)
 add_subdirectory (ryu-cmake)
 add_subdirectory (unixodbc-cmake)
+add_subdirectory (xz)
 
 add_subdirectory (poco-cmake)
 add_subdirectory (croaring-cmake)
@@ -63,10 +64,6 @@ endif ()
 
 if (USE_INTERNAL_FARMHASH_LIBRARY)
     add_subdirectory (libfarmhash)
-endif ()
-
-if (USE_INTERNAL_BTRIE_LIBRARY)
-    add_subdirectory (libbtrie)
 endif ()
 
 if (USE_INTERNAL_ZLIB_LIBRARY)
@@ -288,4 +285,8 @@ if (USE_KRB5)
     if (USE_CYRUS_SASL)
         add_subdirectory (cyrus-sasl-cmake)
     endif()
+endif()
+
+if (USE_INTERNAL_ROCKSDB_LIBRARY)
+    add_subdirectory(rocksdb-cmake)
 endif()

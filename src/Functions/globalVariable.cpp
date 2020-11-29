@@ -58,7 +58,7 @@ public:
             return variable->second.type;
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const ColumnWithTypeAndName & col = arguments[0];
         String variable_name = assert_cast<const ColumnConst &>(*col.column).getValue<String>();

@@ -24,7 +24,7 @@ public:
       */
     using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 
-    Pipe read(
+    QueryPlanPtr read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
@@ -33,7 +33,7 @@ public:
         unsigned num_streams,
         const PartitionIdToMaxBlock * max_block_numbers_to_read = nullptr) const;
 
-    Pipe readFromParts(
+    QueryPlanPtr readFromParts(
         MergeTreeData::DataPartsVector parts,
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
@@ -48,7 +48,7 @@ private:
 
     Poco::Logger * log;
 
-    Pipe spreadMarkRangesAmongStreams(
+    QueryPlanPtr spreadMarkRangesAmongStreams(
         RangesInDataParts && parts,
         size_t num_streams,
         const Names & column_names,
@@ -61,7 +61,7 @@ private:
         const MergeTreeReaderSettings & reader_settings) const;
 
     /// out_projection - save projection only with columns, requested to read
-    Pipe spreadMarkRangesAmongStreamsWithOrder(
+    QueryPlanPtr spreadMarkRangesAmongStreamsWithOrder(
         RangesInDataParts && parts,
         size_t num_streams,
         const Names & column_names,
@@ -69,13 +69,13 @@ private:
         UInt64 max_block_size,
         bool use_uncompressed_cache,
         const SelectQueryInfo & query_info,
-        const ExpressionActionsPtr & sorting_key_prefix_expr,
+        const ActionsDAGPtr & sorting_key_prefix_expr,
         const Names & virt_columns,
         const Settings & settings,
         const MergeTreeReaderSettings & reader_settings,
-        ExpressionActionsPtr & out_projection) const;
+        ActionsDAGPtr & out_projection) const;
 
-    Pipe spreadMarkRangesAmongStreamsFinal(
+    QueryPlanPtr spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts,
         size_t num_streams,
         const Names & column_names,
@@ -86,7 +86,7 @@ private:
         const Names & virt_columns,
         const Settings & settings,
         const MergeTreeReaderSettings & reader_settings,
-        ExpressionActionsPtr & out_projection) const;
+        ActionsDAGPtr & out_projection) const;
 
     /// Get the approximate value (bottom estimate - only by full marks) of the number of rows falling under the index.
     size_t getApproximateTotalRowsToRead(
