@@ -265,6 +265,9 @@ def test_moves_to_disk_work(started_cluster, name, engine, positive):
      "ReplicatedMergeTree('/clickhouse/replicated_test_moves_to_volume_work', '1')"),
 ])
 def test_moves_to_volume_work(started_cluster, name, engine):
+    # Use unique table name for flaky checker, that run tests multiple times
+    name = f'{name}_{int(time.time())}'
+
     try:
         node1.query("""
             CREATE TABLE {name} (
@@ -297,7 +300,9 @@ def test_moves_to_volume_work(started_cluster, name, engine):
         assert set(used_disks) == {'jbod1', 'jbod2'}
 
         wait_expire_1_thread.join()
-        time.sleep(1)
+
+        # wait for MergeTreePartsMover
+        assert_logs_contain_with_retry(node1, f'default.{name}.*Removed part from old location')
 
         used_disks = get_used_disks_for_table(node1, name)
         assert set(used_disks) == {"external"}
@@ -686,6 +691,7 @@ def test_ttls_do_not_work_after_alter(started_cluster, name, engine, positive, b
 def test_materialize_ttl_in_partition(started_cluster, name, engine):
     # Use unique table name for flaky checker, that run tests multiple times
     name = f'{name}_{int(time.time())}'
+
     try:
         node1.query("""
             CREATE TABLE {name} (
