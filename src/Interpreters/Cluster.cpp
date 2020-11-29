@@ -31,7 +31,7 @@ namespace
 /// Default shard weight.
 constexpr UInt32 default_weight = 1;
 
-inline bool isLocalImpl(const Cluster::Address & address, const Poco::Net::SocketAddress & resolved_address, UInt16 clickhouse_port)
+inline bool isLocalImpl(const Poco::Net::SocketAddress & resolved_address, UInt16 clickhouse_port)
 {
     /// If there is replica, for which:
     /// - its port is the same that the server is listening;
@@ -39,11 +39,8 @@ inline bool isLocalImpl(const Cluster::Address & address, const Poco::Net::Socke
     /// then we must go to this shard without any inter-process communication.
     ///
     /// * - this criteria is somewhat approximate.
-    ///
-    /// Also, replica is considered non-local, if it has default database set
-    ///  (only reason is to avoid query rewrite).
 
-    return address.default_database.empty() && isLocalAddress(resolved_address, clickhouse_port);
+    return isLocalAddress(resolved_address, clickhouse_port);
 }
 
 void concatInsertPath(std::string & insert_path, const std::string & dir_name)
@@ -76,7 +73,7 @@ std::optional<Poco::Net::SocketAddress> Cluster::Address::getResolvedAddress() c
 bool Cluster::Address::isLocal(UInt16 clickhouse_port) const
 {
     if (auto resolved = getResolvedAddress())
-        return isLocalImpl(*this, *resolved, clickhouse_port);
+        return isLocalImpl(*resolved, clickhouse_port);
     return false;
 }
 
