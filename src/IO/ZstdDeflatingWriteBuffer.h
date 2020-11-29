@@ -20,11 +20,7 @@ public:
         char * existing_memory = nullptr,
         size_t alignment = 0);
 
-<<<<<<< HEAD
     /// Flush all pending data and write zstd footer to the underlying buffer.
-=======
-    /// Flush all pending data and write footer to the underlying buffer.
->>>>>>> 203db68250ea24856f01ed94428a57f037a713cc
     /// After the first call to this function, subsequent calls will have no effect and
     /// an attempt to write to this buffer will result in exception.
     void finish();
