@@ -14,8 +14,12 @@ ZstdDeflatingWriteBuffer::ZstdDeflatingWriteBuffer(
     cctx = ZSTD_createCCtx();
     if (cctx == nullptr)
         throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED, "zstd stream encoder init failed: zstd version: {}", ZSTD_VERSION_STRING);
-    ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, compression_level);
-    ZSTD_CCtx_setParameter(cctx, ZSTD_c_checksumFlag, 1);
+    size_t ret = ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, compression_level);
+    if (ZSTD_isError(ret))
+        throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED, "zstd stream encoder option setting failed: error code: {}; zstd version: {}", ret, ZSTD_VERSION_STRING);
+    ret = ZSTD_CCtx_setParameter(cctx, ZSTD_c_checksumFlag, 1);
+    if (ZSTD_isError(ret))
+        throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED, "zstd stream encoder option setting failed: error code: {}; zstd version: {}", ret, ZSTD_VERSION_STRING);
 
     input = {nullptr, 0, 0};
     output = {nullptr, 0, 0};
@@ -41,9 +45,7 @@ void ZstdDeflatingWriteBuffer::nextImpl()
     if (!offset())
         return;
 
-    bool last_chunk = hasPendingData();
-
-    ZSTD_EndDirective mode = last_chunk ? ZSTD_e_end : ZSTD_e_flush;
+    ZSTD_EndDirective mode = ZSTD_e_flush;
 
     input.src = reinterpret_cast<unsigned char *>(working_buffer.begin());
     input.size = offset();
@@ -59,13 +61,11 @@ void ZstdDeflatingWriteBuffer::nextImpl()
         output.pos = out->offset();
 
 
-        size_t remaining = ZSTD_compressStream2(cctx, &output, &input, mode);
+        ZSTD_compressStream2(cctx, &output, &input, mode);
         out->position() = out->buffer().begin() + output.pos;
-        finished = last_chunk ? (remaining == 0) : (input.pos == input.size);
+        finished = (input.pos == input.size);
     } while (!finished);
 
-    if (last_chunk)
-        flushed = true;
 }
 
 void ZstdDeflatingWriteBuffer::finish()
