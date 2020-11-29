@@ -1,4 +1,4 @@
-#include "KafkaBlockOutputStream.h"
+#include <Storages/Kafka/KafkaBlockOutputStream.h>
 
 #include <Formats/FormatFactory.h>
 #include <Storages/Kafka/WriteBufferToKafkaProducer.h>

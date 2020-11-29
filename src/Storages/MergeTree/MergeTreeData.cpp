@@ -134,7 +134,7 @@ MergeTreeData::MergeTreeData(
     bool attach,
     BrokenPartCallback broken_part_callback_)
     : IStorage(table_id_)
-    , global_context(context_)
+    , global_context(context_.getGlobalContext())
     , merging_params(merging_params_)
     , require_part_metadata(require_part_metadata_)
     , relative_data_path(relative_data_path_)
@@ -2003,7 +2003,7 @@ bool MergeTreeData::renameTempPartAndReplace(
     if (part_in_memory && getSettings()->in_memory_parts_enable_wal)
     {
         auto wal = getWriteAheadLog();
-        wal->addPart(part_in_memory->block, part_in_memory->name);
+        wal->addPart(part_in_memory);
     }
 
     if (out_covered_parts)
@@ -3895,7 +3895,7 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
 
 MergeTreeData::AlterConversions MergeTreeData::getAlterConversionsForPart(const MergeTreeDataPartPtr part) const
 {
-    MutationCommands commands = getFirtsAlterMutationCommandsForPart(part);
+    MutationCommands commands = getFirstAlterMutationCommandsForPart(part);
 
     AlterConversions result{};
     for (const auto & command : commands)

@@ -3,7 +3,7 @@
 #include <Processors/QueryPipeline.h>
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
-#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <stack>
 #include <Processors/QueryPlan/LimitStep.h>

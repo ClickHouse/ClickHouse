@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cassert>
+#include <stdexcept> // for std::logic_error
 #include <string>
 #include <vector>
 #include <functional>
