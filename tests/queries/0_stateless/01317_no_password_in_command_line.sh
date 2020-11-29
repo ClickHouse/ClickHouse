@@ -24,7 +24,8 @@ do
 
     if ! kill -0 -- $bg_query
     then
-        >&2 echo "The SELECT sleep(1) query finished earlier that we could grep for it in the process list, but it should have run for at least one second. Looks like a bug"
+        # The SELECT sleep(1) query finished earlier that we could grep for it in the process list, but it should have run for at least one second. It is Ok.
+        break
     fi
 done
 
@@ -47,7 +48,8 @@ do
 
     if ! kill -0 -- $bg_query
     then
-        >&2 echo "The SELECT sleep(1) query finished earlier that we could grep for it in the process list, but it should have run for at least one second. Looks like a bug"
+        # The SELECT sleep(1) query finished earlier that we could grep for it in the process list, but it should have run for at least one second. It is Ok.
+        break
     fi
 done
 
