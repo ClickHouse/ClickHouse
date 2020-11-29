@@ -29,6 +29,7 @@ SRCS(
     AggregateFunctionHistogram.cpp
     AggregateFunctionIf.cpp
     AggregateFunctionMLMethod.cpp
+    AggregateFunctionMannWhitney.cpp
     AggregateFunctionMaxIntersections.cpp
     AggregateFunctionMerge.cpp
     AggregateFunctionMinMaxAny.cpp
@@ -43,13 +44,14 @@ SRCS(
     AggregateFunctionState.cpp
     AggregateFunctionStatistics.cpp
     AggregateFunctionStatisticsSimple.cpp
+    AggregateFunctionStudentTTest.cpp
     AggregateFunctionSum.cpp
     AggregateFunctionSumMap.cpp
-    AggregateFunctionTimeSeriesGroupSum.cpp
     AggregateFunctionTopK.cpp
     AggregateFunctionUniq.cpp
     AggregateFunctionUniqCombined.cpp
     AggregateFunctionUniqUpTo.cpp
+    AggregateFunctionWelchTTest.cpp
     AggregateFunctionWindowFunnel.cpp
     UniqCombinedBiasData.cpp
     UniqVariadicHash.cpp
