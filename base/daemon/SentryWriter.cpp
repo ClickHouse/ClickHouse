@@ -47,6 +47,7 @@ void setExtras()
     sentry_set_extra("version_patch", sentry_value_new_int32(VERSION_PATCH));
     sentry_set_extra("version_official", sentry_value_new_string(VERSION_OFFICIAL));
 
+    /// Sentry does not support 64-bit integers.
     sentry_set_extra("total_ram", sentry_value_new_string(formatReadableSizeWithBinarySuffix(getMemoryAmountOrZero()).c_str()));
     sentry_set_extra("physical_cpu_cores", sentry_value_new_int32(getNumberOfPhysicalCPUCores()));
 
