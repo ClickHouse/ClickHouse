@@ -60,12 +60,8 @@ void ZstdDeflatingWriteBuffer::nextImpl()
         output.size = out->buffer().size();
         output.pos = out->offset();
 
-<<<<<<< HEAD
 
         ZSTD_compressStream2(cctx, &output, &input, mode);
-=======
-        size_t remaining = ZSTD_compressStream2(cctx, &output, &input, mode);
->>>>>>> 203db68250ea24856f01ed94428a57f037a713cc
         out->position() = out->buffer().begin() + output.pos;
         finished = (input.pos == input.size);
     } while (!finished);
