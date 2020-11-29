@@ -90,6 +90,7 @@ def test_create_replica_after_delay(started_cluster, engine):
 
     assert_create_query([main_node, dummy_node, competing_node], name, expected)
 
+@pytest.mark.dependency(depends=['test_create_replica_after_delay'])
 def test_alters_from_different_replicas(started_cluster):
     main_node.query("CREATE TABLE testdb.concurrent_test "
                     "(CounterID UInt32, StartDate Date, UserID UInt32, VisitID UInt32, NestedColumn Nested(A UInt8, S String), ToDrop UInt32) "
@@ -138,13 +139,13 @@ def test_replica_restart(started_cluster):
     assert_create_query([main_node, competing_node], "testdb.concurrent_test", expected)
 
 
-@pytest.mark.dependency(depends=['test_create_replica_after_delay'])
+@pytest.mark.dependency(depends=['test_replica_restart'])
 def test_snapshot_and_snapshot_recover(started_cluster):
-    #FIXME bad test
     snapshotting_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica4');")
-    time.sleep(5)
     snapshot_recovering_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica5');")
-    time.sleep(5)
+
+    assert_eq_with_retry(snapshotting_node, "select count() from system.tables where name like 'alter_test_%'", "2\n")
+    assert_eq_with_retry(snapshot_recovering_node, "select count() from system.tables where name like 'alter_test_%'", "2\n")
     assert snapshotting_node.query("desc table testdb.alter_test_MergeTree") == snapshot_recovering_node.query("desc table testdb.alter_test_MergeTree")
     assert snapshotting_node.query("desc table testdb.alter_test_ReplicatedMergeTree") == snapshot_recovering_node.query("desc table testdb.alter_test_ReplicatedMergeTree")
 

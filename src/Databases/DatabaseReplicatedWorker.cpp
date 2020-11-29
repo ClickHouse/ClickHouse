@@ -96,19 +96,19 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
         throw Exception(ErrorCodes::LOGICAL_ERROR, "should be unreachable");
     }
 
-    auto error = task->tryParseEntry(node_data);
-    if (error)
-    {
-        LOG_ERROR(log, "Cannot parse query from '{}': {}", node_data, *error);
-        database->onUnexpectedLogEntry(entry_name, zookeeper);
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "should be unreachable");
-    }
+    task->entry.parse(node_data);
 
-    task->parseQueryFromEntry(context);
+    if (task->entry.query.empty())
+    {
+        //TODO better way to determine special entries
+        task->was_executed = true;
+    }
+    else
+    {
+        task->parseQueryFromEntry(context);
+    }
 
     return task;
 }
-
-
 
 }

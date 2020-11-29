@@ -46,6 +46,16 @@ public:
 
     ~DatabaseReplicated() override;
 
+    void dropTable(const Context &, const String & table_name, bool no_delay) override;
+    void renameTable(const Context & context, const String & table_name, IDatabase & to_database,
+                     const String & to_table_name, bool exchange, bool dictionary) override;
+    void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
+                           const String & table_metadata_tmp_path, const String & table_metadata_path,
+                           const Context & query_context) override;
+    void commitAlterTable(const StorageID & table_id,
+                          const String & table_metadata_tmp_path, const String & table_metadata_path,
+                          const String & statement, const Context & query_context) override;
+
     void drop(const Context & /*context*/) override;
 
     String getEngineName() const override { return "Replicated"; }
@@ -65,17 +75,8 @@ private:
     bool createDatabaseNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
     void createReplicaNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
 
-    //void runBackgroundLogExecutor();
-    void writeLastExecutedToDiskAndZK();
-
-    //void loadMetadataFromSnapshot();
-    void removeOutdatedSnapshotsAndLog();
-
-
     void onUnexpectedLogEntry(const String & entry_name, const ZooKeeperPtr & zookeeper);
-    void recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 from_snapshot, bool create = false);
-
-    void onExecutedLogEntry(const String & entry_name, const ZooKeeperPtr & zookeeper);
+    void recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 from_snapshot);
 
     ASTPtr parseQueryFromMetadataInZooKeeper(const String & node_name, const String & query);
 
@@ -86,19 +87,9 @@ private:
 
     UInt32 log_entry_to_execute;
 
-    std::mutex log_name_mutex;
-    String log_name_to_exec_with_result;
-
-    int snapshot_period;
-
-    String last_executed_log_entry = "";
-
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
     std::unique_ptr<DatabaseReplicatedDDLWorker> ddl_worker;
-
-
-
 };
 
 }

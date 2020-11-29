@@ -23,6 +23,7 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int UNFINISHED;
     extern const int QUERY_IS_PROHIBITED;
+    extern const int LOGICAL_ERROR;
 }
 
 bool isSupportedAlterType(int type)
@@ -189,6 +190,7 @@ DDLQueryStatusInputStream::DDLQueryStatusInputStream(const String & zk_node_path
     if (hosts_to_wait)
     {
         waiting_hosts = NameSet(hosts_to_wait->begin(), hosts_to_wait->end());
+        by_hostname = false;
     }
     else
     {
@@ -267,7 +269,15 @@ Block DDLQueryStatusInputStream::readImpl()
                     status.tryDeserializeText(status_data);
             }
 
-            auto [host, port] = Cluster::Address::fromString(host_id);
+            //FIXME
+            String host = host_id;
+            UInt16 port = 0;
+            if (by_hostname)
+            {
+                auto host_and_port = Cluster::Address::fromString(host_id);
+                host = host_and_port.first;
+                port = host_and_port.second;
+            }
 
             if (status.code != 0 && first_exception == nullptr)
                 first_exception = std::make_unique<Exception>(status.code, "There was an error on [{}:{}]: {}", host, port, status.message);

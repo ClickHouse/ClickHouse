@@ -731,7 +731,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     //TODO make code better if possible
     bool need_add_to_database = !create.temporary;
-    if(need_add_to_database && database->getEngineName() == "Replicated")
+    if (need_add_to_database && database->getEngineName() == "Replicated")
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(create.database, create.table);
         database = DatabaseCatalog::instance().getDatabase(create.database);
