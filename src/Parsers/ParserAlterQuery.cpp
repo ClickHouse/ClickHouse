@@ -667,12 +667,13 @@ bool ParserAssignment::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!s_equals.ignore(pos, expected))
         return false;
 
-    if (!p_expression.parse(pos, assignment->expression, expected))
+    ASTPtr expression;
+    if (!p_expression.parse(pos, expression, expected))
         return false;
 
     tryGetIdentifierNameInto(column, assignment->column_name);
-    if (assignment->expression)
-        assignment->children.push_back(assignment->expression);
+    if (expression)
+        assignment->children.push_back(expression);
 
     return true;
 }
