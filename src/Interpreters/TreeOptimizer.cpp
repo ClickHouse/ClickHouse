@@ -26,6 +26,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Functions/FunctionFactory.h>
+#include <Storages/StorageInMemoryMetadata.h>
 
 
 namespace DB
@@ -438,7 +439,8 @@ void optimizeDuplicateDistinct(ASTSelectQuery & select)
 /// Replace monotonous functions in ORDER BY if they don't participate in GROUP BY expression,
 /// has a single argument and not an aggregate functions.
 void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, const Context & context,
-                                          const TablesWithColumns & tables_with_columns)
+                                          const TablesWithColumns & tables_with_columns,
+                                          const Names & sorting_key_columns)
 {
     auto order_by = select_query->orderBy();
     if (!order_by)
@@ -455,11 +457,20 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, const C
         }
     }
 
-    for (auto & child : order_by->children)
+    bool is_sorting_key_prefix = true;
+    for (size_t i = 0; i < order_by->children.size(); ++i)
     {
-        auto * order_by_element = child->as<ASTOrderByElement>();
+        auto * order_by_element = order_by->children[i]->as<ASTOrderByElement>();
         auto & ast_func = order_by_element->children[0];
         if (!ast_func->as<ASTFunction>())
+            continue;
+
+        if (i >= sorting_key_columns.size() || ast_func->getColumnName() != sorting_key_columns[i])
+            is_sorting_key_prefix = false;
+
+        /// If order by expression matches the sorting key, do not remove
+        /// functions to allow execute reading in order of key.
+        if (is_sorting_key_prefix)
             continue;
 
         MonotonicityCheckVisitor::Data data{tables_with_columns, context, group_by_hashes};
@@ -611,7 +622,8 @@ void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_
 
 void TreeOptimizer::apply(ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set,
                           const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns,
-                          const Context & context, bool & rewrite_subqueries)
+                          const Context & context, const StorageMetadataPtr & metadata_snapshot,
+                          bool & rewrite_subqueries)
 {
     const auto & settings = context.getSettingsRef();
 
@@ -652,9 +664,6 @@ void TreeOptimizer::apply(ASTPtr & query, Aliases & aliases, const NameSet & sou
         optimizeAggregateFunctionsOfGroupByKeys(select_query, query);
     }
 
-    /// Remove duplicate items from ORDER BY.
-    optimizeDuplicatesInOrderBy(select_query);
-
     /// Remove duplicate ORDER BY and DISTINCT from subqueries.
     if (settings.optimize_duplicate_order_by_and_distinct)
     {
@@ -672,7 +681,13 @@ void TreeOptimizer::apply(ASTPtr & query, Aliases & aliases, const NameSet & sou
 
     /// Replace monotonous functions with its argument
     if (settings.optimize_monotonous_functions_in_order_by)
-        optimizeMonotonousFunctionsInOrderBy(select_query, context, tables_with_columns);
+        optimizeMonotonousFunctionsInOrderBy(select_query, context, tables_with_columns,
+            metadata_snapshot ? metadata_snapshot->getSortingKeyColumns() : Names{});
+
+    /// Remove duplicate items from ORDER BY.
+    /// Execute it after all order by optimizations,
+    /// because they can produce duplicated columns.
+    optimizeDuplicatesInOrderBy(select_query);
 
     /// If function "if" has String-type arguments, transform them into enum
     if (settings.optimize_if_transform_strings_to_enum)
