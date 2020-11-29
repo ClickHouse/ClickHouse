@@ -945,6 +945,18 @@ private:
     virtual void startBackgroundMovesIfNeeded() = 0;
 
     bool allow_nullable_key{};
+
+    void addPartContributionToDataVolume(const DataPartPtr & part);
+    void removePartContributionToDataVolume(const DataPartPtr & part);
+
+    void increaseDataVolume(size_t bytes, size_t rows, size_t parts);
+    void decreaseDataVolume(size_t bytes, size_t rows, size_t parts);
+
+    void setDataVolume(size_t bytes, size_t rows, size_t parts);
+
+    std::atomic<size_t> total_active_size_bytes = 0;
+    std::atomic<size_t> total_active_size_rows = 0;
+    std::atomic<size_t> total_active_size_parts = 0;
 };
 
 }
