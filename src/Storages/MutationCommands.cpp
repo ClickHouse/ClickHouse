@@ -2,11 +2,13 @@
 #include <IO/Operators.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTAssignment.h>
+#include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
 #include <Core/Defines.h>
@@ -32,6 +34,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.ast = command->ptr();
         res.type = DELETE;
         res.predicate = command->predicate;
+        res.partition = command->partition;
         return res;
     }
     else if (command->type == ASTAlterCommand::UPDATE)
@@ -40,6 +43,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.ast = command->ptr();
         res.type = UPDATE;
         res.predicate = command->predicate;
+        res.partition = command->partition;
         for (const ASTPtr & assignment_ast : command->update_assignments->children)
         {
             const auto & assignment = assignment_ast->as<ASTAssignment &>();
@@ -124,11 +128,12 @@ std::shared_ptr<ASTAlterCommandList> MutationCommands::ast() const
     return res;
 }
 
+
 void MutationCommands::writeText(WriteBuffer & out) const
 {
-    std::stringstream commands_ss;
-    formatAST(*ast(), commands_ss, /* hilite = */ false, /* one_line = */ true);
-    out << escape << commands_ss.str();
+    WriteBufferFromOwnString commands_buf;
+    formatAST(*ast(), commands_buf, /* hilite = */ false, /* one_line = */ true);
+    out << escape << commands_buf.str();
 }
 
 void MutationCommands::readText(ReadBuffer & in)

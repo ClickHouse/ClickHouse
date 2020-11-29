@@ -63,7 +63,7 @@ struct CustomizeFunctionsData
 
     const String & customized_func_name;
 
-    void visit(ASTFunction & func, ASTPtr &)
+    void visit(ASTFunction & func, ASTPtr &) const
     {
         if (Poco::toLower(func.name) == func_name)
         {
@@ -97,7 +97,7 @@ struct CustomizeFunctionsSuffixData
 
     const String & customized_func_suffix;
 
-    void visit(ASTFunction & func, ASTPtr &)
+    void visit(ASTFunction & func, ASTPtr &) const
     {
         if (endsWith(Poco::toLower(func.name), func_suffix))
         {
@@ -118,7 +118,7 @@ struct CustomizeAggregateFunctionsSuffixData
 
     const String & customized_func_suffix;
 
-    void visit(ASTFunction & func, ASTPtr &)
+    void visit(ASTFunction & func, ASTPtr &) const
     {
         const auto & instance = AggregateFunctionFactory::instance();
         if (instance.isAggregateFunctionName(func.name) && !endsWith(func.name, customized_func_suffix))
@@ -552,7 +552,7 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
 
     if (!unknown_required_source_columns.empty())
     {
-        std::stringstream ss;
+        WriteBufferFromOwnString ss;
         ss << "Missing columns:";
         for (const auto & name : unknown_required_source_columns)
             ss << " '" << name << "'";

@@ -32,3 +32,5 @@ OPTIMIZE TABLE data_01285 FINAL;
 SELECT * FROM data_01285;
 -- and this passes even without fix.
 SELECT * FROM data_01285 WHERE assumeNotNull(value) = 3;
+
+DROP TABLE data_01285;

@@ -45,3 +45,7 @@ CREATE TABLE t3 AS dict; -- { serverError 80; }
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t3;
+DROP DICTIONARY dict;
+DROP TABLE test_01056_dict_data.dict_data;
+
+DROP DATABASE test_01056_dict_data;
