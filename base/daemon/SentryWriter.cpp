@@ -30,6 +30,7 @@ namespace
 
 bool initialized = false;
 bool anonymize = false;
+std::string server_data_path;
 
 void setExtras()
 {
@@ -48,6 +49,10 @@ void setExtras()
 
     sentry_set_extra("total_ram", sentry_value_new_string(formatReadableSizeWithBinarySuffix(getMemoryAmountOrZero()).c_str()));
     sentry_set_extra("physical_cpu_cores", sentry_value_new_int32(getNumberOfPhysicalCPUCores()));
+
+    if (!server_data_path.empty())
+        sentry_set_extra("disk_free_space", sentry_value_new_string(formatReadableSizeWithBinarySuffix(
+            Poco::File(server_data_path).freeSpace()).c_str()));
 }
 
 void sentry_logger(sentry_level_e level, const char * message, va_list args, void *)
@@ -102,6 +107,7 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config)
     }
     if (enabled)
     {
+        server_data_path = config.getString("path", "");
         const std::filesystem::path & default_tmp_path = std::filesystem::path(config.getString("tmp_path", Poco::Path::temp())) / "sentry";
         const std::string & endpoint
             = config.getString("send_crash_reports.endpoint");
