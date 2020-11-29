@@ -6,10 +6,12 @@
 
 #include <common/defines.h>
 #include <common/getFQDNOrHostName.h>
+#include <common/getMemoryAmount.h>
 #include <common/logger_useful.h>
 
 #include <Common/SymbolIndex.h>
 #include <Common/StackTrace.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "Common/config_version.h"
@@ -31,11 +33,9 @@ bool anonymize = false;
 
 void setExtras()
 {
-
     if (!anonymize)
-    {
         sentry_set_extra("server_name", sentry_value_new_string(getFQDNOrHostName().c_str()));
-    }
+
     sentry_set_tag("version", VERSION_STRING);
     sentry_set_extra("version_githash", sentry_value_new_string(VERSION_GITHASH));
     sentry_set_extra("version_describe", sentry_value_new_string(VERSION_DESCRIBE));
@@ -44,6 +44,10 @@ void setExtras()
     sentry_set_extra("version_major", sentry_value_new_int32(VERSION_MAJOR));
     sentry_set_extra("version_minor", sentry_value_new_int32(VERSION_MINOR));
     sentry_set_extra("version_patch", sentry_value_new_int32(VERSION_PATCH));
+    sentry_set_extra("version_official", sentry_value_new_string(VERSION_OFFICIAL));
+
+    sentry_set_extra("total_ram", sentry_value_new_string(formatReadableSizeWithBinarySuffix(getMemoryAmountOrZero()).c_str()));
+    sentry_set_extra("physical_cpu_cores", sentry_value_new_int32(getNumberOfPhysicalCPUCores()));
 }
 
 void sentry_logger(sentry_level_e level, const char * message, va_list args, void *)
