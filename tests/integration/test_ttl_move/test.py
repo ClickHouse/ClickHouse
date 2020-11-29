@@ -3,6 +3,7 @@ import string
 import threading
 import time
 from multiprocessing.dummy import Pool
+from helpers.test_tools import assert_logs_contain_with_retry
 
 import pytest
 from helpers.client import QueryRuntimeException
@@ -728,7 +729,8 @@ def test_materialize_ttl_in_partition(started_cluster, name, engine):
                     MATERIALIZE TTL IN PARTITION 4
         """.format(name=name))
 
-        time.sleep(0.5)
+        # wait for MergeTreePartsMover
+        assert_logs_contain_with_retry(node1, f'default.{name}.*Removed part from old location')
 
         used_disks_sets = []
         for i in range(len(data)):
