@@ -86,20 +86,6 @@ void DDLLogEntry::parse(const String & data)
 }
 
 
-std::optional<String> DDLTaskBase::tryParseEntry(const String & data)
-{
-    std::optional<String> error;
-    try
-    {
-        entry.parse(data);
-    }
-    catch (...)
-    {
-        error = ExecutionStatus::fromCurrentException().serializeText();
-    }
-    return error;
-}
-
 void DDLTaskBase::parseQueryFromEntry(const Context & context)
 {
     const char * begin = entry.query.data();
@@ -313,21 +299,24 @@ std::unique_ptr<Context> DatabaseReplicatedTask::makeQueryContext(Context & from
     query_context->getClientInfo().query_kind = ClientInfo::QueryKind::REPLICATED_LOG_QUERY; //FIXME why do we need separate query kind?
     query_context->setCurrentDatabase(database->getDatabaseName());
 
+    auto txn = std::make_shared<MetadataTransaction>();
+    query_context->initMetadataTransaction(txn);
+    txn->current_zookeeper = from_context.getZooKeeper();
+    txn->zookeeper_path = database->zookeeper_path;
+    txn->is_initial_query = we_are_initiator;
+
     if (we_are_initiator)
     {
-        auto txn = std::make_shared<MetadataTransaction>();
-        query_context->initMetadataTransaction(txn);
-        txn->current_zookeeper = from_context.getZooKeeper();
-        txn->zookeeper_path = database->zookeeper_path;
         txn->ops.emplace_back(zkutil::makeRemoveRequest(entry_path + "/try", -1));
         txn->ops.emplace_back(zkutil::makeCreateRequest(entry_path + "/committed", host_id_str, zkutil::CreateMode::Persistent));
         txn->ops.emplace_back(zkutil::makeRemoveRequest(getActiveNodePath(), -1));
-        if (execute_on_leader)
-            txn->ops.emplace_back(zkutil::makeCreateRequest(getShardNodePath() + "/executed", host_id_str, zkutil::CreateMode::Persistent));
-        txn->ops.emplace_back(zkutil::makeCreateRequest(getFinishedNodePath(), execution_status.serializeText(), zkutil::CreateMode::Persistent));
-        txn->ops.emplace_back(zkutil::makeSetRequest(database->replica_path + "/log_ptr", toString(getLogEntryNumber(entry_name)), -1));
         txn->ops.emplace_back(zkutil::makeSetRequest(database->zookeeper_path + "/max_log_ptr", toString(getLogEntryNumber(entry_name)), -1));
     }
+
+    if (execute_on_leader)
+        txn->ops.emplace_back(zkutil::makeCreateRequest(getShardNodePath() + "/executed", host_id_str, zkutil::CreateMode::Persistent));
+    txn->ops.emplace_back(zkutil::makeCreateRequest(getFinishedNodePath(), execution_status.serializeText(), zkutil::CreateMode::Persistent));
+    txn->ops.emplace_back(zkutil::makeSetRequest(database->replica_path + "/log_ptr", toString(getLogEntryNumber(entry_name)), -1));
 
     return query_context;
 }
@@ -347,15 +336,9 @@ UInt32 DatabaseReplicatedTask::getLogEntryNumber(const String & log_entry_name)
     return parse<UInt32>(log_entry_name.substr(strlen(name)));
 }
 
-void DatabaseReplicatedTask::parseQueryFromEntry(const Context & context)
+void MetadataTransaction::commit()
 {
-    if (entry.query.empty())
-    {
-        was_executed = true;
-        return;
-    }
-
-    DDLTaskBase::parseQueryFromEntry(context);
+    current_zookeeper->multi(ops);
 }
 
 }

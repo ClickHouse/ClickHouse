@@ -36,11 +36,8 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
-    extern const int INCONSISTENT_CLUSTER_DEFINITION;
     extern const int TIMEOUT_EXCEEDED;
-    extern const int UNKNOWN_TYPE_OF_QUERY;
     extern const int UNFINISHED;
-    extern const int QUERY_IS_PROHIBITED;
 }
 
 
@@ -226,7 +223,6 @@ void DDLWorker::recoverZooKeeper()
     }
 }
 
-
 DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper)
 {
     String node_data;
@@ -241,36 +237,50 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
         return {};
     }
 
-    auto error = task->tryParseEntry(node_data);
-    if (error)
+    auto write_error_status = [&](const String & host_id, const String & error_message, const String & reason)
+    {
+        LOG_ERROR(log, "Cannot parse DDL task {}: {}. Will try to send error status: {}", entry_name, reason, error_message);
+        createStatusDirs(entry_path, zookeeper);
+        zookeeper->tryCreate(entry_path + "/finished/" + host_id, error_message, zkutil::CreateMode::Persistent);
+    };
+
+    try
+    {
+        /// Stage 1: parse entry
+        task->entry.parse(node_data);
+    }
+    catch (...)
     {
         /// What should we do if we even cannot parse host name and therefore cannot properly submit execution status?
         /// We can try to create fail node using FQDN if it equal to host name in cluster config attempt will be successful.
         /// Otherwise, that node will be ignored by DDLQueryStatusInputStream.
-        LOG_ERROR(log, "Cannot parse DDL task {}, will try to send error status: {}", entry_name, *error);
-        try
-        {
-            createStatusDirs(entry_path, zookeeper);
-            zookeeper->tryCreate(entry_path + "/finished/" + host_fqdn_id, *error, zkutil::CreateMode::Persistent);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Can't report the task has invalid format");
-        }
-
         out_reason = "Incorrect task format";
+        write_error_status(host_fqdn_id, ExecutionStatus::fromCurrentException().serializeText(), out_reason);
         return {};
     }
 
+    /// Stage 2: resolve host_id and check if we should execute query or not
     if (!task->findCurrentHostID(context, log))
     {
         out_reason = "There is no a local address in host list";
         return {};
     }
 
-    task->parseQueryFromEntry(context);
-    task->setClusterInfo(context, log);
+    try
+    {
+        /// Stage 3.1: parse query
+        task->parseQueryFromEntry(context);
+        /// Stage 3.2: check cluster and find the host in cluster
+        task->setClusterInfo(context, log);
+    }
+    catch (...)
+    {
+        out_reason = "Cannot parse query or obtain cluster info";
+        write_error_status(task->host_id_str, ExecutionStatus::fromCurrentException().serializeText(), out_reason);
+        return {};
+    }
 
+    /// Now task is ready for execution
     return task;
 }
 
@@ -330,7 +340,8 @@ void DDLWorker::scheduleTasks()
             }
             else
             {
-                worker_pool.scheduleOrThrowOnError([this, task_ptr = task.release()]() {
+                worker_pool.scheduleOrThrowOnError([this, task_ptr = task.release()]()
+                {
                     setThreadName("DDLWorkerExec");
                     enqueueTask(DDLTaskPtr(task_ptr));
                 });
@@ -344,13 +355,6 @@ void DDLWorker::scheduleTasks()
         last_entry_name = entry_name;
     }
 }
-
-/// Parses query and resolves cluster and host in cluster
-void DDLWorker::parseQueryAndResolveHost(DDLTaskBase & /*task*/)
-{
-
-}
-
 
 bool DDLWorker::tryExecuteQuery(const String & query, const DDLTaskBase & task, ExecutionStatus & status)
 {
@@ -792,7 +796,6 @@ void DDLWorker::runMainThread()
     setThreadName("DDLWorker");
     LOG_DEBUG(log, "Started DDLWorker thread");
 
-    bool initialized = false;
     do
     {
         try

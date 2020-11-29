@@ -64,12 +64,6 @@ struct DDLTaskBase
     const String entry_name;
     const String entry_path;
 
-    DDLTaskBase(const String & name, const String & path) : entry_name(name), entry_path(path) {}
-    virtual ~DDLTaskBase() = default;
-
-    std::optional<String> tryParseEntry(const String & data);
-    virtual void parseQueryFromEntry(const Context & context);
-
     DDLLogEntry entry;
 
     String host_id_str;
@@ -80,6 +74,11 @@ struct DDLTaskBase
 
     ExecutionStatus execution_status;
     bool was_executed = false;
+
+    DDLTaskBase(const String & name, const String & path) : entry_name(name), entry_path(path) {}
+    virtual ~DDLTaskBase() = default;
+
+    void parseQueryFromEntry(const Context & context);
 
     virtual String getShardID() const = 0;
 
@@ -93,25 +92,11 @@ struct DDLTaskBase
 
 struct DDLTask : public DDLTaskBase
 {
-    /// Stages of task lifetime correspond ordering of these data fields:
-
     DDLTask(const String & name, const String & path) : DDLTaskBase(name, path) {}
 
     bool findCurrentHostID(const Context & global_context, Poco::Logger * log);
 
     void setClusterInfo(const Context & context, Poco::Logger * log);
-
-
-    /// Stage 2: resolve host_id and check that
-
-
-    /// Stage 3.1: parse query
-
-    /// Stage 3.2: check cluster and find the host in cluster
-
-    /// Stage 3.3: execute query
-
-    /// Stage 4: commit results to ZooKeeper
 
     String getShardID() const override;
 
@@ -131,8 +116,6 @@ struct DatabaseReplicatedTask : public DDLTaskBase
 {
     DatabaseReplicatedTask(const String & name, const String & path, DatabaseReplicated * database_);
 
-    void parseQueryFromEntry(const Context & context) override;
-
     String getShardID() const override;
     std::unique_ptr<Context> makeQueryContext(Context & from_context) const override;
 
@@ -148,14 +131,15 @@ struct MetadataTransaction
 {
     ZooKeeperPtr current_zookeeper;
     String zookeeper_path;
+    bool is_initial_query;
     Coordination::Requests ops;
-
-
 
     void addOps(Coordination::Requests & other_ops)
     {
         std::move(ops.begin(), ops.end(), std::back_inserter(other_ops));
     }
+
+    void commit();
 };
 
 }

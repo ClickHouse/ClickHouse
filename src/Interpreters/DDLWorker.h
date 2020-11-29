@@ -53,6 +53,8 @@ public:
 
     void shutdown();
 
+    bool isCurrentlyActive() const { return initialized && !stop_flag; }
+
 protected:
 
     /// Returns cached ZooKeeper session (possibly expired).
@@ -87,8 +89,6 @@ protected:
         const String & node_path,
         const ZooKeeperPtr & zookeeper);
 
-    void parseQueryAndResolveHost(DDLTaskBase & task);
-
     bool tryExecuteQuery(const String & query, const DDLTaskBase & task, ExecutionStatus & status);
 
     /// Checks and cleanups queue's nodes
@@ -121,6 +121,7 @@ protected:
 
     std::shared_ptr<Poco::Event> queue_updated_event = std::make_shared<Poco::Event>();
     std::shared_ptr<Poco::Event> cleanup_event = std::make_shared<Poco::Event>();
+    std::atomic<bool> initialized = false;
     std::atomic<bool> stop_flag = false;
 
     ThreadFromGlobalPool main_thread;

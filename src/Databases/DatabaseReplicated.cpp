@@ -34,6 +34,7 @@ namespace ErrorCodes
     extern const int REPLICA_IS_ALREADY_EXIST;
     extern const int DATABASE_REPLICATION_FAILED;
     extern const int UNKNOWN_DATABASE;
+    extern const int NOT_IMPLEMENTED;
 }
 
 zkutil::ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
@@ -106,9 +107,6 @@ DatabaseReplicated::DatabaseReplicated(
         /// Throws if replica with the same name was created concurrently
         createReplicaNodesInZooKeeper(current_zookeeper);
     }
-
-    snapshot_period = 1; //context_.getConfigRef().getInt("database_replicated_snapshot_period", 10);
-    LOG_DEBUG(log, "Snapshot period is set to {} log entries per one snapshot", snapshot_period);
 }
 
 bool DatabaseReplicated::createDatabaseNodesInZooKeeper(const zkutil::ZooKeeperPtr & current_zookeeper)
@@ -171,8 +169,6 @@ void DatabaseReplicated::loadStoredObjects(Context & context, bool has_force_res
 {
     DatabaseAtomic::loadStoredObjects(context, has_force_restore_data_flag, force_attach);
 
-    //recoverLostReplica(global_context.getZooKeeper(), 0, true); //FIXME
-
     ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, global_context);
 }
 
@@ -209,71 +205,6 @@ void DatabaseReplicated::onUnexpectedLogEntry(const String & entry_name, const Z
                                                "Got log entry '{}' when expected entry number {}");
 }
 
-void DatabaseReplicated::removeOutdatedSnapshotsAndLog()
-{
-    /// This method removes all snapshots and logged queries
-    /// that no longer will be in use by current replicas or
-    /// new coming ones.
-    /// Each registered replica has its state in ZooKeeper.
-    /// Therefore, snapshots and logged queries that are less
-    /// than a least advanced replica are removed.
-    /// It does not interfere with a new coming replica
-    /// metadata loading from snapshot
-    /// because the replica will use the latest snapshot available
-    /// and this snapshot will set the last executed log query
-    /// to a greater one than the least advanced current replica.
-    auto current_zookeeper = getZooKeeper();
-    Strings replica_states = current_zookeeper->getChildren(zookeeper_path + "/replicas");
-    //TODO do not use log pointers to determine which entries to remove if there are staled pointers.
-    // We can just remove all entries older than previous snapshot version.
-    // Possible invariant: store all entries since last snapshot, replica becomes lost when it cannot get log entry.
-    auto least_advanced = std::min_element(replica_states.begin(), replica_states.end());
-    Strings snapshots = current_zookeeper->getChildren(zookeeper_path + "/snapshots");
-
-    if (snapshots.size() < 2)
-    {
-        return;
-    }
-
-    std::sort(snapshots.begin(), snapshots.end());
-    auto still_useful = std::lower_bound(snapshots.begin(), snapshots.end(), *least_advanced);
-    snapshots.erase(still_useful, snapshots.end());
-    for (const String & snapshot : snapshots)
-    {
-        current_zookeeper->tryRemoveRecursive(zookeeper_path + "/snapshots/" + snapshot);
-    }
-
-    Strings log_entry_names = current_zookeeper->getChildren(zookeeper_path + "/log");
-    std::sort(log_entry_names.begin(), log_entry_names.end());
-    auto still_useful_log = std::upper_bound(log_entry_names.begin(), log_entry_names.end(), *still_useful);
-    log_entry_names.erase(still_useful_log, log_entry_names.end());
-    for (const String & log_entry_name : log_entry_names)
-    {
-        String log_entry_path = zookeeper_path + "/log/" + log_entry_name;
-        current_zookeeper->tryRemove(log_entry_path);
-    }
-}
-
-void DatabaseReplicated::onExecutedLogEntry(const String & /*entry_name*/, const ZooKeeperPtr & /*zookeeper*/)
-{
-
-}
-
-void DatabaseReplicated::writeLastExecutedToDiskAndZK()
-{
-    auto current_zookeeper = getZooKeeper();
-    current_zookeeper->createOrUpdate(
-        zookeeper_path + "/replicas/" + replica_name, last_executed_log_entry, zkutil::CreateMode::Persistent);
-
-    String metadata_file = getMetadataPath() + ".last_entry";
-    WriteBufferFromFile out(metadata_file, last_executed_log_entry.size(), O_WRONLY | O_CREAT);
-    writeString(last_executed_log_entry, out);
-    out.next();
-    if (global_context.getSettingsRef().fsync_metadata)
-        out.sync();
-    out.close();
-}
-
 
 BlockIO DatabaseReplicated::propose(const ASTPtr & query)
 {
@@ -302,14 +233,14 @@ BlockIO DatabaseReplicated::propose(const ASTPtr & query)
 
     //FIXME need list of all replicas, we can obtain it from zk
     Strings hosts_to_wait;
-    hosts_to_wait.emplace_back(shard_name + '|' +replica_name);
-    auto stream = std::make_shared<DDLQueryStatusInputStream>(node_path, entry, global_context);
+    hosts_to_wait.emplace_back(getFullReplicaName());
+    auto stream = std::make_shared<DDLQueryStatusInputStream>(node_path, entry, global_context, hosts_to_wait);
     io.in = std::move(stream);
     return io;
 }
 
 
-void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 from_snapshot, bool /*create*/)
+void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 from_snapshot)
 {
     LOG_WARNING(log, "Will recover replica");
 
@@ -339,14 +270,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         InterpreterCreateQuery(query_ast, query_context).execute();
     }
 
-    //if (create)
-    //    return;
-
     current_zookeeper->set(replica_path + "/log_ptr", toString(from_snapshot));
-    last_executed_log_entry = from_snapshot;
-    //ddl_worker->setLogPointer(from_snapshot); //FIXME
-
-    //writeLastExecutedToDiskAndZK();
 }
 
 ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & node_name, const String & query)
@@ -382,6 +306,82 @@ void DatabaseReplicated::shutdown()
         ddl_worker = nullptr;
     }
     DatabaseAtomic::shutdown();
+}
+
+
+void DatabaseReplicated::dropTable(const Context & context, const String & table_name, bool no_delay)
+{
+    auto txn = context.getMetadataTransaction();
+    //assert(!ddl_worker->isCurrentlyActive() || txn /*|| called from DROP DATABASE */);
+    if (txn && txn->is_initial_query)
+    {
+        String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
+        txn->ops.emplace_back(zkutil::makeRemoveRequest(metadata_zk_path, -1));
+    }
+    DatabaseAtomic::dropTable(context, table_name, no_delay);
+}
+
+void DatabaseReplicated::renameTable(const Context & context, const String & table_name, IDatabase & to_database,
+                                     const String & to_table_name, bool exchange, bool dictionary)
+{
+    auto txn = context.getMetadataTransaction();
+    assert(txn);
+
+    if (txn->is_initial_query)
+    {
+        String statement;
+        String statement_to;
+        {
+            //FIXME It's not atomic (however we have only one thread)
+            ReadBufferFromFile in(getObjectMetadataPath(table_name), 4096);
+            readStringUntilEOF(statement, in);
+            if (exchange)
+            {
+                ReadBufferFromFile in_to(to_database.getObjectMetadataPath(to_table_name), 4096);
+                readStringUntilEOF(statement_to, in_to);
+            }
+        }
+        String metadata_zk_path = txn->zookeeper_path + "/metadata/" + escapeForFileName(table_name);
+        String metadata_zk_path_to = txn->zookeeper_path + "/metadata/" + escapeForFileName(to_table_name);
+        txn->ops.emplace_back(zkutil::makeRemoveRequest(metadata_zk_path, -1));
+        if (exchange)
+        {
+            txn->ops.emplace_back(zkutil::makeRemoveRequest(metadata_zk_path_to, -1));
+            txn->ops.emplace_back(zkutil::makeCreateRequest(metadata_zk_path, statement_to, zkutil::CreateMode::Persistent));
+        }
+        txn->ops.emplace_back(zkutil::makeCreateRequest(metadata_zk_path_to, statement, zkutil::CreateMode::Persistent));
+    }
+
+    DatabaseAtomic::renameTable(context, table_name, to_database, to_table_name, exchange, dictionary);
+}
+
+void DatabaseReplicated::commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
+                       const String & table_metadata_tmp_path, const String & table_metadata_path,
+                       const Context & query_context)
+{
+    auto txn = query_context.getMetadataTransaction();
+    assert(!ddl_worker->isCurrentlyActive() || txn);
+    if (txn && txn->is_initial_query)
+    {
+        String metadata_zk_path = txn->zookeeper_path + "/metadata/" + escapeForFileName(query.table);
+        String statement = getObjectDefinitionFromCreateQuery(query.clone());
+        /// zk::multi(...) will throw if `metadata_zk_path` exists
+        txn->ops.emplace_back(zkutil::makeCreateRequest(metadata_zk_path, statement, zkutil::CreateMode::Persistent));
+    }
+    DatabaseAtomic::commitCreateTable(query, table, table_metadata_tmp_path, table_metadata_path, query_context);
+}
+
+void DatabaseReplicated::commitAlterTable(const StorageID & table_id,
+                                          const String & table_metadata_tmp_path, const String & table_metadata_path,
+                                          const String & statement, const Context & query_context)
+{
+    auto txn = query_context.getMetadataTransaction();
+    if (txn && txn->is_initial_query)
+    {
+        String metadata_zk_path = txn->zookeeper_path + "/metadata/" + escapeForFileName(table_id.table_name);
+        txn->ops.emplace_back(zkutil::makeSetRequest(metadata_zk_path, statement, -1));
+    }
+    DatabaseAtomic::commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, query_context);
 }
 
 }

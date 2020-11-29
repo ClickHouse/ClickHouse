@@ -120,13 +120,10 @@ void DatabaseAtomic::dropTable(const Context & context, const String & table_nam
         table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(table->getStorageID());
 
         if (auto txn = context.getMetadataTransaction())
-        {
-            String metadata_zk_path = txn->zookeeper_path + "/metadata/" + escapeForFileName(table_name);
-            txn->ops.emplace_back(zkutil::makeRemoveRequest(metadata_zk_path, -1));
-            txn->current_zookeeper->multi(txn->ops);     /// Commit point (a sort of) for Replicated database
-            /// NOTE: replica will be lost if server crashes before the following rename
-            /// TODO better detection and recovery
-        }
+            txn->commit();      /// Commit point (a sort of) for Replicated database
+
+        /// NOTE: replica will be lost if server crashes before the following rename
+        /// TODO better detection and recovery
 
         Poco::File(table_metadata_path).renameTo(table_metadata_path_drop);    /// Mark table as dropped
         DatabaseWithDictionaries::detachTableUnlocked(table_name, lock);       /// Should never throw
@@ -245,31 +242,10 @@ void DatabaseAtomic::renameTable(const Context & context, const String & table_n
 
     /// Table renaming actually begins here
     if (auto txn = context.getMetadataTransaction())
-    {
-        String statement;
-        String statement_to;
-        {
-            ReadBufferFromFile in(old_metadata_path, 4096);
-            readStringUntilEOF(statement, in);
-            if (exchange)
-            {
-                ReadBufferFromFile in_to(new_metadata_path, 4096);
-                readStringUntilEOF(statement_to, in_to);
-            }
-        }
-        String metadata_zk_path = txn->zookeeper_path + "/metadata/" + escapeForFileName(table_name);
-        String metadata_zk_path_to = txn->zookeeper_path + "/metadata/" + escapeForFileName(to_table_name);
-        txn->ops.emplace_back(zkutil::makeRemoveRequest(metadata_zk_path, -1));
-        if (exchange)
-        {
-            txn->ops.emplace_back(zkutil::makeRemoveRequest(metadata_zk_path_to, -1));
-            txn->ops.emplace_back(zkutil::makeCreateRequest(metadata_zk_path, statement_to, zkutil::CreateMode::Persistent));
-        }
-        txn->ops.emplace_back(zkutil::makeCreateRequest(metadata_zk_path_to, statement, zkutil::CreateMode::Persistent));
-        txn->current_zookeeper->multi(txn->ops);     /// Commit point (a sort of) for Replicated database
-        /// NOTE: replica will be lost if server crashes before the following rename
-        /// TODO better detection and recovery
-    }
+        txn->commit();     /// Commit point (a sort of) for Replicated database
+
+    /// NOTE: replica will be lost if server crashes before the following rename
+    /// TODO better detection and recovery
 
     if (exchange)
         renameExchange(old_metadata_path, new_metadata_path);
@@ -326,15 +302,10 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
         locked_uuid = true;
 
         if (auto txn = query_context.getMetadataTransaction())
-        {
-            String metadata_zk_path = txn->zookeeper_path + "/metadata/" + escapeForFileName(query.table);
-            String statement = getObjectDefinitionFromCreateQuery(query.clone());
-            /// zk::multi(...) will throw if `metadata_zk_path` exists
-            txn->ops.emplace_back(zkutil::makeCreateRequest(metadata_zk_path, statement, zkutil::CreateMode::Persistent));
-            txn->current_zookeeper->multi(txn->ops);     /// Commit point (a sort of) for Replicated database
-            /// NOTE: replica will be lost if server crashes before the following renameNoReplace(...)
-            /// TODO better detection and recovery
-        }
+            txn->commit();     /// Commit point (a sort of) for Replicated database
+
+        /// NOTE: replica will be lost if server crashes before the following renameNoReplace(...)
+        /// TODO better detection and recovery
 
         /// It throws if `table_metadata_path` already exists (it's possible if table was detached)
         renameNoReplace(table_metadata_tmp_path, table_metadata_path);  /// Commit point (a sort of)
@@ -352,7 +323,8 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
         tryCreateSymlink(query.table, table_data_path);
 }
 
-void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path, const String & statement, const Context & query_context)
+void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path,
+                                      const String & /*statement*/, const Context & query_context)
 {
     bool check_file_exists = true;
     SCOPE_EXIT({ std::error_code code; if (check_file_exists) std::filesystem::remove(table_metadata_tmp_path, code); });
@@ -363,17 +335,11 @@ void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String &
     if (table_id.uuid != actual_table_id.uuid)
         throw Exception("Cannot alter table because it was renamed", ErrorCodes::CANNOT_ASSIGN_ALTER);
 
-    if (&query_context != &query_context.getGlobalContext())    // FIXME
-    {
-        if (auto txn = query_context.getMetadataTransaction())
-        {
-            String metadata_zk_path = txn->zookeeper_path + "/metadata/" + escapeForFileName(table_id.table_name);
-            txn->ops.emplace_back(zkutil::makeSetRequest(metadata_zk_path, statement, -1));
-            txn->current_zookeeper->multi(txn->ops); /// Commit point (a sort of) for Replicated database
-            /// NOTE: replica will be lost if server crashes before the following rename
-            /// TODO better detection and recovery
-        }
-    }
+    if (auto txn = query_context.getMetadataTransaction())
+        txn->commit();      /// Commit point (a sort of) for Replicated database
+
+    /// NOTE: replica will be lost if server crashes before the following rename
+    /// TODO better detection and recovery
 
     check_file_exists = renameExchangeIfSupported(table_metadata_tmp_path, table_metadata_path);
     if (!check_file_exists)

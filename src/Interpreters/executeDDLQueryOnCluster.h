@@ -61,6 +61,7 @@ private:
     std::unique_ptr<Exception> first_exception;
 
     Int64 timeout_seconds = 120;
+    bool by_hostname = true;
 };
 
 }
