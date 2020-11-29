@@ -2323,4 +2323,34 @@ Allows configurable `NULL` representation for [TSV](../../interfaces/formats.md#
 
 Default value: `\N`.
 
+## output_format_json_array_of_rows {#output-format-json-array-of-rows}
+
+Adds ability to output of all rows as a [JSON](../../interfaces/formats.md#json) array in the [JSONEachRow](../../interfaces/formats.md#jsoneachrow) format.
+
+Possible values:
+
+-   1 — The output of all rows as a `JSON` array in the `JSONEachRow` format is enabled.
+-   0 — The output of all rows as a `JSON` array in the `JSONEachRow` format is disabled.
+
+Default value: `0`.
+
+**Example**
+
+Query:
+
+```sql
+SET output_format_json_array_of_rows = 1;
+SELECT number FROM numbers(3) format JSONEachRow;
+```
+
+Result:
+
+```text
+[
+{"number":"0"},
+{"number":"1"},
+{"number":"2"}                                                                                                                                                                                  
+]
+```
+
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
