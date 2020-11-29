@@ -13,7 +13,7 @@ class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 
 /// Visits AST node to rewrite alias columns in filter query
-/// Currently works only in `KeyCondition` of select query
+/// Currently works only in `KeyCondition` of select query and `required_columns` in `InterpreterSelectQuery.cpp`
 class ColumnAliasesMatcher
 {
 public:
