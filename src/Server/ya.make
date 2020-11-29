@@ -10,6 +10,7 @@ PEERDIR(
 
 
 SRCS(
+    GRPCServer.cpp
     HTTPHandler.cpp
     HTTPHandlerFactory.cpp
     InterserverIOHTTPHandler.cpp
@@ -20,6 +21,7 @@ SRCS(
     PostgreSQLHandlerFactory.cpp
     PrometheusMetricsWriter.cpp
     PrometheusRequestHandler.cpp
+    ProtocolServerAdapter.cpp
     ReplicasStatusHandler.cpp
     StaticRequestHandler.cpp
     TCPHandler.cpp
