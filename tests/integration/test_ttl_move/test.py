@@ -684,6 +684,8 @@ def test_ttls_do_not_work_after_alter(started_cluster, name, engine, positive, b
      "ReplicatedMergeTree('/clickhouse/test_materialize_ttl_in_partition', '1')"),
 ])
 def test_materialize_ttl_in_partition(started_cluster, name, engine):
+    # Use unique table name for flaky checker, that run tests multiple times
+    name = f'{name}_{int(time.time())}'
     try:
         node1.query("""
             CREATE TABLE {name} (
