@@ -29,3 +29,4 @@ WHERE y = {y:UInt32};
 "
 
 $CLICKHOUSE_CLIENT --query "SELECT x, y FROM test"
+$CLICKHOUSE_CLIENT --query "DROP TABLE test"
