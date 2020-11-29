@@ -16,28 +16,28 @@ namespace DB::AST
 {
 
 // static
-PtrTo<SchemaClause> SchemaClause::createDescription(PtrTo<TableElementList> list)
+PtrTo<TableSchemaClause> TableSchemaClause::createDescription(PtrTo<TableElementList> list)
 {
-    return PtrTo<SchemaClause>(new SchemaClause(ClauseType::DESCRIPTION, {list}));
+    return PtrTo<TableSchemaClause>(new TableSchemaClause(ClauseType::DESCRIPTION, {list}));
 }
 
 // static
-PtrTo<SchemaClause> SchemaClause::createAsTable(PtrTo<TableIdentifier> identifier)
+PtrTo<TableSchemaClause> TableSchemaClause::createAsTable(PtrTo<TableIdentifier> identifier)
 {
-    return PtrTo<SchemaClause>(new SchemaClause(ClauseType::TABLE, {identifier}));
+    return PtrTo<TableSchemaClause>(new TableSchemaClause(ClauseType::TABLE, {identifier}));
 }
 
 // static
-PtrTo<SchemaClause> SchemaClause::createAsFunction(PtrTo<TableFunctionExpr> expr)
+PtrTo<TableSchemaClause> TableSchemaClause::createAsFunction(PtrTo<TableFunctionExpr> expr)
 {
-    return PtrTo<SchemaClause>(new SchemaClause(ClauseType::FUNCTION, {expr}));
+    return PtrTo<TableSchemaClause>(new TableSchemaClause(ClauseType::FUNCTION, {expr}));
 }
 
-SchemaClause::SchemaClause(ClauseType type, PtrList exprs) : INode(exprs), clause_type(type)
+TableSchemaClause::TableSchemaClause(ClauseType type, PtrList exprs) : INode(exprs), clause_type(type)
 {
 }
 
-ASTPtr SchemaClause::convertToOld() const
+ASTPtr TableSchemaClause::convertToOld() const
 {
     switch(clause_type)
     {
@@ -78,7 +78,7 @@ ASTPtr SchemaClause::convertToOld() const
     __builtin_unreachable();  // FIXME: old gcc compilers complain about reaching end of non-void function
 }
 
-String SchemaClause::dumpInfo() const
+String TableSchemaClause::dumpInfo() const
 {
     switch(clause_type)
     {
@@ -96,7 +96,7 @@ CreateTableQuery::CreateTableQuery(
     bool if_not_exists_,
     PtrTo<TableIdentifier> identifier,
     PtrTo<UUIDClause> uuid,
-    PtrTo<SchemaClause> schema,
+    PtrTo<TableSchemaClause> schema,
     PtrTo<EngineClause> engine,
     PtrTo<SelectUnionQuery> query)
     : DDLQuery(cluster, {identifier, uuid, schema, engine, query}), attach(attach_), temporary(temporary_), if_not_exists(if_not_exists_)
@@ -123,21 +123,21 @@ ASTPtr CreateTableQuery::convertToOld() const
 
     if (has(SCHEMA))
     {
-        switch(get<SchemaClause>(SCHEMA)->getType())
+        switch(get<TableSchemaClause>(SCHEMA)->getType())
         {
-            case SchemaClause::ClauseType::DESCRIPTION:
+            case TableSchemaClause::ClauseType::DESCRIPTION:
             {
                 query->set(query->columns_list, get(SCHEMA)->convertToOld());
                 break;
             }
-            case SchemaClause::ClauseType::TABLE:
+            case TableSchemaClause::ClauseType::TABLE:
             {
                 auto table_id = getTableIdentifier(get(SCHEMA)->convertToOld());
                 query->as_database = table_id.database_name;
                 query->as_table = table_id.table_name;
                 break;
             }
-            case SchemaClause::ClauseType::FUNCTION:
+            case TableSchemaClause::ClauseType::FUNCTION:
             {
                 query->as_table_function = get(SCHEMA)->convertToOld();
                 break;
@@ -182,7 +182,7 @@ antlrcpp::Any ParseTreeVisitor::visitCreateTableStmt(ClickHouseParser::CreateTab
 {
     auto uuid = ctx->uuidClause() ? visit(ctx->uuidClause()).as<PtrTo<UUIDClause>>() : nullptr;
     auto cluster = ctx->clusterClause() ? visit(ctx->clusterClause()).as<PtrTo<ClusterClause>>() : nullptr;
-    auto schema = ctx->schemaClause() ? visit(ctx->schemaClause()).as<PtrTo<SchemaClause>>() : nullptr;
+    auto schema = ctx->tableSchemaClause() ? visit(ctx->tableSchemaClause()).as<PtrTo<TableSchemaClause>>() : nullptr;
     auto engine = ctx->engineClause() ? visit(ctx->engineClause()).as<PtrTo<EngineClause>>() : nullptr;
     auto query = ctx->subqueryClause() ? visit(ctx->subqueryClause()).as<PtrTo<SelectUnionQuery>>() : nullptr;
     return std::make_shared<CreateTableQuery>(
@@ -193,17 +193,17 @@ antlrcpp::Any ParseTreeVisitor::visitSchemaDescriptionClause(ClickHouseParser::S
 {
     auto elems = std::make_shared<TableElementList>();
     for (auto * elem : ctx->tableElementExpr()) elems->push(visit(elem));
-    return SchemaClause::createDescription(elems);
+    return TableSchemaClause::createDescription(elems);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitSchemaAsTableClause(ClickHouseParser::SchemaAsTableClauseContext *ctx)
 {
-    return SchemaClause::createAsTable(visit(ctx->tableIdentifier()));
+    return TableSchemaClause::createAsTable(visit(ctx->tableIdentifier()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitSchemaAsFunctionClause(ClickHouseParser::SchemaAsFunctionClauseContext *ctx)
 {
-    return SchemaClause::createAsFunction(visit(ctx->tableFunctionExpr()));
+    return TableSchemaClause::createAsFunction(visit(ctx->tableFunctionExpr()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitSubqueryClause(ClickHouseParser::SubqueryClauseContext *ctx)

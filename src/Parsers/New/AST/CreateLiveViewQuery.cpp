@@ -18,7 +18,7 @@ CreateLiveViewQuery::CreateLiveViewQuery(
     PtrTo<UUIDClause> uuid,
     PtrTo<NumberLiteral> timeout,
     PtrTo<DestinationClause> destination,
-    PtrTo<SchemaClause> schema,
+    PtrTo<TableSchemaClause> schema,
     PtrTo<SelectUnionQuery> query)
     : DDLQuery(cluster, {identifier, uuid, timeout, destination, schema, query}), attach(attach_), if_not_exists(if_not_exists_)
 {
@@ -44,7 +44,7 @@ ASTPtr CreateLiveViewQuery::convertToOld() const
 
     if (has(SCHEMA))
     {
-        assert(get<SchemaClause>(SCHEMA)->getType() == SchemaClause::ClauseType::DESCRIPTION);
+        assert(get<TableSchemaClause>(SCHEMA)->getType() == TableSchemaClause::ClauseType::DESCRIPTION);
         query->set(query->columns_list, get(SCHEMA)->convertToOld());
     }
 
@@ -70,7 +70,7 @@ antlrcpp::Any ParseTreeVisitor::visitCreateLiveViewStmt(ClickHouseParser::Create
     auto cluster = ctx->clusterClause() ? visit(ctx->clusterClause()).as<PtrTo<ClusterClause>>() : nullptr;
     auto timeout = ctx->DECIMAL_LITERAL() ? Literal::createNumber(ctx->DECIMAL_LITERAL()) : nullptr;
     auto destination = ctx->destinationClause() ? visit(ctx->destinationClause()).as<PtrTo<DestinationClause>>() : nullptr;
-    auto schema = ctx->schemaClause() ? visit(ctx->schemaClause()).as<PtrTo<SchemaClause>>() : nullptr;
+    auto schema = ctx->tableSchemaClause() ? visit(ctx->tableSchemaClause()).as<PtrTo<TableSchemaClause>>() : nullptr;
     if (ctx->TIMEOUT() && !timeout) timeout = Literal::createNumber(std::to_string(DEFAULT_TEMPORARY_LIVE_VIEW_TIMEOUT_SEC));
     return std::make_shared<CreateLiveViewQuery>(
         cluster,

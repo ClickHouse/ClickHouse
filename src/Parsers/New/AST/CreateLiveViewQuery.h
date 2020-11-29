@@ -17,7 +17,7 @@ class CreateLiveViewQuery : public DDLQuery
             PtrTo<UUIDClause> uuid,
             PtrTo<NumberLiteral> timeout,
             PtrTo<DestinationClause> destination,
-            PtrTo<SchemaClause> schema,
+            PtrTo<TableSchemaClause> schema,
             PtrTo<SelectUnionQuery> query);
 
         ASTPtr convertToOld() const override;
@@ -29,7 +29,7 @@ class CreateLiveViewQuery : public DDLQuery
             UUID,         // UUIDClause (optional)
             TIMEOUT,      // NumberLiteral (optional)
             DESTINATION,  // DestinationClause (optional)
-            SCHEMA,       // SchemaClause (optional)
+            SCHEMA,       // TableSchemaClause (optional)
             SUBQUERY,     // SelectUnionQuery
         };
 

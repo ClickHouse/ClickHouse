@@ -16,7 +16,7 @@ class CreateMaterializedViewQuery : public DDLQuery
             bool populate,
             PtrTo<TableIdentifier> identifier,
             PtrTo<UUIDClause> uuid,
-            PtrTo<SchemaClause> schema,
+            PtrTo<TableSchemaClause> schema,
             PtrTo<DestinationClause> destination,
             PtrTo<EngineClause> engine,
             PtrTo<SelectUnionQuery> query);
@@ -28,7 +28,7 @@ class CreateMaterializedViewQuery : public DDLQuery
         {
             NAME = 0,     // TableIdentifier
             UUID,         // UUIDClause (optional)
-            SCHEMA,       // SchemaClause (optional)
+            SCHEMA,       // TableSchemaClause (optional)
             DESTINATION,  // DestinationClause (optional)
             ENGINE,       // EngineClause (optional)
             SUBQUERY,     // SelectUnionQuery

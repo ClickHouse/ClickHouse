@@ -77,18 +77,49 @@ checkStmt: CHECK TABLE tableIdentifier partitionClause?;
 // CREATE statement
 
 createStmt
-    : (ATTACH | CREATE) DATABASE (IF NOT EXISTS)? databaseIdentifier clusterClause? engineExpr?                                                                                  # CreateDatabaseStmt
-    | (ATTACH | CREATE) LIVE VIEW (IF NOT EXISTS)? tableIdentifier uuidClause? clusterClause? (WITH TIMEOUT DECIMAL_LITERAL?)? destinationClause? schemaClause? subqueryClause   # CreateLiveViewStmt
-    | (ATTACH | CREATE) MATERIALIZED VIEW (IF NOT EXISTS)? tableIdentifier uuidClause? clusterClause? schemaClause? (destinationClause | engineClause POPULATE?) subqueryClause  # CreateMaterializedViewStmt
-    | (ATTACH | CREATE) TEMPORARY? TABLE (IF NOT EXISTS)? tableIdentifier uuidClause? clusterClause? schemaClause? engineClause? subqueryClause?                                 # CreateTableStmt
-    | (ATTACH | CREATE) (OR REPLACE)? VIEW (IF NOT EXISTS)? tableIdentifier uuidClause? clusterClause? schemaClause? subqueryClause                                              # CreateViewStmt
+    : (ATTACH | CREATE) DATABASE (IF NOT EXISTS)? databaseIdentifier clusterClause? engineExpr?                                                                                       # CreateDatabaseStmt
+    | (ATTACH | CREATE) DICTIONARY (IF NOT EXISTS)? tableIdentifier uuidClause? clusterClause? dictionarySchemaClause dictionaryEngineClause                                          # CreateDictionaryStmt
+    | (ATTACH | CREATE) LIVE VIEW (IF NOT EXISTS)? tableIdentifier uuidClause? clusterClause? (WITH TIMEOUT DECIMAL_LITERAL?)? destinationClause? tableSchemaClause? subqueryClause   # CreateLiveViewStmt
+    | (ATTACH | CREATE) MATERIALIZED VIEW (IF NOT EXISTS)? tableIdentifier uuidClause? clusterClause? tableSchemaClause? (destinationClause | engineClause POPULATE?) subqueryClause  # CreateMaterializedViewStmt
+    | (ATTACH | CREATE) TEMPORARY? TABLE (IF NOT EXISTS)? tableIdentifier uuidClause? clusterClause? tableSchemaClause? engineClause? subqueryClause?                                 # CreateTableStmt
+    | (ATTACH | CREATE) (OR REPLACE)? VIEW (IF NOT EXISTS)? tableIdentifier uuidClause? clusterClause? tableSchemaClause? subqueryClause                                              # CreateViewStmt
     ;
+
+dictionarySchemaClause: LPAREN dictionaryAttrDfnt (COMMA dictionaryAttrDfnt)* RPAREN;
+dictionaryAttrDfnt
+locals [std::set<std::string> attrs]:
+    identifier columnTypeExpr
+    ( {!$attrs.count("default")}?      DEFAULT literal       {$attrs.insert("default");}
+    | {!$attrs.count("expression")}?   EXPRESSION columnExpr {$attrs.insert("expression");}
+    | {!$attrs.count("hierarchical")}? HIERARCHICAL          {$attrs.insert("hierarchical");}
+    | {!$attrs.count("injective")}?    INJECTIVE             {$attrs.insert("injective");}
+    | {!$attrs.count("is_object_id")}? IS_OBJECT_ID          {$attrs.insert("is_object_id");}
+    )*
+    ;
+dictionaryEngineClause
+locals [std::set<std::string> clauses]:
+    primaryKeyClause?
+    ( {!$clauses.count("source")}? sourceClause {$clauses.insert("source");}
+    | {!$clauses.count("lifetime")}? lifetimeClause {$clauses.insert("lifetime");}
+    | {!$clauses.count("layout")}? layoutClause {$clauses.insert("layout");}
+    | {!$clauses.count("range")}? rangeClause {$clauses.insert("range");}
+    | {!$clauses.count("settings")}? settingsClause {$clauses.insert("settings");}
+    )*
+    ;
+dictionaryArgExpr: identifier columnExpr;  // columnExpr: only literal, identifier and const function are acceptable.
+sourceClause: SOURCE LPAREN identifier LPAREN dictionaryArgExpr* RPAREN RPAREN;
+lifetimeClause: LIFETIME LPAREN ( DECIMAL_LITERAL
+                                | MIN DECIMAL_LITERAL MAX DECIMAL_LITERAL
+                                | MAX DECIMAL_LITERAL MIN DECIMAL_LITERAL
+                                ) RPAREN;
+layoutClause: LAYOUT LPAREN identifier LPAREN dictionaryArgExpr* RPAREN RPAREN;
+rangeClause: RANGE LPAREN (MIN identifier MAX identifier | MAX identifier MIN identifier) RPAREN;
 
 clusterClause: ON CLUSTER (identifier | STRING_LITERAL);
 uuidClause: UUID STRING_LITERAL;
 destinationClause: TO tableIdentifier;
 subqueryClause: AS selectUnionStmt;
-schemaClause
+tableSchemaClause
     : LPAREN tableElementExpr (COMMA tableElementExpr)* RPAREN  # SchemaDescriptionClause
     | AS tableIdentifier                                        # SchemaAsTableClause
     | AS tableFunctionExpr                                      # SchemaAsFunctionClause
@@ -380,14 +411,14 @@ keyword
     : AFTER | ALIAS | ALL | ALTER | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | ATTACH | BETWEEN | BOTH | BY | CASE | CAST
     | CHECK | CLEAR | CLUSTER | CODEC | COLLATE | COLUMN | COMMENT | CONSTRAINT | CREATE | CROSS | CUBE | DATABASE | DATABASES | DATE
     | DEDUPLICATE | DEFAULT | DELAY | DELETE | DESCRIBE | DESC | DESCENDING | DETACH | DICTIONARY | DISK | DISTINCT | DISTRIBUTED | DROP
-    | ELSE | END | ENGINE | EVENTS | EXISTS | EXPLAIN | EXTRACT | FETCHES | FINAL | FIRST | FLUSH | FOR | FORMAT | FREEZE | FROM | FULL
-    | FUNCTION | GLOBAL | GRANULARITY | GROUP | HAVING | ID | IF | ILIKE | IN | INDEX | INNER | INSERT | INTERVAL | INTO | IS | JOIN
-    | JSON_FALSE | JSON_TRUE | KEY | LAST | LEADING | LEFT | LIKE | LIMIT | LIVE | LOCAL | LOGS | MATERIALIZED | MERGES | MODIFY | MOVE
-    | NO | NOT | NULLS | OFFSET | ON | OPTIMIZE | OR | ORDER | OUTER | OUTFILE | PARTITION | POPULATE | PREWHERE | PRIMARY
-    | REMOVE | RENAME | REPLACE | REPLICA | REPLICATED | RIGHT | ROLLUP | SAMPLE | SELECT | SEMI | SENDS | SET
-    | SETTINGS | SHOW | START | STOP | SUBSTRING | SYNC | SYNTAX | SYSTEM | TABLE | TABLES | TEMPORARY | THEN | TIES | TIMEOUT | TIMESTAMP
-    | TOTALS | TRAILING | TRIM | TRUNCATE | TO | TOP | TTL | TYPE | UNION | UPDATE | USE | USING | UUID | VALUES | VIEW | VOLUME | WATCH
-    | WHEN | WHERE | WITH
+    | ELSE | END | ENGINE | EVENTS | EXISTS | EXPLAIN | EXPRESSION | EXTRACT | FETCHES | FINAL | FIRST | FLUSH | FOR | FORMAT | FREEZE
+    | FROM | FULL | FUNCTION | GLOBAL | GRANULARITY | GROUP | HAVING | HIERARCHICAL | ID | IF | ILIKE | IN | INDEX | INJECTIVE | INNER
+    | INSERT | INTERVAL | INTO | IS | IS_OBJECT_ID | JOIN | JSON_FALSE | JSON_TRUE | KEY | LAST | LAYOUT | LEADING | LEFT | LIFETIME | LIKE
+    | LIMIT | LIVE | LOCAL | LOGS | MATERIALIZED | MAX | MERGES | MIN | MODIFY | MOVE | NO | NOT | NULLS | OFFSET | ON | OPTIMIZE | OR
+    | ORDER | OUTER | OUTFILE | PARTITION | POPULATE | PREWHERE | PRIMARY | RANGE | REMOVE | RENAME | REPLACE | REPLICA | REPLICATED
+    | RIGHT | ROLLUP | SAMPLE | SELECT | SEMI | SENDS | SET | SETTINGS | SHOW | SOURCE | START | STOP | SUBSTRING | SYNC | SYNTAX | SYSTEM
+    | TABLE | TABLES | TEMPORARY | THEN | TIES | TIMEOUT | TIMESTAMP | TOTALS | TRAILING | TRIM | TRUNCATE | TO | TOP | TTL | TYPE | UNION
+    | UPDATE | USE | USING | UUID | VALUES | VIEW | VOLUME | WATCH | WHEN | WHERE | WITH
     ;
 keywordForAlias
     : DATE | FIRST | ID | KEY

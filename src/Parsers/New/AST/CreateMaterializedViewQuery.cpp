@@ -18,7 +18,7 @@ CreateMaterializedViewQuery::CreateMaterializedViewQuery(
     bool populate_,
     PtrTo<TableIdentifier> identifier,
     PtrTo<UUIDClause> uuid,
-    PtrTo<SchemaClause> schema,
+    PtrTo<TableSchemaClause> schema,
     PtrTo<DestinationClause> destination,
     PtrTo<EngineClause> engine,
     PtrTo<SelectUnionQuery> query)
@@ -52,7 +52,7 @@ ASTPtr CreateMaterializedViewQuery::convertToOld() const
 
     if (has(SCHEMA))
     {
-        assert(get<SchemaClause>(SCHEMA)->getType() == SchemaClause::ClauseType::DESCRIPTION);
+        assert(get<TableSchemaClause>(SCHEMA)->getType() == TableSchemaClause::ClauseType::DESCRIPTION);
         query->set(query->columns_list, get(SCHEMA)->convertToOld());
     }
 
@@ -76,7 +76,7 @@ antlrcpp::Any ParseTreeVisitor::visitCreateMaterializedViewStmt(ClickHouseParser
 {
     auto uuid = ctx->uuidClause() ? visit(ctx->uuidClause()).as<PtrTo<UUIDClause>>() : nullptr;
     auto cluster = ctx->clusterClause() ? visit(ctx->clusterClause()).as<PtrTo<ClusterClause>>() : nullptr;
-    auto schema = ctx->schemaClause() ? visit(ctx->schemaClause()).as<PtrTo<SchemaClause>>() : nullptr;
+    auto schema = ctx->tableSchemaClause() ? visit(ctx->tableSchemaClause()).as<PtrTo<TableSchemaClause>>() : nullptr;
     auto engine = ctx->engineClause() ? visit(ctx->engineClause()).as<PtrTo<EngineClause>>() : nullptr;
     auto destination = ctx->destinationClause() ? visit(ctx->destinationClause()).as<PtrTo<DestinationClause>>() : nullptr;
     return std::make_shared<CreateMaterializedViewQuery>(

@@ -87,6 +87,17 @@ public:
     // CreateDatabaseQuery
     antlrcpp::Any visitCreateDatabaseStmt(ClickHouseParser::CreateDatabaseStmtContext * ctx) override;
 
+    // CreateDictionaryQuery
+    antlrcpp::Any visitCreateDictionaryStmt(ClickHouseParser::CreateDictionaryStmtContext * ctx) override;
+    antlrcpp::Any visitDictionaryArgExpr(ClickHouseParser::DictionaryArgExprContext * ctx) override;
+    antlrcpp::Any visitDictionaryAttrDfnt(ClickHouseParser::DictionaryAttrDfntContext * ctx) override;
+    antlrcpp::Any visitDictionaryEngineClause(ClickHouseParser::DictionaryEngineClauseContext * ctx) override;
+    antlrcpp::Any visitDictionarySchemaClause(ClickHouseParser::DictionarySchemaClauseContext * ctx) override;
+    antlrcpp::Any visitLayoutClause(ClickHouseParser::LayoutClauseContext * ctx) override;
+    antlrcpp::Any visitLifetimeClause(ClickHouseParser::LifetimeClauseContext * ctx) override;
+    antlrcpp::Any visitRangeClause(ClickHouseParser::RangeClauseContext * ctx) override;
+    antlrcpp::Any visitSourceClause(ClickHouseParser::SourceClauseContext * ctx) override;
+
     // CreateLiveViewQuery
     antlrcpp::Any visitCreateLiveViewStmt(ClickHouseParser::CreateLiveViewStmtContext * ctx) override;
 

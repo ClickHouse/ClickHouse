@@ -7,12 +7,12 @@
 namespace DB::AST
 {
 
-class SchemaClause : public INode
+class TableSchemaClause : public INode
 {
     public:
-        static PtrTo<SchemaClause> createDescription(PtrTo<TableElementList> list);
-        static PtrTo<SchemaClause> createAsTable(PtrTo<TableIdentifier> identifier);
-        static PtrTo<SchemaClause> createAsFunction(PtrTo<TableFunctionExpr> expr);
+        static PtrTo<TableSchemaClause> createDescription(PtrTo<TableElementList> list);
+        static PtrTo<TableSchemaClause> createAsTable(PtrTo<TableIdentifier> identifier);
+        static PtrTo<TableSchemaClause> createAsFunction(PtrTo<TableFunctionExpr> expr);
 
         enum class ClauseType
         {
@@ -37,7 +37,7 @@ class SchemaClause : public INode
 
         ClauseType clause_type;
 
-        SchemaClause(ClauseType type, PtrList exprs);
+        TableSchemaClause(ClauseType type, PtrList exprs);
 
         String dumpInfo() const override;
 };
@@ -52,7 +52,7 @@ class CreateTableQuery : public DDLQuery
             bool if_not_exists,
             PtrTo<TableIdentifier> identifier,
             PtrTo<UUIDClause> uuid,
-            PtrTo<SchemaClause> schema,
+            PtrTo<TableSchemaClause> schema,
             PtrTo<EngineClause> engine,
             PtrTo<SelectUnionQuery> query);
 
@@ -63,7 +63,7 @@ class CreateTableQuery : public DDLQuery
         {
             NAME = 0,  // TableIdentifier
             UUID,      // UUIDClause (optional)
-            SCHEMA,    // SchemaClause
+            SCHEMA,    // TableSchemaClause
             ENGINE,    // EngineClause
             SUBQUERY,  // SelectUnionQuery
         };

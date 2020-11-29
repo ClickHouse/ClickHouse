@@ -15,7 +15,7 @@ class CreateViewQuery : public DDLQuery
             bool replace,
             bool if_not_exists,
             PtrTo<TableIdentifier> identifier,
-            PtrTo<SchemaClause> clause,
+            PtrTo<TableSchemaClause> clause,
             PtrTo<SelectUnionQuery> query);
 
         ASTPtr convertToOld() const override;
@@ -24,7 +24,7 @@ class CreateViewQuery : public DDLQuery
         enum ChildIndex : UInt8
         {
             NAME = 0,      // TableIdentifier
-            SCHEMA = 1,    // SchemaClause (optional)
+            SCHEMA = 1,    // TableSchemaClause (optional)
             SUBQUERY = 2,  // SelectUnionQuery
         };
 

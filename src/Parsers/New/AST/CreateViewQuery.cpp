@@ -15,7 +15,7 @@ CreateViewQuery::CreateViewQuery(
     bool replace_,
     bool if_not_exists_,
     PtrTo<TableIdentifier> identifier,
-    PtrTo<SchemaClause> clause,
+    PtrTo<TableSchemaClause> clause,
     PtrTo<SelectUnionQuery> query)
     : DDLQuery(cluster, {identifier, clause, query}), attach(attach_), replace(replace_), if_not_exists(if_not_exists_)
 {
@@ -54,7 +54,7 @@ using namespace AST;
 antlrcpp::Any ParseTreeVisitor::visitCreateViewStmt(ClickHouseParser::CreateViewStmtContext *ctx)
 {
     auto cluster = ctx->clusterClause() ? visit(ctx->clusterClause()).as<PtrTo<ClusterClause>>() : nullptr;
-    auto schema = ctx->schemaClause() ? visit(ctx->schemaClause()).as<PtrTo<SchemaClause>>() : nullptr;
+    auto schema = ctx->tableSchemaClause() ? visit(ctx->tableSchemaClause()).as<PtrTo<TableSchemaClause>>() : nullptr;
     return std::make_shared<CreateViewQuery>(
         cluster, !!ctx->ATTACH(), !!ctx->REPLACE(), !!ctx->IF(), visit(ctx->tableIdentifier()), schema, visit(ctx->subqueryClause()));
 }

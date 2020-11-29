@@ -10,8 +10,6 @@ namespace DB::AST
 
 using PartitionByClause = SimpleClause<ColumnExpr>;
 
-using PrimaryKeyClause = SimpleClause<ColumnExpr>;
-
 using SampleByClause = SimpleClause<ColumnExpr>;
 
 class EngineClause : public INode
