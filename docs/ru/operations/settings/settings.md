@@ -2195,12 +2195,12 @@ SELECT CAST(toNullable(toInt32(0)) AS Int32) as x, toTypeName(x);
 
 ## allow_nullable_key {#allow-nullable-key}
 
-Включает или отключает тип [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable) в качестве ключей таблиц [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree).
+Включает или отключает поддержку типа [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable) для ключей таблиц [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree).
 
 Возможные значения:
 
-- 1 — разрешает использовать тип `Nullable` в качестве ключей.
-- 0 — запрещает использовать тип `Nullable` в качестве ключей.
+- 1 — включает поддержку типа `Nullable` для ключей таблиц.
+- 0 — отключает поддержку типа `Nullable` для ключей таблиц.
 
 Значение по умолчанию: `0`.
 
