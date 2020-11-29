@@ -223,7 +223,7 @@ if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELW
         Dictionaries/FlatDictionary.cpp
         Dictionaries/HashedDictionary.cpp
         Dictionaries/CacheDictionary.cpp
-        Dictionaries/TrieDictionary.cpp
+        Dictionaries/IPAddressDictionary.cpp
         Dictionaries/RangeHashedDictionary.cpp
         Dictionaries/ComplexKeyHashedDictionary.cpp
         Dictionaries/ComplexKeyCacheDictionary.cpp
@@ -305,7 +305,6 @@ endif()
 
 dbms_target_link_libraries (
     PRIVATE
-        ${BTRIE_LIBRARIES}
         boost::filesystem
         boost::program_options
         clickhouse_common_config
@@ -383,6 +382,10 @@ if (USE_PROTOBUF)
     dbms_target_link_libraries (PRIVATE ${Protobuf_LIBRARY})
     dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${Protobuf_INCLUDE_DIR})
 endif ()
+
+if (USE_GRPC)
+    dbms_target_link_libraries (PUBLIC clickhouse_grpc_protos)
+endif()
 
 if (USE_HDFS)
     target_link_libraries (clickhouse_common_io PUBLIC ${HDFS3_LIBRARY})

@@ -907,6 +907,10 @@ class ClickHouseInstance:
         build_opts = self.query("SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
         return "-fsanitize=thread" in build_opts
 
+    def is_built_with_address_sanitizer(self):
+        build_opts = self.query("SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
+        return "-fsanitize=address" in build_opts
+
     # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
     def query(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None,
               ignore_error=False):
@@ -1027,6 +1031,10 @@ class ClickHouseInstance:
         result = self.exec_in_container(
             ["bash", "-c", 'grep "{}" /var/log/clickhouse-server/clickhouse-server.log || true'.format(substring)])
         return len(result) > 0
+
+    def file_exists(self, path):
+        return self.exec_in_container(
+            ["bash", "-c", "echo $(if [ -e '{}' ]; then echo 'yes'; else echo 'no'; fi)".format(path)]) == 'yes\n'
 
     def copy_file_to_container(self, local_path, dest_path):
         container_id = self.get_docker_handle().id

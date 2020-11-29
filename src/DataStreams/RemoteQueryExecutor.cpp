@@ -151,11 +151,26 @@ void RemoteQueryExecutor::sendQuery()
     if (settings.skip_unavailable_shards && 0 == multiplexed_connections->size())
         return;
 
+    /// Query cannot be canceled in the middle of the send query,
+    /// since there are multiple packets:
+    /// - Query
+    /// - Data (multiple times)
+    ///
+    /// And after the Cancel packet none Data packet can be sent, otherwise the remote side will throw:
+    ///
+    ///     Unexpected packet Data received from client
+    ///
+    std::lock_guard guard(was_cancelled_mutex);
+
     established = true;
 
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
     ClientInfo modified_client_info = context.getClientInfo();
     modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+    if (CurrentThread::isInitialized())
+    {
+        modified_client_info.client_trace_context = CurrentThread::get().thread_trace_context;
+    }
 
     multiplexed_connections->sendQuery(timeouts, query, query_id, stage, modified_client_info, true);
 

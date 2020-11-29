@@ -35,7 +35,7 @@ public:
 
     String getName() const override { return "FunctionExpression"; }
 
-    ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) override
+    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         DB::Block expr_columns;
         for (size_t i = 0; i < arguments.size(); ++i)
@@ -119,7 +119,7 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) override
+    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         Names names;
         DataTypes types;
