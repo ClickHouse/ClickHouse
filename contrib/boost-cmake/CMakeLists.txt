@@ -229,8 +229,8 @@ if (NOT EXTERNAL_BOOST_FOUND)
         ${LIBRARY_DIR}/libs/context/src/execution_context.cpp
         ${LIBRARY_DIR}/libs/context/src/fiber.cpp
         ${LIBRARY_DIR}/libs/context/src/posix/stack_traits.cpp
-        ${LIBRARY_DIR}/libs/context/src/untested.cpp
-        ${LIBRARY_DIR}/libs/context/src/windows/stack_traits.cpp
+#        ${LIBRARY_DIR}/libs/context/src/untested.cpp
+#        ${LIBRARY_DIR}/libs/context/src/windows/stack_traits.cpp
     )
 
     add_library (_boost_context ${SRCS_CONTEXT})
