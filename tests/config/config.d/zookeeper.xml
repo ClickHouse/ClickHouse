@@ -1,5 +1,9 @@
 <yandex>
     <zookeeper>
         <implementation>etcdkeeper</implementation>
+        <node>
+            <host>localhost</host>
+            <port>2379</port>
+        </node>
     </zookeeper>
 </yandex>

@@ -1,3 +1,9 @@
+#if !defined(ARCADIA_BUILD)
+#    include "config_formats.h"
+#    include "config_core.h"
+#    include "Common/config.h"
+#endif
+
 #include "ZooKeeper.h"
 #include "ZooKeeperImpl.h"
 #include "KeeperException.h"
@@ -55,6 +61,8 @@ void ZooKeeper::init(const std::string & implementation_, const std::string & ho
     operation_timeout_ms = operation_timeout_ms_;
     chroot = chroot_;
     implementation = implementation_;
+
+    std::cout << "Implementation: " << implementation << std::endl;
 
     if (implementation == "zookeeper")
     {

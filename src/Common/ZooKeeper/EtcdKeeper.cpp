@@ -1,5 +1,5 @@
 #if !defined(ARCADIA_BUILD)
-#    include "config_formats.h"
+#    include "Common/config.h"
 #endif
 
 #if USE_GRPC
