@@ -1,4 +1,5 @@
 #include <Parsers/New/AST/AlterTableQuery.h>
+#include <Parsers/New/AST/AttachQuery.h>
 #include <Parsers/New/AST/CheckQuery.h>
 #include <Parsers/New/AST/ColumnExpr.h>
 #include <Parsers/New/AST/CreateDatabaseQuery.h>
@@ -21,6 +22,7 @@
 #include <Parsers/New/AST/RenameQuery.h>
 #include <Parsers/New/AST/SelectUnionQuery.h>
 #include <Parsers/New/AST/SetQuery.h>
+#include <Parsers/New/AST/ShowQuery.h>
 #include <Parsers/New/AST/ShowCreateQuery.h>
 #include <Parsers/New/AST/SystemQuery.h>
 #include <Parsers/New/AST/TableExpr.h>
@@ -55,6 +57,7 @@ antlrcpp::Any ParseTreeVisitor::visitQuery(ClickHouseParser::QueryContext *ctx)
 
 #define TRY_POINTER_CAST(TYPE) if (query.is<PtrTo<TYPE>>()) return std::static_pointer_cast<Query>(query.as<PtrTo<TYPE>>());
     TRY_POINTER_CAST(AlterTableQuery)
+    TRY_POINTER_CAST(AttachQuery)
     TRY_POINTER_CAST(CheckQuery)
     TRY_POINTER_CAST(CreateDatabaseQuery)
     TRY_POINTER_CAST(CreateDictionaryQuery)
@@ -70,6 +73,7 @@ antlrcpp::Any ParseTreeVisitor::visitQuery(ClickHouseParser::QueryContext *ctx)
     TRY_POINTER_CAST(RenameQuery)
     TRY_POINTER_CAST(SelectUnionQuery)
     TRY_POINTER_CAST(SetQuery)
+    TRY_POINTER_CAST(ShowQuery)
     TRY_POINTER_CAST(ShowCreateQuery)
     TRY_POINTER_CAST(SystemQuery)
     TRY_POINTER_CAST(TruncateQuery)

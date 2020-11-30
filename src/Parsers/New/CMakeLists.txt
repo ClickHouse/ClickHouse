@@ -1,5 +1,6 @@
 set (SRCS
     AST/AlterTableQuery.cpp
+    AST/AttachQuery.cpp
     AST/CheckQuery.cpp
     AST/ColumnExpr.cpp
     AST/ColumnTypeExpr.cpp

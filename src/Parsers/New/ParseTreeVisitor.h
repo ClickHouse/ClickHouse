@@ -42,6 +42,9 @@ public:
     antlrcpp::Any visitAssignmentExprList(ClickHouseParser::AssignmentExprListContext * ctx) override;
     antlrcpp::Any visitTableColumnPropertyType(ClickHouseParser::TableColumnPropertyTypeContext * ctx) override;
 
+    // AttachQuery
+    antlrcpp::Any visitAttachDictionaryStmt(ClickHouseParser::AttachDictionaryStmtContext * ctx) override;
+
     // CheckQuery
     antlrcpp::Any visitCheckStmt(ClickHouseParser::CheckStmtContext * ctx) override;
 

@@ -47,6 +47,12 @@ PtrTo<SystemQuery> SystemQuery::createMerges(bool stop, PtrTo<TableIdentifier> i
 }
 
 // static
+PtrTo<SystemQuery> SystemQuery::createReloadDictionaries()
+{
+    return PtrTo<SystemQuery>(new SystemQuery(QueryType::RELOAD_DICTIONARIES, {}));
+}
+
+// static
 PtrTo<SystemQuery> SystemQuery::createReloadDictionary(PtrTo<TableIdentifier> identifier)
 {
     return PtrTo<SystemQuery>(new SystemQuery(QueryType::RELOAD_DICTIONARY, {identifier}));
@@ -119,6 +125,9 @@ ASTPtr SystemQuery::convertToOld() const
                 query->table = table_id.table_name;
             }
             break;
+        case QueryType::RELOAD_DICTIONARIES:
+            query->type = ASTSystemQuery::Type::RELOAD_DICTIONARIES;
+            break;
         case QueryType::RELOAD_DICTIONARY:
             query->type = ASTSystemQuery::Type::RELOAD_DICTIONARY;
             {
@@ -169,7 +178,11 @@ antlrcpp::Any ParseTreeVisitor::visitSystemStmt(ClickHouseParser::SystemStmtCont
         if (ctx->TTL()) return SystemQuery::createTTLMerges(!!ctx->STOP(), visit(ctx->tableIdentifier()));
         else return SystemQuery::createMerges(!!ctx->STOP(), visit(ctx->tableIdentifier()));
     }
-    if (ctx->RELOAD()) return SystemQuery::createReloadDictionary(visit(ctx->tableIdentifier()));
+    if (ctx->RELOAD())
+    {
+        if (ctx->DICTIONARIES()) return SystemQuery::createReloadDictionaries();
+        if (ctx->DICTIONARY()) return SystemQuery::createReloadDictionary(visit(ctx->tableIdentifier()));
+    }
     if (ctx->REPLICATED() && ctx->SENDS()) return SystemQuery::createReplicatedSends(!!ctx->STOP());
     if (ctx->SYNC() && ctx->REPLICA()) return SystemQuery::createSyncReplica(visit(ctx->tableIdentifier()));
     __builtin_unreachable();

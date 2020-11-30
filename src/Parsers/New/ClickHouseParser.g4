@@ -9,6 +9,7 @@ options {
 queryStmt: query (INTO OUTFILE STRING_LITERAL)? (FORMAT identifierOrNull)? (SEMICOLON)? | insertStmt;
 query
     : alterStmt     // DDL
+    | attachStmt    // DDL
     | checkStmt
     | createStmt    // DDL
     | describeStmt
@@ -68,6 +69,11 @@ tableColumnPropertyType: ALIAS | CODEC | COMMENT | DEFAULT | MATERIALIZED | TTL;
 partitionClause
     : PARTITION columnExpr         // actually we expect here any form of tuple of literals
     | PARTITION ID STRING_LITERAL
+    ;
+
+// ATTACH statement
+attachStmt
+    : ATTACH DICTIONARY tableIdentifier clusterClause?  # AttachDictionaryStmt
     ;
 
 // CHECK statement
@@ -279,6 +285,7 @@ showStmt
 systemStmt
     : SYSTEM FLUSH DISTRIBUTED tableIdentifier
     | SYSTEM FLUSH LOGS
+    | SYSTEM RELOAD DICTIONARIES
     | SYSTEM RELOAD DICTIONARY tableIdentifier
     | SYSTEM (START | STOP) (DISTRIBUTED SENDS | FETCHES | TTL? MERGES) tableIdentifier
     | SYSTEM (START | STOP) REPLICATED SENDS
@@ -287,7 +294,7 @@ systemStmt
 
 // TRUNCATE statements
 
-truncateStmt: TRUNCATE TEMPORARY? TABLE (IF EXISTS)? tableIdentifier clusterClause?;
+truncateStmt: TRUNCATE TEMPORARY? TABLE? (IF EXISTS)? tableIdentifier clusterClause?;
 
 // USE statement
 

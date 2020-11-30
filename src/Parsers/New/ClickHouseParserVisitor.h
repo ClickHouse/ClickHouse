@@ -78,6 +78,8 @@ public:
 
     virtual antlrcpp::Any visitPartitionClause(ClickHouseParser::PartitionClauseContext *context) = 0;
 
+    virtual antlrcpp::Any visitAttachDictionaryStmt(ClickHouseParser::AttachDictionaryStmtContext *context) = 0;
+
     virtual antlrcpp::Any visitCheckStmt(ClickHouseParser::CheckStmtContext *context) = 0;
 
     virtual antlrcpp::Any visitCreateDatabaseStmt(ClickHouseParser::CreateDatabaseStmtContext *context) = 0;

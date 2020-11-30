@@ -27,6 +27,7 @@ DROP DATABASE IF EXISTS empty_db_01036;
 CREATE DATABASE empty_db_01036;
 SELECT query_count FROM system.dictionaries WHERE database = 'dict_db_01036' AND name = 'dict';
 
-DROP TABLE dict_db_01036.dict;
+DROP DICTIONARY dict_db_01036.dict;
 DROP TABLE dict_db_01036.dict_data;
 DROP DATABASE dict_db_01036;
+DROP DATABASE empty_db_01036;

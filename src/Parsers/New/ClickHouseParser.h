@@ -58,35 +58,35 @@ public:
   enum {
     RuleQueryStmt = 0, RuleQuery = 1, RuleAlterStmt = 2, RuleAlterTableClause = 3, 
     RuleAssignmentExprList = 4, RuleAssignmentExpr = 5, RuleTableColumnPropertyType = 6, 
-    RulePartitionClause = 7, RuleCheckStmt = 8, RuleCreateStmt = 9, RuleDictionarySchemaClause = 10, 
-    RuleDictionaryAttrDfnt = 11, RuleDictionaryEngineClause = 12, RuleDictionaryPrimaryKeyClause = 13, 
-    RuleDictionaryArgExpr = 14, RuleSourceClause = 15, RuleLifetimeClause = 16, 
-    RuleLayoutClause = 17, RuleRangeClause = 18, RuleDictionarySettingsClause = 19, 
-    RuleClusterClause = 20, RuleUuidClause = 21, RuleDestinationClause = 22, 
-    RuleSubqueryClause = 23, RuleTableSchemaClause = 24, RuleEngineClause = 25, 
-    RulePartitionByClause = 26, RulePrimaryKeyClause = 27, RuleSampleByClause = 28, 
-    RuleTtlClause = 29, RuleEngineExpr = 30, RuleTableElementExpr = 31, 
-    RuleTableColumnDfnt = 32, RuleTableColumnPropertyExpr = 33, RuleTableIndexDfnt = 34, 
-    RuleCodecExpr = 35, RuleCodecArgExpr = 36, RuleTtlExpr = 37, RuleDescribeStmt = 38, 
-    RuleDropStmt = 39, RuleExistsStmt = 40, RuleExplainStmt = 41, RuleInsertStmt = 42, 
-    RuleColumnsClause = 43, RuleDataClause = 44, RuleOptimizeStmt = 45, 
-    RuleRenameStmt = 46, RuleSelectUnionStmt = 47, RuleSelectStmtWithParens = 48, 
-    RuleSelectStmt = 49, RuleWithClause = 50, RuleTopClause = 51, RuleFromClause = 52, 
-    RuleArrayJoinClause = 53, RulePrewhereClause = 54, RuleWhereClause = 55, 
-    RuleGroupByClause = 56, RuleHavingClause = 57, RuleOrderByClause = 58, 
-    RuleLimitByClause = 59, RuleLimitClause = 60, RuleSettingsClause = 61, 
-    RuleJoinExpr = 62, RuleJoinOp = 63, RuleJoinOpCross = 64, RuleJoinConstraintClause = 65, 
-    RuleSampleClause = 66, RuleLimitExpr = 67, RuleOrderExprList = 68, RuleOrderExpr = 69, 
-    RuleRatioExpr = 70, RuleSettingExprList = 71, RuleSettingExpr = 72, 
-    RuleSetStmt = 73, RuleShowStmt = 74, RuleSystemStmt = 75, RuleTruncateStmt = 76, 
-    RuleUseStmt = 77, RuleWatchStmt = 78, RuleColumnTypeExpr = 79, RuleColumnExprList = 80, 
-    RuleColumnsExpr = 81, RuleColumnExpr = 82, RuleColumnArgList = 83, RuleColumnArgExpr = 84, 
-    RuleColumnLambdaExpr = 85, RuleColumnIdentifier = 86, RuleNestedIdentifier = 87, 
-    RuleTableExpr = 88, RuleTableFunctionExpr = 89, RuleTableIdentifier = 90, 
-    RuleTableArgList = 91, RuleTableArgExpr = 92, RuleDatabaseIdentifier = 93, 
-    RuleFloatingLiteral = 94, RuleNumberLiteral = 95, RuleLiteral = 96, 
-    RuleInterval = 97, RuleKeyword = 98, RuleKeywordForAlias = 99, RuleAlias = 100, 
-    RuleIdentifier = 101, RuleIdentifierOrNull = 102, RuleEnumValue = 103
+    RulePartitionClause = 7, RuleAttachStmt = 8, RuleCheckStmt = 9, RuleCreateStmt = 10, 
+    RuleDictionarySchemaClause = 11, RuleDictionaryAttrDfnt = 12, RuleDictionaryEngineClause = 13, 
+    RuleDictionaryPrimaryKeyClause = 14, RuleDictionaryArgExpr = 15, RuleSourceClause = 16, 
+    RuleLifetimeClause = 17, RuleLayoutClause = 18, RuleRangeClause = 19, 
+    RuleDictionarySettingsClause = 20, RuleClusterClause = 21, RuleUuidClause = 22, 
+    RuleDestinationClause = 23, RuleSubqueryClause = 24, RuleTableSchemaClause = 25, 
+    RuleEngineClause = 26, RulePartitionByClause = 27, RulePrimaryKeyClause = 28, 
+    RuleSampleByClause = 29, RuleTtlClause = 30, RuleEngineExpr = 31, RuleTableElementExpr = 32, 
+    RuleTableColumnDfnt = 33, RuleTableColumnPropertyExpr = 34, RuleTableIndexDfnt = 35, 
+    RuleCodecExpr = 36, RuleCodecArgExpr = 37, RuleTtlExpr = 38, RuleDescribeStmt = 39, 
+    RuleDropStmt = 40, RuleExistsStmt = 41, RuleExplainStmt = 42, RuleInsertStmt = 43, 
+    RuleColumnsClause = 44, RuleDataClause = 45, RuleOptimizeStmt = 46, 
+    RuleRenameStmt = 47, RuleSelectUnionStmt = 48, RuleSelectStmtWithParens = 49, 
+    RuleSelectStmt = 50, RuleWithClause = 51, RuleTopClause = 52, RuleFromClause = 53, 
+    RuleArrayJoinClause = 54, RulePrewhereClause = 55, RuleWhereClause = 56, 
+    RuleGroupByClause = 57, RuleHavingClause = 58, RuleOrderByClause = 59, 
+    RuleLimitByClause = 60, RuleLimitClause = 61, RuleSettingsClause = 62, 
+    RuleJoinExpr = 63, RuleJoinOp = 64, RuleJoinOpCross = 65, RuleJoinConstraintClause = 66, 
+    RuleSampleClause = 67, RuleLimitExpr = 68, RuleOrderExprList = 69, RuleOrderExpr = 70, 
+    RuleRatioExpr = 71, RuleSettingExprList = 72, RuleSettingExpr = 73, 
+    RuleSetStmt = 74, RuleShowStmt = 75, RuleSystemStmt = 76, RuleTruncateStmt = 77, 
+    RuleUseStmt = 78, RuleWatchStmt = 79, RuleColumnTypeExpr = 80, RuleColumnExprList = 81, 
+    RuleColumnsExpr = 82, RuleColumnExpr = 83, RuleColumnArgList = 84, RuleColumnArgExpr = 85, 
+    RuleColumnLambdaExpr = 86, RuleColumnIdentifier = 87, RuleNestedIdentifier = 88, 
+    RuleTableExpr = 89, RuleTableFunctionExpr = 90, RuleTableIdentifier = 91, 
+    RuleTableArgList = 92, RuleTableArgExpr = 93, RuleDatabaseIdentifier = 94, 
+    RuleFloatingLiteral = 95, RuleNumberLiteral = 96, RuleLiteral = 97, 
+    RuleInterval = 98, RuleKeyword = 99, RuleKeywordForAlias = 100, RuleAlias = 101, 
+    RuleIdentifier = 102, RuleIdentifierOrNull = 103, RuleEnumValue = 104
   };
 
   ClickHouseParser(antlr4::TokenStream *input);
@@ -107,6 +107,7 @@ public:
   class AssignmentExprContext;
   class TableColumnPropertyTypeContext;
   class PartitionClauseContext;
+  class AttachStmtContext;
   class CheckStmtContext;
   class CreateStmtContext;
   class DictionarySchemaClauseContext;
@@ -228,6 +229,7 @@ public:
     QueryContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     AlterStmtContext *alterStmt();
+    AttachStmtContext *attachStmt();
     CheckStmtContext *checkStmt();
     CreateStmtContext *createStmt();
     DescribeStmtContext *describeStmt();
@@ -616,6 +618,32 @@ public:
   };
 
   PartitionClauseContext* partitionClause();
+
+  class  AttachStmtContext : public antlr4::ParserRuleContext {
+  public:
+    AttachStmtContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+   
+    AttachStmtContext() = default;
+    void copyFrom(AttachStmtContext *context);
+    using antlr4::ParserRuleContext::copyFrom;
+
+    virtual size_t getRuleIndex() const override;
+
+   
+  };
+
+  class  AttachDictionaryStmtContext : public AttachStmtContext {
+  public:
+    AttachDictionaryStmtContext(AttachStmtContext *ctx);
+
+    antlr4::tree::TerminalNode *ATTACH();
+    antlr4::tree::TerminalNode *DICTIONARY();
+    TableIdentifierContext *tableIdentifier();
+    ClusterClauseContext *clusterClause();
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  AttachStmtContext* attachStmt();
 
   class  CheckStmtContext : public antlr4::ParserRuleContext {
   public:
@@ -2099,6 +2127,7 @@ public:
     TableIdentifierContext *tableIdentifier();
     antlr4::tree::TerminalNode *LOGS();
     antlr4::tree::TerminalNode *RELOAD();
+    antlr4::tree::TerminalNode *DICTIONARIES();
     antlr4::tree::TerminalNode *DICTIONARY();
     antlr4::tree::TerminalNode *START();
     antlr4::tree::TerminalNode *STOP();
@@ -2121,9 +2150,9 @@ public:
     TruncateStmtContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *TRUNCATE();
-    antlr4::tree::TerminalNode *TABLE();
     TableIdentifierContext *tableIdentifier();
     antlr4::tree::TerminalNode *TEMPORARY();
+    antlr4::tree::TerminalNode *TABLE();
     antlr4::tree::TerminalNode *IF();
     antlr4::tree::TerminalNode *EXISTS();
     ClusterClauseContext *clusterClause();

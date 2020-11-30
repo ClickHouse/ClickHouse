@@ -83,6 +83,7 @@ SRCS(
     MySQL/ASTDeclareSubPartition.cpp
     MySQL/ASTDeclareTableOptions.cpp
     New/AST/AlterTableQuery.cpp
+    New/AST/AttachQuery.cpp
     New/AST/CheckQuery.cpp
     New/AST/ColumnExpr.cpp
     New/AST/ColumnTypeExpr.cpp
