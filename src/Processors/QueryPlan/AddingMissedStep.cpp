@@ -11,7 +11,7 @@ static ITransformingStep::Traits getTraits()
     return ITransformingStep::Traits
     {
         {
-            .preserves_distinct_columns = true,
+            .preserves_distinct_columns = false, /// TODO: check if true later.
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
             .preserves_sorting = true,
