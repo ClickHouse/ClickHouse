@@ -49,7 +49,7 @@ PtrTo<ColumnExpr> ColumnExpr::createFunction(PtrTo<Identifier> name, PtrTo<Colum
         if (left && left->getType() == ExprType::FUNCTION && left->getFunctionName() == name->getName())
         {
             auto new_args = std::make_shared<ColumnExprList>();
-            for (const auto & arg : *left->get(ARGS)->as<ColumnExprList>())
+            for (const auto & arg : left->get(ARGS)->as<ColumnExprList &>())
                 new_args->push(std::static_pointer_cast<ColumnExpr>(arg));
             new_args->push(std::static_pointer_cast<ColumnExpr>(*++args->begin()));
             args = new_args;
@@ -58,7 +58,7 @@ PtrTo<ColumnExpr> ColumnExpr::createFunction(PtrTo<Identifier> name, PtrTo<Colum
         {
             auto new_args = std::make_shared<ColumnExprList>();
             new_args->push(std::static_pointer_cast<ColumnExpr>(*args->begin()));
-            for (const auto & arg : *right->get(ARGS)->as<ColumnExprList>())
+            for (const auto & arg : right->get(ARGS)->as<ColumnExprList &>())
                 new_args->push(std::static_pointer_cast<ColumnExpr>(arg));
             args = new_args;
         }

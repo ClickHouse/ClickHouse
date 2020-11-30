@@ -50,7 +50,7 @@ ASTPtr PartitionClause::convertToOld() const
     switch(clause_type)
     {
         case ClauseType::ID:
-            partition->id = get(ID)->as<StringLiteral>()->as<String>();
+            partition->id = get<StringLiteral>(ID)->as<String>();
             break;
         case ClauseType::LIST:
             {
@@ -64,7 +64,7 @@ ASTPtr PartitionClause::convertToOld() const
 
                 partition->value = tuple;
                 partition->children.push_back(partition->value);
-                partition->fields_count = get(LIST)->as<List<Literal>>()->size();
+                partition->fields_count = get<List<Literal>>(LIST)->size();
                 partition->fields_str = get(LIST)->toString();
             }
             break;

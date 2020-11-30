@@ -10,6 +10,7 @@ class ShowCreateQuery : public Query
 {
     public:
         static PtrTo<ShowCreateQuery> createDatabase(PtrTo<DatabaseIdentifier> identifier);
+        static PtrTo<ShowCreateQuery> createDictionary(PtrTo<TableIdentifier> identifier);
         static PtrTo<ShowCreateQuery> createTable(bool temporary, PtrTo<TableIdentifier> identifier);
 
         ASTPtr convertToOld() const override;
@@ -22,6 +23,7 @@ class ShowCreateQuery : public Query
         enum class QueryType
         {
             DATABASE,
+            DICTIONARY,
             TABLE,
         };
 

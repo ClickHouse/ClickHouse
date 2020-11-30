@@ -6,6 +6,7 @@
 #include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/AST/Literal.h>
 #include <Parsers/New/AST/SelectUnionQuery.h>
+#include <Parsers/New/AST/SettingExpr.h>
 #include <Parsers/New/ParseTreeVisitor.h>
 
 #include <Poco/String.h>
@@ -21,8 +22,10 @@ namespace DB::AST
 
 // DictionaryAttributeExpr
 
-DictionaryAttributeExpr::DictionaryAttributeExpr(PtrTo<Identifier> identifier, PtrTo<ColumnTypeExpr> type) : INode{identifier, type}
+DictionaryAttributeExpr::DictionaryAttributeExpr(PtrTo<Identifier> identifier, PtrTo<ColumnTypeExpr> type) : INode(MAX_INDEX)
 {
+    set(NAME, identifier);
+    set(TYPE, type);
 }
 
 void DictionaryAttributeExpr::setDefaultClause(PtrTo<Literal> literal)
@@ -33,6 +36,33 @@ void DictionaryAttributeExpr::setDefaultClause(PtrTo<Literal> literal)
 void DictionaryAttributeExpr::setExpressionClause(PtrTo<ColumnExpr> expr)
 {
     set(EXPRESSION, expr);
+}
+
+ASTPtr DictionaryAttributeExpr::convertToOld() const
+{
+    auto expr = std::make_shared<ASTDictionaryAttributeDeclaration>();
+
+    expr->name = get<Identifier>(NAME)->getName();
+    if (has(TYPE))
+    {
+        expr->type = get(TYPE)->convertToOld();
+        expr->children.push_back(expr->type);
+    }
+    if (has(DEFAULT))
+    {
+        expr->default_value = get(DEFAULT)->convertToOld();
+        expr->children.push_back(expr->default_value);
+    }
+    if (has(EXPRESSION))
+    {
+        expr->expression = get(EXPRESSION)->convertToOld();
+        expr->children.push_back(expr->expression);
+    }
+    expr->hierarchical = hierarchical;
+    expr->injective = injective;
+    expr->is_object_id = is_object_id;
+
+    return expr;
 }
 
 // DictionaryArgExpr
@@ -46,11 +76,11 @@ DictionaryArgExpr::DictionaryArgExpr(PtrTo<Identifier> identifier, PtrTo<ColumnE
 
 ASTPtr DictionaryArgExpr::convertToOld() const
 {
-    auto expr = std::make_shared<ASTPair>(true);  // FIXME: always true?
+    auto expr = std::make_shared<ASTPair>(false);  // FIXME: always true?
 
     // TODO: probably there are more variants to parse.
 
-    expr->first = Poco::toLower(get(KEY)->as<Identifier>()->getName());
+    expr->first = Poco::toLower(get<Identifier>(KEY)->getName());
     expr->set(expr->second, get(VALUE)->convertToOld());
 
     return expr;
@@ -66,7 +96,7 @@ ASTPtr SourceClause::convertToOld() const
 {
     auto clause = std::make_shared<ASTFunctionWithKeyValueArguments>(true);  // FIXME: always true?
 
-    clause->name = Poco::toLower(get(NAME)->as<Identifier>()->getName());
+    clause->name = Poco::toLower(get<Identifier>(NAME)->getName());
     if (has(ARGS))
     {
         clause->elements = get(ARGS)->convertToOld();
@@ -102,7 +132,7 @@ ASTPtr LayoutClause::convertToOld() const
 {
     auto clause = std::make_shared<ASTDictionaryLayout>();
 
-    clause->layout_type = get(NAME)->as<Identifier>()->getName();
+    clause->layout_type = Poco::toLower(get<Identifier>(NAME)->getName());
     clause->has_brackets = true;  // FIXME: maybe not?
     if (has(ARGS)) clause->set(clause->parameters, get(ARGS)->convertToOld());
 
@@ -119,16 +149,36 @@ ASTPtr RangeClause::convertToOld() const
 {
     auto clause = std::make_shared<ASTDictionaryRange>();
 
-    clause->max_attr_name = get(MAX)->as<Identifier>()->getName();
-    clause->min_attr_name = get(MIN)->as<Identifier>()->getName();
+    clause->max_attr_name = get<Identifier>(MAX)->getName();
+    clause->min_attr_name = get<Identifier>(MIN)->getName();
+
+    return clause;
+}
+
+// DictionarySettingsClause
+
+DictionarySettingsClause::DictionarySettingsClause(PtrTo<SettingExprList> list) : INode{list}
+{
+}
+
+ASTPtr DictionarySettingsClause::convertToOld() const
+{
+    auto clause = std::make_shared<ASTDictionarySettings>();
+
+    for (const auto & child : get(LIST)->as<SettingExprList &>())
+    {
+        const auto * setting = child->as<SettingExpr>();
+        clause->changes.emplace_back(setting->getName()->getName(), setting->getValue()->convertToOld()->as<ASTLiteral>()->value);
+    }
 
     return clause;
 }
 
 // DictionaryEngineClause
 
-DictionaryEngineClause::DictionaryEngineClause(PtrTo<PrimaryKeyClause> clause) : INode{clause}
+DictionaryEngineClause::DictionaryEngineClause(PtrTo<DictionaryPrimaryKeyClause> clause) : INode(MAX_INDEX)
 {
+    set(PRIMARY_KEY, clause);
 }
 
 void DictionaryEngineClause::setSourceClause(PtrTo<SourceClause> clause)
@@ -151,7 +201,7 @@ void DictionaryEngineClause::setRangeClause(PtrTo<RangeClause> clause)
     set(RANGE, clause);
 }
 
-void DictionaryEngineClause::setSettingsClause(PtrTo<SettingsClause> clause)
+void DictionaryEngineClause::setSettingsClause(PtrTo<DictionarySettingsClause> clause)
 {
     set(SETTINGS, clause);
 }
@@ -198,6 +248,7 @@ ASTPtr CreateDictionaryQuery::convertToOld() const
 
     query->cluster = cluster_name;
 
+    query->is_dictionary = true;
     query->attach = attach;
     query->if_not_exists = if_not_exists;
 
@@ -226,7 +277,11 @@ antlrcpp::Any ParseTreeVisitor::visitCreateDictionaryStmt(ClickHouseParser::Crea
 
 antlrcpp::Any ParseTreeVisitor::visitDictionaryArgExpr(ClickHouseParser::DictionaryArgExprContext *ctx)
 {
-    return std::make_shared<DictionaryArgExpr>(visit(ctx->identifier()), visit(ctx->columnExpr()));
+    PtrTo<ColumnExpr> expr;
+    if (ctx->literal()) expr = ColumnExpr::createLiteral(visit(ctx->literal()));
+    else if (ctx->LPAREN()) expr = ColumnExpr::createFunction(visit(ctx->identifier(1)), nullptr, nullptr);
+    else expr = ColumnExpr::createIdentifier(visit(ctx->identifier(1)));
+    return std::make_shared<DictionaryArgExpr>(visit(ctx->identifier(0)), expr);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitDictionaryAttrDfnt(ClickHouseParser::DictionaryAttrDfntContext *ctx)
@@ -242,13 +297,20 @@ antlrcpp::Any ParseTreeVisitor::visitDictionaryAttrDfnt(ClickHouseParser::Dictio
 
 antlrcpp::Any ParseTreeVisitor::visitDictionaryEngineClause(ClickHouseParser::DictionaryEngineClauseContext *ctx)
 {
-    auto clause = std::make_shared<DictionaryEngineClause>(visit(ctx->primaryKeyClause()));
+    auto primary_key
+        = ctx->dictionaryPrimaryKeyClause() ? visit(ctx->dictionaryPrimaryKeyClause()).as<PtrTo<DictionaryPrimaryKeyClause>>() : nullptr;
+    auto clause = std::make_shared<DictionaryEngineClause>(primary_key);
     if (!ctx->sourceClause().empty()) clause->setSourceClause(visit(ctx->sourceClause(0)));
     if (!ctx->lifetimeClause().empty()) clause->setLifetimeClause(visit(ctx->lifetimeClause(0)));
     if (!ctx->layoutClause().empty()) clause->setLayoutClause(visit(ctx->layoutClause(0)));
     if (!ctx->rangeClause().empty()) clause->setRangeClause(visit(ctx->rangeClause(0)));
-    if (!ctx->settingsClause().empty()) clause->setSettingsClause(visit(ctx->settingsClause(0)));
+    if (!ctx->dictionarySettingsClause().empty()) clause->setSettingsClause(visit(ctx->dictionarySettingsClause(0)));
     return clause;
+}
+
+antlrcpp::Any ParseTreeVisitor::visitDictionaryPrimaryKeyClause(ClickHouseParser::DictionaryPrimaryKeyClauseContext *ctx)
+{
+    return std::make_shared<DictionaryPrimaryKeyClause>(visit(ctx->columnExprList()).as<PtrTo<ColumnExprList>>());
 }
 
 antlrcpp::Any ParseTreeVisitor::visitDictionarySchemaClause(ClickHouseParser::DictionarySchemaClauseContext *ctx)
@@ -256,6 +318,11 @@ antlrcpp::Any ParseTreeVisitor::visitDictionarySchemaClause(ClickHouseParser::Di
     auto list = std::make_shared<DictionaryAttributeList>();
     for (auto * attr : ctx->dictionaryAttrDfnt()) list->push(visit(attr));
     return std::make_shared<DictionarySchemaClause>(list);
+}
+
+antlrcpp::Any ParseTreeVisitor::visitDictionarySettingsClause(ClickHouseParser::DictionarySettingsClauseContext *ctx)
+{
+    return std::make_shared<DictionarySettingsClause>(visit(ctx->settingExprList()).as<PtrTo<SettingExprList>>());
 }
 
 antlrcpp::Any ParseTreeVisitor::visitLayoutClause(ClickHouseParser::LayoutClauseContext *ctx)

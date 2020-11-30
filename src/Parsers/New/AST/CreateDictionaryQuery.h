@@ -18,6 +18,8 @@ class DictionaryAttributeExpr : public INode
         void setInjectiveFlag() { injective = true; }
         void setIsObjectIdFlag() { is_object_id = true; }
 
+        ASTPtr convertToOld() const override;
+
     private:
         enum ChildIndex : UInt8
         {
@@ -31,6 +33,8 @@ class DictionaryAttributeExpr : public INode
 
         bool hierarchical = false, injective = false, is_object_id = false;
 };
+
+using DictionaryPrimaryKeyClause = SimpleClause<ColumnExprList>;
 
 using DictionarySchemaClause = SimpleClause<DictionaryAttributeList>;
 
@@ -109,28 +113,42 @@ class RangeClause : public INode
         };
 };
 
-class DictionaryEngineClause : public INode
+class DictionarySettingsClause : public INode
 {
     public:
-        explicit DictionaryEngineClause(PtrTo<PrimaryKeyClause> clause);
-
-        void setSourceClause(PtrTo<SourceClause> clause);
-        void setLifetimeClause(PtrTo<LifetimeClause> clause);
-        void setLayoutClause(PtrTo<LayoutClause> clause);
-        void setRangeClause(PtrTo<RangeClause> clause);
-        void setSettingsClause(PtrTo<SettingsClause> clause);
+        explicit DictionarySettingsClause(PtrTo<SettingExprList> list);
 
         ASTPtr convertToOld() const override;
 
     private:
         enum ChildIndex : UInt8
         {
-            PRIMARY_KEY = 0,  // PrimaryKeyClause
+            LIST = 0,  // SettingExprList
+        };
+};
+
+class DictionaryEngineClause : public INode
+{
+    public:
+        explicit DictionaryEngineClause(PtrTo<DictionaryPrimaryKeyClause> clause);
+
+        void setSourceClause(PtrTo<SourceClause> clause);
+        void setLifetimeClause(PtrTo<LifetimeClause> clause);
+        void setLayoutClause(PtrTo<LayoutClause> clause);
+        void setRangeClause(PtrTo<RangeClause> clause);
+        void setSettingsClause(PtrTo<DictionarySettingsClause> clause);
+
+        ASTPtr convertToOld() const override;
+
+    private:
+        enum ChildIndex : UInt8
+        {
+            PRIMARY_KEY = 0,  // DictionaryPrimaryKeyClause
             SOURCE,           // SourceClause (optional)
             LIFETIME,         // LifetimeClause (optional)
             LAYOUT,           // LayoutClause (optional)
             RANGE,            // RangeClause (optional)
-            SETTINGS,         // SettingsClause (optional)
+            SETTINGS,         // DictionarySettingsClause (optional)
 
             MAX_INDEX,
         };

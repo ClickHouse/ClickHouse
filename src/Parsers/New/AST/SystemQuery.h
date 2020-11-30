@@ -14,6 +14,7 @@ class SystemQuery : public Query
         static PtrTo<SystemQuery> createFlushDistributed(PtrTo<TableIdentifier> identifier);
         static PtrTo<SystemQuery> createFlushLogs();
         static PtrTo<SystemQuery> createMerges(bool stop, PtrTo<TableIdentifier> identifier);
+        static PtrTo<SystemQuery> createReloadDictionary(PtrTo<TableIdentifier> identifier);
         static PtrTo<SystemQuery> createReplicatedSends(bool stop);
         static PtrTo<SystemQuery> createSyncReplica(PtrTo<TableIdentifier> identifier);
         static PtrTo<SystemQuery> createTTLMerges(bool stop, PtrTo<TableIdentifier> identifier);
@@ -32,6 +33,7 @@ class SystemQuery : public Query
             FLUSH_DISTRIBUTED,
             FLUSH_LOGS,
             MERGES,
+            RELOAD_DICTIONARY,
             REPLICATED_SENDS,
             SYNC_REPLICA,
             TTL_MERGES,

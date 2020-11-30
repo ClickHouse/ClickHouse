@@ -17,6 +17,12 @@ PtrTo<ShowCreateQuery> ShowCreateQuery::createDatabase(PtrTo<DatabaseIdentifier>
 }
 
 // static
+PtrTo<ShowCreateQuery> ShowCreateQuery::createDictionary(PtrTo<TableIdentifier> identifier)
+{
+    return PtrTo<ShowCreateQuery>(new ShowCreateQuery(QueryType::DICTIONARY, {identifier}));
+}
+
+// static
 PtrTo<ShowCreateQuery> ShowCreateQuery::createTable(bool temporary, PtrTo<TableIdentifier> identifier)
 {
     PtrTo<ShowCreateQuery> query(new ShowCreateQuery(QueryType::TABLE, {identifier}));
@@ -36,6 +42,17 @@ ASTPtr ShowCreateQuery::convertToOld() const
         {
             auto query = std::make_shared<ASTShowCreateDatabaseQuery>();
             query->database = get<DatabaseIdentifier>(IDENTIFIER)->getName();
+            return query;
+        }
+        case QueryType::DICTIONARY:
+        {
+            auto query = std::make_shared<ASTShowCreateDictionaryQuery>();
+            auto table_id = getTableIdentifier(get(IDENTIFIER)->convertToOld());
+
+            query->database = table_id.database_name;
+            query->table = table_id.table_name;
+            query->uuid = table_id.uuid;
+
             return query;
         }
         case QueryType::TABLE:
@@ -64,6 +81,11 @@ using namespace AST;
 antlrcpp::Any ParseTreeVisitor::visitShowCreateDatabaseStmt(ClickHouseParser::ShowCreateDatabaseStmtContext *ctx)
 {
     return ShowCreateQuery::createDatabase(visit(ctx->databaseIdentifier()));
+}
+
+antlrcpp::Any ParseTreeVisitor::visitShowCreateDictionaryStmt(ClickHouseParser::ShowCreateDictionaryStmtContext * ctx)
+{
+    return ShowCreateQuery::createDictionary(visit(ctx->tableIdentifier()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitShowCreateTableStmt(ClickHouseParser::ShowCreateTableStmtContext *ctx)

@@ -92,7 +92,9 @@ public:
     antlrcpp::Any visitDictionaryArgExpr(ClickHouseParser::DictionaryArgExprContext * ctx) override;
     antlrcpp::Any visitDictionaryAttrDfnt(ClickHouseParser::DictionaryAttrDfntContext * ctx) override;
     antlrcpp::Any visitDictionaryEngineClause(ClickHouseParser::DictionaryEngineClauseContext * ctx) override;
+    antlrcpp::Any visitDictionaryPrimaryKeyClause(ClickHouseParser::DictionaryPrimaryKeyClauseContext * ctx) override;
     antlrcpp::Any visitDictionarySchemaClause(ClickHouseParser::DictionarySchemaClauseContext * ctx) override;
+    antlrcpp::Any visitDictionarySettingsClause(ClickHouseParser::DictionarySettingsClauseContext * ctx) override;
     antlrcpp::Any visitLayoutClause(ClickHouseParser::LayoutClauseContext * ctx) override;
     antlrcpp::Any visitLifetimeClause(ClickHouseParser::LifetimeClauseContext * ctx) override;
     antlrcpp::Any visitRangeClause(ClickHouseParser::RangeClauseContext * ctx) override;
@@ -160,6 +162,7 @@ public:
 
     // ShowCreateQuery
     antlrcpp::Any visitShowCreateDatabaseStmt(ClickHouseParser::ShowCreateDatabaseStmtContext * ctx) override;
+    antlrcpp::Any visitShowCreateDictionaryStmt(ClickHouseParser::ShowCreateDictionaryStmtContext * ctx) override;
     antlrcpp::Any visitShowCreateTableStmt(ClickHouseParser::ShowCreateTableStmtContext * ctx) override;
 
     // SystemQuery

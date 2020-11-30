@@ -98,6 +98,8 @@ public:
 
     virtual antlrcpp::Any visitDictionaryEngineClause(ClickHouseParser::DictionaryEngineClauseContext *context) = 0;
 
+    virtual antlrcpp::Any visitDictionaryPrimaryKeyClause(ClickHouseParser::DictionaryPrimaryKeyClauseContext *context) = 0;
+
     virtual antlrcpp::Any visitDictionaryArgExpr(ClickHouseParser::DictionaryArgExprContext *context) = 0;
 
     virtual antlrcpp::Any visitSourceClause(ClickHouseParser::SourceClauseContext *context) = 0;
@@ -107,6 +109,8 @@ public:
     virtual antlrcpp::Any visitLayoutClause(ClickHouseParser::LayoutClauseContext *context) = 0;
 
     virtual antlrcpp::Any visitRangeClause(ClickHouseParser::RangeClauseContext *context) = 0;
+
+    virtual antlrcpp::Any visitDictionarySettingsClause(ClickHouseParser::DictionarySettingsClauseContext *context) = 0;
 
     virtual antlrcpp::Any visitClusterClause(ClickHouseParser::ClusterClauseContext *context) = 0;
 
@@ -241,6 +245,8 @@ public:
     virtual antlrcpp::Any visitSetStmt(ClickHouseParser::SetStmtContext *context) = 0;
 
     virtual antlrcpp::Any visitShowCreateDatabaseStmt(ClickHouseParser::ShowCreateDatabaseStmtContext *context) = 0;
+
+    virtual antlrcpp::Any visitShowCreateDictionaryStmt(ClickHouseParser::ShowCreateDictionaryStmtContext *context) = 0;
 
     virtual antlrcpp::Any visitShowCreateTableStmt(ClickHouseParser::ShowCreateTableStmtContext *context) = 0;
 

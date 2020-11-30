@@ -98,15 +98,16 @@ locals [std::set<std::string> attrs]:
     ;
 dictionaryEngineClause
 locals [std::set<std::string> clauses]:
-    primaryKeyClause?
+    dictionaryPrimaryKeyClause?
     ( {!$clauses.count("source")}? sourceClause {$clauses.insert("source");}
     | {!$clauses.count("lifetime")}? lifetimeClause {$clauses.insert("lifetime");}
     | {!$clauses.count("layout")}? layoutClause {$clauses.insert("layout");}
     | {!$clauses.count("range")}? rangeClause {$clauses.insert("range");}
-    | {!$clauses.count("settings")}? settingsClause {$clauses.insert("settings");}
+    | {!$clauses.count("settings")}? dictionarySettingsClause {$clauses.insert("settings");}
     )*
     ;
-dictionaryArgExpr: identifier columnExpr;  // columnExpr: only literal, identifier and const function are acceptable.
+dictionaryPrimaryKeyClause: PRIMARY KEY columnExprList;
+dictionaryArgExpr: identifier (identifier (LPAREN RPAREN)? | literal);
 sourceClause: SOURCE LPAREN identifier LPAREN dictionaryArgExpr* RPAREN RPAREN;
 lifetimeClause: LIFETIME LPAREN ( DECIMAL_LITERAL
                                 | MIN DECIMAL_LITERAL MAX DECIMAL_LITERAL
@@ -114,6 +115,7 @@ lifetimeClause: LIFETIME LPAREN ( DECIMAL_LITERAL
                                 ) RPAREN;
 layoutClause: LAYOUT LPAREN identifier LPAREN dictionaryArgExpr* RPAREN RPAREN;
 rangeClause: RANGE LPAREN (MIN identifier MAX identifier | MAX identifier MIN identifier) RPAREN;
+dictionarySettingsClause: SETTINGS LPAREN settingExprList RPAREN;
 
 clusterClause: ON CLUSTER (identifier | STRING_LITERAL);
 uuidClause: UUID STRING_LITERAL;
@@ -177,13 +179,13 @@ explainStmt: EXPLAIN SYNTAX query;
 
 // INSERT statement
 
-insertStmt: INSERT INTO TABLE? (tableIdentifier | FUNCTION tableFunctionExpr) columnsClause? dataClause;
+insertStmt: INSERT INTO (TABLE? tableIdentifier | FUNCTION tableFunctionExpr) columnsClause? dataClause;
 
 columnsClause: LPAREN nestedIdentifier (COMMA nestedIdentifier)* RPAREN;
 dataClause
-    : FORMAT identifier  # DataClauseFormat
-    | VALUES             # DataClauseValues
-    | selectUnionStmt    # DataClauseSelect
+    : FORMAT identifier              # DataClauseFormat
+    | VALUES                         # DataClauseValues
+    | selectUnionStmt SEMICOLON? EOF # DataClauseSelect
     ;
 
 // OPTIMIZE statement
@@ -265,6 +267,7 @@ setStmt: SET settingExprList;
 
 showStmt
     : SHOW CREATE DATABASE databaseIdentifier                                                                     # showCreateDatabaseStmt
+    | SHOW CREATE DICTIONARY tableIdentifier                                                                      # showCreateDictionaryStmt
     | SHOW CREATE TEMPORARY? TABLE? tableIdentifier                                                               # showCreateTableStmt
     | SHOW TEMPORARY? TABLES ((FROM | IN) databaseIdentifier)? (LIKE STRING_LITERAL | whereClause)? limitClause?  # showTablesStmt
     | SHOW DATABASES                                                                                              # showDatabasesStmt
@@ -275,6 +278,7 @@ showStmt
 systemStmt
     : SYSTEM FLUSH DISTRIBUTED tableIdentifier
     | SYSTEM FLUSH LOGS
+    | SYSTEM RELOAD DICTIONARY tableIdentifier
     | SYSTEM (START | STOP) (DISTRIBUTED SENDS | FETCHES | TTL? MERGES) tableIdentifier
     | SYSTEM (START | STOP) REPLICATED SENDS
     | SYSTEM SYNC REPLICA tableIdentifier
@@ -415,10 +419,10 @@ keyword
     | FROM | FULL | FUNCTION | GLOBAL | GRANULARITY | GROUP | HAVING | HIERARCHICAL | ID | IF | ILIKE | IN | INDEX | INJECTIVE | INNER
     | INSERT | INTERVAL | INTO | IS | IS_OBJECT_ID | JOIN | JSON_FALSE | JSON_TRUE | KEY | LAST | LAYOUT | LEADING | LEFT | LIFETIME | LIKE
     | LIMIT | LIVE | LOCAL | LOGS | MATERIALIZED | MAX | MERGES | MIN | MODIFY | MOVE | NO | NOT | NULLS | OFFSET | ON | OPTIMIZE | OR
-    | ORDER | OUTER | OUTFILE | PARTITION | POPULATE | PREWHERE | PRIMARY | RANGE | REMOVE | RENAME | REPLACE | REPLICA | REPLICATED
-    | RIGHT | ROLLUP | SAMPLE | SELECT | SEMI | SENDS | SET | SETTINGS | SHOW | SOURCE | START | STOP | SUBSTRING | SYNC | SYNTAX | SYSTEM
-    | TABLE | TABLES | TEMPORARY | THEN | TIES | TIMEOUT | TIMESTAMP | TOTALS | TRAILING | TRIM | TRUNCATE | TO | TOP | TTL | TYPE | UNION
-    | UPDATE | USE | USING | UUID | VALUES | VIEW | VOLUME | WATCH | WHEN | WHERE | WITH
+    | ORDER | OUTER | OUTFILE | PARTITION | POPULATE | PREWHERE | PRIMARY | RANGE | RELOAD | REMOVE | RENAME | REPLACE | REPLICA
+    | REPLICATED | RIGHT | ROLLUP | SAMPLE | SELECT | SEMI | SENDS | SET | SETTINGS | SHOW | SOURCE | START | STOP | SUBSTRING | SYNC
+    | SYNTAX | SYSTEM | TABLE | TABLES | TEMPORARY | THEN | TIES | TIMEOUT | TIMESTAMP | TOTALS | TRAILING | TRIM | TRUNCATE | TO | TOP
+    | TTL | TYPE | UNION | UPDATE | USE | USING | UUID | VALUES | VIEW | VOLUME | WATCH | WHEN | WHERE | WITH
     ;
 keywordForAlias
     : DATE | FIRST | ID | KEY

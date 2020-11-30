@@ -74,7 +74,7 @@ class List : public INode {
 
         ASTPtr convertToOld() const override
         {
-            auto list = std::make_shared<ASTExpressionList>();
+            auto list = std::make_shared<ASTExpressionList>(Separator);
             for (const auto & child : *this) list->children.emplace_back(child->convertToOld());
             return list;
         }

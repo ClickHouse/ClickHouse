@@ -14,11 +14,11 @@ RatioExpr::RatioExpr(PtrTo<NumberLiteral> num1, PtrTo<NumberLiteral> num2) : INo
 
 ASTPtr RatioExpr::convertToOld() const
 {
-    auto numerator = get(NUMERATOR)->as<NumberLiteral>()->convertToOldRational();
+    auto numerator = get<NumberLiteral>(NUMERATOR)->convertToOldRational();
 
     if (has(DENOMINATOR))
     {
-        auto denominator = get(DENOMINATOR)->as<NumberLiteral>()->convertToOldRational();
+        auto denominator = get<NumberLiteral>(DENOMINATOR)->convertToOldRational();
 
         numerator.numerator = numerator.numerator * denominator.denominator;
         numerator.denominator = numerator.denominator * denominator.numerator;
