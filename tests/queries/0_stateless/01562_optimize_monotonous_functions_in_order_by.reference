@@ -1,0 +1,26 @@
+SELECT
+    timestamp,
+    key
+FROM test_order_by
+ORDER BY timestamp ASC
+LIMIT 10
+SELECT
+    timestamp,
+    key
+FROM test_order_by
+ORDER BY toDate(timestamp) ASC
+LIMIT 10
+SELECT
+    timestamp,
+    key
+FROM test_order_by
+ORDER BY
+    toDate(timestamp) ASC,
+    timestamp ASC
+LIMIT 10
+SELECT
+    timestamp,
+    key
+FROM test_order_by
+ORDER BY timestamp ASC
+LIMIT 10
