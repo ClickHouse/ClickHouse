@@ -1,6 +1,0 @@
-syntax = "proto3";
-
-message User {
-  string username = 1;
-  int32 timestamp = 2;
-}

@@ -4,6 +4,7 @@
 #if defined(OS_DARWIN)
 extern "C"
 {
+    /// Is defined in libglibc-compatibility.a
     double lgamma_r(double x, int * signgamp);
 }
 #endif

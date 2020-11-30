@@ -130,7 +130,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
                         throw Exception("Unknown field found while parsing TSKV format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
 
                     /// If the key is not found, skip the value.
-                    NullOutput sink;
+                    NullSink sink;
                     readEscapedStringInto(sink, in);
                 }
                 else

@@ -7,6 +7,7 @@ PEERDIR(
     contrib/libs/protobuf
 )
 
+CFLAGS(-g0)
 
 SRCS(
     Chunk.cpp
@@ -19,14 +20,11 @@ SRCS(
     Executors/PullingPipelineExecutor.cpp
     ForkProcessor.cpp
     Formats/IInputFormat.cpp
-    Formats/IOutputFormat.cpp
-    Formats/IRowInputFormat.cpp
-    Formats/IRowOutputFormat.cpp
     Formats/Impl/BinaryRowInputFormat.cpp
     Formats/Impl/BinaryRowOutputFormat.cpp
+    Formats/Impl/ConstantExpressionTemplate.cpp
     Formats/Impl/CSVRowInputFormat.cpp
     Formats/Impl/CSVRowOutputFormat.cpp
-    Formats/Impl/ConstantExpressionTemplate.cpp
     Formats/Impl/JSONAsStringRowInputFormat.cpp
     Formats/Impl/JSONCompactEachRowRowInputFormat.cpp
     Formats/Impl/JSONCompactEachRowRowOutputFormat.cpp
@@ -52,16 +50,19 @@ SRCS(
     Formats/Impl/RawBLOBRowInputFormat.cpp
     Formats/Impl/RawBLOBRowOutputFormat.cpp
     Formats/Impl/RegexpRowInputFormat.cpp
-    Formats/Impl/TSKVRowInputFormat.cpp
-    Formats/Impl/TSKVRowOutputFormat.cpp
     Formats/Impl/TabSeparatedRowInputFormat.cpp
     Formats/Impl/TabSeparatedRowOutputFormat.cpp
     Formats/Impl/TemplateBlockOutputFormat.cpp
     Formats/Impl/TemplateRowInputFormat.cpp
+    Formats/Impl/TSKVRowInputFormat.cpp
+    Formats/Impl/TSKVRowOutputFormat.cpp
     Formats/Impl/ValuesBlockInputFormat.cpp
     Formats/Impl/ValuesRowOutputFormat.cpp
     Formats/Impl/VerticalRowOutputFormat.cpp
     Formats/Impl/XMLRowOutputFormat.cpp
+    Formats/IOutputFormat.cpp
+    Formats/IRowInputFormat.cpp
+    Formats/IRowOutputFormat.cpp
     Formats/LazyOutputFormat.cpp
     Formats/OutputStreamToOutputFormat.cpp
     Formats/PullingOutputFormat.cpp
@@ -87,6 +88,7 @@ SRCS(
     OffsetTransform.cpp
     Pipe.cpp
     Port.cpp
+    printPipeline.cpp
     QueryPipeline.cpp
     QueryPlan/AddingDelayedSourceStep.cpp
     QueryPlan/AggregatingStep.cpp
@@ -150,7 +152,6 @@ SRCS(
     Transforms/RollupTransform.cpp
     Transforms/SortingTransform.cpp
     Transforms/TotalsHavingTransform.cpp
-    printPipeline.cpp
 
 )
 

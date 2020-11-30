@@ -927,7 +927,7 @@ void obfuscateQueries(
         }
         else
         {
-            /// Everything else is kept as is.
+            /// Everyting else is kept as is.
             result.write(token.begin, token.size());
         }
     }

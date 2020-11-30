@@ -35,11 +35,11 @@
 namespace DB
 {
 
+class MergeListEntry;
 class AlterCommands;
 class MergeTreePartsMover;
 class MutationCommands;
 class Context;
-struct JobAndPool;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
@@ -618,7 +618,6 @@ public:
     /// `additional_path` can be set if part is not located directly in table data path (e.g. 'detached/')
     std::optional<String> getFullRelativePathForPart(const String & part_name, const String & additional_path = "") const;
 
-    bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override;
 
     using PathsWithDisks = std::vector<PathWithDisk>;
@@ -710,12 +709,6 @@ public:
 
     /// Mutex for currently_moving_parts
     mutable std::mutex moving_parts_mutex;
-
-    /// Return main processing background job, like merge/mutate/fetch and so on
-    virtual std::optional<JobAndPool> getDataProcessingJob() = 0;
-    /// Return job to move parts between disks/volumes and so on.
-    std::optional<JobAndPool> getDataMovingJob();
-    bool areBackgroundMovesNeeded() const;
 
 protected:
 
@@ -893,6 +886,7 @@ protected:
     /// Selects parts for move and moves them, used in background process
     bool selectPartsAndMove();
 
+    bool areBackgroundMovesNeeded() const;
 
 private:
     /// RAII Wrapper for atomic work with currently moving parts
@@ -904,19 +898,18 @@ private:
         MergeTreeData & data;
         CurrentlyMovingPartsTagger(MergeTreeMovingParts && moving_parts_, MergeTreeData & data_);
 
+        CurrentlyMovingPartsTagger(const CurrentlyMovingPartsTagger & other) = delete;
         ~CurrentlyMovingPartsTagger();
     };
 
-    using CurrentlyMovingPartsTaggerPtr = std::shared_ptr<CurrentlyMovingPartsTagger>;
-
     /// Move selected parts to corresponding disks
-    bool moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagger);
+    bool moveParts(CurrentlyMovingPartsTagger && moving_tagger);
 
     /// Select parts for move and disks for them. Used in background moving processes.
-    CurrentlyMovingPartsTaggerPtr selectPartsForMove();
+    CurrentlyMovingPartsTagger selectPartsForMove();
 
     /// Check selected parts for movements. Used by ALTER ... MOVE queries.
-    CurrentlyMovingPartsTaggerPtr checkPartsForMove(const DataPartsVector & parts, SpacePtr space);
+    CurrentlyMovingPartsTagger checkPartsForMove(const DataPartsVector & parts, SpacePtr space);
 
     bool canUsePolymorphicParts(const MergeTreeSettings & settings, String * out_reason = nullptr) const;
 

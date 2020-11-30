@@ -10,7 +10,7 @@ echo "Starting clickhouse-server"
 
 $PORT
 
-$CLICKHOUSE_BINARY-server -- --tcp_port "$CLICKHOUSE_PORT_TCP" > server.log 2>&1 &
+$CLICKHOUSE_BINARY server -- --tcp_port "$CLICKHOUSE_PORT_TCP" > server.log 2>&1 &
 PID=$!
 
 function finish {

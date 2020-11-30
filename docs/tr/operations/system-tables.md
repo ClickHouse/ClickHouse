@@ -13,7 +13,7 @@ Sistem tablolarında diskte veri bulunan dosyalar veya meta verilere sahip dosya
 Sistem tabloları salt okunur.
 Bulun theurlar. ‘system’ veritabanı.
 
-## sistem.asynchronous_metrics {#system_tables-asynchronous_metrics}
+## sistem.asynchronous\_metrics {#system_tables-asynchronous_metrics}
 
 Arka planda periyodik olarak hesaplanan metrikleri içerir. Örneğin, kullanılan RAM miktarı.
 
@@ -48,7 +48,7 @@ SELECT * FROM system.asynchronous_metrics LIMIT 10
 -   [İzleme](monitoring.md) — Base concepts of ClickHouse monitoring.
 -   [sistem.metrik](#system_tables-metrics) — Contains instantly calculated metrics.
 -   [sistem.etkinlik](#system_tables-events) — Contains a number of events that have occurred.
--   [sistem.metric_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
+-   [sistem.metric\_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
 
 ## sistem.kümeler {#system-clusters}
 
@@ -72,8 +72,8 @@ Lütfen unutmayın `errors_count` küme için sorgu başına bir kez güncelleş
 **Ayrıca bakınız**
 
 -   [Masa motoru Dağıt Distributedıldı](../engines/table-engines/special/distributed.md)
--   [distributed_replica_error_cap ayarı](settings/settings.md#settings-distributed_replica_error_cap)
--   [distributed_replica_error_half_life ayarı](settings/settings.md#settings-distributed_replica_error_half_life)
+-   [distributed\_replica\_error\_cap ayarı](settings/settings.md#settings-distributed_replica_error_cap)
+-   [distributed\_replica\_error\_half\_life ayarı](settings/settings.md#settings-distributed_replica_error_half_life)
 
 ## sistem.sütun {#system-columns}
 
@@ -145,7 +145,7 @@ Bu tablo, adı verilen tek bir dize sütunu içerir ‘name’ – the name of a
 Sunucunun bildiği her veritabanı, tabloda karşılık gelen bir girdiye sahiptir.
 Bu sistem tablosu uygulamak için kullanılır `SHOW DATABASES` sorgu.
 
-## sistem.detached_parts {#system_tables-detached_parts}
+## sistem.detached\_parts {#system_tables-detached_parts}
 
 Müstakil parçaları hakkında bilgiler içerir [MergeTree](../engines/table-engines/mergetree-family/mergetree.md) Tablolar. Bu `reason` sütun, parçanın neden ayrıldığını belirtir. Kullanıcı tarafından ayrılmış parçalar için sebep boştur. Bu tür parçalar ile eklenebilir [ALTER TABLE ATTACH PARTITION\|PART](../sql-reference/statements/alter.md#alter_attach-partition) komut. Diğer sütunların açıklaması için bkz. [sistem.parçalar](#system_tables-parts). Bölüm adı geçersiz ise, bazı sütunların değerleri olabilir `NULL`. Bu tür parçalar ile silinebilir [ALTER TABLE DROP DETACHED PART](../sql-reference/statements/alter.md#alter_drop-detached).
 
@@ -239,9 +239,9 @@ SELECT * FROM system.events LIMIT 5
 
 **Ayrıca Bakınız**
 
--   [sistem.asynchronous_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
+-   [sistem.asynchronous\_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
 -   [sistem.metrik](#system_tables-metrics) — Contains instantly calculated metrics.
--   [sistem.metric_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
+-   [sistem.metric\_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
 -   [İzleme](monitoring.md) — Base concepts of ClickHouse monitoring.
 
 ## sistem.işlevler {#system-functions}
@@ -253,9 +253,9 @@ Sütun:
 -   `name`(`String`) – The name of the function.
 -   `is_aggregate`(`UInt8`) — Whether the function is aggregate.
 
-## sistem.graphite_retentions {#system-graphite-retentions}
+## sistem.graphite\_retentions {#system-graphite-retentions}
 
-Parametreleri hakkında bilgi içerir [graphite_rollup](server-configuration-parameters/settings.md#server_configuration_parameters-graphite) tablo usedlarında kullanılan [\* Graphıtemergetree](../engines/table-engines/mergetree-family/graphitemergetree.md) motorlar.
+Parametreleri hakkında bilgi içerir [graphite\_rollup](server-configuration-parameters/settings.md#server_configuration_parameters-graphite) tablo usedlarında kullanılan [\* Graphıtemergetree](../engines/table-engines/mergetree-family/graphitemergetree.md) motorlar.
 
 Sütun:
 
@@ -324,12 +324,12 @@ SELECT * FROM system.metrics LIMIT 10
 
 **Ayrıca Bakınız**
 
--   [sistem.asynchronous_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
+-   [sistem.asynchronous\_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
 -   [sistem.etkinlik](#system_tables-events) — Contains a number of events that occurred.
--   [sistem.metric_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
+-   [sistem.metric\_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
 -   [İzleme](monitoring.md) — Base concepts of ClickHouse monitoring.
 
-## sistem.metric_log {#system_tables-metric_log}
+## sistem.metric\_log {#system_tables-metric_log}
 
 Tablolardan metrik değerlerinin geçmişini içerir `system.metrics` ve `system.events`, periyodik olarak diske boşaltılır.
 Metrik geçmişi koleksiyonunu açmak için `system.metric_log`, oluşturmak `/etc/clickhouse-server/config.d/metric_log.xml` aşağıdaki içerik ile:
@@ -380,7 +380,7 @@ CurrentMetric_ReplicatedChecks:                             0
 
 **Ayrıca bakınız**
 
--   [sistem.asynchronous_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
+-   [sistem.asynchronous\_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
 -   [sistem.etkinlik](#system_tables-events) — Contains a number of events that occurred.
 -   [sistem.metrik](#system_tables-metrics) — Contains instantly calculated metrics.
 -   [İzleme](monitoring.md) — Base concepts of ClickHouse monitoring.
@@ -391,7 +391,7 @@ Bu tablo adında tek bir uint64 sütunu içerir ‘number’ bu sıfırdan başl
 Bu tabloyu testler için veya kaba kuvvet araması yapmanız gerekiyorsa kullanabilirsiniz.
 Bu tablodan okumalar parallelized değil.
 
-## sistem.numbers_mt {#system-numbers-mt}
+## sistem.numbers\_mt {#system-numbers-mt}
 
 Olarak aynı ‘system.numbers’ ancak okumalar paralelleştirilmiştir. Sayılar herhangi bir sırayla iade edilebilir.
 Testler için kullanılır.
@@ -483,9 +483,9 @@ Sütun:
 
 -   `marks_size` (`UInt64`) – Alias for `marks_bytes`.
 
-## sistem.part_log {#system_tables-part-log}
+## sistem.part\_log {#system_tables-part-log}
 
-Bu `system.part_log` tablo yalnızca aşağıdaki durumlarda oluşturulur: [part_log](server-configuration-parameters/settings.md#server_configuration_parameters-part-log) sunucu ayarı belirtilir.
+Bu `system.part_log` tablo yalnızca aşağıdaki durumlarda oluşturulur: [part\_log](server-configuration-parameters/settings.md#server_configuration_parameters-part-log) sunucu ayarı belirtilir.
 
 Bu tablo ile oluşan olaylar hakkında bilgi içerir [veri parçaları](../engines/table-engines/mergetree-family/custom-partitioning-key.md) in the [MergeTree](../engines/table-engines/mergetree-family/mergetree.md) veri ekleme veya birleştirme gibi aile tabloları.
 
@@ -528,11 +528,11 @@ Sütun:
 -   `rows_read` (UInt64) – The number of rows read from the table. For distributed processing, on the requestor server, this is the total for all remote servers.
 -   `bytes_read` (UInt64) – The number of uncompressed bytes read from the table. For distributed processing, on the requestor server, this is the total for all remote servers.
 -   `total_rows_approx` (UInt64) – The approximation of the total number of rows that should be read. For distributed processing, on the requestor server, this is the total for all remote servers. It can be updated during request processing, when new sources to process become known.
--   `memory_usage` (UInt64) – Amount of RAM the request uses. It might not include some types of dedicated memory. See the [max_memory_usage](../operations/settings/query-complexity.md#settings_max_memory_usage) ayar.
+-   `memory_usage` (UInt64) – Amount of RAM the request uses. It might not include some types of dedicated memory. See the [max\_memory\_usage](../operations/settings/query-complexity.md#settings_max_memory_usage) ayar.
 -   `query` (String) – The query text. For `INSERT`, eklemek için veri içermez.
 -   `query_id` (String) – Query ID, if defined.
 
-## sistem.text_log {#system_tables-text_log}
+## sistem.text\_log {#system_tables-text_log}
 
 Günlük girişleri içerir. Bu tabloya giden günlük seviyesi ile sınırlı olabilir `text_log.level` sunucu ayarı.
 
@@ -559,16 +559,16 @@ Sütun:
 -   `source_file` (`LowCardinality(String)`)- Günlüğü yapıldığı kaynak dosya.
 -   `source_line` (`UInt64`)- Kaynak satır hangi günlüğü yapıldı.
 
-## sistem.query_log {#system_tables-query_log}
+## sistem.query\_log {#system_tables-query_log}
 
 Sorguların yürütülmesi hakkında bilgi içerir. Her sorgu için, işlem başlangıç saatini, işlem süresini, hata mesajlarını ve diğer bilgileri görebilirsiniz.
 
 !!! note "Not"
     Tablo için giriş verileri içermiyor `INSERT` sorgular.
 
-ClickHouse bu tabloyu yalnızca [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) sunucu parametresi belirtilir. Bu parametre, günlük aralığı veya sorguların oturum açacağı tablonun adı gibi günlük kurallarını ayarlar.
+ClickHouse bu tabloyu yalnızca [query\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) sunucu parametresi belirtilir. Bu parametre, günlük aralığı veya sorguların oturum açacağı tablonun adı gibi günlük kurallarını ayarlar.
 
-Sorgu günlüğünü etkinleştirmek için, [log_queries](settings/settings.md#settings-log-queries) parametre 1. Ayrıntılar için, bkz. [Ayarlar](settings/settings.md) bölme.
+Sorgu günlüğünü etkinleştirmek için, [log\_queries](settings/settings.md#settings-log-queries) parametre 1. Ayrıntılar için, bkz. [Ayarlar](settings/settings.md) bölme.
 
 Bu `system.query_log` tablo iki tür sorgu kaydeder:
 
@@ -636,22 +636,22 @@ Her sorgu bir veya iki satır oluşturur `query_log` tablo, sorgunun durumuna ba
 2.  Sorgu işleme sırasında bir hata oluştu, iki olay türleri 1 ve 4 oluşturulur.
 3.  Sorguyu başlatmadan önce bir hata oluşmuşsa, 3 tipi olan tek bir olay oluşturulur.
 
-Varsayılan olarak, günlükleri 7.5 saniye aralıklarla tabloya eklenir. Bu aralığı ayarlayabilirsiniz [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) sunucu ayarı (bkz. `flush_interval_milliseconds` parametre). Günlükleri zorla bellek arabelleğinden tabloya temizlemek için `SYSTEM FLUSH LOGS` sorgu.
+Varsayılan olarak, günlükleri 7.5 saniye aralıklarla tabloya eklenir. Bu aralığı ayarlayabilirsiniz [query\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) sunucu ayarı (bkz. `flush_interval_milliseconds` parametre). Günlükleri zorla bellek arabelleğinden tabloya temizlemek için `SYSTEM FLUSH LOGS` sorgu.
 
 Tablo elle silindiğinde, otomatik olarak anında oluşturulur. Önceki tüm günlüklerin silineceğini unutmayın.
 
 !!! note "Not"
     Günlüklerin depolama süresi sınırsızdır. Günlükler tablodan otomatik olarak silinmez. Eski günlüklerin kaldırılmasını kendiniz düzenlemeniz gerekir.
 
-İçin keyfi bir bölümleme anahtarı belirtebilirsiniz `system.query_log` tablo içinde [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) sunucu ayarı (bkz. `partition_by` parametre).
+İçin keyfi bir bölümleme anahtarı belirtebilirsiniz `system.query_log` tablo içinde [query\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) sunucu ayarı (bkz. `partition_by` parametre).
 
-## sistem.query_thread_log {#system_tables-query-thread-log}
+## sistem.query\_thread\_log {#system_tables-query-thread-log}
 
 Tablo, her sorgu yürütme iş parçacığı hakkında bilgi içerir.
 
-ClickHouse bu tabloyu yalnızca [query_thread_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) sunucu parametresi belirtilir. Bu parametre, günlük aralığı veya sorguların oturum açacağı tablonun adı gibi günlük kurallarını ayarlar.
+ClickHouse bu tabloyu yalnızca [query\_thread\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) sunucu parametresi belirtilir. Bu parametre, günlük aralığı veya sorguların oturum açacağı tablonun adı gibi günlük kurallarını ayarlar.
 
-Sorgu günlüğünü etkinleştirmek için, [log_query_threads](settings/settings.md#settings-log-query-threads) parametre 1. Ayrıntılar için, bkz. [Ayarlar](settings/settings.md) bölme.
+Sorgu günlüğünü etkinleştirmek için, [log\_query\_threads](settings/settings.md#settings-log-query-threads) parametre 1. Ayrıntılar için, bkz. [Ayarlar](settings/settings.md) bölme.
 
 Sütun:
 
@@ -701,20 +701,20 @@ Sütun:
 -   `ProfileEvents.Names` (Array(String)) — Counters that measure different metrics for this thread. The description of them could be found in the table [sistem.etkinlik](#system_tables-events)
 -   `ProfileEvents.Values` (Array(UInt64)) — Values of metrics for this thread that are listed in the `ProfileEvents.Names` sütun.
 
-Varsayılan olarak, günlükleri 7.5 saniye aralıklarla tabloya eklenir. Bu aralığı ayarlayabilirsiniz [query_thread_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) sunucu ayarı (bkz. `flush_interval_milliseconds` parametre). Günlükleri zorla bellek arabelleğinden tabloya temizlemek için `SYSTEM FLUSH LOGS` sorgu.
+Varsayılan olarak, günlükleri 7.5 saniye aralıklarla tabloya eklenir. Bu aralığı ayarlayabilirsiniz [query\_thread\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) sunucu ayarı (bkz. `flush_interval_milliseconds` parametre). Günlükleri zorla bellek arabelleğinden tabloya temizlemek için `SYSTEM FLUSH LOGS` sorgu.
 
 Tablo elle silindiğinde, otomatik olarak anında oluşturulur. Önceki tüm günlüklerin silineceğini unutmayın.
 
 !!! note "Not"
     Günlüklerin depolama süresi sınırsızdır. Günlükler tablodan otomatik olarak silinmez. Eski günlüklerin kaldırılmasını kendiniz düzenlemeniz gerekir.
 
-İçin keyfi bir bölümleme anahtarı belirtebilirsiniz `system.query_thread_log` tablo içinde [query_thread_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) sunucu ayarı (bkz. `partition_by` parametre).
+İçin keyfi bir bölümleme anahtarı belirtebilirsiniz `system.query_thread_log` tablo içinde [query\_thread\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) sunucu ayarı (bkz. `partition_by` parametre).
 
-## sistem.trace_log {#system_tables-trace_log}
+## sistem.trace\_log {#system_tables-trace_log}
 
 Örnekleme sorgusu profiler tarafından toplanan yığın izlemeleri içerir.
 
-ClickHouse bu tabloyu oluşturduğunda [trace_log](server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) sunucu yapılandırma bölümü ayarlanır. Ayrıca [query_profiler_real_time_period_ns](settings/settings.md#query_profiler_real_time_period_ns) ve [query_profiler_cpu_time_period_ns](settings/settings.md#query_profiler_cpu_time_period_ns) ayarlar ayarlan .malıdır.
+ClickHouse bu tabloyu oluşturduğunda [trace\_log](server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) sunucu yapılandırma bölümü ayarlanır. Ayrıca [query\_profiler\_real\_time\_period\_ns](settings/settings.md#query_profiler_real_time_period_ns) ve [query\_profiler\_cpu\_time\_period\_ns](settings/settings.md#query_profiler_cpu_time_period_ns) ayarlar ayarlan .malıdır.
 
 Günlükleri analiz etmek için `addressToLine`, `addressToSymbol` ve `demangle` iç gözlem fonksiyonları.
 
@@ -737,7 +737,7 @@ Sütun:
 
 -   `thread_number` ([Uİnt32](../sql-reference/data-types/int-uint.md)) — Thread identifier.
 
--   `query_id` ([Dize](../sql-reference/data-types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query_log](#system_tables-query_log) sistem tablosu.
+-   `query_id` ([Dize](../sql-reference/data-types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query\_log](#system_tables-query_log) sistem tablosu.
 
 -   `trace` ([Dizi (Uİnt64)](../sql-reference/data-types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
 
@@ -824,7 +824,7 @@ Sütun:
 -   `parts_to_check` (`UInt32`)- Doğrulama için kuyruktaki veri parçalarının sayısı. Hasar görebileceğinden şüphe varsa, bir parça doğrulama kuyruğuna konur.
 -   `zookeeper_path` (`String`)- ZooKeeper tablo verilerine yolu.
 -   `replica_name` (`String`)- Zookeeper çoğaltma adı. Aynı tablonun farklı kopyaları farklı adlara sahiptir.
--   `replica_path` (`String`)- ZooKeeper çoğaltma veri yolu. Birleştirme ile aynı ‘zookeeper_path/replicas/replica_path’.
+-   `replica_path` (`String`)- ZooKeeper çoğaltma veri yolu. Birleştirme ile aynı ‘zookeeper\_path/replicas/replica\_path’.
 -   `columns_version` (`Int32`)- Tablo yapısının sürüm numarası. ALTER kaç kez gerçekleştirildiğini gösterir. Kopyaların farklı sürümleri varsa, bazı kopyaların tüm değişiklikleri henüz yapmadığı anlamına gelir.
 -   `queue_size` (`UInt32`)- Yapılması beklenen işlemler için sıranın büyüklüğü. İşlemler, veri bloklarını, birleştirmeleri ve diğer bazı eylemleri eklemeyi içerir. Genellikle ile çakışmaktadır `future_parts`.
 -   `inserts_in_queue` (`UInt32`)- Yapılması gereken veri bloklarının eklerinin sayısı. Eklemeler genellikle oldukça hızlı bir şekilde çoğaltılır. Bu sayı büyükse, bir şeylerin yanlış olduğu anlamına gelir.
@@ -845,7 +845,7 @@ Sonraki 4 sütun, yalnızca ZK ile aktif bir oturumun olduğu sıfır olmayan bi
 -   `active_replicas` (`UInt8`)- ZooKeeper bir oturum var bu tablonun kopyaları sayısı (yani, işleyen kopyaları sayısı).
 
 Tüm sütunları talep ederseniz, Tablo biraz yavaş çalışabilir, çünkü ZooKeeper birkaç okuma her satır için yapılır.
-Son 4 sütun (log_max_ındex, log_pointer, total_replicas, active_replicas) istemiyorsanız, tablo hızlı bir şekilde çalışır.
+Son 4 sütun (log\_max\_ındex, log\_pointer, total\_replicas, active\_replicas) istemiyorsanız, tablo hızlı bir şekilde çalışır.
 
 Örneğin, her şeyin böyle düzgün çalıştığını kontrol edebilirsiniz:
 
@@ -932,7 +932,7 @@ SELECT * FROM system.settings WHERE changed AND name='load_balancing'
 -   [Sorgular için izinler](settings/permissions-for-queries.md#settings_readonly)
 -   [Ayarlardaki kısıtlamalar](settings/constraints-on-settings.md)
 
-## sistem.table_engines {#system.table_engines}
+## sistem.table\_engines {#system.table_engines}
 
 ``` text
 ┌─name───────────────────┬─value───────┐
@@ -943,7 +943,7 @@ SELECT * FROM system.settings WHERE changed AND name='load_balancing'
 └────────────────────────┴─────────────┘
 ```
 
-## sistem.merge_tree_settings {#system-merge_tree_settings}
+## sistem.merge\_tree\_settings {#system-merge_tree_settings}
 
 İçin ayarlar hakkında bilgi içerir `MergeTree` Tablolar.
 
@@ -955,7 +955,7 @@ Sütun:
 -   `type` (String) — Setting type (implementation specific string value).
 -   `changed` (UInt8) — Whether the setting was explicitly defined in the config or explicitly changed.
 
-## sistem.table_engines {#system-table-engines}
+## sistem.table\_engines {#system-table-engines}
 
 Sunucu tarafından desteklenen tablo motorlarının açıklamasını ve özellik destek bilgilerini içerir.
 
@@ -1118,25 +1118,25 @@ Tablo hakkında bilgi içerir [mutasyonlar](../sql-reference/statements/alter.md
 
 **veritabanı**, **Tablo** - Mutasyonun uygulandığı veritabanı ve tablonun adı.
 
-**mutation_id** - Mutasyonun kimliği. Çoğaltılmış tablolar için bu kimlikler znode adlarına karşılık gelir `<table_path_in_zookeeper>/mutations/` ZooKeeper dizin. Yinelenmemiş tablolar için kimlikler, tablonun veri dizinindeki dosya adlarına karşılık gelir.
+**mutation\_id** - Mutasyonun kimliği. Çoğaltılmış tablolar için bu kimlikler znode adlarına karşılık gelir `<table_path_in_zookeeper>/mutations/` ZooKeeper dizin. Yinelenmemiş tablolar için kimlikler, tablonun veri dizinindeki dosya adlarına karşılık gelir.
 
 **komut** - Mut commandasyon komut diz (gesi (sorgu afterdan sonra `ALTER TABLE [db.]table`).
 
-**create_time** - Bu mutasyon komutu idam için sunulduğunda.
+**create\_time** - Bu mutasyon komutu idam için sunulduğunda.
 
-**block_numbers.partition_id**, **block_numbers.numara** - İç içe geçmiş bir sütun. Çoğaltılmış tabloların mutasyonları için, her bölüm için bir kayıt içerir: bölüm kimliği ve mutasyon tarafından elde edilen blok numarası (her bölümde, yalnızca bu bölümdeki mutasyon tarafından elde edilen blok sayısından daha az sayıda blok içeren parçalar mutasyona uğrayacaktır). Çoğaltılmamış tablolarda, tüm bölümlerdeki blok numaraları tek bir sıra oluşturur. Bu, çoğaltılmamış tabloların mutasyonları için, sütunun mutasyon tarafından elde edilen tek bir blok numarasına sahip bir kayıt içereceği anlamına gelir.
+**block\_numbers.partition\_id**, **block\_numbers.numara** - İç içe geçmiş bir sütun. Çoğaltılmış tabloların mutasyonları için, her bölüm için bir kayıt içerir: bölüm kimliği ve mutasyon tarafından elde edilen blok numarası (her bölümde, yalnızca bu bölümdeki mutasyon tarafından elde edilen blok sayısından daha az sayıda blok içeren parçalar mutasyona uğrayacaktır). Çoğaltılmamış tablolarda, tüm bölümlerdeki blok numaraları tek bir sıra oluşturur. Bu, çoğaltılmamış tabloların mutasyonları için, sütunun mutasyon tarafından elde edilen tek bir blok numarasına sahip bir kayıt içereceği anlamına gelir.
 
-**parts_to_do** - Mutasyonun bitmesi için mutasyona uğraması gereken veri parçalarının sayısı.
+**parts\_to\_do** - Mutasyonun bitmesi için mutasyona uğraması gereken veri parçalarının sayısı.
 
-**is_done** - Mutasyon bitti mi? Not bile `parts_to_do = 0` çoğaltılmış bir tablonun mutasyonu, mutasyona uğraması gereken yeni bir veri parçası yaratacak uzun süren bir ekleme nedeniyle henüz yapılmamıştır.
+**is\_done** - Mutasyon bitti mi? Not bile `parts_to_do = 0` çoğaltılmış bir tablonun mutasyonu, mutasyona uğraması gereken yeni bir veri parçası yaratacak uzun süren bir ekleme nedeniyle henüz yapılmamıştır.
 
 Bazı bölümleri mutasyon ile ilgili sorunlar varsa, aşağıdaki sütunlar ek bilgi içerir:
 
-**latest_failed_part** - Mutasyona uğramayan en son bölümün adı.
+**latest\_failed\_part** - Mutasyona uğramayan en son bölümün adı.
 
-**latest_fail_time** - En son bölüm mutasyon başarısızlığı zamanı.
+**latest\_fail\_time** - En son bölüm mutasyon başarısızlığı zamanı.
 
-**latest_fail_reason** - En son bölüm mutasyon başarısızlığına neden olan istisna mesajı.
+**latest\_fail\_reason** - En son bölüm mutasyon başarısızlığına neden olan istisna mesajı.
 
 ## sistem.diskler {#system_tables-disks}
 
@@ -1150,7 +1150,7 @@ Sütun:
 -   `total_space` ([Uİnt64](../sql-reference/data-types/int-uint.md)) — Disk volume in bytes.
 -   `keep_free_space` ([Uİnt64](../sql-reference/data-types/int-uint.md)) — Amount of disk space that should stay free on disk in bytes. Defined in the `keep_free_space_bytes` disk yapılandırması parametresi.
 
-## sistem.storage_policies {#system_tables-storage_policies}
+## sistem.storage\_policies {#system_tables-storage_policies}
 
 Depolama ilkeleri ve birimlerinde tanımlanan bilgiler içerir. [sunucu yapılandırması](../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
 

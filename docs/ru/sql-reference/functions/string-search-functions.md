@@ -1,8 +1,3 @@
----
-toc_priority: 41
-toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u043f\u043e\u0438\u0441\u043a\u0430\u0020\u0432\u0020\u0441\u0442\u0440\u043e\u043a\u0430\u0445"
----
-
 # Функции поиска в строках {#funktsii-poiska-v-strokakh}
 
 Во всех функциях, поиск регистрозависимый по умолчанию. Существуют варианты функций для регистронезависимого поиска.
@@ -446,66 +441,6 @@ SELECT extractAllGroupsVertical('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[
 ## notLike(haystack, pattern), оператор haystack NOT LIKE pattern {#function-notlike}
 
 То же, что like, но с отрицанием.
-
-## ilike {#ilike}
-
-Нечувствительный к регистру вариант функции [like](https://clickhouse.tech/docs/ru/sql-reference/functions/string-search-functions/#function-like). Вы можете использовать оператор `ILIKE` вместо функции `ilike`.
-
-**Синтаксис**
-
-``` sql
-ilike(haystack, pattern)
-```
-
-**Параметры**
-
--   `haystack` — Входная строка. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `pattern` — Если `pattern` не содержит процента или нижнего подчеркивания, тогда `pattern` представляет саму строку. Нижнее подчеркивание (`_`) в `pattern` обозначает любой отдельный символ. Знак процента (`%`) соответствует последовательности из любого количества символов: от нуля и более.
-
-Некоторые примеры `pattern`:
-
-``` text
-'abc' ILIKE 'abc'    true
-'abc' ILIKE 'a%'     true
-'abc' ILIKE '_b_'    true
-'abc' ILIKE 'c'      false
-```
-
-**Возвращаемые значения**
-
--   Правда, если строка соответствует `pattern`.
--   Ложь, если строка не соответствует `pattern`.
-
-**Пример**
-
-Входная таблица:
-
-``` text
-┌─id─┬─name─────┬─days─┐
-│  1 │ January  │   31 │
-│  2 │ February │   29 │
-│  3 │ March    │   31 │
-│  4 │ April    │   30 │
-└────┴──────────┴──────┘
-```
-
-Запрос:
-
-``` sql
-SELECT * FROM Months WHERE ilike(name, '%j%')
-```
-
-Результат:
-
-``` text
-┌─id─┬─name────┬─days─┐
-│  1 │ January │   31 │
-└────┴─────────┴──────┘
-```
-
-**Смотрите также**
-
--   [like](https://clickhouse.tech/docs/ru/sql-reference/functions/string-search-functions/#function-like) <!--hide-->
 
 ## ngramDistance(haystack, needle) {#ngramdistancehaystack-needle}
 

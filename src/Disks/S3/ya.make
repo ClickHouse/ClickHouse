@@ -4,6 +4,7 @@ PEERDIR(
     clickhouse/src/Common
 )
 
+CFLAGS(-g0)
 
 SRCS(
     DiskS3.cpp

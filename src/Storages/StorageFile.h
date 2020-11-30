@@ -46,7 +46,6 @@ public:
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
-    bool storesDataOnDisk() const override;
     Strings getDataPaths() const override;
 
     struct CommonArguments
@@ -60,8 +59,6 @@ public:
     };
 
     NamesAndTypesList getVirtuals() const override;
-
-    static Strings getPathsList(const String & table_path, const String & user_files_path, const Context & context);
 
 protected:
     friend class StorageFileSource;

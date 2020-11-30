@@ -1,8 +1,3 @@
----
-toc_priority: 37
-toc_title: VersionedCollapsingMergeTree
----
-
 # VersionedCollapsingMergeTree {#versionedcollapsingmergetree}
 
 Движок:

@@ -208,7 +208,7 @@ ALTER TABLE [db].name DROP CONSTRAINT constraint_name;
 -   [ATTACH PART\|PARTITION](#alter_attach-partition) – Adds a part or partition from the `detached` دایرکتوری به جدول.
 -   [ATTACH PARTITION FROM](#alter_attach-partition-from) – Copies the data partition from one table to another and adds.
 -   [REPLACE PARTITION](#alter_replace-partition) - پارتیشن داده ها را از یک جدول به دیگری کپی می کند و جایگزین می شود.
--   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition)(#تغییر_موف_ قابل تنظیم-پارتیشن) - پارتیشن داده را از یک جدول به دیگری حرکت دهید.
+-   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition)(\#تغییر\_موف\_ قابل تنظیم-پارتیشن) - پارتیشن داده را از یک جدول به دیگری حرکت دهید.
 -   [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) - بازنشانی ارزش یک ستون مشخص شده در یک پارتیشن.
 -   [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - بازنشانی شاخص ثانویه مشخص شده در یک پارتیشن.
 -   [FREEZE PARTITION](#alter_freeze-partition) – Creates a backup of a partition.

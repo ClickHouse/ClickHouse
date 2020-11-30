@@ -208,7 +208,7 @@ Aşağıdaki işlemler ile [bölümler](../../engines/table-engines/mergetree-fa
 -   [ATTACH PART\|PARTITION](#alter_attach-partition) – Adds a part or partition from the `detached` tabloya dizin.
 -   [ATTACH PARTITION FROM](#alter_attach-partition-from) – Copies the data partition from one table to another and adds.
 -   [REPLACE PARTITION](#alter_replace-partition) - Veri bölümünü bir tablodan diğerine kopyalar ve değiştirir.
--   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition)(#alter_move_to_table-partition) - veri bölümünü bir tablodan diğerine taşıyın.
+-   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition)(\#alter\_move\_to\_table-partition) - veri bölümünü bir tablodan diğerine taşıyın.
 -   [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) - Bir bölümdeki belirtilen sütunun değerini sıfırlar.
 -   [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - Bir bölümde belirtilen ikincil dizini sıfırlar.
 -   [FREEZE PARTITION](#alter_freeze-partition) – Creates a backup of a partition.
@@ -436,7 +436,7 @@ Bölüm ifadesini şu şekilde belirtebilirsiniz `ALTER ... PARTITION` farklı �
 -   Bu gibi bir değer `partition` sütun `system.parts` Tablo. Mesela, `ALTER TABLE visits DETACH PARTITION 201901`.
 -   Tablo sütunundan ifade olarak. Sabitler ve sabit ifadeler desteklenir. Mesela, `ALTER TABLE visits DETACH PARTITION toYYYYMM(toDate('2019-01-25'))`.
 -   Bölüm kimliğini kullanma. Partition ID, dosya sistemindeki ve Zookeeper'daki bölümlerin adları olarak kullanılan bölümün (mümkünse insan tarafından okunabilir) bir dize tanımlayıcısıdır. Bölüm kimliği belirtilmelidir `PARTITION ID` fık .ra, tek tırnak içinde. Mesela, `ALTER TABLE visits DETACH PARTITION ID '201901'`.
--   İn the [ALTER ATTACH PART](#alter_attach-partition) ve [DROP DETACHED PART](#alter_drop-detached) sorgu, bir parçanın adını belirtmek için, bir değer ile dize literal kullanın `name` sütun [sistem.detached_parts](../../operations/system-tables.md#system_tables-detached_parts) Tablo. Mesela, `ALTER TABLE visits ATTACH PART '201901_1_1_0'`.
+-   İn the [ALTER ATTACH PART](#alter_attach-partition) ve [DROP DETACHED PART](#alter_drop-detached) sorgu, bir parçanın adını belirtmek için, bir değer ile dize literal kullanın `name` sütun [sistem.detached\_parts](../../operations/system-tables.md#system_tables-detached_parts) Tablo. Mesela, `ALTER TABLE visits ATTACH PART '201901_1_1_0'`.
 
 Bölüm belirtilirken tırnak kullanımı bölüm ifadesi türüne bağlıdır. Örneğin, için `String` yazın, adını tırnak içinde belirtmeniz gerekir (`'`). İçin `Date` ve `Int*` türleri hiçbir tırnak gereklidir.
 

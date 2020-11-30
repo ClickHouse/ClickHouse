@@ -28,18 +28,8 @@ def get_options(i):
     options = ""
     if 0 < i:
         options += " --order=random"
-
     if i % 2 == 1:
         options += " --db-engine=Ordinary"
-
-    # If database name is not specified, new database is created for each functional test.
-    # Run some threads with one database for all tests.
-    if i % 3 == 1:
-        options += " --database=test_{}".format(i)
-
-    if i == 13:
-        options += " --client-option='memory_tracker_fault_probability=0.00001'"
-
     return options
 
 
@@ -68,6 +58,8 @@ if __name__ == "__main__":
     parser.add_argument("--test-cmd", default='/usr/bin/clickhouse-test')
     parser.add_argument("--skip-func-tests", default='')
     parser.add_argument("--client-cmd", default='clickhouse-client')
+    parser.add_argument("--perf-test-cmd", default='clickhouse-performance-test')
+    parser.add_argument("--perf-test-xml-path", default='/usr/share/clickhouse-test/performance/')
     parser.add_argument("--server-log-folder", default='/var/log/clickhouse-server')
     parser.add_argument("--output-folder")
     parser.add_argument("--global-time-limit", type=int, default=3600)

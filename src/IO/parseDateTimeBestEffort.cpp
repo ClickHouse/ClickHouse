@@ -533,10 +533,6 @@ ReturnType parseDateTimeBestEffortImpl(
         }
     }
 
-    /// If neither Date nor Time is parsed successfully, it should fail
-    if (!year && !month && !day_of_month && !has_time)
-        return on_error("Cannot read DateTime: neither Date nor Time was parsed successfully", ErrorCodes::CANNOT_PARSE_DATETIME);
-
     if (!year)
         year = 2000;
     if (!month)
