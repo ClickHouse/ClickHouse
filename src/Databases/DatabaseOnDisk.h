@@ -39,6 +39,8 @@ public:
         const StoragePtr & table,
         const ASTPtr & query) override;
 
+    void detachTablePermanently(const String & table_name) override;
+
     void dropTable(
         const Context & context,
         const String & table_name,
@@ -70,6 +72,11 @@ public:
 protected:
     static constexpr const char * create_suffix = ".tmp";
     static constexpr const char * drop_suffix = ".tmp_drop";
+
+    /// engine=Atomic takes the table name from basename of metadata file (also for detached table)
+    /// in case of double dots (table_name.sql.detached) it would extract 'table_name.sql'
+    /// so we use simpler option "table_name.sql_detached" and get 'table_name' correctly.
+    static constexpr const char * detached_suffix = "_detached";
 
     using IteratingFunction = std::function<void(const String &)>;
 

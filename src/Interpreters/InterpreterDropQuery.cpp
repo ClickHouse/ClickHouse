@@ -128,8 +128,18 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ASTDropQuery & query, Dat
             TableExclusiveLockHolder table_lock;
             if (database->getUUID() == UUIDHelpers::Nil)
                 table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
-            /// Drop table from memory, don't touch data and metadata
-            database->detachTable(table_id.table_name);
+
+            if (query.permanently)
+            {
+                /// Drop table from memory, don't touch data, metadata file renamed and will be skipped during server restart
+                database->detachTablePermanently(table_id.table_name);
+            }
+            else
+            {
+                /// Drop table from memory, don't touch data and metadata
+                database->detachTable(table_id.table_name);
+            }
+
         }
         else if (query.kind == ASTDropQuery::Kind::Truncate)
         {
