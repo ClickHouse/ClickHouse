@@ -36,8 +36,7 @@ public:
             const SelectQueryInfo & query_info,
             std::vector<QueryPlanPtr> & res,
             Pipes & remote_pipes,
-            Pipes & delayed_pipes,
-            Poco::Logger * log) = 0;
+            Pipes & delayed_pipes) = 0;
 };
 
 }

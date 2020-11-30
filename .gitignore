@@ -124,5 +124,3 @@ website/package-lock.json
 
 # Toolchains
 /cmake/toolchain/*
-
-*.iml

@@ -237,10 +237,7 @@ void assertResponseIsOk(const Poco::Net::HTTPRequest & request, Poco::Net::HTTPR
 {
     auto status = response.getStatus();
 
-    if (!(status == Poco::Net::HTTPResponse::HTTP_OK
-        || status == Poco::Net::HTTPResponse::HTTP_CREATED
-        || status == Poco::Net::HTTPResponse::HTTP_ACCEPTED
-        || (isRedirect(status) && allow_redirects)))
+    if (!(status == Poco::Net::HTTPResponse::HTTP_OK || (isRedirect(status) && allow_redirects)))
     {
         std::stringstream error_message;        // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         error_message.exceptions(std::ios::failbit);

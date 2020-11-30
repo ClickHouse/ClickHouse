@@ -1,17 +1,17 @@
 ---
-toc_priority: 15
-toc_title: Yandex.Metrica Data
+toc_priority: 21
+toc_title: "Yandex\u6885\u7279\u91CC\u5361\u6570\u636E"
 ---
 
-# Anonymized Yandex.Metrica Data {#anonymized-yandex-metrica-data}
+# 脱敏的Yandex.Metrica数据集 {#anonymized-yandex-metrica-data}
 
-数据集由两个表组成，包含关于Yandex.Metrica的hits(`hits_v1`)和visit(`visits_v1`)的匿名数据。你可以阅读更多关于Yandex的信息。在[ClickHouse历史](../../introduction/history.md)的Metrica部分。
+Dataset由两个表组成，其中包含有关命中的匿名数据 (`hits_v1`）和访问 (`visits_v1`）的Yandex的。梅特里卡 你可以阅读更多关于Yandex的。梅特里卡 [ClickHouse历史](../../introduction/history.md) 科。
 
-数据集由两个表组成，他们中的任何一个都可以下载作为一个压缩`tsv.xz`的文件或准备的分区。除此之外,一个扩展版的`hits`表包含1亿行TSV在https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_100m_obfuscated_v1.tsv.xz，准备分区在https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits_100m_obfuscated_v1.tar.xz。
+数据集由两个表组成，其中任何一个都可以作为压缩表下载 `tsv.xz` 文件或作为准备的分区。 除此之外，该扩展版本 `hits` 包含1亿行的表可作为TSV在https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_100m_obfuscated_v1.tsv.xz 并作为准备的分区在https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits_100m_obfuscated_v1.tar.xz.
 
 ## 从准备好的分区获取表 {#obtaining-tables-from-prepared-partitions}
 
-下载和导入`hits`表:
+下载和导入点击表:
 
 ``` bash
 curl -O https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits_v1.tar
@@ -21,7 +21,7 @@ sudo service clickhouse-server restart
 clickhouse-client --query "SELECT COUNT(*) FROM datasets.hits_v1"
 ```
 
-下载和导入`visits`表:
+下载和导入访问:
 
 ``` bash
 curl -O https://clickhouse-datasets.s3.yandex.net/visits/partitions/visits_v1.tar
@@ -31,9 +31,9 @@ sudo service clickhouse-server restart
 clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
 ```
 
-## 从TSV压缩文件获取表 {#obtaining-tables-from-compressed-tsv-file}
+## 从压缩TSV文件获取表 {#obtaining-tables-from-compressed-tsv-file}
 
-从TSV压缩文件下载并导入`hits`:
+从压缩的TSV文件下载并导入命中:
 
 ``` bash
 curl https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
@@ -47,7 +47,7 @@ clickhouse-client --query "OPTIMIZE TABLE datasets.hits_v1 FINAL"
 clickhouse-client --query "SELECT COUNT(*) FROM datasets.hits_v1"
 ```
 
-从压缩tsv文件下载和导入`visits`:
+从压缩tsv文件下载和导入访问:
 
 ``` bash
 curl https://clickhouse-datasets.s3.yandex.net/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv
@@ -63,6 +63,6 @@ clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
 
 ## 查询示例 {#example-queries}
 
-[使用教程](../../getting-started/tutorial.md)是以Yandex.Metrica数据集开始教程。
+[点击教程](../../getting-started/tutorial.md) 是基于Yandex的。Metrica数据集和开始使用此数据集的推荐方式是通过教程。
 
-可以在ClickHouse的[stateful tests](https://github.com/ClickHouse/ClickHouse/tree/master/tests/queries/1_stateful) 中找到对这些表的查询的其他示例(它们被命名为`test.hists`和`test.visits`)。
+查询这些表的其他示例可以在 [有状态测试](https://github.com/ClickHouse/ClickHouse/tree/master/tests/queries/1_stateful) ClickHouse的（它们被命名为 `test.hists` 和 `test.visits` 那里）。

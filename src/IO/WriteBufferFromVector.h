@@ -85,8 +85,6 @@ public:
 
     void restart()
     {
-        if (vector.empty())
-            vector.resize(initial_size);
         set(reinterpret_cast<Position>(vector.data()), vector.size());
         is_finished = false;
     }

@@ -119,11 +119,7 @@ void executeQuery(
         throttler = user_level_throttler;
 
     for (const auto & shard_info : query_info.cluster->getShardsInfo())
-    {
-        stream_factory.createForShard(shard_info, query, query_ast,
-            new_context, throttler, query_info, plans,
-            remote_pipes, delayed_pipes, log);
-    }
+        stream_factory.createForShard(shard_info, query, query_ast, new_context, throttler, query_info, plans, remote_pipes, delayed_pipes);
 
     if (!remote_pipes.empty())
     {

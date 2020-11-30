@@ -117,8 +117,7 @@ void SelectStreamFactory::createForShard(
     const SelectQueryInfo &,
     std::vector<QueryPlanPtr> & plans,
     Pipes & remote_pipes,
-    Pipes & delayed_pipes,
-    Poco::Logger * log)
+    Pipes & delayed_pipes)
 {
     bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
@@ -144,8 +143,6 @@ void SelectStreamFactory::createForShard(
     {
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
             shard_info.pool, modified_query, header, context, nullptr, throttler, scalars, external_tables, processed_stage);
-        remote_query_executor->setLogger(log);
-
         remote_query_executor->setPoolMode(PoolMode::GET_MANY);
         if (!table_func_ptr)
             remote_query_executor->setMainTable(main_table);

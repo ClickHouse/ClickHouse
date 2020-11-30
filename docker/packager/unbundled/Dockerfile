@@ -56,7 +56,6 @@ RUN apt-get update \
         libprotoc-dev \
         libgrpc++-dev \
         protobuf-compiler-grpc \
-        libc-ares-dev \
         rapidjson-dev \
         libsnappy-dev \
         libparquet-dev \

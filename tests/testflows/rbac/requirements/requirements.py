@@ -1,6 +1,6 @@
 # These requirements were auto generated
 # from software requirements specification (SRS)
-# document by TestFlows v1.6.201102.1235648.
+# document by TestFlows v1.6.201021.1163815.
 # Do not edit by hand but re-generate instead
 # using 'tfs requirements generate' command.
 from testflows.core import Specification
@@ -411,32 +411,32 @@ SRS_006_ClickHouse_Role_Based_Access_Control = Specification(
         * 5.2.11.3.4 [RQ.SRS-006.RBAC.Privileges.Insert.Column](#rqsrs-006rbacprivilegesinsertcolumn)
         * 5.2.11.3.5 [RQ.SRS-006.RBAC.Privileges.Insert.Cluster](#rqsrs-006rbacprivilegesinsertcluster)
         * 5.2.11.3.6 [RQ.SRS-006.RBAC.Privileges.Insert.TableEngines](#rqsrs-006rbacprivilegesinserttableengines)
-      * 5.2.11.4 [Alter Column](#alter-column)
+      * 5.2.11.4 [AlterColumn](#altercolumn)
         * 5.2.11.4.1 [RQ.SRS-006.RBAC.Privileges.AlterColumn](#rqsrs-006rbacprivilegesaltercolumn)
         * 5.2.11.4.2 [RQ.SRS-006.RBAC.Privileges.AlterColumn.Grant](#rqsrs-006rbacprivilegesaltercolumngrant)
         * 5.2.11.4.3 [RQ.SRS-006.RBAC.Privileges.AlterColumn.Revoke](#rqsrs-006rbacprivilegesaltercolumnrevoke)
         * 5.2.11.4.4 [RQ.SRS-006.RBAC.Privileges.AlterColumn.Column](#rqsrs-006rbacprivilegesaltercolumncolumn)
         * 5.2.11.4.5 [RQ.SRS-006.RBAC.Privileges.AlterColumn.Cluster](#rqsrs-006rbacprivilegesaltercolumncluster)
         * 5.2.11.4.6 [RQ.SRS-006.RBAC.Privileges.AlterColumn.TableEngines](#rqsrs-006rbacprivilegesaltercolumntableengines)
-      * 5.2.11.5 [Alter Index](#alter-index)
+      * 5.2.11.5 [AlterIndex](#alterindex)
         * 5.2.11.5.1 [RQ.SRS-006.RBAC.Privileges.AlterIndex](#rqsrs-006rbacprivilegesalterindex)
         * 5.2.11.5.2 [RQ.SRS-006.RBAC.Privileges.AlterIndex.Grant](#rqsrs-006rbacprivilegesalterindexgrant)
         * 5.2.11.5.3 [RQ.SRS-006.RBAC.Privileges.AlterIndex.Revoke](#rqsrs-006rbacprivilegesalterindexrevoke)
         * 5.2.11.5.4 [RQ.SRS-006.RBAC.Privileges.AlterIndex.Cluster](#rqsrs-006rbacprivilegesalterindexcluster)
         * 5.2.11.5.5 [RQ.SRS-006.RBAC.Privileges.AlterIndex.TableEngines](#rqsrs-006rbacprivilegesalterindextableengines)
-      * 5.2.11.6 [Alter Constraint](#alter-constraint)
+      * 5.2.11.6 [AlterConstraint](#alterconstraint)
         * 5.2.11.6.1 [RQ.SRS-006.RBAC.Privileges.AlterConstraint](#rqsrs-006rbacprivilegesalterconstraint)
         * 5.2.11.6.2 [RQ.SRS-006.RBAC.Privileges.AlterConstraint.Grant](#rqsrs-006rbacprivilegesalterconstraintgrant)
         * 5.2.11.6.3 [RQ.SRS-006.RBAC.Privileges.AlterConstraint.Revoke](#rqsrs-006rbacprivilegesalterconstraintrevoke)
         * 5.2.11.6.4 [RQ.SRS-006.RBAC.Privileges.AlterConstraint.Cluster](#rqsrs-006rbacprivilegesalterconstraintcluster)
         * 5.2.11.6.5 [RQ.SRS-006.RBAC.Privileges.AlterConstraint.TableEngines](#rqsrs-006rbacprivilegesalterconstrainttableengines)
-      * 5.2.11.7 [Alter TTL](#alter-ttl)
+      * 5.2.11.7 [AlterTTL](#alterttl)
         * 5.2.11.7.1 [RQ.SRS-006.RBAC.Privileges.AlterTTL](#rqsrs-006rbacprivilegesalterttl)
         * 5.2.11.7.2 [RQ.SRS-006.RBAC.Privileges.AlterTTL.Grant](#rqsrs-006rbacprivilegesalterttlgrant)
         * 5.2.11.7.3 [RQ.SRS-006.RBAC.Privileges.AlterTTL.Revoke](#rqsrs-006rbacprivilegesalterttlrevoke)
         * 5.2.11.7.4 [RQ.SRS-006.RBAC.Privileges.AlterTTL.Cluster](#rqsrs-006rbacprivilegesalterttlcluster)
         * 5.2.11.7.5 [RQ.SRS-006.RBAC.Privileges.AlterTTL.TableEngines](#rqsrs-006rbacprivilegesalterttltableengines)
-      * 5.2.11.8 [Alter Settings](#alter-settings)
+      * 5.2.11.8 [AlterSettings](#altersettings)
         * 5.2.11.8.1 [RQ.SRS-006.RBAC.Privileges.AlterSettings](#rqsrs-006rbacprivilegesaltersettings)
         * 5.2.11.8.2 [RQ.SRS-006.RBAC.Privileges.AlterSettings.Grant](#rqsrs-006rbacprivilegesaltersettingsgrant)
         * 5.2.11.8.3 [RQ.SRS-006.RBAC.Privileges.AlterSettings.Revoke](#rqsrs-006rbacprivilegesaltersettingsrevoke)
@@ -462,55 +462,15 @@ SRS_006_ClickHouse_Role_Based_Access_Control = Specification(
         * 5.2.11.13.1 [RQ.SRS-006.RBAC.Privileges.AlterMove](#rqsrs-006rbacprivilegesaltermove)
         * 5.2.11.13.2 [RQ.SRS-006.RBAC.Privileges.AlterMove.Access](#rqsrs-006rbacprivilegesaltermoveaccess)
         * 5.2.11.13.3 [RQ.SRS-006.RBAC.Privileges.AlterMove.TableEngines](#rqsrs-006rbacprivilegesaltermovetableengines)
-      * 5.2.11.14 [Create Table](#create-table)
-        * 5.2.11.14.1 [RQ.SRS-006.RBAC.Privileges.CreateTable](#rqsrs-006rbaccreatetable)
-        * 5.2.11.14.2 [RQ.SRS-006.RBAC.Privileges.CreateTable.Access](#rqsrs-006rbacprivilegescreatetableaccess)
-      * 5.2.11.15 [Create Database](#create-database)
-        * 5.2.11.15.1 [RQ.SRS-006.RBAC.Privileges.CreateDatabase](#rqsrs-006rbacprivilegescreatedatabase)
-        * 5.2.11.15.2 [RQ.SRS-006.RBAC.Privileges.CreateDatabase.Access](#rqsrs-006rbacprivilegescreatedatabaseaccess)
-      * 5.2.11.16 [Create Dictionary](#create-dictionary)
-        * 5.2.11.16.1 [RQ.SRS-006.RBAC.Privileges.CreateDictionary](#rqsrs-006rbacprivilegescreatedictionary)
-        * 5.2.11.16.2 [RQ.SRS-006.RBAC.Privileges.CreateDictionary.Access](#rqsrs-006rbacprivilegescreatedictionaryaccess)
-      * 5.2.11.17 [Create Temporary Table](#create-temporary-table)
-        * 5.2.11.17.1 [RQ.SRS-006.RBAC.Privileges.CreateTemporaryTable](#rqsrs-006rbacprivilegescreatetemporarytable)
-        * 5.2.11.17.2 [RQ.SRS-006.RBAC.Privileges.CreateTemporaryTable.Access](#rqsrs-006rbacprivilegescreatetemporarytableaccess)
-      * 5.2.11.18 [Attach Database](#attach-database)
-        * 5.2.11.18.1 [RQ.SRS-006.RBAC.Privileges.AttachDatabase](#rqsrs-006rbacprivilegesattachdatabase)
-      * 5.2.11.19 [Attach Dictionary](#attach-dictionary)
-        * 5.2.11.19.1 [RQ.SRS-006.RBAC.Privileges.AttachDictionary](#rqsrs-006rbacprivilegesattachdictionary)
-      * 5.2.11.20 [Attach Temporary Table](#attach-temporary-table)
-        * 5.2.11.20.1 [RQ.SRS-006.RBAC.Privileges.AttachTemporaryTable](#rqsrs-006rbacprivilegesattachtemporarytable)
-      * 5.2.11.21 [Attach Table](#attach-table)
-        * 5.2.11.21.1 [RQ.SRS-006.RBAC.Privileges.AttachTable](#rqsrs-006rbacprivilegesattachtable)
-      * 5.2.11.22 [Drop Table](#drop-table)
-        * 5.2.11.22.1 [RQ.SRS-006.RBAC.Privileges.DropTable](#rqsrs-006rbacprivilegesdroptable)
-        * 5.2.11.22.2 [RQ.SRS-006.RBAC.Privileges.DropTable.Access](#rqsrs-006rbacprivilegesdroptableaccess)
-      * 5.2.11.23 [Drop View](#drop-view)
-        * 5.2.11.23.1 [RQ.SRS-006.RBAC.Privileges.DropView](#rqsrs-006rbacprivilegesdropview)
-        * 5.2.11.23.2 [RQ.SRS-006.RBAC.Privileges.DropView.Access](#rqsrs-006rbacprivilegesdropviewaccess)
-      * 5.2.11.24 [Drop Database](#drop-database)
-        * 5.2.11.24.1 [RQ.SRS-006.RBAC.Privileges.DropDatabase](#rqsrs-006rbacprivilegesdropdatabase)
-        * 5.2.11.24.2 [RQ.SRS-006.RBAC.Privileges.DropDatabase.Access](#rqsrs-006rbacprivilegesdropdatabaseaccess)
-      * 5.2.11.25 [Drop Dictionary](#drop-dictionary)
-        * 5.2.11.25.1 [RQ.SRS-006.RBAC.Privileges.DropDictionary](#rqsrs-006rbacprivilegesdropdictionary)
-        * 5.2.11.25.2 [RQ.SRS-006.RBAC.Privileges.DropDictionary.Access](#rqsrs-006rbacprivilegesdropdictionaryaccess)
-      * 5.2.11.26 [Detach Table](#detach-table)
-        * 5.2.11.26.1 [RQ.SRS-006.RBAC.Privileges.DetachTable](#rqsrs-006rbacprivilegesdetachtable)
-      * 5.2.11.27 [Detach View](#detach-view)
-        * 5.2.11.27.1 [RQ.SRS-006.RBAC.Privileges.DetachView](#rqsrs-006rbacprivilegesdetachview)
-      * 5.2.11.28 [Detach Database](#detach-database)
-        * 5.2.11.28.1 [RQ.SRS-006.RBAC.Privileges.DetachDatabase](#rqsrs-006rbacprivilegesdetachdatabase)
-      * 5.2.11.29 [Detach Dictionary](#detach-dictionary)
-        * 5.2.11.29.1 [RQ.SRS-006.RBAC.Privileges.DetachDictionary](#rqsrs-006rbacprivilegesdetachdictionary)
-      * 5.2.11.30 [Grant Option](#grant-option)
-        * 5.2.11.30.1 [RQ.SRS-006.RBAC.Privileges.GrantOption](#rqsrs-006rbacprivilegesgrantoption)
-      * 5.2.11.31 [RQ.SRS-006.RBAC.Privileges.Delete](#rqsrs-006rbacprivilegesdelete)
-      * 5.2.11.32 [RQ.SRS-006.RBAC.Privileges.Alter](#rqsrs-006rbacprivilegesalter)
-      * 5.2.11.33 [RQ.SRS-006.RBAC.Privileges.Create](#rqsrs-006rbacprivilegescreate)
-      * 5.2.11.34 [RQ.SRS-006.RBAC.Privileges.Drop](#rqsrs-006rbacprivilegesdrop)
-      * 5.2.11.35 [RQ.SRS-006.RBAC.Privileges.All](#rqsrs-006rbacprivilegesall)
-      * 5.2.11.36 [RQ.SRS-006.RBAC.Privileges.All.GrantRevoke](#rqsrs-006rbacprivilegesallgrantrevoke)
-      * 5.2.11.37 [RQ.SRS-006.RBAC.Privileges.AdminOption](#rqsrs-006rbacprivilegesadminoption)
+      * 5.2.11.14 [Grant Option](#grant-option)
+        * 5.2.11.14.1 [RQ.SRS-006.RBAC.Privileges.GrantOption](#rqsrs-006rbacprivilegesgrantoption)
+      * 5.2.11.15 [RQ.SRS-006.RBAC.Privileges.Delete](#rqsrs-006rbacprivilegesdelete)
+      * 5.2.11.16 [RQ.SRS-006.RBAC.Privileges.Alter](#rqsrs-006rbacprivilegesalter)
+      * 5.2.11.17 [RQ.SRS-006.RBAC.Privileges.Create](#rqsrs-006rbacprivilegescreate)
+      * 5.2.11.18 [RQ.SRS-006.RBAC.Privileges.Drop](#rqsrs-006rbacprivilegesdrop)
+      * 5.2.11.19 [RQ.SRS-006.RBAC.Privileges.All](#rqsrs-006rbacprivilegesall)
+      * 5.2.11.20 [RQ.SRS-006.RBAC.Privileges.All.GrantRevoke](#rqsrs-006rbacprivilegesallgrantrevoke)
+      * 5.2.11.21 [RQ.SRS-006.RBAC.Privileges.AdminOption](#rqsrs-006rbacprivilegesadminoption)
     * 5.2.12 [Required Privileges](#required-privileges)
       * 5.2.12.1 [RQ.SRS-006.RBAC.RequiredPrivileges.Create](#rqsrs-006rbacrequiredprivilegescreate)
       * 5.2.12.2 [RQ.SRS-006.RBAC.RequiredPrivileges.Alter](#rqsrs-006rbacrequiredprivilegesalter)
@@ -1092,7 +1052,7 @@ to some password as identification when altering user account using
 ##### RQ.SRS-006.RBAC.User.Alter.Host.AddDrop
 version: 1.0
 
-[ClickHouse] SHALL support altering user by adding and dropping access to hosts with the `ADD HOST` or the `CREATE HOST`in the `ALTER USER` statement.
+[ClickHouse] SHALL support altering user by adding and dropping access to hosts with the `ADD HOST` or the `DROP HOST`in the `ALTER USER` statement.
 
 ##### RQ.SRS-006.RBAC.User.Alter.Host.Local
 version: 1.0
@@ -1187,7 +1147,7 @@ version: 1.0
 ALTER USER [IF EXISTS] name [ON CLUSTER cluster_name]
     [RENAME TO new_name]
     [IDENTIFIED [WITH {PLAINTEXT_PASSWORD|SHA256_PASSWORD|DOUBLE_SHA1_PASSWORD}] BY {'password'|'hash'}]
-    [[ADD|CREATE] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
+    [[ADD|DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
 ```
@@ -1296,12 +1256,12 @@ SHOW CREATE USER [name | CURRENT_USER]
 ##### RQ.SRS-006.RBAC.User.Drop
 version: 1.0
 
-[ClickHouse] SHALL support removing a user account using `CREATE USER` statement.
+[ClickHouse] SHALL support removing a user account using `DROP USER` statement.
 
 ##### RQ.SRS-006.RBAC.User.Drop.IfExists
 version: 1.0
 
-[ClickHouse] SHALL support using `IF EXISTS` clause in the `CREATE USER` statement
+[ClickHouse] SHALL support using `IF EXISTS` clause in the `DROP USER` statement
 to skip raising an exception if the user account does not exist.
 If the `IF EXISTS` clause is not specified then an exception SHALL be
 raised if a user does not exist.
@@ -1309,16 +1269,16 @@ raised if a user does not exist.
 ##### RQ.SRS-006.RBAC.User.Drop.OnCluster
 version: 1.0
 
-[ClickHouse] SHALL support using `ON CLUSTER` clause in the `CREATE USER` statement
+[ClickHouse] SHALL support using `ON CLUSTER` clause in the `DROP USER` statement
 to specify the name of the cluster the user should be dropped from.
 
 ##### RQ.SRS-006.RBAC.User.Drop.Syntax
 version: 1.0
 
-[ClickHouse] SHALL support the following syntax for `CREATE USER` statement
+[ClickHouse] SHALL support the following syntax for `DROP USER` statement
 
 ```sql
-CREATE USER [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
+DROP USER [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 ```
 
 ##### RQ.SRS-006.RBAC.Role.Create
@@ -1405,12 +1365,12 @@ ALTER ROLE [IF EXISTS] name [ON CLUSTER cluster_name]
 ##### RQ.SRS-006.RBAC.Role.Drop
 version: 1.0
 
-[ClickHouse] SHALL support removing one or more roles using `CREATE ROLE` statement.
+[ClickHouse] SHALL support removing one or more roles using `DROP ROLE` statement.
 
 ##### RQ.SRS-006.RBAC.Role.Drop.IfExists
 version: 1.0
 
-[ClickHouse] SHALL support using `IF EXISTS` clause in the `CREATE ROLE` statement
+[ClickHouse] SHALL support using `IF EXISTS` clause in the `DROP ROLE` statement
 to skip raising an exception if the role does not exist.
 If the `IF EXISTS` clause is not specified then an exception SHALL be
 raised if a role does not exist.
@@ -1418,15 +1378,15 @@ raised if a role does not exist.
 ##### RQ.SRS-006.RBAC.Role.Drop.Cluster
 version: 1.0
 
-[ClickHouse] SHALL support using `ON CLUSTER` clause in the `CREATE ROLE` statement to specify the cluster from which to drop the specified role.
+[ClickHouse] SHALL support using `ON CLUSTER` clause in the `DROP ROLE` statement to specify the cluster from which to drop the specified role.
 
 ##### RQ.SRS-006.RBAC.Role.Drop.Syntax
 version: 1.0
 
-[ClickHouse] SHALL support the following syntax for the `CREATE ROLE` statement
+[ClickHouse] SHALL support the following syntax for the `DROP ROLE` statement
 
 ``` sql
-CREATE ROLE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
+DROP ROLE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 ```
 
 ##### RQ.SRS-006.RBAC.Role.ShowCreate
@@ -1484,7 +1444,7 @@ for a database or a table using the `GRANT CREATE` statement.
 version: 1.0
 
 [ClickHouse] SHALL support granting the **drop** privilege to one or more users or roles
-for a database or a table using the `GRANT CREATE` statement.
+for a database or a table using the `GRANT DROP` statement.
 
 ##### RQ.SRS-006.RBAC.Grant.Privilege.Truncate
 version: 1.0
@@ -1610,7 +1570,7 @@ version: 1.0
 [ClickHouse] SHALL support revoking ANY privilege to one or more users or roles
 for a database or a table using the `REVOKE some_privilege` statement.
 **some_privilege** refers to any Clickhouse defined privilege, whose hierarchy includes
-SELECT, INSERT, ALTER, CREATE, CREATE, TRUNCATE, OPTIMIZE, SHOW, KILL QUERY, ACCESS MANAGEMENT,
+SELECT, INSERT, ALTER, CREATE, DROP, TRUNCATE, OPTIMIZE, SHOW, KILL QUERY, ACCESS MANAGEMENT,
 SYSTEM, INTROSPECTION, SOURCES, dictGet and all of their sub-privileges.
 
 ##### RQ.SRS-006.RBAC.Revoke.Privilege.Select
@@ -1641,7 +1601,7 @@ for a database or a table using the `REVOKE CREATE` statement.
 version: 1.0
 
 [ClickHouse] SHALL support revoking the **drop** privilege to one or more users or roles
-for a database or a table using the `REVOKE CREATE` statement.
+for a database or a table using the `REVOKE DROP` statement.
 
 ##### RQ.SRS-006.RBAC.Revoke.Privilege.Truncate
 version: 1.0
@@ -1711,7 +1671,7 @@ version: 1.0
 [ClickHouse] SHALL support revoking MULTIPLE **privileges** to one or more users or roles
 for a database or a table using the `REVOKE privilege1, privilege2...` statement.
 **privileges** refers to any set of Clickhouse defined privilege, whose hierarchy includes
-SELECT, INSERT, ALTER, CREATE, CREATE, TRUNCATE, OPTIMIZE, SHOW, KILL QUERY, ACCESS MANAGEMENT,
+SELECT, INSERT, ALTER, CREATE, DROP, TRUNCATE, OPTIMIZE, SHOW, KILL QUERY, ACCESS MANAGEMENT,
 SYSTEM, INTROSPECTION, SOURCES, dictGet and all of their sub-privileges.
 
 ##### RQ.SRS-006.RBAC.Revoke.Privilege.All
@@ -2050,12 +2010,12 @@ ALTER SETTINGS PROFILE [IF EXISTS] name
 ##### RQ.SRS-006.RBAC.SettingsProfile.Drop
 version: 1.0
 
-[ClickHouse] SHALL support removing one or more settings profiles using the `CREATE SETTINGS PROFILE` statement.
+[ClickHouse] SHALL support removing one or more settings profiles using the `DROP SETTINGS PROFILE` statement.
 
 ##### RQ.SRS-006.RBAC.SettingsProfile.Drop.IfExists
 version: 1.0
 
-[ClickHouse] SHALL support using `IF EXISTS` clause in the `CREATE SETTINGS PROFILE` statement
+[ClickHouse] SHALL support using `IF EXISTS` clause in the `DROP SETTINGS PROFILE` statement
 to skip raising an exception if the settings profile does not exist.
 If the `IF EXISTS` clause is not specified then an exception SHALL be
 raised if a settings profile does not exist.
@@ -2064,15 +2024,15 @@ raised if a settings profile does not exist.
 version: 1.0
 
 [ClickHouse] SHALL support dropping one or more settings profiles on specified cluster using
-`ON CLUSTER` clause in the `CREATE SETTINGS PROFILE` statement.
+`ON CLUSTER` clause in the `DROP SETTINGS PROFILE` statement.
 
 ##### RQ.SRS-006.RBAC.SettingsProfile.Drop.Syntax
 version: 1.0
 
-[ClickHouse] SHALL support the following syntax for the `CREATE SETTINGS PROFILE` statement
+[ClickHouse] SHALL support the following syntax for the `DROP SETTINGS PROFILE` statement
 
 ``` sql
-CREATE SETTINGS PROFILE [IF EXISTS] name [,name,...]
+DROP SETTINGS PROFILE [IF EXISTS] name [,name,...]
 ```
 
 ##### RQ.SRS-006.RBAC.SettingsProfile.ShowCreateSettingsProfile
@@ -2407,12 +2367,12 @@ ALTER QUOTA [IF EXIST] name
 ##### RQ.SRS-006.RBAC.Quota.Drop
 version: 1.0
 
-[ClickHouse] SHALL support removing one or more quotas using the `CREATE QUOTA` statement.
+[ClickHouse] SHALL support removing one or more quotas using the `DROP QUOTA` statement.
 
 ##### RQ.SRS-006.RBAC.Quota.Drop.IfExists
 version: 1.0
 
-[ClickHouse] SHALL support using `IF EXISTS` clause in the `CREATE QUOTA` statement
+[ClickHouse] SHALL support using `IF EXISTS` clause in the `DROP QUOTA` statement
 to skip raising an exception when the quota does not exist.
 If the `IF EXISTS` clause is not specified then an exception SHALL be
 raised if the quota does not exist.
@@ -2420,16 +2380,16 @@ raised if the quota does not exist.
 ##### RQ.SRS-006.RBAC.Quota.Drop.Cluster
 version: 1.0
 
-[ClickHouse] SHALL support using `ON CLUSTER` clause in the `CREATE QUOTA` statement
+[ClickHouse] SHALL support using `ON CLUSTER` clause in the `DROP QUOTA` statement
 to indicate the cluster the quota to be dropped is located on.
 
 ##### RQ.SRS-006.RBAC.Quota.Drop.Syntax
 version: 1.0
 
-[ClickHouse] SHALL support the following syntax for the `CREATE QUOTA` statement
+[ClickHouse] SHALL support the following syntax for the `DROP QUOTA` statement
 
 ``` sql
-CREATE QUOTA [IF EXISTS] name [,name...]
+DROP QUOTA [IF EXISTS] name [,name...]
 ```
 
 ##### RQ.SRS-006.RBAC.Quota.ShowQuotas
@@ -2701,12 +2661,12 @@ ALTER [ROW] POLICY [IF EXISTS] name [ON CLUSTER cluster_name] ON [database.]tabl
 ##### RQ.SRS-006.RBAC.RowPolicy.Drop
 version: 1.0
 
-[ClickHouse] SHALL support removing one or more row policies using the `CREATE ROW POLICY` statement.
+[ClickHouse] SHALL support removing one or more row policies using the `DROP ROW POLICY` statement.
 
 ##### RQ.SRS-006.RBAC.RowPolicy.Drop.IfExists
 version: 1.0
 
-[ClickHouse] SHALL support using the `IF EXISTS` clause in the `CREATE ROW POLICY` statement
+[ClickHouse] SHALL support using the `IF EXISTS` clause in the `DROP ROW POLICY` statement
 to skip raising an exception when the row policy does not exist.
 If the `IF EXISTS` clause is not specified then an exception SHALL be
 raised if the row policy does not exist.
@@ -2715,21 +2675,21 @@ raised if the row policy does not exist.
 version: 1.0
 
 [ClickHouse] SHALL support removing row policy from one or more specified tables
-using the `ON` clause in the `CREATE ROW POLICY` statement.
+using the `ON` clause in the `DROP ROW POLICY` statement.
 
 ##### RQ.SRS-006.RBAC.RowPolicy.Drop.OnCluster
 version: 1.0
 
 [ClickHouse] SHALL support removing row policy from specified cluster
-using the `ON CLUSTER` clause in the `CREATE ROW POLICY` statement.
+using the `ON CLUSTER` clause in the `DROP ROW POLICY` statement.
 
 ##### RQ.SRS-006.RBAC.RowPolicy.Drop.Syntax
 version: 1.0
 
-[ClickHouse] SHALL support the following syntax for the `CREATE ROW POLICY` statement.
+[ClickHouse] SHALL support the following syntax for the `DROP ROW POLICY` statement.
 
 ``` sql
-CREATE [ROW] POLICY [IF EXISTS] name [,...] ON [database.]table [,...] [ON CLUSTER cluster_name]
+DROP [ROW] POLICY [IF EXISTS] name [,...] ON [database.]table [,...] [ON CLUSTER cluster_name]
 ```
 
 ##### RQ.SRS-006.RBAC.RowPolicy.ShowCreateRowPolicy
@@ -3189,14 +3149,14 @@ on tables created using the following engines
 * ReplicatedVersionedCollapsingMergeTree
 * ReplicatedGraphiteMergeTree
 
-##### Alter Column
+##### AlterColumn
 
 ###### RQ.SRS-006.RBAC.Privileges.AlterColumn
 version: 1.0
 
 [ClickHouse] SHALL support controlling access to the **AlterColumn** privilege
 for a database or a specific table to one or more **users** or **roles**.
-Any `ALTER TABLE ... ADD|CREATE|CLEAR|COMMENT|MODIFY COLUMN` statements SHALL
+Any `ALTER TABLE ... ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN` statements SHALL
 return an error, unless the user has the **alter column** privilege for
 the destination table either because of the explicit grant or through one of
 the roles assigned to the user.
@@ -3218,7 +3178,7 @@ version: 1.0
 
 [ClickHouse] SHALL support granting or revoking **alter column** privilege
 for one or more specified columns in a table to one or more **users** or **roles**.
-Any `ALTER TABLE ... ADD|CREATE|CLEAR|COMMENT|MODIFY COLUMN` statements SHALL return an error,
+Any `ALTER TABLE ... ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN` statements SHALL return an error,
  unless the user has the **alter column** privilege for the destination column
 either because of the explicit grant or through one of the roles assigned to the user.
 
@@ -3227,7 +3187,7 @@ version: 1.0
 
 [ClickHouse] SHALL support granting or revoking **alter column** privilege
 on a specified cluster to one or more **users** or **roles**.
-Any `ALTER TABLE ... ADD|CREATE|CLEAR|COMMENT|MODIFY COLUMN`
+Any `ALTER TABLE ... ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN`
 statements SHALL succeed only on nodes where the table exists and privilege was granted.
 
 ###### RQ.SRS-006.RBAC.Privileges.AlterColumn.TableEngines
@@ -3251,14 +3211,14 @@ on tables created using the following engines
 * ReplicatedVersionedCollapsingMergeTree
 * ReplicatedGraphiteMergeTree
 
-##### Alter Index
+##### AlterIndex
 
 ###### RQ.SRS-006.RBAC.Privileges.AlterIndex
 version: 1.0
 
 [ClickHouse] SHALL support controlling access to the **alter index** privilege
 for a database or a specific table to one or more **users** or **roles**.
-Any `ALTER TABLE ... ORDER BY | ADD|CREATE|MATERIALIZE|CLEAR INDEX` statements SHALL
+Any `ALTER TABLE ... ORDER BY | ADD|DROP|MATERIALIZE|CLEAR INDEX` statements SHALL
 return an error, unless the user has the **alter index** privilege for
 the destination table either because of the explicit grant or through one of
 the roles assigned to the user.
@@ -3280,7 +3240,7 @@ version: 1.0
 
 [ClickHouse] SHALL support granting or revoking **alter index** privilege
 on a specified cluster to one or more **users** or **roles**.
-Any `ALTER TABLE ... ORDER BY | ADD|CREATE|MATERIALIZE|CLEAR INDEX`
+Any `ALTER TABLE ... ORDER BY | ADD|DROP|MATERIALIZE|CLEAR INDEX`
 statements SHALL succeed only on nodes where the table exists and privilege was granted.
 
 ###### RQ.SRS-006.RBAC.Privileges.AlterIndex.TableEngines
@@ -3304,14 +3264,14 @@ on tables created using the following engines
 * ReplicatedVersionedCollapsingMergeTree
 * ReplicatedGraphiteMergeTree
 
-##### Alter Constraint
+##### AlterConstraint
 
 ###### RQ.SRS-006.RBAC.Privileges.AlterConstraint
 version: 1.0
 
 [ClickHouse] SHALL support controlling access to the **alter constraint** privilege
 for a database or a specific table to one or more **users** or **roles**.
-Any `ALTER TABLE ... ADD|CREATE CONSTRAINT` statements SHALL
+Any `ALTER TABLE ... ADD|DROP CONSTRAINT` statements SHALL
 return an error, unless the user has the **alter constraint** privilege for
 the destination table either because of the explicit grant or through one of
 the roles assigned to the user.
@@ -3333,7 +3293,7 @@ version: 1.0
 
 [ClickHouse] SHALL support granting or revoking **alter constraint** privilege
 on a specified cluster to one or more **users** or **roles**.
-Any `ALTER TABLE ... ADD|CREATE CONSTRAINT`
+Any `ALTER TABLE ... ADD|DROP CONSTRAINT`
 statements SHALL succeed only on nodes where the table exists and privilege was granted.
 
 ###### RQ.SRS-006.RBAC.Privileges.AlterConstraint.TableEngines
@@ -3357,7 +3317,7 @@ on tables created using the following engines
 * ReplicatedVersionedCollapsingMergeTree
 * ReplicatedGraphiteMergeTree
 
-##### Alter TTL
+##### AlterTTL
 
 ###### RQ.SRS-006.RBAC.Privileges.AlterTTL
 version: 1.0
@@ -3397,7 +3357,7 @@ on tables created using the following engines
 
 * MergeTree
 
-##### Alter Settings
+##### AlterSettings
 
 ###### RQ.SRS-006.RBAC.Privileges.AlterSettings
 version: 1.0
@@ -3619,186 +3579,6 @@ on tables created using the following engines
 * ReplicatedVersionedCollapsingMergeTree
 * ReplicatedGraphiteMergeTree
 
-##### Create Table
-
-###### RQ.SRS-006.RBAC.Privileges.CreateTable
-version: 1.0
-
-[ClickHouse] SHALL only successfully execute a `CREATE TABLE` command if and only if
-the user has **create table** privilege either explicitly or through roles.
-
-If the stored query includes one or more source tables, the user must have **select** privilege
-on all the source tables and **insert** for the table they're trying to create either explicitly or through a role.
-For example,
-```sql
-CREATE TABLE table AS SELECT * FROM source_table
-CREATE TABLE table AS SELECT * FROM table0 WHERE column IN (SELECT column FROM table1 WHERE column IN (SELECT column FROM table2 WHERE expression))
-CREATE TABLE table AS SELECT * FROM table0 JOIN table1 USING column
-CREATE TABLE table AS SELECT * FROM table0 UNION ALL SELECT * FROM table1 UNION ALL SELECT * FROM table2
-CREATE TABLE table AS SELECT column FROM table0 JOIN table1 USING column UNION ALL SELECT column FROM table2 WHERE column IN (SELECT column FROM table3 WHERE column IN (SELECT column FROM table4 WHERE expression))
-CREATE TABLE table0 AS SELECT column FROM table1 UNION ALL SELECT column FROM table2
-```
-
-###### RQ.SRS-006.RBAC.Privileges.CreateTable.Access
-version: 1.0
-
-[ClickHouse] SHALL support granting or revoking **create table** privilege to one or more **users** or **roles**.
-
-##### Create Database
-
-###### RQ.SRS-006.RBAC.Privileges.CreateDatabase
-version: 1.0
-
-[ClickHouse] SHALL successfully execute `CREATE DATABASE` statement if and only if the user has **create database** privilege on the source table,
-either directly or through a role.
-
-###### RQ.SRS-006.RBAC.Privileges.CreateDatabase.Access
-version: 1.0
-
-[ClickHouse] SHALL support granting or revoking **create database** privilege to one or more **users** or **roles**.
-
-##### Create Dictionary
-
-###### RQ.SRS-006.RBAC.Privileges.CreateDictionary
-version: 1.0
-
-[ClickHouse] SHALL successfully execute `CREATE DICTIONARY` statement if and only if the user has **create dictionary** privilege on the source table,
-either directly or through a role.
-
-###### RQ.SRS-006.RBAC.Privileges.CreateDictionary.Access
-version: 1.0
-
-[ClickHouse] SHALL support granting or revoking **create dictionary** privilege to one or more **users** or **roles**.
-
-##### Create Temporary Table
-
-###### RQ.SRS-006.RBAC.Privileges.CreateTemporaryTable
-version: 1.0
-
-[ClickHouse] SHALL successfully execute `CREATE TEMPORARY TABLE` statement if and only if the user has **create temporary table** privilege on the source table,
-either directly or through a role.
-
-###### RQ.SRS-006.RBAC.Privileges.CreateTemporaryTable.Access
-version: 1.0
-
-[ClickHouse] SHALL support granting or revoking **create temporary table** privilege to one or more **users** or **roles**.
-
-##### Attach Database
-
-###### RQ.SRS-006.RBAC.Privileges.AttachDatabase
-version: 1.0
-
-[ClickHouse] SHALL successfully execute `ATTACH DATABASE` statement if and only if the user has **create database** privilege on the source table,
-either directly or through a role.
-
-##### Attach Dictionary
-
-###### RQ.SRS-006.RBAC.Privileges.AttachDictionary
-version: 1.0
-
-[ClickHouse] SHALL successfully execute `ATTACH DICTIONARY` statement if and only if the user has **create dictionary** privilege on the source table,
-either directly or through a role.
-
-##### Attach Temporary Table
-
-###### RQ.SRS-006.RBAC.Privileges.AttachTemporaryTable
-version: 1.0
-
-[ClickHouse] SHALL successfully execute `ATTACH TEMPORARY TABLE` statement if and only if the user has **create temporary table** privilege on the source table,
-either directly or through a role.
-
-##### Attach Table
-
-###### RQ.SRS-006.RBAC.Privileges.AttachTable
-version: 1.0
-
-[ClickHouse] SHALL successfully execute `ATTACH TABLE` statement if and only if the user has **create table** privilege on the source table,
-either directly or through a role.
-
-##### Drop Table
-
-###### RQ.SRS-006.RBAC.Privileges.DropTable
-version: 1.0
-
-[ClickHouse] SHALL successfully execute `DROP TABLE` statement if and only if the user has **drop table** privilege on the source table,
-either directly or through a role.
-
-###### RQ.SRS-006.RBAC.Privileges.DropTable.Access
-version: 1.0
-
-[ClickHouse] SHALL support granting or revoking **drop table** privilege to one or more **users** or **roles**.
-
-##### Drop View
-
-###### RQ.SRS-006.RBAC.Privileges.DropView
-version: 1.0
-
-[ClickHouse] SHALL successfully execute `DROP VIEW` statement if and only if the user has **drop view** privilege on the source table,
-either directly or through a role.
-
-###### RQ.SRS-006.RBAC.Privileges.DropView.Access
-version: 1.0
-
-[ClickHouse] SHALL support granting or revoking **drop view** privilege to one or more **users** or **roles**.
-
-##### Drop Database
-
-###### RQ.SRS-006.RBAC.Privileges.DropDatabase
-version: 1.0
-
-[ClickHouse] SHALL successfully execute `DROP DATABASE` statement if and only if the user has **drop database** privilege on the source table,
-either directly or through a role.
-
-###### RQ.SRS-006.RBAC.Privileges.DropDatabase.Access
-version: 1.0
-
-[ClickHouse] SHALL support granting or revoking **drop database** privilege to one or more **users** or **roles**.
-
-##### Drop Dictionary
-
-###### RQ.SRS-006.RBAC.Privileges.DropDictionary
-version: 1.0
-
-[ClickHouse] SHALL successfully execute `DROP DICTIONARY` statement if and only if the user has **drop dictionary** privilege on the source table,
-either directly or through a role.
-
-###### RQ.SRS-006.RBAC.Privileges.DropDictionary.Access
-version: 1.0
-
-[ClickHouse] SHALL support granting or revoking **drop dictionary** privilege to one or more **users** or **roles**.
-
-##### Detach Table
-
-###### RQ.SRS-006.RBAC.Privileges.DetachTable
-version: 1.0
-
-[ClickHouse] SHALL successfully execute `DETACH TABLE` statement if and only if the user has **drop table** privilege on the source table,
-either directly or through a role.
-
-##### Detach View
-
-###### RQ.SRS-006.RBAC.Privileges.DetachView
-version: 1.0
-
-[ClickHouse] SHALL successfully execute `DETACH VIEW` statement if and only if the user has **drop view** privilege on the source table,
-either directly or through a role.
-
-##### Detach Database
-
-###### RQ.SRS-006.RBAC.Privileges.DetachDatabase
-version: 1.0
-
-[ClickHouse] SHALL successfully execute `DETACH DATABASE` statement if and only if the user has **drop database** privilege on the source table,
-either directly or through a role.
-
-##### Detach Dictionary
-
-###### RQ.SRS-006.RBAC.Privileges.DetachDictionary
-version: 1.0
-
-[ClickHouse] SHALL successfully execute `DETACH DICTIONARY` statement if and only if the user has **drop dictionary** privilege on the source table,
-either directly or through a role.
-
 ##### Grant Option
 
 ###### RQ.SRS-006.RBAC.Privileges.GrantOption
@@ -3821,15 +3601,6 @@ the user has that privilege with `GRANT OPTION`, either directly or through a ro
 * `ALTER INDEX`
 * `INSERT`
 * `SELECT`
-* `CREATE TABLE`
-* `CREATE VIEW`
-* `CREATE DATABASE`
-* `CREATE DICTIONARY`
-* `CREATE TEMPORARY TABLE`
-* `DROP TABLE`
-* `DROP VIEW`
-* `DROP DATABASE`
-* `DROP DICTIONARY`
 
 ##### RQ.SRS-006.RBAC.Privileges.Delete
 version: 1.0
@@ -3893,14 +3664,14 @@ either because of the explicit grant or through one of the roles assigned to the
 ##### RQ.SRS-006.RBAC.RequiredPrivileges.Drop
 version: 1.0
 
-[ClickHouse] SHALL not allow any `CREATE` statements
+[ClickHouse] SHALL not allow any `DROP` statements
 to be executed unless the user has the **drop** privilege for the destination database
 either because of the explicit grant or through one of the roles assigned to the user.
 
 ##### RQ.SRS-006.RBAC.RequiredPrivileges.Drop.Table
 version: 1.0
 
-[ClickHouse] SHALL not allow any `CREATE TABLE` statements
+[ClickHouse] SHALL not allow any `DROP TABLE` statements
 to be executed unless the user has the **drop** privilege for the destination database or the table
 either because of the explicit grant or through one of the roles assigned to the user.
 
@@ -5085,7 +4856,7 @@ RQ_SRS_006_RBAC_User_Alter_Host_AddDrop = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support altering user by adding and dropping access to hosts with the `ADD HOST` or the `CREATE HOST`in the `ALTER USER` statement.\n'
+        '[ClickHouse] SHALL support altering user by adding and dropping access to hosts with the `ADD HOST` or the `DROP HOST`in the `ALTER USER` statement.\n'
         '\n'
         ),
         link=None)
@@ -5300,7 +5071,7 @@ RQ_SRS_006_RBAC_User_Alter_Syntax = Requirement(
         'ALTER USER [IF EXISTS] name [ON CLUSTER cluster_name]\n'
         '    [RENAME TO new_name]\n'
         "    [IDENTIFIED [WITH {PLAINTEXT_PASSWORD|SHA256_PASSWORD|DOUBLE_SHA1_PASSWORD}] BY {'password'|'hash'}]\n"
-        "    [[ADD|CREATE] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]\n"
+        "    [[ADD|DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]\n"
         '    [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]\n'
         "    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]\n"
         '```\n'
@@ -5537,7 +5308,7 @@ RQ_SRS_006_RBAC_User_Drop = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support removing a user account using `CREATE USER` statement.\n'
+        '[ClickHouse] SHALL support removing a user account using `DROP USER` statement.\n'
         '\n'
         ),
         link=None)
@@ -5550,7 +5321,7 @@ RQ_SRS_006_RBAC_User_Drop_IfExists = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support using `IF EXISTS` clause in the `CREATE USER` statement\n'
+        '[ClickHouse] SHALL support using `IF EXISTS` clause in the `DROP USER` statement\n'
         'to skip raising an exception if the user account does not exist.\n'
         'If the `IF EXISTS` clause is not specified then an exception SHALL be\n'
         'raised if a user does not exist.\n'
@@ -5566,7 +5337,7 @@ RQ_SRS_006_RBAC_User_Drop_OnCluster = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support using `ON CLUSTER` clause in the `CREATE USER` statement\n'
+        '[ClickHouse] SHALL support using `ON CLUSTER` clause in the `DROP USER` statement\n'
         'to specify the name of the cluster the user should be dropped from.\n'
         '\n'
         ),
@@ -5580,10 +5351,10 @@ RQ_SRS_006_RBAC_User_Drop_Syntax = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support the following syntax for `CREATE USER` statement\n'
+        '[ClickHouse] SHALL support the following syntax for `DROP USER` statement\n'
         '\n'
         '```sql\n'
-        'CREATE USER [IF EXISTS] name [,...] [ON CLUSTER cluster_name]\n'
+        'DROP USER [IF EXISTS] name [,...] [ON CLUSTER cluster_name]\n'
         '```\n'
         '\n'
         ),
@@ -5766,7 +5537,7 @@ RQ_SRS_006_RBAC_Role_Drop = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support removing one or more roles using `CREATE ROLE` statement.\n'
+        '[ClickHouse] SHALL support removing one or more roles using `DROP ROLE` statement.\n'
         '\n'
         ),
         link=None)
@@ -5779,7 +5550,7 @@ RQ_SRS_006_RBAC_Role_Drop_IfExists = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support using `IF EXISTS` clause in the `CREATE ROLE` statement\n'
+        '[ClickHouse] SHALL support using `IF EXISTS` clause in the `DROP ROLE` statement\n'
         'to skip raising an exception if the role does not exist.\n'
         'If the `IF EXISTS` clause is not specified then an exception SHALL be\n'
         'raised if a role does not exist.\n'
@@ -5795,7 +5566,7 @@ RQ_SRS_006_RBAC_Role_Drop_Cluster = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support using `ON CLUSTER` clause in the `CREATE ROLE` statement to specify the cluster from which to drop the specified role.\n'
+        '[ClickHouse] SHALL support using `ON CLUSTER` clause in the `DROP ROLE` statement to specify the cluster from which to drop the specified role.\n'
         '\n'
         ),
         link=None)
@@ -5808,10 +5579,10 @@ RQ_SRS_006_RBAC_Role_Drop_Syntax = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support the following syntax for the `CREATE ROLE` statement\n'
+        '[ClickHouse] SHALL support the following syntax for the `DROP ROLE` statement\n'
         '\n'
         '``` sql\n'
-        'CREATE ROLE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]\n'
+        'DROP ROLE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]\n'
         '```\n'
         '\n'
         ),
@@ -5941,7 +5712,7 @@ RQ_SRS_006_RBAC_Grant_Privilege_Drop = Requirement(
         uid=None,
         description=(
         '[ClickHouse] SHALL support granting the **drop** privilege to one or more users or roles\n'
-        'for a database or a table using the `GRANT CREATE` statement.\n'
+        'for a database or a table using the `GRANT DROP` statement.\n'
         '\n'
         ),
         link=None)
@@ -6211,7 +5982,7 @@ RQ_SRS_006_RBAC_Revoke_Privilege_Any = Requirement(
         '[ClickHouse] SHALL support revoking ANY privilege to one or more users or roles\n'
         'for a database or a table using the `REVOKE some_privilege` statement.\n'
         '**some_privilege** refers to any Clickhouse defined privilege, whose hierarchy includes\n'
-        'SELECT, INSERT, ALTER, CREATE, CREATE, TRUNCATE, OPTIMIZE, SHOW, KILL QUERY, ACCESS MANAGEMENT,\n'
+        'SELECT, INSERT, ALTER, CREATE, DROP, TRUNCATE, OPTIMIZE, SHOW, KILL QUERY, ACCESS MANAGEMENT,\n'
         'SYSTEM, INTROSPECTION, SOURCES, dictGet and all of their sub-privileges.\n'
         '\n'
         ),
@@ -6282,7 +6053,7 @@ RQ_SRS_006_RBAC_Revoke_Privilege_Drop = Requirement(
         uid=None,
         description=(
         '[ClickHouse] SHALL support revoking the **drop** privilege to one or more users or roles\n'
-        'for a database or a table using the `REVOKE CREATE` statement.\n'
+        'for a database or a table using the `REVOKE DROP` statement.\n'
         '\n'
         ),
         link=None)
@@ -6440,7 +6211,7 @@ RQ_SRS_006_RBAC_Revoke_Privilege_Multiple = Requirement(
         '[ClickHouse] SHALL support revoking MULTIPLE **privileges** to one or more users or roles\n'
         'for a database or a table using the `REVOKE privilege1, privilege2...` statement.\n'
         '**privileges** refers to any set of Clickhouse defined privilege, whose hierarchy includes\n'
-        'SELECT, INSERT, ALTER, CREATE, CREATE, TRUNCATE, OPTIMIZE, SHOW, KILL QUERY, ACCESS MANAGEMENT,\n'
+        'SELECT, INSERT, ALTER, CREATE, DROP, TRUNCATE, OPTIMIZE, SHOW, KILL QUERY, ACCESS MANAGEMENT,\n'
         'SYSTEM, INTROSPECTION, SOURCES, dictGet and all of their sub-privileges.\n'
         '\n'
         ),
@@ -7147,7 +6918,7 @@ RQ_SRS_006_RBAC_SettingsProfile_Drop = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support removing one or more settings profiles using the `CREATE SETTINGS PROFILE` statement.\n'
+        '[ClickHouse] SHALL support removing one or more settings profiles using the `DROP SETTINGS PROFILE` statement.\n'
         '\n'
         ),
         link=None)
@@ -7160,7 +6931,7 @@ RQ_SRS_006_RBAC_SettingsProfile_Drop_IfExists = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support using `IF EXISTS` clause in the `CREATE SETTINGS PROFILE` statement\n'
+        '[ClickHouse] SHALL support using `IF EXISTS` clause in the `DROP SETTINGS PROFILE` statement\n'
         'to skip raising an exception if the settings profile does not exist.\n'
         'If the `IF EXISTS` clause is not specified then an exception SHALL be\n'
         'raised if a settings profile does not exist.\n'
@@ -7177,7 +6948,7 @@ RQ_SRS_006_RBAC_SettingsProfile_Drop_OnCluster = Requirement(
         uid=None,
         description=(
         '[ClickHouse] SHALL support dropping one or more settings profiles on specified cluster using\n'
-        '`ON CLUSTER` clause in the `CREATE SETTINGS PROFILE` statement.\n'
+        '`ON CLUSTER` clause in the `DROP SETTINGS PROFILE` statement.\n'
         '\n'
         ),
         link=None)
@@ -7190,10 +6961,10 @@ RQ_SRS_006_RBAC_SettingsProfile_Drop_Syntax = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support the following syntax for the `CREATE SETTINGS PROFILE` statement\n'
+        '[ClickHouse] SHALL support the following syntax for the `DROP SETTINGS PROFILE` statement\n'
         '\n'
         '``` sql\n'
-        'CREATE SETTINGS PROFILE [IF EXISTS] name [,name,...]\n'
+        'DROP SETTINGS PROFILE [IF EXISTS] name [,name,...]\n'
         '```\n'
         '\n'
         ),
@@ -7896,7 +7667,7 @@ RQ_SRS_006_RBAC_Quota_Drop = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support removing one or more quotas using the `CREATE QUOTA` statement.\n'
+        '[ClickHouse] SHALL support removing one or more quotas using the `DROP QUOTA` statement.\n'
         '\n'
         ),
         link=None)
@@ -7909,7 +7680,7 @@ RQ_SRS_006_RBAC_Quota_Drop_IfExists = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support using `IF EXISTS` clause in the `CREATE QUOTA` statement\n'
+        '[ClickHouse] SHALL support using `IF EXISTS` clause in the `DROP QUOTA` statement\n'
         'to skip raising an exception when the quota does not exist.\n'
         'If the `IF EXISTS` clause is not specified then an exception SHALL be\n'
         'raised if the quota does not exist.\n'
@@ -7925,7 +7696,7 @@ RQ_SRS_006_RBAC_Quota_Drop_Cluster = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support using `ON CLUSTER` clause in the `CREATE QUOTA` statement\n'
+        '[ClickHouse] SHALL support using `ON CLUSTER` clause in the `DROP QUOTA` statement\n'
         'to indicate the cluster the quota to be dropped is located on.\n'
         '\n'
         ),
@@ -7939,10 +7710,10 @@ RQ_SRS_006_RBAC_Quota_Drop_Syntax = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support the following syntax for the `CREATE QUOTA` statement\n'
+        '[ClickHouse] SHALL support the following syntax for the `DROP QUOTA` statement\n'
         '\n'
         '``` sql\n'
-        'CREATE QUOTA [IF EXISTS] name [,name...]\n'
+        'DROP QUOTA [IF EXISTS] name [,name...]\n'
         '```\n'
         '\n'
         ),
@@ -8534,7 +8305,7 @@ RQ_SRS_006_RBAC_RowPolicy_Drop = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support removing one or more row policies using the `CREATE ROW POLICY` statement.\n'
+        '[ClickHouse] SHALL support removing one or more row policies using the `DROP ROW POLICY` statement.\n'
         '\n'
         ),
         link=None)
@@ -8547,7 +8318,7 @@ RQ_SRS_006_RBAC_RowPolicy_Drop_IfExists = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support using the `IF EXISTS` clause in the `CREATE ROW POLICY` statement\n'
+        '[ClickHouse] SHALL support using the `IF EXISTS` clause in the `DROP ROW POLICY` statement\n'
         'to skip raising an exception when the row policy does not exist.\n'
         'If the `IF EXISTS` clause is not specified then an exception SHALL be\n'
         'raised if the row policy does not exist.\n'
@@ -8564,7 +8335,7 @@ RQ_SRS_006_RBAC_RowPolicy_Drop_On = Requirement(
         uid=None,
         description=(
         '[ClickHouse] SHALL support removing row policy from one or more specified tables\n'
-        'using the `ON` clause in the `CREATE ROW POLICY` statement.\n'
+        'using the `ON` clause in the `DROP ROW POLICY` statement.\n'
         '\n'
         ),
         link=None)
@@ -8578,7 +8349,7 @@ RQ_SRS_006_RBAC_RowPolicy_Drop_OnCluster = Requirement(
         uid=None,
         description=(
         '[ClickHouse] SHALL support removing row policy from specified cluster\n'
-        'using the `ON CLUSTER` clause in the `CREATE ROW POLICY` statement.\n'
+        'using the `ON CLUSTER` clause in the `DROP ROW POLICY` statement.\n'
         '\n'
         ),
         link=None)
@@ -8591,10 +8362,10 @@ RQ_SRS_006_RBAC_RowPolicy_Drop_Syntax = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support the following syntax for the `CREATE ROW POLICY` statement.\n'
+        '[ClickHouse] SHALL support the following syntax for the `DROP ROW POLICY` statement.\n'
         '\n'
         '``` sql\n'
-        'CREATE [ROW] POLICY [IF EXISTS] name [,...] ON [database.]table [,...] [ON CLUSTER cluster_name]\n'
+        'DROP [ROW] POLICY [IF EXISTS] name [,...] ON [database.]table [,...] [ON CLUSTER cluster_name]\n'
         '```\n'
         '\n'
         ),
@@ -9417,7 +9188,7 @@ RQ_SRS_006_RBAC_Privileges_AlterColumn = Requirement(
         description=(
         '[ClickHouse] SHALL support controlling access to the **AlterColumn** privilege\n'
         'for a database or a specific table to one or more **users** or **roles**.\n'
-        'Any `ALTER TABLE ... ADD|CREATE|CLEAR|COMMENT|MODIFY COLUMN` statements SHALL\n'
+        'Any `ALTER TABLE ... ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN` statements SHALL\n'
         'return an error, unless the user has the **alter column** privilege for\n'
         'the destination table either because of the explicit grant or through one of\n'
         'the roles assigned to the user.\n'
@@ -9463,7 +9234,7 @@ RQ_SRS_006_RBAC_Privileges_AlterColumn_Column = Requirement(
         description=(
         '[ClickHouse] SHALL support granting or revoking **alter column** privilege\n'
         'for one or more specified columns in a table to one or more **users** or **roles**.\n'
-        'Any `ALTER TABLE ... ADD|CREATE|CLEAR|COMMENT|MODIFY COLUMN` statements SHALL return an error,\n'
+        'Any `ALTER TABLE ... ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN` statements SHALL return an error,\n'
         ' unless the user has the **alter column** privilege for the destination column\n'
         'either because of the explicit grant or through one of the roles assigned to the user.\n'
         '\n'
@@ -9480,7 +9251,7 @@ RQ_SRS_006_RBAC_Privileges_AlterColumn_Cluster = Requirement(
         description=(
         '[ClickHouse] SHALL support granting or revoking **alter column** privilege\n'
         'on a specified cluster to one or more **users** or **roles**.\n'
-        'Any `ALTER TABLE ... ADD|CREATE|CLEAR|COMMENT|MODIFY COLUMN`\n'
+        'Any `ALTER TABLE ... ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN`\n'
         'statements SHALL succeed only on nodes where the table exists and privilege was granted.\n'
         '\n'
         ),
@@ -9525,7 +9296,7 @@ RQ_SRS_006_RBAC_Privileges_AlterIndex = Requirement(
         description=(
         '[ClickHouse] SHALL support controlling access to the **alter index** privilege\n'
         'for a database or a specific table to one or more **users** or **roles**.\n'
-        'Any `ALTER TABLE ... ORDER BY | ADD|CREATE|MATERIALIZE|CLEAR INDEX` statements SHALL\n'
+        'Any `ALTER TABLE ... ORDER BY | ADD|DROP|MATERIALIZE|CLEAR INDEX` statements SHALL\n'
         'return an error, unless the user has the **alter index** privilege for\n'
         'the destination table either because of the explicit grant or through one of\n'
         'the roles assigned to the user.\n'
@@ -9571,7 +9342,7 @@ RQ_SRS_006_RBAC_Privileges_AlterIndex_Cluster = Requirement(
         description=(
         '[ClickHouse] SHALL support granting or revoking **alter index** privilege\n'
         'on a specified cluster to one or more **users** or **roles**.\n'
-        'Any `ALTER TABLE ... ORDER BY | ADD|CREATE|MATERIALIZE|CLEAR INDEX`\n'
+        'Any `ALTER TABLE ... ORDER BY | ADD|DROP|MATERIALIZE|CLEAR INDEX`\n'
         'statements SHALL succeed only on nodes where the table exists and privilege was granted.\n'
         '\n'
         ),
@@ -9616,7 +9387,7 @@ RQ_SRS_006_RBAC_Privileges_AlterConstraint = Requirement(
         description=(
         '[ClickHouse] SHALL support controlling access to the **alter constraint** privilege\n'
         'for a database or a specific table to one or more **users** or **roles**.\n'
-        'Any `ALTER TABLE ... ADD|CREATE CONSTRAINT` statements SHALL\n'
+        'Any `ALTER TABLE ... ADD|DROP CONSTRAINT` statements SHALL\n'
         'return an error, unless the user has the **alter constraint** privilege for\n'
         'the destination table either because of the explicit grant or through one of\n'
         'the roles assigned to the user.\n'
@@ -9662,7 +9433,7 @@ RQ_SRS_006_RBAC_Privileges_AlterConstraint_Cluster = Requirement(
         description=(
         '[ClickHouse] SHALL support granting or revoking **alter constraint** privilege\n'
         'on a specified cluster to one or more **users** or **roles**.\n'
-        'Any `ALTER TABLE ... ADD|CREATE CONSTRAINT`\n'
+        'Any `ALTER TABLE ... ADD|DROP CONSTRAINT`\n'
         'statements SHALL succeed only on nodes where the table exists and privilege was granted.\n'
         '\n'
         ),
@@ -10145,346 +9916,6 @@ RQ_SRS_006_RBAC_Privileges_AlterMove_TableEngines = Requirement(
         ),
         link=None)
 
-RQ_SRS_006_RBAC_Privileges_CreateTable = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.CreateTable',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL only successfully execute a `CREATE TABLE` command if and only if\n'
-        'the user has **create table** privilege either explicitly or through roles.\n'
-        '\n'
-        'If the stored query includes one or more source tables, the user must have **select** privilege\n'
-        "on all the source tables and **insert** for the table they're trying to create either explicitly or through a role.\n"
-        'For example,\n'
-        '```sql\n'
-        'CREATE TABLE table AS SELECT * FROM source_table\n'
-        'CREATE TABLE table AS SELECT * FROM table0 WHERE column IN (SELECT column FROM table1 WHERE column IN (SELECT column FROM table2 WHERE expression))\n'
-        'CREATE TABLE table AS SELECT * FROM table0 JOIN table1 USING column\n'
-        'CREATE TABLE table AS SELECT * FROM table0 UNION ALL SELECT * FROM table1 UNION ALL SELECT * FROM table2\n'
-        'CREATE TABLE table AS SELECT column FROM table0 JOIN table1 USING column UNION ALL SELECT column FROM table2 WHERE column IN (SELECT column FROM table3 WHERE column IN (SELECT column FROM table4 WHERE expression))\n'
-        'CREATE TABLE table0 AS SELECT column FROM table1 UNION ALL SELECT column FROM table2\n'
-        '```\n'
-        '\n'
-        ),
-        link=None)
-
-RQ_SRS_006_RBAC_Privileges_CreateTable_Access = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.CreateTable.Access',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL support granting or revoking **create table** privilege to one or more **users** or **roles**.\n'
-        '\n'
-        ),
-        link=None)
-
-RQ_SRS_006_RBAC_Privileges_CreateDatabase = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.CreateDatabase',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL successfully execute `CREATE DATABASE` statement if and only if the user has **create database** privilege on the source table,\n'
-        'either directly or through a role.\n'
-        '\n'
-        ),
-        link=None)
-
-RQ_SRS_006_RBAC_Privileges_CreateDatabase_Access = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.CreateDatabase.Access',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL support granting or revoking **create database** privilege to one or more **users** or **roles**.\n'
-        '\n'
-        ),
-        link=None)
-
-RQ_SRS_006_RBAC_Privileges_CreateDictionary = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.CreateDictionary',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL successfully execute `CREATE DICTIONARY` statement if and only if the user has **create dictionary** privilege on the source table,\n'
-        'either directly or through a role.\n'
-        '\n'
-        ),
-        link=None)
-
-RQ_SRS_006_RBAC_Privileges_CreateDictionary_Access = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.CreateDictionary.Access',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL support granting or revoking **create dictionary** privilege to one or more **users** or **roles**.\n'
-        '\n'
-        ),
-        link=None)
-
-RQ_SRS_006_RBAC_Privileges_CreateTemporaryTable = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.CreateTemporaryTable',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL successfully execute `CREATE TEMPORARY TABLE` statement if and only if the user has **create temporary table** privilege on the source table,\n'
-        'either directly or through a role.\n'
-        '\n'
-        ),
-        link=None)
-
-RQ_SRS_006_RBAC_Privileges_CreateTemporaryTable_Access = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.CreateTemporaryTable.Access',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL support granting or revoking **create temporary table** privilege to one or more **users** or **roles**.\n'
-        '\n'
-        ),
-        link=None)
-
-RQ_SRS_006_RBAC_Privileges_AttachDatabase = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.AttachDatabase',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL successfully execute `ATTACH DATABASE` statement if and only if the user has **create database** privilege on the source table,\n'
-        'either directly or through a role.\n'
-        '\n'
-        ),
-        link=None)
-
-RQ_SRS_006_RBAC_Privileges_AttachDictionary = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.AttachDictionary',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL successfully execute `ATTACH DICTIONARY` statement if and only if the user has **create dictionary** privilege on the source table,\n'
-        'either directly or through a role.\n'
-        '\n'
-        ),
-        link=None)
-
-RQ_SRS_006_RBAC_Privileges_AttachTemporaryTable = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.AttachTemporaryTable',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL successfully execute `ATTACH TEMPORARY TABLE` statement if and only if the user has **create temporary table** privilege on the source table,\n'
-        'either directly or through a role.\n'
-        '\n'
-        ),
-        link=None)
-
-RQ_SRS_006_RBAC_Privileges_AttachTable = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.AttachTable',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL successfully execute `ATTACH TABLE` statement if and only if the user has **create table** privilege on the source table,\n'
-        'either directly or through a role.\n'
-        '\n'
-        ),
-        link=None)
-
-RQ_SRS_006_RBAC_Privileges_DropTable = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.DropTable',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL successfully execute `DROP TABLE` statement if and only if the user has **drop table** privilege on the source table,\n'
-        'either directly or through a role.\n'
-        '\n'
-        ),
-        link=None)
-
-RQ_SRS_006_RBAC_Privileges_DropTable_Access = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.DropTable.Access',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL support granting or revoking **drop table** privilege to one or more **users** or **roles**.\n'
-        '\n'
-        ),
-        link=None)
-
-RQ_SRS_006_RBAC_Privileges_DropView = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.DropView',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL successfully execute `DROP VIEW` statement if and only if the user has **drop view** privilege on the source table,\n'
-        'either directly or through a role.\n'
-        '\n'
-        ),
-        link=None)
-
-RQ_SRS_006_RBAC_Privileges_DropView_Access = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.DropView.Access',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL support granting or revoking **drop view** privilege to one or more **users** or **roles**.\n'
-        '\n'
-        ),
-        link=None)
-
-RQ_SRS_006_RBAC_Privileges_DropDatabase = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.DropDatabase',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL successfully execute `DROP DATABASE` statement if and only if the user has **drop database** privilege on the source table,\n'
-        'either directly or through a role.\n'
-        '\n'
-        ),
-        link=None)
-
-RQ_SRS_006_RBAC_Privileges_DropDatabase_Access = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.DropDatabase.Access',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL support granting or revoking **drop database** privilege to one or more **users** or **roles**.\n'
-        '\n'
-        ),
-        link=None)
-
-RQ_SRS_006_RBAC_Privileges_DropDictionary = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.DropDictionary',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL successfully execute `DROP DICTIONARY` statement if and only if the user has **drop dictionary** privilege on the source table,\n'
-        'either directly or through a role.\n'
-        '\n'
-        ),
-        link=None)
-
-RQ_SRS_006_RBAC_Privileges_DropDictionary_Access = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.DropDictionary.Access',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL support granting or revoking **drop dictionary** privilege to one or more **users** or **roles**.\n'
-        '\n'
-        ),
-        link=None)
-
-RQ_SRS_006_RBAC_Privileges_DetachTable = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.DetachTable',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL successfully execute `DETACH TABLE` statement if and only if the user has **drop table** privilege on the source table,\n'
-        'either directly or through a role.\n'
-        '\n'
-        ),
-        link=None)
-
-RQ_SRS_006_RBAC_Privileges_DetachView = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.DetachView',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL successfully execute `DETACH VIEW` statement if and only if the user has **drop view** privilege on the source table,\n'
-        'either directly or through a role.\n'
-        '\n'
-        ),
-        link=None)
-
-RQ_SRS_006_RBAC_Privileges_DetachDatabase = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.DetachDatabase',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL successfully execute `DETACH DATABASE` statement if and only if the user has **drop database** privilege on the source table,\n'
-        'either directly or through a role.\n'
-        '\n'
-        ),
-        link=None)
-
-RQ_SRS_006_RBAC_Privileges_DetachDictionary = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.DetachDictionary',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL successfully execute `DETACH DICTIONARY` statement if and only if the user has **drop dictionary** privilege on the source table,\n'
-        'either directly or through a role.\n'
-        '\n'
-        ),
-        link=None)
-
 RQ_SRS_006_RBAC_Privileges_GrantOption = Requirement(
         name='RQ.SRS-006.RBAC.Privileges.GrantOption',
         version='1.0',
@@ -10510,15 +9941,6 @@ RQ_SRS_006_RBAC_Privileges_GrantOption = Requirement(
         '* `ALTER INDEX`\n'
         '* `INSERT`\n'
         '* `SELECT`\n'
-        '* `CREATE TABLE`\n'
-        '* `CREATE VIEW`\n'
-        '* `CREATE DATABASE`\n'
-        '* `CREATE DICTIONARY`\n'
-        '* `CREATE TEMPORARY TABLE`\n'
-        '* `DROP TABLE`\n'
-        '* `DROP VIEW`\n'
-        '* `DROP DATABASE`\n'
-        '* `DROP DICTIONARY`\n'
         '\n'
         ),
         link=None)
@@ -10660,7 +10082,7 @@ RQ_SRS_006_RBAC_RequiredPrivileges_Drop = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL not allow any `CREATE` statements\n'
+        '[ClickHouse] SHALL not allow any `DROP` statements\n'
         'to be executed unless the user has the **drop** privilege for the destination database\n'
         'either because of the explicit grant or through one of the roles assigned to the user.\n'
         '\n'
@@ -10675,7 +10097,7 @@ RQ_SRS_006_RBAC_RequiredPrivileges_Drop_Table = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL not allow any `CREATE TABLE` statements\n'
+        '[ClickHouse] SHALL not allow any `DROP TABLE` statements\n'
         'to be executed unless the user has the **drop** privilege for the destination database or the table\n'
         'either because of the explicit grant or through one of the roles assigned to the user.\n'
         '\n'

@@ -109,14 +109,6 @@ void ODBCBridge::defineOptions(Poco::Util::OptionSet & options)
                           .argument("err-log-path")
                           .binding("logger.errorlog"));
 
-    options.addOption(Poco::Util::Option("stdout-path", "", "stdout log path, default console")
-                          .argument("stdout-path")
-                          .binding("logger.stdout"));
-
-    options.addOption(Poco::Util::Option("stderr-path", "", "stderr log path, default console")
-                          .argument("stderr-path")
-                          .binding("logger.stderr"));
-
     using Me = std::decay_t<decltype(*this)>;
     options.addOption(Poco::Util::Option("help", "", "produce this help message")
                           .binding("help")
@@ -134,27 +126,6 @@ void ODBCBridge::initialize(Application & self)
         return;
 
     config().setString("logger", "ODBCBridge");
-
-    /// Redirect stdout, stderr to specified files.
-    /// Some libraries and sanitizers write to stderr in case of errors.
-    const auto stdout_path = config().getString("logger.stdout", "");
-    if (!stdout_path.empty())
-    {
-        if (!freopen(stdout_path.c_str(), "a+", stdout))
-            throw Poco::OpenFileException("Cannot attach stdout to " + stdout_path);
-
-        /// Disable buffering for stdout.
-        setbuf(stdout, nullptr);
-    }
-    const auto stderr_path = config().getString("logger.stderr", "");
-    if (!stderr_path.empty())
-    {
-        if (!freopen(stderr_path.c_str(), "a+", stderr))
-            throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
-
-        /// Disable buffering for stderr.
-        setbuf(stderr, nullptr);
-    }
 
     buildLoggers(config(), logger(), self.commandName());
 

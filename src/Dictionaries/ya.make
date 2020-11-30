@@ -53,7 +53,6 @@ SRCS(
     FlatDictionary.cpp
     HTTPDictionarySource.cpp
     HashedDictionary.cpp
-    IPAddressDictionary.cpp
     LibraryDictionarySource.cpp
     LibraryDictionarySourceExternal.cpp
     MongoDBDictionarySource.cpp

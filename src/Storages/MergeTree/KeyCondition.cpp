@@ -185,22 +185,6 @@ const KeyCondition::AtomMap KeyCondition::atom_map
         }
     },
     {
-        "globalIn",
-        [] (RPNElement & out, const Field &)
-        {
-            out.function = RPNElement::FUNCTION_IN_SET;
-            return true;
-        }
-    },
-    {
-        "globalNotIn",
-        [] (RPNElement & out, const Field &)
-        {
-            out.function = RPNElement::FUNCTION_NOT_IN_SET;
-            return true;
-        }
-    },
-    {
         "empty",
         [] (RPNElement & out, const Field & value)
         {

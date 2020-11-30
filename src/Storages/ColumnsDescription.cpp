@@ -63,34 +63,34 @@ void ColumnDescription::writeText(WriteBuffer & buf) const
 {
     writeBackQuotedString(name, buf);
     writeChar(' ', buf);
-    writeEscapedString(type->getName(), buf);
+    DB::writeText(type->getName(), buf);
 
     if (default_desc.expression)
     {
         writeChar('\t', buf);
         DB::writeText(DB::toString(default_desc.kind), buf);
         writeChar('\t', buf);
-        writeEscapedString(queryToString(default_desc.expression), buf);
+        DB::writeText(queryToString(default_desc.expression), buf);
     }
 
     if (!comment.empty())
     {
         writeChar('\t', buf);
         DB::writeText("COMMENT ", buf);
-        writeEscapedString(queryToString(ASTLiteral(Field(comment))), buf);
+        DB::writeText(queryToString(ASTLiteral(Field(comment))), buf);
     }
 
     if (codec)
     {
         writeChar('\t', buf);
-        writeEscapedString(queryToString(codec), buf);
+        DB::writeText(queryToString(codec), buf);
     }
 
     if (ttl)
     {
         writeChar('\t', buf);
         DB::writeText("TTL ", buf);
-        writeEscapedString(queryToString(ttl), buf);
+        DB::writeText(queryToString(ttl), buf);
     }
 
     writeChar('\n', buf);

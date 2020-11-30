@@ -2515,7 +2515,7 @@ public:
         {
             std::string traceparent = options["opentelemetry-traceparent"].as<std::string>();
             std::string error;
-            if (!context.getClientInfo().client_trace_context.parseTraceparentHeader(
+            if (!context.getClientInfo().parseTraceparentHeader(
                 traceparent, error))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -2526,7 +2526,7 @@ public:
 
         if (options.count("opentelemetry-tracestate"))
         {
-            context.getClientInfo().client_trace_context.tracestate =
+            context.getClientInfo().opentelemetry_tracestate =
                 options["opentelemetry-tracestate"].as<std::string>();
         }
 
