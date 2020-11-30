@@ -132,7 +132,15 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         bool old_style_database = context.getSettingsRef().default_database_engine.value == DefaultDatabaseEngine::Ordinary;
         auto engine = std::make_shared<ASTFunction>();
         auto storage = std::make_shared<ASTStorage>();
-        engine->name = old_style_database ? "Ordinary" : "Atomic";
+        //FIXME revert it before merge
+        engine->name = "Atomic";
+        if (old_style_database)
+        {
+            engine = makeASTFunction("Replicated",
+                                     std::make_shared<ASTLiteral>(fmt::format("/clickhouse/db/{}/", create.database)),
+                                     std::make_shared<ASTLiteral>("s1"),
+                                     std::make_shared<ASTLiteral>("r1"));
+        }
         storage->set(storage->engine, engine);
         create.set(create.storage, storage);
     }
