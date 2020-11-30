@@ -57,32 +57,31 @@ SELECT
 
 ## toUnixTimestamp {#to-unix-timestamp}
 
-For DateTime argument: converts value to its internal numeric representation (Unix Timestamp).
-For String argument: parse datetime from string according to the timezone (optional second argument, server timezone is used by default) and returns the corresponding unix timestamp.
-For Date argument: the behaviour is unspecified.
+Переводит дату-с-временем в число типа UInt32 -- Unix Timestamp (https://en.wikipedia.org/wiki/Unix_time).
+Для аргумента String, строка конвертируется в дату и время в соответствии с часовым поясом (необязательный второй аргумент, часовой пояс сервера используется по умолчанию).
 
-**Syntax**
+**Синтаксис**
 
 ``` sql
 toUnixTimestamp(datetime)
 toUnixTimestamp(str, [timezone])
 ```
 
-**Returned value**
+**Возвращаемое значение**
 
--   Returns the unix timestamp.
+-   Возвращает Unix Timestamp.
 
-Type: `UInt32`.
+Тип: `UInt32`.
 
-**Example**
+**Пример**
 
-Query:
+Запрос:
 
 ``` sql
 SELECT toUnixTimestamp('2017-11-05 08:07:47', 'Asia/Tokyo') AS unix_timestamp
 ```
 
-Result:
+Результат:
 
 ``` text
 ┌─unix_timestamp─┐
