@@ -3,7 +3,6 @@
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/RowsBeforeLimitCounter.h>
 #include <Processors/Pipe.h>
-#include <atomic>
 
 namespace DB
 {
@@ -21,7 +20,6 @@ public:
     RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation_info_);
     ~RemoteSource() override;
 
-    Status prepare() override;
     String getName() const override { return "Remote"; }
 
     void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) { rows_before_limit.swap(counter); }
@@ -38,7 +36,6 @@ protected:
     void onCancel() override;
 
 private:
-    std::atomic<bool> was_query_canceled = false;
     bool was_query_sent = false;
     bool add_aggregation_info = false;
     RemoteQueryExecutorPtr query_executor;

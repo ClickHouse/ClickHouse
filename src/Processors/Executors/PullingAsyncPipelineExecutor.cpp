@@ -220,15 +220,9 @@ Block PullingAsyncPipelineExecutor::getExtremesBlock()
 
 BlockStreamProfileInfo & PullingAsyncPipelineExecutor::getProfileInfo()
 {
-    if (lazy_format)
-        return lazy_format->getProfileInfo();
-
     static BlockStreamProfileInfo profile_info;
-    static std::once_flag flag;
-    /// Calculate rows before limit here to avoid race.
-    std::call_once(flag, []() { profile_info.getRowsBeforeLimit(); });
-
-    return profile_info;
+    return lazy_format ? lazy_format->getProfileInfo()
+                       : profile_info;
 }
 
 }

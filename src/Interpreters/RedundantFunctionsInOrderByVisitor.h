@@ -5,7 +5,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTExpressionList.h>
 
 namespace DB
 {
@@ -76,8 +75,7 @@ public:
 
     static bool needChildVisit(const ASTPtr & node, const ASTPtr &)
     {
-        /// Visit functions and their arguments, that are stored in ASTExpressionList.
-        return node->as<ASTFunction>() || node->as<ASTExpressionList>();
+        return node->as<ASTFunction>();
     }
 };
 

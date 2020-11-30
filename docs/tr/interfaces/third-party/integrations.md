@@ -19,15 +19,15 @@ toc_title: Entegrasyonlar
         -   [clickhouse-mysql-data-reader](https://github.com/Altinity/clickhouse-mysql-data-reader)
         -   [horgh-çoğaltıcı](https://github.com/larsnovikov/horgh-replicator)
     -   [PostgreSQL](https://www.postgresql.org)
-        -   [clickhousedb_fdw](https://github.com/Percona-Lab/clickhousedb_fdw)
-        -   [ınfi.clickhouse_fdw](https://github.com/Infinidat/infi.clickhouse_fdw) (kullanma [ınfi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm))
+        -   [clickhousedb\_fdw](https://github.com/Percona-Lab/clickhousedb_fdw)
+        -   [ınfi.clickhouse\_fdw](https://github.com/Infinidat/infi.clickhouse_fdw) (kullanma [ınfi.clickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm))
         -   [pg2ch](https://github.com/mkabilov/pg2ch)
-        -   [clickhouse_fdw](https://github.com/adjust/clickhouse_fdw)
+        -   [clickhouse\_fdw](https://github.com/adjust/clickhouse_fdw)
     -   [MSSQL](https://en.wikipedia.org/wiki/Microsoft_SQL_Server)
         -   [ClickHouseMigrator](https://github.com/zlzforever/ClickHouseMigrator)
 -   Mesaj kuyrukları
     -   [Kafka](https://kafka.apache.org)
-        -   [clickhouse_sinker](https://github.com/housepower/clickhouse_sinker) (kullanma [Go client](https://github.com/ClickHouse/clickhouse-go/))
+        -   [clickhouse\_sinker](https://github.com/housepower/clickhouse_sinker) (kullanma [Go client](https://github.com/ClickHouse/clickhouse-go/))
         -   [stream-loader-clickhouse](https://github.com/adform/stream-loader)
 -   Akış işleme
     -   [Flink](https://flink.apache.org)
@@ -51,12 +51,12 @@ toc_title: Entegrasyonlar
     -   [Grafana](https://grafana.com/)
         -   [clickhouse-grafana](https://github.com/Vertamedia/clickhouse-grafana)
     -   [Prometheus](https://prometheus.io/)
-        -   [clickhouse_exporter](https://github.com/f1yegor/clickhouse_exporter)
+        -   [clickhouse\_exporter](https://github.com/f1yegor/clickhouse_exporter)
         -   [PromHouse](https://github.com/Percona-Lab/PromHouse)
-        -   [clickhouse_exporter](https://github.com/hot-wifi/clickhouse_exporter) (kullanma [Go client](https://github.com/kshvakov/clickhouse/))
+        -   [clickhouse\_exporter](https://github.com/hot-wifi/clickhouse_exporter) (kullanma [Go client](https://github.com/kshvakov/clickhouse/))
     -   [Nagios](https://www.nagios.org/)
-        -   [check_clickhouse](https://github.com/exogroup/check_clickhouse/)
-        -   [check_clickhouse.py](https://github.com/innogames/igmonplugins/blob/master/src/check_clickhouse.py)
+        -   [check\_clickhouse](https://github.com/exogroup/check_clickhouse/)
+        -   [check\_clickhouse.py](https://github.com/innogames/igmonplugins/blob/master/src/check_clickhouse.py)
     -   [Zabbix](https://www.zabbix.com)
         -   [clickhouse-zabbix-şablon](https://github.com/Altinity/clickhouse-zabbix-template)
     -   [Sematext](https://sematext.com/)
@@ -76,7 +76,7 @@ toc_title: Entegrasyonlar
 
 -   Piton
     -   [SQLAlchemy](https://www.sqlalchemy.org)
-        -   [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) (kullanma [ınfi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm))
+        -   [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) (kullanma [ınfi.clickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm))
     -   [Pandalar](https://pandas.pydata.org)
         -   [pandahouse](https://github.com/kszucs/pandahouse)
 -   PHP
@@ -91,7 +91,7 @@ toc_title: Entegrasyonlar
 -   SC scalaala
     -   [Akka](https://akka.io)
         -   [clickhouse-Scala-istemci](https://github.com/crobox/clickhouse-scala-client)
--   C#
+-   C\#
     -   [ADO.NET](https://docs.microsoft.com/en-us/dotnet/framework/data/adonet/ado-net-overview)
         -   [ClickHouse.Gürültü](https://github.com/killwort/ClickHouse-Net)
         -   [ClickHouse.Müşteri](https://github.com/DarkWanderer/ClickHouse.Client)
@@ -99,7 +99,7 @@ toc_title: Entegrasyonlar
         -   [ClickHouse. Net. Migrations](https://github.com/ilyabreev/ClickHouse.Net.Migrations)
 -   İksir
     -   [Ecto](https://github.com/elixir-ecto/ecto)
-        -   [clickhouse_ecto](https://github.com/appodeal/clickhouse_ecto)
+        -   [clickhouse\_ecto](https://github.com/appodeal/clickhouse_ecto)
 -   Ruby
     -   [Ruby on Rails](https://rubyonrails.org/)
         -   [activecube](https://github.com/bitquery/activecube)

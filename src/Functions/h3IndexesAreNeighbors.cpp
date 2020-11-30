@@ -1,9 +1,3 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
-
-#if USE_H3
-
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -20,10 +14,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
-
-namespace
-{
-
 class FunctionH3IndexesAreNeighbors : public IFunction
 {
 public:
@@ -53,10 +43,10 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const auto * col_hindex_origin = arguments[0].column.get();
-        const auto * col_hindex_dest = arguments[1].column.get();
+        const auto * col_hindex_origin = block.getByPosition(arguments[0]).column.get();
+        const auto * col_hindex_dest = block.getByPosition(arguments[1]).column.get();
 
         auto dst = ColumnVector<UInt8>::create();
         auto & dst_data = dst->getData();
@@ -72,11 +62,10 @@ public:
             dst_data[row] = res;
         }
 
-        return dst;
+        block.getByPosition(result).column = std::move(dst);
     }
 };
 
-}
 
 void registerFunctionH3IndexesAreNeighbors(FunctionFactory & factory)
 {
@@ -84,5 +73,3 @@ void registerFunctionH3IndexesAreNeighbors(FunctionFactory & factory)
 }
 
 }
-
-#endif

@@ -11,5 +11,3 @@
 #cmakedefine01 USE_SSL
 #cmakedefine01 USE_OPENCL
 #cmakedefine01 USE_LDAP
-#cmakedefine01 USE_ROCKSDB
-

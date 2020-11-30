@@ -1,8 +1,3 @@
----
-toc_priority: 50
-toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0445\u044d\u0448\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u044f"
----
-
 # Функции хэширования {#funktsii-kheshirovaniia}
 
 Функции хэширования могут использоваться для детерминированного псевдослучайного разбрасывания элементов.
@@ -317,7 +312,7 @@ SELECT metroHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:
 Имеет два параметра: ключ типа UInt64 и количество бакетов. Возвращает значение типа Int32.
 Дополнительные сведения смотрите по ссылке: [JumpConsistentHash](https://arxiv.org/pdf/1406.2294.pdf)
 
-## murmurHash2_32, murmurHash2_64 {#murmurhash2-32-murmurhash2-64}
+## murmurHash2\_32, murmurHash2\_64 {#murmurhash2-32-murmurhash2-64}
 
 Генерирует значение [MurmurHash2](https://github.com/aappleby/smhasher).
 
@@ -385,7 +380,7 @@ SELECT
 └──────────────────────┴─────────────────────┘
 ```
 
-## murmurHash3_32, murmurHash3_64 {#murmurhash3-32-murmurhash3-64}
+## murmurHash3\_32, murmurHash3\_64 {#murmurhash3-32-murmurhash3-64}
 
 Генерирует значение [MurmurHash3](https://github.com/aappleby/smhasher).
 
@@ -415,7 +410,7 @@ SELECT murmurHash3_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 └─────────────┴────────┘
 ```
 
-## murmurHash3_128 {#murmurhash3-128}
+## murmurHash3\_128 {#murmurhash3-128}
 
 Генерирует значение [MurmurHash3](https://github.com/aappleby/smhasher).
 

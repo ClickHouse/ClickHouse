@@ -2,7 +2,7 @@
 
 #include <iostream>
 
-#include <common/types.h>
+#include <Core/Types.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromOStream.h>
 
@@ -16,8 +16,7 @@ int main(int, char **)
         DB::String c = "вася пе\tтя";
         DB::String d = "'xyz\\";
 
-        std::stringstream s;    // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        s.exceptions(std::ios::failbit);
+        std::stringstream s;
 
         {
             DB::WriteBufferFromOStream out(s);

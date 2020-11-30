@@ -1,7 +1,7 @@
 #pragma once
 
 #include <string>
-#include <common/types.h>
+#include <Core/Types.h>
 
 #define UNICODE_BAR_CHAR_SIZE (strlen("█"))
 

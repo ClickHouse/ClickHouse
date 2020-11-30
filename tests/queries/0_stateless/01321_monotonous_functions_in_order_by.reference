@@ -80,13 +80,7 @@ ORDER BY number DESC
 1
 2
 0
-1
 2
-0
-1
-2
-2
-1
 0
 0
 1
@@ -132,12 +126,12 @@ FROM numbers(3)
 ORDER BY exp(number) ASC
 SELECT roundToExp2(number) AS x
 FROM numbers(3)
-ORDER BY
+ORDER BY 
     x ASC,
     toFloat32(x) ASC
 SELECT number AS x
 FROM numbers(3)
-ORDER BY
+ORDER BY 
     toFloat32(x) AS k ASC,
     toFloat64(k) ASC
 SELECT number
@@ -157,6 +151,6 @@ FROM numbers(3)
 ORDER BY exp(number) DESC
 SELECT roundToExp2(number) AS x
 FROM numbers(3)
-ORDER BY
+ORDER BY 
     x DESC,
     toFloat32(x) DESC
