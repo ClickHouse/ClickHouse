@@ -87,6 +87,7 @@ SRCS(
     New/AST/ColumnExpr.cpp
     New/AST/ColumnTypeExpr.cpp
     New/AST/CreateDatabaseQuery.cpp
+    New/AST/CreateDictionaryQuery.cpp
     New/AST/CreateLiveViewQuery.cpp
     New/AST/CreateMaterializedViewQuery.cpp
     New/AST/CreateTableQuery.cpp
@@ -111,11 +112,13 @@ SRCS(
     New/AST/SetQuery.cpp
     New/AST/SettingExpr.cpp
     New/AST/ShowCreateQuery.cpp
+    New/AST/ShowQuery.cpp
     New/AST/SystemQuery.cpp
     New/AST/TableElementExpr.cpp
     New/AST/TableExpr.cpp
     New/AST/TruncateQuery.cpp
     New/AST/UseQuery.cpp
+    New/AST/WatchQuery.cpp
     New/CharInputStream.cpp
     New/ClickHouseLexer.cpp
     New/ClickHouseParser.cpp

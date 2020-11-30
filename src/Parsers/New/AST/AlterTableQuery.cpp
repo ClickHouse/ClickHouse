@@ -26,7 +26,7 @@ ASTPtr AssignmentExpr::convertToOld() const
     auto expr = std::make_shared<ASTAssignment>();
 
     expr->column_name = get(IDENTIFIER)->convertToOld()->getColumnName();
-    expr->expression = get(EXPR)->convertToOld();
+    expr->children.push_back(get(EXPR)->convertToOld());
 
     return expr;
 }

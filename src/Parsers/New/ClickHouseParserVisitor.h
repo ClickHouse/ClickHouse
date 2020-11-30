@@ -250,9 +250,11 @@ public:
 
     virtual antlrcpp::Any visitShowCreateTableStmt(ClickHouseParser::ShowCreateTableStmtContext *context) = 0;
 
-    virtual antlrcpp::Any visitShowTablesStmt(ClickHouseParser::ShowTablesStmtContext *context) = 0;
-
     virtual antlrcpp::Any visitShowDatabasesStmt(ClickHouseParser::ShowDatabasesStmtContext *context) = 0;
+
+    virtual antlrcpp::Any visitShowDictionariesStmt(ClickHouseParser::ShowDictionariesStmtContext *context) = 0;
+
+    virtual antlrcpp::Any visitShowTablesStmt(ClickHouseParser::ShowTablesStmtContext *context) = 0;
 
     virtual antlrcpp::Any visitSystemStmt(ClickHouseParser::SystemStmtContext *context) = 0;
 

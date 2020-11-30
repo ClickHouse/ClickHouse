@@ -165,6 +165,11 @@ public:
     antlrcpp::Any visitShowCreateDictionaryStmt(ClickHouseParser::ShowCreateDictionaryStmtContext * ctx) override;
     antlrcpp::Any visitShowCreateTableStmt(ClickHouseParser::ShowCreateTableStmtContext * ctx) override;
 
+    // ShowQuery
+    antlrcpp::Any visitShowDatabasesStmt(ClickHouseParser::ShowDatabasesStmtContext * ctx) override;
+    antlrcpp::Any visitShowDictionariesStmt(ClickHouseParser::ShowDictionariesStmtContext * ctx) override;
+    antlrcpp::Any visitShowTablesStmt(ClickHouseParser::ShowTablesStmtContext * ctx) override;
+
     // SystemQuery
     antlrcpp::Any visitSystemStmt(ClickHouseParser::SystemStmtContext * ctx) override;
 
@@ -195,12 +200,6 @@ public:
 
     // WatchQuery
     antlrcpp::Any visitWatchStmt(ClickHouseParser::WatchStmtContext * ctx) override;
-
-
-    // aliases to SelectUnionQuery
-    antlrcpp::Any visitShowDatabasesStmt(ClickHouseParser::ShowDatabasesStmtContext * ctx) override;
-    antlrcpp::Any visitShowTablesStmt(ClickHouseParser::ShowTablesStmtContext * ctx) override;
-
 
     // TODO: sort methods below this comment.
 

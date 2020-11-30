@@ -29,6 +29,7 @@ set (SRCS
     AST/SetQuery.cpp
     AST/SettingExpr.cpp
     AST/ShowCreateQuery.cpp
+    AST/ShowQuery.cpp
     AST/SystemQuery.cpp
     AST/TableElementExpr.cpp
     AST/TableExpr.cpp
