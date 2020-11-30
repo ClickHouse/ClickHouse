@@ -57,6 +57,7 @@ def test_reload_zookeeper(start_cluster):
 </yandex >
 """
     node.replace_config("/etc/clickhouse-server/conf.d/zookeeper.xml", new_config)
+    node.query("SYSTEM RELOAD CONFIG")
     ## config reloads, but can still work
     assert_eq_with_retry(node, "SELECT COUNT() FROM test_table", '1000', retry_count=120, sleep_time=0.5)
 
@@ -86,6 +87,7 @@ def test_reload_zookeeper(start_cluster):
 </yandex>
 """
     node.replace_config("/etc/clickhouse-server/conf.d/zookeeper.xml", new_config)
+    node.query("SYSTEM RELOAD CONFIG")
 
     assert_eq_with_retry(node, "SELECT COUNT() FROM test_table", '1000', retry_count=120, sleep_time=0.5)
 
