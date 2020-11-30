@@ -33,7 +33,8 @@ namespace ErrorCodes
 
 namespace
 {
-    const pid_t expected_pid = getpid();
+    // Initialized in StorageSystemStackTrace's ctor and used in signalHandler.
+    pid_t expected_pid;
     const int sig = SIGRTMIN;
 
     std::atomic<int> sequence_num = 0;    /// For messages sent via pipe.
@@ -133,6 +134,7 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
 
     /// Setup signal handler.
 
+    expected_pid = getpid();
     struct sigaction sa{};
     sa.sa_sigaction = signalHandler;
     sa.sa_flags = SA_SIGINFO;
@@ -214,7 +216,11 @@ void StorageSystemStackTrace::fillData(MutableColumns & res_columns, const Conte
             res_columns[2]->insertDefault();
         }
 
-        ++sequence_num; /// FYI: For signed Integral types, arithmetic is defined to use two’s complement representation. There are no undefined results.
+        /// Signed integer overflow is undefined behavior in both C and C++. However, according to
+        /// C++ standard, Atomic signed integer arithmetic is defined to use two's complement; there
+        /// are no undefined results. See https://en.cppreference.com/w/cpp/atomic/atomic and
+        /// http://eel.is/c++draft/atomics.types.generic#atomics.types.int-8
+        ++sequence_num;
     }
 }
 
