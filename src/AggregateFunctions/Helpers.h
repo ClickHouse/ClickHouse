@@ -15,6 +15,7 @@
     M(Float32) \
     M(Float64)
 
+// No UInt128 here because of the name conflict
 #define FOR_NUMERIC_TYPES(M) \
     M(UInt8) \
     M(UInt16) \

@@ -13,6 +13,7 @@
 #include <Common/LRUCache.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Storages/IStorage_fwd.h>
 #include <atomic>
 #include <chrono>
@@ -198,6 +199,12 @@ private:
     Context * session_context = nullptr;    /// Session context or nullptr. Could be equal to this.
     Context * global_context = nullptr;     /// Global context. Could be equal to this.
 
+public:
+    // Top-level OpenTelemetry trace context for the query. Makes sense only for
+    // a query context.
+    OpenTelemetryTraceContext query_trace_context;
+
+private:
     friend class NamedSessions;
 
     using SampleBlockCache = std::unordered_map<std::string, Block>;
@@ -492,6 +499,8 @@ public:
     void reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config);
     /// Has ready or expired ZooKeeper
     bool hasZooKeeper() const;
+    /// Has ready or expired auxiliary ZooKeeper
+    bool hasAuxiliaryZooKeeper(const String & name) const;
     /// Reset current zookeeper session. Do not create a new one.
     void resetZooKeeper() const;
     // Reload Zookeeper

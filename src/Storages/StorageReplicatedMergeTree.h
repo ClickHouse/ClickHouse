@@ -107,9 +107,9 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    std::optional<UInt64> totalRows() const override;
+    std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, const Context & context) const override;
-    std::optional<UInt64> totalBytes() const override;
+    std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
 
@@ -237,13 +237,15 @@ private:
 
     zkutil::ZooKeeperPtr tryGetZooKeeper() const;
     zkutil::ZooKeeperPtr getZooKeeper() const;
-    void setZooKeeper(zkutil::ZooKeeperPtr zookeeper);
+    void setZooKeeper();
 
     /// If true, the table is offline and can not be written to it.
     std::atomic_bool is_readonly {false};
     /// If false - ZooKeeper is available, but there is no table metadata. It's safe to drop table in this case.
     bool has_metadata_in_zookeeper = true;
 
+    static constexpr auto default_zookeeper_name = "default";
+    String zookeeper_name;
     String zookeeper_path;
     String replica_name;
     String replica_path;
@@ -326,7 +328,7 @@ private:
     const size_t replicated_fetches_pool_size;
 
     template <class Func>
-    void foreachCommittedParts(const Func & func) const;
+    void foreachCommittedParts(Func && func, bool select_sequential_consistency) const;
 
     /** Creates the minimum set of nodes in ZooKeeper and create first replica.
       * Returns true if was created, false if exists.
@@ -582,7 +584,7 @@ private:
     void waitMutationToFinishOnReplicas(
         const Strings & replicas, const String & mutation_id) const;
 
-    MutationCommands getFirtsAlterMutationCommandsForPart(const DataPartPtr & part) const override;
+    MutationCommands getFirstAlterMutationCommandsForPart(const DataPartPtr & part) const override;
 
     void startBackgroundMovesIfNeeded() override;
 
