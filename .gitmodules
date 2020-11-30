@@ -157,7 +157,7 @@
 	url = https://github.com/ClickHouse-Extras/libcpuid.git
 [submodule "contrib/openldap"]
 	path = contrib/openldap
-	url = https://github.com/openldap/openldap.git
+	url = https://github.com/ClickHouse-Extras/openldap.git
 [submodule "contrib/AMQP-CPP"]
 	path = contrib/AMQP-CPP
 	url = https://github.com/ClickHouse-Extras/AMQP-CPP.git
