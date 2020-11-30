@@ -219,12 +219,14 @@ void AggregatingSortedAlgorithm::AggregatingMergedData::startGroup(const ColumnR
     for (auto & desc : def.columns_to_simple_aggregate)
         desc.createState();
 
-    /// If and only if:
-    /// - arena is required (i.e. SimpleAggregateFunction(any, String) in PK)
-    /// - arena was used since otherwise it may be too costly to increment atomic counters inside Arena.
-    ///   i.e. SELECT with SimpleAggregateFunction(String) in PK and lots of groups
-    ///   may produce ~1.5M of ArenaAllocChunks atomic increments,
-    ///   while LOCK is too costly for CPU (~10% overhead here).
+    /// Frequent Arena creation may be too costly, because we have to increment the atomic
+    /// ProfileEvents counters when creating the first Chunk -- e.g. SELECT with
+    /// SimpleAggregateFunction(String) in PK and lots of groups may produce ~1.5M of
+    /// ArenaAllocChunks atomic increments, while LOCK is too costly for CPU
+    /// (~10% overhead here).
+    /// To avoid this, reset arena if and only if:
+    /// - arena is required (i.e. SimpleAggregateFunction(any, String) in PK),
+    /// - arena was used in the previous groups.
     if (def.allocates_memory_in_arena && arena->size() > arena_size)
     {
         arena = std::make_unique<Arena>();
