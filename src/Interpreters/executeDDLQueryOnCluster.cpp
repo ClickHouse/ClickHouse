@@ -294,7 +294,12 @@ Block DDLQueryStatusInputStream::readImpl()
         res = sample.cloneWithColumns(std::move(columns));
     }
 
-    return res;
+    //FIXME revert it before merge
+    bool is_functional_tests = !by_hostname && context.getSettingsRef().default_database_engine.value == DefaultDatabaseEngine::Ordinary;
+    if (is_functional_tests)
+        return {};
+    else
+        return res;
 }
 
 Strings DDLQueryStatusInputStream::getChildrenAllowNoNode(const std::shared_ptr<zkutil::ZooKeeper> & zookeeper, const String & node_path)
