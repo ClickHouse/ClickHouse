@@ -57,6 +57,10 @@ std::shared_ptr<TSystemLog> createSystemLog(
             throw Exception("If 'engine' is specified for system table, "
                 "PARTITION BY parameters should be specified directly inside 'engine' and 'partition_by' setting doesn't make sense",
                 ErrorCodes::BAD_ARGUMENTS);
+        if (config.has(config_prefix + ".ttl"))
+            throw Exception("If 'engine' is specified for system table, "
+                            "TTL parameters should be specified directly inside 'engine' and 'ttl' setting doesn't make sense",
+                            ErrorCodes::BAD_ARGUMENTS);
         engine = config.getString(config_prefix + ".engine");
     }
     else
@@ -65,9 +69,9 @@ std::shared_ptr<TSystemLog> createSystemLog(
         engine = "ENGINE = MergeTree";
         if (!partition_by.empty())
             engine += " PARTITION BY (" + partition_by + ")";
-        int ttl = config.getInt(config_prefix + ".ttl", 0);
-        if (ttl > 0)
-            engine += " TTL event_date + INTERVAL " + toString(ttl) + " DAY DELETE ";
+        String ttl = config.getString(config_prefix + ".ttl", "");
+        if (!ttl.empty())
+            engine += " TTL " + ttl;
         engine += " ORDER BY (event_date, event_time)";
     }
 
