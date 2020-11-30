@@ -13,22 +13,22 @@ toc_title: MaterializeMySQL
 
 ``` sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
-ENGINE = MaterializeMySQL('host:port', ['database' | database], 'user', 'password')
+ENGINE = MaterializeMySQL('host:port', ['database' | database], 'user', 'password') [SETTINGS ...]
 ```
 
 **Engine Parameters**
 
--   `host:port` — MySQL server address.
+-   `host:port` — MySQL server endpoint.
 -   `database` — Remote database name.
 -   `user` — MySQL user.
 -   `password` — User password.
 
 ## Virtual columns {#virtual-columns}
 
- When working with the MaterializeMySQL database engine, [ReplacingMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md) tables are used with virtual `_sign` and `_version` columns.
+ When working with the `MaterializeMySQL` database engine, [ReplacingMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md) tables are used with virtual `_sign` and `_version` columns.
  
- - `_version` — Works as transaction counter. Type [UInt64](../../sql-reference/data-types/int-uint.md). 
- - `_sign` — Works as deletion mark. Type [Int8](../../sql-reference/data-types/int-uint.md). Possible values: 
+ - `_version` — Transaction counter. Type [UInt64](../../sql-reference/data-types/int-uint.md). 
+ - `_sign` — Deletion mark. Type [Int8](../../sql-reference/data-types/int-uint.md). Possible values: 
      - `1` — Row is not deleted, 
      - `-1` — Row is deleted.
 
@@ -55,7 +55,7 @@ All other MySQL data types are converted into [String](../../sql-reference/data-
 
 [Nullable](../../sql-reference/data-types/nullable.md) is supported.
 
-## Specifics and recommendations {#specifics-and-recommendations}
+## Specifics and Recommendations {#specifics-and-recommendations}
 
 ### DDL Queries
 
@@ -63,7 +63,7 @@ MySQL DDL queries are converted into the corresponding ClickHouse [ALTER](../../
 
 ### DML Queries
 
-MaterializeMySQL engine performs only `INSERT` and `SELECT` queries.
+`MaterializeMySQL` engine supports only `INSERT` and `SELECT` queries.
 
 MySql `DELETE` query is converted into `INSERT` with `_sign=-1`. 
 
@@ -84,7 +84,7 @@ ClickHouse has only one physical order, which is determined by `ORDER BY` clause
  **Notes**
 
  - Rows with `_sign=-1` are not deleted physically from the tables. 
- - Cascade UPDATE/DELETE queries are not supported by MaterializeMySQL engine.
+ - Cascade `UPDATE/DELETE` queries are not supported by the `MaterializeMySQL` engine.
  - Replication can be easily broken.
  - Manual operations on database and tables are forbidden.
 
