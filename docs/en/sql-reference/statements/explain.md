@@ -12,6 +12,32 @@ Syntax:
 ```sql
 EXPLAIN [AST | SYNTAX | PLAN | PIPELINE] [setting = value, ...] SELECT ... [FORMAT ...]
 ```
+
+Example:
+
+```sql
+EXPLAIN SELECT sum(number) FROM numbers(10) UNION ALL SELECT sum(number) FROM numbers(10) ORDER BY sum(number) ASC FORMAT TSV;
+```
+
+```sql
+Union
+  Expression (Projection)
+    Expression (Before ORDER BY and SELECT)
+      Aggregating
+        Expression (Before GROUP BY)
+          SettingQuotaAndLimits (Set limits and quota after reading from storage)
+            ReadFromStorage (SystemNumbers)
+  Expression (Projection)
+    MergingSorted (Merge sorted streams for ORDER BY)
+      MergeSorting (Merge sorted blocks for ORDER BY)
+        PartialSorting (Sort each block for ORDER BY)
+          Expression (Before ORDER BY and SELECT)
+            Aggregating
+              Expression (Before GROUP BY)
+                SettingQuotaAndLimits (Set limits and quota after reading from storage)
+                  ReadFromStorage (SystemNumbers)
+```
+
 ## EXPLAIN Types {#explain-types}
 
 -  `AST` — Abstract syntax tree.
@@ -22,6 +48,8 @@ EXPLAIN [AST | SYNTAX | PLAN | PIPELINE] [setting = value, ...] SELECT ... [FORM
 ### EXPLAIN AST {#explain-ast}
 
 Dump query AST.
+
+Example:
 
 ```sql
 EXPLAIN AST SELECT 1;
@@ -39,18 +67,20 @@ SelectWithUnionQuery (children 1)
 
 Return query after syntax optimisations.
 
+Example:
+
 ```sql
 EXPLAIN SYNTAX SELECT * FROM system.numbers AS a, system.numbers AS b, system.numbers AS c;
 ```
 
 ```sql
-SELECT 
+SELECT
     `--a.number` AS `a.number`,
     `--b.number` AS `b.number`,
     number AS `c.number`
-FROM 
+FROM
 (
-    SELECT 
+    SELECT
         number AS `--a.number`,
         b.number AS `--b.number`
     FROM system.numbers AS a
@@ -77,10 +107,11 @@ EXPLAIN SELECT sum(number) FROM numbers(10) GROUP BY number % 4;
 ```sql
 Union
   Expression (Projection)
-    Expression (Before ORDER BY and SELECT)
-      Aggregating
-        Expression (Before GROUP BY)
-          ReadFromStorage (Read from SystemNumbers)
+  Expression (Before ORDER BY and SELECT)
+    Aggregating
+      Expression (Before GROUP BY)
+        SettingQuotaAndLimits (Set limits and quota after reading from storage)
+          ReadFromStorage (SystemNumbers)
 ```
 
 ### EXPLAIN PIPELINE {#explain-pipeline}
@@ -99,18 +130,18 @@ EXPLAIN PIPELINE SELECT sum(number) FROM numbers_mt(100000) GROUP BY number % 4;
 
 ```sql
 (Union)
-Converting
+(Expression)
+ExpressionTransform
   (Expression)
   ExpressionTransform
-    (Expression)
-    ExpressionTransform
-      (Aggregating)
-      Resize 32 → 1
-        AggregatingTransform × 32
-          (Expression)
-          ExpressionTransform × 32
+    (Aggregating)
+    Resize 2 → 1
+      AggregatingTransform ? 2
+        (Expression)
+        ExpressionTransform ? 2
+          (SettingQuotaAndLimits)
             (ReadFromStorage)
-            NumbersMt × 32 0 → 1
+            NumbersMt ? 2 0 → 1
 ```
 
 [Оriginal article](https://clickhouse.tech/docs/en/sql-reference/statements/explain/) <!--hide-->
