@@ -63,7 +63,7 @@ SELECT
     key,
     a
 FROM test
-ORDER BY
+ORDER BY 
     key ASC,
     exp(key + a) ASC
 [0,1,2]
