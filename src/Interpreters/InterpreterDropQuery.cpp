@@ -119,7 +119,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ASTDropQuery & query, Dat
         if (query.kind == ASTDropQuery::Kind::Detach)
         {
             context.checkAccess(table->isView() ? AccessType::DROP_VIEW : AccessType::DROP_TABLE, table_id);
-            table->checkTableCanBeDetached();
             table->shutdown();
             TableExclusiveLockHolder table_lock;
             if (database->getEngineName() != "Atomic")

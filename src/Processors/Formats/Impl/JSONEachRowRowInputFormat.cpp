@@ -163,7 +163,7 @@ void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns
     }
     catch (Exception & e)
     {
-        e.addMessage("(while reading the value of key " + columnName(index) + ")");
+        e.addMessage("(while read the value of key " + columnName(index) + ")");
         throw;
     }
 }

@@ -13,7 +13,7 @@ using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
 ConfigurationPtr getConfigurationFromXMLString(const std::string & xml_data)
 {
-    std::stringstream ss(xml_data);         // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    std::stringstream ss(xml_data);
     Poco::XML::InputSource input_source{ss};
     return {new Poco::Util::XMLConfiguration{&input_source}};
 }

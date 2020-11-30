@@ -144,7 +144,6 @@ def parallel_login_with_the_same_user(self, server, timeout=200):
                 join(tasks, timeout)
 
 @TestScenario
-@Tags("custom config")
 def login_after_ldap_external_user_directory_is_removed(self, server):
     """Check that ClickHouse stops authenticating LDAP users
     after LDAP external user directory is removed.

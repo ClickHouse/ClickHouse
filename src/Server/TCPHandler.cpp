@@ -20,7 +20,6 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/InternalTextLogsQueue.h>
-#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Core/ExternalTable.h>
@@ -437,9 +436,12 @@ bool TCPHandler::readDataNext(const size_t & poll_interval, const int & receive_
         double elapsed = watch.elapsedSeconds();
         if (elapsed > receive_timeout)
         {
-            throw Exception(ErrorCodes::SOCKET_TIMEOUT,
-                            "Timeout exceeded while receiving data from client. Waited for {} seconds, timeout is {} seconds.",
-                            static_cast<size_t>(elapsed), receive_timeout);
+            std::stringstream ss;
+            ss << "Timeout exceeded while receiving data from client.";
+            ss << " Waited for " << static_cast<size_t>(elapsed) << " seconds,";
+            ss << " timeout is " << receive_timeout << " seconds.";
+
+            throw Exception(ss.str(), ErrorCodes::SOCKET_TIMEOUT);
         }
     }
 
@@ -518,8 +520,6 @@ void TCPHandler::processInsertQuery(const Settings & connection_settings)
 
 void TCPHandler::processOrdinaryQuery()
 {
-    OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
-
     /// Pull query execution result, if exists, and send it to network.
     if (state.io.in)
     {

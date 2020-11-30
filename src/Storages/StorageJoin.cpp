@@ -10,7 +10,6 @@
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/joinDispatch.h>
 #include <Interpreters/TableJoin.h>
-#include <Interpreters/castColumn.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 
@@ -103,8 +102,8 @@ HashJoinPtr StorageJoin::getJoin(std::shared_ptr<TableJoin> analyzed_join) const
 void StorageJoin::insertBlock(const Block & block) { join->addJoinedBlock(block, true); }
 
 size_t StorageJoin::getSize() const { return join->getTotalRowCount(); }
-std::optional<UInt64> StorageJoin::totalRows(const Settings &) const { return join->getTotalRowCount(); }
-std::optional<UInt64> StorageJoin::totalBytes(const Settings &) const { return join->getTotalByteCount(); }
+std::optional<UInt64> StorageJoin::totalRows() const { return join->getTotalRowCount(); }
+std::optional<UInt64> StorageJoin::totalBytes() const { return join->getTotalByteCount(); }
 
 
 void registerStorageJoin(StorageFactory & factory)
@@ -322,7 +321,7 @@ private:
     template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Maps>
     Chunk createChunk(const Maps & maps)
     {
-        MutableColumns mut_columns = restored_block.cloneEmpty().mutateColumns();
+        MutableColumns columns = restored_block.cloneEmpty().mutateColumns();
 
         size_t rows_added = 0;
 
@@ -330,7 +329,7 @@ private:
         {
 #define M(TYPE)                                           \
     case HashJoin::Type::TYPE:                                \
-        rows_added = fillColumns<KIND, STRICTNESS>(*maps.TYPE, mut_columns); \
+        rows_added = fillColumns<KIND, STRICTNESS>(*maps.TYPE, columns); \
         break;
             APPLY_FOR_JOIN_VARIANTS_LIMITED(M)
 #undef M
@@ -343,23 +342,19 @@ private:
         if (!rows_added)
             return {};
 
-        Columns columns;
-        columns.reserve(mut_columns.size());
-        for (auto & col : mut_columns)
-            columns.emplace_back(std::move(col));
-
-        /// Correct nullability and LowCardinality types
+        /// Correct nullability
         for (size_t i = 0; i < columns.size(); ++i)
         {
-            const auto & src = restored_block.getByPosition(i);
-            const auto & dst = sample_block.getByPosition(i);
+            bool src_nullable = restored_block.getByPosition(i).type->isNullable();
+            bool dst_nullable = sample_block.getByPosition(i).type->isNullable();
 
-            if (!src.type->equals(*dst.type))
+            if (src_nullable && !dst_nullable)
             {
-                auto arg = src;
-                arg.column = std::move(columns[i]);
-                columns[i] = castColumn(arg, dst.type);
+                auto & nullable_column = assert_cast<ColumnNullable &>(*columns[i]);
+                columns[i] = nullable_column.getNestedColumnPtr()->assumeMutable();
             }
+            else if (!src_nullable && dst_nullable)
+                columns[i] = makeNullable(std::move(columns[i]))->assumeMutable();
         }
 
         UInt64 num_rows = columns.at(0)->size();
@@ -456,7 +451,7 @@ private:
 Pipe StorageJoin::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & /*query_info*/,
+    const SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,

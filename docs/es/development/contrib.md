@@ -19,6 +19,7 @@ toc_title: Bibliotecas de terceros utilizadas
 | Más información    | [Licencia de 3 cláusulas BSD](https://github.com/google/googletest/blob/master/LICENSE)                                                          |
 | H3                 | [Licencia Apache 2.0](https://github.com/uber/h3/blob/master/LICENSE)                                                                            |
 | hyperscan          | [Licencia de 3 cláusulas BSD](https://github.com/intel/hyperscan/blob/master/LICENSE)                                                            |
+| libbtrie           | [Licencia BSD de 2 cláusulas](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libbtrie/LICENSE)                                     |
 | libcxxabi          | [BSD + MIT](https://github.com/ClickHouse/ClickHouse/blob/master/libs/libglibc-compatibility/libcxxabi/LICENSE.TXT)                              |
 | libdivide          | [Licencia Zlib](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libdivide/LICENSE.txt)                                              |
 | libgsasl           | [Información adicional](https://github.com/ClickHouse-Extras/libgsasl/blob/3b8948a4042e34fb00b4fb987535dc9e02e39040/LICENSE)                     |

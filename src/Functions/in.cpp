@@ -80,7 +80,7 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return null_is_skipped; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, [[maybe_unused]] size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, [[maybe_unused]] size_t input_rows_count) const override
     {
         if constexpr (ignore_set)
             return ColumnUInt8::create(input_rows_count, 0u);

@@ -72,7 +72,7 @@ def create(self):
     ]
 
     for scenario in create_scenarios:
-        Scenario(run=scenario, setup=instrument_clickhouse_server_log)
+        Scenario(run=scenario)
 
 @TestScenario
 def create_without_privilege(self, node=None):
@@ -82,7 +82,7 @@ def create_without_privilege(self, node=None):
     table0_name = f"table0_{getuid()}"
     table1_name = f"table1_{getuid()}"
     exitcode, message = errors.not_enough_privileges(name=f"{user_name}")
-    cluster = self.context.cluster_name
+    cluster = self.context.cluster
     if node is None:
         node = self.context.node
 
@@ -127,7 +127,7 @@ def create_with_privilege(self, user_name, grant_target_name, node=None):
     table1_name = f"table1_{getuid()}"
 
     exitcode, message = errors.not_enough_privileges(name=f"{user_name}")
-    cluster = self.context.cluster_name
+    cluster = self.context.cluster
 
     if node is None:
         node = self.context.node
@@ -172,7 +172,7 @@ def select(self):
     ]
 
     for scenario in select_scenarios:
-        Scenario(run=scenario, setup=instrument_clickhouse_server_log)
+        Scenario(run=scenario)
 
 @TestScenario
 def select_without_privilege(self, node=None):
@@ -183,7 +183,7 @@ def select_without_privilege(self, node=None):
     table1_name = f"table1_{getuid()}"
 
     exitcode, message = errors.not_enough_privileges(name=f"{user_name}")
-    cluster = self.context.cluster_name
+    cluster = self.context.cluster
 
     if node is None:
         node = self.context.node
@@ -239,7 +239,7 @@ def select_with_privilege(self, user_name, grant_target_name, node=None):
     table1_name = f"table1_{getuid()}"
 
     exitcode, message = errors.not_enough_privileges(name=f"{user_name}")
-    cluster = self.context.cluster_name
+    cluster = self.context.cluster
 
     if node is None:
         node = self.context.node
@@ -286,7 +286,7 @@ def insert(self):
     ]
 
     for scenario in insert_scenarios:
-        Scenario(run=scenario, setup=instrument_clickhouse_server_log)
+        Scenario(run=scenario)
 
 @TestScenario
 def insert_without_privilege(self, node=None):
@@ -297,7 +297,7 @@ def insert_without_privilege(self, node=None):
     table1_name = f"table1_{getuid()}"
 
     exitcode, message = errors.not_enough_privileges(name=f"{user_name}")
-    cluster = self.context.cluster_name
+    cluster = self.context.cluster
 
     if node is None:
         node = self.context.node
@@ -353,7 +353,7 @@ def insert_with_privilege(self, user_name, grant_target_name, node=None):
     table1_name = f"table1_{getuid()}"
 
     exitcode, message = errors.not_enough_privileges(name=f"{user_name}")
-    cluster = self.context.cluster_name
+    cluster = self.context.cluster
 
     if node is None:
         node = self.context.node
@@ -405,7 +405,7 @@ def special_cases(self):
     ]
 
     for scenario in special_case_scenarios:
-        Scenario(run=scenario, setup=instrument_clickhouse_server_log)
+        Scenario(run=scenario)
 
 @TestScenario
 def select_with_table_on_materialized_view_privilege_granted_directly_or_via_role(self, node=None):
@@ -444,7 +444,7 @@ def select_with_table_on_materialized_view(self, user_name, grant_target_name, n
     view_name = f"view_{getuid()}"
 
     exitcode, message = errors.not_enough_privileges(name=f"{user_name}")
-    cluster = self.context.cluster_name
+    cluster = self.context.cluster
 
     if node is None:
         node = self.context.node
@@ -519,7 +519,7 @@ def select_with_table_on_source_table_of_materialized_view(self, user_name, gran
     view_name = f"view_{getuid()}"
 
     exitcode, message = errors.not_enough_privileges(name=f"{user_name}")
-    cluster = self.context.cluster_name
+    cluster = self.context.cluster
 
     if node is None:
         node = self.context.node
@@ -594,7 +594,7 @@ def select_with_table_on_distributed_table(self, user_name, grant_target_name, n
     table2_name = f"table1_{getuid()}"
 
     exitcode, message = errors.not_enough_privileges(name=f"{user_name}")
-    cluster = self.context.cluster_name
+    cluster = self.context.cluster
 
     if node is None:
         node = self.context.node
@@ -663,7 +663,7 @@ def insert_with_table_on_materialized_view(self, user_name, grant_target_name, n
 
     view_name = f"view_{getuid()}"
     exitcode, message = errors.not_enough_privileges(name=f"{user_name}")
-    cluster = self.context.cluster_name
+    cluster = self.context.cluster
 
     if node is None:
         node = self.context.node
@@ -740,7 +740,7 @@ def insert_with_table_on_source_table_of_materialized_view(self, user_name, gran
 
     view_name = f"view_{getuid()}"
     exitcode, message = errors.not_enough_privileges(name=f"{user_name}")
-    cluster = self.context.cluster_name
+    cluster = self.context.cluster
 
     if node is None:
         node = self.context.node
@@ -815,7 +815,7 @@ def insert_with_table_on_distributed_table(self, user_name, grant_target_name, n
     table2_name = f"table1_{getuid()}"
 
     exitcode, message = errors.not_enough_privileges(name=f"{user_name}")
-    cluster = self.context.cluster_name
+    cluster = self.context.cluster
 
     if node is None:
         node = self.context.node
@@ -967,7 +967,7 @@ def multiple_node_user(self, node=None):
 def cluster_tests(self, cluster, node=None):
     """Scenarios to be run on different cluster configurations.
     """
-    self.context.cluster_name = cluster
+    self.context.cluster = cluster
 
     tasks = []
     pool = Pool(3)
@@ -989,7 +989,7 @@ def feature(self, node="clickhouse1"):
     self.context.node3 = self.context.cluster.node("clickhouse3")
 
     tasks = []
-    pool = Pool(3)
+    pool = Pool(5)
 
     try:
         run_scenario(pool, tasks, Feature(test=cluster_tests))

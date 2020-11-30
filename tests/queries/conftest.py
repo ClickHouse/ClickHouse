@@ -36,11 +36,6 @@ def sql_query(request):
     return os.path.join(QUERIES_PATH, os.path.splitext(request.param)[0])
 
 
-@pytest.fixture(scope='module', params=[f for f in os.listdir(QUERIES_PATH) if f.endswith('.sh')])
-def shell_query(request):
-    return os.path.join(QUERIES_PATH, os.path.splitext(request.param)[0])
-
-
 @pytest.fixture
 def standalone_server(bin_prefix, tmp_path):
     server = ServerThread(bin_prefix, str(tmp_path))

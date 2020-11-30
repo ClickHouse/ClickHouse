@@ -61,7 +61,7 @@ public:
         throw Exception("Prediction is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    virtual ~IAggregateFunction() = default;
+    virtual ~IAggregateFunction() {}
 
     /** Data manipulating functions. */
 
@@ -114,7 +114,7 @@ public:
     virtual void predictValues(
         ConstAggregateDataPtr /* place */,
         IColumn & /*to*/,
-        const ColumnsWithTypeAndName & /*arguments*/,
+        ColumnsWithTypeAndName & /*arguments*/,
         size_t /*offset*/,
         size_t /*limit*/,
         const Context & /*context*/) const

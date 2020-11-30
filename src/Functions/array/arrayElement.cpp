@@ -46,40 +46,40 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
 private:
-    ColumnPtr perform(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
+    ColumnPtr perform(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
                       ArrayImpl::NullMapBuilder & builder, size_t input_rows_count) const;
 
     template <typename DataType>
-    static ColumnPtr executeNumberConst(const ColumnsWithTypeAndName & arguments, const Field & index, ArrayImpl::NullMapBuilder & builder);
+    static ColumnPtr executeNumberConst(ColumnsWithTypeAndName & arguments, const Field & index, ArrayImpl::NullMapBuilder & builder);
 
     template <typename IndexType, typename DataType>
-    static ColumnPtr executeNumber(const ColumnsWithTypeAndName & arguments, const PaddedPODArray<IndexType> & indices, ArrayImpl::NullMapBuilder & builder);
+    static ColumnPtr executeNumber(ColumnsWithTypeAndName & arguments, const PaddedPODArray<IndexType> & indices, ArrayImpl::NullMapBuilder & builder);
 
-    static ColumnPtr executeStringConst(const ColumnsWithTypeAndName & arguments, const Field & index, ArrayImpl::NullMapBuilder & builder);
-
-    template <typename IndexType>
-    static ColumnPtr executeString(const ColumnsWithTypeAndName & arguments, const PaddedPODArray<IndexType> & indices, ArrayImpl::NullMapBuilder & builder);
-
-    static ColumnPtr executeGenericConst(const ColumnsWithTypeAndName & arguments, const Field & index, ArrayImpl::NullMapBuilder & builder);
+    static ColumnPtr executeStringConst(ColumnsWithTypeAndName & arguments, const Field & index, ArrayImpl::NullMapBuilder & builder);
 
     template <typename IndexType>
-    static ColumnPtr executeGeneric(const ColumnsWithTypeAndName & arguments, const PaddedPODArray<IndexType> & indices, ArrayImpl::NullMapBuilder & builder);
+    static ColumnPtr executeString(ColumnsWithTypeAndName & arguments, const PaddedPODArray<IndexType> & indices, ArrayImpl::NullMapBuilder & builder);
+
+    static ColumnPtr executeGenericConst(ColumnsWithTypeAndName & arguments, const Field & index, ArrayImpl::NullMapBuilder & builder);
 
     template <typename IndexType>
-    static ColumnPtr executeConst(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
+    static ColumnPtr executeGeneric(ColumnsWithTypeAndName & arguments, const PaddedPODArray<IndexType> & indices, ArrayImpl::NullMapBuilder & builder);
+
+    template <typename IndexType>
+    static ColumnPtr executeConst(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
                                   const PaddedPODArray <IndexType> & indices, ArrayImpl::NullMapBuilder & builder,
                                   size_t input_rows_count);
 
     template <typename IndexType>
-    ColumnPtr executeArgument(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
+    ColumnPtr executeArgument(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
                               ArrayImpl::NullMapBuilder & builder, size_t input_rows_count) const;
 
     /** For a tuple array, the function is evaluated component-wise for each element of the tuple.
       */
-    ColumnPtr executeTuple(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const;
+    ColumnPtr executeTuple(ColumnsWithTypeAndName & arguments, size_t input_rows_count) const;
 };
 
 
@@ -421,7 +421,7 @@ FunctionPtr FunctionArrayElement::create(const Context &)
 
 template <typename DataType>
 ColumnPtr FunctionArrayElement::executeNumberConst(
-    const ColumnsWithTypeAndName & arguments, const Field & index, ArrayImpl::NullMapBuilder & builder)
+    ColumnsWithTypeAndName & arguments, const Field & index, ArrayImpl::NullMapBuilder & builder)
 {
     const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
 
@@ -449,7 +449,7 @@ ColumnPtr FunctionArrayElement::executeNumberConst(
 
 template <typename IndexType, typename DataType>
 ColumnPtr FunctionArrayElement::executeNumber(
-    const ColumnsWithTypeAndName & arguments, const PaddedPODArray<IndexType> & indices, ArrayImpl::NullMapBuilder & builder)
+    ColumnsWithTypeAndName & arguments, const PaddedPODArray<IndexType> & indices, ArrayImpl::NullMapBuilder & builder)
 {
     const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
 
@@ -469,8 +469,7 @@ ColumnPtr FunctionArrayElement::executeNumber(
     return col_res;
 }
 
-ColumnPtr
-FunctionArrayElement::executeStringConst(const ColumnsWithTypeAndName & arguments, const Field & index, ArrayImpl::NullMapBuilder & builder)
+ColumnPtr FunctionArrayElement::executeStringConst(ColumnsWithTypeAndName & arguments, const Field & index, ArrayImpl::NullMapBuilder & builder)
 {
     const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
 
@@ -509,8 +508,7 @@ FunctionArrayElement::executeStringConst(const ColumnsWithTypeAndName & argument
 }
 
 template <typename IndexType>
-ColumnPtr FunctionArrayElement::executeString(
-    const ColumnsWithTypeAndName & arguments, const PaddedPODArray<IndexType> & indices, ArrayImpl::NullMapBuilder & builder)
+ColumnPtr FunctionArrayElement::executeString(ColumnsWithTypeAndName & arguments, const PaddedPODArray<IndexType> & indices, ArrayImpl::NullMapBuilder & builder)
 {
     const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
 
@@ -536,8 +534,7 @@ ColumnPtr FunctionArrayElement::executeString(
     return col_res;
 }
 
-ColumnPtr FunctionArrayElement::executeGenericConst(
-    const ColumnsWithTypeAndName & arguments, const Field & index, ArrayImpl::NullMapBuilder & builder)
+ColumnPtr FunctionArrayElement::executeGenericConst(ColumnsWithTypeAndName & arguments, const Field & index, ArrayImpl::NullMapBuilder & builder)
 {
     const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
 
@@ -560,8 +557,7 @@ ColumnPtr FunctionArrayElement::executeGenericConst(
 }
 
 template <typename IndexType>
-ColumnPtr FunctionArrayElement::executeGeneric(
-    const ColumnsWithTypeAndName & arguments, const PaddedPODArray<IndexType> & indices, ArrayImpl::NullMapBuilder & builder)
+ColumnPtr FunctionArrayElement::executeGeneric(ColumnsWithTypeAndName & arguments, const PaddedPODArray<IndexType> & indices, ArrayImpl::NullMapBuilder & builder)
 {
     const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
 
@@ -578,7 +574,7 @@ ColumnPtr FunctionArrayElement::executeGeneric(
 }
 
 template <typename IndexType>
-ColumnPtr FunctionArrayElement::executeConst(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
+ColumnPtr FunctionArrayElement::executeConst(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
                                         const PaddedPODArray <IndexType> & indices, ArrayImpl::NullMapBuilder & builder,
                                         size_t input_rows_count)
 {
@@ -623,7 +619,7 @@ ColumnPtr FunctionArrayElement::executeConst(const ColumnsWithTypeAndName & argu
 
 template <typename IndexType>
 ColumnPtr FunctionArrayElement::executeArgument(
-    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, ArrayImpl::NullMapBuilder & builder, size_t input_rows_count) const
+    ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, ArrayImpl::NullMapBuilder & builder, size_t input_rows_count) const
 {
     auto index = checkAndGetColumn<ColumnVector<IndexType>>(arguments[1].column.get());
 
@@ -655,7 +651,7 @@ ColumnPtr FunctionArrayElement::executeArgument(
     return res;
 }
 
-ColumnPtr FunctionArrayElement::executeTuple(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+ColumnPtr FunctionArrayElement::executeTuple(ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
 {
     const ColumnArray * col_array = typeid_cast<const ColumnArray *>(arguments[0].column.get());
 
@@ -729,7 +725,7 @@ DataTypePtr FunctionArrayElement::getReturnTypeImpl(const DataTypes & arguments)
     return array_type->getNestedType();
 }
 
-ColumnPtr FunctionArrayElement::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+ColumnPtr FunctionArrayElement::executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
     /// Check nullability.
     bool is_array_of_nullable = false;
@@ -810,7 +806,7 @@ ColumnPtr FunctionArrayElement::executeImpl(const ColumnsWithTypeAndName & argum
     }
 }
 
-ColumnPtr FunctionArrayElement::perform(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
+ColumnPtr FunctionArrayElement::perform(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
                                    ArrayImpl::NullMapBuilder & builder, size_t input_rows_count) const
 {
     ColumnPtr res;

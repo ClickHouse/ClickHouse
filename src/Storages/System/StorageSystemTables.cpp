@@ -429,7 +429,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     assert(table != nullptr);
-                    auto total_rows = table->totalRows(context.getSettingsRef());
+                    auto total_rows = table->totalRows();
                     if (total_rows)
                         res_columns[res_index++]->insert(*total_rows);
                     else
@@ -439,7 +439,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     assert(table != nullptr);
-                    auto total_bytes = table->totalBytes(context.getSettingsRef());
+                    auto total_bytes = table->totalBytes();
                     if (total_bytes)
                         res_columns[res_index++]->insert(*total_bytes);
                     else
@@ -487,7 +487,7 @@ private:
 Pipe StorageSystemTables::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & query_info,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,

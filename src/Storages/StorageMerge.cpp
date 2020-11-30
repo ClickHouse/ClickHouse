@@ -5,7 +5,6 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/AlterCommands.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -26,7 +25,7 @@
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/Transforms/AddingConstColumnTransform.h>
-#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/ConvertingTransform.h>
 
 
 namespace DB
@@ -77,7 +76,7 @@ StorageMerge::StorageMerge(
     : IStorage(table_id_)
     , source_database(source_database_)
     , table_name_regexp(table_name_regexp_)
-    , global_context(context_.getGlobalContext())
+    , global_context(context_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -133,20 +132,8 @@ bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, cons
 }
 
 
-QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, SelectQueryInfo & query_info) const
+QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, const ASTPtr & query_ptr) const
 {
-    ASTPtr modified_query = query_info.query->clone();
-    auto & modified_select = modified_query->as<ASTSelectQuery &>();
-    /// In case of JOIN the first stage (which includes JOIN)
-    /// should be done on the initiator always.
-    ///
-    /// Since in case of JOIN query on shards will receive query w/o JOIN (and their columns).
-    /// (see modifySelect()/removeJoin())
-    ///
-    /// And for this we need to return FetchColumns.
-    if (removeJoin(modified_select))
-        return QueryProcessingStage::FetchColumns;
-
     auto stage_in_source_tables = QueryProcessingStage::FetchColumns;
 
     DatabaseTablesIteratorPtr iterator = getDatabaseIterator(context);
@@ -159,7 +146,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context &
         if (table && table.get() != this)
         {
             ++selected_table_size;
-            stage_in_source_tables = std::max(stage_in_source_tables, table->getQueryProcessingStage(context, to_stage, query_info));
+            stage_in_source_tables = std::max(stage_in_source_tables, table->getQueryProcessingStage(context, to_stage, query_ptr));
         }
 
         iterator->next();
@@ -172,7 +159,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context &
 Pipe StorageMerge::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & query_info,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
@@ -272,7 +259,7 @@ Pipe StorageMerge::read(
 
 Pipe StorageMerge::createSources(
     const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & query_info,
+    const SelectQueryInfo & query_info,
     const QueryProcessingStage::Enum & processed_stage,
     const UInt64 max_block_size,
     const Block & header,
@@ -306,7 +293,7 @@ Pipe StorageMerge::createSources(
         return pipe;
     }
 
-    auto storage_stage = storage->getQueryProcessingStage(*modified_context, QueryProcessingStage::Complete, modified_query_info);
+    auto storage_stage = storage->getQueryProcessingStage(*modified_context, QueryProcessingStage::Complete, modified_query_info.query);
     if (processed_stage <= storage_stage)
     {
         /// If there are only virtual columns in query, you must request at least one other column.
@@ -345,13 +332,10 @@ Pipe StorageMerge::createSources(
 
         if (has_table_virtual_column)
         {
-            ColumnWithTypeAndName column;
-            column.name = "_table";
-            column.type = std::make_shared<DataTypeString>();
-            column.column = column.type->createColumnConst(0, Field(table_name));
-            pipe.addSimpleTransform([&](const Block & stream_header)
+            pipe.addSimpleTransform([name = table_name](const Block & stream_header)
             {
-                return std::make_shared<AddingConstColumnTransform>(stream_header, column);
+                return std::make_shared<AddingConstColumnTransform<String>>(
+                        stream_header, std::make_shared<DataTypeString>(), name, "_table");
             });
         }
 
@@ -469,16 +453,9 @@ void StorageMerge::convertingSourceStream(
     QueryProcessingStage::Enum processed_stage)
 {
     Block before_block_header = pipe.getHeader();
-
-    auto convert_actions_dag = ActionsDAG::makeConvertingActions(
-            pipe.getHeader().getColumnsWithTypeAndName(),
-            header.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Name);
-    auto convert_actions = std::make_shared<ExpressionActions>(convert_actions_dag);
-
     pipe.addSimpleTransform([&](const Block & stream_header)
     {
-        return std::make_shared<ExpressionTransform>(stream_header, convert_actions);
+        return std::make_shared<ConvertingTransform>(stream_header, header, ConvertingTransform::MatchColumnsMode::Name);
     });
 
     auto where_expression = query->as<ASTSelectQuery>()->where();
