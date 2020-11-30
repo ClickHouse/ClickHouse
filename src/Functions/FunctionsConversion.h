@@ -117,7 +117,7 @@ struct ConvertImpl
         if (std::is_same_v<Name, NameToUnixTimestamp>)
         {
             if (isDate(named_from.type))
-                throw Exception("Illegal column " + named_from.column->getName() + " of first argument of function " + Name::name,
+                throw Exception("Illegal type " + named_from.type->getName() + " of first argument of function " + Name::name,
                     ErrorCodes::ILLEGAL_COLUMN);
         }
 

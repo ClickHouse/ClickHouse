@@ -655,6 +655,11 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
                 {
                     LOG_DEBUG(log, "Removing killed mutation {} from local state.", entry.znode_name);
                     some_active_mutations_were_killed = true;
+                    if (entry.isAlterMutation())
+                    {
+                        LOG_DEBUG(log, "Removed alter {} because mutation {} were killed.", entry.alter_version, entry.znode_name);
+                        alter_sequence.finishDataAlter(entry.alter_version, state_lock);
+                    }
                 }
                 else
                     LOG_DEBUG(log, "Removing obsolete mutation {} from local state.", entry.znode_name);
