@@ -233,6 +233,46 @@ ALTER TABLE hits MOVE PART '20190301_14343_16206_438' TO VOLUME 'slow'
 ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
 ```
 
+## UPDATE IN PARTITION {#update-in-partition}
+
+Allows to manipulate data in the specifies partition matching the specified filtering expression. Implemented as a [mutation](../../../sql-reference/statements/alter/index.md#mutations).
+
+Syntax:
+
+``` sql
+ALTER TABLE [db.]table UPDATE column1 = expr1 [, ...] [IN PARTITION partition_id] WHERE filter_expr
+```
+
+### Example
+
+``` sql
+ALTER TABLE mt UPDATE x = x + 1 IN PARTITION 2 WHERE p = 2;
+```
+
+### See Also
+
+-   [UPDATE](../../../sql-reference/statements/alter/update.md#alter-table-update-statements)
+
+## DELETE IN PARTITION {#delete-in-partition}
+
+Allows to delete data in the specifies partition matching the specified filtering expression. Implemented as a [mutation](../../../sql-reference/statements/alter/index.md#mutations).
+
+Syntax:
+
+``` sql
+ALTER TABLE [db.]table DELETE [IN PARTITION partition_id] WHERE filter_expr
+```
+
+### Example
+
+``` sql
+ALTER TABLE mt DELETE IN PARTITION 2 WHERE p = 2;
+```
+
+### See Also
+
+-   [DELETE](../../../sql-reference/statements/alter/delete.md#alter-mutations)
+
 ## How to Set Partition Expression {#alter-how-to-specify-part-expr}
 
 You can specify the partition expression in `ALTER ... PARTITION` queries in different ways:
@@ -250,28 +290,6 @@ All the rules above are also true for the [OPTIMIZE](../../../sql-reference/stat
 OPTIMIZE TABLE table_not_partitioned PARTITION tuple() FINAL;
 ```
 
-## UPDATE\|DELETE IN PARTITION {#update-delete-in-partition}
-
-``` sql
-ALTER TABLE table_name UPDATE update_expr [IN PARTITION partition_id] WHERE where_expr
-```
-
-``` sql
-ALTER TABLE table_name DELETE [IN PARTITION partition_id] WHERE where_expr
-```
-
-`IN PARTITION` specifies the partition to which the [UPDATE](../../../sql-reference/statements/alter/update.md#alter-table-update-statements) or [DELETE](../../../sql-reference/statements/alter/delete.md#alter-mutations) expressions will be applied as a result of the query `ALTER TABLE`. New parts will be created only from the specified partition.
-
-In this way, `IN PARTITION` helps reduce the load when the table is divided into many partitions, and you only need to update the data point-by-point.
-
-Examples:
-
-``` sql
-ALTER TABLE mt UPDATE x = x + 1 IN PARTITION 2 WHERE p = 2;
-```
-
-``` sql
-ALTER TABLE mt DELETE IN PARTITION 2 WHERE p = 2;
-```
+`IN PARTITION` specifies the partition to which the [UPDATE](../../../sql-reference/statements/alter/update.md#alter-table-update-statements) or [DELETE](../../../sql-reference/statements/alter/delete.md#alter-mutations) expressions will be applied as a result of the query `ALTER TABLE`. New parts will be created only from the specified partition. In this way, `IN PARTITION` helps reduce the load when the table is divided into many partitions, and you only need to update the data point-by-point.
 
 The examples of `ALTER ... PARTITION` queries are demonstrated in the tests [`00502_custom_partitioning_local`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00502_custom_partitioning_local.sql) and [`00502_custom_partitioning_replicated_zookeeper`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00502_custom_partitioning_replicated_zookeeper.sql).
