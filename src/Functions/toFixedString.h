@@ -111,7 +111,7 @@ public:
             if constexpr (exception_mode == ConvertToFixedStringExceptionMode::Null)
                 return ColumnNullable::create(std::move(column_fixed), std::move(col_null_map_to));
             else
-                return column_fixed;;
+                return column_fixed;
         }
         else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
