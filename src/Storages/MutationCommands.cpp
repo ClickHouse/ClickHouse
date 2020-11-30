@@ -47,7 +47,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         for (const ASTPtr & assignment_ast : command->update_assignments->children)
         {
             const auto & assignment = assignment_ast->as<ASTAssignment &>();
-            auto insertion = res.column_to_update_expression.emplace(assignment.column_name, assignment.expression);
+            auto insertion = res.column_to_update_expression.emplace(assignment.column_name, assignment.expression());
             if (!insertion.second)
                 throw Exception("Multiple assignments in the single statement to column " + backQuote(assignment.column_name),
                     ErrorCodes::MULTIPLE_ASSIGNMENTS_TO_COLUMN);
