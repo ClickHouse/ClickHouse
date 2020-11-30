@@ -139,11 +139,6 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     analyzeAggregation();
 }
 
-bool ExpressionAnalyzer::isRemoteStorage() const
-{
-    return storage() && storage()->isRemote();
-}
-
 
 void ExpressionAnalyzer::analyzeAggregation()
 {
