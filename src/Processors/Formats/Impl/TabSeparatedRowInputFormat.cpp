@@ -423,10 +423,11 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
     }
 }
 
-static bool fileSegmentationEngineTabSeparatedImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
+static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
 {
     bool need_more_data = true;
     char * pos = in.position();
+    size_t number_of_rows = 0;
 
     while (loadAtPosition(in, memory, pos) && need_more_data)
     {
@@ -443,6 +444,9 @@ static bool fileSegmentationEngineTabSeparatedImpl(ReadBuffer & in, DB::Memory<>
         }
         else if (*pos == '\n' || *pos == '\r')
         {
+            if (*pos == '\n')
+                ++number_of_rows;
+
             if (memory.size() + static_cast<size_t>(pos - in.position()) >= min_chunk_size)
                 need_more_data = false;
             ++pos;
@@ -451,7 +455,7 @@ static bool fileSegmentationEngineTabSeparatedImpl(ReadBuffer & in, DB::Memory<>
 
     saveUpToPosition(in, memory, pos);
 
-    return loadAtPosition(in, memory, pos);
+    return {loadAtPosition(in, memory, pos), number_of_rows};
 }
 
 void registerFileSegmentationEngineTabSeparated(FormatFactory & factory)
