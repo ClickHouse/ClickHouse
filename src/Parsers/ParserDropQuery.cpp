@@ -21,6 +21,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, bool
     ParserToken s_dot(TokenType::Dot);
     ParserKeyword s_if_exists("IF EXISTS");
     ParserIdentifier name_p;
+    ParserKeyword s_permanently("PERMANENTLY");
     ParserKeyword s_no_delay("NO DELAY");
     ParserKeyword s_sync("SYNC");
 
@@ -32,6 +33,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, bool
     bool is_dictionary = false;
     bool is_view = false;
     bool no_delay = false;
+    bool permanently = false;
 
     if (s_database.ignore(pos, expected))
     {
@@ -83,6 +85,9 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, bool
                 return false;
         }
 
+        if (s_permanently.ignore(pos, expected))
+            permanently = true;
+
         if (s_no_delay.ignore(pos, expected) || s_sync.ignore(pos, expected))
             no_delay = true;
     }
@@ -96,6 +101,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, bool
     query->is_dictionary = is_dictionary;
     query->is_view = is_view;
     query->no_delay = no_delay;
+    query->permanently = permanently;
 
     tryGetIdentifierNameInto(database, query->database);
     tryGetIdentifierNameInto(table, query->table);

@@ -170,14 +170,19 @@ void DatabaseOnDisk::createTable(
     if (isTableExist(table_name, global_context))
         throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 
-    if (create.attach_short_syntax)
+    String table_metadata_path = getObjectMetadataPath(table_name);
+
+    if (create.attach_short_syntax && Poco::File(table_metadata_path).exists())
     {
-        /// Metadata already exists, table was detached
+        /// Metadata already exists, table was detached (not permanently)
         attachTable(table_name, table, getTableDataPath(create));
         return;
+
+        /// if the table was detached permanently, then usual metadata file doesn't exists
+        /// (.sql_detached instead) and we use longer, but safer way of attaching that back
+        /// with recreating the metadata file.
     }
 
-    String table_metadata_path = getObjectMetadataPath(table_name);
     String table_metadata_tmp_path = table_metadata_path + create_suffix;
     String statement;
 
@@ -213,7 +218,46 @@ void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const Stora
         Poco::File(table_metadata_tmp_path).remove();
         throw;
     }
+
+    try
+    {
+        /// If the table was detached permanently we will have a file with
+        /// .sql_detached suffix, which is not needed anymore since we attached the table back
+        auto table_metadata_file_detached = Poco::File(table_metadata_path + detached_suffix);
+        if (table_metadata_file_detached.exists())
+            table_metadata_file_detached.remove();
+    }
+    catch (...)
+    {
+        // It's not a big issue if we can't remove the .sql_detached file.
+        LOG_WARNING(log, getCurrentExceptionMessage(__PRETTY_FUNCTION__));
+    }
 }
+
+void DatabaseOnDisk::detachTablePermanently(const String & table_name)
+{
+    StoragePtr table = detachTable(table_name);
+
+    /// This is possible for Lazy database.
+    if (!table)
+        return;
+
+    String table_metadata_path = getObjectMetadataPath(table_name);
+    String table_metadata_path_detached = table_metadata_path + detached_suffix;
+
+    try
+    {
+        /// it will silently overwrite the file if exists, and it's ok
+        Poco::File(table_metadata_path).renameTo(table_metadata_path_detached);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while trying to detach table {} permanently.", table_name);
+        throw;
+    }
+
+}
+
 
 void DatabaseOnDisk::dropTable(const Context & context, const String & table_name, bool /*no_delay*/)
 {
@@ -328,14 +372,22 @@ void DatabaseOnDisk::renameTable(
     }
 }
 
+
+/// It returns create table statement (even if table is detached permanently)
 ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const String & table_name, const Context &, bool throw_on_error) const
 {
     ASTPtr ast;
     bool has_table = tryGetTable(table_name, global_context) != nullptr;
     auto table_metadata_path = getObjectMetadataPath(table_name);
+
     try
     {
-        ast = getCreateQueryFromMetadata(table_metadata_path, throw_on_error);
+        if (Poco::File(table_metadata_path).exists())
+            ast = getCreateQueryFromMetadata(table_metadata_path, throw_on_error);
+        else if (Poco::File(table_metadata_path + detached_suffix).exists())
+            ast = getCreateQueryFromMetadata(table_metadata_path + detached_suffix, throw_on_error);
+        else if (throw_on_error)
+            throw Exception("Metadata file does not exist", ErrorCodes::FILE_DOESNT_EXIST);
     }
     catch (const Exception & e)
     {
@@ -430,6 +482,10 @@ void DatabaseOnDisk::iterateMetadataFiles(const Context & context, const Iterati
         if (endsWith(dir_it.name(), ".sql.bak"))
             continue;
 
+        /// Permanently detached tables are not attached automatically
+        if (endsWith(dir_it.name(), ".sql_detached"))
+            continue;
+
         static const char * tmp_drop_ext = ".sql.tmp_drop";
         if (endsWith(dir_it.name(), tmp_drop_ext))
         {
@@ -510,6 +566,8 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(Poco::Logger * logger, const Conte
     auto & create = ast->as<ASTCreateQuery &>();
     if (!create.table.empty() && create.uuid != UUIDHelpers::Nil)
     {
+        /// if the table is detached permanently getBaseName will still return a proper name
+        /// because we use table_name.sql_detached naming
         String table_name = Poco::Path(metadata_file_path).makeFile().getBaseName();
         table_name = unescapeForFileName(table_name);
 
