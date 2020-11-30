@@ -36,7 +36,6 @@ public:
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
 
     void drop() override;
-    void dropInnerTable(bool no_delay);
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &) override;
 
@@ -52,7 +51,7 @@ public:
 
     void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const override;
 
-    Pipe alterPartition(const StorageMetadataPtr & metadata_snapshot, const PartitionCommands & commands, const Context & context) override;
+    Pipe alterPartition(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, const PartitionCommands & commands, const Context & context) override;
 
     void checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const override;
 
@@ -65,7 +64,7 @@ public:
     void checkTableCanBeDropped() const override;
     void checkPartitionCanBeDropped(const ASTPtr & partition) override;
 
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const override;
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, const ASTPtr &) const override;
 
     StoragePtr getTargetTable() const;
     StoragePtr tryGetTargetTable() const;
@@ -75,17 +74,7 @@ public:
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        SelectQueryInfo & query_info,
-        const Context & context,
-        QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size,
-        unsigned num_streams) override;
-
-    void read(
-        QueryPlan & query_plan,
-        const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
-        SelectQueryInfo & query_info,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,

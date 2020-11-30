@@ -209,10 +209,10 @@ Verilen kutunun içine giren ve verilen kutunun sınırlarını kesişen, temel 
 
 **Giriş değerleri**
 
--   longitude_min - min boylam, aralıkta kayan değer `[-180°, 180°]`
--   latitude_min - min enlem, aralıkta kayan değer `[-90°, 90°]`
--   longitude_max-maksimum boylam, aralıkta kayan değer `[-180°, 180°]`
--   latitude_max-maksimum enlem, aralıkta kayan değer `[-90°, 90°]`
+-   longitude\_min - min boylam, aralıkta kayan değer `[-180°, 180°]`
+-   latitude\_min - min enlem, aralıkta kayan değer `[-90°, 90°]`
+-   longitude\_max-maksimum boylam, aralıkta kayan değer `[-180°, 180°]`
+-   latitude\_max-maksimum enlem, aralıkta kayan değer `[-90°, 90°]`
 -   hassas-geohash hassas, `UInt8` Aralık inta `[1, 12]`
 
 Lütfen tüm koordinat parametrelerinin aynı tipte olması gerektiğini unutmayın: `Float32` veya `Float64`.

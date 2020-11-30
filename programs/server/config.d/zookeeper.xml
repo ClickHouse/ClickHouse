@@ -1,1 +1,5 @@
-../../../tests/config/config.d/zookeeper.xml
+<yandex>
+    <zookeeper>
+        <implementation>testkeeper</implementation>
+    </zookeeper>
+</yandex>

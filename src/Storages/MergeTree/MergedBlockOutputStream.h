@@ -46,7 +46,6 @@ public:
     /// Finilize writing part and fill inner structures
     void writeSuffixAndFinalizePart(
             MergeTreeData::MutableDataPartPtr & new_part,
-            bool sync = false,
             const NamesAndTypesList * total_columns_list = nullptr,
             MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
 
@@ -59,8 +58,7 @@ private:
     void finalizePartOnDisk(
             const MergeTreeData::MutableDataPartPtr & new_part,
             NamesAndTypesList & part_columns,
-            MergeTreeData::DataPart::Checksums & checksums,
-            bool sync);
+            MergeTreeData::DataPart::Checksums & checksums);
 
 private:
     NamesAndTypesList columns_list;

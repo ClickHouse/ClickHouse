@@ -205,7 +205,7 @@ bool Set::insertFromBlock(const Block & block)
     {
         for (size_t i = 0; i < keys_size; ++i)
         {
-            auto filtered_column = key_columns[i]->filter(filter->getData(), rows);
+            auto filtered_column = block.getByPosition(i).column->filter(filter->getData(), rows);
             if (set_elements[i]->empty())
                 set_elements[i] = filtered_column;
             else
@@ -342,9 +342,10 @@ void Set::checkColumnsNumber(size_t num_key_columns) const
 {
     if (data_types.size() != num_key_columns)
     {
-        throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH,
-                        "Number of columns in section IN doesn't match. {} at left, {} at right.",
-                        num_key_columns, data_types.size());
+        std::stringstream message;
+        message << "Number of columns in section IN doesn't match. "
+                << num_key_columns << " at left, " << data_types.size() << " at right.";
+        throw Exception(message.str(), ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
     }
 }
 

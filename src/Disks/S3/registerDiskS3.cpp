@@ -1,10 +1,10 @@
-#include <aws/core/client/DefaultRetryStrategy.h>
 #include <IO/ReadHelpers.h>
 #include <IO/S3Common.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include "DiskS3.h"
 #include "Disks/DiskCacheWrapper.h"
+#include "Disks/DiskCacheWrapper.cpp"
 #include "Disks/DiskFactory.h"
 #include "ProxyConfiguration.h"
 #include "ProxyListConfiguration.h"
@@ -124,16 +124,12 @@ void registerDiskS3(DiskFactory & factory)
         if (proxy_config)
             cfg.perRequestConfiguration = [proxy_config](const auto & request) { return proxy_config->getConfiguration(request); };
 
-        cfg.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(
-            config.getUInt(config_prefix + ".retry_attempts", 10));
-
         auto client = S3::ClientFactory::instance().create(
             cfg,
             uri.is_virtual_hosted_style,
             config.getString(config_prefix + ".access_key_id", ""),
             config.getString(config_prefix + ".secret_access_key", ""),
-            context.getRemoteHostFilter(),
-            context.getGlobalContext().getSettingsRef().s3_max_redirects);
+            context.getRemoteHostFilter());
 
         String metadata_path = config.getString(config_prefix + ".metadata_path", context.getPath() + "disks/" + name + "/");
 
@@ -149,12 +145,9 @@ void registerDiskS3(DiskFactory & factory)
             config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024));
 
         /// This code is used only to check access to the corresponding disk.
-        if (!config.getBool(config_prefix + ".skip_access_check", false))
-        {
-            checkWriteAccess(*s3disk);
-            checkReadAccess(name, *s3disk);
-            checkRemoveAccess(*s3disk);
-        }
+        checkWriteAccess(*s3disk);
+        checkReadAccess(name, *s3disk);
+        checkRemoveAccess(*s3disk);
 
         bool cache_enabled = config.getBool(config_prefix + ".cache_enabled", true);
 

@@ -18,7 +18,7 @@ system reload dictionary db_01527_ranges.dict;
 select _shard_num from dist_01527 where key=0;
 select _shard_num from dist_01527 where key=1;
 
-drop table db_01527_ranges.data sync;
+drop table db_01527_ranges.data;
 create table db_01527_ranges.data engine=Memory() as select number key, number+1 shard from numbers(100);
 system reload dictionary db_01527_ranges.dict;
 

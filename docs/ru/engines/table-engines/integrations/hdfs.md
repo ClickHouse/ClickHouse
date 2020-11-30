@@ -1,8 +1,3 @@
----
-toc_priority: 4
-toc_title: HDFS
----
-
 # HDFS {#table_engines-hdfs}
 
 Управляет данными в HDFS. Данный движок похож на движки [File](../special/file.md#table_engines-file) и [URL](../special/url.md#table_engines-url).
@@ -67,12 +62,12 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 
 1.  Предположим, у нас есть несколько файлов со следующими URI в HDFS:
 
--   ‘hdfs://hdfs1:9000/some_dir/some_file_1’
--   ‘hdfs://hdfs1:9000/some_dir/some_file_2’
--   ‘hdfs://hdfs1:9000/some_dir/some_file_3’
--   ‘hdfs://hdfs1:9000/another_dir/some_file_1’
--   ‘hdfs://hdfs1:9000/another_dir/some_file_2’
--   ‘hdfs://hdfs1:9000/another_dir/some_file_3’
+-   ‘hdfs://hdfs1:9000/some\_dir/some\_file\_1’
+-   ‘hdfs://hdfs1:9000/some\_dir/some\_file\_2’
+-   ‘hdfs://hdfs1:9000/some\_dir/some\_file\_3’
+-   ‘hdfs://hdfs1:9000/another\_dir/some\_file\_1’
+-   ‘hdfs://hdfs1:9000/another\_dir/some\_file\_2’
+-   ‘hdfs://hdfs1:9000/another\_dir/some\_file\_3’
 
 1.  Есть несколько возможностей создать таблицу, состояющую из этих шести файлов:
 

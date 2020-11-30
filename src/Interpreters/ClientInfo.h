@@ -1,9 +1,8 @@
 #pragma once
 
 #include <Poco/Net/SocketAddress.h>
-#include <Common/UInt128.h>
-#include <common/types.h>
-#include <Common/OpenTelemetryTraceContext.h>
+#include <Core/Types.h>
+
 
 namespace DB
 {
@@ -25,7 +24,6 @@ public:
     {
         TCP = 1,
         HTTP = 2,
-        GRPC = 3,
     };
 
     enum class HTTPMethod : uint8_t
@@ -60,10 +58,6 @@ public:
     String initial_query_id;
     Poco::Net::SocketAddress initial_address;
 
-    // OpenTelemetry trace context we received from client, or which we are going
-    // to send to server.
-    OpenTelemetryTraceContext client_trace_context;
-
     /// All below are parameters related to initial query.
 
     Interface interface = Interface::TCP;
@@ -75,7 +69,7 @@ public:
     UInt64 client_version_major = 0;
     UInt64 client_version_minor = 0;
     UInt64 client_version_patch = 0;
-    unsigned client_tcp_protocol_version = 0;
+    unsigned client_revision = 0;
 
     /// For http
     HTTPMethod http_method = HTTPMethod::UNKNOWN;

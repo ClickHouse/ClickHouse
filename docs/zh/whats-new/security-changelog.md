@@ -18,7 +18,7 @@ unixODBC允许从文件系统加载任意共享对象，从而导致«远程执�
 
 ### CVE-2018-14668 {#cve-2018-14668}
 
-远程表函数功能允许在 «user», «password» 及 «default_database» 字段中使用任意符号，从而导致跨协议请求伪造攻击。
+远程表函数功能允许在 «user», «password» 及 «default\_database» 字段中使用任意符号，从而导致跨协议请求伪造攻击。
 
 来源：Yandex信息安全团队的Andrey Krasichkov
 

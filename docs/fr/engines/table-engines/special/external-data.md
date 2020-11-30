@@ -27,10 +27,10 @@ Vous pouvez avoir plusieurs sections comme ça, pour le nombre de tables étant 
 **–file** – Path to the file with the table dump, or -, which refers to stdin.
 Une seule table peut être récupérée à partir de stdin.
 
-Les paramètres suivants sont facultatifs: **–name**– Name of the table. If omitted, _data is used.
+Les paramètres suivants sont facultatifs: **–name**– Name of the table. If omitted, \_data is used.
 **–format** – Data format in the file. If omitted, TabSeparated is used.
 
-L'un des paramètres suivants est requis:**–types** – A list of comma-separated column types. For example: `UInt64,String`. The columns will be named _1, _2, …
+L'un des paramètres suivants est requis:**–types** – A list of comma-separated column types. For example: `UInt64,String`. The columns will be named \_1, \_2, …
 **–structure**– The table structure in the format`UserID UInt64`, `URL String`. Définit les noms et les types de colonnes.
 
 Les fichiers spécifiés dans ‘file’ sera analysé par le format spécifié dans ‘format’, en utilisant les types de données spécifié dans ‘types’ ou ‘structure’. La table sera téléchargée sur le serveur et accessible en tant que table temporaire avec le nom dans ‘name’.
@@ -48,7 +48,7 @@ $ cat /etc/passwd | sed 's/:/\t/g' | clickhouse-client --query="SELECT shell, co
 /bin/sync       1
 ```
 
-Lors de l'utilisation de L'interface HTTP, les données externes sont transmises au format multipart/form-data. Chaque tableau est transmis en tant que fichier séparé. Le nom de la table est tiré du nom du fichier. Le ‘query_string’ est passé les paramètres ‘name_format’, ‘name_types’, et ‘name_structure’, où ‘name’ est le nom de la table que ces paramètres correspondent. La signification des paramètres est la même que lors de l'utilisation du client de ligne de commande.
+Lors de l'utilisation de L'interface HTTP, les données externes sont transmises au format multipart/form-data. Chaque tableau est transmis en tant que fichier séparé. Le nom de la table est tiré du nom du fichier. Le ‘query\_string’ est passé les paramètres ‘name\_format’, ‘name\_types’, et ‘name\_structure’, où ‘name’ est le nom de la table que ces paramètres correspondent. La signification des paramètres est la même que lors de l'utilisation du client de ligne de commande.
 
 Exemple:
 

@@ -21,12 +21,10 @@ namespace DB
 /// Estimate of number of bytes in cache for marks.
 struct MarksWeightFunction
 {
-    /// We spent additional bytes on key in hashmap, linked lists, shared pointers, etc ...
-    static constexpr size_t MARK_CACHE_OVERHEAD = 128;
-
     size_t operator()(const MarksInCompressedFile & marks) const
     {
-        return marks.size() * sizeof(MarkInCompressedFile) + MARK_CACHE_OVERHEAD;
+        /// NOTE Could add extra 100 bytes for overhead of std::vector, cache structures and allocator.
+        return marks.size() * sizeof(MarkInCompressedFile);
     }
 };
 

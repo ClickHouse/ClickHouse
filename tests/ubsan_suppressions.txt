@@ -1,3 +1,0 @@
-# Suppress some failures in contrib so that we can enable UBSan in CI.
-# Ideally, we should report these upstream.
-src:*/contrib/openssl/*
