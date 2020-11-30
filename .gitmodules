@@ -198,7 +198,6 @@
 [submodule "contrib/rocksdb"]
 	path = contrib/rocksdb
 	url = https://github.com/ClickHouse-Extras/rocksdb.git 
-	branch = v6.14.5
 [submodule "contrib/xz"]
 	path = contrib/xz
 	url = https://github.com/xz-mirror/xz
