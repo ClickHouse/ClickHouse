@@ -148,6 +148,8 @@ if (NOT EXTERNAL_BOOST_FOUND)
     target_include_directories (_boost_system PRIVATE ${LIBRARY_DIR})
 
     # context
+    enable_language(ASM)
+    SET(ASM_OPTIONS "-x assembler-with-cpp")
 
     set (SRCS_CONTEXT
         ${LIBRARY_DIR}/libs/context/src/asm/jump_arm64_aapcs_elf_gas.S
