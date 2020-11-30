@@ -231,7 +231,7 @@ protected:
         std::unique_ptr<MergeTreeSettings> settings_,
         bool has_force_restore_data_flag);
 
-    MutationCommands getFirtsAlterMutationCommandsForPart(const DataPartPtr & part) const override;
+    MutationCommands getFirstAlterMutationCommandsForPart(const DataPartPtr & part) const override;
 };
 
 }
