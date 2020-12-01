@@ -25,7 +25,37 @@ SELECT
 
 ## toTimeZone {#totimezone}
 
-Convert time or date and time to the specified time zone.
+Convert time or date and time to the specified time zone. The time zone is an attribute of the Date/DateTime types, the internal value (number of seconds) of the table field or of the result column does not change, the field type changes and its displayed string representation is changed accordingly.
+
+```sql
+SELECT
+    toDateTime('2019-01-01 00:00:00', 'UTC') AS time_utc,
+    toTypeName(time_utc) AS type_utc,
+    toInt32(time_utc) AS int32utc,
+    toTimeZone(time_utc, 'Asia/Yekaterinburg') AS time_yekat,
+    toTypeName(time_yekat) AS type_yekat,
+    toInt32(time_yekat) AS int32yekat,
+    toTimeZone(time_utc, 'US/Samoa') AS time_samoa,
+    toTypeName(time_samoa) AS type_samoa,
+    toInt32(time_samoa) AS int32samoa
+FORMAT Vertical;
+```
+
+```text
+Row 1:
+──────
+time_utc:   2019-01-01 00:00:00
+type_utc:   DateTime('UTC')
+int32utc:   1546300800
+time_yekat: 2019-01-01 05:00:00
+type_yekat: DateTime('Asia/Yekaterinburg')
+int32yekat: 1546300800
+time_samoa: 2018-12-31 13:00:00
+type_samoa: DateTime('US/Samoa')
+int32samoa: 1546300800
+```
+
+`toTimeZone(time_utc, 'Asia/Yekaterinburg')` changes type `DateTime('UTC')` to `DateTime('Asia/Yekaterinburg')`. The value (Unixtimestamp) 1546300800 stayes the same, but string representation (a result of the function toString()) changes to `time_utc:   2019-01-01 00:00:00` в `time_yekat: 2019-01-01 05:00:00`.
 
 ## toYear {#toyear}
 
