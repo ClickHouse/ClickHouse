@@ -937,6 +937,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         {
             (*it)->remove_time.store((*it)->modification_time, std::memory_order_relaxed);
             modifyPartState(it, DataPartState::Outdated);
+            /// Update data volume
+            removePartContributionToDataVolume(*it);
         };
 
         (*prev_jt)->assertState({DataPartState::Committed});
@@ -1168,7 +1170,6 @@ void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_re
         for (const DataPartPtr & part : parts_to_remove)
         {
             LOG_DEBUG(log, "Removing part from filesystem {}", part->name);
-
             part->remove();
         }
     }
@@ -1240,8 +1241,7 @@ void MergeTreeData::clearEmptyParts()
     {
         if (part->rows_count == 0)
         {
-            if (part->checkState({DataPartState::Committed}))
-                ++empty_parts;
+            ++empty_parts;
             ASTPtr literal = std::make_shared<ASTLiteral>(part->name);
             /// If another replica has already started drop, it's ok, no need to throw.
             dropPartition(literal, /* detach = */ false, /*drop_part = */ true, global_context, /* throw_if_noop = */ false);
@@ -2474,11 +2474,6 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
 void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
 {
     auto lock = lockParts();
-
-    size_t reduce_bytes = 0;
-    size_t reduce_rows = 0;
-    size_t reduce_parts = 0;
-
     for (auto original_active_part : getDataPartsStateRange(DataPartState::Committed)) // NOLINT (copy is intended)
     {
         if (part_copy->name == original_active_part->name)
@@ -2487,14 +2482,15 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
             if (active_part_it == data_parts_by_info.end())
                 throw Exception("Cannot swap part '" + part_copy->name + "', no such active part.", ErrorCodes::NO_SUCH_DATA_PART);
 
-            reduce_bytes += original_active_part->getBytesOnDisk();
-            reduce_rows += original_active_part->rows_count;
-            ++reduce_parts;
             modifyPartState(original_active_part, DataPartState::DeleteOnDestroy);
             data_parts_indexes.erase(active_part_it);
 
             auto part_it = data_parts_indexes.insert(part_copy).first;
             modifyPartState(part_it, DataPartState::Committed);
+
+            /// Update data volume
+            removePartContributionToDataVolume(original_active_part);
+            addPartContributionToDataVolume(part_copy);
 
             auto disk = original_active_part->volume->getDisk();
             String marker_path = original_active_part->getFullRelativePath() + IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME;
@@ -2508,13 +2504,6 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
             }
             return;
         }
-    }
-    /// Update data volume
-    if (reduce_parts)
-    {
-        decreaseDataVolume(reduce_bytes, reduce_rows, reduce_parts);
-        /// Number of increased parts equals to number of decreased parts
-        increaseDataVolume(part_copy->getBytesOnDisk() * reduce_parts, part_copy->rows_count * reduce_parts, reduce_parts);
     }
     throw Exception("Cannot swap part '" + part_copy->name + "', no such active part.", ErrorCodes::NO_SUCH_DATA_PART);
 }
