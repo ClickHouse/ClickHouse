@@ -134,7 +134,7 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
         os.environ["CLICKHOUSE_DATABASE"] = database
 
     params = {
-        'client': args.client + ' --database=' + database,
+        'client': args.client + ' --database=' + database  + ' --use_antlr_parser=1',
         'logs_level': server_logs_level,
         'options': client_options,
         'test': case_file,
