@@ -28,6 +28,7 @@ RUN apt-get update \
     libssl-dev \
     libcurl4-openssl-dev \
     gdb \
+    moreutils \
     && rm -rf \
         /var/lib/apt/lists/* \
         /var/cache/debconf \
@@ -96,4 +97,4 @@ RUN set -x \
 VOLUME /var/lib/docker
 EXPOSE 2375
 ENTRYPOINT ["dockerd-entrypoint.sh"]
-CMD ["sh", "-c", "pytest $PYTEST_OPTS"]
+CMD ["sh", "-c", "pytest $PYTEST_OPTS 2>&1 | ts '%Y-%m-%d %H:%M:%S'"]
