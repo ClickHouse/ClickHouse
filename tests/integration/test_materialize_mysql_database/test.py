@@ -1,18 +1,20 @@
 import os
+import os.path as p
 import subprocess
 import time
-
+import pwd
+import re
 import pymysql.cursors
 import pytest
 from helpers.cluster import ClickHouseCluster, get_docker_compose_path
+import docker
 
 from . import materialize_with_ddl
 
 DOCKER_COMPOSE_PATH = get_docker_compose_path()
 
 cluster = ClickHouseCluster(__file__)
-clickhouse_node = cluster.add_instance('node1', user_configs=["configs/users.xml"], with_mysql=False)
-
+clickhouse_node = cluster.add_instance('node1', user_configs=["configs/users.xml"], with_mysql=False, stay_alive=True)
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -24,17 +26,24 @@ def started_cluster():
 
 
 class MySQLNodeInstance:
-    def __init__(self, user='root', password='clickhouse', hostname='127.0.0.1', port=3308):
+    def __init__(self, user='root', password='clickhouse', ip_address='127.0.0.1', port=3308, docker_compose=None, project_name=cluster.project_name):
         self.user = user
         self.port = port
-        self.hostname = hostname
+        self.ip_address = ip_address
         self.password = password
         self.mysql_connection = None  # lazy init
+        self.docker_compose = docker_compose
+        self.project_name = project_name
+
 
     def alloc_connection(self):
         if self.mysql_connection is None:
-            self.mysql_connection = pymysql.connect(user=self.user, password=self.password, host=self.hostname,
+            self.mysql_connection = pymysql.connect(user=self.user, password=self.password, host=self.ip_address,
                                                     port=self.port, autocommit=True)
+        else:
+            if self.mysql_connection.ping():
+                self.mysql_connection = pymysql.connect(user=self.user, password=self.password, host=self.ip_address,
+                                                        port=self.port, autocommit=True)
         return self.mysql_connection
 
     def query(self, execution_query):
@@ -55,6 +64,11 @@ class MySQLNodeInstance:
             if result is not None:
                 print(cursor.fetchall())
 
+    def query_and_get_data(self, executio_query):
+        with self.alloc_connection().cursor() as cursor:
+            cursor.execute(executio_query)
+            return cursor.fetchall()
+
     def close(self):
         if self.mysql_connection is not None:
             self.mysql_connection.close()
@@ -65,8 +79,6 @@ class MySQLNodeInstance:
             try:
                 self.alloc_connection()
                 print("Mysql Started")
-                self.create_min_priv_user("test", "123")
-                print("min priv user created")
                 return
             except Exception as ex:
                 print("Can't connect to MySQL " + str(ex))
@@ -75,11 +87,10 @@ class MySQLNodeInstance:
         subprocess.check_call(['docker-compose', 'ps', '--services', 'all'])
         raise Exception("Cannot wait MySQL container")
 
-
 @pytest.fixture(scope="module")
 def started_mysql_5_7():
-    mysql_node = MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', 3308)
-    docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mysql.yml')
+    docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mysql_5_7_for_materialize_mysql.yml')
+    mysql_node = MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', 3308, docker_compose)
 
     try:
         subprocess.check_call(
@@ -94,8 +105,8 @@ def started_mysql_5_7():
 
 @pytest.fixture(scope="module")
 def started_mysql_8_0():
-    mysql_node = MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', 33308)
-    docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mysql_8_0.yml')
+    docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mysql_8_0_for_materialize_mysql.yml')
+    mysql_node = MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', 33308, docker_compose)
 
     try:
         subprocess.check_call(
@@ -181,19 +192,29 @@ def test_insert_with_modify_binlog_checksum_8_0(started_cluster, started_mysql_8
 
 
 def test_materialize_database_err_sync_user_privs_5_7(started_cluster, started_mysql_5_7):
-    try:
-        materialize_with_ddl.err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1")
-    except:
-        print((clickhouse_node.query(
-            "select '\n', thread_id, query_id, arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym from system.stack_trace format TSVRaw")))
-        raise
-
+    materialize_with_ddl.err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1")
 
 def test_materialize_database_err_sync_user_privs_8_0(started_cluster, started_mysql_8_0):
-    try:
-        materialize_with_ddl.err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0, "mysql8_0")
-    except:
-        print((clickhouse_node.query(
-            "select '\n', thread_id, query_id, arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym from system.stack_trace format TSVRaw")))
-        raise
+    materialize_with_ddl.err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0, "mysql8_0")
+
+
+def test_network_partition_5_7(started_cluster, started_mysql_5_7):
+    materialize_with_ddl.network_partition_test(clickhouse_node, started_mysql_5_7, "mysql1")
+
+def test_network_partition_8_0(started_cluster, started_mysql_8_0):
+    materialize_with_ddl.network_partition_test(clickhouse_node, started_mysql_8_0, "mysql8_0")
+
+
+def test_mysql_kill_sync_thread_restore_5_7(started_cluster, started_mysql_5_7):
+    materialize_with_ddl.mysql_kill_sync_thread_restore_test(clickhouse_node, started_mysql_5_7, "mysql1")
+
+def test_mysql_kill_sync_thread_restore_8_0(started_cluster, started_mysql_8_0):
+    materialize_with_ddl.mysql_kill_sync_thread_restore_test(clickhouse_node, started_mysql_8_0, "mysql8_0")
+
+
+def test_clickhouse_killed_while_insert_5_7(started_cluster, started_mysql_5_7):
+    materialize_with_ddl.clickhouse_killed_while_insert(clickhouse_node, started_mysql_5_7, "mysql1")
+
+def test_clickhouse_killed_while_insert_8_0(started_cluster, started_mysql_8_0):
+    materialize_with_ddl.clickhouse_killed_while_insert(clickhouse_node, started_mysql_8_0, "mysql8_0")
 

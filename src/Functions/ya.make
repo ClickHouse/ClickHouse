@@ -208,6 +208,9 @@ SRCS(
     cos.cpp
     cosh.cpp
     countDigits.cpp
+    countSubstrings.cpp
+    countSubstringsCaseInsensitive.cpp
+    countSubstringsCaseInsensitiveUTF8.cpp
     currentDatabase.cpp
     currentUser.cpp
     dateDiff.cpp
