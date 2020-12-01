@@ -39,7 +39,8 @@ std::array<char, 16> IPv6ToBinary(const Poco::Net::IPAddress & address)
     return res;
 }
 
-static constexpr RawMaskArray generateBitMask(size_t prefix) {
+static constexpr RawMaskArray generateBitMask(size_t prefix)
+{
     if (prefix >= 128)
         prefix = 128;
     RawMaskArray arr{0};
@@ -53,7 +54,8 @@ static constexpr RawMaskArray generateBitMask(size_t prefix) {
     return arr;
 }
 
-static constexpr std::array<RawMaskArray, IPV6_MASKS_COUNT> generateBitMasks() {
+static constexpr std::array<RawMaskArray, IPV6_MASKS_COUNT> generateBitMasks()
+{
     std::array<RawMaskArray, IPV6_MASKS_COUNT> arr{};
     for (size_t i = 0; i < IPV6_MASKS_COUNT; ++i)
         arr[i] = generateBitMask(i);
