@@ -106,8 +106,8 @@ TTLExpr::TTLExpr(PtrTo<ColumnExpr> expr, TTLType type, PtrTo<StringLiteral> lite
 
 ASTPtr TTLExpr::convertToOld() const
 {
-    TTLMode mode;
-    DataDestinationType destination_type;
+    TTLMode mode = TTLMode::DELETE;
+    DataDestinationType destination_type = DataDestinationType::DELETE;
     String destination_name;
 
     switch(ttl_type)

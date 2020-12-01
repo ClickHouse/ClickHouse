@@ -149,6 +149,9 @@ public:
     antlrcpp::Any visitDataClauseValues(ClickHouseParser::DataClauseValuesContext * ctx) override;
     antlrcpp::Any visitInsertStmt(ClickHouseParser::InsertStmtContext * ctx) override;
 
+    // KillQuery
+    antlrcpp::Any visitKillMutationStmt(ClickHouseParser::KillMutationStmtContext * ctx) override;
+
     // OptimizeQuery
     antlrcpp::Any visitOptimizeStmt(ClickHouseParser::OptimizeStmtContext * ctx) override;
 

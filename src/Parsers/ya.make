@@ -102,6 +102,7 @@ SRCS(
     New/AST/Identifier.cpp
     New/AST/InsertQuery.cpp
     New/AST/JoinExpr.cpp
+    New/AST/KillQuery.cpp
     New/AST/LimitExpr.cpp
     New/AST/Literal.cpp
     New/AST/OptimizeQuery.cpp

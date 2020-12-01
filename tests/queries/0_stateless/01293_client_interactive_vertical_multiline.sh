@@ -2,7 +2,7 @@
 
 log_user 0
 set timeout 60
-spawn $env(CLICKHOUSE_CLIENT) --port "$env(CLICKHOUSE_PORT_TCP)"
+spawn clickhouse-client
 match_max 100000
 
 expect ":) "
@@ -34,7 +34,7 @@ send -- ""
 expect eof
 
 set timeout 60
-spawn spawn $env(CLICKHOUSE_CLIENT) --port "$env(CLICKHOUSE_PORT_TCP)" --multiline
+spawn spawn clickhouse-client --multiline
 match_max 100000
 
 expect ":) "

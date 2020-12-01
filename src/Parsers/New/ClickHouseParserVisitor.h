@@ -178,6 +178,8 @@ public:
 
     virtual antlrcpp::Any visitDataClauseSelect(ClickHouseParser::DataClauseSelectContext *context) = 0;
 
+    virtual antlrcpp::Any visitKillMutationStmt(ClickHouseParser::KillMutationStmtContext *context) = 0;
+
     virtual antlrcpp::Any visitOptimizeStmt(ClickHouseParser::OptimizeStmtContext *context) = 0;
 
     virtual antlrcpp::Any visitRenameStmt(ClickHouseParser::RenameStmtContext *context) = 0;

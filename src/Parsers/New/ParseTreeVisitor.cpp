@@ -18,6 +18,7 @@
 #include <Parsers/New/AST/InsertQuery.h>
 #include <Parsers/New/AST/JoinExpr.h>
 #include <Parsers/New/AST/Literal.h>
+#include <Parsers/New/AST/KillQuery.h>
 #include <Parsers/New/AST/OptimizeQuery.h>
 #include <Parsers/New/AST/RenameQuery.h>
 #include <Parsers/New/AST/SelectUnionQuery.h>
@@ -69,6 +70,7 @@ antlrcpp::Any ParseTreeVisitor::visitQuery(ClickHouseParser::QueryContext *ctx)
     TRY_POINTER_CAST(DropQuery)
     TRY_POINTER_CAST(ExistsQuery)
     TRY_POINTER_CAST(ExplainQuery)
+    TRY_POINTER_CAST(KillQuery)
     TRY_POINTER_CAST(OptimizeQuery)
     TRY_POINTER_CAST(RenameQuery)
     TRY_POINTER_CAST(SelectUnionQuery)

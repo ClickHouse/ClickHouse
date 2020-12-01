@@ -19,6 +19,7 @@ set (SRCS
     AST/Identifier.cpp
     AST/InsertQuery.cpp
     AST/JoinExpr.cpp
+    AST/KillQuery.cpp
     AST/LimitExpr.cpp
     AST/Literal.cpp
     AST/OptimizeQuery.cpp

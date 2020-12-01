@@ -2,7 +2,7 @@
 
 log_user 0
 set timeout 60
-spawn $env(CLICKHOUSE_CLIENT) --port "$env(CLICKHOUSE_PORT_TCP)"
+spawn clickhouse-client
 match_max 100000
 
 expect ":) "
