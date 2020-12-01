@@ -5,7 +5,7 @@
 #include <vector>
 #include <type_traits>
 
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Block.h>
 #include <Common/Exception.h>
@@ -114,7 +114,7 @@ public:
     virtual void predictValues(
         ConstAggregateDataPtr /* place */,
         IColumn & /*to*/,
-        ColumnsWithTypeAndName & /*block*/,
+        Block & /*block*/,
         size_t /*offset*/,
         size_t /*limit*/,
         const ColumnNumbers & /*arguments*/,

@@ -12,14 +12,12 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
-
-namespace
-{
 
 /// Function multiIf, which generalizes the function if.
 ///
@@ -127,7 +125,7 @@ public:
         Columns converted_columns_holder;
         converted_columns_holder.reserve(instructions.size());
 
-        const DataTypePtr & return_type = block[result].type;
+        const DataTypePtr & return_type = block.getByPosition(result).type;
 
         for (size_t i = 0; i < args.size(); i += 2)
         {
@@ -142,7 +140,7 @@ public:
             }
             else
             {
-                const ColumnWithTypeAndName & cond_col = block[args[i]];
+                const ColumnWithTypeAndName & cond_col = block.getByPosition(args[i]);
 
                 /// We skip branches that are always false.
                 /// If we encounter a branch that is always true, we can finish.
@@ -168,7 +166,7 @@ public:
                 }
             }
 
-            const ColumnWithTypeAndName & source_col = block[args[source_idx]];
+            const ColumnWithTypeAndName & source_col = block.getByPosition(args[source_idx]);
             if (source_col.type->equals(*return_type))
             {
                 instruction.source = source_col.column.get();
@@ -223,11 +221,9 @@ public:
             }
         }
 
-        block[result].column = std::move(res);
+        block.getByPosition(result).column = std::move(res);
     }
 };
-
-}
 
 void registerFunctionMultiIf(FunctionFactory & factory)
 {

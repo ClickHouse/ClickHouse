@@ -1,6 +1,7 @@
 #include <Storages/RabbitMQ/StorageRabbitMQ.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
+#include <DataStreams/LimitBlockInputStream.h>
 #include <DataStreams/UnionBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -751,7 +752,7 @@ bool StorageRabbitMQ::streamToViews()
         streams.emplace_back(stream);
 
         // Limit read batch to maximum block size to allow DDL
-        StreamLocalLimits limits;
+        IBlockInputStream::LocalLimits limits;
 
         limits.speed_limits.max_execution_time = rabbitmq_settings->rabbitmq_flush_interval_ms.changed
                                                   ? rabbitmq_settings->rabbitmq_flush_interval_ms

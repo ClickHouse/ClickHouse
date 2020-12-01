@@ -65,10 +65,8 @@ RoleCache::~RoleCache() = default;
 std::shared_ptr<const EnabledRoles>
 RoleCache::getEnabledRoles(const boost::container::flat_set<UUID> & roles, const boost::container::flat_set<UUID> & roles_with_admin_option)
 {
-    /// Declared before `lock` to send notifications after the mutex will be unlocked.
-    ext::scope_guard notifications;
-
     std::lock_guard lock{mutex};
+
     EnabledRoles::Params params;
     params.current_roles = roles;
     params.current_roles_with_admin_option = roles_with_admin_option;
@@ -82,13 +80,13 @@ RoleCache::getEnabledRoles(const boost::container::flat_set<UUID> & roles, const
     }
 
     auto res = std::shared_ptr<EnabledRoles>(new EnabledRoles(params));
-    collectEnabledRoles(*res, notifications);
+    collectEnabledRoles(*res);
     enabled_roles.emplace(std::move(params), res);
     return res;
 }
 
 
-void RoleCache::collectEnabledRoles(ext::scope_guard & notifications)
+void RoleCache::collectEnabledRoles()
 {
     /// `mutex` is already locked.
 
@@ -99,14 +97,14 @@ void RoleCache::collectEnabledRoles(ext::scope_guard & notifications)
             i = enabled_roles.erase(i);
         else
         {
-            collectEnabledRoles(*elem, notifications);
+            collectEnabledRoles(*elem);
             ++i;
         }
     }
 }
 
 
-void RoleCache::collectEnabledRoles(EnabledRoles & enabled, ext::scope_guard & notifications)
+void RoleCache::collectEnabledRoles(EnabledRoles & enabled)
 {
     /// `mutex` is already locked.
 
@@ -121,7 +119,7 @@ void RoleCache::collectEnabledRoles(EnabledRoles & enabled, ext::scope_guard & n
         collectRoles(*new_info, skip_ids, get_role_function, current_role, true, true);
 
     /// Collect data from the collected roles.
-    enabled.setRolesInfo(new_info, notifications);
+    enabled.setRolesInfo(new_info);
 }
 
 
@@ -158,27 +156,21 @@ RolePtr RoleCache::getRole(const UUID & role_id)
 
 void RoleCache::roleChanged(const UUID & role_id, const RolePtr & changed_role)
 {
-    /// Declared before `lock` to send notifications after the mutex will be unlocked.
-    ext::scope_guard notifications;
-
     std::lock_guard lock{mutex};
     auto role_from_cache = cache.get(role_id);
     if (!role_from_cache)
         return;
     role_from_cache->first = changed_role;
     cache.update(role_id, role_from_cache);
-    collectEnabledRoles(notifications);
+    collectEnabledRoles();
 }
 
 
 void RoleCache::roleRemoved(const UUID & role_id)
 {
-    /// Declared before `lock` to send notifications after the mutex will be unlocked.
-    ext::scope_guard notifications;
-
     std::lock_guard lock{mutex};
     cache.remove(role_id);
-    collectEnabledRoles(notifications);
+    collectEnabledRoles();
 }
 
 }

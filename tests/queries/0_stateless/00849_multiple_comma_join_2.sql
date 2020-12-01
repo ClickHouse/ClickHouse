@@ -1,5 +1,6 @@
 SET enable_debug_queries = 1;
 SET enable_optimize_predicate_expression = 0;
+SET multiple_joins_rewriter_version = 2;
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;

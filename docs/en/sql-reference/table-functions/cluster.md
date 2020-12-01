@@ -34,5 +34,5 @@ Connection settings like `host`, `port`, `user`, `password`, `compression`, `sec
 
 **See Also**
 
--   [skip_unavailable_shards](../../operations/settings/settings.md#settings-skip_unavailable_shards)
--   [load_balancing](../../operations/settings/settings.md#settings-load_balancing)
+-   [skip\_unavailable\_shards](../../operations/settings/settings.md#settings-skip_unavailable_shards)
+-   [load\_balancing](../../operations/settings/settings.md#settings-load_balancing)

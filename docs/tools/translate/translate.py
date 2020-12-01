@@ -49,14 +49,13 @@ def translate_impl(text, target_language=None):
 
 
 def translate(text, target_language=None):
-    return "".join(
-        [
-            part
-            if part.startswith("{") and part.endswith("}")
-            else translate_impl(part, target_language=target_language)
-            for part in re.split(curly_braces_re, text)
-        ]
-    )
+    result = []
+    for part in re.split(curly_braces_re, text):
+        if part.startswith('{') and part.endswith('}'):
+            result.append(part)
+        else:
+            result.append(translate_impl(part, target_language=target_language))
+    return ''.join(result)
 
 
 def translate_toc(root, lang):

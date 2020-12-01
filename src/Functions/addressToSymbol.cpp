@@ -21,9 +21,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-namespace
-{
-
 class FunctionAddressToSymbol : public IFunction
 {
 public:
@@ -68,7 +65,7 @@ public:
     {
         const SymbolIndex & symbol_index = SymbolIndex::instance();
 
-        const ColumnPtr & column = block[arguments[0]].column;
+        const ColumnPtr & column = block.getByPosition(arguments[0]).column;
         const ColumnUInt64 * column_concrete = checkAndGetColumn<ColumnUInt64>(column.get());
 
         if (!column_concrete)
@@ -85,11 +82,9 @@ public:
                 result_column->insertDefault();
         }
 
-        block[result].column = std::move(result_column);
+        block.getByPosition(result).column = std::move(result_column);
     }
 };
-
-}
 
 void registerFunctionAddressToSymbol(FunctionFactory & factory)
 {

@@ -48,7 +48,7 @@ private:
     {
         using UnderlyingColumnType = typename TypeToColumnType<typename DataType::FieldType>::ColumnType;
 
-        block[result].column = ColumnArray::create(
+        block.getByPosition(result).column = ColumnArray::create(
             UnderlyingColumnType::create(),
             ColumnArray::ColumnOffsets::create(input_rows_count, 0));
     }

@@ -10,6 +10,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
@@ -18,8 +19,6 @@ namespace ErrorCodes
     extern const int FUNCTION_THROW_IF_VALUE_IS_NON_ZERO;
 }
 
-namespace
-{
 
 /// Throw an exception if the argument is non zero.
 class FunctionThrowIf : public IFunction
@@ -70,13 +69,13 @@ public:
         std::optional<String> custom_message;
         if (arguments.size() == 2)
         {
-            const auto * msg_column = checkAndGetColumnConst<ColumnString>(block[arguments[1]].column.get());
+            const auto * msg_column = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[1]).column.get());
             if (!msg_column)
                 throw Exception{"Second argument for function " + getName() + " must be constant String", ErrorCodes::ILLEGAL_COLUMN};
             custom_message = msg_column->getValue<String>();
         }
 
-        const auto * in = block[arguments.front()].column.get();
+        const auto * in = block.getByPosition(arguments.front()).column.get();
 
         if (   !execute<UInt8>(block, in, result, custom_message)
             && !execute<UInt16>(block, in, result, custom_message)
@@ -102,7 +101,7 @@ public:
                                 ErrorCodes::FUNCTION_THROW_IF_VALUE_IS_NON_ZERO};
 
             /// We return non constant to avoid constant folding.
-            block[result].column = ColumnUInt8::create(in_data.size(), 0);
+            block.getByPosition(result).column = ColumnUInt8::create(in_data.size(), 0);
             return true;
         }
 
@@ -110,7 +109,6 @@ public:
     }
 };
 
-}
 
 void registerFunctionThrowIf(FunctionFactory & factory)
 {

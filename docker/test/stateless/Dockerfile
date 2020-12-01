@@ -12,16 +12,18 @@ RUN apt-get update -y \
             ncdu \
             netcat-openbsd \
             openssl \
-            python3 \
-            python3-lxml \
-            python3-requests \
-            python3-termcolor \
+            python \
+            python-lxml \
+            python-requests \
+            python-termcolor \
             qemu-user-static \
             sudo \
             telnet \
             tree \
             unixodbc \
-            wget
+            wget \
+            zookeeper \
+            zookeeperd
 
 RUN mkdir -p /tmp/clickhouse-odbc-tmp \
    && wget -nv -O - ${odbc_driver_url} | tar --strip-components=1 -xz -C /tmp/clickhouse-odbc-tmp \

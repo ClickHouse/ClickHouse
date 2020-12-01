@@ -13,15 +13,13 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
-
-namespace
-{
 
 /** timeSlots(StartTime, Duration)
   * - for the time interval beginning at `StartTime` and continuing `Duration` seconds,
@@ -147,11 +145,11 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
     {
-        const auto * starts = checkAndGetColumn<ColumnUInt32>(block[arguments[0]].column.get());
-        const auto * const_starts = checkAndGetColumnConst<ColumnUInt32>(block[arguments[0]].column.get());
+        const auto * starts = checkAndGetColumn<ColumnUInt32>(block.getByPosition(arguments[0]).column.get());
+        const auto * const_starts = checkAndGetColumnConst<ColumnUInt32>(block.getByPosition(arguments[0]).column.get());
 
-        const auto * durations = checkAndGetColumn<ColumnUInt32>(block[arguments[1]].column.get());
-        const auto * const_durations = checkAndGetColumnConst<ColumnUInt32>(block[arguments[1]].column.get());
+        const auto * durations = checkAndGetColumn<ColumnUInt32>(block.getByPosition(arguments[1]).column.get());
+        const auto * const_durations = checkAndGetColumnConst<ColumnUInt32>(block.getByPosition(arguments[1]).column.get());
 
         auto res = ColumnArray::create(ColumnUInt32::create());
         ColumnUInt32::Container & res_values = typeid_cast<ColumnUInt32 &>(res->getData()).getData();
@@ -160,7 +158,7 @@ public:
 
         if (arguments.size() == 3)
         {
-            const auto * time_slot_column = checkAndGetColumn<ColumnConst>(block[arguments[2]].column.get());
+            const auto * time_slot_column = checkAndGetColumn<ColumnConst>(block.getByPosition(arguments[2]).column.get());
             if (!time_slot_column)
                 throw Exception("Third argument for function " + getName() + " must be constant UInt32", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -171,28 +169,26 @@ public:
         if (starts && durations)
         {
             TimeSlotsImpl<UInt32>::vectorVector(starts->getData(), durations->getData(), time_slot_size, res_values, res->getOffsets());
-            block[result].column = std::move(res);
+            block.getByPosition(result).column = std::move(res);
         }
         else if (starts && const_durations)
         {
             TimeSlotsImpl<UInt32>::vectorConstant(starts->getData(), const_durations->getValue<UInt32>(), time_slot_size, res_values, res->getOffsets());
-            block[result].column = std::move(res);
+            block.getByPosition(result).column = std::move(res);
         }
         else if (const_starts && durations)
         {
             TimeSlotsImpl<UInt32>::constantVector(const_starts->getValue<UInt32>(), durations->getData(), time_slot_size, res_values, res->getOffsets());
-            block[result].column = std::move(res);
+            block.getByPosition(result).column = std::move(res);
         }
         else
-            throw Exception("Illegal columns " + block[arguments[0]].column->getName()
-                    + ", " + block[arguments[1]].column->getName()
-                    + ", " + block[arguments[2]].column->getName()
+            throw Exception("Illegal columns " + block.getByPosition(arguments[0]).column->getName()
+                    + ", " + block.getByPosition(arguments[1]).column->getName()
+                    + ", " + block.getByPosition(arguments[2]).column->getName()
                     + " of arguments of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
 };
-
-}
 
 void registerFunctionTimeSlots(FunctionFactory & factory)
 {

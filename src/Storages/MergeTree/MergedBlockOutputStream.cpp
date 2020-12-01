@@ -91,7 +91,6 @@ void MergedBlockOutputStream::writeSuffix()
 
 void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         MergeTreeData::MutableDataPartPtr & new_part,
-        bool sync,
         const NamesAndTypesList * total_columns_list,
         MergeTreeData::DataPart::Checksums * additional_column_checksums)
 {
@@ -102,9 +101,9 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         checksums = std::move(*additional_column_checksums);
 
     /// Finish columns serialization.
-    writer->finishDataSerialization(checksums, sync);
-    writer->finishPrimaryIndexSerialization(checksums, sync);
-    writer->finishSkipIndicesSerialization(checksums, sync);
+    writer->finishDataSerialization(checksums);
+    writer->finishPrimaryIndexSerialization(checksums);
+    writer->finishSkipIndicesSerialization(checksums);
 
     NamesAndTypesList part_columns;
     if (!total_columns_list)
@@ -113,7 +112,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         part_columns = *total_columns_list;
 
     if (new_part->isStoredOnDisk())
-        finalizePartOnDisk(new_part, part_columns, checksums, sync);
+        finalizePartOnDisk(new_part, part_columns, checksums);
 
     new_part->setColumns(part_columns);
     new_part->rows_count = rows_count;
@@ -130,8 +129,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
 void MergedBlockOutputStream::finalizePartOnDisk(
     const MergeTreeData::MutableDataPartPtr & new_part,
     NamesAndTypesList & part_columns,
-    MergeTreeData::DataPart::Checksums & checksums,
-    bool sync)
+    MergeTreeData::DataPart::Checksums & checksums)
 {
     if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || isCompactPart(new_part))
     {
@@ -148,9 +146,6 @@ void MergedBlockOutputStream::finalizePartOnDisk(
         count_out_hashing.next();
         checksums.files["count.txt"].file_size = count_out_hashing.count();
         checksums.files["count.txt"].file_hash = count_out_hashing.getHash();
-        count_out->finalize();
-        if (sync)
-            count_out->sync();
     }
 
     if (!new_part->ttl_infos.empty())
@@ -161,9 +156,6 @@ void MergedBlockOutputStream::finalizePartOnDisk(
         new_part->ttl_infos.write(out_hashing);
         checksums.files["ttl.txt"].file_size = out_hashing.count();
         checksums.files["ttl.txt"].file_hash = out_hashing.getHash();
-        out->finalize();
-        if (sync)
-            out->sync();
     }
 
     removeEmptyColumnsFromPart(new_part, part_columns, checksums);
@@ -172,16 +164,12 @@ void MergedBlockOutputStream::finalizePartOnDisk(
         /// Write a file with a description of columns.
         auto out = volume->getDisk()->writeFile(part_path + "columns.txt", 4096);
         part_columns.writeText(*out);
-        out->finalize();
-        if (sync)
-            out->sync();
     }
 
     if (default_codec != nullptr)
     {
         auto out = volume->getDisk()->writeFile(part_path + IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096);
         DB::writeText(queryToString(default_codec->getFullCodecDesc()), *out);
-        out->finalize();
     }
     else
     {
@@ -193,9 +181,6 @@ void MergedBlockOutputStream::finalizePartOnDisk(
         /// Write file with checksums.
         auto out = volume->getDisk()->writeFile(part_path + "checksums.txt", 4096);
         checksums.write(*out);
-        out->finalize();
-        if (sync)
-            out->sync();
     }
 }
 

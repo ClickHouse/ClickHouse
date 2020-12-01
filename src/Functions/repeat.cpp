@@ -17,9 +17,6 @@ namespace ErrorCodes
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
-namespace
-{
-
 struct RepeatImpl
 {
     /// Safety threshold against DoS.
@@ -167,8 +164,8 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
     {
-        const auto & strcolumn = block[arguments[0]].column;
-        const auto & numcolumn = block[arguments[1]].column;
+        const auto & strcolumn = block.getByPosition(arguments[0]).column;
+        const auto & numcolumn = block.getByPosition(arguments[1]).column;
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(strcolumn.get()))
         {
@@ -177,17 +174,17 @@ public:
                 UInt64 repeat_time = scale_column_num->getValue<UInt64>();
                 auto col_res = ColumnString::create();
                 RepeatImpl::vectorStrConstRepeat(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets(), repeat_time);
-                block[result].column = std::move(col_res);
+                block.getByPosition(result).column = std::move(col_res);
                 return;
             }
-            else if (castType(block[arguments[1]].type.get(), [&](const auto & type)
+            else if (castType(block.getByPosition(arguments[1]).type.get(), [&](const auto & type)
                 {
                     using DataType = std::decay_t<decltype(type)>;
                     using T = typename DataType::FieldType;
                     const ColumnVector<T> * colnum = checkAndGetColumn<ColumnVector<T>>(numcolumn.get());
                     auto col_res = ColumnString::create();
                     RepeatImpl::vectorStrVectorRepeat(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets(), colnum->getData());
-                    block[result].column = std::move(col_res);
+                    block.getByPosition(result).column = std::move(col_res);
                     return true;
                 }))
             {
@@ -200,14 +197,14 @@ public:
 
             StringRef copy_str = col_const->getDataColumn().getDataAt(0);
 
-            if (castType(block[arguments[1]].type.get(), [&](const auto & type)
+            if (castType(block.getByPosition(arguments[1]).type.get(), [&](const auto & type)
                 {
                     using DataType = std::decay_t<decltype(type)>;
                     using T = typename DataType::FieldType;
                     const ColumnVector<T> * colnum = checkAndGetColumn<ColumnVector<T>>(numcolumn.get());
                     auto col_res = ColumnString::create();
                     RepeatImpl::constStrVectorRepeat(copy_str, col_res->getChars(), col_res->getOffsets(), colnum->getData());
-                    block[result].column = std::move(col_res);
+                    block.getByPosition(result).column = std::move(col_res);
                     return true;
                 }))
             {
@@ -216,12 +213,11 @@ public:
         }
 
         throw Exception(
-            "Illegal column " + block[arguments[0]].column->getName() + " of argument of function " + getName(),
+            "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
-}
 
 void registerFunctionRepeat(FunctionFactory & factory)
 {

@@ -6,8 +6,6 @@
 namespace DB
 {
 
-struct StreamLocalLimits;
-
 class Pipe;
 using Pipes = std::vector<Pipe>;
 
@@ -96,8 +94,7 @@ public:
     const Processors & getProcessors() const { return processors; }
 
     /// Specify quotas and limits for every ISourceWithProgress.
-    void setLimits(const StreamLocalLimits & limits);
-    void setLeafLimits(const SizeLimits & leaf_limits);
+    void setLimits(const SourceWithProgress::LocalLimits & limits);
     void setQuota(const std::shared_ptr<const EnabledQuota> & quota);
 
     /// Do not allow to change the table while the processors of pipe are alive.

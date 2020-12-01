@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/TTLMergeSelector.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Parsers/queryToString.h>
 
 #include <algorithm>
 #include <cmath>
@@ -9,14 +8,14 @@
 namespace DB
 {
 
-const String & getPartitionIdForPart(const ITTLMergeSelector::Part & part_info)
+const String & getPartitionIdForPart(const TTLMergeSelector::Part & part_info)
 {
     const MergeTreeData::DataPartPtr & part = *static_cast<const MergeTreeData::DataPartPtr *>(part_info.data);
     return part->info.partition_id;
 }
 
 
-IMergeSelector::PartsRange ITTLMergeSelector::select(
+IMergeSelector::PartsRange TTLMergeSelector::select(
     const PartsRanges & parts_ranges,
     const size_t max_total_size_to_merge)
 {
@@ -38,9 +37,9 @@ IMergeSelector::PartsRange ITTLMergeSelector::select(
 
         for (Iterator part_it = mergeable_parts_in_partition.cbegin(); part_it != mergeable_parts_in_partition.cend(); ++part_it)
         {
-            time_t ttl = getTTLForPart(*part_it);
+            time_t ttl = only_drop_parts ? part_it->max_ttl : part_it->min_ttl;
 
-            if (ttl && !isTTLAlreadySatisfied(*part_it) && (partition_to_merge_index == -1 || ttl < partition_to_merge_min_ttl))
+            if (ttl && (partition_to_merge_index == -1 || ttl < partition_to_merge_min_ttl))
             {
                 partition_to_merge_min_ttl = ttl;
                 partition_to_merge_index = i;
@@ -58,9 +57,9 @@ IMergeSelector::PartsRange ITTLMergeSelector::select(
 
     while (true)
     {
-        time_t ttl = getTTLForPart(*best_begin);
+        time_t ttl = only_drop_parts ? best_begin->max_ttl : best_begin->min_ttl;
 
-        if (!ttl || isTTLAlreadySatisfied(*best_begin) || ttl > current_time
+        if (!ttl || ttl > current_time
             || (max_total_size_to_merge && total_size > max_total_size_to_merge))
         {
             ++best_begin;
@@ -76,9 +75,9 @@ IMergeSelector::PartsRange ITTLMergeSelector::select(
 
     while (best_end != best_partition.end())
     {
-        time_t ttl = getTTLForPart(*best_end);
+        time_t ttl = only_drop_parts ? best_end->max_ttl : best_end->min_ttl;
 
-        if (!ttl || isTTLAlreadySatisfied(*best_end) || ttl > current_time
+        if (!ttl || ttl > current_time
             || (max_total_size_to_merge && total_size > max_total_size_to_merge))
             break;
 
@@ -90,36 +89,6 @@ IMergeSelector::PartsRange ITTLMergeSelector::select(
     merge_due_times[best_partition_id] = current_time + merge_cooldown_time;
 
     return PartsRange(best_begin, best_end);
-}
-
-time_t TTLDeleteMergeSelector::getTTLForPart(const IMergeSelector::Part & part) const
-{
-    return only_drop_parts ? part.ttl_infos->part_max_ttl : part.ttl_infos->part_min_ttl;
-}
-
-time_t TTLRecompressMergeSelector::getTTLForPart(const IMergeSelector::Part & part) const
-{
-    return part.ttl_infos->getMinimalMaxRecompressionTTL();
-}
-
-bool TTLRecompressMergeSelector::isTTLAlreadySatisfied(const IMergeSelector::Part & part) const
-{
-    if (recompression_ttls.empty())
-        return false;
-
-    auto ttl_description = selectTTLDescriptionForTTLInfos(recompression_ttls, part.ttl_infos->recompression_ttl, current_time, true);
-
-    if (!ttl_description)
-        return true;
-
-    auto ast_to_str = [](ASTPtr query) -> String
-    {
-        if (!query)
-            return "";
-        return queryToString(query);
-    };
-
-    return ast_to_str(ttl_description->recompression_codec) == ast_to_str(part.compression_codec_desc);
 }
 
 }

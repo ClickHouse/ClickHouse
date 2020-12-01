@@ -1,1 +1,0 @@
-SELECT tid() FORMAT Null

@@ -6,8 +6,6 @@
 
 namespace DB
 {
-namespace
-{
 
 /** blockSize() - get the block size in number of rows.
   */
@@ -45,11 +43,10 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
-        block[result].column = ColumnUInt64::create(input_rows_count, input_rows_count);
+        block.getByPosition(result).column = ColumnUInt64::create(input_rows_count, input_rows_count);
     }
 };
 
-}
 
 void registerFunctionBlockSize(FunctionFactory & factory)
 {

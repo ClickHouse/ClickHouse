@@ -1,4 +1,3 @@
-#pragma once
 #include <Functions/FunctionHelpers.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <Functions/GatherUtils/Sources.h>
@@ -65,8 +64,8 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const IColumn * haystack_column = block[arguments[0]].column.get();
-        const IColumn * needle_column = block[arguments[1]].column.get();
+        const IColumn * haystack_column = block.getByPosition(arguments[0]).column.get();
+        const IColumn * needle_column = block.getByPosition(arguments[1]).column.get();
 
         auto col_res = ColumnVector<UInt8>::create();
         typename ColumnVector<UInt8>::Container & vec_res = col_res->getData();
@@ -84,7 +83,7 @@ public:
         else
             throw Exception("Illegal combination of columns as arguments of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
 
-        block[result].column = std::move(col_res);
+        block.getByPosition(result).column = std::move(col_res);
     }
 
 private:
@@ -159,7 +158,7 @@ public:
     #endif
     }
 
-    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         selector.selectAndExecute(block, arguments, result, input_rows_count);
     }

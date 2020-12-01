@@ -1,8 +1,6 @@
-#pragma once
 #include <Functions/IFunctionImpl.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
-#include <Core/Block.h>
 
 namespace DB
 {
@@ -15,14 +13,14 @@ template <bool or_null>
 class ExecutableFunctionJoinGet final : public IExecutableFunctionImpl
 {
 public:
-    ExecutableFunctionJoinGet(HashJoinPtr join_, const DB::Block & result_block_)
-        : join(std::move(join_)), result_block(result_block_) {}
+    ExecutableFunctionJoinGet(HashJoinPtr join_, String attr_name_)
+        : join(std::move(join_)), attr_name(std::move(attr_name_)) {}
 
     static constexpr auto name = or_null ? "joinGetOrNull" : "joinGet";
 
     bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
 
     void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 
@@ -30,7 +28,7 @@ public:
 
 private:
     HashJoinPtr join;
-    DB::Block result_block;
+    const String attr_name;
 };
 
 template <bool or_null>
@@ -79,14 +77,13 @@ public:
     String getName() const override { return name; }
 
     FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override;
-    DataTypePtr getReturnType(const ColumnsWithTypeAndName &) const override { return {}; } // Not used
+    DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const override;
 
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
 
 private:
     const Context & context;
