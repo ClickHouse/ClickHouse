@@ -152,7 +152,7 @@ void RemoteQueryExecutor::sendQuery()
         return;
 
     /// Query cannot be canceled in the middle of the send query,
-    /// since there are multiple packages:
+    /// since there are multiple packets:
     /// - Query
     /// - Data (multiple times)
     ///

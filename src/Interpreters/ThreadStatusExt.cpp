@@ -356,11 +356,6 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
         span.attribute_names.push_back("clickhouse.thread_id");
         span.attribute_values.push_back(thread_id);
 
-#ifndef NDEBUG
-        span.attribute_names.push_back("clickhouse.end.stacktrace");
-        span.attribute_values.push_back(StackTrace().toString());
-#endif
-
         opentelemetry_span_log->add(span);
     }
 
