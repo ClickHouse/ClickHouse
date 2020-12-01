@@ -5,7 +5,7 @@ Contains information about the databases that are available to the current user.
 Columns:
 
 -   `name` ([String](../../sql-reference/data-types/string.md)) — Database name.
--   `engine` ([String](../../sql-reference/data-types/string.md)) — [Database engine](../..//engines/database-engines/index.md).
+-   `engine` ([String](../../sql-reference/data-types/string.md)) — [Database engine](../../engines/database-engines/index.md).
 -   `data_path` ([String](../../sql-reference/data-types/string.md)) — Data path.
 -   `metadata_path` ([String](../../sql-reference/data-types/enum.md)) — Metadata path.
 -   `uuid` ([UUID](../../sql-reference/data-types/uuid.md)) — Database UUID.
