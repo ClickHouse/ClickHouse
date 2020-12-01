@@ -577,6 +577,8 @@ void HTTPHandler::processQuery(
     client_info.http_method = http_method;
     client_info.http_user_agent = request.get("User-Agent", "");
 
+    client_info.forwarded_for = request.get("X-Forwarded-For", "");
+
     auto append_callback = [&context] (ProgressCallback callback)
     {
         auto prev = context.getProgressCallback();

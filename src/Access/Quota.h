@@ -76,6 +76,7 @@ struct Quota : public IAccessEntity
         NONE,       /// All users share the same quota.
         USER_NAME,  /// Connections with the same user name share the same quota.
         IP_ADDRESS, /// Connections from the same IP share the same quota.
+        FORWARDED_IP_ADDRESS, /// Use X-Forwarded-For HTTP header instead of IP address.
         CLIENT_KEY, /// Client should explicitly supply a key to use.
         CLIENT_KEY_OR_USER_NAME,  /// Same as CLIENT_KEY, but use USER_NAME if the client doesn't supply a key.
         CLIENT_KEY_OR_IP_ADDRESS, /// Same as CLIENT_KEY, but use IP_ADDRESS if the client doesn't supply a key.
@@ -230,6 +231,11 @@ inline const Quota::KeyTypeInfo & Quota::KeyTypeInfo::get(KeyType type)
         case KeyType::IP_ADDRESS:
         {
             static const auto info = make_info("IP_ADDRESS");
+            return info;
+        }
+        case KeyType::FORWARDED_IP_ADDRESS:
+        {
+            static const auto info = make_info("FORWARDED_IP_ADDRESS");
             return info;
         }
         case KeyType::CLIENT_KEY:
