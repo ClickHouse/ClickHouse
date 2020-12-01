@@ -188,6 +188,7 @@ void ReplxxLineReader::openEditor()
         rx.print("Cannot create temporary file to edit query: %s\n", errnoToString(errno).c_str());
         return;
     }
+
     String editor = std::getenv("EDITOR");
     if (editor.empty())
         editor = "vim";
@@ -196,11 +197,11 @@ void ReplxxLineReader::openEditor()
     write(fd, state.text(), strlen(state.text()));
     if (0 != ::close(fd))
     {
-        rx.print("Cannot close temporary query file: %s\n", errnoToString(errno).c_str());
+        rx.print("Cannot close temporary query file %s: %s\n", filename, errnoToString(errno).c_str());
         return;
     }
-    int rc = execute(editor + " " + filename);
-    if (0 == rc)
+
+    if (0 == execute(editor + " " + filename))
     {
         std::ifstream t(filename);
         std::string str;
@@ -210,9 +211,12 @@ void ReplxxLineReader::openEditor()
         str.assign((std::istreambuf_iterator<char>(t)), std::istreambuf_iterator<char>());
         rx.set_state(replxx::Replxx::State(str.c_str(), str.size()));
     }
+
     if (bracketed_paste_enabled)
         enableBracketedPaste();
-    ::unlink(filename);
+
+    if (0 != ::unlink(filename))
+        rx.print("Cannot remove temporary query file %s: %s\n", filename, errnoToString(errno).c_str());
 }
 
 void ReplxxLineReader::enableBracketedPaste()
