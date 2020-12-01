@@ -23,7 +23,11 @@
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTWatchQuery.h>
 #include <Parsers/Lexer.h>
-#include <Parsers/New/parseQuery.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include <Parsers/New/parseQuery.h>  // Y_IGNORE
+#endif
+
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/queryToString.h>
@@ -332,6 +336,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
     try
     {
+#if !defined(ARCADIA_BUILD)
         if (settings.use_antlr_parser)
         {
             ast = parseQuery(begin, end, max_query_size, settings.max_parser_depth);
@@ -343,6 +348,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// TODO: parser should fail early when max_query_size limit is reached.
             ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
         }
+#else
+        ParserQuery parser(end);
+
+        /// TODO: parser should fail early when max_query_size limit is reached.
+        ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+#endif
 
         /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
         /// to allow settings to take effect.

@@ -197,9 +197,9 @@ antlrcpp::Any ParseTreeVisitor::visitLiteral(ClickHouseParser::LiteralContext * 
     if (ctx->NULL_SQL())
         return Literal::createNull();
     if (ctx->STRING_LITERAL())
-        return static_pointer_cast<Literal>(Literal::createString(ctx->STRING_LITERAL()));
+        return std::static_pointer_cast<Literal>(Literal::createString(ctx->STRING_LITERAL()));
     if (ctx->numberLiteral())
-        return static_pointer_cast<Literal>(visit(ctx->numberLiteral()).as<PtrTo<NumberLiteral>>());
+        return std::static_pointer_cast<Literal>(visit(ctx->numberLiteral()).as<PtrTo<NumberLiteral>>());
     __builtin_unreachable();
 }
 

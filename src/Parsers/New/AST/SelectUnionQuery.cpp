@@ -227,7 +227,7 @@ void SelectUnionQuery::appendSelect(PtrTo<SelectStmt> stmt)
 void SelectUnionQuery::appendSelect(PtrTo<SelectUnionQuery> query)
 {
     for (const auto & stmt : query->get(STMTS)->as<List<SelectStmt> &>())
-        appendSelect(static_pointer_cast<SelectStmt>(stmt));
+        appendSelect(std::static_pointer_cast<SelectStmt>(stmt));
 }
 
 ASTPtr SelectUnionQuery::convertToOld() const

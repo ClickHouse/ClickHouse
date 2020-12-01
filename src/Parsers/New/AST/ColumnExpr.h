@@ -37,7 +37,7 @@ class ColumnExpr : public INode
         auto argumentsEnd() const { return has(ARGS) ? get<ColumnExprList>(ARGS)->end() : end(); }
 
         // LITERAL
-        auto getLiteral() const { return static_pointer_cast<Literal>(get(LITERAL)); }
+        auto getLiteral() const { return std::static_pointer_cast<Literal>(get(LITERAL)); }
 
         ASTPtr convertToOld() const override;
         String toString() const override;

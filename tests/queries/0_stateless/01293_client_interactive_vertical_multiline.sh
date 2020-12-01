@@ -34,7 +34,7 @@ send -- ""
 expect eof
 
 set timeout 60
-spawn spawn clickhouse-client --multiline
+spawn clickhouse-client --multiline
 match_max 100000
 
 expect ":) "

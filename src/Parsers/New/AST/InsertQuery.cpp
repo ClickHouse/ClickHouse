@@ -1,5 +1,6 @@
 #include <Parsers/New/AST/InsertQuery.h>
 
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/New/AST/ColumnExpr.h>
 #include <Parsers/New/AST/Identifier.h>
@@ -69,7 +70,7 @@ ASTPtr InsertQuery::convertToOld() const
             query->table_function = get(FUNCTION)->convertToOld();
             break;
         case QueryType::TABLE:
-            query->table_id = get(IDENTIFIER)->convertToOld();
+            query->table_id = getTableIdentifier(get(IDENTIFIER)->convertToOld());
             break;
     }
 
