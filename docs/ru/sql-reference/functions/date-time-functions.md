@@ -381,7 +381,7 @@ SELECT toDate('2016-12-27') AS date, toWeek(date) AS week0, toWeek(date,1) AS we
 ## toYearWeek(date[,mode]) {#toyearweek}
 Возвращает год и неделю для даты. Год в результате может отличаться от года в аргументе даты для первой и последней недели года.
 
-Аргумент mode работает точно так же, как аргумент mode [toWeek()](#date_time_functions-toweek). Если mode не задан, используется режим 0.
+Аргумент mode работает точно так же, как аргумент mode [toWeek()](#toweek). Если mode не задан, используется режим 0.
 
 `toISOYear() ` эквивалентно `intDiv(toYearWeek(date,3),100)`.
 
