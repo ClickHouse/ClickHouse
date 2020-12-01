@@ -1,7 +1,5 @@
 #pragma once
 
-#include <atomic>
-#include <optional>
 #include <mutex>
 
 #include <ext/shared_ptr_helper.h>
@@ -21,6 +19,7 @@ namespace DB
   */
 class StorageMemory final : public ext::shared_ptr_helper<StorageMemory>, public IStorage
 {
+friend class MemoryBlockInputStream;
 friend class MemoryBlockOutputStream;
 friend struct ext::shared_ptr_helper<StorageMemory>;
 
@@ -93,9 +92,6 @@ private:
     mutable std::mutex mutex;
 
     bool delay_read_for_global_subqueries = false;
-
-    std::atomic<size_t> total_size_bytes = 0;
-    std::atomic<size_t> total_size_rows = 0;
 
 protected:
     StorageMemory(const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_);

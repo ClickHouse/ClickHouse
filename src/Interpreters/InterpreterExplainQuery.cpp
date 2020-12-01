@@ -119,17 +119,13 @@ struct QueryPlanSettings
 {
     QueryPlan::ExplainPlanOptions query_plan_options;
 
-    /// Apply query plan optimisations.
-    bool optimize = true;
-
     constexpr static char name[] = "PLAN";
 
     std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
     {
             {"header", query_plan_options.header},
             {"description", query_plan_options.description},
-            {"actions", query_plan_options.actions},
-            {"optimize", optimize},
+            {"actions", query_plan_options.actions}
     };
 };
 
@@ -252,8 +248,7 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), context, SelectQueryOptions());
         interpreter.buildQueryPlan(plan);
 
-        if (settings.optimize)
-            plan.optimize();
+        plan.optimize();
 
         WriteBufferFromOStream buffer(ss);
         plan.explainPlan(buffer, settings.query_plan_options);

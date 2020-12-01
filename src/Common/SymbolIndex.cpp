@@ -59,7 +59,7 @@ Otherwise you will get only exported symbols from program headers.
 #   pragma clang diagnostic ignored "-Wunused-macros"
 #endif
 
-#define __msan_unpoison_string(X) // NOLINT
+#define __msan_unpoison_string(X)
 #if defined(__has_feature)
 #   if __has_feature(memory_sanitizer)
 #       undef __msan_unpoison_string

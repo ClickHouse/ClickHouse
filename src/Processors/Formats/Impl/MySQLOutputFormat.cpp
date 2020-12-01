@@ -95,7 +95,7 @@ void registerOutputFormatProcessorMySQLWire(FormatFactory & factory)
         "MySQLWire",
         [](WriteBuffer & buf,
            const Block & sample,
-           const RowOutputFormatParams &,
+           FormatFactory::WriteCallback,
            const FormatSettings & settings) { return std::make_shared<MySQLOutputFormat>(buf, sample, settings); });
 }
 

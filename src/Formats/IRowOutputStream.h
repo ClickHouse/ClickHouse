@@ -3,7 +3,7 @@
 #include <memory>
 #include <cstdint>
 #include <boost/noncopyable.hpp>
-#include <common/types.h>
+#include <Core/Types.h>
 
 
 namespace DB

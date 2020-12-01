@@ -2,7 +2,7 @@ SET send_logs_level = 'fatal';
 
 DROP DATABASE IF EXISTS database_for_dict;
 
-CREATE DATABASE database_for_dict;
+CREATE DATABASE database_for_dict Engine = Ordinary;
 
 SELECT '***date dict***';
 

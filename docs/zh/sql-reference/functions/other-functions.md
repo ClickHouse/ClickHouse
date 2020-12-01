@@ -201,7 +201,7 @@ ORDER BY h ASC
 对于相同的字母（T或U），如果数值类型，那么它们不可不完全匹配的，只需要具备共同的类型即可。
 例如，第一个参数是Int64类型，第二个参数是Array(UInt16)类型。
 
-如果’x’值等于’array_from’数组中的一个元素，它将从’array_to’数组返回一个对应的元素（下标相同）。否则，它返回’default’。如果’array_from’匹配到了多个元素，则返回第一个匹配的元素。
+如果’x’值等于’array\_from’数组中的一个元素，它将从’array\_to’数组返回一个对应的元素（下标相同）。否则，它返回’default’。如果’array\_from’匹配到了多个元素，则返回第一个匹配的元素。
 
 示例:
 
@@ -224,7 +224,7 @@ ORDER BY c DESC
 1.  `transform(x, array_from, array_to)`
 
 与第一种不同在于省略了’default’参数。
-如果’x’值等于’array_from’数组中的一个元素，它将从’array_to’数组返回相应的元素（下标相同）。 否则，它返回’x’。
+如果’x’值等于’array\_from’数组中的一个元素，它将从’array\_to’数组返回相应的元素（下标相同）。 否则，它返回’x’。
 
 类型约束:
 
@@ -521,11 +521,11 @@ FROM
 例如，获取聚合函数的状态（示例runningAccumulate(uniqState(UserID))），对于数据块的每一行，返回所有先前行和当前行的状态合并后的聚合函数的结果。
 因此，函数的结果取决于分区中数据块的顺序以及数据块中行的顺序。
 
-## joinGet(‘join_storage_table_name’, ‘get_column’,join_key) {#joingetjoin-storage-table-name-get-column-join-key}
+## joinGet(‘join\_storage\_table\_name’, ‘get\_column’,join\_key) {#joingetjoin-storage-table-name-get-column-join-key}
 
 使用指定的连接键从Join类型引擎的表中获取数据。
 
-## modelEvaluate(model_name, …) {#function-modelevaluate}
+## modelEvaluate(model\_name, …) {#function-modelevaluate}
 
 使用外部模型计算。
 接受模型的名称以及模型的参数。返回Float64类型的值。

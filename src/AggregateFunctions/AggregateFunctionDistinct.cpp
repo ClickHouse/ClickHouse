@@ -6,13 +6,11 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
-
-namespace
-{
 
 class AggregateFunctionCombinatorDistinct final : public IAggregateFunctionCombinator
 {
@@ -57,8 +55,6 @@ public:
         return std::make_shared<AggregateFunctionDistinct<AggregateFunctionDistinctMultipleGenericData>>(nested_function, arguments);
     }
 };
-
-}
 
 void registerAggregateFunctionCombinatorDistinct(AggregateFunctionCombinatorFactory & factory)
 {

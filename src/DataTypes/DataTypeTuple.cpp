@@ -44,39 +44,28 @@ DataTypeTuple::DataTypeTuple(const DataTypes & elems_)
         names[i] = toString(i + 1);
 }
 
-static std::optional<Exception> checkTupleNames(const Strings & names)
-{
-    std::unordered_set<String> names_set;
-    for (const auto & name : names)
-    {
-        if (name.empty())
-            return Exception("Names of tuple elements cannot be empty", ErrorCodes::BAD_ARGUMENTS);
 
-        if (isNumericASCII(name[0]))
-            return Exception("Explicitly specified names of tuple elements cannot start with digit", ErrorCodes::BAD_ARGUMENTS);
-
-        if (!names_set.insert(name).second)
-            return Exception("Names of tuple elements must be unique", ErrorCodes::DUPLICATE_COLUMN);
-    }
-
-    return {};
-}
-
-DataTypeTuple::DataTypeTuple(const DataTypes & elems_, const Strings & names_, bool serialize_names_)
-    : elems(elems_), names(names_), have_explicit_names(true), serialize_names(serialize_names_)
+DataTypeTuple::DataTypeTuple(const DataTypes & elems_, const Strings & names_)
+    : elems(elems_), names(names_), have_explicit_names(true)
 {
     size_t size = elems.size();
     if (names.size() != size)
         throw Exception("Wrong number of names passed to constructor of DataTypeTuple", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    if (auto exception = checkTupleNames(names))
-        throw std::move(*exception);
+    std::unordered_set<String> names_set;
+    for (size_t i = 0; i < size; ++i)
+    {
+        if (names[i].empty())
+            throw Exception("Names of tuple elements cannot be empty", ErrorCodes::BAD_ARGUMENTS);
+
+        if (isNumericASCII(names[i][0]))
+            throw Exception("Explicitly specified names of tuple elements cannot start with digit", ErrorCodes::BAD_ARGUMENTS);
+
+        if (!names_set.insert(names[i]).second)
+            throw Exception("Names of tuple elements must be unique", ErrorCodes::DUPLICATE_COLUMN);
+    }
 }
 
-bool DataTypeTuple::canBeCreatedWithNames(const Strings & names)
-{
-    return checkTupleNames(names) == std::nullopt;
-}
 
 std::string DataTypeTuple::doGetName() const
 {
@@ -89,7 +78,7 @@ std::string DataTypeTuple::doGetName() const
         if (i != 0)
             s << ", ";
 
-        if (have_explicit_names && serialize_names)
+        if (have_explicit_names)
             s << backQuoteIfNeed(names[i]) << ' ';
 
         s << elems[i]->getName();

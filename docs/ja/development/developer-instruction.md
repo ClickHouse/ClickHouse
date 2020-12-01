@@ -44,7 +44,7 @@ Ubuntuでこれを行うには、コマンドラインターミナルで実行�
     git clone --recursive git@github.com:your_github_username/ClickHouse.git
     cd ClickHouse
 
-注:、代理して下さい *your_github_username* 適切なもので！
+注:、代理して下さい *your\_github\_username* 適切なもので！
 
 このコマンドディレクトリの作成 `ClickHouse` プロジェクトの作業コピーを含む。
 
@@ -141,7 +141,7 @@ ClickHouseのビルドには、バージョン9以降のGCCとClangバージョ�
 
 UBUNTUにGCCをインストールするには: `sudo apt install gcc g++`
 
-Gccのバージョンを確認する: `gcc --version`. の場合は下記9その指示に従う。https://clickhouse.tech/docs/ja/development/build/#install-gcc-10.
+Gccのバージョンを確認する: `gcc --version`. の場合は下記9その指示に従う。https://clickhouse.tech/docs/ja/development/build/#install-gcc-9.
 
 Mac OS XのビルドはClangでのみサポートされています。 ちょうど実行 `brew install llvm`
 
@@ -154,13 +154,13 @@ ClickHouseを構築する準備ができたので、別のディレクトリを�
     mkdir build
     cd build
 
-いくつかの異なるディレクトリ（build_release、build_debugなど）を持つことができます。）ビルドの異なるタイプのために。
+いくつかの異なるディレクトリ（build\_release、build\_debugなど）を持つことができます。）ビルドの異なるタイプのために。
 
 中の間 `build` cmakeを実行してビルドを構成します。 最初の実行の前に、コンパイラ（この例ではバージョン9gccコンパイラ）を指定する環境変数を定義する必要があります。
 
 Linux:
 
-    export CC=gcc-10 CXX=g++-10
+    export CC=gcc-9 CXX=g++-9
     cmake ..
 
 Mac OS X:

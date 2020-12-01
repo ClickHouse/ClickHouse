@@ -45,7 +45,7 @@ AggregateFunctionPtr createAggregateFunctionRankCorrelation(const std::string & 
 
 void registerAggregateFunctionRankCorrelation(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("rankCorr", createAggregateFunctionRankCorrelation);
+    factory.registerFunction("rankCorr", createAggregateFunctionRankCorrelation, AggregateFunctionFactory::CaseInsensitive);
 }
 
 }

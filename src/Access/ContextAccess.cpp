@@ -100,7 +100,7 @@ namespace
             if (res & alter_table)
                 res |= alter_view;
 
-            /// CREATE TABLE (on any database/table) => CREATE_TEMPORARY_TABLE (global)
+            /// CREATE TABLE (on any database/table) => CREATE_TEMPORARY_TABLE (global) 
             static const AccessFlags create_temporary_table = AccessType::CREATE_TEMPORARY_TABLE;
             if ((level == 0) && (max_flags_with_children & create_table))
                 res |= create_temporary_table;
@@ -285,6 +285,23 @@ void ContextAccess::calculateAccessRights() const
         LOG_TRACE(trace_log, "Settings: readonly={}, allow_ddl={}, allow_introspection_functions={}", params.readonly, params.allow_ddl, params.allow_introspection);
         LOG_TRACE(trace_log, "List of all grants: {}", access->toString());
     }
+}
+
+
+bool ContextAccess::isCorrectPassword(const String & password) const
+{
+    std::lock_guard lock{mutex};
+    if (!user)
+        return false;
+    return user->authentication.isCorrectPassword(password, user_name, manager->getExternalAuthenticators());
+}
+
+bool ContextAccess::isClientHostAllowed() const
+{
+    std::lock_guard lock{mutex};
+    if (!user)
+        return false;
+    return user->allowed_client_hosts.contains(params.address);
 }
 
 

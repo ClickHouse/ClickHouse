@@ -11,14 +11,12 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
-
-namespace
-{
 
 /// Just changes time zone information for data type. The calculation is free.
 class FunctionToTimeZone : public IFunction
@@ -54,13 +52,11 @@ public:
         return std::make_shared<DataTypeDateTime64>(date_time64->getScale(), time_zone_name);
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        return arguments[0].column;
+        block.getByPosition(result).column = block.getByPosition(arguments[0]).column;
     }
 };
-
-}
 
 void registerFunctionToTimeZone(FunctionFactory & factory)
 {

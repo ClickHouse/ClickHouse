@@ -1,7 +1,7 @@
 #pragma once
 
 #include <algorithm>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <IO/ReadBuffer.h>
 #include <IO/VarInt.h>
 #include <IO/WriteBuffer.h>

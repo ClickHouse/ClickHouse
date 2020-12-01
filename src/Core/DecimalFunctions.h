@@ -1,4 +1,5 @@
 #pragma once
+// Moved Decimal-related functions out from Core/Types.h to reduce compilation time.
 
 #include <Core/Types.h>
 #include <Common/Exception.h>
@@ -152,14 +153,12 @@ inline typename DecimalType::NativeType getFractionalPartWithScaleMultiplier(
 {
     using T = typename DecimalType::NativeType;
 
-    /// There's UB with min integer value here. But it does not matter for Decimals cause they use not full integer ranges.
-    /// Anycase we make modulo before compare to make scale_multiplier > 1 unaffected.
-    T result = decimal.value % scale_multiplier;
+    T result = decimal.value;
     if constexpr (!keep_sign)
         if (result < T(0))
             result = -result;
 
-    return result;
+    return result % scale_multiplier;
 }
 
 /** Get fractional part from decimal

@@ -1,4 +1,3 @@
-#pragma once
 #include <IO/ReadHelpers.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
