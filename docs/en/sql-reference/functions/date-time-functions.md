@@ -662,7 +662,7 @@ Result:
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/date_time_functions/) <!--hide-->
 
-## FROM_UNIXTIME {#fromunixfime}
+## FROM\_UNIXTIME {#fromunixfime}
 
 When there is only single argument of integer type, it act in the same way as `toDateTime` and return [DateTime](../../sql-reference/data-types/datetime.md).
 type.
