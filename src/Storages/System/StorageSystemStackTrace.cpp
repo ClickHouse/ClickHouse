@@ -34,7 +34,7 @@ namespace ErrorCodes
 namespace
 {
     // Initialized in StorageSystemStackTrace's ctor and used in signalHandler.
-    pid_t expected_pid;
+    std::atomic<pid_t> expected_pid;
     const int sig = SIGRTMIN;
 
     std::atomic<int> sequence_num = 0;    /// For messages sent via pipe.
