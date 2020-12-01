@@ -154,7 +154,6 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     }
 
     size_t num_children = ast.list_of_selects->children.size();
-
     if (!num_children)
         throw Exception("Logical error: no children in ASTSelectWithUnionQuery", ErrorCodes::LOGICAL_ERROR);
 
@@ -199,7 +198,6 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     {
         const ASTPtr first_select_ast = ast.list_of_selects->children.at(0);
         ASTSelectQuery * select_query = first_select_ast->as<ASTSelectQuery>();
-        // auto select_ast_new = const_cast<ASTSelectQuery *>(select_ast);// ->clone();
 
         if (!select_query->withFill() && !select_query->limit_with_ties)
         {
