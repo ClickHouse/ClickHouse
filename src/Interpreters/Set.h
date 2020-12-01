@@ -15,7 +15,6 @@ namespace DB
 {
 
 class Range;
-class FieldWithInfinity;
 
 class Context;
 class IFunctionBase;
