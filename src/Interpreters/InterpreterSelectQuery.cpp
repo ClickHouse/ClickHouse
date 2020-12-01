@@ -80,6 +80,8 @@
 #include <ext/scope_guard.h>
 #include <memory>
 
+#include <Core/iostream_debug_helpers.h>
+#include <Parsers/formatAST.h>
 
 namespace DB
 {
