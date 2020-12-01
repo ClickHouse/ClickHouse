@@ -81,6 +81,13 @@
                 <ip>::/0</ip>
             </networks>
 
+            <!-- Use the last value of X-Forwarded-For header if present as IP address
+                  for authentication and accounting for requests from HTTP, HTTPS interfaces.
+                 Note that this is only safe if connection can be made only via proxy and if this proxy is trusted.
+                 Otherwise malicious client can provide any IP address.
+            -->
+            <use_x_forwarded_for>false</use_x_forwarded_for>
+
             <!-- Settings profile for user. -->
             <profile>default</profile>
 

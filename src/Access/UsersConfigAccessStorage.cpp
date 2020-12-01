@@ -130,6 +130,8 @@ namespace
             }
         }
 
+        user->use_x_forwarded_for = config.getBool(user_config + ".use_x_forwarded_for");
+
         /// Fill list of allowed databases.
         const auto databases_config = user_config + ".allow_databases";
         std::optional<Strings> databases;

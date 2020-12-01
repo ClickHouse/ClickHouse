@@ -17,6 +17,7 @@ struct User : public IAccessEntity
 {
     Authentication authentication;
     AllowedClientHosts allowed_client_hosts = AllowedClientHosts::AnyHostTag{};
+    bool use_x_forwarded_for = false;
     AccessRights access;
     GrantedRoles granted_roles;
     RolesOrUsersSet default_roles = RolesOrUsersSet::AllTag{};

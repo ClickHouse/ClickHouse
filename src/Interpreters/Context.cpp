@@ -673,7 +673,8 @@ ConfigurationPtr Context::getUsersConfig()
 }
 
 
-void Context::setUserImpl(const String & name, const std::optional<String> & password, const Poco::Net::SocketAddress & address)
+void Context::setUserImpl(String name, std::optional<String> password,
+    Poco::Net::SocketAddress address, String forwarded_for)
 {
     auto lock = getLock();
 
@@ -688,7 +689,7 @@ void Context::setUserImpl(const String & name, const std::optional<String> & pas
     /// Find a user with such name and check the password.
     UUID new_user_id;
     if (password)
-        new_user_id = getAccessControlManager().login(name, *password, address.host());
+        new_user_id = getAccessControlManager().login(name, *password, address.host(), forwarded_for);
     else
     {
         /// Access w/o password is done under interserver-secret (remote_servers.secret)
@@ -708,14 +709,14 @@ void Context::setUserImpl(const String & name, const std::optional<String> & pas
     setSettings(*access->getDefaultSettings());
 }
 
-void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address)
+void Context::setUser(String name, String password, Poco::Net::SocketAddress address, String forwarded_for)
 {
-    setUserImpl(name, password, address);
+    setUserImpl(std::move(name), std::move(password), std::move(address), std::move(forwarded_for));
 }
 
-void Context::setUserWithoutCheckingPassword(const String & name, const Poco::Net::SocketAddress & address)
+void Context::setUserWithoutCheckingPassword(String name, Poco::Net::SocketAddress address)
 {
-    setUserImpl(name, {} /* no password */, address);
+    setUserImpl(std::move(name), {} /* no password */, std::move(address), {});
 }
 
 std::shared_ptr<const User> Context::getUser() const

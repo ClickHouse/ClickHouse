@@ -144,7 +144,7 @@ public:
 
     /// Finds an user, check its password and returns the ID of the user.
     /// Throws an exception if no such user or password is incorrect.
-    UUID login(const String & user_name, const String & password, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool replace_exception_with_cannot_authenticate = true) const;
+    UUID login(const String & user_name, const String & password, const Poco::Net::IPAddress & address, const String & forwarded_for, const ExternalAuthenticators & external_authenticators, bool replace_exception_with_cannot_authenticate = true) const;
 
     /// Returns the ID of an user who has logged in (maybe on another node).
     /// The function assumes that the password has been already checked somehow, so we can skip checking it now.
@@ -164,7 +164,12 @@ protected:
     virtual ext::scope_guard subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const = 0;
     virtual bool hasSubscriptionImpl(const UUID & id) const = 0;
     virtual bool hasSubscriptionImpl(EntityType type) const = 0;
-    virtual UUID loginImpl(const String & user_name, const String & password, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const;
+    virtual UUID loginImpl(
+        const String & user_name,
+        const String & password,
+        const Poco::Net::IPAddress & address,
+        const String & forwarded_for,
+        const ExternalAuthenticators & external_authenticators) const;
     virtual bool isPasswordCorrectImpl(const User & user, const String & password, const ExternalAuthenticators & external_authenticators) const;
     virtual bool isAddressAllowedImpl(const User & user, const Poco::Net::IPAddress & address) const;
     virtual UUID getIDOfLoggedUserImpl(const String & user_name) const;

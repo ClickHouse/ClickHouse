@@ -5,6 +5,8 @@
 #include <IO/WriteHelpers.h>
 #include <Poco/UUIDGenerator.h>
 #include <Poco/Logger.h>
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/trim.hpp>
 
 
 namespace DB
@@ -420,12 +422,13 @@ UUID IAccessStorage::login(
     const String & user_name,
     const String & password,
     const Poco::Net::IPAddress & address,
+    const String & forwarded_for,
     const ExternalAuthenticators & external_authenticators,
     bool replace_exception_with_cannot_authenticate) const
 {
     try
     {
-        return loginImpl(user_name, password, address, external_authenticators);
+        return loginImpl(user_name, password, address, forwarded_for, external_authenticators);
     }
     catch (...)
     {
@@ -442,6 +445,7 @@ UUID IAccessStorage::loginImpl(
     const String & user_name,
     const String & password,
     const Poco::Net::IPAddress & address,
+    const String & forwarded_for,
     const ExternalAuthenticators & external_authenticators) const
 {
     if (auto id = find<User>(user_name))
@@ -451,8 +455,23 @@ UUID IAccessStorage::loginImpl(
             if (!isPasswordCorrectImpl(*user, password, external_authenticators))
                 throwInvalidPassword();
 
-            if (!isAddressAllowedImpl(*user, address))
-                throwAddressNotAllowed(address);
+            Poco::Net::IPAddress auth_address = address;
+
+            if (user->use_x_forwarded_for && !forwarded_for.empty())
+            {
+                /// Extract the last entry from comma separated list.
+                Strings forwarded_addresses;
+                boost::split(forwarded_addresses, forwarded_for, boost::is_any_of(","));
+                if (!forwarded_addresses.empty())
+                {
+                    String & last_forwarded_address = forwarded_addresses.back();
+                    boost::trim(last_forwarded_address);
+                    auth_address = Poco::Net::IPAddress(last_forwarded_address);
+                }
+            }
+
+            if (!isAddressAllowedImpl(*user, auth_address))
+                throwAddressNotAllowed(auth_address);
 
             return *id;
         }
