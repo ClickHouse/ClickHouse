@@ -689,45 +689,48 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
     return actions_dag;
 }
 
-ActionsDAGPtr ActionsDAG::merge(ActionsDAG && lhs, ActionsDAG && rhs)
+ActionsDAGPtr ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
 {
-    /// lhs: x (1), x (2), y ==> x (2), z, x (3)
-    /// rhs: x (1), x (2), x (3) ==> x (3), x (2), x (1)
-    /// merge: x (1), x (2), x (3), y =(lhs)=> x (3), y, x (2), z, x (4) =(rhs)=> y, z, x (4), x (2), x (3)
+    /// first: x (1), x (2), y ==> x (2), z, x (3)
+    /// second: x (1), x (2), x (3) ==> x (3), x (2), x (1)
+    /// merge: x (1), x (2), x (3), y =(first)=> x (3), y, x (2), z, x (4) =(second)=> y, z, x (4), x (2), x (3)
 
-    /// Will store merged result in lhs.
+    /// Will store merged result in `first`.
 
-    std::unordered_set<Node *> removed_lhs_result;
+    /// This map contains nodes which should be removed from `first` index, cause they are used as inputs for `second`.
+    std::unordered_set<Node *> removed_first_result;
+    /// Map inputs of `second` to nodes of `first`.
     std::unordered_map<Node *, Node *> inputs_map;
 
     /// Update inputs list.
     {
-        std::unordered_map<std::string_view, std::list<Node *>> lhs_result;
-        for (auto & node : lhs.index)
-            lhs_result[node->result_name].push_back(node);
+        /// Index may have multiple columns with same name. They also may be used by `second`. Order is important.
+        std::unordered_map<std::string_view, std::list<Node *>> first_result;
+        for (auto & node : first.index)
+            first_result[node->result_name].push_back(node);
 
-        for (auto & node : rhs.inputs)
+        for (auto & node : second.inputs)
         {
-            auto it = lhs_result.find(node->result_name);
-            if (it == lhs_result.end() || it->second.empty())
+            auto it = first_result.find(node->result_name);
+            if (it == first_result.end() || it->second.empty())
             {
-                if (lhs.settings.project_input)
+                if (first.settings.project_input)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                                     "Cannot find column {} in ActionsDAG result", node->result_name);
 
-                lhs.inputs.push_back(node);
+                first.inputs.push_back(node);
             }
             else
             {
                 inputs_map[node] = it->second.front();
-                removed_lhs_result.emplace(it->second.front());
+                removed_first_result.emplace(it->second.front());
                 it->second.pop_front();
             }
         }
     }
 
-    /// Replace inputs from rhs to nodes from lhs result.
-    for (auto & node : rhs.nodes)
+    /// Replace inputs from `second` to nodes from `first` result.
+    for (auto & node : second.nodes)
     {
         for (auto & child : node.children)
         {
@@ -740,7 +743,7 @@ ActionsDAGPtr ActionsDAG::merge(ActionsDAG && lhs, ActionsDAG && rhs)
         }
     }
 
-    for (auto & node : rhs.index)
+    for (auto & node : second.index)
     {
         if (node->type == ActionType::INPUT)
         {
@@ -751,44 +754,44 @@ ActionsDAGPtr ActionsDAG::merge(ActionsDAG && lhs, ActionsDAG && rhs)
     }
 
     /// Update index.
-    if (rhs.settings.project_input)
+    if (second.settings.project_input)
     {
-        lhs.index.swap(rhs.index);
-        lhs.settings.project_input = true;
+        first.index.swap(second.index);
+        first.settings.project_input = true;
     }
     else
     {
-        /// Remove rhs inputs from index.
-        for (auto it = lhs.index.begin(); it != lhs.index.end();)
+        /// Remove `second` inputs from index.
+        for (auto it = first.index.begin(); it != first.index.end();)
         {
             auto cur = it;
             ++it;
 
-            if (removed_lhs_result.count(*cur))
-                lhs.index.remove(cur);
+            if (removed_first_result.count(*cur))
+                first.index.remove(cur);
         }
 
-        for (auto * node : rhs.index)
-            lhs.index.insert(node);
+        for (auto * node : second.index)
+            first.index.insert(node);
     }
 
 
-    lhs.nodes.splice(lhs.nodes.end(), std::move(rhs.nodes));
+    first.nodes.splice(first.nodes.end(), std::move(second.nodes));
 
 #if USE_EMBEDDED_COMPILER
-    if (lhs.compilation_cache == nullptr)
-        lhs.compilation_cache = rhs.compilation_cache;
+    if (first.compilation_cache == nullptr)
+        first.compilation_cache = second.compilation_cache;
 #endif
 
-    lhs.settings.max_temporary_columns = std::max(lhs.settings.max_temporary_columns, rhs.settings.max_temporary_columns);
-    lhs.settings.max_temporary_non_const_columns = std::max(lhs.settings.max_temporary_non_const_columns, rhs.settings.max_temporary_non_const_columns);
-    lhs.settings.min_count_to_compile_expression = std::max(lhs.settings.min_count_to_compile_expression, rhs.settings.min_count_to_compile_expression);
-    lhs.settings.projected_output = rhs.settings.projected_output;
+    first.settings.max_temporary_columns = std::max(first.settings.max_temporary_columns, second.settings.max_temporary_columns);
+    first.settings.max_temporary_non_const_columns = std::max(first.settings.max_temporary_non_const_columns, second.settings.max_temporary_non_const_columns);
+    first.settings.min_count_to_compile_expression = std::max(first.settings.min_count_to_compile_expression, second.settings.min_count_to_compile_expression);
+    first.settings.projected_output = second.settings.projected_output;
 
     /// Drop unused inputs and, probably, some actions.
-    lhs.removeUnusedActions();
+    first.removeUnusedActions();
 
-    return std::make_shared<ActionsDAG>(std::move(lhs));
+    return std::make_shared<ActionsDAG>(std::move(first));
 }
 
 ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_joined_columns)
