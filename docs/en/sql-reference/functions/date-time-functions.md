@@ -25,7 +25,7 @@ SELECT
 
 ## toTimeZone {#totimezone}
 
-Convert time or date and time to the specified time zone. The time zone is an attribute of the Date/DateTime types, the internal value (number of seconds) of the table field or of the result column does not change, the field type changes and its displayed string representation is changed accordingly.
+Convert time or date and time to the specified time zone. The time zone is an attribute of the Date/DateTime types. The internal value (number of seconds) of the table field or of the resultset's column does not change, the column's type changes and its string representation changes accordingly.
 
 ```sql
 SELECT
@@ -55,7 +55,7 @@ type_samoa: DateTime('US/Samoa')
 int32samoa: 1546300800
 ```
 
-`toTimeZone(time_utc, 'Asia/Yekaterinburg')` changes type `DateTime('UTC')` to `DateTime('Asia/Yekaterinburg')`. The value (Unixtimestamp) 1546300800 stayes the same, but string representation (a result of the function toString()) changes to `time_utc:   2019-01-01 00:00:00` в `time_yekat: 2019-01-01 05:00:00`.
+`toTimeZone(time_utc, 'Asia/Yekaterinburg')` changes the `DateTime('UTC')` type to `DateTime('Asia/Yekaterinburg')`. The value (Unixtimestamp) 1546300800 stays the same, but the string representation (the result of the toString() function) changes from `time_utc:   2019-01-01 00:00:00` to `time_yekat: 2019-01-01 05:00:00`.
 
 ## toYear {#toyear}
 
