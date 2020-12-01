@@ -47,7 +47,7 @@ namespace
 
     LazyPipeFDs notification_pipe;
 
-    // TSan complains about expected_pid being accessed unsafely, which is not the case.
+    // TSan complains about stack_trace being accessed unsafely, which is not the case.
     void NO_SANITIZE_THREAD signalHandler(int, siginfo_t * info, void * context)
     {
         auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
