@@ -68,9 +68,9 @@ LAYOUTS = [
     Layout("hashed"),
     Layout("cache"),
     Layout("complex_key_hashed"),
-    Layout("complex_key_cache"),
+    # Layout("complex_key_cache"), # Currently not supported
     Layout("direct"),
-    Layout("complex_key_direct")
+    # Layout("complex_key_direct") # Currently not supported
 ]
 
 DICTIONARIES = []

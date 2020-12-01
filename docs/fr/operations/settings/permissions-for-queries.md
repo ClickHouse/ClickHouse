@@ -18,7 +18,7 @@ Les requêtes dans ClickHouse peuvent être divisées en plusieurs types:
 Les paramètres suivants règlent les autorisations utilisateur selon le type de requête:
 
 -   [ReadOnly](#settings_readonly) — Restricts permissions for all types of queries except DDL queries.
--   [allow_ddl](#settings_allow_ddl) — Restricts permissions for DDL queries.
+-   [allow\_ddl](#settings_allow_ddl) — Restricts permissions for DDL queries.
 
 `KILL QUERY` peut être réalisée avec tous les paramètres.
 
@@ -43,7 +43,7 @@ de modifier uniquement des paramètres spécifiques, pour plus de détails, voir
 
 Valeur par défaut: 0
 
-## allow_ddl {#settings_allow_ddl}
+## allow\_ddl {#settings_allow_ddl}
 
 Permet ou interdit [DDL](https://en.wikipedia.org/wiki/Data_definition_language) requête.
 

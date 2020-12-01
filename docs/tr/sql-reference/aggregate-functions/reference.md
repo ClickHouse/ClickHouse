@@ -31,7 +31,7 @@ Her iki durumda da döndürülen değerin türü [Uİnt64](../../sql-reference/d
 
 **Ayrıntı**
 
-ClickHouse destekler `COUNT(DISTINCT ...)` sözdizimi. Bu yapının davranışı Aşağıdakilere bağlıdır [count_distinct_implementation](../../operations/settings/settings.md#settings-count_distinct_implementation) ayar. Aşağıdakilerden hang theisini tanımlar [uniq\*](#agg_function-uniq) fonksiyonlar işlemi gerçekleştirmek için kullanılır. Varsayılan değer [uniqExact](#agg_function-uniqexact) İşlev.
+ClickHouse destekler `COUNT(DISTINCT ...)` sözdizimi. Bu yapının davranışı Aşağıdakilere bağlıdır [count\_distinct\_implementation](../../operations/settings/settings.md#settings-count_distinct_implementation) ayar. Aşağıdakilerden hang theisini tanımlar [uniq\*](#agg_function-uniq) fonksiyonlar işlemi gerçekleştirmek için kullanılır. Varsayılan değer [uniqExact](#agg_function-uniqexact) İşlev.
 
 Bu `SELECT count() FROM table` tablodaki girdi sayısı ayrı olarak depolanmadığı için sorgu en iyi duruma getirilmez. Tablodan küçük bir sütun seçer ve içindeki değerlerin sayısını sayar.
 
@@ -464,6 +464,69 @@ The kurtosis of the given distribution. Type — [Float64](../../sql-reference/d
 SELECT kurtSamp(value) FROM series_with_value_column
 ```
 
+## timeSeriesGroupSum(uıd, zaman damgası, değer) {#agg-function-timeseriesgroupsum}
+
+`timeSeriesGroupSum` örnek zaman damgası değil hizalama farklı zaman serileri toplayabilir.
+İki örnek zaman damgası arasında doğrusal enterpolasyon kullanacak ve daha sonra zaman serilerini birlikte toplayacaktır.
+
+-   `uid` zaman serisi benzersiz kimliği mi, `UInt64`.
+-   `timestamp` milisaniye veya mikrosaniye desteklemek için Int64 türüdür.
+-   `value` metr .iktir.
+
+İşlev, tuples dizisini döndürür `(timestamp, aggregated_value)` çiftliler.
+
+Bu işlevi kullanmadan önce emin olun `timestamp` artan düzende.
+
+Örnek:
+
+``` text
+┌─uid─┬─timestamp─┬─value─┐
+│ 1   │     2     │   0.2 │
+│ 1   │     7     │   0.7 │
+│ 1   │    12     │   1.2 │
+│ 1   │    17     │   1.7 │
+│ 1   │    25     │   2.5 │
+│ 2   │     3     │   0.6 │
+│ 2   │     8     │   1.6 │
+│ 2   │    12     │   2.4 │
+│ 2   │    18     │   3.6 │
+│ 2   │    24     │   4.8 │
+└─────┴───────────┴───────┘
+```
+
+``` sql
+CREATE TABLE time_series(
+    uid       UInt64,
+    timestamp Int64,
+    value     Float64
+) ENGINE = Memory;
+INSERT INTO time_series VALUES
+    (1,2,0.2),(1,7,0.7),(1,12,1.2),(1,17,1.7),(1,25,2.5),
+    (2,3,0.6),(2,8,1.6),(2,12,2.4),(2,18,3.6),(2,24,4.8);
+
+SELECT timeSeriesGroupSum(uid, timestamp, value)
+FROM (
+    SELECT * FROM time_series order by timestamp ASC
+);
+```
+
+Ve sonuç olacak:
+
+``` text
+[(2,0.2),(3,0.9),(7,2.1),(8,2.4),(12,3.6),(17,5.1),(18,5.4),(24,7.2),(25,2.5)]
+```
+
+## timeSeriesGroupRateSum(uıd, ts, val) {#agg-function-timeseriesgroupratesum}
+
+Benzer şekilde `timeSeriesGroupSum`, `timeSeriesGroupRateSum` zaman serilerinin oranını hesaplar ve daha sonra toplam oranları birlikte hesaplar.
+Ayrıca, bu işlevi kullanmadan önce zaman damgası yükseliş sırasına göre olmalıdır.
+
+Bu fonksiyon dataun ver theiye uygulanması `timeSeriesGroupSum` örnek, aşağıdaki sonucu alırsınız:
+
+``` text
+[(2,0),(3,0.1),(7,0.3),(8,0.3),(12,0.3),(17,0.3),(18,0.3),(24,0.3),(25,0.1)]
+```
+
 ## avg (x) {#agg_function-avg}
 
 Ortalama hesaplar.
@@ -658,7 +721,7 @@ Fonksiyon değişken sayıda parametre alır. Parametreler olabilir `Tuple`, `Ar
 -   [uniqCombined](#agg_function-uniqcombined)
 -   [uniqHLL12](#agg_function-uniqhll12)
 
-## groupArray (x), groupArray (max_size)(x) {#agg_function-grouparray}
+## groupArray (x), groupArray (max\_size)(x) {#agg_function-grouparray}
 
 Bağımsız değişken değerleri dizisi oluşturur.
 Değerler diziye herhangi bir (belirsiz) sırayla eklenebilir.
@@ -904,7 +967,7 @@ FROM t
 └───────────┴──────────────────────────────────┴───────────────────────┘
 ```
 
-## groupUniqArray (x), groupUniqArray (max_size)(x) {#groupuniqarrayx-groupuniqarraymax-sizex}
+## groupUniqArray (x), groupUniqArray (max\_size)(x) {#groupuniqarrayx-groupuniqarraymax-sizex}
 
 Farklı bağımsız değişken değerlerinden bir dizi oluşturur. Bellek tüketimi için aynıdır `uniqExact` İşlev.
 

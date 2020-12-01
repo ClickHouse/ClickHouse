@@ -35,7 +35,7 @@ def test_ttl_columns(started_cluster):
         node.query(
             '''
                 CREATE TABLE test_ttl(date DateTime, id UInt32, a Int32 TTL date + INTERVAL 1 DAY, b Int32 TTL date + INTERVAL 1 MONTH)
-                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_columns', '{replica}')
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl', '{replica}')
                 ORDER BY id PARTITION BY toDayOfMonth(date) SETTINGS merge_with_ttl_timeout=0, min_bytes_for_wide_part=0;
             '''.format(replica=node.name))
 
@@ -155,7 +155,7 @@ def test_modify_ttl(started_cluster):
         node.query(
             '''
                 CREATE TABLE test_ttl(d DateTime, id UInt32)
-                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_modify', '{replica}')
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl', '{replica}')
                 ORDER BY id
             '''.format(replica=node.name))
 
@@ -179,7 +179,7 @@ def test_modify_column_ttl(started_cluster):
         node.query(
             '''
                 CREATE TABLE test_ttl(d DateTime, id UInt32 DEFAULT 42)
-                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_column', '{replica}')
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl', '{replica}')
                 ORDER BY d
             '''.format(replica=node.name))
 
@@ -202,7 +202,7 @@ def test_ttl_double_delete_rule_returns_error(started_cluster):
     try:
         node1.query('''
             CREATE TABLE test_ttl(date DateTime, id UInt32)
-            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_double_delete', '{replica}')
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl', '{replica}')
             ORDER BY id PARTITION BY toDayOfMonth(date)
             TTL date + INTERVAL 1 DAY, date + INTERVAL 2 DAY SETTINGS merge_with_ttl_timeout=0
         '''.format(replica=node1.name))
@@ -212,14 +212,6 @@ def test_ttl_double_delete_rule_returns_error(started_cluster):
     except:
         assert False
 
-
-def optimize_with_retry(node, table_name, retry=20):
-    for i in range(retry):
-        try:
-            node.query("OPTIMIZE TABLE {name} FINAL SETTINGS optimize_throw_if_noop = 1".format(name=table_name), settings={"optimize_throw_if_noop": "1"})
-            break
-        except e:
-            time.sleep(0.5)
 
 @pytest.mark.parametrize("name,engine", [
     ("test_ttl_alter_delete", "MergeTree()"),
@@ -246,6 +238,14 @@ limitations under the License."""
     """
     drop_table([node1], name)
 
+    def optimize_with_retry(retry=20):
+        for i in range(retry):
+            try:
+                node1.query("OPTIMIZE TABLE {name} FINAL".format(name=name), settings={"optimize_throw_if_noop": "1"})
+                break
+            except:
+                time.sleep(0.5)
+
     node1.query(
         """
             CREATE TABLE {name} (
@@ -267,7 +267,7 @@ limitations under the License."""
 
     time.sleep(1)
 
-    optimize_with_retry(node1, name)
+    optimize_with_retry()
     r = node1.query("SELECT s1, b1 FROM {name} ORDER BY b1, s1".format(name=name)).splitlines()
     assert r == ["\t1", "hello2\t2"]
 
@@ -277,55 +277,7 @@ limitations under the License."""
 
     time.sleep(1)
 
-    optimize_with_retry(node1, name)
+    optimize_with_retry()
 
     r = node1.query("SELECT s1, b1 FROM {name} ORDER BY b1, s1".format(name=name)).splitlines()
     assert r == ["\t0", "\t0", "hello2\t2"]
-
-def test_ttl_empty_parts(started_cluster):
-    drop_table([node1, node2], "test_ttl_empty_parts")
-    for node in [node1, node2]:
-        node.query(
-        '''
-            CREATE TABLE test_ttl_empty_parts(date Date, id UInt32)
-            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_empty_parts', '{replica}')
-            ORDER BY id
-            SETTINGS max_bytes_to_merge_at_min_space_in_pool = 1, max_bytes_to_merge_at_max_space_in_pool = 1,
-                cleanup_delay_period = 1, cleanup_delay_period_random_add = 0
-        '''.format(replica=node.name))
-
-    for i in range (1, 7):
-        node1.query("INSERT INTO test_ttl_empty_parts SELECT '2{}00-01-0{}', number FROM numbers(1000)".format(i % 2, i))
-
-    assert node1.query("SELECT count() FROM test_ttl_empty_parts") == "6000\n"
-    assert node1.query("SELECT name FROM system.parts WHERE table = 'test_ttl_empty_parts' AND active ORDER BY name") == \
-        "all_0_0_0\nall_1_1_0\nall_2_2_0\nall_3_3_0\nall_4_4_0\nall_5_5_0\n"
-
-    node1.query("ALTER TABLE test_ttl_empty_parts MODIFY TTL date")
-
-    assert node1.query("SELECT count() FROM test_ttl_empty_parts") == "3000\n"
-
-    time.sleep(3) # Wait for cleanup thread
-    assert node1.query("SELECT name FROM system.parts WHERE table = 'test_ttl_empty_parts' AND active ORDER BY name") == \
-        "all_0_0_0_6\nall_2_2_0_6\nall_4_4_0_6\n"
-
-    for node in [node1, node2]:
-        node.query("ALTER TABLE test_ttl_empty_parts MODIFY SETTING max_bytes_to_merge_at_min_space_in_pool = 1000000000")
-        node.query("ALTER TABLE test_ttl_empty_parts MODIFY SETTING max_bytes_to_merge_at_max_space_in_pool = 1000000000")
-
-    optimize_with_retry(node1, 'test_ttl_empty_parts')
-    assert node1.query("SELECT name FROM system.parts WHERE table = 'test_ttl_empty_parts' AND active ORDER BY name") == "all_0_4_1_6\n"
-
-    # Check that after removing empty parts mutations and merges works
-    node1.query("INSERT INTO test_ttl_empty_parts SELECT '2100-01-20', number FROM numbers(1000)")
-    node1.query("ALTER TABLE test_ttl_empty_parts DELETE WHERE id % 2 = 0 SETTINGS mutations_sync = 2")
-    assert node1.query("SELECT count() FROM test_ttl_empty_parts") == "2000\n"
-
-    optimize_with_retry(node1, 'test_ttl_empty_parts')
-    assert node1.query("SELECT name FROM system.parts WHERE table = 'test_ttl_empty_parts' AND active ORDER BY name") == "all_0_7_2_8\n"
-
-    node2.query('SYSTEM SYNC REPLICA test_ttl_empty_parts', timeout=20)
-
-    error_msg = '<Error> default.test_ttl_empty_parts (ReplicatedMergeTreeCleanupThread)'
-    assert not node1.contains_in_log(error_msg)
-    assert not node2.contains_in_log(error_msg)

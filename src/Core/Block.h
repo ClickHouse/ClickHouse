@@ -119,9 +119,6 @@ public:
      /** List of names, types and lengths of columns. Designed for debugging. */
     std::string dumpStructure() const;
 
-    /** List of column names and positions from index */
-    std::string dumpIndex() const;
-
     /** Get the same block, but empty. */
     Block cloneEmpty() const;
 
@@ -159,7 +156,7 @@ private:
     /// This is needed to allow function execution over data.
     /// It is safe because functions does not change column names, so index is unaffected.
     /// It is temporary.
-    friend class ExpressionActions;
+    friend struct ExpressionAction;
     friend class ActionsDAG;
 };
 

@@ -36,7 +36,7 @@ Verilerin yıkanması için koşullar, her biri için ayrı ayrı hesaplanır. `
 CREATE TABLE merge.hits_buffer AS merge.hits ENGINE = Buffer(merge, hits, 16, 10, 100, 10000, 1000000, 10000000, 100000000)
 ```
 
-Oluşturma Bir ‘merge.hits_buffer’ ile aynı yapıya sahip tablo ‘merge.hits’ ve Tampon motorunu kullanarak. Bu tabloya yazarken, veriler RAM'de arabelleğe alınır ve daha sonra ‘merge.hits’ Tablo. 16 tamponlar oluşturulur. 100 saniye geçti veya bir milyon satır yazılmış veya 100 MB veri yazılmıştır; ya da aynı anda 10 saniye geçti ve 10.000 satır ve 10 MB veri yazılmıştır, bunların her veri temizlendi. Örneğin, sadece bir satır yazılmışsa, 100 saniye sonra ne olursa olsun, yıkanacaktır. Ancak, birçok satır yazılmışsa, veriler daha erken temizlenecektir.
+Oluşturma Bir ‘merge.hits\_buffer’ ile aynı yapıya sahip tablo ‘merge.hits’ ve Tampon motorunu kullanarak. Bu tabloya yazarken, veriler RAM'de arabelleğe alınır ve daha sonra ‘merge.hits’ Tablo. 16 tamponlar oluşturulur. 100 saniye geçti veya bir milyon satır yazılmış veya 100 MB veri yazılmıştır; ya da aynı anda 10 saniye geçti ve 10.000 satır ve 10 MB veri yazılmıştır, bunların her veri temizlendi. Örneğin, sadece bir satır yazılmışsa, 100 saniye sonra ne olursa olsun, yıkanacaktır. Ancak, birçok satır yazılmışsa, veriler daha erken temizlenecektir.
 
 Sunucu DROP TABLE veya DETACH TABLE ile durdurulduğunda, arabellek verileri de hedef tabloya temizlendi.
 
@@ -58,7 +58,7 @@ Son ve örnek arabellek tabloları için düzgün çalışmıyor. Bu koşullar h
 
 Bir arabelleğe veri eklerken, arabelleklerden biri kilitlenir. Bir okuma işlemi aynı anda tablodan gerçekleştiriliyor, bu gecikmelere neden olur.
 
-Bir arabellek tablosuna eklenen veriler, alt tabloda farklı bir sırada ve farklı bloklarda sonuçlanabilir. Bu nedenle, bir arabellek tablo CollapsingMergeTree doğru yazmak için kullanmak zordur. Sorunları önlemek için şunları ayarlayabilirsiniz ‘num_layers’ 1'e.
+Bir arabellek tablosuna eklenen veriler, alt tabloda farklı bir sırada ve farklı bloklarda sonuçlanabilir. Bu nedenle, bir arabellek tablo CollapsingMergeTree doğru yazmak için kullanmak zordur. Sorunları önlemek için şunları ayarlayabilirsiniz ‘num\_layers’ 1'e.
 
 Hedef tablo yinelenirse, bir arabellek tablosuna yazarken yinelenmiş tabloların bazı beklenen özellikleri kaybolur. Satır ve veri parçaları boyutlarda sipariş için rasgele değişiklikler veri çoğaltma güvenilir olması mümkün olmadığını ifade eden çalışma, kapanmasına neden ‘exactly once’ çoğaltılan tablolara yazın.
 

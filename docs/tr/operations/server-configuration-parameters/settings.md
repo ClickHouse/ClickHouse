@@ -7,7 +7,7 @@ toc_title: "Sunucu Ayarlar\u0131"
 
 # Sunucu Ayarları {#server-settings}
 
-## buıltın_dıctıonarıes_reload_ınterval {#builtin-dictionaries-reload-interval}
+## buıltın\_dıctıonarıes\_reload\_ınterval {#builtin-dictionaries-reload-interval}
 
 Dahili sözlükleri yeniden yüklemeden önce saniye cinsinden Aralık.
 
@@ -68,7 +68,7 @@ Bir veri bölümü için herhangi bir koşul karşılanmazsa, ClickHouse `lz4` s
 </compression>
 ```
 
-## default_database {#default-database}
+## default\_database {#default-database}
 
 Varsayılan veritabanı.
 
@@ -80,7 +80,7 @@ Veritabanlarının bir listesini almak için [SHOW DATABASES](../../sql-referenc
 <default_database>default</default_database>
 ```
 
-## default_profile {#default-profile}
+## default\_profile {#default-profile}
 
 Varsayılan ayarlar profili.
 
@@ -92,7 +92,7 @@ Ayarlar profilleri parametrede belirtilen dosyada bulunur `user_config`.
 <default_profile>default</default_profile>
 ```
 
-## dictionaries_config {#server_configuration_parameters-dictionaries_config}
+## dictionaries\_config {#server_configuration_parameters-dictionaries_config}
 
 Dış sözlükler için yapılandırma dosyasının yolu.
 
@@ -109,7 +109,7 @@ Ayrıca bakınız “[Dış söz dictionarieslükler](../../sql-reference/dictio
 <dictionaries_config>*_dictionary.xml</dictionaries_config>
 ```
 
-## dictionaries_lazy_load {#server_configuration_parameters-dictionaries_lazy_load}
+## dictionaries\_lazy\_load {#server_configuration_parameters-dictionaries_lazy_load}
 
 Sözlüklerin tembel yüklenmesi.
 
@@ -125,7 +125,7 @@ Varsayılan değer `true`.
 <dictionaries_lazy_load>true</dictionaries_lazy_load>
 ```
 
-## format_schema_path {#server_configuration_parameters-format_schema_path}
+## format\_schema\_path {#server_configuration_parameters-format_schema_path}
 
 Dizin için şemalar gibi giriş verileri için şemaları ile yolu [CapnProto](../../interfaces/formats.md#capnproto) biçimli.
 
@@ -146,11 +146,11 @@ Ayarlar:
 -   port – The port on the Graphite server.
 -   interval – The interval for sending, in seconds.
 -   timeout – The timeout for sending data, in seconds.
--   root_path – Prefix for keys.
+-   root\_path – Prefix for keys.
 -   metrics – Sending data from the [sistem.metrik](../../operations/system-tables.md#system_tables-metrics) Tablo.
 -   events – Sending deltas data accumulated for the time period from the [sistem.etkinlik](../../operations/system-tables.md#system_tables-events) Tablo.
--   events_cumulative – Sending cumulative data from the [sistem.etkinlik](../../operations/system-tables.md#system_tables-events) Tablo.
--   asynchronous_metrics – Sending data from the [sistem.asynchronous_metrics](../../operations/system-tables.md#system_tables-asynchronous_metrics) Tablo.
+-   events\_cumulative – Sending cumulative data from the [sistem.etkinlik](../../operations/system-tables.md#system_tables-events) Tablo.
+-   asynchronous\_metrics – Sending data from the [sistem.asynchronous\_metrics](../../operations/system-tables.md#system_tables-asynchronous_metrics) Tablo.
 
 Birden fazla yapılandırabilirsiniz `<graphite>` yanlar. Örneğin, bunu farklı aralıklarla farklı veri göndermek için kullanabilirsiniz.
 
@@ -170,7 +170,7 @@ Birden fazla yapılandırabilirsiniz `<graphite>` yanlar. Örneğin, bunu farkl�
 </graphite>
 ```
 
-## graphite_rollup {#server_configuration_parameters-graphite-rollup}
+## graphite\_rollup {#server_configuration_parameters-graphite-rollup}
 
 Grafit için inceltme verileri için ayarlar.
 
@@ -198,7 +198,7 @@ Daha fazla ayrıntı için bkz. [Graphıtemergetree](../../engines/table-engines
 </graphite_rollup_example>
 ```
 
-## http_port/https_port {#http-porthttps-port}
+## http\_port/https\_port {#http-porthttps-port}
 
 Http(ler) üzerinden sunucuya bağlanmak için bağlantı noktası.
 
@@ -212,7 +212,7 @@ Eğer `http_port` belirtilmişse, OpenSSL yapılandırması ayarlanmış olsa bi
 <https_port>9999</https_port>
 ```
 
-## http_server_default_response {#server_configuration_parameters-http_server_default_response}
+## http\_server\_default\_response {#server_configuration_parameters-http_server_default_response}
 
 ClickHouse HTTP (s) sunucusuna eriştiğinizde varsayılan olarak gösterilen sayfa.
 Varsayılan değer “Ok.” (sonunda bir çizgi besleme ile)
@@ -227,7 +227,7 @@ Açıyor `https://tabix.io/` eriş whenirken `http://localhost: http_port`.
 </http_server_default_response>
 ```
 
-## include_from {#server_configuration_parameters-include_from}
+## include\_from {#server_configuration_parameters-include_from}
 
 Değiştirmeleri ile dosyanın yolu.
 
@@ -239,7 +239,7 @@ Daha fazla bilgi için bölüme bakın “[Yapılandırma dosyaları](../configu
 <include_from>/etc/metrica.xml</include_from>
 ```
 
-## ınterserver_http_port {#interserver-http-port}
+## ınterserver\_http\_port {#interserver-http-port}
 
 ClickHouse sunucuları arasında veri alışverişi için bağlantı noktası.
 
@@ -249,7 +249,7 @@ ClickHouse sunucuları arasında veri alışverişi için bağlantı noktası.
 <interserver_http_port>9009</interserver_http_port>
 ```
 
-## ınterserver_http_host {#interserver-http-host}
+## ınterserver\_http\_host {#interserver-http-host}
 
 Bu sunucuya erişmek için diğer sunucular tarafından kullanılabilecek ana bilgisayar adı.
 
@@ -263,7 +263,7 @@ Belirli bir ağ arayüzünden kopmak için kullanışlıdır.
 <interserver_http_host>example.yandex.ru</interserver_http_host>
 ```
 
-## ınterserver_http_credentials {#server-settings-interserver-http-credentials}
+## ınterserver\_http\_credentials {#server-settings-interserver-http-credentials}
 
 Sırasında kimlik doğrulaması için kullanılan kullanıcı adı ve şifre [çoğalma](../../engines/table-engines/mergetree-family/replication.md) çoğaltılan \* motorlarla. Bu kimlik bilgileri yalnızca yinelemeler arasındaki iletişim için kullanılır ve ClickHouse istemcileri için kimlik bilgileri ile ilgisizdir. Sunucu, yinelemeleri bağlamak için bu kimlik bilgilerini denetliyor ve diğer yinelemelere bağlanırken aynı kimlik bilgilerini kullanıyor. Bu nedenle, bu kimlik bilgileri kümedeki tüm yinelemeler için aynı şekilde ayarlanmalıdır.
 Varsayılan olarak, kimlik doğrulama kullanılmaz.
@@ -282,7 +282,7 @@ Bu bölüm aşağıdaki parametreleri içerir:
 </interserver_http_credentials>
 ```
 
-## keep_alive_timeout {#keep-alive-timeout}
+## keep\_alive\_timeout {#keep-alive-timeout}
 
 ClickHouse bağlantıyı kapatmadan önce gelen istekleri bekler saniye sayısı. Varsayılan 3 saniye.
 
@@ -292,7 +292,7 @@ ClickHouse bağlantıyı kapatmadan önce gelen istekleri bekler saniye sayısı
 <keep_alive_timeout>3</keep_alive_timeout>
 ```
 
-## listen_host {#server_configuration_parameters-listen_host}
+## listen\_host {#server_configuration_parameters-listen_host}
 
 İsteklerin gelebileceği ana bilgisayarlarda kısıtlama. Sunucunun hepsini yanıtlamasını istiyorsanız, belirtin `::`.
 
@@ -343,10 +343,10 @@ Syslog yazma da desteklenmektedir. Yapılandırma örneği:
 
 Anahtarlar:
 
--   use_syslog — Required setting if you want to write to the syslog.
+-   use\_syslog — Required setting if you want to write to the syslog.
 -   address — The host\[:port\] of syslogd. If omitted, the local daemon is used.
 -   hostname — Optional. The name of the host that logs are sent from.
--   facility — [Syslog tesisi anahtar sözcüğü](https://en.wikipedia.org/wiki/Syslog#Facility) ile büyük harf inlerle “LOG_” önek: (`LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3` vb.).
+-   facility — [Syslog tesisi anahtar sözcüğü](https://en.wikipedia.org/wiki/Syslog#Facility) ile büyük harf inlerle “LOG\_” önek: (`LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3` vb.).
     Varsayılan değer: `LOG_USER` eğer `address` belirtilen, `LOG_DAEMON otherwise.`
 -   format – Message format. Possible values: `bsd` ve `syslog.`
 
@@ -364,7 +364,7 @@ Daha fazla bilgi için bölüme bakın “[Çoğaltılmış tablolar oluşturma]
 <macros incl="macros" optional="true" />
 ```
 
-## mark_cache_size {#server-mark-cache-size}
+## mark\_cache\_size {#server-mark-cache-size}
 
 Tablo motorları tarafından kullanılan işaretlerin önbelleğinin yaklaşık boyutu (bayt cinsinden) [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) aile.
 
@@ -376,7 +376,7 @@ Tablo motorları tarafından kullanılan işaretlerin önbelleğinin yaklaşık 
 <mark_cache_size>5368709120</mark_cache_size>
 ```
 
-## max_concurrent_queries {#max-concurrent-queries}
+## max\_concurrent\_queries {#max-concurrent-queries}
 
 Aynı anda işlenen isteklerin maksimum sayısı.
 
@@ -386,7 +386,7 @@ Aynı anda işlenen isteklerin maksimum sayısı.
 <max_concurrent_queries>100</max_concurrent_queries>
 ```
 
-## max_connections {#max-connections}
+## max\_connections {#max-connections}
 
 En fazla gelen bağlantı sayısı.
 
@@ -396,7 +396,7 @@ En fazla gelen bağlantı sayısı.
 <max_connections>4096</max_connections>
 ```
 
-## max_open_files {#max-open-files}
+## max\_open\_files {#max-open-files}
 
 Maksimum açık dosya sayısı.
 
@@ -410,7 +410,7 @@ Biz beri Mac OS X bu seçeneği kullanmanızı öneririz `getrlimit()` işlev ya
 <max_open_files>262144</max_open_files>
 ```
 
-## max_table_size_to_drop {#max-table-size-to-drop}
+## max\_table\_size\_to\_drop {#max-table-size-to-drop}
 
 Tabloları silme konusunda kısıtlama.
 
@@ -428,7 +428,7 @@ Varsayılan değer: 50 GB.
 <max_table_size_to_drop>0</max_table_size_to_drop>
 ```
 
-## merge_tree {#server_configuration_parameters-merge_tree}
+## merge\_tree {#server_configuration_parameters-merge_tree}
 
 Tablolar için ince ayar [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
 
@@ -463,7 +463,7 @@ Sunucu/istemci ayarları için tuşlar:
 -   sessionTimeout – Time for caching the session on the server.
 -   extendedVerification – Automatically extended verification of certificates after the session ends. Acceptable values: `true`, `false`.
 -   requireTLSv1 – Require a TLSv1 connection. Acceptable values: `true`, `false`.
--   requireTLSv1_1 – Require a TLSv1.1 connection. Acceptable values: `true`, `false`.
+-   requireTLSv1\_1 – Require a TLSv1.1 connection. Acceptable values: `true`, `false`.
 -   requireTLSv1 – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
 -   fips – Activates OpenSSL FIPS mode. Supported if the library's OpenSSL version supports FIPS.
 -   privateKeyPassphraseHandler – Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.
@@ -501,11 +501,11 @@ Sunucu/istemci ayarları için tuşlar:
 </openSSL>
 ```
 
-## part_log {#server_configuration_parameters-part-log}
+## part\_log {#server_configuration_parameters-part-log}
 
 İlişkili olayları günlüğe kaydetme [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md). Örneğin, veri ekleme veya birleştirme. Birleştirme algoritmalarını simüle etmek ve özelliklerini karşılaştırmak için günlüğü kullanabilirsiniz. Birleştirme işlemini görselleştirebilirsiniz.
 
-Sorgular günlüğe kaydedilir [sistem.part_log](../../operations/system-tables.md#system_tables-part-log) tablo, ayrı bir dosyada değil. Bu tablonun adını aşağıdaki tabloda yapılandırabilirsiniz: `table` parametre (aşağıya bakınız).
+Sorgular günlüğe kaydedilir [sistem.part\_log](../../operations/system-tables.md#system_tables-part-log) tablo, ayrı bir dosyada değil. Bu tablonun adını aşağıdaki tabloda yapılandırabilirsiniz: `table` parametre (aşağıya bakınız).
 
 Günlüğü yapılandırmak için aşağıdaki parametreleri kullanın:
 
@@ -548,7 +548,7 @@ Ayarlar:
 -   `port` – Port for `endpoint`.
 -   `metrics` – Flag that sets to expose metrics from the [sistem.metrik](../system-tables.md#system_tables-metrics) Tablo.
 -   `events` – Flag that sets to expose metrics from the [sistem.etkinlik](../system-tables.md#system_tables-events) Tablo.
--   `asynchronous_metrics` – Flag that sets to expose current metrics values from the [sistem.asynchronous_metrics](../system-tables.md#system_tables-asynchronous_metrics) Tablo.
+-   `asynchronous_metrics` – Flag that sets to expose current metrics values from the [sistem.asynchronous\_metrics](../system-tables.md#system_tables-asynchronous_metrics) Tablo.
 
 **Örnek**
 
@@ -562,11 +562,11 @@ Ayarlar:
     </prometheus>
 ```
 
-## query_log {#server_configuration_parameters-query-log}
+## query\_log {#server_configuration_parameters-query-log}
 
-İle alınan günlük sorgu settinglarının ayarlanması [log_queries = 1](../settings/settings.md) ayar.
+İle alınan günlük sorgu settinglarının ayarlanması [log\_queries = 1](../settings/settings.md) ayar.
 
-Sorgular günlüğe kaydedilir [sistem.query_log](../../operations/system-tables.md#system_tables-query_log) tablo, ayrı bir dosyada değil. Tablonun adını değiştirebilirsiniz. `table` parametre (aşağıya bakınız).
+Sorgular günlüğe kaydedilir [sistem.query\_log](../../operations/system-tables.md#system_tables-query_log) tablo, ayrı bir dosyada değil. Tablonun adını değiştirebilirsiniz. `table` parametre (aşağıya bakınız).
 
 Günlüğü yapılandırmak için aşağıdaki parametreleri kullanın:
 
@@ -588,11 +588,11 @@ Tablo yoksa, ClickHouse bunu oluşturur. ClickHouse sunucusu güncelleştirildi�
 </query_log>
 ```
 
-## query_thread_log {#server_configuration_parameters-query-thread-log}
+## query\_thread\_log {#server_configuration_parameters-query-thread-log}
 
-İle alınan sorguların günlük iş parçacıklarının ayarlanması [log_query_threads = 1](../settings/settings.md#settings-log-query-threads) ayar.
+İle alınan sorguların günlük iş parçacıklarının ayarlanması [log\_query\_threads = 1](../settings/settings.md#settings-log-query-threads) ayar.
 
-Sorgular günlüğe kaydedilir [sistem.query_thread_log](../../operations/system-tables.md#system_tables-query-thread-log) tablo, ayrı bir dosyada değil. Tablonun adını değiştirebilirsiniz. `table` parametre (aşağıya bakınız).
+Sorgular günlüğe kaydedilir [sistem.query\_thread\_log](../../operations/system-tables.md#system_tables-query-thread-log) tablo, ayrı bir dosyada değil. Tablonun adını değiştirebilirsiniz. `table` parametre (aşağıya bakınız).
 
 Günlüğü yapılandırmak için aşağıdaki parametreleri kullanın:
 
@@ -614,9 +614,9 @@ Tablo yoksa, ClickHouse bunu oluşturur. Sorgu iş parçacığı günlüğü yap
 </query_thread_log>
 ```
 
-## trace_log {#server_configuration_parameters-trace_log}
+## trace\_log {#server_configuration_parameters-trace_log}
 
-İçin ayarlar [trace_log](../../operations/system-tables.md#system_tables-trace_log) sistem tablosu çalışması.
+İçin ayarlar [trace\_log](../../operations/system-tables.md#system_tables-trace_log) sistem tablosu çalışması.
 
 Parametre:
 
@@ -636,7 +636,7 @@ Varsayılan sunucu yapılandırma dosyası `config.xml` aşağıdaki ayarlar bö
 </trace_log>
 ```
 
-## query_masking_rules {#query-masking-rules}
+## query\_masking\_rules {#query-masking-rules}
 
 Regexp tabanlı kurallar, sorgulara ve tüm günlük iletilerine sunucu günlüklerinde depolamadan önce uygulanacak,
 `system.query_log`, `system.text_log`, `system.processes` tablo ve istemciye gönderilen günlüklerde. Önlem allowseyi sağlayan
@@ -667,7 +667,7 @@ Maskeleme kuralları tüm sorguya uygulanır (hatalı biçimlendirilmiş / ayrı
 Dağıtılmış sorgular için her sunucu ayrı ayrı yapılandırılmalıdır, aksi takdirde alt sorgular diğerine iletilir
 düğümler maskeleme olmadan saklanır.
 
-## remote_servers {#server-settings-remote-servers}
+## remote\_servers {#server-settings-remote-servers}
 
 Tarafından kullanılan küm ofelerin yapılandırması [Dağılı](../../engines/table-engines/special/distributed.md) tablo motoru ve `cluster` tablo işlevi.
 
@@ -681,7 +681,7 @@ Değeri için `incl` öznitelik, bölümüne bakın “[Yapılandırma dosyalar�
 
 **Ayrıca Bakınız**
 
--   [skip_unavailable_shards](../settings/settings.md#settings-skip_unavailable_shards)
+-   [skip\_unavailable\_shards](../settings/settings.md#settings-skip_unavailable_shards)
 
 ## saat dilimi {#server_configuration_parameters-timezone}
 
@@ -697,7 +697,7 @@ Saat dilimi, datetime alanları metin biçimine (ekranda veya dosyada yazdırıl
 <timezone>Europe/Moscow</timezone>
 ```
 
-## tcp_port {#server_configuration_parameters-tcp_port}
+## tcp\_port {#server_configuration_parameters-tcp_port}
 
 TCP protokolü üzerinden istemcilerle iletişim kurmak için bağlantı noktası.
 
@@ -707,7 +707,7 @@ TCP protokolü üzerinden istemcilerle iletişim kurmak için bağlantı noktas�
 <tcp_port>9000</tcp_port>
 ```
 
-## tcp_port_secure {#server_configuration_parameters-tcp_port_secure}
+## tcp\_port\_secure {#server_configuration_parameters-tcp_port_secure}
 
 İstemcilerle güvenli iletişim için TCP bağlantı noktası. İle kullanın [OpenSSL](#server_configuration_parameters-openssl) ayarlar.
 
@@ -721,7 +721,7 @@ Pozitif tamsayı.
 <tcp_port_secure>9440</tcp_port_secure>
 ```
 
-## mysql_port {#server_configuration_parameters-mysql_port}
+## mysql\_port {#server_configuration_parameters-mysql_port}
 
 MySQL protokolü üzerinden istemcilerle iletişim kurmak için bağlantı noktası.
 
@@ -735,7 +735,7 @@ Pozitif tamsayı.
 <mysql_port>9004</mysql_port>
 ```
 
-## tmp_path {#server-settings-tmp_path}
+## tmp\_path {#server-settings-tmp_path}
 
 Büyük sorguları işlemek için geçici veri yolu.
 
@@ -748,7 +748,7 @@ Büyük sorguları işlemek için geçici veri yolu.
 <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
 ```
 
-## tmp_policy {#server-settings-tmp-policy}
+## tmp\_policy {#server-settings-tmp-policy}
 
 Politika dan [`storage_configuration`](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) geçici dosyaları saklamak için.
 Set değilse [`tmp_path`](#server-settings-tmp_path) kullanılır, aksi takdirde göz ardı edilir.
@@ -759,11 +759,11 @@ Set değilse [`tmp_path`](#server-settings-tmp_path) kullanılır, aksi takdirde
 - `max_data_part_size_bytes` göz ardı edilir
 - bu Politikada tam olarak bir cilt olmalı
 
-## uncompressed_cache_size {#server-settings-uncompressed_cache_size}
+## uncompressed\_cache\_size {#server-settings-uncompressed_cache_size}
 
 Tablo motorları tarafından kullanılan sıkıştırılmamış veriler için önbellek boyutu (bayt cinsinden) [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
 
-Sunucu için bir paylaşılan önbellek var. Bellek talep üzerine tahsis edilir. Seçenek varsa önbellek kullanılır [use_uncompressed_cache](../settings/settings.md#setting-use_uncompressed_cache) etkindir.
+Sunucu için bir paylaşılan önbellek var. Bellek talep üzerine tahsis edilir. Seçenek varsa önbellek kullanılır [use\_uncompressed\_cache](../settings/settings.md#setting-use_uncompressed_cache) etkindir.
 
 Sıkıştırılmamış önbellek, tek tek durumlarda çok kısa sorgular için avantajlıdır.
 
@@ -773,7 +773,7 @@ Sıkıştırılmamış önbellek, tek tek durumlarda çok kısa sorgular için a
 <uncompressed_cache_size>8589934592</uncompressed_cache_size>
 ```
 
-## user_files_path {#server_configuration_parameters-user_files_path}
+## user\_files\_path {#server_configuration_parameters-user_files_path}
 
 Kullanıcı dosyaları ile dizin. Tablo işlevinde kullanılır [Dosya()](../../sql-reference/table-functions/file.md).
 
@@ -783,7 +783,7 @@ Kullanıcı dosyaları ile dizin. Tablo işlevinde kullanılır [Dosya()](../../
 <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 ```
 
-## users_config {#users-config}
+## users\_config {#users-config}
 
 İçeren dosyanın yolu:
 
@@ -851,13 +851,13 @@ Bu bölüm aşağıdaki parametreleri içerir:
 -   [Çoğalma](../../engines/table-engines/mergetree-family/replication.md)
 -   [ZooKeeper programcı Kılavuzu](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
 
-## use_minimalistic_part_header_in_zookeeper {#server-settings-use_minimalistic_part_header_in_zookeeper}
+## use\_minimalistic\_part\_header\_in\_zookeeper {#server-settings-use_minimalistic_part_header_in_zookeeper}
 
 ZooKeeper veri parçası başlıkları için depolama yöntemi.
 
 Bu ayar yalnızca `MergeTree` aile. Belirt specifiedilebilir:
 
--   Küresel olarak [merge_tree](#server_configuration_parameters-merge_tree) bu bölüm `config.xml` Dosya.
+-   Küresel olarak [merge\_tree](#server_configuration_parameters-merge_tree) bu bölüm `config.xml` Dosya.
 
     ClickHouse sunucudaki tüm tablolar için ayarı kullanır. Ayarı istediğiniz zaman değiştirebilirsiniz. Mevcut tablolar, ayar değiştiğinde davranışlarını değiştirir.
 
@@ -879,21 +879,21 @@ Eğer `use_minimalistic_part_header_in_zookeeper = 1`, sonraları [çoğaltıyor
 
 **Varsayılan değer:** 0.
 
-## disable_internal_dns_cache {#server-settings-disable-internal-dns-cache}
+## disable\_internal\_dns\_cache {#server-settings-disable-internal-dns-cache}
 
 İç DNS önbelleğini devre dışı bırakır. Sistemlerinde ClickHouse işletim için tavsiye
 Kubernetes gibi sık sık değişen altyapı ile.
 
 **Varsayılan değer:** 0.
 
-## dns_cache_update_period {#server-settings-dns-cache-update-period}
+## dns\_cache\_update\_period {#server-settings-dns-cache-update-period}
 
 ClickHouse iç DNS önbelleğinde saklanan IP adreslerini güncelleme süresi (saniye cinsinden).
 Güncelleştirme, ayrı bir sistem iş parçacığında zaman uyumsuz olarak gerçekleştirilir.
 
 **Varsayılan değer**: 15.
 
-## access_control_path {#access_control_path}
+## access\_control\_path {#access_control_path}
 
 ClickHouse sunucusunun SQL komutları tarafından oluşturulan kullanıcı ve rol yapılandırmalarını depoladığı bir klasörün yolu.
 

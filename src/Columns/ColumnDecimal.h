@@ -1,14 +1,14 @@
 #pragma once
 
-#include <Columns/ColumnVectorHelper.h>
+#include <cmath>
+
+#include <Common/typeid_cast.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
+#include <Columns/ColumnVectorHelper.h>
 #include <Core/Field.h>
 #include <Core/DecimalFunctions.h>
 #include <Common/typeid_cast.h>
-#include <common/sort.h>
-
-#include <cmath>
 
 
 namespace DB
@@ -82,7 +82,7 @@ public:
 
     bool isNumeric() const override { return false; }
     bool canBeInsideNullable() const override { return true; }
-    bool isFixedAndContiguous() const final { return true; }
+    bool isFixedAndContiguous() const override { return true; }
     size_t sizeOfValueIfFixed() const override { return sizeof(T); }
 
     size_t size() const override { return data.size(); }
@@ -189,9 +189,9 @@ protected:
             sort_end = res.begin() + limit;
 
         if (reverse)
-            partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] > data[b]; });
+            std::partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] > data[b]; });
         else
-            partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] < data[b]; });
+            std::partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] < data[b]; });
     }
 };
 

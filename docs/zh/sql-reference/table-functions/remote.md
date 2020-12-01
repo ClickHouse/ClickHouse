@@ -49,7 +49,7 @@ example01-{01..02}-1
 
 如果您有多对大括号，它会生成相应集合的直接乘积。
 
-大括号中的地址和部分地址可以用管道符号(\|)分隔。 在这种情况下，相应的地址集被解释为副本，并且查询将被发送到第一个正常副本。 但是，副本将按照当前[load_balancing](../../operations/settings/settings.md)设置的顺序进行迭代。
+大括号中的地址和部分地址可以用管道符号(\|)分隔。 在这种情况下，相应的地址集被解释为副本，并且查询将被发送到第一个正常副本。 但是，副本将按照当前[load\_balancing](../../operations/settings/settings.md)设置的顺序进行迭代。
 
 示例:
 
@@ -73,6 +73,6 @@ example01-{01..02}-{1|2}
 如果未指定用户, 将会使用`default`。
 如果未指定密码，则使用空密码。
 
-`remoteSecure` - 与 `remote` 相同，但是会使用加密链接。默认端口为配置文件中的[tcp_port_secure](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure)，或9440。
+`remoteSecure` - 与 `remote` 相同，但是会使用加密链接。默认端口为配置文件中的[tcp\_port\_secure](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure)，或9440。
 
 [原始文章](https://clickhouse.tech/docs/en/query_language/table_functions/remote/) <!--hide-->

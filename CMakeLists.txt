@@ -59,6 +59,25 @@ set(CMAKE_DEBUG_POSTFIX "d" CACHE STRING "Generate debug library name with a pos
 # For more info see https://cmake.org/cmake/help/latest/prop_gbl/USE_FOLDERS.html
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
+# cmake 3.9+ needed.
+# Usually impractical.
+# See also ${ENABLE_THINLTO}
+option(ENABLE_IPO "Full link time optimization")
+
+if(ENABLE_IPO)
+    cmake_policy(SET CMP0069 NEW)
+    include(CheckIPOSupported)
+    check_ipo_supported(RESULT IPO_SUPPORTED OUTPUT IPO_NOT_SUPPORTED)
+    if(IPO_SUPPORTED)
+        message(STATUS "IPO/LTO is supported, enabling")
+        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+    else()
+        message (${RECONFIGURE_MESSAGE_LEVEL} "IPO/LTO is not supported: <${IPO_NOT_SUPPORTED}>")
+    endif()
+else()
+    message(STATUS "IPO/LTO not enabled.")
+endif()
+
 # Check that submodules are present only if source was downloaded with git
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git" AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/boost/boost")
     message (FATAL_ERROR "Submodules are not initialized. Run\n\tgit submodule update --init --recursive")
@@ -154,19 +173,17 @@ endif ()
 # Make sure the final executable has symbols exported
 set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic")
 
-if (OS_LINUX)
-    find_program (OBJCOPY_PATH NAMES "llvm-objcopy" "llvm-objcopy-11" "llvm-objcopy-10" "llvm-objcopy-9" "llvm-objcopy-8" "objcopy")
-    if (OBJCOPY_PATH)
-        message(STATUS "Using objcopy: ${OBJCOPY_PATH}.")
+find_program (OBJCOPY_PATH NAMES "llvm-objcopy" "llvm-objcopy-11" "llvm-objcopy-10" "llvm-objcopy-9" "llvm-objcopy-8" "objcopy")
+if (OBJCOPY_PATH)
+    message(STATUS "Using objcopy: ${OBJCOPY_PATH}.")
 
-        if (ARCH_AMD64)
-            set(OBJCOPY_ARCH_OPTIONS -O elf64-x86-64 -B i386)
-        elseif (ARCH_AARCH64)
-            set(OBJCOPY_ARCH_OPTIONS -O elf64-aarch64 -B aarch64)
-        endif ()
-    else ()
-        message(FATAL_ERROR "Cannot find objcopy.")
+    if (ARCH_AMD64)
+        set(OBJCOPY_ARCH_OPTIONS -O elf64-x86-64 -B i386)
+    elseif (ARCH_AARCH64)
+        set(OBJCOPY_ARCH_OPTIONS -O elf64-aarch64 -B aarch64)
     endif ()
+else ()
+    message(FATAL_ERROR "Cannot find objcopy.")
 endif ()
 
 if (OS_DARWIN)
@@ -447,7 +464,6 @@ include (cmake/find/brotli.cmake)
 include (cmake/find/protobuf.cmake)
 include (cmake/find/grpc.cmake)
 include (cmake/find/pdqsort.cmake)
-include (cmake/find/miniselect.cmake)
 include (cmake/find/hdfs3.cmake) # uses protobuf
 include (cmake/find/poco.cmake)
 include (cmake/find/curl.cmake)
@@ -458,8 +474,6 @@ include (cmake/find/simdjson.cmake)
 include (cmake/find/rapidjson.cmake)
 include (cmake/find/fastops.cmake)
 include (cmake/find/odbc.cmake)
-include (cmake/find/rocksdb.cmake)
-
 
 if(NOT USE_INTERNAL_PARQUET_LIBRARY)
     set (ENABLE_ORC OFF CACHE INTERNAL "")
@@ -476,6 +490,9 @@ set (USE_INTERNAL_CITYHASH_LIBRARY ON CACHE INTERNAL "")
 find_contrib_lib(cityhash)
 
 find_contrib_lib(farmhash)
+
+set (USE_INTERNAL_BTRIE_LIBRARY ON CACHE INTERNAL "")
+find_contrib_lib(btrie)
 
 if (ENABLE_TESTS)
     include (cmake/find/gtest.cmake)

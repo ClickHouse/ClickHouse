@@ -38,19 +38,19 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
     {
-        const ColumnWithTypeAndName & elem = arguments[0];
+        const ColumnWithTypeAndName & elem = block.getByPosition(arguments[0]);
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*elem.column))
         {
             /// Merely return the embedded null map.
-            return nullable->getNullMapColumnPtr();
+            block.getByPosition(result).column = nullable->getNullMapColumnPtr();
         }
         else
         {
             /// Since no element is nullable, return a zero-constant column representing
             /// a zero-filled null map.
-            return DataTypeUInt8().createColumnConst(elem.column->size(), 0u);
+            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(elem.column->size(), 0u);
         }
     }
 };

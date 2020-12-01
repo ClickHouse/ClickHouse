@@ -32,8 +32,6 @@ public:
         return false;
     }
 
-    bool isSuitableForConstantFolding() const override { return false; }
-
     size_t getNumberOfArguments() const override
     {
         return 0;
@@ -47,9 +45,9 @@ public:
     /** convertToFullColumn needed because in distributed query processing,
       *    each server returns its own value.
       */
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
-        return result_type->createColumnConst(
+        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(
             input_rows_count, DNSResolver::instance().getHostName())->convertToFullColumnIfConst();
     }
 };

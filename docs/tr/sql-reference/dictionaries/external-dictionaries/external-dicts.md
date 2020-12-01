@@ -15,9 +15,9 @@ ClickHouse:
 -   Sözlükleri periyodik olarak günceller ve eksik değerleri dinamik olarak yükler. Başka bir deyişle, sözlükler dinamik olarak yüklenebilir.
 -   Xml dosyaları ile harici sözlükler oluşturmak için izin verir veya [DDL sorguları](../../statements/create.md#create-dictionary-query).
 
-Dış sözlüklerin yapılandırması bir veya daha fazla xml dosyasında bulunabilir. Yapılandırma yolu belirtilen [dictionaries_config](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_config) parametre.
+Dış sözlüklerin yapılandırması bir veya daha fazla xml dosyasında bulunabilir. Yapılandırma yolu belirtilen [dictionaries\_config](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_config) parametre.
 
-Sözlükler sunucu başlangıçta veya ilk kullanımda, bağlı olarak yüklenebilir [dictionaries_lazy_load](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load) ayar.
+Sözlükler sunucu başlangıçta veya ilk kullanımda, bağlı olarak yüklenebilir [dictionaries\_lazy\_load](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load) ayar.
 
 Bu [sözlükler](../../../operations/system-tables.md#system_tables-dictionaries) sistem tablosu sunucuda yapılandırılmış sözlükler hakkında bilgi içerir. Her sözlük için orada bulabilirsiniz:
 

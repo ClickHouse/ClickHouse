@@ -18,7 +18,7 @@ public:
     JSONCompactEachRowRowOutputFormat(
         WriteBuffer & out_,
         const Block & header_,
-        const RowOutputFormatParams & params_,
+        FormatFactory::WriteCallback callback,
         const FormatSettings & settings_,
         bool with_names_,
         bool yield_strings_);

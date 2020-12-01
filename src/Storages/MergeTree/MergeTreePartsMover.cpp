@@ -199,7 +199,7 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
     const String directory_to_move = "moving";
     moving_part.part->makeCloneOnDisk(moving_part.reserved_space->getDisk(), directory_to_move);
 
-    auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + moving_part.part->name, moving_part.reserved_space->getDisk(), 0);
+    auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + moving_part.part->name, moving_part.reserved_space->getDisk());
     MergeTreeData::MutableDataPartPtr cloned_part =
         data->createPart(moving_part.part->name, single_disk_volume, directory_to_move + '/' + moving_part.part->name);
     LOG_TRACE(log, "Part {} was cloned to {}", moving_part.part->name, cloned_part->getFullPath());

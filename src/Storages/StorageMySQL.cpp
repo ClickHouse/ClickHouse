@@ -55,7 +55,7 @@ StorageMySQL::StorageMySQL(
     , replace_query{replace_query_}
     , on_duplicate_clause{on_duplicate_clause_}
     , pool(std::move(pool_))
-    , global_context(context_.getGlobalContext())
+    , global_context(context_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -67,7 +67,7 @@ StorageMySQL::StorageMySQL(
 Pipe StorageMySQL::read(
     const Names & column_names_,
     const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & query_info_,
+    const SelectQueryInfo & query_info_,
     const Context & context_,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size_,

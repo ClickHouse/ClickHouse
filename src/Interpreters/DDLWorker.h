@@ -104,7 +104,8 @@ private:
     void attachToThreadGroup();
 
 private:
-    Context context;
+    std::atomic<bool> is_circular_replicated = false;
+    Context & context;
     Poco::Logger * log;
 
     std::string host_fqdn;      /// current host domain name

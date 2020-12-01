@@ -1,7 +1,9 @@
 #pragma once
 
 #include <Core/QueryProcessingStage.h>
-#include <Interpreters/IInterpreterUnionOrSelectQuery.h>
+#include <Interpreters/IInterpreter.h>
+#include <Interpreters/SelectQueryOptions.h>
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
@@ -10,13 +12,11 @@ class Context;
 class InterpreterSelectQuery;
 class QueryPlan;
 
-/** Interprets one or multiple SELECT queries inside UNION/UNION ALL/UNION DISTINCT chain.
+/** Interprets one or multiple SELECT queries inside UNION ALL chain.
   */
-class InterpreterSelectWithUnionQuery : public IInterpreterUnionOrSelectQuery
+class InterpreterSelectWithUnionQuery : public IInterpreter
 {
 public:
-    using IInterpreterUnionOrSelectQuery::getSampleBlock;
-
     InterpreterSelectWithUnionQuery(
         const ASTPtr & query_ptr_,
         const Context & context_,
@@ -26,29 +26,35 @@ public:
     ~InterpreterSelectWithUnionQuery() override;
 
     /// Builds QueryPlan for current query.
-    virtual void buildQueryPlan(QueryPlan & query_plan) override;
+    void buildQueryPlan(QueryPlan & query_plan);
 
     BlockIO execute() override;
 
     bool ignoreLimits() const override { return options.ignore_limits; }
     bool ignoreQuota() const override { return options.ignore_quota; }
 
+    Block getSampleBlock();
+
     static Block getSampleBlock(
         const ASTPtr & query_ptr_,
         const Context & context_);
 
-    virtual void ignoreWithTotals() override;
+    void ignoreWithTotals();
+
+    ASTPtr getQuery() const { return query_ptr; }
 
 private:
-    std::vector<std::unique_ptr<IInterpreterUnionOrSelectQuery>> nested_interpreters;
+    SelectQueryOptions options;
+    ASTPtr query_ptr;
+    std::shared_ptr<Context> context;
+
+    std::vector<std::unique_ptr<InterpreterSelectQuery>> nested_interpreters;
+
+    Block result_header;
+
+    size_t max_streams = 1;
 
     static Block getCommonHeaderForUnion(const Blocks & headers);
-
-    Block getCurrentChildResultHeader(const ASTPtr & ast_ptr_, const Names & required_result_column_names);
-
-    std::unique_ptr<IInterpreterUnionOrSelectQuery>
-    buildCurrentChildInterpreter(const ASTPtr & ast_ptr_, const Names & current_required_result_column_names);
-
 };
 
 }
