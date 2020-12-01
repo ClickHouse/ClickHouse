@@ -581,6 +581,59 @@ void writeCSVString(const StringRef & s, WriteBuffer & buf)
     writeCSVString<quote>(s.data, s.data + s.size, buf);
 }
 
+inline void writeHTMLString(const char * begin, const char * end, WriteBuffer & buf)
+{
+    const char * pos = begin;
+    while (true)
+    {
+        const char * next_pos = find_first_symbols<'<', '&', '>', '"', '\''>(pos, end);
+
+        if (next_pos == end)
+        {
+            buf.write(pos, end - pos);
+            break;
+        }
+        else if (*next_pos == '<')
+        {
+            buf.write(pos, next_pos - pos);
+            ++next_pos;
+            writeCString("&lt;", buf);
+        }
+        else if (*next_pos == '&')
+        {
+            buf.write(pos, next_pos - pos);
+            ++next_pos;
+            writeCString("&amp;", buf);
+        }else if (*next_pos == '>')
+        {
+            buf.write(pos, next_pos - pos);
+            ++next_pos;
+            writeCString("&gt;", buf);
+        }else if (*next_pos == '"')
+        {
+            buf.write(pos, next_pos - pos);
+            ++next_pos;
+            writeCString("&quot;", buf);
+        }else if (*next_pos == '\'')
+        {
+            buf.write(pos, next_pos - pos);
+            ++next_pos;
+            writeCString("&apos;", buf);
+        }
+
+        pos = next_pos;
+    }
+}
+
+inline void writeHTMLString(const String & s, WriteBuffer & buf)
+{
+    writeHTMLString(s.data(), s.data() + s.size(), buf);
+}
+
+inline void writeHTMLString(const StringRef & s, WriteBuffer & buf)
+{
+    writeHTMLString(s.data, s.data + s.size, buf);
+}
 
 /// Writing a string to a text node in XML (not into an attribute - otherwise you need more escaping).
 inline void writeXMLString(const char * begin, const char * end, WriteBuffer & buf)
