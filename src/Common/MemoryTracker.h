@@ -136,11 +136,11 @@ public:
     private:
         BlockerInThread(const BlockerInThread &) = delete;
         BlockerInThread & operator=(const BlockerInThread &) = delete;
-        static thread_local bool is_blocked;
+        static thread_local uint64_t counter;
     public:
-        BlockerInThread() { is_blocked = true; }
-        ~BlockerInThread() { is_blocked = false; }
-        static bool isBlocked() { return is_blocked; }
+        BlockerInThread() { ++counter; }
+        ~BlockerInThread() { --counter; }
+        static bool isBlocked() { return counter > 0; }
     };
 
     /// To be able to avoid MEMORY_LIMIT_EXCEEDED Exception in destructors:
@@ -160,11 +160,11 @@ public:
     private:
         LockExceptionInThread(const LockExceptionInThread &) = delete;
         LockExceptionInThread & operator=(const LockExceptionInThread &) = delete;
-        static thread_local bool is_blocked;
+        static thread_local uint64_t counter;
     public:
-        LockExceptionInThread() { is_blocked = true; }
-        ~LockExceptionInThread() { is_blocked = false; }
-        static bool isBlocked() { return is_blocked; }
+        LockExceptionInThread() { ++counter; }
+        ~LockExceptionInThread() { --counter; }
+        static bool isBlocked() { return counter > 0; }
     };
 };
 
