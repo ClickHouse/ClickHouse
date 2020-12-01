@@ -211,7 +211,7 @@ void Pool::Entry::forceConnected() const
     Poco::Util::Application & app = Poco::Util::Application::instance();
 
     bool first = true;
-    while (!tryForceConnected());
+    while (!tryForceConnected())
     {
         if (first)
             first = false;
