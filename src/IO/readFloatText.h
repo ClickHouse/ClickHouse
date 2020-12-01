@@ -318,13 +318,6 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
 
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    bool negative = false;
-    x = 0;
-    UInt64 before_point = 0;
-    UInt64 after_point = 0;
-    int after_point_exponent = 0;
-    int exponent = 0;
-
     if (in.eof())
     {
         if constexpr (throw_exception)
@@ -333,144 +326,18 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
             return false;
     }
 
-    if (*in.position() == '-')
+    char *begin = in.position();
+    char *end;
+    x = strtod(begin, &end);
+    if (begin == end)
     {
-        negative = true;
-        ++in.position();
+        if constexpr (throw_exception)
+            throw Exception("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
+        else
+            return false;
     }
 
-
-    auto count_after_sign = in.count();
-
-    constexpr int significant_digits = std::numeric_limits<UInt64>::digits10;
-    readUIntTextUpToNSignificantDigits<significant_digits>(before_point, in);
-
-    int read_digits = in.count() - count_after_sign;
-
-    if (unlikely(read_digits > significant_digits))
-    {
-        int before_point_additional_exponent = read_digits - significant_digits;
-        x = shift10(before_point, before_point_additional_exponent);
-    }
-    else
-    {
-        x = before_point;
-
-        /// Shortcut for the common case when there is an integer that fit in Int64.
-        if (read_digits && (in.eof() || *in.position() < '.'))
-        {
-            if (negative)
-                x = -x;
-            return ReturnType(true);
-        }
-    }
-
-    if (checkChar('.', in))
-    {
-        auto after_point_count = in.count();
-
-        while (!in.eof() && *in.position() == '0')
-            ++in.position();
-
-        auto after_leading_zeros_count = in.count();
-        auto after_point_num_leading_zeros = after_leading_zeros_count - after_point_count;
-
-        readUIntTextUpToNSignificantDigits<significant_digits>(after_point, in);
-        read_digits = in.count() - after_leading_zeros_count;
-        after_point_exponent = (read_digits > significant_digits ? -significant_digits : -read_digits) - after_point_num_leading_zeros;
-    }
-
-    if (checkChar('e', in) || checkChar('E', in))
-    {
-        if (in.eof())
-        {
-            if constexpr (throw_exception)
-                throw Exception("Cannot read floating point value: nothing after exponent", ErrorCodes::CANNOT_PARSE_NUMBER);
-            else
-                return false;
-        }
-
-        bool exponent_negative = false;
-        if (*in.position() == '-')
-        {
-            exponent_negative = true;
-            ++in.position();
-        }
-        else if (*in.position() == '+')
-        {
-            ++in.position();
-        }
-
-        readUIntTextUpToNSignificantDigits<4>(exponent, in);
-        if (exponent_negative)
-            exponent = -exponent;
-    }
-
-    if (after_point)
-        x += shift10(after_point, after_point_exponent);
-
-    if (exponent)
-        x = shift10(x, exponent);
-
-    if (negative)
-        x = -x;
-
-    auto num_characters_without_sign = in.count() - count_after_sign;
-
-    /// Denormals. At most one character is read before denormal and it is '-'.
-    if (num_characters_without_sign == 0)
-    {
-        if (in.eof())
-        {
-            if constexpr (throw_exception)
-                throw Exception("Cannot read floating point value: no digits read", ErrorCodes::CANNOT_PARSE_NUMBER);
-            else
-                return false;
-        }
-
-        if (*in.position() == '+')
-        {
-            ++in.position();
-            if (in.eof())
-            {
-                if constexpr (throw_exception)
-                    throw Exception("Cannot read floating point value: nothing after plus sign", ErrorCodes::CANNOT_PARSE_NUMBER);
-                else
-                    return false;
-            }
-            else if (negative)
-            {
-                if constexpr (throw_exception)
-                    throw Exception("Cannot read floating point value: plus after minus sign", ErrorCodes::CANNOT_PARSE_NUMBER);
-                else
-                    return false;
-            }
-        }
-
-        if (*in.position() == 'i' || *in.position() == 'I')
-        {
-            if (assertOrParseInfinity<throw_exception>(in))
-            {
-                x = std::numeric_limits<T>::infinity();
-                if (negative)
-                    x = -x;
-                return ReturnType(true);
-            }
-            return ReturnType(false);
-        }
-        else if (*in.position() == 'n' || *in.position() == 'N')
-        {
-            if (assertOrParseNaN<throw_exception>(in))
-            {
-                x = std::numeric_limits<T>::quiet_NaN();
-                if (negative)
-                    x = -x;
-                return ReturnType(true);
-            }
-            return ReturnType(false);
-        }
-    }
-
+    in.position() += end - begin;
     return ReturnType(true);
 }
 

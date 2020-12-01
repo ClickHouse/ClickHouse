@@ -4,6 +4,8 @@
 
 #### Bug Fix
 
+* Fix floating-point precision issues when inserting numbers such as 2.236
+
 * Fix rare silent crashes when query profiler is on and ClickHouse is installed on OS with glibc version that has (supposedly) broken asynchronous unwind tables for some functions. This fixes [#15301](https://github.com/ClickHouse/ClickHouse/issues/15301). This fixes [#13098](https://github.com/ClickHouse/ClickHouse/issues/13098). [#16846](https://github.com/ClickHouse/ClickHouse/pull/16846) ([alexey-milovidov](https://github.com/alexey-milovidov)).
 
 
