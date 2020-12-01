@@ -129,12 +129,12 @@ class _NetworkManager:
     def add_iptables_rule(self, **kwargs):
         cmd = ['iptables', '-I', 'DOCKER-USER', '1']
         cmd.extend(self._iptables_cmd_suffix(**kwargs))
-        self._exec_run(cmd, privileged=True)
+        # self._exec_run(cmd, privileged=True)
 
     def delete_iptables_rule(self, **kwargs):
         cmd = ['iptables', '-D', 'DOCKER-USER']
         cmd.extend(self._iptables_cmd_suffix(**kwargs))
-        self._exec_run(cmd, privileged=True)
+        # self._exec_run(cmd, privileged=True)
 
     @staticmethod
     def _iptables_cmd_suffix(
@@ -168,7 +168,7 @@ class _NetworkManager:
 
         self._container = None
 
-        self._ensure_container()
+        # self._ensure_container()
 
     def _ensure_container(self):
         if self._container is None or self._container_expire_time <= time.time():
