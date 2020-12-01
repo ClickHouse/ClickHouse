@@ -167,7 +167,10 @@ DDLWorker::DDLWorker(int pool_size_, const std::string & zk_root_dir, const Cont
 
     host_fqdn = getFQDNOrHostName();
     host_fqdn_id = Cluster::Address::toString(host_fqdn, context.getTCPPort());
+}
 
+void DDLWorker::startup()
+{
     main_thread = ThreadFromGlobalPool(&DDLWorker::runMainThread, this);
     cleanup_thread = ThreadFromGlobalPool(&DDLWorker::runCleanupThread, this);
 }
@@ -183,8 +186,10 @@ DDLWorker::~DDLWorker()
 {
     shutdown();
     worker_pool.wait();
-    main_thread.join();
-    cleanup_thread.join();
+    if (main_thread.joinable())
+        main_thread.join();
+    if (cleanup_thread.joinable())
+        cleanup_thread.join();
 }
 
 
@@ -421,7 +426,12 @@ void DDLWorker::enqueueTask(DDLTaskPtr task_ptr)
             else if (e.code == Coordination::Error::ZNONODE)
             {
                 LOG_ERROR(log, "ZooKeeper error: {}", getCurrentExceptionMessage(true));
-                // TODO: retry?
+                if (!current_zookeeper->exists(task_ptr->entry_path))
+                {
+                    //FIXME race condition with cleanup thread
+                    LOG_ERROR(log, "Task {} is lost. It probably was removed by other server.", task_ptr->entry_path);
+                    return;
+                }
             }
             else
             {

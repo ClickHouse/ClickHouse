@@ -213,10 +213,11 @@ std::pair<ResponsePtr, Undo> TestKeeperCreateRequest::process(TestKeeper::Contai
             created_node.is_sequental = is_sequential;
             std::string path_created = path;
 
+            ++it->second.seq_num;
+
             if (is_sequential)
             {
                 auto seq_num = it->second.seq_num;
-                ++it->second.seq_num;
 
                 std::stringstream seq_num_str;      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
                 seq_num_str.exceptions(std::ios::failbit);
@@ -228,15 +229,14 @@ std::pair<ResponsePtr, Undo> TestKeeperCreateRequest::process(TestKeeper::Contai
             response.path_created = path_created;
             container.emplace(path_created, std::move(created_node));
 
-            undo = [&container, path_created, is_sequential = is_sequential, parent_path = it->first]
+            undo = [&container, path_created, parent_path = it->first]
             {
                 container.erase(path_created);
                 auto & undo_parent = container.at(parent_path);
                 --undo_parent.stat.cversion;
                 --undo_parent.stat.numChildren;
 
-                if (is_sequential)
-                    --undo_parent.seq_num;
+                --undo_parent.seq_num;
             };
 
             ++it->second.stat.cversion;

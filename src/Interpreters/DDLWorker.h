@@ -51,6 +51,7 @@ public:
         return host_fqdn_id;
     }
 
+    void startup();
     void shutdown();
 
     bool isCurrentlyActive() const { return initialized && !stop_flag; }
