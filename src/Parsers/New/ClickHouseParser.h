@@ -1430,8 +1430,8 @@ public:
     TableIdentifierContext *tableIdentifier();
     antlr4::tree::TerminalNode *FUNCTION();
     TableFunctionExprContext *tableFunctionExpr();
-    ColumnsClauseContext *columnsClause();
     antlr4::tree::TerminalNode *TABLE();
+    ColumnsClauseContext *columnsClause();
 
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
    

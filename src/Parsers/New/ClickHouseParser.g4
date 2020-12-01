@@ -186,7 +186,7 @@ explainStmt: EXPLAIN SYNTAX query;
 
 // INSERT statement
 
-insertStmt: INSERT INTO (TABLE? tableIdentifier | FUNCTION tableFunctionExpr) columnsClause? dataClause;
+insertStmt: INSERT INTO TABLE? (tableIdentifier | FUNCTION tableFunctionExpr) columnsClause? dataClause;
 
 columnsClause: LPAREN nestedIdentifier (COMMA nestedIdentifier)* RPAREN;
 dataClause
