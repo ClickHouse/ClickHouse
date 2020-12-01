@@ -1,6 +1,6 @@
 <yandex>
-    <grpc_port>9100</grpc_port>
-    <grpc>
+    <grpc_port replace="replace">9100</grpc_port>
+    <grpc replace="replace">
         <enable_ssl>true</enable_ssl>
 
         <!-- The following two files are used only if enable_ssl=1 -->
