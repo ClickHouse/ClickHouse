@@ -34,7 +34,6 @@ namespace ErrorCodes
 namespace
 {
     // Initialized in StorageSystemStackTrace's ctor and used in signalHandler.
-    std::atomic<pid_t> expected_pid;
     const int sig = SIGRTMIN;
 
     std::atomic<int> sequence_num = 0;    /// For messages sent via pipe.
@@ -49,6 +48,8 @@ namespace
 
     void signalHandler(int, siginfo_t * info, void * context)
     {
+        // getpid() is an async-signal-safe function required by POSIX.1
+        static const pid_t expected_pid = getpid();
         auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
         /// In case malicious user is sending signals manually (for unknown reason).
@@ -133,8 +134,6 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
     notification_pipe.open();
 
     /// Setup signal handler.
-
-    expected_pid = getpid();
     struct sigaction sa{};
     sa.sa_sigaction = signalHandler;
     sa.sa_flags = SA_SIGINFO;
