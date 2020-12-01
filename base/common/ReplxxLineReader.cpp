@@ -6,6 +6,12 @@
 #include <unistd.h>
 #include <functional>
 #include <sys/file.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <csignal>
+#include <dlfcn.h>
+#include <fcntl.h>
+#include <fstream>
 
 namespace
 {
@@ -83,6 +89,8 @@ ReplxxLineReader::ReplxxLineReader(
     /// it also binded to M-p/M-n).
     rx.bind_key(Replxx::KEY::meta('N'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::COMPLETE_NEXT, code); });
     rx.bind_key(Replxx::KEY::meta('P'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::COMPLETE_PREVIOUS, code); });
+
+    rx.bind_key(Replxx::KEY::meta('E'), [this](char32_t) { openEditor(); return Replxx::ACTION_RESULT::CONTINUE; });
 }
 
 ReplxxLineReader::~ReplxxLineReader()
@@ -127,7 +135,73 @@ void ReplxxLineReader::addToHistory(const String & line)
         rx.print("Unlock of history file failed: %s\n", errnoToString(errno).c_str());
 }
 
+int execute(const std::string & command)
+{
+    std::vector<char> argv0("sh", &("sh"[3]));
+    std::vector<char> argv1("-c", &("-c"[3]));
+    std::vector<char> argv2(command.data(), command.data() + command.size() + 1);
+
+    const char * filename = "/bin/sh";
+    char * const argv[] = {argv0.data(), argv1.data(), argv2.data(), nullptr};
+
+    static void * real_vfork = dlsym(RTLD_DEFAULT, "vfork");
+    if (!real_vfork)
+        return -1;
+
+    pid_t pid = reinterpret_cast<pid_t (*)()>(real_vfork)();
+
+    if (-1 == pid)
+        return -1;
+
+    if (0 == pid)
+    {
+        sigset_t mask;
+        sigemptyset(&mask);
+        sigprocmask(0, nullptr, &mask);
+        sigprocmask(SIG_UNBLOCK, &mask, nullptr);
+
+        execv(filename, argv);
+        _exit(-1);
+    }
+
+    int status = 0;
+    if (-1 == waitpid(pid, &status, 0))
+        return -1;
+    return status;
+}
+
+void ReplxxLineReader::openEditor()
+{
+    char filename[] = "clickhouse_replxx.XXXXXX";
+    int fd = ::mkstemp(filename);
+    if (-1 == fd)
+        return;
+    String editor = std::getenv("EDITOR");
+    if (editor.empty())
+        editor = "vim";
+
+    replxx::Replxx::State state(rx.get_state());
+    write(fd, state.text(), strlen(state.text()));
+    if (0 != ::close(fd))
+        return;
+    int rc = execute(editor + " " + filename);
+    if (0 == rc)
+    {
+        std::ifstream t(filename);
+        std::string str;
+        t.seekg(0, std::ios::end);
+        str.reserve(t.tellg());
+        t.seekg(0, std::ios::beg);
+        str.assign((std::istreambuf_iterator<char>(t)), std::istreambuf_iterator<char>());
+        rx.set_state(replxx::Replxx::State(str.c_str(), str.size()));
+    }
+    if (bracketed_paste_enabled)
+        enableBracketedPaste();
+    ::unlink(filename);
+}
+
 void ReplxxLineReader::enableBracketedPaste()
 {
+    bracketed_paste_enabled = true;
     rx.enable_bracketed_paste();
 };
