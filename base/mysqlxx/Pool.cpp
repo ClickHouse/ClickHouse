@@ -26,6 +26,7 @@ void Pool::Entry::incrementRefCount()
         mysql_thread_init();
 }
 
+
 void Pool::Entry::decrementRefCount()
 {
     if (!data)
@@ -150,14 +151,22 @@ Pool::Entry Pool::tryGet()
 
     initialize();
 
-    /// Searching for connection which was established but wasn't used.
-    for (auto & connection : connections)
+    /// Try to pick an idle connection from already allocated
+    for (auto connection_it = connections.begin(); connection_it != connections.end();)
     {
-        if (connection->ref_count == 0)
+        /// Fixme: Race condition is here b/c this is not synchronized with Pool::Entry's copy-assignment operator
+        if ((*connection_it)->ref_count == 0)
         {
-            Entry res(connection, this);
-            return res.tryForceConnected() ? res : Entry();
+            Entry res(*connection_it, this);
+            if (res.tryForceConnected())  /// Will try to reestablish connection as well
+                return res;
+
+            /// This one is disconnected for good and so must be removed
+            ::delete *connection_it;  /// TODO: Manual memory management is awkward (matches allocConnection() method)
+            connection_it = connections.erase(connection_it);
         }
+        else
+            ++connection_it;
     }
 
     /// Throws if pool is overflowed.
@@ -171,6 +180,7 @@ Pool::Entry Pool::tryGet()
 
     return Entry();
 }
+
 
 void Pool::removeConnection(Connection* connection)
 {
@@ -199,11 +209,9 @@ void Pool::Entry::forceConnected() const
         throw Poco::RuntimeException("Tried to access NULL database connection.");
 
     Poco::Util::Application & app = Poco::Util::Application::instance();
-    if (data->conn.ping())
-        return;
 
     bool first = true;
-    do
+    while (!tryForceConnected());
     {
         if (first)
             first = false;
@@ -225,7 +233,6 @@ void Pool::Entry::forceConnected() const
             pool->rw_timeout,
             pool->enable_local_infile);
     }
-    while (!data->conn.ping());
 }
 
 
