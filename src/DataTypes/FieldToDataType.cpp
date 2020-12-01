@@ -1,6 +1,7 @@
 #include <Common/FieldVisitors.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeString.h>
@@ -116,6 +117,17 @@ DataTypePtr FieldToDataType::operator() (const Tuple & tuple) const
         element_types.push_back(applyVisitor(FieldToDataType(), element));
 
     return std::make_shared<DataTypeTuple>(element_types);
+}
+
+DataTypePtr FieldToDataType::operator() (const Map & map) const
+{
+    DataTypes element_types;
+    element_types.reserve(2);
+
+    element_types.push_back(applyVisitor(FieldToDataType(), map[0]));
+    element_types.push_back(applyVisitor(FieldToDataType(), map[1]));
+
+    return std::make_shared<DataTypeMap>(element_types);
 }
 
 DataTypePtr FieldToDataType::operator() (const AggregateFunctionStateData & x) const

@@ -91,6 +91,8 @@ public:
 
             TupleElement,
 
+            MapElement,
+
             DictionaryKeys,
             DictionaryIndexes,
         };
@@ -98,6 +100,8 @@ public:
 
         /// Index of tuple element, starting at 1.
         String tuple_element_name;
+
+        String map_element_name;
 
         Substream(Type type_) : type(type_) {}
     };
@@ -517,6 +521,7 @@ struct WhichDataType
     constexpr bool isUUID() const { return idx == TypeIndex::UUID; }
     constexpr bool isArray() const { return idx == TypeIndex::Array; }
     constexpr bool isTuple() const { return idx == TypeIndex::Tuple; }
+    constexpr bool isMap() const {return idx == TypeIndex::Map; }
     constexpr bool isSet() const { return idx == TypeIndex::Set; }
     constexpr bool isInterval() const { return idx == TypeIndex::Interval; }
 
