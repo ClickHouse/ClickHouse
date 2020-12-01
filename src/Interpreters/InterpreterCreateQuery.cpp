@@ -136,7 +136,10 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         engine->name = "Atomic";
         if (old_style_database)
         {
-            engine = makeASTFunction("Replicated",
+            if (database_name == "test")
+                engine->name = "Ordinary";      // for stateful tests
+            else
+                engine = makeASTFunction("Replicated",
                                      std::make_shared<ASTLiteral>(fmt::format("/clickhouse/db/{}/", create.database)),
                                      std::make_shared<ASTLiteral>("s1"),
                                      std::make_shared<ASTLiteral>("r1"));

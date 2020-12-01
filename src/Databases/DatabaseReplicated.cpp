@@ -170,6 +170,7 @@ void DatabaseReplicated::loadStoredObjects(Context & context, bool has_force_res
     DatabaseAtomic::loadStoredObjects(context, has_force_restore_data_flag, force_attach);
 
     ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, global_context);
+    ddl_worker->startup();
 }
 
 void DatabaseReplicated::onUnexpectedLogEntry(const String & entry_name, const ZooKeeperPtr & zookeeper)

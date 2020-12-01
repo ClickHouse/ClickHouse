@@ -1487,6 +1487,7 @@ void Context::setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker)
     auto lock = getLock();
     if (shared->ddl_worker)
         throw Exception("DDL background thread has already been initialized", ErrorCodes::LOGICAL_ERROR);
+    ddl_worker->startup();
     shared->ddl_worker = std::move(ddl_worker);
 }
 

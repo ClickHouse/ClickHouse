@@ -201,6 +201,10 @@ DDLQueryStatusInputStream::DDLQueryStatusInputStream(const String & zk_node_path
     addTotalRowsApprox(waiting_hosts.size());
 
     timeout_seconds = context.getSettingsRef().distributed_ddl_task_timeout;
+
+    //FIXME revert it before merge
+    if (context.getSettingsRef().default_database_engine.value == DefaultDatabaseEngine::Ordinary)
+        timeout_seconds = 10;
 }
 
 Block DDLQueryStatusInputStream::readImpl()
