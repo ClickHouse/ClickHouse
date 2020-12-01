@@ -22,6 +22,7 @@ public:
 private:
     InputStatus readOneLine(const String & prompt) override;
     void addToHistory(const String & line) override;
+    int execute(const std::string & command);
     void openEditor();
 
     replxx::Replxx rx;

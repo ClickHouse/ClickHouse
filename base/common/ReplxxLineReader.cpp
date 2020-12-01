@@ -135,7 +135,7 @@ void ReplxxLineReader::addToHistory(const String & line)
         rx.print("Unlock of history file failed: %s\n", errnoToString(errno).c_str());
 }
 
-int execute(const std::string & command)
+int ReplxxLineReader::execute(const std::string & command)
 {
     std::vector<char> argv0("sh", &("sh"[3]));
     std::vector<char> argv1("-c", &("-c"[3]));
@@ -146,12 +146,18 @@ int execute(const std::string & command)
 
     static void * real_vfork = dlsym(RTLD_DEFAULT, "vfork");
     if (!real_vfork)
+    {
+        rx.print("Cannot find symbol vfork in myself: %s", errnoToString(errno).c_str());
         return -1;
+    }
 
     pid_t pid = reinterpret_cast<pid_t (*)()>(real_vfork)();
 
     if (-1 == pid)
+    {
+        rx.print("Cannot vfork: %s\n", errnoToString(errno).c_str());
         return -1;
+    }
 
     if (0 == pid)
     {
@@ -166,7 +172,10 @@ int execute(const std::string & command)
 
     int status = 0;
     if (-1 == waitpid(pid, &status, 0))
+    {
+        rx.print("Cannot waitpid: %s\n", errnoToString(errno).c_str());
         return -1;
+    }
     return status;
 }
 
@@ -175,7 +184,10 @@ void ReplxxLineReader::openEditor()
     char filename[] = "clickhouse_replxx.XXXXXX";
     int fd = ::mkstemp(filename);
     if (-1 == fd)
+    {
+        rx.print("Cannot create temporary file to edit query: %s\n", errnoToString(errno).c_str());
         return;
+    }
     String editor = std::getenv("EDITOR");
     if (editor.empty())
         editor = "vim";
@@ -183,7 +195,10 @@ void ReplxxLineReader::openEditor()
     replxx::Replxx::State state(rx.get_state());
     write(fd, state.text(), strlen(state.text()));
     if (0 != ::close(fd))
+    {
+        rx.print("Cannot close temporary query file: %s\n", errnoToString(errno).c_str());
         return;
+    }
     int rc = execute(editor + " " + filename);
     if (0 == rc)
     {
