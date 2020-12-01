@@ -13,6 +13,9 @@ namespace
 
 inline StringRef checkAndReturnHost(const Pos & pos, const Pos & dot_pos, const Pos & start_of_host)
 {
+    if (!dot_pos && *pos == ':' && pos > start_of_host)
+        return StringRef(start_of_host, pos - start_of_host);
+
     if (!dot_pos || start_of_host >= pos || pos - dot_pos == 1)
         return StringRef{};
 
