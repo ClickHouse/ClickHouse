@@ -1,6 +1,6 @@
 # system.databases {#system-databases}
 
-Contains information about database. Each database that the server knows about has a corresponding entry in the table.
+Contains information about the databases that are available to the current user.
 
 Columns:
 
@@ -20,7 +20,7 @@ Create a database.
 CREATE DATABASE test
 ```
 
-Check all of the available databases.
+Check all of the available databases to the user.
 
 ``` sql
 SELECT * FROM system.databases
