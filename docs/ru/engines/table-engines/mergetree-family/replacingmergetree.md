@@ -5,7 +5,7 @@ toc_title: ReplacingMergeTree
 
 # ReplacingMergeTree {#replacingmergetree}
 
-Движок отличается от [MergeTree](mergetree.md#table_engines-mergetree) тем, что выполняет удаление дублирующихся записей с одинаковым значением [ключа сортировки](mergetree.md)).
+Движок отличается от [MergeTree](mergetree.md#table_engines-mergetree) тем, что выполняет удаление дублирующихся записей с одинаковым значением [ключа сортировки](mergetree.md) (секция `ORDER BY`, не `PRIMARY KEY`).
 
 Дедупликация данных производится лишь во время слияний. Слияние происходят в фоне в неизвестный момент времени, на который вы не можете ориентироваться. Некоторая часть данных может остаться необработанной. Хотя вы можете вызвать внеочередное слияние с помощью запроса `OPTIMIZE`, на это не стоит рассчитывать, так как запрос `OPTIMIZE` приводит к чтению и записи большого объёма данных.
 
@@ -29,7 +29,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 Описание параметров запроса смотрите в [описании запроса](../../../engines/table-engines/mergetree-family/replacingmergetree.md).
 
 !!! note "Внимание"
-    Для дедупликации используются поля входящие в секцию ключа сортировки -- `ORDER BY`, a не `PRIMARY KEY`.
+    Уникальность строк определяется `ORDER BY` секцией таблицы, а не `PRIMARY KEY`.
 
 **Параметры ReplacingMergeTree**
 
