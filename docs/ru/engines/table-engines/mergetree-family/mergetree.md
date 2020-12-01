@@ -313,7 +313,7 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 
     Поддержанные типы данных: `Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`.
     
-    Фильтром могут пользоваться функции: [equals](../../../engines/table_engines/mergetree_family/mergetree.md), [notEquals](../../../engines/table_engines/mergetree_family/mergetree.md), [in](../../../engines/table_engines/mergetree_family/mergetree.md), [notIn](../../../engines/table_engines/mergetree_family/mergetree.md).
+    Фильтром могут пользоваться функции: [equals](../../../engines/table-engines/mergetree-family/mergetree.md), [notEquals](../../../engines/table-engines/mergetree-family/mergetree.md), [in](../../../engines/table-engines/mergetree-family/mergetree.md), [notIn](../../../engines/table-engines/mergetree-family/mergetree.md).
 
 **Примеры**
 
@@ -645,4 +645,4 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 После выполнения фоновых слияний или мутаций старые куски не удаляются сразу, а через некоторое время (табличная настройка `old_parts_lifetime`). Также они не перемещаются на другие тома или диски, поэтому до момента удаления они продолжают учитываться при подсчёте занятого дискового пространства.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/mergetree/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/mergetree/) <!--hide-->
