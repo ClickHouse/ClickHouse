@@ -258,9 +258,12 @@ void ContextAccess::setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> &
 {
     assert(roles_info_);
     roles_info = roles_info_;
-    enabled_row_policies = manager->getEnabledRowPolicies(*params.user_id, roles_info->enabled_roles);
-    enabled_quota = manager->getEnabledQuota(*params.user_id, user_name, roles_info->enabled_roles, params.address, params.quota_key);
-    enabled_settings = manager->getEnabledSettings(*params.user_id, user->settings, roles_info->enabled_roles, roles_info->settings_from_enabled_roles);
+    enabled_row_policies = manager->getEnabledRowPolicies(
+        *params.user_id, roles_info->enabled_roles);
+    enabled_quota = manager->getEnabledQuota(
+        *params.user_id, user_name, roles_info->enabled_roles, params.address, params.forwarded_address, params.quota_key);
+    enabled_settings = manager->getEnabledSettings(
+        *params.user_id, user->settings, roles_info->enabled_roles, roles_info->settings_from_enabled_roles);
     calculateAccessRights();
 }
 
