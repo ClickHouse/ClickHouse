@@ -10,6 +10,8 @@
 namespace DB
 {
 
+/// Result array could be indexed with all possible uint8 values without extra check.
+/// For values greater than 128 we will store same value as for 128 (all bits set).
 constexpr size_t IPV6_MASKS_COUNT = 256;
 
 using RawMaskArray = std::array<uint8_t, IPV6_BINARY_LENGTH>;
