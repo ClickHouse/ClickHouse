@@ -260,8 +260,10 @@ public:
         bool ignore_constant_values = false); /// Do not check that constants are same. Use value from result_header.
 
     /// Create ActionsDAG which represents expression equivalent to applying lhs and rhs actions consequently.
-    /// Is used to replace `(lhs -> rhs)` expression chain to single `merge(lhs, rhs)` expression.
-    static ActionsDAGPtr merge(ActionsDAG && lhs, ActionsDAG && rhs);
+    /// Is used to replace `(first -> second)` expression chain to single `merge(first, second)` expression.
+    /// If first.settings.project_input is set, then outputs of `first` must include inputs of `second`.
+    /// Otherwise, any two actions may be combined.
+    static ActionsDAGPtr merge(ActionsDAG && first, ActionsDAG && second);
 
 private:
     Node & addNode(Node node, bool can_replace = false);
