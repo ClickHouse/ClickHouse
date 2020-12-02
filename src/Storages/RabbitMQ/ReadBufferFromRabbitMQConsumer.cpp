@@ -35,7 +35,8 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         , stopped(stopped_)
         , received(queue_size_)
 {
-    setupChannel();
+    if (consumer_channel)
+        setupChannel();
 }
 
 
