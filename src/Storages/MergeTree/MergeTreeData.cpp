@@ -1802,6 +1802,31 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             if (setting_name == "storage_policy")
                 checkStoragePolicy(getContext()->getStoragePolicy(new_value.safeGet<String>()));
         }
+
+        /// Check if it is safe to reset the settings
+        for (const auto & current_setting : current_changes)
+        {
+            const auto & setting_name = current_setting.name;
+            const Field * new_value = new_changes.tryGet(setting_name);
+            /// Prevent unsetting readonly setting
+            if (MergeTreeSettings::isReadonlySetting(setting_name) && !new_value)
+            {
+                throw Exception{"Setting '" + setting_name + "' is readonly for storage '" + getName() + "'",
+                                ErrorCodes::READONLY_SETTING};
+            }
+
+            if (MergeTreeSettings::isPartFormatSetting(setting_name) && !new_value)
+            {
+                /// Use default settings + new and check if doesn't affect part format settings
+                MergeTreeSettings copy = *getSettings();
+                copy.resetToDefault();
+                copy.applyChanges(new_changes);
+                String reason;
+                if (!canUsePolymorphicParts(copy, &reason) && !reason.empty())
+                    throw Exception("Can't change settings. Reason: " + reason, ErrorCodes::NOT_IMPLEMENTED);
+            }
+
+        }
     }
 
     for (const auto & part : getDataPartsVector())
@@ -1960,6 +1985,8 @@ void MergeTreeData::changeSettings(
         }
 
         MergeTreeSettings copy = *getSettings();
+        /// reset to default settings before applying existing
+        copy.resetToDefault();
         copy.applyChanges(new_changes);
 
         copy.sanityCheck(getContext()->getSettingsRef());
