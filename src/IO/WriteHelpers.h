@@ -581,7 +581,7 @@ void writeCSVString(const StringRef & s, WriteBuffer & buf)
     writeCSVString<quote>(s.data, s.data + s.size, buf);
 }
 
-inline void writeHTMLString(const char * begin, const char * end, WriteBuffer & buf)
+inline void writeXMLStringForTextElementOrAttributeValue(const char * begin, const char * end, WriteBuffer & buf)
 {
     const char * pos = begin;
     while (true)
@@ -625,18 +625,18 @@ inline void writeHTMLString(const char * begin, const char * end, WriteBuffer & 
     }
 }
 
-inline void writeHTMLString(const String & s, WriteBuffer & buf)
+inline void writeXMLStringForTextElementOrAttributeValue(const String & s, WriteBuffer & buf)
 {
-    writeHTMLString(s.data(), s.data() + s.size(), buf);
+    writeXMLStringForTextElementOrAttributeValue(s.data(), s.data() + s.size(), buf);
 }
 
-inline void writeHTMLString(const StringRef & s, WriteBuffer & buf)
+inline void writeXMLStringForTextElementOrAttributeValue(const StringRef & s, WriteBuffer & buf)
 {
-    writeHTMLString(s.data, s.data + s.size, buf);
+    writeXMLStringForTextElementOrAttributeValue(s.data, s.data + s.size, buf);
 }
 
 /// Writing a string to a text node in XML (not into an attribute - otherwise you need more escaping).
-inline void writeXMLString(const char * begin, const char * end, WriteBuffer & buf)
+inline void writeXMLStringForTextElement(const char * begin, const char * end, WriteBuffer & buf)
 {
     const char * pos = begin;
     while (true)
@@ -666,14 +666,14 @@ inline void writeXMLString(const char * begin, const char * end, WriteBuffer & b
     }
 }
 
-inline void writeXMLString(const String & s, WriteBuffer & buf)
+inline void writeXMLStringForTextElement(const String & s, WriteBuffer & buf)
 {
-    writeXMLString(s.data(), s.data() + s.size(), buf);
+    writeXMLStringForTextElement(s.data(), s.data() + s.size(), buf);
 }
 
-inline void writeXMLString(const StringRef & s, WriteBuffer & buf)
+inline void writeXMLStringForTextElement(const StringRef & s, WriteBuffer & buf)
 {
-    writeXMLString(s.data, s.data + s.size, buf);
+    writeXMLStringForTextElement(s.data, s.data + s.size, buf);
 }
 
 template <typename IteratorSrc, typename IteratorDst>
