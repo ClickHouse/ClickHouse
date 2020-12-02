@@ -114,13 +114,16 @@ Union
           ReadFromStorage (SystemNumbers)
 ```
 
+!!! note "Note"
+  Step and query cost estimation is not supported.
+
 ### EXPLAIN PIPELINE {#explain-pipeline}
 
 Settings:
 
--   `header` — print header for each output port. Default: 0.
--   `graph` — use DOT graph description language. Default: 0.
--   `compact` — print graph in compact mode if graph is enabled. Default: 1.
+-   `header` — Print header for each output port. Default: 0.
+-   `graph` — Use DOT graph description language. Default: 0.
+-   `compact` — Print graph in compact mode if graph is enabled. Default: 1.
 
 Example:
 
