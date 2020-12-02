@@ -581,7 +581,7 @@
         <database>system</database>
         <table>query_log</table>
         <!--
-            PARTITION BY expr https://clickhouse.yandex/docs/en/table_engines/custom_partitioning_key/
+            PARTITION BY expr: https://clickhouse.yandex/docs/en/table_engines/custom_partitioning_key/
             Example:
                 event_date
                 toMonday(event_date)
@@ -589,6 +589,15 @@
                 toStartOfHour(event_time)
         -->
         <partition_by>toYYYYMM(event_date)</partition_by>
+        <!--
+            Table TTL specification: https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/mergetree/#mergetree-table-ttl
+            Example:
+                event_date + INTERVAL 1 WEEK
+                event_date + INTERVAL 7 DAY DELETE
+                event_date + INTERVAL 2 WEEK TO DISK 'bbb'
+        
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+        -->
 
         <!-- Instead of partition_by, you can provide full engine expression (starting with ENGINE = ) with parameters,
              Example: <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024</engine>
