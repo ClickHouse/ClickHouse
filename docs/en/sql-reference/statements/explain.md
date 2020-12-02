@@ -65,7 +65,7 @@ SelectWithUnionQuery (children 1)
 
 ### EXPLAIN SYNTAX {#explain-syntax}
 
-Return query after syntax optimisations.
+Return query after syntax optimizations.
 
 Example:
 
