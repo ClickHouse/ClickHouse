@@ -23,7 +23,7 @@ ELSEIF (OS_LINUX)
 ENDIF ()
 
 PEERDIR(
-    contrib/libs/cctz/src
+    contrib/libs/cctz
     contrib/libs/cxxsupp/libcxx-filesystem
     contrib/libs/poco/Net
     contrib/libs/poco/Util
