@@ -194,7 +194,21 @@ void ReplxxLineReader::openEditor()
         editor = "vim";
 
     replxx::Replxx::State state(rx.get_state());
-    write(fd, state.text(), strlen(state.text()));
+
+    size_t bytes_written = 0;
+    const char * begin = state.text();
+    size_t offset = strlen(state.text());
+    while (bytes_written != offset)
+    {
+        ssize_t res = ::write(fd, begin + bytes_written, offset - bytes_written);
+        if ((-1 == res || 0 == res) && errno != EINTR)
+        {
+            rx.print("Cannot write to temporary query file %s: %s\n", filename, errnoToString(errno).c_str());
+            return;
+        }
+        bytes_written += res;
+    }
+
     if (0 != ::close(fd))
     {
         rx.print("Cannot close temporary query file %s: %s\n", filename, errnoToString(errno).c_str());
