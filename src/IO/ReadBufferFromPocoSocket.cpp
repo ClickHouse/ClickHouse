@@ -28,10 +28,24 @@ bool ReadBufferFromPocoSocket::nextImpl()
     ssize_t bytes_read = 0;
     Stopwatch watch;
 
+    int flags = 0;
+    if (fiber)
+        flags |= MSG_DONTWAIT;
+
     /// Add more details to exceptions.
     try
     {
-        bytes_read = socket.impl()->receiveBytes(internal_buffer.begin(), internal_buffer.size());
+        bytes_read = socket.impl()->receiveBytes(internal_buffer.begin(), internal_buffer.size(), flags);
+
+        /// If fiber is specified, and read is blocking, run fiber and try again later.
+        /// It is expected that file descriptor may be polled externally.
+        /// Note that receive timeout is not checked here. External code should check it while polling.
+        while (bytes_read < 0 && fiber && (errno == POCO_EAGAIN || errno == POCO_EWOULDBLOCK))
+        {
+            fiber->fd = socket.impl()->sockfd();
+            fiber->fiber = std::move(fiber->fiber).resume();
+            bytes_read = socket.impl()->receiveBytes(internal_buffer.begin(), internal_buffer.size(), flags);
+        }
     }
     catch (const Poco::Net::NetException & e)
     {

@@ -3,6 +3,7 @@
 #include <Interpreters/Context.h>
 #include <Client/ConnectionPool.h>
 #include <Client/MultiplexedConnections.h>
+#include <Common/FiberStack.h>
 
 namespace DB
 {
@@ -46,11 +47,31 @@ public:
 
     ~RemoteQueryExecutor();
 
+    struct ReadContext
+    {
+        bool is_read_in_progress = false;
+
+        /// If is_read_in_progress, use this fd to poll
+        int fd;
+
+        /// If not is_read_in_progress, result block is set.
+        Block result;
+
+        /// Internal data
+
+        boost::context::fiber fiber;
+        Packet packet;
+        std::exception_ptr exception;
+        FiberStack<> stack;
+        ReadBufferFromPocoSocket::Fiber fiber_context;
+    };
+
     /// Create connection and send query, external tables and scalars.
     void sendQuery();
 
     /// Read next block of data. Returns empty block if query is finished.
     Block read();
+    void read(ReadContext & read_context);
 
     /// Receive all remain packets and finish query.
     /// It should be cancelled after read returned empty block.
@@ -159,6 +180,9 @@ private:
 
     /// Returns true if exception was thrown
     bool hasThrownException() const;
+
+    /// Process packet for read and return data block if possible.
+    std::optional<Block> processPacket(Packet packet);
 };
 
 }
