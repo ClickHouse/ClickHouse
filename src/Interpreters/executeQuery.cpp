@@ -19,6 +19,10 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTRenameQuery.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTWatchQuery.h>
@@ -30,6 +34,7 @@
 
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
+#include <Parsers/queryNormalization.h>
 #include <Parsers/queryToString.h>
 
 #include <Storages/StorageInput.h>
@@ -234,6 +239,10 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
 
     elem.current_database = context.getCurrentDatabase();
     elem.query = query_for_logging;
+    elem.normalized_query_hash = normalizedQueryHash(query_for_logging);
+
+    // We don't calculate query_kind, databases, tables and columns when the query isn't able to start
+
     elem.exception_code = getCurrentExceptionCode();
     elem.exception = getCurrentExceptionMessage(false);
 
@@ -334,6 +343,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     size_t max_query_size = 0;
     if (!internal) max_query_size = settings.max_query_size;
 
+    String query_database;
+    String query_table;
     try
     {
 #if !defined(ARCADIA_BUILD)
@@ -380,6 +391,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         {
             if (query_with_output->settings_ast)
                 InterpreterSetQuery(query_with_output->settings_ast, context).executeForCurrentContext();
+        }
+
+        if (const auto * query_with_table_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(ast.get()))
+        {
+            query_database = query_with_table_output->database;
+            query_table = query_with_table_output->table;
         }
 
         auto * insert_query = ast->as<ASTInsertQuery>();
@@ -587,6 +604,117 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             elem.current_database = context.getCurrentDatabase();
             elem.query = query_for_logging;
+            elem.normalized_query_hash = normalizedQueryHash(query_for_logging);
+
+            if (use_processors)
+            {
+                const auto & info = context.getQueryAccessInfo();
+                elem.query_databases = info.databases;
+                elem.query_tables = info.tables;
+                elem.query_columns = info.columns;
+            }
+
+            if (!query_database.empty() && query_table.empty())
+            {
+                elem.query_databases.insert(query_database);
+            }
+            else if (!query_table.empty())
+            {
+                if (query_database.empty())
+                    query_database = context.getCurrentDatabase();
+                elem.query_databases.insert(query_database);
+                elem.query_tables.insert(query_database + "." + query_table);
+            }
+
+            {
+                if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
+                {
+                    elem.query_kind = "Select";
+                }
+                else if (ast->as<ASTInsertQuery>())
+                {
+                    elem.query_kind = "Insert";
+                    const auto & insert_table = context.getInsertionTable();
+                    if (!insert_table.empty())
+                    {
+                        elem.query_databases.insert(insert_table.getDatabaseName());
+                        elem.query_tables.insert(insert_table.getFullNameNotQuoted());
+                    }
+                }
+                else if (auto * create = ast->as<ASTCreateQuery>())
+                {
+                    elem.query_kind = "Create";
+                    if (!create->as_table.empty())
+                    {
+                        String database = create->as_database.empty() ? context.getCurrentDatabase() : create->as_database;
+                        elem.query_databases.insert(database);
+                        elem.query_tables.insert(database + "." + create->as_table);
+                    }
+                }
+                else if (ast->as<ASTDropQuery>())
+                {
+                    elem.query_kind = "Drop";
+                }
+                else if (const auto * rename = ast->as<ASTRenameQuery>())
+                {
+                    elem.query_kind = "Rename";
+                    for (const auto & element : rename->elements)
+                    {
+                        {
+                            String database = element.from.database.empty() ? context.getCurrentDatabase() : element.from.database;
+                            elem.query_databases.insert(database);
+                            elem.query_tables.insert(database + "." + element.from.table);
+                        }
+                        {
+                            String database = element.to.database.empty() ? context.getCurrentDatabase() : element.to.database;
+                            elem.query_databases.insert(database);
+                            elem.query_tables.insert(database + "." + element.to.table);
+                        }
+                    }
+                }
+                else if (const auto * alter = ast->as<ASTAlterQuery>())
+                {
+                    elem.query_kind = "Alter";
+                    if (alter->command_list != nullptr)
+                    {
+                        String prefix = query_database + "." + query_table + ".";
+                        for (const auto & child : alter->command_list->children)
+                        {
+                            const auto * command = child->as<ASTAlterCommand>();
+
+                            if (command->column)
+                                elem.query_columns.insert(prefix + command->column->getColumnName());
+
+                            if (command->rename_to)
+                                elem.query_columns.insert(prefix + command->rename_to->getColumnName());
+
+                            // ADD COLUMN
+                            if (command->col_decl)
+                            {
+                                elem.query_columns.insert(prefix + command->col_decl->as<ASTColumnDeclaration &>().name);
+                            }
+
+                            if (!command->from_table.empty())
+                            {
+                                String database = command->from_database.empty() ? context.getCurrentDatabase() : command->from_database;
+                                elem.query_databases.insert(database);
+                                elem.query_tables.insert(database + "." + command->from_table);
+                            }
+
+                            if (!command->to_table.empty())
+                            {
+                                String database = command->to_database.empty() ? context.getCurrentDatabase() : command->to_database;
+                                elem.query_databases.insert(database);
+                                elem.query_tables.insert(database + "." + command->to_table);
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    // TODO complete query categorization
+                }
+            }
 
             elem.client_info = context.getClientInfo();
 
