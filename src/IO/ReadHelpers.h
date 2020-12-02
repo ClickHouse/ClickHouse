@@ -476,6 +476,10 @@ void readStringUntilEOF(String & s, ReadBuffer & buf);
 // Buffer pointer is left at EOL, don't forget to advance it.
 void readEscapedStringUntilEOL(String & s, ReadBuffer & buf);
 
+/// Only 0x20 as whitespace character
+void readStringUntilWhitespace(String & s, ReadBuffer & buf);
+
+
 
 /** Read string in CSV format.
   * Parsing rules:
@@ -526,6 +530,9 @@ bool tryReadJSONStringInto(Vector & s, ReadBuffer & buf)
 {
     return readJSONStringInto<Vector, bool>(s, buf);
 }
+
+template <typename Vector>
+void readStringUntilWhitespaceInto(Vector & s, ReadBuffer & buf);
 
 /// This could be used as template parameter for functions above, if you want to just skip data.
 struct NullOutput
