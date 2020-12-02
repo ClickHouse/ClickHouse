@@ -464,6 +464,7 @@ private:
         zkutil::ZooKeeperPtr & zookeeper,
         const DataPartsVector & parts,
         const String & merged_name,
+        const UUID & merged_part_uuid,
         const MergeTreeDataPartType & merged_part_type,
         bool deduplicate,
         ReplicatedMergeTreeLogEntryData * out_log_entry,
@@ -472,6 +473,7 @@ private:
 
     CreateMergeEntryResult createLogEntryToMutatePart(
         const IMergeTreeDataPart & part,
+        const UUID & new_part_uuid,
         Int64 mutation_version,
         int32_t alter_version,
         int32_t log_version);

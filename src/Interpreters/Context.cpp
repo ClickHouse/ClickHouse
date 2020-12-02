@@ -336,9 +336,9 @@ struct ContextShared
     ReplicatedFetchList replicated_fetch_list;
     ConfigurationPtr users_config;                          /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
-    std::optional<BackgroundSchedulePool> buffer_flush_schedule_pool; /// A thread pool that can do background flush for Buffer tables.
-    std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
-    std::optional<BackgroundSchedulePool> distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
+    mutable std::optional<BackgroundSchedulePool> buffer_flush_schedule_pool; /// A thread pool that can do background flush for Buffer tables.
+    mutable std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
+    mutable std::optional<BackgroundSchedulePool> distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
@@ -484,7 +484,7 @@ Context Context::createGlobal(ContextShared * shared)
 
 void Context::initGlobal()
 {
-    DatabaseCatalog::init(this);
+    DatabaseCatalog::init(*this);
     TemporaryLiveViewCleaner::init(*this);
 }
 
@@ -1127,8 +1127,14 @@ void Context::setCurrentQueryId(const String & query_id)
     random.words.a = thread_local_rng(); //-V656
     random.words.b = thread_local_rng(); //-V656
 
-    if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
-        && client_info.opentelemetry_trace_id == 0)
+    if (client_info.client_trace_context.trace_id != 0)
+    {
+        // Use the OpenTelemetry trace context we received from the client, and
+        // create a new span for the query.
+        query_trace_context = client_info.client_trace_context;
+        query_trace_context.span_id = thread_local_rng();
+    }
+    else if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
         // If this is an initial query without any parent OpenTelemetry trace, we
         // might start the trace ourselves, with some configurable probability.
@@ -1138,19 +1144,11 @@ void Context::setCurrentQueryId(const String & query_id)
         if (should_start_trace(thread_local_rng))
         {
             // Use the randomly generated default query id as the new trace id.
-            client_info.opentelemetry_trace_id = random.uuid;
-            client_info.opentelemetry_parent_span_id = 0;
-            client_info.opentelemetry_span_id = thread_local_rng();
+            query_trace_context.trace_id = random.uuid;
+            query_trace_context.span_id = thread_local_rng();
             // Mark this trace as sampled in the flags.
-            client_info.opentelemetry_trace_flags = 1;
+            query_trace_context.trace_flags = 1;
         }
-    }
-    else
-    {
-        // The incoming request has an OpenTelemtry trace context. Its span id
-        // becomes our parent span id.
-        client_info.opentelemetry_parent_span_id = client_info.opentelemetry_span_id;
-        client_info.opentelemetry_span_id = thread_local_rng();
     }
 
     String query_id_to_set = query_id;
@@ -1401,7 +1399,7 @@ void Context::dropCaches() const
         shared->mark_cache->reset();
 }
 
-BackgroundSchedulePool & Context::getBufferFlushSchedulePool()
+BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const
 {
     auto lock = getLock();
     if (!shared->buffer_flush_schedule_pool)
@@ -1443,7 +1441,7 @@ BackgroundTaskSchedulingSettings Context::getBackgroundMoveTaskSchedulingSetting
     return task_settings;
 }
 
-BackgroundSchedulePool & Context::getSchedulePool()
+BackgroundSchedulePool & Context::getSchedulePool() const
 {
     auto lock = getLock();
     if (!shared->schedule_pool)
@@ -1454,7 +1452,7 @@ BackgroundSchedulePool & Context::getSchedulePool()
     return *shared->schedule_pool;
 }
 
-BackgroundSchedulePool & Context::getDistributedSchedulePool()
+BackgroundSchedulePool & Context::getDistributedSchedulePool() const
 {
     auto lock = getLock();
     if (!shared->distributed_schedule_pool)

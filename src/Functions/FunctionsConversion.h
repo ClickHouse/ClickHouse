@@ -35,6 +35,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Common/FieldVisitors.h>
 #include <Common/assert_cast.h>
+#include <Common/quoteString.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/FunctionHelpers.h>
@@ -90,6 +91,9 @@ inline UInt32 extractToDecimalScale(const ColumnWithTypeAndName & named_column)
     return field.get<UInt32>();
 }
 
+/// Function toUnixTimestamp has exactly the same implementation as toDateTime of String type.
+struct NameToUnixTimestamp { static constexpr auto name = "toUnixTimestamp"; };
+
 
 /** Conversion of number types to each other, enums to numbers, dates and datetimes to numbers and back: done by straight assignment.
   *  (Date is represented internally as number of days from some day; DateTime - as unix timestamp)
@@ -109,6 +113,13 @@ struct ConvertImpl
 
         using ColVecFrom = typename FromDataType::ColumnType;
         using ColVecTo = typename ToDataType::ColumnType;
+
+        if (std::is_same_v<Name, NameToUnixTimestamp>)
+        {
+            if (isDate(named_from.type))
+                throw Exception("Illegal column " + named_from.column->getName() + " of first argument of function " + Name::name,
+                    ErrorCodes::ILLEGAL_COLUMN);
+        }
 
         if constexpr ((IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
             && !(std::is_same_v<DataTypeDateTime64, FromDataType> || std::is_same_v<DataTypeDateTime64, ToDataType>))
@@ -153,6 +164,9 @@ struct ConvertImpl
                 {
                     if constexpr (std::is_same_v<FromFieldType, UInt128> || std::is_same_v<ToFieldType, UInt128>)
                         throw Exception("Unexpected UInt128 to big int conversion", ErrorCodes::NOT_IMPLEMENTED);
+                    /// If From Data is Nan or Inf, throw exception
+                    else if (!isFinite(vec_from[i]))
+                        throw Exception("Unexpected inf or nan to big int conversion", ErrorCodes::NOT_IMPLEMENTED);
                     else
                         vec_to[i] = bigint_cast<ToFieldType>(vec_from[i]);
                 }
@@ -918,9 +932,6 @@ struct ConvertImplGenericFromString
     }
 };
 
-
-/// Function toUnixTimestamp has exactly the same implementation as toDateTime of String type.
-struct NameToUnixTimestamp { static constexpr auto name = "toUnixTimestamp"; };
 
 template <>
 struct ConvertImpl<DataTypeString, DataTypeUInt32, NameToUnixTimestamp>
@@ -1874,8 +1885,15 @@ class ExecutableFunctionCast : public IExecutableFunctionImpl
 public:
     using WrapperType = std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr &, const ColumnNullable *, size_t)>;
 
-    explicit ExecutableFunctionCast(WrapperType && wrapper_function_, const char * name_)
-            : wrapper_function(std::move(wrapper_function_)), name(name_) {}
+    struct Diagnostic
+    {
+        std::string column_from;
+        std::string column_to;
+    };
+
+    explicit ExecutableFunctionCast(
+            WrapperType && wrapper_function_, const char * name_, std::optional<Diagnostic> diagnostic_)
+            : wrapper_function(std::move(wrapper_function_)), name(name_), diagnostic(std::move(diagnostic_)) {}
 
     String getName() const override { return name; }
 
@@ -1887,7 +1905,17 @@ protected:
         if (arguments.size() > 2)
             new_arguments.insert(std::end(new_arguments), std::next(std::begin(arguments), 2), std::end(arguments));
 
-        return wrapper_function(new_arguments, result_type, nullptr, input_rows_count);
+        try
+        {
+            return wrapper_function(new_arguments, result_type, nullptr, input_rows_count);
+        }
+        catch (Exception & e)
+        {
+            if (diagnostic)
+                e.addMessage("while converting source column " + backQuoteIfNeed(diagnostic->column_from) +
+                             " to destination column " + backQuoteIfNeed(diagnostic->column_to));
+            throw;
+        }
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -1898,6 +1926,7 @@ protected:
 private:
     WrapperType wrapper_function;
     const char * name;
+    std::optional<Diagnostic> diagnostic;
 };
 
 
@@ -1908,11 +1937,12 @@ class FunctionCast final : public IFunctionBaseImpl
 public:
     using WrapperType = std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr &, const ColumnNullable *, size_t)>;
     using MonotonicityForRange = std::function<Monotonicity(const IDataType &, const Field &, const Field &)>;
+    using Diagnostic = ExecutableFunctionCast::Diagnostic;
 
     FunctionCast(const char * name_, MonotonicityForRange && monotonicity_for_range_
-            , const DataTypes & argument_types_, const DataTypePtr & return_type_)
-            : name(name_), monotonicity_for_range(monotonicity_for_range_)
-            , argument_types(argument_types_), return_type(return_type_)
+        , const DataTypes & argument_types_, const DataTypePtr & return_type_, std::optional<Diagnostic> diagnostic_)
+        : name(name_), monotonicity_for_range(monotonicity_for_range_)
+        , argument_types(argument_types_), return_type(return_type_), diagnostic(std::move(diagnostic_))
     {
     }
 
@@ -1921,8 +1951,18 @@ public:
 
     ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName & /*sample_columns*/) const override
     {
-        return std::make_unique<ExecutableFunctionCast>(
-                prepareUnpackDictionaries(getArgumentTypes()[0], getResultType()), name);
+        try
+        {
+            return std::make_unique<ExecutableFunctionCast>(
+                    prepareUnpackDictionaries(getArgumentTypes()[0], getResultType()), name, diagnostic);
+        }
+        catch (Exception & e)
+        {
+            if (diagnostic)
+                e.addMessage("while converting source column " + backQuoteIfNeed(diagnostic->column_from) +
+                             " to destination column " + backQuoteIfNeed(diagnostic->column_to));
+            throw;
+        }
     }
 
     String getName() const override { return name; }
@@ -1947,6 +1987,8 @@ private:
 
     DataTypes argument_types;
     DataTypePtr return_type;
+
+    std::optional<Diagnostic> diagnostic;
 
     template <typename DataType>
     WrapperType createWrapper(const DataTypePtr & from_type, const DataType * const, bool requested_result_is_nullable) const
@@ -2558,14 +2600,19 @@ class CastOverloadResolver : public IFunctionOverloadResolverImpl
 {
 public:
     using MonotonicityForRange = FunctionCast::MonotonicityForRange;
+    using Diagnostic = FunctionCast::Diagnostic;
 
     static constexpr auto name = "CAST";
 
     static FunctionOverloadResolverImplPtr create(const Context & context);
-    static FunctionOverloadResolverImplPtr createImpl(bool keep_nullable) { return std::make_unique<CastOverloadResolver>(keep_nullable); }
+    static FunctionOverloadResolverImplPtr createImpl(bool keep_nullable, std::optional<Diagnostic> diagnostic = {})
+    {
+        return std::make_unique<CastOverloadResolver>(keep_nullable, std::move(diagnostic));
+    }
 
-    explicit CastOverloadResolver(bool keep_nullable_)
-        : keep_nullable(keep_nullable_)
+
+    explicit CastOverloadResolver(bool keep_nullable_, std::optional<Diagnostic> diagnostic_ = {})
+        : keep_nullable(keep_nullable_), diagnostic(std::move(diagnostic_))
     {}
 
     String getName() const override { return name; }
@@ -2584,7 +2631,7 @@ protected:
             data_types[i] = arguments[i].type;
 
         auto monotonicity = getMonotonicityInformation(arguments.front().type, return_type.get());
-        return std::make_unique<FunctionCast>(name, std::move(monotonicity), data_types, return_type);
+        return std::make_unique<FunctionCast>(name, std::move(monotonicity), data_types, return_type, diagnostic);
     }
 
     DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const override
@@ -2612,6 +2659,7 @@ protected:
 
 private:
     bool keep_nullable;
+    std::optional<Diagnostic> diagnostic;
 
     template <typename DataType>
     static auto monotonicityForType(const DataType * const)

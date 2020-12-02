@@ -535,18 +535,7 @@ dateDiff('unit', startdate, enddate, [timezone])
 
 -   `unit` — Time unit, in which the returned value is expressed. [String](../../sql-reference/syntax.md#syntax-string-literal).
 
-        Supported values:
-
-        | unit   |
-        | ---- |
-        |second  |
-        |minute  |
-        |hour    |
-        |day     |
-        |week    |
-        |month   |
-        |quarter |
-        |year    |
+        Supported values: second, minute, hour, day, week, month, quarter, year.
 
 -   `startdate` — The first time value to compare. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
