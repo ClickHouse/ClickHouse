@@ -96,18 +96,12 @@ StorageRabbitMQ::StorageRabbitMQ(
         , semaphore(0, num_consumers)
         , unique_strbase(getRandomName())
         , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
+        , rabbit_is_ready(false)
 {
     loop = std::make_unique<uv_loop_t>();
     uv_loop_init(loop.get());
     event_handler = std::make_shared<RabbitMQHandler>(loop.get(), log);
-
-    if (!restoreConnection(false))
-    {
-        if (!connection->closed())
-            connection->close(true);
-
-        throw Exception("Cannot connect to RabbitMQ " + address, ErrorCodes::CANNOT_CONNECT_RABBITMQ);
-    }
+    restoreConnection(false);
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -123,6 +117,9 @@ StorageRabbitMQ::StorageRabbitMQ(
 
     streaming_task = global_context.getSchedulePool().createTask("RabbitMQStreamingTask", [this]{ streamingToViewsFunc(); });
     streaming_task->deactivate();
+
+    connection_task = global_context.getSchedulePool().createTask("RabbitMQConnectionTask", [this]{ connectionFunc(); });
+    connection_task->deactivate();
 
     if (queue_base.empty())
     {
@@ -213,6 +210,15 @@ void StorageRabbitMQ::loopingFunc()
 }
 
 
+void StorageRabbitMQ::connectionFunc()
+{
+    if (restoreConnection(true))
+        initRabbitMQ();
+    else
+        connection_task->scheduleAfter(RESCHEDULE_MS);
+}
+
+
 /* Need to deactivate this way because otherwise might get a deadlock when first deactivate streaming task in shutdown and then
  * inside streaming task try to deactivate any other task
  */
@@ -241,6 +247,23 @@ size_t StorageRabbitMQ::getMaxBlockSize() const
          ? rabbitmq_settings->rabbitmq_max_block_size.value
          : (global_context.getSettingsRef().max_insert_block_size.value / num_consumers);
  }
+
+
+void StorageRabbitMQ::initRabbitMQ()
+{
+    setup_channel = std::make_shared<AMQP::TcpChannel>(connection.get());
+
+    initExchange();
+    bindExchange();
+
+    for (const auto i : ext::range(0, num_queues))
+        bindQueue(i + 1);
+
+    LOG_TRACE(log, "RabbitMQ setup completed");
+
+    rabbit_is_ready = true;
+    setup_channel->close();
+}
 
 
 void StorageRabbitMQ::initExchange()
@@ -293,7 +316,8 @@ void StorageRabbitMQ::initExchange()
          * is bad.
          */
         throw Exception(
-           ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE, "Unable to declare sharding exchange ({}). Reason: {}", sharding_exchange, std::string(message));
+           ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE,
+           "Unable to declare sharding exchange ({}). Reason: {}", sharding_exchange, std::string(message));
     });
 
     setup_channel->bindExchange(bridge_exchange, sharding_exchange, routing_keys[0])
@@ -309,6 +333,7 @@ void StorageRabbitMQ::initExchange()
 
     consumer_exchange = sharding_exchange;
 }
+
 
 
 void StorageRabbitMQ::bindExchange()
@@ -333,9 +358,7 @@ void StorageRabbitMQ::bindExchange()
             throw Exception(
                 ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE,
                 "Unable to bind exchange {} to bridge exchange ({}). Reason: {}",
-                exchange_name,
-                bridge_exchange,
-                std::string(message));
+                exchange_name, bridge_exchange, std::string(message));
         });
     }
     else if (exchange_type == AMQP::ExchangeType::fanout || exchange_type == AMQP::ExchangeType::consistent_hash)
@@ -347,9 +370,7 @@ void StorageRabbitMQ::bindExchange()
             throw Exception(
                 ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE,
                 "Unable to bind exchange {} to bridge exchange ({}). Reason: {}",
-                exchange_name,
-                bridge_exchange,
-                std::string(message));
+                exchange_name, bridge_exchange, std::string(message));
         });
     }
     else
@@ -368,9 +389,7 @@ void StorageRabbitMQ::bindExchange()
                 throw Exception(
                     ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE,
                     "Unable to bind exchange {} to bridge exchange ({}). Reason: {}",
-                    exchange_name,
-                    bridge_exchange,
-                    std::string(message));
+                    exchange_name, bridge_exchange, std::string(message));
             });
         }
     }
@@ -480,7 +499,10 @@ bool StorageRabbitMQ::restoreConnection(bool reconnecting)
 
 void StorageRabbitMQ::updateChannel(ChannelPtr & channel)
 {
-    channel = std::make_shared<AMQP::TcpChannel>(connection.get());
+    if (event_handler->connectionRunning())
+        channel = std::make_shared<AMQP::TcpChannel>(connection.get());
+    else
+        channel = nullptr;
 }
 
 
@@ -536,9 +558,7 @@ Pipe StorageRabbitMQ::read(
         return {};
 
     auto sample_block = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
-
     auto modified_context = addSettings(context);
-
     auto block_size = getMaxBlockSize();
 
     bool update_channels = false;
@@ -596,16 +616,10 @@ BlockOutputStreamPtr StorageRabbitMQ::write(const ASTPtr &, const StorageMetadat
 
 void StorageRabbitMQ::startup()
 {
-    setup_channel = std::make_shared<AMQP::TcpChannel>(connection.get());
-    initExchange();
-    bindExchange();
-
-    for (size_t i = 1; i <= num_queues; ++i)
-    {
-        bindQueue(i);
-    }
-
-    setup_channel->close();
+    if (event_handler->connectionRunning())
+        initRabbitMQ();
+    else
+        connection_task->activateAndSchedule();
 
     for (size_t i = 0; i < num_consumers; ++i)
     {
@@ -685,7 +699,9 @@ ConsumerBufferPtr StorageRabbitMQ::popReadBuffer(std::chrono::milliseconds timeo
 
 ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
 {
-    ChannelPtr consumer_channel = std::make_shared<AMQP::TcpChannel>(connection.get());
+    ChannelPtr consumer_channel;
+    if (event_handler->connectionRunning())
+        consumer_channel = std::make_shared<AMQP::TcpChannel>(connection.get());
 
     return std::make_shared<ReadBufferFromRabbitMQConsumer>(
         consumer_channel, event_handler, queues, ++consumer_id,
@@ -732,42 +748,45 @@ bool StorageRabbitMQ::checkDependencies(const StorageID & table_id)
 
 void StorageRabbitMQ::streamingToViewsFunc()
 {
-    try
+    if (rabbit_is_ready)
     {
-        auto table_id = getStorageID();
-
-        // Check if at least one direct dependency is attached
-        size_t dependencies_count = DatabaseCatalog::instance().getDependencies(table_id).size();
-
-        if (dependencies_count)
+        try
         {
-            auto start_time = std::chrono::steady_clock::now();
+            auto table_id = getStorageID();
 
-            // Keep streaming as long as there are attached views and streaming is not cancelled
-            while (!stream_cancelled && num_created_consumers > 0)
+            // Check if at least one direct dependency is attached
+            size_t dependencies_count = DatabaseCatalog::instance().getDependencies(table_id).size();
+
+            if (dependencies_count)
             {
-                if (!checkDependencies(table_id))
-                    break;
+                auto start_time = std::chrono::steady_clock::now();
 
-                LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
-
-                if (streamToViews())
-                    break;
-
-                auto end_time = std::chrono::steady_clock::now();
-                auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-                if (duration.count() > MAX_THREAD_WORK_DURATION_MS)
+                // Keep streaming as long as there are attached views and streaming is not cancelled
+                while (!stream_cancelled && num_created_consumers > 0)
                 {
-                    event_handler->updateLoopState(Loop::STOP);
-                    LOG_TRACE(log, "Reschedule streaming. Thread work duration limit exceeded.");
-                    break;
+                    if (!checkDependencies(table_id))
+                        break;
+
+                    LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
+
+                    if (streamToViews())
+                        break;
+
+                    auto end_time = std::chrono::steady_clock::now();
+                    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+                    if (duration.count() > MAX_THREAD_WORK_DURATION_MS)
+                    {
+                        event_handler->updateLoopState(Loop::STOP);
+                        LOG_TRACE(log, "Reschedule streaming. Thread work duration limit exceeded.");
+                        break;
+                    }
                 }
             }
         }
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
 
     /// Wait for attached views
