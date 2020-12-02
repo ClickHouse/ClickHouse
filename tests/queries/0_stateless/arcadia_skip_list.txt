@@ -174,3 +174,4 @@
 01584_distributed_buffer_cannot_find_column
 01018_ip_dictionary
 00976_ttl_with_old_parts
+01582_distinct_subquery_groupby
