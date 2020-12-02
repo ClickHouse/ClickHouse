@@ -12,7 +12,7 @@ For more information and documentation see https://clickhouse.yandex/.
 
 ### start server instance
 ```bash
-$ docker run -d --name some-clickhouse-server --ulimit nofile=262144:262144 yandex/clickhouse-server
+$ docker run -d -p 8123:8123 --name some-clickhouse-server --ulimit nofile=262144:262144 yandex/clickhouse-server
 ```
 
 ### connect to it from a native client
@@ -22,6 +22,13 @@ $ docker run -it --rm --link some-clickhouse-server:clickhouse-server yandex/cli
 
 More information about [ClickHouse client](https://clickhouse.yandex/docs/en/interfaces/cli/).
 
+### connect to it using curl
+
+```bash
+$ echo 'SELECT 1' | curl 'http://localhost:8123/?query=' --data-binary @-
+```
+More information about [ClickHouse HTTP Interface](https://clickhouse.tech/docs/en/interfaces/http/).
+
 ## Configuration
 
 Container exposes 8123 port for [HTTP interface](https://clickhouse.yandex/docs/en/interfaces/http_interface/) and 9000 port for [native client](https://clickhouse.yandex/docs/en/interfaces/tcp/).
@@ -30,7 +37,7 @@ ClickHouse configuration represented with a file "config.xml" ([documentation](h
 
 ### Start server instance with custom configuration
 ```bash
-$ docker run -d --name some-clickhouse-server --ulimit nofile=262144:262144 -v /path/to/your/config.xml:/etc/clickhouse-server/config.xml yandex/clickhouse-server
+$ docker run -d -p 8123:8123 --name some-clickhouse-server --ulimit nofile=262144:262144 -v /path/to/your/config.xml:/etc/clickhouse-server/config.xml yandex/clickhouse-server
 ```
 
 ### Start server as custom user
@@ -42,7 +49,7 @@ When you use the image with mounting local directories inside you probably would
 
 ### Start server from root (useful in case of userns enabled)
 ```
-$ docker run --rm -e CLICKHOUSE_UID=0 -e CLICKHOUSE_GID=0 --name clickhouse-server-userns -v "$(pwd)/logs/clickhouse:/var/log/clickhouse-server" -v "$(pwd)/data/clickhouse:/var/lib/clickhouse" yandex/clickhouse-server
+$ docker run --rm -e CLICKHOUSE_UID=0 -e CLICKHOUSE_GID=0 --name clickhouse-server-userns -v "$(pwd)/logs/clickhouse:/var/log/clickhouse-server" -v "$(pwd)/data/clickhouse:/var/lib/clickhouse" yandex/clickhouse-server 
 ```
 
 ### How to create default database and user on starting
