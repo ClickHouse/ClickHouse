@@ -206,12 +206,16 @@ inline const Quota::KeyTypeInfo & Quota::KeyTypeInfo::get(KeyType type)
         if (tokens.size() > 1)
         {
             for (const auto & token : tokens)
+            {
                 for (auto kt : ext::range(KeyType::MAX))
+                {
                     if (KeyTypeInfo::get(kt).name == token)
                     {
                         init_base_types.push_back(kt);
                         break;
                     }
+                }
+            }
         }
         return KeyTypeInfo{raw_name_, std::move(init_name), std::move(init_base_types)};
     };
