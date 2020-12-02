@@ -19,7 +19,11 @@ public:
             const Block & header_,
             ExpressionActionsPtr expression_);
 
-    String getName() const override { return "ExpressionTransform"; }
+    String getName() const override
+    {
+        fmt::print(stderr, "et getname at \n{}\n", StackTrace().toString());
+        return "ExpressionTransform";
+    }
 
     static Block transformHeader(Block header, const ExpressionActionsPtr & expression);
 

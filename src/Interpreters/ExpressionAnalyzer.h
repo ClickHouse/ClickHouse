@@ -172,6 +172,8 @@ class SelectQueryExpressionAnalyzer;
 /// Result of SelectQueryExpressionAnalyzer: expressions for InterpreterSelectQuery
 struct ExpressionAnalysisResult
 {
+    std::string dump() const;
+
     /// Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
     bool first_stage = false;
     /// Do I need to execute the second part of the pipeline - running on the initiating server during distributed processing.

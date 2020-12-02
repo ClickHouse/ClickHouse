@@ -75,6 +75,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
+        fmt::print(stderr, "executeImpl at \n{}\n", StackTrace().toString());
+
         const ColumnAggregateFunction * column_with_states
             = typeid_cast<const ColumnAggregateFunction *>(&*arguments.at(0).column);
 
@@ -134,6 +136,136 @@ public:
     }
 };
 
+}
+
+namespace
+{
+
+class FunctionWindow : public IFunction
+{
+    mutable ColumnsWithTypeAndName prev_columns = {};
+    mutable int prev_index = -1;
+
+    mutable AlignedBuffer place;
+    mutable std::unique_ptr<Arena> arena;
+
+public:
+    static constexpr auto name = "window";
+    static FunctionPtr create(const Context &)
+    {
+        return std::make_shared<FunctionWindow>();
+    }
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    bool isStateful() const override
+    {
+        return true;
+    }
+
+    bool isVariadic() const override { return true; }
+
+    size_t getNumberOfArguments() const override { return 0; }
+
+    bool isDeterministic() const override { return false; }
+
+    bool isDeterministicInScopeOfQuery() const override
+    {
+        return false;
+    }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        fmt::print(stderr, "getReturnType for {} at \n{}\n",
+            static_cast<const void *>(this), StackTrace().toString());
+
+        if (arguments.empty() || arguments.size() > 3)
+            throw Exception("Incorrect number of arguments of function " + getName() + ". Must be up to 3 (function, PARTITION BY, ORDER BY).",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        const DataTypeAggregateFunction * type = checkAndGetDataType<DataTypeAggregateFunction>(arguments[0].get());
+        if (!type)
+            throw Exception("Argument for function " + getName() + " must have type AggregateFunction - state of aggregate function.",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        const auto & agg_func = *type->getFunction();
+        place.reset(agg_func.sizeOfData(), agg_func.alignOfData());
+
+        /// Will pass empty arena if agg_func does not allocate memory in arena
+        arena = agg_func.allocatesMemoryInArena() ? std::make_unique<Arena>() : nullptr;
+
+
+        return type->getReturnType();
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    {
+        fmt::print(stderr, "executeImpl for {} at \n{}\n",
+            static_cast<const void *>(this), StackTrace().toString());
+
+        const ColumnAggregateFunction * column_with_states
+            = typeid_cast<const ColumnAggregateFunction *>(&*arguments.at(0).column);
+
+        if (!column_with_states)
+            throw Exception("Illegal column " + arguments.at(0).column->getName()
+                    + " of first argument of function "
+                    + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
+
+        ColumnPtr column_with_groups;
+
+        if (arguments.size() >= 2)
+            column_with_groups = arguments[1].column;
+
+        AggregateFunctionPtr aggregate_function_ptr = column_with_states->getAggregateFunction();
+        const IAggregateFunction & agg_func = *aggregate_function_ptr;
+
+
+        auto result_column_ptr = agg_func.getReturnType()->createColumn();
+        IColumn & result_column = *result_column_ptr;
+        result_column.reserve(column_with_states->size());
+
+        const auto & states = column_with_states->getData();
+
+        bool state_created = false;
+        SCOPE_EXIT({
+            if (state_created)
+                agg_func.destroy(place.data());
+        });
+
+        size_t row_number = 0;
+        for (const auto & state_to_add : states)
+        {
+            if (row_number == 0 || (column_with_groups && column_with_groups->compareAt(row_number, row_number - 1, *column_with_groups, 1) != 0))
+            {
+                if (state_created)
+                {
+                    agg_func.destroy(place.data());
+                    state_created = false;
+                }
+
+                agg_func.create(place.data());
+                state_created = true;
+            }
+
+            agg_func.merge(place.data(), state_to_add, arena.get());
+            agg_func.insertResultInto(place.data(), result_column, arena.get());
+
+            ++row_number;
+        }
+
+        return result_column_ptr;
+    }
+};
+
+}
+
+void registerFunctionWindow(FunctionFactory & factory)
+{
+    factory.registerFunction<FunctionWindow>();
 }
 
 void registerFunctionRunningAccumulate(FunctionFactory & factory)
