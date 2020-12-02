@@ -43,7 +43,7 @@ $ docker run -d -p 8123:8123 --name some-clickhouse-server --ulimit nofile=26214
 ### Start server as custom user
 ```
 # $(pwd)/data/clickhouse should exist and be owned by current user
-$ docker run --rm --user ${UID}:${GID} --name some-clickhouse-server --ulimit nofile=262144:262144 p 8123:8123 -v "$(pwd)/logs/clickhouse:/var/log/clickhouse-server" -v "$(pwd)/data/clickhouse:/var/lib/clickhouse" yandex/clickhouse-server
+$ docker run --rm --user ${UID}:${GID} --name some-clickhouse-server --ulimit nofile=262144:262144 -v "$(pwd)/logs/clickhouse:/var/log/clickhouse-server" -v "$(pwd)/data/clickhouse:/var/lib/clickhouse" yandex/clickhouse-server
 ```
 When you use the image with mounting local directories inside you probably would like to not mess your directory tree with files owner and permissions. Then you could use `--user` argument. In this case, you should mount every necessary directory (`/var/lib/clickhouse` and `/var/log/clickhouse-server`) inside the container. Otherwise, image will complain and not start.
 
