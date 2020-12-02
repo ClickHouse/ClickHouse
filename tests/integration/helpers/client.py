@@ -13,7 +13,7 @@ class Client:
         if os.path.basename(command) == 'clickhouse':
             self.command.append('client')
 
-        self.command += ['--host', self.host, '--port', str(self.port), '--stacktrace', '--use_antlr_parser=1']
+        self.command += ['--host', self.host, '--port', str(self.port), '--stacktrace']
 
     def query(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None,
               ignore_error=False):
