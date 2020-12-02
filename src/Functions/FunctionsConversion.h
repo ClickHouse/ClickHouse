@@ -2897,8 +2897,6 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-protected:
-
     FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         DataTypes data_types(arguments.size());
@@ -2909,7 +2907,7 @@ protected:
         auto monotonicity = MonotonicityHelper::getMonotonicityInformation(arguments.front().type, return_type.get());
         return std::make_unique<FunctionCast>(name, std::move(monotonicity), data_types, return_type, std::optional<Diagnostic>(), true);
     }
-
+protected:
     DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const override
     {
         const auto & column = arguments.back().column;
