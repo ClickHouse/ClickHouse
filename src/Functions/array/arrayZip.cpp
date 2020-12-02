@@ -55,7 +55,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(arguments_types));
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         size_t num_arguments = arguments.size();
 

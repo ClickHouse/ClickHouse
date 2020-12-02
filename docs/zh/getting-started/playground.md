@@ -38,10 +38,15 @@ ClickHouse体验平台提供了小型集群[Managed Service for ClickHouse](http
 -   不允许插入查询
 
 还强制执行以下设置:
-- [max_result_bytes=10485760](../operations/settings/query_complexity/#max-result-bytes)
-- [max_result_rows=2000](../operations/settings/query_complexity/#setting-max_result_rows)
-- [result_overflow_mode=break](../operations/settings/query_complexity/#result-overflow-mode)
-- [max_execution_time=60000](../operations/settings/query_complexity/#max-execution-time)
+- [max_result_bytes=10485760](../operations/settings/query-complexity/#max-result-bytes)
+- [max_result_rows=2000](../operations/settings/query-complexity/#setting-max_result_rows)
+- [result_overflow_mode=break](../operations/settings/query-complexity/#result-overflow-mode)
+- [max_execution_time=60000](../operations/settings/query-complexity/#max-execution-time)
+
+ClickHouse体验还有如下：
+[ClickHouse管理服务](https://cloud.yandex.com/services/managed-clickhouse)
+实例托管 [Yandex云](https://cloud.yandex.com/)。
+更多信息 [云提供商](../commercial/cloud.md)。
 
 ## 示例 {#examples}
 

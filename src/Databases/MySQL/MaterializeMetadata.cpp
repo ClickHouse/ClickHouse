@@ -91,6 +91,29 @@ void MaterializeMetadata::fetchMasterStatus(mysqlxx::PoolWithFailover::Entry & c
     executed_gtid_set = (*master_status.getByPosition(4).column)[0].safeGet<String>();
 }
 
+void MaterializeMetadata::fetchMasterVariablesValue(const mysqlxx::PoolWithFailover::Entry & connection)
+{
+    Block variables_header{
+        {std::make_shared<DataTypeString>(), "Variable_name"},
+        {std::make_shared<DataTypeString>(), "Value"}
+    };
+
+    const String & fetch_query = "SHOW VARIABLES WHERE Variable_name = 'binlog_checksum'";
+    MySQLBlockInputStream variables_input(connection, fetch_query, variables_header, DEFAULT_BLOCK_SIZE);
+
+    while (Block variables_block = variables_input.read())
+    {
+        ColumnPtr variables_name = variables_block.getByName("Variable_name").column;
+        ColumnPtr variables_value = variables_block.getByName("Value").column;
+
+        for (size_t index = 0; index < variables_block.rows(); ++index)
+        {
+            if (variables_name->getDataAt(index) == "binlog_checksum")
+                binlog_checksum = variables_value->getDataAt(index).toString();
+        }
+    }
+}
+
 static Block getShowMasterLogHeader(const String & mysql_version)
 {
     if (startsWith(mysql_version, "5."))
@@ -108,7 +131,7 @@ static Block getShowMasterLogHeader(const String & mysql_version)
     };
 }
 
-static bool checkSyncUserPrivImpl(mysqlxx::PoolWithFailover::Entry & connection, WriteBuffer & out)
+static bool checkSyncUserPrivImpl(const mysqlxx::PoolWithFailover::Entry & connection, WriteBuffer & out)
 {
     Block sync_user_privs_header
     {
@@ -140,7 +163,7 @@ static bool checkSyncUserPrivImpl(mysqlxx::PoolWithFailover::Entry & connection,
     return false;
 }
 
-static void checkSyncUserPriv(mysqlxx::PoolWithFailover::Entry & connection)
+static void checkSyncUserPriv(const mysqlxx::PoolWithFailover::Entry & connection)
 {
     WriteBufferFromOwnString out;
 
@@ -151,7 +174,7 @@ static void checkSyncUserPriv(mysqlxx::PoolWithFailover::Entry & connection)
                         "But the SYNC USER grant query is: " + out.str(), ErrorCodes::SYNC_MYSQL_USER_ACCESS_ERROR);
 }
 
-bool MaterializeMetadata::checkBinlogFileExists(mysqlxx::PoolWithFailover::Entry & connection, const String & mysql_version) const
+bool MaterializeMetadata::checkBinlogFileExists(const mysqlxx::PoolWithFailover::Entry & connection, const String & mysql_version) const
 {
     MySQLBlockInputStream input(connection, "SHOW MASTER LOGS", getShowMasterLogHeader(mysql_version), DEFAULT_BLOCK_SIZE);
 
@@ -159,7 +182,7 @@ bool MaterializeMetadata::checkBinlogFileExists(mysqlxx::PoolWithFailover::Entry
     {
         for (size_t index = 0; index < block.rows(); ++index)
         {
-            const auto & log_name = (*block.getByPosition(0).column)[index].safeGet<String>();
+            const auto log_name = (*block.getByPosition(0).column)[index].safeGet<String>();
             if (log_name == binlog_file)
                 return true;
         }
@@ -241,6 +264,7 @@ MaterializeMetadata::MaterializeMetadata(
 
         locked_tables = true;
         fetchMasterStatus(connection);
+        fetchMasterVariablesValue(connection);
         connection->query("SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ;").execute();
         connection->query("START TRANSACTION /*!40100 WITH CONSISTENT SNAPSHOT */;").execute();
 
