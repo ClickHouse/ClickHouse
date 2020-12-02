@@ -221,13 +221,13 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
             if (limit_length_ast)
             {
                 limit_length = limit_length_ast->as<ASTLiteral &>().value.safeGet<UInt64>();
-                UInt64 new_limit_length = limit_length;
-                if (settings.offset > limit_length)
-                    new_limit_length = 0;
-                else if (settings.offset > 0)
-                    new_limit_length =  settings.limit ? std::min(UInt64(settings.limit), limit_length - settings.offset) : (limit_length - settings.offset);
-                else
+
+                UInt64 new_limit_length = 0;
+                if (settings.offset == 0)
                     new_limit_length = std::min(limit_length, UInt64(settings.limit));
+                else if (settings.offset < limit_length)
+                    new_limit_length =  settings.limit ? std::min(UInt64(settings.limit), limit_length - settings.offset) : (limit_length - settings.offset);
+
                 limit_length_ast->as<ASTLiteral &>().value = Field(new_limit_length);
             }
             else if (settings.limit)
