@@ -58,7 +58,10 @@ void RabbitMQBlockInputStream::readPrefixImpl()
     buffer = storage.popReadBuffer(timeout);
 
     if (!buffer->getChannel())
+    {
+        storage.updateQueues(buffer->getQueues());
         updateChannel();
+    }
 }
 
 

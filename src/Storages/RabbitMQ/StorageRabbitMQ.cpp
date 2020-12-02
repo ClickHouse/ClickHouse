@@ -47,7 +47,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_CONNECT_RABBITMQ;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int CANNOT_BIND_RABBITMQ_EXCHANGE;
     extern const int CANNOT_DECLARE_RABBITMQ_EXCHANGE;
@@ -335,7 +334,6 @@ void StorageRabbitMQ::initExchange()
 }
 
 
-
 void StorageRabbitMQ::bindExchange()
 {
     std::atomic<bool> binding_created = false;
@@ -499,6 +497,7 @@ bool StorageRabbitMQ::restoreConnection(bool reconnecting)
 
 void StorageRabbitMQ::updateChannel(ChannelPtr & channel)
 {
+    std::lock_guard lock(conn_mutex);
     if (event_handler->connectionRunning())
         channel = std::make_shared<AMQP::TcpChannel>(connection.get());
     else
