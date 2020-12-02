@@ -2325,12 +2325,12 @@ Default value: `\N`.
 
 ## allow_nullable_key {#allow-nullable-key}
 
-Enables or disables [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable) type as keys in [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree) tables.
+Allows using of the [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable)-typed values in a sorting and a primary key for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree) tables.
 
 Possible values:
 
-- 1 — `Nullable` type is allowed as keys.
-- 0 — `Nullable` type is not allowed as keys.
+- 1 — `Nullable`-type expressions are allowed in keys.
+- 0 — `Nullable`-type expressions are not allowed in keys.
 
 Default value: `0`.
 
