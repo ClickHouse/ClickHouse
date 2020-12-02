@@ -11,7 +11,7 @@ drop table if exists dist_01247;
 drop table if exists data_01247;
 
 create table data_01247 engine=Memory() as select * from numbers(2);
-create table dist_01247 as data_01247 engine=Distributed(test_cluster_two_shards, currentDatabase(), data_01247, number);
+create table dist_01247 as data_01247 engine=Distributed(test_cluster_two_shards, '$CLICKHOUSE_DATABASE', data_01247, number);
 
 select * from dist_01247 format Null;
 EOL

@@ -16,11 +16,11 @@ ${CLICKHOUSE_CLIENT} --query="SELECT '*** Create and kill a single invalid mutat
 
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE kill_mutation DELETE WHERE toUInt32(s) = 1 SETTINGS mutations_sync = 1" 2>/dev/null
 
-${CLICKHOUSE_CLIENT} --query="SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 'kill_mutation' and is_done = 0"
+${CLICKHOUSE_CLIENT} --query="SELECT count() FROM system.mutations WHERE database = '$CLICKHOUSE_DATABASE' AND table = 'kill_mutation' and is_done = 0"
 
-${CLICKHOUSE_CLIENT} --query="KILL MUTATION WHERE database = currentDatabase() AND table = 'kill_mutation'"
+${CLICKHOUSE_CLIENT} --query="KILL MUTATION WHERE database = '$CLICKHOUSE_DATABASE' AND table = 'kill_mutation'"
 
-${CLICKHOUSE_CLIENT} --query="SELECT mutation_id FROM system.mutations WHERE database = currentDatabase() AND table = 'kill_mutation'"
+${CLICKHOUSE_CLIENT} --query="SELECT mutation_id FROM system.mutations WHERE database = '$CLICKHOUSE_DATABASE' AND table = 'kill_mutation'"
 
 ${CLICKHOUSE_CLIENT} --query="SELECT '*** Create and kill invalid mutation that blocks another mutation ***'"
 
@@ -28,10 +28,10 @@ ${CLICKHOUSE_CLIENT} --query="ALTER TABLE kill_mutation DELETE WHERE toUInt32(s)
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE kill_mutation DELETE WHERE x = 1 SETTINGS mutations_sync = 1" 2>&1 | grep -o "happened during execution of mutations 'mutation_4.txt, mutation_5.txt'" | head -n 1
 
 # but exception doesn't stop mutations, and we will still see them in system.mutations
-${CLICKHOUSE_CLIENT} --query="SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 'kill_mutation' AND mutation_id = 'mutation_4.txt'" # 1
+${CLICKHOUSE_CLIENT} --query="SELECT count() FROM system.mutations WHERE database = '$CLICKHOUSE_DATABASE' AND table = 'kill_mutation' AND mutation_id = 'mutation_4.txt'" # 1
 
 # waiting	test	kill_mutation	mutation_4.txt	DELETE WHERE toUInt32(s) = 1
-${CLICKHOUSE_CLIENT} --query="KILL MUTATION WHERE database = currentDatabase() AND table = 'kill_mutation' AND mutation_id = 'mutation_4.txt'"
+${CLICKHOUSE_CLIENT} --query="KILL MUTATION WHERE database = '$CLICKHOUSE_DATABASE' AND table = 'kill_mutation' AND mutation_id = 'mutation_4.txt'"
 
 # just to wait previous mutation to finish (and don't poll system.mutations), doesn't affect data
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE kill_mutation DELETE WHERE x = 1 SETTINGS mutations_sync = 1"
@@ -39,6 +39,6 @@ ${CLICKHOUSE_CLIENT} --query="ALTER TABLE kill_mutation DELETE WHERE x = 1 SETTI
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM kill_mutation" # 2001-01-01	2	b
 
 # must always be empty
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM system.mutations WHERE table = 'kill_mutation' AND database = currentDatabase() AND is_done = 0"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM system.mutations WHERE table = 'kill_mutation' AND database = '$CLICKHOUSE_DATABASE' AND is_done = 0"
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE kill_mutation"
