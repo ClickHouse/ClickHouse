@@ -5,7 +5,7 @@ toc_title: Overview
 
 # What Is ClickHouse? {#what-is-clickhouse}
 
-ClickHouse is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).
+ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).
 
 In a “normal” row-oriented DBMS, data is stored in this order:
 
