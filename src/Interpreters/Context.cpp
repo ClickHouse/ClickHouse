@@ -935,6 +935,16 @@ bool Context::hasScalar(const String & name) const
 }
 
 
+void Context::addQueryAccessInfo(const String & database_name, const String & table_name, const Names & column_names)
+{
+    assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
+    query_access_info.databases.emplace(database_name);
+    query_access_info.tables.emplace(table_name);
+    for (const auto & column_name : column_names)
+        query_access_info.columns.emplace(table_name + "." + column_name);
+}
+
+
 StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
 {
     /// Slightly suboptimal.
