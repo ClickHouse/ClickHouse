@@ -353,6 +353,8 @@ void HTTPHandler::processQuery(
             http_response_compression_method = CompressionMethod::Zlib;
         else if (std::string::npos != http_response_compression_methods.find("xz"))
             http_response_compression_method = CompressionMethod::Xz;
+        else if (std::string::npos != http_response_compression_methods.find("zstd"))
+            http_response_compression_method = CompressionMethod::Zstd;
     }
 
     bool client_supports_http_compression = http_response_compression_method != CompressionMethod::None;
