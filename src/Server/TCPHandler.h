@@ -101,9 +101,14 @@ struct LastBlockInputParameters
 class TCPHandler : public Poco::Net::TCPServerConnection
 {
 public:
-    TCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_)
+    /** parse_proxy_protocol_ - if true, expect and parse the header of PROXY protocol in every connection
+      * and set the information about forwarded address accordingly.
+      * See https://github.com/wolfeidau/proxyv2/blob/master/docs/proxy-protocol.txt
+      */
+    TCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_)
         : Poco::Net::TCPServerConnection(socket_)
         , server(server_)
+        , parse_proxy_protocol(parse_proxy_protocol_)
         , log(&Poco::Logger::get("TCPHandler"))
         , connection_context(server.context())
         , query_context(server.context())
@@ -118,6 +123,7 @@ public:
 
 private:
     IServer & server;
+    bool parse_proxy_protocol = false;
     Poco::Logger * log;
 
     String client_name;
@@ -158,6 +164,7 @@ private:
 
     void runImpl();
 
+    bool receiveProxyHeader();
     void receiveHello();
     bool receivePacket();
     void receiveQuery();
