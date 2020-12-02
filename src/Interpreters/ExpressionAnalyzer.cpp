@@ -1241,6 +1241,8 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
     removeExtraColumns();
 
     checkActions();
+
+    fmt::print(stderr, "ExpressionAnalysisResult: \n{}\n", dump());
 }
 
 void ExpressionAnalysisResult::finalize(const ExpressionActionsChain & chain, size_t where_step_num)
@@ -1312,6 +1314,72 @@ void ExpressionAnalysisResult::checkActions() const
         check_actions(prewhere_info->alias_actions);
         check_actions(prewhere_info->remove_columns_actions);
     }
+}
+
+std::string ExpressionAnalysisResult::dump() const
+{
+    std::stringstream ss;
+
+    ss << "ExpressionAnalysisResult\n";
+    ss << "need_aggregate " << need_aggregate << "\n";
+    ss << "has_order_by " << has_order_by << "\n";
+
+    if (before_array_join)
+    {
+        ss << "before_array_join " << before_array_join->dumpDAG() << "\n";
+    }
+
+    if (array_join)
+    {
+        ss << "array_join " << "FIXME doesn't have dump" << "\n";
+    }
+
+    if (before_join)
+    {
+        ss << "before_join " << before_join->dumpDAG() << "\n";
+    }
+
+    if (before_where)
+    {
+        ss << "before_where " << before_where->dumpDAG() << "\n";
+    }
+
+    if (prewhere_info)
+    {
+        ss << "prewhere_info " << prewhere_info->dump() << "\n";
+    }
+
+    if (filter_info)
+    {
+        ss << "filter_info " << filter_info->dump() << "\n";
+    }
+
+    if (before_aggregation)
+    {
+        ss << "before_aggregation " << before_aggregation->dumpDAG() << "\n";
+    }
+
+    if (before_having)
+    {
+        ss << "before_having " << before_having->dumpDAG() << "\n";
+    }
+
+    if (before_order_and_select)
+    {
+        ss << "before_order_and_select " << before_order_and_select->dumpDAG() << "\n";
+    }
+
+    if (before_limit_by)
+    {
+        ss << "before_limit_by " << before_limit_by->dumpDAG() << "\n";
+    }
+
+    if (final_projection)
+    {
+        ss << "final_projection " << final_projection->dumpDAG() << "\n";
+    }
+
+    return ss.str();
 }
 
 }

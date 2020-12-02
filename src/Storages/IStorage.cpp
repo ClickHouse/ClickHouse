@@ -168,4 +168,43 @@ NamesAndTypesList IStorage::getVirtuals() const
     return {};
 }
 
+std::string PrewhereDAGInfo::dump() const
+{
+    std::stringstream ss;
+    ss << "PrewhereDagInfo\n";
+
+    if (alias_actions)
+    {
+        ss << "alias_actions " << alias_actions->dumpDAG() << "\n";
+    }
+
+    if (prewhere_actions)
+    {
+        ss << "prewhere_actions " << prewhere_actions->dumpDAG() << "\n";
+    }
+
+    if (remove_columns_actions)
+    {
+        ss << "remove_columns_actions " << remove_columns_actions->dumpDAG() << "\n";
+    }
+
+    ss << "remove_prewhere_column " << remove_prewhere_column
+       << ", need_filter " << need_filter << "\n";
+
+    return ss.str();
+}
+
+std::string FilterInfo::dump() const
+{
+    std::stringstream ss;
+    ss << "FilterInfo for column '" << column_name <<"', do_remove_column "
+       << do_remove_column << "\n";
+    if (actions_dag)
+    {
+        ss << "actions_dag " << actions_dag->dumpDAG() << "\n";
+    }
+
+    return ss.str();
+}
+
 }
