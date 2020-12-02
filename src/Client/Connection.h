@@ -16,6 +16,7 @@
 #include <DataStreams/BlockStreamProfileInfo.h>
 
 #include <IO/ConnectionTimeouts.h>
+#include <IO/ReadBufferFromPocoSocket.h>
 
 #include <Core/Settings.h>
 #include <Interpreters/TablesStatus.h>
@@ -188,6 +189,8 @@ public:
     size_t outBytesCount() const { return out ? out->count() : 0; }
     size_t inBytesCount() const { return in ? in->count() : 0; }
 
+    void setFiber(ReadBufferFromPocoSocket::Fiber * fiber) { in->setFiber(fiber); }
+
 private:
     String host;
     UInt16 port;
@@ -224,7 +227,7 @@ private:
     String server_display_name;
 
     std::unique_ptr<Poco::Net::StreamSocket> socket;
-    std::shared_ptr<ReadBuffer> in;
+    std::shared_ptr<ReadBufferFromPocoSocket> in;
     std::shared_ptr<WriteBuffer> out;
     std::optional<UInt64> last_input_packet_type;
 

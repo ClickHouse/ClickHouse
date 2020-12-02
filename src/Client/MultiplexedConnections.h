@@ -67,6 +67,8 @@ public:
     /// Without locking, because sendCancel() does not change the state of the replicas.
     bool hasActiveConnections() const { return active_connection_count > 0; }
 
+    void setFiber(ReadBufferFromPocoSocket::Fiber * fiber) { current_connection->setFiber(fiber); }
+
 private:
     /// Internal version of `receivePacket` function without locking.
     Packet receivePacketUnlocked();

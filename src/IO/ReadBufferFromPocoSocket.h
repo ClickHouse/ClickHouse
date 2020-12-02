@@ -5,6 +5,8 @@
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 
+#include <boost/context/fiber.hpp>
+
 
 namespace DB
 {
@@ -28,6 +30,17 @@ public:
     ReadBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
 
     bool poll(size_t timeout_microseconds);
+
+    struct Fiber
+    {
+        boost::context::fiber fiber;
+        int fd;
+    };
+
+    void setFiber(Fiber * fiber_) { fiber = fiber_; }
+
+private:
+    Fiber * fiber;
 };
 
 }

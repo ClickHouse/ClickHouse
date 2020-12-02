@@ -9,6 +9,7 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InternalTextLogsQueue.h>
+#include <Common/FiberStack.h>
 
 namespace DB
 {
@@ -199,65 +200,136 @@ Block RemoteQueryExecutor::read()
 
         Packet packet = multiplexed_connections->receivePacket();
 
-        switch (packet.type)
+        if (auto block = processPacket(std::move(packet)))
+            return *block;
+    }
+}
+
+void RemoteQueryExecutor::read(ReadContext & read_context)
+{
+    if (!sent_query)
+    {
+        sendQuery();
+
+        if (context.getSettingsRef().skip_unavailable_shards && (0 == multiplexed_connections->size()))
         {
-            case Protocol::Server::Data:
-                /// If the block is not empty and is not a header block
-                if (packet.block && (packet.block.rows() > 0))
-                    return adaptBlockStructure(packet.block, header);
-                break;  /// If the block is empty - we will receive other packets before EndOfStream.
-
-            case Protocol::Server::Exception:
-                got_exception_from_replica = true;
-                packet.exception->rethrow();
-                break;
-
-            case Protocol::Server::EndOfStream:
-                if (!multiplexed_connections->hasActiveConnections())
-                {
-                    finished = true;
-                    return Block();
-                }
-                break;
-
-            case Protocol::Server::Progress:
-                /** We use the progress from a remote server.
-                  * We also include in ProcessList,
-                  * and we use it to check
-                  * constraints (for example, the minimum speed of query execution)
-                  * and quotas (for example, the number of lines to read).
-                  */
-                if (progress_callback)
-                    progress_callback(packet.progress);
-                break;
-
-            case Protocol::Server::ProfileInfo:
-                /// Use own (client-side) info about read bytes, it is more correct info than server-side one.
-                if (profile_info_callback)
-                    profile_info_callback(packet.profile_info);
-                break;
-
-            case Protocol::Server::Totals:
-                totals = packet.block;
-                break;
-
-            case Protocol::Server::Extremes:
-                extremes = packet.block;
-                break;
-
-            case Protocol::Server::Log:
-                /// Pass logs from remote server to client
-                if (auto log_queue = CurrentThread::getInternalTextLogsQueue())
-                    log_queue->pushBlock(std::move(packet.block));
-                break;
-
-            default:
-                got_unknown_packet_from_replica = true;
-                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from one of the following replicas: {}",
-                    toString(packet.type),
-                    multiplexed_connections->dumpAddresses());
+            read_context.is_read_in_progress = false;
+            read_context.result.clear();
+            return;
         }
     }
+
+    do
+    {
+        if (!read_context.is_read_in_progress)
+        {
+            auto routine = [&read_context, this](boost::context::fiber && sink)
+            {
+                read_context.fiber_context.fiber = std::move(sink);
+
+                try
+                {
+                    multiplexed_connections->setFiber(&read_context.fiber_context);
+                    read_context.packet = multiplexed_connections->receivePacket();
+                    multiplexed_connections->setFiber(nullptr);
+                }
+                catch (...)
+                {
+                    read_context.exception = std::current_exception();
+                }
+
+                return std::move(read_context.fiber_context.fiber);
+            };
+
+            read_context.fiber = boost::context::fiber(std::allocator_arg_t(), read_context.stack, std::move(routine));
+        }
+
+        read_context.fiber = std::move(read_context.fiber).resume();
+
+        if (read_context.exception)
+            std::rethrow_exception(std::move(read_context.exception));
+
+        if (read_context.fiber)
+        {
+            read_context.is_read_in_progress = true;
+            read_context.fd = read_context.fiber_context.fd;
+            return;
+        }
+        else
+        {
+            read_context.is_read_in_progress = false;
+            if (auto data = processPacket(std::move(read_context.packet)))
+            {
+                read_context.result = std::move(*data);
+                return;
+            }
+        }
+    }
+    while (true);
+}
+
+std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
+{
+    switch (packet.type)
+    {
+        case Protocol::Server::Data:
+            /// If the block is not empty and is not a header block
+            if (packet.block && (packet.block.rows() > 0))
+                return adaptBlockStructure(packet.block, header);
+            break;  /// If the block is empty - we will receive other packets before EndOfStream.
+
+        case Protocol::Server::Exception:
+            got_exception_from_replica = true;
+            packet.exception->rethrow();
+            break;
+
+        case Protocol::Server::EndOfStream:
+            if (!multiplexed_connections->hasActiveConnections())
+            {
+                finished = true;
+                return Block();
+            }
+            break;
+
+        case Protocol::Server::Progress:
+            /** We use the progress from a remote server.
+              * We also include in ProcessList,
+              * and we use it to check
+              * constraints (for example, the minimum speed of query execution)
+              * and quotas (for example, the number of lines to read).
+              */
+            if (progress_callback)
+                progress_callback(packet.progress);
+            break;
+
+        case Protocol::Server::ProfileInfo:
+            /// Use own (client-side) info about read bytes, it is more correct info than server-side one.
+            if (profile_info_callback)
+                profile_info_callback(packet.profile_info);
+            break;
+
+        case Protocol::Server::Totals:
+            totals = packet.block;
+            break;
+
+        case Protocol::Server::Extremes:
+            extremes = packet.block;
+            break;
+
+        case Protocol::Server::Log:
+            /// Pass logs from remote server to client
+            if (auto log_queue = CurrentThread::getInternalTextLogsQueue())
+                log_queue->pushBlock(std::move(packet.block));
+            break;
+
+        default:
+            got_unknown_packet_from_replica = true;
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from one of the following replicas: {}",
+                toString(packet.type),
+                multiplexed_connections->dumpAddresses());
+    }
+
+    return {};
 }
 
 void RemoteQueryExecutor::finish()
