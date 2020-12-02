@@ -38,6 +38,7 @@ struct AlterCommand
         DROP_PROJECTION,
         MODIFY_TTL,
         MODIFY_SETTING,
+        RESET_SETTING,
         MODIFY_QUERY,
         RENAME_COLUMN,
         REMOVE_TTL,
@@ -80,7 +81,7 @@ struct AlterCommand
     /// For ADD_COLUMN, MODIFY_COLUMN - Add to the begin if it is true.
     bool first = false;
 
-    /// For DROP_COLUMN, MODIFY_COLUMN, COMMENT_COLUMN
+    /// For DROP_COLUMN, MODIFY_COLUMN, COMMENT_COLUMN, RESET_SETTING
     bool if_exists = false;
 
     /// For ADD_COLUMN
@@ -126,6 +127,9 @@ struct AlterCommand
 
     /// For MODIFY SETTING
     SettingsChanges settings_changes;
+
+    /// For RESET SETTING
+    std::set<String> settings_resets;
 
     /// For MODIFY_QUERY
     ASTPtr select = nullptr;
