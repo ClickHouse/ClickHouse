@@ -38,7 +38,7 @@ public:
 private:
     [[noreturn]] void throwNotAllowed() const
     {
-        throw Exception("This method is not allowed for MaterializeMySQ", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("This method is not allowed for MaterializeMySQL", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     StoragePtr nested_storage;
