@@ -57,6 +57,7 @@ public:
     bool isChannelError() { return channel_error; }
     /// Do not allow to update channel if current channel is not properly set up and subscribed
     bool isChannelUpdateAllowed() { return !wait_subscription; }
+    std::vector<String> & getQueues() { return queues; }
 
     ChannelPtr & getChannel() { return consumer_channel; }
     void setupChannel();

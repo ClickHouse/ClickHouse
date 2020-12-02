@@ -63,6 +63,7 @@ public:
     bool exchangeRemoved() { return exchange_removed.load(); }
 
     void updateChannel(ChannelPtr & channel);
+    void updateQueues(std::vector<String> & queues_) { queues_ = queues; }
 
 protected:
     StorageRabbitMQ(
@@ -100,7 +101,7 @@ private:
 
     size_t num_created_consumers = 0;
     Poco::Semaphore semaphore;
-    std::mutex buffers_mutex;
+    std::mutex buffers_mutex, conn_mutex;
     std::vector<ConsumerBufferPtr> buffers; /// available buffers for RabbitMQ consumers
 
     String unique_strbase; /// to make unique consumer channel id
