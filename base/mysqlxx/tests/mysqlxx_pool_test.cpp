@@ -12,11 +12,11 @@ mysqlxx::Pool::Entry getWithFailover(mysqlxx::Pool & connections_pool)
 {
     using namespace std::chrono;
 
-    constexpr size_t MAX_TRIES = 3;
+    constexpr size_t max_tries = 3;
 
     mysqlxx::Pool::Entry worker_connection;
 
-    for (size_t try_no = 1; try_no <= MAX_TRIES; ++try_no)
+    for (size_t try_no = 1; try_no <= max_tries; ++try_no)
     {
         try
         {
