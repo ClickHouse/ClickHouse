@@ -139,12 +139,12 @@ ExpressionTransform
   ExpressionTransform
     (Aggregating)
     Resize 2 → 1
-      AggregatingTransform ? 2
+      AggregatingTransform × 2
         (Expression)
-        ExpressionTransform ? 2
+        ExpressionTransform × 2
           (SettingQuotaAndLimits)
             (ReadFromStorage)
-            NumbersMt ? 2 0 → 1
+            NumbersMt × 2 0 → 1
 ```
 
 [Оriginal article](https://clickhouse.tech/docs/en/sql-reference/statements/explain/) <!--hide-->
