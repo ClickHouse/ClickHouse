@@ -139,11 +139,6 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     analyzeAggregation();
 }
 
-bool ExpressionAnalyzer::isRemoteStorage() const
-{
-    return storage() && storage()->isRemote();
-}
-
 
 void ExpressionAnalyzer::analyzeAggregation()
 {
@@ -364,7 +359,7 @@ void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
     }
 
     const auto * func = node->as<ASTFunction>();
-    if (func && functionIsInOperator(func->name))
+    if (func && functionIsInOrGlobalInOperator(func->name))
     {
         const IAST & args = *func->arguments;
         const ASTPtr & left_in_operand = args.children.at(0);

@@ -44,10 +44,10 @@ namespace
     }
 }
 
-DatabaseDictionary::DatabaseDictionary(const String & name_, const Context & global_context_)
+DatabaseDictionary::DatabaseDictionary(const String & name_, const Context & context_)
     : IDatabase(name_)
     , log(&Poco::Logger::get("DatabaseDictionary(" + database_name + ")"))
-    , global_context(global_context_.getGlobalContext())
+    , global_context(context_.getGlobalContext())
 {
 }
 

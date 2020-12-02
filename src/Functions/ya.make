@@ -208,6 +208,9 @@ SRCS(
     cos.cpp
     cosh.cpp
     countDigits.cpp
+    countSubstrings.cpp
+    countSubstringsCaseInsensitive.cpp
+    countSubstringsCaseInsensitiveUTF8.cpp
     currentDatabase.cpp
     currentUser.cpp
     dateDiff.cpp
@@ -433,6 +436,7 @@ SRCS(
     subtractYears.cpp
     tan.cpp
     tanh.cpp
+    tcpPort.cpp
     tgamma.cpp
     throwIf.cpp
     tid.cpp
