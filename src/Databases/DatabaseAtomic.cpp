@@ -11,10 +11,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <filesystem>
-
-//FIXME it shouldn't be here
 #include <Interpreters/DDLTask.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
 
 namespace DB
 {

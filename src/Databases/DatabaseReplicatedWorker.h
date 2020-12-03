@@ -15,7 +15,8 @@ public:
     String enqueueQuery(DDLLogEntry & entry) override;
 
 private:
-    void initialize() override;
+    void initializeMainThread() override;
+    void initializeReplication();
 
     DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper) override;
 

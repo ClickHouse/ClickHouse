@@ -17,7 +17,26 @@ DatabaseReplicatedDDLWorker::DatabaseReplicatedDDLWorker(DatabaseReplicated * db
     /// Pool size must be 1 (to avoid reordering of log entries)
 }
 
-void DatabaseReplicatedDDLWorker::initialize()
+void DatabaseReplicatedDDLWorker::initializeMainThread()
+{
+    do
+    {
+        try
+        {
+            auto zookeeper = getAndSetZooKeeper();
+            initializeReplication();
+            initialized = true;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("Error on initialization of {}", database->getDatabaseName()));
+            sleepForSeconds(5);
+        }
+    }
+    while (!initialized && !stop_flag);
+}
+
+void DatabaseReplicatedDDLWorker::initializeReplication()
 {
     /// Check if we need to recover replica.
     /// Invariant: replica is lost if it's log_ptr value is less then min_log_ptr value.
@@ -101,11 +120,16 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
     if (task->entry.query.empty())
     {
         //TODO better way to determine special entries
-        task->was_executed = true;
+        out_reason = "It's dummy task";
+        return {};
     }
-    else
+
+    task->parseQueryFromEntry(context);
+
+    if (zookeeper->exists(task->getFinishedNodePath()))
     {
-        task->parseQueryFromEntry(context);
+        out_reason = "Task has been already processed";
+        return {};
     }
 
     return task;

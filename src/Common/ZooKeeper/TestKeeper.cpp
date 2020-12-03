@@ -213,8 +213,6 @@ std::pair<ResponsePtr, Undo> TestKeeperCreateRequest::process(TestKeeper::Contai
             created_node.is_sequental = is_sequential;
             std::string path_created = path;
 
-            ++it->second.seq_num;
-
             if (is_sequential)
             {
                 auto seq_num = it->second.seq_num;
@@ -225,6 +223,8 @@ std::pair<ResponsePtr, Undo> TestKeeperCreateRequest::process(TestKeeper::Contai
 
                 path_created += seq_num_str.str();
             }
+
+            ++it->second.seq_num;
 
             response.path_created = path_created;
             container.emplace(path_created, std::move(created_node));
