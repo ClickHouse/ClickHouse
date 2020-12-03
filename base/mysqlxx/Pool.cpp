@@ -240,7 +240,7 @@ void Pool::Entry::forceConnected() const
 
 bool Pool::Entry::tryForceConnected() const
 {
-    const auto mysql_driver = data->conn.getDriver();
+    auto * const mysql_driver = data->conn.getDriver();
     const auto prev_connection_id = mysql_thread_id(mysql_driver);
     if (data->conn.ping())  /// Attempts to reestablish lost connection
     {
