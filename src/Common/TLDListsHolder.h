@@ -2,7 +2,8 @@
 
 #include <common/defines.h>
 #include <common/StringRef.h>
-#include <Common/HashTable/HashSet.h>
+#include <Common/HashTable/StringHashSet.h>
+#include <Common/Arena.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <mutex>
 #include <string>
@@ -12,20 +13,24 @@ namespace DB
 {
 
 /// Custom TLD List
-/// Unlike tldLookup (which uses gperf) this one uses plain HashSet.
+///
+/// Unlike tldLookup (which uses gperf) this one uses plain StringHashSet.
 class TLDList
 {
 public:
-    /// Uses StringRefHash
-    using Container = HashSet<UInt32>;
+    using Container = StringHashSet<>;
+
+    TLDList(size_t size);
 
     /// Return true if the tld_container does not contains such element.
     bool insert(const StringRef & host);
+    /// Check is there such TLD
     bool has(const StringRef & host) const;
     size_t size() const { return tld_container.size(); }
 
 private:
     Container tld_container;
+    std::unique_ptr<Arena> pool;
 };
 
 class TLDListsHolder
