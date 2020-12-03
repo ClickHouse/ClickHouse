@@ -37,6 +37,7 @@
 #include <common/getFQDNOrHostName.h>
 #include <pcg_random.hpp>
 
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -858,10 +859,10 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
     String shard_node_name = get_shard_name(task.cluster->getShardsAddresses().at(task.host_shard_num));
 
 
-    String shard_path = node_path + "/shards/" + shard_node_name;
-    String is_executed_path = shard_path + "/executed";
-    String tries_to_execute_path = shard_path + "/tries_to_execute";
-    zookeeper->createAncestors(shard_path + "/");
+    String shard_path = (fs::path(node_path) / fs::path("shards")  / fs::path(shard_node_name)).string();
+    String is_executed_path = (fs::path(shard_path) / fs::path("executed"));
+    String tries_to_execute_path = fs::path(shard_path) / fs::path("tries_to_execute");
+    zookeeper->createAncestors((fs::path(shard_path) / "").string()); /* appends "/" at the end of shard_path */
 
     /// Node exists, or we will create or we will get an exception
     zookeeper->tryCreate(tries_to_execute_path, "0", zkutil::CreateMode::Persistent);
@@ -990,8 +991,8 @@ void DDLWorker::cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zo
             return;
 
         String node_name = *it;
-        String node_path = queue_dir + "/" + node_name;
-        String lock_path = node_path + "/lock";
+        String node_path = (fs::path(queue_dir)  / fs::path(node_name)).string();
+        String lock_path = (fs::path(node_path) / fs::path("lock")).string();
 
         Coordination::Stat stat;
         String dummy;
@@ -1040,7 +1041,7 @@ void DDLWorker::cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zo
                 for (const String & child : children)
                 {
                     if (child != "lock")
-                        zookeeper->tryRemoveRecursive(node_path + "/" + child);
+                        zookeeper->tryRemoveRecursive((fs::path(node_path)  / fs::path(child)).string());
                 }
 
                 /// Remove the lock node and its parent atomically
@@ -1064,12 +1065,12 @@ void DDLWorker::createStatusDirs(const std::string & node_path, const ZooKeeperP
     Coordination::Requests ops;
     {
         Coordination::CreateRequest request;
-        request.path = node_path + "/active";
+        request.path = (fs::path(node_path)  / fs::path("active")).string();
         ops.emplace_back(std::make_shared<Coordination::CreateRequest>(std::move(request)));
     }
     {
         Coordination::CreateRequest request;
-        request.path = node_path + "/finished";
+        request.path = (fs::path(node_path)  / fs::path("finished")).string();
         ops.emplace_back(std::make_shared<Coordination::CreateRequest>(std::move(request)));
     }
     Coordination::Responses responses;
@@ -1087,7 +1088,7 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry)
 
     auto zookeeper = getAndSetZooKeeper();
 
-    String query_path_prefix = queue_dir + "/query-";
+    String query_path_prefix = (fs::path(queue_dir) /  fs::path("query-")).string();
     zookeeper->createAncestors(query_path_prefix);
 
     String node_path = zookeeper->create(query_path_prefix, entry.toString(), zkutil::CreateMode::PersistentSequential);
@@ -1117,7 +1118,7 @@ void DDLWorker::runMainThread()
         try
         {
             auto zookeeper = getAndSetZooKeeper();
-            zookeeper->createAncestors(queue_dir + "/");
+            zookeeper->createAncestors((fs::path(queue_dir) /  "").string());
             initialized = true;
         }
         catch (const Coordination::Exception & e)
@@ -1290,12 +1291,12 @@ public:
                     node_path);
             }
 
-            Strings new_hosts = getNewAndUpdate(getChildrenAllowNoNode(zookeeper, node_path + "/finished"));
+            Strings new_hosts = getNewAndUpdate(getChildrenAllowNoNode(zookeeper, (fs::path(node_path) / fs::path( "finished").string())));
             ++try_number;
             if (new_hosts.empty())
                 continue;
 
-            current_active_hosts = getChildrenAllowNoNode(zookeeper, node_path + "/active");
+            current_active_hosts = getChildrenAllowNoNode(zookeeper, (fs::path(node_path) / fs::path( "active").string()));
 
             MutableColumns columns = sample.cloneEmptyColumns();
             for (const String & host_id : new_hosts)
@@ -1303,7 +1304,7 @@ public:
                 ExecutionStatus status(-1, "Cannot obtain error message");
                 {
                     String status_data;
-                    if (zookeeper->tryGet(node_path + "/finished/" + host_id, status_data))
+                    if (zookeeper->tryGet((fs::path(node_path) / fs::path("finished") / fs::path(host_id)).string(), status_data))
                         status.tryDeserializeText(status_data);
                 }
 
