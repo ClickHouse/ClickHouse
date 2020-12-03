@@ -60,10 +60,7 @@ struct SortColumnDescription
 
     std::string dump() const
     {
-        std::stringstream ss;
-        ss.exceptions(std::ios::failbit);
-        ss << column_name << ":" << column_number << ":dir " << direction << "nulls " << nulls_direction;
-        return ss.str();
+        return fmt::format("{}:{}:dir {}nulls ", column_name, column_number, direction, nulls_direction);
     }
 };
 

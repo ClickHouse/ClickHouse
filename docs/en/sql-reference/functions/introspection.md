@@ -306,3 +306,67 @@ execute_native_thread_routine
 start_thread
 clone
 ```
+## tid {#tid}
+
+Returns id of the thread, in which current [Block](https://clickhouse.tech/docs/en/development/architecture/#block) is processed.
+
+**Syntax**
+
+``` sql
+tid()
+```
+
+**Returned value**
+
+-   Current thread id. [Uint64](../../sql-reference/data-types/int-uint.md#uint-ranges).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT tid();
+```
+
+Result:
+
+``` text
+┌─tid()─┐
+│  3878 │
+└───────┘
+```
+## logTrace {#logtrace}
+
+Emits trace log message to server log for each [Block](https://clickhouse.tech/docs/en/development/architecture/#block).
+
+**Syntax**
+
+``` sql
+logTrace('message')
+```
+
+**Parameters**
+
+-   `message` — Message that is emitted to server log. [String](../../sql-reference/data-types/string.md#string).
+
+**Returned value**
+
+-   Always returns 0.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT logTrace('logTrace message');
+```
+
+Result:
+
+``` text
+┌─logTrace('logTrace message')─┐
+│                            0 │
+└──────────────────────────────┘
+```
+
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/introspection/) <!--hide-->

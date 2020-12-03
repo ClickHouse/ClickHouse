@@ -241,13 +241,9 @@ TableFunctionRemote::TableFunctionRemote(const std::string & name_, bool secure_
     : name{name_}, secure{secure_}
 {
     is_cluster_function = (name == "cluster" || name == "clusterAllReplicas");
-
-    std::stringstream ss;
-    ss.exceptions(std::ios::failbit);
-    ss << "Table function '" << name + "' requires from 2 to " << (is_cluster_function ? 3 : 5) << " parameters"
-       << ": <addresses pattern or cluster name>, <name of remote database>, <name of remote table>"
-       << (is_cluster_function ? "" : ", [username, [password]].");
-    help_message = ss.str();
+    help_message = fmt::format("Table function '{}' requires from 2 to {} parameters: "
+                               "<addresses pattern or cluster name>, <name of remote database>, <name of remote table>{}",
+                               name, is_cluster_function ? 3 : 5, is_cluster_function ? "" : ", [username, [password]].");
 }
 
 

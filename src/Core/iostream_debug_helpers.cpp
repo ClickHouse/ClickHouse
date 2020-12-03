@@ -106,12 +106,6 @@ std::ostream & operator<<(std::ostream & stream, const Packet & what)
     return stream;
 }
 
-std::ostream & operator<<(std::ostream & stream, const ExpressionAction & what)
-{
-    stream << "ExpressionAction(" << what.toString() << ")";
-    return stream;
-}
-
 std::ostream & operator<<(std::ostream & stream, const ExpressionActions & what)
 {
     stream << "ExpressionActions(" << what.dumpActions() << ")";

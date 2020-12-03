@@ -3,7 +3,6 @@
 #if !defined(ARCADIA_BUILD) && USE_STATS
 
 #include <math.h>
-#include <sstream>
 
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
@@ -214,7 +213,7 @@ public:
         return true;
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         if (input_rows_count == 0)
             return ColumnString::create();

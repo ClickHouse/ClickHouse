@@ -6,6 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/SipHash.h>
+#include <IO/Operators.h>
 
 
 namespace DB
