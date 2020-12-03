@@ -480,7 +480,6 @@ void readEscapedStringUntilEOL(String & s, ReadBuffer & buf);
 void readStringUntilWhitespace(String & s, ReadBuffer & buf);
 
 
-
 /** Read string in CSV format.
   * Parsing rules:
   * - string could be placed in quotes; quotes could be single: ' if FormatSettings::CSV::allow_single_quotes is true
