@@ -123,11 +123,11 @@ cosh(x)
 
 **Parameters**
 
--   `x` — The angle, in radians. Values are from the interval: `-∞ < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+-   `x` — The angle, in radians. Values from the interval: `-∞ < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
 **Returned value**
 
--   Values are from the interval: `1 <= cosh(x) < +∞`.
+-   Values from the interval: `1 <= cosh(x) < +∞`.
 
 Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
@@ -159,11 +159,11 @@ acosh(x)
 
 **Parameters**
 
--   `x` — The angle, in radians. Values are from the interval: `1 <= x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+-   `x` — The angle, in radians. Values from the interval: `1 <= x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
 **Returned value**
 
--   Values are from the interval: `0 <= acosh(x) < +∞`.
+-   Values from the interval: `0 <= acosh(x) < +∞`.
 
 Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
@@ -199,11 +199,11 @@ sinh(x)
 
 **Parameters**
 
--   `x` — The angle, in radians. Values are from the interval: `-∞ < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+-   `x` — The angle, in radians. Values from the interval: `-∞ < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
 **Returned value**
 
--   Values are from the interval: `-∞ < sinh(x) < +∞`.
+-   Values from the interval: `-∞ < sinh(x) < +∞`.
 
 Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
@@ -235,11 +235,11 @@ asinh(x)
 
 **Parameters**
 
--   `x` — The angle, in radians. Values are from the interval: `-∞ < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+-   `x` — The angle, in radians. Values from the interval: `-∞ < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
 **Returned value**
 
--   Values are from the interval: `-∞ < asinh(x) < +∞`.
+-   Values from the interval: `-∞ < asinh(x) < +∞`.
 
 Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
@@ -275,11 +275,11 @@ atanh(x)
 
 **Parameters**
 
--   `x` — The angle, in radians. Values are from the interval: `–1 < x < 1`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+-   `x` — The angle, in radians. Values from the interval: `–1 < x < 1`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
 **Returned value**
 
--   Values are from the interval: `-∞ < atanh(x) < +∞`.
+-   Values from the interval: `-∞ < atanh(x) < +∞`.
 
 Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
@@ -301,7 +301,7 @@ Result:
 
 ## atan2(y, x) {#atan2yx}
 
-The [function](https://en.wikipedia.org/wiki/Atan2) is defined as the angle in the Euclidean plane, given in radians, between the positive x axis and the ray(`r`) to the point `(x, y) ≠ (0, 0)`.
+The [function](https://en.wikipedia.org/wiki/Atan2) calculates the angle in the Euclidean plane, given in radians, between the positive x axis and the ray to the point `(x, y) ≠ (0, 0)`.
 
 **Syntax**
 
@@ -311,12 +311,12 @@ atan2(y, x)
 
 **Parameters**
 
--   `y` — y axis coordinate of the point through which the ray passes. [Float64](../../sql-reference/data-types/float.md#float32-float64).
--   `x` — x axis coordinate of the point through which the ray passes. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+-   `y` — y-coordinate of the point through which the ray passes. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+-   `x` — x-coordinate of the point through which the ray passes. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
 **Returned value**
 
--   The angle `θ` such that `−π < θ ≤ π` and, for some `r > 0`, in radians.
+-   The angle `θ` such that `−π < θ ≤ π`, in radians.
 
 Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
@@ -338,7 +338,7 @@ Result:
 
 ## hypot(x, y) {#hypotxy}
 
-The [function](https://en.wikipedia.org/wiki/Hypot) is defined to calculate the length of the hypotenuse of a right-angle triangle. It was designed to avoid errors arising due to limited-precision calculations performed on computers. The function avoids problems that occur when squaring very large or very small numbers.
+Calculates the length of the hypotenuse of a right-angle triangle. The [function](https://en.wikipedia.org/wiki/Hypot) avoids problems that occur when squaring very large or very small numbers.
 
 **Syntax**
 
@@ -375,7 +375,7 @@ Result:
 
 ## log1p(x) {#log1px}
 
-The [function](https://en.wikipedia.org/wiki/Natural_logarithm#lnp1) calculates `log(1 + x)`, compensating for the roundoff in `1+x`. `log1p(x)` is more accurate than `log(1+x)` for small values of `x`. For small `x`, `log1p(x)` is approximately `x`, whereas `log(1+x)` can be zero.
+Calculates `log(1+x)`. The [function](https://en.wikipedia.org/wiki/Natural_logarithm#lnp1) `log1p(x)` is more accurate than `log(1+x)` for small values of x.
 
 **Syntax**
 
@@ -385,11 +385,11 @@ log1p(x)
 
 **Parameters**
 
--   `x` — Values are from the interval: `-1 < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+-   `x` — Values from the interval: `-1 < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
 **Returned value**
 
--   Values are from the interval: `-∞ < log1p(x) < +∞`.
+-   Values from the interval: `-∞ < log1p(x) < +∞`.
 
 Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
