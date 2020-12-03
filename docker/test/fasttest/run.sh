@@ -317,6 +317,9 @@ function run_tests
         01545_system_errors
         # Checks system.errors
         01563_distributed_query_finish
+
+        # nc - command not found
+        01601_proxy_protocol
     )
 
     time clickhouse-test -j 8 --order=random --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" -- "$FASTTEST_FOCUS" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"
