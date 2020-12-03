@@ -118,7 +118,7 @@ SELECT format('{} {}', 'Hello', 'World')
 
 与[concat](#concat-s1-s2)相同，区别在于，你需要保证concat(s1, s2, s3) -\> s4是单射的，它将用于GROUP BY的优化。
 
-## 子串(s,offset,length),mid(s,offset,length),substr(s,offset,length) {#substrings-offset-length-mids-offset-length-substrs-offset-length}
+## substring(s,offset,length),mid(s,offset,length),substr(s,offset,length) {#substrings-offset-length-mids-offset-length-substrs-offset-length}
 
 以字节为单位截取指定位置字符串，返回以’offset’位置为开头，长度为’length’的子串。’offset’从1开始（与标准SQL相同）。’offset’和’length’参数必须是常量。
 
