@@ -14,8 +14,8 @@ DROP QUOTA IF EXISTS quota_by_forwarded_ip;
 CREATE USER quoted_by_ip;
 CREATE USER quoted_by_forwarded_ip;
 
-GRANT ALL ON *.* TO quoted_by_ip;
-GRANT ALL ON *.* TO quoted_by_forwarded_ip;
+GRANT SELECT, CREATE ON *.* TO quoted_by_ip;
+GRANT SELECT, CREATE ON *.* TO quoted_by_forwarded_ip;
 
 CREATE QUOTA quota_by_ip KEYED BY ip_address FOR RANDOMIZED INTERVAL 1 YEAR MAX QUERIES = 1 TO quoted_by_ip;
 CREATE QUOTA quota_by_forwarded_ip KEYED BY forwarded_ip_address FOR RANDOMIZED INTERVAL 1 YEAR MAX QUERIES = 1 TO quoted_by_forwarded_ip;
