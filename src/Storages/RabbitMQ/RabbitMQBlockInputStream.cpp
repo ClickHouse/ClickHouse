@@ -56,26 +56,15 @@ void RabbitMQBlockInputStream::readPrefixImpl()
 {
     auto timeout = std::chrono::milliseconds(context->getSettingsRef().rabbitmq_max_wait_ms.totalMilliseconds());
     buffer = storage.popReadBuffer(timeout);
-
-    if (!buffer->getChannel())
-    {
-        storage.updateQueues(buffer->getQueues());
-        updateChannel();
-    }
 }
 
 
 bool RabbitMQBlockInputStream::needChannelUpdate()
 {
-    if (!buffer || !buffer->isChannelUpdateAllowed())
+    if (!buffer)
         return false;
 
-    if (buffer->isChannelError())
-        return true;
-
-    ChannelPtr channel = buffer->getChannel();
-
-    return !channel || !channel->usable();
+    return buffer->needChannelUpdate();
 }
 
 
@@ -85,9 +74,8 @@ void RabbitMQBlockInputStream::updateChannel()
         return;
 
     buffer->updateAckTracker();
-    storage.updateChannel(buffer->getChannel());
 
-    if (buffer->getChannel())
+    if (storage.updateChannel(buffer->getChannel()))
         buffer->setupChannel();
 }
 

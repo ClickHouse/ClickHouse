@@ -62,7 +62,7 @@ public:
     void unbindExchange();
     bool exchangeRemoved() { return exchange_removed.load(); }
 
-    void updateChannel(ChannelPtr & channel);
+    bool updateChannel(ChannelPtr & channel);
     void updateQueues(std::vector<String> & queues_) { queues_ = queues; }
 
 protected:
@@ -101,7 +101,7 @@ private:
 
     size_t num_created_consumers = 0;
     Poco::Semaphore semaphore;
-    std::mutex buffers_mutex, conn_mutex;
+    std::mutex buffers_mutex;
     std::vector<ConsumerBufferPtr> buffers; /// available buffers for RabbitMQ consumers
 
     String unique_strbase; /// to make unique consumer channel id
@@ -113,7 +113,7 @@ private:
     size_t consumer_id = 0; /// counter for consumer buffer, needed for channel id
     std::atomic<size_t> producer_id = 1; /// counter for producer buffer, needed for channel id
     std::atomic<bool> wait_confirm = true; /// needed to break waiting for confirmations for producer
-    std::atomic<bool> exchange_removed = false, rabbit_is_ready;
+    std::atomic<bool> exchange_removed = false, rabbit_is_ready = false;
     ChannelPtr setup_channel;
     std::vector<String> queues;
 

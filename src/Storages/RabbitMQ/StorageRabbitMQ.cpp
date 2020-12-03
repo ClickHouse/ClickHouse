@@ -95,7 +95,6 @@ StorageRabbitMQ::StorageRabbitMQ(
         , semaphore(0, num_consumers)
         , unique_strbase(getRandomName())
         , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
-        , rabbit_is_ready(false)
 {
     loop = std::make_unique<uv_loop_t>();
     uv_loop_init(loop.get());
@@ -495,13 +494,16 @@ bool StorageRabbitMQ::restoreConnection(bool reconnecting)
 }
 
 
-void StorageRabbitMQ::updateChannel(ChannelPtr & channel)
+bool StorageRabbitMQ::updateChannel(ChannelPtr & channel)
 {
-    std::lock_guard lock(conn_mutex);
     if (event_handler->connectionRunning())
+    {
         channel = std::make_shared<AMQP::TcpChannel>(connection.get());
-    else
-        channel = nullptr;
+        return true;
+    }
+
+    channel = nullptr;
+    return false;
 }
 
 
@@ -560,13 +562,11 @@ Pipe StorageRabbitMQ::read(
     auto modified_context = addSettings(context);
     auto block_size = getMaxBlockSize();
 
-    bool update_channels = false;
     if (!event_handler->connectionRunning())
     {
         if (event_handler->loopRunning())
             deactivateTask(looping_task, false, true);
-
-        update_channels = restoreConnection(true);
+        restoreConnection(true);
     }
 
     Pipes pipes;
@@ -576,21 +576,6 @@ Pipe StorageRabbitMQ::read(
     {
         auto rabbit_stream = std::make_shared<RabbitMQBlockInputStream>(
                 *this, metadata_snapshot, modified_context, column_names, block_size);
-
-        /* It is a possible but rare case when channel gets into error state and does not also close connection, so need manual update.
-         * But I believe that in current context and with local rabbitmq settings this will never happen and any channel error will also
-         * close connection, but checking anyway (in second condition of if statement). This must be done here (and also in streamToViews())
-         * and not in readPrefix as it requires to stop heartbeats and looping tasks to avoid race conditions inside the library
-         */
-        if (event_handler->connectionRunning() && (update_channels || rabbit_stream->needChannelUpdate()))
-        {
-            if (event_handler->loopRunning())
-            {
-                deactivateTask(looping_task, false, true);
-            }
-
-            rabbit_stream->updateChannel();
-        }
 
         auto converting_stream = std::make_shared<ConvertingBlockInputStream>(
             rabbit_stream, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Name);
@@ -691,6 +676,17 @@ ConsumerBufferPtr StorageRabbitMQ::popReadBuffer(std::chrono::milliseconds timeo
     std::lock_guard lock(buffers_mutex);
     auto buffer = buffers.back();
     buffers.pop_back();
+
+    if (buffer->needChannelUpdate())
+    {
+        if (buffer->queuesCount() != queues.size())
+            buffer->updateQueues(queues);
+
+        buffer->updateAckTracker();
+
+        if (updateChannel(buffer->getChannel()))
+            buffer->setupChannel();
+    }
 
     return buffer;
 }
@@ -900,19 +896,8 @@ bool StorageRabbitMQ::streamToViews()
             {
                 /// Iterate loop to activate error callbacks if they happened
                 event_handler->iterateLoop();
-
-                if (event_handler->connectionRunning())
-                {
-                    /* Almost any error with channel will lead to connection closure, but if so happens that channel errored and
-                     * connection is not closed - also need to restore channels
-                     */
-                    if (!stream->as<RabbitMQBlockInputStream>()->needChannelUpdate())
-                        stream->as<RabbitMQBlockInputStream>()->updateChannel();
-                }
-                else
-                {
+                if (!event_handler->connectionRunning())
                     break;
-                }
             }
 
             event_handler->iterateLoop();
