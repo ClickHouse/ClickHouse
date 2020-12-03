@@ -146,12 +146,9 @@ public:
         /// You may call 'work' method and processor will do some work synchronously.
         Ready,
 
-        /// You may call 'schedule' method and processor will initiate some background work.
+        /// You may call 'schedule' method and processor will return descriptor.
+        /// You need to poll this descriptor and call work() afterwards.
         Async,
-
-        /// Processor is doing some work in background.
-        /// You may wait for next event or do something else and then you should call 'prepare' again.
-        Wait,
 
         /// Processor wants to add other processors to pipeline.
         /// New processors must be obtained by expandPipeline() call.
@@ -207,7 +204,7 @@ public:
       * Note that it can fire many events in EventCounter while doing its job,
       *  and you have to wait for next event (or do something else) every time when 'prepare' returned Wait.
       */
-    virtual void schedule(EventCounter & /*watch*/)
+    virtual int schedule()
     {
         throw Exception("Method 'schedule' is not implemented for " + getName() + " processor", ErrorCodes::NOT_IMPLEMENTED);
     }

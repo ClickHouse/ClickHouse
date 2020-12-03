@@ -254,10 +254,6 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
 //            addAsyncJob(pid);
 //            break;
             }
-            case IProcessor::Status::Wait:
-            {
-                throw Exception("Wait is temporary not supported.", ErrorCodes::LOGICAL_ERROR);
-            }
             case IProcessor::Status::ExpandPipeline:
             {
                 need_expand_pipeline = true;
