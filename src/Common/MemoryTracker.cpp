@@ -30,6 +30,22 @@ MemoryTracker * getMemoryTracker()
     return nullptr;
 }
 
+/// MemoryTracker cannot throw MEMORY_LIMIT_EXCEEDED (either configured memory
+/// limit reached or fault injected), in the following cases:
+///
+/// - when it is explicitly blocked with LockExceptionInThread
+///
+/// - to avoid std::terminate(), when stack unwinding is current in progress in
+///   this thread.
+///
+///   NOTE: that since C++11 destructor marked with noexcept by default, and
+///   this means that any throw from destructor (that is not marked with
+///   noexcept(false)) will cause std::terminate()
+bool inline memoryTrackerCanThrow()
+{
+    return !MemoryTracker::LockExceptionInThread::isBlocked() && !std::uncaught_exceptions();
+}
+
 }
 
 namespace DB
@@ -48,7 +64,8 @@ namespace ProfileEvents
 
 static constexpr size_t log_peak_memory_usage_every = 1ULL << 30;
 
-thread_local bool MemoryTracker::BlockerInThread::is_blocked = false;
+thread_local uint64_t MemoryTracker::BlockerInThread::counter = 0;
+thread_local uint64_t MemoryTracker::LockExceptionInThread::counter = 0;
 
 MemoryTracker total_memory_tracker(nullptr, VariableContext::Global);
 
@@ -127,23 +144,19 @@ void MemoryTracker::alloc(Int64 size)
     }
 
     std::bernoulli_distribution fault(fault_probability);
-    if (unlikely(fault_probability && fault(thread_local_rng)))
+    if (unlikely(fault_probability && fault(thread_local_rng)) && memoryTrackerCanThrow())
     {
         /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
         BlockerInThread untrack_lock;
 
         ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
-        std::stringstream message;
-        message.exceptions(std::ios::failbit);
-        message << "Memory tracker";
-        if (const auto * description = description_ptr.load(std::memory_order_relaxed))
-            message << " " << description;
-        message << ": fault injected. Would use " << formatReadableSizeWithBinarySuffix(will_be)
-            << " (attempt to allocate chunk of " << size << " bytes)"
-            << ", maximum: " << formatReadableSizeWithBinarySuffix(current_hard_limit);
-
+        const auto * description = description_ptr.load(std::memory_order_relaxed);
         amount.fetch_sub(size, std::memory_order_relaxed);
-        throw DB::Exception(message.str(), DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED);
+        throw DB::Exception(DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
+                            "Memory tracker{}{}: fault injected. Would use {} (attempt to allocate chunk of {} bytes), maximum: {}",
+                            description ? " " : "", description ? description : "",
+                            formatReadableSizeWithBinarySuffix(will_be),
+                            size, formatReadableSizeWithBinarySuffix(current_hard_limit));
     }
 
     if (unlikely(current_profiler_limit && will_be > current_profiler_limit))
@@ -160,23 +173,19 @@ void MemoryTracker::alloc(Int64 size)
         DB::TraceCollector::collect(DB::TraceType::MemorySample, StackTrace(), size);
     }
 
-    if (unlikely(current_hard_limit && will_be > current_hard_limit))
+    if (unlikely(current_hard_limit && will_be > current_hard_limit) && memoryTrackerCanThrow())
     {
         /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
         BlockerInThread untrack_lock;
 
         ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
-        std::stringstream message;
-        message.exceptions(std::ios::failbit);
-        message << "Memory limit";
-        if (const auto * description = description_ptr.load(std::memory_order_relaxed))
-            message << " " << description;
-        message << " exceeded: would use " << formatReadableSizeWithBinarySuffix(will_be)
-            << " (attempt to allocate chunk of " << size << " bytes)"
-            << ", maximum: " << formatReadableSizeWithBinarySuffix(current_hard_limit);
-
+        const auto * description = description_ptr.load(std::memory_order_relaxed);
         amount.fetch_sub(size, std::memory_order_relaxed);
-        throw DB::Exception(message.str(), DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED);
+        throw DB::Exception(DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
+                            "Memory limit{}{} exceeded: would use {} (attempt to allocate chunk of {} bytes), maximum: {}",
+                            description ? " " : "", description ? description : "",
+                            formatReadableSizeWithBinarySuffix(will_be),
+                            size, formatReadableSizeWithBinarySuffix(current_hard_limit));
     }
 
     updatePeak(will_be);

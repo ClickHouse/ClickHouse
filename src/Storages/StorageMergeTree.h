@@ -56,9 +56,9 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    std::optional<UInt64> totalRows() const override;
+    std::optional<UInt64> totalRows(const Settings &) const override;
     std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo &, const Context &) const override;
-    std::optional<UInt64> totalBytes() const override;
+    std::optional<UInt64> totalBytes(const Settings &) const override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
 
@@ -70,11 +70,6 @@ public:
         const ASTPtr & partition,
         bool final,
         bool deduplicate,
-        const Context & context) override;
-
-    Pipe alterPartition(
-        const StorageMetadataPtr & /* metadata_snapshot */,
-        const PartitionCommands & commands,
         const Context & context) override;
 
     void mutate(const MutationCommands & commands, const Context & context) override;
@@ -200,11 +195,11 @@ private:
     void clearOldMutations(bool truncate = false);
 
     // Partition helpers
-    void dropPartition(const ASTPtr & partition, bool detach, bool drop_part, const Context & context);
-    PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, bool part, const Context & context);
+    void dropPartition(const ASTPtr & partition, bool detach, bool drop_part, const Context & context, bool throw_if_noop) override;
+    PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, const Context & context) override;
 
-    void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context);
-    void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, const Context & context);
+    void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context) override;
+    void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, const Context & context) override;
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
     /// Update mutation entries after part mutation execution. May reset old
     /// errors if mutation was successful. Otherwise update last_failed* fields
@@ -244,7 +239,7 @@ protected:
         std::unique_ptr<MergeTreeSettings> settings_,
         bool has_force_restore_data_flag);
 
-    MutationCommands getFirtsAlterMutationCommandsForPart(const DataPartPtr & part) const override;
+    MutationCommands getFirstAlterMutationCommandsForPart(const DataPartPtr & part) const override;
 };
 
 }

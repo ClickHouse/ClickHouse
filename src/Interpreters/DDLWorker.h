@@ -104,7 +104,6 @@ private:
     void attachToThreadGroup();
 
 private:
-    std::atomic<bool> is_circular_replicated = false;
     Context context;
     Poco::Logger * log;
 

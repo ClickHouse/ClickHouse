@@ -1,6 +1,7 @@
 #include <iomanip>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Common/quoteString.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -21,7 +22,7 @@ void ASTShowTablesQuery::formatLike(const FormatSettings & settings) const
             << (not_like ? " NOT" : "")
             << (case_insensitive_like ? " ILIKE " : " LIKE ")
             << (settings.hilite ? hilite_none : "")
-            << std::quoted(like, '\'');
+            << DB::quote << like;
 }
 
 void ASTShowTablesQuery::formatLimit(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
