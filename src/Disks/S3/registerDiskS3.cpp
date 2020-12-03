@@ -120,6 +120,7 @@ void registerDiskS3(DiskFactory & factory)
 
         cfg.connectTimeoutMs = config.getUInt(config_prefix + ".connect_timeout_ms", 10000);
         cfg.httpRequestTimeoutMs = config.getUInt(config_prefix + ".request_timeout_ms", 5000);
+        cfg.maxConnections = config.getUInt(config_prefix + ".max_connections", 100);
         cfg.endpointOverride = uri.endpoint;
 
         auto proxy_config = getProxyConfiguration(config_prefix, config);
