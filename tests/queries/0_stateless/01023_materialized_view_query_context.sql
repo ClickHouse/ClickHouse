@@ -27,3 +27,12 @@ CREATE MATERIALIZED VIEW mv TO output AS SELECT key, dictGetUInt64('dict_in_0102
 INSERT INTO input VALUES (1);
 
 SELECT count() FROM output;
+
+DROP DICTIONARY dict;
+DROP TABLE input;
+DROP TABLE buffer_;
+DROP TABLE dist_out;
+DROP TABLE input;
+DROP TABLE mv;
+DROP TABLE null_;
+DROP TABLE output;

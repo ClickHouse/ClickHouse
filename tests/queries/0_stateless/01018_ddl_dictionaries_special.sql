@@ -92,7 +92,7 @@ CREATE DICTIONARY database_for_dict.dict_ip_trie
   cca2 String
 )
 PRIMARY KEY prefix
-SOURCE(CLICKHOUSE(host 'localhost' port 9000 user 'default' db 'database_for_dict' table 'table_ip_trie'))
+SOURCE(CLICKHOUSE(host 'localhost' port tcpPort() user 'default' db 'database_for_dict' table 'table_ip_trie'))
 LAYOUT(IP_TRIE())
 LIFETIME(MIN 10 MAX 100);
 
@@ -120,7 +120,7 @@ CREATE DICTIONARY database_for_dict.dictionary_with_hierarchy
     RegionName String
 )
 PRIMARY KEY RegionID
-SOURCE(CLICKHOUSE(host 'localhost' port 9000 user 'default' db 'database_for_dict' table 'table_with_hierarchy'))
+SOURCE(CLICKHOUSE(host 'localhost' port tcpPort() user 'default' db 'database_for_dict' table 'table_with_hierarchy'))
 LAYOUT(HASHED())
 LIFETIME(MIN 1 MAX 1000);
 
