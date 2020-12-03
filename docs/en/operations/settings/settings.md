@@ -2329,8 +2329,8 @@ Enables the ability to output all rows as a [JSON](../../interfaces/formats.md#j
 
 Possible values:
 
--   1 — All rows can be output as a `JSON` array in the `JSONEachRow` format.
--   0 — All rows cannot be output as a `JSON` array in the `JSONEachRow` format.
+-   1 — ClickHouse outputs all rows as an array, each row in the `JSONEachRow` format.
+-   0 — ClickHouse outputs each row separately in the `JSONEachRow` format.
 
 Default value: `0`.
 
@@ -2340,7 +2340,7 @@ Query:
 
 ```sql
 SET output_format_json_array_of_rows = 1;
-SELECT number FROM numbers(3) format JSONEachRow;
+SELECT number FROM numbers(3) FORMAT JSONEachRow;
 ```
 
 Result:
@@ -2359,7 +2359,7 @@ Query:
 
 ```sql
 SET output_format_json_array_of_rows = 0;
-SELECT number FROM numbers(3) format JSONEachRow;
+SELECT number FROM numbers(3) FORMAT JSONEachRow;
 ```
 
 Result:
