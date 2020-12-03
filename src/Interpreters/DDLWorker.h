@@ -62,17 +62,16 @@ protected:
     ZooKeeperPtr tryGetZooKeeper() const;
     /// If necessary, creates a new session and caches it.
     ZooKeeperPtr getAndSetZooKeeper();
-    /// ZooKeeper recover loop (while not stopped).
-    void recoverZooKeeper();
 
-    void checkCurrentTasks();
+    /// Iterates through queue tasks in ZooKeeper, runs execution of new tasks
     void scheduleTasks();
+
+    DDLTaskBase & saveTask(DDLTaskPtr && task);
 
     /// Reads entry and check that the host belongs to host list of the task
     /// Returns non-empty DDLTaskPtr if entry parsed and the check is passed
     virtual DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper);
 
-    void enqueueTask(DDLTaskPtr task);
     void processTask(DDLTaskBase & task);
 
     /// Check that query should be executed on leader replica only
@@ -98,7 +97,7 @@ protected:
     /// Init task node
     static void createStatusDirs(const std::string & node_path, const ZooKeeperPtr & zookeeper);
 
-    virtual void initialize() {}
+    virtual void initializeMainThread();
 
     void runMainThread();
     void runCleanupThread();
@@ -117,8 +116,8 @@ protected:
     ZooKeeperPtr current_zookeeper;
 
     /// Save state of executed task to avoid duplicate execution on ZK error
-    //std::vector<std::string> last_tasks;
-    std::optional<String> last_entry_name;
+    //std::optional<String> last_entry_name;
+    std::list<DDLTaskPtr> current_tasks;
 
     std::shared_ptr<Poco::Event> queue_updated_event = std::make_shared<Poco::Event>();
     std::shared_ptr<Poco::Event> cleanup_event = std::make_shared<Poco::Event>();
@@ -130,7 +129,7 @@ protected:
 
     /// Size of the pool for query execution.
     size_t pool_size = 1;
-    ThreadPool worker_pool;
+    std::optional<ThreadPool> worker_pool;
 
     /// Cleaning starts after new node event is received if the last cleaning wasn't made sooner than N seconds ago
     Int64 cleanup_delay_period = 60; // minute (in seconds)

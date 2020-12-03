@@ -76,6 +76,8 @@ struct DDLTaskBase
     bool was_executed = false;
 
     DDLTaskBase(const String & name, const String & path) : entry_name(name), entry_path(path) {}
+    DDLTaskBase(const DDLTaskBase &) = delete;
+    DDLTaskBase(DDLTaskBase &&) = default;
     virtual ~DDLTaskBase() = default;
 
     void parseQueryFromEntry(const Context & context);
