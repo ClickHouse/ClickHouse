@@ -4,6 +4,8 @@
 #include <Client/ConnectionPool.h>
 #include <Client/MultiplexedConnections.h>
 #include <Common/FiberStack.h>
+#include <Common/TimerDescriptor.h>
+#include <variant>
 
 namespace DB
 {
@@ -47,31 +49,16 @@ public:
 
     ~RemoteQueryExecutor();
 
-    struct ReadContext
-    {
-        bool is_read_in_progress = false;
-
-        /// If is_read_in_progress, use this fd to poll
-        int fd;
-
-        /// If not is_read_in_progress, result block is set.
-        Block result;
-
-        /// Internal data
-
-        boost::context::fiber fiber;
-        Packet packet;
-        std::exception_ptr exception;
-        FiberStack<> stack;
-        ReadBufferFromPocoSocket::Fiber fiber_context;
-    };
-
     /// Create connection and send query, external tables and scalars.
     void sendQuery();
 
     /// Read next block of data. Returns empty block if query is finished.
     Block read();
-    void read(ReadContext & read_context);
+
+    /// Async variant of read. Returns ready block or file descriptor which may be used for polling.
+    /// ReadContext is an internal read state. Pass empty ptr first time, reuse created one for every call.
+    struct ReadContext;
+    std::variant<Block, int> read(std::unique_ptr<ReadContext> & read_context);
 
     /// Receive all remain packets and finish query.
     /// It should be cancelled after read returned empty block.

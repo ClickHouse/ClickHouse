@@ -189,7 +189,8 @@ public:
     size_t outBytesCount() const { return out ? out->count() : 0; }
     size_t inBytesCount() const { return in ? in->count() : 0; }
 
-    void setFiber(ReadBufferFromPocoSocket::Fiber * fiber) { in->setFiber(fiber); }
+    void setFiber(boost::context::fiber * fiber) { in->setFiber(fiber); }
+    Poco::Net::Socket & getSocket() { return in->getSocket(); }
 
 private:
     String host;

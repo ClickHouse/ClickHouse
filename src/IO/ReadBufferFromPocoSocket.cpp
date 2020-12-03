@@ -42,8 +42,9 @@ bool ReadBufferFromPocoSocket::nextImpl()
         /// Note that receive timeout is not checked here. External code should check it while polling.
         while (bytes_read < 0 && fiber && (errno == POCO_EAGAIN || errno == POCO_EWOULDBLOCK))
         {
-            fiber->fd = socket.impl()->sockfd();
-            fiber->fiber = std::move(fiber->fiber).resume();
+            //fiber->fd = socket.impl()->sockfd();
+            //fiber->timeout = socket.impl()->getReceiveTimeout();
+            *fiber = std::move(*fiber).resume();
             bytes_read = socket.impl()->receiveBytes(internal_buffer.begin(), internal_buffer.size(), flags);
         }
     }
