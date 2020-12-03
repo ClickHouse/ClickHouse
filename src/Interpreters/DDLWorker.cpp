@@ -11,7 +11,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
-#include <Storages/IStorage.h>
 #include <Storages/StorageDistributed.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/executeQuery.h>
@@ -31,16 +30,11 @@
 #include <Common/quoteString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeArray.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnArray.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Poco/Timestamp.h>
 #include <Poco/Net/NetException.h>
 #include <common/sleep.h>
 #include <common/getFQDNOrHostName.h>
-#include <random>
 #include <pcg_random.hpp>
 
 
@@ -862,6 +856,8 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
     };
 
     String shard_node_name = get_shard_name(task.cluster->getShardsAddresses().at(task.host_shard_num));
+
+
     String shard_path = node_path + "/shards/" + shard_node_name;
     String is_executed_path = shard_path + "/executed";
     String tries_to_execute_path = shard_path + "/tries_to_execute";
