@@ -34,6 +34,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/getMappedArea.h>
 #include <Common/remapExecutable.h>
+#include <Common/TLDListsHolder.h>
 #include <IO/HTTPCommon.h>
 #include <IO/UseSSL.h>
 #include <Interpreters/AsynchronousMetrics.h>
@@ -482,6 +483,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
         global_context->setDictionariesLibPath(dictionaries_lib_path);
         Poco::File(dictionaries_lib_path).createDirectories();
     }
+
+    /// top_level_domains_lists
+    TLDListsHolder::getInstance().parseConfig(config());
 
     {
         Poco::File(path + "data/").createDirectories();
