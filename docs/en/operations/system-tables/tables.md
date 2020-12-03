@@ -53,9 +53,8 @@ This table contains the following columns (the column type is shown in brackets)
 The `system.tables` table is used in `SHOW TABLES` query implementation.
 
 ```sql
-
-```
 :) SELECT * FROM system.tables LIMIT 2 FORMAT Vertical;
+```
 
 ```text
 Row 1:
