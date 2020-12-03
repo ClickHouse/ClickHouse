@@ -2,6 +2,7 @@
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnArray.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -78,8 +79,9 @@ public:
         if (num_elements == 0)
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
-        const DataTypePtr & key_type = static_cast<const DataTypeMap &>(*result_type).getKeyType();
-        const DataTypePtr & value_type = static_cast<const DataTypeMap &>(*result_type).getValueType();
+        const auto & result_type_map = static_cast<const DataTypeMap &>(*result_type);
+        const DataTypePtr & key_type = result_type_map.getKeyType();
+        const DataTypePtr & value_type = result_type_map.getValueType();
 
         Columns columns_holder(num_elements);
         ColumnRawPtrs column_ptrs(num_elements);
@@ -87,14 +89,9 @@ public:
         for (size_t i = 0; i < num_elements; ++i)
         {
             const auto & arg = arguments[i];
+            const auto to_type = i % 2 == 0 ? key_type : value_type;
 
-            ColumnPtr preprocessed_column = arg.column;
-
-            if (0 == i % 2 && !arg.type->equals(*key_type))
-                preprocessed_column = castColumn(arg, key_type);
-            else if (1 == i % 2 && !arg.type->equals(*value_type))
-                preprocessed_column = castColumn(arg, value_type);
-
+            ColumnPtr preprocessed_column = castColumn(arg, to_type);
             preprocessed_column = preprocessed_column->convertToFullColumnIfConst();
 
             columns_holder[i] = std::move(preprocessed_column);
@@ -102,38 +99,34 @@ public:
         }
 
         /// Create and fill the result map.
-        Columns map_columns(2);
 
-        auto keys = ColumnArray::create(key_type->createColumn());
-        IColumn & keys_data = keys->getData();
-        IColumn::Offsets & keys_offsets = keys->getOffsets();
-        keys_data.reserve(input_rows_count * num_elements / 2);
-        keys_offsets.resize(input_rows_count);
+        MutableColumnPtr keys_data = key_type->createColumn();
+        MutableColumnPtr values_data = value_type->createColumn();
+        MutableColumnPtr offsets = DataTypeNumber<IColumn::Offset>().createColumn();
 
-        auto values = ColumnArray::create(value_type->createColumn());
-        IColumn & values_data = values->getData();
-        IColumn::Offsets & values_offsets = values->getOffsets();
-        values_data.reserve(input_rows_count * num_elements / 2);
-        values_offsets.resize(input_rows_count);
+        size_t total_elements = input_rows_count * num_elements / 2;
+        keys_data->reserve(total_elements);
+        values_data->reserve(total_elements);
+        offsets->reserve(input_rows_count);
 
         IColumn::Offset current_offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             for (size_t j = 0; j < num_elements; j += 2)
             {
-                keys_data.insertFrom(*column_ptrs[j], i);
-                values_data.insertFrom(*column_ptrs[j + 1], i);
+                keys_data->insertFrom(*column_ptrs[j], i);
+                values_data->insertFrom(*column_ptrs[j + 1], i);
             }
 
             current_offset += num_elements / 2;
-            keys_offsets[i] = current_offset;
-            values_offsets[i] = current_offset;
+            offsets->insert(current_offset);
         }
 
-        map_columns[0] = keys->assumeMutable();
-        map_columns[1] = values->assumeMutable();
+        auto nested_column = ColumnArray::create(
+            ColumnTuple::create(Columns{std::move(keys_data), std::move(values_data)}),
+            std::move(offsets));
 
-        return ColumnMap::create(map_columns);
+        return ColumnMap::create(nested_column);
     }
 };
 

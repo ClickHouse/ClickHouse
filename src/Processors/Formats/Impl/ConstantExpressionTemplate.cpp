@@ -262,7 +262,7 @@ private:
             info.special_parser.is_map = true;
 
             info.type = applyVisitor(FieldToDataType(), info.literal->value);
-            auto nested_types = assert_cast<const DataTypeMap &>(*info.type).getElements();
+            auto nested_types = assert_cast<const DataTypeMap &>(*info.type).getKeyValueTypes();
             fillLiteralInfo(nested_types, info);
             info.type = std::make_shared<DataTypeMap>(nested_types);
         }
@@ -502,7 +502,7 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, co
         else if (type_info.is_tuple)
             nested_types = assert_cast<const DataTypeTuple &>(*collection_type).getElements();
         else
-            nested_types = assert_cast<const DataTypeMap &>(*collection_type).getElements();
+            nested_types = assert_cast<const DataTypeMap &>(*collection_type).getKeyValueTypes();
 
         for (size_t i = 0; i < nested_types.size(); ++i)
         {

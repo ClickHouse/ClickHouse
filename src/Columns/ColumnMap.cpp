@@ -18,7 +18,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int NOT_IMPLEMENTED;
-    extern const int CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE;
     extern const int LOGICAL_ERROR;
 }
 
@@ -26,77 +25,59 @@ namespace ErrorCodes
 std::string ColumnMap::getName() const
 {
     WriteBufferFromOwnString res;
-    res << "Map(" << columns[0]->getName() << ", " << columns[1]->getName() << ")";
+    const auto & nested_tuple = getNestedData();
+    res << "Map(" << nested_tuple.getColumn(0).getName()
+        << ", " << nested_tuple.getColumn(1).getName() << ")";
+
     return res.str();
 }
 
-ColumnMap::ColumnMap(MutableColumns && mutable_columns)
+ColumnMap::ColumnMap(MutableColumnPtr && nested_)
+    : nested(std::move(nested_))
 {
-    columns.reserve(mutable_columns.size());
-    for (auto & column : mutable_columns)
-    {
-        assert(column->getDataType() == TypeIndex::Array);
+    const auto * column_array = typeid_cast<const ColumnArray *>(nested.get());
+    if (!column_array)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnMap can be created only from array of tuples");
+
+    const auto * column_tuple = typeid_cast<const ColumnTuple *>(column_array->getDataPtr().get());
+    if (!column_tuple)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnMap can be created only from array of tuples");
+
+    if (column_tuple->getColumns().size() != 2)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnMap should contain only 2 subcolumns: keys and values");
+
+    for (const auto & column : column_tuple->getColumns())
         if (isColumnConst(*column))
-            throw Exception{"ColumnMap cannot have ColumnConst as its element", ErrorCodes::ILLEGAL_COLUMN};
-
-        columns.push_back(std::move(column));
-    }
-}
-
-ColumnMap::Ptr ColumnMap::create(const Columns & columns)
-{
-    for (const auto & column : columns)
-        if (isColumnConst(*column))
-            throw Exception{"ColumnMap cannot have ColumnConst as its element", ErrorCodes::ILLEGAL_COLUMN};
-
-    auto column_map = ColumnMap::create(MutableColumns());
-    column_map->columns.assign(columns.begin(), columns.end());
-
-    return column_map;
-}
-
-ColumnMap::Ptr ColumnMap::create(const MapColumns & columns)
-{
-    for (const auto & column : columns)
-        if (isColumnConst(*column))
-            throw Exception{"ColumnMap cannot have ColumnConst as its element", ErrorCodes::ILLEGAL_COLUMN};
-
-    auto column_map = ColumnMap::create(MutableColumns());
-    column_map->columns = columns;
-
-    return column_map;
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnMap cannot have ColumnConst as its element");
 }
 
 MutableColumnPtr ColumnMap::cloneEmpty() const
 {
-    MutableColumns new_columns(2);
-    for (size_t i = 0; i < 2; ++i)
-        new_columns[i] = columns[i]->cloneEmpty();
-
-    return ColumnMap::create(std::move(new_columns));
+    return ColumnMap::create(nested->cloneEmpty());
 }
 
 MutableColumnPtr ColumnMap::cloneResized(size_t new_size) const
 {
-    MutableColumns new_columns(2);
-    for (size_t i = 0; i < 2; ++i)
-        new_columns[i] = columns[i]->cloneResized(new_size);
-
-    return ColumnMap::create(std::move(new_columns));
+    return ColumnMap::create(nested->cloneResized(new_size));
 }
 
 Field ColumnMap::operator[](size_t n) const
 {
-    return ext::map<Map>(columns, [n] (const auto & column) { return (*column)[n]; });
+    auto array = DB::get<Array>((*nested)[n]);
+    return Map(std::make_move_iterator(array.begin()), std::make_move_iterator(array.end()));
 }
 
 void ColumnMap::get(size_t n, Field & res) const
 {
-    Map map(2);
-    columns[0]->get(n, map[0]);
-    columns[1]->get(n, map[1]);
+    const auto & offsets = getNestedColumn().getOffsets();
+    size_t offset = offsets[n - 1];
+    size_t size = offsets[n] - offsets[n - 1];
 
-    res = map;
+    res = Map(size);
+    auto & map = DB::get<Map &>(res);
+
+    for (size_t i = 0; i < size; ++i)
+        getNestedData().get(offset + i, map[i]);
 }
 
 StringRef ColumnMap::getDataAt(size_t) const
@@ -112,145 +93,89 @@ void ColumnMap::insertData(const char *, size_t)
 void ColumnMap::insert(const Field & x)
 {
     const auto & map = DB::get<const Map &>(x);
-
-    if (map.size() != 2)
-        throw Exception("Cannot insert value of different size into map", ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE);
-
-    for (size_t i = 0; i < 2; ++i)
-        columns[i]->insert(map[i]);
+    nested->insert(Array(map.begin(), map.end()));
 }
 
 void ColumnMap::insertDefault()
 {
-    for (auto & column : columns)
-        column->insertDefault();
+    nested->insertDefault();
 }
 void ColumnMap::popBack(size_t n)
 {
-    for (auto & column : columns)
-        column->popBack(n);
+    nested->popBack(n);
 }
 
 StringRef ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
-    StringRef res(begin, 0);
-    for (const auto & column : columns)
-    {
-        auto value_ref = column->serializeValueIntoArena(n, arena, begin);
-        res.data = value_ref.data - res.size;
-        res.size += value_ref.size;
-    }
-
-    return res;
+    return nested->serializeValueIntoArena(n, arena, begin);
 }
 
 const char * ColumnMap::deserializeAndInsertFromArena(const char * pos)
 {
-    for (auto & column : columns)
-        pos = column->deserializeAndInsertFromArena(pos);
-
-    return pos;
+    return nested->deserializeAndInsertFromArena(pos);
 }
 
 void ColumnMap::updateHashWithValue(size_t n, SipHash & hash) const
 {
-    for (const auto & column : columns)
-        column->updateHashWithValue(n, hash);
+    nested->updateHashWithValue(n, hash);
 }
 
 void ColumnMap::updateWeakHash32(WeakHash32 & hash) const
 {
-    auto s = size();
-
-    if (hash.getData().size() != s)
-        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
-                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
-
-    for (const auto & column : columns)
-        column->updateWeakHash32(hash);
+    nested->updateWeakHash32(hash);
 }
 
 void ColumnMap::updateHashFast(SipHash & hash) const
 {
-    for (const auto & column : columns)
-        column->updateHashFast(hash);
+    nested->updateHashFast(hash);
 }
 
 void ColumnMap::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
-    for (size_t i = 0; i < 2; ++i)
-        columns[i]->insertRangeFrom(
-            *assert_cast<const ColumnMap &>(src).columns[i],
-            start, length);
+    nested->insertRangeFrom(
+        assert_cast<const ColumnMap &>(src).getNestedColumn(),
+        start, length);
 }
 
 ColumnPtr ColumnMap::filter(const Filter & filt, ssize_t result_size_hint) const
 {
-    Columns new_columns(2);
-
-    for (size_t i = 0; i < 2; ++i)
-        new_columns[i] = columns[i]->filter(filt, result_size_hint);
-
-    return ColumnMap::create(new_columns);
+    auto filtered = nested->filter(filt, result_size_hint);
+    return ColumnMap::create(filtered);
 }
 
 ColumnPtr ColumnMap::permute(const Permutation & perm, size_t limit) const
 {
-    Columns new_columns(2);
-
-    for (size_t i = 0; i < 2; ++i)
-        new_columns[i] = columns[i]->permute(perm, limit);
-
-    return ColumnMap::create(new_columns);
+    auto permuted = nested->permute(perm, limit);
+    return ColumnMap::create(std::move(permuted));
 }
 
 ColumnPtr ColumnMap::index(const IColumn & indexes, size_t limit) const
 {
-    Columns new_columns(2);
-
-    for (size_t i = 0; i < 2; ++i)
-        new_columns[i] = columns[i]->index(indexes, limit);
-
-    return ColumnMap::create(new_columns);
+    auto res = nested->index(indexes, limit);
+    return ColumnMap::create(std::move(res));
 }
 
 ColumnPtr ColumnMap::replicate(const Offsets & offsets) const
 {
-    Columns new_columns(2);
-
-    for (size_t i = 0; i < 2; ++i)
-        new_columns[i] = columns[i]->replicate(offsets);
-
-    return ColumnMap::create(new_columns);
+    auto replicated = nested->replicate(offsets);
+    return ColumnMap::create(std::move(replicated));
 }
 
 MutableColumns ColumnMap::scatter(ColumnIndex num_columns, const Selector & selector) const
 {
-    std::vector<MutableColumns> scattered_map_elements(2);
-
-    for (size_t map_element_idx = 0; map_element_idx < 2; ++map_element_idx)
-        scattered_map_elements[map_element_idx] = columns[map_element_idx]->scatter(num_columns, selector);
-
-    MutableColumns res(num_columns);
-
-    for (size_t scattered_idx = 0; scattered_idx < num_columns; ++scattered_idx)
-    {
-        MutableColumns new_columns(2);
-        for (size_t map_element_idx = 0; map_element_idx < 2; ++map_element_idx)
-            new_columns[map_element_idx] = std::move(scattered_map_elements[map_element_idx][scattered_idx]);
-        res[scattered_idx] = ColumnMap::create(std::move(new_columns));
-    }
+    auto scattered_columns = nested->scatter(num_columns, selector);
+    MutableColumns res;
+    res.reserve(num_columns);
+    for (auto && scattered : scattered_columns)
+        res.push_back(ColumnMap::create(std::move(scattered)));
 
     return res;
 }
 
 int ColumnMap::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
 {
-    for (size_t i = 0; i < 2; ++i)
-        if (int res = columns[i]->compareAt(n, m, *assert_cast<const ColumnMap &>(rhs).columns[i], nan_direction_hint))
-            return res;
-
-    return 0;
+    const auto & rhs_map = assert_cast<const ColumnMap &>(rhs);
+    return nested->compareAt(n, m, rhs_map.getNestedColumn(), nan_direction_hint);
 }
 
 void ColumnMap::compareColumn(const IColumn & rhs, size_t rhs_row_num,
@@ -261,68 +186,14 @@ void ColumnMap::compareColumn(const IColumn & rhs, size_t rhs_row_num,
                                         compare_results, direction, nan_direction_hint);
 }
 
-template <bool positive>
-struct ColumnMap::Less
-{
-    MapColumns columns;
-    int nan_direction_hint;
-
-    Less(const MapColumns & columns_, int nan_direction_hint_)
-        : columns(columns_), nan_direction_hint(nan_direction_hint_)
-    {
-    }
-
-    bool operator() (size_t a, size_t b) const
-    {
-        for (const auto & column : columns)
-        {
-            int res = column->compareAt(a, b, *column, nan_direction_hint);
-            if (res < 0)
-                return positive;
-            else if (res > 0)
-                return !positive;
-        }
-        return false;
-    }
-};
-
 void ColumnMap::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
 {
-    size_t rows = size();
-    res.resize(rows);
-    for (size_t i = 0; i < rows; ++i)
-        res[i] = i;
-
-    if (limit >= rows)
-        limit = 0;
-
-    if (limit)
-    {
-        if (reverse)
-            std::partial_sort(res.begin(), res.begin() + limit, res.end(), Less<false>(columns, nan_direction_hint));
-        else
-            std::partial_sort(res.begin(), res.begin() + limit, res.end(), Less<true>(columns, nan_direction_hint));
-    }
-    else
-    {
-        if (reverse)
-            std::sort(res.begin(), res.end(), Less<false>(columns, nan_direction_hint));
-        else
-            std::sort(res.begin(), res.end(), Less<true>(columns, nan_direction_hint));
-    }
+    nested->getPermutation(reverse, limit, nan_direction_hint, res);
 }
 
 void ColumnMap::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_range) const
 {
-    for (const auto& column : columns)
-    {
-        column->updatePermutation(reverse, limit, nan_direction_hint, res, equal_range);
-        while (limit && !equal_range.empty() && limit <= equal_range.back().first)
-            equal_range.pop_back();
-
-        if (equal_range.empty())
-            break;
-    }
+    nested->updatePermutation(reverse, limit, nan_direction_hint, res, equal_range);
 }
 
 void ColumnMap::gather(ColumnGathererStream & gatherer)
@@ -332,65 +203,39 @@ void ColumnMap::gather(ColumnGathererStream & gatherer)
 
 void ColumnMap::reserve(size_t n)
 {
-    for (size_t i = 0; i < 2; ++i)
-        getColumn(i).reserve(n);
+    nested->reserve(n);
 }
 
 size_t ColumnMap::byteSize() const
 {
-    size_t res = 0;
-    for (const auto & column : columns)
-        res += column->byteSize();
-    return res;
+    return nested->byteSize();
 }
 
 size_t ColumnMap::allocatedBytes() const
 {
-    size_t res = 0;
-    for (const auto & column : columns)
-        res += column->allocatedBytes();
-    return res;
+    return nested->allocatedBytes();
 }
 
 void ColumnMap::protect()
 {
-    for (auto & column : columns)
-        column->protect();
+    nested->protect();
 }
 
 void ColumnMap::getExtremes(Field & min, Field & max) const
 {
-    Map min_map(2);
-    Map max_map(2);
-
-    columns[0]->getExtremes(min_map[0], max_map[0]);
-    columns[1]->getExtremes(min_map[1], max_map[1]);
-
-    min = min_map;
-    max = max_map;
+    nested->getExtremes(min, max);
 }
 
 void ColumnMap::forEachSubcolumn(ColumnCallback callback)
 {
-    for (auto & column : columns)
-        callback(column);
+    nested->forEachSubcolumn(callback);
 }
 
 bool ColumnMap::structureEquals(const IColumn & rhs) const
 {
     if (const auto * rhs_map = typeid_cast<const ColumnMap *>(&rhs))
-    {
-        if (rhs_map->columns.size() != 2)
-            return false;
-
-        for (const auto i : ext::range(0, 2))
-            if (!columns[i]->structureEquals(*rhs_map->columns[i]))
-                return false;
-
-        return true;
-    }
-    else
-        return false;
+        return nested->structureEquals(*rhs_map->nested);
+    return false;
 }
 
 }

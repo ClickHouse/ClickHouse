@@ -29,14 +29,14 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
         writeChar(')', ostr);
     }
 
-    writeChar(name == "map" ? '{' : '(', ostr);
+    writeChar('(', ostr);
     for (auto it = arguments->children.begin(); it != arguments->children.end(); ++it)
     {
         if (it != arguments->children.begin())
             writeCString(", ", ostr);
         (*it)->appendColumnName(ostr);
     }
-    writeChar(name == "map" ? '}' : ')', ostr);
+    writeChar(')', ostr);
 }
 
 /** Get the text that identifies this element. */
