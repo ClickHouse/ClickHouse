@@ -10,11 +10,6 @@ Columns:
 -   `type` (String) — Setting type (implementation specific string value).
 -   `changed` (UInt8) — Whether the setting was explicitly defined in the config or explicitly changed.
 
-[Original article](https://clickhouse.tech/docs/en/operations/system_tables/merge_tree_settings) <!--hide-->
-
- select * from system.functions LIMIT 10;
-
-
 **Example**
 ```sql
 :) SELECT * FROM system.merge_tree_settings LIMIT 4 FORMAT Vertical;
@@ -55,3 +50,5 @@ type:        SettingUInt64
 
 4 rows in set. Elapsed: 0.001 sec. 
 ```
+
+[Original article](https://clickhouse.tech/docs/en/operations/system_tables/merge_tree_settings) <!--hide-->

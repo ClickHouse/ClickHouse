@@ -20,7 +20,6 @@ Columns:
 ```
 
 ```text
-
 Row 1:
 ──────
 is_initial_query:     1
