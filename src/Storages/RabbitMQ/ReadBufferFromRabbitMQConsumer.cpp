@@ -148,6 +148,15 @@ void ReadBufferFromRabbitMQConsumer::setupChannel()
 }
 
 
+bool ReadBufferFromRabbitMQConsumer::needChannelUpdate()
+{
+    if (wait_subscription)
+        return false;
+
+    return channel_error || !consumer_channel || !consumer_channel->usable();
+}
+
+
 void ReadBufferFromRabbitMQConsumer::iterateEventLoop()
 {
     event_handler->iterateLoop();
