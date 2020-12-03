@@ -3,6 +3,7 @@
 #include <common/logger_useful.h>
 #include <IO/ReadBufferFromFile.h>
 #include <string_view>
+#include <unordered_set>
 
 namespace DB
 {
@@ -15,15 +16,19 @@ namespace ErrorCodes
 ///
 /// TLDList
 ///
+TLDList::TLDList(size_t size)
+    : tld_container(size)
+    , pool(std::make_unique<Arena>(10 << 20))
+{}
 bool TLDList::insert(const StringRef & host)
 {
-    StringRefHash hash;
-    return tld_container.insert(hash(host)).second;
+    bool inserted;
+    tld_container.emplace(DB::ArenaKeyHolder{host, *pool}, inserted);
+    return inserted;
 }
 bool TLDList::has(const StringRef & host) const
 {
-    StringRefHash hash;
-    return tld_container.has(hash(host));
+    return tld_container.has(host);
 }
 
 ///
@@ -54,7 +59,7 @@ void TLDListsHolder::parseConfig(const Poco::Util::AbstractConfiguration & confi
 
 size_t TLDListsHolder::parseAndAddTldList(const std::string & name, const std::string & path)
 {
-    TLDList tld_list;
+    std::unordered_set<std::string> tld_list_tmp;
 
     ReadBufferFromFile in(path);
     while (!in.eof())
@@ -73,12 +78,19 @@ size_t TLDListsHolder::parseAndAddTldList(const std::string & name, const std::s
         /// Skip empty line
         if (line.empty())
             continue;
-        tld_list.insert(StringRef{line.data(), line.size()});
+        tld_list_tmp.emplace(line);
+    }
+
+    TLDList tld_list(tld_list_tmp.size());
+    for (const auto & host : tld_list_tmp)
+    {
+        StringRef host_ref{host.data(), host.size()};
+        tld_list.insert(host_ref);
     }
 
     size_t tld_list_size = tld_list.size();
     std::lock_guard<std::mutex> lock(tld_lists_map_mutex);
-    tld_lists_map.emplace(name, std::move(tld_list));
+    tld_lists_map.insert(std::make_pair(name, std::move(tld_list)));
     return tld_list_size;
 }
 
