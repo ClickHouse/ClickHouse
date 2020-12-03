@@ -1,3 +1,5 @@
+#include <filesystem>
+
 #include <Interpreters/DDLWorker.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTDropQuery.h>
