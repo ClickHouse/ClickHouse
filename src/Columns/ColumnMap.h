@@ -1,6 +1,9 @@
 #pragma once
 
 #include <Core/Block.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnTuple.h>
 
 namespace DB
 {
@@ -13,13 +16,11 @@ class ColumnMap final : public COWHelper<IColumn, ColumnMap>
 private:
     friend class COWHelper<IColumn, ColumnMap>;
 
-    using MapColumns = std::vector<WrappedPtr>;
-    MapColumns columns;
+    WrappedPtr nested;
 
-    template <bool positive>
-    struct Less;
+    explicit ColumnMap(MutableColumnPtr && nested_);
+    // ColumnMap(MutableColumnPtr && keys, MutableColumnPtr && values);
 
-    explicit ColumnMap(MutableColumns && columns);
     ColumnMap(const ColumnMap &) = default;
 
 public:
@@ -27,9 +28,8 @@ public:
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
       */
     using Base = COWHelper<IColumn, ColumnMap>;
-    static Ptr create(const Columns & columns);
-    static Ptr create(const MapColumns & columns);
-    static Ptr create(Columns && arg) { return create(arg); }
+    static Ptr create(const ColumnPtr & column) { return ColumnMap::create(column->assumeMutable()); }
+    static Ptr create(ColumnPtr && arg) { return create(arg); }
 
     template <typename Arg, typename = typename std::enable_if<std::is_rvalue_reference<Arg &&>::value>::type>
     static MutablePtr create(Arg && arg) { return Base::create(std::forward<Arg>(arg)); }
@@ -41,10 +41,7 @@ public:
     MutableColumnPtr cloneEmpty() const override;
     MutableColumnPtr cloneResized(size_t size) const override;
 
-    size_t size() const override
-    {
-        return columns.at(0)->size();
-    }
+    size_t size() const override { return nested->size(); }
 
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
@@ -80,13 +77,11 @@ public:
     void forEachSubcolumn(ColumnCallback callback) override;
     bool structureEquals(const IColumn & rhs) const override;
 
-    const IColumn & getColumn(size_t idx) const { return *columns[idx]; }
-    IColumn & getColumn(size_t idx) { return *columns[idx]; }
+    const ColumnArray & getNestedColumn() const { return assert_cast<const ColumnArray &>(*nested); }
+    ColumnArray & getNestedColumn() { return assert_cast<ColumnArray &>(*nested); }
 
-    const MapColumns & getColumns() const { return columns; }
-    Columns getColumnsCopy() const { return {columns.begin(), columns.end()}; }
-
-    const ColumnPtr & getColumnPtr(size_t idx) const { return columns[idx]; }
+    const ColumnTuple & getNestedData() const { return assert_cast<const ColumnTuple &>(getNestedColumn().getData()); }
+    ColumnTuple & getNestedData() { return assert_cast<ColumnTuple &>(getNestedColumn().getData()); }
 };
 
 }

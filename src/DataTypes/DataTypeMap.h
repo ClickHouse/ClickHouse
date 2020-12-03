@@ -16,14 +16,13 @@ class DataTypeMap final : public DataTypeWithSimpleSerialization
 private:
     DataTypePtr key_type;
     DataTypePtr value_type;
-    DataTypePtr keys;
-    DataTypePtr values;
-    DataTypes kv;
+    DataTypePtr nested;
 
 public:
     static constexpr bool is_parametric = true;
 
     DataTypeMap(const DataTypes & elems);
+    DataTypeMap(const DataTypePtr & key_type_, const DataTypePtr & value_type_);
 
     TypeIndex getTypeId() const override { return TypeIndex::Map; }
     std::string doGetName() const override;
@@ -88,7 +87,7 @@ public:
 
     const DataTypePtr & getKeyType() const { return key_type; }
     const DataTypePtr & getValueType() const { return value_type; }
-    const DataTypes & getElements() const  {return kv; }
+    DataTypes getKeyValueTypes() const { return {key_type, value_type}; }
 };
 
 }

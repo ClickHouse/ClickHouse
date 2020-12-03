@@ -34,8 +34,6 @@ namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TYPE_MISMATCH;
-    extern const int BAD_ARGUMENTS;
-    extern const int BAD_TYPE_OF_FIELD;
 }
 
 
@@ -234,53 +232,6 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             }
 
             return have_unconvertible_element ? Field(Null()) : Field(res);
-        }
-        else if (src.getType() == Field::Types::Map)
-        {
-            //Convert keys or values to Array(String)
-            const Map & src_map = src.get<Map>();
-            size_t count = src_map.size();
-            const auto & element_type = *(type_array->getNestedType());
-            Array res(count);
-            for (size_t i = 0; i < count; ++i)
-                res[i] = convertFieldToType(src_map[i], element_type);
-
-            return Field(res);
-        }
-    }
-    else if (const DataTypeMap * type_map = typeid_cast<const DataTypeMap *>(&type))
-    {
-        if (src.getType() == Field::Types::Map)
-        {
-            const Map & src_map = src.get<Map>();
-            size_t src_map_size = src_map.size();
-
-            // Check weather it's already converted.
-            if (src_map_size == 2 && src_map[0].getType() == DB::Field::Types::Array)
-                return src;
-
-            size_t count = src_map_size / 2;
-            if (src_map_size % 2)
-                throw Exception("Bad size of map in In or VALUES section, Expected size must %2==0", ErrorCodes::BAD_ARGUMENTS);
-            Map res(2);
-            const auto & kv_type = type_map->getElements();
-
-            Map keys(count);
-            Map values(count);
-
-            for (size_t i = 0; i < count; ++i)
-            {
-                keys[i] = src_map[i * 2];
-                values[i] = src_map[i * 2 + 1];
-            }
-
-            res[0] = convertFieldToType(keys, *kv_type[0].get());
-            res[1] = convertFieldToType(values, *kv_type[1].get());
-
-            if (res[0].isNull())
-                throw Exception("Bad type of key", ErrorCodes::BAD_TYPE_OF_FIELD);
-
-            return Field(res);
         }
     }
     else if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(&type))

@@ -438,22 +438,22 @@ ColumnPtr FunctionArrayIntersect::executeImpl(const ColumnsWithTypeAndName & arg
 template <typename T, size_t>
 void FunctionArrayIntersect::NumberExecutor::operator()()
 {
-    using Map2 = ClearableHashMapWithStackMemory<T, size_t, DefaultHash<T>,
+    using Container = ClearableHashMapWithStackMemory<T, size_t, DefaultHash<T>,
         INITIAL_SIZE_DEGREE>;
 
     if (!result && typeid_cast<const DataTypeNumber<T> *>(data_type.get()))
-        result = execute<Map2, ColumnVector<T>, true>(arrays, ColumnVector<T>::create());
+        result = execute<Container, ColumnVector<T>, true>(arrays, ColumnVector<T>::create());
 }
 
 template <typename T, size_t>
 void FunctionArrayIntersect::DecimalExecutor::operator()()
 {
-    using Map2 = ClearableHashMapWithStackMemory<T, size_t, DefaultHash<T>,
+    using Container = ClearableHashMapWithStackMemory<T, size_t, DefaultHash<T>,
         INITIAL_SIZE_DEGREE>;
 
     if (!result)
         if (auto * decimal = typeid_cast<const DataTypeDecimal<T> *>(data_type.get()))
-            result = execute<Map2, ColumnDecimal<T>, true>(arrays, ColumnDecimal<T>::create(0, decimal->getScale()));
+            result = execute<Container, ColumnDecimal<T>, true>(arrays, ColumnDecimal<T>::create(0, decimal->getScale()));
 }
 
 template <typename Map, typename ColumnType, bool is_numeric_column>
