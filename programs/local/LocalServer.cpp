@@ -422,7 +422,7 @@ static const char * minimal_default_user_xml =
 
 static ConfigurationPtr getConfigurationFromXMLString(const char * xml_data)
 {
-    std::stringstream ss{std::string{xml_data}};
+    std::stringstream ss{std::string{xml_data}};    // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     Poco::XML::InputSource input_source{ss};
     return {new Poco::Util::XMLConfiguration{&input_source}};
 }

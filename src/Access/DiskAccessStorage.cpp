@@ -197,11 +197,13 @@ namespace
             boost::range::push_back(queries, InterpreterShowGrantsQuery::getAttachGrantQueries(entity));
 
         /// Serialize the list of ATTACH queries to a string.
-        std::stringstream ss;
-        ss.exceptions(std::ios::failbit);
+        WriteBufferFromOwnString buf;
         for (const ASTPtr & query : queries)
-            ss << *query << ";\n";
-        String file_contents = std::move(ss).str();
+        {
+            formatAST(*query, buf, false, true);
+            buf.write(";\n", 2);
+        }
+        String file_contents = buf.str();
 
         /// First we save *.tmp file and then we rename if everything's ok.
         auto tmp_file_path = std::filesystem::path{file_path}.replace_extension(".tmp");
@@ -353,7 +355,7 @@ String DiskAccessStorage::getStorageParamsJSON() const
     json.set("path", directory_path);
     if (readonly)
         json.set("readonly", readonly.load());
-    std::ostringstream oss;
+    std::ostringstream oss;         // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
     Poco::JSON::Stringifier::stringify(json, oss);
     return oss.str();

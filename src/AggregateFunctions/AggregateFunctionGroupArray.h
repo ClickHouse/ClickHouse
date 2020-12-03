@@ -2,6 +2,9 @@
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
@@ -244,10 +247,9 @@ public:
         if constexpr (Trait::sampler == Sampler::RNG)
         {
             DB::writeIntBinary<size_t>(this->data(place).total_values, buf);
-            std::ostringstream rng_stream;
-            rng_stream.exceptions(std::ios::failbit);
-            rng_stream << this->data(place).rng;
-            DB::writeStringBinary(rng_stream.str(), buf);
+            WriteBufferFromOwnString rng_buf;
+            rng_buf << this->data(place).rng;
+            DB::writeStringBinary(rng_buf.str(), buf);
         }
 
         // TODO
@@ -275,9 +277,8 @@ public:
             DB::readIntBinary<size_t>(this->data(place).total_values, buf);
             std::string rng_string;
             DB::readStringBinary(rng_string, buf);
-            std::istringstream rng_stream(rng_string);
-            rng_stream.exceptions(std::ios::failbit);
-            rng_stream >> this->data(place).rng;
+            ReadBufferFromString rng_buf(rng_string);
+            rng_buf >> this->data(place).rng;
         }
 
         // TODO
@@ -565,10 +566,9 @@ public:
         if constexpr (Trait::sampler == Sampler::RNG)
         {
             DB::writeIntBinary<size_t>(data(place).total_values, buf);
-            std::ostringstream rng_stream;
-            rng_stream.exceptions(std::ios::failbit);
-            rng_stream << data(place).rng;
-            DB::writeStringBinary(rng_stream.str(), buf);
+            WriteBufferFromOwnString rng_buf;
+            rng_buf << data(place).rng;
+            DB::writeStringBinary(rng_buf.str(), buf);
         }
 
         // TODO
@@ -600,9 +600,8 @@ public:
             DB::readIntBinary<size_t>(data(place).total_values, buf);
             std::string rng_string;
             DB::readStringBinary(rng_string, buf);
-            std::istringstream rng_stream(rng_string);
-            rng_stream.exceptions(std::ios::failbit);
-            rng_stream >> data(place).rng;
+            ReadBufferFromString rng_buf(rng_string);
+            rng_buf >> data(place).rng;
         }
 
         // TODO

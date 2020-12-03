@@ -8,6 +8,7 @@
 #include <common/logger_useful.h>
 #include <common/errnoToString.h>
 #include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 #include <unistd.h>
 #include <csignal>
 
@@ -73,8 +74,7 @@ ShellCommand::~ShellCommand()
 
 void ShellCommand::logCommand(const char * filename, char * const argv[])
 {
-    std::stringstream args;
-    args.exceptions(std::ios::failbit);
+    WriteBufferFromOwnString args;
     for (int i = 0; argv != nullptr && argv[i] != nullptr; ++i)
     {
         if (i > 0)

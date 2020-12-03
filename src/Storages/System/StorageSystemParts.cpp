@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
@@ -20,6 +21,7 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
     {
         {"partition",                                   std::make_shared<DataTypeString>()},
         {"name",                                        std::make_shared<DataTypeString>()},
+        {"uuid",                                        std::make_shared<DataTypeUUID>()},
         {"part_type",                                   std::make_shared<DataTypeString>()},
         {"active",                                      std::make_shared<DataTypeUInt8>()},
         {"marks",                                       std::make_shared<DataTypeUInt64>()},
@@ -93,6 +95,7 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns_, const Sto
             columns_[i++]->insert(out.str());
         }
         columns_[i++]->insert(part->name);
+        columns_[i++]->insert(part->uuid);
         columns_[i++]->insert(part->getTypeName());
         columns_[i++]->insert(part_state == State::Committed);
         columns_[i++]->insert(part->getMarksCount());

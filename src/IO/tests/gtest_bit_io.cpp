@@ -76,7 +76,7 @@ std::string dumpContents(const T& container,
                          const size_t cols_in_row = 8)
 
 {
-    std::stringstream sstr;
+    std::stringstream sstr;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     sstr.exceptions(std::ios::failbit);
     dumpBuffer(std::begin(container), std::end(container), &sstr, col_sep, row_sep, cols_in_row);
 

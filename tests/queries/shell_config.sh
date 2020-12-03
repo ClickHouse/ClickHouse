@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+# Don't check for ODR violation, since we may test shared build with ASAN
+export ASAN_OPTIONS=detect_odr_violation=0
+
 export CLICKHOUSE_DATABASE=${CLICKHOUSE_DATABASE:="test"}
 export CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL:="warning"}
 [ -v CLICKHOUSE_CONFIG_CLIENT ] && CLICKHOUSE_CLIENT_OPT0+=" --config-file=${CLICKHOUSE_CONFIG_CLIENT} "
@@ -67,7 +70,9 @@ export CLICKHOUSE_PORT_INTERSERVER=${CLICKHOUSE_PORT_INTERSERVER:="9009"}
 export CLICKHOUSE_URL_INTERSERVER=${CLICKHOUSE_URL_INTERSERVER:="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_INTERSERVER}/"}
 
 export CLICKHOUSE_CURL_COMMAND=${CLICKHOUSE_CURL_COMMAND:="curl"}
-export CLICKHOUSE_CURL_TIMEOUT=${CLICKHOUSE_CURL_TIMEOUT:="10"}
+# The queries in CI are prone to sudden delays, and we often don't check for curl
+# errors, so it makes sense to set a relatively generous timeout.
+export CLICKHOUSE_CURL_TIMEOUT=${CLICKHOUSE_CURL_TIMEOUT:="60"}
 export CLICKHOUSE_CURL=${CLICKHOUSE_CURL:="${CLICKHOUSE_CURL_COMMAND} -q -s --max-time ${CLICKHOUSE_CURL_TIMEOUT}"}
 export CLICKHOUSE_TMP=${CLICKHOUSE_TMP:="."}
 mkdir -p ${CLICKHOUSE_TMP}

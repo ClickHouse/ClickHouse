@@ -1,5 +1,4 @@
 #include <IO/MySQLPacketPayloadReadBuffer.h>
-#include <sstream>
 
 namespace DB
 {
