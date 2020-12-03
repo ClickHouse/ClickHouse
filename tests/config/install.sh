@@ -30,6 +30,7 @@ ln -sf $SRC_PATH/config.d/database_atomic.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/test_cluster_with_incorrect_pw.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/logging_no_rotate.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/tcp_with_proxy.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/top_level_domains_lists.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/users.d/log_queries.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/readonly.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/access_management.xml $DEST_SERVER_PATH/users.d/
@@ -40,6 +41,12 @@ ln -sf $SRC_PATH/ints_dictionary.xml $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/strings_dictionary.xml $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/decimals_dictionary.xml $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/executable_dictionary.xml $DEST_SERVER_PATH/
+
+# For CI when it is runned via init service
+mkdir -p /var/lib/clickhouse/cores
+ln -sf $SRC_PATH/public_suffix_list.dat /var/lib/clickhouse/cores/
+# For fasttest, that runs server just in background
+ln -sf $SRC_PATH/public_suffix_list.dat ./
 
 ln -sf $SRC_PATH/server.key $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/server.crt $DEST_SERVER_PATH/
