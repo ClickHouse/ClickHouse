@@ -31,16 +31,11 @@ public:
 
     bool poll(size_t timeout_microseconds);
 
-    struct Fiber
-    {
-        boost::context::fiber fiber;
-        int fd;
-    };
-
-    void setFiber(Fiber * fiber_) { fiber = fiber_; }
+    void setFiber(boost::context::fiber * fiber_) { fiber = fiber_; }
+    Poco::Net::Socket & getSocket() { return socket; }
 
 private:
-    Fiber * fiber;
+    boost::context::fiber * fiber;
 };
 
 }
