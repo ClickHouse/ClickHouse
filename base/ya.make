@@ -1,3 +1,5 @@
+OWNER(g:clickhouse)
+
 RECURSE(
     common
     daemon

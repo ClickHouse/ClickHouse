@@ -11,9 +11,9 @@
 
 不要禁用超线程。 它有助于某些查询，但不适用于其他查询。
 
-## 涡轮增压 {#turbo-boost}
+## 超频 {#turbo-boost}
 
-强烈推荐涡轮增压。 它显着提高了典型负载的性能。
+强烈推荐超频(turbo-boost)。 它显着提高了典型负载的性能。
 您可以使用 `turbostat` 要查看负载下的CPU的实际时钟速率。
 
 ## CPU缩放调控器 {#cpu-scaling-governor}
@@ -39,18 +39,18 @@ echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_gover
 
 始终禁用交换文件。 不这样做的唯一原因是，如果您使用的ClickHouse在您的个人笔记本电脑。
 
-## 巨大的页面 {#huge-pages}
+## 大页(Huge Pages) {#huge-pages}
 
-始终禁用透明巨大的页面。 它会干扰内存分alloc，从而导致显着的性能下降。
+始终禁用透明大页(transparent huge pages)。 它会干扰内存分alloc，从而导致显着的性能下降。
 
 ``` bash
 echo 'never' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
 ```
 
-使用 `perf top` 观看内核中用于内存管理的时间。
-永久巨大的页面也不需要被分配。
+使用 `perf top` 观察内核中用于内存管理的时间。
+永久大页(permanent huge pages)也不需要被分配。
 
-## 存储子系统 {#storage-subsystem}
+## 存储系统 {#storage-subsystem}
 
 如果您的预算允许您使用SSD，请使用SSD。
 如果没有，请使用硬盘。 SATA硬盘7200转就行了。
@@ -100,27 +100,27 @@ XFS也是合适的，但它还没有经过ClickHouse的彻底测试。
 
 如果可能的话，至少使用一个10GB的网络。 1Gb也可以工作，但对于使用数十tb的数据修补副本或处理具有大量中间数据的分布式查询，情况会更糟。
 
-## 动物园管理员 {#zookeeper}
+## Zookeeper {#zookeeper}
 
 您可能已经将ZooKeeper用于其他目的。 您可以使用相同的zookeeper安装，如果它还没有超载。
 
-It’s best to use a fresh version of ZooKeeper – 3.4.9 or later. The version in stable Linux distributions may be outdated.
+最好使用新版本的 Zookeeper – 3.4.9 或之后的版本. 稳定 Liunx 发行版中的 Zookeeper 版本可能是落后的。
 
-You should never use manually written scripts to transfer data between different ZooKeeper clusters, because the result will be incorrect for sequential nodes. Never use the «zkcopy» utility for the same reason: https://github.com/ksprojects/zkcopy/issues/15
+你永远不该使用自己手写的脚本在不同的 Zookeeper 集群之间转移数据, 这可能会导致序列节点的数据不正确。出于同样的原因，永远不要使用 zkcopy 工具: https://github.com/ksprojects/zkcopy/issues/15
 
 如果要将现有ZooKeeper集群分为两个，正确的方法是增加其副本的数量，然后将其重新配置为两个独立的集群。
 
-不要在与ClickHouse相同的服务器上运行ZooKeeper。 由于ZooKeeper对延迟非常敏感，ClickHouse可能会利用所有可用的系统资源。
+不要在与ClickHouse相同的服务器上运行ZooKeeper。 因为ZooKeeper对延迟非常敏感，而ClickHouse可能会占用所有可用的系统资源。
 
-使用默认设置，ZooKeeper是一个定时炸弹:
+默认设置下，ZooKeeper 就像是一个定时炸弹:
 
-> 使用默认配置时，ZooKeeper服务器不会从旧快照和日志中删除文件（请参阅autopurge），这是操作员的责任。
+当使用默认配置时，ZooKeeper服务不会从旧快照和日志中删除文件（请参阅autopurge），这是操作员的责任。
 
-必须拆除炸弹
+必须拆除炸弹。
 
-下面的ZooKeeper（3.5.1）配置在Yandex中使用。梅地卡生产环境截至2017年5月20日:
+下面的ZooKeeper（3.5.1）配置在 Yandex.Metrica 的生产环境中使用截至2017年5月20日:
 
-动物园cfg:
+zoo.cfg:
 
 ``` bash
 # http://hadoop.apache.org/zookeeper/docs/current/zookeeperAdmin.html
@@ -222,7 +222,7 @@ JAVA_OPTS="-Xms{{ '{{' }} cluster.get('xms','128M') {{ '}}' }} \
 -XX:+CMSParallelRemarkEnabled"
 ```
 
-盐初始化:
+Salt init:
 
     description "zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }} centralized coordination service"
 

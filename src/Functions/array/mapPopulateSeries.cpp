@@ -241,7 +241,7 @@ private:
         }
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         auto col1 = arguments[0];
         auto col2 = arguments[1];

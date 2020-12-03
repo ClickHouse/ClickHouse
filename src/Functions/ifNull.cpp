@@ -49,7 +49,7 @@ public:
         return getLeastSupertype({removeNullable(arguments[0]), arguments[1]});
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         /// Always null.
         if (arguments[0].type->onlyNull())

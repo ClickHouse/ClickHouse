@@ -145,7 +145,7 @@ struct Decimal
     operator T () const { return value; }
 
     template <typename U>
-    U convertTo()
+    U convertTo() const
     {
         /// no IsDecimalNumber defined yet
         if constexpr (std::is_same_v<U, Decimal<Int32>> ||
