@@ -2645,7 +2645,7 @@ bool StorageReplicatedMergeTree::processQueueEntry(ReplicatedMergeTreeQueue::Sel
               * See `queue.processEntry` function.
               */
             throw;
-        } 
+        }
         catch (...)
         {
             tryLogCurrentException(log, __PRETTY_FUNCTION__);
