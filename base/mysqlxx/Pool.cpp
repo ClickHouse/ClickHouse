@@ -152,33 +152,35 @@ Pool::Entry Pool::tryGet()
     initialize();
 
     /// Try to pick an idle connection from already allocated
-    for (auto connection_it = connections.begin(); connection_it != connections.end();)
+    for (auto connection_it = connections.cbegin(); connection_it != connections.cend();)
     {
-        /// Fixme: Race condition is here b/c this is not synchronized with Pool::Entry's copy-assignment operator
-        if ((*connection_it)->ref_count == 0)
+        Connection * connection_ptr = *connection_it;
+        /// Fixme: There is a race condition here b/c we do not synchronize with Pool::Entry's copy-assignment operator
+        if (connection_ptr->ref_count == 0)
         {
-            Entry res(*connection_it, this);
-            if (res.tryForceConnected())  /// Will try to reestablish connection as well
+            Entry res(connection_ptr, this);
+            if (res.tryForceConnected())  /// Tries to reestablish connection as well
                 return res;
 
-            /// This one is disconnected for good and so must be removed
-            ::delete *connection_it;  /// TODO: Manual memory management is awkward (matches allocConnection() method)
+            auto & logger = Poco::Util::Application::instance().logger();
+            logger.information("Idle connection to mysql server cannot be recovered, dropping it.");
+
+            /// This one is disconnected, cannot be reestablished and so needs to be disposed of.
             connection_it = connections.erase(connection_it);
+            ::delete connection_ptr;  /// TODO: Manual memory management is awkward (matches allocConnection() method)
         }
         else
             ++connection_it;
     }
 
-    /// Throws if pool is overflowed.
     if (connections.size() >= max_connections)
         throw Poco::Exception("mysqlxx::Pool is full");
 
-    /// Allocates new connection.
-    Connection * conn = allocConnection(true);
-    if (conn)
-        return Entry(conn, this);
+    Connection * connection_ptr = allocConnection(true);
+    if (connection_ptr)
+        return {connection_ptr, this};
 
-    return Entry();
+    return {};
 }
 
 
@@ -233,6 +235,26 @@ void Pool::Entry::forceConnected() const
             pool->rw_timeout,
             pool->enable_local_infile);
     }
+}
+
+
+bool Pool::Entry::tryForceConnected() const
+{
+    const auto mysql_driver = data->conn.getDriver();
+    const auto prev_connection_id = mysql_thread_id(mysql_driver);
+    if (data->conn.ping())  /// Attempts to reestablish lost connection
+    {
+        const auto current_connection_id = mysql_thread_id(mysql_driver);
+        if (prev_connection_id != current_connection_id)
+        {
+            auto & logger = Poco::Util::Application::instance().logger();
+            logger.information("Connection to mysql server has been reestablished. Connection id changed: %d -> %d",
+                                prev_connection_id, current_connection_id);
+        }
+        return true;
+    }
+
+    return false;
 }
 
 
