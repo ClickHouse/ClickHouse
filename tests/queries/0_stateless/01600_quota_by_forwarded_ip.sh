@@ -55,3 +55,11 @@ ${CLICKHOUSE_CURL} -H 'X-Forwarded-For: 1.2.3.4' -sS "${CLICKHOUSE_URL}&user=quo
 ${CLICKHOUSE_CURL} -H 'X-Forwarded-For: 5.6.7.8, 1.2.3.4' -sS "${CLICKHOUSE_URL}&user=quoted_by_forwarded_ip" -d "SELECT count() FROM numbers(10)" | grep -oF 'exceeded'
 
 ${CLICKHOUSE_CURL} -H 'X-Forwarded-For: 1.2.3.4, 5.6.7.8' -sS "${CLICKHOUSE_URL}&user=quoted_by_forwarded_ip" -d "SELECT count() FROM numbers(10)"
+
+$CLICKHOUSE_CLIENT -n --query "
+DROP QUOTA IF EXISTS quota_by_ip;
+DROP QUOTA IF EXISTS quota_by_forwarded_ip;
+
+DROP USER IF EXISTS quoted_by_ip;
+DROP USER IF EXISTS quoted_by_forwarded_ip;
+"
