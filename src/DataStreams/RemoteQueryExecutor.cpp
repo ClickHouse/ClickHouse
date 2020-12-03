@@ -39,7 +39,7 @@ struct RemoteQueryExecutor::ReadContext
 
     TimerDescriptor timer{CLOCK_MONOTONIC, 0};
     int socket_fd;
-    int epoll_df;
+    int epoll_fd;
 
     explicit ReadContext(MultiplexedConnections & connections_) : connections(connections_)
     {
@@ -47,7 +47,8 @@ struct RemoteQueryExecutor::ReadContext
         socket_fd = socket.impl()->sockfd();
         receive_timeout = socket.impl()->getReceiveTimeout();
 
-        if (-1 == epoll_create(2))
+        socket_fd = epoll_create(2);
+        if (-1 == socket_fd)
             throwFromErrno("Cannot create epoll descriptor", ErrorCodes::CANNOT_OPEN_FILE);
 
         {
@@ -55,7 +56,7 @@ struct RemoteQueryExecutor::ReadContext
             socket_event.events = EPOLLIN | EPOLLPRI;
             socket_event.data.fd = socket_fd;
 
-            if (-1 == epoll_ctl(epoll_df, EPOLL_CTL_ADD, socket_event.data.fd, &socket_event))
+            if (-1 == epoll_ctl(epoll_fd, EPOLL_CTL_ADD, socket_event.data.fd, &socket_event))
                 throwFromErrno("Cannot add socket descriptor to epoll", ErrorCodes::CANNOT_OPEN_FILE);
         }
 
@@ -64,7 +65,7 @@ struct RemoteQueryExecutor::ReadContext
             timer_event.events = EPOLLIN | EPOLLPRI;
             timer_event.data.fd = timer.getDescriptor();
 
-            if (-1 == epoll_ctl(epoll_df, EPOLL_CTL_ADD, timer_event.data.fd, &timer_event))
+            if (-1 == epoll_ctl(epoll_fd, EPOLL_CTL_ADD, timer_event.data.fd, &timer_event))
                 throwFromErrno("Cannot add timer descriptor to epoll", ErrorCodes::CANNOT_OPEN_FILE);
         }
 
@@ -100,7 +101,7 @@ struct RemoteQueryExecutor::ReadContext
         epoll_event events[2];
 
         /// Wait for epoll_fd will not block if it was polled externally.
-        int num_events = epoll_wait(epoll_df, events, 2, 0);
+        int num_events = epoll_wait(epoll_fd, events, 2, 0);
         if (num_events == -1)
             throwFromErrno("Failed to epoll_wait", ErrorCodes::CANNOT_READ_FROM_SOCKET);
 
@@ -144,7 +145,7 @@ struct RemoteQueryExecutor::ReadContext
     {
         /// socket_fd is closed by Poco::Net::Socket
         /// timer_fd is closed by TimerDescriptor
-        close(epoll_df);
+        close(epoll_fd);
     }
 
     struct Routine
@@ -388,7 +389,7 @@ std::variant<Block, int> RemoteQueryExecutor::read(std::unique_ptr<ReadContext> 
         if (read_context->is_read_in_progress)
         {
             read_context->setTimer();
-            return read_context->epoll_df;
+            return read_context->epoll_fd;
         }
         else
         {
