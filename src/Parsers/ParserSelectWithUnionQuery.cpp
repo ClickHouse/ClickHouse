@@ -20,9 +20,9 @@ bool ParserSelectWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     if (!parser.parse(pos, list_node, expected))
         return false;
 
-    /// NOTE: We cann't simply flatten inner union query now, since we may have different union mode in query,
+    /// NOTE: We can't simply flatten inner union query now, since we may have different union mode in query,
     /// so flatten may change it's semantics. For example:
-    /// flatten `SELECT 1 UNION (SELECT 1 UNION ALL SELETC 1)` -> `SELECT 1 UNION SELECT 1 UNION ALL SELECT 1`
+    /// flatten `SELECT 1 UNION (SELECT 1 UNION ALL SELECT 1)` -> `SELECT 1 UNION SELECT 1 UNION ALL SELECT 1`
 
     /// If we got only one child which is ASTSelectWithUnionQuery, just lift it up
     auto & expr_list = list_node->as<ASTExpressionList &>();
