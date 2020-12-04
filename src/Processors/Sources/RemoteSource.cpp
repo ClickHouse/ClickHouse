@@ -1,5 +1,6 @@
 #include <Processors/Sources/RemoteSource.h>
 #include <DataStreams/RemoteQueryExecutor.h>
+#include <DataStreams/RemoteQueryExecutorReadContext.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 
