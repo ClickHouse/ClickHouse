@@ -24,7 +24,7 @@ CREATE DICTIONARY dictdb.invalidate
   two UInt8 EXPRESSION dummy
 )
 PRIMARY KEY dummy
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'dict_invalidate' DB 'dictdb' INVALIDATE_QUERY 'select max(last_time) from dictdb.dict_invalidate'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'dict_invalidate' DB 'dictdb' INVALIDATE_QUERY 'select max(last_time) from dictdb.dict_invalidate'))
 LIFETIME(MIN 0 MAX 1)
 LAYOUT(FLAT())"
 
