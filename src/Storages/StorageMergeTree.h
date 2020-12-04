@@ -132,7 +132,7 @@ private:
       * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).
       * Returns true if merge is finished successfully.
       */
-    bool merge(bool aggressive, const String & partition_id, bool final, bool deduplicate, String * out_disable_reason = nullptr, const Context * context = nullptr);
+    bool merge(bool aggressive, const String & partition_id, bool final, bool deduplicate, String * out_disable_reason = nullptr, bool optimize_skip_merged_partitions = false);
 
     ActionLock stopMergesAndWait();
 
@@ -181,7 +181,7 @@ private:
         bool final,
         String * disable_reason,
         TableLockHolder & table_lock_holder,
-        const Context * context = nullptr,
+        bool optimize_skip_merged_partitions = false,
         SelectPartsDecision * select_decision_out = nullptr);
     bool mergeSelectedParts(const StorageMetadataPtr & metadata_snapshot, bool deduplicate, MergeMutateSelectedEntry & entry, TableLockHolder & table_lock_holder);
 
