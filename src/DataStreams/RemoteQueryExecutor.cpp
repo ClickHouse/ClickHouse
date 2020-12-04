@@ -25,8 +25,11 @@ namespace ErrorCodes
     extern const int SOCKET_TIMEOUT;
 }
 
-struct RemoteQueryExecutor::ReadContext
+class RemoteQueryExecutorReadContext
 {
+public:
+    using Self = RemoteQueryExecutorReadContext;
+
     bool is_read_in_progress = false;
     Packet packet;
 
@@ -41,7 +44,7 @@ struct RemoteQueryExecutor::ReadContext
     int socket_fd;
     int epoll_fd;
 
-    explicit ReadContext(MultiplexedConnections & connections_) : connections(connections_)
+    explicit RemoteQueryExecutorReadContext(MultiplexedConnections & connections_) : connections(connections_)
     {
         auto & socket = connections.getSocket();
         socket_fd = socket.impl()->sockfd();
@@ -72,11 +75,11 @@ struct RemoteQueryExecutor::ReadContext
         fiber = boost::context::fiber(std::allocator_arg_t(), stack, Routine{connections, *this});
     }
 
-    static void initialize(std::unique_ptr<ReadContext> & read_context, MultiplexedConnections & connections)
+    static void initialize(std::unique_ptr<Self> & read_context, MultiplexedConnections & connections)
     {
         try
         {
-            read_context = std::make_unique<ReadContext>(connections);
+            read_context = std::make_unique<Self>(connections);
         }
         catch (DB::Exception & e)
         {
@@ -141,7 +144,7 @@ struct RemoteQueryExecutor::ReadContext
             std::rethrow_exception(std::move(exception));
     }
 
-    ~ReadContext()
+    ~RemoteQueryExecutorReadContext()
     {
         /// socket_fd is closed by Poco::Net::Socket
         /// timer_fd is closed by TimerDescriptor
@@ -151,7 +154,7 @@ struct RemoteQueryExecutor::ReadContext
     struct Routine
     {
         MultiplexedConnections & connections;
-        ReadContext & read_context;
+        Self & read_context;
 
         boost::context::fiber operator()(boost::context::fiber && sink) const
         {

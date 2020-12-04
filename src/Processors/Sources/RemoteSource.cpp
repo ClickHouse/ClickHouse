@@ -21,6 +21,9 @@ RemoteSource::~RemoteSource() = default;
 
 ISource::Status RemoteSource::prepare()
 {
+    if (is_async_state)
+        return Status::Async;
+
     Status status = SourceWithProgress::prepare();
     /// To avoid resetting the connection (because of "unfinished" query) in the
     /// RemoteQueryExecutor it should be finished explicitly.
@@ -29,7 +32,7 @@ ISource::Status RemoteSource::prepare()
     return status;
 }
 
-Chunk RemoteSource::generate()
+std::optional<Chunk> RemoteSource::tryGenerate()
 {
     /// onCancel() will do the cancel if the query was sent.
     if (was_query_canceled)
@@ -52,7 +55,17 @@ Chunk RemoteSource::generate()
         was_query_sent = true;
     }
 
-    auto block = query_executor->read();
+    auto res = query_executor->read(read_context);
+    if (std::holds_alternative<int>(res))
+    {
+        fd = std::get<int>(res);
+        is_async_state = true;
+        return Chunk();
+    }
+
+    is_async_state = false;
+
+    auto block = std::get<Block>(std::move(res));
 
     if (!block)
     {
