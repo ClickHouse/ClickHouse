@@ -48,6 +48,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int CANNOT_CONNECT_RABBITMQ;
     extern const int CANNOT_BIND_RABBITMQ_EXCHANGE;
     extern const int CANNOT_DECLARE_RABBITMQ_EXCHANGE;
     extern const int CANNOT_REMOVE_RABBITMQ_EXCHANGE;
@@ -555,6 +556,9 @@ Pipe StorageRabbitMQ::read(
         size_t /* max_block_size */,
         unsigned /* num_streams */)
 {
+    if (!rabbit_is_ready)
+        throw Exception("RabbitMQ setup not finished. Connection might be lost", ErrorCodes::CANNOT_CONNECT_RABBITMQ);
+
     if (num_created_consumers == 0)
         return {};
 
@@ -743,7 +747,7 @@ bool StorageRabbitMQ::checkDependencies(const StorageID & table_id)
 
 void StorageRabbitMQ::streamingToViewsFunc()
 {
-    if (rabbit_is_ready)
+    if (rabbit_is_ready && (event_handler->connectionRunning() || restoreConnection(true)))
     {
         try
         {
