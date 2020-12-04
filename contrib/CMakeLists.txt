@@ -21,6 +21,7 @@ endif()
 
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
 
+add_subdirectory (antlr4-runtime-cmake)
 add_subdirectory (boost-cmake)
 add_subdirectory (cctz-cmake)
 add_subdirectory (consistent-hashing-sumbur)
@@ -64,10 +65,6 @@ endif ()
 
 if (USE_INTERNAL_FARMHASH_LIBRARY)
     add_subdirectory (libfarmhash)
-endif ()
-
-if (USE_INTERNAL_BTRIE_LIBRARY)
-    add_subdirectory (libbtrie)
 endif ()
 
 if (USE_INTERNAL_ZLIB_LIBRARY)

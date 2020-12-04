@@ -273,13 +273,15 @@ SELECT
     sum(Duration) AS Duration
 FROM UAct
 GROUP BY UserID
-```text
+```
+
+``` text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┐
 │ 4324182021466249494 │         6 │      185 │
 └─────────────────────┴───────────┴──────────┘
 ```
 
-``` sqk
+``` sql
 select count() FROM UAct
 ```
 

@@ -55,7 +55,7 @@ StorageMySQL::StorageMySQL(
     , replace_query{replace_query_}
     , on_duplicate_clause{on_duplicate_clause_}
     , pool(std::move(pool_))
-    , global_context(context_)
+    , global_context(context_.getGlobalContext())
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
