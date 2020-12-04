@@ -655,6 +655,11 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
                 {
                     LOG_DEBUG(log, "Removing killed mutation {} from local state.", entry.znode_name);
                     some_active_mutations_were_killed = true;
+                    if (entry.isAlterMutation())
+                    {
+                        LOG_DEBUG(log, "Removed alter {} because mutation {} were killed.", entry.alter_version, entry.znode_name);
+                        alter_sequence.finishDataAlter(entry.alter_version, state_lock);
+                    }
                 }
                 else
                     LOG_DEBUG(log, "Removing obsolete mutation {} from local state.", entry.znode_name);
@@ -1048,13 +1053,11 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     }
 
     /// Check that fetches pool is not overloaded
-    if (entry.type == LogEntry::GET_PART)
+    if (entry.type == LogEntry::GET_PART && !storage.canExecuteFetch(entry, out_postpone_reason))
     {
-        if (!storage.canExecuteFetch(entry, out_postpone_reason))
-        {
-            LOG_TRACE(log, out_postpone_reason);
-            return false;
-        }
+        /// Don't print log message about this, because we can have a lot of fetches,
+        /// for example during replica recovery.
+        return false;
     }
 
     if (entry.type == LogEntry::MERGE_PARTS || entry.type == LogEntry::MUTATE_PART)
@@ -1137,11 +1140,12 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                 {
                     const char * format_str = "Not executing log entry {} for part {}"
                         " because {} merges with TTL already executing, maximum {}.";
-                    LOG_DEBUG(log, format_str, entry.znode_name,
-                        entry.new_part_name, total_merges_with_ttl,
+                    LOG_DEBUG(log, format_str,
+                        entry.znode_name, entry.new_part_name, total_merges_with_ttl,
                         data_settings->max_number_of_merges_with_ttl_in_pool);
 
-                    out_postpone_reason = fmt::format(format_str, entry.new_part_name, total_merges_with_ttl,
+                    out_postpone_reason = fmt::format(format_str,
+                        entry.znode_name, entry.new_part_name, total_merges_with_ttl,
                         data_settings->max_number_of_merges_with_ttl_in_pool);
                     return false;
                 }

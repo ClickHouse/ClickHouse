@@ -5,13 +5,12 @@ set -e
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
-db="test"
 table="optimize_me_finally"
-name="$db.$table"
+name="$CLICKHOUSE_DATABASE.$table"
 res_rows=1500000 # >= vertical_merge_algorithm_min_rows_to_activate
 
 function get_num_parts {
-    $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.parts WHERE active AND database='$db' AND table='$table'"
+    $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.parts WHERE active AND database='$CLICKHOUSE_DATABASE' AND table='$table'"
 }
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS $name"

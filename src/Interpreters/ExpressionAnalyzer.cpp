@@ -139,11 +139,6 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     analyzeAggregation();
 }
 
-bool ExpressionAnalyzer::isRemoteStorage() const
-{
-    return storage() && storage()->isRemote();
-}
-
 
 void ExpressionAnalyzer::analyzeAggregation()
 {
@@ -364,7 +359,7 @@ void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
     }
 
     const auto * func = node->as<ASTFunction>();
-    if (func && functionIsInOperator(func->name))
+    if (func && functionIsInOrGlobalInOperator(func->name))
     {
         const IAST & args = *func->arguments;
         const ASTPtr & left_in_operand = args.children.at(0);
@@ -428,11 +423,11 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions)
     for (const ASTFunction * node : aggregates())
     {
         AggregateDescription aggregate;
-        getRootActionsNoMakeSet(node->arguments, true, actions);
+        if (node->arguments) getRootActionsNoMakeSet(node->arguments, true, actions);
 
         aggregate.column_name = node->getColumnName();
 
-        const ASTs & arguments = node->arguments->children;
+        const ASTs & arguments = node->arguments ? node->arguments->children : ASTs();
         aggregate.argument_names.resize(arguments.size());
         DataTypes types(arguments.size());
 
@@ -825,8 +820,9 @@ void SelectQueryExpressionAnalyzer::appendAggregateFunctionsArguments(Expression
 
     /// TODO: data.aggregates -> aggregates()
     for (const ASTFunction * node : data.aggregates)
-        for (auto & argument : node->arguments->children)
-            getRootActions(argument, only_types, step.actions());
+        if (node->arguments)
+            for (auto & argument : node->arguments->children)
+                getRootActions(argument, only_types, step.actions());
 }
 
 bool SelectQueryExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain, bool only_types)

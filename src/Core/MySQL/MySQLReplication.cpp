@@ -57,7 +57,6 @@ namespace MySQLReplication
         payload.readStrict(reinterpret_cast<char *>(&create_timestamp), 4);
         payload.readStrict(reinterpret_cast<char *>(&event_header_length), 1);
         assert(event_header_length == EVENT_HEADER_LENGTH);
-
         readStringUntilEOF(event_type_header_length, payload);
     }
 
@@ -745,7 +744,7 @@ namespace MySQLReplication
         // skip the generic response packets header flag.
         payload.ignore(1);
 
-        MySQLBinlogEventReadBuffer event_payload(payload);
+        MySQLBinlogEventReadBuffer event_payload(payload, checksum_signature_length);
 
         EventHeader event_header;
         event_header.parse(event_payload);
@@ -800,9 +799,8 @@ namespace MySQLReplication
                 break;
             }
             case WRITE_ROWS_EVENT_V1:
-            case WRITE_ROWS_EVENT_V2:
-            {
-                if (do_replicate())
+            case WRITE_ROWS_EVENT_V2: {
+                if (doReplicate())
                     event = std::make_shared<WriteRowsEvent>(table_map, std::move(event_header));
                 else
                     event = std::make_shared<DryRunEvent>(std::move(event_header));
@@ -811,9 +809,8 @@ namespace MySQLReplication
                 break;
             }
             case DELETE_ROWS_EVENT_V1:
-            case DELETE_ROWS_EVENT_V2:
-            {
-                if (do_replicate())
+            case DELETE_ROWS_EVENT_V2: {
+                if (doReplicate())
                     event = std::make_shared<DeleteRowsEvent>(table_map, std::move(event_header));
                 else
                     event = std::make_shared<DryRunEvent>(std::move(event_header));
@@ -822,9 +819,8 @@ namespace MySQLReplication
                 break;
             }
             case UPDATE_ROWS_EVENT_V1:
-            case UPDATE_ROWS_EVENT_V2:
-            {
-                if (do_replicate())
+            case UPDATE_ROWS_EVENT_V2: {
+                if (doReplicate())
                     event = std::make_shared<UpdateRowsEvent>(table_map, std::move(event_header));
                 else
                     event = std::make_shared<DryRunEvent>(std::move(event_header));

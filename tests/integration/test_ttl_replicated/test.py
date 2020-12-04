@@ -35,7 +35,7 @@ def test_ttl_columns(started_cluster):
         node.query(
             '''
                 CREATE TABLE test_ttl(date DateTime, id UInt32, a Int32 TTL date + INTERVAL 1 DAY, b Int32 TTL date + INTERVAL 1 MONTH)
-                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl', '{replica}')
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_columns', '{replica}')
                 ORDER BY id PARTITION BY toDayOfMonth(date) SETTINGS merge_with_ttl_timeout=0, min_bytes_for_wide_part=0;
             '''.format(replica=node.name))
 
@@ -155,7 +155,7 @@ def test_modify_ttl(started_cluster):
         node.query(
             '''
                 CREATE TABLE test_ttl(d DateTime, id UInt32)
-                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl', '{replica}')
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_modify', '{replica}')
                 ORDER BY id
             '''.format(replica=node.name))
 
@@ -179,7 +179,7 @@ def test_modify_column_ttl(started_cluster):
         node.query(
             '''
                 CREATE TABLE test_ttl(d DateTime, id UInt32 DEFAULT 42)
-                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl', '{replica}')
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_column', '{replica}')
                 ORDER BY d
             '''.format(replica=node.name))
 
@@ -202,7 +202,7 @@ def test_ttl_double_delete_rule_returns_error(started_cluster):
     try:
         node1.query('''
             CREATE TABLE test_ttl(date DateTime, id UInt32)
-            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl', '{replica}')
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_double_delete', '{replica}')
             ORDER BY id PARTITION BY toDayOfMonth(date)
             TTL date + INTERVAL 1 DAY, date + INTERVAL 2 DAY SETTINGS merge_with_ttl_timeout=0
         '''.format(replica=node1.name))
@@ -288,7 +288,7 @@ def test_ttl_empty_parts(started_cluster):
         node.query(
         '''
             CREATE TABLE test_ttl_empty_parts(date Date, id UInt32)
-            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl', '{replica}')
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_empty_parts', '{replica}')
             ORDER BY id
             SETTINGS max_bytes_to_merge_at_min_space_in_pool = 1, max_bytes_to_merge_at_max_space_in_pool = 1,
                 cleanup_delay_period = 1, cleanup_delay_period_random_add = 0
