@@ -15,6 +15,9 @@ class ASTQueryWithOnCluster;
 using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
 class DatabaseReplicated;
 
+struct MetadataTransaction;
+using MetadataTransactionPtr = std::shared_ptr<MetadataTransaction>;
+
 struct HostID
 {
     String host_name;
@@ -72,6 +75,8 @@ struct DDLTaskBase
     bool is_circular_replicated = false;
     bool execute_on_leader = false;
 
+    //MetadataTransactionPtr txn;
+    Coordination::Requests ops;
     ExecutionStatus execution_status;
     bool was_executed = false;
 
@@ -84,7 +89,7 @@ struct DDLTaskBase
 
     virtual String getShardID() const = 0;
 
-    virtual std::unique_ptr<Context> makeQueryContext(Context & from_context) const;
+    virtual std::unique_ptr<Context> makeQueryContext(Context & from_context);
 
     inline String getActiveNodePath() const { return entry_path + "/active/" + host_id_str; }
     inline String getFinishedNodePath() const { return entry_path + "/finished/" + host_id_str; }
@@ -119,7 +124,7 @@ struct DatabaseReplicatedTask : public DDLTaskBase
     DatabaseReplicatedTask(const String & name, const String & path, DatabaseReplicated * database_);
 
     String getShardID() const override;
-    std::unique_ptr<Context> makeQueryContext(Context & from_context) const override;
+    std::unique_ptr<Context> makeQueryContext(Context & from_context) override;
 
     static String getLogEntryName(UInt32 log_entry_number);
     static UInt32 getLogEntryNumber(const String & log_entry_name);
@@ -131,6 +136,14 @@ struct DatabaseReplicatedTask : public DDLTaskBase
 
 struct MetadataTransaction
 {
+    enum State
+    {
+        CREATED,
+        COMMITED,
+        FAILED
+    };
+
+    State state = CREATED;
     ZooKeeperPtr current_zookeeper;
     String zookeeper_path;
     bool is_initial_query;
@@ -142,6 +155,7 @@ struct MetadataTransaction
     }
 
     void commit();
+
 };
 
 }
