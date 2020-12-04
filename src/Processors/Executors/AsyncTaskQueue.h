@@ -26,7 +26,7 @@ public:
     /// Wait for any descriptor. If no descriptors in queue, blocks.
     /// Returns ptr which was inserted into queue or nullptr if finished was called.
     /// Lock is used to wait on condvar.
-    void * wait(std::unique_lock<std::mutex> lock);
+    void * wait(std::unique_lock<std::mutex> & lock);
 
     /// Interrupt waiting.
     void finish();

@@ -164,7 +164,7 @@ bool PipelineExecutor::expandPipeline(Stack & stack, UInt64 pid)
     return true;
 }
 
-bool PipelineExecutor::tryAddProcessorToStackIfUpdated(ExecutingGraph::Edge & edge, Queue & queue, size_t thread_number)
+bool PipelineExecutor::tryAddProcessorToStackIfUpdated(ExecutingGraph::Edge & edge, Queue & queue, Queue & async_queue, size_t thread_number)
 {
     /// In this method we have ownership on edge, but node can be concurrently accessed.
 
@@ -185,7 +185,7 @@ bool PipelineExecutor::tryAddProcessorToStackIfUpdated(ExecutingGraph::Edge & ed
     if (status == ExecutingGraph::ExecStatus::Idle)
     {
         node.status = ExecutingGraph::ExecStatus::Preparing;
-        return prepareProcessor(edge.to, thread_number, queue, std::move(lock));
+        return prepareProcessor(edge.to, thread_number, queue, async_queue, std::move(lock));
     }
     else
         graph->nodes[edge.to]->processor->onUpdatePorts();
@@ -193,7 +193,7 @@ bool PipelineExecutor::tryAddProcessorToStackIfUpdated(ExecutingGraph::Edge & ed
     return true;
 }
 
-bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue & queue, std::unique_lock<std::mutex> node_lock)
+bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue & queue, Queue & async_queue, std::unique_lock<std::mutex> node_lock)
 {
     /// In this method we have ownership on node.
     auto & node = *graph->nodes[pid];
@@ -248,11 +248,9 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
             }
             case IProcessor::Status::Async:
             {
-                throw Exception("Async is temporary not supported.", ErrorCodes::LOGICAL_ERROR);
-
-//            node.status = ExecStatus::Executing;
-//            addAsyncJob(pid);
-//            break;
+                node.status = ExecutingGraph::ExecStatus::Executing;
+                async_queue.push(&node);
+                break;
             }
             case IProcessor::Status::ExpandPipeline:
             {
@@ -284,13 +282,13 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
     {
         for (auto & edge : updated_direct_edges)
         {
-            if (!tryAddProcessorToStackIfUpdated(*edge, queue, thread_number))
+            if (!tryAddProcessorToStackIfUpdated(*edge, queue, async_queue, thread_number))
                 return false;
         }
 
         for (auto & edge : updated_back_edges)
         {
-            if (!tryAddProcessorToStackIfUpdated(*edge, queue, thread_number))
+            if (!tryAddProcessorToStackIfUpdated(*edge, queue, async_queue, thread_number))
                 return false;
         }
     }
@@ -321,7 +319,7 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
         while (!stack.empty())
         {
             auto item = stack.top();
-            if (!prepareProcessor(item, thread_number, queue, std::unique_lock<std::mutex>(graph->nodes[item]->status_mutex)))
+            if (!prepareProcessor(item, thread_number, queue, async_queue, std::unique_lock<std::mutex>(graph->nodes[item]->status_mutex)))
                 return false;
 
             stack.pop();
@@ -374,6 +372,7 @@ void PipelineExecutor::finish()
     {
         std::lock_guard lock(task_queue_mutex);
         finished = true;
+        async_task_queue.finish();
     }
 
     std::lock_guard guard(executor_contexts_mutex);
@@ -518,11 +517,22 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
                     break;
                 }
 
-                if (threads_queue.size() + 1 == num_threads)
+                if (threads_queue.size() + 1 == num_threads && async_task_queue.empty())
                 {
                     lock.unlock();
                     finish();
                     break;
+                }
+
+                if (num_threads == 1)
+                {
+                    /// If we execute in single thread, wait for async tasks here.
+                    void * res = async_task_queue.wait(lock);
+                    if (!res)
+                        throw Exception("Empty task was returned from async task queue", ErrorCodes::LOGICAL_ERROR);
+
+                    node = static_cast<ExecutingGraph::Node *>(res);
+                    continue;
                 }
 
                 threads_queue.push(thread_num);
@@ -575,6 +585,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
             /// Try to execute neighbour processor.
             {
                 Queue queue;
+                Queue async_queue;
 
                 ++num_processing_executors;
                 while (auto * task = expand_pipeline_task.load())
@@ -583,7 +594,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
                 /// Prepare processor after execution.
                 {
                     auto lock = std::unique_lock<std::mutex>(node->status_mutex);
-                    if (!prepareProcessor(node->processors_id, thread_num, queue, std::move(lock)))
+                    if (!prepareProcessor(node->processors_id, thread_num, queue, async_queue, std::move(lock)))
                         finish();
                 }
 
@@ -597,9 +608,15 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
                 }
 
                 /// Push other tasks to global queue.
-                if (!queue.empty())
+                if (!queue.empty() || !async_queue.empty())
                 {
                     std::unique_lock lock(task_queue_mutex);
+
+                    while (!async_queue.empty() && !finished)
+                    {
+                        async_task_queue.addTask(async_queue.front(), async_queue.front()->processor->schedule());
+                        async_queue.pop();
+                    }
 
                     while (!queue.empty() && !finished)
                     {
@@ -607,7 +624,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
                         queue.pop();
                     }
 
-                    if (!threads_queue.empty() && !finished /* && task_queue.quota() > threads_queue.size()*/)
+                    if (!threads_queue.empty() && !finished)
                     {
                         auto thread_to_wake = task_queue.getAnyThreadWithTasks(thread_num + 1 == num_threads ? 0 : (thread_num + 1));
 
@@ -665,6 +682,7 @@ void PipelineExecutor::initializeExecution(size_t num_threads)
         std::lock_guard lock(task_queue_mutex);
 
         Queue queue;
+        Queue async_queue;
         size_t next_thread = 0;
 
         while (!stack.empty())
@@ -672,7 +690,7 @@ void PipelineExecutor::initializeExecution(size_t num_threads)
             UInt64 proc = stack.top();
             stack.pop();
 
-            prepareProcessor(proc, 0, queue, std::unique_lock<std::mutex>(graph->nodes[proc]->status_mutex));
+            prepareProcessor(proc, 0, queue, async_queue, std::unique_lock<std::mutex>(graph->nodes[proc]->status_mutex));
 
             while (!queue.empty())
             {
@@ -682,6 +700,12 @@ void PipelineExecutor::initializeExecution(size_t num_threads)
                 ++next_thread;
                 if (next_thread >= num_threads)
                     next_thread = 0;
+            }
+
+            while (!async_queue.empty())
+            {
+                async_task_queue.addTask(async_queue.front(), async_queue.front()->processor->schedule());
+                async_queue.pop();
             }
         }
     }
@@ -741,6 +765,20 @@ void PipelineExecutor::executeImpl(size_t num_threads)
                     executor_contexts[thread_num]->exception = std::current_exception();
                 }
             });
+        }
+
+        {
+            /// Wait for async tasks.
+            std::unique_lock lock(task_queue_mutex);
+            size_t next_thread = 0;
+            while (void * task = async_task_queue.wait(lock))
+            {
+                task_queue.push(static_cast<ExecutingGraph::Node *>(task), next_thread);
+
+                ++next_thread;
+                if (next_thread >= num_threads)
+                    next_thread = 0;
+            }
         }
 
         for (auto & thread : threads)
