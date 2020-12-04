@@ -109,7 +109,7 @@ struct SortCursorImpl
         permutation = perm;
     }
 
-    size_t getPos() const
+    size_t getRow() const
     {
         if (permutation)
             return (*permutation)[pos];
@@ -146,7 +146,7 @@ struct SortCursorHelper
 
     bool ALWAYS_INLINE greater(const SortCursorHelper & rhs) const
     {
-        return derived().greaterAt(rhs.derived(), impl->getPos(), rhs.impl->getPos());
+        return derived().greaterAt(rhs.derived(), impl->getRow(), rhs.impl->getRow());
     }
 
     /// Inverted so that the priority queue elements are removed in ascending order.
