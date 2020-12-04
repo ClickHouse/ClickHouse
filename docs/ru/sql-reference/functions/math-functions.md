@@ -403,6 +403,6 @@ SELECT log1p(0);
 
 **Смотрите также**
 
--   [log(x)](../../sql-reference/functions/math-functions.md#logx-lnx)
+-   [log(x)](../../sql-reference/functions/math-functions.md#logx)
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/math_functions/) <!--hide-->
