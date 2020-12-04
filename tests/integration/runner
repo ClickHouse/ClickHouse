@@ -101,7 +101,7 @@ if __name__ == "__main__":
         cfg=args.configs_dir,
         pth=args.clickhouse_root,
         opts=' '.join(args.pytest_args),
-        img=DIND_INTEGRATION_TESTS_IMAGE_NAME,
+        img=DIND_INTEGRATION_TESTS_IMAGE_NAME + ":9624",
         name=CONTAINER_NAME,
         command=args.command
     )
