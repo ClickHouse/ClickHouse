@@ -35,7 +35,7 @@ public:
     Poco::Net::Socket & getSocket() { return socket; }
 
 private:
-    boost::context::fiber * fiber;
+    boost::context::fiber * fiber = nullptr;
 };
 
 }

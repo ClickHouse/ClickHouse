@@ -91,7 +91,7 @@ std::optional<Chunk> RemoteSource::tryGenerate()
 void RemoteSource::onCancel()
 {
     was_query_canceled = true;
-    query_executor->cancel();
+    query_executor->cancel(&read_context);
 }
 
 

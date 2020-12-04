@@ -67,7 +67,7 @@ public:
     /// Without locking, because sendCancel() does not change the state of the replicas.
     bool hasActiveConnections() const { return active_connection_count > 0; }
 
-    void setFiber(boost::context::fiber * fiber) { current_connection->setFiber(fiber); }
+    void setFiber(boost::context::fiber * fiber_) { fiber = fiber_; }
     Poco::Net::Socket & getSocket() { return current_connection->getSocket(); }
 
 private:
@@ -108,6 +108,8 @@ private:
     /// A mutex for the sendCancel function to execute safely
     /// in separate thread.
     mutable std::mutex cancel_mutex;
+
+    boost::context::fiber * fiber = nullptr;
 };
 
 }

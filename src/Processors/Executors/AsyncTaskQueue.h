@@ -23,6 +23,9 @@ public:
     /// Add new task to queue.
     void addTask(void * data, int fd);
 
+    /// Remove task.
+    void removeTask(int fd) const;
+
     /// Wait for any descriptor. If no descriptors in queue, blocks.
     /// Returns ptr which was inserted into queue or nullptr if finished was called.
     /// Lock is used to wait on condvar.

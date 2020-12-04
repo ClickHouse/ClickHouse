@@ -2,7 +2,7 @@
 #include <Common/Exception.h>
 
 #include <sys/timerfd.h>
-#include <sys/ioctl.h>
+#include <fcntl.h>
 #include <unistd.h>
 
 namespace DB
@@ -21,6 +21,9 @@ TimerDescriptor::TimerDescriptor(int clockid, int flags)
     timer_fd = timerfd_create(clockid, flags);
     if (timer_fd == -1)
         throw Exception(ErrorCodes::CANNOT_CREATE_TIMER, "Cannot create timer_fd descriptor");
+
+    if (-1 == fcntl(timer_fd, F_SETFL, O_NONBLOCK))
+        throwFromErrno("Cannot set O_NONBLOCK for timer_fd", ErrorCodes::CANNOT_FCNTL);
 }
 
 TimerDescriptor::~TimerDescriptor()
@@ -47,22 +50,19 @@ void TimerDescriptor::reset() const
 
 void TimerDescriptor::drain() const
 {
-    int num_bytes_to_read = 0;
-    if (-1 == ioctl(timer_fd, FIONREAD, &num_bytes_to_read))
-        throwFromErrno("Cannot get available bytes form timer_fd", ErrorCodes::CANNOT_FCNTL);
-
-    if (num_bytes_to_read)
+    /// It is expected that socket returns 8 bytes when readable.
+    /// Read in loop anyway cause signal may interrupt read call.
+    uint64_t buf;
+    while (true)
     {
-        /// It is expected that socket returns 8 bytes when readable.
-        /// Read in loop anyway cause signal may interrupt read call.
-        uint64_t buf;
-        while (num_bytes_to_read)
+        ssize_t res = ::read(timer_fd, &buf, sizeof(buf));
+        if (res < 0)
         {
-            ssize_t res = ::read(timer_fd, &buf, sizeof(buf));
-            if (res < 0 && errno != EINTR)
+            if (errno == EAGAIN)
+                break;
+
+            if (errno != EINTR)
                 throwFromErrno("Cannot drain timer_fd", ErrorCodes::CANNOT_READ_FROM_SOCKET);
-            else
-                num_bytes_to_read -= res;
         }
     }
 }

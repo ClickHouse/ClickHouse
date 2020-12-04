@@ -532,6 +532,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
                         throw Exception("Empty task was returned from async task queue", ErrorCodes::LOGICAL_ERROR);
 
                     node = static_cast<ExecutingGraph::Node *>(res);
+                    async_task_queue.removeTask(node->processor->schedule());
                     continue;
                 }
 
@@ -773,7 +774,9 @@ void PipelineExecutor::executeImpl(size_t num_threads)
             size_t next_thread = 0;
             while (void * task = async_task_queue.wait(lock))
             {
-                task_queue.push(static_cast<ExecutingGraph::Node *>(task), next_thread);
+                auto * node = static_cast<ExecutingGraph::Node *>(task);
+                async_task_queue.removeTask(node->processor->schedule());
+                task_queue.push(node, next_thread);
 
                 ++next_thread;
                 if (next_thread >= num_threads)
