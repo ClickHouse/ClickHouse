@@ -3895,7 +3895,7 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
 
 MergeTreeData::AlterConversions MergeTreeData::getAlterConversionsForPart(const MergeTreeDataPartPtr part) const
 {
-    MutationCommands commands = getFirtsAlterMutationCommandsForPart(part);
+    MutationCommands commands = getFirstAlterMutationCommandsForPart(part);
 
     AlterConversions result{};
     for (const auto & command : commands)

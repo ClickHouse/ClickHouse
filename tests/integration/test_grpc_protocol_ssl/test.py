@@ -25,7 +25,7 @@ import clickhouse_grpc_pb2_grpc
 # Utilities
 
 node_ip = '10.5.172.77' # It's important for the node to work at this IP because 'server-cert.pem' requires that (see server-ext.cnf).
-grpc_port = 9001
+grpc_port = 9100
 node_ip_with_grpc_port = node_ip + ':' + str(grpc_port)
 config_dir = os.path.join(SCRIPT_DIR, './configs')
 cluster = ClickHouseCluster(__file__)
@@ -73,15 +73,18 @@ def start_cluster():
 
 # Actual tests
 
+@pytest.mark.skip(reason="Flaky")
 def test_secure_channel():
     with create_secure_channel() as channel:
         assert query("SELECT 'ok'", channel) == "ok\n"
 
+@pytest.mark.skip(reason="Flaky")
 def test_insecure_channel():
     with pytest.raises(grpc.FutureTimeoutError):
         with create_insecure_channel() as channel:
             query("SELECT 'ok'", channel)
 
+@pytest.mark.skip(reason="Flaky")
 def test_wrong_client_certificate():
     with pytest.raises(grpc.FutureTimeoutError):
         with create_insecure_channel() as channel:
