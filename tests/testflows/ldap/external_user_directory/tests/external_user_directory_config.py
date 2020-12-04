@@ -220,15 +220,12 @@ def defined_twice_roles(self, timeout=20):
 
 @TestScenario
 @Requirements(
-    RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Users_Parameters_Roles_Invalid("1.0")
+    RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Users_Parameters_Roles_Invalid("2.0")
 )
 def invalid_role_in_roles(self, timeout=20):
-    """Check that an error is returned when LDAP users try to authenticate
+    """Check that no error is returned when LDAP users try to authenticate
     if an invalid role is specified inside the `roles` section.
     """
-    exitcode = 4
-    message = "DB::Exception: user1: Authentication failed"
-
     servers = {
         "openldap1": {
             "host": "openldap1", "port": "389", "enable_tls": "no",
@@ -241,8 +238,7 @@ def invalid_role_in_roles(self, timeout=20):
         with ldap_external_user_directory("openldap1", roles=["foo"], restart=True):
             with When(f"I login as {user['username']} and execute query"):
                 current().context.node.query("SELECT 1",
-                settings=[("user", user["username"]), ("password", user["password"])],
-                exitcode=exitcode, message=message)
+                    settings=[("user", user["username"]), ("password", user["password"])])
 
 @TestScenario
 @Requirements(
