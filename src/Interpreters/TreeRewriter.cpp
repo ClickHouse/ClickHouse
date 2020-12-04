@@ -380,8 +380,9 @@ std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQu
 
     /// There can not be other aggregate functions within the aggregate functions.
     for (const ASTFunction * node : data.aggregates)
-        for (auto & arg : node->arguments->children)
-            assertNoAggregates(arg, "inside another aggregate function");
+        if (node->arguments)
+            for (auto & arg : node->arguments->children)
+                assertNoAggregates(arg, "inside another aggregate function");
     return data.aggregates;
 }
 
