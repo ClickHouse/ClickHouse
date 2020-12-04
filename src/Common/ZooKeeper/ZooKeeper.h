@@ -314,8 +314,15 @@ public:
         return std::make_shared<EphemeralNodeHolder>(path, zookeeper, false, false, "");
     }
 
+    void reset()
+    {
+        need_remove = false;
+    }
+
     ~EphemeralNodeHolder()
     {
+        if (!need_remove)
+            return;
         try
         {
             zookeeper.tryRemove(path);
@@ -331,6 +338,7 @@ private:
     std::string path;
     ZooKeeper & zookeeper;
     CurrentMetrics::Increment metric_increment{CurrentMetrics::EphemeralNode};
+    bool need_remove = true;
 };
 
 using EphemeralNodeHolderPtr = EphemeralNodeHolder::Ptr;

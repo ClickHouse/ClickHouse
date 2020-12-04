@@ -96,7 +96,7 @@ void DDLTaskBase::parseQueryFromEntry(const Context & context)
     query = parseQuery(parser_query, begin, end, description, 0, context.getSettingsRef().max_parser_depth);
 }
 
-std::unique_ptr<Context> DDLTaskBase::makeQueryContext(Context & from_context) const
+std::unique_ptr<Context> DDLTaskBase::makeQueryContext(Context & from_context)
 {
     auto query_context = std::make_unique<Context>(from_context);
     query_context->makeQueryContext();
@@ -293,7 +293,7 @@ String DatabaseReplicatedTask::getShardID() const
     return database->shard_name;
 }
 
-std::unique_ptr<Context> DatabaseReplicatedTask::makeQueryContext(Context & from_context) const
+std::unique_ptr<Context> DatabaseReplicatedTask::makeQueryContext(Context & from_context)
 {
     auto query_context = DDLTaskBase::makeQueryContext(from_context);
     query_context->getClientInfo().query_kind = ClientInfo::QueryKind::REPLICATED_LOG_QUERY; //FIXME why do we need separate query kind?
@@ -309,14 +309,17 @@ std::unique_ptr<Context> DatabaseReplicatedTask::makeQueryContext(Context & from
     {
         txn->ops.emplace_back(zkutil::makeRemoveRequest(entry_path + "/try", -1));
         txn->ops.emplace_back(zkutil::makeCreateRequest(entry_path + "/committed", host_id_str, zkutil::CreateMode::Persistent));
-        txn->ops.emplace_back(zkutil::makeRemoveRequest(getActiveNodePath(), -1));
+        //txn->ops.emplace_back(zkutil::makeRemoveRequest(getActiveNodePath(), -1));
         txn->ops.emplace_back(zkutil::makeSetRequest(database->zookeeper_path + "/max_log_ptr", toString(getLogEntryNumber(entry_name)), -1));
     }
 
-    if (execute_on_leader)
-        txn->ops.emplace_back(zkutil::makeCreateRequest(getShardNodePath() + "/executed", host_id_str, zkutil::CreateMode::Persistent));
-    txn->ops.emplace_back(zkutil::makeCreateRequest(getFinishedNodePath(), execution_status.serializeText(), zkutil::CreateMode::Persistent));
+    //if (execute_on_leader)
+    //    txn->ops.emplace_back(zkutil::makeCreateRequest(getShardNodePath() + "/executed", host_id_str, zkutil::CreateMode::Persistent));
+    //txn->ops.emplace_back(zkutil::makeCreateRequest(getFinishedNodePath(), execution_status.serializeText(), zkutil::CreateMode::Persistent));
     txn->ops.emplace_back(zkutil::makeSetRequest(database->replica_path + "/log_ptr", toString(getLogEntryNumber(entry_name)), -1));
+
+    std::move(ops.begin(), ops.end(), std::back_inserter(txn->ops));
+    ops.clear();
 
     return query_context;
 }
@@ -338,7 +341,10 @@ UInt32 DatabaseReplicatedTask::getLogEntryNumber(const String & log_entry_name)
 
 void MetadataTransaction::commit()
 {
+    assert(state == CREATED);
+    state = FAILED;
     current_zookeeper->multi(ops);
+    state = COMMITED;
 }
 
 }

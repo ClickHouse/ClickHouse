@@ -38,6 +38,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
     extern const int UNFINISHED;
+    extern const int NOT_A_LEADER;
+    extern const int KEEPER_EXCEPTION;
+    extern const int CANNOT_ASSIGN_ALTER;
+    extern const int CANNOT_ALLOCATE_MEMORY;
+    extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
 
@@ -295,6 +300,19 @@ void DDLWorker::scheduleTasks()
     LOG_DEBUG(log, "Scheduling tasks");
     auto zookeeper = tryGetZooKeeper();
 
+    for (auto & task : current_tasks)
+    {
+        /// Main thread of DDLWorker was restarted, probably due to lost connection with ZooKeeper.
+        /// We have some unfinished tasks. To avoid duplication of some queries, try to write execution status.
+        bool status_written = task->ops.empty();
+        bool task_still_exists = zookeeper->exists(task->entry_path);
+        if (task->was_executed && !status_written && task_still_exists)
+        {
+            assert(!zookeeper->exists(task->getFinishedNodePath()));
+            processTask(*task);
+        }
+    }
+
     Strings queue_nodes = zookeeper->getChildren(queue_dir, nullptr, queue_updated_event);
     filterAndSortQueueNodes(queue_nodes);
     if (queue_nodes.empty())
@@ -304,10 +322,16 @@ void DDLWorker::scheduleTasks()
     }
 
     bool server_startup = current_tasks.empty();
+    auto begin_node = queue_nodes.begin();
 
-    auto begin_node = server_startup
-        ? queue_nodes.begin()
-        : std::upper_bound(queue_nodes.begin(), queue_nodes.end(), current_tasks.back()->entry_name);
+    if (!server_startup)
+    {
+        /// We will recheck status of last executed tasks. It's useful if main thread was just restarted.
+        auto & min_task = *std::min_element(current_tasks.begin(), current_tasks.end());
+        begin_node = std::upper_bound(queue_nodes.begin(), queue_nodes.end(), min_task->entry_name);
+        current_tasks.clear();
+        //FIXME better way of maintaning current tasks list and min_task name;
+    }
 
     for (auto it = begin_node; it != queue_nodes.end() && !stop_flag; ++it)
     {
@@ -319,8 +343,8 @@ void DDLWorker::scheduleTasks()
         if (!task)
         {
             LOG_DEBUG(log, "Will not execute task {}: {}", entry_name, reason);
-            task->was_executed = true;
-            saveTask(std::move(task)); //FIXME questionable
+            //task->was_executed = true;
+            //saveTask(std::move(task));
             continue;
         }
 
@@ -343,16 +367,17 @@ void DDLWorker::scheduleTasks()
 
 DDLTaskBase & DDLWorker::saveTask(DDLTaskPtr && task)
 {
-    if (current_tasks.size() == pool_size)
-    {
-        assert(current_tasks.front()->was_executed);
-        current_tasks.pop_front();
-    }
+    //assert(current_tasks.size() <= pool_size + 1);
+    //if (current_tasks.size() == pool_size)
+    //{
+    //    assert(current_tasks.front()->ops.empty()); //FIXME
+    //    current_tasks.pop_front();
+    //}
     current_tasks.emplace_back(std::move(task));
     return *current_tasks.back();
 }
 
-bool DDLWorker::tryExecuteQuery(const String & query, const DDLTaskBase & task, ExecutionStatus & status)
+bool DDLWorker::tryExecuteQuery(const String & query, DDLTaskBase & task)
 {
     /// Add special comment at the start of query to easily identify DDL-produced queries in query_log
     String query_prefix = "/* ddl_entry=" + task.entry_name + " */ ";
@@ -367,15 +392,34 @@ bool DDLWorker::tryExecuteQuery(const String & query, const DDLTaskBase & task, 
         auto query_context = task.makeQueryContext(context);
         executeQuery(istr, ostr, false, *query_context, {});
     }
-    catch (...)
+    catch (const DB::Exception & e)
     {
-        status = ExecutionStatus::fromCurrentException();
+        task.execution_status = ExecutionStatus::fromCurrentException();
         tryLogCurrentException(log, "Query " + query + " wasn't finished successfully");
 
+        /// We use return value of tryExecuteQuery(...) in tryExecuteQueryOnLeaderReplica(...) to determine
+        /// if replica has stopped being leader and we should retry query.
+        /// However, for the majority of exceptions there is no sense to retry, because most likely we will just
+        /// get the same exception again. So we return false only for several special exception codes,
+        /// and consider query as executed with status "failed" and return true in other cases.
+        bool no_sense_to_retry = e.code() != ErrorCodes::KEEPER_EXCEPTION &&
+                                 e.code() != ErrorCodes::NOT_A_LEADER &&
+                                 e.code() != ErrorCodes::CANNOT_ASSIGN_ALTER &&
+                                 e.code() != ErrorCodes::CANNOT_ALLOCATE_MEMORY &&
+                                 e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED;
+        return no_sense_to_retry;
+    }
+    catch (...)
+    {
+        task.execution_status = ExecutionStatus::fromCurrentException();
+        tryLogCurrentException(log, "Query " + query + " wasn't finished successfully");
+
+        /// We don't know what exactly happened, but maybe it's Poco::NetException or std::bad_alloc,
+        /// so we consider unknown exception as retryable error.
         return false;
     }
 
-    status = ExecutionStatus(0);
+    task.execution_status = ExecutionStatus(0);
     LOG_DEBUG(log, "Executed query: {}", query);
 
     return true;
@@ -405,19 +449,18 @@ void DDLWorker::processTask(DDLTaskBase & task)
     String finished_node_path = task.getFinishedNodePath();
 
     String dummy;
-    auto code = zookeeper->tryCreate(active_node_path, "", zkutil::CreateMode::Ephemeral, dummy);
+    zookeeper->createAncestors(active_node_path);
+    auto active_node = zkutil::EphemeralNodeHolder::create(active_node_path, *zookeeper, "");
 
-    if (code == Coordination::Error::ZNONODE)
+    if (!task.was_executed)
     {
-        /// There is no parent
-        createStatusDirs(task.entry_path, zookeeper);
-        zookeeper->create(active_node_path, "", zkutil::CreateMode::Ephemeral);
-    }
-    else
-        throw Coordination::Exception(code, active_node_path);
+        /// If table and database engine supports it, they will execute task.ops by their own in a single transaction
+        /// with other zk operations (such as appending something to ReplicatedMergeTree log, or
+        /// updating metadata in Replicated database), so we make create request for finished_node_path with status "0",
+        /// which means that query executed successfully.
+        task.ops.emplace_back(zkutil::makeRemoveRequest(active_node_path, -1));
+        task.ops.emplace_back(zkutil::makeCreateRequest(finished_node_path, "0", zkutil::CreateMode::Persistent));
 
-    if (!task.was_executed)     // FIXME always true
-    {
         try
         {
             String rewritten_query = queryToString(task.query);
@@ -439,7 +482,7 @@ void DDLWorker::processTask(DDLTaskBase & task)
             if (task.execute_on_leader)
                 tryExecuteQueryOnLeaderReplica(task, storage, rewritten_query, task.entry_path, zookeeper);
             else
-                tryExecuteQuery(rewritten_query, task, task.execution_status);
+                tryExecuteQuery(rewritten_query, task);
         }
         catch (const Coordination::Exception &)
         {
@@ -451,25 +494,35 @@ void DDLWorker::processTask(DDLTaskBase & task)
             task.execution_status = ExecutionStatus::fromCurrentException("An error occurred before execution");
         }
 
+        if (task.execution_status.code != 0)
+        {
+            bool status_written_by_table_or_db = task.ops.empty();
+            if (status_written_by_table_or_db)
+            {
+                throw Exception(ErrorCodes::UNFINISHED, "Unexpected error: {}", task.execution_status.serializeText());
+            }
+            else
+            {
+                /// task.ops where not executed by table or database engine, se DDLWorker is responsible for
+                /// writing query execution status into ZooKeeper.
+                task.ops.emplace_back(zkutil::makeSetRequest(finished_node_path, task.execution_status.serializeText(), -1));
+            }
+        }
+
         /// We need to distinguish ZK errors occurred before and after query executing
         task.was_executed = true;
     }
 
     /// FIXME: if server fails right here, the task will be executed twice. We need WAL here.
-    /// Another possible issue: if ZooKeeper session is lost here, we will recover connection and execute the task second time.
+    /// If ZooKeeper connection is lost here, we will try again to write query status.
 
-
-
-    /// Delete active flag and create finish flag
-    Coordination::Requests ops;
-    ops.emplace_back(zkutil::makeRemoveRequest(active_node_path, -1));
-    ops.emplace_back(zkutil::makeCreateRequest(finished_node_path, task.execution_status.serializeText(), zkutil::CreateMode::Persistent));
-
-    //FIXME replace with multi(...) or use MetadataTransaction
-    Coordination::Responses responses;
-    auto res = zookeeper->tryMulti(ops, responses);
-    if (res != Coordination::Error::ZNODEEXISTS && res != Coordination::Error::ZNONODE)
-        zkutil::KeeperMultiException::check(res, ops, responses);
+    bool status_written = task.ops.empty();
+    if (!status_written)
+    {
+        zookeeper->multi(task.ops);
+        active_node->reset();
+        task.ops.clear();
+    }
 }
 
 
@@ -496,12 +549,16 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
 
     /// If we will develop new replicated storage
     if (!replicated_storage)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Storage type '{}' is not supported by distributed DDL", storage->getName());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage type '{}' is not supported by distributed DDL", storage->getName());
 
     String shard_path = task.getShardNodePath();
     String is_executed_path = shard_path + "/executed";
     String tries_to_execute_path = shard_path + "/tries_to_execute";
     zookeeper->createAncestors(shard_path + "/");
+
+    /// Leader replica creates is_executed_path node on successful query execution.
+    /// We will remove create_shard_flag from zk operations list, if current replica is just waiting for leader to execute the query.
+    auto create_shard_flag = zkutil::makeCreateRequest(is_executed_path, task.host_id_str, zkutil::CreateMode::Persistent);
 
     /// Node exists, or we will create or we will get an exception
     zookeeper->tryCreate(tries_to_execute_path, "0", zkutil::CreateMode::Persistent);
@@ -526,7 +583,9 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
 
     Stopwatch stopwatch;
 
-    bool executed_by_leader = false;
+    bool executed_by_us = false;
+    bool executed_by_other_leader = false;
+
     /// Defensive programming. One hour is more than enough to execute almost all DDL queries.
     /// If it will be very long query like ALTER DELETE for a huge table it's still will be executed,
     /// but DDL worker can continue processing other queries.
@@ -544,7 +603,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
             if (zookeeper->tryGet(is_executed_path, executed_by))
             {
                 LOG_DEBUG(log, "Task {} has already been executed by replica ({}) of the same shard.", task.entry_name, executed_by);
-                executed_by_leader = true;
+                executed_by_other_leader = true;
                 break;
             }
 
@@ -555,13 +614,14 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
 
             zookeeper->set(tries_to_execute_path, toString(counter + 1));
 
+            task.ops.push_back(create_shard_flag);
+            SCOPE_EXIT({ if (!executed_by_us && !task.ops.empty()) task.ops.pop_back(); });
+
             /// If the leader will unexpectedly changed this method will return false
             /// and on the next iteration new leader will take lock
-            if (tryExecuteQuery(rewritten_query, task, task.execution_status))
+            if (tryExecuteQuery(rewritten_query, task))
             {
-                //FIXME replace with create(...) or remove and use MetadataTransaction
-                zookeeper->createIfNotExists(is_executed_path, task.host_id_str);
-                executed_by_leader = true;
+                executed_by_us = true;
                 break;
             }
 
@@ -572,7 +632,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
         if (event->tryWait(std::uniform_int_distribution<int>(0, 1000)(rng)))
         {
             LOG_DEBUG(log, "Task {} has already been executed by replica ({}) of the same shard.", task.entry_name, zookeeper->get(is_executed_path));
-            executed_by_leader = true;
+            executed_by_other_leader = true;
             break;
         }
         else
@@ -593,8 +653,10 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
         }
     }
 
+    assert(!(executed_by_us && executed_by_other_leader));
+
     /// Not executed by leader so was not executed at all
-    if (!executed_by_leader)
+    if (!executed_by_us && !executed_by_other_leader)
     {
         /// If we failed with timeout
         if (stopwatch.elapsedSeconds() >= MAX_EXECUTION_TIMEOUT_SEC)
@@ -610,7 +672,11 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
         return false;
     }
 
-    LOG_DEBUG(log, "Task {} has already been executed by replica ({}) of the same shard.", task.entry_name, zookeeper->get(is_executed_path));
+    if (executed_by_us)
+        LOG_DEBUG(log, "Task {} executed by current replica", task.entry_name);
+    else // if (executed_by_other_leader)
+        LOG_DEBUG(log, "Task {} has already been executed by replica ({}) of the same shard.", task.entry_name, zookeeper->get(is_executed_path));
+
     return true;
 }
 
@@ -816,8 +882,16 @@ void DDLWorker::runMainThread()
             else
             {
                 LOG_ERROR(log, "Unexpected ZooKeeper error: {}.", getCurrentExceptionMessage(true));
-                assert(false);
+                //assert(false);
             }
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::LOGICAL_ERROR)
+                throw;  /// Something terrible happened. Will terminate DDLWorker.
+
+            tryLogCurrentException(log, "Unexpected error, will try to restart main thread:");
+            initialized = false;
         }
         catch (...)
         {

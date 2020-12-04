@@ -89,7 +89,7 @@ protected:
         const String & node_path,
         const ZooKeeperPtr & zookeeper);
 
-    bool tryExecuteQuery(const String & query, const DDLTaskBase & task, ExecutionStatus & status);
+    bool tryExecuteQuery(const String & query, DDLTaskBase & task);
 
     /// Checks and cleanups queue's nodes
     void cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zookeeper);
