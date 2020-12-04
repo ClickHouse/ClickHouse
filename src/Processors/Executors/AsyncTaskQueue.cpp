@@ -40,7 +40,7 @@ void AsyncTaskQueue::addTask(void * data, int fd)
         condvar.notify_one();
 }
 
-void * AsyncTaskQueue::wait(std::unique_lock<std::mutex> lock)
+void * AsyncTaskQueue::wait(std::unique_lock<std::mutex> & lock)
 {
     condvar.wait(lock, [&] { return !empty() || is_finished; });
 
