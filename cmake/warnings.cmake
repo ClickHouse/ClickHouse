@@ -23,8 +23,8 @@ option (WEVERYTHING "Enable -Weverything option with some exceptions." ON)
 
 # Control maximum size of stack frames. It can be important if the code is run in fibers with small stack size.
 # Only in release build because debug has too large stack frames.
-if ((NOT CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG") AND (NOT SANITIZE))
-    add_warning(frame-larger-than=32768)
+if ((NOT CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG") AND (NOT SANITIZE) AND (NOT CMAKE_CXX_COMPILER_ID MATCHES "AppleClang"))
+    add_warning(frame-larger-than=65536)
 endif ()
 
 if (COMPILER_CLANG)

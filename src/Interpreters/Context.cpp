@@ -1127,8 +1127,14 @@ void Context::setCurrentQueryId(const String & query_id)
     random.words.a = thread_local_rng(); //-V656
     random.words.b = thread_local_rng(); //-V656
 
-    if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
-        && client_info.opentelemetry_trace_id == 0)
+    if (client_info.client_trace_context.trace_id != 0)
+    {
+        // Use the OpenTelemetry trace context we received from the client, and
+        // create a new span for the query.
+        query_trace_context = client_info.client_trace_context;
+        query_trace_context.span_id = thread_local_rng();
+    }
+    else if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
         // If this is an initial query without any parent OpenTelemetry trace, we
         // might start the trace ourselves, with some configurable probability.
@@ -1138,19 +1144,11 @@ void Context::setCurrentQueryId(const String & query_id)
         if (should_start_trace(thread_local_rng))
         {
             // Use the randomly generated default query id as the new trace id.
-            client_info.opentelemetry_trace_id = random.uuid;
-            client_info.opentelemetry_parent_span_id = 0;
-            client_info.opentelemetry_span_id = thread_local_rng();
+            query_trace_context.trace_id = random.uuid;
+            query_trace_context.span_id = thread_local_rng();
             // Mark this trace as sampled in the flags.
-            client_info.opentelemetry_trace_flags = 1;
+            query_trace_context.trace_flags = 1;
         }
-    }
-    else
-    {
-        // The incoming request has an OpenTelemtry trace context. Its span id
-        // becomes our parent span id.
-        client_info.opentelemetry_parent_span_id = client_info.opentelemetry_span_id;
-        client_info.opentelemetry_span_id = thread_local_rng();
     }
 
     String query_id_to_set = query_id;
@@ -1574,6 +1572,10 @@ bool Context::hasZooKeeper() const
     return getConfigRef().has("zookeeper");
 }
 
+bool Context::hasAuxiliaryZooKeeper(const String & name) const
+{
+    return getConfigRef().has("auxiliary_zookeepers." + name);
+}
 
 void Context::setInterserverIOAddress(const String & host, UInt16 port)
 {
@@ -2013,7 +2015,7 @@ void Context::checkCanBeDropped(const String & database, const String & table, c
                     "1. Size ({}) is greater than max_[table/partition]_size_to_drop ({})\n"
                     "2. File '{}' intended to force DROP {}\n"
                     "How to fix this:\n"
-                    "1. Either increase (or set to zero) max_[table/partition]_size_to_drop in server config\n",
+                    "1. Either increase (or set to zero) max_[table/partition]_size_to_drop in server config\n"
                     "2. Either create forcing file {} and make sure that ClickHouse has write permission for it.\n"
                     "Example:\nsudo touch '{}' && sudo chmod 666 '{}'",
                     backQuoteIfNeed(database), backQuoteIfNeed(table),

@@ -3,11 +3,16 @@ OWNER(g:clickhouse)
 
 LIBRARY()
 
+ADDINCL(
+    contrib/libs/zstd
+)
+
 PEERDIR(
     clickhouse/src/Common
     contrib/libs/brotli/dec
     contrib/libs/brotli/enc
     contrib/libs/poco/NetSSL_OpenSSL
+    contrib/libs/zstd
 )
 
 
@@ -58,6 +63,8 @@ SRCS(
     WriteHelpers.cpp
     ZlibDeflatingWriteBuffer.cpp
     ZlibInflatingReadBuffer.cpp
+    ZstdDeflatingWriteBuffer.cpp
+    ZstdInflatingReadBuffer.cpp
     copyData.cpp
     createReadBufferFromFileBase.cpp
     createWriteBufferFromFileBase.cpp

@@ -21,7 +21,8 @@ class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
 
-/** Creator have arguments: name of aggregate function, types of arguments, values of parameters.
+/**
+ * The invoker has arguments: name of aggregate function, types of arguments, values of parameters.
  * Parameters are for "parametric" aggregate functions.
  * For example, in quantileWeighted(0.9)(x, weight), 0.9 is "parameter" and x, weight are "arguments".
  */
@@ -87,7 +88,6 @@ private:
 
     std::optional<AggregateFunctionProperties> tryGetPropertiesImpl(const String & name) const;
 
-private:
     using AggregateFunctions = std::unordered_map<String, Value>;
 
     AggregateFunctions aggregate_functions;

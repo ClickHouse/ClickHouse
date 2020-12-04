@@ -13,10 +13,18 @@ def feature(self):
         try:
             run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.insert", "feature"), flags=TE), {})
             run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.select", "feature"), flags=TE), {})
-            run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.show_tables", "feature"), flags=TE), {})
             run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.public_tables", "feature"), flags=TE), {})
             run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.distributed_table", "feature"), flags=TE), {})
             run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.grant_option", "feature"), flags=TE), {})
+            run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.truncate", "feature"), flags=TE), {})
+            run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.optimize", "feature"), flags=TE), {})
+            run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.kill_query", "feature"), flags=TE), {})
+            run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.kill_mutation", "feature"), flags=TE), {})
+
+            run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.show.show_tables", "feature"), flags=TE), {})
+            run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.show.show_dictionaries", "feature"), flags=TE), {})
+            run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.show.show_databases", "feature"), flags=TE), {})
+            run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.show.show_columns", "feature"), flags=TE), {})
 
             run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.alter.alter_column", "feature"), flags=TE), {})
             run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.alter.alter_index", "feature"), flags=TE), {})
