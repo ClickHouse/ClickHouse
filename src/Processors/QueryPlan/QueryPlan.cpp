@@ -488,6 +488,7 @@ static bool tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Node *
 {
     auto & parent = parent_node->step;
     auto & child = child_node->step;
+    /// TODO: FilterStep
     auto * parent_expr = typeid_cast<ExpressionStep *>(parent.get());
     auto * child_expr = typeid_cast<ExpressionStep *>(child.get());
 
