@@ -107,7 +107,7 @@ public:
         bool final,
         const StorageMetadataPtr & metadata_snapshot,
         String * out_disable_reason = nullptr,
-        const Context * context = nullptr);
+        bool optimize_skip_merged_partitions = false);
 
     /** Merge the parts.
       * If `reservation != nullptr`, now and then reduces the size of the reserved space

@@ -366,7 +366,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectAllPartsToMergeWithinParti
     bool final,
     const StorageMetadataPtr & metadata_snapshot,
     String * out_disable_reason,
-    const Context * context)
+    bool optimize_skip_merged_partitions)
 {
     MergeTreeData::DataPartsVector parts = selectAllPartsFromPartition(partition_id);
 
@@ -382,7 +382,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectAllPartsToMergeWithinParti
 
     /// If final, optimize_skip_merged_partitions is true and we have only one part in partition with level > 0
     /// than we don't select it to merge. But if there are some expired TTL then merge is needed
-    if (final && context && context->getSettingsRef().optimize_skip_merged_partitions && parts.size() == 1 && parts[0]->info.level > 0 &&
+    if (final && optimize_skip_merged_partitions && parts.size() == 1 && parts[0]->info.level > 0 &&
         (!metadata_snapshot->hasAnyTTL() || parts[0]->checkAllTTLCalculated(metadata_snapshot)))
     {
         return SelectPartsDecision::NOTHING_TO_MERGE;
