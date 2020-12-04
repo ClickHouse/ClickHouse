@@ -19,10 +19,14 @@ using ProgressCallback = std::function<void(const Progress & progress)>;
 struct BlockStreamProfileInfo;
 using ProfileInfoCallback = std::function<void(const BlockStreamProfileInfo & info)>;
 
+class RemoteQueryExecutorReadContext;
+
 /// This class allows one to launch queries on remote replicas of one shard and get results
 class RemoteQueryExecutor
 {
 public:
+    using ReadContext = RemoteQueryExecutorReadContext;
+
     /// Takes already set connection.
     /// If `settings` is nullptr, settings will be taken from context.
     RemoteQueryExecutor(
@@ -57,7 +61,6 @@ public:
 
     /// Async variant of read. Returns ready block or file descriptor which may be used for polling.
     /// ReadContext is an internal read state. Pass empty ptr first time, reuse created one for every call.
-    struct ReadContext;
     std::variant<Block, int> read(std::unique_ptr<ReadContext> & read_context);
 
     /// Receive all remain packets and finish query.
