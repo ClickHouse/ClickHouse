@@ -1,5 +1,5 @@
 733	733
-CREATE TABLE default.alter_table\n(\n    `key` UInt64,\n    `value` LowCardinality(String)\n)\nENGINE = MergeTree\nORDER BY key\nSETTINGS index_granularity = 8192
+CREATE TABLE default.alter_table (`key` UInt64, `value` LowCardinality(String)) ENGINE = MergeTree ORDER BY key SETTINGS index_granularity = 8192
 all_1_1_0
 all_2_2_0
 all_3_3_0
