@@ -137,7 +137,6 @@ Block RabbitMQBlockInputStream::readImpl()
                 }
                 case IProcessor::Status::NeedData:
                 case IProcessor::Status::Async:
-                case IProcessor::Status::Wait:
                 case IProcessor::Status::ExpandPipeline:
                     throw Exception("Source processor returned status " + IProcessor::statusToName(status), ErrorCodes::LOGICAL_ERROR);
             }
