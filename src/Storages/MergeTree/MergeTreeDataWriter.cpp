@@ -202,7 +202,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block
     return result;
 }
 
-Block MergeTreeDataWriter::mergeBlock(const Block & block, SortDescription sort_description, Names & partition_key_columns, IColumn::Permutation ** permutation)
+Block MergeTreeDataWriter::mergeBlock(const Block & block, SortDescription sort_description, Names & partition_key_columns, IColumn::Permutation *& permutation)
 {
     size_t block_size = block.rows();
 
@@ -245,23 +245,31 @@ Block MergeTreeDataWriter::mergeBlock(const Block & block, SortDescription sort_
 
     IMergingAlgorithm::Input input;
     input.set(std::move(chunk));
-    input.permutation = *permutation;
+    input.permutation = permutation;
 
     IMergingAlgorithm::Inputs inputs;
     inputs.push_back(std::move(input));
     merging_algorithm->initialize(std::move(inputs));
 
     IMergingAlgorithm::Status status = merging_algorithm->merge();
-    while (!status.is_finished)
-        status = merging_algorithm->merge();
+
+    /// Check that after first merge merging_algorithm is waiting for data from input 0.
+    if (status.required_source != 0)
+        return block;
+
+    status = merging_algorithm->merge();
+
+    /// Check that merge is finished.
+    if (!status.is_finished)
+        return block;
 
     /// Merged Block is sorted and we don't need to use permutation anymore
-    *permutation = nullptr;
+    permutation = nullptr;
 
     return block.cloneWithColumns(status.chunk.getColumns());
 }
 
-MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPartition & block_with_partition, const StorageMetadataPtr & metadata_snapshot, const Context & context)
+MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPartition & block_with_partition, const StorageMetadataPtr & metadata_snapshot, bool optimize_on_insert)
 {
     Block & block = block_with_partition.block;
 
@@ -324,8 +332,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     }
 
     Names partition_key_columns = metadata_snapshot->getPartitionKey().column_names;
-    if (context.getSettings().optimize_on_insert)
-        block = mergeBlock(block, sort_description, partition_key_columns, &perm_ptr);
+    if (optimize_on_insert)
+        block = mergeBlock(block, sort_description, partition_key_columns, perm_ptr);
 
     /// Size of part would not be greater than block.bytes() + epsilon
     size_t expected_size = block.bytes();
