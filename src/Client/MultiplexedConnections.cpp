@@ -249,7 +249,13 @@ Packet MultiplexedConnections::receivePacketUnlocked()
     if (current_connection == nullptr)
         throw Exception("Logical error: no available replica", ErrorCodes::NO_AVAILABLE_REPLICA);
 
+    if (fiber)
+        current_connection->setFiber(fiber);
+
     Packet packet = current_connection->receivePacket();
+
+    fiber = nullptr;
+    current_connection->setFiber(fiber);
 
     switch (packet.type)
     {

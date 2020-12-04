@@ -29,15 +29,21 @@ void AsyncTaskQueue::addTask(void * data, int fd)
 {
     epoll_event socket_event;
     socket_event.events = EPOLLIN | EPOLLPRI;
-    socket_event.data.fd = fd;
     socket_event.data.ptr = data;
 
-    if (-1 == epoll_ctl(epoll_fd, EPOLL_CTL_ADD, socket_event.data.fd, &socket_event))
+    if (-1 == epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &socket_event))
         throwFromErrno("Cannot add socket descriptor to epoll", ErrorCodes::CANNOT_OPEN_FILE);
 
     ++num_tasks;
     if (num_tasks == 1)
         condvar.notify_one();
+}
+
+void AsyncTaskQueue::removeTask(int fd) const
+{
+    epoll_event event;
+    if (-1 == epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, &event))
+        throwFromErrno("Cannot remove socket descriptor to epoll", ErrorCodes::CANNOT_OPEN_FILE);
 }
 
 void * AsyncTaskQueue::wait(std::unique_lock<std::mutex> & lock)
@@ -57,6 +63,7 @@ void * AsyncTaskQueue::wait(std::unique_lock<std::mutex> & lock)
         num_events = epoll_wait(epoll_fd, &event, 1, 0);
         if (num_events == -1)
             throwFromErrno("Failed to epoll_wait", ErrorCodes::CANNOT_READ_FROM_SOCKET);
+
     }
 
     lock.lock();
@@ -67,6 +74,7 @@ void * AsyncTaskQueue::wait(std::unique_lock<std::mutex> & lock)
 void AsyncTaskQueue::finish()
 {
     is_finished = true;
+    num_tasks = 0;
     condvar.notify_one();
 }
 

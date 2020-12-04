@@ -69,7 +69,7 @@ public:
 
     /// Cancel query execution. Sends Cancel packet and ignore others.
     /// This method may be called from separate thread.
-    void cancel();
+    void cancel(std::unique_ptr<ReadContext> * read_context = nullptr);
 
     /// Get totals and extremes if any.
     Block getTotals() { return std::move(totals); }

@@ -219,14 +219,12 @@ std::variant<Block, int> RemoteQueryExecutor::read(std::unique_ptr<ReadContext> 
     }
 
     if (!read_context)
-        ReadContext::initialize(read_context, *multiplexed_connections);
-
-    if (read_context->is_read_in_progress)
-        read_context->checkTimeout();
+        read_context = std::make_unique<ReadContext>(*multiplexed_connections);
 
     do
     {
-        read_context->resumeRoutine();
+        if (!read_context->resumeRoutine())
+            return Block();
 
         if (read_context->is_read_in_progress)
         {
@@ -352,7 +350,7 @@ void RemoteQueryExecutor::finish()
     }
 }
 
-void RemoteQueryExecutor::cancel()
+void RemoteQueryExecutor::cancel(std::unique_ptr<ReadContext> * read_context)
 {
     {
         std::lock_guard lock(external_tables_mutex);
@@ -365,6 +363,9 @@ void RemoteQueryExecutor::cancel()
 
     if (!isQueryPending() || hasThrownException())
         return;
+
+    if (read_context && *read_context)
+        (*read_context)->cancel();
 
     tryCancel("Cancelling query");
 }
