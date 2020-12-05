@@ -5,7 +5,7 @@ toc_title: MaterializeMySQL
 
 # MaterializeMySQL {#materialize-mysql}
 
- Creates the tables, existing in MySQL, in the ClickHouse and inputs the data at the same time. 
+ Creates ClickHouse database with all the tables existing in MySQL, and all the data in those tables. 
 
  ClickHouse server works as MySQL replica. It reads binlog and performs DDL and DML queries.   
 
@@ -19,7 +19,7 @@ ENGINE = MaterializeMySQL('host:port', ['database' | database], 'user', 'passwor
 **Engine Parameters**
 
 -   `host:port` — MySQL server endpoint.
--   `database` — Remote database name.
+-   `database` — MySQL database name.
 -   `user` — MySQL user.
 -   `password` — User password.
 
@@ -34,24 +34,24 @@ ENGINE = MaterializeMySQL('host:port', ['database' | database], 'user', 'passwor
 
 ## Data Types Support {#data_types-support}
 
-| MySQL                            | ClickHouse                                                   |
-|----------------------------------|--------------------------------------------------------------|
-| UNSIGNED TINYINT                 | [UInt8](../../sql-reference/data-types/int-uint.md)          |
-| TINYINT                          | [Int8](../../sql-reference/data-types/int-uint.md)           |
-| UNSIGNED SMALLINT                | [UInt16](../../sql-reference/data-types/int-uint.md)         |
-| SMALLINT                         | [Int16](../../sql-reference/data-types/int-uint.md)          |
-| UNSIGNED INT, UNSIGNED MEDIUMINT | [UInt32](../../sql-reference/data-types/int-uint.md)         |
-| INT, MEDIUMINT                   | [Int32](../../sql-reference/data-types/int-uint.md)          |
-| UNSIGNED BIGINT                  | [UInt64](../../sql-reference/data-types/int-uint.md)         |
-| BIGINT                           | [Int64](../../sql-reference/data-types/int-uint.md)          |
-| FLOAT                            | [Float32](../../sql-reference/data-types/float.md)           |
-| DOUBLE                           | [Float64](../../sql-reference/data-types/float.md)           |
-| DECIMAL                          | [Decimal](../../sql-reference/data-types/decimal.md)           |
-| DATE                             | [Date](../../sql-reference/data-types/date.md)               |
-| DATETIME, TIMESTAMP              | [DateTime](../../sql-reference/data-types/datetime.md)       |
-| BINARY                           | [FixedString](../../sql-reference/data-types/fixedstring.md) |
+| MySQL                   | ClickHouse                                                   |
+|-------------------------|--------------------------------------------------------------|
+| TINY                    | [Int8](../../sql-reference/data-types/int-uint.md)           |
+| SHORT                   | [Int16](../../sql-reference/data-types/int-uint.md)          |
+| INT24                   | [Int32](../../sql-reference/data-types/int-uint.md)          |
+| LONG                    | [UInt32](../../sql-reference/data-types/int-uint.md)         |
+| LONGLONG                | [UInt64](../../sql-reference/data-types/int-uint.md)         |
+| FLOAT                   | [Float32](../../sql-reference/data-types/float.md)           |
+| DOUBLE                  | [Float64](../../sql-reference/data-types/float.md)           |
+| DECIMAL, NEWDECIMAL     | [Decimal](../../sql-reference/data-types/decimal.md)         |
+| DATE, NEWDATE           | [Date](../../sql-reference/data-types/date.md)               |
+| DATETIME, TIMESTAMP     | [DateTime](../../sql-reference/data-types/datetime.md)       |
+| DATETIME2, TIMESTAMP2   | [DateTime64](../../sql-reference/data-types/datetime64.md)   |
+| STRING                  | [String](../../sql-reference/data-types/string.md)           |
+| VARCHAR, VAR_STRING     | [String](../../sql-reference/data-types/string.md)           |
+| BLOB                    | [String](../../sql-reference/data-types/string.md)           |
 
-All other MySQL data types are converted into [String](../../sql-reference/data-types/string.md).
+Other types are not supported. If MySQL table contains a column of such type, ClickHouse throws exception "Unhandled data type" and stops replication.
 
 [Nullable](../../sql-reference/data-types/nullable.md) is supported.
 
@@ -59,7 +59,7 @@ All other MySQL data types are converted into [String](../../sql-reference/data-
 
 ### DDL Queries
 
-MySQL DDL queries are converted into the corresponding ClickHouse [ALTER](../../sql-reference/statements/alter/index.md) statements.
+MySQL DDL queries are converted into the corresponding ClickHouse DDL queries ([ALTER](../../sql-reference/statements/alter/index.md), [CREATE](../../sql-reference/statements/create/index.md), [DROP](../../sql-reference/statements/drop.md), [RENAME](../../sql-reference/statements/rename.md)). If ClickHouse cannot parse some DDL query, the query is ignored.
 
 ### DML Queries
 
@@ -69,7 +69,7 @@ MySql `DELETE` query is converted into `INSERT` with `_sign=-1`.
 
 MySQL `UPDATE` query is converted into `INSERT` with `_sign=-1` and `INSERT` with `_sign=1`.
 
-`SELECT` query specifics refers to the virtual columns usage:
+`SELECT` query has some specifics:
 
 - If `_version` is not specified in the `SELECT` query, [FINAL](../../sql-reference/statements/select/from.md#select-from-final) modifier is used. So only rows with `MAX(_version)` are selected.
 
@@ -143,11 +143,11 @@ SELECT * FROM mysql.test;
 ```
 
 ``` sql
-INSERT INTO mysql_db.mysql_table VALUES (3,4);
+INSERT INTO mysql_db.test VALUES (3,4);
 ```
 
 ``` sql
-SELECT * FROM mysql_db.mysql_table;
+SELECT * FROM mysql_db.test;
 ```
 
 ``` text
