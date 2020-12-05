@@ -74,9 +74,6 @@ try
     if (method == 1) loop<T, readFloatTextPrecise>(in, out);
     if (method == 2) loop<T, readFloatTextFast>(in, out);
     if (method == 3) loop<T, readFloatTextSimple>(in, out);
-    #ifdef USE_FAST_FLOAT
-    if (method == 4) loop<T, readFloatTextWithFastFloat>(in, out);
-    #endif
 
     return 0;
 }
