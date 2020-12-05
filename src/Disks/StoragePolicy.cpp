@@ -21,6 +21,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_DISK;
     extern const int UNKNOWN_POLICY;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_ENOUGH_SPACE;
 }
 
 StoragePolicy::StoragePolicy(
@@ -175,6 +176,14 @@ ReservationPtr StoragePolicy::reserve(UInt64 bytes) const
 }
 
 
+ReservationPtr StoragePolicy::reserveAndCheck(UInt64 bytes) const
+{
+    if (auto res = reserve(bytes, 0))
+        return res;
+    throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Cannot reserve {}, not enough space", ReadableSize(bytes));
+}
+
+
 ReservationPtr StoragePolicy::makeEmptyReservationOnLargestDisk() const
 {
     UInt64 max_space = 0;
@@ -191,7 +200,14 @@ ReservationPtr StoragePolicy::makeEmptyReservationOnLargestDisk() const
             }
         }
     }
-    return max_disk->reserve(0);
+    auto reservation = max_disk->reserve(0);
+    if (!reservation)
+    {
+        /// I'm not sure if it's really a logical error, but exception message
+        /// "Cannot reserve 0 bytes" looks too strange to throw it with another exception code.
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot reserve 0 bytes");
+    }
+    return reservation;
 }
 
 
