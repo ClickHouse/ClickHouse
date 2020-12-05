@@ -243,6 +243,7 @@ target_link_libraries (clickhouse_common_io
             common
             ${DOUBLE_CONVERSION_LIBRARIES}
             ryu
+            dragonbox_to_chars
 )
 
 if(RE2_LIBRARY)

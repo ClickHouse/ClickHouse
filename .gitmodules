@@ -209,3 +209,6 @@
 	path = contrib/abseil-cpp
 	url = https://github.com/ClickHouse-Extras/abseil-cpp.git
 	branch = lts_2020_02_25
+[submodule "contrib/dragonbox"]
+	path = contrib/dragonbox
+	url = https://github.com/kitaisreal/dragonbox.git

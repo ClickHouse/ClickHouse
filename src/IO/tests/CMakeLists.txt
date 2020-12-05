@@ -82,6 +82,7 @@ target_link_libraries (zlib_ng_bug PRIVATE ${ZLIB_LIBRARIES})
 
 add_executable (ryu_test ryu_test.cpp)
 target_link_libraries (ryu_test PRIVATE ryu)
+target_link_libraries (ryu_test PRIVATE dragonbox_to_chars)
 
 add_executable (zstd_buffers zstd_buffers.cpp)
 target_link_libraries (zstd_buffers PRIVATE clickhouse_common_io)
