@@ -775,44 +775,60 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
     String shard_node_name = get_shard_name(task.cluster->getShardsAddresses().at(task.host_shard_num));
     String shard_path = node_path + "/shards/" + shard_node_name;
     String is_executed_path = shard_path + "/executed";
+    String tries_to_execute_path = shard_path + "/tries_to_execute";
     zookeeper->createAncestors(shard_path + "/");
 
-    auto is_already_executed = [&]() -> bool
-    {
-        String executed_by;
-        if (zookeeper->tryGet(is_executed_path, executed_by))
-        {
-            LOG_DEBUG(log, "Task {} has already been executed by leader replica ({}) of the same shard.", task.entry_name, executed_by);
-            return true;
-        }
+    /// Node exists, or we will create or we will get an exception
+    zookeeper->tryCreate(tries_to_execute_path, "0", zkutil::CreateMode::Persistent);
 
-        return false;
-    };
+    static constexpr int MAX_TRIES_TO_EXECUTE = 3;
+    static constexpr int MAX_EXECUTION_TIMEOUT_SEC = 3600;
+
+    String executed_by;
+
+    zkutil::EventPtr event = std::make_shared<Poco::Event>();
+    /// We must use exists request instead of get, because zookeeper will not setup event
+    /// for non existing node after get request
+    if (zookeeper->exists(is_executed_path, nullptr, event))
+    {
+        LOG_DEBUG(log, "Task {} has already been executed by replica ({}) of the same shard.", task.entry_name, zookeeper->get(is_executed_path));
+        return true;
+    }
 
     pcg64 rng(randomSeed());
 
     auto lock = createSimpleZooKeeperLock(zookeeper, shard_path, "lock", task.host_id_str);
-    static const size_t max_tries = 20;
-    bool executed_by_leader = false;
-    for (size_t num_tries = 0; num_tries < max_tries; ++num_tries)
-    {
-        if (is_already_executed())
-        {
-            executed_by_leader = true;
-            break;
-        }
 
+    Stopwatch stopwatch;
+
+    bool executed_by_leader = false;
+    /// Defensive programming. One hour is more than enough to execute almost all DDL queries.
+    /// If it will be very long query like ALTER DELETE for a huge table it's still will be executed,
+    /// but DDL worker can continue processing other queries.
+    while (stopwatch.elapsedSeconds() <= MAX_EXECUTION_TIMEOUT_SEC)
+    {
         StorageReplicatedMergeTree::Status status;
         replicated_storage->getStatus(status);
 
-        /// Leader replica take lock
+        /// Any replica which is leader tries to take lock
         if (status.is_leader && lock->tryLock())
         {
-            if (is_already_executed())
+            /// In replicated merge tree we can have multiple leaders. So we can
+            /// be "leader" and took lock, but another "leader" replica may have
+            /// already executed this task.
+            if (zookeeper->tryGet(is_executed_path, executed_by))
             {
+                LOG_DEBUG(log, "Task {} has already been executed by replica ({}) of the same shard.", task.entry_name, executed_by);
                 executed_by_leader = true;
                 break;
             }
+
+            /// Checking and incrementing counter exclusively.
+            size_t counter = parse<int>(zookeeper->get(tries_to_execute_path));
+            if (counter > MAX_TRIES_TO_EXECUTE)
+                break;
+
+            zookeeper->set(tries_to_execute_path, toString(counter + 1));
 
             /// If the leader will unexpectedly changed this method will return false
             /// and on the next iteration new leader will take lock
@@ -822,20 +838,53 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
                 executed_by_leader = true;
                 break;
             }
+
+            lock->unlock();
         }
 
-        /// Does nothing if wasn't previously locked
-        lock->unlock();
-        std::this_thread::sleep_for(std::chrono::milliseconds(std::uniform_int_distribution<int>(0, 1000)(rng)));
+        /// Waiting for someone who will execute query and change is_executed_path node
+        if (event->tryWait(std::uniform_int_distribution<int>(0, 1000)(rng)))
+        {
+            LOG_DEBUG(log, "Task {} has already been executed by replica ({}) of the same shard.", task.entry_name, zookeeper->get(is_executed_path));
+            executed_by_leader = true;
+            break;
+        }
+        else
+        {
+            String tries_count;
+            zookeeper->tryGet(tries_to_execute_path, tries_count);
+            if (parse<int>(tries_count) > MAX_TRIES_TO_EXECUTE)
+            {
+                /// Nobody will try to execute query again
+                LOG_WARNING(log, "Maximum retries count for task {} exceeded, cannot execute replicated DDL query", task.entry_name);
+                break;
+            }
+            else
+            {
+                /// Will try to wait or execute
+                LOG_TRACE(log, "Task {} still not executed, will try to wait for it or execute ourselves, tries count {}", task.entry_name, tries_count);
+            }
+        }
     }
 
     /// Not executed by leader so was not executed at all
     if (!executed_by_leader)
     {
-        task.execution_status = ExecutionStatus(ErrorCodes::NOT_IMPLEMENTED,
-                                                "Cannot execute replicated DDL query on leader");
+        /// If we failed with timeout
+        if (stopwatch.elapsedSeconds() >= MAX_EXECUTION_TIMEOUT_SEC)
+        {
+            LOG_WARNING(log, "Task {} was not executed by anyone, maximum timeout {} seconds exceeded", task.entry_name, MAX_EXECUTION_TIMEOUT_SEC);
+            task.execution_status = ExecutionStatus(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot execute replicated DDL query, timeout exceeded");
+        }
+        else /// If we exceeded amount of tries
+        {
+            LOG_WARNING(log, "Task {} was not executed by anyone, maximum number of retries exceeded", task.entry_name);
+            task.execution_status = ExecutionStatus(ErrorCodes::UNFINISHED, "Cannot execute replicated DDL query, maximum retires exceeded");
+        }
         return false;
     }
+
+    LOG_DEBUG(log, "Task {} has already been executed by replica ({}) of the same shard.", task.entry_name, zookeeper->get(is_executed_path));
     return true;
 }
 

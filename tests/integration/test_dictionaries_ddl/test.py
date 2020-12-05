@@ -11,6 +11,7 @@ cluster = ClickHouseCluster(__file__, base_configs_dir=os.path.join(SCRIPT_DIR, 
 node1 = cluster.add_instance('node1', with_mysql=True, main_configs=['configs/dictionaries/simple_dictionary.xml'])
 node2 = cluster.add_instance('node2', with_mysql=True, main_configs=['configs/dictionaries/simple_dictionary.xml', 'configs/dictionaries/lazy_load.xml'])
 node3 = cluster.add_instance('node3', main_configs=['configs/dictionaries/dictionary_with_conflict_name.xml'])
+node4 = cluster.add_instance('node4', user_configs=['configs/config_password.xml']) # hardcoded value 33333
 
 
 def create_mysql_conn(user, password, hostname, port):
@@ -32,7 +33,7 @@ def execute_mysql_query(connection, query):
 def started_cluster():
     try:
         cluster.start()
-        for clickhouse in [node1, node2, node3]:
+        for clickhouse in [node1, node2, node3, node4]:
             clickhouse.query("CREATE DATABASE test", user="admin")
             clickhouse.query("CREATE TABLE test.xml_dictionary_table (id UInt64, SomeValue1 UInt8, SomeValue2 String) ENGINE = MergeTree() ORDER BY id", user="admin")
             clickhouse.query("INSERT INTO test.xml_dictionary_table SELECT number, number % 23, hex(number) from numbers(1000)", user="admin")
@@ -241,3 +242,34 @@ def test_dictionary_with_where(started_cluster):
     node1.query("SYSTEM RELOAD DICTIONARY default.special_dict")
 
     assert node1.query("SELECT dictGetString('default.special_dict', 'value1', toUInt64(2))") == 'qweqwe\n'
+
+def test_clickhouse_remote(started_cluster):
+    with pytest.raises(QueryRuntimeException):
+        node3.query("""
+        CREATE DICTIONARY test.clickhouse_remote(
+            id UInt64,
+            SomeValue1 UInt8,
+            SomeValue2 String
+        )
+        PRIMARY KEY id
+        LAYOUT(FLAT())
+        SOURCE(CLICKHOUSE(HOST 'node4' PORT 9000 USER 'default' TABLE 'xml_dictionary_table' DB 'test'))
+        LIFETIME(MIN 1 MAX 10)
+        """)
+        node3.query("system reload dictionaries")
+
+    node3.query("detach dictionary if exists test.clickhouse_remote")
+    node3.query("""
+        CREATE DICTIONARY test.clickhouse_remote(
+            id UInt64,
+            SomeValue1 UInt8,
+            SomeValue2 String
+        )
+        PRIMARY KEY id
+        LAYOUT(FLAT())
+        SOURCE(CLICKHOUSE(HOST 'node4' PORT 9000 USER 'default' PASSWORD 'default' TABLE 'xml_dictionary_table' DB 'test'))
+        LIFETIME(MIN 1 MAX 10)
+        """)
+
+    node3.query("select dictGetUInt8('test.clickhouse_remote', 'SomeValue1', toUInt64(17))") == '17\n'
+    

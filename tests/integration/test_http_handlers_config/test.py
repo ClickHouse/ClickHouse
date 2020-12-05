@@ -121,8 +121,11 @@ def test_defaults_http_handlers():
         assert 200 == cluster.instance.http_request('ping', method='GET').status_code
         assert 'Ok.\n' == cluster.instance.http_request('ping', method='GET').content
 
-        assert 200 == cluster.instance.http_request('replicas_status', method='GET').status_code
-        assert 'Ok.\n' == cluster.instance.http_request('replicas_status', method='GET').content
+        assert 200 == cluster.instance.http_request('replicas_status', method='get').status_code
+        assert 'Ok.\n' == cluster.instance.http_request('replicas_status', method='get').content
+
+        assert 200 == cluster.instance.http_request('replicas_status?verbose=1', method='get').status_code
+        assert '' == cluster.instance.http_request('replicas_status?verbose=1', method='get').content
 
         assert 200 == cluster.instance.http_request('?query=SELECT+1', method='GET').status_code
         assert '1\n' == cluster.instance.http_request('?query=SELECT+1', method='GET').content

@@ -46,6 +46,12 @@ IOutputFormat::Status IOutputFormat::prepare()
 
 void IOutputFormat::work()
 {
+    if (!prefix_written)
+    {
+        doWritePrefix();
+        prefix_written = true;
+    }
+
     if (finished && !finalized)
     {
         if (rows_before_limit_counter && rows_before_limit_counter->hasAppliedLimit())

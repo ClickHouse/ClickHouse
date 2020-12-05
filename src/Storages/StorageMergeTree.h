@@ -128,6 +128,8 @@ private:
       */
     bool merge(bool aggressive, const String & partition_id, bool final, bool deduplicate, String * out_disable_reason = nullptr);
 
+    ActionLock stopMergesAndWait();
+
     BackgroundProcessingPoolTaskResult movePartsTask();
 
     /// Allocate block number for new mutation, write mutation to disk

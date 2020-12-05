@@ -10,7 +10,7 @@ from helpers.cluster import ClickHouseCluster
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 cluster = ClickHouseCluster(__file__, base_configs_dir=os.path.join(SCRIPT_DIR, 'configs'))
-node1 = cluster.add_instance('node1', with_odbc_drivers=True, with_mysql=True, image='yandex/clickhouse-integration-test', main_configs=['configs/dictionaries/sqlite3_odbc_hashed_dictionary.xml', 'configs/dictionaries/sqlite3_odbc_cached_dictionary.xml', 'configs/dictionaries/postgres_odbc_hashed_dictionary.xml'], stay_alive=True)
+node1 = cluster.add_instance('node1', with_odbc_drivers=True, with_mysql=True, main_configs=['configs/dictionaries/sqlite3_odbc_hashed_dictionary.xml', 'configs/dictionaries/sqlite3_odbc_cached_dictionary.xml', 'configs/dictionaries/postgres_odbc_hashed_dictionary.xml'], stay_alive=True)
 
 create_table_sql_template =   """
     CREATE TABLE `clickhouse`.`{}` (
@@ -251,8 +251,11 @@ def test_bridge_dies_with_parent(started_cluster):
         clickhouse_pid = node1.get_process_pid("clickhouse server")
         time.sleep(1)
 
-    time.sleep(1) # just for sure, that odbc-bridge caught signal
-    bridge_pid = node1.get_process_pid("odbc-bridge")
+    for i in range(5):
+        time.sleep(1) # just for sure, that odbc-bridge caught signal
+        bridge_pid = node1.get_process_pid("odbc-bridge")
+        if bridge_pid is None:
+            break
 
     if bridge_pid:
         out = node1.exec_in_container(["gdb", "-p", str(bridge_pid), "--ex", "thread apply all bt", "--ex", "q"], privileged=True, user='root')

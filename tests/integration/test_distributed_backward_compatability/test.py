@@ -8,7 +8,7 @@ from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 
-node_old = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'], image='yandex/clickhouse-server:19.17.8.54', stay_alive=True, with_installed_binary=True)
+node_old = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'], image='yandex/clickhouse-server', tag='19.17.8.54', stay_alive=True, with_installed_binary=True)
 node_new = cluster.add_instance('node2', main_configs=['configs/remote_servers.xml'])
 
 @pytest.fixture(scope="module")

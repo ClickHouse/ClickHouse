@@ -261,6 +261,11 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
             {
                 limit = current_index_offset;
             }
+            else if (skip_index_current_data_mark == index_granularity.getMarksCount())
+            {
+                /// Case, when last granule was exceeded and no new granule was created.
+                limit = rows - prev_pos;
+            }
             else
             {
                 limit = index_granularity.getMarkRows(skip_index_current_data_mark);

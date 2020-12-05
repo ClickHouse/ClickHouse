@@ -145,6 +145,8 @@ protected:
       */
     void getRootActionsNoMakeSet(const ASTPtr & ast, bool no_subqueries, ExpressionActionsPtr & actions, bool only_consts = false);
 
+    void getRootActionsForHaving(const ASTPtr & ast, bool no_subqueries, ExpressionActionsPtr & actions, bool only_consts = false);
+
     /** Add aggregation keys to aggregation_keys, aggregate functions to aggregate_descriptions,
       * Create a set of columns aggregated_columns resulting after the aggregation, if any,
       *  or after all the actions that are normally performed before aggregation.
@@ -174,6 +176,7 @@ struct ExpressionAnalysisResult
     bool remove_where_filter = false;
     bool optimize_read_in_order = false;
     bool optimize_aggregation_in_order = false;
+    bool join_has_delayed_stream = false;
 
     ExpressionActionsPtr before_join;
     ExpressionActionsPtr join;

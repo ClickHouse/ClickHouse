@@ -15,8 +15,8 @@ int main(int, char **)
 {
     using namespace DB;
 
-    IMergeSelector::Partitions partitions(1);
-    IMergeSelector::PartsInPartition & parts = partitions.back();
+    IMergeSelector::PartsRanges partitions(1);
+    IMergeSelector::PartsRange & parts = partitions.back();
 
     SimpleMergeSelector::Settings settings;
 //    settings.base = 2;
@@ -54,7 +54,7 @@ int main(int, char **)
 
     while (parts.size() > 1)
     {
-        IMergeSelector::PartsInPartition selected_parts = selector.select(partitions, 0);
+        IMergeSelector::PartsRange selected_parts = selector.select(partitions, 0);
 
         if (selected_parts.empty())
         {

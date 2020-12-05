@@ -782,9 +782,8 @@ std::string StorageDistributedDirectoryMonitor::getLoggerName() const
 
 void StorageDistributedDirectoryMonitor::updatePath(const std::string & new_path)
 {
-    std::lock_guard lock{mutex};
-
     task_handle->deactivate();
+    std::lock_guard lock{mutex};
 
     {
         std::unique_lock metrics_lock(metrics_mutex);

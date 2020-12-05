@@ -172,7 +172,7 @@ public:
 
     const Block & getHeader() const { return current_header; }
 
-    void addTableLock(const TableLockHolder & lock) { table_locks.push_back(lock); }
+    void addTableLock(TableLockHolder lock) { table_locks.emplace_back(std::move(lock)); }
     void addInterpreterContext(std::shared_ptr<Context> context) { interpreter_context.emplace_back(std::move(context)); }
     void addStorageHolder(StoragePtr storage) { storage_holders.emplace_back(std::move(storage)); }
 

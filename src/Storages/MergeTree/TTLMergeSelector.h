@@ -10,7 +10,7 @@ namespace DB
 {
 
 /** Merge selector, which is used to remove values with expired ttl.
-  * It selects parts to merge by greedy algorithm: 
+  * It selects parts to merge by greedy algorithm:
   *  1. Finds part with the most earliest expired ttl and includes it to result.
   *  2. Tries to find the longest range of parts with expired ttl, that includes part from step 1.
   * Finally, merge selector updates TTL merge timer for the selected partition
@@ -26,8 +26,8 @@ public:
           merge_cooldown_time(merge_cooldown_time_),
           only_drop_parts(only_drop_parts_) {}
 
-    PartsInPartition select(
-        const Partitions & partitions,
+    PartsRange select(
+        const PartsRanges & parts_ranges,
         const size_t max_total_size_to_merge) override;
 
 private:

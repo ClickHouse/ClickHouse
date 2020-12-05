@@ -6,16 +6,17 @@
 #include <Columns/ColumnArray.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Core/Block.h>
-#include <Storages/ColumnDefault.h>
+#include <Storages/ColumnsDescription.h>
 
 
 namespace DB
 {
 
-Block addMissingDefaults(const Block & block,
-                         const NamesAndTypesList & required_columns,
-                         const ColumnDefaults & column_defaults,
-                         const Context & context)
+Block addMissingDefaults(
+    const Block & block,
+    const NamesAndTypesList & required_columns,
+    const ColumnsDescription & columns,
+    const Context & context)
 {
     /// For missing columns of nested structure, you need to create not a column of empty arrays, but a column of arrays of correct lengths.
     /// First, remember the offset columns for all arrays in the block.
@@ -49,7 +50,7 @@ Block addMissingDefaults(const Block & block,
             continue;
         }
 
-        if (column_defaults.count(column.name))
+        if (columns.hasDefault(column.name))
             continue;
 
         String offsets_name = Nested::extractTableName(column.name);
@@ -72,8 +73,8 @@ Block addMissingDefaults(const Block & block,
         res.insert(ColumnWithTypeAndName(std::move(new_column), column.type, column.name));
     }
 
-    /// Computes explicitly specified values (in column_defaults) by default and materialized columns.
-    evaluateMissingDefaults(res, required_columns, column_defaults, context);
+    /// Computes explicitly specified values by default and materialized columns.
+    evaluateMissingDefaults(res, required_columns, columns, context);
     return res;
 }
 
