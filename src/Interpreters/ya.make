@@ -143,7 +143,6 @@ SRCS(
     TreeRewriter.cpp
     addMissingDefaults.cpp
     addTypeConversionToAST.cpp
-    castColumn.cpp
     convertFieldToType.cpp
     createBlockSelector.cpp
     evaluateConstantExpression.cpp
