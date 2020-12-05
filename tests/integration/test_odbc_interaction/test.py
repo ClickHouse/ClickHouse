@@ -5,6 +5,7 @@ import os
 import pymysql.cursors
 import psycopg2
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+from helpers.test_tools import assert_eq_with_retry
 from helpers.cluster import ClickHouseCluster
 
 
