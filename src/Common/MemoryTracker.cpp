@@ -41,9 +41,9 @@ MemoryTracker * getMemoryTracker()
 ///   NOTE: that since C++11 destructor marked with noexcept by default, and
 ///   this means that any throw from destructor (that is not marked with
 ///   noexcept(false)) will cause std::terminate()
-bool inline memoryTrackerCanThrow()
+bool inline memoryTrackerCanThrow(VariableContext level, bool fault_injection)
 {
-    return !MemoryTracker::LockExceptionInThread::isBlocked() && !std::uncaught_exceptions();
+    return !MemoryTracker::LockExceptionInThread::isBlocked(level, fault_injection) && !std::uncaught_exceptions();
 }
 
 }
@@ -64,8 +64,40 @@ namespace ProfileEvents
 
 static constexpr size_t log_peak_memory_usage_every = 1ULL << 30;
 
+// BlockerInThread
 thread_local uint64_t MemoryTracker::BlockerInThread::counter = 0;
+thread_local VariableContext MemoryTracker::BlockerInThread::level = VariableContext::Global;
+MemoryTracker::BlockerInThread::BlockerInThread(VariableContext level_)
+    : previous_level(level)
+{
+    ++counter;
+    level = level_;
+}
+MemoryTracker::BlockerInThread::~BlockerInThread()
+{
+    --counter;
+    level = previous_level;
+}
+
+/// LockExceptionInThread
 thread_local uint64_t MemoryTracker::LockExceptionInThread::counter = 0;
+thread_local VariableContext MemoryTracker::LockExceptionInThread::level = VariableContext::Global;
+thread_local bool MemoryTracker::LockExceptionInThread::block_fault_injections = false;
+MemoryTracker::LockExceptionInThread::LockExceptionInThread(VariableContext level_, bool block_fault_injections_)
+    : previous_level(level)
+    , previous_block_fault_injections(block_fault_injections)
+{
+    ++counter;
+    level = level_;
+    block_fault_injections = block_fault_injections_;
+}
+MemoryTracker::LockExceptionInThread::~LockExceptionInThread()
+{
+    --counter;
+    level = previous_level;
+    block_fault_injections = previous_block_fault_injections;
+}
+
 
 MemoryTracker total_memory_tracker(nullptr, VariableContext::Global);
 
@@ -110,8 +142,13 @@ void MemoryTracker::alloc(Int64 size)
     if (size < 0)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Negative size ({}) is passed to MemoryTracker. It is a bug.", size);
 
-    if (BlockerInThread::isBlocked())
+    if (BlockerInThread::isBlocked(level))
+    {
+        /// Since the BlockerInThread should respect the level, we should go to the next parent.
+        if (auto * loaded_next = parent.load(std::memory_order_relaxed))
+            loaded_next->alloc(size);
         return;
+    }
 
     /** Using memory_order_relaxed means that if allocations are done simultaneously,
       *  we allow exception about memory limit exceeded to be thrown only on next allocation.
@@ -144,7 +181,7 @@ void MemoryTracker::alloc(Int64 size)
     }
 
     std::bernoulli_distribution fault(fault_probability);
-    if (unlikely(fault_probability && fault(thread_local_rng)) && memoryTrackerCanThrow())
+    if (unlikely(fault_probability && fault(thread_local_rng)) && memoryTrackerCanThrow(level, true))
     {
         /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
         BlockerInThread untrack_lock;
@@ -173,7 +210,7 @@ void MemoryTracker::alloc(Int64 size)
         DB::TraceCollector::collect(DB::TraceType::MemorySample, StackTrace(), size);
     }
 
-    if (unlikely(current_hard_limit && will_be > current_hard_limit) && memoryTrackerCanThrow())
+    if (unlikely(current_hard_limit && will_be > current_hard_limit) && memoryTrackerCanThrow(level, false))
     {
         /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
         BlockerInThread untrack_lock;
@@ -211,7 +248,7 @@ void MemoryTracker::updatePeak(Int64 will_be)
 
 void MemoryTracker::free(Int64 size)
 {
-    if (BlockerInThread::isBlocked())
+    if (BlockerInThread::isBlocked(level))
         return;
 
     std::bernoulli_distribution sample(sample_probability);
