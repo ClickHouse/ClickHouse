@@ -74,14 +74,14 @@ query_with_retry "ALTER TABLE dst_r1 DROP PARTITION 1;"
 $CLICKHOUSE_CLIENT --query="INSERT INTO dst_r1 VALUES (1, '1', 2), (1, '2', 2);"
 
 $CLICKHOUSE_CLIENT --query="CREATE table test_block_numbers (m UInt64) ENGINE MergeTree() ORDER BY tuple();"
-$CLICKHOUSE_CLIENT --query="INSERT INTO test_block_numbers SELECT max(max_block_number) AS m FROM system.parts WHERE database=currentDatabase() AND  table='dst_r1' AND active AND name LIKE '1_%';"
+$CLICKHOUSE_CLIENT --query="INSERT INTO test_block_numbers SELECT max(max_block_number) AS m FROM system.parts WHERE database='$CLICKHOUSE_DATABASE' AND  table='dst_r1' AND active AND name LIKE '1_%';"
 
 query_with_retry "ALTER TABLE dst_r1 REPLACE PARTITION 1 FROM dst_r1;"
 $CLICKHOUSE_CLIENT --query="SYSTEM SYNC REPLICA dst_r2;"
 $CLICKHOUSE_CLIENT --query="SELECT count(), sum(d) FROM dst_r1;"
 $CLICKHOUSE_CLIENT --query="SELECT count(), sum(d) FROM dst_r2;"
 
-$CLICKHOUSE_CLIENT --query="INSERT INTO test_block_numbers SELECT max(max_block_number) AS m FROM system.parts WHERE database=currentDatabase() AND  table='dst_r1' AND active AND name LIKE '1_%';"
+$CLICKHOUSE_CLIENT --query="INSERT INTO test_block_numbers SELECT max(max_block_number) AS m FROM system.parts WHERE database='$CLICKHOUSE_DATABASE' AND  table='dst_r1' AND active AND name LIKE '1_%';"
 $CLICKHOUSE_CLIENT --query="SELECT (max(m) - min(m) > 1) AS new_block_is_generated FROM test_block_numbers;"
 $CLICKHOUSE_CLIENT --query="DROP TABLE test_block_numbers;"
 
