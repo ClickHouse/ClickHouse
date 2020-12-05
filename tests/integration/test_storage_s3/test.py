@@ -5,6 +5,7 @@ import threading
 import os
 
 import pytest
+import time
 
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 
@@ -347,7 +348,15 @@ def run_s3_mock(cluster):
 
 
 def test_custom_auth_headers(cluster):
-    ping_response = cluster.exec_in_container(cluster.get_container_id('resolver'), ["curl", "-s", "http://resolver:8080"])
+    ping_response = None
+    for _ in range(100):
+        try:
+            ping_response = cluster.exec_in_container(cluster.get_container_id('resolver'), ["curl", "-s", "http://resolver:8080"])
+            if ping_response == 'OK':
+                break
+        except:
+            time.sleep(0.5)
+
     assert ping_response == 'OK', 'Expected "OK", but got "{}"'.format(ping_response)
     
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"

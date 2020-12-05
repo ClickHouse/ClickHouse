@@ -202,9 +202,9 @@ def test_postgres_odbc_hached_dictionary_with_schema(started_cluster):
     conn = get_postgres_conn()
     cursor = conn.cursor()
     cursor.execute("insert into clickhouse.test_table values(1, 'hello'),(2, 'world')")
-    time.sleep(5)
-    assert node1.query("select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(1))") == "hello\n"
-    assert node1.query("select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(2))") == "world\n"
+    node1.query("SYSTEM RELOAD DICTIONARY postgres_odbc_hashed")
+    assert_eq_with_retry(node1, "select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(1))", "hello")
+    assert_eq_with_retry(node1, "select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(2))", "world")
 
 def test_postgres_odbc_hached_dictionary_no_tty_pipe_overflow(started_cluster):
     conn = get_postgres_conn()
@@ -216,7 +216,7 @@ def test_postgres_odbc_hached_dictionary_no_tty_pipe_overflow(started_cluster):
         except Exception as ex:
             assert False, "Exception occured -- odbc-bridge hangs: " + str(ex)
 
-    assert node1.query("select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(3))") == "xxx\n"
+    assert_eq_with_retry(node1, "select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(3))", "xxx")
 
 def test_postgres_insert(started_cluster):
     conn = get_postgres_conn()
