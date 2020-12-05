@@ -136,11 +136,20 @@ public:
     private:
         BlockerInThread(const BlockerInThread &) = delete;
         BlockerInThread & operator=(const BlockerInThread &) = delete;
+
         static thread_local uint64_t counter;
+        static thread_local VariableContext level;
+
+        VariableContext previous_level;
     public:
-        BlockerInThread() { ++counter; }
-        ~BlockerInThread() { --counter; }
-        static bool isBlocked() { return counter > 0; }
+        /// level_ - block in level and above
+        BlockerInThread(VariableContext level_ = VariableContext::Global);
+        ~BlockerInThread();
+
+        static bool isBlocked(VariableContext current_level)
+        {
+            return counter > 0 && current_level >= level;
+        }
     };
 
     /// To be able to avoid MEMORY_LIMIT_EXCEEDED Exception in destructors:
@@ -160,11 +169,23 @@ public:
     private:
         LockExceptionInThread(const LockExceptionInThread &) = delete;
         LockExceptionInThread & operator=(const LockExceptionInThread &) = delete;
+
         static thread_local uint64_t counter;
+        static thread_local VariableContext level;
+        static thread_local bool block_fault_injections;
+
+        VariableContext previous_level;
+        bool previous_block_fault_injections;
     public:
-        LockExceptionInThread() { ++counter; }
-        ~LockExceptionInThread() { --counter; }
-        static bool isBlocked() { return counter > 0; }
+        /// level_ - block in level and above
+        /// block_fault_injections_ - block in fault injection too
+        LockExceptionInThread(VariableContext level_ = VariableContext::Global, bool block_fault_injections_ = true);
+        ~LockExceptionInThread();
+
+        static bool isBlocked(VariableContext current_level, bool fault_injection)
+        {
+            return counter > 0 && current_level >= level && (!fault_injection || (fault_injection && block_fault_injections));
+        }
     };
 };
 
