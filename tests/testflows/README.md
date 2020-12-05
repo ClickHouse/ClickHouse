@@ -130,7 +130,7 @@ For example,
 cat test.log | tfs show test messages "/clickhouse/rbac/syntax/grant privilege/grant privileges/privilege='SELECT', on=\('db0.table0', 'db0.\*', '\*.\*', 'tb0', '\*'\), allow_column=True, allow_introspection=False"
 ```
 
-> Note: that characters that are treated as special by the shell need to be escaped. In this case
+> Note: that characters that are treated as special in extended regular expressions need to be escaped. In this case
 > we have to escape the `*`, `(`, and the `)` characters in the test name.
 
 ### Step 4: working with the `test.log`
