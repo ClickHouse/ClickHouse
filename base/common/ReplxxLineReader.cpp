@@ -147,7 +147,7 @@ int ReplxxLineReader::execute(const std::string & command)
     static void * real_vfork = dlsym(RTLD_DEFAULT, "vfork");
     if (!real_vfork)
     {
-        rx.print("Cannot find symbol vfork in myself: %s", errnoToString(errno).c_str());
+        rx.print("Cannot find symbol vfork in myself: %s\n", errnoToString(errno).c_str());
         return -1;
     }
 
@@ -181,8 +181,8 @@ int ReplxxLineReader::execute(const std::string & command)
 
 void ReplxxLineReader::openEditor()
 {
-    char filename[] = "clickhouse_replxx.XXXXXX";
-    int fd = ::mkstemp(filename);
+    char filename[] = "clickhouse_replxx_XXXXXX.sql";
+    int fd = ::mkstemps(filename, 4);
     if (-1 == fd)
     {
         rx.print("Cannot create temporary file to edit query: %s\n", errnoToString(errno).c_str());
@@ -217,13 +217,21 @@ void ReplxxLineReader::openEditor()
 
     if (0 == execute(editor + " " + filename))
     {
-        std::ifstream t(filename);
-        std::string str;
-        t.seekg(0, std::ios::end);
-        str.reserve(t.tellg());
-        t.seekg(0, std::ios::beg);
-        str.assign((std::istreambuf_iterator<char>(t)), std::istreambuf_iterator<char>());
-        rx.set_state(replxx::Replxx::State(str.c_str(), str.size()));
+        try
+        {
+            std::ifstream t(filename);
+            std::string str;
+            t.seekg(0, std::ios::end);
+            str.reserve(t.tellg());
+            t.seekg(0, std::ios::beg);
+            str.assign((std::istreambuf_iterator<char>(t)), std::istreambuf_iterator<char>());
+            rx.set_state(replxx::Replxx::State(str.c_str(), str.size()));
+        }
+        catch (...)
+        {
+            rx.print("Cannot read from temporary query file %s: %s\n", filename, errnoToString(errno).c_str());
+            return;
+        }
     }
 
     if (bracketed_paste_enabled)
