@@ -3827,7 +3827,9 @@ void StorageReplicatedMergeTree::checkPartitionCanBeDropped(const ASTPtr & parti
 void StorageReplicatedMergeTree::drop(TableStructureWriteLockHolder &)
 {
     {
-        auto zookeeper = tryGetZooKeeper();
+        /// Table can be shut down, restarting thread is not active
+        /// and calling StorageReplicatedMergeTree::getZooKeeper() won't suffice.
+        auto zookeeper = global_context.getZooKeeper();
 
         if (is_readonly || !zookeeper)
             throw Exception("Can't drop readonly replicated table (need to drop data in ZooKeeper as well)", ErrorCodes::TABLE_IS_READ_ONLY);
