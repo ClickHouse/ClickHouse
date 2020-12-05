@@ -5,10 +5,8 @@
 #include <common/shift10.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <double-conversion/double-conversion.h>
+#include <fast_float/fast_float.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
 
 /** Methods for reading floating point numbers from text with decimal representation.
   * There are "precise", "fast" and "simple" implementations.
@@ -138,12 +136,56 @@ bool assertOrParseNaN(ReadBuffer & buf)
 
 /// Some garbage may be successfully parsed, examples: '--1' parsed as '1'.
 template <typename T, typename ReturnType>
-ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
+ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & in)
 {
-    static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for readFloatTextImpl must be float or double");
+    static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for readFloatTextFastFloatImpl must be float or double");
+    static_assert('a' > '.' && 'A' > '.' && '\n' < '.' && '\t' < '.' && '\'' < '.' && '"' < '.', "Layout of char is not like ASCII"); //-V590
+
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    if (buf.eof())
+    /// Fast path
+
+    char * initial_position = in.position();
+    auto res = fast_float::from_chars(initial_position, in.buffer().end(), x);
+    in.position() += res.ptr - initial_position;
+
+    /// Slow path
+
+    if (unlikely(!in.hasPendingData()))
+    {
+        String buffer;
+
+        while (true)
+        {
+            if (!in.hasPendingData())
+            {
+                buffer.insert(buffer.end(), initial_position, in.position());
+
+                if (in.next())
+                {
+                    initial_position = in.buffer().begin();
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            if (isWhitespaceASCII(*in.position()))
+            {
+                buffer.insert(buffer.end(), initial_position, in.position());
+                break;
+            }
+            else
+            {
+                ++in.position();
+            }
+        }
+
+        res = fast_float::from_chars(buffer.data(), buffer.data() + buffer.size(), x);
+    }
+
+    if (unlikely(res.ec != std::errc()))
     {
         if constexpr (throw_exception)
             throw Exception("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
@@ -151,124 +193,7 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
             return ReturnType(false);
     }
 
-    /// We use special code to read denormals (inf, nan), because we support slightly more variants that double-conversion library does:
-    /// Example: inf and Infinity.
-
-    bool negative = false;
-
-    while (true)
-    {
-        switch (*buf.position())
-        {
-            case '+':
-                continue;
-
-            case '-':
-            {
-                negative = true;
-                ++buf.position();
-                continue;
-            }
-
-            case 'i': [[fallthrough]];
-            case 'I':
-            {
-                if (assertOrParseInfinity<throw_exception>(buf))
-                {
-                    x = std::numeric_limits<T>::infinity();
-                    if (negative)
-                        x = -x;
-                    return ReturnType(true);
-                }
-                return ReturnType(false);
-            }
-
-            case 'n': [[fallthrough]];
-            case 'N':
-            {
-                if (assertOrParseNaN<throw_exception>(buf))
-                {
-                    x = std::numeric_limits<T>::quiet_NaN();
-                    if (negative)
-                        x = -x;
-                    return ReturnType(true);
-                }
-                return ReturnType(false);
-            }
-
-            default:
-                break;
-        }
-        break;
-    }
-
-    static const double_conversion::StringToDoubleConverter converter(
-        double_conversion::StringToDoubleConverter::ALLOW_TRAILING_JUNK,
-        0, 0, nullptr, nullptr);
-
-    /// Fast path (avoid copying) if the buffer have at least MAX_LENGTH bytes.
-    static constexpr int MAX_LENGTH = 316;
-
-    if (buf.position() + MAX_LENGTH <= buf.buffer().end())
-    {
-        int num_processed_characters = 0;
-
-        if constexpr (std::is_same_v<T, double>)
-            x = converter.StringToDouble(buf.position(), buf.buffer().end() - buf.position(), &num_processed_characters);
-        else
-            x = converter.StringToFloat(buf.position(), buf.buffer().end() - buf.position(), &num_processed_characters);
-
-        if (num_processed_characters < 0)
-        {
-            if constexpr (throw_exception)
-                throw Exception("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
-            else
-                return ReturnType(false);
-        }
-
-        buf.position() += num_processed_characters;
-
-        if (negative)
-            x = -x;
-        return ReturnType(true);
-    }
-    else
-    {
-        /// Slow path. Copy characters that may be present in floating point number to temporary buffer.
-
-        char tmp_buf[MAX_LENGTH];
-        int num_copied_chars = 0;
-
-        while (!buf.eof() && num_copied_chars < MAX_LENGTH)
-        {
-            char c = *buf.position();
-            if (!(isNumericASCII(c) || c == '-' || c == '+' || c == '.' || c == 'e' || c == 'E'))
-                break;
-
-            tmp_buf[num_copied_chars] = c;
-            ++buf.position();
-            ++num_copied_chars;
-        }
-
-        int num_processed_characters = 0;
-
-        if constexpr (std::is_same_v<T, double>)
-            x = converter.StringToDouble(tmp_buf, num_copied_chars, &num_processed_characters);
-        else
-            x = converter.StringToFloat(tmp_buf, num_copied_chars, &num_processed_characters);
-
-        if (num_processed_characters < num_copied_chars)
-        {
-            if constexpr (throw_exception)
-                throw Exception("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
-            else
-                return ReturnType(false);
-        }
-
-        if (negative)
-            x = -x;
-        return ReturnType(true);
-    }
+    return ReturnType(true);
 }
 
 
@@ -477,72 +402,6 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
     return ReturnType(true);
 }
 
-#ifdef USE_FAST_FLOAT
-#include <fast_float/fast_float.h>
-
-template <typename T, typename ReturnType>
-ReturnType readFloatTextWithFastFloatImpl(T & x, ReadBuffer & in)
-{
-    static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for readFloatTextFastFloatImpl must be float or double");
-    static_assert('a' > '.' && 'A' > '.' && '\n' < '.' && '\t' < '.' && '\'' < '.' && '"' < '.', "Layout of char is not like ASCII"); //-V590
-
-    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
-
-    /// Fast path
-
-    char * initial_position = in.position();
-    auto res = fast_float::from_chars(initial_position, in.buffer().end(), x);
-    in.position() += res.ptr - initial_position;
-
-    /// Slow path
-
-    if (unlikely(!in.hasPendingData()))
-    {
-        String buffer;
-
-        while (true)
-        {
-            if (!in.hasPendingData())
-            {
-                buffer.insert(buffer.end(), initial_position, in.position());
-
-                if (in.next())
-                {
-                    initial_position = in.buffer().begin();
-                }
-                else
-                {
-                    break;
-                }
-            }
-
-            if (isWhitespaceASCII(*in.position()))
-            {
-                buffer.insert(buffer.end(), initial_position, in.position());
-                break;
-            }
-            else
-            {
-                ++in.position();
-            }
-        }
-
-        res = fast_float::from_chars(buffer.data(), buffer.data() + buffer.size(), x);
-    }
-
-    if (unlikely(res.ec != std::errc()))
-    {
-        if constexpr (throw_exception)
-            throw Exception("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
-        else
-            return ReturnType(false);
-    }
-
-    return ReturnType(true);
-}
-
-#endif
-
 template <typename T, typename ReturnType>
 ReturnType readFloatTextSimpleImpl(T & x, ReadBuffer & buf)
 {
@@ -643,18 +502,8 @@ ReturnType readFloatTextSimpleImpl(T & x, ReadBuffer & buf)
     return ReturnType(true);
 }
 
-#ifdef USE_FAST_FLOAT
-template <typename T> void readFloatTextWithFastFloat(T & x, ReadBuffer & in) { readFloatTextWithFastFloatImpl<T, void>(x, in); }
-template <typename T> bool tryReadFloatTextWithFastFloat(T & x, ReadBuffer & in) { return readFloatTextWithFastFloatImpl<T, bool>(x, in); }
-#endif
-
-#ifdef USE_FAST_FLOAT
-template <typename T> void readFloatTextPrecise(T & x, ReadBuffer & in) { readFloatTextWithFastFloat(x, in); }
-template <typename T> bool tryReadFloatTextPrecise(T & x, ReadBuffer & in) { return tryReadFloatTextWithFastFloat(x, in); }
-#else
 template <typename T> void readFloatTextPrecise(T & x, ReadBuffer & in) { readFloatTextPreciseImpl<T, void>(x, in); }
 template <typename T> bool tryReadFloatTextPrecise(T & x, ReadBuffer & in) { return readFloatTextPreciseImpl<T, bool>(x, in); }
-#endif
 
 template <typename T> void readFloatTextFast(T & x, ReadBuffer & in) { readFloatTextFastImpl<T, void>(x, in); }
 template <typename T> bool tryReadFloatTextFast(T & x, ReadBuffer & in) { return readFloatTextFastImpl<T, bool>(x, in); }
