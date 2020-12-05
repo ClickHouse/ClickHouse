@@ -515,7 +515,7 @@ inline bool NO_SANITIZE_UNDEFINED convertNumeric(From value, To & result)
         return true;
     }
 
-    if constexpr (std::is_floating_point_v<From> && std::is_floating_point_v<To>) 
+    if constexpr (std::is_floating_point_v<From> && std::is_floating_point_v<To>)
     {
         /// Note that NaNs doesn't compare equal to anything, but they are still in range of any Float type.
         if (isNaN(value))

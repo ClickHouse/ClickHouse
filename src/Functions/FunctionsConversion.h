@@ -179,15 +179,16 @@ struct ConvertImpl
 
             for (size_t i = 0; i < size; ++i)
             {
-                if constexpr ((is_big_int_v<FromFieldType> || is_big_int_v<ToFieldType>)
-                    && (std::is_same_v<FromFieldType, UInt128> || std::is_same_v<ToFieldType, UInt128>)) 
+                if constexpr ((is_big_int_v<FromFieldType> || is_big_int_v<ToFieldType>) &&
+                    (std::is_same_v<FromFieldType, UInt128> || std::is_same_v<ToFieldType, UInt128>))
                 {
                     if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
                         (*vec_null_map_to)[i] = true;
                     else
-                        throw Exception("Unexpected UInt128 to big int conversion", ErrorCodes::NOT_IMPLEMENTED); 
-                } 
-                else {
+                        throw Exception("Unexpected UInt128 to big int conversion", ErrorCodes::NOT_IMPLEMENTED);
+                }
+                else
+                {
                     if constexpr (IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
                     {
                         try
@@ -235,7 +236,7 @@ struct ConvertImpl
                             }
                         }
 
-                        if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions> 
+                        if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>
                                 || std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
                         {
                             bool convert_result = accurate::convertNumeric(vec_from[i], vec_to[i]);
@@ -2021,10 +2022,10 @@ private:
     std::optional<Diagnostic> diagnostic;
 };
 
-
 struct NameCast { static constexpr auto name = "CAST"; };
 
-enum class CastType {
+enum class CastType
+{
     nonAccurate,
     accurate,
     accurateOrNull
@@ -2853,15 +2854,15 @@ public:
     static constexpr auto accurate_cast_or_null_name = "accurateCastOrNull";
     static constexpr auto cast_name = "CAST";
 
-    static constexpr auto name = 
-        cast_type == CastType::accurate ? accurate_cast_name :
-            (cast_type == CastType::accurateOrNull ? accurate_cast_or_null_name : cast_name);
+    static constexpr auto name = cast_type == CastType::accurate
+        ? accurate_cast_name
+        : (cast_type == CastType::accurateOrNull ? accurate_cast_or_null_name : cast_name);
 
     static FunctionOverloadResolverImplPtr create(const Context & context)
     {
         return createImpl(context.getSettingsRef().cast_keep_nullable);
     }
-    
+
     static FunctionOverloadResolverImplPtr createImpl(bool keep_nullable, std::optional<Diagnostic> diagnostic = {})
     {
         return std::make_unique<CastOverloadResolver>(keep_nullable, std::move(diagnostic));
