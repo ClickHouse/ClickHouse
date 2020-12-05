@@ -635,6 +635,7 @@ void StorageRabbitMQ::shutdown()
 
     deactivateTask(streaming_task, true, false);
     deactivateTask(looping_task, true, true);
+    deactivateTask(connection_task, true, false);
 
     connection->close();
 
@@ -680,17 +681,6 @@ ConsumerBufferPtr StorageRabbitMQ::popReadBuffer(std::chrono::milliseconds timeo
     std::lock_guard lock(buffers_mutex);
     auto buffer = buffers.back();
     buffers.pop_back();
-
-    if (buffer->needChannelUpdate())
-    {
-        if (buffer->queuesCount() != queues.size())
-            buffer->updateQueues(queues);
-
-        buffer->updateAckTracker();
-
-        if (updateChannel(buffer->getChannel()))
-            buffer->setupChannel();
-    }
 
     return buffer;
 }
@@ -883,6 +873,21 @@ bool StorageRabbitMQ::streamToViews()
         {
             if (stream->as<RabbitMQBlockInputStream>()->queueEmpty())
                 ++queue_empty;
+
+            if (stream->as<RabbitMQBlockInputStream>()->needChannelUpdate())
+            {
+                auto buffer = stream->as<RabbitMQBlockInputStream>()->getBuffer();
+                if (buffer)
+                {
+                    if (buffer->queuesCount() != queues.size())
+                        buffer->updateQueues(queues);
+
+                    buffer->updateAckTracker();
+
+                    if (updateChannel(buffer->getChannel()))
+                        buffer->setupChannel();
+                }
+            }
 
             /* false is returned by the sendAck function in only two cases:
              * 1) if connection failed. In this case all channels will be closed and will be unable to send ack. Also ack is made based on
