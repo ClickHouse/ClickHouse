@@ -41,9 +41,10 @@
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/DateTimeTransforms.h>
+#include <Functions/toFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnLowCardinality.h>
-#include <Functions/toFixedString.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -70,6 +71,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
+    extern const int DECIMAL_OVERFLOW;
 }
 
 
@@ -95,15 +97,14 @@ inline UInt32 extractToDecimalScale(const ColumnWithTypeAndName & named_column)
 /// Function toUnixTimestamp has exactly the same implementation as toDateTime of String type.
 struct NameToUnixTimestamp { static constexpr auto name = "toUnixTimestamp"; };
 
-struct AccurateAdditions
+struct AccurateConvertStrategyAdditions
 {
     UInt32 scale { 0 };
 };
 
-enum class ConvertStrategy
+struct AccurateOrNullConvertStrategyAdditions
 {
-    NonAccurate,
-    Accurate
+    UInt32 scale { 0 };
 };
 
 /** Conversion of number types to each other, enums to numbers, dates and datetimes to numbers and back: done by straight assignment.
@@ -117,11 +118,9 @@ struct ConvertImpl
 
     template <typename Additions = void *>
     static ColumnPtr NO_SANITIZE_UNDEFINED execute(
-        const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/,
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type [[maybe_unused]], size_t /*input_rows_count*/,
         Additions additions [[maybe_unused]] = Additions())
     {
-        static constexpr auto convert_strategy
-            = std::is_same_v<Additions, AccurateAdditions> ? ConvertStrategy::Accurate : ConvertStrategy::NonAccurate;
         const ColumnWithTypeAndName & named_from = arguments[0];
 
         using ColVecFrom = typename FromDataType::ColumnType;
@@ -150,7 +149,8 @@ struct ConvertImpl
             if constexpr (IsDataTypeDecimal<ToDataType>)
             {
                 UInt32 scale;
-                if constexpr (convert_strategy == ConvertStrategy::Accurate)
+                if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>
+                    || std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
                 {
                     scale = additions.scale;
                 }
@@ -171,7 +171,7 @@ struct ConvertImpl
 
             ColumnUInt8::MutablePtr col_null_map_to;
             ColumnUInt8::Container * vec_null_map_to [[maybe_unused]] = nullptr;
-            if constexpr (convert_strategy == ConvertStrategy::Accurate)
+            if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
             {
                 col_null_map_to = ColumnUInt8::create(size, false);
                 vec_null_map_to = &col_null_map_to->getData();
@@ -179,95 +179,91 @@ struct ConvertImpl
 
             for (size_t i = 0; i < size; ++i)
             {
-                if constexpr (IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
+                if constexpr ((is_big_int_v<FromFieldType> || is_big_int_v<ToFieldType>)
+                    && (std::is_same_v<FromFieldType, UInt128> || std::is_same_v<ToFieldType, UInt128>)) 
                 {
-                    try
+                    if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                        (*vec_null_map_to)[i] = true;
+                    else
+                        throw Exception("Unexpected UInt128 to big int conversion", ErrorCodes::NOT_IMPLEMENTED); 
+                } 
+                else {
+                    if constexpr (IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
                     {
-                        if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
-                            vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], vec_from.getScale(), vec_to.getScale());
-                        else if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeNumber<ToDataType>)
-                            vec_to[i] = convertFromDecimal<FromDataType, ToDataType>(vec_from[i], vec_from.getScale());
-                        else if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDataType>)
-                            vec_to[i] = convertToDecimal<FromDataType, ToDataType>(vec_from[i], vec_to.getScale());
-                        else
+                        try
                         {
-                            throw Exception("Unsupported data type in conversion function", ErrorCodes::CANNOT_CONVERT_TYPE);
+                            if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
+                                vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], vec_from.getScale(), vec_to.getScale());
+                            else if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeNumber<ToDataType>)
+                                vec_to[i] = convertFromDecimal<FromDataType, ToDataType>(vec_from[i], vec_from.getScale());
+                            else if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDataType>)
+                                vec_to[i] = convertToDecimal<FromDataType, ToDataType>(vec_from[i], vec_to.getScale());
+                            else
+                            {
+                                throw Exception("Unsupported data type in conversion function", ErrorCodes::CANNOT_CONVERT_TYPE);
+                            }
                         }
-                    }
-                    catch (...)
-                    {
-                        /// Handle decimal overflow that propagated as exception
-                        if constexpr (convert_strategy == ConvertStrategy::Accurate)
-                            (*vec_null_map_to)[i] = true;
-                        else
-                            throw;
-                    }
-                }
-                else if constexpr (is_big_int_v<FromFieldType> || is_big_int_v<ToFieldType>)
-                {
-                    if constexpr (std::is_same_v<FromFieldType, UInt128> || std::is_same_v<ToFieldType, UInt128>)
-                    {
-                        if constexpr (convert_strategy == ConvertStrategy::Accurate)
-                            (*vec_null_map_to)[i] = true;
-                        else
-                            throw Exception("Unexpected UInt128 to big int conversion", ErrorCodes::NOT_IMPLEMENTED);
-                    }
-                    /// If From Data is Nan or Inf, throw exception
-                    else if (!isFinite(vec_from[i]))
-                    {
-                        if constexpr (convert_strategy == ConvertStrategy::Accurate)
-                            vec_null_map_to[i] = true;
-                        else
-                            throw Exception("Unexpected inf or nan to big int conversion", ErrorCodes::NOT_IMPLEMENTED);
+                        catch (const Exception & exception)
+                        {
+                            if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                            {
+                                if (exception.code() == ErrorCodes::CANNOT_CONVERT_TYPE || exception.code() == ErrorCodes::DECIMAL_OVERFLOW)
+                                    (*vec_null_map_to)[i] = true;
+                                else
+                                    throw exception;
+                            }
+                            else
+                                throw exception;
+                        }
                     }
                     else
                     {
-                        if constexpr (convert_strategy == ConvertStrategy::Accurate)
+                        /// If From Data is Nan or Inf, throw exception
+                        /// TODO: Probably this can be applied to all integers not just big integers
+                        /// https://stackoverflow.com/questions/38795544/is-casting-of-infinity-to-integer-undefined
+                        if constexpr (is_big_int_v<ToFieldType>)
                         {
-                            if (accurate::greaterOp(vec_from[i], std::numeric_limits<ToFieldType>::max())
-                                || accurate::greaterOp(std::numeric_limits<ToFieldType>::min(), vec_from[i]))
+                            if (!isFinite(vec_from[i]))
                             {
-                                (*vec_null_map_to)[i] = true;
-                                continue;
+                                if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                                {
+                                    vec_null_map_to[i] = true;
+                                    continue;
+                                }
+                                else
+                                    throw Exception("Unexpected inf or nan to big int conversion", ErrorCodes::NOT_IMPLEMENTED);
                             }
                         }
 
-                        ToFieldType from = bigint_cast<ToFieldType>(vec_from[i]);
-                        vec_to[i] = static_cast<ToFieldType>(from);
-                    }
-                }
-                else if constexpr (std::is_same_v<ToFieldType, UInt128> && sizeof(FromFieldType) <= sizeof(UInt64))
-                {
-                    if constexpr (convert_strategy == ConvertStrategy::Accurate)
-                    {
-                        if (accurate::greaterOp(vec_from[i], std::numeric_limits<ToFieldType>::max())
-                            || accurate::greaterOp(std::numeric_limits<ToFieldType>::min(), vec_from[i]))
+                        if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions> 
+                                || std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
                         {
-                            (*vec_null_map_to)[i] = true;
-                            continue;
+                            bool convert_result = accurate::convertNumeric(vec_from[i], vec_to[i]);
+
+                            if (!convert_result)
+                            {
+                                if (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                                {
+                                    (*vec_null_map_to)[i] = true;
+                                }
+                                else
+                                {
+                                    throw Exception(
+                                        "Value in column " + named_from.column->getName() + " cannot be safely converted into type "
+                                            + result_type->getName(),
+                                        ErrorCodes::CANNOT_CONVERT_TYPE);
+                                }
+                            }
+                        }
+                        else
+                        {
+                            vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
                         }
                     }
-
-                    UInt64 from = static_cast<UInt64>(vec_from[i]);
-                    vec_to[i] = static_cast<ToFieldType>(from);
-                }
-                else
-                {
-                    if constexpr (convert_strategy == ConvertStrategy::Accurate)
-                    {
-                        if (accurate::greaterOp(vec_from[i], std::numeric_limits<ToFieldType>::max())
-                            || accurate::greaterOp(std::numeric_limits<ToFieldType>::min(), vec_from[i]))
-                        {
-                            (*vec_null_map_to)[i] = true;
-                            continue;
-                        }
-                    }
-
-                    vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
                 }
             }
 
-            if constexpr (convert_strategy == ConvertStrategy::Accurate)
+            if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
                 return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
             else
                 return col_to;
@@ -2028,6 +2024,12 @@ private:
 
 struct NameCast { static constexpr auto name = "CAST"; };
 
+enum class CastType {
+    nonAccurate,
+    accurate,
+    accurateOrNull
+};
+
 class FunctionCast final : public IFunctionBaseImpl
 {
 public:
@@ -2037,10 +2039,10 @@ public:
 
     FunctionCast(const char * name_, MonotonicityForRange && monotonicity_for_range_
         , const DataTypes & argument_types_, const DataTypePtr & return_type_
-        , std::optional<Diagnostic> diagnostic_, bool is_accurate_cast_or_null_)
+        , std::optional<Diagnostic> diagnostic_, CastType cast_type_)
         : name(name_), monotonicity_for_range(std::move(monotonicity_for_range_))
         , argument_types(argument_types_), return_type(return_type_), diagnostic(std::move(diagnostic_))
-        , is_accurate_cast_or_null(is_accurate_cast_or_null_)
+        , cast_type(cast_type_)
     {
     }
 
@@ -2087,7 +2089,7 @@ private:
     DataTypePtr return_type;
 
     std::optional<Diagnostic> diagnostic;
-    bool is_accurate_cast_or_null;
+    CastType cast_type;
 
     WrapperType createFunctionAdaptor(FunctionPtr function, const DataTypePtr & from_type) const
     {
@@ -2101,7 +2103,7 @@ private:
         };
     }
 
-    WrapperType createToNullableColumnWrapper() const
+    static WrapperType createToNullableColumnWrapper()
     {
         return [] (ColumnsWithTypeAndName &, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count)
         {
@@ -2116,7 +2118,8 @@ private:
     {
         TypeIndex from_type_index = from_type->getTypeId();
         WhichDataType which(from_type_index);
-        bool can_apply_accurate_cast = is_accurate_cast_or_null && (which.isInt() || which.isUInt() || which.isFloat());
+        bool can_apply_accurate_cast = (cast_type == CastType::accurate || cast_type == CastType::accurateOrNull)
+            && (which.isInt() || which.isUInt() || which.isFloat());
 
         if (requested_result_is_nullable && checkAndGetDataType<DataTypeString>(from_type.get()))
         {
@@ -2131,10 +2134,9 @@ private:
             return createFunctionAdaptor(function, from_type);
         }
 
-        auto nullable_column_wrapper = createToNullableColumnWrapper();
-        bool is_accurate_cast = is_accurate_cast_or_null;
+        auto wrapper_cast_type = cast_type;
 
-        return [is_accurate_cast, nullable_column_wrapper, from_type_index, to_type]
+        return [wrapper_cast_type, from_type_index, to_type]
             (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *column_nullable, size_t input_rows_count)
         {
             ColumnPtr result_column;
@@ -2145,8 +2147,17 @@ private:
 
                 if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>)
                 {
-                    result_column = ConvertImpl<LeftDataType, RightDataType, NameCast>::execute(
-                        arguments, result_type, input_rows_count, AccurateAdditions());
+                    if (wrapper_cast_type == CastType::accurate)
+                    {
+                        result_column = ConvertImpl<LeftDataType, RightDataType, NameCast>::execute(
+                            arguments, result_type, input_rows_count, AccurateConvertStrategyAdditions());
+                    }
+                    else
+                    {
+                        result_column = ConvertImpl<LeftDataType, RightDataType, NameCast>::execute(
+                            arguments, result_type, input_rows_count, AccurateOrNullConvertStrategyAdditions());
+                    }
+
                     return true;
                 }
 
@@ -2156,8 +2167,11 @@ private:
             /// Additionally check if callOnIndexAndDataType wasn't called at all.
             if (!res)
             {
-                if (is_accurate_cast)
+                if (wrapper_cast_type == CastType::accurateOrNull)
+                {
+                    auto nullable_column_wrapper = FunctionCast::createToNullableColumnWrapper();
                     return nullable_column_wrapper(arguments, result_type, column_nullable, input_rows_count);
+                }
                 else
                 {
                     throw Exception{"Conversion from " + std::string(getTypeName(from_type_index)) + " to " + to_type->getName() + " is not supported",
@@ -2180,7 +2194,7 @@ private:
         if (!isStringOrFixedString(from_type))
             throw Exception{"CAST AS FixedString is only implemented for types String and FixedString", ErrorCodes::NOT_IMPLEMENTED};
 
-        bool exception_mode_null = is_accurate_cast_or_null;
+        bool exception_mode_null = cast_type == CastType::accurateOrNull;
         return [exception_mode_null, N] (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t /*input_rows_count*/)
         {
             if (exception_mode_null)
@@ -2202,17 +2216,16 @@ private:
             || which.isStringOrFixedString();
         if (!ok)
         {
-            if (is_accurate_cast_or_null)
+            if (cast_type == CastType::accurateOrNull)
                 return createToNullableColumnWrapper();
             else
                 throw Exception{"Conversion from " + from_type->getName() + " to " + to_type->getName() + " is not supported",
                     ErrorCodes::CANNOT_CONVERT_TYPE};
         }
 
-        auto nullable_column_wrapper = createToNullableColumnWrapper();
-        bool is_accurate_cast = is_accurate_cast_or_null;
+        auto wrapper_cast_type = cast_type;
 
-        return [is_accurate_cast, nullable_column_wrapper, type_index, scale, to_type]
+        return [wrapper_cast_type, type_index, scale, to_type]
             (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *column_nullable, size_t input_rows_count)
         {
             ColumnPtr result_column;
@@ -2223,11 +2236,22 @@ private:
 
                 if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
                 {
-                    if (is_accurate_cast)
+                    if (wrapper_cast_type == CastType::accurate)
                     {
-                        AccurateAdditions additions;
+                        AccurateConvertStrategyAdditions additions;
                         additions.scale = scale;
-                        result_column = ConvertImpl<LeftDataType, RightDataType, NameCast>::execute(arguments, result_type, input_rows_count, additions);
+                        result_column = ConvertImpl<LeftDataType, RightDataType, NameCast>::execute(
+                            arguments, result_type, input_rows_count, additions);
+
+                        return true;
+                    }
+                    else if (wrapper_cast_type == CastType::accurateOrNull)
+                    {
+                        AccurateOrNullConvertStrategyAdditions additions;
+                        additions.scale = scale;
+                        result_column = ConvertImpl<LeftDataType, RightDataType, NameCast>::execute(
+                            arguments, result_type, input_rows_count, additions);
+
                         return true;
                     }
                 }
@@ -2240,8 +2264,11 @@ private:
             /// Additionally check if callOnIndexAndDataType wasn't called at all.
             if (!res)
             {
-                if (is_accurate_cast)
+                if (wrapper_cast_type == CastType::accurateOrNull)
+                {
+                    auto nullable_column_wrapper = FunctionCast::createToNullableColumnWrapper();
                     return nullable_column_wrapper(arguments, result_type, column_nullable, input_rows_count);
+                }
                 else
                     throw Exception{"Conversion from " + std::string(getTypeName(type_index)) + " to " + to_type->getName() + " is not supported",
                         ErrorCodes::CANNOT_CONVERT_TYPE};
@@ -2263,7 +2290,7 @@ private:
         }
         else
         {
-            if (is_accurate_cast_or_null)
+            if (cast_type == CastType::accurateOrNull)
                 return createToNullableColumnWrapper();
             else
                 throw Exception{"Conversion from " + from_type_untyped->getName() + " to " + to_type->getName() +
@@ -2397,7 +2424,7 @@ private:
         }
         else
         {
-            if (is_accurate_cast_or_null)
+            if (cast_type == CastType::accurateOrNull)
                 return createToNullableColumnWrapper();
             else
                 throw Exception{"Conversion from " + from_type->getName() + " to " + to_type->getName() + " is not supported",
@@ -2504,7 +2531,7 @@ private:
         {
             if (!to_nested->isNullable())
             {
-                if (is_accurate_cast_or_null)
+                if (cast_type == CastType::accurateOrNull)
                 {
                     return createToNullableColumnWrapper();
                 }
@@ -2750,7 +2777,7 @@ private:
                 break;
         }
 
-        if (is_accurate_cast_or_null)
+        if (cast_type == CastType::accurateOrNull)
             return createToNullableColumnWrapper();
         else
             throw Exception{"Conversion from " + from_type->getName() + " to " + to_type->getName() + " is not supported",
@@ -2815,15 +2842,26 @@ template <typename DataType>
     }
 };
 
+template<CastType cast_type>
 class CastOverloadResolver : public IFunctionOverloadResolverImpl
 {
 public:
     using MonotonicityForRange = FunctionCast::MonotonicityForRange;
     using Diagnostic = FunctionCast::Diagnostic;
 
-    static constexpr auto name = "CAST";
+    static constexpr auto accurate_cast_name = "accurateCast";
+    static constexpr auto accurate_cast_or_null_name = "accurateCastOrNull";
+    static constexpr auto cast_name = "CAST";
 
-    static FunctionOverloadResolverImplPtr create(const Context & context);
+    static constexpr auto name = 
+        cast_type == CastType::accurate ? accurate_cast_name :
+            (cast_type == CastType::accurateOrNull ? accurate_cast_or_null_name : cast_name);
+
+    static FunctionOverloadResolverImplPtr create(const Context & context)
+    {
+        return createImpl(context.getSettingsRef().cast_keep_nullable);
+    }
+    
     static FunctionOverloadResolverImplPtr createImpl(bool keep_nullable, std::optional<Diagnostic> diagnostic = {})
     {
         return std::make_unique<CastOverloadResolver>(keep_nullable, std::move(diagnostic));
@@ -2840,8 +2878,6 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-protected:
-
     FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         DataTypes data_types(arguments.size());
@@ -2850,7 +2886,7 @@ protected:
             data_types[i] = arguments[i].type;
 
         auto monotonicity = MonotonicityHelper::getMonotonicityInformation(arguments.front().type, return_type.get());
-        return std::make_unique<FunctionCast>(name, std::move(monotonicity), data_types, return_type, diagnostic, false);
+        return std::make_unique<FunctionCast>(name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type);
     }
 
     DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const override
@@ -2868,9 +2904,17 @@ protected:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         DataTypePtr type = DataTypeFactory::instance().get(type_col->getValue<String>());
-        if (keep_nullable && arguments.front().type->isNullable())
+
+        if constexpr (cast_type == CastType::accurateOrNull)
+        {
             return makeNullable(type);
-        return type;
+        }
+        else
+        {
+            if (keep_nullable && arguments.front().type->isNullable())
+                return makeNullable(type);
+            return type;
+        }
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -2879,55 +2923,6 @@ protected:
 private:
     bool keep_nullable;
     std::optional<Diagnostic> diagnostic;
-};
-
-class AccurateCastOverloadResolver : public IFunctionOverloadResolverImpl
-{
-public:
-    using MonotonicityForRange = FunctionCast::MonotonicityForRange;
-    using Diagnostic = FunctionCast::Diagnostic;
-
-    static constexpr auto name = "accurateCastOrNull";
-
-    static FunctionOverloadResolverImplPtr create(const Context & context);
-
-    String getName() const override { return name; }
-
-    size_t getNumberOfArguments() const override { return 2; }
-
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
-
-    FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
-    {
-        DataTypes data_types(arguments.size());
-
-        for (size_t i = 0; i < arguments.size(); ++i)
-            data_types[i] = arguments[i].type;
-
-        auto monotonicity = MonotonicityHelper::getMonotonicityInformation(arguments.front().type, return_type.get());
-        return std::make_unique<FunctionCast>(name, std::move(monotonicity), data_types, return_type, std::optional<Diagnostic>(), true);
-    }
-protected:
-    DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const override
-    {
-        const auto & column = arguments.back().column;
-        if (!column)
-            throw Exception("Second argument to " + getName() + " must be a constant string describing type."
-                " Instead there is non-constant column of type " + arguments.back().type->getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        const auto type_col = checkAndGetColumnConst<ColumnString>(column.get());
-        if (!type_col)
-            throw Exception("Second argument to " + getName() + " must be a constant string describing type."
-                " Instead there is a column with the following structure: " + column->dumpStructure(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        DataTypePtr type = DataTypeFactory::instance().get(type_col->getValue<String>());
-        return makeNullable(type);
-    }
-
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 };
 
 }

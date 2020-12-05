@@ -25,14 +25,13 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/NullableUtils.h>
 #include <Interpreters/sortBlock.h>
+#include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
 
 #include <Storages/MergeTree/KeyCondition.h>
 
 #include <ext/range.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-
-#include <iostream>
 
 namespace DB
 {
@@ -257,15 +256,19 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 
     for (size_t i = 0; i < num_key_columns; ++i)
     {
-        /// TODO: Optimize making cast only if types different
-        /// TODO: This case SELECT '1' IN (SELECT 1); should not work but with AccurateCastOrNull it works
+        ColumnPtr result;
+
         auto & column_before_cast = block.safeGetByPosition(i);
-        ColumnWithTypeAndName column
+        ColumnWithTypeAndName column_to_cast
             = {column_before_cast.column->convertToFullColumnIfConst(), column_before_cast.type, column_before_cast.name};
-        auto accurate_cast = AccurateCastOverloadResolver().build({column}, data_types[i]);
-        auto accurate_cast_executable = accurate_cast->prepare({column});
-        auto casted_column = accurate_cast_executable->execute({column}, data_types[i], column.column->size());
-        materialized_columns.emplace_back() = casted_column;
+
+        if (!transform_null_in) {
+            result = castColumn<CastType::accurateOrNull>(column_to_cast, data_types[i]);
+        } else {
+            result = castColumn<CastType::accurate>(column_to_cast, data_types[i]);
+        }
+
+        materialized_columns.emplace_back() = result;
         key_columns.emplace_back() = materialized_columns.back().get();
     }
 

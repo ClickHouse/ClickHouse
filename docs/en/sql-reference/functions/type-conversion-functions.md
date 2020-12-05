@@ -430,7 +430,28 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null
 
 -   [cast_keep_nullable](../../operations/settings/settings.md#cast_keep_nullable) setting
 
-## accurateCastOrNull(x, T) {#type_conversion_function-accurate-cast}
+## accurateCast(x, T) {#type_conversion_function-accurate-cast}
+
+Converts ‘x’ to the ‘t’ data type. The differente from cast(x, T) is that accurateCast
+does not allow overflow of numeric types during cast if type value x does not fit
+bounds of type T.
+
+Example
+``` sql
+SELECT cast(-1, 'UInt8') as uint8; 
+```
+
+``` text
+```
+
+```sql
+SELECT accurateCast(-1, 'UInt8') as uint8;
+```
+
+``` text
+```
+
+## accurateCastOrNull(x, T) {#type_conversion_function-accurate-cast_or_null}
 
 Converts ‘x’ to the ‘t’ data type. Always returns nullable type and returns NULL 
 if the casted value is not representable in the target type.
