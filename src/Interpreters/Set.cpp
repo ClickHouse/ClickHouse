@@ -262,9 +262,12 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
         ColumnWithTypeAndName column_to_cast
             = {column_before_cast.column->convertToFullColumnIfConst(), column_before_cast.type, column_before_cast.name};
 
-        if (!transform_null_in) {
+        if (!transform_null_in && data_types[i]->canBeInsideNullable())
+        {
             result = castColumn<CastType::accurateOrNull>(column_to_cast, data_types[i]);
-        } else {
+        }
+        else
+        {
             result = castColumn<CastType::accurate>(column_to_cast, data_types[i]);
         }
 
