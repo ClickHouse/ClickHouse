@@ -403,6 +403,7 @@ if (USE_MSGPACK)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${MSGPACK_INCLUDE_DIR})
 endif()
 
+target_link_libraries (clickhouse_common_io PUBLIC ${FAST_FLOAT_LIBRARY})
 target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${FAST_FLOAT_INCLUDE_DIR})
 
 if (USE_ORC)

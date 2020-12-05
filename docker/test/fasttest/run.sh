@@ -155,6 +155,7 @@ function clone_submodules
             contrib/miniselect
             contrib/xz
             contrib/dragonbox
+            contrib/fast_float
         )
 
         git submodule sync
