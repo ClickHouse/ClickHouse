@@ -155,6 +155,7 @@ function clone_submodules
             contrib/croaring
             contrib/miniselect
             contrib/xz
+            contrib/dragonbox
         )
 
         git submodule sync
