@@ -2878,6 +2878,8 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
+protected:
+
     FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         DataTypes data_types(arguments.size());

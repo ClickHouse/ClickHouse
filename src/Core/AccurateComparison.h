@@ -543,6 +543,8 @@ inline bool NO_SANITIZE_UNDEFINED convertNumeric(From value, To & result)
         return false;
     }
 
+    result = static_cast<To>(value);
+    return equalsOp(value, result);
 }
 
 }
