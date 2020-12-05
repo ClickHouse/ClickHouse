@@ -49,7 +49,7 @@ struct ExpressionAnalyzerData
     SubqueriesForSets subqueries_for_sets;
     PreparedSets prepared_sets;
 
-    /// Columns after ARRAY JOIN. It there is no ARRAY JOIN, it's source_columns.
+    /// Columns after ARRAY JOIN. If there is no ARRAY JOIN, it's source_columns.
     NamesAndTypesList columns_after_array_join;
     /// Columns after Columns after ARRAY JOIN and JOIN. If there is no JOIN, it's columns_after_array_join.
     NamesAndTypesList columns_after_join;

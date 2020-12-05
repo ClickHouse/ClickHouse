@@ -64,8 +64,8 @@ namespace ProfileEvents
 
 static constexpr size_t log_peak_memory_usage_every = 1ULL << 30;
 
-thread_local bool MemoryTracker::BlockerInThread::is_blocked = false;
-thread_local bool MemoryTracker::LockExceptionInThread::is_blocked = false;
+thread_local uint64_t MemoryTracker::BlockerInThread::counter = 0;
+thread_local uint64_t MemoryTracker::LockExceptionInThread::counter = 0;
 
 MemoryTracker total_memory_tracker(nullptr, VariableContext::Global);
 
