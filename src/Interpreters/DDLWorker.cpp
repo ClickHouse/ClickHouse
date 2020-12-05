@@ -1128,13 +1128,6 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry)
     return node_path;
 }
 
-std::vector<String> DDLWorker::dumpQueriesInQueue()
-{
-    std::vector<String> queries;
-    // TODO:
-    return queries;
-}
-
 
 void DDLWorker::runMainThread()
 {
@@ -1524,7 +1517,6 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
     else
         context.checkAccess(query_requires_access);
 
-    // enqueue the queries into the DDL worker queue
     DDLLogEntry entry;
     entry.hosts = std::move(hosts);
     entry.query = queryToString(query_ptr);
