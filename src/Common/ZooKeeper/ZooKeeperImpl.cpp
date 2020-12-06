@@ -1114,6 +1114,7 @@ void ZooKeeper::sendThread()
                     info.request->probably_sent = true;
                     info.request->write(*out);
 
+                    /// We sent close request, exit
                     if (info.request->xid == close_xid)
                         break;
                 }
@@ -1288,13 +1289,13 @@ void ZooKeeper::receiveEvent()
             response->removeRootPath(root_path);
         }
 
-        /// Instead of setting the watch in sendEvent, set it in receiveEvent becuase need to check the response.
+        /// Instead of setting the watch in sendEvent, set it in receiveEvent because need to check the response.
         /// The watch shouldn't be set if the node does not exist and it will never exist like sequential ephemeral nodes.
         /// By using getData() instead of exists(), a watch won't be set if the node doesn't exist.
         if (request_info.watch)
         {
             bool add_watch = false;
-            /// 3 indicates the ZooKeeperExistsRequest. 
+            /// 3 indicates the ZooKeeperExistsRequest.
             // For exists, we set the watch on both node exist and nonexist case.
             // For other case like getData, we only set the watch when node exists.
             if (request_info.request->getOpNum() == 3)
@@ -1342,21 +1343,25 @@ void ZooKeeper::receiveEvent()
 
 void ZooKeeper::finalize(bool error_send, bool error_receive)
 {
+    /// If some thread (send/receive) already finalizing session don't try to do it
+    if (finalization_started.exchange(true))
+        return;
+
+    auto expire_session_if_not_expired = [&]
     {
         std::lock_guard lock(push_request_mutex);
-
-        if (expired)
-            return;
-        expired = true;
-    }
-
-    active_session_metric_increment.destroy();
+        if (!expired)
+        {
+            expired = true;
+            active_session_metric_increment.destroy();
+        }
+    };
 
     try
     {
         if (!error_send)
         {
-            /// Send close event. This also signals sending thread to wakeup and then stop.
+            /// Send close event. This also signals sending thread to stop.
             try
             {
                 close();
@@ -1364,11 +1369,17 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
             catch (...)
             {
                 /// This happens for example, when "Cannot push request to queue within operation timeout".
+                /// Just mark session expired in case of error on close request, otherwise sendThread may not stop.
+                expire_session_if_not_expired();
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
 
+            /// Send thread will exit after sending close request or on expired flag
             send_thread.join();
         }
+
+        /// Set expired flag after we sent close event
+        expire_session_if_not_expired();
 
         try
         {

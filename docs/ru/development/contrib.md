@@ -1,3 +1,9 @@
+---
+toc_priority: 70
+toc_title: "\u0418\u0441\u043f\u043e\u043b\u044c\u0437\u0443\u0435\u043c\u044b\u0435\u0020\u0441\u0442\u043e\u0440\u043e\u043d\u043d\u0438\u0435\u0020\u0431\u0438\u0431\u043b\u0438\u043e\u0442\u0435\u043a\u0438"
+---
+
+
 # Используемые сторонние библиотеки {#ispolzuemye-storonnie-biblioteki}
 
 | Библиотека          | Лицензия                                                                                                                                     |
@@ -12,7 +18,6 @@
 | googletest          | [BSD 3-Clause License](https://github.com/google/googletest/blob/master/LICENSE)                                                             |
 | h3                  | [Apache License 2.0](https://github.com/uber/h3/blob/master/LICENSE)                                                                         |
 | hyperscan           | [BSD 3-Clause License](https://github.com/intel/hyperscan/blob/master/LICENSE)                                                               |
-| libbtrie            | [BSD 2-Clause License](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libbtrie/LICENSE)                                        |
 | libcxxabi           | [BSD + MIT](https://github.com/ClickHouse/ClickHouse/blob/master/libs/libglibc-compatibility/libcxxabi/LICENSE.TXT)                          |
 | libdivide           | [Zlib License](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libdivide/LICENSE.txt)                                           |
 | libgsasl            | [LGPL v2.1](https://github.com/ClickHouse-Extras/libgsasl/blob/3b8948a4042e34fb00b4fb987535dc9e02e39040/LICENSE)                             |

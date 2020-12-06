@@ -165,7 +165,7 @@ private:
 template <> struct NearestFieldTypeImpl<char> { using Type = std::conditional_t<is_signed_v<char>, Int64, UInt64>; };
 template <> struct NearestFieldTypeImpl<signed char> { using Type = Int64; };
 template <> struct NearestFieldTypeImpl<unsigned char> { using Type = UInt64; };
-#if __cplusplus > 201703L
+#ifdef __cpp_char8_t
 template <> struct NearestFieldTypeImpl<char8_t> { using Type = UInt64; };
 #endif
 
@@ -767,9 +767,9 @@ T & Field::get()
 #ifndef NDEBUG
     // Disregard signedness when converting between int64 types.
     constexpr Field::Types::Which target = TypeToEnum<NearestFieldType<ValueType>>::value;
-    assert(target == which
-           || (isInt64FieldType(target) && isInt64FieldType(which))
-           || target == Field::Types::Decimal64 /* DateTime64 fields */);
+    if (target != which
+           && (!isInt64FieldType(target) || !isInt64FieldType(which)))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid Field get from type {} to type {}", Types::toString(which), Types::toString(target));
 #endif
 
     ValueType * MAY_ALIAS ptr = reinterpret_cast<ValueType *>(&storage);

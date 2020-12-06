@@ -1,3 +1,8 @@
+---
+toc_priority: 40
+toc_title: remote
+---
+
 # remote, remoteSecure {#remote-remotesecure}
 
 Позволяет обратиться к удалённым серверам без создания таблицы типа `Distributed`.

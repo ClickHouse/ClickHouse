@@ -1,3 +1,8 @@
+---
+toc_priority: 3
+toc_title: MySQL
+---
+
 # MySQL {#mysql}
 
 Движок MySQL позволяет выполнять запросы `SELECT` над данными, хранящимися на удалённом MySQL сервере.

@@ -1,5 +1,5 @@
 #  docker build -t yandex/clickhouse-fasttest .
-FROM ubuntu:19.10
+FROM ubuntu:20.04
 
 ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=10
 
@@ -82,6 +82,7 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 ENV COMMIT_SHA=''
 ENV PULL_REQUEST_NUMBER=''
+ENV COPY_CLICKHOUSE_BINARY_TO_OUTPUT=0
 
 COPY run.sh /
 CMD ["/bin/bash", "/run.sh"]

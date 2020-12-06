@@ -57,7 +57,7 @@ Identifiers are:
 
 Identifiers can be quoted or non-quoted. The latter is preferred.
 
-Non-quoted identifiers must match the regex `^[a-zA-Z_][0-9a-zA-Z_]*$` and can not be equal to [keywords](#syntax-keywords). Examples: `x, _1, X_y__Z123_.`
+Non-quoted identifiers must match the regex `^[a-zA-Z_][0-9a-zA-Z_]*$` and can not be equal to [keywords](#syntax-keywords). Examples: `x`, `_1`, `X_y__Z123_`.
 
 If you want to use identifiers the same as keywords or you want to use other symbols in identifiers, quote it using double quotes or backticks, for example, `"id"`, `` `id` ``.
 
@@ -87,7 +87,7 @@ In string literals, you need to escape at least `'` and `\`. Single quotes can b
 
 ### Compound {#compound}
 
-Arrays are constructed with square brackets `[1, 2, 3]`. Nuples are constructed with round brackets `(1, 'Hello, world!', 2)`.
+Arrays are constructed with square brackets `[1, 2, 3]`. Tuples are constructed with round brackets `(1, 'Hello, world!', 2)`.
 Technically these are not literals, but expressions with the array creation operator and the tuple creation operator, respectively.
 An array must consist of at least one item, and a tuple must have at least two items.
 There’s a separate case when tuples appear in the `IN` clause of a `SELECT` query. Query results can include tuples, but tuples can’t be saved to a database (except of tables with [Memory](../engines/table-engines/special/memory.md) engine).

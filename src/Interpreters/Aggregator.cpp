@@ -112,7 +112,22 @@ Block Aggregator::Params::getHeader(
 {
     Block res;
 
-    if (src_header)
+    if (intermediate_header)
+    {
+        res = intermediate_header.cloneEmpty();
+
+        if (final)
+        {
+            for (const auto & aggregate : aggregates)
+            {
+                auto & elem = res.getByName(aggregate.column_name);
+
+                elem.type = aggregate.function->getReturnType();
+                elem.column = elem.type->createColumn();
+            }
+        }
+    }
+    else
     {
         for (const auto & key : keys)
             res.insert(src_header.safeGetByPosition(key).cloneEmpty());
@@ -131,21 +146,6 @@ Block Aggregator::Params::getHeader(
                 type = std::make_shared<DataTypeAggregateFunction>(aggregate.function, argument_types, aggregate.parameters);
 
             res.insert({ type, aggregate.column_name });
-        }
-    }
-    else if (intermediate_header)
-    {
-        res = intermediate_header.cloneEmpty();
-
-        if (final)
-        {
-            for (const auto & aggregate : aggregates)
-            {
-                auto & elem = res.getByName(aggregate.column_name);
-
-                elem.type = aggregate.function->getReturnType();
-                elem.column = elem.type->createColumn();
-            }
         }
     }
 

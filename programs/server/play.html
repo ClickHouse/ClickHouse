@@ -1,0 +1,549 @@
+<html> <!-- TODO If I write DOCTYPE HTML something changes but I don't know what. -->
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDkgOCI+PHN0eWxlPi5ve2ZpbGw6I2ZjMH0ucntmaWxsOnJlZH08L3N0eWxlPjxwYXRoIGQ9Ik0wLDcgaDEgdjEgaC0xIHoiIGNsYXNzPSJyIi8+PHBhdGggZD0iTTAsMCBoMSB2NyBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNMiwwIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik00LDAgaDEgdjggaC0xIHoiIGNsYXNzPSJvIi8+PHBhdGggZD0iTTYsMCBoMSB2OCBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNOCwzLjI1IGgxIHYxLjUgaC0xIHoiIGNsYXNzPSJvIi8+PC9zdmc+">
+    <title>ClickHouse Query</title>
+
+    <!-- Code Style:
+
+    Do not use any JavaScript or CSS frameworks or preprocessors.
+    This HTML page should not require any build systems (node.js, npm, gulp, etc.)
+    This HTML page should not be minified, instead it should be reasonably minimalistic by itself.
+    This HTML page should not load any external resources
+    (CSS and JavaScript must be embedded directly to the page. No external fonts or images should be loaded).
+    This UI should look as lightweight, clean and fast as possible.
+    All UI elements must be aligned in pixel-perfect way.
+    There should not be any animations.
+    No unexpected changes in positions of elements while the page is loading.
+    Navigation by keyboard should work.
+    64-bit numbers must display correctly.
+
+    -->
+
+    <!-- Development Roadmap:
+
+    1. Support readonly servers.
+    Check if readonly = 1 (with SELECT FROM system.settings) to avoid sending settings. It can be done once on address/credentials change.
+    It can be done in background, e.g. wait 100 ms after address/credentials change and do the check.
+    Also it can provide visual indication that credentials are correct.
+
+    -->
+
+    <style type="text/css">
+        :root {
+            --background-color: #DDF8FF; /* Or #FFFBEF; actually many pastel colors look great for light theme. */
+            --element-background-color: #FFF;
+            --border-color: #EEE;
+            --shadow-color: rgba(0, 0, 0, 0.1);
+            --button-color: #FFAA00; /* Orange on light-cyan is especially good. */
+            --text-color: #000;
+            --button-active-color: #F00;
+            --button-active-text-color: #FFF;
+            --misc-text-color: #888;
+            --error-color: #FEE; /* Light-pink on light-cyan is so neat, I even want to trigger errors to see this cool combination of colors. */
+            --table-header-color: #F8F8F8;
+            --table-hover-color: #FFF8EF;
+            --null-color: #A88;
+        }
+
+        [data-theme="dark"] {
+            --background-color: #000;
+            --element-background-color: #102030;
+            --border-color: #111;
+            --shadow-color: rgba(255, 255, 255, 0.1);
+            --text-color: #CCC;
+            --button-color: #FFAA00;
+            --button-text-color: #000;
+            --button-active-color: #F00;
+            --button-active-text-color: #FFF;
+            --misc-text-color: #888;
+            --error-color: #400;
+            --table-header-color: #102020;
+            --table-hover-color: #003333;
+            --null-color: #A88;
+        }
+
+        html, body
+        {
+            /* Personal choice. */
+            font-family: Sans-Serif;
+            background: var(--background-color);
+            color: var(--text-color);
+        }
+
+        /* Otherwise Webkit based browsers will display ugly border on focus. */
+        textarea, input, button
+        {
+            outline: none;
+            border: none;
+            color: var(--text-color);
+        }
+
+        /* Otherwise scrollbar may appear dynamically and it will alter viewport height,
+           then relative heights of elements will change suddenly, and it will break overall impression. */
+        /* html
+        {
+            overflow-x: scroll;
+        }*/
+
+        div
+        {
+            width: 100%;
+        }
+
+        .monospace
+        {
+            /* Prefer fonts that have full hinting info. This is important for non-retina displays.
+               Also I personally dislike "Ubuntu" font due to the similarity of 'r' and 'г' (it looks very ignorant).
+            */
+            font-family: Liberation Mono, DejaVu Sans Mono, MonoLisa, Consolas, Monospace;
+        }
+
+        .shadow
+        {
+            box-shadow: 0 0 1rem var(--shadow-color);
+        }
+
+        input, textarea
+        {
+            border: 1px solid var(--border-color);
+            /* The font must be not too small (to be inclusive) and not too large (it's less practical and make general feel of insecurity) */
+            font-size: 11pt;
+            padding: 0.25rem;
+            background-color: var(--element-background-color);
+        }
+
+        #query
+        {
+            /* Make enough space for even huge queries. */
+            height: 20%;
+            width: 100%;
+        }
+
+        #inputs
+        {
+            white-space: nowrap;
+            width: 100%;
+        }
+
+        #url
+        {
+            width: 70%;
+        }
+
+        #user
+        {
+            width: 15%;
+        }
+
+        #password
+        {
+            width: 15%;
+        }
+
+        #run_div
+        {
+            margin-top: 1rem;
+        }
+
+        #run
+        {
+            color: var(--button-text-color);
+            background-color: var(--button-color);
+            padding: 0.25rem 1rem;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 100%; /* Otherwise button element will have lower font size. */
+        }
+
+        #run:hover, #run:focus
+        {
+            color: var(--button-active-text-color);
+            background-color: var(--button-active-color);
+        }
+
+        #stats
+        {
+            float: right;
+            color: var(--misc-text-color);
+        }
+
+        #toggle-light, #toggle-dark
+        {
+            float: right;
+            padding-right: 0.5rem;
+            cursor: pointer;
+        }
+
+        .hint
+        {
+            color: var(--misc-text-color);
+        }
+
+        #data_div
+        {
+            margin-top: 1rem;
+        }
+
+        #data-table
+        {
+            border-collapse: collapse;
+            border-spacing: 0;
+            /* I need pixel-perfect alignment but not sure the following is correct, please help */
+            min-width: calc(100vw - 2rem);
+        }
+
+        /* Will be displayed when user specified custom format. */
+        #data-unparsed
+        {
+            background-color: var(--element-background-color);
+            margin-top: 0rem;
+            padding: 0.25rem 0.5rem;
+            display: none;
+        }
+
+        td
+        {
+            background-color: var(--element-background-color);
+            white-space: nowrap;
+            /* For wide tables any individual column will be no more than 50% of page width. */
+            max-width: 50vw;
+            /* The content is cut unless you hover. */
+            overflow: hidden;
+            padding: 0.25rem 0.5rem;
+            border: 1px solid var(--border-color);
+            white-space: pre;
+        }
+
+        td.right
+        {
+            text-align: right;
+        }
+
+        th
+        {
+            padding: 0.25rem 0.5rem;
+            text-align: middle;
+            background-color: var(--table-header-color);
+            border: 1px solid var(--border-color);
+        }
+
+        /* The row under mouse pointer is highlight for better legibility. */
+        tr:hover, tr:hover td
+        {
+            background-color: var(--table-hover-color);
+        }
+
+        tr:hover
+        {
+            box-shadow: 0 0 1rem rgba(0, 0, 0, 0.1);
+        }
+
+        #error
+        {
+            background: var(--error-color);
+            white-space: pre-wrap;
+            padding: 0.5rem 1rem;
+            display: none;
+        }
+
+        /* When mouse pointer is over table cell, will display full text (with wrap) instead of cut.
+           TODO Find a way to make it work on touch devices. */
+        td.left:hover
+        {
+            white-space: pre-wrap;
+        }
+
+        /* The style for SQL NULL */
+        .null
+        {
+            color: var(--null-color);
+        }
+
+        #hourglass
+        {
+            display: none;
+            padding-left: 1rem;
+            font-size: 110%;
+            color: #888;
+        }
+
+        #check-mark
+        {
+            display: none;
+            padding-left: 1rem;
+            font-size: 110%;
+            color: #080;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="inputs">
+        <input class="monospace shadow" id="url" type="text" value="http://localhost:8123/" /><input class="monospace shadow" id="user" type="text" value="default" /><input class="monospace shadow" id="password" type="password" />
+    </div>
+    <div>
+        <textarea autofocus spellcheck="false" class="monospace shadow" id="query"></textarea>
+    </div>
+    <div id="run_div">
+        <button class="shadow" id="run">Run</button>
+        <span class="hint">&nbsp;(Ctrl+Enter)</span>
+        <span id="hourglass">⧗</span>
+        <span id="check-mark">✔</span>
+        <span id="stats"></span>
+        <span id="toggle-dark">🌑</span><span id="toggle-light">🌞</span>
+    </div>
+    <div id="data_div">
+        <table class="monospace shadow" id="data-table"></table>
+        <pre class="monospace shadow" id="data-unparsed"></pre>
+    </div>
+    <p id="error" class="monospace shadow">
+    </p>
+</body>
+
+<script type="text/javascript">
+
+    /// Incremental request number. When response is received,
+    /// if it's request number does not equal to the current request number, response will be ignored.
+    /// This is to avoid race conditions.
+    var request_num = 0;
+
+    /// Save query in history only if it is different.
+    var previous_query = '';
+
+    /// Substitute the address of the server where the page is served.
+    if (location.protocol != 'file:') {
+        document.getElementById('url').value = location.origin;
+    }
+
+    /// Substitute user name if it's specified in the query string
+    var user_from_url = (new URL(window.location)).searchParams.get('user');
+    if (user_from_url) {
+        document.getElementById('user').value = user_from_url;
+    }
+
+    function postImpl(posted_request_num, query)
+    {
+        /// TODO: Check if URL already contains query string (append parameters).
+
+        var user = document.getElementById('user').value;
+        var password = document.getElementById('password').value;
+
+        var url = document.getElementById('url').value +
+            /// Ask server to allow cross-domain requests.
+            '?add_http_cors_header=1' +
+            '&user=' + encodeURIComponent(user) +
+            '&password=' + encodeURIComponent(password) +
+            '&default_format=JSONCompact' +
+            /// Safety settings to prevent results that browser cannot display.
+            '&max_result_rows=1000&max_result_bytes=10000000&result_overflow_mode=break';
+
+        var xhr = new XMLHttpRequest;
+
+        xhr.open('POST', url, true);
+
+        xhr.onreadystatechange = function()
+        {
+            if (posted_request_num != request_num) {
+                return;
+            } else if (this.readyState === XMLHttpRequest.DONE) {
+                renderResponse(this.status, this.response);
+
+                /// The query is saved in browser history (in state JSON object)
+                /// as well as in URL fragment identifier.
+                if (query != previous_query) {
+                    var state = {
+                        query: query,
+                        status: this.status,
+                        response: this.response.length > 100000 ? null : this.response  /// Lower than the browser's limit.
+                    };
+                    var title = "ClickHouse Query: " + query;
+                    var url = window.location.pathname + '?user=' + encodeURIComponent(user) + '#' + window.btoa(query);
+                    if (previous_query == '') {
+                        history.replaceState(state, title, url);
+                    } else {
+                        history.pushState(state, title, url);
+                    }
+                    document.title = title;
+                    previous_query = query;
+                }
+            } else {
+                //console.log(this);
+            }
+        }
+
+        document.getElementById('check-mark').style.display = 'none';
+        document.getElementById('hourglass').style.display = 'inline';
+
+        xhr.send(query);
+    }
+
+    function renderResponse(status, response) {
+        document.getElementById('hourglass').style.display = 'none';
+
+        if (status === 200) {
+            var json;
+            try { json = JSON.parse(response); } catch (e) {}
+            if (json !== undefined && json.statistics !== undefined) {
+                renderResult(json);
+            } else {
+                renderUnparsedResult(response);
+            }
+            document.getElementById('check-mark').style.display = 'inline';
+        } else {
+            /// TODO: Proper rendering of network errors.
+            renderError(response);
+        }
+    }
+
+    window.onpopstate = function(event) {
+        if (!event.state) {
+            return;
+        }
+        document.getElementById('query').value = event.state.query;
+        if (!event.state.response) {
+            clear();
+            return;
+        }
+        renderResponse(event.state.status, event.state.response);
+    };
+
+    if (window.location.hash) {
+        document.getElementById('query').value = window.atob(window.location.hash.substr(1));
+    }
+
+    function post()
+    {
+        ++request_num;
+        var query = document.getElementById('query').value;
+        postImpl(request_num, query);
+    }
+
+    document.getElementById('run').onclick = function()
+    {
+        post();
+    }
+
+    document.onkeypress = function(event)
+    {
+        /// Firefox has code 13 for Enter and Chromium has code 10.
+        if (event.ctrlKey && (event.charCode == 13 || event.charCode == 10)) {
+            post();
+        }
+    }
+
+    function clear()
+    {
+        var table = document.getElementById('data-table');
+        while (table.firstChild) {
+            table.removeChild(table.lastChild);
+        }
+
+        document.getElementById('data-unparsed').innerText = '';
+        document.getElementById('data-unparsed').style.display = 'none';
+
+        document.getElementById('error').innerText = '';
+        document.getElementById('error').style.display = 'none';
+
+        document.getElementById('stats').innerText = '';
+
+        document.getElementById('hourglass').style.display = 'none';
+        document.getElementById('check-mark').style.display = 'none';
+    }
+
+    function renderResult(response)
+    {
+        //console.log(response);
+        clear();
+
+        var stats = document.getElementById('stats');
+        stats.innerText = 'Elapsed: ' + response.statistics.elapsed.toFixed(3) + " sec, read " + response.statistics.rows_read + " rows.";
+
+        var thead = document.createElement('thead');
+        for (var idx in response.meta) {
+            var th = document.createElement('th');
+            var name = document.createTextNode(response.meta[idx].name);
+            th.appendChild(name);
+            thead.appendChild(th);
+        }
+
+        /// To prevent hanging the browser, limit the number of cells in a table.
+        /// It's important to have the limit on number of cells, not just rows, because tables may be wide or narrow.
+        var max_rows = 10000 / response.meta.length;
+        var row_num = 0;
+
+        var tbody = document.createElement('tbody');
+        for (var row_idx in response.data) {
+            var tr = document.createElement('tr');
+            for (var col_idx in response.data[row_idx]) {
+                var td = document.createElement('td');
+                var cell = response.data[row_idx][col_idx];
+                var is_null = (cell === null);
+                var content = document.createTextNode(is_null ? 'ᴺᵁᴸᴸ' : cell);
+                td.appendChild(content);
+                /// TODO: Execute regexp only once for each column.
+                td.className = response.meta[col_idx].type.match(/^(U?Int|Decimal|Float)/) ? 'right' : 'left';
+                if (is_null) {
+                    td.className += ' null';
+                }
+                tr.appendChild(td);
+            }
+            tbody.appendChild(tr);
+
+            ++row_num;
+            if (row_num >= max_rows) {
+                break;
+            }
+        }
+
+        var table = document.getElementById('data-table');
+        table.appendChild(thead);
+        table.appendChild(tbody);
+    }
+
+    /// A function to render raw data when non-default format is specified.
+    function renderUnparsedResult(response)
+    {
+        clear();
+        var data = document.getElementById('data-unparsed')
+
+        if (response === '') {
+            /// TODO: Fade or remove previous result when new request will be performed.
+            response = 'Ok.';
+        }
+
+        data.innerText = response;
+        /// inline-block make width adjust to the size of content.
+        data.style.display = 'inline-block';
+    }
+
+    function renderError(response)
+    {
+        clear();
+        document.getElementById('error').innerText = response ? response : "No response.";
+        document.getElementById('error').style.display = 'block';
+    }
+
+    function setColorTheme(theme)
+    {
+        window.localStorage.setItem('theme', theme);
+        document.documentElement.setAttribute('data-theme', theme);
+    }
+
+    /// The choice of color theme is saved in browser.
+    var theme = window.localStorage.getItem('theme');
+    if (theme) {
+        setColorTheme(theme);
+    }
+
+    document.getElementById('toggle-light').onclick = function()
+    {
+        setColorTheme('light');
+    }
+
+    document.getElementById('toggle-dark').onclick = function()
+    {
+        setColorTheme('dark');
+    }
+</script>
+</html>

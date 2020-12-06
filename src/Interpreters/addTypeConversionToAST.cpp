@@ -11,7 +11,7 @@ namespace DB
 
 ASTPtr addTypeConversionToAST(ASTPtr && ast, const String & type_name)
 {
-    auto func = makeASTFunction("CAST", ast, std::make_shared<ASTLiteral>(type_name));
+    auto func = makeASTFunction("cast", ast, std::make_shared<ASTLiteral>(type_name));
 
     if (ASTWithAlias * ast_with_alias = dynamic_cast<ASTWithAlias *>(ast.get()))
     {

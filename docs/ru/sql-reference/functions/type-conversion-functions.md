@@ -1,3 +1,8 @@
+---
+toc_priority: 38
+toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u043f\u0440\u0435\u043e\u0431\u0440\u0430\u0437\u043e\u0432\u0430\u043d\u0438\u044f\u0020\u0442\u0438\u043f\u043e\u0432"
+---
+
 # Функции преобразования типов {#funktsii-preobrazovaniia-tipov}
 
 ## Общие проблемы преобразования чисел {#numeric-conversion-issues}
@@ -313,6 +318,62 @@ SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
 ## reinterpretAsString {#type_conversion_functions-reinterpretAsString}
 
 Функция принимает число или дату или дату-с-временем и возвращает строку, содержащую байты, представляющие соответствующее значение в host order (little endian). При этом, отбрасываются нулевые байты с конца. Например, значение 255 типа UInt32 будет строкой длины 1 байт.
+
+## reinterpretAsUUID {#reinterpretasuuid}
+
+Функция принимает шестнадцатибайтную строку и интерпретирует ее байты в network order (big-endian). Если строка имеет недостаточную длину, то функция работает так, как будто строка дополнена необходимым количетсвом нулевых байт с конца. Если строка длиннее, чем шестнадцать байт, то игнорируются лишние байты с конца.
+
+**Синтаксис**
+
+``` sql
+reinterpretAsUUID(fixed_string)
+```
+
+**Параметры**
+
+-   `fixed_string` — cтрока с big-endian порядком байтов. [FixedString](../../sql-reference/data-types/fixedstring.md#fixedstring).
+
+**Возвращаемое значение**
+
+-   Значение типа [UUID](../../sql-reference/data-types/uuid.md#uuid-data-type).
+
+**Примеры**
+
+Интерпретация строки как UUID.
+
+Запрос:
+
+``` sql
+SELECT reinterpretAsUUID(reverse(unhex('000102030405060708090a0b0c0d0e0f')))
+```
+
+Результат:
+
+``` text
+┌─reinterpretAsUUID(reverse(unhex('000102030405060708090a0b0c0d0e0f')))─┐
+│                                  08090a0b-0c0d-0e0f-0001-020304050607 │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+Переход в UUID и обратно.
+
+Запрос:
+
+``` sql
+WITH
+    generateUUIDv4() AS uuid,
+    identity(lower(hex(reverse(reinterpretAsString(uuid))))) AS str,
+    reinterpretAsUUID(reverse(unhex(str))) AS uuid2
+SELECT uuid = uuid2;
+```
+
+Результат:
+
+``` text
+┌─equals(uuid, uuid2)─┐
+│                   1 │
+└─────────────────────┘
+```
 
 ## CAST(x, T) {#type_conversion_function-cast}
 
@@ -767,4 +828,43 @@ FROM numbers(3)
                          │
 └──────────────────────────────────┘
 ```
+
+## formatRowNoNewline {#formatrownonewline}
+
+Преобразует произвольные выражения в строку заданного формата. При этом удаляет лишние переводы строк `\n`, если они появились.
+
+**Синтаксис** 
+
+``` sql
+formatRowNoNewline(format, x, y, ...)
+```
+
+**Параметры**
+
+-   `format` — Текстовый формат. Например, [CSV](../../interfaces/formats.md#csv), [TSV](../../interfaces/formats.md#tabseparated).
+-   `x`,`y`, ... — Выражения.
+
+**Возвращаемое значение**
+
+-   Отформатированная строка (в текстовых форматах без завершающего перевода строки).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT formatRowNoNewline('CSV', number, 'good')
+FROM numbers(3)
+```
+
+Ответ:
+
+``` text
+┌─formatRowNoNewline('CSV', number, 'good')─┐
+│ 0,"good"                                  │
+│ 1,"good"                                  │
+│ 2,"good"                                  │
+└───────────────────────────────────────────┘
+```
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/type_conversion_functions/) <!--hide-->

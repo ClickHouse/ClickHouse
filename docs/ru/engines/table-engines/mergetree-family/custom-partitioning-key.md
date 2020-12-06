@@ -1,3 +1,9 @@
+---
+toc_priority: 32
+toc_title: "\u041f\u0440\u043e\u0438\u0437\u0432\u043e\u043b\u044c\u043d\u044b\u0439\u0020\u043a\u043b\u044e\u0447\u0020\u043f\u0430\u0440\u0442\u0438\u0446\u0438\u043e\u043d\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u044f"
+---
+
+
 # Произвольный ключ партиционирования {#proizvolnyi-kliuch-partitsionirovaniia}
 
 Партиционирование данных доступно для таблиц семейства [MergeTree](mergetree.md) (включая [реплицированные таблицы](replication.md)). Таблицы [MaterializedView](../special/materializedview.md#materializedview), созданные на основе таблиц MergeTree, также поддерживают партиционирование.

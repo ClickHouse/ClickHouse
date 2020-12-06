@@ -1,3 +1,8 @@
+---
+toc_priority: 15
+toc_title: "\u0410\u043d\u043e\u043d\u0438\u043c\u0438\u0437\u0438\u0440\u043e\u0432\u0430\u043d\u043d\u044b\u0435\u0020\u0434\u0430\u043d\u043d\u044b\u0435\u0020\u042f\u043d\u0434\u0435\u043a\u0441\u002e\u041c\u0435\u0442\u0440\u0438\u043a\u0438"
+---
+
 # Анонимизированные данные Яндекс.Метрики {#anonimizirovannye-dannye-iandeks-metriki}
 
 Датасет состоит из двух таблиц, содержащих анонимизированные данные о хитах (`hits_v1`) и визитах (`visits_v1`) Яндекс.Метрики. Каждую из таблиц можно скачать в виде сжатого `.tsv.xz`-файла или в виде уже готовых партиций. Также можно скачать расширенную версию таблицы `hits`, содержащую 100 миллионов строк в виде [архива c файлами TSV](https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_100m_obfuscated_v1.tsv.xz) и в виде [готовых партиций](https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits_100m_obfuscated_v1.tar.xz).

@@ -16,6 +16,7 @@
 #include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
+#include <IO/WriteBufferFromString.h>
 
 #include <boost/algorithm/string.hpp>
 #include <boost/program_options.hpp>
@@ -622,7 +623,7 @@ FuncRet arrayJoinFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
         {
             auto ident = std::dynamic_pointer_cast<DB::ASTIdentifier>(arg);
             if (ident)
-                indents.insert(ident->name);
+                indents.insert(ident->name());
         }
         for (const auto & indent : indents)
         {
@@ -654,7 +655,7 @@ FuncRet inFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             auto ident = std::dynamic_pointer_cast<DB::ASTIdentifier>(arg);
             if (ident)
             {
-                indents.insert(ident->name);
+                indents.insert(ident->name());
             }
             auto literal = std::dynamic_pointer_cast<DB::ASTLiteral>(arg);
             if (literal)
@@ -734,7 +735,7 @@ FuncRet arrayFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             if (ident)
             {
                 no_indent = false;
-                indents.insert(ident->name);
+                indents.insert(ident->name());
             }
             auto literal = std::dynamic_pointer_cast<DB::ASTLiteral>(arg);
             if (literal)
@@ -784,7 +785,7 @@ FuncRet arithmeticFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             if (ident)
             {
                 no_indent = false;
-                indents.insert(ident->name);
+                indents.insert(ident->name());
             }
             auto literal = std::dynamic_pointer_cast<DB::ASTLiteral>(arg);
             if (literal)
@@ -828,9 +829,9 @@ FuncRet arithmeticFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
         FuncRet r(ret_type, "");
         if (no_indent)
         {
-            std::ostringstream ss;
-            formatAST(*ch, ss);
-            r.value = ss.str();
+            DB::WriteBufferFromOwnString buf;
+            formatAST(*ch, buf);
+            r.value = buf.str();
         }
         return r;
     }
@@ -848,7 +849,7 @@ FuncRet likeFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
         {
             auto ident = std::dynamic_pointer_cast<DB::ASTIdentifier>(arg);
             if (ident)
-                indents.insert(ident->name);
+                indents.insert(ident->name());
             auto literal = std::dynamic_pointer_cast<DB::ASTLiteral>(arg);
             if (literal)
             {
@@ -905,7 +906,7 @@ FuncRet simpleFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             if (ident)
             {
                 no_indent = false;
-                indents.insert(ident->name);
+                indents.insert(ident->name());
             }
             auto literal = std::dynamic_pointer_cast<DB::ASTLiteral>(arg);
             if (literal)
@@ -990,10 +991,10 @@ FuncRet simpleFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
         {
             if (no_indent)
             {
-                std::ostringstream ss;
-                formatAST(*ch, ss);
+                DB::WriteBufferFromOwnString buf;
+                formatAST(*ch, buf);
                 auto r = func_to_return_type[boost::algorithm::to_lower_copy(x->name)];
-                r.value = ss.str();
+                r.value = buf.str();
                 return r;
             }
             return func_to_return_type[boost::algorithm::to_lower_copy(x->name)];
@@ -1003,11 +1004,11 @@ FuncRet simpleFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
         {
             if (no_indent)
             {
-                std::ostringstream ss;
-                formatAST(*ch, ss);
+                DB::WriteBufferFromOwnString buf;
+                formatAST(*ch, buf);
                 return FuncRet(
                         func_to_param_type[boost::algorithm::to_lower_copy(x->name)],
-                        ss.str());
+                        buf.str());
             }
             return FuncRet(
                     func_to_param_type[boost::algorithm::to_lower_copy(x->name)],
@@ -1046,7 +1047,7 @@ std::set<std::string> getIndent(DB::ASTPtr ch)
     std::set<std::string> ret = {};
     auto x = std::dynamic_pointer_cast<DB::ASTIdentifier>(ch);
     if (x)
-        ret.insert(x->name);
+        ret.insert(x->name());
     for (const auto & child : (*ch).children)
     {
         auto child_ind = getIndent(child);
@@ -1292,9 +1293,11 @@ int main(int argc, const char *argv[])
             return 1;
         }
         if (vm.count("input"))
-            freopen(vm["input"].as<std::string>().c_str(), "r", stdin);
+            if (!freopen(vm["input"].as<std::string>().c_str(), "r", stdin))
+                std::cout << "Error while input." << std::endl;
         if (vm.count("output"))
-            freopen(vm["output"].as<std::string>().c_str(), "w", stdout);
+            if (!freopen(vm["output"].as<std::string>().c_str(), "w", stdout))
+                std::cout << "Error while output." << std::endl;
         if (vm.empty())
             std::cout << "Copy your queries (with semicolons) here, press Enter and Ctrl+D." << std::endl;
     }

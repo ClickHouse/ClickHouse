@@ -141,7 +141,7 @@ ClickHouseのビルドには、バージョン9以降のGCCとClangバージョ�
 
 UBUNTUにGCCをインストールするには: `sudo apt install gcc g++`
 
-Gccのバージョンを確認する: `gcc --version`. の場合は下記9その指示に従う。https://clickhouse.tech/docs/ja/development/build/#install-gcc-9.
+Gccのバージョンを確認する: `gcc --version`. の場合は下記9その指示に従う。https://clickhouse.tech/docs/ja/development/build/#install-gcc-10.
 
 Mac OS XのビルドはClangでのみサポートされています。 ちょうど実行 `brew install llvm`
 
@@ -160,7 +160,7 @@ ClickHouseを構築する準備ができたので、別のディレクトリを�
 
 Linux:
 
-    export CC=gcc-9 CXX=g++-9
+    export CC=gcc-10 CXX=g++-10
     cmake ..
 
 Mac OS X:

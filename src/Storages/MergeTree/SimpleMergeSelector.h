@@ -6,7 +6,7 @@
 namespace DB
 {
 
-class SimpleMergeSelector : public IMergeSelector
+class SimpleMergeSelector final : public IMergeSelector
 {
 public:
     struct Settings

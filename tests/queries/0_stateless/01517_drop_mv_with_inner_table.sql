@@ -38,3 +38,10 @@ create materialized view db_01517_ordinary.mv engine=Null as select * from db_01
 -- drops it and hangs with Atomic engine, due to recursive DROP
 drop table db_01517_ordinary.mv sync;
 show tables from db_01517_ordinary;
+
+drop table db_01517_atomic_sync.source;
+drop table db_01517_ordinary.source;
+
+drop database db_01517_atomic;
+drop database db_01517_atomic_sync;
+drop database db_01517_ordinary;

@@ -30,9 +30,9 @@ struct QueryLogElement
     /// Depending on the type of query and type of stage, not all the fields may be filled.
 
     time_t event_time{};
-    UInt64 event_time_microseconds{};
+    Decimal64 event_time_microseconds{};
     time_t query_start_time{};
-    UInt64 query_start_time_microseconds{};
+    Decimal64 query_start_time_microseconds{};
     UInt64 query_duration_ms{};
 
     /// The data fetched from DB to execute the query

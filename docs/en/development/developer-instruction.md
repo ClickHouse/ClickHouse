@@ -131,13 +131,13 @@ ClickHouse uses several external libraries for building. All of them do not need
 
 ## C++ Compiler {#c-compiler}
 
-Compilers GCC starting from version 9 and Clang version 8 or above are supported for building ClickHouse.
+Compilers GCC starting from version 10 and Clang version 8 or above are supported for building ClickHouse.
 
 Official Yandex builds currently use GCC because it generates machine code of slightly better performance (yielding a difference of up to several percent according to our benchmarks). And Clang is more convenient for development usually. Though, our continuous integration (CI) platform runs checks for about a dozen of build combinations.
 
 To install GCC on Ubuntu run: `sudo apt install gcc g++`
 
-Check the version of gcc: `gcc --version`. If it is below 9, then follow the instruction here: https://clickhouse.tech/docs/en/development/build/#install-gcc-9.
+Check the version of gcc: `gcc --version`. If it is below 10, then follow the instruction here: https://clickhouse.tech/docs/en/development/build/#install-gcc-10.
 
 Mac OS X build is supported only for Clang. Just run `brew install llvm`
 
@@ -152,11 +152,11 @@ Now that you are ready to build ClickHouse we recommend you to create a separate
 
 You can have several different directories (build_release, build_debug, etc.) for different types of build.
 
-While inside the `build` directory, configure your build by running CMake. Before the first run, you need to define environment variables that specify compiler (version 9 gcc compiler in this example).
+While inside the `build` directory, configure your build by running CMake. Before the first run, you need to define environment variables that specify compiler (version 10 gcc compiler in this example).
 
 Linux:
 
-    export CC=gcc-9 CXX=g++-9
+    export CC=gcc-10 CXX=g++-10
     cmake ..
 
 Mac OS X:

@@ -305,6 +305,54 @@ When enabled, replace empty input fields in TSV with default values. For complex
 
 Disabled by default.
 
+## input_format_tsv_enum_as_number {#settings-input_format_tsv_enum_as_number}
+
+Enables or disables parsing enum values as enum ids for TSV input format.
+
+Possible values:
+
+-   0 — Enum values are parsed as values.
+-   1 — Enum values are parsed as enum IDs
+
+Default value: 0.
+
+**Example**
+
+Consider the table:
+
+```sql
+CREATE TABLE table_with_enum_column_for_tsv_insert (Id Int32,Value Enum('first' = 1, 'second' = 2)) ENGINE=Memory();
+```
+
+When the `input_format_tsv_enum_as_number` setting is enabled:  
+
+```sql
+SET input_format_tsv_enum_as_number = 1;
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 103	1;
+SELECT * FROM table_with_enum_column_for_tsv_insert;
+```
+
+Result:
+
+```text
+┌──Id─┬─Value──┐
+│ 102 │ second │
+└─────┴────────┘
+┌──Id─┬─Value──┐
+│ 103 │ first  │
+└─────┴────────┘
+```
+
+When the `input_format_tsv_enum_as_number` setting is disabled, the `INSERT` query:
+
+```sql
+SET input_format_tsv_enum_as_number = 0;
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
+```
+
+throws an exception.
+
 ## input_format_null_as_default {#settings-input-format-null-as-default}
 
 Enables or disables using default values if input data contain `NULL`, but the data type of the corresponding column in not `Nullable(T)` (for text input formats).
@@ -380,7 +428,7 @@ Possible values:
 
 -   `'basic'` — Use basic parser.
 
-    ClickHouse can parse only the basic `YYYY-MM-DD HH:MM:SS` format. For example, `'2019-08-20 10:18:56'`.
+    ClickHouse can parse only the basic `YYYY-MM-DD HH:MM:SS` or `YYYY-MM-DD` format. For example, `'2019-08-20 10:18:56'` or `2019-08-20`.
 
 Default value: `'basic'`.
 
@@ -675,6 +723,21 @@ Example:
 ``` text
 log_queries=1
 ```
+
+## log_queries_min_query_duration_ms {#settings-log-queries-min-query-duration-ms}
+
+Minimal time for the query to run to get to the following tables:
+
+- `system.query_log`
+- `system.query_thread_log`
+
+Only the queries with the following type will get to the log:
+
+- `QUERY_FINISH`
+- `EXCEPTION_WHILE_PROCESSING`
+
+-   Type: milliseconds
+-   Default value: 0 (any query)
 
 ## log_queries_min_type {#settings-log-queries-min-type}
 
@@ -1161,6 +1224,50 @@ The character is interpreted as a delimiter in the CSV data. By default, the del
 
 For CSV input format enables or disables parsing of unquoted `NULL` as literal (synonym for `\N`).
 
+## input_format_csv_enum_as_number {#settings-input_format_csv_enum_as_number}
+
+Enables or disables parsing enum values as enum ids for CSV input format.
+
+Possible values:
+
+-   0 — Enum values are parsed as values.
+-   1 — Enum values are parsed as enum IDs.
+
+Default value: 0.
+
+**Examples**
+
+Consider the table:
+
+```sql
+CREATE TABLE table_with_enum_column_for_csv_insert (Id Int32,Value Enum('first' = 1, 'second' = 2)) ENGINE=Memory();
+```
+
+When the `input_format_csv_enum_as_number` setting is enabled:  
+
+```sql
+SET input_format_csv_enum_as_number = 1;
+INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2;
+SELECT * FROM table_with_enum_column_for_csv_insert;
+```
+
+Result:
+
+```text
+┌──Id─┬─Value─────┐
+│ 102 │ second    │
+└─────┴───────────┘
+```
+
+When the `input_format_csv_enum_as_number` setting is disabled, the `INSERT` query:
+
+```sql
+SET input_format_csv_enum_as_number = 0;
+INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2;
+```
+
+throws an exception.
+
 ## output_format_csv_crlf_end_of_line {#settings-output-format-csv-crlf-end-of-line}
 
 Use DOS/Windows-style line separator (CRLF) in CSV instead of Unix style (LF).
@@ -1395,6 +1502,17 @@ Possible values:
 
 -   0 — Disabled.
 -   1 — Enabled.
+
+Default value: 0
+
+## allow_nondeterministic_optimize_skip_unused_shards {#allow-nondeterministic-optimize-skip-unused-shards}
+
+Allow nondeterministic (like `rand` or `dictGet`, since later has some caveats with updates) functions in sharding key.
+
+Possible values:
+
+-   0 — Disallowed.
+-   1 — Allowed.
 
 Default value: 0
 
@@ -1731,6 +1849,23 @@ Default value: `0`.
 
 -   [Distributed Table Engine](../../engines/table-engines/special/distributed.md#distributed)
 -   [Managing Distributed Tables](../../sql-reference/statements/system.md#query-language-system-distributed)
+
+
+## use_compact_format_in_distributed_parts_names {#use_compact_format_in_distributed_parts_names}
+
+Uses compact format for storing blocks for async (`insert_distributed_sync`) INSERT into tables with `Distributed` engine.
+
+Possible values:
+
+-   0 — Uses `user[:password]@host:port#default_database` directory format.
+-   1 — Uses `[shard{shard_index}[_replica{replica_index}]]` directory format.
+
+Default value: `1`.
+
+!!! note "Note"
+    - with `use_compact_format_in_distributed_parts_names=0` changes from cluster definition will not be applied for async INSERT.
+    - with `use_compact_format_in_distributed_parts_names=1` changing the order of the nodes in the cluster definition, will change the `shard_index`/`replica_index` so be aware.
+
 ## background_buffer_flush_schedule_pool_size {#background_buffer_flush_schedule_pool_size}
 
 Sets the number of threads performing background flush in [Buffer](../../engines/table-engines/special/buffer.md)-engine tables. This setting is applied at the ClickHouse server start and can’t be changed in a user session.
@@ -2129,7 +2264,75 @@ Result:
 └───────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
+## output_format_pretty_row_numbers {#output_format_pretty_row_numbers}
+
+Adds row numbers to output in the [Pretty](../../interfaces/formats.md#pretty) format.
+
+Possible values:
+
+-   0 — Output without row numbers.
+-   1 — Output with row numbers.
+
+Default value: `0`.
+
+**Example**
+
+Query:
+
+```sql
+SET output_format_pretty_row_numbers = 1;
+SELECT TOP 3 name, value FROM system.settings;
+```
+
+Result:
+```text
+   ┌─name────────────────────┬─value───┐
+1. │ min_compress_block_size │ 65536   │
+2. │ max_compress_block_size │ 1048576 │
+3. │ max_block_size          │ 65505   │
+   └─────────────────────────┴─────────┘
+```
+
+## system_events_show_zero_values {#system_events_show_zero_values}
+
+Allows to select zero-valued events from [`system.events`](../../operations/system-tables/events.md).
+
+Some monitoring systems require passing all the metrics values to them for each checkpoint, even if the metric value is zero.
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: `0`.
+
+**Examples**
+
+Query
+
+```sql
+SELECT * FROM system.events WHERE event='QueryMemoryLimitExceeded';
+```
+
+Result
+
+```text
+Ok.
+```
+
+Query
+```sql
+SET system_events_show_zero_values = 1;
+SELECT * FROM system.events WHERE event='QueryMemoryLimitExceeded';
+```
+
+Result
+
+```text
+┌─event────────────────────┬─value─┬─description───────────────────────────────────────────┐
+│ QueryMemoryLimitExceeded │     0 │ Number of times when memory limit exceeded for query. │
+└──────────────────────────┴───────┴───────────────────────────────────────────────────────┘
+```
 
 ## allow_experimental_bigint_types {#allow_experimental_bigint_types}
 
@@ -2141,3 +2344,35 @@ Possible values:
 -   0 — The bigint data type is disabled.
 
 Default value: `0`.
+
+## persistent {#persistent}
+
+Disables persistency for the [Set](../../engines/table-engines/special/set.md#set) and [Join](../../engines/table-engines/special/join.md#join) table engines. 
+
+Reduces the I/O overhead. Suitable for scenarios that pursue performance and do not require persistence.
+
+Possible values:
+
+- 1 — Enabled.
+- 0 — Disabled.
+
+Default value: `1`.
+
+## output_format_tsv_null_representation {#output_format_tsv_null_representation}
+
+Allows configurable `NULL` representation for [TSV](../../interfaces/formats.md#tabseparated) output format. The setting only controls output format and `\N` is the only supported `NULL` representation for TSV input format.
+
+Default value: `\N`.
+
+## allow_nullable_key {#allow-nullable-key}
+
+Allows using of the [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable)-typed values in a sorting and a primary key for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree) tables.
+
+Possible values:
+
+- 1 — `Nullable`-type expressions are allowed in keys.
+- 0 — `Nullable`-type expressions are not allowed in keys.
+
+Default value: `0`.
+
+[Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

@@ -1,3 +1,8 @@
+---
+toc_priority: 11
+toc_title: "\u0423\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0430"
+---
+
 # Установка {#ustanovka}
 
 ## Системные требования {#sistemnye-trebovaniia}

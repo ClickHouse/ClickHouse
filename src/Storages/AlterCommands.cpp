@@ -22,12 +22,11 @@
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/queryToString.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Common/typeid_cast.h>
-
-
-#include <Parsers/queryToString.h>
+#include <Common/randomSeed.h>
 
 
 namespace DB
@@ -208,7 +207,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.index_name = ast_index_decl.name;
 
         if (command_ast->index)
-            command.after_index_name = command_ast->index->as<ASTIdentifier &>().name;
+            command.after_index_name = command_ast->index->as<ASTIdentifier &>().name();
 
         command.if_not_exists = command_ast->if_not_exists;
 
@@ -235,7 +234,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.ast = command_ast->clone();
         command.if_exists = command_ast->if_exists;
         command.type = AlterCommand::DROP_CONSTRAINT;
-        command.constraint_name = command_ast->constraint->as<ASTIdentifier &>().name;
+        command.constraint_name = command_ast->constraint->as<ASTIdentifier &>().name();
 
         return command;
     }
@@ -244,7 +243,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.ast = command_ast->clone();
         command.type = AlterCommand::DROP_INDEX;
-        command.index_name = command_ast->index->as<ASTIdentifier &>().name;
+        command.index_name = command_ast->index->as<ASTIdentifier &>().name();
         command.if_exists = command_ast->if_exists;
         if (command_ast->clear_index)
             command.clear = true;
@@ -290,8 +289,8 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.ast = command_ast->clone();
         command.type = AlterCommand::RENAME_COLUMN;
-        command.column_name = command_ast->column->as<ASTIdentifier &>().name;
-        command.rename_to = command_ast->rename_to->as<ASTIdentifier &>().name;
+        command.column_name = command_ast->column->as<ASTIdentifier &>().name();
+        command.rename_to = command_ast->rename_to->as<ASTIdentifier &>().name();
         command.if_exists = command_ast->if_exists;
         return command;
     }
@@ -1117,7 +1116,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                     data_type_ptr = command.data_type;
 
                 const auto & final_column_name = column_name;
-                const auto tmp_column_name = final_column_name + "_tmp";
+                const auto tmp_column_name = final_column_name + "_tmp_alter" + toString(randomSeed());
 
                 default_expr_list->children.emplace_back(setAlias(
                     addTypeConversionToAST(std::make_shared<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()),
@@ -1133,7 +1132,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                     continue;
 
                 const auto & final_column_name = column_name;
-                const auto tmp_column_name = final_column_name + "_tmp";
+                const auto tmp_column_name = final_column_name + "_tmp_alter" + toString(randomSeed());
                 const auto data_type_ptr = command.data_type;
 
                 default_expr_list->children.emplace_back(setAlias(

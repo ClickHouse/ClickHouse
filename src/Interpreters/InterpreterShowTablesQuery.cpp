@@ -6,8 +6,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
 #include <Common/typeid_cast.h>
-#include <iomanip>
-#include <sstream>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -32,7 +31,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     /// SHOW DATABASES
     if (query.databases)
     {
-        std::stringstream rewritten_query;
+        WriteBufferFromOwnString rewritten_query;
         rewritten_query << "SELECT name FROM system.databases";
 
         if (!query.like.empty())
@@ -41,7 +40,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
                 << " WHERE name "
                 << (query.not_like ? "NOT " : "")
                 << (query.case_insensitive_like ? "ILIKE " : "LIKE ")
-                << std::quoted(query.like, '\'');
+                << DB::quote << query.like;
         }
 
         if (query.limit_length)
@@ -50,10 +49,10 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         return rewritten_query.str();
     }
 
-    /// SHOW CLUSTER/CLUSTERS 
+    /// SHOW CLUSTER/CLUSTERS
     if (query.clusters)
     {
-        std::stringstream rewritten_query;
+        WriteBufferFromOwnString rewritten_query;
         rewritten_query << "SELECT DISTINCT cluster FROM system.clusters";
 
         if (!query.like.empty())
@@ -62,7 +61,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
                 << " WHERE cluster "
                 << (query.not_like ? "NOT " : "")
                 << (query.case_insensitive_like ? "ILIKE " : "LIKE ")
-                << std::quoted(query.like, '\'');
+                << DB::quote << query.like;
         }
 
         if (query.limit_length)
@@ -72,10 +71,10 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     }
     else if (query.cluster)
     {
-        std::stringstream rewritten_query;
+        WriteBufferFromOwnString rewritten_query;
         rewritten_query << "SELECT * FROM system.clusters";
 
-        rewritten_query << " WHERE cluster = " << std::quoted(query.cluster_str, '\'');
+        rewritten_query << " WHERE cluster = " << DB::quote << query.cluster_str;
 
         return rewritten_query.str();
     }
@@ -86,7 +85,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     String database = context.resolveDatabase(query.from);
     DatabaseCatalog::instance().assertDatabaseExists(database);
 
-    std::stringstream rewritten_query;
+    WriteBufferFromOwnString rewritten_query;
     rewritten_query << "SELECT name FROM system.";
 
     if (query.dictionaries)
@@ -103,14 +102,14 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         rewritten_query << "is_temporary";
     }
     else
-        rewritten_query << "database = " << std::quoted(database, '\'');
+        rewritten_query << "database = " << DB::quote << database;
 
     if (!query.like.empty())
         rewritten_query
             << " AND name "
             << (query.not_like ? "NOT " : "")
             << (query.case_insensitive_like ? "ILIKE " : "LIKE ")
-            << std::quoted(query.like, '\'');
+            << DB::quote << query.like;
     else if (query.where_expression)
         rewritten_query << " AND (" << query.where_expression << ")";
 

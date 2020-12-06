@@ -1,3 +1,8 @@
+---
+toc_priority: 14
+toc_title: Playground
+---
+
 # ClickHouse Playground {#clickhouse-playground}
 
 [ClickHouse Playground](https://play.clickhouse.tech) позволяет пользователям экспериментировать с ClickHouse, мгновенно выполняя запросы без настройки своего сервера или кластера.

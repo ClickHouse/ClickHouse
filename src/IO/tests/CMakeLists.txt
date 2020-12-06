@@ -65,6 +65,9 @@ endif ()
 add_executable (zlib_buffers zlib_buffers.cpp)
 target_link_libraries (zlib_buffers PRIVATE clickhouse_common_io)
 
+add_executable (lzma_buffers lzma_buffers.cpp)
+target_link_libraries (lzma_buffers PRIVATE clickhouse_common_io)
+
 add_executable (limit_read_buffer limit_read_buffer.cpp)
 target_link_libraries (limit_read_buffer PRIVATE clickhouse_common_io)
 
@@ -79,3 +82,6 @@ target_link_libraries (zlib_ng_bug PRIVATE ${ZLIB_LIBRARIES})
 
 add_executable (ryu_test ryu_test.cpp)
 target_link_libraries (ryu_test PRIVATE ryu)
+
+add_executable (zstd_buffers zstd_buffers.cpp)
+target_link_libraries (zstd_buffers PRIVATE clickhouse_common_io)

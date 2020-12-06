@@ -1,4 +1,4 @@
-<test max_ignored_relative_change="0.2">
+<test>
     <create_query>DROP TABLE IF EXISTS perf_lc_fixed_str_groupby</create_query>
     <create_query>CREATE TABLE perf_lc_fixed_str_groupby(
             a LowCardinality(FixedString(14)),

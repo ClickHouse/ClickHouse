@@ -28,12 +28,17 @@ DictionaryReader::FunctionWrapper::FunctionWrapper(FunctionOverloadResolverPtr r
 
     ColumnWithTypeAndName result;
     result.name = "get_" + column_name;
-    result.type = prepared_function->getReturnType();
+    result.type = prepared_function->getResultType();
     if (result.type->getTypeId() != expected_type)
         throw Exception("Type mismatch in dictionary reader for: " + column_name, ErrorCodes::TYPE_MISMATCH);
     block.insert(result);
 
-    function = prepared_function->prepare(block.getColumnsWithTypeAndName(), arg_positions, result_pos);
+    ColumnsWithTypeAndName args;
+    args.reserve(arg_positions.size());
+    for (auto pos : arg_positions)
+        args.emplace_back(block.getByPosition(pos));
+
+    function = prepared_function->prepare(block.getColumnsWithTypeAndName());
 }
 
 static constexpr const size_t key_size = 1;

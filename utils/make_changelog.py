@@ -262,7 +262,7 @@ def process_unknown_commits(commits, commits_info, users):
 # Returns False if the PR should not be mentioned changelog.
 def parse_one_pull_request(item):
     description = item['description']
-    lines = [line for line in [x.strip() for x in description.split('\n') if description else []] if line]
+    lines = [line for line in [x.strip() for x in description.split('\n')] if line] if description else []
     lines = [re.sub(r'\s+', ' ', l) for l in lines]
 
     cat_pos = None

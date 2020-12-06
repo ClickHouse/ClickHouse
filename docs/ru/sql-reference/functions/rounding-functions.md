@@ -1,3 +1,8 @@
+---
+toc_priority: 45
+toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u043e\u043a\u0440\u0443\u0433\u043b\u0435\u043d\u0438\u044f"
+---
+
 # Функции округления {#funktsii-okrugleniia}
 
 ## floor(x\[, N\]) {#floorx-n}

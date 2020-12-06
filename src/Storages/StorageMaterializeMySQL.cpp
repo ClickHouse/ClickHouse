@@ -34,7 +34,7 @@ StorageMaterializeMySQL::StorageMaterializeMySQL(const StoragePtr & nested_stora
 Pipe StorageMaterializeMySQL::read(
     const Names & column_names,
     const StorageMetadataPtr & /*metadata_snapshot*/,
-    const SelectQueryInfo & query_info,
+    SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
@@ -82,6 +82,7 @@ Pipe StorageMaterializeMySQL::read(
     }
 
     Pipe pipe = nested_storage->read(require_columns_name, nested_metadata, query_info, context, processed_stage, max_block_size, num_streams);
+    pipe.addTableLock(lock);
 
     if (!expressions->children.empty() && !pipe.empty())
     {
