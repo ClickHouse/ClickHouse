@@ -242,7 +242,6 @@ target_link_libraries (clickhouse_common_io
         PUBLIC
             common
             ${DOUBLE_CONVERSION_LIBRARIES}
-            ryu
             dragonbox_to_chars
 )
 

@@ -142,9 +142,6 @@
 [submodule "contrib/replxx"]
 	path = contrib/replxx
 	url = https://github.com/ClickHouse-Extras/replxx.git
-[submodule "contrib/ryu"]
-	path = contrib/ryu
-	url = https://github.com/ClickHouse-Extras/ryu.git
 [submodule "contrib/avro"]
 	path = contrib/avro
 	url = https://github.com/ClickHouse-Extras/avro.git
@@ -211,4 +208,4 @@
 	branch = lts_2020_02_25
 [submodule "contrib/dragonbox"]
 	path = contrib/dragonbox
-	url = https://github.com/kitaisreal/dragonbox.git
+	url = https://github.com/ClickHouse-Extras/dragonbox.git
