@@ -29,7 +29,7 @@ def check_result(result, error, return_code, reference, replace_map):
 
 def run_client(bin_prefix, port, query, reference, replace_map={}):
     # We can't use `text=True` since some tests may return binary data
-    client = subprocess.Popen([bin_prefix + '-client', '--port', str(port), '-m', '-n', '--testmode'],
+    client = subprocess.Popen([bin_prefix + '-client', '--port', str(port), '-m', '-n', '--testmode', '--use_antlr_parser=1'],
                               stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     result, error = client.communicate(query.encode('utf-8'))
     assert client.returncode is not None, "Client should exit after processing all queries"
@@ -37,14 +37,16 @@ def run_client(bin_prefix, port, query, reference, replace_map={}):
     check_result(result, error, client.returncode, reference, replace_map)
 
 
-def run_shell(bin_prefix, tmp_dir, tcp_port, http_port, inter_port, database, path, reference, replace_map={}):
+def run_shell(bin_prefix, server, database, path, reference, replace_map={}):
     env = {
         'CLICKHOUSE_BINARY': bin_prefix,
         'CLICKHOUSE_DATABASE': database,
-        'CLICKHOUSE_PORT_TCP': str(tcp_port),
-        'CLICKHOUSE_PORT_HTTP': str(http_port),
-        'CLICKHOUSE_PORT_INTERSERVER': str(inter_port),
-        'CLICKHOUSE_TMP': tmp_dir,
+        'CLICKHOUSE_PORT_TCP': str(server.tcp_port),
+        'CLICKHOUSE_PORT_TCP_SECURE': str(server.tcps_port),
+        'CLICKHOUSE_PORT_HTTP': str(server.http_port),
+        'CLICKHOUSE_PORT_INTERSERVER': str(server.inter_port),
+        'CLICKHOUSE_TMP': server.tmp_dir,
+        'CLICKHOUSE_CONFIG_CLIENT': server.client_config
     }
     shell = subprocess.Popen([path], env=env, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     result, error = shell.communicate()
@@ -88,9 +90,6 @@ def test_sql_query(bin_prefix, sql_query, standalone_server):
 
 def test_shell_query(bin_prefix, shell_query, standalone_server):
     tcp_port = standalone_server.tcp_port
-    http_port = standalone_server.http_port
-    inter_port = standalone_server.inter_port
-    tmp_path = standalone_server.tmp_dir
 
     shell_path = shell_query + ".sh"
     reference_path = shell_query + ".reference"
@@ -105,7 +104,7 @@ def test_shell_query(bin_prefix, shell_query, standalone_server):
     query = 'CREATE DATABASE {random};'.format(random=random_name)
     run_client(bin_prefix, tcp_port, query, b'')
 
-    run_shell(bin_prefix, tmp_path, tcp_port, http_port, inter_port, random_name, shell_path, reference, {random_name: 'default'})
+    run_shell(bin_prefix, standalone_server, random_name, shell_path, reference, {random_name: 'default'})
 
     query = "SELECT 'SHOW ORPHANED TABLES'; SELECT name FROM system.tables WHERE database != 'system' ORDER BY (database, name);"
     run_client(bin_prefix, tcp_port, query, b'SHOW ORPHANED TABLES\n')
