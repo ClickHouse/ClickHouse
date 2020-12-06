@@ -135,10 +135,14 @@ ALTER TABLE table_name MOFIY COLUMN column_name REMOVE removing_part
 **Example**
 
 Request
+```sql
+ALTER TABLE table_name MOFIY COLUMN column_name REMOVE removing_part
+```
 
 Result
+```text
 
-## Other necessary sections of the description (Optional)
+```
 
 ## See Also (Optional)
 
