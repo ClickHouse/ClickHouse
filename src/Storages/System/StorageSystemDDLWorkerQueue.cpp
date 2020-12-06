@@ -40,7 +40,7 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, const C
      [zk: localhost:2181(CONNECTED) 53] ls /clickhouse/task_queue/ddl/query-0000000004
     [active, finished]
     */
-    for (String q : queries)
+    for (const String & q : queries)
     {
         /* Fetch all nodes under active & finished.
         [zk: localhost:2181(CONNECTED) 54] ls /clickhouse/task_queue/ddl/query-0000000004/active
@@ -58,7 +58,7 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, const C
         {
             Array active_nodes_array;
             active_nodes_array.reserve(active_nodes.size());
-            for (String active_node : active_nodes)
+            for (const String & active_node : active_nodes)
                 active_nodes_array.emplace_back(active_node);
             res_columns[col_num++]->insert(active_nodes_array);
         }
@@ -66,7 +66,7 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, const C
         {
             Array finished_nodes_array;
             finished_nodes_array.reserve(active_nodes.size());
-            for (String finished_node : finished_nodes)
+            for (const String & finished_node : finished_nodes)
                 finished_nodes_array.emplace_back(finished_node);
             res_columns[col_num++]->insert(finished_nodes_array);
         }
