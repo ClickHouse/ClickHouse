@@ -1383,8 +1383,8 @@ Below is a comparison of the formats `RawBLOB` and [TabSeparatedRaw](# tabsepara
 - the string contains values ​​separated by tabs;
 - there is a line feed after the last value in the line.
 
-The following is a comparison of the `Raw BLOB` and [RowBinary](#rowbinary) formats.
-`Raw BLOB`:
+The following is a comparison of the `RawBLOB` and [RowBinary](#rowbinary) formats.
+`RawBLOB`:
 - lines are output without their length.
 [TabSeparatedRaw](#tabseparatedraw):
 - strings are represented as length in varint format (unsigned [LEB128] (https://en.wikipedia.org/wiki/LEB128)), followed by the bytes of the string.
