@@ -7,7 +7,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
-#include <Poco/Util/Application.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
 
@@ -27,9 +26,7 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, const C
 {
     zkutil::ZooKeeperPtr zookeeper = context.getZooKeeper();
 
-    // TODO: load using config().getString("distributed_ddl.path", "/clickhouse/task_queue/ddl/");
-
-    String ddl_zookeeper_path = "/clickhouse/task_queue/ddl";
+    String ddl_zookeeper_path = config.getString("distributed_ddl.path", "/clickhouse/task_queue/ddl/");
     String ddl_query_path;
 
     // this is equivalent to query zookeeper at the `ddl_zookeeper_path`

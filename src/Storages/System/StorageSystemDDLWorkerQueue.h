@@ -1,5 +1,8 @@
 #pragma once
 
+#include <Poco/Util/Application.h>
+#include <Poco/Util/LayeredConfiguration.h>
+
 #include <Storages/System/IStorageSystemOneBlock.h>
 #include <ext/shared_ptr_helper.h>
 
@@ -15,6 +18,7 @@ class StorageSystemDDLWorkerQueue final : public ext::shared_ptr_helper<StorageS
                                           public IStorageSystemOneBlock<StorageSystemDDLWorkerQueue>
 {
     friend struct ext::shared_ptr_helper<StorageSystemDDLWorkerQueue>;
+    Poco::Util::LayeredConfiguration & config = Poco::Util::Application::instance().config();
 
 protected:
     void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const override;
