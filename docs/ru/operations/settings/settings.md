@@ -2235,4 +2235,15 @@ SELECT CAST(toNullable(toInt32(0)) AS Int32) as x, toTypeName(x);
 
 Значение по умолчанию: `\N`.
 
+## allow_nullable_key {#allow-nullable-key}
+
+Включает или отключает поддержку типа [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable) для ключей таблиц [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree).
+
+Возможные значения:
+
+- 1 — включает поддержку типа `Nullable` для ключей таблиц.
+- 0 — отключает поддержку типа `Nullable` для ключей таблиц.
+
+Значение по умолчанию: `0`.
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->

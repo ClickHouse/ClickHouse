@@ -210,3 +210,17 @@ def test_mysql_kill_sync_thread_restore_5_7(started_cluster, started_mysql_5_7):
 
 def test_mysql_kill_sync_thread_restore_8_0(started_cluster, started_mysql_8_0):
     materialize_with_ddl.mysql_kill_sync_thread_restore_test(clickhouse_node, started_mysql_8_0, "mysql8_0")
+
+
+def test_mysql_killed_while_insert_5_7(started_cluster, started_mysql_5_7):
+    materialize_with_ddl.mysql_killed_while_insert(clickhouse_node, started_mysql_5_7, "mysql1")
+
+def test_mysql_killed_while_insert_8_0(started_cluster, started_mysql_8_0):
+    materialize_with_ddl.mysql_killed_while_insert(clickhouse_node, started_mysql_8_0, "mysql8_0")
+
+
+def test_clickhouse_killed_while_insert_5_7(started_cluster, started_mysql_5_7):
+    materialize_with_ddl.clickhouse_killed_while_insert(clickhouse_node, started_mysql_5_7, "mysql1")
+
+def test_clickhouse_killed_while_insert_8_0(started_cluster, started_mysql_8_0):
+    materialize_with_ddl.clickhouse_killed_while_insert(clickhouse_node, started_mysql_8_0, "mysql8_0")
