@@ -59,6 +59,26 @@ void ClientInfo::write(WriteBuffer & out, const UInt64 server_protocol_revision)
         if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
             writeVarUInt(client_version_patch, out);
     }
+
+    if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_OPENTELEMETRY)
+    {
+        if (client_trace_context.trace_id)
+        {
+            // Have OpenTelemetry header.
+            writeBinary(uint8_t(1), out);
+            // No point writing these numbers with variable length, because they
+            // are random and will probably require the full length anyway.
+            writeBinary(client_trace_context.trace_id, out);
+            writeBinary(client_trace_context.span_id, out);
+            writeBinary(client_trace_context.tracestate, out);
+            writeBinary(client_trace_context.trace_flags, out);
+        }
+        else
+        {
+            // Don't have OpenTelemetry header.
+            writeBinary(uint8_t(0), out);
+        }
+    }
 }
 
 
@@ -111,6 +131,19 @@ void ClientInfo::read(ReadBuffer & in, const UInt64 client_protocol_revision)
             readVarUInt(client_version_patch, in);
         else
             client_version_patch = client_tcp_protocol_version;
+    }
+
+    if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_OPENTELEMETRY)
+    {
+        uint8_t have_trace_id = 0;
+        readBinary(have_trace_id, in);
+        if (have_trace_id)
+        {
+            readBinary(client_trace_context.trace_id, in);
+            readBinary(client_trace_context.span_id, in);
+            readBinary(client_trace_context.tracestate, in);
+            readBinary(client_trace_context.trace_flags, in);
+        }
     }
 }
 

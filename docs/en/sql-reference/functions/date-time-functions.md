@@ -23,11 +23,39 @@ SELECT
 └─────────────────────┴────────────┴────────────┴─────────────────────┘
 ```
 
-Only time zones that differ from UTC by a whole number of hours are supported.
-
 ## toTimeZone {#totimezone}
 
-Convert time or date and time to the specified time zone.
+Convert time or date and time to the specified time zone. The time zone is an attribute of the Date/DateTime types. The internal value (number of seconds) of the table field or of the resultset's column does not change, the column's type changes and its string representation changes accordingly.
+
+```sql
+SELECT
+    toDateTime('2019-01-01 00:00:00', 'UTC') AS time_utc,
+    toTypeName(time_utc) AS type_utc,
+    toInt32(time_utc) AS int32utc,
+    toTimeZone(time_utc, 'Asia/Yekaterinburg') AS time_yekat,
+    toTypeName(time_yekat) AS type_yekat,
+    toInt32(time_yekat) AS int32yekat,
+    toTimeZone(time_utc, 'US/Samoa') AS time_samoa,
+    toTypeName(time_samoa) AS type_samoa,
+    toInt32(time_samoa) AS int32samoa
+FORMAT Vertical;
+```
+
+```text
+Row 1:
+──────
+time_utc:   2019-01-01 00:00:00
+type_utc:   DateTime('UTC')
+int32utc:   1546300800
+time_yekat: 2019-01-01 05:00:00
+type_yekat: DateTime('Asia/Yekaterinburg')
+int32yekat: 1546300800
+time_samoa: 2018-12-31 13:00:00
+type_samoa: DateTime('US/Samoa')
+int32samoa: 1546300800
+```
+
+`toTimeZone(time_utc, 'Asia/Yekaterinburg')` changes the `DateTime('UTC')` type to `DateTime('Asia/Yekaterinburg')`. The value (Unixtimestamp) 1546300800 stays the same, but the string representation (the result of the toString() function) changes from `time_utc:   2019-01-01 00:00:00` to `time_yekat: 2019-01-01 05:00:00`.
 
 ## toYear {#toyear}
 
@@ -69,9 +97,8 @@ Leap seconds are not accounted for.
 
 ## toUnixTimestamp {#to-unix-timestamp}
 
-For DateTime argument: converts value to its internal numeric representation (Unix Timestamp).
-For String argument: parse datetime from string according to the timezone (optional second argument, server timezone is used by default) and returns the corresponding unix timestamp.
-For Date argument: the behaviour is unspecified.
+For DateTime argument: converts value to the number with type UInt32 -- Unix Timestamp (https://en.wikipedia.org/wiki/Unix_time).
+For String argument: converts the input string to the datetime according to the timezone (optional second argument, server timezone is used by default) and returns the corresponding unix timestamp.
 
 **Syntax**
 
@@ -339,26 +366,124 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 └────────────┴───────────┴───────────┴───────────┘
 ```
 
-## date_trunc(datepart, time_or_data\[, time_zone\]), dateTrunc(datepart, time_or_data\[, time_zone\]) {#date_trunc}
+## date_trunc {#date_trunc}
 
-Truncates a date or date with time based on the specified datepart, such as
-- `second`
-- `minute`
-- `hour`
-- `day`
-- `week`
-- `month`
-- `quarter`
-- `year`
+Truncates date and time data to the specified part of date.
 
-```sql
-SELECT date_trunc('hour', now())
+**Syntax** 
+
+``` sql
+date_trunc(unit, value[, timezone])
 ```
 
-## now {#now}
+Alias: `dateTrunc`. 
 
-Accepts zero or one arguments(timezone) and returns the current time at one of the moments of request execution, or current time of specific timezone at one of the moments of request execution if `timezone` argument provided.
-This function returns a constant, even if the request took a long time to complete.
+**Parameters**
+
+-   `unit` — Part of date. [String](../syntax.md#syntax-string-literal).
+    Possible values:
+
+    - `second`
+    - `minute`
+    - `hour`
+    - `day`
+    - `week`
+    - `month`
+    - `quarter`
+    - `year`
+
+-   `value` — Date and time. [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+-   `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   Value, truncated to the specified part of date.
+
+Type: [Datetime](../../sql-reference/data-types/datetime.md).
+
+**Example**
+
+Query without timezone:
+
+``` sql
+SELECT now(), date_trunc('hour', now());
+```
+
+Result:
+
+``` text
+┌───────────────now()─┬─date_trunc('hour', now())─┐
+│ 2020-09-28 10:40:45 │       2020-09-28 10:00:00 │
+└─────────────────────┴───────────────────────────┘
+```
+
+Query with the specified timezone:
+
+```sql
+SELECT now(), date_trunc('hour', now(), 'Europe/Moscow');
+```
+
+Result:
+
+```text
+┌───────────────now()─┬─date_trunc('hour', now(), 'Europe/Moscow')─┐
+│ 2020-09-28 10:46:26 │                        2020-09-28 13:00:00 │
+└─────────────────────┴────────────────────────────────────────────┘
+```
+
+**See also**
+
+-   [toStartOfInterval](#tostartofintervaltime-or-data-interval-x-unit-time-zone)
+
+# now {#now}
+
+Returns the current date and time. 
+
+**Syntax** 
+
+``` sql
+now([timezone])
+```
+
+**Parameters**
+
+-   `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   Current date and time.
+
+Type: [Datetime](../../sql-reference/data-types/datetime.md).
+
+**Example**
+
+Query without timezone:
+
+``` sql
+SELECT now();
+```
+
+Result:
+
+``` text
+┌───────────────now()─┐
+│ 2020-10-17 07:42:09 │
+└─────────────────────┘
+```
+
+Query with the specified timezone:
+
+``` sql
+SELECT now('Europe/Moscow');
+```
+
+Result:
+
+``` text
+┌─now('Europe/Moscow')─┐
+│  2020-10-17 10:42:23 │
+└──────────────────────┘
+```
 
 ## today {#today}
 
@@ -439,18 +564,7 @@ dateDiff('unit', startdate, enddate, [timezone])
 
 -   `unit` — Time unit, in which the returned value is expressed. [String](../../sql-reference/syntax.md#syntax-string-literal).
 
-        Supported values:
-
-        | unit   |
-        | ---- |
-        |second  |
-        |minute  |
-        |hour    |
-        |day     |
-        |week    |
-        |month   |
-        |quarter |
-        |year    |
+        Supported values: second, minute, hour, day, week, month, quarter, year.
 
 -   `startdate` — The first time value to compare. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 

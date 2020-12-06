@@ -12,21 +12,17 @@ function drop_database()
 
 function drop_table()
 {
-    ${CLICKHOUSE_CLIENT} -nm <<EOL
-DROP TABLE IF EXISTS db_01516.data3;
-DROP TABLE IF EXISTS db_01516.data1;
-DROP TABLE IF EXISTS db_01516.data2;
-EOL
+    ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS db_01516.data3;" 2>&1 | grep -F "Code: " | grep -Fv "is currently dropped or renamed"
+    ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS db_01516.data1;" 2>&1 | grep -F "Code: " | grep -Fv "is currently dropped or renamed"
+    ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS db_01516.data2;" 2>&1 | grep -F "Code: " | grep -Fv "is currently dropped or renamed"
 }
 
 function create()
 {
-    ${CLICKHOUSE_CLIENT} -nm <<EOL
-CREATE DATABASE IF NOT EXISTS db_01516;
-CREATE TABLE IF NOT EXISTS db_01516.data1 Engine=MergeTree() ORDER BY number AS SELECT * FROM numbers(1);
-CREATE TABLE IF NOT EXISTS db_01516.data2 Engine=MergeTree() ORDER BY number AS SELECT * FROM numbers(1);
-CREATE TABLE IF NOT EXISTS db_01516.data3 Engine=MergeTree() ORDER BY number AS SELECT * FROM numbers(1);
-EOL
+    ${CLICKHOUSE_CLIENT} -q "CREATE DATABASE IF NOT EXISTS db_01516;"
+    ${CLICKHOUSE_CLIENT} -q "CREATE TABLE IF NOT EXISTS db_01516.data1 Engine=MergeTree() ORDER BY number AS SELECT * FROM numbers(1);" 2>&1 | grep -F "Code: " | grep -Fv "is currently dropped or renamed"
+    ${CLICKHOUSE_CLIENT} -q "CREATE TABLE IF NOT EXISTS db_01516.data2 Engine=MergeTree() ORDER BY number AS SELECT * FROM numbers(1);" 2>&1 | grep -F "Code: " | grep -Fv "is currently dropped or renamed"
+    ${CLICKHOUSE_CLIENT} -q "CREATE TABLE IF NOT EXISTS db_01516.data3 Engine=MergeTree() ORDER BY number AS SELECT * FROM numbers(1);" 2>&1 | grep -F "Code: " | grep -Fv "is currently dropped or renamed"
 }
 
 for _ in {1..100}; do

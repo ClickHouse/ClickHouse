@@ -19,7 +19,7 @@ $ sudo apt-get install git cmake python ninja-build
 
 Veya eski sistemlerde cmake yerine cmake3.
 
-## Gcc 9'u yükle {#install-gcc-9}
+## Gcc 10'u yükle {#install-gcc-10}
 
 Bunu yapmak için çeşitli yollar vardır.
 
@@ -29,18 +29,18 @@ Bunu yapmak için çeşitli yollar vardır.
 $ sudo apt-get install software-properties-common
 $ sudo apt-add-repository ppa:ubuntu-toolchain-r/test
 $ sudo apt-get update
-$ sudo apt-get install gcc-9 g++-9
+$ sudo apt-get install gcc-10 g++-10
 ```
 
 ### Kaynaklardan yükleyin {#install-from-sources}
 
 Bakmak [utils/ci/build-gcc-from-sources.sh](https://github.com/ClickHouse/ClickHouse/blob/master/utils/ci/build-gcc-from-sources.sh)
 
-## Yapılar için GCC 9 kullanın {#use-gcc-9-for-builds}
+## Yapılar için GCC 10 kullanın {#use-gcc-10-for-builds}
 
 ``` bash
-$ export CC=gcc-9
-$ export CXX=g++-9
+$ export CC=gcc-10
+$ export CXX=g++-10
 ```
 
 ## Checkout ClickHouse Kaynakları {#checkout-clickhouse-sources}
@@ -76,7 +76,7 @@ Yapı aşağıdaki bileşenleri gerektirir:
 -   Git (yalnızca kaynakları kontrol etmek için kullanılır, yapı için gerekli değildir)
 -   Cmake 3.10 veya daha yeni
 -   Ninja (önerilir) veya yapmak
--   C ++ derleyici: gcc 9 veya clang 8 veya daha yeni
+-   C ++ derleyici: gcc 10 veya clang 8 veya daha yeni
 -   Linker :lld veya altın (klasik GNU ld çalışmaz)
 -   Python (sadece LLVM yapısında kullanılır ve isteğe bağlıdır)
 

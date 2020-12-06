@@ -27,7 +27,7 @@ Block SquashingTransform::add(const Block & input_block)
 
 /*
  * To minimize copying, accept two types of argument: const reference for output
- * stream, and rvalue reference for input stream, and decide whether to copy 
+ * stream, and rvalue reference for input stream, and decide whether to copy
  * inside this function. This allows us not to copy Block unless we absolutely
  * have to.
  */

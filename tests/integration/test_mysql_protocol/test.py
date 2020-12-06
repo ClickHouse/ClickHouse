@@ -154,6 +154,36 @@ def test_mysql_client_exception(mysql_client, server_address):
                             "ERROR 1000 (00000) at line 1: Poco::Exception. Code: 1000, e.code() = 2002, e.displayText() = mysqlxx::ConnectionFailed: Can't connect to MySQL server on '127.0.0.1' (115) ((nullptr):0)"
 
 
+def test_mysql_affected_rows(mysql_client, server_address):
+    code, (stdout, stderr) = mysql_client.exec_run('''
+        mysql --protocol tcp -h {host} -P {port} default -u default --password=123
+        -e "CREATE TABLE IF NOT EXISTS default.t1 (n UInt64) ENGINE MergeTree() ORDER BY tuple();"
+    '''.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
+
+    code, (stdout, stderr) = mysql_client.exec_run('''
+        mysql -vvv --protocol tcp -h {host} -P {port} default -u default --password=123
+        -e "INSERT INTO default.t1(n) VALUES(1);"
+    '''.format(host=server_address, port=server_port), demux=True)
+
+    assert code == 0
+    assert "1 row affected" in stdout.decode()
+
+    code, (stdout, stderr) = mysql_client.exec_run('''
+        mysql -vvv --protocol tcp -h {host} -P {port} default -u default --password=123
+        -e "INSERT INTO default.t1(n) SELECT * FROM numbers(1000)"
+    '''.format(host=server_address, port=server_port), demux=True)
+
+    assert code == 0
+    assert "1000 rows affected" in stdout.decode()
+
+    code, (stdout, stderr) = mysql_client.exec_run('''
+        mysql --protocol tcp -h {host} -P {port} default -u default --password=123
+        -e "DROP TABLE default.t1;"
+    '''.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
+
+
 def test_mysql_replacement_query(mysql_client, server_address):
     # SHOW TABLE STATUS LIKE.
     code, (stdout, stderr) = mysql_client.exec_run('''

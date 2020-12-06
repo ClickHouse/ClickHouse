@@ -7,7 +7,6 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 
 
 namespace DB
@@ -51,16 +50,12 @@ Columns convertConstTupleToConstantElements(const ColumnConst & column)
 }
 
 
-static ColumnsWithTypeAndName createBlockWithNestedColumnsImpl(const ColumnsWithTypeAndName & columns, const std::unordered_set<size_t> & args)
+ColumnsWithTypeAndName createBlockWithNestedColumns(const ColumnsWithTypeAndName & columns)
 {
     ColumnsWithTypeAndName res;
-    size_t num_columns = columns.size();
-
-    for (size_t i = 0; i < num_columns; ++i)
+    for (const auto & col : columns)
     {
-        const auto & col = columns[i];
-
-        if (args.count(i) && col.type->isNullable())
+        if (col.type->isNullable())
         {
             const DataTypePtr & nested_type = static_cast<const DataTypeNullable &>(*col.type).getNestedType();
 
@@ -86,20 +81,6 @@ static ColumnsWithTypeAndName createBlockWithNestedColumnsImpl(const ColumnsWith
     }
 
     return res;
-}
-
-
-ColumnsWithTypeAndName createBlockWithNestedColumns(const ColumnsWithTypeAndName & columns, const ColumnNumbers & args)
-{
-    std::unordered_set<size_t> args_set(args.begin(), args.end());
-    return createBlockWithNestedColumnsImpl(columns, args_set);
-}
-
-ColumnsWithTypeAndName createBlockWithNestedColumns(const ColumnsWithTypeAndName & columns, const ColumnNumbers & args, size_t result)
-{
-    std::unordered_set<size_t> args_set(args.begin(), args.end());
-    args_set.insert(result);
-    return createBlockWithNestedColumnsImpl(columns, args_set);
 }
 
 void validateArgumentType(const IFunction & func, const DataTypes & arguments,
@@ -137,7 +118,7 @@ void validateArgumentsImpl(const IFunction & func,
         const auto & arg = arguments[i + argument_offset];
         const auto descriptor = descriptors[i];
         if (int error_code = descriptor.isValid(arg.type, arg.column); error_code != 0)
-            throw Exception("Illegal type of argument #" + std::to_string(i)
+            throw Exception("Illegal type of argument #" + std::to_string(argument_offset + i + 1) // +1 is for human-friendly 1-based indexing
                             + (descriptor.argument_name ? " '" + std::string(descriptor.argument_name) + "'" : String{})
                             + " of function " + func.getName()
                             + (descriptor.expected_type_description ? String(", expected ") + descriptor.expected_type_description : String{})

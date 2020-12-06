@@ -3,7 +3,7 @@
 #include <Processors/QueryPipeline.h>
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
-#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <stack>
 #include <Processors/QueryPlan/LimitStep.h>
@@ -183,6 +183,17 @@ QueryPipelinePtr QueryPlan::buildQueryPipeline()
         last_pipeline->addInterpreterContext(std::move(context));
 
     return last_pipeline;
+}
+
+Pipe QueryPlan::convertToPipe()
+{
+    if (!isInitialized())
+        return {};
+
+    if (isCompleted())
+        throw Exception("Cannot convert completed QueryPlan to Pipe", ErrorCodes::LOGICAL_ERROR);
+
+    return QueryPipeline::getPipe(std::move(*buildQueryPipeline()));
 }
 
 void QueryPlan::addInterpreterContext(std::shared_ptr<Context> context)
@@ -438,7 +449,7 @@ static void tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node * 
         return;
 
     /// All actions was moved before ARRAY JOIN. Swap Expression and ArrayJoin.
-    if (expression->getActions().empty())
+    if (expression->empty())
     {
         auto expected_header = parent->getOutputStream().header;
 

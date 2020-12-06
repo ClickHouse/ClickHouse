@@ -4,6 +4,7 @@
 
 #include <math.h>
 
+#include <new>
 #include <utility>
 
 #include <boost/noncopyable.hpp>
@@ -314,8 +315,8 @@ public:
         zeroValue()->~Cell();
     }
 
-    Cell * zeroValue()             { return reinterpret_cast<Cell*>(&zero_value_storage); }
-    const Cell * zeroValue() const { return reinterpret_cast<const Cell*>(&zero_value_storage); }
+    Cell * zeroValue()             { return std::launder(reinterpret_cast<Cell*>(&zero_value_storage)); }
+    const Cell * zeroValue() const { return std::launder(reinterpret_cast<const Cell*>(&zero_value_storage)); }
 };
 
 template <typename Cell>

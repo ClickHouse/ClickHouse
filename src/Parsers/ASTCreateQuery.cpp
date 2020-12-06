@@ -5,6 +5,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Common/quoteString.h>
 #include <Interpreters/StorageID.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -124,6 +125,8 @@ ASTPtr ASTColumns::clone() const
         res->set(res->indices, indices->clone());
     if (constraints)
         res->set(res->constraints, constraints->clone());
+    if (primary_key)
+        res->set(res->primary_key, primary_key->clone());
 
     return res;
 }

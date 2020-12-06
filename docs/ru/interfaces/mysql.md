@@ -1,3 +1,8 @@
+---
+toc_priority: 20
+toc_title: "\u004d\u0079\u0053\u0051\u004c\u002d\u0438\u043d\u0442\u0435\u0440\u0444\u0435\u0439\u0441"
+---
+
 # MySQL-интерфейс {#mysql-interface}
 
 ClickHouse поддерживает взаимодействие по протоколу MySQL. Данная функция включается настройкой [mysql_port](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-mysql_port) в конфигурационном файле:

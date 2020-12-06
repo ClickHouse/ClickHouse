@@ -398,8 +398,7 @@ bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_ev
     return true;
 }
 
-// Parse comma-separated list of event names. Empty means all available
-// events.
+// Parse comma-separated list of event names. Empty means all available events.
 std::vector<size_t> PerfEventsCounters::eventIndicesFromString(const std::string & events_list)
 {
     std::vector<size_t> result;
@@ -414,12 +413,12 @@ std::vector<size_t> PerfEventsCounters::eventIndicesFromString(const std::string
         return result;
     }
 
-    std::istringstream iss(events_list);
+
+    std::istringstream iss(events_list);        // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     std::string event_name;
     while (std::getline(iss, event_name, ','))
     {
-        // Allow spaces at the beginning of the token, so that you can write
-        // 'a, b'.
+        // Allow spaces at the beginning of the token, so that you can write 'a, b'.
         event_name.erase(0, event_name.find_first_not_of(' '));
 
         auto entry = event_name_to_index.find(event_name);

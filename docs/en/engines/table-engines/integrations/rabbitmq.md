@@ -51,7 +51,7 @@ Optional parameters:
 -   `rabbitmq_row_delimiter` – Delimiter character, which ends the message.
 -   `rabbitmq_schema` – Parameter that must be used if the format requires a schema definition. For example, [Cap’n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
 -   `rabbitmq_num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient.
--   `rabbitmq_num_queues` – The number of queues per consumer. Default: `1`. Specify more queues if the capacity of one queue per consumer is insufficient.
+-   `rabbitmq_num_queues` – Total number of queues. Default: `1`. Increasing this number can significantly improve performance.
 -   `rabbitmq_queue_base` - Specify a hint for queue names. Use cases of this setting are described below.
 -   `rabbitmq_deadletter_exchange` - Specify name for a [dead letter exchange](https://www.rabbitmq.com/dlx.html). You can create another table with this exchange name and collect messages in cases when they are republished to dead letter exchange. By default dead letter exchange is not specified.
 -   `rabbitmq_persistent` - If set to 1 (true), in insert query delivery mode will be set to 2 (marks messages as 'persistent'). Default: `0`.
@@ -148,4 +148,5 @@ Example:
 -   `_channel_id` - ChannelID, on which consumer, who received the message, was declared.
 -   `_delivery_tag` - DeliveryTag of the received message. Scoped per channel.
 -   `_redelivered` - `redelivered` flag of the message.
--   `_message_id` - MessageID of the received message; non-empty if was set, when message was published.
+-   `_message_id` - messageID of the received message; non-empty if was set, when message was published.
+-   `_timestamp` - timestamp of the received message; non-empty if was set, when message was published.

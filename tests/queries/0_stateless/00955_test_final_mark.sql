@@ -119,7 +119,7 @@ INSERT INTO mt_without_pk (d, x, y, z, `n.Age`, `n.Name`) VALUES (toDate('2018-1
 
 SELECT COUNT(*) FROM mt_without_pk WHERE x > toDateTime('2018-10-01 23:57:57');
 
-SELECT sum(marks) FROM system.parts WHERE table = 'mt_without_pk' AND active=1;
+SELECT sum(marks) FROM system.parts WHERE table = 'mt_without_pk' AND active=1 AND database=currentDatabase();
 
 INSERT INTO mt_without_pk (d, x, y, z, `n.Age`, `n.Name`) VALUES (toDate('2018-10-01'), toDateTime('2018-10-01 07:57:57'), [4, 4, 4], 14, [111, 222], ['Lui', 'Dave']), (toDate('2018-10-01'), toDateTime('2018-10-01 08:57:57'), [5, 5, 5], 15, [333, 444], ['John', 'Mike']), (toDate('2018-10-01'), toDateTime('2018-10-01 09:57:57'), [6, 6, 6], 16, [555, 666, 777], ['Alex', 'Jim', 'Tom']);
 
@@ -127,7 +127,7 @@ OPTIMIZE TABLE mt_without_pk FINAL;
 
 SELECT COUNT(*) FROM mt_without_pk WHERE x > toDateTime('2018-10-01 23:57:57');
 
-SELECT sum(marks) FROM system.parts WHERE table = 'mt_without_pk' AND active=1;
+SELECT sum(marks) FROM system.parts WHERE table = 'mt_without_pk' AND active=1  AND database=currentDatabase();
 
 DROP TABLE IF EXISTS mt_without_pk;
 
@@ -149,7 +149,7 @@ INSERT INTO mt_with_small_granularity (d, x, y, z, `n.Age`, `n.Name`) VALUES (to
 
 SELECT COUNT(*) FROM mt_with_small_granularity WHERE x > toDateTime('2018-10-01 23:57:57');
 
-SELECT sum(marks) FROM system.parts WHERE table = 'mt_with_small_granularity' AND active=1;
+SELECT sum(marks) FROM system.parts WHERE table = 'mt_with_small_granularity' AND active=1  AND database=currentDatabase();
 
 INSERT INTO mt_with_small_granularity (d, x, y, z, `n.Age`, `n.Name`) VALUES (toDate('2018-10-01'), toDateTime('2018-10-01 07:57:57'), [4, 4, 4], 14, [111, 222], ['Lui', 'Dave']), (toDate('2018-10-01'), toDateTime('2018-10-01 08:57:57'), [5, 5, 5], 15, [333, 444], ['John', 'Mike']), (toDate('2018-10-01'), toDateTime('2018-10-01 09:57:57'), [6, 6, 6], 16, [555, 666, 777], ['Alex', 'Jim', 'Tom']);
 
@@ -157,6 +157,6 @@ OPTIMIZE TABLE mt_with_small_granularity FINAL;
 
 SELECT COUNT(*) FROM mt_with_small_granularity WHERE x > toDateTime('2018-10-01 23:57:57');
 
-SELECT sum(marks) FROM system.parts WHERE table = 'mt_with_small_granularity' AND active=1;
+SELECT sum(marks) FROM system.parts WHERE table = 'mt_with_small_granularity' AND active=1  AND database=currentDatabase();
 
 DROP TABLE IF EXISTS mt_with_small_granularity;

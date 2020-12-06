@@ -20,6 +20,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/InternalTextLogsQueue.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Core/ExternalTable.h>
@@ -277,6 +278,9 @@ void TCPHandler::runImpl()
             /// Do it before sending end of stream, to have a chance to show log message in client.
             query_scope->logPeakMemoryUsage();
 
+            if (state.is_connection_closed)
+                break;
+
             sendLogs();
             sendEndOfStream();
 
@@ -433,18 +437,19 @@ bool TCPHandler::readDataNext(const size_t & poll_interval, const int & receive_
         double elapsed = watch.elapsedSeconds();
         if (elapsed > receive_timeout)
         {
-            std::stringstream ss;
-            ss << "Timeout exceeded while receiving data from client.";
-            ss << " Waited for " << static_cast<size_t>(elapsed) << " seconds,";
-            ss << " timeout is " << receive_timeout << " seconds.";
-
-            throw Exception(ss.str(), ErrorCodes::SOCKET_TIMEOUT);
+            throw Exception(ErrorCodes::SOCKET_TIMEOUT,
+                            "Timeout exceeded while receiving data from client. Waited for {} seconds, timeout is {} seconds.",
+                            static_cast<size_t>(elapsed), receive_timeout);
         }
     }
 
     /// If client disconnected.
     if (in->eof())
+    {
+        LOG_INFO(log, "Client has dropped the connection, cancel the query.");
+        state.is_connection_closed = true;
         return false;
+    }
 
     /// We accept and process data. And if they are over, then we leave.
     if (!receivePacket())
@@ -477,9 +482,8 @@ void TCPHandler::readData(const Settings & connection_settings)
     std::tie(poll_interval, receive_timeout) = getReadTimeouts(connection_settings);
     sendLogs();
 
-    while (true)
-        if (!readDataNext(poll_interval, receive_timeout))
-            return;
+    while (readDataNext(poll_interval, receive_timeout))
+        ;
 }
 
 
@@ -514,6 +518,8 @@ void TCPHandler::processInsertQuery(const Settings & connection_settings)
 
 void TCPHandler::processOrdinaryQuery()
 {
+    OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
+
     /// Pull query execution result, if exists, and send it to network.
     if (state.io.in)
     {
@@ -566,6 +572,9 @@ void TCPHandler::processOrdinaryQuery()
             sendProfileInfo(state.io.in->getProfileInfo());
             sendProgress();
         }
+
+        if (state.is_connection_closed)
+            return;
 
         sendData({});
     }
@@ -631,6 +640,9 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
             sendProgress();
             sendLogs();
         }
+
+        if (state.is_connection_closed)
+            return;
 
         sendData({});
     }
@@ -884,8 +896,6 @@ void TCPHandler::receiveQuery()
     state.is_empty = false;
     readStringBinary(state.query_id, *in);
 
-    query_context->setCurrentQueryId(state.query_id);
-
     /// Client info
     ClientInfo & client_info = query_context->getClientInfo();
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
@@ -904,14 +914,6 @@ void TCPHandler::receiveQuery()
 
     /// Set fields, that are known apriori.
     client_info.interface = ClientInfo::Interface::TCP;
-
-    if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-    {
-        /// 'Current' fields was set at receiveHello.
-        client_info.initial_user = client_info.current_user;
-        client_info.initial_query_id = client_info.current_query_id;
-        client_info.initial_address = client_info.current_address;
-    }
 
     /// Per query settings are also passed via TCP.
     /// We need to check them before applying due to they can violate the settings constraints.
@@ -989,11 +991,32 @@ void TCPHandler::receiveQuery()
         query_context->clampToSettingsConstraints(settings_changes);
     }
     query_context->applySettingsChanges(settings_changes);
-    const Settings & settings = query_context->getSettingsRef();
+
+    // Use the received query id, or generate a random default. It is convenient
+    // to also generate the default OpenTelemetry trace id at the same time, and
+    // set the trace parent.
+    // Why is this done here and not earlier:
+    // 1) ClientInfo might contain upstream trace id, so we decide whether to use
+    // the default ids after we have received the ClientInfo.
+    // 2) There is the opentelemetry_start_trace_probability setting that
+    // controls when we start a new trace. It can be changed via Native protocol,
+    // so we have to apply the changes first.
+    query_context->setCurrentQueryId(state.query_id);
+
+    // Set parameters of initial query.
+    if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+    {
+        /// 'Current' fields was set at receiveHello.
+        client_info.initial_user = client_info.current_user;
+        client_info.initial_query_id = client_info.current_query_id;
+        client_info.initial_address = client_info.current_address;
+    }
+
     /// Sync timeouts on client and server during current query to avoid dangling queries on server
     /// NOTE: We use settings.send_timeout for the receive timeout and vice versa (change arguments ordering in TimeoutSetter),
     ///  because settings.send_timeout is client-side setting which has opposite meaning on the server side.
     /// NOTE: these settings are applied only for current connection (not for distributed tables' connections)
+    const Settings & settings = query_context->getSettingsRef();
     state.timeout_setter = std::make_unique<TimeoutSetter>(socket(), settings.receive_timeout, settings.send_timeout);
 }
 
@@ -1179,6 +1202,14 @@ bool TCPHandler::isQueryCancelled()
     /// During request execution the only packet that can come from the client is stopping the query.
     if (static_cast<ReadBufferFromPocoSocket &>(*in).poll(0))
     {
+        if (in->eof())
+        {
+            LOG_INFO(log, "Client has dropped the connection, cancel the query.");
+            state.is_cancelled = true;
+            state.is_connection_closed = true;
+            return true;
+        }
+
         UInt64 packet_type = 0;
         readVarUInt(packet_type, *in);
 

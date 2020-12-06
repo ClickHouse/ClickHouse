@@ -1,3 +1,8 @@
+---
+toc_priority: 36
+toc_title: SYSTEM
+---
+
 # Запросы SYSTEM {#query-language-system}
 
 -   [RELOAD EMBEDDED DICTIONARIES](#query_language-system-reload-emdedded-dictionaries) 
@@ -125,7 +130,7 @@ ClickHouse может управлять фоновыми процессами �
 Позволяет остановить фоновые мержи для таблиц семейства MergeTree:
 
 ``` sql
-SYSTEM STOP MERGES [[db.]merge_tree_family_table_name]
+SYSTEM STOP MERGES [ON VOLUME <volume_name> | [db.]merge_tree_family_table_name]
 ```
 
 !!! note "Note"
@@ -136,7 +141,7 @@ SYSTEM STOP MERGES [[db.]merge_tree_family_table_name]
 Включает фоновые мержи для таблиц семейства MergeTree:
 
 ``` sql
-SYSTEM START MERGES [[db.]merge_tree_family_table_name]
+SYSTEM START MERGES [ON VOLUME <volume_name> | [db.]merge_tree_family_table_name]
 ```
 
 ### STOP TTL MERGES {#query_language-stop-ttl-merges}

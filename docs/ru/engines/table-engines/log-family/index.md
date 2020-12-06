@@ -1,6 +1,6 @@
 ---
-toc_folder_title: Семейство Log
-toc_title: Введение
+toc_folder_title: "\u0421\u0435\u043c\u0435\u0439\u0441\u0442\u0432\u043e\u0020\u004c\u006f\u0067"
+toc_title: "\u0412\u0432\u0435\u0434\u0435\u043d\u0438\u0435"
 toc_priority: 29
 ---
 
