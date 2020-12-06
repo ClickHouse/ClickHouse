@@ -537,12 +537,16 @@ private:
       * NOTE: This method must be called without table lock held.
       * Because it effectively waits for other thread that usually has to also acquire a lock to proceed and this yields deadlock.
       * TODO: There are wrong usages of this method that are not fixed yet.
+      *
+      * One method for convenient use on current table, another for waiting on foregin shards.
       */
+    Strings waitForAllTableReplicasToProcessLogEntry(const String & table_zookeeper_path, const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active = true);
     Strings waitForAllReplicasToProcessLogEntry(const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active = true);
 
     /** Wait until the specified replica executes the specified action from the log.
       * NOTE: See comment about locks above.
       */
+    bool waitForTableReplicaToProcessLogEntry(const String & table_zookeeper_path, const String & replica_name, const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active = true);
     bool waitForReplicaToProcessLogEntry(const String & replica_name, const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active = true);
 
     /// Throw an exception if the table is readonly.
