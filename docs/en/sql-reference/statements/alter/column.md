@@ -129,7 +129,7 @@ Removes something from the specific column.
 Syntax:
 
 ```sql
-Syntax of the statement.
+ALTER TABLE table_name MOFIY COLUMN column_name REMOVE removing_part
 ```
 
 **Example**
