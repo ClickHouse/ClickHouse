@@ -165,7 +165,7 @@ private:
 template <> struct NearestFieldTypeImpl<char> { using Type = std::conditional_t<is_signed_v<char>, Int64, UInt64>; };
 template <> struct NearestFieldTypeImpl<signed char> { using Type = Int64; };
 template <> struct NearestFieldTypeImpl<unsigned char> { using Type = UInt64; };
-#if __cplusplus > 201703L
+#ifdef __cpp_char8_t
 template <> struct NearestFieldTypeImpl<char8_t> { using Type = UInt64; };
 #endif
 
