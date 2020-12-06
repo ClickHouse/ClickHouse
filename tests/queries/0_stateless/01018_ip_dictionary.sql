@@ -95,6 +95,10 @@ SELECT 11212 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'asn', tuple(I
 
 SELECT 11211 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'asn', tuple(IPv4StringToNum('202.79.32.2')));
 
+-- check that dictionary works with aliased types `IPv4` and `IPv6`
+SELECT 11211 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'asn', tuple(toIPv4('202.79.32.2')));
+SELECT 11212 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'asn', tuple(toIPv6('::ffff:101.79.55.22')));
+
 CREATE TABLE database_for_dict.table_from_ipv4_trie_dict
 (
   prefix String,
