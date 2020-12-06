@@ -1341,15 +1341,24 @@ Result:
 
 ## RawBLOB {#rawblob}
 
-This format slurps all input data into a single value. This format can only parse a table with a single field of type [String](../sql-reference/data-types/string.md) or similar.
+In this format, all input data is read to a single value. It is possible to parse щтдн a table with a single field of type [String](../sql-reference/data-types/string.md) or similar.
 The result is output in binary format without delimiters and escaping. If more than one value is output, the format is ambiguous, and it will be impossible to read the data back.
 
-The difference between `RawBLOB` and `TSVRaw`:
--   data is output in binary format, no escaping;
--   no delimiters between values;
--   no newline at the end of each value.
+Below is a comparison of the formats `RawBLOB` and [TabSeparatedRaw](# tabseparatedraw).
+`RawBLOB`:
+- data is output in binary format, no escaping;
+- there are no delimiters between values;
+- no newline at the end of each value.
+[TabSeparatedRaw] (# tabseparatedraw):
+- data is output without screening;
+- the string contains values ​​separated by tabs;
+- there is a line feed after the last value in the line.
 
-In `Raw BLOB` unlike `Raw Binary` strings are output without their length.
+The following is a comparison of the `Raw BLOB` and [RowBinary](#rowbinary) formats.
+`Raw BLOB`:
+- lines are output without their length.
+[TabSeparatedRaw](#tabseparatedraw):
+- strings are represented as length in varint format (unsigned [LEB128] (https://en.wikipedia.org/wiki/LEB128)), followed by the bytes of the string.
 
 When an empty value is passed to the `RawBLOB` input, ClickHouse generates an exception:
  
