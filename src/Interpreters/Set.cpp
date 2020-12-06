@@ -253,12 +253,13 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 
     /// The constant columns to the left of IN are not supported directly. For this, they first materialize.
     Columns materialized_columns;
+    materialized_columns.reserve(num_key_columns);
 
     for (size_t i = 0; i < num_key_columns; ++i)
     {
         ColumnPtr result;
 
-        auto & column_before_cast = block.safeGetByPosition(i);
+        const auto & column_before_cast = block.safeGetByPosition(i);
         ColumnWithTypeAndName column_to_cast
             = {column_before_cast.column->convertToFullColumnIfConst(), column_before_cast.type, column_before_cast.name};
 
