@@ -151,11 +151,11 @@ acosh(x)
 
 **Параметры**
 
--   `x` — угол в радианах. Значения из интервала: `1 <= x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+-   `x` — гиперболический косинус угла. Значения из интервала: `1 <= x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
 **Возвращаемое значение**
 
--   Значения из интервала: `0 <= acosh(x) < +∞`.
+-   Угол в радианах. Значения из интервала: `0 <= acosh(x) < +∞`.
 
 Тип: [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
@@ -227,11 +227,11 @@ asinh(x)
 
 **Параметры**
 
--   `x` — угол в радианах. Значения из интервала: `-∞ < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+-   `x` — гиперболический синус угла. Значения из интервала: `-∞ < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
 **Возвращаемое значение**
 
--   Значения из интервала: `-∞ < asinh(x) < +∞`.
+-   Угол в радианах. Значения из интервала: `-∞ < asinh(x) < +∞`.
 
 Тип: [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
@@ -267,11 +267,11 @@ atanh(x)
 
 **Параметры**
 
--   `x` — угол в радианах. Значения из интервала: `–1 < x < 1`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+-   `x` — гиперболический тангенс угла. Значения из интервала: `–1 < x < 1`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
 **Возвращаемое значение**
 
--   Значения из интервала: `-∞ < atanh(x) < +∞`.
+-   Угол в радианах. Значения из интервала: `-∞ < atanh(x) < +∞`.
 
 Тип: [Float64](../../sql-reference/data-types/float.md#float32-float64).
 

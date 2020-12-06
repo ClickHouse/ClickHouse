@@ -159,11 +159,11 @@ acosh(x)
 
 **Parameters**
 
--   `x` — The angle, in radians. Values from the interval: `1 <= x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+-   `x` — Hyperbolic cosine of angle. Values from the interval: `1 <= x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
 **Returned value**
 
--   Values from the interval: `0 <= acosh(x) < +∞`.
+-   The angle, in radians. Values from the interval: `0 <= acosh(x) < +∞`.
 
 Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
@@ -235,11 +235,11 @@ asinh(x)
 
 **Parameters**
 
--   `x` — The angle, in radians. Values from the interval: `-∞ < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+-   `x` — Hyperbolic sine of angle. Values from the interval: `-∞ < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
 **Returned value**
 
--   Values from the interval: `-∞ < asinh(x) < +∞`.
+-   The angle, in radians. Values from the interval: `-∞ < asinh(x) < +∞`.
 
 Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
@@ -275,11 +275,11 @@ atanh(x)
 
 **Parameters**
 
--   `x` — The angle, in radians. Values from the interval: `–1 < x < 1`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+-   `x` — Hyperbolic tangent of angle. Values from the interval: `–1 < x < 1`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
 **Returned value**
 
--   Values from the interval: `-∞ < atanh(x) < +∞`.
+-   The angle, in radians. Values from the interval: `-∞ < atanh(x) < +∞`.
 
 Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
