@@ -5,11 +5,13 @@ toc_title: Tuples
 
 # Functions for Working with Tuples {#tuple-functions}
 
-## Tuple {#tuple}
+## tuple {#tuple}
 
 A function that allows grouping multiple columns.
 For columns with the types T1, T2, …, it returns a Tuple(T1, T2, …) type tuple containing these columns. There is no cost to execute the function.
 Tuples are normally used as intermediate values for an argument of IN operators, or for creating a list of formal parameters of lambda functions. Tuples can’t be written to a table.
+
+The function implements the operator `(x, y, …)`.
 
 **Syntax**
 
@@ -17,15 +19,13 @@ Tuples are normally used as intermediate values for an argument of IN operators,
 tuple(x, y, …)
 ```
 
-**See Also**
-
--   [Operator (x, y, …)](../../sql-reference/functions/in-functions.md#tuplex-y-operator-x-y)
-
-## TupleElement {#tupleelement}
+## tupleElement {#tupleelement}
 
 A function that allows getting a column from a tuple.
 ‘N’ is the column index, starting from 1. N must be a constant. ‘N’ must be a constant. ‘N’ must be a strict postive integer no greater than the size of the tuple.
 There is no cost to execute the function.
+
+The function implements the operator `x.N`.
 
 **Syntax**
 
@@ -33,11 +33,7 @@ There is no cost to execute the function.
 tupleElement(tuple, n)
 ```
 
-**See Also**
-
--   [Operator x.N](../../sql-reference/functions/in-functions.md#tupleelementtuple-n-operator-x-n)
-
-## Untuple {#untuple}
+## untuple {#untuple}
 
 Performs syntactic substitution of [tuple](../../sql-reference/data-types/tuple.md#tuplet1-t2) elements in the call location.
 
