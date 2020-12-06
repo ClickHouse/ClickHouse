@@ -35,7 +35,6 @@ add_subdirectory (libmetrohash)
 add_subdirectory (lz4-cmake)
 add_subdirectory (murmurhash)
 add_subdirectory (replxx-cmake)
-add_subdirectory (ryu-cmake)
 add_subdirectory (unixodbc-cmake)
 add_subdirectory (xz)
 
