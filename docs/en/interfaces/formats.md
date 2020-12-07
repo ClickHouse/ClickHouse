@@ -1370,7 +1370,7 @@ Result:
 
 ## RawBLOB {#rawblob}
 
-In this format, all input data is read to a single value. It is possible to parse щтдн a table with a single field of type [String](../sql-reference/data-types/string.md) or similar.
+In this format, all input data is read to a single value. It is possible to parse only a table with a single field of type [String](../sql-reference/data-types/string.md) or similar.
 The result is output in binary format without delimiters and escaping. If more than one value is output, the format is ambiguous, and it will be impossible to read the data back.
 
 Below is a comparison of the formats `RawBLOB` and [TabSeparatedRaw](#tabseparatedraw).
