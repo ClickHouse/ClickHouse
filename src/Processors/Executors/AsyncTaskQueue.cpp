@@ -25,33 +25,28 @@ AsyncTaskQueue::~AsyncTaskQueue()
     close(epoll_fd);
 }
 
-void AsyncTaskQueue::addTask(void * data, int fd)
+void AsyncTaskQueue::addTask(size_t thread_number, void * data, int fd)
 {
+    auto it = tasks.insert(tasks.end(), TaskData{thread_number, data, fd, {}});
+    it->self = it;
+
     epoll_event socket_event;
     socket_event.events = EPOLLIN | EPOLLPRI;
-    socket_event.data.ptr = data;
+    socket_event.data.ptr = &(*it);
 
     if (-1 == epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &socket_event))
         throwFromErrno("Cannot add socket descriptor to epoll", ErrorCodes::CANNOT_OPEN_FILE);
 
-    ++num_tasks;
-    if (num_tasks == 1)
+    if (size() == 1)
         condvar.notify_one();
 }
 
-void AsyncTaskQueue::removeTask(int fd) const
-{
-    epoll_event event;
-    if (-1 == epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, &event))
-        throwFromErrno("Cannot remove socket descriptor to epoll", ErrorCodes::CANNOT_OPEN_FILE);
-}
-
-void * AsyncTaskQueue::wait(std::unique_lock<std::mutex> & lock)
+AsyncTaskQueue::TaskData AsyncTaskQueue::wait(std::unique_lock<std::mutex> & lock)
 {
     condvar.wait(lock, [&] { return !empty() || is_finished; });
 
     if (is_finished)
-        return nullptr;
+        return {};
 
     lock.unlock();
 
@@ -63,18 +58,24 @@ void * AsyncTaskQueue::wait(std::unique_lock<std::mutex> & lock)
         num_events = epoll_wait(epoll_fd, &event, 1, 0);
         if (num_events == -1)
             throwFromErrno("Failed to epoll_wait", ErrorCodes::CANNOT_READ_FROM_SOCKET);
-
     }
 
     lock.lock();
-    --num_tasks;
-    return event.data.ptr;
+
+    auto it = static_cast<TaskData *>(event.data.ptr)->self;
+
+    if (-1 == epoll_ctl(epoll_fd, EPOLL_CTL_DEL, it->fd, &event))
+        throwFromErrno("Cannot remove socket descriptor to epoll", ErrorCodes::CANNOT_OPEN_FILE);
+
+    auto res = *it;
+    tasks.erase(it);
+    return res;
 }
 
 void AsyncTaskQueue::finish()
 {
     is_finished = true;
-    num_tasks = 0;
+    tasks.clear();
     condvar.notify_one();
 }
 

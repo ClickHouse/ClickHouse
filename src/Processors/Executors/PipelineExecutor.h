@@ -62,6 +62,7 @@ private:
     /// If multiple threads are using, main thread will wait for async tasks.
     /// For single thread, will wait for async tasks only when task_queue is empty.
     AsyncTaskQueue async_task_queue;
+    size_t num_waiting_async_tasks = 0;
 
     ThreadsQueue threads_queue;
     std::mutex task_queue_mutex;
@@ -95,6 +96,8 @@ private:
         /// Will store context for all expand pipeline tasks (it's easy and we don't expect many).
         /// This can be solved by using atomic shard ptr.
         std::list<ExpandPipelineTask> task_list;
+
+        std::queue<ExecutingGraph::Node *> async_tasks;
 
         std::condition_variable condvar;
         std::mutex mutex;

@@ -497,11 +497,18 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
             {
                 std::unique_lock lock(task_queue_mutex);
 
-                if (!task_queue.empty())
+                if (!context->async_tasks.empty())
                 {
+                    node = context->async_tasks.front();
+                    context->async_tasks.pop();
+                    --num_waiting_async_tasks;
+                }
+                else if (!task_queue.empty())
                     node = task_queue.pop(thread_num);
 
-                    if (!task_queue.empty() && !threads_queue.empty() /*&& task_queue.quota() > threads_queue.size()*/)
+                if (node)
+                {
+                    if (!task_queue.empty() && !threads_queue.empty())
                     {
                         auto thread_to_wake = task_queue.getAnyThreadWithTasks(thread_num + 1 == num_threads ? 0 : (thread_num + 1));
 
@@ -517,7 +524,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
                     break;
                 }
 
-                if (threads_queue.size() + 1 == num_threads && async_task_queue.empty())
+                if (threads_queue.size() + 1 == num_threads && async_task_queue.empty() && num_waiting_async_tasks == 0)
                 {
                     lock.unlock();
                     finish();
@@ -527,13 +534,12 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
                 if (num_threads == 1)
                 {
                     /// If we execute in single thread, wait for async tasks here.
-                    void * res = async_task_queue.wait(lock);
+                    auto res = async_task_queue.wait(lock);
                     if (!res)
                         throw Exception("Empty task was returned from async task queue", ErrorCodes::LOGICAL_ERROR);
 
-                    node = static_cast<ExecutingGraph::Node *>(res);
-                    async_task_queue.removeTask(node->processor->schedule());
-                    continue;
+                    node = static_cast<ExecutingGraph::Node *>(res.data);
+                    break;
                 }
 
                 threads_queue.push(thread_num);
@@ -615,7 +621,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
 
                     while (!async_queue.empty() && !finished)
                     {
-                        async_task_queue.addTask(async_queue.front(), async_queue.front()->processor->schedule());
+                        async_task_queue.addTask(thread_num, async_queue.front(), async_queue.front()->processor->schedule());
                         async_queue.pop();
                     }
 
@@ -625,7 +631,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
                         queue.pop();
                     }
 
-                    if (!threads_queue.empty() && !finished)
+                    if (!threads_queue.empty() && !task_queue.empty() && !finished)
                     {
                         auto thread_to_wake = task_queue.getAnyThreadWithTasks(thread_num + 1 == num_threads ? 0 : (thread_num + 1));
 
@@ -704,10 +710,8 @@ void PipelineExecutor::initializeExecution(size_t num_threads)
             }
 
             while (!async_queue.empty())
-            {
-                async_task_queue.addTask(async_queue.front(), async_queue.front()->processor->schedule());
-                async_queue.pop();
-            }
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Async is only possible after work() call. Processor {}",
+                                async_queue.front()->processor->getName());
         }
     }
 }
@@ -771,16 +775,17 @@ void PipelineExecutor::executeImpl(size_t num_threads)
         {
             /// Wait for async tasks.
             std::unique_lock lock(task_queue_mutex);
-            size_t next_thread = 0;
-            while (void * task = async_task_queue.wait(lock))
+            while (auto task = async_task_queue.wait(lock))
             {
-                auto * node = static_cast<ExecutingGraph::Node *>(task);
-                async_task_queue.removeTask(node->processor->schedule());
-                task_queue.push(node, next_thread);
+                auto * node = static_cast<ExecutingGraph::Node *>(task.data);
+                executor_contexts[task.thread_num]->async_tasks.push(node);
+                ++num_waiting_async_tasks;
 
-                ++next_thread;
-                if (next_thread >= num_threads)
-                    next_thread = 0;
+                if (threads_queue.has(task.thread_num))
+                {
+                    threads_queue.pop(task.thread_num);
+                    wakeUpExecutor(task.thread_num);
+                }
             }
         }
 
