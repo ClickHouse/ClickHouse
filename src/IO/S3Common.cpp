@@ -260,6 +260,7 @@ namespace S3
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
+        bool use_environment_credentials,
         const RemoteHostFilter & remote_host_filter,
         unsigned int s3_max_redirects)
     {
@@ -268,7 +269,13 @@ namespace S3
         if (!endpoint.empty())
             cfg.endpointOverride = endpoint;
 
-        return create(cfg, is_virtual_hosted_style, access_key_id, secret_access_key, remote_host_filter, s3_max_redirects);
+        return create(cfg,
+            is_virtual_hosted_style,
+            access_key_id,
+            secret_access_key,
+            use_environment_credentials,
+            remote_host_filter,
+            s3_max_redirects);
     }
 
     std::shared_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
@@ -276,6 +283,7 @@ namespace S3
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
+        bool use_environment_credentials,
         const RemoteHostFilter & remote_host_filter,
         unsigned int s3_max_redirects)
     {
@@ -286,7 +294,10 @@ namespace S3
         client_configuration.updateSchemeAndRegion();
 
         return std::make_shared<Aws::S3::S3Client>(
-            credentials, // Aws credentials.
+            std::make_shared<S3CredentialsProviderChain>(
+                client_configuration,
+                credentials,
+                use_environment_credentials), // AWS credentials provider.
             std::move(client_configuration), // Client configuration.
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never, // Sign policy.
             is_virtual_hosted_style || cfg.endpointOverride.empty() // Use virtual addressing if endpoint is not specified.

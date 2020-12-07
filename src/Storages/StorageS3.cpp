@@ -221,7 +221,7 @@ StorageS3::StorageS3(
         credentials.GetAWSAccessKeyId(),
         credentials.GetAWSSecretKey(),
         std::move(settings.headers),
-        settings.use_environment_credentials,
+        settings.use_environment_credentials.value_or(context_.getGlobalContext().getSettingsRef().s3_use_environment_credentials),
         context_.getRemoteHostFilter(),
         context_.getGlobalContext().getSettingsRef().s3_max_redirects);
 }

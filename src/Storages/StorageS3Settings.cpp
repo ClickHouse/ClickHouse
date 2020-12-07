@@ -26,7 +26,11 @@ void StorageS3Settings::loadFromConfig(const String & config_elem, const Poco::U
         auto endpoint = config.getString(config_elem + "." + key + ".endpoint");
         auto access_key_id = config.getString(config_elem + "." + key + ".access_key_id", "");
         auto secret_access_key = config.getString(config_elem + "." + key + ".secret_access_key", "");
-        auto use_environment_credentials = config.getBool(config_elem + "." + key + ".use_environment_credentials", false);
+        std::optional<bool> use_environment_credentials;
+        if (config.has(config_elem + "." + key + ".use_environment_credentials"))
+        {
+            use_environment_credentials = config.getBool(config_elem + "." + key + ".use_environment_credentials");
+        }
 
         HeaderCollection headers;
         Poco::Util::AbstractConfiguration::Keys subconfig_keys;
