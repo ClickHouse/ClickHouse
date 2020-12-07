@@ -286,10 +286,6 @@ if (USE_SIMDJSON)
     add_subdirectory (simdjson-cmake)
 endif()
 
-if (USE_FAST_FLOAT)
-    add_subdirectory (fast_float)
-endif()
-
 if (USE_FASTOPS)
     add_subdirectory (fastops-cmake)
 endif()
