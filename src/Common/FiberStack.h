@@ -38,7 +38,7 @@ public:
     void deallocate(boost::context::stack_context & sctx)
     {
 #if defined(BOOST_USE_VALGRIND)
-        VALGRIND_STACK_DEREGISTER( sctx.valgrind_stack_id);
+        VALGRIND_STACK_DEREGISTER(sctx.valgrind_stack_id);
 #endif
         void * vp = static_cast< char * >(sctx.sp) - sctx.size;
         TAllocator().free(vp, stack_size);
