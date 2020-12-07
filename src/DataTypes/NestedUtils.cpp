@@ -86,7 +86,7 @@ Block flatten(const Block & block)
     for (const auto & elem : block)
     {
         const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(elem.type.get());
-        if (!isNested(elem.type) && type_arr)
+        if (type_arr)
         {
             const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(type_arr->getNestedType().get());
             if (type_tuple && type_tuple->haveExplicitNames())
@@ -130,12 +130,14 @@ Block flatten(const Block & block)
     return res;
 }
 
-
-NamesAndTypesList collect(const NamesAndTypesList & names_and_types)
+namespace
 {
-    NamesAndTypesList res = names_and_types;
 
-    std::map<std::string, NamesAndTypesList> nested;
+using NameToDataType = std::map<String, DataTypePtr>;
+
+NameToDataType getSubcolumnsOfNested(const NamesAndTypesList & names_and_types)
+{
+    std::unordered_map<String, NamesAndTypesList> nested;
     for (const auto & name_type : names_and_types)
     {
         const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(name_type.type.get());
@@ -149,9 +151,35 @@ NamesAndTypesList collect(const NamesAndTypesList & names_and_types)
         }
     }
 
-    std::unordered_map<String, DataTypePtr> nested_types;
+    std::map<String, DataTypePtr> nested_types;
+
     for (const auto & [name, elems] : nested)
         nested_types.emplace(name, createNested(elems.getTypes(), elems.getNames()));
+
+    return nested_types;
+}
+
+}
+
+NamesAndTypesList collect(const NamesAndTypesList & names_and_types)
+{
+    NamesAndTypesList res;
+    auto nested_types = getSubcolumnsOfNested(names_and_types);
+
+    for (const auto & name_type : names_and_types)
+        if (!nested_types.count(splitName(name_type.name).first))
+            res.push_back(name_type);
+
+    for (const auto & name_type : nested_types)
+        res.emplace_back(name_type.first, name_type.second);
+
+    return res;
+}
+
+NamesAndTypesList convertToSubcolumns(const NamesAndTypesList & names_and_types)
+{
+    auto nested_types = getSubcolumnsOfNested(names_and_types);
+    auto res = names_and_types;
 
     for (auto & name_type : res)
     {

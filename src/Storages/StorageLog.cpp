@@ -57,7 +57,6 @@ public:
         for (const auto & name_type : columns)
             res.insert({ name_type.type->createColumn(), name_type.type, name_type.name });
 
-        // return Nested::flatten(res);
         return res;
     }
 
@@ -628,7 +627,7 @@ Pipe StorageLog::read(
     loadMarks();
 
     auto all_columns = metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(column_names);
-    all_columns = Nested::collect(all_columns);
+    all_columns = Nested::convertToSubcolumns(all_columns);
 
     std::shared_lock<std::shared_mutex> lock(rwlock);
 
