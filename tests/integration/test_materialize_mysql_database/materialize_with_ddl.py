@@ -1,22 +1,33 @@
 import time
 
 import pymysql.cursors
-
+import subprocess
 import pytest
 from helpers.client import QueryRuntimeException
+from helpers.network import PartitionManager
+import pytest
+from helpers.client import QueryRuntimeException
+from helpers.cluster import get_docker_compose_path
+import random
+
+import threading
+from multiprocessing.dummy import Pool
 
 def check_query(clickhouse_node, query, result_set, retry_count=60, interval_seconds=3):
     lastest_result = ''
-    for index in range(retry_count):
-        lastest_result = clickhouse_node.query(query)
+    for i in range(retry_count):
+        try:
+            lastest_result = clickhouse_node.query(query)
+            if result_set == lastest_result:
+                return
 
-        if result_set == lastest_result:
-            return
-
-        print(lastest_result)
-        time.sleep(interval_seconds)
-
-    assert lastest_result == result_set
+            print(lastest_result)
+            time.sleep(interval_seconds)
+        except Exception as e:
+            print(("check_query retry {} exception {}".format(i + 1, e)))
+            time.sleep(interval_seconds)
+    else:
+        assert clickhouse_node.query(query) == result_set
 
 
 def dml_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
@@ -24,7 +35,6 @@ def dml_with_materialize_mysql_database(clickhouse_node, mysql_node, service_nam
     clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
     mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
     # existed before the mapping was created
-
     mysql_node.query("CREATE TABLE test_database.test_table_1 ("
                      "`key` INT NOT NULL PRIMARY KEY, "
                      "unsigned_tiny_int TINYINT UNSIGNED, tiny_int TINYINT, "
@@ -50,7 +60,7 @@ def dml_with_materialize_mysql_database(clickhouse_node, mysql_node, service_nam
             service_name))
 
     assert "test_database" in clickhouse_node.query("SHOW DATABASES")
-    check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table_1\n")
+
     check_query(clickhouse_node, "SELECT * FROM test_database.test_table_1 ORDER BY key FORMAT TSV",
                 "1\t1\t-1\t2\t-2\t3\t-3\t4\t-4\t5\t-5\t6\t-6\t3.2\t-3.2\t3.4\t-3.4\tvarchar\tchar\t2020-01-01\t"
                 "2020-01-01 00:00:00\t2020-01-01 00:00:00\t1\n")
@@ -115,7 +125,7 @@ def materialize_mysql_database_with_datetime_and_decimal(clickhouse_node, mysql_
 
     clickhouse_node.query("CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'root', 'clickhouse')".format(service_name))
     assert "test_database" in clickhouse_node.query("SHOW DATABASES")
-    check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table_1\n")
+
     check_query(clickhouse_node, "SELECT * FROM test_database.test_table_1 ORDER BY key FORMAT TSV",
                 "1\t2020-01-01 01:02:03.999999\t2020-01-01 01:02:03.999\t" + ('9' * 35) + "." + ('9' * 30) + "\n"
                 "2\t2020-01-01 01:02:03.000000\t2020-01-01 01:02:03.000\t0." + ('0' * 29) + "1\n"
@@ -127,7 +137,7 @@ def materialize_mysql_database_with_datetime_and_decimal(clickhouse_node, mysql_
     mysql_node.query("INSERT INTO test_database.test_table_2 VALUES(2, '2020-01-01 01:02:03.000000', '2020-01-01 01:02:03.000', ." + ('0' * 29) + "1)")
     mysql_node.query("INSERT INTO test_database.test_table_2 VALUES(3, '2020-01-01 01:02:03.9999', '2020-01-01 01:02:03.99', -" + ('9' * 35) + "." + ('9' * 30) + ")")
     mysql_node.query("INSERT INTO test_database.test_table_2 VALUES(4, '2020-01-01 01:02:03.9999', '2020-01-01 01:02:03.9999', -." + ('0' * 29) + "1)")
-    check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table_1\ntest_table_2\n")
+
     check_query(clickhouse_node, "SELECT * FROM test_database.test_table_2 ORDER BY key FORMAT TSV",
                 "1\t2020-01-01 01:02:03.999999\t2020-01-01 01:02:03.999\t" + ('9' * 35) + "." + ('9' * 30) + "\n"
                 "2\t2020-01-01 01:02:03.000000\t2020-01-01 01:02:03.000\t0." + ('0' * 29) + "1\n"
@@ -156,7 +166,6 @@ def drop_table_with_materialize_mysql_database(clickhouse_node, mysql_node, serv
             service_name))
 
     assert "test_database" in clickhouse_node.query("SHOW DATABASES")
-    check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table_2\n")
     check_query(clickhouse_node, "SELECT * FROM test_database.test_table_2 ORDER BY id FORMAT TSV", "")
 
     mysql_node.query("INSERT INTO test_database.test_table_2 VALUES(1), (2), (3), (4), (5), (6)")
@@ -189,13 +198,11 @@ def create_table_with_materialize_mysql_database(clickhouse_node, mysql_node, se
 
     # Check for pre-existing status
     assert "test_database" in clickhouse_node.query("SHOW DATABASES")
-    check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table_1\n")
     check_query(clickhouse_node, "SELECT * FROM test_database.test_table_1 ORDER BY id FORMAT TSV",
                 "1\n2\n3\n5\n6\n7\n")
 
     mysql_node.query("CREATE TABLE test_database.test_table_2 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB;")
     mysql_node.query("INSERT INTO test_database.test_table_2 VALUES(1), (2), (3), (4), (5), (6);")
-    check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table_1\ntest_table_2\n")
     check_query(clickhouse_node, "SELECT * FROM test_database.test_table_2 ORDER BY id FORMAT TSV",
                 "1\n2\n3\n4\n5\n6\n")
 
@@ -243,7 +250,6 @@ def alter_add_column_with_materialize_mysql_database(clickhouse_node, mysql_node
             service_name))
 
     assert "test_database" in clickhouse_node.query("SHOW DATABASES")
-    check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table_1\n")
     check_query(clickhouse_node, "DESC test_database.test_table_1 FORMAT TSV",
                 "add_column_2\tInt32\t\t\t\t\t\nid\tInt32\t\t\t\t\t\nadd_column_1\tInt32\t\t\t\t\t\nadd_column_3\tInt32\t\t\t\t\t\nadd_column_4\tInt32\t\t\t\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n")
     mysql_node.query("CREATE TABLE test_database.test_table_2 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB;")
@@ -319,12 +325,10 @@ def alter_rename_column_with_materialize_mysql_database(clickhouse_node, mysql_n
             service_name))
 
     assert "test_database" in clickhouse_node.query("SHOW DATABASES")
-    check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table_1\n")
     check_query(clickhouse_node, "DESC test_database.test_table_1 FORMAT TSV",
                 "id\tInt32\t\t\t\t\t\nnew_column_name\tInt32\t\t\t\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n")
     mysql_node.query(
         "CREATE TABLE test_database.test_table_2 (id INT NOT NULL PRIMARY KEY, rename_column INT NOT NULL) ENGINE = InnoDB;")
-    check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table_1\ntest_table_2\n")
     check_query(clickhouse_node, "DESC test_database.test_table_2 FORMAT TSV",
                 "id\tInt32\t\t\t\t\t\nrename_column\tInt32\t\t\t\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n")
     mysql_node.query("ALTER TABLE test_database.test_table_2 RENAME COLUMN rename_column TO new_column_name")
@@ -451,10 +455,10 @@ def query_event_with_empty_transaction(clickhouse_node, mysql_node, service_name
     mysql_node.query("INSERT INTO test_database.t1(a) VALUES(2)")
     mysql_node.query("/* start */ commit /* end */")
 
-    check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "t1\n")
     check_query(clickhouse_node, "SELECT * FROM test_database.t1 ORDER BY a FORMAT TSV", "1\tBEGIN\n2\tBEGIN\n")
     clickhouse_node.query("DROP DATABASE test_database")
     mysql_node.query("DROP DATABASE test_database")
+
 
 def select_without_columns(clickhouse_node, mysql_node, service_name):
     mysql_node.query("DROP DATABASE IF EXISTS db")
@@ -489,20 +493,39 @@ def select_without_columns(clickhouse_node, mysql_node, service_name):
     mysql_node.query("DROP DATABASE db")
 
 
+def insert_with_modify_binlog_checksum(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("CREATE DATABASE test_checksum")
+    mysql_node.query("CREATE TABLE test_checksum.t (a INT PRIMARY KEY, b varchar(200))")
+    clickhouse_node.query("CREATE DATABASE test_checksum ENGINE = MaterializeMySQL('{}:3306', 'test_checksum', 'root', 'clickhouse')".format(service_name))
+    check_query(clickhouse_node, "SHOW TABLES FROM test_checksum FORMAT TSV", "t\n")
+    mysql_node.query("INSERT INTO test_checksum.t VALUES(1, '1111')")
+    check_query(clickhouse_node, "SELECT * FROM test_checksum.t ORDER BY a FORMAT TSV", "1\t1111\n")
+
+    mysql_node.query("SET GLOBAL binlog_checksum=NONE")
+    mysql_node.query("INSERT INTO test_checksum.t VALUES(2, '2222')")
+    check_query(clickhouse_node, "SELECT * FROM test_checksum.t ORDER BY a FORMAT TSV", "1\t1111\n2\t2222\n")
+
+    mysql_node.query("SET GLOBAL binlog_checksum=CRC32")
+    mysql_node.query("INSERT INTO test_checksum.t VALUES(3, '3333')")
+    check_query(clickhouse_node, "SELECT * FROM test_checksum.t ORDER BY a FORMAT TSV", "1\t1111\n2\t2222\n3\t3333\n")
+
+    clickhouse_node.query("DROP DATABASE test_checksum")
+    mysql_node.query("DROP DATABASE test_checksum")
+
+
 def err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
     clickhouse_node.query("DROP DATABASE IF EXISTS priv_err_db")
     mysql_node.query("DROP DATABASE IF EXISTS priv_err_db")
     mysql_node.query("CREATE DATABASE priv_err_db DEFAULT CHARACTER SET 'utf8'")
     mysql_node.query("CREATE TABLE priv_err_db.test_table_1 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB;")
     mysql_node.query("INSERT INTO priv_err_db.test_table_1 VALUES(1);")
-
+    mysql_node.create_min_priv_user("test", "123")
     mysql_node.result("SHOW GRANTS FOR 'test'@'%';")
 
     clickhouse_node.query(
         "CREATE DATABASE priv_err_db ENGINE = MaterializeMySQL('{}:3306', 'priv_err_db', 'test', '123')".format(
             service_name))
-    # wait MaterializeMySQL read binlog events
-    check_query(clickhouse_node, "SHOW TABLES FROM priv_err_db FORMAT TSV;", "test_table_1\n")
+
     check_query(clickhouse_node, "SELECT count() FROM priv_err_db.test_table_1 FORMAT TSV", "1\n", 30, 5)
     mysql_node.query("INSERT INTO priv_err_db.test_table_1 VALUES(2);")
     check_query(clickhouse_node, "SELECT count() FROM priv_err_db.test_table_1 FORMAT TSV", "2\n")
@@ -534,4 +557,123 @@ def err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, mysql_n
     assert "priv_err_db" not in clickhouse_node.query("SHOW DATABASES")
 
     mysql_node.query("DROP DATABASE priv_err_db;")
-    mysql_node.grant_min_priv_for_user("test")
+    mysql_node.query("DROP USER 'test'@'%'")
+
+
+def restore_instance_mysql_connections(clickhouse_node, pm, action='DROP'):
+    pm._check_instance(clickhouse_node)
+    pm._delete_rule({'source': clickhouse_node.ip_address, 'destination_port': 3306, 'action': action})
+    pm._delete_rule({'destination': clickhouse_node.ip_address, 'source_port': 3306, 'action': action})
+    time.sleep(5)
+
+def drop_instance_mysql_connections(clickhouse_node, pm, action='DROP'):
+    pm._check_instance(clickhouse_node)
+    pm._add_rule({'source': clickhouse_node.ip_address, 'destination_port': 3306, 'action': action})
+    pm._add_rule({'destination': clickhouse_node.ip_address, 'source_port': 3306, 'action': action})
+    time.sleep(5)
+
+def network_partition_test(clickhouse_node, mysql_node, service_name):
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
+    clickhouse_node.query("DROP DATABASE  IF EXISTS test")
+    mysql_node.query("DROP DATABASE IF EXISTS test_database")
+    mysql_node.query("DROP DATABASE IF EXISTS test")
+    mysql_node.query("CREATE DATABASE test_database;")
+    mysql_node.query("CREATE TABLE test_database.test_table ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;")
+
+    mysql_node.query("CREATE DATABASE test;")
+
+    clickhouse_node.query(
+        "CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'root', 'clickhouse')".format(service_name))
+    check_query(clickhouse_node, "SELECT * FROM test_database.test_table", '')
+
+    with PartitionManager() as pm:
+        drop_instance_mysql_connections(clickhouse_node, pm)
+        mysql_node.query('INSERT INTO test_database.test_table VALUES(1)')
+        check_query(clickhouse_node, "SELECT * FROM test_database.test_table", '')
+
+        with pytest.raises(QueryRuntimeException) as exception:
+            clickhouse_node.query(
+                "CREATE DATABASE test ENGINE = MaterializeMySQL('{}:3306', 'test', 'root', 'clickhouse')".format(service_name))
+
+        assert "Can't connect to MySQL server" in str(exception.value)
+
+        restore_instance_mysql_connections(clickhouse_node, pm)
+
+        clickhouse_node.query("DETACH DATABASE test_database")
+        clickhouse_node.query("ATTACH DATABASE test_database")
+        check_query(clickhouse_node, "SELECT * FROM test_database.test_table FORMAT TSV", '1\n')
+
+        clickhouse_node.query(
+            "CREATE DATABASE test ENGINE = MaterializeMySQL('{}:3306', 'test', 'root', 'clickhouse')".format(service_name))
+        check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table\n")
+
+        mysql_node.query("CREATE TABLE test.test ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;")
+        check_query(clickhouse_node, "SHOW TABLES FROM test FORMAT TSV", "test\n")
+
+        clickhouse_node.query("DROP DATABASE test_database")
+        clickhouse_node.query("DROP DATABASE test")
+        mysql_node.query("DROP DATABASE test_database")
+        mysql_node.query("DROP DATABASE test")
+
+
+def mysql_kill_sync_thread_restore_test(clickhouse_node, mysql_node, service_name):
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_database;")
+    mysql_node.query("DROP DATABASE IF EXISTS test_database;")
+    mysql_node.query("CREATE DATABASE test_database;")
+    mysql_node.query("CREATE TABLE test_database.test_table ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;")
+    mysql_node.query("INSERT INTO test_database.test_table VALUES (1)")
+
+    clickhouse_node.query("CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'root', 'clickhouse')".format(service_name))
+    check_query(clickhouse_node, "SELECT * FROM test_database.test_table FORMAT TSV", '1\n')
+
+    get_sync_id_query = "select id from information_schema.processlist where STATE='Master has sent all binlog to slave; waiting for more updates'"
+    result = mysql_node.query_and_get_data(get_sync_id_query)
+
+    for row in result:
+        row_result = {}
+        query = "kill " + str(row[0]) + ";"
+        mysql_node.query(query)
+
+    with pytest.raises(QueryRuntimeException) as exception:
+        # https://dev.mysql.com/doc/refman/5.7/en/kill.html
+        # When you use KILL, a thread-specific kill flag is set for the thread. In most cases, it might take some time for the thread to die because the kill flag is checked only at specific intervals:
+        time.sleep(3)
+        clickhouse_node.query("SELECT * FROM test_database.test_table")
+    assert "Cannot read all data" in str(exception.value)
+
+    clickhouse_node.query("DETACH DATABASE test_database")
+    clickhouse_node.query("ATTACH DATABASE test_database")
+    check_query(clickhouse_node, "SELECT * FROM test_database.test_table FORMAT TSV", '1\n')
+
+    mysql_node.query("INSERT INTO test_database.test_table VALUES (2)")
+    check_query(clickhouse_node, "SELECT * FROM test_database.test_table ORDER BY id FORMAT TSV", '1\n2\n')
+
+    clickhouse_node.query("DROP DATABASE test_database")
+    mysql_node.query("DROP DATABASE test_database")
+
+
+def clickhouse_killed_while_insert(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("CREATE DATABASE kill_clickhouse_while_insert")
+    mysql_node.query("CREATE TABLE kill_clickhouse_while_insert.test ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;")
+    clickhouse_node.query("CREATE DATABASE kill_clickhouse_while_insert ENGINE = MaterializeMySQL('{}:3306', 'kill_clickhouse_while_insert', 'root', 'clickhouse')".format(service_name))
+    check_query(clickhouse_node, "SHOW TABLES FROM kill_clickhouse_while_insert FORMAT TSV", 'test\n')
+
+    def insert(num):
+        for i in range(num):
+            query = "INSERT INTO kill_clickhouse_while_insert.test VALUES({v});".format( v = i + 1 )
+            mysql_node.query(query)
+
+    t = threading.Thread(target=insert, args=(1000,))
+    t.start()
+    
+    # TODO: add clickhouse_node.restart_clickhouse(20, kill=False) test
+    clickhouse_node.restart_clickhouse(20, kill=True)
+    t.join()
+
+    result = mysql_node.query_and_get_data("SELECT COUNT(1) FROM kill_clickhouse_while_insert.test")
+    for row in result:
+        res = str(row[0]) + '\n'
+        check_query(clickhouse_node, "SELECT count() FROM kill_clickhouse_while_insert.test FORMAT TSV", res)
+
+    mysql_node.query("DROP DATABASE kill_clickhouse_while_insert")
+    clickhouse_node.query("DROP DATABASE kill_clickhouse_while_insert")

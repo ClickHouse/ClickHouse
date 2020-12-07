@@ -42,8 +42,8 @@ namespace
 }
 
 
-ExternalLoaderDatabaseConfigRepository::ExternalLoaderDatabaseConfigRepository(IDatabase & database_, const Context & global_context_)
-    : global_context(global_context_.getGlobalContext())
+ExternalLoaderDatabaseConfigRepository::ExternalLoaderDatabaseConfigRepository(IDatabase & database_, const Context & context_)
+    : global_context(context_.getGlobalContext())
     , database_name(database_.getDatabaseName())
     , database(database_)
 {

@@ -5,7 +5,7 @@
 #include <Processors/Transforms/TotalsHavingTransform.h>
 #include <Processors/Transforms/ExtremesTransform.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
-#include <Processors/Transforms/ConvertingTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/SourceFromInputStream.h>
@@ -14,6 +14,7 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Common/typeid_cast.h>
 #include <Common/CurrentThread.h>
 #include <Processors/DelayedPortsProcessor.h>
@@ -226,10 +227,15 @@ QueryPipeline QueryPipeline::unitePipelines(
 
         if (!pipeline.isCompleted())
         {
+            auto actions_dag = ActionsDAG::makeConvertingActions(
+                    pipeline.getHeader().getColumnsWithTypeAndName(),
+                    common_header.getColumnsWithTypeAndName(),
+                    ActionsDAG::MatchColumnsMode::Position);
+            auto actions = std::make_shared<ExpressionActions>(actions_dag);
+
             pipeline.addSimpleTransform([&](const Block & header)
             {
-               return std::make_shared<ConvertingTransform>(
-                       header, common_header, ConvertingTransform::MatchColumnsMode::Position);
+               return std::make_shared<ExpressionTransform>(header, actions);
             });
         }
 
