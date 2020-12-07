@@ -131,12 +131,12 @@ function clone_submodules
         cd "$FASTTEST_SOURCE"
 
         SUBMODULES_TO_UPDATE=(
+            contrib/antlr4-runtime
             contrib/boost
             contrib/zlib-ng
             contrib/libxml2
             contrib/poco
             contrib/libunwind
-            contrib/ryu
             contrib/fmtlib
             contrib/base64
             contrib/cctz
@@ -154,6 +154,7 @@ function clone_submodules
             contrib/croaring
             contrib/miniselect
             contrib/xz
+            contrib/dragonbox
         )
 
         git submodule sync

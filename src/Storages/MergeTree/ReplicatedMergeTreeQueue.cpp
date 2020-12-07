@@ -1140,11 +1140,12 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                 {
                     const char * format_str = "Not executing log entry {} for part {}"
                         " because {} merges with TTL already executing, maximum {}.";
-                    LOG_DEBUG(log, format_str, entry.znode_name,
-                        entry.new_part_name, total_merges_with_ttl,
+                    LOG_DEBUG(log, format_str,
+                        entry.znode_name, entry.new_part_name, total_merges_with_ttl,
                         data_settings->max_number_of_merges_with_ttl_in_pool);
 
-                    out_postpone_reason = fmt::format(format_str, entry.new_part_name, total_merges_with_ttl,
+                    out_postpone_reason = fmt::format(format_str,
+                        entry.znode_name, entry.new_part_name, total_merges_with_ttl,
                         data_settings->max_number_of_merges_with_ttl_in_pool);
                     return false;
                 }
