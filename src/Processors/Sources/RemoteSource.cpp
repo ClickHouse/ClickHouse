@@ -22,6 +22,13 @@ RemoteSource::~RemoteSource() = default;
 
 ISource::Status RemoteSource::prepare()
 {
+    /// Check if query was cancelled before returning Async status. Otherwise it may lead to infinite loop.
+    if (was_query_canceled)
+    {
+        getPort().finish();
+        return Status::Finished;
+    }
+
     if (is_async_state)
         return Status::Async;
 
