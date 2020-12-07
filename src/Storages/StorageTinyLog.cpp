@@ -219,7 +219,6 @@ Chunk TinyLogSource::generate()
         streams.clear();
     }
 
-    // auto flatten = Nested::flatten(res);
     return Chunk(res.getColumns(), res.rows());
 }
 
@@ -449,7 +448,7 @@ Pipe StorageTinyLog::read(
     // When reading, we lock the entire storage, because we only have one file
     // per column and can't modify it concurrently.
     return Pipe(std::make_shared<TinyLogSource>(
-        max_block_size, Nested::collect(all_columns),
+        max_block_size, Nested::convertToSubcolumns(all_columns),
         *this, context.getSettingsRef().max_read_buffer_size));
 }
 

@@ -51,7 +51,7 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartInMemory::getReader(
 {
     auto ptr = std::static_pointer_cast<const MergeTreeDataPartInMemory>(shared_from_this());
     return std::make_unique<MergeTreeReaderInMemory>(
-        ptr, Nested::collect(columns_to_read), metadata_snapshot, mark_ranges, reader_settings);
+        ptr, columns_to_read, metadata_snapshot, mark_ranges, reader_settings);
 }
 
 IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartInMemory::getWriter(
