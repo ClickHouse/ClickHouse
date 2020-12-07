@@ -47,8 +47,7 @@ namespace
 
     LazyPipeFDs notification_pipe;
 
-    // TSan complains about stack_trace being accessed unsafely, which is not the case.
-    void NO_SANITIZE_THREAD signalHandler(int, siginfo_t * info, void * context)
+    void signalHandler(int, siginfo_t * info, void * context)
     {
         auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
@@ -161,7 +160,7 @@ NamesAndTypesList StorageSystemStackTrace::getNamesAndTypes()
 }
 
 
-void NO_SANITIZE_THREAD StorageSystemStackTrace::fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const
+void StorageSystemStackTrace::fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const
 {
     /// It shouldn't be possible to do concurrent reads from this table.
     std::lock_guard lock(mutex);
