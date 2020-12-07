@@ -24,6 +24,7 @@ issue_17146 = "https://github.com/ClickHouse/ClickHouse/issues/17146"
 issue_17147 = "https://github.com/ClickHouse/ClickHouse/issues/17147"
 issue_17653 = "https://github.com/ClickHouse/ClickHouse/issues/17653"
 issue_17655 = "https://github.com/ClickHouse/ClickHouse/issues/17655"
+issue_17766 = "https://github.com/ClickHouse/ClickHouse/issues/17766"
 
 xfails = {
     "syntax/show create quota/I show create quota current":
@@ -112,6 +113,8 @@ xfails = {
         [(Fail, issue_17147)],
     "privileges/show dictionaries/:/check privilege/:/exists/EXISTS with privilege":
         [(Fail, issue_17655)],
+    "privileges/public tables/query log":
+        [(Fail, issue_17766)]
 }
 
 xflags = {

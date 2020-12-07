@@ -29,7 +29,7 @@
 #include <IO/DoubleConverter.h>
 #include <IO/WriteBufferFromString.h>
 
-#include <ryu/ryu.h>
+#include <dragonbox/dragonbox_to_chars.h>
 
 #include <Formats/FormatSettings.h>
 
@@ -228,14 +228,14 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
         if (DecomposedFloat64(x).is_inside_int64())
             result = itoa(Int64(x), buffer) - buffer;
         else
-            result = d2s_buffered_n(x, buffer);
+            result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
     }
     else
     {
         if (DecomposedFloat32(x).is_inside_int32())
             result = itoa(Int32(x), buffer) - buffer;
         else
-            result = f2s_buffered_n(x, buffer);
+            result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
     }
 
     if (result <= 0)

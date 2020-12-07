@@ -177,6 +177,10 @@ Marks numbers:   0      1      2      3      4      5      6      7      8      
 
 ClickHouse не требует уникального первичного ключа. Можно вставить много строк с одинаковым первичным ключом.
 
+Ключ в `PRIMARY KEY` и `ORDER BY` может иметь тип `Nullable`. За поддержку этой возможности отвечает настройка [allow_nullable_key](../../../operations/settings/settings.md#allow-nullable-key).
+
+При сортировке с использованием выражения `ORDER BY` для значений `NULL` всегда работает принцип [NULLS_LAST](../../../sql-reference/statements/select/order-by.md#sorting-of-special-values).
+
 ### Выбор первичного ключа {#vybor-pervichnogo-kliucha}
 
 Количество столбцов в первичном ключе не ограничено явным образом. В зависимости от структуры данных в первичный ключ можно включать больше или меньше столбцов. Это может:
