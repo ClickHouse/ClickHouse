@@ -18,7 +18,7 @@ public:
     /// A flag can be specified - perform optimization "to the end" instead of one step.
     bool final = false;
     /// Do deduplicate (default: false)
-    bool deduplicate;
+    bool deduplicate = false;
     /// Deduplicate by columns.
     ASTPtr deduplicate_by_columns;
 

@@ -1,3 +1,5 @@
+--- See also tests/queries/0_stateless/01581_deduplicate_by_columns_replicated.sql
+
 --- local case
 
 -- Just in case if previous tests run left some stuff behind.

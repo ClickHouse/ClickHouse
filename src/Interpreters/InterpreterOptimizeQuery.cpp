@@ -45,7 +45,6 @@ BlockIO InterpreterOptimizeQuery::execute()
         }
 
         metadata_snapshot->check(column_names, NamesAndTypesList{}, table_id);
-        // TODO: validate that deduplicate_by_columns contains all primary key columns.
         for (const auto & primary_key : metadata_snapshot->getPrimaryKeyColumns())
         {
             if (std::find(column_names.begin(), column_names.end(), primary_key) == column_names.end())
