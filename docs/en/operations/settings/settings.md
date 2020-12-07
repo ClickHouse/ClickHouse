@@ -2293,6 +2293,47 @@ Result:
    └─────────────────────────┴─────────┘
 ```
 
+## system_events_show_zero_values {#system_events_show_zero_values}
+
+Allows to select zero-valued events from [`system.events`](../../operations/system-tables/events.md).
+
+Some monitoring systems require passing all the metrics values to them for each checkpoint, even if the metric value is zero.
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: `0`.
+
+**Examples**
+
+Query
+
+```sql
+SELECT * FROM system.events WHERE event='QueryMemoryLimitExceeded';
+```
+
+Result
+
+```text
+Ok.
+```
+
+Query
+```sql
+SET system_events_show_zero_values = 1;
+SELECT * FROM system.events WHERE event='QueryMemoryLimitExceeded';
+```
+
+Result
+
+```text
+┌─event────────────────────┬─value─┬─description───────────────────────────────────────────┐
+│ QueryMemoryLimitExceeded │     0 │ Number of times when memory limit exceeded for query. │
+└──────────────────────────┴───────┴───────────────────────────────────────────────────────┘
+```
+
 ## allow_experimental_bigint_types {#allow_experimental_bigint_types}
 
 Enables or disables integer values exceeding the range that is supported by the int data type.
@@ -2322,5 +2363,16 @@ Default value: `1`.
 Allows configurable `NULL` representation for [TSV](../../interfaces/formats.md#tabseparated) output format. The setting only controls output format and `\N` is the only supported `NULL` representation for TSV input format.
 
 Default value: `\N`.
+
+## allow_nullable_key {#allow-nullable-key}
+
+Allows using of the [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable)-typed values in a sorting and a primary key for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree) tables.
+
+Possible values:
+
+- 1 — `Nullable`-type expressions are allowed in keys.
+- 0 — `Nullable`-type expressions are not allowed in keys.
+
+Default value: `0`.
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
