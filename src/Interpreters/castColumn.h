@@ -10,7 +10,6 @@ namespace DB
 template <CastType cast_type = CastType::nonAccurate>
 ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type)
 {
-
     if (arg.type->equals(*type))
         return arg.column;
 
