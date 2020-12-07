@@ -28,7 +28,7 @@ SYSTEM SYNC REPLICA replicated_deduplicate_by_columns_r1;
 
 SELECT 'check that we have a data';
 SELECT 'r1', id, val, count(), uniqExact(insert_time_ns), uniqExact(insert_replica_id) FROM replicated_deduplicate_by_columns_r1 GROUP BY id, val ORDER BY id, val;
-SELECT 'r1', id, val, count(), uniqExact(insert_time_ns), uniqExact(insert_replica_id) FROM replicated_deduplicate_by_columns_r2 GROUP BY id, val ORDER BY id, val;
+SELECT 'r2', id, val, count(), uniqExact(insert_time_ns), uniqExact(insert_replica_id) FROM replicated_deduplicate_by_columns_r2 GROUP BY id, val ORDER BY id, val;
 
 -- NOTE: here and below we need FINAL to force deduplication in such a small set of data in only 1 part.
 -- that should remove full duplicates
