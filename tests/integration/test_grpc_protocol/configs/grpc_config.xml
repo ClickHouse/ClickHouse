@@ -1,0 +1,4 @@
+<yandex>
+    <grpc_port>9100</grpc_port>
+    <grpc replace="replace"/>
+</yandex>

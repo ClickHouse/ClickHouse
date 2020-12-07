@@ -1,5 +1,5 @@
 <yandex>
-    <grpc_port replace="replace">9100</grpc_port>
+    <grpc_port>9100</grpc_port>
     <grpc replace="replace">
         <enable_ssl>true</enable_ssl>
 
