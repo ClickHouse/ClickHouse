@@ -1,8 +1,6 @@
 ---
-machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 20
-toc_title: "MySQL\u63A5\u53E3"
+toc_title: MySQL接口
 ---
 
 # MySQL接口 {#mysql-interface}
