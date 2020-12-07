@@ -24,10 +24,13 @@ ORDER BY (pk, sk);
 -- ERROR cases
 OPTIMIZE TABLE full_duplicates DEDUPLICATE BY pk, sk, val, mat, alias; -- { serverError 16 } -- alias column is present
 OPTIMIZE TABLE full_duplicates DEDUPLICATE BY sk, val; -- { serverError 8 } -- primary key column is missing
-OPTIMIZE TABLE full_duplicates DEDUPLICATE BY; -- { serverError 51 } -- list is empty
 OPTIMIZE TABLE full_duplicates DEDUPLICATE BY * EXCEPT(pk, sk, val, mat, alias); -- { serverError 51 } -- list is empty
 OPTIMIZE TABLE full_duplicates DEDUPLICATE BY * EXCEPT(pk); -- { serverError 8 } -- primary key column is missing
+
+OPTIMIZE TABLE full_duplicates DEDUPLICATE BY; -- { clientError 62 } -- empty list is a syntax error
 OPTIMIZE TABLE partial_duplicates DEDUPLICATE BY pk,sk,val,mat EXCEPT mat; -- { clientError 62 } -- invalid syntax
+OPTIMIZE TABLE partial_duplicates DEDUPLICATE BY pk APPLY(pk+1); -- { clientError 62 } -- APPLY column transformer is not supported
+OPTIMIZE TABLE partial_duplicates DEDUPLICATE BY pk REPLACE(pk+1); -- { clientError 62 } -- REPLACE column transformer is not supported
 
 -- Valid cases
 -- NOTE: here and below we need FINAL to force deduplication in such a small set of data in only 1 part.
