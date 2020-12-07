@@ -74,6 +74,10 @@ std::shared_ptr<TSystemLog> createSystemLog(
             engine += " TTL " + ttl;
         engine += " ORDER BY (event_date, event_time)";
     }
+    // Validate engine definition grammatically to prevent some configuration errors
+    ParserStorage storage_parser;
+    parseQuery(storage_parser, engine.data(), engine.data() + engine.size(),
+            "Storage to create table for " + config_prefix, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
 
     size_t flush_interval_milliseconds = config.getUInt64(config_prefix + ".flush_interval_milliseconds",
                                                           DEFAULT_SYSTEM_LOG_FLUSH_INTERVAL_MILLISECONDS);
