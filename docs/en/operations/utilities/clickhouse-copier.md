@@ -70,11 +70,21 @@ Parameters:
     <!-- Configuration of clusters as in an ordinary server config -->
     <remote_servers>
         <source_cluster>
+            <!--
+                source cluster & destination clusters accepts exactly the same
+                parameters as parameters for usual Distributed table
+                see https://clickhouse.tech/docs/en/engines/table-engines/special/distributed/
+            --> 
             <shard>
                 <internal_replication>false</internal_replication>
                     <replica>
                         <host>127.0.0.1</host>
                         <port>9000</port>
+                        <!--
+                        <user>default</user>
+                        <password>default</password>
+                        <secure>1</secure>
+                        -->
                     </replica>
             </shard>
             ...

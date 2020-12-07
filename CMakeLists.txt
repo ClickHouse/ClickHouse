@@ -154,17 +154,19 @@ endif ()
 # Make sure the final executable has symbols exported
 set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic")
 
-find_program (OBJCOPY_PATH NAMES "llvm-objcopy" "llvm-objcopy-11" "llvm-objcopy-10" "llvm-objcopy-9" "llvm-objcopy-8" "objcopy")
-if (OBJCOPY_PATH)
-    message(STATUS "Using objcopy: ${OBJCOPY_PATH}.")
+if (OS_LINUX)
+    find_program (OBJCOPY_PATH NAMES "llvm-objcopy" "llvm-objcopy-11" "llvm-objcopy-10" "llvm-objcopy-9" "llvm-objcopy-8" "objcopy")
+    if (OBJCOPY_PATH)
+        message(STATUS "Using objcopy: ${OBJCOPY_PATH}.")
 
-    if (ARCH_AMD64)
-        set(OBJCOPY_ARCH_OPTIONS -O elf64-x86-64 -B i386)
-    elseif (ARCH_AARCH64)
-        set(OBJCOPY_ARCH_OPTIONS -O elf64-aarch64 -B aarch64)
+        if (ARCH_AMD64)
+            set(OBJCOPY_ARCH_OPTIONS -O elf64-x86-64 -B i386)
+        elseif (ARCH_AARCH64)
+            set(OBJCOPY_ARCH_OPTIONS -O elf64-aarch64 -B aarch64)
+        endif ()
+    else ()
+        message(FATAL_ERROR "Cannot find objcopy.")
     endif ()
-else ()
-    message(FATAL_ERROR "Cannot find objcopy.")
 endif ()
 
 if (OS_DARWIN)
@@ -254,6 +256,8 @@ if (WITH_COVERAGE AND COMPILER_GCC)
     set(COVERAGE_OPTION "-lgcov")
     set(WITHOUT_COVERAGE "-fno-profile-arcs -fno-test-coverage")
 endif()
+
+set(COMPILER_FLAGS "${COMPILER_FLAGS}")
 
 set (CMAKE_BUILD_COLOR_MAKEFILE          ON)
 set (CMAKE_CXX_FLAGS                     "${CMAKE_CXX_FLAGS} ${COMPILER_FLAGS} ${PLATFORM_EXTRA_CXX_FLAG} ${COMMON_WARNING_FLAGS} ${CXX_WARNING_FLAGS}")
@@ -474,9 +478,6 @@ set (USE_INTERNAL_CITYHASH_LIBRARY ON CACHE INTERNAL "")
 find_contrib_lib(cityhash)
 
 find_contrib_lib(farmhash)
-
-set (USE_INTERNAL_BTRIE_LIBRARY ON CACHE INTERNAL "")
-find_contrib_lib(btrie)
 
 if (ENABLE_TESTS)
     include (cmake/find/gtest.cmake)
