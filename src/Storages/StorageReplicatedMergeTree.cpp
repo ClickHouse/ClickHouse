@@ -2752,7 +2752,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 future_merged_part.uuid = UUIDHelpers::generateV4();
 
             if (max_source_parts_size_for_merge > 0 &&
-                merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size_for_merge, merge_pred, merge_with_ttl_allowed, nullptr))
+                merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size_for_merge, merge_pred, merge_with_ttl_allowed, nullptr) == SelectPartsDecision::SELECTED)
             {
                 create_result = createLogEntryToMergeParts(
                     zookeeper,
@@ -3891,6 +3891,7 @@ bool StorageReplicatedMergeTree::optimize(
         };
 
         const auto storage_settings_ptr = getSettings();
+        auto metadata_snapshot = getInMemoryMetadataPtr();
 
         if (!partition && final)
         {
@@ -3913,13 +3914,14 @@ bool StorageReplicatedMergeTree::optimize(
                     ReplicatedMergeTreeMergePredicate can_merge = queue.getMergePredicate(zookeeper);
 
                     FutureMergedMutatedPart future_merged_part;
+
                     if (storage_settings.get()->assign_part_uuids)
                         future_merged_part.uuid = UUIDHelpers::generateV4();
 
-                    bool selected = merger_mutator.selectAllPartsToMergeWithinPartition(
-                        future_merged_part, disk_space, can_merge, partition_id, true, nullptr);
+                    SelectPartsDecision select_decision = merger_mutator.selectAllPartsToMergeWithinPartition(
+                        future_merged_part, disk_space, can_merge, partition_id, true, metadata_snapshot, nullptr, query_context.getSettingsRef().optimize_skip_merged_partitions);
 
-                    if (!selected)
+                    if (select_decision != SelectPartsDecision::SELECTED)
                         break;
 
                     ReplicatedMergeTreeLogEntryData merge_entry;
@@ -3955,22 +3957,26 @@ bool StorageReplicatedMergeTree::optimize(
                     future_merged_part.uuid = UUIDHelpers::generateV4();
 
                 String disable_reason;
-                bool selected = false;
+                SelectPartsDecision select_decision = SelectPartsDecision::CANNOT_SELECT;
+
                 if (!partition)
                 {
-                    selected = merger_mutator.selectPartsToMerge(
+                    select_decision = merger_mutator.selectPartsToMerge(
                         future_merged_part, true, storage_settings_ptr->max_bytes_to_merge_at_max_space_in_pool, can_merge, false, &disable_reason);
                 }
                 else
                 {
-
                     UInt64 disk_space = getStoragePolicy()->getMaxUnreservedFreeSpace();
                     String partition_id = getPartitionIDFromQuery(partition, query_context);
-                    selected = merger_mutator.selectAllPartsToMergeWithinPartition(
-                        future_merged_part, disk_space, can_merge, partition_id, final, &disable_reason);
+                    select_decision = merger_mutator.selectAllPartsToMergeWithinPartition(
+                        future_merged_part, disk_space, can_merge, partition_id, final, metadata_snapshot, &disable_reason, query_context.getSettingsRef().optimize_skip_merged_partitions);
                 }
 
-                if (!selected)
+                /// If there is nothing to merge then we treat this merge as successful (needed for optimize final optimization)
+                if (select_decision == SelectPartsDecision::NOTHING_TO_MERGE)
+                    break;
+
+                if (select_decision != SelectPartsDecision::SELECTED)
                 {
                     constexpr const char * message_fmt = "Cannot select parts for optimization: {}";
                     if (disable_reason.empty())
@@ -4566,19 +4572,19 @@ StorageReplicatedMergeTree::allocateBlockNumber(
 }
 
 
-Strings StorageReplicatedMergeTree::waitForAllReplicasToProcessLogEntry(
-    const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active)
+Strings StorageReplicatedMergeTree::waitForAllTableReplicasToProcessLogEntry(
+    const String & table_zookeeper_path, const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active)
 {
     LOG_DEBUG(log, "Waiting for all replicas to process {}", entry.znode_name);
 
     auto zookeeper = getZooKeeper();
-    Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
+    Strings replicas = zookeeper->getChildren(table_zookeeper_path + "/replicas");
     Strings unwaited;
     for (const String & replica : replicas)
     {
-        if (wait_for_non_active || zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
+        if (wait_for_non_active || zookeeper->exists(table_zookeeper_path + "/replicas/" + replica + "/is_active"))
         {
-            if (!waitForReplicaToProcessLogEntry(replica, entry, wait_for_non_active))
+            if (!waitForTableReplicaToProcessLogEntry(table_zookeeper_path, replica, entry, wait_for_non_active))
                 unwaited.push_back(replica);
         }
         else
@@ -4592,8 +4598,15 @@ Strings StorageReplicatedMergeTree::waitForAllReplicasToProcessLogEntry(
 }
 
 
-bool StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(
-    const String & replica, const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active)
+Strings StorageReplicatedMergeTree::waitForAllReplicasToProcessLogEntry(
+    const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active)
+{
+    return waitForAllTableReplicasToProcessLogEntry(zookeeper_path, entry, wait_for_non_active);
+}
+
+
+bool StorageReplicatedMergeTree::waitForTableReplicaToProcessLogEntry(
+    const String & table_zookeeper_path, const String & replica, const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active)
 {
     String entry_str = entry.toString();
     String log_node_name;
@@ -4619,7 +4632,7 @@ bool StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(
     const auto & stop_waiting = [&]()
     {
         bool stop_waiting_itself = waiting_itself && is_dropped;
-        bool stop_waiting_non_active = !wait_for_non_active && !getZooKeeper()->exists(zookeeper_path + "/replicas/" + replica + "/is_active");
+        bool stop_waiting_non_active = !wait_for_non_active && !getZooKeeper()->exists(table_zookeeper_path + "/replicas/" + replica + "/is_active");
         return stop_waiting_itself || stop_waiting_non_active;
     };
     constexpr auto event_wait_timeout_ms = 1000;
@@ -4639,7 +4652,7 @@ bool StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(
         {
             zkutil::EventPtr event = std::make_shared<Poco::Event>();
 
-            String log_pointer = getZooKeeper()->get(zookeeper_path + "/replicas/" + replica + "/log_pointer", nullptr, event);
+            String log_pointer = getZooKeeper()->get(table_zookeeper_path + "/replicas/" + replica + "/log_pointer", nullptr, event);
             if (!log_pointer.empty() && parse<UInt64>(log_pointer) > log_index)
                 break;
 
@@ -4655,9 +4668,9 @@ bool StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(
           *  looking for a node with the same content. And if we do not find it - then the replica has already taken this entry in its queue.
           */
 
-        String log_pointer = getZooKeeper()->get(zookeeper_path + "/replicas/" + replica + "/log_pointer");
+        String log_pointer = getZooKeeper()->get(table_zookeeper_path + "/replicas/" + replica + "/log_pointer");
 
-        Strings log_entries = getZooKeeper()->getChildren(zookeeper_path + "/log");
+        Strings log_entries = getZooKeeper()->getChildren(table_zookeeper_path + "/log");
         UInt64 log_index = 0;
         bool found = false;
 
@@ -4669,7 +4682,7 @@ bool StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(
                 continue;
 
             String log_entry_str;
-            bool exists = getZooKeeper()->tryGet(zookeeper_path + "/log/" + log_entry_name, log_entry_str);
+            bool exists = getZooKeeper()->tryGet(table_zookeeper_path + "/log/" + log_entry_name, log_entry_str);
             if (exists && entry_str == log_entry_str)
             {
                 found = true;
@@ -4687,7 +4700,7 @@ bool StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(
             {
                 zkutil::EventPtr event = std::make_shared<Poco::Event>();
 
-                String log_pointer_new = getZooKeeper()->get(zookeeper_path + "/replicas/" + replica + "/log_pointer", nullptr, event);
+                String log_pointer_new = getZooKeeper()->get(table_zookeeper_path + "/replicas/" + replica + "/log_pointer", nullptr, event);
                 if (!log_pointer_new.empty() && parse<UInt64>(log_pointer_new) > log_index)
                     break;
 
@@ -4711,13 +4724,13 @@ bool StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(
       * Therefore, we search by comparing the content.
       */
 
-    Strings queue_entries = getZooKeeper()->getChildren(zookeeper_path + "/replicas/" + replica + "/queue");
+    Strings queue_entries = getZooKeeper()->getChildren(table_zookeeper_path + "/replicas/" + replica + "/queue");
     String queue_entry_to_wait_for;
 
     for (const String & entry_name : queue_entries)
     {
         String queue_entry_str;
-        bool exists = getZooKeeper()->tryGet(zookeeper_path + "/replicas/" + replica + "/queue/" + entry_name, queue_entry_str);
+        bool exists = getZooKeeper()->tryGet(table_zookeeper_path + "/replicas/" + replica + "/queue/" + entry_name, queue_entry_str);
         if (exists && queue_entry_str == entry_str)
         {
             queue_entry_to_wait_for = entry_name;
@@ -4735,9 +4748,16 @@ bool StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(
     LOG_DEBUG(log, "Waiting for {} to disappear from {} queue", queue_entry_to_wait_for, replica);
 
     /// Third - wait until the entry disappears from the replica queue or replica become inactive.
-    String path_to_wait_on = zookeeper_path + "/replicas/" + replica + "/queue/" + queue_entry_to_wait_for;
+    String path_to_wait_on = table_zookeeper_path + "/replicas/" + replica + "/queue/" + queue_entry_to_wait_for;
 
     return getZooKeeper()->waitForDisappear(path_to_wait_on, stop_waiting);
+}
+
+
+bool StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(
+    const String & replica, const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active)
+{
+    return waitForTableReplicaToProcessLogEntry(zookeeper_path, replica, entry, wait_for_non_active);
 }
 
 
