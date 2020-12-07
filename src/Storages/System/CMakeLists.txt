@@ -15,6 +15,8 @@ include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
 add_headers_and_sources(storages_system .)
 list (APPEND storages_system_sources ${CONFIG_BUILD})
 
+set_source_files_properties(StorageSystemStackTrace.cpp PROPERTIES COMPILE_FLAGS -fno-sanitize=thread)
+
 add_custom_target(generate-contributors
     ./StorageSystemContributors.sh
     SOURCES StorageSystemContributors.sh
