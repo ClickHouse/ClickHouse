@@ -11,7 +11,7 @@ namespace DB
 namespace
 {
 
-bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, bool optional_table_keyword = false)
+bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, const ASTDropQuery::Kind kind)
 {
     ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_table("TABLE");
@@ -42,15 +42,6 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, bool
 
         if (!name_p.parse(pos, database, expected))
             return false;
-
-        if (ParserKeyword{"ON"}.ignore(pos, expected))
-        {
-            if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
-                return false;
-        }
-
-        if (s_no_delay.ignore(pos, expected) || s_sync.ignore(pos, expected))
-            no_delay = true;
     }
     else
     {
@@ -61,7 +52,8 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, bool
         else if (s_temporary.ignore(pos, expected))
             temporary = true;
 
-        if (!is_view && !is_dictionary && (!s_table.ignore(pos, expected) && !optional_table_keyword))
+        /// for TRUNCATE queries TABLE keyword is assumed as default and can be skipped
+        if (!is_view && !is_dictionary && (!s_table.ignore(pos, expected) && kind == ASTDropQuery::Kind::Truncate))
         {
             return false;
         }
@@ -78,24 +70,26 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, bool
             if (!name_p.parse(pos, table, expected))
                 return false;
         }
-
-        if (ParserKeyword{"ON"}.ignore(pos, expected))
-        {
-            if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
-                return false;
-        }
-
-        if (s_permanently.ignore(pos, expected))
-            permanently = true;
-
-        if (s_no_delay.ignore(pos, expected) || s_sync.ignore(pos, expected))
-            no_delay = true;
     }
+
+    /// common for tables / dictionaries / databases
+    if (ParserKeyword{"ON"}.ignore(pos, expected))
+    {
+        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+            return false;
+    }
+
+    if (kind == ASTDropQuery::Kind::Detach && s_permanently.ignore(pos, expected))
+        permanently = true;
+
+    /// actually for TRUNCATE NO DELAY / SYNC means nothing
+    if (s_no_delay.ignore(pos, expected) || s_sync.ignore(pos, expected))
+        no_delay = true;
 
     auto query = std::make_shared<ASTDropQuery>();
     node = query;
 
-    query->kind = ASTDropQuery::Kind::Drop;
+    query->kind = kind;
     query->if_exists = if_exists;
     query->temporary = temporary;
     query->is_dictionary = is_dictionary;
@@ -111,28 +105,6 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, bool
     return true;
 }
 
-bool parseDetachQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
-{
-    if (parseDropQuery(pos, node, expected))
-    {
-        auto * drop_query = node->as<ASTDropQuery>();
-        drop_query->kind = ASTDropQuery::Kind::Detach;
-        return true;
-    }
-    return false;
-}
-
-bool parseTruncateQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
-{
-    if (parseDropQuery(pos, node, expected, true))
-    {
-        auto * drop_query = node->as<ASTDropQuery>();
-        drop_query->kind = ASTDropQuery::Kind::Truncate;
-        return true;
-    }
-    return false;
-}
-
 }
 
 bool ParserDropQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -142,11 +114,11 @@ bool ParserDropQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_truncate("TRUNCATE");
 
     if (s_drop.ignore(pos, expected))
-        return parseDropQuery(pos, node, expected);
+        return parseDropQuery(pos, node, expected, ASTDropQuery::Kind::Drop);
     else if (s_detach.ignore(pos, expected))
-        return parseDetachQuery(pos, node, expected);
+        return parseDropQuery(pos, node, expected, ASTDropQuery::Kind::Detach);
     else if (s_truncate.ignore(pos, expected))
-        return parseTruncateQuery(pos, node, expected);
+        return parseDropQuery(pos, node, expected, ASTDropQuery::Kind::Truncate);
     else
         return false;
 }
