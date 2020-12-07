@@ -137,7 +137,6 @@ function clone_submodules
             contrib/libxml2
             contrib/poco
             contrib/libunwind
-            contrib/ryu
             contrib/fmtlib
             contrib/base64
             contrib/cctz
@@ -155,6 +154,7 @@ function clone_submodules
             contrib/croaring
             contrib/miniselect
             contrib/xz
+            contrib/dragonbox
         )
 
         git submodule sync
