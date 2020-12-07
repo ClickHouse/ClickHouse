@@ -5,6 +5,7 @@
 #include <Core/iostream_debug_helpers.h>
 
 #include <type_traits>
+#include <regex>
 
 #include <gtest/gtest.h>
 
@@ -171,34 +172,35 @@ void compareAttributes(::testing::AssertionResult & result, const char * name, c
 }
 
 
-// TEST(ReplicatedMergeTreeLogEntryData, writeToText)
-// {
-//     const ReplicatedMergeTreeLogEntryData expected
-//     {
-//         .type = ReplicatedMergeTreeLogEntryData::MERGE_PARTS,
-//         .new_part_uuid = UUIDHelpers::generateV4(),
-//         .deduplicate_by_columns = {"foo", "bar", "quix"},
-//         .alter_version = 123456,
-//     };
-
-//     ReplicatedMergeTreeLogEntryData actual;
-//     {
-//         const auto str = actual.toString();
-//         DB::ReadBufferFromString buffer(str);
-//         EXPECT_NO_THROW(expected.readText(buffer)) << "While reading:\n" << str;
-//     }
-
-//     ASSERT_TRUE(compare(expected, actual));
-// }
-
-
-class ReplicatedMergeTreeLogEntryDataTest : public ::testing::TestWithParam<ReplicatedMergeTreeLogEntryData>
+class ReplicatedMergeTreeLogEntryDataTest : public ::testing::TestWithParam<std::tuple<ReplicatedMergeTreeLogEntryData, const char* /* serialized RE*/>>
 {};
 
 TEST_P(ReplicatedMergeTreeLogEntryDataTest, transcode)
 {
-    const auto & expected = GetParam();
+    const auto & [expected, match_regexp] = GetParam();
     const auto str = expected.toString();
+
+    if (match_regexp)
+    {
+        try
+        {
+            // egrep since "." matches newline and we can also use "\n" explicitly
+            std::regex re(match_regexp, std::regex::egrep);
+            EXPECT_TRUE(std::regex_match(str, re))
+                    << "Failed to match with \"" << match_regexp << "\"\nserialized ReplicatedMergeTreeLogEntryData: {\n"
+                    << str << "}";
+        }
+        catch (const std::regex_error &e)
+        {
+            FAIL() << e.what()
+                   << " on regex: " << match_regexp
+                   << " (" << strlen(match_regexp) << " bytes)" << std::endl;
+        }
+        catch (...)
+        {
+            throw;
+        }
+    }
 
     ReplicatedMergeTreeLogEntryData actual;
     // To simplify comparison, since it is rarely set.
@@ -212,59 +214,93 @@ TEST_P(ReplicatedMergeTreeLogEntryDataTest, transcode)
 }
 
 INSTANTIATE_TEST_SUITE_P(Merge, ReplicatedMergeTreeLogEntryDataTest,
-        ::testing::ValuesIn(std::initializer_list<ReplicatedMergeTreeLogEntryData>{
+        ::testing::ValuesIn(std::initializer_list<std::tuple<ReplicatedMergeTreeLogEntryData, const char*>>{
     {
-        // Basic: minimal set of attributes.
-        .type = ReplicatedMergeTreeLogEntryData::MERGE_PARTS,
-        .new_part_type = MergeTreeDataPartType::WIDE,
-        .alter_version = 0,
-        .create_time = 123,
+        {
+            // Basic: minimal set of attributes.
+            .type = ReplicatedMergeTreeLogEntryData::MERGE_PARTS,
+            .new_part_type = MergeTreeDataPartType::WIDE,
+            .alter_version = 0,
+            .create_time = 123,
+        },
+        R"re(^format version: 4.+merge.+into.+deduplicate: 0.+$)re"
     },
     {
-        .type = ReplicatedMergeTreeLogEntryData::MERGE_PARTS,
-        .new_part_type = MergeTreeDataPartType::WIDE,
-        // Format version 4
-        .deduplicate = true,
+        {
+            .type = ReplicatedMergeTreeLogEntryData::MERGE_PARTS,
+            .new_part_type = MergeTreeDataPartType::WIDE,
+            // Format version 4
+            .deduplicate = true,
 
-        .alter_version = 0,
-        .create_time = 123,
+            .alter_version = 0,
+            .create_time = 123,
+        },
+        R"re(^format version: 4.+merge.+into.+deduplicate: 1.+$)re"
     },
     {
-        .type = ReplicatedMergeTreeLogEntryData::MERGE_PARTS,
-        .new_part_type = MergeTreeDataPartType::WIDE,
+        {
+            .type = ReplicatedMergeTreeLogEntryData::MERGE_PARTS,
+            .new_part_type = MergeTreeDataPartType::WIDE,
 
-        // Format version 5
-        .new_part_uuid = UUID(UInt128(123456789, 10111213141516)),
+            // Format version 5
+            .new_part_uuid = UUID(UInt128(123456789, 10111213141516)),
 
-        .alter_version = 0,
-        .create_time = 123,
+            .alter_version = 0,
+            .create_time = 123,
+        },
+        R"re(^format version: 5.+merge.+into.+deduplicate: 0.+into_uuid: 00000000-075b-cd15-0000-093233447e0c.+$)re"
     },
     {
-        .type = ReplicatedMergeTreeLogEntryData::MERGE_PARTS,
-        .new_part_type = MergeTreeDataPartType::WIDE,
+        {
+            .type = ReplicatedMergeTreeLogEntryData::MERGE_PARTS,
+            .new_part_type = MergeTreeDataPartType::WIDE,
 
-        // Format version 6
-        .deduplicate = true,
-        .deduplicate_by_columns = {"foo", "bar", "quix"},
+            // Format version 6
+            .deduplicate = true,
+            .deduplicate_by_columns = {"foo", "bar", "qux"},
 
-        .alter_version = 0,
-        .create_time = 123,
+            .alter_version = 0,
+            .create_time = 123,
+        },
+        R"re(^format version: 6.+merge.+into.+deduplicate: 1.+deduplicate_by_columns: \["foo","bar","qux"].*$)re"
     },
     {
-        .type = ReplicatedMergeTreeLogEntryData::MERGE_PARTS,
-        .new_part_type = MergeTreeDataPartType::WIDE,
+        {
+            .type = ReplicatedMergeTreeLogEntryData::MERGE_PARTS,
+            .new_part_type = MergeTreeDataPartType::WIDE,
 
-        // Mixing features
-        .new_part_uuid = UUID(UInt128(123456789, 10111213141516)),
-        .deduplicate = true,
-        .deduplicate_by_columns = {"foo", "bar", "quix"},
+            // Mixing features
+            .new_part_uuid = UUID(UInt128(123456789, 10111213141516)),
+            .deduplicate = true,
+            .deduplicate_by_columns = {"foo", "bar", "qux"},
 
-        .alter_version = 0,
-        .create_time = 123,
+            .alter_version = 0,
+            .create_time = 123,
+        },
+        R"re(^format version: 6.+merge.+into.+deduplicate: 1.+into_uuid: 00000000-075b-cd15-0000-093233447e0c.+deduplicate_by_columns: \["foo","bar","qux"].*$)re"
+    },
+    {
+        // Validate that exotic column names are serialized/desirialized properly
+        {
+            .type = ReplicatedMergeTreeLogEntryData::MERGE_PARTS,
+            .new_part_type = MergeTreeDataPartType::WIDE,
+
+            // Mixing features
+            .new_part_uuid = UUID(UInt128(123456789, 10111213141516)),
+            .deduplicate = true,
+            .deduplicate_by_columns = {"name with space", "\"column\"", "'column'", "колонка"},
+
+            .alter_version = 0,
+            .create_time = 123,
+        },
+        // Due to excessive backslashes it is hard to write a digestibe regular expression
+        nullptr
     },
 }));
 
 
+// This is just an example of how to set all fields, can't be used as is since depending on type, only some fields are serialized/deserialized,
+// and even if everything works perfectly, some fileds in deserialized object would be unset.
 // INSTANTIATE_TEST_SUITE_P(Full, ReplicatedMergeTreeLogEntryDataTest,
 //         ::testing::ValuesIn(std::initializer_list<ReplicatedMergeTreeLogEntryData>{
 //     {
