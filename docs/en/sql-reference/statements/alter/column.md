@@ -122,14 +122,14 @@ Example:
 ALTER TABLE visits MODIFY COLUMN browser Array(String)
 ```
 
-## ALTER TABLE MODIFY COLUMN col_name REMOVE what_to_remove
+## ALTER TABLE MODIFY col_name REMOVE what_to_remove
 
 Removes something from the specific column.
 
 Syntax:
 
 ```sql
-ALTER TABLE table_name MOFIY COLUMN column_name REMOVE removing_part
+ALTER TABLE table_name MODIFY column_name REMOVE removing_part
 ```
 
 **Example**
@@ -144,11 +144,10 @@ Result
 
 ```
 
-## See Also (Optional)
+## See Also
 
-Links to related topics as a list.
-
--   [link](#)
+- More about [ALTER](../../sql-reference/statements/alter/#query_language_queries_alter).
+- More about [MODIFY column](../../sql-reference/statements/alter/column/#alter_modify-column).
 
 Changing the column type is the only complex action – it changes the contents of files with data. For large tables, this may take a long time.
 
