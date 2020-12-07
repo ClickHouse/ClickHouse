@@ -7,7 +7,7 @@ set -e
 
 function thread()
 {
-    db_engine=`$CLICKHOUSE_CLIENT -q "SELECT engine FROM system.databases WHERE name=currentDatabase()"`
+    db_engine=`$CLICKHOUSE_CLIENT -q "SELECT engine FROM system.databases WHERE name='$CLICKHOUSE_DATABASE'"`
     if [[ $db_engine == "Atomic" ]]; then
         # Ignore "Replica already exists" exception
         while true; do
