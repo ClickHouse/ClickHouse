@@ -53,7 +53,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
             temporary = true;
 
         /// for TRUNCATE queries TABLE keyword is assumed as default and can be skipped
-        if (!is_view && !is_dictionary && (!s_table.ignore(pos, expected) && kind == ASTDropQuery::Kind::Truncate))
+        if (!is_view && !is_dictionary && (!s_table.ignore(pos, expected) && kind != ASTDropQuery::Kind::Truncate))
         {
             return false;
         }
