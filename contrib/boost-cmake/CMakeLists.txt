@@ -224,10 +224,10 @@ if (NOT EXTERNAL_BOOST_FOUND)
 #        ${LIBRARY_DIR}/libs/context/src/asm/ontop_x86_64_ms_pe_masm.asm
         ${LIBRARY_DIR}/libs/context/src/asm/ontop_x86_64_sysv_elf_gas.S
 #        ${LIBRARY_DIR}/libs/context/src/asm/ontop_x86_64_sysv_macho_gas.S
-        ${LIBRARY_DIR}/libs/context/src/continuation.cpp
+#        ${LIBRARY_DIR}/libs/context/src/continuation.cpp
         ${LIBRARY_DIR}/libs/context/src/dummy.cpp
         ${LIBRARY_DIR}/libs/context/src/execution_context.cpp
-        ${LIBRARY_DIR}/libs/context/src/fiber.cpp
+#        ${LIBRARY_DIR}/libs/context/src/fiber.cpp
         ${LIBRARY_DIR}/libs/context/src/posix/stack_traits.cpp
 #        ${LIBRARY_DIR}/libs/context/src/untested.cpp
 #        ${LIBRARY_DIR}/libs/context/src/windows/stack_traits.cpp
