@@ -7,7 +7,7 @@
 namespace DB
 {
 
-template<CastType cast_type = CastType::nonAccurate>
+template <CastType cast_type = CastType::nonAccurate>
 ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type)
 {
 
