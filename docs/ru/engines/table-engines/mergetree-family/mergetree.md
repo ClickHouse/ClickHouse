@@ -177,6 +177,10 @@ Marks numbers:   0      1      2      3      4      5      6      7      8      
 
 ClickHouse не требует уникального первичного ключа. Можно вставить много строк с одинаковым первичным ключом.
 
+Ключ в `PRIMARY KEY` и `ORDER BY` может иметь тип `Nullable`. За поддержку этой возможности отвечает настройка [allow_nullable_key](../../../operations/settings/settings.md#allow-nullable-key).
+
+При сортировке с использованием выражения `ORDER BY` для значений `NULL` всегда работает принцип [NULLS_LAST](../../../sql-reference/statements/select/order-by.md#sorting-of-special-values).
+
 ### Выбор первичного ключа {#vybor-pervichnogo-kliucha}
 
 Количество столбцов в первичном ключе не ограничено явным образом. В зависимости от структуры данных в первичный ключ можно включать больше или меньше столбцов. Это может:
@@ -565,6 +569,7 @@ ALTER TABLE example_table
 -   `disk` — диск, находящийся внутри тома.
 -   `max_data_part_size_bytes` — максимальный размер куска данных, который может находится на любом из дисков этого тома.
 -   `move_factor` — доля доступного свободного места на томе, если места становится меньше, то данные начнут перемещение на следующий том, если он есть (по умолчанию 0.1).
+-   `prefer_not_to_merge` — Отключает слияние кусков данных, хранящихся на данном томе. Если данная настройка включена, то слияние данных, хранящихся на данном томе, не допускается. Это позволяет контролировать работу ClickHouse с медленными дисками.
 
 Примеры конфигураций:
 
@@ -593,6 +598,19 @@ ALTER TABLE example_table
             </volumes>
             <move_factor>0.2</move_factor>
         </moving_from_ssd_to_hdd>
+
+		<small_jbod_with_external_no_merges>
+            <volumes>
+                <main>
+                    <disk>jbod1</disk>
+                </main>
+                <external>
+                    <disk>external</disk>
+                    <prefer_not_to_merge>true</prefer_not_to_merge>
+                </external>
+            </volumes>
+        </small_jbod_with_external_no_merges>
+
     </policies>
     ...
 </storage_configuration>
