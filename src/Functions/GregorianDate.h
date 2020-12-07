@@ -308,7 +308,7 @@ namespace DB
             writeChar('0' + y / 1000, buf); y %= 1000;
             writeChar('0' + y /  100, buf); y %=  100;
             writeChar('0' + y /   10, buf); y %=   10;
-            writeChar('0' + y       , buf);;
+            writeChar('0' + y       , buf);
 
             writeChar('-', buf);
 
