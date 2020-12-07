@@ -19,3 +19,5 @@ for _ in {1..100}; do
 done
 
 wait
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE t"

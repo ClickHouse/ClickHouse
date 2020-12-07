@@ -83,7 +83,7 @@ void ReplicatedMergeTreeRestartingThread::run()
             {
                 try
                 {
-                    storage.setZooKeeper(storage.global_context.getZooKeeper());
+                    storage.setZooKeeper();
                 }
                 catch (const Coordination::Exception &)
                 {

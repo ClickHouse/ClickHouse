@@ -90,11 +90,6 @@ OpenTelemetrySpanHolder::OpenTelemetrySpanHolder(const std::string & _operation_
     start_time_us = std::chrono::duration_cast<std::chrono::microseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
 
-#ifndef NDEBUG
-    attribute_names.push_back("clickhouse.start.stacktrace");
-    attribute_values.push_back(StackTrace().toString());
-#endif
-
     thread.thread_trace_context.span_id = span_id;
 }
 
@@ -110,7 +105,7 @@ OpenTelemetrySpanHolder::~OpenTelemetrySpanHolder()
 
         // First of all, return old value of current span.
         auto & thread = CurrentThread::get();
-        assert(thread.thread_trace_context.span_id = span_id);
+        assert(thread.thread_trace_context.span_id == span_id);
         thread.thread_trace_context.span_id = parent_span_id;
 
         // Not sure what's the best way to access the log from here.
@@ -129,11 +124,6 @@ OpenTelemetrySpanHolder::~OpenTelemetrySpanHolder()
             // queries.
             return;
         }
-
-#ifndef NDEBUG
-        attribute_names.push_back("clickhouse.end.stacktrace");
-        attribute_values.push_back(StackTrace().toString());
-#endif
 
         auto log = context->getOpenTelemetrySpanLog();
         if (!log)
