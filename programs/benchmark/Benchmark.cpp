@@ -214,7 +214,8 @@ private:
 
     void readQueries()
     {
-        if (query_to_execute.empty()) {
+        if (query_to_execute.empty())
+        {
             ReadBufferFromFileDescriptor in(STDIN_FILENO);
 
             while (!in.eof())
@@ -229,7 +230,9 @@ private:
 
             if (queries.empty())
                 throw Exception("Empty list of queries.", ErrorCodes::EMPTY_DATA_PASSED);
-        } else {
+        }
+        else
+        {
             queries.emplace_back(query_to_execute);
         }
 
