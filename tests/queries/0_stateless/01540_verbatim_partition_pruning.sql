@@ -21,3 +21,10 @@ select * from xy where intHash64(x) % 2 = intHash64(2) % 2;
 select * from xy where x = 8;
 
 drop table if exists xy;
+
+-- Test if we provide enough columns to generate a partition value
+drop table if exists xyz;
+create table xyz(x int, y int, z int) engine MergeTree partition by if(toUInt8(x), y, z) order by x settings index_granularity = 1;
+insert into xyz values (1, 2, 3);
+select * from xyz where y = 2;
+drop table if exists xyz;
