@@ -280,7 +280,7 @@ INSTANTIATE_TEST_SUITE_P(Merge, ReplicatedMergeTreeLogEntryDataTest,
         R"re(^format version: 6.+merge.+into.+deduplicate: 1.+into_uuid: 00000000-075b-cd15-0000-093233447e0c.+deduplicate_by_columns: \["foo","bar","qux"].*$)re"
     },
     {
-        // Validate that exotic column names are serialized/desirialized properly
+        // Validate that exotic column names are serialized/deserialized properly
         {
             .type = ReplicatedMergeTreeLogEntryData::MERGE_PARTS,
             .new_part_type = MergeTreeDataPartType::WIDE,

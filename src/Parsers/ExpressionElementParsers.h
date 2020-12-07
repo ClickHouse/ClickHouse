@@ -117,17 +117,9 @@ protected:
   */
 class ParserQualifiedAsterisk : public IParserBase
 {
-public:
-    using ColumnTransformers = ParserColumnsTransformers::ColumnTransformers;
-    ParserQualifiedAsterisk(ColumnTransformers allowed_transformers_ = ParserColumnsTransformers::AllTransformers)
-        : allowed_transformers(allowed_transformers_)
-    {}
-
 protected:
     const char * getName() const override { return "qualified asterisk"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-
-    ColumnTransformers allowed_transformers;
 };
 
 /** COLUMNS('<regular expression>')
