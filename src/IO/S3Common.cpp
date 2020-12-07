@@ -323,8 +323,9 @@ namespace S3
 
         Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
 
+        auto auth_signer = std::make_shared<S3AuthSigner>(client_configuration, std::move(credentials), std::move(headers), use_environment_credentials);
         return std::make_shared<Aws::S3::S3Client>(
-            std::make_shared<S3AuthSigner>(client_configuration, std::move(credentials), std::move(headers), use_environment_credentials),
+            std::move(auth_signer),
             std::move(client_configuration), // Client configuration.
             is_virtual_hosted_style || client_configuration.endpointOverride.empty() // Use virtual addressing only if endpoint is not specified.
         );
