@@ -160,6 +160,9 @@
         <!-- Send/receive message size limits in bytes. -1 means unlimited -->
         <max_send_message_size>-1</max_send_message_size>
         <max_receive_message_size>-1</max_receive_message_size>
+
+        <!-- Enable if you want very detailed logs -->
+        <verbose_logs>false</verbose_logs>
     </grpc>
 
     <!-- Maximum number of concurrent queries. -->
