@@ -23,8 +23,8 @@ public:
 
 private:
     int epoll_fd;
+    int pipe_fd[2];
     std::atomic_bool is_finished = false;
-    std::condition_variable condvar;
     std::list<TaskData> tasks;
 
 public:

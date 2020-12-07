@@ -65,7 +65,7 @@ public:
 
     /// Receive all remain packets and finish query.
     /// It should be cancelled after read returned empty block.
-    void finish();
+    void finish(std::unique_ptr<ReadContext> * read_context = nullptr);
 
     /// Cancel query execution. Sends Cancel packet and ignore others.
     /// This method may be called from separate thread.

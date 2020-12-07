@@ -2,6 +2,7 @@
 #include <Common/Exception.h>
 #include <sys/epoll.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 namespace DB
 {
@@ -18,11 +19,23 @@ AsyncTaskQueue::AsyncTaskQueue()
     epoll_fd = epoll_create(1);
     if (-1 == epoll_fd)
         throwFromErrno("Cannot create epoll descriptor", ErrorCodes::CANNOT_OPEN_FILE);
+
+    if (-1 == pipe2(pipe_fd, O_NONBLOCK))
+        throwFromErrno("Cannot create pipe", ErrorCodes::CANNOT_OPEN_FILE);
+
+    epoll_event socket_event;
+    socket_event.events = EPOLLIN | EPOLLPRI;
+    socket_event.data.ptr = pipe_fd;
+
+    if (-1 == epoll_ctl(epoll_fd, EPOLL_CTL_ADD, pipe_fd[0], &socket_event))
+        throwFromErrno("Cannot add pipe descriptor to epoll", ErrorCodes::CANNOT_OPEN_FILE);
 }
 
 AsyncTaskQueue::~AsyncTaskQueue()
 {
     close(epoll_fd);
+    close(pipe_fd[0]);
+    close(pipe_fd[1]);
 }
 
 void AsyncTaskQueue::addTask(size_t thread_number, void * data, int fd)
@@ -36,15 +49,10 @@ void AsyncTaskQueue::addTask(size_t thread_number, void * data, int fd)
 
     if (-1 == epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &socket_event))
         throwFromErrno("Cannot add socket descriptor to epoll", ErrorCodes::CANNOT_OPEN_FILE);
-
-    if (size() == 1)
-        condvar.notify_one();
 }
 
 AsyncTaskQueue::TaskData AsyncTaskQueue::wait(std::unique_lock<std::mutex> & lock)
 {
-    condvar.wait(lock, [&] { return !empty() || is_finished; });
-
     if (is_finished)
         return {};
 
@@ -62,6 +70,9 @@ AsyncTaskQueue::TaskData AsyncTaskQueue::wait(std::unique_lock<std::mutex> & loc
 
     lock.lock();
 
+    if (event.data.ptr == pipe_fd)
+        return {};
+
     auto it = static_cast<TaskData *>(event.data.ptr)->self;
 
     if (-1 == epoll_ctl(epoll_fd, EPOLL_CTL_DEL, it->fd, &event))
@@ -76,7 +87,16 @@ void AsyncTaskQueue::finish()
 {
     is_finished = true;
     tasks.clear();
-    condvar.notify_one();
+
+    uint64_t buf = 0;
+    while (-1 == write(pipe_fd[1], &buf, sizeof(buf)))
+    {
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+            break;
+
+        if (errno != EINTR)
+            throwFromErrno("Cannot write to pipe", ErrorCodes::CANNOT_READ_FROM_SOCKET);
+    }
 }
 
 }

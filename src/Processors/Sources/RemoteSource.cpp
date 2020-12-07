@@ -29,7 +29,10 @@ ISource::Status RemoteSource::prepare()
     /// To avoid resetting the connection (because of "unfinished" query) in the
     /// RemoteQueryExecutor it should be finished explicitly.
     if (status == Status::Finished)
-        query_executor->finish();
+    {
+        query_executor->finish(&read_context);
+        is_async_state = false;
+    }
     return status;
 }
 
@@ -70,7 +73,7 @@ std::optional<Chunk> RemoteSource::tryGenerate()
 
     if (!block)
     {
-        query_executor->finish();
+        query_executor->finish(&read_context);
         return {};
     }
 
@@ -92,6 +95,7 @@ void RemoteSource::onCancel()
 {
     was_query_canceled = true;
     query_executor->cancel(&read_context);
+    is_async_state = false;
 }
 
 

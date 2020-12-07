@@ -304,7 +304,7 @@ std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
     return {};
 }
 
-void RemoteQueryExecutor::finish()
+void RemoteQueryExecutor::finish(std::unique_ptr<ReadContext> * read_context)
 {
     /** If one of:
       * - nothing started to do;
@@ -315,6 +315,9 @@ void RemoteQueryExecutor::finish()
       */
     if (!isQueryPending() || hasThrownException())
         return;
+
+    if (read_context && *read_context)
+        (*read_context)->cancel();
 
     /** If you have not read all the data yet, but they are no longer needed.
       * This may be due to the fact that the data is sufficient (for example, when using LIMIT).
