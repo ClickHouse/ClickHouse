@@ -30,6 +30,7 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_DICTIONARY;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -55,6 +56,8 @@ BlockIO InterpreterDropQuery::execute()
     {
         if (!drop.is_dictionary)
             return executeToTable(drop);
+        else if (drop.permanently && drop.kind == ASTDropQuery::Kind::Detach)
+            throw Exception("DETACH PERMANENTLY is not implemented for dictionaries", ErrorCodes::NOT_IMPLEMENTED);
         else
             return executeToDictionary(drop.database, drop.table, drop.kind, drop.if_exists, drop.temporary, drop.no_ddl_lock);
     }
@@ -296,10 +299,14 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             bool drop = query.kind == ASTDropQuery::Kind::Drop;
             context.checkAccess(AccessType::DROP_DATABASE, database_name);
 
+            if (query.kind == ASTDropQuery::Kind::Detach && query.permanently)
+                throw Exception("DETACH PERMANENTLY is not implemented for databases", ErrorCodes::NOT_IMPLEMENTED);
+
 #if USE_MYSQL
             if (database->getEngineName() == "MaterializeMySQL")
                 stopDatabaseSynchronization(database);
 #endif
+
 
             if (database->shouldBeEmptyOnDetach())
             {
