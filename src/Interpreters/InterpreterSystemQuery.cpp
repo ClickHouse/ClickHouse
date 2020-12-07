@@ -276,10 +276,10 @@ BlockIO InterpreterSystemQuery::execute()
 #if defined(__ELF__) && !defined(__FreeBSD__)
             context.checkAccess(AccessType::SYSTEM_RELOAD_SYMBOLS);
             (void)SymbolIndex::instance(true);
+            break;
 #else
             throw Exception("SYSTEM RELOAD SYMBOLS is not supported on current platform", ErrorCodes::NOT_IMPLEMENTED);
 #endif
-            break;
         case Type::STOP_MERGES:
             startStopAction(ActionLocks::PartsMerge, false);
             break;
