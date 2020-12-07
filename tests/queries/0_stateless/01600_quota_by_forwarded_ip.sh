@@ -26,9 +26,9 @@ CREATE QUOTA quota_by_forwarded_ip KEYED BY forwarded_ip_address FOR RANDOMIZED 
 
 echo '--- Test with quota by immediate IP ---'
 
-for _ in {1..10}; do
-    $CLICKHOUSE_CLIENT --user quoted_by_ip --query "SELECT count() FROM numbers(10)" 2>/dev/null
-done
+while true; do
+    $CLICKHOUSE_CLIENT --user quoted_by_ip --query "SELECT count() FROM numbers(10)" 2>/dev/null || break
+done | uniq
 
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=quoted_by_ip" -d "SELECT count() FROM numbers(10)" | grep -oF 'exceeded'
 
@@ -38,16 +38,16 @@ ${CLICKHOUSE_CURL} -H 'X-Forwarded-For: 1.2.3.4' -sS "${CLICKHOUSE_URL}&user=quo
 
 echo '--- Test with quota by forwarded IP ---'
 
-for _ in {1..10}; do
-    $CLICKHOUSE_CLIENT --user quoted_by_forwarded_ip --query "SELECT count() FROM numbers(10)" 2>/dev/null
-done
+while true; do
+    $CLICKHOUSE_CLIENT --user quoted_by_forwarded_ip --query "SELECT count() FROM numbers(10)" 2>/dev/null || break
+done | uniq
 
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=quoted_by_forwarded_ip" -d "SELECT count() FROM numbers(10)" | grep -oF 'exceeded'
 
 # X-Forwarded-For is respected for quota by forwarded IP address
-for _ in {1..10}; do
-    ${CLICKHOUSE_CURL} -H 'X-Forwarded-For: 1.2.3.4' -sS "${CLICKHOUSE_URL}&user=quoted_by_forwarded_ip" -d "SELECT count() FROM numbers(10)" | grep -oF '10'
-done
+while true; do
+    ${CLICKHOUSE_CURL} -H 'X-Forwarded-For: 1.2.3.4' -sS "${CLICKHOUSE_URL}&user=quoted_by_forwarded_ip" -d "SELECT count() FROM numbers(10)" | grep -oP '^10$' || break
+done | uniq
 
 ${CLICKHOUSE_CURL} -H 'X-Forwarded-For: 1.2.3.4' -sS "${CLICKHOUSE_URL}&user=quoted_by_forwarded_ip" -d "SELECT count() FROM numbers(10)" | grep -oF 'exceeded'
 
