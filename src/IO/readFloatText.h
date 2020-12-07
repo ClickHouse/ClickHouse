@@ -147,7 +147,7 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
 
     if (likely(buf.position() + MAX_LENGTH <= buf.buffer().end()))
     {
-        char * initial_position = buf.position();
+        auto initial_position = buf.position();
         auto res = fast_float::from_chars(initial_position, buf.buffer().end(), x);
 
         if (unlikely(res.ec != std::errc()))
@@ -167,21 +167,25 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
         /// Slow path. Copy characters that may be present in floating point number to temporary buffer.
         bool negative = false;
 
+        /// We check eof here because we can parse +inf +nan
         while (!buf.eof())
         {
             switch (*buf.position())
             {
                 case '+':
+                    ++buf.position();
                     continue;
 
-                case '-': {
+                case '-':
+                {
                     negative = true;
                     ++buf.position();
                     continue;
                 }
 
                 case 'i': [[fallthrough]];
-                case 'I': {
+                case 'I':
+                {
                     if (assertOrParseInfinity<throw_exception>(buf))
                     {
                         x = std::numeric_limits<T>::infinity();
@@ -193,7 +197,8 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
                 }
 
                 case 'n': [[fallthrough]];
-                case 'N': {
+                case 'N':
+                {
                     if (assertOrParseNaN<throw_exception>(buf))
                     {
                         x = std::numeric_limits<T>::quiet_NaN();
