@@ -3,7 +3,7 @@ toc_priority: 22
 toc_title: JDBC驱动
 ---
 
-# JDBC 驱动 {#jdbc-driver}
+# JDBC驱动 {#jdbc-driver}
 
 -   **[官方驱动](https://github.com/ClickHouse/clickhouse-jdbc)**
 -   第三方驱动:
