@@ -16,7 +16,7 @@
 namespace DB
 {
     template <typename Name, typename FromDataType, bool nullOnErrors>
-    class ExecutableFunctionFromMJD : public IExecutableFunctionImpl
+    class ExecutableFunctionFromModifiedJulianDay : public IExecutableFunctionImpl
     {
     public:
         String getName() const override
@@ -95,10 +95,10 @@ namespace DB
     };
 
     template <typename Name, typename FromDataType, bool nullOnErrors>
-    class FunctionBaseFromMJD : public IFunctionBaseImpl
+    class FunctionBaseFromModifiedJulianDay : public IFunctionBaseImpl
     {
     public:
-        explicit FunctionBaseFromMJD(DataTypes argument_types_, DataTypePtr return_type_)
+        explicit FunctionBaseFromModifiedJulianDay(DataTypes argument_types_, DataTypePtr return_type_)
             : argument_types(std::move(argument_types_))
             , return_type(std::move(return_type_)) {}
 
@@ -119,7 +119,7 @@ namespace DB
 
         ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &) const override
         {
-            return std::make_unique<ExecutableFunctionFromMJD<Name, FromDataType, nullOnErrors>>();
+            return std::make_unique<ExecutableFunctionFromModifiedJulianDay<Name, FromDataType, nullOnErrors>>();
         }
 
         bool isInjective(const ColumnsWithTypeAndName &) const override
@@ -146,14 +146,14 @@ namespace DB
     };
 
     template <typename Name, bool nullOnErrors>
-    class FromMJDOverloadResolver : public IFunctionOverloadResolverImpl
+    class FromModifiedJulianDayOverloadResolver : public IFunctionOverloadResolverImpl
     {
     public:
         static constexpr auto name = Name::name;
 
         static FunctionOverloadResolverImplPtr create(const Context &)
         {
-            return std::make_unique<FromMJDOverloadResolver<Name, nullOnErrors>>();
+            return std::make_unique<FromModifiedJulianDayOverloadResolver<Name, nullOnErrors>>();
         }
 
         String getName() const override
@@ -172,7 +172,7 @@ namespace DB
                 using FromIntType = typename Types::RightType;
                 using FromDataType = DataTypeNumber<FromIntType>;
 
-                base = std::make_unique<FunctionBaseFromMJD<Name, FromDataType, nullOnErrors>>(argument_types, return_type);
+                base = std::make_unique<FunctionBaseFromModifiedJulianDay<Name, FromDataType, nullOnErrors>>(argument_types, return_type);
                 return true;
             };
             bool built = callOnBasicType<void, true, false, false, false>(from_type->getTypeId(), call);
@@ -190,7 +190,7 @@ namespace DB
                  */
                 if (WhichDataType(from_type).isNullable()) // Nullable(Nothing)
                 {
-                    return std::make_unique<FunctionBaseFromMJD<Name, DataTypeInt32, nullOnErrors>>(argument_types, return_type);
+                    return std::make_unique<FunctionBaseFromModifiedJulianDay<Name, DataTypeInt32, nullOnErrors>>(argument_types, return_type);
                 }
                 else {
                     // Should not happen.
@@ -230,19 +230,19 @@ namespace DB
         }
     };
 
-    struct NameFromMJD
+    struct NameFromModifiedJulianDay
     {
-        static constexpr auto name = "fromMJD";
+        static constexpr auto name = "fromModifiedJulianDay";
     };
 
-    struct NameFromMJDOrNull
+    struct NameFromModifiedJulianDayOrNull
     {
-        static constexpr auto name = "fromMJDOrNull";
+        static constexpr auto name = "fromModifiedJulianDayOrNull";
     };
 
-    void registerFunctionFromMJD(FunctionFactory & factory)
+    void registerFunctionFromModifiedJulianDay(FunctionFactory & factory)
     {
-        factory.registerFunction<FromMJDOverloadResolver<NameFromMJD, false>>();
-        factory.registerFunction<FromMJDOverloadResolver<NameFromMJDOrNull, true>>();
+        factory.registerFunction<FromModifiedJulianDayOverloadResolver<NameFromModifiedJulianDay, false>>();
+        factory.registerFunction<FromModifiedJulianDayOverloadResolver<NameFromModifiedJulianDayOrNull, true>>();
     }
 }

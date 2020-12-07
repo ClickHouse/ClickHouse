@@ -20,7 +20,7 @@ namespace DB
     }
 
     template <typename Name, typename ToDataType, bool nullOnErrors>
-    class ExecutableFunctionToMJD : public IExecutableFunctionImpl
+    class ExecutableFunctionToModifiedJulianDay : public IExecutableFunctionImpl
     {
     public:
         String getName() const override
@@ -70,37 +70,37 @@ namespace DB
             size_t current_offset = 0;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                 const size_t next_offset = offsets ? (*offsets)[i] : current_offset + fixed_string_size;
-                 const size_t string_size = offsets ? next_offset - current_offset - 1 : fixed_string_size;
-                 ReadBufferFromMemory read_buffer(&(*chars)[current_offset], string_size);
-                 current_offset = next_offset;
+                const size_t next_offset = offsets ? (*offsets)[i] : current_offset + fixed_string_size;
+                const size_t string_size = offsets ? next_offset - current_offset - 1 : fixed_string_size;
+                ReadBufferFromMemory read_buffer(&(*chars)[current_offset], string_size);
+                current_offset = next_offset;
 
-                 if constexpr (nullOnErrors)
-                 {
-                     try
-                     {
-                         const GregorianDate<> date(read_buffer);
-                         vec_to[i] = date.toMJD<typename ToDataType::FieldType>();
-                         (*vec_null_map_to)[i] = false;
-                     }
-                     catch (const Exception & e)
-                     {
-                         if (e.code() == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED ||
-                             e.code() == ErrorCodes::CANNOT_PARSE_DATE)
-                         {
-                             (*vec_null_map_to)[i] = true;
-                         }
-                         else
-                         {
-                             throw;
-                         }
-                     }
-                 }
-                 else
-                 {
-                     const GregorianDate<> date(read_buffer);
-                     vec_to[i] = date.toMJD<typename ToDataType::FieldType>();
-                 }
+                if constexpr (nullOnErrors)
+                {
+                    try
+                    {
+                        const GregorianDate<> date(read_buffer);
+                        vec_to[i] = date.toMJD<typename ToDataType::FieldType>();
+                        (*vec_null_map_to)[i] = false;
+                    }
+                    catch (const Exception & e)
+                    {
+                        if (e.code() == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED ||
+                            e.code() == ErrorCodes::CANNOT_PARSE_DATE)
+                        {
+                            (*vec_null_map_to)[i] = true;
+                        }
+                        else
+                        {
+                            throw;
+                        }
+                    }
+                }
+                else
+                {
+                    const GregorianDate<> date(read_buffer);
+                    vec_to[i] = date.toMJD<typename ToDataType::FieldType>();
+                }
             }
 
             if constexpr (nullOnErrors)
@@ -120,10 +120,10 @@ namespace DB
     };
 
     template <typename Name, typename ToDataType, bool nullOnErrors>
-    class FunctionBaseToMJD : public IFunctionBaseImpl
+    class FunctionBaseToModifiedJulianDay : public IFunctionBaseImpl
     {
     public:
-        explicit FunctionBaseToMJD(DataTypes argument_types_, DataTypePtr return_type_)
+        explicit FunctionBaseToModifiedJulianDay(DataTypes argument_types_, DataTypePtr return_type_)
             : argument_types(std::move(argument_types_))
             , return_type(std::move(return_type_)) {}
 
@@ -144,7 +144,7 @@ namespace DB
 
         ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &) const override
         {
-            return std::make_unique<ExecutableFunctionToMJD<Name, ToDataType, nullOnErrors>>();
+            return std::make_unique<ExecutableFunctionToModifiedJulianDay<Name, ToDataType, nullOnErrors>>();
         }
 
         bool isInjective(const ColumnsWithTypeAndName &) const override
@@ -171,14 +171,14 @@ namespace DB
     };
 
     template <typename Name, typename ToDataType, bool nullOnErrors>
-    class ToMJDOverloadResolver : public IFunctionOverloadResolverImpl
+    class ToModifiedJulianDayOverloadResolver : public IFunctionOverloadResolverImpl
     {
     public:
         static constexpr auto name = Name::name;
 
         static FunctionOverloadResolverImplPtr create(const Context &)
         {
-            return std::make_unique<ToMJDOverloadResolver<Name, ToDataType, nullOnErrors>>();
+            return std::make_unique<ToModifiedJulianDayOverloadResolver<Name, ToDataType, nullOnErrors>>();
         }
 
         String getName() const override
@@ -190,7 +190,7 @@ namespace DB
         {
             DataTypes argument_types = { arguments[0].type };
 
-            return std::make_unique<FunctionBaseToMJD<Name, ToDataType, nullOnErrors>>(argument_types, return_type);
+            return std::make_unique<FunctionBaseToModifiedJulianDay<Name, ToDataType, nullOnErrors>>(argument_types, return_type);
         }
 
         DataTypePtr getReturnType(const DataTypes & arguments) const override
@@ -223,19 +223,19 @@ namespace DB
         }
     };
 
-    struct NameToMJD
+    struct NameToModifiedJulianDay
     {
-        static constexpr auto name = "toMJD";
+        static constexpr auto name = "toModifiedJulianDay";
     };
 
-    struct NameToMJDOrNull
+    struct NameToModifiedJulianDayOrNull
     {
-        static constexpr auto name = "toMJDOrNull";
+        static constexpr auto name = "toModifiedJulianDayOrNull";
     };
 
-    void registerFunctionToMJD(FunctionFactory & factory)
+    void registerFunctionToModifiedJulianDay(FunctionFactory & factory)
     {
-        factory.registerFunction<ToMJDOverloadResolver<NameToMJD, DataTypeInt32, false>>();
-        factory.registerFunction<ToMJDOverloadResolver<NameToMJDOrNull, DataTypeInt32, true>>();
+        factory.registerFunction<ToModifiedJulianDayOverloadResolver<NameToModifiedJulianDay, DataTypeInt32, false>>();
+        factory.registerFunction<ToModifiedJulianDayOverloadResolver<NameToModifiedJulianDayOrNull, DataTypeInt32, true>>();
     }
 }
