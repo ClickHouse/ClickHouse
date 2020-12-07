@@ -134,7 +134,6 @@ bool assertOrParseNaN(ReadBuffer & buf)
 }
 
 
-/// Some garbage may be successfully parsed, examples: '--1' parsed as '1'.
 template <typename T, typename ReturnType>
 ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & in)
 {
