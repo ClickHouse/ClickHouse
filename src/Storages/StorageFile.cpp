@@ -333,8 +333,8 @@ public:
 
                 reader = std::make_shared<InputStreamFromInputFormat>(format);
 
-                if (!column_defaults.empty())
-                    reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, column_defaults, context);
+                if (columns_description.hasDefaults())
+                    reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, columns_description, context);
 
                 reader->readPrefix();
             }
