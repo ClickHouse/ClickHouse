@@ -203,7 +203,7 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartSizeForMutation() const
     return 0;
 }
 
-bool MergeTreeDataMergerMutator::selectPartsToMerge(
+SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
     FutureMergedMutatedPart & future_part,
     bool aggressive,
     size_t max_total_size_to_merge,
@@ -219,7 +219,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
     {
         if (out_disable_reason)
             *out_disable_reason = "There are no parts in the table";
-        return false;
+        return SelectPartsDecision::CANNOT_SELECT;
     }
 
     time_t current_time = std::time(nullptr);
@@ -341,7 +341,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         {
             if (out_disable_reason)
                 *out_disable_reason = "There is no need to merge parts according to merge selector algorithm";
-            return false;
+            return SelectPartsDecision::CANNOT_SELECT;
         }
     }
 
@@ -355,27 +355,37 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
 
     LOG_DEBUG(log, "Selected {} parts from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
     future_part.assign(std::move(parts));
-    return true;
+    return SelectPartsDecision::SELECTED;
 }
 
-bool MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
+SelectPartsDecision MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
     FutureMergedMutatedPart & future_part,
     UInt64 & available_disk_space,
     const AllowedMergingPredicate & can_merge,
     const String & partition_id,
     bool final,
-    String * out_disable_reason)
+    const StorageMetadataPtr & metadata_snapshot,
+    String * out_disable_reason,
+    bool optimize_skip_merged_partitions)
 {
     MergeTreeData::DataPartsVector parts = selectAllPartsFromPartition(partition_id);
 
     if (parts.empty())
-        return false;
+        return SelectPartsDecision::CANNOT_SELECT;
 
     if (!final && parts.size() == 1)
     {
         if (out_disable_reason)
             *out_disable_reason = "There is only one part inside partition";
-        return false;
+        return SelectPartsDecision::CANNOT_SELECT;
+    }
+
+    /// If final, optimize_skip_merged_partitions is true and we have only one part in partition with level > 0
+    /// than we don't select it to merge. But if there are some expired TTL then merge is needed
+    if (final && optimize_skip_merged_partitions && parts.size() == 1 && parts[0]->info.level > 0 &&
+        (!metadata_snapshot->hasAnyTTL() || parts[0]->checkAllTTLCalculated(metadata_snapshot)))
+    {
+        return SelectPartsDecision::NOTHING_TO_MERGE;
     }
 
     auto it = parts.begin();
@@ -387,7 +397,7 @@ bool MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
         /// For the case of one part, we check that it can be merged "with itself".
         if ((it != parts.begin() || parts.size() == 1) && !can_merge(*prev_it, *it, out_disable_reason))
         {
-            return false;
+            return SelectPartsDecision::CANNOT_SELECT;
         }
 
         sum_bytes += (*it)->getBytesOnDisk();
@@ -417,14 +427,14 @@ bool MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
         if (out_disable_reason)
             *out_disable_reason = fmt::format("Insufficient available disk space, required {}", ReadableSize(required_disk_space));
 
-        return false;
+        return SelectPartsDecision::CANNOT_SELECT;
     }
 
     LOG_DEBUG(log, "Selected {} parts from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
     future_part.assign(std::move(parts));
 
     available_disk_space -= required_disk_space;
-    return true;
+    return SelectPartsDecision::SELECTED;
 }
 
 
