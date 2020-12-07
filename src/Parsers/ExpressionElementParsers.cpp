@@ -1254,7 +1254,7 @@ bool ParserColumnsMatcher::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         res->children.push_back(regex_node);
     }
 
-    ParserColumnsTransformers transformers_p;
+    ParserColumnsTransformers transformers_p(allowed_transformers);
     ASTPtr transformer;
     while (transformers_p.parse(pos, transformer, expected))
     {
@@ -1429,7 +1429,7 @@ bool ParserAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         ++pos;
         auto asterisk = std::make_shared<ASTAsterisk>();
-        ParserColumnsTransformers transformers_p;
+        ParserColumnsTransformers transformers_p(allowed_transformers);
         ASTPtr transformer;
         while (transformers_p.parse(pos, transformer, expected))
         {

@@ -72,7 +72,7 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     ASTPtr deduplicate_by_columns;
     if (deduplicate && s_by.ignore(pos, expected))
     {
-        if (!ParserList(std::make_unique<ParserOptimizeQueryColumnsSpecification>(), std::make_unique<ParserToken>(TokenType::Comma))
+        if (!ParserList(std::make_unique<ParserOptimizeQueryColumnsSpecification>(), std::make_unique<ParserToken>(TokenType::Comma), false)
                 .parse(pos, deduplicate_by_columns, expected))
             return false;
     }
