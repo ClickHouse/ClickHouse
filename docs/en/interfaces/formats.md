@@ -1390,7 +1390,7 @@ The following is a comparison of the `RawBLOB` and [RowBinary](#rowbinary) forma
 - strings are represented as length in varint format (unsigned [LEB128] (https://en.wikipedia.org/wiki/LEB128)), followed by the bytes of the string.
 
 When an empty value is passed to the `RawBLOB` input, ClickHouse generates an exception:
- 
+
 ``` text
 Code: 108. DB::Exception: No data to insert
 ```
@@ -1398,11 +1398,9 @@ Code: 108. DB::Exception: No data to insert
 **Example**
 
 ``` bash
-$ clickhouse-client --query "DROP TABLE IF EXISTS {some_table};"                                                                
-$ clickhouse-client --query "CREATE TABLE {some_table} (a String) ENGINE = Memory;"                   
+$ clickhouse-client --query "CREATE TABLE {some_table} (a String) ENGINE = Memory;"
 $ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT RawBLOB"
 $ clickhouse-client --query "SELECT * FROM {some_table} FORMAT RawBLOB" | md5sum
-$ clickhouse-client --query "DROP TABLE {some_table};"
 ```
 
 Result:

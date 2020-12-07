@@ -1277,7 +1277,7 @@ Code: 108. DB::Exception: No data to insert
 **Пример**
 
 ``` bash
-$ clickhouse-client --query "CREATE TABLE {some_table} (a String) ENGINE = Memory;"                   
+$ clickhouse-client --query "CREATE TABLE {some_table} (a String) ENGINE = Memory;"
 $ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT RawBLOB"
 $ clickhouse-client --query "SELECT * FROM {some_table} FORMAT RawBLOB" | md5sum
 ```
