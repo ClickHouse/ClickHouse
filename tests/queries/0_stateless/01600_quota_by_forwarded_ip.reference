@@ -1,13 +1,10 @@
 --- Test with quota by immediate IP ---
 10
-10
 exceeded
 exceeded
 --- Test with quota by forwarded IP ---
 10
-10
 exceeded
-10
 10
 exceeded
 exceeded
