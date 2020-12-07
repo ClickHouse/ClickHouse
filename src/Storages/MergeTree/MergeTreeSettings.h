@@ -18,7 +18,7 @@ struct Settings;
 
 #define LIST_OF_MERGE_TREE_SETTINGS(M) \
     M(UInt64, min_compress_block_size, 0, "The actual size of the block to compress of each table, if this setting doesn't set, using corresponding global setting.", 0) \
-    M(UInt64, max_compress_block_size, 0, "The maximum size of blocks of uncompressed data of each table before compressing for writing to a table, is this setting doesn't set, using correspondin global setting.", 0) \
+    M(UInt64, max_compress_block_size, 0, "The maximum size of blocks of uncompressed data of each table before compressing for writing to a table, if this setting doesn't set, using correspondin global setting.", 0) \
     M(UInt64, index_granularity, 8192, "How many rows correspond to one primary key value.", 0) \
     \
     /** Data storing format settings. */ \
