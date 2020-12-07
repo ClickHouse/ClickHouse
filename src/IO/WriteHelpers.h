@@ -29,7 +29,7 @@
 #include <IO/DoubleConverter.h>
 #include <IO/WriteBufferFromString.h>
 
-#include <ryu/ryu.h>
+#include <dragonbox/dragonbox_to_chars.h>
 
 #include <Formats/FormatSettings.h>
 
@@ -228,14 +228,14 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
         if (DecomposedFloat64(x).is_inside_int64())
             result = itoa(Int64(x), buffer) - buffer;
         else
-            result = d2s_buffered_n(x, buffer);
+            result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
     }
     else
     {
         if (DecomposedFloat32(x).is_inside_int32())
             result = itoa(Int32(x), buffer) - buffer;
         else
-            result = f2s_buffered_n(x, buffer);
+            result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
     }
 
     if (result <= 0)
@@ -859,15 +859,15 @@ template <typename T>
 inline std::enable_if_t<std::is_floating_point_v<T>, void>
 writeText(const T & x, WriteBuffer & buf) { writeFloatText(x, buf); }
 
-inline void writeText(const String & x, WriteBuffer & buf) { writeEscapedString(x, buf); }
+inline void writeText(const String & x, WriteBuffer & buf) { writeString(x.c_str(), x.size(), buf); }
 
 /// Implemented as template specialization (not function overload) to avoid preference over templates on arithmetic types above.
 template <> inline void writeText<bool>(const bool & x, WriteBuffer & buf) { writeBoolText(x, buf); }
 
 /// unlike the method for std::string
 /// assumes here that `x` is a null-terminated string.
-inline void writeText(const char * x, WriteBuffer & buf) { writeEscapedString(x, strlen(x), buf); }
-inline void writeText(const char * x, size_t size, WriteBuffer & buf) { writeEscapedString(x, size, buf); }
+inline void writeText(const char * x, WriteBuffer & buf) { writeCString(x, buf); }
+inline void writeText(const char * x, size_t size, WriteBuffer & buf) { writeString(x, size, buf); }
 
 inline void writeText(const DayNum & x, WriteBuffer & buf) { writeDateText(LocalDate(x), buf); }
 inline void writeText(const LocalDate & x, WriteBuffer & buf) { writeDateText(x, buf); }

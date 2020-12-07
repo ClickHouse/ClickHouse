@@ -380,11 +380,25 @@ std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQu
 
     /// There can not be other aggregate functions within the aggregate functions.
     for (const ASTFunction * node : data.aggregates)
-        for (auto & arg : node->arguments->children)
-            assertNoAggregates(arg, "inside another aggregate function");
+        if (node->arguments)
+            for (auto & arg : node->arguments->children)
+                assertNoAggregates(arg, "inside another aggregate function");
     return data.aggregates;
 }
 
+}
+
+TreeRewriterResult::TreeRewriterResult(
+    const NamesAndTypesList & source_columns_,
+    ConstStoragePtr storage_,
+    const StorageMetadataPtr & metadata_snapshot_,
+    bool add_special)
+    : storage(storage_)
+    , metadata_snapshot(metadata_snapshot_)
+    , source_columns(source_columns_)
+{
+    collectSourceColumns(add_special);
+    is_remote_storage = storage && storage->isRemote();
 }
 
 /// Add columns from storage to source_columns list. Deduplicate resulted list.
@@ -645,7 +659,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     /// Executing scalar subqueries - replacing them with constant values.
     executeScalarSubqueries(query, context, subquery_depth, result.scalars, select_options.only_analyze);
 
-    TreeOptimizer::apply(query, result.aliases, source_columns_set, tables_with_columns, context, result.rewrite_subqueries);
+    TreeOptimizer::apply(query, result.aliases, source_columns_set, tables_with_columns, context, result.metadata_snapshot, result.rewrite_subqueries);
 
     /// array_join_alias_to_name, array_join_result_to_source.
     getArrayJoinedColumns(query, result, select_query, result.source_columns, source_columns_set);

@@ -4,6 +4,7 @@
 
 #include <cppkafka/cppkafka.h>
 #include <boost/algorithm/string/join.hpp>
+#include <fmt/ostream.h>
 #include <algorithm>
 
 namespace DB
