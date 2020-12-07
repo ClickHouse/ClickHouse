@@ -135,64 +135,112 @@ bool assertOrParseNaN(ReadBuffer & buf)
 
 
 template <typename T, typename ReturnType>
-ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & in)
+ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
 {
     static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for readFloatTextFastFloatImpl must be float or double");
     static_assert('a' > '.' && 'A' > '.' && '\n' < '.' && '\t' < '.' && '\'' < '.' && '"' < '.', "Layout of char is not like ASCII"); //-V590
 
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    /// Fast path
+    /// Fast path (avoid copying) if the buffer have at least MAX_LENGTH bytes.
+    static constexpr int MAX_LENGTH = 316;
 
-    char * initial_position = in.position();
-    auto res = fast_float::from_chars(initial_position, in.buffer().end(), x);
-    in.position() += res.ptr - initial_position;
-
-    /// Slow path
-
-    if (unlikely(!in.hasPendingData()))
+    if (likely(buf.position() + MAX_LENGTH <= buf.buffer().end()))
     {
-        String buffer;
+        char * initial_position = buf.position();
+        auto res = fast_float::from_chars(initial_position, buf.buffer().end(), x);
 
-        while (true)
+        if (unlikely(res.ec != std::errc()))
         {
-            if (!in.hasPendingData())
-            {
-                buffer.insert(buffer.end(), initial_position, in.position());
-
-                if (in.next())
-                {
-                    initial_position = in.buffer().begin();
-                }
-                else
-                {
-                    break;
-                }
-            }
-
-            if (isWhitespaceASCII(*in.position()))
-            {
-                buffer.insert(buffer.end(), initial_position, in.position());
-                break;
-            }
+            if constexpr (throw_exception)
+                throw Exception("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
             else
-            {
-                ++in.position();
-            }
+                return ReturnType(false);
         }
 
-        res = fast_float::from_chars(buffer.data(), buffer.data() + buffer.size(), x);
-    }
+        buf.position() += res.ptr - initial_position;
 
-    if (unlikely(res.ec != std::errc()))
+        return ReturnType(true);
+    }
+    else
     {
-        if constexpr (throw_exception)
-            throw Exception("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
-        else
-            return ReturnType(false);
-    }
+        /// Slow path. Copy characters that may be present in floating point number to temporary buffer.
+        bool negative = false;
 
-    return ReturnType(true);
+        while (!buf.eof())
+        {
+            switch (*buf.position())
+            {
+                case '+':
+                    continue;
+
+                case '-': {
+                    negative = true;
+                    ++buf.position();
+                    continue;
+                }
+
+                case 'i': [[fallthrough]];
+                case 'I': {
+                    if (assertOrParseInfinity<throw_exception>(buf))
+                    {
+                        x = std::numeric_limits<T>::infinity();
+                        if (negative)
+                            x = -x;
+                        return ReturnType(true);
+                    }
+                    return ReturnType(false);
+                }
+
+                case 'n': [[fallthrough]];
+                case 'N': {
+                    if (assertOrParseNaN<throw_exception>(buf))
+                    {
+                        x = std::numeric_limits<T>::quiet_NaN();
+                        if (negative)
+                            x = -x;
+                        return ReturnType(true);
+                    }
+                    return ReturnType(false);
+                }
+
+                default:
+                    break;
+            }
+
+            break;
+        }
+
+
+        char tmp_buf[MAX_LENGTH];
+        int num_copied_chars = 0;
+
+        while (!buf.eof() && num_copied_chars < MAX_LENGTH)
+        {
+            char c = *buf.position();
+            if (!(isNumericASCII(c) || c == '-' || c == '+' || c == '.' || c == 'e' || c == 'E'))
+                break;
+
+            tmp_buf[num_copied_chars] = c;
+            ++buf.position();
+            ++num_copied_chars;
+        }
+
+        auto res = fast_float::from_chars(tmp_buf, tmp_buf + num_copied_chars, x);
+
+        if (unlikely(res.ec != std::errc()))
+        {
+            if constexpr (throw_exception)
+                throw Exception("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
+            else
+                return ReturnType(false);
+        }
+
+        if (negative)
+            x = -x;
+
+        return ReturnType(true);
+    }
 }
 
 
