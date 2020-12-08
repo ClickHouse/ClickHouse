@@ -219,10 +219,8 @@ struct ConvertImpl
                     }
                     else
                     {
-                        /// If From Data is Nan or Inf, throw exception
-                        /// TODO: Probably this can be applied to all integers not just big integers
-                        /// https://stackoverflow.com/questions/38795544/is-casting-of-infinity-to-integer-undefined
-                        if constexpr (is_big_int_v<ToFieldType>)
+                        /// If From Data is Nan or Inf and we convert to integer type, throw exception
+                        if constexpr (std::is_floating_point_v<FromFieldType> && !std::is_floating_point_v<ToFieldType>)
                         {
                             if (!isFinite(vec_from[i]))
                             {
@@ -232,7 +230,7 @@ struct ConvertImpl
                                     continue;
                                 }
                                 else
-                                    throw Exception("Unexpected inf or nan to big int conversion", ErrorCodes::NOT_IMPLEMENTED);
+                                    throw Exception("Unexpected inf or nan to integer conversion", ErrorCodes::CANNOT_CONVERT_TYPE);
                             }
                         }
 

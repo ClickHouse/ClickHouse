@@ -441,7 +441,11 @@ Example
 SELECT cast(-1, 'UInt8') as uint8; 
 ```
 
+
 ``` text
+┌─uint8─┐
+│   255 │
+└───────┘
 ```
 
 ```sql
@@ -449,6 +453,8 @@ SELECT accurateCast(-1, 'UInt8') as uint8;
 ```
 
 ``` text
+Code: 70. DB::Exception: Received from localhost:9000. DB::Exception: Value in column Int8 cannot be safely converted into type UInt8: While processing accurateCast(-1, 'UInt8') AS uint8.
+
 ```
 
 ## accurateCastOrNull(x, T) {#type_conversion_function-accurate-cast_or_null}
