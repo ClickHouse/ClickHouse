@@ -231,11 +231,7 @@ void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const Stora
 
 void DatabaseOnDisk::detachTablePermanently(const String & table_name)
 {
-    StoragePtr table = detachTable(table_name);
-
-    /// This is possible for Lazy database.
-    if (!table)
-        return;
+    detachTable(table_name);
 
     String table_metadata_path = getObjectMetadataPath(table_name);
     String table_metadata_path_detached = table_metadata_path + detached_suffix;
