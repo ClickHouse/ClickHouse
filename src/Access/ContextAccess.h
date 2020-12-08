@@ -41,9 +41,16 @@ struct ContextAccessParams
     ClientInfo::Interface interface = ClientInfo::Interface::TCP;
     ClientInfo::HTTPMethod http_method = ClientInfo::HTTPMethod::UNKNOWN;
     Poco::Net::IPAddress address;
+    String forwarded_address;
     String quota_key;
 
-    auto toTuple() const { return std::tie(user_id, current_roles, use_default_roles, readonly, allow_ddl, allow_introspection, current_database, interface, http_method, address, quota_key); }
+    auto toTuple() const
+    {
+        return std::tie(
+            user_id, current_roles, use_default_roles, readonly, allow_ddl, allow_introspection,
+            current_database, interface, http_method, address, forwarded_address, quota_key);
+    }
+
     friend bool operator ==(const ContextAccessParams & lhs, const ContextAccessParams & rhs) { return lhs.toTuple() == rhs.toTuple(); }
     friend bool operator !=(const ContextAccessParams & lhs, const ContextAccessParams & rhs) { return !(lhs == rhs); }
     friend bool operator <(const ContextAccessParams & lhs, const ContextAccessParams & rhs) { return lhs.toTuple() < rhs.toTuple(); }

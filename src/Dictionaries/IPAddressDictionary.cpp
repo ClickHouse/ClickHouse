@@ -112,9 +112,12 @@ static void validateKeyTypes(const DataTypes & key_types)
     if (key_types.empty() || key_types.size() > 2)
         throw Exception{"Expected a single IP address or IP with mask", ErrorCodes::TYPE_MISMATCH};
 
-    const auto & actual_type = key_types[0]->getName();
-    if (actual_type != "UInt32" && actual_type != "FixedString(16)")
-        throw Exception{"Key does not match, expected either UInt32 or FixedString(16)", ErrorCodes::TYPE_MISMATCH};
+    const auto * key_ipv4type = typeid_cast<const DataTypeUInt32 *>(key_types[0].get());
+    const auto * key_ipv6type = typeid_cast<const DataTypeFixedString *>(key_types[0].get());
+
+    if (key_ipv4type == nullptr && (key_ipv6type == nullptr || key_ipv6type->getN() != 16))
+        throw Exception{"Key does not match, expected either `IPv4` (`UInt32`) or `IPv6` (`FixedString(16)`)",
+                        ErrorCodes::TYPE_MISMATCH};
 
     if (key_types.size() > 1)
     {
