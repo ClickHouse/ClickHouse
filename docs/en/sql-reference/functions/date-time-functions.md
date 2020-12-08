@@ -693,14 +693,14 @@ SELECT FROM_UNIXTIME(1234334543, '%Y-%m-%d %R:%S') AS DateTime
 └─────────────────────┘
 ```
 
-## toMJD {#tomjd}
+## toModifiedJulianDay {#tomodifiedjulianday}
 
 Converts a [Proleptic Gregorian calendar](https://en.wikipedia.org/wiki/Proleptic_Gregorian_calendar) date in text form `YYYY-MM-DD` to a [Modified Julian Day](https://en.wikipedia.org/wiki/Julian_day#Variants) number in Int32. This function supports date from `0000-01-01` to `9999-12-31`. It raises an exception if the argument cannot be parsed as a date, or the date is invalid.
 
 **Syntax**
 
 ``` sql
-toMJD(date)
+toModifiedJulianDay(date)
 ```
 
 **Parameters**
@@ -718,25 +718,25 @@ Type: [Int32](../../sql-reference/data-types/int-uint.md).
 Query:
 
 ``` sql
-SELECT toMJD('2020-01-01');
+SELECT toModifiedJulianDay('2020-01-01');
 ```
 
 Result:
 
 ``` text
-┌─toMJD('2020-01-01')─┐
-│               58849 │
-└─────────────────────┘
+┌─toModifiedJulianDay('2020-01-01')─┐
+│                             58849 │
+└───────────────────────────────────┘
 ```
 
-## toMJDOrNull {#tomjdornull}
+## toModifiedJulianDayOrNull {#tomodifiedjuliandayornull}
 
-Similar to [toMJD()](#tomjd), but instead of raising exceptions it returns `NULL`.
+Similar to [toModifiedJulianDay()](#tomodifiedjulianday), but instead of raising exceptions it returns `NULL`.
 
 **Syntax**
 
 ``` sql
-toMJDOrNull(date)
+toModifiedJulianDayOrNull(date)
 ```
 
 **Parameters**
@@ -754,25 +754,25 @@ Type: [Nullable(Int32)](../../sql-reference/data-types/int-uint.md).
 Query:
 
 ``` sql
-SELECT toMJDOrNull('2020-01-01');
+SELECT toModifiedJulianDayOrNull('2020-01-01');
 ```
 
 Result:
 
 ``` text
-┌─toMJDOrNull('2020-01-01')─┐
-│                     58849 │
-└───────────────────────────┘
+┌─toModifiedJulianDayOrNull('2020-01-01')─┐
+│                                   58849 │
+└─────────────────────────────────────────┘
 ```
 
-## fromMJD {#frommjd}
+## fromModifiedJulianDay {#frommodifiedjulianday}
 
 Converts a [Modified Julian Day](https://en.wikipedia.org/wiki/Julian_day#Variants) number to a [Proleptic Gregorian calendar](https://en.wikipedia.org/wiki/Proleptic_Gregorian_calendar) date in text form `YYYY-MM-DD`. This function supports day number from `-678941` to `2973119` (which represent 0000-01-01 and 9999-12-31 respectively). It raises an exception if the day number is outside of the supported range.
 
 **Syntax**
 
 ``` sql
-fromMJD(day)
+fromModifiedJulianDay(day)
 ```
 
 **Parameters**
@@ -790,25 +790,25 @@ Type: [String](../../sql-reference/data-types/string.md)
 Query:
 
 ``` sql
-SELECT fromMJD(58849);
+SELECT fromModifiedJulianDay(58849);
 ```
 
 Result:
 
 ``` text
-┌─fromMJD(58849)─┐
-│ 2020-01-01     │
-└────────────────┘
+┌─fromModifiedJulianDay(58849)─┐
+│ 2020-01-01                   │
+└──────────────────────────────┘
 ```
 
-## fromMJDOrNull {#frommjdornull}
+## fromModifiedJulianDayOrNull {#frommodifiedjuliandayornull}
 
-Similar to [fromMJD()](#frommjd), but instead of raising exceptions it returns `NULL`.
+Similar to [fromModifiedJulianDayOrNull()](#frommodifiedjuliandayornull), but instead of raising exceptions it returns `NULL`.
 
 **Syntax**
 
 ``` sql
-fromMJDOrNull(day)
+fromModifiedJulianDayOrNull(day)
 ```
 
 **Parameters**
@@ -826,13 +826,13 @@ Type: [Nullable(String)](../../sql-reference/data-types/string.md)
 Query:
 
 ``` sql
-SELECT fromMJDOrNull(58849);
+SELECT fromModifiedJulianDayOrNull(58849);
 ```
 
 Result:
 
 ``` text
-┌─fromMJDOrNull(58849)─┐
-│ 2020-01-01           │
-└──────────────────────┘
+┌─fromModifiedJulianDayOrNull(58849)─┐
+│ 2020-01-01                         │
+└────────────────────────────────────┘
 ```
