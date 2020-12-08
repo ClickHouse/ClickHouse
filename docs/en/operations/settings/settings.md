@@ -2364,10 +2364,9 @@ Allows configurable `NULL` representation for [TSV](../../interfaces/formats.md#
 
 Default value: `\N`.
 
-<<<<<<< HEAD
 ## output_format_json_array_of_rows {#output-format-json-array-of-rows}
 
-Enables the ability to output all rows as a [JSON](../../interfaces/formats.md#json) array in the [JSONEachRow](../../interfaces/formats.md#jsoneachrow) format.
+Enables the ability to output all rows as a JSON array in the [JSONEachRow](../../interfaces/formats.md#jsoneachrow) format.
 
 Possible values:
 
@@ -2424,5 +2423,4 @@ Possible values:
 
 Default value: `0`.
 
->>>>>>> remotes/clickhouse/master
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
