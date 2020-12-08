@@ -94,6 +94,9 @@ protected:
 
     const String metadata_path;
     const String data_path;
+
+private:
+    void checkTableAttachPossible(const Context & context, const String & table_name, const ASTCreateQuery & create);
 };
 
 }
