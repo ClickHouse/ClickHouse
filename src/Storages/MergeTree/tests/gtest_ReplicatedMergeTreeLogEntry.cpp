@@ -37,13 +37,13 @@ std::ostream & operator<<(std::ostream & ostr, const MergeType & v)
 namespace std
 {
 
-std::ostream & operator<<(std::ostream & ostr, const std::exception_ptr & e)
+std::ostream & operator<<(std::ostream & ostr, const std::exception_ptr & exception)
 {
     try
     {
-        if (e)
+        if (exception)
         {
-            std::rethrow_exception(e);
+            std::rethrow_exception(exception);
         }
         return ostr << "<NULL EXCEPTION>";
     }
@@ -203,8 +203,6 @@ TEST_P(ReplicatedMergeTreeLogEntryDataTest, transcode)
     }
 
     ReplicatedMergeTreeLogEntryData actual;
-    // To simplify comparison, since it is rarely set.
-    actual.alter_version = expected.alter_version;
     {
         DB::ReadBufferFromString buffer(str);
         EXPECT_NO_THROW(actual.readText(buffer)) << "While reading:\n" << str;
@@ -213,6 +211,12 @@ TEST_P(ReplicatedMergeTreeLogEntryDataTest, transcode)
     ASSERT_TRUE(compare(expected, actual)) << "Via text:\n" << str;
 }
 
+// Enabling this warning would ruin test brievity without adding anything else in return,
+// since most of the fields have default constructors or be will be zero-initialized as by standard,
+// so values are predicatable and stable accross runs.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+
 INSTANTIATE_TEST_SUITE_P(Merge, ReplicatedMergeTreeLogEntryDataTest,
         ::testing::ValuesIn(std::initializer_list<std::tuple<ReplicatedMergeTreeLogEntryData, const char*>>{
     {
@@ -220,8 +224,7 @@ INSTANTIATE_TEST_SUITE_P(Merge, ReplicatedMergeTreeLogEntryDataTest,
             // Basic: minimal set of attributes.
             .type = ReplicatedMergeTreeLogEntryData::MERGE_PARTS,
             .new_part_type = MergeTreeDataPartType::WIDE,
-            .alter_version = 0,
-            .create_time = 123,
+            .create_time = 123, // 0 means 'now' which could cause flaky tests.
         },
         R"re(^format version: 4.+merge.+into.+deduplicate: 0.+$)re"
     },
@@ -229,10 +232,10 @@ INSTANTIATE_TEST_SUITE_P(Merge, ReplicatedMergeTreeLogEntryDataTest,
         {
             .type = ReplicatedMergeTreeLogEntryData::MERGE_PARTS,
             .new_part_type = MergeTreeDataPartType::WIDE,
+
             // Format version 4
             .deduplicate = true,
 
-            .alter_version = 0,
             .create_time = 123,
         },
         R"re(^format version: 4.+merge.+into.+deduplicate: 1.+$)re"
@@ -245,7 +248,6 @@ INSTANTIATE_TEST_SUITE_P(Merge, ReplicatedMergeTreeLogEntryDataTest,
             // Format version 5
             .new_part_uuid = UUID(UInt128(123456789, 10111213141516)),
 
-            .alter_version = 0,
             .create_time = 123,
         },
         R"re(^format version: 5.+merge.+into.+deduplicate: 0.+into_uuid: 00000000-075b-cd15-0000-093233447e0c.+$)re"
@@ -259,7 +261,6 @@ INSTANTIATE_TEST_SUITE_P(Merge, ReplicatedMergeTreeLogEntryDataTest,
             .deduplicate = true,
             .deduplicate_by_columns = {"foo", "bar", "qux"},
 
-            .alter_version = 0,
             .create_time = 123,
         },
         R"re(^format version: 6.+merge.+into.+deduplicate: 1.+deduplicate_by_columns: \["foo","bar","qux"].*$)re"
@@ -274,7 +275,6 @@ INSTANTIATE_TEST_SUITE_P(Merge, ReplicatedMergeTreeLogEntryDataTest,
             .deduplicate = true,
             .deduplicate_by_columns = {"foo", "bar", "qux"},
 
-            .alter_version = 0,
             .create_time = 123,
         },
         R"re(^format version: 6.+merge.+into.+deduplicate: 1.+into_uuid: 00000000-075b-cd15-0000-093233447e0c.+deduplicate_by_columns: \["foo","bar","qux"].*$)re"
@@ -290,7 +290,6 @@ INSTANTIATE_TEST_SUITE_P(Merge, ReplicatedMergeTreeLogEntryDataTest,
             .deduplicate = true,
             .deduplicate_by_columns = {"name with space", "\"column\"", "'column'", "колонка"},
 
-            .alter_version = 0,
             .create_time = 123,
         },
         // Due to excessive backslashes it is hard to write a digestibe regular expression
@@ -298,9 +297,11 @@ INSTANTIATE_TEST_SUITE_P(Merge, ReplicatedMergeTreeLogEntryDataTest,
     },
 }));
 
+#pragma GCC diagnostic pop
 
-// This is just an example of how to set all fields, can't be used as is since depending on type, only some fields are serialized/deserialized,
-// and even if everything works perfectly, some fileds in deserialized object would be unset.
+// This is just an example of how to set all fields. Can't be used as is since depending on type,
+// only some fields are serialized/deserialized, and even if everything works perfectly,
+// some fileds in deserialized object would be unset (hence differ from expected).
 // INSTANTIATE_TEST_SUITE_P(Full, ReplicatedMergeTreeLogEntryDataTest,
 //         ::testing::ValuesIn(std::initializer_list<ReplicatedMergeTreeLogEntryData>{
 //     {
