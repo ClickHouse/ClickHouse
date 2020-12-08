@@ -11,6 +11,10 @@ script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 LEFT_SERVER_PORT=9001
 # patched version
 RIGHT_SERVER_PORT=9002
+# use zero port for auto-allocation
+# (it is not used in perf tests anyway)
+LEFT_SERVER_TCP_WITH_PROXY_PORT=0
+RIGHT_SERVER_TCP_WITH_PROXY_PORT=0
 
 function wait_for_server # port, pid
 {
@@ -56,6 +60,7 @@ function configure
         --path db0
         --user_files_path db0/user_files
         --tcp_port $LEFT_SERVER_PORT
+        --tcp_with_proxy_port $LEFT_SERVER_TCP_WITH_PROXY_PORT
     )
     left/clickhouse-server "${setup_left_server_opts[@]}" &> setup-server-log.log &
     left_pid=$!
@@ -103,6 +108,7 @@ function restart
         --path left/db
         --user_files_path left/db/user_files
         --tcp_port $LEFT_SERVER_PORT
+        --tcp_with_proxy_port $LEFT_SERVER_TCP_WITH_PROXY_PORT
     )
     left/clickhouse-server "${left_server_opts[@]}" &>> left-server-log.log &
     left_pid=$!
@@ -117,6 +123,7 @@ function restart
         --path right/db
         --user_files_path right/db/user_files
         --tcp_port $RIGHT_SERVER_PORT
+        --tcp_with_proxy_port $RIGHT_SERVER_TCP_WITH_PROXY_PORT
     )
     right/clickhouse-server "${right_server_opts[@]}" &>> right-server-log.log &
     right_pid=$!
