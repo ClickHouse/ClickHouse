@@ -323,3 +323,4 @@ if (USE_INTERNAL_ROCKSDB_LIBRARY)
 endif()
 
 add_subdirectory(dragonbox)
+add_subdirectory(fast_float)
