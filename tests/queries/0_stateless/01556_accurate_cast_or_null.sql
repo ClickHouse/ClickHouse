@@ -21,3 +21,15 @@ SELECT accurateCastOrNull(1, 'Decimal32(9)');
 SELECT accurateCastOrNull(-10, 'Decimal32(9)');
 
 SELECT accurateCastOrNull('123', 'FixedString(2)');
+
+SELECT accurateCastOrNull(inf, 'Int64');
+SELECT accurateCastOrNull(inf, 'Int128');
+SELECT accurateCastOrNull(inf, 'Int256');
+SELECT accurateCastOrNull(nan, 'Int64');
+SELECT accurateCastOrNull(nan, 'Int128');
+SELECT accurateCastOrNull(nan, 'Int256');
+
+SELECT accurateCastOrNull(inf, 'UInt64');
+SELECT accurateCastOrNull(inf, 'UInt256');
+SELECT accurateCastOrNull(nan, 'UInt64');
+SELECT accurateCastOrNull(nan, 'UInt256');
