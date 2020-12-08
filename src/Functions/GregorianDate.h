@@ -149,17 +149,14 @@ namespace DB
 
 /* Implementation */
 
-namespace gd {
+namespace gd
+{
     using namespace DB;
 
     template <typename YearT>
     static inline constexpr bool isLeapYear(YearT year)
     {
-        return ( (year % 4 == 0)
-                 &&
-                 ( (year % 400 == 0)
-                   ||
-                   (! (year % 100 == 0)) ) );
+        return (year % 4 == 0) && ((year % 400 == 0) || (year % 100 != 0));
     }
 
     static inline constexpr uint8_t monthLength(bool isLeapYear, uint8_t month)
@@ -189,15 +186,12 @@ namespace gd {
     static inline constexpr I div(I x, J y)
     {
         const auto y_ = static_cast<I>(y);
-        if (x > 0 && y_ < 0) {
+        if (x > 0 && y_ < 0)
             return ((x - 1) / y_) - 1;
-        }
-        else if (x < 0 && y_ > 0) {
+        else if (x < 0 && y_ > 0)
             return ((x + 1) / y_) - 1;
-        }
-        else {
+        else
             return x / y_;
-        }
     }
 
     /** Integer modulus, satisfying div(x, y)*y + mod(x, y) == x.
@@ -207,12 +201,10 @@ namespace gd {
     {
         const auto y_ = static_cast<I>(y);
         const auto r = x % y_;
-        if ((x > 0 && y_ < 0) || (x < 0 && y_ > 0)) {
+        if ((x > 0 && y_ < 0) || (x < 0 && y_ > 0))
             return r == 0 ? static_cast<I>(0) : r + y_;
-        }
-        else {
+        else
             return r;
-        }
     }
 
     /** Like std::min(), but the type of operands may differ.
@@ -227,19 +219,16 @@ namespace gd {
     static inline char readDigit(ReadBuffer & in)
     {
         char c;
-        if (!in.read(c)) {
+        if (!in.read(c))
             throw Exception(
                 "Cannot parse input: expected a digit at the end of stream",
                 ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
-        }
-        else if (c < '0' || c > '9') {
+        else if (c < '0' || c > '9')
             throw Exception(
                 "Cannot read input: expected a digit but got something else",
                 ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
-        }
-        else {
+        else
             return c - '0';
-        }
     }
 }
 
@@ -303,7 +292,8 @@ namespace DB
                 "Impossible to stringify: year too big or small: " + DB::toString(year_),
                 ErrorCodes::CANNOT_FORMAT_DATETIME);
         }
-        else {
+        else
+        {
             auto y = year_;
             writeChar('0' + y / 1000, buf); y %= 1000;
             writeChar('0' + y /  100, buf); y %=  100;
@@ -367,22 +357,21 @@ namespace DB
     {
         const auto y = year_ - 1;
         return dayOfYear_
-            +  365 * y
-            +  gd::div(y,   4)
-            -  gd::div(y, 100)
-            +  gd::div(y, 400)
-            -  678576;
+            + 365 * y
+            + gd::div(y, 4)
+            - gd::div(y, 100)
+            + gd::div(y, 400)
+            - 678576;
     }
 
     inline MonthDay::MonthDay(uint8_t month, uint8_t dayOfMonth)
         : month_(month)
         , dayOfMonth_(dayOfMonth)
     {
-        if (month < 1 || month > 12) {
+        if (month < 1 || month > 12)
             throw Exception(
                 "Invalid month: " + DB::toString(month),
                 ErrorCodes::LOGICAL_ERROR);
-        }
         /* We can't validate dayOfMonth here, because we don't know if
          * it's a leap year. */
     }
@@ -390,25 +379,20 @@ namespace DB
     inline MonthDay::MonthDay(bool isLeapYear, uint16_t dayOfYear)
     {
         if (dayOfYear < 1 || dayOfYear > (isLeapYear ? 366 : 365))
-        {
             throw Exception(
                 std::string("Invalid day of year: ") +
                 (isLeapYear ? "leap, " : "non-leap, ") + DB::toString(dayOfYear),
                 ErrorCodes::LOGICAL_ERROR);
-        }
 
         month_ = 1;
         uint16_t d = dayOfYear;
-        while (true) {
+        while (true)
+        {
             const auto len = gd::monthLength(isLeapYear, month_);
-            if (d > len)
-            {
-                month_++;
-                d -= len;
-            }
-            else {
+            if (d <= len)
                 break;
-            }
+            month_++;
+            d -= len;
         }
         dayOfMonth_ = d;
     }
@@ -423,9 +407,7 @@ namespace DB
                 "-" + DB::toString(dayOfMonth_),
                 ErrorCodes::LOGICAL_ERROR);
         }
-        const auto k = month_ <= 2 ?  0
-                     : isLeapYear  ? -1
-                     :               -2;
+        const auto k = month_ <= 2 ? 0 : isLeapYear ? -1 :-2;
         return (367 * month_ - 362) / 12 + k + dayOfMonth_;
     }
 }
