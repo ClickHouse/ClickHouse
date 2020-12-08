@@ -45,10 +45,12 @@ def started_cluster():
 
     finally:
         cluster.shutdown()
-        _genuine_zk_instance.stop()
-        _genuine_zk_instance.close()
-        _fake_zk_instance.stop()
-        _fake_zk_instance.close()
+        if _genuine_zk_instance:
+            _genuine_zk_instance.stop()
+            _genuine_zk_instance.close()
+        if _fake_zk_instance:
+            _fake_zk_instance.stop()
+            _fake_zk_instance.close()
 
 
 def test_simple_commands(started_cluster):
@@ -335,3 +337,66 @@ def test_random_requests(started_cluster):
     root_children_genuine = [elem for elem in list(sorted(genuine_zk.get_children("/"))) if elem not in ('clickhouse', 'zookeeper')]
     root_children_fake = [elem for elem in list(sorted(fake_zk.get_children("/"))) if elem not in ('clickhouse', 'zookeeper')]
     assert root_children_fake == root_children_genuine
+
+def test_end_of_session(started_cluster):
+    fake_zk1 = None
+    fake_zk2 = None
+    genuine_zk1 = None
+    genuine_zk2 = None
+
+    try:
+        fake_zk1 = KazooClient(hosts=cluster.get_instance_ip("node") + ":9181")
+        fake_zk1.start()
+        fake_zk2 = KazooClient(hosts=cluster.get_instance_ip("node") + ":9181")
+        fake_zk2.start()
+        genuine_zk1 = cluster.get_kazoo_client('zoo1')
+        genuine_zk1.start()
+        genuine_zk2 = cluster.get_kazoo_client('zoo1')
+        genuine_zk2.start()
+
+        fake_zk1.create("/test_end_of_session")
+        genuine_zk1.create("/test_end_of_session")
+        fake_ephemeral_event = None
+        def fake_ephemeral_callback(event):
+            print("Fake watch triggered")
+            nonlocal fake_ephemeral_event
+            fake_ephemeral_event = event
+
+        genuine_ephemeral_event = None
+        def genuine_ephemeral_callback(event):
+            print("Genuine watch triggered")
+            nonlocal genuine_ephemeral_event
+            genuine_ephemeral_event = event
+
+        assert fake_zk2.exists("/test_end_of_session") is not None
+        assert genuine_zk2.exists("/test_end_of_session") is not None
+
+        fake_zk1.create("/test_end_of_session/ephemeral_node", ephemeral=True)
+        genuine_zk1.create("/test_end_of_session/ephemeral_node", ephemeral=True)
+
+        assert fake_zk2.exists("/test_end_of_session/ephemeral_node", watch=fake_ephemeral_callback) is not None
+        assert genuine_zk2.exists("/test_end_of_session/ephemeral_node", watch=genuine_ephemeral_callback) is not None
+
+        print("Stopping genuine zk")
+        genuine_zk1.stop()
+        print("Closing genuine zk")
+        genuine_zk1.close()
+
+        print("Stopping fake zk")
+        fake_zk1.stop()
+        print("Closing fake zk")
+        fake_zk1.close()
+
+        assert fake_zk2.exists("/test_end_of_session/ephemeral_node") is None
+        assert genuine_zk2.exists("/test_end_of_session/ephemeral_node") is None
+
+        assert fake_ephemeral_event == genuine_ephemeral_event
+
+    finally:
+        try:
+            for zk in [fake_zk1, fake_zk2, genuine_zk1, genuine_zk2]:
+                if zk:
+                    zk.stop()
+                    zk.close()
+        except:
+            pass
