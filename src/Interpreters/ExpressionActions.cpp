@@ -162,6 +162,9 @@ void ExpressionActions::linearizeActions()
 
         if (node->type == ActionsDAG::ActionType::INPUT)
         {
+            /// Position for input is special. It contains the position from actions.
+            cur.position = actions.size();
+
             /// Argument for input is special. It contains the position from required columns.
             ExpressionActions::Argument argument;
             argument.needed_later = !cur.parents.empty();
