@@ -42,7 +42,7 @@ public:
 
     /// Parse "top_level_domains_lists" section,
     /// And add each found dictionary.
-    void parseConfig(const Poco::Util::AbstractConfiguration & config);
+    void parseConfig(const std::string & top_level_domains_path, const Poco::Util::AbstractConfiguration & config);
 
     /// Parse file and add it as a Set to the list of TLDs
     /// - "//" -- comment,
