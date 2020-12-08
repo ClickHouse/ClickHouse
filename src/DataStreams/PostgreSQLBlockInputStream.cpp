@@ -38,6 +38,9 @@ PostgreSQLBlockInputStream::PostgreSQLBlockInputStream(
     , connection(connection_)
 {
     description.init(sample_block);
+    for (const auto idx : ext::range(0, description.sample_block.columns()))
+        if (description.types[idx].first == ValueType::vtArray)
+            prepareArrayInfo(idx, description.sample_block.getByPosition(idx).type);
 }
 
 
@@ -56,7 +59,6 @@ Block PostgreSQLBlockInputStream::readImpl()
 
     MutableColumns columns = description.sample_block.cloneEmptyColumns();
     size_t num_rows = 0;
-    std::string value;
 
     while (true)
     {
@@ -73,8 +75,6 @@ Block PostgreSQLBlockInputStream::readImpl()
         for (const auto idx : ext::range(0, row->size()))
         {
             const auto & sample = description.sample_block.getByPosition(idx);
-            if (!num_rows && description.types[idx].first == ValueType::vtArray)
-                prepareArrayParser(idx, sample.type);
 
             /// if got NULL type, then pqxx::zview will return nullptr in c_str()
             if ((*row)[idx].c_str())
@@ -147,6 +147,21 @@ void PostgreSQLBlockInputStream::insertValue(IColumn & column, std::string_view 
         case ValueType::vtUUID:
             assert_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.data(), value.size()));
             break;
+        case ValueType::vtDate:
+            assert_cast<ColumnUInt16 &>(column).insertValue(UInt16{LocalDate{std::string(value)}.getDayNum()});
+            break;
+        case ValueType::vtDateTime:
+            assert_cast<ColumnUInt32 &>(column).insertValue(time_t{LocalDateTime{std::string(value)}});
+            break;
+        case ValueType::vtDateTime64:[[fallthrough]];
+        case ValueType::vtDecimal32: [[fallthrough]];
+        case ValueType::vtDecimal64: [[fallthrough]];
+        case ValueType::vtDecimal128:
+        {
+            ReadBufferFromString istr(value);
+            data_type->deserializeAsWholeText(column, istr, FormatSettings{});
+            break;
+        }
         case ValueType::vtArray:
         {
             pqxx::array_parser parser{value};
@@ -188,24 +203,13 @@ void PostgreSQLBlockInputStream::insertValue(IColumn & column, std::string_view 
             assert_cast<ColumnArray &>(column).insert(Array(dimensions[1].begin(), dimensions[1].end()));
             break;
         }
-        case ValueType::vtDate:      [[fallthrough]];
-        case ValueType::vtDateTime:  [[fallthrough]];
-        case ValueType::vtDateTime64:[[fallthrough]];
-        case ValueType::vtDecimal32: [[fallthrough]];
-        case ValueType::vtDecimal64: [[fallthrough]];
-        case ValueType::vtDecimal128:
-        {
-            ReadBufferFromString istr(value);
-            data_type->deserializeAsWholeText(column, istr, FormatSettings{});
-            break;
-        }
         default:
             throw Exception("Value of unsupported type:" + column.getName(), ErrorCodes::UNKNOWN_TYPE);
     }
 }
 
 
-void PostgreSQLBlockInputStream::prepareArrayParser(size_t column_idx, const DataTypePtr data_type)
+void PostgreSQLBlockInputStream::prepareArrayInfo(size_t column_idx, const DataTypePtr data_type)
 {
     const auto * array_type = typeid_cast<const DataTypeArray *>(data_type.get());
     auto nested = array_type->getNestedType();
@@ -249,21 +253,21 @@ void PostgreSQLBlockInputStream::prepareArrayParser(size_t column_idx, const Dat
     else if (which.isDecimal32())
         parser = [nested](std::string & field) -> Field
         {
-            auto type = typeid_cast<const DataTypeDecimal<Decimal32> *>(nested.get());
+            const auto & type = typeid_cast<const DataTypeDecimal<Decimal32> *>(nested.get());
             DataTypeDecimal<Decimal32> res(getDecimalPrecision(*type), getDecimalScale(*type));
             return convertFieldToType(field, res);
         };
     else if (which.isDecimal64())
         parser = [nested](std::string & field) -> Field
         {
-            auto type = typeid_cast<const DataTypeDecimal<Decimal64> *>(nested.get());
+            const auto & type = typeid_cast<const DataTypeDecimal<Decimal64> *>(nested.get());
             DataTypeDecimal<Decimal64> res(getDecimalPrecision(*type), getDecimalScale(*type));
             return convertFieldToType(field, res);
         };
     else if (which.isDecimal128())
         parser = [nested](std::string & field) -> Field
         {
-            auto type = typeid_cast<const DataTypeDecimal<Decimal128> *>(nested.get());
+            const auto & type = typeid_cast<const DataTypeDecimal<Decimal128> *>(nested.get());
             DataTypeDecimal<Decimal128> res(getDecimalPrecision(*type), getDecimalScale(*type));
             return convertFieldToType(field, res);
         };

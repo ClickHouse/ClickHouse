@@ -91,7 +91,6 @@ void PostgreSQLBlockOutputStream::writePrefix()
 {
     storage.checkConnection(connection);
     work = std::make_unique<pqxx::work>(*connection);
-    stream_inserter = std::make_unique<pqxx::stream_to>(*work, remote_table_name);
 }
 
 
@@ -100,7 +99,9 @@ void PostgreSQLBlockOutputStream::write(const Block & block)
     const auto columns = block.getColumns();
     const size_t num_rows = block.rows(), num_cols = block.columns();
     const auto data_types = block.getDataTypes();
-    const auto settings = FormatSettings{};
+
+    if (!stream_inserter)
+        stream_inserter = std::make_unique<pqxx::stream_to>(*work, remote_table_name, block.getNames());
 
     /// std::optional lets libpqxx to know if value is NULL
     std::vector<std::optional<std::string>> row(num_cols);
@@ -116,7 +117,7 @@ void PostgreSQLBlockOutputStream::write(const Block & block)
             else
             {
                 WriteBufferFromOwnString ostr;
-                data_types[j]->serializeAsText(*columns[j], i, ostr, settings);
+                data_types[j]->serializeAsText(*columns[j], i, ostr, FormatSettings{});
                 row[j] = std::optional<std::string>(ostr.str());
 
                 if (isArray(data_types[j]))
@@ -130,7 +131,7 @@ void PostgreSQLBlockOutputStream::write(const Block & block)
             }
         }
 
-        /// pqxx::stream_to uses COPY instead of insert query, so it is faster if inserting large number of rows
+        /// pqxx::stream_to is much faster than simple insert, especially for large number of rows
         stream_inserter->write_values(row);
     }
 }
@@ -138,7 +139,8 @@ void PostgreSQLBlockOutputStream::write(const Block & block)
 
 void PostgreSQLBlockOutputStream::writeSuffix()
 {
-    stream_inserter->complete();
+    if (stream_inserter)
+        stream_inserter->complete();
     work->commit();
 }
 
@@ -159,9 +161,9 @@ void registerStoragePostgreSQL(StorageFactory & factory)
     {
         ASTs & engine_args = args.engine_args;
 
-        if (engine_args.size() < 5)
-            throw Exception(
-                "Storage PostgreSQL requires 5-7 parameters: PostgreSQL('host:port', 'database', 'table', 'username', 'password'.",
+        if (engine_args.size() != 5)
+            throw Exception("Storage PostgreSQL requires 5 parameters: "
+                            "PostgreSQL('host:port', 'database', 'table', 'username', 'password'.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (auto & engine_arg : engine_args)

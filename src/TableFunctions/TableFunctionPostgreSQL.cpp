@@ -74,11 +74,9 @@ DataTypePtr TableFunctionPostgreSQL::getDataType(std::string & type, bool is_nul
 {
     DataTypePtr res;
 
+    /// Get rid of trailing '[]' for arrays
     if (dimensions)
-    {
-        /// No matter how many dimensions, in type we will get only one '[]' (i.e. Integer[])
         type.resize(type.size() - 2);
-    }
 
     if (type == "smallint")
         res = std::make_shared<DataTypeInt16>();
@@ -100,7 +98,7 @@ DataTypePtr TableFunctionPostgreSQL::getDataType(std::string & type, bool is_nul
         res = std::make_shared<DataTypeDate>();
     else if (type.starts_with("numeric"))
     {
-        /// Numeric and decimal will both be numeric
+        /// Numeric and decimal will both end up here as numeric
         /// Will get numeric(precision, scale) string, need to extract precision and scale
         std::vector<std::string> result;
         boost::split(result, type, [](char c){ return c == '(' || c == ',' || c == ')'; });
@@ -143,7 +141,7 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, const 
 
     ASTs & args = func_args.arguments->children;
 
-    if (args.size() < 5)
+    if (args.size() != 5)
         throw Exception("Table function 'PostgreSQL' requires 5 parameters: "
                         "PostgreSQL('host:port', 'database', 'table', 'user', 'password').",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);

@@ -39,7 +39,7 @@ private:
     {
         column.insertFrom(sample_column, 0);
     }
-    void prepareArrayParser(size_t column_idx, const DataTypePtr data_type);
+    void prepareArrayInfo(size_t column_idx, const DataTypePtr data_type);
 
     const String query_str;
     const UInt64 max_block_size;
