@@ -393,7 +393,7 @@ void ZooKeeperMultiResponse::writeImpl(WriteBuffer & out) const
         Coordination::write(op_num, out);
         Coordination::write(done, out);
         Coordination::write(op_error, out);
-        if (op_error == Error::ZOK)
+        if (op_error == Error::ZOK || op_num == OpNum::Error)
             zk_response.writeImpl(out);
     }
 
@@ -472,6 +472,7 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::Exists, ZooKeeperExistsRequest>(*this);
     registerZooKeeperRequest<OpNum::Get, ZooKeeperGetRequest>(*this);
     registerZooKeeperRequest<OpNum::Set, ZooKeeperSetRequest>(*this);
+    registerZooKeeperRequest<OpNum::SimpleList, ZooKeeperSimpleListRequest>(*this);
     registerZooKeeperRequest<OpNum::List, ZooKeeperListRequest>(*this);
     registerZooKeeperRequest<OpNum::Check, ZooKeeperCheckRequest>(*this);
     registerZooKeeperRequest<OpNum::Multi, ZooKeeperMultiRequest>(*this);

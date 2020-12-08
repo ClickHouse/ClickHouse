@@ -39,34 +39,37 @@ static String baseName(const String & path)
     return path.substr(rslash_pos + 1);
 }
 
-static void processWatchesImpl(const String & path, TestKeeperStorage::Watches & watches, TestKeeperStorage::Watches & list_watches)
+static void processWatchesImpl(const String & path, TestKeeperStorage::Watches & watches, TestKeeperStorage::Watches & list_watches, Coordination::Event event_type)
 {
-    Coordination::ZooKeeperWatchResponse watch_response;
-    watch_response.path = path;
-    watch_response.xid = -1;
-    watch_response.zxid = -1;
-
-    auto it = watches.find(watch_response.path);
+    auto it = watches.find(path);
     if (it != watches.end())
     {
+        std::shared_ptr<Coordination::ZooKeeperWatchResponse> watch_response = std::make_shared<Coordination::ZooKeeperWatchResponse>();
+        watch_response->path = path;
+        watch_response->xid = -1;
+        watch_response->zxid = -1;
+        watch_response->type = event_type;
+        watch_response->state = Coordination::State::CONNECTED;
         for (auto & watcher : it->second)
             if (watcher.watch_callback)
-                watcher.watch_callback(std::make_shared<Coordination::ZooKeeperWatchResponse>(watch_response));
+                watcher.watch_callback(watch_response);
 
         watches.erase(it);
     }
 
-    Coordination::ZooKeeperWatchResponse watch_list_response;
-    watch_list_response.path = parentPath(path);
-    watch_list_response.xid = -1;
-    watch_list_response.zxid = -1;
-
-    it = list_watches.find(watch_list_response.path);
+    auto parent_path = parentPath(path);
+    it = list_watches.find(parent_path);
     if (it != list_watches.end())
     {
+        std::shared_ptr<Coordination::ZooKeeperWatchResponse> watch_list_response = std::make_shared<Coordination::ZooKeeperWatchResponse>();
+        watch_list_response->path = parent_path;
+        watch_list_response->xid = -1;
+        watch_list_response->zxid = -1;
+        watch_list_response->type = Coordination::Event::CHILD;
+        watch_list_response->state = Coordination::State::CONNECTED;
         for (auto & watcher : it->second)
             if (watcher.watch_callback)
-                watcher.watch_callback(std::make_shared<Coordination::ZooKeeperWatchResponse>(watch_list_response));
+                watcher.watch_callback(watch_list_response);
 
         list_watches.erase(it);
     }
@@ -110,7 +113,7 @@ struct TestKeeperStorageCreateRequest final : public TestKeeperStorageRequest
 
     void processWatches(TestKeeperStorage::Watches & watches, TestKeeperStorage::Watches & list_watches) const override
     {
-        processWatchesImpl(zk_request->getPath(), watches, list_watches);
+        processWatchesImpl(zk_request->getPath(), watches, list_watches, Coordination::Event::CREATED);
     }
 
     std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(TestKeeperStorage::Container & container, TestKeeperStorage::Ephemerals & ephemerals, int64_t zxid, int64_t session_id) const override
@@ -154,7 +157,6 @@ struct TestKeeperStorageCreateRequest final : public TestKeeperStorageRequest
                 if (request.is_sequential)
                 {
                     auto seq_num = it->second.seq_num;
-                    ++it->second.seq_num;
 
                     std::stringstream seq_num_str;      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
                     seq_num_str.exceptions(std::ios::failbit);
@@ -163,13 +165,16 @@ struct TestKeeperStorageCreateRequest final : public TestKeeperStorageRequest
                     path_created += seq_num_str.str();
                 }
 
+                /// Increment sequential number even if node is not sequential
+                ++it->second.seq_num;
+
                 response.path_created = path_created;
                 container.emplace(path_created, std::move(created_node));
 
                 if (request.is_ephemeral)
                     ephemerals[session_id].emplace(path_created);
 
-                undo = [&container, &ephemerals, session_id, path_created, is_sequential = request.is_sequential, is_ephemeral = request.is_ephemeral, parent_path = it->first]
+                undo = [&container, &ephemerals, session_id, path_created, is_ephemeral = request.is_ephemeral, parent_path = it->first]
                 {
                     container.erase(path_created);
                     if (is_ephemeral)
@@ -177,9 +182,7 @@ struct TestKeeperStorageCreateRequest final : public TestKeeperStorageRequest
                     auto & undo_parent = container.at(parent_path);
                     --undo_parent.stat.cversion;
                     --undo_parent.stat.numChildren;
-
-                    if (is_sequential)
-                        --undo_parent.seq_num;
+                    --undo_parent.seq_num;
                 };
 
                 ++it->second.stat.cversion;
@@ -270,7 +273,7 @@ struct TestKeeperStorageRemoveRequest final : public TestKeeperStorageRequest
 
     void processWatches(TestKeeperStorage::Watches & watches, TestKeeperStorage::Watches & list_watches) const override
     {
-        processWatchesImpl(zk_request->getPath(), watches, list_watches);
+        processWatchesImpl(zk_request->getPath(), watches, list_watches, Coordination::Event::DELETED);
     }
 };
 
@@ -321,6 +324,7 @@ struct TestKeeperStorageSetRequest final : public TestKeeperStorageRequest
             ++it->second.stat.version;
             it->second.stat.mzxid = zxid;
             it->second.stat.mtime = std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1);
+            it->second.stat.dataLength = request.data.length();
             it->second.data = request.data;
             ++container.at(parentPath(request.path)).stat.cversion;
             response.stat = it->second.stat;
@@ -342,7 +346,7 @@ struct TestKeeperStorageSetRequest final : public TestKeeperStorageRequest
 
     void processWatches(TestKeeperStorage::Watches & watches, TestKeeperStorage::Watches & list_watches) const override
     {
-        processWatchesImpl(zk_request->getPath(), watches, list_watches);
+        processWatchesImpl(zk_request->getPath(), watches, list_watches, Coordination::Event::CHANGED);
     }
 
 };
@@ -457,9 +461,23 @@ struct TestKeeperStorageMultiRequest final : public TestKeeperStorageRequest
             for (const auto & concrete_request : concrete_requests)
             {
                 auto [ cur_response, undo_action ] = concrete_request->process(container, ephemerals, zxid, session_id);
+
                 response.responses[i] = cur_response;
                 if (cur_response->error != Coordination::Error::ZOK)
                 {
+                    for (size_t j = 0; j <= i; ++j)
+                    {
+                        auto response_error = response.responses[j]->error;
+                        response.responses[j] = std::make_shared<Coordination::ZooKeeperErrorResponse>();
+                        response.responses[j]->error = response_error;
+                    }
+
+                    for (size_t j = i + 1; j < response.responses.size(); ++j)
+                    {
+                        response.responses[j] = std::make_shared<Coordination::ZooKeeperErrorResponse>();
+                        response.responses[j]->error = Coordination::Error::ZRUNTIMEINCONSISTENCY;
+                    }
+
                     for (auto it = undo_actions.rbegin(); it != undo_actions.rend(); ++it)
                         if (*it)
                             (*it)();
@@ -468,6 +486,7 @@ struct TestKeeperStorageMultiRequest final : public TestKeeperStorageRequest
                 }
                 else
                     undo_actions.emplace_back(std::move(undo_action));
+
                 ++i;
             }
 
@@ -525,7 +544,7 @@ void TestKeeperStorage::processingThread()
                         for (const auto & ephemeral_path : it->second)
                         {
                             container.erase(ephemeral_path);
-                            processWatchesImpl(ephemeral_path, watches, list_watches);
+                            processWatchesImpl(ephemeral_path, watches, list_watches, Coordination::Event::DELETED);
                         }
                         ephemerals.erase(it);
                     }
@@ -539,7 +558,7 @@ void TestKeeperStorage::processingThread()
                     {
                         if (response->error == Coordination::Error::ZOK)
                         {
-                            auto & watches_type = zk_request->getOpNum() == Coordination::OpNum::List
+                            auto & watches_type = zk_request->getOpNum() == Coordination::OpNum::List || zk_request->getOpNum() == Coordination::OpNum::SimpleList
                                 ? list_watches
                                 : watches;
 
@@ -553,11 +572,12 @@ void TestKeeperStorage::processingThread()
                         }
                         else
                         {
-                            Coordination::ZooKeeperWatchResponse watch_response;
-                            watch_response.path = zk_request->getPath();
-                            watch_response.xid = -1;
-                            watch_response.error = response->error;
-                            info.watch_callback(std::make_shared<Coordination::ZooKeeperWatchResponse>(watch_response));
+                            std::shared_ptr<Coordination::ZooKeeperWatchResponse> watch_response = std::make_shared<Coordination::ZooKeeperWatchResponse>();
+                            watch_response->path = zk_request->getPath();
+                            watch_response->xid = -1;
+                            watch_response->error = response->error;
+                            watch_response->type = Coordination::Event::NOTWATCHING;
+                            info.watch_callback(watch_response);
                         }
                     }
 
@@ -700,6 +720,7 @@ TestKeeperWrapperFactory::TestKeeperWrapperFactory()
     registerTestKeeperRequestWrapper<Coordination::OpNum::Get, TestKeeperStorageGetRequest>(*this);
     registerTestKeeperRequestWrapper<Coordination::OpNum::Set, TestKeeperStorageSetRequest>(*this);
     registerTestKeeperRequestWrapper<Coordination::OpNum::List, TestKeeperStorageListRequest>(*this);
+    registerTestKeeperRequestWrapper<Coordination::OpNum::SimpleList, TestKeeperStorageListRequest>(*this);
     registerTestKeeperRequestWrapper<Coordination::OpNum::Check, TestKeeperStorageCheckRequest>(*this);
     registerTestKeeperRequestWrapper<Coordination::OpNum::Multi, TestKeeperStorageMultiRequest>(*this);
 }
@@ -740,7 +761,9 @@ void TestKeeperStorage::putRequest(const Coordination::ZooKeeperRequestPtr & req
     request_info.session_id = session_id;
     request_info.response_callback = callback;
     if (request->has_watch)
+    {
         request_info.watch_callback = watch_callback;
+    }
 
     std::lock_guard lock(push_request_mutex);
     if (!requests_queue.tryPush(std::move(request_info), operation_timeout.totalMilliseconds()))

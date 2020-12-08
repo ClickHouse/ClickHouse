@@ -81,6 +81,11 @@ void read(bool & x, ReadBuffer & in)
     readBinary(x, in);
 }
 
+void read(int8_t & x, ReadBuffer & in)
+{
+    readBinary(x, in);
+}
+
 void read(std::string & s, ReadBuffer & in)
 {
     int32_t size = 0;
