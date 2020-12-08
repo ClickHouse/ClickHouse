@@ -3,12 +3,14 @@
 #include <IO/S3Common.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <common/logger_useful.h>
 #include "DiskS3.h"
 #include "Disks/DiskCacheWrapper.h"
 #include "Disks/DiskFactory.h"
 #include "ProxyConfiguration.h"
 #include "ProxyListConfiguration.h"
 #include "ProxyResolverConfiguration.h"
+
 
 namespace DB
 {
