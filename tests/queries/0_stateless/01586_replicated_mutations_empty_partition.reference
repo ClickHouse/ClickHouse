@@ -1,0 +1,5 @@
+10
+10
+10
+24
+CREATE TABLE default.replicated_mutations_empty_partitions\n(\n    `key` UInt64,\n    `value` UInt64\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/test/01586_replicated_mutations_empty_partitions\', \'1\')\nPARTITION BY key\nORDER BY key\nSETTINGS index_granularity = 8192

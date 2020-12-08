@@ -951,12 +951,28 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setReceiveTimeout(settings.receive_timeout);
                 socket.setSendTimeout(settings.send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
-                    new TCPHandlerFactory(*this),
+                    new TCPHandlerFactory(*this, /* secure */ false, /* proxy protocol */ false),
                     server_pool,
                     socket,
                     new Poco::Net::TCPServerParams));
 
                 LOG_INFO(log, "Listening for connections with native protocol (tcp): {}", address.toString());
+            });
+
+            /// TCP with PROXY protocol, see https://github.com/wolfeidau/proxyv2/blob/master/docs/proxy-protocol.txt
+            create_server("tcp_with_proxy_port", [&](UInt16 port)
+            {
+                Poco::Net::ServerSocket socket;
+                auto address = socket_bind_listen(socket, listen_host, port);
+                socket.setReceiveTimeout(settings.receive_timeout);
+                socket.setSendTimeout(settings.send_timeout);
+                servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
+                    new TCPHandlerFactory(*this, /* secure */ false, /* proxy protocol */ true),
+                    server_pool,
+                    socket,
+                    new Poco::Net::TCPServerParams));
+
+                LOG_INFO(log, "Listening for connections with native protocol (tcp) with PROXY: {}", address.toString());
             });
 
             /// TCP with SSL
@@ -968,7 +984,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setReceiveTimeout(settings.receive_timeout);
                 socket.setSendTimeout(settings.send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
-                    new TCPHandlerFactory(*this, /* secure= */ true),
+                    new TCPHandlerFactory(*this, /* secure */ true, /* proxy protocol */ false),
                     server_pool,
                     socket,
                     new Poco::Net::TCPServerParams));

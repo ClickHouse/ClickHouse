@@ -20,4 +20,4 @@ done
 
 wait
 
-${CLICKHOUSE_CLIENT} --query="DROP TABLE t"
+$CLICKHOUSE_CLIENT -q "DROP TABLE t"

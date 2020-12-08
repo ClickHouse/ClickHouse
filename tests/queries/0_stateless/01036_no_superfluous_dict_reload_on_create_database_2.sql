@@ -27,7 +27,7 @@ DROP DATABASE IF EXISTS `foo 123`;
 CREATE DATABASE `foo 123`;
 SELECT query_count FROM system.dictionaries WHERE database = 'foo 1234' AND name = 'dict';
 
-DROP TABLE `foo 1234`.dict_data;
 DROP DICTIONARY `foo 1234`.dict;
+DROP TABLE `foo 1234`.dict_data;
 DROP DATABASE `foo 1234`;
 DROP DATABASE `foo 123`;

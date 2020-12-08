@@ -30,3 +30,4 @@ SELECT query_count FROM system.dictionaries WHERE database = 'dict_db_01036' AND
 DROP DICTIONARY dict_db_01036.dict;
 DROP TABLE dict_db_01036.dict_data;
 DROP DATABASE dict_db_01036;
+DROP DATABASE empty_db_01036;

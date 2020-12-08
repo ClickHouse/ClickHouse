@@ -30,7 +30,7 @@ ${CLICKHOUSE_CLIENT} --query="ALTER TABLE kill_mutation DELETE WHERE x = 1 SETTI
 # but exception doesn't stop mutations, and we will still see them in system.mutations
 ${CLICKHOUSE_CLIENT} --query="SELECT count() FROM system.mutations WHERE database = '$CLICKHOUSE_DATABASE' AND table = 'kill_mutation' AND mutation_id = 'mutation_4.txt'" # 1
 
-# waiting	default	kill_mutation	mutation_4.txt	DELETE WHERE toUInt32(s) = 1
+# waiting	test	kill_mutation	mutation_4.txt	DELETE WHERE toUInt32(s) = 1
 ${CLICKHOUSE_CLIENT} --query="KILL MUTATION WHERE database = '$CLICKHOUSE_DATABASE' AND table = 'kill_mutation' AND mutation_id = 'mutation_4.txt'"
 
 # just to wait previous mutation to finish (and don't poll system.mutations), doesn't affect data

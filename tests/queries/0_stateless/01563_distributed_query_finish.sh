@@ -32,5 +32,5 @@ EOL
 network_errors_after=$($CLICKHOUSE_CLIENT -q "SELECT value FROM system.errors WHERE name = 'NETWORK_ERROR'")
 echo NETWORK_ERROR=$(( network_errors_after-network_errors_before ))
 
-$CLICKHOUSE_CLIENT -q "DROP table data_01247"
-$CLICKHOUSE_CLIENT -q "DROP table dist_01247"
+$CLICKHOUSE_CLIENT -q "drop table data_01247"
+$CLICKHOUSE_CLIENT -q "drop table dist_01247"

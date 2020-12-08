@@ -143,7 +143,8 @@ reportStageEnd('before-connect')
 
 # Open connections
 servers = [{'host': host or args.host[0], 'port': port or args.port[0]} for (host, port) in itertools.zip_longest(args.host, args.port)]
-all_connections = [clickhouse_driver.Client(**server) for server in servers]
+# Force settings_is_important to fail queries on unknown settings.
+all_connections = [clickhouse_driver.Client(**server, settings_is_important=True) for server in servers]
 
 for i, s in enumerate(servers):
     print(f'server\t{i}\t{s["host"]}\t{s["port"]}')
@@ -167,12 +168,6 @@ if not args.use_existing_tables:
     reportStageEnd('drop-1')
 
 # Apply settings.
-# If there are errors, report them and continue -- maybe a new test uses a setting
-# that is not in master, but the queries can still run. If we have multiple
-# settings and one of them throws an exception, all previous settings for this
-# connection will be reset, because the driver reconnects on error (not
-# configurable). So the end result is uncertain, but hopefully we'll be able to
-# run at least some queries.
 settings = root.findall('settings/*')
 for conn_index, c in enumerate(all_connections):
     for s in settings:
@@ -415,4 +410,4 @@ if not args.keep_created_tables and not args.use_existing_tables:
             c.execute(q)
             print(f'drop\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}')
 
-reportStageEnd('drop-2')
+    reportStageEnd('drop-2')

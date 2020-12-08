@@ -22,7 +22,8 @@ SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_fo
 LIFETIME(1)
 LAYOUT(FLAT());
 
-SELECT dictGet('dict_exists', 'value', toUInt64(1)) as val FROM numbers(2) GROUP BY val;
+SELECT dictGet('dictdb_01376.dict_exists', 'value', toUInt64(1)) as val FROM numbers(2) GROUP BY val;
 
-DROP TABLE table_for_dict;
-DROP DICTIONARY dict_exists;
+DROP DICTIONARY dictdb_01376.dict_exists;
+DROP TABLE dictdb_01376.table_for_dict;
+DROP DATABASE dictdb_01376;

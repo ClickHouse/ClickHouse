@@ -28,11 +28,12 @@ INSERT INTO input VALUES (1);
 
 SELECT count() FROM output;
 
-DROP DICTIONARY dict;
-DROP TABLE input;
-DROP TABLE buffer_;
-DROP TABLE dist_out;
-DROP TABLE input;
 DROP TABLE mv;
-DROP TABLE null_;
 DROP TABLE output;
+DROP TABLE dist_out;
+DROP TABLE buffer_;
+DROP TABLE null_;
+DROP TABLE input;
+DROP DICTIONARY dict_in_01023.dict;
+DROP TABLE dict_in_01023.input;
+DROP DATABASE dict_in_01023;

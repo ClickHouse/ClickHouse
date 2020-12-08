@@ -20,5 +20,5 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=select+x+from+tab_str_lc+format+
 $CLICKHOUSE_CLIENT --query="select '----'";
 $CLICKHOUSE_CLIENT --query="select x from tab_str";
 
-$CLICKHOUSE_CLIENT --query="drop table tab_str"
-$CLICKHOUSE_CLIENT --query="drop table tab_str_lc"
+$CLICKHOUSE_CLIENT -q "DROP TABLE tab_str"
+$CLICKHOUSE_CLIENT -q "DROP TABLE tab_str_lc"
