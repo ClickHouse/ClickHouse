@@ -109,7 +109,6 @@ JoinStep::JoinStep(const DataStream & input_stream_, JoinPtr join_)
         getJoinTraits())
     , join(std::move(join_))
 {
-    updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
 }
 
 void JoinStep::transformPipeline(QueryPipeline & pipeline)

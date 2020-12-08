@@ -115,7 +115,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         auto ast = DatabaseOnDisk::parseQueryFromMetadata(nullptr, context, metadata_file_path);
         create = ast->as<ASTCreateQuery &>();
         if (!create.table.empty() || !create.storage)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Metadata file {} contains incorrect CREATE DATABASE query", metadata_file_path);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Metadata file {} contains incorrect CREATE DATABASE query", metadata_file_path.string());
         create.attach = true;
         create.attach_short_syntax = true;
         create.database = database_name;
@@ -130,6 +130,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         auto engine = std::make_shared<ASTFunction>();
         auto storage = std::make_shared<ASTStorage>();
         engine->name = old_style_database ? "Ordinary" : "Atomic";
+        engine->no_empty_args = true;
         storage->set(storage->engine, engine);
         create.set(create.storage, storage);
     }
@@ -149,7 +150,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         metadata_path = metadata_path / "store" / DatabaseCatalog::getPathForUUID(create.uuid);
 
         if (!create.attach && fs::exists(metadata_path))
-            throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Metadata directory {} already exists", metadata_path);
+            throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Metadata directory {} already exists", metadata_path.string());
     }
     else
     {
@@ -600,6 +601,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     {
         auto engine_ast = std::make_shared<ASTFunction>();
         engine_ast->name = "Memory";
+        engine_ast->no_empty_args = true;
         auto storage_ast = std::make_shared<ASTStorage>();
         storage_ast->set(storage_ast->engine, engine_ast);
         create.set(create.storage, storage_ast);
