@@ -2237,7 +2237,7 @@ SELECT CAST(toNullable(toInt32(0)) AS Int32) as x, toTypeName(x);
 
 ## output_format_json_array_of_rows {#output-format-json-array-of-rows}
 
-Позволяет выводить все строки в виде массива [JSON](../../interfaces/formats.md#json) в формате [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
+Позволяет выводить все строки в виде массива JSON в формате [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
 
 Возможные значения:
 
