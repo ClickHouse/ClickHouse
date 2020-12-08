@@ -208,14 +208,14 @@ namespace DB
                     "The argument of function " + getName() + " must be integral", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             }
 
-            DataTypePtr baseType = std::make_shared<DataTypeString>();
+            DataTypePtr base_type = std::make_shared<DataTypeString>();
             if constexpr (nullOnErrors)
             {
-                return std::make_shared<DataTypeNullable>(baseType);
+                return std::make_shared<DataTypeNullable>(base_type);
             }
             else
             {
-                return baseType;
+                return base_type;
             }
         }
 
