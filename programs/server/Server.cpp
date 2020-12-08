@@ -485,7 +485,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
 
     /// top_level_domains_lists
-    TLDListsHolder::getInstance().parseConfig(config());
+    {
+        const std::string & top_level_domains_path = config().getString("top_level_domains_path", path + "top_level_domains/") + "/";
+        TLDListsHolder::getInstance().parseConfig(top_level_domains_path, config());
+    }
 
     {
         Poco::File(path + "data/").createDirectories();

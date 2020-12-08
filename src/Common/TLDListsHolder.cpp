@@ -41,7 +41,7 @@ TLDListsHolder & TLDListsHolder::getInstance()
 }
 TLDListsHolder::TLDListsHolder() = default;
 
-void TLDListsHolder::parseConfig(const Poco::Util::AbstractConfiguration & config)
+void TLDListsHolder::parseConfig(const std::string & top_level_domains_path, const Poco::Util::AbstractConfiguration & config)
 {
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys("top_level_domains_lists", config_keys);
@@ -50,7 +50,7 @@ void TLDListsHolder::parseConfig(const Poco::Util::AbstractConfiguration & confi
 
     for (const auto & key : config_keys)
     {
-        auto path = config.getString("top_level_domains_lists." + key);
+        const std::string & path = top_level_domains_path + config.getString("top_level_domains_lists." + key);
         LOG_TRACE(log, "{} loading from {}", key, path);
         size_t hosts = parseAndAddTldList(key, path);
         LOG_INFO(log, "{} was added ({} hosts)", key, hosts);

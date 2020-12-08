@@ -141,9 +141,11 @@ Same as `cutToFirstSignificantSubdomain` but accept custom TLD list name, useful
 Configuration example:
 
 ```xml
+<!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
 <top_level_domains_lists>
     <!-- https://publicsuffix.org/list/public_suffix_list.dat -->
-    <public_suffix_list>/path/to/public_suffix_list.dat</public_suffix_list>
+    <public_suffix_list>public_suffix_list.dat</public_suffix_list>
+    <!-- NOTE: path is under top_level_domains_path -->
 </top_level_domains_lists>
 ```
 
