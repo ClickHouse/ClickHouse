@@ -34,6 +34,12 @@ select count() from test_tuple where toDate(p) > '2020-09-01' and i = 1;
 select count() from test_tuple where i > 1;
 -- optimized
 select count() from test_tuple where i < 1;
+-- non-optimized
+select count() from test_tuple array join [p,p] as c where toDate(p) = '2020-09-01'; -- { serverError 158; }
+select count() from test_tuple array join [1,2] as c where toDate(p) = '2020-09-01' settings max_rows_to_read = 4;
+-- non-optimized
+select count() from test_tuple array join [1,2,3] as c where toDate(p) = '2020-09-01'; -- { serverError 158; }
+select count() from test_tuple array join [1,2,3] as c where toDate(p) = '2020-09-01' settings max_rows_to_read = 6;
 
 create table test_two_args(i int, j int, k int) engine MergeTree partition by i + j order by k;
 
