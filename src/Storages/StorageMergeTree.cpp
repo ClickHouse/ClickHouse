@@ -635,7 +635,7 @@ void StorageMergeTree::loadMutations()
 }
 
 std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMerge(
-    const StorageMetadataPtr & metadata_snapshot, bool aggressive, const String & partition_id, bool final, String * out_disable_reason, TableLockHolder & /* table_lock_holder */)
+    const StorageMetadataPtr & metadata_snapshot, bool aggressive, const String & partition_id, bool final, String * out_disable_reason, TableLockHolder & /* table_lock_holder */, bool optimize_skip_merged_partitions, SelectPartsDecision * select_decision_out)
 {
     std::unique_lock lock(currently_processing_in_background_mutex);
     auto data_settings = getSettings();
@@ -659,7 +659,7 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
             && getCurrentMutationVersion(left, lock) == getCurrentMutationVersion(right, lock);
     };
 
-    bool selected = false;
+    SelectPartsDecision select_decision = SelectPartsDecision::CANNOT_SELECT;
 
     if (partition_id.empty())
     {
@@ -671,7 +671,7 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
         /// possible.
         if (max_source_parts_size > 0)
         {
-            selected = merger_mutator.selectPartsToMerge(
+            select_decision = merger_mutator.selectPartsToMerge(
                 future_part,
                 aggressive,
                 max_source_parts_size,
@@ -687,13 +687,13 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
         while (true)
         {
             UInt64 disk_space = getStoragePolicy()->getMaxUnreservedFreeSpace();
-            selected = merger_mutator.selectAllPartsToMergeWithinPartition(
-                future_part, disk_space, can_merge, partition_id, final, out_disable_reason);
+            select_decision = merger_mutator.selectAllPartsToMergeWithinPartition(
+                future_part, disk_space, can_merge, partition_id, final, metadata_snapshot, out_disable_reason, optimize_skip_merged_partitions);
 
             /// If final - we will wait for currently processing merges to finish and continue.
             /// TODO Respect query settings for timeout
             if (final
-                && !selected
+                && select_decision != SelectPartsDecision::SELECTED
                 && !currently_merging_mutating_parts.empty()
                 && out_disable_reason
                 && out_disable_reason->empty())
@@ -713,7 +713,12 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
         }
     }
 
-    if (!selected)
+    /// In case of final we need to know the decision of select in StorageMergeTree::merge
+    /// to treat NOTHING_TO_MERGE as successful merge (otherwise optimize final will be uncompleted)
+    if (select_decision_out)
+        *select_decision_out = select_decision;
+
+    if (select_decision != SelectPartsDecision::SELECTED)
     {
         if (out_disable_reason)
         {
@@ -736,12 +741,20 @@ bool StorageMergeTree::merge(
     const String & partition_id,
     bool final,
     bool deduplicate,
-    String * out_disable_reason)
+    String * out_disable_reason,
+    bool optimize_skip_merged_partitions)
 {
     auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
-    auto merge_mutate_entry = selectPartsToMerge(metadata_snapshot, aggressive, partition_id, final, out_disable_reason, table_lock_holder);
+    SelectPartsDecision select_decision;
+
+    auto merge_mutate_entry = selectPartsToMerge(metadata_snapshot, aggressive, partition_id, final, out_disable_reason, table_lock_holder, optimize_skip_merged_partitions, &select_decision);
+
+    /// If there is nothing to merge then we treat this merge as successful (needed for optimize final optimization)
+    if (select_decision == SelectPartsDecision::NOTHING_TO_MERGE)
+        return true;
+
     if (!merge_mutate_entry)
         return false;
 
@@ -1036,7 +1049,7 @@ bool StorageMergeTree::optimize(
 
         for (const String & partition_id : partition_ids)
         {
-            if (!merge(true, partition_id, true, deduplicate, &disable_reason))
+            if (!merge(true, partition_id, true, deduplicate, &disable_reason, context.getSettingsRef().optimize_skip_merged_partitions))
             {
                 constexpr const char * message = "Cannot OPTIMIZE table: {}";
                 if (disable_reason.empty())
@@ -1055,7 +1068,7 @@ bool StorageMergeTree::optimize(
         if (partition)
             partition_id = getPartitionIDFromQuery(partition, context);
 
-        if (!merge(true, partition_id, final, deduplicate, &disable_reason))
+        if (!merge(true, partition_id, final, deduplicate, &disable_reason, context.getSettingsRef().optimize_skip_merged_partitions))
         {
             constexpr const char * message = "Cannot OPTIMIZE table: {}";
             if (disable_reason.empty())

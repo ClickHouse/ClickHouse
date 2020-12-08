@@ -21,6 +21,7 @@ endif()
 
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
 
+add_subdirectory (antlr4-runtime-cmake)
 add_subdirectory (boost-cmake)
 add_subdirectory (cctz-cmake)
 add_subdirectory (consistent-hashing-sumbur)
@@ -34,7 +35,6 @@ add_subdirectory (libmetrohash)
 add_subdirectory (lz4-cmake)
 add_subdirectory (murmurhash)
 add_subdirectory (replxx-cmake)
-add_subdirectory (ryu-cmake)
 add_subdirectory (unixodbc-cmake)
 add_subdirectory (xz)
 
@@ -321,3 +321,5 @@ endif()
 if (USE_INTERNAL_ROCKSDB_LIBRARY)
     add_subdirectory(rocksdb-cmake)
 endif()
+
+add_subdirectory(dragonbox)
