@@ -478,7 +478,7 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
     auto rewritten_rename_query = std::make_shared<ASTRenameQuery>();
     rewritten_alter_query->database = mapped_to_database;
     rewritten_alter_query->table = alter_query.table;
-    rewritten_alter_query->set(rewritten_alter_query->command_list, std::make_shared<ASTAlterCommandList>());
+    rewritten_alter_query->set(rewritten_alter_query->command_list, std::make_shared<ASTExpressionList>());
 
     String default_after_column;
     for (const auto & command_query : alter_query.command_list->children)
@@ -542,7 +542,7 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
                 }
 
                 rewritten_command->children.push_back(rewritten_command->col_decl);
-                rewritten_alter_query->command_list->add(rewritten_command);
+                rewritten_alter_query->command_list->children.push_back(rewritten_command);
             }
         }
         else if (alter_command->type == MySQLParser::ASTAlterCommand::DROP_COLUMN)
@@ -550,7 +550,7 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
             auto rewritten_command = std::make_shared<ASTAlterCommand>();
             rewritten_command->type = ASTAlterCommand::DROP_COLUMN;
             rewritten_command->column = std::make_shared<ASTIdentifier>(alter_command->column_name);
-            rewritten_alter_query->command_list->add(rewritten_command);
+            rewritten_alter_query->command_list->children.push_back(rewritten_command);
         }
         else if (alter_command->type == MySQLParser::ASTAlterCommand::RENAME_COLUMN)
         {
@@ -561,7 +561,7 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
                 rewritten_command->type = ASTAlterCommand::RENAME_COLUMN;
                 rewritten_command->column = std::make_shared<ASTIdentifier>(alter_command->old_name);
                 rewritten_command->rename_to = std::make_shared<ASTIdentifier>(alter_command->column_name);
-                rewritten_alter_query->command_list->add(rewritten_command);
+                rewritten_alter_query->command_list->children.push_back(rewritten_command);
             }
         }
         else if (alter_command->type == MySQLParser::ASTAlterCommand::MODIFY_COLUMN)
@@ -590,7 +590,7 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
                     rewritten_command->children.push_back(rewritten_command->column);
                 }
 
-                rewritten_alter_query->command_list->add(rewritten_command);
+                rewritten_alter_query->command_list->children.push_back(rewritten_command);
             }
 
             if (!alter_command->old_name.empty() && alter_command->old_name != new_column_name)
@@ -599,7 +599,7 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
                 rewritten_command->type = ASTAlterCommand::RENAME_COLUMN;
                 rewritten_command->column = std::make_shared<ASTIdentifier>(alter_command->old_name);
                 rewritten_command->rename_to = std::make_shared<ASTIdentifier>(new_column_name);
-                rewritten_alter_query->command_list->add(rewritten_command);
+                rewritten_alter_query->command_list->children.push_back(rewritten_command);
             }
         }
         else if (alter_command->type == MySQLParser::ASTAlterCommand::RENAME_TABLE)
@@ -624,7 +624,7 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
     ASTs rewritten_queries;
 
     /// Order is very important. We always execute alter first and then execute rename
-    if (!rewritten_alter_query->command_list->commands.empty())
+    if (!rewritten_alter_query->command_list->children.empty())
         rewritten_queries.push_back(rewritten_alter_query);
 
     if (!rewritten_rename_query->elements.empty())

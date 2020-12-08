@@ -184,6 +184,10 @@ Sparse indexes allow you to work with a very large number of table rows, because
 
 ClickHouse does not require a unique primary key. You can insert multiple rows with the same primary key.
 
+You can use `Nullable`-typed expressions in the `PRIMARY KEY` and `ORDER BY` clauses. To allow this feature, turn on the [allow_nullable_key](../../../operations/settings/settings.md#allow-nullable-key) setting.
+
+The [NULLS_LAST](../../../sql-reference/statements/select/order-by.md#sorting-of-special-values) principle applies for `NULL` values in the `ORDER BY` clause.
+
 ### Selecting the Primary Key {#selecting-the-primary-key}
 
 The number of columns in the primary key is not explicitly limited. Depending on the data structure, you can include more or fewer columns in the primary key. This may:
@@ -579,6 +583,7 @@ Tags:
 -   `disk` — a disk within a volume.
 -   `max_data_part_size_bytes` — the maximum size of a part that can be stored on any of the volume’s disks.
 -   `move_factor` — when the amount of available space gets lower than this factor, data automatically start to move on the next volume if any (by default, 0.1).
+-   `prefer_not_to_merge` — Disables merging of data parts on this volume. When this setting is enabled, merging data on this volume is not allowed. This allows controlling how ClickHouse works with slow disks.
 
 Cofiguration examples:
 
@@ -607,6 +612,18 @@ Cofiguration examples:
             </volumes>
             <move_factor>0.2</move_factor>
         </moving_from_ssd_to_hdd>
+		
+		<small_jbod_with_external_no_merges>
+            <volumes>
+                <main>
+                    <disk>jbod1</disk>
+                </main>
+                <external>
+                    <disk>external</disk>
+                    <prefer_not_to_merge>true</prefer_not_to_merge>
+                </external>
+            </volumes>
+        </small_jbod_with_external_no_merges>
     </policies>
     ...
 </storage_configuration>

@@ -1,0 +1,24 @@
+<test>
+    <create_query>
+        CREATE TABLE bench
+        ENGINE = AggregatingMergeTree()
+        ORDER BY key
+        SETTINGS index_granularity = 8192
+        AS
+        SELECT CAST(reinterpretAsString(number), 'SimpleAggregateFunction(any, String)') AS key
+        FROM numbers_mt(toUInt64(5e6))
+        SETTINGS max_insert_threads = 16
+    </create_query>
+
+    <fill_query>OPTIMIZE TABLE bench</fill_query>
+
+    <query>
+        SELECT *
+        FROM bench
+        GROUP BY key
+        SETTINGS optimize_aggregation_in_order = 1, max_threads = 16
+        FORMAT Null
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS bench</drop_query>
+</test>

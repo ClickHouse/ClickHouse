@@ -134,6 +134,34 @@
     <max_connections>4096</max_connections>
     <keep_alive_timeout>3</keep_alive_timeout>
 
+    <!-- gRPC protocol (see src/Server/grpc_protos/clickhouse_grpc.proto for the API) -->
+    <!-- <grpc_port>9100</grpc_port> -->
+    <grpc>
+        <enable_ssl>true</enable_ssl>
+
+        <!-- The following two files are used only if enable_ssl=1
+        <ssl_cert_file>/path/to/ssl_cert_file</ssl_cert_file>
+        <ssl_key_file>/path/to/ssl_key_file</ssl_key_file> -->
+
+        <!-- Whether server will request client for a certificate
+        <ssl_require_client_auth>true</ssl_require_client_auth> -->
+
+        <!-- The following file is used only if ssl_require_client_auth=1
+        <ssl_ca_cert_file>/path/to/ssl_ca_cert_file</ssl_ca_cert_file> -->
+
+        <!-- Default compression algorithm (applied if client doesn't specify another algorithm).
+             Supported algorithms: none, deflate, gzip, stream_gzip
+        <compression>gzip</compression> -->
+
+        <!-- Default compression level (applied if client doesn't specify another level).
+             Supported levels: none, low, medium, high
+        <compression_level>high</compression_level> -->
+
+        <!-- Send/receive message size limits in bytes. -1 means unlimited
+        <max_send_message_size>-1</max_send_message_size>
+        <max_receive_message_size>4194304</max_receive_message_size> -->
+    </grpc>
+
     <!-- Maximum number of concurrent queries. -->
     <max_concurrent_queries>100</max_concurrent_queries>
 
@@ -553,7 +581,7 @@
         <database>system</database>
         <table>query_log</table>
         <!--
-            PARTITION BY expr https://clickhouse.yandex/docs/en/table_engines/custom_partitioning_key/
+            PARTITION BY expr: https://clickhouse.yandex/docs/en/table_engines/custom_partitioning_key/
             Example:
                 event_date
                 toMonday(event_date)
@@ -561,6 +589,15 @@
                 toStartOfHour(event_time)
         -->
         <partition_by>toYYYYMM(event_date)</partition_by>
+        <!--
+            Table TTL specification: https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/mergetree/#mergetree-table-ttl
+            Example:
+                event_date + INTERVAL 1 WEEK
+                event_date + INTERVAL 7 DAY DELETE
+                event_date + INTERVAL 2 WEEK TO DISK 'bbb'
+        
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+        -->
 
         <!-- Instead of partition_by, you can provide full engine expression (starting with ENGINE = ) with parameters,
              Example: <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024</engine>
@@ -678,7 +715,7 @@
 
 
     <!-- Configuration of external dictionaries. See:
-         https://clickhouse.yandex/docs/en/dicts/external_dicts/
+         https://clickhouse.tech/docs/en/sql-reference/dictionaries/external-dictionaries/external-dicts
     -->
     <dictionaries_config>*_dictionary.xml</dictionaries_config>
 
