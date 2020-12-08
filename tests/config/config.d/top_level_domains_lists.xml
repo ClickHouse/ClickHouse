@@ -1,9 +1,5 @@
 <yandex>
     <top_level_domains_lists>
-        <!-- relative to application.path, i.e.:
-          - /var/lib/clickhouse/ on CI
-          - $PWD local
-        -->
         <public_suffix_list>public_suffix_list.dat</public_suffix_list>
     </top_level_domains_lists>
 </yandex>
