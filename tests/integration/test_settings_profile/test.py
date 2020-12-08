@@ -207,14 +207,10 @@ def test_show_profiles():
 
 
 def test_allow_ddl():
-    assert "Not enough privileges" in instance.query_and_get_error("CREATE TABLE tbl(a Int32) ENGINE=Log", user="robin")
-    assert "DDL queries are prohibited" in instance.query_and_get_error("CREATE TABLE tbl(a Int32) ENGINE=Log",
-                                                                        settings={"allow_ddl": 0})
-
-    assert "Not enough privileges" in instance.query_and_get_error("GRANT CREATE ON tbl TO robin", user="robin")
-    assert "DDL queries are prohibited" in instance.query_and_get_error("GRANT CREATE ON tbl TO robin",
-                                                                        settings={"allow_ddl": 0})
-
+    assert "it's necessary to have grant" in instance.query_and_get_error("CREATE TABLE tbl(a Int32) ENGINE=Log", user="robin")
+    assert "it's necessary to have grant" in instance.query_and_get_error("GRANT CREATE ON tbl TO robin", user="robin")
+    assert "DDL queries are prohibited" in instance.query_and_get_error("CREATE TABLE tbl(a Int32) ENGINE=Log", settings={"allow_ddl": 0})
+    
     instance.query("GRANT CREATE ON tbl TO robin")
     instance.query("CREATE TABLE tbl(a Int32) ENGINE=Log", user="robin")
     instance.query("DROP TABLE tbl")

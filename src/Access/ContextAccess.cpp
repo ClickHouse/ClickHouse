@@ -457,7 +457,7 @@ bool ContextAccess::checkAccessImpl2(const AccessFlags & flags, const Args &... 
         }
     }
 
-    if (!params.allow_ddl)
+    if (!params.allow_ddl && !grant_option)
     {
         if (flags & precalc.ddl_flags)
             return access_denied("Cannot execute query. DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
