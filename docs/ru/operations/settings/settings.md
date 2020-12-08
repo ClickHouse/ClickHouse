@@ -2235,6 +2235,53 @@ SELECT CAST(toNullable(toInt32(0)) AS Int32) as x, toTypeName(x);
 
 Значение по умолчанию: `\N`.
 
+## output_format_json_array_of_rows {#output-format-json-array-of-rows}
+
+Позволяет выводить все строки в виде массива JSON в формате [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
+
+Возможные значения:
+
+-   1 — ClickHouse выводит все строки в виде массива и при этом каждую строку в формате `JSONEachRow`.
+-   0 — ClickHouse выводит каждую строку отдельно в формате `JSONEachRow`.
+
+Значение по умолчанию: `0`.
+
+**Пример запроса с включенной настройкой**
+
+Запрос:
+
+```sql
+SET output_format_json_array_of_rows = 1;
+SELECT number FROM numbers(3) FORMAT JSONEachRow;
+```
+
+Результат:
+
+```text
+[
+{"number":"0"},
+{"number":"1"},
+{"number":"2"}                                                                                                                                                                                  
+]
+```
+
+**Пример запроса с отключенной настройкой**
+
+Запрос:
+
+```sql
+SET output_format_json_array_of_rows = 0;
+SELECT number FROM numbers(3) FORMAT JSONEachRow;
+```
+
+Результат:
+
+```text
+{"number":"0"}
+{"number":"1"}
+{"number":"2"}
+```
+
 ## allow_nullable_key {#allow-nullable-key}
 
 Включает или отключает поддержку типа [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable) для ключей таблиц [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree).
