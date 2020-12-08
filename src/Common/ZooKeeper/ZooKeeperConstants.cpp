@@ -14,6 +14,7 @@ static const std::unordered_set<int32_t> VALID_OPERATIONS =
     static_cast<int32_t>(OpNum::Exists),
     static_cast<int32_t>(OpNum::Get),
     static_cast<int32_t>(OpNum::Set),
+    static_cast<int32_t>(OpNum::SimpleList),
     static_cast<int32_t>(OpNum::Heartbeat),
     static_cast<int32_t>(OpNum::List),
     static_cast<int32_t>(OpNum::Check),
@@ -39,6 +40,8 @@ std::string toString(OpNum op_num)
             return "Get";
         case OpNum::Set:
             return "Set";
+        case OpNum::SimpleList:
+            return "SimpleList";
         case OpNum::List:
             return "List";
         case OpNum::Check:

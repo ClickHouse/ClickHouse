@@ -23,6 +23,7 @@ enum class OpNum : int32_t
     Exists = 3,
     Get = 4,
     Set = 5,
+    SimpleList = 8,
     Heartbeat = 11,
     List = 12,
     Check = 13,
@@ -35,6 +36,7 @@ OpNum getOpNum(int32_t raw_op_num);
 
 static constexpr int32_t ZOOKEEPER_PROTOCOL_VERSION = 0;
 static constexpr int32_t CLIENT_HANDSHAKE_LENGTH = 44;
+static constexpr int32_t CLIENT_HANDSHAKE_LENGTH_WITH_READONLY = 45;
 static constexpr int32_t SERVER_HANDSHAKE_LENGTH = 36;
 static constexpr int32_t PASSWORD_LENGTH = 16;
 

@@ -231,7 +231,7 @@ void TestKeeperTCPHandler::receiveHandshake()
     std::array<char, Coordination::PASSWORD_LENGTH> passwd {};
 
     Coordination::read(handshake_length, *in);
-    if (handshake_length != Coordination::CLIENT_HANDSHAKE_LENGTH)
+    if (handshake_length != Coordination::CLIENT_HANDSHAKE_LENGTH && handshake_length != Coordination::CLIENT_HANDSHAKE_LENGTH_WITH_READONLY)
         throw Exception("Unexpected handshake length received: " + toString(handshake_length), ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
 
     Coordination::read(protocol_version, *in);
@@ -251,6 +251,10 @@ void TestKeeperTCPHandler::receiveHandshake()
         throw Exception("Non zero previous session id is not supported", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
 
     Coordination::read(passwd, *in);
+
+    int8_t readonly;
+    if (handshake_length == Coordination::CLIENT_HANDSHAKE_LENGTH_WITH_READONLY)
+        Coordination::read(readonly, *in);
 }
 
 

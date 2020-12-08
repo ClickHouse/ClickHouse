@@ -41,6 +41,7 @@ void read(int64_t & x, ReadBuffer & in);
 void read(int32_t & x, ReadBuffer & in);
 void read(OpNum & x, ReadBuffer & in);
 void read(bool & x, ReadBuffer & in);
+void read(int8_t & x, ReadBuffer & in);
 void read(std::string & s, ReadBuffer & in);
 void read(ACL & acl, ReadBuffer & in);
 void read(Stat & stat, ReadBuffer & in);

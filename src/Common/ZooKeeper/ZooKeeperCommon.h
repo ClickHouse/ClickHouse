@@ -226,7 +226,7 @@ struct ZooKeeperSetResponse final : SetResponse, ZooKeeperResponse
     OpNum getOpNum() const override { return OpNum::Set; }
 };
 
-struct ZooKeeperListRequest final : ListRequest, ZooKeeperRequest
+struct ZooKeeperListRequest : ListRequest, ZooKeeperRequest
 {
     OpNum getOpNum() const override { return OpNum::List; }
     void writeImpl(WriteBuffer & out) const override;
@@ -234,11 +234,21 @@ struct ZooKeeperListRequest final : ListRequest, ZooKeeperRequest
     ZooKeeperResponsePtr makeResponse() const override;
 };
 
-struct ZooKeeperListResponse final : ListResponse, ZooKeeperResponse
+struct ZooKeeperSimpleListRequest final : ZooKeeperListRequest
+{
+    OpNum getOpNum() const override { return OpNum::SimpleList; }
+};
+
+struct ZooKeeperListResponse : ListResponse, ZooKeeperResponse
 {
     void readImpl(ReadBuffer & in) override;
     void writeImpl(WriteBuffer & out) const override;
     OpNum getOpNum() const override { return OpNum::List; }
+};
+
+struct ZooKeeperSimpleListResponse final : ZooKeeperListResponse
+{
+    OpNum getOpNum() const override { return OpNum::SimpleList; }
 };
 
 struct ZooKeeperCheckRequest final : CheckRequest, ZooKeeperRequest
