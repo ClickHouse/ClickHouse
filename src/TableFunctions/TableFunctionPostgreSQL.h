@@ -9,6 +9,7 @@
 
 namespace DB
 {
+using ConnectionPtr = std::shared_ptr<pqxx::connection>;
 
 class TableFunctionPostgreSQL : public ITableFunction
 {
@@ -30,7 +31,7 @@ private:
 
     String connection_str;
     String remote_table_name;
-    std::shared_ptr<pqxx::connection> connection;
+    ConnectionPtr connection;
 };
 
 }
