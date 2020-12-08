@@ -463,7 +463,7 @@ bool ContextAccess::checkAccessImpl2(const AccessFlags & flags, const Args &... 
             return access_denied("Cannot execute query. DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
     }
 
-    if (!params.allow_introspection)
+    if (!params.allow_introspection && !grant_option)
     {
         if (flags & precalc.introspection_flags)
             return access_denied("Introspection functions are disabled, because setting 'allow_introspection_functions' is set to 0", ErrorCodes::FUNCTION_NOT_ALLOWED);
