@@ -15,6 +15,13 @@
 
 namespace DB
 {
+
+    namespace ErrorCodes
+    {
+        extern const int CANNOT_FORMAT_DATETIME;
+        extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    }
+
     template <typename Name, typename FromDataType, bool nullOnErrors>
     class ExecutableFunctionFromModifiedJulianDay : public IExecutableFunctionImpl
     {
@@ -58,18 +65,15 @@ namespace DB
                     catch (const Exception & e)
                     {
                         if (e.code() == ErrorCodes::CANNOT_FORMAT_DATETIME)
-                        {
                             (*vec_null_map_to)[i] = true;
-                        }
                         else
-                        {
                             throw;
-                        }
                     }
                     writeChar(0, write_buffer);
                     offsets_to[i] = write_buffer.count();
                 }
-                else {
+                else
+                {
                     const GregorianDate<> gd(vec_from[i]);
                     gd.write(write_buffer);
                     writeChar(0, write_buffer);
@@ -192,11 +196,10 @@ namespace DB
                 {
                     return std::make_unique<FunctionBaseFromModifiedJulianDay<Name, DataTypeInt32, nullOnErrors>>(argument_types, return_type);
                 }
-                else {
+                else
                     // Should not happen.
                     throw Exception(
                         "The argument of function " + getName() + " must be integral", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-                }
             }
         }
 

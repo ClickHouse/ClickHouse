@@ -17,6 +17,8 @@ namespace DB
     {
         extern const int ILLEGAL_COLUMN;
         extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+        extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
+        extern const int CANNOT_PARSE_DATE;
     }
 
     template <typename Name, typename ToDataType, bool nullOnErrors>
