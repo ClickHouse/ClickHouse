@@ -157,7 +157,6 @@ def test_watchers(started_cluster):
     genuine_zk.set("/test_data_watches", b"a")
     print("Calling set fake")
     fake_zk.set("/test_data_watches", b"a")
-    time.sleep(5)
 
     print("Genuine data", genuine_data_watch_data)
     print("Fake data", fake_data_watch_data)
@@ -182,8 +181,6 @@ def test_watchers(started_cluster):
     genuine_zk.create("/test_data_watches/child", b"b")
     print("Calling fake child")
     fake_zk.create("/test_data_watches/child", b"b")
-
-    time.sleep(5)
 
     print("Genuine children", genuine_children)
     print("Fake children", fake_children)
