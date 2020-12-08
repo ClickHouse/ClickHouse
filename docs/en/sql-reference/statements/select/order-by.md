@@ -99,6 +99,7 @@ Result:
 Example with [Nullable](../../../sql-reference/data-types/nullable.md#data_type-nullable):
 
 Input table:
+
 ``` text
 ┌─x─┬─s────┐
 │ 1 │ bca  │
