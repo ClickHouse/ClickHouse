@@ -514,7 +514,7 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
             /// If we have no information about columns sizes, choose a column of minimum size of its data type.
             required.insert(ExpressionActions::getSmallestColumn(source_columns));
     }
-    else if (is_select && metadata_snapshot)
+    else if (is_select && metadata_snapshot && !columns_context.has_array_join)
     {
         const auto & partition_desc = metadata_snapshot->getPartitionKey();
         if (partition_desc.expression)
