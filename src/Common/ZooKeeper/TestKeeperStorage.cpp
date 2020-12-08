@@ -549,6 +549,12 @@ void TestKeeperStorage::processingThread()
                         ephemerals.erase(it);
                     }
                     clearDeadWatches(info.session_id);
+
+                    /// Finish connection
+                    auto response = std::make_shared<Coordination::ZooKeeperCloseResponse>();
+                    response->xid = zk_request->xid;
+                    response->zxid = getZXID();
+                    info.response_callback(response);
                 }
                 else
                 {
@@ -724,20 +730,6 @@ TestKeeperWrapperFactory::TestKeeperWrapperFactory()
     registerTestKeeperRequestWrapper<Coordination::OpNum::Check, TestKeeperStorageCheckRequest>(*this);
     registerTestKeeperRequestWrapper<Coordination::OpNum::Multi, TestKeeperStorageMultiRequest>(*this);
 }
-
-
-void TestKeeperStorage::putCloseRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
-{
-    TestKeeperStorageRequestPtr storage_request = TestKeeperWrapperFactory::instance().get(request);
-    RequestInfo request_info;
-    request_info.time = clock::now();
-    request_info.request = storage_request;
-    request_info.session_id = session_id;
-    std::lock_guard lock(push_request_mutex);
-    if (!requests_queue.tryPush(std::move(request_info), operation_timeout.totalMilliseconds()))
-        throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::TIMEOUT_EXCEEDED);
-}
-
 
 void TestKeeperStorage::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, ResponseCallback callback)
 {

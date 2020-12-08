@@ -91,8 +91,6 @@ public:
     void putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, ResponseCallback callback);
     void putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, ResponseCallback callback, ResponseCallback watch_callback);
 
-    void putCloseRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
-
     int64_t getSessionID()
     {
         return session_id_counter.fetch_add(1);

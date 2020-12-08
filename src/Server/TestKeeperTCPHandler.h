@@ -46,7 +46,7 @@ private:
     void receiveHandshake();
 
     Coordination::OpNum receiveRequest();
-    void putCloseRequest();
+    zkutil::TestKeeperStorage::AsyncResponse putCloseRequest();
 };
 
 }
