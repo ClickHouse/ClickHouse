@@ -124,7 +124,7 @@ struct SortCursorImpl
     bool isValid() const { return pos < rows; }
     void next() { ++pos; }
 
-/// Prevent using pos instead of getPos()
+/// Prevent using pos instead of getRow()
 private:
     size_t pos;
 };
