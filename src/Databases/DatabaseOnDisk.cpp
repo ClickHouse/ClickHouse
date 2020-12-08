@@ -151,6 +151,8 @@ void DatabaseOnDisk::createTable(
     const auto & create = query->as<ASTCreateQuery &>();
     assert(table_name == create.table);
 
+    checkTableAttachPossible(context, table_name, create);
+
     /// Create a file with metadata if necessary - if the query is not ATTACH.
     /// Write the query of `ATTACH table` to it.
 
@@ -162,13 +164,6 @@ void DatabaseOnDisk::createTable(
 
     /// A race condition would be possible if a table with the same name is simultaneously created using CREATE and using ATTACH.
     /// But there is protection from it - see using DDLGuard in InterpreterCreateQuery.
-
-    if (isDictionaryExist(table_name))
-        throw Exception("Dictionary " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " already exists.",
-            ErrorCodes::DICTIONARY_ALREADY_EXISTS);
-
-    if (isTableExist(table_name, global_context))
-        throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 
     String table_metadata_path = getObjectMetadataPath(table_name);
 
@@ -297,6 +292,43 @@ void DatabaseOnDisk::dropTable(const Context & context, const String & table_nam
     Poco::File(table_metadata_path_drop).remove();
 }
 
+
+/// will throw when the table exists (in active / detached / detached permanently form) and we try to do to wrong create
+void DatabaseOnDisk::checkTableAttachPossible(const Context & context, const String & table_name, const ASTCreateQuery & create)
+{
+    if (isDictionaryExist(table_name))
+        throw Exception("Dictionary " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " already exists.",
+            ErrorCodes::DICTIONARY_ALREADY_EXISTS);
+
+    if (isTableExist(table_name, global_context))
+        throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+
+    String table_metadata_path = getObjectMetadataPath(table_name);
+
+    if (!create.attach && Poco::File(table_metadata_path).exists())
+        throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " already exists (detached).", ErrorCodes::TABLE_ALREADY_EXISTS);
+
+    /// if we have a table with a same name detached permanently we only allow
+    /// attaching it (and uuid should be the same), but not creating
+    String table_metadata_path_detached = getObjectMetadataPath(table_name) + detached_suffix;
+
+    if (Poco::File(table_metadata_path_detached).exists())
+    {
+        if (!create.attach)
+            throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " already exists (detached permanently).", ErrorCodes::TABLE_ALREADY_EXISTS);
+
+        if (!create.attach_short_syntax)
+        {
+            ASTPtr ast_detached = parseQueryFromMetadata(log, context, table_metadata_path_detached);
+            auto & create_detached = ast_detached->as<ASTCreateQuery &>();
+
+            // either both should be Nil, either values should be equal
+            if (create.uuid != create_detached.uuid)
+                throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " already exist (detached permanently). To attach it back you need to use short ATTACH syntax or a full statement with the same UUID.", ErrorCodes::TABLE_ALREADY_EXISTS);
+        }
+    }
+}
+
 void DatabaseOnDisk::renameTable(
         const Context & context,
         const String & table_name,
@@ -342,6 +374,8 @@ void DatabaseOnDisk::renameTable(
             create.uuid = UUIDHelpers::generateV4();
         if (from_atomic_to_ordinary)
             create.uuid = UUIDHelpers::Nil;
+
+        checkTableAttachPossible(context, table_name, create);
 
         /// Notify the table that it is renamed. It will move data to new path (if it stores data on disk) and update StorageID
         table->rename(to_database.getTableDataPath(create), StorageID(create));
