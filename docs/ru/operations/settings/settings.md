@@ -2235,7 +2235,6 @@ SELECT CAST(toNullable(toInt32(0)) AS Int32) as x, toTypeName(x);
 
 Значение по умолчанию: `\N`.
 
-<<<<<<< HEAD
 ## output_format_json_array_of_rows {#output-format-json-array-of-rows}
 
 Позволяет выводить все строки в виде массива [JSON](../../interfaces/formats.md#json) в формате [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
@@ -2283,7 +2282,6 @@ SELECT number FROM numbers(3) FORMAT JSONEachRow;
 {"number":"2"}
 ```
 
-=======
 ## allow_nullable_key {#allow-nullable-key}
 
 Включает или отключает поддержку типа [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable) для ключей таблиц [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree).
@@ -2295,5 +2293,4 @@ SELECT number FROM numbers(3) FORMAT JSONEachRow;
 
 Значение по умолчанию: `0`.
 
->>>>>>> remotes/clickhouse/master
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->
