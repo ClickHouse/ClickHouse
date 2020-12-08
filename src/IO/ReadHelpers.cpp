@@ -194,12 +194,12 @@ inline void appendToStringOrVector(PODArray<char> & s, ReadBuffer & rb, const ch
     s.insert(rb.position(), end);
 }
 
-template <typename Vector>
-void readStringInto(Vector & s, ReadBuffer & buf)
+template <char... chars, typename Vector>
+void readStringUntilCharsInto(Vector & s, ReadBuffer & buf)
 {
     while (!buf.eof())
     {
-        char * next_pos = find_first_symbols<'\t', '\n'>(buf.position(), buf.buffer().end());
+        char * next_pos = find_first_symbols<chars...>(buf.position(), buf.buffer().end());
 
         appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
@@ -210,19 +210,28 @@ void readStringInto(Vector & s, ReadBuffer & buf)
 }
 
 template <typename Vector>
+void readStringInto(Vector & s, ReadBuffer & buf)
+{
+    readStringUntilCharsInto<'\t', '\n'>(s, buf);
+}
+
+template <typename Vector>
+void readStringUntilWhitespaceInto(Vector & s, ReadBuffer & buf)
+{
+    readStringUntilCharsInto<' '>(s, buf);
+}
+
+template <typename Vector>
 void readNullTerminated(Vector & s, ReadBuffer & buf)
 {
-    while (!buf.eof())
-    {
-        char * next_pos = find_first_symbols<'\0'>(buf.position(), buf.buffer().end());
-
-        appendToStringOrVector(s, buf, next_pos);
-        buf.position() = next_pos;
-
-        if (buf.hasPendingData())
-            break;
-    }
+    readStringUntilCharsInto<'\0'>(s, buf);
     buf.ignore();
+}
+
+void readStringUntilWhitespace(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readStringUntilWhitespaceInto(s, buf);
 }
 
 template void readNullTerminated<PODArray<char>>(PODArray<char> & s, ReadBuffer & buf);
