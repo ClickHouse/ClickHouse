@@ -12,7 +12,7 @@ Columns:
 
 -   `position` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Position of task in the queue.
 
--   `node_name` ([String](../../sql-reference/data-types/string.md)) — Name of the queue.
+-   `node_name` ([String](../../sql-reference/data-types/string.md)) — Node name in ZooKeeper.
 
 -   `type` ([String](../../sql-reference/data-types/string.md)) — Type of task in the queue.
 
