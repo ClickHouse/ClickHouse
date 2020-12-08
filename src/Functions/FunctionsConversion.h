@@ -226,7 +226,7 @@ struct ConvertImpl
                             {
                                 if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
                                 {
-                                    vec_null_map_to[i] = true;
+                                    (*vec_null_map_to)[i] = true;
                                     continue;
                                 }
                                 else
