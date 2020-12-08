@@ -1045,6 +1045,14 @@ bool StorageMergeTree::optimize(
     const Names & deduplicate_by_columns,
     const Context & context)
 {
+    if (deduplicate)
+    {
+        if (deduplicate_by_columns.empty())
+            LOG_DEBUG(log, "DEDUPLICATE BY all columns");
+        else
+            LOG_DEBUG(log, "DEDUPLICATE BY ('{}')", fmt::join(deduplicate_by_columns, "', '"));
+    }
+
     String disable_reason;
     if (!partition && final)
     {

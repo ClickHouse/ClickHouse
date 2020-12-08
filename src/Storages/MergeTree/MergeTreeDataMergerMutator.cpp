@@ -658,6 +658,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     const MergeTreeData::DataPartsVector & parts = future_part.parts;
 
     LOG_DEBUG(log, "Merging {} parts: from {} to {} into {}", parts.size(), parts.front()->name, parts.back()->name, future_part.type.toString());
+    if (deduplicate)
+    {
+        if (deduplicate_by_columns.empty())
+            LOG_DEBUG(log, "DEDUPLICATE BY all columns");
+        else
+            LOG_DEBUG(log, "DEDUPLICATE BY ('{}')", fmt::join(deduplicate_by_columns, "', '"));
+    }
 
     auto disk = space_reservation->getDisk();
     String part_path = data.relative_data_path;
