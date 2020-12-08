@@ -457,7 +457,10 @@ This format is only appropriate for outputting a query result, but not for parsi
 
 ClickHouse supports [NULL](../sql-reference/syntax.md), which is displayed as `null` in the JSON output. To enable `+nan`, `-nan`, `+inf`, `-inf` values in output, set the [output_format_json_quote_denormals](../operations/settings/settings.md#settings-output_format_json_quote_denormals) to 1.
 
-See also the [JSONEachRow](#jsoneachrow) format.
+**See Also**
+
+-   [JSONEachRow](#jsoneachrow) format
+-   [output_format_json_array_of_rows](../operations/settings/settings.md#output-format-json-array-of-rows) setting
 
 ## JSONString {#jsonstring}
 
