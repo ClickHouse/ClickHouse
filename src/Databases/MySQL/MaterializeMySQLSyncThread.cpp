@@ -260,7 +260,7 @@ static inline void cleanOutdatedTables(const String & database_name, const Conte
             tryToExecuteQuery(" DROP TABLE " + cleaning_table_name, query_context, database_name, comment);
         }
     }
-    catch (Exception exception)
+    catch (Exception & exception)
     {
         exception.addMessage("While executing " + (cleaning_table_name.empty() ? "cleanOutdatedTables" : cleaning_table_name));
         throw;
@@ -320,12 +320,12 @@ static inline void dumpDataForTables(
             copyData(input, *out, is_cancelled);
             const Progress & progress = out->getProgress();
             LOG_INFO(&Poco::Logger::get("MaterializeMySQLSyncThread(" + database_name + ")"),
-                     "Materialize MySQL step 1: dump {}, {} rows, {} in {} sec., {} rows/sec., {}/sec."
-            , table_name, formatReadableQuantity(progress.written_rows), formatReadableSizeWithBinarySuffix(progress.written_bytes)
-            , watch.elapsedSeconds(), formatReadableQuantity(static_cast<size_t>(progress.written_rows / watch.elapsedSeconds()))
-            , formatReadableSizeWithBinarySuffix(static_cast<size_t>(progress.written_bytes / watch.elapsedSeconds())));
+                "Materialize MySQL step 1: dump {}, {} rows, {} in {} sec., {} rows/sec., {}/sec."
+                , table_name, formatReadableQuantity(progress.written_rows), formatReadableSizeWithBinarySuffix(progress.written_bytes)
+                , watch.elapsedSeconds(), formatReadableQuantity(static_cast<size_t>(progress.written_rows / watch.elapsedSeconds()))
+                , formatReadableSizeWithBinarySuffix(static_cast<size_t>(progress.written_bytes / watch.elapsedSeconds())));
         }
-        catch (Exception exception)
+        catch (Exception & exception)
         {
             exception.addMessage("While executing dump MySQL {}.{} table data.", mysql_database_name, iterator->first);
             throw;
