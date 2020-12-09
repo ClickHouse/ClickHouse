@@ -2364,6 +2364,52 @@ Defines the representation of `NULL` for [TSV](../../interfaces/formats.md#tabse
 
 Default value: `\N`.
 
+**Examples**
+
+Query
+
+```sql
+SELECT *
+FROM tsv_custom_null
+FORMAT TSV
+```
+
+Result
+
+```text
+\N
+788
+\N
+```
+
+Query
+
+```sql
+SET output_format_tsv_null_representation = 'My NULL'
+```
+
+Result
+
+```text
+Ok.
+```
+
+Query
+
+```sql
+SELECT *
+FROM tsv_custom_null
+FORMAT TSV
+```
+
+Result
+
+```text
+788
+My NULL
+My NULL
+```
+
 ## allow_nullable_key {#allow-nullable-key}
 
 Allows using of the [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable)-typed values in a sorting and a primary key for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree) tables.
