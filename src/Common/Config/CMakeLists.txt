@@ -14,4 +14,5 @@ target_link_libraries(clickhouse_common_config
         Poco::XML
     PRIVATE
         string_utils
+        _boost_context
 )

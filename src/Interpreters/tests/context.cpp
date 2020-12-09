@@ -1,8 +1,8 @@
 #include <iostream>
 /// #define BOOST_USE_UCONTEXT
 #include <boost/context/fiber.hpp>
-#include <boost/context/pooled_fixedsize_stack.hpp>
-#include <boost/context/segmented_stack.hpp>
+// #include <boost/context/pooled_fixedsize_stack.hpp>
+// #include <boost/context/segmented_stack.hpp>
 #include <Common/Exception.h>
 #include <Common/FiberStack.h>
 
