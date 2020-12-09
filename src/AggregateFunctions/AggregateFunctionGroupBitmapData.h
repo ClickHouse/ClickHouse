@@ -11,15 +11,14 @@
 // garbage that breaks the build (e.g. it changes _POSIX_C_SOURCE).
 // TODO: find out what it is. On github, they have proper interface headers like
 // this one: https://github.com/RoaringBitmap/CRoaring/blob/master/include/roaring/roaring.h
-#include <roaring/roaring.h>
-#include "roaring.hh"
+#include <roaring.hh>
 #include <roaring64map.hh>
 
 namespace DB
 {
 /**
   * For a small number of values - an array of fixed size "on the stack".
-  * For large, roaring_bitmap_t is allocated.
+  * For large, roaring bitmap is allocated.
   * For a description of the roaring_bitmap_t, see: https://github.com/RoaringBitmap/CRoaring
   */
 template <typename T, UInt8 small_set_size>
@@ -28,40 +27,23 @@ class RoaringBitmapWithSmallSet : private boost::noncopyable
 private:
     using Small = SmallSet<T, small_set_size>;
     using ValueBuffer = std::vector<T>;
-    bool bUInt64 = sizeof(T) >= 8;
-
     Small small;
-    roaring_bitmap_t * rb = nullptr;
-    std::shared_ptr<Roaring64Map> rb64 = nullptr;
+    using RoaringBitmap = std::conditional_t<sizeof(T) >= 8, Roaring64Map, Roaring>;
+    using Value = std::conditional_t<sizeof(T) >= 8, UInt64, UInt32>;
+    std::shared_ptr<RoaringBitmap> rb64 = nullptr;
 
     void toLarge()
     {
-        if (isUInt64())
-            rb64 = std::make_shared<Roaring64Map>();
-        else
-            rb = roaring_bitmap_create();
-
+        rb64 = std::make_shared<RoaringBitmap>();
         for (const auto & x : small)
-        {
-            if (isUInt64())
-                rb64->add(static_cast<UInt64>(x.getValue()));
-            else
-                roaring_bitmap_add(rb, x.getValue());
-        }
+            rb64->add(static_cast<Value>(x.getValue()));
+        small.clear();
     }
 
 public:
-    bool isLarge() const { return rb != nullptr || rb64 != nullptr; }
+    bool isLarge() const { return rb64 != nullptr; }
 
-    bool isSmall() const { return rb == nullptr && rb64 == nullptr; }
-
-    bool isUInt64() const { return bUInt64; }
-
-    ~RoaringBitmapWithSmallSet()
-    {
-        if (isLarge() && !isUInt64())
-            roaring_bitmap_free(rb);
-    }
+    bool isSmall() const { return rb64 == nullptr; }
 
     void add(T value)
     {
@@ -74,35 +56,22 @@ public:
                 else
                 {
                     toLarge();
-                    if (isUInt64())
-                        rb64->add(static_cast<UInt64>(value));
-                    else
-                        roaring_bitmap_add(rb, value);
+                    rb64->add(static_cast<Value>(value));
                 }
             }
         }
         else
         {
-            if (isUInt64())
-                rb64->add(static_cast<UInt64>(value));
-            else
-                roaring_bitmap_add(rb, value);
+            rb64->add(static_cast<Value>(value));
         }
     }
 
     UInt64 size() const
     {
         if (isSmall())
-        {
             return small.size();
-        }
         else
-        {
-            if (isUInt64())
-                return rb64->cardinality();
-            else
-                return roaring_bitmap_get_cardinality(rb);
-        }
+            return rb64->cardinality();
     }
 
     void merge(const RoaringBitmapWithSmallSet & r1)
@@ -112,10 +81,7 @@ public:
             if (isSmall())
                 toLarge();
 
-            if (isUInt64())
-                *rb64 |= *r1.rb64;
-            else
-                roaring_bitmap_or_inplace(rb, r1.rb);
+            *rb64 |= *r1.rb64;
         }
         else
         {
@@ -126,7 +92,7 @@ public:
 
     void read(DB::ReadBuffer & in)
     {
-        // Container type:  0: SmallSet,  1: RoaringBitmap32,  2: RoaringBitmap64
+        // Container type:  0: SmallSet,  1: RoaringBitmap
         UInt8 containerType = 0;
         readBinary(containerType, in);
 
@@ -136,81 +102,41 @@ public:
         }
         else if (1 == containerType)
         {
-            std::string s;
-            readStringBinary(s, in);
-            rb = roaring_bitmap_portable_deserialize(s.c_str());
-            // It has been persisted in the bitmap and does not need to merge from small
-            //            for (const auto & x : small) // merge from small
-            //                roaring_bitmap_add(rb, x.getValue());
-        }
-        else
-        {
-            std::string s;
-            readStringBinary(s, in);
-            rb64 = std::make_shared<Roaring64Map>(Roaring64Map::read(s.c_str()));
+            size_t size;
+            readVarUInt(size, in);
+            std::unique_ptr<char[]> buf(new char[size]);
+            in.readStrict(buf.get(), size);
+            rb64 = std::make_shared<RoaringBitmap>(RoaringBitmap::read(buf.get()));
         }
     }
 
     void write(DB::WriteBuffer & out) const
     {
-        // Container type:  0: SmallSet,  1: RoaringBitmap32,  2: RoaringBitmap64
-        UInt8 containerType = 0;
-        if (isLarge())
-        {
-            if (isUInt64())
-                containerType = 2;
-            else
-                containerType = 1;
-        }
-
+        // Container type:  0: SmallSet,  1: RoaringBitmap
+        UInt8 containerType = isLarge() ? 1 : 0;
         writeBinary(containerType, out);
-
-        if (isLarge())
+        if (0 == containerType)
         {
-            if (isUInt64())
-            {
-                uint32_t expectedsize = rb64->getSizeInBytes();
-                std::string s(expectedsize, 0);
-                rb64->write(const_cast<char *>(s.data()));
-                writeStringBinary(s, out);
-            }
-            else
-            {
-                uint32_t expectedsize = roaring_bitmap_portable_size_in_bytes(rb);
-                std::string s(expectedsize, 0);
-                roaring_bitmap_portable_serialize(rb, const_cast<char *>(s.data()));
-                writeStringBinary(s, out);
-            }
-        }
-        else
             small.write(out);
-    }
-
-    roaring_bitmap_t * getRb() const { return rb; }
-
-    std::shared_ptr<Roaring64Map> getRb64() const { return rb64; }
-
-    Small & getSmall() const { return small; }
-
-    /**
-     * Get a new roaring_bitmap_t from elements of small
-     */
-    roaring_bitmap_t * getNewRbFromSmall() const
-    {
-        roaring_bitmap_t * smallRb = roaring_bitmap_create();
-        for (const auto & x : small)
-            roaring_bitmap_add(smallRb, x.getValue());
-        return smallRb;
+        }
+        else if (1 == containerType)
+        {
+            auto size = rb64->getSizeInBytes();
+            writeVarUInt(size, out);
+            std::unique_ptr<char[]> buf(new char[size]);
+            rb64->write(buf.get());
+            out.write(buf.get(), size);
+        }
     }
 
     /**
-     * Get a new Roaring64Map from elements of small
+     * Get a new RoaringBitmap from elements of small
      */
-    std::shared_ptr<Roaring64Map> getNewRb64FromSmall() const
+    std::shared_ptr<RoaringBitmap> getNewRb64FromSmall() const
     {
-        std::shared_ptr<Roaring64Map> smallRb64 = std::make_shared<Roaring64Map>();
+        std::shared_ptr<RoaringBitmap> smallRb64 = std::make_shared<RoaringBitmap>();
         for (const auto & x : small)
-            smallRb64->add(static_cast<UInt64>(x.getValue()));
+            smallRb64->add(static_cast<Value>(x.getValue()));
         return smallRb64;
     }
 
@@ -239,16 +165,8 @@ public:
         {
             for (const auto & x : small)
             {
-                if (isUInt64())
-                {
-                    if (rb64->contains(static_cast<UInt64>(x.getValue())))
-                        buffer.push_back(x.getValue());
-                }
-                else
-                {
-                    if (roaring_bitmap_contains(r1.rb, x.getValue()))
-                        buffer.push_back(x.getValue());
-                }
+                if (rb64->contains(static_cast<Value>(x.getValue())))
+                    buffer.push_back(x.getValue());
             }
 
             // Clear out the original values
@@ -261,18 +179,8 @@ public:
         }
         else
         {
-            if (isUInt64())
-            {
-                std::shared_ptr<Roaring64Map> newRb64 = r1.isSmall() ? r1.getNewRb64FromSmall() : r1.getRb64();
-                *rb64 &= *newRb64;
-            }
-            else
-            {
-                roaring_bitmap_t * rb1 = r1.isSmall() ? r1.getNewRbFromSmall() : r1.getRb();
-                roaring_bitmap_and_inplace(rb, rb1);
-                if (r1.isSmall())
-                    roaring_bitmap_free(rb1);
-            }
+            std::shared_ptr<RoaringBitmap> newRb64 = r1.isSmall() ? r1.getNewRb64FromSmall() : r1.rb64;
+            *rb64 &= *newRb64;
         }
     }
 
@@ -289,18 +197,8 @@ public:
         if (isSmall())
             toLarge();
 
-        if (isUInt64())
-        {
-            std::shared_ptr<Roaring64Map> newRb64 = r1.isSmall() ? r1.getNewRb64FromSmall() : r1.getRb64();
-            *rb64 ^= *newRb64;
-        }
-        else
-        {
-            roaring_bitmap_t * rb1 = r1.isSmall() ? r1.getNewRbFromSmall() : r1.getRb();
-            roaring_bitmap_xor_inplace(rb, rb1);
-            if (r1.isSmall())
-                roaring_bitmap_free(rb1);
-        }
+        std::shared_ptr<RoaringBitmap> newRb64 = r1.isSmall() ? r1.getNewRb64FromSmall() : r1.rb64;
+        *rb64 ^= *newRb64;
     }
 
     /**
@@ -328,16 +226,8 @@ public:
         {
             for (const auto & x : small)
             {
-                if (isUInt64())
-                {
-                    if (!rb64->contains(static_cast<UInt64>(x.getValue())))
-                        buffer.push_back(x.getValue());
-                }
-                else
-                {
-                    if (!roaring_bitmap_contains(r1.rb, x.getValue()))
-                        buffer.push_back(x.getValue());
-                }
+                if (!rb64->contains(static_cast<Value>(x.getValue())))
+                    buffer.push_back(x.getValue());
             }
 
             // Clear out the original values
@@ -350,18 +240,8 @@ public:
         }
         else
         {
-            if (isUInt64())
-            {
-                std::shared_ptr<Roaring64Map> newRb64 = r1.isSmall() ? r1.getNewRb64FromSmall() : r1.getRb64();
-                *rb64 -= *newRb64;
-            }
-            else
-            {
-                roaring_bitmap_t * rb1 = r1.isSmall() ? r1.getNewRbFromSmall() : r1.getRb();
-                roaring_bitmap_andnot_inplace(rb, rb1);
-                if (r1.isSmall())
-                    roaring_bitmap_free(rb1);
-            }
+            std::shared_ptr<RoaringBitmap> newRb64 = r1.isSmall() ? r1.getNewRb64FromSmall() : r1.rb64;
+            *rb64 -= *newRb64;
         }
     }
 
@@ -370,45 +250,27 @@ public:
      */
     UInt64 rb_and_cardinality(const RoaringBitmapWithSmallSet & r1) const
     {
-        UInt64 retSize = 0;
+        UInt64 ret = 0;
         if (isSmall() && r1.isSmall())
         {
             for (const auto & x : small)
                 if (r1.small.find(x.getValue()) != r1.small.end())
-                    ++retSize;
+                    ++ret;
         }
         else if (isSmall() && r1.isLarge())
         {
             for (const auto & x : small)
             {
-                if (isUInt64())
-                {
-                    if (rb64->contains(static_cast<UInt64>(x.getValue())))
-                        ++retSize;
-                }
-                else
-                {
-                    if (roaring_bitmap_contains(r1.rb, x.getValue()))
-                        ++retSize;
-                }
+                if (rb64->contains(static_cast<Value>(x.getValue())))
+                    ++ret;
             }
         }
         else
         {
-            if (isUInt64())
-            {
-                std::shared_ptr<Roaring64Map> newRb64 = r1.isSmall() ? r1.getNewRb64FromSmall() : r1.getRb64();
-                retSize = (*rb64 & *newRb64).cardinality();
-            }
-            else
-            {
-                roaring_bitmap_t * rb1 = r1.isSmall() ? r1.getNewRbFromSmall() : r1.getRb();
-                retSize = roaring_bitmap_and_cardinality(rb, rb1);
-                if (r1.isSmall())
-                    roaring_bitmap_free(rb1);
-            }
+            std::shared_ptr<RoaringBitmap> newRb64 = r1.isSmall() ? r1.getNewRb64FromSmall() : r1.rb64;
+            ret = (*rb64 & *newRb64).cardinality();
         }
-        return retSize;
+        return ret;
     }
 
     /**
@@ -451,21 +313,8 @@ public:
         if (isSmall())
             toLarge();
 
-        UInt8 is_true = 0;
-        if (isUInt64())
-        {
-            std::shared_ptr<Roaring64Map> newRb64 = r1.isSmall() ? r1.getNewRb64FromSmall() : r1.getRb64();
-            is_true = *rb64 == *newRb64;
-        }
-        else
-        {
-            roaring_bitmap_t * rb1 = r1.isSmall() ? r1.getNewRbFromSmall() : r1.getRb();
-            is_true = roaring_bitmap_equals(rb, rb1);
-            if (r1.isSmall())
-                roaring_bitmap_free(rb1);
-        }
-
-        return is_true;
+        std::shared_ptr<RoaringBitmap> newRb64 = r1.isSmall() ? r1.getNewRb64FromSmall() : r1.rb64;
+        return *rb64 == *newRb64;
     }
 
     /**
@@ -486,16 +335,8 @@ public:
             {
                 for (const auto & x : small)
                 {
-                    if (isUInt64())
-                    {
-                        if (r1.rb64->contains(static_cast<UInt64>(x.getValue())))
-                            return 1;
-                    }
-                    else
-                    {
-                        if (roaring_bitmap_contains(r1.rb, x.getValue()))
-                            return 1;
-                    }
+                    if (r1.rb64->contains(static_cast<Value>(x.getValue())))
+                        return 1;
                 }
             }
         }
@@ -503,30 +344,14 @@ public:
         {
             for (const auto & x : r1.small)
             {
-                if (isUInt64())
-                {
-                    if (rb64->contains(static_cast<UInt64>(x.getValue())))
-                        return 1;
-                }
-                else
-                {
-                    if (roaring_bitmap_contains(rb, x.getValue()))
-                        return 1;
-                }
+                if (rb64->contains(static_cast<Value>(x.getValue())))
+                    return 1;
             }
         }
         else
         {
-            if (isUInt64())
-            {
-                if ((*rb64 & *r1.rb64).cardinality() > 0)
-                    return 1;
-            }
-            else
-            {
-                if (roaring_bitmap_intersect(rb, r1.rb))
-                    return 1;
-            }
+            if ((*rb64 & *r1.rb64).cardinality() > 0)
+                return 1;
         }
 
         return 0;
@@ -550,8 +375,9 @@ public:
             {
                 UInt64 r1_size = r1.size();
 
+                // A bigger set can not be a subset of ours.
                 if (r1_size > small.size())
-                    return 0; // A bigger set can not be a subset of ours.
+                    return 0;
 
                 // This is a rare case with a small number of elements on
                 // both sides: r1 was promoted to large for some reason and
@@ -561,16 +387,8 @@ public:
                 // greater then r1 is not a subset.
                 for (const auto & x : small)
                 {
-                    if (isUInt64())
-                    {
-                        if (!r1.rb64->contains(static_cast<UInt64>(x.getValue())) && ++r1_size > small.size())
-                            return 0;
-                    }
-                    else
-                    {
-                        if (!roaring_bitmap_contains(r1.rb, x.getValue()) && ++r1_size > small.size())
-                            return 0;
-                    }
+                    if (!r1.rb64->contains(static_cast<Value>(x.getValue())) && ++r1_size > small.size())
+                        return 0;
                 }
             }
         }
@@ -578,30 +396,14 @@ public:
         {
             for (const auto & x : r1.small)
             {
-                if (isUInt64())
-                {
-                    if (!rb64->contains(static_cast<UInt64>(x.getValue())))
-                        return 0;
-                }
-                else
-                {
-                    if (!roaring_bitmap_contains(rb, x.getValue()))
-                        return 0;
-                }
+                if (!rb64->contains(static_cast<Value>(x.getValue())))
+                    return 0;
             }
         }
         else
         {
-            if (isUInt64())
-            {
-                if (!r1.rb64->isSubset(*rb64))
-                    return 0;
-            }
-            else
-            {
-                if (!roaring_bitmap_is_subset(r1.rb, rb))
-                    return 0;
-            }
+            if (!r1.rb64->isSubset(*rb64))
+                return 0;
         }
         return 1;
     }
@@ -609,37 +411,23 @@ public:
     /**
      * Check whether this bitmap contains the argument.
      */
-    UInt8 rb_contains(const UInt64 x) const
+    UInt8 rb_contains(UInt64 x) const
     {
         if (isSmall())
-        {
             return small.find(x) != small.end();
-        }
         else
-        {
-            if (isUInt64())
-            {
-                return rb64->contains(x);
-            }
-            else
-            {
-                return roaring_bitmap_contains(rb, x);
-            }
-        }
+            return rb64->contains(x);
     }
 
     /**
      * Remove value
      */
-    void rb_remove(UInt64 offsetid)
+    void rb_remove(UInt64 x)
     {
         if (isSmall())
             toLarge();
 
-        if (isUInt64())
-            rb64->remove(offsetid);
-        else
-            roaring_bitmap_remove(rb, offsetid);
+        rb64->remove(x);
     }
 
     /**
@@ -648,65 +436,46 @@ public:
      * range_end - range_start.
      * Areas outside the range are passed through unchanged.
      */
-    void rb_flip(UInt64 offsetstart, UInt64 offsetend)
+    void rb_flip(UInt64 begin, UInt64 end)
     {
         if (isSmall())
             toLarge();
-        if (isUInt64())
-            rb64->flip(offsetstart, offsetend);
-        else
-            roaring_bitmap_flip_inplace(rb, offsetstart, offsetend);
+
+        rb64->flip(begin, end);
     }
 
     /**
      * returns the number of integers that are smaller or equal to offsetid.
      */
-    UInt64 rb_rank(UInt64 offsetid)
+    UInt64 rb_rank(UInt64 x)
     {
         if (isSmall())
             toLarge();
 
-        if (isUInt64())
-            return rb64->rank(offsetid);
-        else
-            return roaring_bitmap_rank(rb, offsetid);
+        return rb64->rank(x);
     }
 
     /**
      * Convert elements to integer array, return number of elements
      */
     template <typename Element>
-    UInt64 rb_to_array(PaddedPODArray<Element> & res_data) const
+    UInt64 rb_to_array(PaddedPODArray<Element> & res) const
     {
         UInt64 count = 0;
         if (isSmall())
         {
             for (const auto & x : small)
             {
-                res_data.emplace_back(x.getValue());
-                count++;
+                res.emplace_back(x.getValue());
+                ++count;
             }
         }
         else
         {
-            if (isUInt64())
+            for (auto it = rb64->begin(); it != rb64->end(); ++it)
             {
-                for (Roaring64Map::const_iterator iterator = rb64->begin(); iterator != rb64->end(); iterator++)
-                {
-                    res_data.emplace_back(*iterator);
-                    count++;
-                }
-            }
-            else
-            {
-                roaring_uint32_iterator_t iterator;
-                roaring_init_iterator(rb, &iterator);
-                while (iterator.has_value)
-                {
-                    res_data.emplace_back(iterator.current_value);
-                    roaring_advance_uint32_iterator(&iterator);
-                    count++;
-                }
+                res.emplace_back(*it);
+                ++count;
             }
         }
         return count;
@@ -734,33 +503,18 @@ public:
         }
         else
         {
-            if (isUInt64())
+            for (auto it = rb64->begin(); it != rb64->end(); ++it)
             {
-                for (Roaring64Map::const_iterator iterator = rb64->begin(); iterator != rb64->end(); iterator++)
-                {
-                    if (*iterator < range_start)
-                        continue;
+                if (*it < range_start)
+                    continue;
 
-                    if (*iterator < range_end)
-                    {
-                        r1.add(*iterator);
-                        ++count;
-                    }
-                    else
-                        break;
-                }
-            }
-            else
-            {
-                roaring_uint32_iterator_t iterator;
-                roaring_init_iterator(rb, &iterator);
-                roaring_move_uint32_iterator_equalorlarger(&iterator, range_start);
-                while (iterator.has_value && UInt32(iterator.current_value) < range_end)
+                if (*it < range_end)
                 {
-                    r1.add(iterator.current_value);
-                    roaring_advance_uint32_iterator(&iterator);
+                    r1.add(*it);
                     ++count;
                 }
+                else
+                    break;
             }
         }
         return count;
@@ -771,7 +525,9 @@ public:
      */
     UInt64 rb_limit(UInt64 range_start, UInt64 limit, RoaringBitmapWithSmallSet & r1) const
     {
-        UInt64 count = 0;
+        if (limit == 0)
+            return 0;
+
         if (isSmall())
         {
             std::vector<T> answer;
@@ -783,93 +539,68 @@ public:
                     answer.push_back(val);
                 }
             }
-            sort(answer.begin(), answer.end());
-            if (limit > answer.size())
-                limit = answer.size();
-            for (size_t i = 0; i < limit; ++i)
-                r1.add(answer[i]);
-            count = UInt64(limit);
+            if (limit < answer.size())
+            {
+                std::nth_element(answer.begin(), answer.begin() + limit, answer.end());
+                answer.resize(limit);
+            }
+
+            for (const auto & elem : answer)
+                r1.add(elem);
+            return answer.size();
         }
         else
         {
-            if (isUInt64())
+            UInt64 count = 0;
+            for (auto it = rb64->begin(); it != rb64->end(); ++it)
             {
-                for (Roaring64Map::const_iterator iterator = rb64->begin(); iterator != rb64->end(); iterator++)
-                {
-                    if (*iterator < range_start)
-                        continue;
+                if (*it < range_start)
+                    continue;
 
-                    if (count < limit)
-                    {
-                        r1.add(*iterator);
-                        ++count;
-                    }
-                    else
-                        break;
-                }
-            }
-            else
-            {
-                roaring_uint32_iterator_t iterator;
-                roaring_init_iterator(rb, &iterator);
-                roaring_move_uint32_iterator_equalorlarger(&iterator, range_start);
-                while (UInt32(count) < limit && iterator.has_value)
+                if (count < limit)
                 {
-                    r1.add(iterator.current_value);
-                    roaring_advance_uint32_iterator(&iterator);
+                    r1.add(*it);
                     ++count;
                 }
+                else
+                    break;
             }
+            return count;
         }
-        return count;
     }
 
     UInt64 rb_min() const
     {
-        UInt64 min_val = UINT32_MAX;
         if (isSmall())
         {
+            auto min_val = std::numeric_limits<std::make_unsigned_t<T>>::max();
             for (const auto & x : small)
             {
-                T val = x.getValue();
-                if (UInt64(val) < min_val)
-                {
-                    min_val = UInt64(val);
-                }
+                auto val = x.getValue();
+                if (val < min_val)
+                    min_val = val;
             }
+            return min_val;
         }
         else
-        {
-            if (isUInt64())
-                min_val = rb64->minimum();
-            else
-                min_val = UInt64(roaring_bitmap_minimum(rb));
-        }
-        return min_val;
+            return rb64->minimum();
     }
 
     UInt64 rb_max() const
     {
-        UInt64 max_val = 0;
         if (isSmall())
         {
+            auto max_val = std::numeric_limits<std::make_unsigned_t<T>>::min();
             for (const auto & x : small)
             {
-                T val = x.getValue();
-                if (UInt64(val) > max_val)
-                {
-                    max_val = UInt64(val);
-                }
+                auto val = x.getValue();
+                if (val < max_val)
+                    max_val = val;
             }
+            return max_val;
         }
         else
-        {
-            if (isUInt64())
-                max_val = rb64->maximum();
-            else
-                max_val = UInt64(roaring_bitmap_maximum(rb));
-        }
-        return max_val;
+            return rb64->maximum();
     }
 
     /**
@@ -879,34 +610,23 @@ public:
     {
         if (isSmall())
             toLarge();
+
         for (size_t i = 0; i < num; ++i)
         {
             if (from_vals[i] == to_vals[i])
                 continue;
-
-            if (isUInt64())
-            {
-                bool changed = rb64->removeChecked(from_vals[i]);
-                if (changed)
-                    rb64->add(to_vals[i]);
-            }
-            else
-            {
-                bool changed = roaring_bitmap_remove_checked(rb, from_vals[i]);
-                if (changed)
-                    roaring_bitmap_add(rb, to_vals[i]);
-            }
+            bool changed = rb64->removeChecked(from_vals[i]);
+            if (changed)
+                rb64->add(to_vals[i]);
         }
     }
-
-private:
- 
 };
 
 template <typename T>
 struct AggregateFunctionGroupBitmapData
 {
-    bool doneFirst = false;
+    // If false, all bitmap operations will be treated as merge to initialize the state
+    bool init = false;
     RoaringBitmapWithSmallSet<T, 32> rbs;
     static const char * name() { return "groupBitmap"; }
 };
