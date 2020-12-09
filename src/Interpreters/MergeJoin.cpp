@@ -180,7 +180,11 @@ class MergeJoinCursor
 public:
     MergeJoinCursor(const Block & block, const SortDescription & desc_)
         : impl(SortCursorImpl(block, desc_))
-    {}
+    {
+        /// SortCursorImpl can work with permutation, but MergeJoinCursor can't.
+        if (impl.permutation)
+            throw Exception("Logical error: MergeJoinCursor doesn't support permutation", ErrorCodes::LOGICAL_ERROR);
+    }
 
     size_t position() const { return impl.getRow(); }
     size_t end() const { return impl.rows; }

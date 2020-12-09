@@ -255,13 +255,13 @@ Block MergeTreeDataWriter::mergeBlock(const Block & block, SortDescription sort_
 
     /// Check that after first merge merging_algorithm is waiting for data from input 0.
     if (status.required_source != 0)
-        return block;
+        throw Exception("Logical error: required source after the first merge is not 0.", ErrorCodes::LOGICAL_ERROR);
 
     status = merging_algorithm->merge();
 
     /// Check that merge is finished.
     if (!status.is_finished)
-        return block;
+        throw Exception("Logical error: merge is not finished after the second merge.", ErrorCodes::LOGICAL_ERROR);
 
     /// Merged Block is sorted and we don't need to use permutation anymore
     permutation = nullptr;
