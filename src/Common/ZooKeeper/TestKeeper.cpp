@@ -216,7 +216,6 @@ std::pair<ResponsePtr, Undo> TestKeeperCreateRequest::process(TestKeeper::Contai
             if (is_sequential)
             {
                 auto seq_num = it->second.seq_num;
-                ++it->second.seq_num;
 
                 std::stringstream seq_num_str;      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
                 seq_num_str.exceptions(std::ios::failbit);
@@ -225,18 +224,19 @@ std::pair<ResponsePtr, Undo> TestKeeperCreateRequest::process(TestKeeper::Contai
                 path_created += seq_num_str.str();
             }
 
+            /// Increment sequential number even if node is not sequential
+            ++it->second.seq_num;
+
             response.path_created = path_created;
             container.emplace(path_created, std::move(created_node));
 
-            undo = [&container, path_created, is_sequential = is_sequential, parent_path = it->first]
+            undo = [&container, path_created, parent_path = it->first]
             {
                 container.erase(path_created);
                 auto & undo_parent = container.at(parent_path);
                 --undo_parent.stat.cversion;
                 --undo_parent.stat.numChildren;
-
-                if (is_sequential)
-                    --undo_parent.seq_num;
+                --undo_parent.seq_num;
             };
 
             ++it->second.stat.cversion;
@@ -511,19 +511,30 @@ void TestKeeper::processingThread()
                 if (expired)
                     break;
 
-                if (info.watch)
-                {
-                    auto & watches_type = dynamic_cast<const ListRequest *>(info.request.get())
-                        ? list_watches
-                        : watches;
-
-                    watches_type[info.request->getPath()].emplace_back(std::move(info.watch));
-                }
 
                 ++zxid;
 
                 info.request->addRootPath(root_path);
                 auto [response, _] = info.request->process(container, zxid);
+
+                if (info.watch)
+                {
+                    /// To be compatible with real ZooKeeper we add watch if request was successful (i.e. node exists)
+                    /// or if it was exists request which allows to add watches for non existing nodes.
+                    if (response->error == Error::ZOK)
+                    {
+                        auto & watches_type = dynamic_cast<const ListRequest *>(info.request.get())
+                            ? list_watches
+                            : watches;
+
+                        watches_type[info.request->getPath()].emplace_back(std::move(info.watch));
+                    }
+                    else if (response->error == Error::ZNONODE && dynamic_cast<const ExistsRequest *>(info.request.get()))
+                    {
+                        watches[info.request->getPath()].emplace_back(std::move(info.watch));
+                    }
+                }
+
                 if (response->error == Error::ZOK)
                     info.request->processWatches(watches, list_watches);
 

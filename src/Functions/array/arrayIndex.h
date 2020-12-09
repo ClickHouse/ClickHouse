@@ -396,9 +396,9 @@ public:
       * (they are vectors of Fields, which may represent the NULL value),
       * they do not require any preprocessing.
       */
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
-        ColumnPtr& ptr = arguments[0].column;
+        const ColumnPtr & ptr = arguments[0].column;
 
         /**
          * The columns here have two general cases, either being Array(T) or Const(Array(T)).
@@ -578,7 +578,7 @@ private:
 
 #define INTEGRAL_TPL_PACK UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64
 
-    ColumnPtr executeOnNonNullable(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
+    ColumnPtr executeOnNonNullable(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
     {
         if (const auto* const left_arr = checkAndGetColumn<ColumnArray>(arguments[0].column.get()))
         {
@@ -639,7 +639,7 @@ private:
      * (s1, s1, s2, ...), (s2, s1, s2, ...), (s3, s1, s2, ...)
      */
     template <class ...Integral>
-    static inline ColumnPtr executeIntegral(ColumnsWithTypeAndName & arguments)
+    static inline ColumnPtr executeIntegral(const ColumnsWithTypeAndName & arguments)
     {
         const ColumnArray * const left = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
 
@@ -732,7 +732,7 @@ private:
      *
      * Tips and tricks tried can be found at https://github.com/ClickHouse/ClickHouse/pull/12550 .
      */
-    static ColumnPtr executeLowCardinality(ColumnsWithTypeAndName & arguments)
+    static ColumnPtr executeLowCardinality(const ColumnsWithTypeAndName & arguments)
     {
         const ColumnArray * const col_array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
 
@@ -874,7 +874,7 @@ private:
 
 #undef INTEGRAL_TPL_PACK
 
-    static ColumnPtr executeString(ColumnsWithTypeAndName & arguments)
+    static ColumnPtr executeString(const ColumnsWithTypeAndName & arguments)
     {
         const ColumnArray * array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
 
@@ -963,7 +963,7 @@ private:
         return true;
     }
 
-    static ColumnPtr executeConst(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type)
+    static ColumnPtr executeConst(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type)
     {
         const ColumnConst * col_array = checkAndGetColumnConst<ColumnArray>(arguments[0].column.get());
 
@@ -1037,7 +1037,7 @@ private:
         }
     }
 
-    static ColumnPtr executeGeneric(ColumnsWithTypeAndName & arguments)
+    static ColumnPtr executeGeneric(const ColumnsWithTypeAndName & arguments)
     {
         const ColumnArray * col = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
 

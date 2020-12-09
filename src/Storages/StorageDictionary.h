@@ -15,6 +15,7 @@ public:
     std::string getName() const override { return "Dictionary"; }
 
     void checkTableCanBeDropped() const override;
+    void checkTableCanBeDetached() const override;
 
     Pipe read(
         const Names & column_names,

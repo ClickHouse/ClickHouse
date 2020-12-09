@@ -10,7 +10,7 @@ namespace ErrorCodes
 }
 
 
-std::vector<FunctionJSONHelpers::Move> FunctionJSONHelpers::prepareMoves(const char * function_name, ColumnsWithTypeAndName & columns, size_t first_index_argument, size_t num_index_arguments)
+std::vector<FunctionJSONHelpers::Move> FunctionJSONHelpers::prepareMoves(const char * function_name, const ColumnsWithTypeAndName & columns, size_t first_index_argument, size_t num_index_arguments)
 {
     std::vector<Move> moves;
     moves.reserve(num_index_arguments);

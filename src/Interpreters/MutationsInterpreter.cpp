@@ -442,10 +442,10 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 auto type_literal = std::make_shared<ASTLiteral>(columns_desc.getPhysical(column).type->getName());
 
                 const auto & update_expr = kv.second;
-                auto updated_column = makeASTFunction("CAST",
+                auto updated_column = makeASTFunction("cast",
                     makeASTFunction("if",
                         getPartitionAndPredicateExpressionForMutationCommand(command),
-                        makeASTFunction("CAST",
+                        makeASTFunction("cast",
                             update_expr->clone(),
                             type_literal),
                         std::make_shared<ASTIdentifier>(column)),
@@ -701,6 +701,10 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
     for (const auto & column_name : prepared_stages[0].output_columns)
         select->select()->children.push_back(std::make_shared<ASTIdentifier>(column_name));
 
+    /// Don't let select list be empty.
+    if (select->select()->children.empty())
+        select->select()->children.push_back(std::make_shared<ASTLiteral>(Field(0)));
+
     if (!prepared_stages[0].filters.empty())
     {
         ASTPtr where_expression;
@@ -733,12 +737,12 @@ QueryPipelinePtr MutationsInterpreter::addStreamsForLaterStages(const std::vecto
             if (i < stage.filter_column_names.size())
             {
                 /// Execute DELETEs.
-                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentDataStream(), step->getExpression(), stage.filter_column_names[i], false));
+                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentDataStream(), step->actions(), stage.filter_column_names[i], false));
             }
             else
             {
                 /// Execute UPDATE or final projection.
-                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), step->getExpression()));
+                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), step->actions()));
             }
         }
 
