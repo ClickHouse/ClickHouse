@@ -50,7 +50,7 @@ private:
 
     bool is_async_state = false;
     std::unique_ptr<RemoteQueryExecutorReadContext> read_context;
-    int fd;
+    int fd = -1;
 };
 
 /// Totals source from RemoteQueryExecutor.
