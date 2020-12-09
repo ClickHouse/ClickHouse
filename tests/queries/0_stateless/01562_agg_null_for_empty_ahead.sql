@@ -8,6 +8,7 @@ SELECT sumIf(1, 0);
 
 SELECT sumIf(1, 1);
 
+-- should return Null even if we donn't set aggregate_functions_null_for_empty
 SELECT sumIfOrNull(1, 0);
 SELECT sumOrNullIf(1, 0);
 
