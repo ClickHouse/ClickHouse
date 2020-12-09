@@ -176,6 +176,7 @@ InputFormatPtr FormatFactory::getInput(
 
     if (parallel_parsing)
     {
+        std::cout << "parallel_parsing" << std::endl;
         const auto & input_getter = getCreators(name).input_processor_creator;
 
         RowInputFormatParams row_input_format_params;
@@ -185,10 +186,13 @@ InputFormatPtr FormatFactory::getInput(
         row_input_format_params.max_execution_time = settings.max_execution_time;
         row_input_format_params.timeout_overflow_mode = settings.timeout_overflow_mode;
 
+        std::cout << "format_settings.csv.delimiter " << format_settings.csv.delimiter << std::endl;
+
         /// Const reference is copied to lambda.
         auto parser_creator = [input_getter, sample, row_input_format_params, format_settings]
             (ReadBuffer & input) -> InputFormatPtr
-            { return input_getter(input, sample, row_input_format_params, format_settings); };
+            {   std::cout << format_settings.csv.delimiter << std::endl;
+                return input_getter(input, sample, row_input_format_params, format_settings); };
 
 
         ParallelParsingInputFormat::Params params{
@@ -201,8 +205,7 @@ InputFormatPtr FormatFactory::getInput(
     return format;
 }
 
-
-BlockOutputStreamPtr FormatFactory::getOutput(const String & name,
+BlockOutputStreamPtr FormatFactory::getOutputParallelIfPossible(const String & name,
     WriteBuffer & buf, const Block & sample, const Context & context,
     WriteCallback callback, const std::optional<FormatSettings> & _format_settings) const
 {
@@ -214,11 +217,10 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name,
         throw Exception("Format " + name + " is not suitable for output (with processors)", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT);
     }
 
-
     const Settings & settings = context.getSettingsRef();
     bool parallel_formatting = settings.output_format_parallel_formatting;
 
-    if (parallel_formatting && getCreators(name).supports_parallel_formatting && !settings.allow_experimental_live_view)
+    if (parallel_formatting && getCreators(name).supports_parallel_formatting && !settings.allow_experimental_live_view && !settings.output_format_json_array_of_rows)
     {
         const auto & output_getter = getCreators(name).output_processor_creator;
 
@@ -241,6 +243,23 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name,
     }
 
 
+    return nullptr;
+}
+
+
+
+BlockOutputStreamPtr FormatFactory::getOutput(const String & name,
+    WriteBuffer & buf, const Block & sample, const Context & context,
+    WriteCallback callback, const std::optional<FormatSettings> & _format_settings) const
+{
+    auto format_settings = _format_settings
+        ? *_format_settings : getFormatSettings(context);
+
+    if (!getCreators(name).output_processor_creator)
+    {
+        throw Exception("Format " + name + " is not suitable for output (with processors)", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT);
+    }
+    
     auto format = getOutputFormat(name, buf, sample, context, std::move(callback), format_settings);
     return std::make_shared<MaterializingBlockOutputStream>(std::make_shared<OutputStreamToOutputFormat>(format), sample);
 }
