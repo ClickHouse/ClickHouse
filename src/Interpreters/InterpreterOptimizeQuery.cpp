@@ -39,17 +39,26 @@ BlockIO InterpreterOptimizeQuery::execute()
     {
         // User requested custom set of columns for deduplication, possibly with Column Transformer expression.
         {
+            // Expand asterisk, column transformers, etc into list of column names.
             const auto cols = processColumnTransformers(context.getCurrentDatabase(), table, metadata_snapshot, ast.deduplicate_by_columns);
             for (const auto & col : cols->children)
                 column_names.emplace_back(col->getColumnName());
         }
 
         metadata_snapshot->check(column_names, NamesAndTypesList{}, table_id);
-        for (const auto & primary_key : metadata_snapshot->getPrimaryKeyColumns())
+        const auto & sorting_keys = metadata_snapshot->getColumnsRequiredForSortingKey();
+        for (const auto & sorting_key : sorting_keys)
         {
-            if (std::find(column_names.begin(), column_names.end(), primary_key) == column_names.end())
-                throw Exception("Deduplicate expression doesn't contain primary key column: " + primary_key,
-                        ErrorCodes::THERE_IS_NO_COLUMN);
+            // Deduplication is performed only for adjacent rows in a block,
+            // and all rows in block are in the sorting key order,
+            // hence deduplication always implicitly takes sorting keys in account.
+            // So we just explicitly state that limitation in order to avoid confusion.
+            if (std::find(column_names.begin(), column_names.end(), sorting_key) == column_names.end())
+                throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
+                        "DEDUPLICATE BY expression must include all columns used in table's ORDER BY or PRIMARY KEY,"
+                        " but '{}' is missing."
+                        " Expanded deduplicate columns expression: ['{}']",
+                        sorting_key, fmt::join(column_names, "', '"));
         }
     }
 
