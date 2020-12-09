@@ -247,6 +247,7 @@ SRCS(
     formatReadableTimeDelta.cpp
     formatRow.cpp
     formatString.cpp
+    fromModifiedJulianDay.cpp
     fromUnixTimestamp64Micro.cpp
     fromUnixTimestamp64Milli.cpp
     fromUnixTimestamp64Nano.cpp
@@ -455,6 +456,7 @@ SRCS(
     toISOYear.cpp
     toLowCardinality.cpp
     toMinute.cpp
+    toModifiedJulianDay.cpp
     toMonday.cpp
     toMonth.cpp
     toNullable.cpp

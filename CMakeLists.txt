@@ -223,8 +223,8 @@ if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 endif ()
 
-if (UNBUNDLED AND (COMPILER_GCC OR COMPILER_CLANG))
-    # to make numeric_limits<__int128> works for unbundled build
+if (COMPILER_GCC OR COMPILER_CLANG)
+    # to make numeric_limits<__int128> works with GCC
     set (_CXX_STANDARD "-std=gnu++2a")
 else()
     set (_CXX_STANDARD "-std=c++2a")
