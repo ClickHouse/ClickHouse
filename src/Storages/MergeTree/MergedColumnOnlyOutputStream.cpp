@@ -40,7 +40,6 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         throw Exception("MergedColumnOnlyOutputStream supports only parts stored on disk", ErrorCodes::NOT_IMPLEMENTED);
 
     writer_on_disk->setWrittenOffsetColumns(offset_columns_);
-    writer_on_disk->initSkipIndices();
 }
 
 void MergedColumnOnlyOutputStream::write(const Block & block)

@@ -74,13 +74,6 @@ public:
     void calculateAndSerializePrimaryIndex(const Block & primary_index_block) final;
     void calculateAndSerializeSkipIndices(const Block & skip_indexes_block) final;
 
-     /// Count index_granularity for block and store in `index_granularity`
-    size_t computeIndexGranularity(const Block & block);
-    virtual void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block);
-
-    void initSkipIndices() final;
-    void initPrimaryIndex() final;
-
     void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums, bool sync) final;
     void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums, bool sync) final;
 
@@ -90,15 +83,14 @@ public:
     }
 
 protected:
-    using SerializationState = IDataType::SerializeBinaryBulkStatePtr;
-    using SerializationStates = std::unordered_map<String, SerializationState>;
+     /// Count index_granularity for block and store in `index_granularity`
+    size_t computeIndexGranularity(const Block & block) const;
 
-    String part_path;
+    const String part_path;
     const String marks_file_extension;
-    CompressionCodecPtr default_codec;
+    const CompressionCodecPtr default_codec;
 
-    bool compute_granularity;
-    bool need_finish_last_granule;
+    const bool compute_granularity;
 
     /// Number of marsk in data from which skip indices have to start
     /// aggregation. I.e. it's data mark number, not skip indices mark.
@@ -116,13 +108,15 @@ protected:
     Columns last_block_index_columns;
 
     bool data_written = false;
-    bool primary_index_initialized = false;
-    bool skip_indices_initialized = false;
 
     /// To correctly write Nested elements column-by-column.
     WrittenOffsetColumns * written_offset_columns = nullptr;
 
 private:
+    void initSkipIndices();
+    void initPrimaryIndex();
+
+    virtual void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) = 0;
     /// Index is already serialized up to this mark.
     size_t index_mark = 0;
 };

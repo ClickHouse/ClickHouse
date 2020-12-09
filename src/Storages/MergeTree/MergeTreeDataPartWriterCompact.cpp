@@ -118,6 +118,30 @@ void MergeTreeDataPartWriterCompact::write(
     writeBlock(header.cloneWithColumns(columns_buffer.releaseColumns()));
 }
 
+namespace
+{
+
+/// Write single granule of one column (rows between 2 marks)
+void writeColumnSingleGranule(
+    const ColumnWithTypeAndName & column,
+    IDataType::OutputStreamGetter stream_getter,
+    size_t from_row,
+    size_t number_of_rows)
+{
+    IDataType::SerializeBinaryBulkStatePtr state;
+    IDataType::SerializeBinaryBulkSettings serialize_settings;
+
+    serialize_settings.getter = stream_getter;
+    serialize_settings.position_independent_encoding = true;
+    serialize_settings.low_cardinality_max_dictionary_size = 0;
+
+    column.type->serializeBinaryBulkStatePrefix(serialize_settings, state);
+    column.type->serializeBinaryBulkWithMultipleStreams(*column.column, from_row, number_of_rows, serialize_settings, state);
+    column.type->serializeBinaryBulkStateSuffix(serialize_settings, state);
+}
+
+}
+
 void MergeTreeDataPartWriterCompact::writeBlock(const Block & block)
 {
     size_t total_rows = block.rows();
@@ -184,24 +208,6 @@ void MergeTreeDataPartWriterCompact::writeBlock(const Block & block)
 
     next_index_offset = 0;
     next_mark = from_mark;
-}
-
-void MergeTreeDataPartWriterCompact::writeColumnSingleGranule(
-    const ColumnWithTypeAndName & column,
-    IDataType::OutputStreamGetter stream_getter,
-    size_t from_row,
-    size_t number_of_rows)
-{
-    IDataType::SerializeBinaryBulkStatePtr state;
-    IDataType::SerializeBinaryBulkSettings serialize_settings;
-
-    serialize_settings.getter = stream_getter;
-    serialize_settings.position_independent_encoding = true;
-    serialize_settings.low_cardinality_max_dictionary_size = 0;
-
-    column.type->serializeBinaryBulkStatePrefix(serialize_settings, state);
-    column.type->serializeBinaryBulkWithMultipleStreams(*column.column, from_row, number_of_rows, serialize_settings, state);
-    column.type->serializeBinaryBulkStateSuffix(serialize_settings, state);
 }
 
 void MergeTreeDataPartWriterCompact::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync)

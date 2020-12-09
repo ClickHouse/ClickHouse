@@ -89,6 +89,9 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     auto disk = data_part->volume->getDisk();
     if (!disk->exists(part_path))
         disk->createDirectories(part_path);
+
+    initSkipIndices();
+    initPrimaryIndex();
 }
 
 // Implementation is split into static functions for ability
@@ -129,17 +132,7 @@ static size_t computeIndexGranularityImpl(
     return index_granularity_for_block;
 }
 
-static void fillIndexGranularityImpl(
-    MergeTreeIndexGranularity & index_granularity,
-    size_t index_offset,
-    size_t index_granularity_for_block,
-    size_t rows_in_block)
-{
-    for (size_t current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
-        index_granularity.appendMark(index_granularity_for_block);
-}
-
-size_t MergeTreeDataPartWriterOnDisk::computeIndexGranularity(const Block & block)
+size_t MergeTreeDataPartWriterOnDisk::computeIndexGranularity(const Block & block) const
 {
     const auto storage_settings = storage.getSettings();
     return computeIndexGranularityImpl(
@@ -150,15 +143,6 @@ size_t MergeTreeDataPartWriterOnDisk::computeIndexGranularity(const Block & bloc
             settings.can_use_adaptive_granularity);
 }
 
-void MergeTreeDataPartWriterOnDisk::fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block)
-{
-    fillIndexGranularityImpl(
-        index_granularity,
-        getIndexOffset(),
-        index_granularity_for_block,
-        rows_in_block);
-}
-
 void MergeTreeDataPartWriterOnDisk::initPrimaryIndex()
 {
     if (metadata_snapshot->hasPrimaryKey())
@@ -166,8 +150,6 @@ void MergeTreeDataPartWriterOnDisk::initPrimaryIndex()
         index_file_stream = data_part->volume->getDisk()->writeFile(part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
         index_stream = std::make_unique<HashingWriteBuffer>(*index_file_stream);
     }
-
-    primary_index_initialized = true;
 }
 
 void MergeTreeDataPartWriterOnDisk::initSkipIndices()
@@ -186,15 +168,10 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
         skip_indices_aggregators.push_back(index_helper->createIndexAggregator());
         skip_index_filling.push_back(0);
     }
-
-    skip_indices_initialized = true;
 }
 
 void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Block & primary_index_block)
 {
-    if (!primary_index_initialized)
-        throw Exception("Primary index is not initialized", ErrorCodes::LOGICAL_ERROR);
-
     size_t rows = primary_index_block.rows();
     size_t primary_columns_num = primary_index_block.columns();
     if (index_columns.empty())
@@ -241,9 +218,6 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
 
 void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block & skip_indexes_block)
 {
-    if (!skip_indices_initialized)
-        throw Exception("Skip indices are not initialized", ErrorCodes::LOGICAL_ERROR);
-
     size_t rows = skip_indexes_block.rows();
     size_t skip_index_current_data_mark = 0;
 

@@ -8,9 +8,6 @@ namespace DB
 class MergeTreeDataPartWriterWide : public MergeTreeDataPartWriterOnDisk
 {
 public:
-
-    using ColumnToSize = std::map<std::string, UInt64>;
-
     MergeTreeDataPartWriterWide(
         const MergeTreeData::DataPartPtr & data_part,
         const NamesAndTypesList & columns_list,
@@ -25,8 +22,6 @@ public:
         const Block & primary_key_block, const Block & skip_indexes_block) override;
 
     void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync) override;
-
-    IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns);
 
 private:
     /// Write data of one column.
@@ -69,6 +64,13 @@ private:
         const IDataType & type,
         const ASTPtr & effective_codec_desc,
         size_t estimated_size);
+
+    void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) override;
+
+    IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns) const;
+
+    using SerializationState = IDataType::SerializeBinaryBulkStatePtr;
+    using SerializationStates = std::unordered_map<String, SerializationState>;
 
     SerializationStates serialization_states;
 

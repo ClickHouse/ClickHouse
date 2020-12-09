@@ -66,8 +66,6 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         volume->getDisk()->createDirectories(part_path);
 
     writer = data_part->getWriter(columns_list, metadata_snapshot, skip_indices, default_codec, writer_settings);
-    writer->initPrimaryIndex();
-    writer->initSkipIndices();
 }
 
 /// If data is pre-sorted.
