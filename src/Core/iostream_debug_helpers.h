@@ -40,9 +40,6 @@ std::ostream & operator<<(std::ostream & stream, const IColumn & what);
 struct Packet;
 std::ostream & operator<<(std::ostream & stream, const Packet & what);
 
-struct ExpressionAction;
-std::ostream & operator<<(std::ostream & stream, const ExpressionAction & what);
-
 class ExpressionActions;
 std::ostream & operator<<(std::ostream & stream, const ExpressionActions & what);
 

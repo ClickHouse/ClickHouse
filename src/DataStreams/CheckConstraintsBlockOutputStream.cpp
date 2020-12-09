@@ -46,7 +46,7 @@ void CheckConstraintsBlockOutputStream::write(const Block & block)
 
             auto * constraint_ptr = constraints.constraints[i]->as<ASTConstraintDeclaration>();
 
-            ColumnWithTypeAndName res_column = block_to_calculate.getByPosition(block_to_calculate.columns() - 1);
+            ColumnWithTypeAndName res_column = block_to_calculate.getByName(constraint_ptr->expr->getColumnName());
 
             if (!isUInt8(res_column.type))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Constraint {} does not return a value of type UInt8",

@@ -151,7 +151,7 @@ DROP [ROW] POLICY [IF EXISTS] name [,...] ON [database.]table [,...] [ON CLUSTER
 
 删除配额。
 
-已删除的配额将从分配配额的所有实体撤销。
+已删除的配额将从分配该配额的所有实体撤销。
 
 ### 语法 {#drop-quota-syntax}
 
@@ -161,9 +161,9 @@ DROP QUOTA [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 
 ## DROP SETTINGS PROFILE {#drop-settings-profile-statement}
 
-删除配额。
+删除settings配置。
 
-已删除的配额将从分配配额的所有实体撤销。
+已删除的settings配置将从分配该settings配置的所有实体撤销。
 
 ### 语法 {#drop-settings-profile-syntax}
 
@@ -177,7 +177,7 @@ DROP [SETTINGS] PROFILE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 EXISTS [TEMPORARY] [TABLE|DICTIONARY] [db.]name [INTO OUTFILE filename] [FORMAT format]
 ```
 
-返回单 `UInt8`-type column，其中包含单个值 `0` 如果表或数据库不存在，或 `1` 如果该表存在于指定的数据库中。
+返回单个 `UInt8` 类型的列，其中包含单个值 `0` 如果表或数据库不存在，或 `1` 如果该表存在于指定的数据库中。
 
 ## KILL QUERY {#kill-query-statement}
 

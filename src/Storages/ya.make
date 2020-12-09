@@ -1,4 +1,6 @@
 # This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
+OWNER(g:clickhouse)
+
 LIBRARY()
 
 PEERDIR(
@@ -92,6 +94,7 @@ SRCS(
     MergeTree/ReplicatedMergeTreeBlockOutputStream.cpp
     MergeTree/ReplicatedMergeTreeCleanupThread.cpp
     MergeTree/ReplicatedMergeTreeLogEntry.cpp
+    MergeTree/ReplicatedMergeTreeMergeStrategyPicker.cpp
     MergeTree/ReplicatedMergeTreeMutationEntry.cpp
     MergeTree/ReplicatedMergeTreePartCheckThread.cpp
     MergeTree/ReplicatedMergeTreePartHeader.cpp

@@ -11,7 +11,6 @@ add_library(clickhouse_dictionaries ${clickhouse_dictionaries_sources})
 
 target_link_libraries(clickhouse_dictionaries
     PRIVATE
-        ${BTRIE_LIBRARIES}
         clickhouse_common_io
         dbms
         Poco::Data
