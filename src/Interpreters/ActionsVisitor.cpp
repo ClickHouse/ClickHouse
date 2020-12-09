@@ -738,6 +738,14 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     if (AggregateFunctionFactory::instance().isAggregateFunctionName(node.name))
         return;
 
+    /// FIXME need proper grammar for window functions. For now, ignore it --
+    /// the resulting column is added in ExpressionAnalyzer, similar to the
+    /// aggregate functions.
+    if (node.name == "window")
+    {
+        return;
+    }
+
     FunctionOverloadResolverPtr function_builder;
     try
     {

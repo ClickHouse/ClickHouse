@@ -380,9 +380,42 @@ std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQu
 
     /// There can not be other aggregate functions within the aggregate functions.
     for (const ASTFunction * node : data.aggregates)
+    {
         for (auto & arg : node->arguments->children)
+        {
             assertNoAggregates(arg, "inside another aggregate function");
+            assertNoWindows(arg, "inside another window function");
+        }
+    }
     return data.aggregates;
+}
+
+std::vector<const ASTFunction *> getWindowFunctions(ASTPtr & query, const ASTSelectQuery & select_query)
+{
+    /// There can not be aggregate functions inside the WHERE and PREWHERE.
+    if (select_query.where())
+        assertNoWindows(select_query.where(), "in WHERE");
+    if (select_query.prewhere())
+        assertNoWindows(select_query.prewhere(), "in PREWHERE");
+
+    GetAggregatesVisitor::Data data;
+    GetAggregatesVisitor(data).visit(query);
+
+    /// There can not be other aggregate functions within the aggregate functions.
+    for (const ASTFunction * node : data.window_functions)
+    {
+        for (auto & arg : node->arguments->children)
+        {
+            //assertNoAggregates(arg, "inside another aggregate function");
+            assertNoWindows(arg, "inside another window function");
+        }
+    }
+
+    fmt::print(stderr, "getWindowFunctions ({}) for \n{}\n at \n{}\n",
+        data.window_functions.size(), query->formatForErrorMessage(),
+        StackTrace().toString());
+
+    return data.window_functions;
 }
 
 }
@@ -398,6 +431,8 @@ TreeRewriterResult::TreeRewriterResult(
 {
     collectSourceColumns(add_special);
     is_remote_storage = storage && storage->isRemote();
+
+    fmt::print(stderr, "TreeRewriterResult created at \n{}\n", StackTrace().toString());
 }
 
 /// Add columns from storage to source_columns list. Deduplicate resulted list.
@@ -668,6 +703,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     collectJoinedColumns(*result.analyzed_join, *select_query, tables_with_columns, result.aliases);
 
     result.aggregates = getAggregates(query, *select_query);
+    result.window_functions = getWindowFunctions(query, *select_query);
     result.collectUsedColumns(query, true);
     result.ast_join = select_query->join();
 
