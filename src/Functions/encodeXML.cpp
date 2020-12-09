@@ -26,7 +26,7 @@ namespace
             ColumnString::Chars & res_data,
             ColumnString::Offsets & res_offsets)
         {
-            res_data.resize(data.size());
+            res_data.resize(data.size() * 6);
             size_t size = offsets.size();
             res_offsets.resize(size);
 
@@ -39,8 +39,7 @@ namespace
                 size_t src_size = offsets[i] - prev_offset;
                 size_t dst_size = execute(src_data, src_size, reinterpret_cast<char *>(res_data.data() + res_offset));
 
-                res_offset += dst_size + 1;
-                res_data[res_offset - 1] = '\0';
+                res_offset += dst_size;
                 res_offsets[i] = res_offset;
                 prev_offset = offsets[i];
             }
