@@ -122,8 +122,8 @@ SOURCES = [
     SourceFile("File", "localhost", "9000", "node", "9000", "", ""),
     SourceExecutableHashed("ExecutableHashed", "localhost", "9000", "node", "9000", "", ""),
     SourceExecutableCache("ExecutableCache", "localhost", "9000", "node", "9000", "", ""),
-    SourceHTTP("SourceHTTP", "localhost", "9000", "clickhouse1", "9000", "", ""),
-    SourceHTTPS("SourceHTTPS", "localhost", "9000", "clickhouse1", "9000", "", ""),
+    # SourceHTTP("SourceHTTP", "localhost", "9000", "clickhouse1", "9000", "", ""),
+    # SourceHTTPS("SourceHTTPS", "localhost", "9000", "clickhouse1", "9000", "", ""),
 ]
 
 DICTIONARIES = []
