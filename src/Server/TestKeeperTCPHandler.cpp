@@ -291,97 +291,106 @@ void TestKeeperTCPHandler::runImpl()
     sendHandshake();
     session_stopwatch.start();
     bool close_received = false;
-
-    while (true)
+    try
     {
-        using namespace std::chrono_literals;
-
-        auto state = poll_wrapper->poll(session_timeout);
-        if (state & SocketInterruptablePollWrapper::HAS_REQUEST)
+        while (true)
         {
-            do
+            using namespace std::chrono_literals;
+
+            auto state = poll_wrapper->poll(session_timeout);
+            if (state & SocketInterruptablePollWrapper::HAS_REQUEST)
             {
-                auto received_op = receiveRequest();
-                if (received_op == Coordination::OpNum::Close)
+                do
                 {
-                    LOG_DEBUG(log, "Received close request for session #{}", session_id);
-                    if (responses.back().wait_for(std::chrono::microseconds(operation_timeout.totalMicroseconds())) != std::future_status::ready)
+                    Coordination::OpNum received_op = receiveRequest();
+
+                    if (received_op == Coordination::OpNum::Close)
                     {
-                        LOG_DEBUG(log, "Cannot sent close for session #{}", session_id);
+                        LOG_DEBUG(log, "Received close request for session #{}", session_id);
+                        if (responses.back().wait_for(std::chrono::microseconds(operation_timeout.totalMicroseconds())) != std::future_status::ready)
+                        {
+                            LOG_DEBUG(log, "Cannot sent close for session #{}", session_id);
+                        }
+                        else
+                        {
+                            LOG_DEBUG(log, "Sent close for session #{}", session_id);
+                            responses.back().get()->write(*out);
+                        }
+                        close_received = true;
+
+                        break;
+                    }
+                    else if (received_op == Coordination::OpNum::Heartbeat)
+                    {
+                        LOG_TRACE(log, "Received heartbeat for session #{}", session_id);
+                        session_stopwatch.restart();
+                    }
+                }
+                while (in->available());
+            }
+
+            if (close_received)
+                break;
+
+            if (state & SocketInterruptablePollWrapper::HAS_RESPONSE)
+            {
+                while (!responses.empty())
+                {
+                    if (responses.front().wait_for(0s) != std::future_status::ready)
+                        break;
+
+                    auto response = responses.front().get();
+                    response->write(*out);
+                    responses.pop();
+                }
+            }
+
+            if (state & SocketInterruptablePollWrapper::HAS_WATCH_RESPONSE)
+            {
+                for (auto it = watch_responses.begin(); it != watch_responses.end();)
+                {
+                    if (it->wait_for(0s) == std::future_status::ready)
+                    {
+                        auto response = it->get();
+                        if (response->error == Coordination::Error::ZOK)
+                            response->write(*out);
+                        it = watch_responses.erase(it);
                     }
                     else
                     {
-                        LOG_DEBUG(log, "Sent close for session #{}", session_id);
-                        responses.back().get()->write(*out);
+                        ++it;
                     }
-                    close_received = true;
-
-                    break;
-                }
-                else if (received_op == Coordination::OpNum::Heartbeat)
-                {
-                    LOG_TRACE(log, "Received heartbeat for session #{}", session_id);
-                    session_stopwatch.restart();
                 }
             }
-            while (in->available());
-        }
 
-        if (close_received)
-            break;
-
-        if (state & SocketInterruptablePollWrapper::HAS_RESPONSE)
-        {
-            while (!responses.empty())
+            if (state == SocketInterruptablePollWrapper::ERROR)
             {
-                if (responses.front().wait_for(0s) != std::future_status::ready)
-                    break;
-
-                auto response = responses.front().get();
-                response->write(*out);
-                responses.pop();
+                throw Exception("Exception happened while reading from socket", ErrorCodes::SYSTEM_ERROR);
             }
-        }
 
-        if (state & SocketInterruptablePollWrapper::HAS_WATCH_RESPONSE)
-        {
-            for (auto it = watch_responses.begin(); it != watch_responses.end();)
+            if (session_stopwatch.elapsedMicroseconds() > static_cast<UInt64>(session_timeout.totalMicroseconds()))
             {
-                if (it->wait_for(0s) == std::future_status::ready)
-                {
-                    auto response = it->get();
-                    if (response->error == Coordination::Error::ZOK)
-                        response->write(*out);
-                    it = watch_responses.erase(it);
-                }
+                LOG_DEBUG(log, "Session #{} expired", session_id);
+                auto response = putCloseRequest();
+                if (response.wait_for(std::chrono::microseconds(operation_timeout.totalMicroseconds())) != std::future_status::ready)
+                    LOG_DEBUG(log, "Cannot sent close for expired session #{}", session_id);
                 else
-                {
-                    ++it;
-                }
-            }
-        }
+                    response.get()->write(*out);
 
-        if (state == SocketInterruptablePollWrapper::ERROR)
-        {
-            throw Exception("Exception happened while reading from socket", ErrorCodes::SYSTEM_ERROR);
-        }
-
-        if (session_stopwatch.elapsedMicroseconds() > static_cast<UInt64>(session_timeout.totalMicroseconds()))
-        {
-            LOG_DEBUG(log, "Session #{} expired", session_id);
-            auto response = putCloseRequest();
-            if (response.wait_for(std::chrono::microseconds(operation_timeout.totalMicroseconds())) != std::future_status::ready)
-            {
-                LOG_DEBUG(log, "Cannot sent close for expired session #{}", session_id);
+                break;
             }
-            else
-            {
-                response.get()->write(*out);
-            }
-
-            break;
         }
     }
+    catch (const Exception & ex)
+    {
+        LOG_INFO(log, "Got exception processing session #{}: {}", session_id, getExceptionMessage(ex, true));
+        auto response = putCloseRequest();
+        if (response.wait_for(std::chrono::microseconds(operation_timeout.totalMicroseconds())) != std::future_status::ready)
+            LOG_DEBUG(log, "Cannot sent close for session #{}", session_id);
+        else
+            response.get()->write(*out);
+    }
+
 }
 
 zkutil::TestKeeperStorage::AsyncResponse TestKeeperTCPHandler::putCloseRequest()
