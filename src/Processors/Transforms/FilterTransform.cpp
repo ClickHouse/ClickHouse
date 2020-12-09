@@ -63,6 +63,9 @@ FilterTransform::FilterTransform(
     auto & column = transformed_header.getByPosition(filter_column_position).column;
     if (column)
         constant_filter_description = ConstantFilterDescription(*column);
+
+    fmt::print(stderr, "FilterTransform created at \n{}\n",
+        StackTrace().toString());
 }
 
 IProcessor::Status FilterTransform::prepare()

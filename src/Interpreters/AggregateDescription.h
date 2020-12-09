@@ -1,12 +1,17 @@
 #pragma once
 
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <DataTypes/IDataType.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Names.h>
-#include <AggregateFunctions/IAggregateFunction.h>
+#include <Core/SortDescription.h>
+#include <Parsers/IAST_fwd.h>
 
 
 namespace DB
 {
+
+class ASTFunction;
 
 struct AggregateDescription
 {
@@ -20,5 +25,33 @@ struct AggregateDescription
 };
 
 using AggregateDescriptions = std::vector<AggregateDescription>;
+
+
+struct WindowFunctionDescription
+{
+    std::string window_name;
+    std::string column_name;
+    const IAST * wrapper_node;
+    const ASTFunction * function_node;
+    AggregateFunctionPtr aggregate_function;
+    Array function_parameters;
+    DataTypes argument_types;
+    Names argument_names;
+
+    std::string dump() const;
+};
+
+struct WindowDescription
+{
+    std::string window_name;
+    // Always ASC for now.
+    std::vector<std::string> partition_by;
+    std::vector<std::string> order_by;
+    // No frame info as of yet.
+};
+
+using WindowFunctionDescriptions = std::vector<WindowFunctionDescription>;
+
+using WindowDescriptions = std::unordered_map<std::string, WindowDescription>;
 
 }

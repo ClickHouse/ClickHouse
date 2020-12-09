@@ -1,5 +1,7 @@
 #include <Core/Block.h>
 
+#include <iostream>
+
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -57,12 +59,13 @@ using LogAST = DebugASTLog<false>; /// set to true to enable logs
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_TYPE_OF_AST_NODE;
-    extern const int UNKNOWN_IDENTIFIER;
+    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_PREWHERE;
-    extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+    extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_IDENTIFIER;
+    extern const int UNKNOWN_TYPE_OF_AST_NODE;
 }
 
 namespace
@@ -277,6 +280,8 @@ void ExpressionAnalyzer::analyzeAggregation()
     {
         aggregated_columns = temp_actions->getNamesAndTypesList();
     }
+
+    has_window = makeWindowDescriptions(temp_actions);
 }
 
 
@@ -438,7 +443,11 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions)
 
             auto it = index.find(name);
             if (it == index.end())
-                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown identifier (in aggregate function '{}'): {}", node->name, name);
+            {
+                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                    "Unknown identifier '{}' in aggregate function '{}'",
+                    name, node->formatForErrorMessage());
+            }
 
             types[i] = (*it)->result_type;
             aggregate.argument_names[i] = name;
@@ -452,6 +461,125 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions)
     }
 
     return !aggregates().empty();
+}
+
+
+bool ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr & actions)
+{
+    for (const ASTFunction * wrapper_node : windowFunctions())
+    {
+        fmt::print(stderr, "window function ast: {}\n", wrapper_node->dumpTree());
+
+        // Not sure why NoMakeSet, copied from aggregate functions.
+        getRootActionsNoMakeSet(wrapper_node->arguments, true /* no subqueries */,
+            actions);
+
+        // FIXME not thread-safe, should use a per-query counter.
+        static int window_index = 1;
+
+        WindowDescription window_description;
+        window_description.window_name = fmt::format("window_{}", window_index++);
+
+        const auto * elist = wrapper_node->arguments
+            ? wrapper_node->arguments->as<const ASTExpressionList>()
+            : nullptr;
+        if (elist)
+        {
+            if (elist->children.size() >= 2)
+            {
+                const auto partition_by_ast = elist->children[1];
+                fmt::print(stderr, "partition by ast {}\n",
+                    partition_by_ast->dumpTree());
+                if (const auto * as_tuple = partition_by_ast->as<ASTFunction>();
+                    as_tuple
+                    && as_tuple->name == "tuple"
+                    && as_tuple->arguments)
+                {
+                    // untuple it
+                    for (const auto & element_ast
+                        : as_tuple->arguments->children)
+                    {
+                        const auto * with_alias = dynamic_cast<
+                            const ASTWithAlias *>(element_ast.get());
+                        if (!with_alias)
+                        {
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "(1) Expected column in PARTITION BY"
+                                " for window '{}', got '{}'",
+                                window_description.window_name,
+                                element_ast->formatForErrorMessage());
+                        }
+                        window_description.partition_by.push_back(
+                            with_alias->getColumnName());
+                    }
+                }
+                else if (const auto * with_alias
+                    = dynamic_cast<const ASTWithAlias *>(partition_by_ast.get()))
+                {
+                    window_description.partition_by.push_back(
+                        with_alias->getColumnName());
+                }
+                else
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "(2) Expected tuple or column in PARTITION BY"
+                        " for window '{}', got '{}'",
+                        window_description.window_name,
+                        partition_by_ast->formatForErrorMessage());
+                }
+            }
+        }
+
+        WindowFunctionDescription window_function;
+        window_function.window_name = window_description.window_name;
+        window_function.wrapper_node = wrapper_node;
+        window_function.function_node
+            = &elist->children.at(0)->as<ASTFunction &>();
+        window_function.column_name
+            = window_function.function_node->getColumnName();
+        window_function.function_parameters
+            = window_function.function_node->parameters
+                ? getAggregateFunctionParametersArray(
+                    window_function.function_node->parameters)
+                : Array();
+
+        const ASTs & arguments
+            = window_function.function_node->arguments->children;
+        window_function.argument_types.resize(arguments.size());
+        window_function.argument_names.resize(arguments.size());
+        const auto & index = actions->getIndex();
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            const std::string & name = arguments[i]->getColumnName();
+
+            auto it = index.find(name);
+            if (it == index.end())
+            {
+                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                    "Unknown identifier '{}' in window function '{}'",
+                    name, window_function.function_node->formatForErrorMessage());
+            }
+
+            window_function.argument_types[i] = (*it)->result_type;
+            window_function.argument_names[i] = name;
+        }
+
+
+        AggregateFunctionProperties properties;
+        window_function.aggregate_function
+            = AggregateFunctionFactory::instance().get(
+                window_function.function_node->name,
+                window_function.argument_types,
+                window_function.function_parameters, properties);
+
+        window_descriptions.insert({window_description.window_name,
+            window_description});
+        window_functions.push_back(window_function);
+
+        fmt::print(stderr, "{}\n", window_function.dump());
+    }
+
+    return !windowFunctions().empty();
 }
 
 
@@ -822,6 +950,37 @@ void SelectQueryExpressionAnalyzer::appendAggregateFunctionsArguments(Expression
     for (const ASTFunction * node : data.aggregates)
         for (auto & argument : node->arguments->children)
             getRootActions(argument, only_types, step.actions());
+
+
+    fmt::print(stderr, "actions after appendAggregateFunctionsArguments: \n{} at \n{}\n", chain.dumpChain(), StackTrace().toString());
+}
+
+void SelectQueryExpressionAnalyzer::appendWindowFunctionsArguments(
+    ExpressionActionsChain & chain, bool only_types)
+{
+    fmt::print(stderr, "actions before window: {}\n", chain.dumpChain());
+    const auto * select_query = getSelectQuery();
+
+    ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
+
+    /*
+    for (const auto & desc : aggregate_descriptions)
+        for (const auto & name : desc.argument_names)
+            step.required_output.emplace_back(name);
+    */
+
+    /// Collect aggregates removing duplicates by node.getColumnName()
+    /// It's not clear why we recollect aggregates (for query parts) while we're able to use previously collected ones (for entire query)
+    /// @note The original recollection logic didn't remove duplicates.
+    GetAggregatesVisitor::Data data;
+    GetAggregatesVisitor(data).visit(select_query->select());
+
+    /// TODO: data.aggregates -> aggregates()
+    for (const ASTFunction * node : data.window_functions)
+        for (auto & argument : node->arguments->children)
+            getRootActions(argument, only_types, step.actions());
+
+    fmt::print(stderr, "actions after window: {}\n", chain.dumpChain());
 }
 
 bool SelectQueryExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain, bool only_types)
@@ -830,6 +989,8 @@ bool SelectQueryExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain,
 
     if (!select_query->having())
         return false;
+
+    fmt::print(stderr, "has having\n");
 
     ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
 
@@ -848,7 +1009,16 @@ void SelectQueryExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain,
     getRootActions(select_query->select(), only_types, step.actions());
 
     for (const auto & child : select_query->select()->children)
+    {
+        /// FIXME add proper grammar for window functions
+        if (const auto * as_function = child->as<ASTFunction>();
+            as_function && as_function->name == "window")
+        {
+            continue;
+        }
+
         step.required_output.push_back(child->getColumnName());
+    }
 }
 
 ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order,
@@ -943,6 +1113,13 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActio
     ASTs asts = select_query->select()->children;
     for (const auto & ast : asts)
     {
+        /// FIXME add proper grammar for window functions
+        if (const auto * as_function = ast->as<ASTFunction>();
+            as_function && as_function->name == "window")
+        {
+            continue;
+        }
+
         String result_name = ast->getAliasOrColumnName();
         if (required_result_columns.empty() || required_result_columns.count(result_name))
         {
@@ -1069,6 +1246,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
     : first_stage(first_stage_)
     , second_stage(second_stage_)
     , need_aggregate(query_analyzer.hasAggregation())
+    , has_window(query_analyzer.hasWindow())
 {
     /// first_stage: Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
     /// second_stage: Do I need to execute the second part of the pipeline - running on the initiating server during distributed processing.
@@ -1181,6 +1359,8 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             chain.addStep();
         }
 
+        fmt::print(stderr, "chain before aggregate: {}\n", chain.dumpChain());
+
         if (need_aggregate)
         {
             /// TODO correct conditions
@@ -1189,17 +1369,28 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                     && storage && query.groupBy();
 
             query_analyzer.appendGroupBy(chain, only_types || !first_stage, optimize_aggregation_in_order, group_by_elements_actions);
+
+            fmt::print(stderr, "chain after appendGroupBy: {}\n", chain.dumpChain());
+
             query_analyzer.appendAggregateFunctionsArguments(chain, only_types || !first_stage);
+
+            fmt::print(stderr, "chain after appendAggregateFunctionsArguments: {}\n", chain.dumpChain());
+
             before_aggregation = chain.getLastActions();
 
             finalize_chain(chain);
 
+            fmt::print(stderr, "chain after finalize_chain: {}\n", chain.dumpChain());
+
             if (query_analyzer.appendHaving(chain, only_types || !second_stage))
             {
+                fmt::print(stderr, "chain after appendHaving: {}\n", chain.dumpChain());
                 before_having = chain.getLastActions();
                 chain.addStep();
             }
         }
+
+        fmt::print(stderr, "chain after aggregate: {}\n", chain.dumpChain());
 
         bool join_allow_read_in_order = true;
         if (hasJoin())
@@ -1216,8 +1407,18 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             && !query.final()
             && join_allow_read_in_order;
 
+        if (has_window)
+        {
+            query_analyzer.appendWindowFunctionsArguments(chain, only_types || !first_stage);
+            before_window = chain.getLastActions();
+
+            finalize_chain(chain);
+        }
+
         /// If there is aggregation, we execute expressions in SELECT and ORDER BY on the initiating server, otherwise on the source servers.
         query_analyzer.appendSelect(chain, only_types || (need_aggregate ? !second_stage : !first_stage));
+        fmt::print(stderr, "chain after select: {}\n", chain.dumpChain());
+
         selected_columns = chain.getLastStep().required_output;
         has_order_by = query.orderBy() != nullptr;
         before_order_and_select = query_analyzer.appendOrderBy(
@@ -1225,6 +1426,10 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 only_types || (need_aggregate ? !second_stage : !first_stage),
                 optimize_read_in_order,
                 order_by_elements_actions);
+
+        fmt::print(stderr, "chain after order by: {}\n", chain.dumpChain());
+
+        //if (h
 
         if (query_analyzer.appendLimitBy(chain, only_types || !second_stage))
         {
@@ -1242,6 +1447,8 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
     checkActions();
 
+    fmt::print(stderr, "ExpressionAnalysisResult created at \n{}\n",
+        StackTrace().toString());
     fmt::print(stderr, "ExpressionAnalysisResult: \n{}\n", dump());
 }
 
@@ -1320,9 +1527,9 @@ std::string ExpressionAnalysisResult::dump() const
 {
     std::stringstream ss;
 
-    ss << "ExpressionAnalysisResult\n";
     ss << "need_aggregate " << need_aggregate << "\n";
     ss << "has_order_by " << has_order_by << "\n";
+    ss << "has_window " << has_window << "\n";
 
     if (before_array_join)
     {
@@ -1364,6 +1571,11 @@ std::string ExpressionAnalysisResult::dump() const
         ss << "before_having " << before_having->dumpDAG() << "\n";
     }
 
+    if (before_window)
+    {
+        ss << "before_window " << before_window->dumpDAG() << "\n";
+    }
+
     if (before_order_and_select)
     {
         ss << "before_order_and_select " << before_order_and_select->dumpDAG() << "\n";
@@ -1377,6 +1589,21 @@ std::string ExpressionAnalysisResult::dump() const
     if (final_projection)
     {
         ss << "final_projection " << final_projection->dumpDAG() << "\n";
+    }
+
+    return ss.str();
+}
+
+std::string WindowFunctionDescription::dump() const
+{
+    std::stringstream ss;
+    ss << "window function '" << column_name << "' over '" << window_name <<"\n";
+    ss << "wrapper node " << wrapper_node->dumpTree() << "\n";
+    ss << "function node " << function_node->dumpTree() << "\n";
+    ss << "aggregate function '" << aggregate_function->getName() << "'\n";
+    if (function_parameters.size())
+    {
+        ss << "parameters " << toString(function_parameters) << "\n";
     }
 
     return ss.str();
