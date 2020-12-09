@@ -726,7 +726,7 @@ log_queries=1
 
 ## log_queries_min_query_duration_ms {#settings-log-queries-min-query-duration-ms}
 
-Minimal time for the query to run to get to the following tables:
+Minimum query execution time to navigate to the following tables:
 
 - `system.query_log`
 - `system.query_thread_log`

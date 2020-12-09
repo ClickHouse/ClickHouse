@@ -1589,4 +1589,24 @@ SELECT countDigits(toDecimal32(1, 9)), countDigits(toDecimal32(-1, 9)),
 10	10	19	19	39	39
 ```
 
+## errorCodeToName {#error-code-to-name}
+
+**Возвращаемое значение**
+
+-   Название переменной для кода ошибки.
+
+Тип: [LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md).
+
+**Синтаксис**
+
+``` sql
+errorCodeToName(1)
+```
+
+Результат:
+
+``` text
+UNSUPPORTED_METHOD
+```
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/other_functions/) <!--hide-->
