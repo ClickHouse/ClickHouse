@@ -28,7 +28,7 @@ import clickhouse_grpc_pb2_grpc
 
 config_dir = os.path.join(SCRIPT_DIR, './configs')
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance('node', main_configs=['configs/grpc_port.xml'])
+node = cluster.add_instance('node', main_configs=['configs/grpc_config.xml'])
 grpc_port = 9100
 main_channel = None
 
@@ -138,15 +138,12 @@ def reset_after_test():
 
 # Actual tests
 
-@pytest.mark.skip(reason="Flaky")
 def test_select_one():
     assert query("SELECT 1") == "1\n"
 
-@pytest.mark.skip(reason="Flaky")
 def test_ordinary_query():
     assert query("SELECT count() FROM numbers(100)") == "100\n"
 
-@pytest.mark.skip(reason="Flaky")
 def test_insert_query():
     query("CREATE TABLE t (a UInt8) ENGINE = Memory")
     query("INSERT INTO t VALUES (1),(2),(3)")
@@ -155,13 +152,11 @@ def test_insert_query():
     query("INSERT INTO t FORMAT TabSeparated", input_data="9\n10\n")
     assert query("SELECT a FROM t ORDER BY a") == "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n"
 
-@pytest.mark.skip(reason="Flaky")
 def test_insert_query_streaming():
     query("CREATE TABLE t (a UInt8) ENGINE = Memory")
     query("INSERT INTO t VALUES", input_data=["(1),(2),(3),", "(5),(4),(6),", "(7),(8),(9)"])
     assert query("SELECT a FROM t ORDER BY a") == "1\n2\n3\n4\n5\n6\n7\n8\n9\n"
 
-@pytest.mark.skip(reason="Flaky")
 def test_insert_query_delimiter():
     query("CREATE TABLE t (a UInt8) ENGINE = Memory")
     query("INSERT INTO t FORMAT CSV 1\n2", input_data=["3", "4\n5"], input_data_delimiter='\n')
@@ -171,7 +166,6 @@ def test_insert_query_delimiter():
     query("INSERT INTO t FORMAT CSV 1\n2", input_data=["3", "4\n5"])
     assert query("SELECT a FROM t ORDER BY a") == "1\n5\n234\n"
 
-@pytest.mark.skip(reason="Flaky")
 def test_insert_default_column():
     query("CREATE TABLE t (a UInt8, b Int32 DEFAULT 100, c String DEFAULT 'c') ENGINE = Memory")
     query("INSERT INTO t (c, a) VALUES ('x',1),('y',2)")
@@ -181,20 +175,17 @@ def test_insert_default_column():
                                                   "3\t100\tc\n" \
                                                   "4\t100\tc\n"
 
-@pytest.mark.skip(reason="Flaky")
 def test_insert_splitted_row():
     query("CREATE TABLE t (a UInt8) ENGINE = Memory")
     query("INSERT INTO t VALUES", input_data=["(1),(2),(", "3),(5),(4),(6)"])
     assert query("SELECT a FROM t ORDER BY a") == "1\n2\n3\n4\n5\n6\n"
 
-@pytest.mark.skip(reason="Flaky")
 def test_output_format():
     query("CREATE TABLE t (a UInt8) ENGINE = Memory")
     query("INSERT INTO t VALUES (1),(2),(3)")
     assert query("SELECT a FROM t ORDER BY a FORMAT JSONEachRow") == '{"a":1}\n{"a":2}\n{"a":3}\n'
     assert query("SELECT a FROM t ORDER BY a", output_format="JSONEachRow") == '{"a":1}\n{"a":2}\n{"a":3}\n'
 
-@pytest.mark.skip(reason="Flaky")
 def test_totals_and_extremes():
     query("CREATE TABLE t (x UInt8, y UInt8) ENGINE = Memory")
     query("INSERT INTO t VALUES (1, 2), (2, 4), (3, 2), (3, 3), (3, 4)")
@@ -203,7 +194,6 @@ def test_totals_and_extremes():
     assert query("SELECT x, y FROM t") == "1\t2\n2\t4\n3\t2\n3\t3\n3\t4\n"
     assert query_and_get_extremes("SELECT x, y FROM t", settings={"extremes": "1"}) == "1\t2\n3\t4\n"
 
-@pytest.mark.skip(reason="Flaky")
 def test_errors_handling():
     e = query_and_get_error("")
     #print(e)
@@ -212,19 +202,16 @@ def test_errors_handling():
     e = query_and_get_error("CREATE TABLE t (a UInt8) ENGINE = Memory")
     assert "Table default.t already exists" in e.display_text
 
-@pytest.mark.skip(reason="Flaky")
 def test_authentication():
     query("CREATE USER john IDENTIFIED BY 'qwe123'")
     assert query("SELECT currentUser()", user_name="john", password="qwe123") == "john\n"
 
-@pytest.mark.skip(reason="Flaky")
 def test_logs():
     logs = query_and_get_logs("SELECT 1", settings={'send_logs_level':'debug'})
     assert "SELECT 1" in logs
     assert "Read 1 rows" in logs
     assert "Peak memory usage" in logs
 
-@pytest.mark.skip(reason="Flaky")
 def test_progress():
     results = query_no_errors("SELECT number, sleep(0.31) FROM numbers(8) SETTINGS max_block_size=2, interactive_delay=100000", stream_output=True)
     #print(results)
@@ -259,7 +246,6 @@ def test_progress():
 }
 ]"""
 
-@pytest.mark.skip(reason="Flaky")
 def test_session():
     session_a = "session A"
     session_b = "session B"
@@ -270,12 +256,10 @@ def test_session():
     assert query("SELECT getSetting('custom_x'), getSetting('custom_y')", session_id=session_a) == "1\t2\n"
     assert query("SELECT getSetting('custom_x'), getSetting('custom_y')", session_id=session_b) == "3\t4\n"
 
-@pytest.mark.skip(reason="Flaky")
 def test_no_session():
     e = query_and_get_error("SET custom_x=1")
     assert "There is no session" in e.display_text
 
-@pytest.mark.skip(reason="Flaky")
 def test_input_function():
     query("CREATE TABLE t (a UInt8) ENGINE = Memory")
     query("INSERT INTO t SELECT col1 * col2 FROM input('col1 UInt8, col2 UInt8') FORMAT CSV", input_data=["5,4\n", "8,11\n", "10,12\n"])
@@ -285,7 +269,6 @@ def test_input_function():
     query("INSERT INTO t SELECT col1 * col2 FROM input('col1 UInt8, col2 UInt8') FORMAT CSV 20,10\n", input_data="15,15\n")
     assert query("SELECT a FROM t ORDER BY a") == "20\n88\n120\n143\n200\n225\n"
 
-@pytest.mark.skip(reason="Flaky")
 def test_external_table():
     columns = [clickhouse_grpc_pb2.NameAndType(name='UserID', type='UInt64'), clickhouse_grpc_pb2.NameAndType(name='UserName', type='String')]
     ext1 = clickhouse_grpc_pb2.ExternalTable(name='ext1', columns=columns, data='1\tAlex\n2\tBen\n3\tCarl\n', format='TabSeparated')
@@ -303,7 +286,6 @@ def test_external_table():
     assert query("SELECT * FROM _data ORDER BY _2", external_tables=[unnamed_table]) == "7\tFred\n"\
                                                                                         "6\tGeorge\n"
 
-@pytest.mark.skip(reason="Flaky")
 def test_external_table_streaming():
     columns = [clickhouse_grpc_pb2.NameAndType(name='UserID', type='UInt64'), clickhouse_grpc_pb2.NameAndType(name='UserName', type='String')]
     def send_query_info():
@@ -319,7 +301,6 @@ def test_external_table_streaming():
                             "4\tDaniel\n"\
                             "5\tEthan\n"
 
-@pytest.mark.skip(reason="Flaky")
 def test_simultaneous_queries_same_channel():
     threads=[]
     try:
@@ -331,7 +312,6 @@ def test_simultaneous_queries_same_channel():
         for thread in threads:
             thread.join()
 
-@pytest.mark.skip(reason="Flaky")
 def test_simultaneous_queries_multiple_channels():
     threads=[]
     try:
@@ -343,7 +323,6 @@ def test_simultaneous_queries_multiple_channels():
         for thread in threads:
             thread.join()
 
-@pytest.mark.skip(reason="Flaky")
 def test_cancel_while_processing_input():
     query("CREATE TABLE t (a UInt8) ENGINE = Memory")
     def send_query_info():
@@ -356,7 +335,6 @@ def test_cancel_while_processing_input():
     assert result.progress.written_rows == 6
     assert query("SELECT a FROM t ORDER BY a") == "1\n2\n3\n4\n5\n6\n"
 
-@pytest.mark.skip(reason="Flaky")
 def test_cancel_while_generating_output():
     def send_query_info():
         yield clickhouse_grpc_pb2.QueryInfo(query="SELECT number, sleep(0.2) FROM numbers(10) SETTINGS max_block_size=2")
