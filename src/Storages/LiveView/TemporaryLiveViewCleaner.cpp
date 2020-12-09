@@ -149,7 +149,6 @@ void TemporaryLiveViewCleaner::backgroundThreadFunc()
 
 void TemporaryLiveViewCleaner::stopBackgroundThread()
 {
-    std::lock_guard lock{mutex};
     if (background_thread.joinable())
     {
         background_thread_should_exit = true;

@@ -768,7 +768,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     signal_listener_thread.start(*signal_listener);
 
 #if defined(__ELF__) && !defined(__FreeBSD__)
-    String build_id_hex = DB::SymbolIndex::instance().getBuildIDHex();
+    String build_id_hex = DB::SymbolIndex::instance()->getBuildIDHex();
     if (build_id_hex.empty())
         build_id_info = "no build id";
     else

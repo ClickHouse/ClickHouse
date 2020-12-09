@@ -6,18 +6,6 @@ if (USE_CLANG_TIDY)
     set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
 endif ()
 
-if(COMPILER_PIPE)
-    set(MAX_COMPILER_MEMORY 2500)
-else()
-    set(MAX_COMPILER_MEMORY 1500)
-endif()
-if(MAKE_STATIC_LIBRARIES)
-    set(MAX_LINKER_MEMORY 3500)
-else()
-    set(MAX_LINKER_MEMORY 2500)
-endif()
-include(../cmake/limit_jobs.cmake)
-
 set (CONFIG_VERSION ${CMAKE_CURRENT_BINARY_DIR}/Common/config_version.h)
 set (CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/Common/config.h)
 
@@ -49,6 +37,7 @@ add_subdirectory (Dictionaries)
 add_subdirectory (Disks)
 add_subdirectory (Storages)
 add_subdirectory (Parsers)
+add_subdirectory (Parsers/New)
 add_subdirectory (IO)
 add_subdirectory (Functions)
 add_subdirectory (Interpreters)
@@ -186,12 +175,12 @@ endif()
 
 if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
     add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
-    target_link_libraries (dbms PRIVATE jemalloc libdivide ${DBMS_COMMON_LIBRARIES})
+    target_link_libraries (dbms PRIVATE clickhouse_parsers_new jemalloc libdivide ${DBMS_COMMON_LIBRARIES})
     set (all_modules dbms)
 else()
     add_library (dbms SHARED ${dbms_headers} ${dbms_sources})
     target_link_libraries (dbms PUBLIC ${all_modules} ${DBMS_COMMON_LIBRARIES})
-    target_link_libraries (clickhouse_interpreters PRIVATE jemalloc libdivide)
+    target_link_libraries (clickhouse_interpreters PRIVATE clickhouse_parsers_new jemalloc libdivide)
     list (APPEND all_modules dbms)
     # force all split libs to be linked
     set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-as-needed")
@@ -223,7 +212,7 @@ if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELW
         Dictionaries/FlatDictionary.cpp
         Dictionaries/HashedDictionary.cpp
         Dictionaries/CacheDictionary.cpp
-        Dictionaries/TrieDictionary.cpp
+        Dictionaries/IPAddressDictionary.cpp
         Dictionaries/RangeHashedDictionary.cpp
         Dictionaries/ComplexKeyHashedDictionary.cpp
         Dictionaries/ComplexKeyCacheDictionary.cpp
@@ -253,7 +242,7 @@ target_link_libraries (clickhouse_common_io
         PUBLIC
             common
             ${DOUBLE_CONVERSION_LIBRARIES}
-            ryu
+            dragonbox_to_chars
 )
 
 if(RE2_LIBRARY)
@@ -305,7 +294,6 @@ endif()
 
 dbms_target_link_libraries (
     PRIVATE
-        ${BTRIE_LIBRARIES}
         boost::filesystem
         boost::program_options
         clickhouse_common_config
@@ -330,6 +318,8 @@ dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${MINISELECT_INCLUDE_DIR})
 
 if (ZSTD_LIBRARY)
     dbms_target_link_libraries(PRIVATE ${ZSTD_LIBRARY})
+    target_link_libraries (clickhouse_common_io PUBLIC ${ZSTD_LIBRARY})
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${ZSTD_INCLUDE_DIR})
     if (NOT USE_INTERNAL_ZSTD_LIBRARY AND ZSTD_INCLUDE_DIR)
         dbms_target_include_directories(SYSTEM BEFORE PRIVATE ${ZSTD_INCLUDE_DIR})
     endif ()
@@ -382,6 +372,10 @@ if (USE_PROTOBUF)
     dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${Protobuf_INCLUDE_DIR})
 endif ()
 
+if (USE_GRPC)
+    dbms_target_link_libraries (PUBLIC clickhouse_grpc_protos)
+endif()
+
 if (USE_HDFS)
     target_link_libraries (clickhouse_common_io PUBLIC ${HDFS3_LIBRARY})
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${HDFS3_INCLUDE_DIR})
@@ -408,6 +402,9 @@ target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${DOUBLE_C
 if (USE_MSGPACK)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${MSGPACK_INCLUDE_DIR})
 endif()
+
+target_link_libraries (clickhouse_common_io PUBLIC ${FAST_FLOAT_LIBRARY})
+target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${FAST_FLOAT_INCLUDE_DIR})
 
 if (USE_ORC)
     dbms_target_link_libraries(PUBLIC ${ORC_LIBRARIES})
