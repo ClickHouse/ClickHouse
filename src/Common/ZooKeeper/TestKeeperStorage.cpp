@@ -739,8 +739,11 @@ void TestKeeperStorage::putRequest(const Coordination::ZooKeeperRequestPtr & req
     request_info.request = storage_request;
     request_info.session_id = session_id;
     request_info.response_callback = callback;
+
+    /// Put close requests without timeouts
+    auto timeout = request->getOpNum() == Coordination::OpNum::Close ? 0 : operation_timeout.totalMilliseconds();
     std::lock_guard lock(push_request_mutex);
-    if (!requests_queue.tryPush(std::move(request_info), operation_timeout.totalMilliseconds()))
+    if (!requests_queue.tryPush(std::move(request_info), timeout))
         throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::TIMEOUT_EXCEEDED);
 }
 
@@ -753,12 +756,12 @@ void TestKeeperStorage::putRequest(const Coordination::ZooKeeperRequestPtr & req
     request_info.session_id = session_id;
     request_info.response_callback = callback;
     if (request->has_watch)
-    {
         request_info.watch_callback = watch_callback;
-    }
 
+    /// Put close requests without timeouts
+    auto timeout = request->getOpNum() == Coordination::OpNum::Close ? 0 : operation_timeout.totalMilliseconds();
     std::lock_guard lock(push_request_mutex);
-    if (!requests_queue.tryPush(std::move(request_info), operation_timeout.totalMilliseconds()))
+    if (!requests_queue.tryPush(std::move(request_info), timeout))
         throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::TIMEOUT_EXCEEDED);
 }
 
