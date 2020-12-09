@@ -302,6 +302,13 @@ void AsynchronousMetrics::update()
                     total_number_of_rows += table_merge_tree->totalRows(settings).value();
                     total_number_of_parts += table_merge_tree->getPartsCount();
                 }
+                if (table_replicated_merge_tree)
+                {
+                    const auto settings = context.getSettingsRef();
+                    total_number_of_bytes += table_replicated_merge_tree->totalBytes(settings).value();
+                    total_number_of_rows += table_replicated_merge_tree->totalRows(settings).value();
+                    total_number_of_parts += table_replicated_merge_tree->getPartsCount();
+                }
             }
         }
 
@@ -321,9 +328,9 @@ void AsynchronousMetrics::update()
         new_values["NumberOfDatabases"] = number_of_databases;
         new_values["NumberOfTables"] = total_number_of_tables;
 
-        new_values["TotalBytesOfMergeTreeTable"] = total_number_of_bytes;
-        new_values["TotalRowsOfMergeTreeTable"] = total_number_of_rows;
-        new_values["TotalPartsOfMergeTreeTable"] = total_number_of_parts;
+        new_values["TotalBytesOfMergeTreeTables"] = total_number_of_bytes;
+        new_values["TotalRowsOfMergeTreeTables"] = total_number_of_rows;
+        new_values["TotalPartsOfMergeTreeTables"] = total_number_of_parts;
     }
 
 #if USE_JEMALLOC && JEMALLOC_VERSION_MAJOR >= 4
