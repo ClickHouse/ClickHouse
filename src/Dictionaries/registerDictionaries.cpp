@@ -16,6 +16,7 @@ void registerDictionaries()
         registerDictionarySourceCassandra(source_factory);
         registerDictionarySourceXDBC(source_factory);
         registerDictionarySourceJDBC(source_factory);
+        registerDictionarySourcePostgreSQL(source_factory);
         registerDictionarySourceExecutable(source_factory);
         registerDictionarySourceHTTP(source_factory);
         registerDictionarySourceLibrary(source_factory);

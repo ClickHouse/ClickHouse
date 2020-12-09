@@ -41,7 +41,7 @@ private:
     }
     void prepareArrayInfo(size_t column_idx, const DataTypePtr data_type);
 
-    const String query_str;
+    String query_str;
     const UInt64 max_block_size;
     ExternalResultDescription description;
 
