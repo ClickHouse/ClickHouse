@@ -64,6 +64,7 @@
 #include <Common/ThreadFuzzer.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
+#include <Server/ProtocolServerAdapter.h>
 
 
 #if !defined(ARCADIA_BUILD)
@@ -83,6 +84,11 @@
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/SecureServerSocket.h>
 #endif
+
+#if USE_GRPC
+#   include <Server/GRPCServer.h>
+#endif
+
 
 namespace CurrentMetrics
 {
@@ -806,7 +812,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         http_params->setTimeout(settings.http_receive_timeout);
         http_params->setKeepAliveTimeout(keep_alive_timeout);
 
-        std::vector<std::unique_ptr<Poco::Net::TCPServer>> servers;
+        std::vector<ProtocolServerAdapter> servers;
 
         std::vector<std::string> listen_hosts = DB::getMultipleValuesFromConfig(config(), "", "listen_host");
 
@@ -945,12 +951,28 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setReceiveTimeout(settings.receive_timeout);
                 socket.setSendTimeout(settings.send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
-                    new TCPHandlerFactory(*this),
+                    new TCPHandlerFactory(*this, /* secure */ false, /* proxy protocol */ false),
                     server_pool,
                     socket,
                     new Poco::Net::TCPServerParams));
 
                 LOG_INFO(log, "Listening for connections with native protocol (tcp): {}", address.toString());
+            });
+
+            /// TCP with PROXY protocol, see https://github.com/wolfeidau/proxyv2/blob/master/docs/proxy-protocol.txt
+            create_server("tcp_with_proxy_port", [&](UInt16 port)
+            {
+                Poco::Net::ServerSocket socket;
+                auto address = socket_bind_listen(socket, listen_host, port);
+                socket.setReceiveTimeout(settings.receive_timeout);
+                socket.setSendTimeout(settings.send_timeout);
+                servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
+                    new TCPHandlerFactory(*this, /* secure */ false, /* proxy protocol */ true),
+                    server_pool,
+                    socket,
+                    new Poco::Net::TCPServerParams));
+
+                LOG_INFO(log, "Listening for connections with native protocol (tcp) with PROXY: {}", address.toString());
             });
 
             /// TCP with SSL
@@ -962,7 +984,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setReceiveTimeout(settings.receive_timeout);
                 socket.setSendTimeout(settings.send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
-                    new TCPHandlerFactory(*this, /* secure= */ true),
+                    new TCPHandlerFactory(*this, /* secure */ true, /* proxy protocol */ false),
                     server_pool,
                     socket,
                     new Poco::Net::TCPServerParams));
@@ -1035,6 +1057,15 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 LOG_INFO(log, "Listening for PostgreSQL compatibility protocol: " + address.toString());
             });
 
+#if USE_GRPC
+            create_server("grpc_port", [&](UInt16 port)
+            {
+                Poco::Net::SocketAddress server_address(listen_host, port);
+                servers.emplace_back(std::make_unique<GRPCServer>(*this, make_socket_address(listen_host, port)));
+                LOG_INFO(log, "Listening for gRPC protocol: " + server_address.toString());
+            });
+#endif
+
             /// Prometheus (if defined and not setup yet with http_port)
             create_server("prometheus.port", [&](UInt16 port)
             {
@@ -1056,7 +1087,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         global_context->enableNamedSessions();
 
         for (auto & server : servers)
-            server->start();
+            server.start();
 
         {
             String level_str = config().getString("text_log.level", "");
@@ -1088,8 +1119,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
             int current_connections = 0;
             for (auto & server : servers)
             {
-                server->stop();
-                current_connections += server->currentConnections();
+                server.stop();
+                current_connections += server.currentConnections();
             }
 
             if (current_connections)
@@ -1109,7 +1140,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 {
                     current_connections = 0;
                     for (auto & server : servers)
-                        current_connections += server->currentConnections();
+                        current_connections += server.currentConnections();
                     if (!current_connections)
                         break;
                     sleep_current_ms += sleep_one_ms;

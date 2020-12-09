@@ -25,6 +25,7 @@ The supported formats are:
 | [Vertical](#vertical)                                                                   | ✗     | ✔      |
 | [VerticalRaw](#verticalraw)                                                             | ✗     | ✔      |
 | [JSON](#json)                                                                           | ✗     | ✔      |
+| [JSONAsString](#jsonasstring)                                                           | ✔     | ✗      |
 | [JSONString](#jsonstring)                                                               | ✗     | ✔      |
 | [JSONCompact](#jsoncompact)                                                             | ✗     | ✔      |
 | [JSONCompactString](#jsoncompactstring)                                                 | ✗     | ✔      |
@@ -456,7 +457,10 @@ This format is only appropriate for outputting a query result, but not for parsi
 
 ClickHouse supports [NULL](../sql-reference/syntax.md), which is displayed as `null` in the JSON output. To enable `+nan`, `-nan`, `+inf`, `-inf` values in output, set the [output_format_json_quote_denormals](../operations/settings/settings.md#settings-output_format_json_quote_denormals) to 1.
 
-See also the [JSONEachRow](#jsoneachrow) format.
+**See Also**
+
+-   [JSONEachRow](#jsoneachrow) format
+-   [output_format_json_array_of_rows](../operations/settings/settings.md#output-format-json-array-of-rows) setting
 
 ## JSONString {#jsonstring}
 
@@ -506,6 +510,34 @@ Example:
         "rows_before_limit_at_least": 3
 }
 ```
+
+## JSONAsString {#jsonasstring}
+
+In this format, a single JSON object is interpreted as a single value. If input has several JSON objects (comma separated) they will be interpreted as a sepatate rows.
+
+This format can only be parsed for table with a single field of type [String](../sql-reference/data-types/string.md). The remaining columns must be set to  [DEFAULT](../sql-reference/statements/create/table.md#default) or [MATERIALIZED](../sql-reference/statements/create/table.md#materialized), or omitted. Once you collect whole JSON object to string you can use [JSON functions](../sql-reference/functions/json-functions.md) to process it.
+
+**Example**
+
+Query:
+
+``` sql
+DROP TABLE IF EXISTS json_as_string;
+CREATE TABLE json_as_string (json String) ENGINE = Memory;
+INSERT INTO json_as_string FORMAT JSONAsString {"foo":{"bar":{"x":"y"},"baz":1}},{},{"any json stucture":1}
+SELECT * FROM json_as_string;
+```
+
+Result:
+
+``` text
+┌─json──────────────────────────────┐
+│ {"foo":{"bar":{"x":"y"},"baz":1}} │
+│ {}                                │
+│ {"any json stucture":1}           │
+└───────────────────────────────────┘
+```
+
 
 ## JSONCompact {#jsoncompact}
 ## JSONCompactString {#jsoncompactstring}

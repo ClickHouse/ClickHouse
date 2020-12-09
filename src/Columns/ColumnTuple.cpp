@@ -1,17 +1,16 @@
 #include <Columns/ColumnTuple.h>
+
 #include <Columns/IColumnImpl.h>
+#include <Core/Field.h>
 #include <DataStreams/ColumnGathererStream.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <Common/WeakHash.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
+#include <common/sort.h>
 #include <ext/map.h>
 #include <ext/range.h>
-#include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
-#include <Common/WeakHash.h>
-#include <Core/Field.h>
-#if !defined(ARCADIA_BUILD)
-    #include <miniselect/floyd_rivest_select.h> // Y_IGNORE
-#endif
 
 
 namespace DB
@@ -354,17 +353,9 @@ void ColumnTuple::getPermutationImpl(size_t limit, Permutation & res, LessOperat
         limit = 0;
 
     if (limit)
-    {
-#if !defined(ARCADIA_BUILD)
-        miniselect::floyd_rivest_partial_sort(res.begin(), res.begin() + limit, res.end(), less);
-#else
-        std::partial_sort(res.begin(), res.begin() + limit, res.end(), less);
-#endif
-    }
+        partial_sort(res.begin(), res.begin() + limit, res.end(), less);
     else
-    {
         std::sort(res.begin(), res.end(), less);
-    }
 }
 
 void ColumnTuple::updatePermutationImpl(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges, const Collator * collator) const

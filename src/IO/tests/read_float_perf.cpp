@@ -13,7 +13,6 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <Compression/CompressedReadBuffer.h>
 
-
 /** How to test:
 
 # Prepare data
@@ -38,7 +37,6 @@ $ for i in {1..10}; do echo $i; time ./read_float_perf 2 < numbers$i.tsv; done
 
 
 using namespace DB;
-
 
 template <typename T, void F(T&, ReadBuffer&)>
 void NO_INLINE loop(ReadBuffer & in, WriteBuffer & out)
