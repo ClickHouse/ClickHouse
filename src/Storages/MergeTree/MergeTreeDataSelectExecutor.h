@@ -69,11 +69,11 @@ private:
         UInt64 max_block_size,
         bool use_uncompressed_cache,
         const SelectQueryInfo & query_info,
-        const ExpressionActionsPtr & sorting_key_prefix_expr,
+        const ActionsDAGPtr & sorting_key_prefix_expr,
         const Names & virt_columns,
         const Settings & settings,
         const MergeTreeReaderSettings & reader_settings,
-        ExpressionActionsPtr & out_projection) const;
+        ActionsDAGPtr & out_projection) const;
 
     QueryPlanPtr spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts,
@@ -86,7 +86,7 @@ private:
         const Names & virt_columns,
         const Settings & settings,
         const MergeTreeReaderSettings & reader_settings,
-        ExpressionActionsPtr & out_projection) const;
+        ActionsDAGPtr & out_projection) const;
 
     /// Get the approximate value (bottom estimate - only by full marks) of the number of rows falling under the index.
     size_t getApproximateTotalRowsToRead(

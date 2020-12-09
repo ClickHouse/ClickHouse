@@ -1,3 +1,5 @@
+OWNER(g:clickhouse)
+
 LIBRARY()
 
 PEERDIR(
@@ -6,7 +8,7 @@ PEERDIR(
 
 
 SRCS(
-<? find . -name '*.cpp' | grep -v -F tests | sed 's/^\.\//    /' | sort ?>
+<? find . -name '*.cpp' | grep -v -F New | grep -v -F tests | sed 's/^\.\//    /' | sort ?>
 )
 
 END()

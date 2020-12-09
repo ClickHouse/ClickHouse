@@ -358,6 +358,8 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                 maximize(max_bits_of_unsigned_integer, 32);
             else if (typeid_cast<const DataTypeUInt64 *>(type.get()))
                 maximize(max_bits_of_unsigned_integer, 64);
+            else if (typeid_cast<const DataTypeUInt256 *>(type.get()))
+                maximize(max_bits_of_unsigned_integer, 256);
             else if (typeid_cast<const DataTypeInt8 *>(type.get()))
                 maximize(max_bits_of_signed_integer, 8);
             else if (typeid_cast<const DataTypeInt16 *>(type.get()))
@@ -366,6 +368,10 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                 maximize(max_bits_of_signed_integer, 32);
             else if (typeid_cast<const DataTypeInt64 *>(type.get()))
                 maximize(max_bits_of_signed_integer, 64);
+            else if (typeid_cast<const DataTypeInt128 *>(type.get()))
+                maximize(max_bits_of_signed_integer, 128);
+            else if (typeid_cast<const DataTypeInt256 *>(type.get()))
+                maximize(max_bits_of_signed_integer, 256);
             else if (typeid_cast<const DataTypeFloat32 *>(type.get()))
                 maximize(max_mantissa_bits_of_floating, 24);
             else if (typeid_cast<const DataTypeFloat64 *>(type.get()))
@@ -386,7 +392,18 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
             /// If unsigned is not covered by signed.
             if (max_bits_of_signed_integer && max_bits_of_unsigned_integer >= max_bits_of_signed_integer)
-                ++min_bit_width_of_integer;
+            {
+                // Because 128 and 256 bit integers are significantly slower, we should not promote to them.
+                // But if we already have wide numbers, promotion is necessary.
+                if (min_bit_width_of_integer != 64)
+                    ++min_bit_width_of_integer;
+                else
+                    throw Exception(
+                        getExceptionMessagePrefix(types)
+                            + " because some of them are signed integers and some are unsigned integers,"
+                              " but there is no signed integer type, that can exactly represent all required unsigned integer values",
+                        ErrorCodes::NO_COMMON_TYPE);
+            }
 
             /// If the result must be floating.
             if (max_mantissa_bits_of_floating)
@@ -413,6 +430,10 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                     return std::make_shared<DataTypeInt32>();
                 else if (min_bit_width_of_integer <= 64)
                     return std::make_shared<DataTypeInt64>();
+                else if (min_bit_width_of_integer <= 128)
+                    return std::make_shared<DataTypeInt128>();
+                else if (min_bit_width_of_integer <= 256)
+                    return std::make_shared<DataTypeInt256>();
                 else
                     throw Exception(getExceptionMessagePrefix(types)
                         + " because some of them are signed integers and some are unsigned integers,"
@@ -429,6 +450,8 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                     return std::make_shared<DataTypeUInt32>();
                 else if (min_bit_width_of_integer <= 64)
                     return std::make_shared<DataTypeUInt64>();
+                else if (min_bit_width_of_integer <= 256)
+                    return std::make_shared<DataTypeUInt256>();
                 else
                     throw Exception("Logical error: " + getExceptionMessagePrefix(types)
                         + " but as all data types are unsigned integers, we must have found maximum unsigned integer type", ErrorCodes::NO_COMMON_TYPE);

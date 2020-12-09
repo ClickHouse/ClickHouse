@@ -134,7 +134,7 @@ MergeTreeData::MergeTreeData(
     bool attach,
     BrokenPartCallback broken_part_callback_)
     : IStorage(table_id_)
-    , global_context(context_)
+    , global_context(context_.getGlobalContext())
     , merging_params(merging_params_)
     , require_part_metadata(require_part_metadata_)
     , relative_data_path(relative_data_path_)
@@ -257,14 +257,14 @@ StoragePolicyPtr MergeTreeData::getStoragePolicy() const
 
 static void checkKeyExpression(const ExpressionActions & expr, const Block & sample_block, const String & key_name, bool allow_nullable_key)
 {
-    for (const ExpressionAction & action : expr.getActions())
+    for (const auto & action : expr.getActions())
     {
-        if (action.type == ExpressionAction::ARRAY_JOIN)
+        if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
             throw Exception(key_name + " key cannot contain array joins", ErrorCodes::ILLEGAL_COLUMN);
 
-        if (action.type == ExpressionAction::APPLY_FUNCTION)
+        if (action.node->type == ActionsDAG::ActionType::FUNCTION)
         {
-            IFunctionBase & func = *action.function_base;
+            IFunctionBase & func = *action.node->function_base;
             if (!func.isDeterministic())
                 throw Exception(key_name + " key cannot contain non-deterministic functions, "
                     "but contains function " + func.getName(),
@@ -438,7 +438,7 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
 
     /// Add all columns used in the partition key to the min-max index.
     const NamesAndTypesList & minmax_idx_columns_with_types = new_partition_key.expression->getRequiredColumnsWithTypes();
-    minmax_idx_expr = std::make_shared<ExpressionActions>(minmax_idx_columns_with_types, global_context);
+    minmax_idx_expr = std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(minmax_idx_columns_with_types));
     for (const NameAndTypePair & column : minmax_idx_columns_with_types)
     {
         minmax_idx_columns.emplace_back(column.name);
@@ -734,7 +734,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                 for (auto && part : write_ahead_log->restore(metadata_snapshot))
                     parts_from_wal.push_back(std::move(part));
             }
-            else if (startsWith(it->name(), MergeTreeWriteAheadLog::WAL_FILE_NAME))
+            else if (startsWith(it->name(), MergeTreeWriteAheadLog::WAL_FILE_NAME) && settings->in_memory_parts_enable_wal)
             {
                 MergeTreeWriteAheadLog wal(*this, disk_ptr, it->name());
                 for (auto && part : wal.restore(metadata_snapshot))
@@ -1215,6 +1215,23 @@ void MergeTreeData::clearOldWriteAheadLogs()
     }
 }
 
+void MergeTreeData::clearEmptyParts()
+{
+    if (!getSettings()->remove_empty_parts)
+        return;
+
+    auto parts = getDataPartsVector();
+    for (const auto & part : parts)
+    {
+        if (part->rows_count == 0)
+        {
+            ASTPtr literal = std::make_shared<ASTLiteral>(part->name);
+            /// If another replica has already started drop, it's ok, no need to throw.
+            dropPartition(literal, /* detach = */ false, /*drop_part = */ true, global_context, /* throw_if_noop = */ false);
+        }
+    }
+}
+
 void MergeTreeData::rename(const String & new_table_path, const StorageID & new_table_id)
 {
     auto disks = getStoragePolicy()->getDisks();
@@ -1402,10 +1419,10 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
     {
         /// Forbid altering columns inside partition key expressions because it can change partition ID format.
         auto partition_key_expr = old_metadata.getPartitionKey().expression;
-        for (const ExpressionAction & action : partition_key_expr->getActions())
+        for (const auto & action : partition_key_expr->getActions())
         {
-            auto action_columns = action.getNeededColumns();
-            columns_alter_type_forbidden.insert(action_columns.begin(), action_columns.end());
+            for (const auto * child : action.node->children)
+                columns_alter_type_forbidden.insert(child->result_name);
         }
 
         /// But allow to alter columns without expressions under certain condition.
@@ -1422,10 +1439,10 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
     if (old_metadata.hasSortingKey())
     {
         auto sorting_key_expr = old_metadata.getSortingKey().expression;
-        for (const ExpressionAction & action : sorting_key_expr->getActions())
+        for (const auto & action : sorting_key_expr->getActions())
         {
-            auto action_columns = action.getNeededColumns();
-            columns_alter_type_forbidden.insert(action_columns.begin(), action_columns.end());
+            for (const auto * child : action.node->children)
+                columns_alter_type_forbidden.insert(child->result_name);
         }
         for (const String & col : sorting_key_expr->getRequiredColumns())
             columns_alter_type_metadata_only.insert(col);
@@ -1986,7 +2003,7 @@ bool MergeTreeData::renameTempPartAndReplace(
     if (part_in_memory && getSettings()->in_memory_parts_enable_wal)
     {
         auto wal = getWriteAheadLog();
-        wal->addPart(part_in_memory->block, part_in_memory->name);
+        wal->addPart(part_in_memory);
     }
 
     if (out_covered_parts)
@@ -2648,7 +2665,7 @@ void MergeTreeData::checkPartCanBeDropped(const ASTPtr & part_ast)
     String part_name = part_ast->as<ASTLiteral &>().value.safeGet<String>();
     auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Committed});
     if (!part)
-        throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No part {} in commited state", part_name);
+        throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No part {} in committed state", part_name);
 
     auto table_id = getStorageID();
     global_context.checkPartitionCanBeDropped(table_id.database_name, table_id.table_name, part->getBytesOnDisk());
@@ -3123,8 +3140,7 @@ inline ReservationPtr checkAndReturnReservation(UInt64 expected_size, Reservatio
 ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size) const
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
-    auto reservation = getStoragePolicy()->reserve(expected_size);
-    return checkAndReturnReservation(expected_size, std::move(reservation));
+    return getStoragePolicy()->reserveAndCheck(expected_size);
 }
 
 ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size, SpacePtr space)
@@ -3878,7 +3894,7 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
 
 MergeTreeData::AlterConversions MergeTreeData::getAlterConversionsForPart(const MergeTreeDataPartPtr part) const
 {
-    MutationCommands commands = getFirtsAlterMutationCommandsForPart(part);
+    MutationCommands commands = getFirstAlterMutationCommandsForPart(part);
 
     AlterConversions result{};
     for (const auto & command : commands)

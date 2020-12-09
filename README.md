@@ -1,6 +1,6 @@
 [![ClickHouse — open source distributed column-oriented DBMS](https://github.com/ClickHouse/ClickHouse/raw/master/website/images/logo-400x240.png)](https://clickhouse.tech)
 
-ClickHouse is an open-source column-oriented database management system that allows generating analytical data reports in real time.
+ClickHouse® is an open-source column-oriented database management system that allows generating analytical data reports in real time.
 
 ## Useful Links
 
@@ -16,7 +16,4 @@ ClickHouse is an open-source column-oriented database management system that all
 * You can also [fill this form](https://clickhouse.tech/#meet) to meet Yandex ClickHouse team in person.
 
 ## Upcoming Events
-
-* [The Second ClickHouse Meetup East (online)](https://www.eventbrite.com/e/the-second-clickhouse-meetup-east-tickets-126787955187) on October 31, 2020.
-* [ClickHouse for Enterprise Meetup (online in Russian)](https://arenadata-events.timepad.ru/event/1465249/) on November 10, 2020.
-
+* [SF Bay Area ClickHouse Virtual Office Hours (online)](https://www.meetup.com/San-Francisco-Bay-Area-ClickHouse-Meetup/events/274273549/) on 20 January 2020.
