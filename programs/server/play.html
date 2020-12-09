@@ -352,17 +352,20 @@
                 /// The query is saved in browser history (in state JSON object)
                 /// as well as in URL fragment identifier.
                 if (query != previous_query) {
-                    previous_query = query;
+                    var state = {
+                        query: query,
+                        status: this.status,
+                        response: this.response.length > 100000 ? null : this.response  /// Lower than the browser's limit.
+                    };
                     var title = "ClickHouse Query: " + query;
-                    history.pushState(
-                        {
-                            query: query,
-                            status: this.status,
-                            response: this.response.length > 100000 ? null : this.response  /// Lower than the browser's limit.
-                        },
-                        title,
-                        window.location.pathname + '?user=' + encodeURIComponent(user) + '#' + window.btoa(query));
+                    var url = window.location.pathname + '?user=' + encodeURIComponent(user) + '#' + window.btoa(query);
+                    if (previous_query == '') {
+                        history.replaceState(state, title, url);
+                    } else {
+                        history.pushState(state, title, url);
+                    }
                     document.title = title;
+                    previous_query = query;
                 }
             } else {
                 //console.log(this);
