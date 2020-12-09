@@ -41,7 +41,6 @@ inc="-I. \
 -I/usr/include/llvm-5.0 \
 -I./contrib/llvm/llvm/include \
 -I${BUILD_DIR}/contrib/llvm/llvm/include \
--I./contrib/libbtrie/include \
 -I./contrib/libpcg-random/include \
 -I./contrib/capnproto/c++/src \
 -I./contrib/unixodbc/include \

@@ -3,12 +3,14 @@
 #include <IO/S3Common.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <common/logger_useful.h>
 #include "DiskS3.h"
 #include "Disks/DiskCacheWrapper.h"
 #include "Disks/DiskFactory.h"
 #include "ProxyConfiguration.h"
 #include "ProxyListConfiguration.h"
 #include "ProxyResolverConfiguration.h"
+
 
 namespace DB
 {
@@ -132,7 +134,8 @@ void registerDiskS3(DiskFactory & factory)
             uri.is_virtual_hosted_style,
             config.getString(config_prefix + ".access_key_id", ""),
             config.getString(config_prefix + ".secret_access_key", ""),
-            context.getRemoteHostFilter());
+            context.getRemoteHostFilter(),
+            context.getGlobalContext().getSettingsRef().s3_max_redirects);
 
         String metadata_path = config.getString(config_prefix + ".metadata_path", context.getPath() + "disks/" + name + "/");
 

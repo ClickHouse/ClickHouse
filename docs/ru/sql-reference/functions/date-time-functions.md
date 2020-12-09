@@ -25,6 +25,40 @@ SELECT
 
 Поддерживаются только часовые пояса, отличающиеся от UTC на целое число часов.
 
+## toTimeZone {#totimezone}
+
+Переводит дату или дату-с-временем в указанный часовой пояс. Часовой пояс (таймзона) это атрибут типов Date/DateTime, внутреннее значение (количество секунд) поля таблицы или колонки результата не изменяется, изменяется тип поля и автоматически его текстовое отображение.
+
+```sql
+SELECT
+    toDateTime('2019-01-01 00:00:00', 'UTC') AS time_utc,
+    toTypeName(time_utc) AS type_utc,
+    toInt32(time_utc) AS int32utc,
+    toTimeZone(time_utc, 'Asia/Yekaterinburg') AS time_yekat,
+    toTypeName(time_yekat) AS type_yekat,
+    toInt32(time_yekat) AS int32yekat,
+    toTimeZone(time_utc, 'US/Samoa') AS time_samoa,
+    toTypeName(time_samoa) AS type_samoa,
+    toInt32(time_samoa) AS int32samoa
+FORMAT Vertical;
+```
+
+```text
+Row 1:
+──────
+time_utc:   2019-01-01 00:00:00
+type_utc:   DateTime('UTC')
+int32utc:   1546300800
+time_yekat: 2019-01-01 05:00:00
+type_yekat: DateTime('Asia/Yekaterinburg')
+int32yekat: 1546300800
+time_samoa: 2018-12-31 13:00:00
+type_samoa: DateTime('US/Samoa')
+int32samoa: 1546300800
+```
+
+`toTimeZone(time_utc, 'Asia/Yekaterinburg')` изменяет тип `DateTime('UTC')` в `DateTime('Asia/Yekaterinburg')`. Значение (unix-время) 1546300800 остается неизменным, но текстовое отображение (результат функции toString()) меняется `time_utc:   2019-01-01 00:00:00` в `time_yekat: 2019-01-01 05:00:00`.
+
 ## toYear {#toyear}
 
 Переводит дату или дату-с-временем в число типа UInt16, содержащее номер года (AD).
@@ -57,32 +91,31 @@ SELECT
 
 ## toUnixTimestamp {#to-unix-timestamp}
 
-For DateTime argument: converts value to its internal numeric representation (Unix Timestamp).
-For String argument: parse datetime from string according to the timezone (optional second argument, server timezone is used by default) and returns the corresponding unix timestamp.
-For Date argument: the behaviour is unspecified.
+Переводит дату-с-временем в число типа UInt32 -- Unix Timestamp (https://en.wikipedia.org/wiki/Unix_time).
+Для аргумента String, строка конвертируется в дату и время в соответствии с часовым поясом (необязательный второй аргумент, часовой пояс сервера используется по умолчанию).
 
-**Syntax**
+**Синтаксис**
 
 ``` sql
 toUnixTimestamp(datetime)
 toUnixTimestamp(str, [timezone])
 ```
 
-**Returned value**
+**Возвращаемое значение**
 
--   Returns the unix timestamp.
+-   Возвращает Unix Timestamp.
 
-Type: `UInt32`.
+Тип: `UInt32`.
 
-**Example**
+**Пример**
 
-Query:
+Запрос:
 
 ``` sql
 SELECT toUnixTimestamp('2017-11-05 08:07:47', 'Asia/Tokyo') AS unix_timestamp
 ```
 
-Result:
+Результат:
 
 ``` text
 ┌─unix_timestamp─┐
