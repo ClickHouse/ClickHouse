@@ -194,9 +194,6 @@ struct HashTableCell
     /// Do the hash table need to store the zero key separately (that is, can a zero key be inserted into the hash table).
     static constexpr bool need_zero_value_storage = true;
 
-    /// Whether the cell is deleted.
-    bool isDeleted() const { return false; }
-
     /// Set the mapped value, if any (for HashMap), to the corresponding `value`.
     void setMapped(const value_type & /*value*/) {}
 
@@ -229,6 +226,8 @@ struct HashTableGrower
 
     UInt8 size_degree = initial_size_degree;
     static constexpr auto initial_count = 1ULL << initial_size_degree;
+
+    static constexpr auto performs_linear_probing_with_single_step = true;
 
     /// The size of the hash table in the cells.
     size_t bufSize() const               { return 1ULL << size_degree; }
@@ -277,6 +276,9 @@ template <size_t key_bits>
 struct HashTableFixedGrower
 {
     static constexpr auto initial_count = 1ULL << key_bits;
+
+    static constexpr auto performs_linear_probing_with_single_step = true;
+
     size_t bufSize() const               { return 1ULL << key_bits; }
     size_t place(size_t x) const         { return x; }
     /// You could write __builtin_unreachable(), but the compiler does not optimize everything, and it turns out less efficiently.
@@ -466,7 +468,7 @@ protected:
           */
         size_t i = 0;
         for (; i < old_size; ++i)
-            if (!buf[i].isZero(*this) && !buf[i].isDeleted())
+            if (!buf[i].isZero(*this))
                 reinsert(buf[i], buf[i].getHash(*this));
 
         /** There is also a special case:
@@ -477,7 +479,7 @@ protected:
           *    after transferring all the elements from the old halves you need to     [         o   x    ]
           *    process tail from the collision resolution chain immediately after it   [        o    x    ]
           */
-        for (; !buf[i].isZero(*this) && !buf[i].isDeleted(); ++i)
+        for (; !buf[i].isZero(*this); ++i)
             reinsert(buf[i], buf[i].getHash(*this));
 
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
@@ -829,6 +831,7 @@ protected:
                   */
                 --m_size;
                 buf[place_value].setZero();
+                inserted = false;
                 throw;
             }
 
@@ -952,6 +955,72 @@ public:
     ConstLookupResult ALWAYS_INLINE find(const Key & x, size_t hash_value) const
     {
         return const_cast<std::decay_t<decltype(*this)> *>(this)->find(x, hash_value);
+    }
+
+    template<typename = std::enable_if<Grower::performs_linear_probing_with_single_step, void>>
+    void ALWAYS_INLINE erase(const Key & x)
+    {
+        /*
+        Deletion of open address hash table without tombstones
+
+        https://en.wikipedia.org/wiki/Linear_probing
+        https://en.wikipedia.org/wiki/Open_addressing
+        Algorithm without recomputing hash but keep probes difference value (difference of natural cell position and inserted one)
+        in cell https://arxiv.org/ftp/arxiv/papers/0909/0909.2547.pdf
+
+        Currently we use algorithm with hash recomputing on each step from https://en.wikipedia.org/wiki/Open_addressing.
+        */
+
+        if (Cell::isZero(x, *this))
+        {
+            if (this->hasZero())
+            {
+                --m_size;
+                this->clearHasZero();
+            }
+            else
+            {
+                return;
+            }
+        }
+
+        size_t hash_value = hash(x);
+        size_t i = findCell(x, hash_value, grower.place(hash_value));
+
+        if (buf[i].isZero(*this))
+        {
+            return;
+        }
+
+        /// We need to guarantee loop termination because there will be empty position
+        assert(m_size < grower.bufSize());
+
+        size_t j = i;
+
+        while (true)
+        {
+            /// TODO: Modify to remove unnecessary setZero over loop
+            buf[j].setZero();
+        r2:
+            j = grower.next(j);
+
+            if (buf[j].isZero(*this))
+            {
+                break;
+            }
+
+            /// If hash recomputing is expensive we can avoid it adding additional value in cell during insertion
+            /// check algorithm link above
+            size_t k = grower.place(buf[j].getHash(*this));
+
+            if (i <= j ? ((i < k) && (k <= j)) : ((i < k) || (k <= j)))
+                goto r2;
+
+            memcpy(static_cast<void *>(&buf[i]), static_cast<void *>(&buf[j]), sizeof(Cell));
+            i = j;
+        }
+
+        --m_size;
     }
 
     bool ALWAYS_INLINE has(const Key & x) const
