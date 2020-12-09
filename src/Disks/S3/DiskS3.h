@@ -31,7 +31,7 @@ public:
         String s3_root_path_,
         String metadata_path_,
         size_t min_upload_part_size_,
-        size_t min_multi_part_upload_size_,
+        size_t max_single_part_upload_size_,
         size_t min_bytes_for_seek_);
 
     const String & getName() const override { return name; }
