@@ -25,7 +25,8 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     MergeTreeWriterSettings writer_settings(
         global_settings,
         index_granularity_info ? index_granularity_info->is_adaptive : data_part->storage.canUseAdaptiveGranularity(),
-        global_settings.min_bytes_to_use_direct_io, false);
+        global_settings.min_bytes_to_use_direct_io,
+        /* rewrite_primary_key = */false);
 
     writer = data_part->getWriter(
         header.getNamesAndTypesList(),
