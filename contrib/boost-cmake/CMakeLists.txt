@@ -151,87 +151,34 @@ if (NOT EXTERNAL_BOOST_FOUND)
     enable_language(ASM)
     SET(ASM_OPTIONS "-x assembler-with-cpp")
 
-    set (SRCS_CONTEXT
-#        ${LIBRARY_DIR}/libs/context/src/asm/jump_arm64_aapcs_elf_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/jump_arm64_aapcs_macho_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/jump_arm_aapcs_elf_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/jump_arm_aapcs_macho_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/jump_arm_aapcs_pe_armasm.asm
-#        ${LIBRARY_DIR}/libs/context/src/asm/jump_combined_sysv_macho_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/jump_i386_ms_pe_gas.asm
-#        ${LIBRARY_DIR}/libs/context/src/asm/jump_i386_ms_pe_masm.asm
-#        ${LIBRARY_DIR}/libs/context/src/asm/jump_i386_sysv_elf_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/jump_i386_sysv_macho_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/jump_i386_x86_64_sysv_macho_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/jump_mips32_o32_elf_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/jump_mips64_n64_elf_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/jump_ppc32_ppc64_sysv_macho_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/jump_ppc32_sysv_elf_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/jump_ppc32_sysv_macho_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/jump_ppc32_sysv_xcoff_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/jump_ppc64_sysv_elf_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/jump_ppc64_sysv_macho_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/jump_ppc64_sysv_xcoff_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/jump_x86_64_ms_pe_gas.asm
-#        ${LIBRARY_DIR}/libs/context/src/asm/jump_x86_64_ms_pe_masm.asm
-        ${LIBRARY_DIR}/libs/context/src/asm/jump_x86_64_sysv_elf_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/jump_x86_64_sysv_macho_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/make_arm64_aapcs_elf_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/make_arm64_aapcs_macho_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/make_arm_aapcs_elf_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/make_arm_aapcs_macho_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/make_arm_aapcs_pe_armasm.asm
-#        ${LIBRARY_DIR}/libs/context/src/asm/make_combined_sysv_macho_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/make_i386_ms_pe_gas.asm
-#        ${LIBRARY_DIR}/libs/context/src/asm/make_i386_ms_pe_masm.asm
-#        ${LIBRARY_DIR}/libs/context/src/asm/make_i386_sysv_elf_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/make_i386_sysv_macho_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/make_i386_x86_64_sysv_macho_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/make_mips32_o32_elf_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/make_mips64_n64_elf_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/make_ppc32_ppc64_sysv_macho_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/make_ppc32_sysv_elf_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/make_ppc32_sysv_macho_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/make_ppc32_sysv_xcoff_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/make_ppc64_sysv_elf_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/make_ppc64_sysv_macho_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/make_ppc64_sysv_xcoff_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/make_x86_64_ms_pe_gas.asm
-#        ${LIBRARY_DIR}/libs/context/src/asm/make_x86_64_ms_pe_masm.asm
-        ${LIBRARY_DIR}/libs/context/src/asm/make_x86_64_sysv_elf_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/make_x86_64_sysv_macho_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/ontop_arm64_aapcs_elf_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/ontop_arm64_aapcs_macho_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/ontop_arm_aapcs_elf_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/ontop_arm_aapcs_macho_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/ontop_arm_aapcs_pe_armasm.asm
-#        ${LIBRARY_DIR}/libs/context/src/asm/ontop_combined_sysv_macho_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/ontop_i386_ms_pe_gas.asm
-#        ${LIBRARY_DIR}/libs/context/src/asm/ontop_i386_ms_pe_masm.asm
-#        ${LIBRARY_DIR}/libs/context/src/asm/ontop_i386_sysv_elf_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/ontop_i386_sysv_macho_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/ontop_i386_x86_64_sysv_macho_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/ontop_mips32_o32_elf_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/ontop_mips64_n64_elf_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/ontop_ppc32_ppc64_sysv_macho_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/ontop_ppc32_sysv_elf_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/ontop_ppc32_sysv_macho_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/ontop_ppc32_sysv_xcoff_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/ontop_ppc64_sysv_elf_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/ontop_ppc64_sysv_macho_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/ontop_ppc64_sysv_xcoff_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/ontop_x86_64_ms_pe_gas.asm
-#        ${LIBRARY_DIR}/libs/context/src/asm/ontop_x86_64_ms_pe_masm.asm
-        ${LIBRARY_DIR}/libs/context/src/asm/ontop_x86_64_sysv_elf_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/asm/ontop_x86_64_sysv_macho_gas.S
-#        ${LIBRARY_DIR}/libs/context/src/continuation.cpp
-        ${LIBRARY_DIR}/libs/context/src/dummy.cpp
-        ${LIBRARY_DIR}/libs/context/src/execution_context.cpp
-#        ${LIBRARY_DIR}/libs/context/src/fiber.cpp
-        ${LIBRARY_DIR}/libs/context/src/posix/stack_traits.cpp
-#        ${LIBRARY_DIR}/libs/context/src/untested.cpp
-#        ${LIBRARY_DIR}/libs/context/src/windows/stack_traits.cpp
-    )
+    if (ARCH_ARM)
+        set (SRCS_CONTEXT
+            ${LIBRARY_DIR}/libs/context/src/asm/jump_arm64_aapcs_elf_gas.S
+            ${LIBRARY_DIR}/libs/context/src/asm/make_arm64_aapcs_elf_gas.S
+            ${LIBRARY_DIR}/libs/context/src/asm/ontop_arm64_aapcs_elf_gas.S
+            ${LIBRARY_DIR}/libs/context/src/dummy.cpp
+            ${LIBRARY_DIR}/libs/context/src/execution_context.cpp
+            ${LIBRARY_DIR}/libs/context/src/posix/stack_traits.cpp
+        )
+    elseif(OS_DARWIN)
+        set (SRCS_CONTEXT
+            ${LIBRARY_DIR}/libs/context/src/asm/jump_x86_64_sysv_macho_gas.S
+            ${LIBRARY_DIR}/libs/context/src/asm/make_x86_64_sysv_macho_gas.S
+            ${LIBRARY_DIR}/libs/context/src/asm/ontop_x86_64_sysv_macho_gas.S
+            ${LIBRARY_DIR}/libs/context/src/dummy.cpp
+            ${LIBRARY_DIR}/libs/context/src/execution_context.cpp
+            ${LIBRARY_DIR}/libs/context/src/posix/stack_traits.cpp
+        )
+    else()
+        set (SRCS_CONTEXT
+            ${LIBRARY_DIR}/libs/context/src/asm/jump_x86_64_sysv_elf_gas.S
+            ${LIBRARY_DIR}/libs/context/src/asm/make_x86_64_sysv_elf_gas.S
+            ${LIBRARY_DIR}/libs/context/src/asm/ontop_x86_64_sysv_elf_gas.S
+            ${LIBRARY_DIR}/libs/context/src/dummy.cpp
+            ${LIBRARY_DIR}/libs/context/src/execution_context.cpp
+            ${LIBRARY_DIR}/libs/context/src/posix/stack_traits.cpp
+        )
+    endif()
 
     add_library (_boost_context ${SRCS_CONTEXT})
     add_library (boost::context ALIAS _boost_context)

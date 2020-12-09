@@ -40,7 +40,7 @@ bool ReadBufferFromPocoSocket::nextImpl()
         /// If fiber is specified, and read is blocking, run fiber and try again later.
         /// It is expected that file descriptor may be polled externally.
         /// Note that receive timeout is not checked here. External code should check it while polling.
-        while (bytes_read < 0 && fiber && (errno == EAGAIN || errno == EWOULDBLOCK))
+        while (bytes_read < 0 && fiber && errno == EAGAIN)
         {
             //fiber->fd = socket.impl()->sockfd();
             //fiber->timeout = socket.impl()->getReceiveTimeout();
