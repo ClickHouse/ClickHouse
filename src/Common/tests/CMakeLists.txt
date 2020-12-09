@@ -13,6 +13,9 @@ target_link_libraries (auto_array PRIVATE clickhouse_common_io)
 add_executable (hash_table hash_table.cpp)
 target_link_libraries (hash_table PRIVATE clickhouse_common_io)
 
+add_executable (hash_table_erase hash_table_erase.cpp)
+target_link_libraries (hash_table_erase PRIVATE clickhouse_common_io)
+
 add_executable (small_table small_table.cpp)
 target_link_libraries (small_table PRIVATE clickhouse_common_io)
 

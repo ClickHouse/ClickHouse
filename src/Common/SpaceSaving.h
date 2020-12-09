@@ -353,13 +353,7 @@ private:
     void destroyLastElement()
     {
         auto last_element = counter_list.back();
-
-        if constexpr (std::is_same_v<StringRef, TKey>)
-        {
-            auto last_element_it = counter_map.find(last_element->key, last_element->hash);
-            last_element_it->setZero();
-        }
-        
+        counter_map.erase(last_element->key);
         arena.free(last_element->key);
         delete last_element;
         counter_list.pop_back();
