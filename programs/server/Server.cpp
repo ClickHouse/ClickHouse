@@ -57,6 +57,7 @@
 #include <Disks/registerDisks.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Server/HTTPHandlerFactory.h>
+#include <Server/TestKeeperTCPHandlerFactory.h>
 #include "MetricsTransmitter.h"
 #include <Common/StatusFile.h>
 #include <Server/TCPHandlerFactory.h>
@@ -762,7 +763,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             socket.setReceiveTimeout(settings.receive_timeout);
             socket.setSendTimeout(settings.send_timeout);
             servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
-                new TCPHandlerFactory(*this, false, false, true),
+                new TestKeeperTCPHandlerFactory(*this),
                 server_pool,
                 socket,
                 new Poco::Net::TCPServerParams));
