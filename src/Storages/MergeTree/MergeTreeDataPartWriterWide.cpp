@@ -69,7 +69,7 @@ void MergeTreeDataPartWriterWide::addStreams(
 
 
 IDataType::OutputStreamGetter MergeTreeDataPartWriterWide::createStreamGetter(
-        const String & name, WrittenOffsetColumns & offset_columns)
+        const String & name, WrittenOffsetColumns & offset_columns) const
 {
     return [&, this] (const IDataType::SubstreamPath & substream_path) -> WriteBuffer *
     {
@@ -81,7 +81,7 @@ IDataType::OutputStreamGetter MergeTreeDataPartWriterWide::createStreamGetter(
         if (is_offsets && offset_columns.count(stream_name))
             return nullptr;
 
-        return &column_streams[stream_name]->compressed;
+        return &column_streams.at(stream_name)->compressed;
     };
 }
 
@@ -329,6 +329,25 @@ void MergeTreeDataPartWriterWide::writeFinalMark(
             offset_columns.insert(stream_name);
         }
     }, path);
+}
+
+static void fillIndexGranularityImpl(
+    MergeTreeIndexGranularity & index_granularity,
+    size_t index_offset,
+    size_t index_granularity_for_block,
+    size_t rows_in_block)
+{
+    for (size_t current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
+        index_granularity.appendMark(index_granularity_for_block);
+}
+
+void MergeTreeDataPartWriterWide::fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block)
+{
+    fillIndexGranularityImpl(
+        index_granularity,
+        getIndexOffset(),
+        index_granularity_for_block,
+        rows_in_block);
 }
 
 }

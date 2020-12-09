@@ -23,10 +23,9 @@ public:
 
     void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync) override;
 
-protected:
+private:
     void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) override;
 
-private:
     void writeBlock(const Block & block);
 
     void addToChecksums(MergeTreeDataPartChecksums & checksums);
@@ -78,13 +77,6 @@ private:
     /// marks -> marks_file
     std::unique_ptr<WriteBufferFromFileBase> marks_file;
     HashingWriteBuffer marks;
-
-    /// Write single granule of one column (rows between 2 marks)
-    static void writeColumnSingleGranule(
-        const ColumnWithTypeAndName & column,
-        IDataType::OutputStreamGetter stream_getter,
-        size_t from_row,
-        size_t number_of_rows);
 };
 
 }

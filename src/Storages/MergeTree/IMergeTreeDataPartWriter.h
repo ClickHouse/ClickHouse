@@ -48,9 +48,6 @@ public:
     ///  calling calculations of primary and skip indices.
     void next();
 
-    virtual void initSkipIndices() {}
-    virtual void initPrimaryIndex() {}
-
     virtual void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync) = 0;
     virtual void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & /* checksums */, bool /* sync */) {}
     virtual void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & /* checksums */, bool /* sync */) {}
@@ -63,17 +60,14 @@ protected:
     size_t getCurrentMark() const { return current_mark; }
     size_t getIndexOffset() const { return index_offset; }
 
-    using SerializationState = IDataType::SerializeBinaryBulkStatePtr;
-    using SerializationStates = std::unordered_map<String, SerializationState>;
-
-    MergeTreeData::DataPartPtr data_part;
+    const MergeTreeData::DataPartPtr data_part;
     const MergeTreeData & storage;
-    StorageMetadataPtr metadata_snapshot;
-    NamesAndTypesList columns_list;
-    MergeTreeIndices skip_indices;
+    const StorageMetadataPtr metadata_snapshot;
+    const NamesAndTypesList columns_list;
+    const MergeTreeIndices skip_indices;
     MergeTreeIndexGranularity index_granularity;
-    MergeTreeWriterSettings settings;
-    bool with_final_mark;
+    const MergeTreeWriterSettings settings;
+    const bool with_final_mark;
 
     size_t next_mark = 0;
     size_t next_index_offset = 0;
