@@ -139,7 +139,7 @@ Lazy loading of dictionaries.
 
 If `true`, then each dictionary is created on first use. If dictionary creation failed, the function that was using the dictionary throws an exception.
 
-If `false`, all dictionaries are created when the server starts, and if there is an error, the server shuts down.
+If `false`, all dictionaries are created when the server starts, if the dictionary or dictionaries are created too long or are created with errors, then the server boots without of these dictionaries and continues to try to create these dictionaries.
 
 The default is `true`.
 
