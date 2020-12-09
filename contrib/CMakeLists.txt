@@ -322,3 +322,6 @@ endif()
 if (USE_INTERNAL_ROCKSDB_LIBRARY)
     add_subdirectory(rocksdb-cmake)
 endif()
+
+add_subdirectory(fast_float)
+
