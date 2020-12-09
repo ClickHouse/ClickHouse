@@ -1011,7 +1011,7 @@ public:
             if (i <= j ? ((k <= i) || (k > j)) : ((k <= i) && (k > j)))
             {
                 memcpy(static_cast<void *>(&buf[i]), static_cast<void *>(&buf[j]), sizeof(Cell));
-                i = j;   
+                i = j;
             }
         }
 
