@@ -999,9 +999,6 @@ public:
 
         while (true)
         {
-            /// TODO: Modify to remove unnecessary setZero over loop
-            buf[j].setZero();
-        r2:
             j = grower.next(j);
 
             if (buf[j].isZero(*this))
@@ -1009,17 +1006,16 @@ public:
                 break;
             }
 
-            /// If hash recomputing is expensive we can avoid it adding additional value in cell during insertion
-            /// check algorithm link above
             size_t k = grower.place(buf[j].getHash(*this));
 
-            if (i <= j ? ((i < k) && (k <= j)) : ((i < k) || (k <= j)))
-                goto r2;
-
-            memcpy(static_cast<void *>(&buf[i]), static_cast<void *>(&buf[j]), sizeof(Cell));
-            i = j;
+            if (i <= j ? ((k <= i) || (k > j)) : ((k <= i) && (k > j)))
+            {
+                memcpy(static_cast<void *>(&buf[i]), static_cast<void *>(&buf[j]), sizeof(Cell));
+                i = j;   
+            }
         }
 
+        buf[i].setZero();
         --m_size;
     }
 
