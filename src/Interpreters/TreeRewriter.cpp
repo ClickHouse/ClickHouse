@@ -121,7 +121,7 @@ struct CustomizeAggregateFunctionsSuffixData
     void visit(ASTFunction & func, ASTPtr &) const
     {
         const auto & instance = AggregateFunctionFactory::instance();
-        if (instance.isAggregateFunctionName(func.name))
+        if (instance.isAggregateFunctionName(func.name) && !endsWith(func.name, "OrNull"))
         {
             auto properties = instance.tryGetProperties(func.name);
             if (properties && !properties->returns_default_when_only_null)
@@ -165,10 +165,13 @@ struct CustomizeAggregateFunctionsMoveSuffixData
         const auto & instance = AggregateFunctionFactory::instance();
         if (instance.isAggregateFunctionName(func.name))
         {
-            auto properties = instance.tryGetProperties(func.name);
-            if (properties && !properties->returns_default_when_only_null)
+            if (endsWith(func.name, "OrNull"))
             {
-                func.name = moveSuffixAhead(func.name);
+                auto properties = instance.tryGetProperties(func.name);
+                if (properties && !properties->returns_default_when_only_null)
+                {
+                    func.name = moveSuffixAhead(func.name);
+                }
             }
         }
     }
