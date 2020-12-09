@@ -50,6 +50,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         storage.global_context.getSettings(),
         data_part->index_granularity_info.is_adaptive,
         aio_threshold,
+        /* rewrite_primary_key = */ true,
         blocks_are_granules_size);
 
     if (aio_threshold > 0 && !merged_column_to_size.empty())
