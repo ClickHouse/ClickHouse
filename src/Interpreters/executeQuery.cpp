@@ -945,7 +945,10 @@ void executeQuery(
                 ? getIdentifierName(ast_query_with_output->format)
                 : context.getDefaultFormat();
 
-            BlockOutputStreamPtr out = context.getOutputFormat(format_name, *out_buf, streams.in->getHeader());
+            BlockOutputStreamPtr out;
+            out = context.getOutputFormatParallelIfPossible(format_name, *out_buf, streams.in->getHeader());
+            if (!out)
+                out = context.getOutputFormat(format_name, *out_buf, streams.in->getHeader());
 
             /// Save previous progress callback if any. TODO Do it more conveniently.
             auto previous_progress_callback = context.getProgressCallback();

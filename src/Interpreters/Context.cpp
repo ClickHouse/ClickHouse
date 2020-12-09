@@ -2076,6 +2076,11 @@ BlockInputStreamPtr Context::getInputFormat(const String & name, ReadBuffer & bu
     return std::make_shared<InputStreamFromInputFormat>(FormatFactory::instance().getInput(name, buf, sample, *this, max_block_size));
 }
 
+BlockOutputStreamPtr Context::getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const
+{
+    return FormatFactory::instance().getOutputParallelIfPossible(name, buf, sample, *this);
+}
+
 BlockOutputStreamPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const
 {
     return FormatFactory::instance().getOutput(name, buf, sample, *this);

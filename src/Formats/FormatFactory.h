@@ -116,6 +116,11 @@ public:
         UInt64 max_block_size,
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
+    /// Checks all preconditions. Returns nullptr of parallel formatting cannot be done.
+    BlockOutputStreamPtr getOutputParallelIfPossible(const String & name, WriteBuffer & buf,
+        const Block & sample, const Context & context, WriteCallback callback = {},
+        const std::optional<FormatSettings> & format_settings = std::nullopt) const;
+
     BlockOutputStreamPtr getOutput(const String & name, WriteBuffer & buf,
         const Block & sample, const Context & context, WriteCallback callback = {},
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;

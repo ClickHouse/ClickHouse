@@ -329,7 +329,7 @@ public:
 
                 read_buf = wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method);
                 auto format = FormatFactory::instance().getInput(
-                        storage->format_name, *read_buf, metadata_snapshot->getSampleBlock(), context, max_block_size);
+                        storage->format_name, *read_buf, metadata_snapshot->getSampleBlock(), context, max_block_size, storage->format_settings);
 
                 reader = std::make_shared<InputStreamFromInputFormat>(format);
 
@@ -481,9 +481,14 @@ public:
 
         write_buf = wrapWriteBufferWithCompressionMethod(std::move(naked_buffer), compression_method, 3);
 
-        writer = FormatFactory::instance().getOutput(storage.format_name,
+        writer = FormatFactory::instance().getOutputParallelIfPossible(storage.format_name,
             *write_buf, metadata_snapshot->getSampleBlock(), context,
             {}, format_settings);
+
+        if (!writer)
+            writer = FormatFactory::instance().getOutput(storage.format_name,
+                *write_buf, metadata_snapshot->getSampleBlock(), context,
+                {}, format_settings);
     }
 
     Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }

@@ -1932,7 +1932,12 @@ private:
             if (has_vertical_output_suffix)
                 current_format = "Vertical";
 
-            block_out_stream = context.getOutputFormat(current_format, *out_buf, block);
+            if (!is_interactive && !need_render_progress)
+                block_out_stream = context.getOutputFormatParallelIfPossible(current_format, *out_buf, block);
+            
+            if (!block_out_stream)
+                block_out_stream = context.getOutputFormat(current_format, *out_buf, block);
+
             block_out_stream->writePrefix();
         }
     }

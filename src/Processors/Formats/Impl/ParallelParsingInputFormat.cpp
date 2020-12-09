@@ -79,6 +79,13 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
          */
         ReadBuffer read_buffer(unit.segment.data(), unit.segment.size(), 0);
 
+        std::cout << unit.segment.size() << std::endl;
+
+        for (size_t i = 0; i < unit.segment.size(); ++i) {
+            std::cout << *(unit.segment.data() + i);
+        }
+        std::cout << std::endl;
+
         InputFormatPtr input_format = internal_parser_creator(read_buffer);
         InternalParser parser(input_format);
 
