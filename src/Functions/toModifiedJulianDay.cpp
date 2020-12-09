@@ -82,37 +82,28 @@ namespace DB
                     try
                     {
                         const GregorianDate<> date(read_buffer);
-                        vec_to[i] = date.toMJD<typename ToDataType::FieldType>();
+                        vec_to[i] = date.toModifiedJulianDay<typename ToDataType::FieldType>();
                         (*vec_null_map_to)[i] = false;
                     }
                     catch (const Exception & e)
                     {
-                        if (e.code() == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED ||
-                            e.code() == ErrorCodes::CANNOT_PARSE_DATE)
-                        {
+                        if (e.code() == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED || e.code() == ErrorCodes::CANNOT_PARSE_DATE)
                             (*vec_null_map_to)[i] = true;
-                        }
                         else
-                        {
                             throw;
-                        }
                     }
                 }
                 else
                 {
                     const GregorianDate<> date(read_buffer);
-                    vec_to[i] = date.toMJD<typename ToDataType::FieldType>();
+                    vec_to[i] = date.toModifiedJulianDay<typename ToDataType::FieldType>();
                 }
             }
 
             if constexpr (nullOnErrors)
-            {
                 return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
-            }
             else
-            {
                 return col_to;
-            }
         }
 
         bool useDefaultImplementationForConstants() const override

@@ -83,13 +83,9 @@ namespace DB
             write_buffer.finalize();
 
             if constexpr (nullOnErrors)
-            {
                 return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
-            }
             else
-            {
                 return col_to;
-            }
         }
 
         bool useDefaultImplementationForConstants() const override
@@ -181,26 +177,20 @@ namespace DB
             };
             bool built = callOnBasicType<void, true, false, false, false>(from_type->getTypeId(), call);
             if (built)
-            {
                 return base;
-            }
+
+            /* When the argument is a NULL constant, the resulting
+                * function base will not be actually called but it
+                * will still be inspected. Returning a NULL pointer
+                * here causes a SEGV. So we must somehow create a
+                * dummy implementation and return it.
+                */
+            if (WhichDataType(from_type).isNullable()) // Nullable(Nothing)
+                return std::make_unique<FunctionBaseFromModifiedJulianDay<Name, DataTypeInt32, nullOnErrors>>(argument_types, return_type);
             else
-            {
-                /* When the argument is a NULL constant, the resulting
-                 * function base will not be actually called but it
-                 * will still be inspected. Returning a NULL pointer
-                 * here causes a SEGV. So we must somehow create a
-                 * dummy implementation and return it.
-                 */
-                if (WhichDataType(from_type).isNullable()) // Nullable(Nothing)
-                {
-                    return std::make_unique<FunctionBaseFromModifiedJulianDay<Name, DataTypeInt32, nullOnErrors>>(argument_types, return_type);
-                }
-                else
-                    // Should not happen.
-                    throw Exception(
-                        "The argument of function " + getName() + " must be integral", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            }
+                // Should not happen.
+                throw Exception(
+                    "The argument of function " + getName() + " must be integral", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
         DataTypePtr getReturnType(const DataTypes & arguments) const override
@@ -213,13 +203,9 @@ namespace DB
 
             DataTypePtr base_type = std::make_shared<DataTypeString>();
             if constexpr (nullOnErrors)
-            {
                 return std::make_shared<DataTypeNullable>(base_type);
-            }
             else
-            {
                 return base_type;
-            }
         }
 
         size_t getNumberOfArguments() const override

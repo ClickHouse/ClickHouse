@@ -46,7 +46,7 @@ namespace DB
           * signed.
           */
         template <typename T, std::enable_if_t<wide::IntegralConcept<T>()> * = nullptr>
-        T toMJD() const;
+        T toModifiedJulianDay() const;
 
         /** Write the date in text form 'YYYY-MM-DD' to a buffer.
           */
@@ -66,15 +66,15 @@ namespace DB
             return month_;
         }
 
-        uint8_t dayOfMonth() const noexcept
+        uint8_t day_of_month() const noexcept
         {
-            return dayOfMonth_;
+            return day_of_month_;
         }
 
     private:
         YearT year_;
         uint8_t month_;
-        uint8_t dayOfMonth_;
+        uint8_t day_of_month_;
     };
 
     /** ISO 8601 Ordinal Date. YearT is an integral type which should
@@ -84,7 +84,7 @@ namespace DB
     class OrdinalDate
     {
     public:
-        OrdinalDate(YearT year, uint16_t dayOfYear);
+        OrdinalDate(YearT year, uint16_t day_of_year);
 
         /** Construct from Modified Julian Day. The type T is an
           * integral type which should be at least 32 bits wide, and
@@ -98,7 +98,7 @@ namespace DB
           * preferably be signed.
           */
         template <typename T, std::enable_if_t<wide::IntegralConcept<T>()> * = nullptr>
-        T toMJD() const noexcept;
+        T toModifiedJulianDay() const noexcept;
 
         YearT year() const noexcept
         {
@@ -107,43 +107,43 @@ namespace DB
 
         uint16_t dayOfYear() const noexcept
         {
-            return dayOfYear_;
+            return day_of_year_;
         }
 
     private:
         YearT year_;
-        uint16_t dayOfYear_;
+        uint16_t day_of_year_;
     };
 
     class MonthDay
     {
     public:
         /** Construct from month and day. */
-        MonthDay(uint8_t month, uint8_t dayOfMonth);
+        MonthDay(uint8_t month, uint8_t day_of_month);
 
         /** Construct from day of year in Gregorian or Julian
           * calendars to month and day.
           */
-        MonthDay(bool isLeapYear, uint16_t dayOfYear);
+        MonthDay(bool is_leap_year, uint16_t day_of_year);
 
         /** Convert month and day in Gregorian or Julian calendars to
           * day of year.
           */
-        uint16_t dayOfYear(bool isLeapYear) const;
+        uint16_t dayOfYear(bool is_leap_year) const;
 
         uint8_t month() const noexcept
         {
             return month_;
         }
 
-        uint8_t dayOfMonth() const noexcept
+        uint8_t day_of_month() const noexcept
         {
-            return dayOfMonth_;
+            return day_of_month_;
         }
 
     private:
         uint8_t month_;
-        uint8_t dayOfMonth_;
+        uint8_t day_of_month_;
     };
 }
 
@@ -154,17 +154,17 @@ namespace gd
     using namespace DB;
 
     template <typename YearT>
-    static inline constexpr bool isLeapYear(YearT year)
+    static inline constexpr bool is_leap_year(YearT year)
     {
         return (year % 4 == 0) && ((year % 400 == 0) || (year % 100 != 0));
     }
 
-    static inline constexpr uint8_t monthLength(bool isLeapYear, uint8_t month)
+    static inline constexpr uint8_t monthLength(bool is_leap_year, uint8_t month)
     {
         switch (month)
         {
         case  1: return 31;
-        case  2: return isLeapYear ? 29 : 28;
+        case  2: return is_leap_year ? 29 : 28;
         case  3: return 31;
         case  4: return 30;
         case  5: return 31;
@@ -238,8 +238,8 @@ namespace DB
     GregorianDate<YearT>::GregorianDate(ReadBuffer & in)
     {
         year_ = gd::readDigit(in) * 1000
-              + gd::readDigit(in) *  100
-              + gd::readDigit(in) *   10
+              + gd::readDigit(in) * 100
+              + gd::readDigit(in) * 10
               + gd::readDigit(in);
 
         assertChar('-', in);
@@ -249,17 +249,13 @@ namespace DB
 
         assertChar('-', in);
 
-        dayOfMonth_ = gd::readDigit(in) * 10
+        day_of_month_ = gd::readDigit(in) * 10
                     + gd::readDigit(in);
 
         assertEOF(in);
 
-        if (month_      < 1 || month_      > 12 ||
-            dayOfMonth_ < 1 || dayOfMonth_ > gd::monthLength(gd::isLeapYear(year_), month_))
-        {
-            throw Exception(
-                "Invalid date: " + toString(), ErrorCodes::CANNOT_PARSE_DATE);
-        }
+        if (month_ < 1 || month_ > 12 || day_of_month_ < 1 || day_of_month_ > gd::monthLength(gd::is_leap_year(year_), month_))
+            throw Exception("Invalid date: " + toString(), ErrorCodes::CANNOT_PARSE_DATE);
     }
 
     template <typename YearT>
@@ -267,20 +263,20 @@ namespace DB
     GregorianDate<YearT>::GregorianDate(T mjd)
     {
         const OrdinalDate<YearT> ord(mjd);
-        const MonthDay md(gd::isLeapYear(ord.year()), ord.dayOfYear());
+        const MonthDay md(gd::is_leap_year(ord.year()), ord.dayOfYear());
         year_       = ord.year();
         month_      = md.month();
-        dayOfMonth_ = md.dayOfMonth();
+        day_of_month_ = md.day_of_month();
     }
 
     template <typename YearT>
     template <typename T, std::enable_if_t<wide::IntegralConcept<T>()> *>
-    T GregorianDate<YearT>::toMJD() const
+    T GregorianDate<YearT>::toModifiedJulianDay() const
     {
-        const MonthDay md(month_, dayOfMonth_);
-        const auto dayOfYear = md.dayOfYear(gd::isLeapYear(year_));
-        const OrdinalDate<YearT> ord(year_, dayOfYear);
-        return ord.template toMJD<T>();
+        const MonthDay md(month_, day_of_month_);
+        const auto day_of_year = md.dayOfYear(gd::is_leap_year(year_));
+        const OrdinalDate<YearT> ord(year_, day_of_year);
+        return ord.template toModifiedJulianDay<T>();
     }
 
     template <typename YearT>
@@ -308,7 +304,7 @@ namespace DB
 
             writeChar('-', buf);
 
-            auto d = dayOfMonth_;
+            auto d = day_of_month_;
             writeChar('0' + d / 10, buf); d %= 10;
             writeChar('0' + d     , buf);
         }
@@ -323,14 +319,14 @@ namespace DB
     }
 
     template <typename YearT>
-    OrdinalDate<YearT>::OrdinalDate(YearT year, uint16_t dayOfYear)
+    OrdinalDate<YearT>::OrdinalDate(YearT year, uint16_t day_of_year)
         : year_(year)
-        , dayOfYear_(dayOfYear)
+        , day_of_year_(day_of_year)
     {
-        if (dayOfYear < 1 || dayOfYear > (gd::isLeapYear(year) ? 366 : 365))
+        if (day_of_year < 1 || day_of_year > (gd::is_leap_year(year) ? 366 : 365))
         {
             throw Exception(
-                "Invalid ordinal date: " + toString(year) + "-" + toString(dayOfYear),
+                "Invalid ordinal date: " + toString(year) + "-" + toString(day_of_year),
                 ErrorCodes::LOGICAL_ERROR);
         }
     }
@@ -347,16 +343,16 @@ namespace DB
         const auto quad      = gd::div(c, 1461);
         const auto d         = gd::mod(c, 1461);
         const auto y         = gd::min(gd::div(d, 365), 3);
-        dayOfYear_ = d - y * 365 + 1;
+        day_of_year_ = d - y * 365 + 1;
         year_      = quad_cent * 400 + cent * 100 + quad * 4 + y + 1;
     }
 
     template <typename YearT>
     template <typename T, std::enable_if_t<wide::IntegralConcept<T>()> *>
-    T OrdinalDate<YearT>::toMJD() const noexcept
+    T OrdinalDate<YearT>::toModifiedJulianDay() const noexcept
     {
         const auto y = year_ - 1;
-        return dayOfYear_
+        return day_of_year_
             + 365 * y
             + gd::div(y, 4)
             - gd::div(y, 100)
@@ -364,50 +360,50 @@ namespace DB
             - 678576;
     }
 
-    inline MonthDay::MonthDay(uint8_t month, uint8_t dayOfMonth)
+    inline MonthDay::MonthDay(uint8_t month, uint8_t day_of_month)
         : month_(month)
-        , dayOfMonth_(dayOfMonth)
+        , day_of_month_(day_of_month)
     {
         if (month < 1 || month > 12)
             throw Exception(
                 "Invalid month: " + DB::toString(month),
                 ErrorCodes::LOGICAL_ERROR);
-        /* We can't validate dayOfMonth here, because we don't know if
+        /* We can't validate day_of_month here, because we don't know if
          * it's a leap year. */
     }
 
-    inline MonthDay::MonthDay(bool isLeapYear, uint16_t dayOfYear)
+    inline MonthDay::MonthDay(bool is_leap_year, uint16_t day_of_year)
     {
-        if (dayOfYear < 1 || dayOfYear > (isLeapYear ? 366 : 365))
+        if (day_of_year < 1 || day_of_year > (is_leap_year ? 366 : 365))
             throw Exception(
                 std::string("Invalid day of year: ") +
-                (isLeapYear ? "leap, " : "non-leap, ") + DB::toString(dayOfYear),
+                (is_leap_year ? "leap, " : "non-leap, ") + DB::toString(day_of_year),
                 ErrorCodes::LOGICAL_ERROR);
 
         month_ = 1;
-        uint16_t d = dayOfYear;
+        uint16_t d = day_of_year;
         while (true)
         {
-            const auto len = gd::monthLength(isLeapYear, month_);
+            const auto len = gd::monthLength(is_leap_year, month_);
             if (d <= len)
                 break;
             month_++;
             d -= len;
         }
-        dayOfMonth_ = d;
+        day_of_month_ = d;
     }
 
-    inline uint16_t MonthDay::dayOfYear(bool isLeapYear) const
+    inline uint16_t MonthDay::dayOfYear(bool is_leap_year) const
     {
-        if (dayOfMonth_ < 1 || dayOfMonth_ > gd::monthLength(isLeapYear, month_))
+        if (day_of_month_ < 1 || day_of_month_ > gd::monthLength(is_leap_year, month_))
         {
             throw Exception(
                 std::string("Invalid day of month: ") +
-                (isLeapYear ? "leap, " : "non-leap, ") + DB::toString(month_) +
-                "-" + DB::toString(dayOfMonth_),
+                (is_leap_year ? "leap, " : "non-leap, ") + DB::toString(month_) +
+                "-" + DB::toString(day_of_month_),
                 ErrorCodes::LOGICAL_ERROR);
         }
-        const auto k = month_ <= 2 ? 0 : isLeapYear ? -1 :-2;
-        return (367 * month_ - 362) / 12 + k + dayOfMonth_;
+        const auto k = month_ <= 2 ? 0 : is_leap_year ? -1 :-2;
+        return (367 * month_ - 362) / 12 + k + day_of_month_;
     }
 }
