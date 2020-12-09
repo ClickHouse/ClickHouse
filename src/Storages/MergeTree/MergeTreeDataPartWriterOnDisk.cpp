@@ -90,8 +90,9 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     if (!disk->exists(part_path))
         disk->createDirectories(part_path);
 
+    if (settings.rewrite_primary_key)
+        initPrimaryIndex();
     initSkipIndices();
-    initPrimaryIndex();
 }
 
 // Implementation is split into static functions for ability
