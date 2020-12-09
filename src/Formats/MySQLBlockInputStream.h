@@ -30,6 +30,7 @@ public:
 protected:
     MySQLBlockInputStream(const Block & sample_block_, UInt64 max_block_size_, bool auto_close_, bool fetch_by_name_);
     Block readImpl() override;
+    void initPositionMappingFromQueryResultStructure();
 
     struct Connection
     {
