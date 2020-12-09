@@ -13,6 +13,7 @@ void registerDictionarySourceCassandra(DictionarySourceFactory & source_factory)
 void registerDictionarySourceRedis(DictionarySourceFactory & source_factory);
 void registerDictionarySourceXDBC(DictionarySourceFactory & source_factory);
 void registerDictionarySourceJDBC(DictionarySourceFactory & source_factory);
+void registerDictionarySourcePostgreSQL(DictionarySourceFactory & source_factory);
 void registerDictionarySourceExecutable(DictionarySourceFactory & source_factory);
 void registerDictionarySourceHTTP(DictionarySourceFactory & source_factory);
 void registerDictionarySourceLibrary(DictionarySourceFactory & source_factory);

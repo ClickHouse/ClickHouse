@@ -41,6 +41,9 @@ PostgreSQLBlockInputStream::PostgreSQLBlockInputStream(
     for (const auto idx : ext::range(0, description.sample_block.columns()))
         if (description.types[idx].first == ValueType::vtArray)
             prepareArrayInfo(idx, description.sample_block.getByPosition(idx).type);
+    /// pqxx::stream_from uses COPY command, but when selecting from dictionary will get ';', it is not needed
+    if (query_str.ends_with(';'))
+        query_str.resize(query_str.size() - 1);
 }
 
 
