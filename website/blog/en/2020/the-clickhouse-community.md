@@ -97,7 +97,7 @@ With the community growth numerous resources are available to users. At the cent
 
 In addition, ClickHouse users have a wide range of ways to engage with the community and get help on applications.  These include both chat applications as well as meetups.  Here are some links to get started.
 
-* Yandex Meetups — Yandex has regular in-person and online Russian-language meetups.  Watch for announcements on the [clickhouse.tech](https://clickhouse.tech/) site and [Telegram](https://t.me/clickhouse_ru).
+* Yandex Meetups — Yandex has regular in-person and online international and Russian-language meetups. Video recordings and online translations are available at the official [YouTube channel](https://www.youtube.com/c/ClickHouseDB/videos). Watch for announcements on the [clickhouse.tech](https://clickhouse.tech/) site and [Telegram](https://t.me/clickhouse_ru).
 * [SF Bay Area ClickHouse Meetup](https://www.meetup.com/San-Francisco-Bay-Area-ClickHouse-Meetup/) — The largest US ClickHouse meetup, with meetings approximately every 2 months.
 * Chinese meetups occur at regular intervals with different sponsors.  Watch for announcements on clickhouse.tech.
 * Telegram - By far the largest forum for ClickHouse. It is the best place to talk to ClickHouse devs. There are two groups.
