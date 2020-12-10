@@ -5,15 +5,17 @@ toc_title: TTL
 
 # Manipulations with Table TTL {#manipulations-with-table-ttl}
 
+## MODIFY TTL {#modify-ttl}
+
 You can change [table TTL](../../../engines/table-engines/mergetree-family/mergetree.md#mergetree-table-ttl) with a request of the following form:
 
 ``` sql
 ALTER TABLE table_name MODIFY TTL ttl_expression;
 ```
 
-## ALTER TABLE REMOVE TTL
+## REMOVE TTL {remove-ttl}
 
-Removes ttl-property from the specified column.
+Removes TTL-property from the specified column.
 
 Syntax:
 
@@ -22,6 +24,12 @@ ALTER TABLE table_name MODIFY column_name REMOVE TTL
 ```
 
 **Example**
+
+<!--Попробовать: 
+посмотреть установленные TTL, 
+показать состояние таблицы до, 
+удалить TTL 
+и показать состояние после.-->
 
 Request
 
