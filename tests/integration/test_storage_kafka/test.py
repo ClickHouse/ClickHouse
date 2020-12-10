@@ -9,6 +9,7 @@ import time
 import avro.schema
 from confluent_kafka.avro.cached_schema_registry_client import CachedSchemaRegistryClient
 from confluent_kafka.avro.serializer.message_serializer import MessageSerializer
+from confluent_kafka import admin
 
 import kafka.errors
 import pytest
@@ -1161,6 +1162,66 @@ def test_kafka_materialized_view(kafka_cluster):
 
     kafka_check_result(result, True)
 
+@pytest.mark.timeout(180)
+def test_librdkafka_snappy_regression(kafka_cluster):
+    """
+    Regression for UB in snappy-c (that is used in librdkafka),
+    backport pr is [1].
+
+      [1]: https://github.com/ClickHouse-Extras/librdkafka/pull/3
+
+    Example of corruption:
+
+        2020.12.10 09:59:56.831507 [ 20 ] {} <Error> void DB::StorageKafka::threadFunc(size_t): Code: 27, e.displayText() = DB::Exception: Cannot parse input: expected '"' before: 'foo"}': (while reading the value of key value): (at row 1)
+, Stack trace (when copying this message, always include the lines below):
+    """
+
+    # create topic with snappy compression
+    admin_client = admin.AdminClient({'bootstrap.servers': 'localhost:9092'})
+    topic_snappy = admin.NewTopic(topic='snappy_regression', num_partitions=1, replication_factor=1, config={
+        'compression.type': 'snappy',
+    })
+    admin_client.create_topics(new_topics=[topic_snappy], validate_only=False)
+
+    instance.query('''
+        CREATE TABLE test.kafka (key UInt64, value String)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'snappy_regression',
+                     kafka_group_name = 'ch_snappy_regression',
+                     kafka_format = 'JSONEachRow';
+    ''')
+
+    messages = []
+    expected = []
+    # To trigger this regression there should duplicated messages
+    # Orignal reproducer is:
+    #
+    #     $ gcc --version |& fgrep gcc
+    #     gcc (GCC) 10.2.0
+    #     $ yes foobarbaz | fold -w 80 | head -n10 >| in-…
+    #     $ make clean && make CFLAGS='-Wall -g -O2 -ftree-loop-vectorize -DNDEBUG=1 -DSG=1 -fPIC'
+    #     $ ./verify in
+    #     final comparision of in failed at 20 of 100
+    value = 'foobarbaz'*10
+    number_of_messages = 50
+    for i in range(number_of_messages):
+        messages.append(json.dumps({'key': i, 'value': value}))
+        expected.append(f'{i}\t{value}')
+    kafka_produce('snappy_regression', messages)
+
+    expected = '\n'.join(expected)
+
+    while True:
+        result = instance.query('SELECT * FROM test.kafka')
+        rows = len(result.strip('\n').split('\n'))
+        print(rows)
+        if rows == number_of_messages:
+            break
+
+    assert TSV(result) == TSV(expected)
+
+    instance.query('DROP TABLE test.kafka')
 
 @pytest.mark.timeout(180)
 def test_kafka_materialized_view_with_subquery(kafka_cluster):
