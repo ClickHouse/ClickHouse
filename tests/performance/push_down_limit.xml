@@ -5,4 +5,5 @@
     <query>select number from (select number from numbers_mt(1500000000) order by -number) limit 10</query>
 
     <query short="1">select number from numbers_view limit 100</query>
+    <query short="1">select number from view(SELECT number from numbers_mt(100000000) order by number desc) limit 100</query>
 </test>
