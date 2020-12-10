@@ -13,6 +13,7 @@
 namespace DB
 {
 
+Block getBlockAndPermute(const Block & block, const Names & names, const IColumn::Permutation * permutation);
 
 /// Writes data part to disk in different formats.
 /// Calculates and serializes primary and skip indices if needed.
@@ -35,28 +36,21 @@ public:
 
     virtual ~IMergeTreeDataPartWriter();
 
-    virtual void write(
-        const Block & block, const IColumn::Permutation * permutation = nullptr,
-        /* Blocks with already sorted index columns */
-        const Block & primary_key_block = {}, const Block & skip_indexes_block = {}) = 0;
+    virtual void write(const Block & block, const IColumn::Permutation * permutation) = 0;
 
-    virtual void calculateAndSerializePrimaryIndex(const Block & /* primary_index_block */) {}
-    virtual void calculateAndSerializeSkipIndices(const Block & /* skip_indexes_block */) {}
+    virtual void finish(IMergeTreeDataPart::Checksums & checksums, bool sync) = 0;
 
-    /// Shift mark and offset to prepare read next mark.
-    /// You must call it after calling write method and optionally
-    ///  calling calculations of primary and skip indices.
-    void next();
-
-    virtual void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync) = 0;
-    virtual void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & /* checksums */, bool /* sync */) {}
-    virtual void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & /* checksums */, bool /* sync */) {}
 
     Columns releaseIndexColumns();
     const MergeTreeIndexGranularity & getIndexGranularity() const { return index_granularity; }
     const MergeTreeIndices & getSkipIndices() { return skip_indices; }
 
 protected:
+    /// Shift mark and offset to prepare read next mark.
+    /// You must call it after calling write method and optionally
+    ///  calling calculations of primary and skip indices.
+    void next();
+
     size_t getCurrentMark() const { return current_mark; }
     size_t getIndexOffset() const { return index_offset; }
 

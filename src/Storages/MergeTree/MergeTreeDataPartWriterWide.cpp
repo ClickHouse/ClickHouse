@@ -85,9 +85,7 @@ IDataType::OutputStreamGetter MergeTreeDataPartWriterWide::createStreamGetter(
     };
 }
 
-void MergeTreeDataPartWriterWide::write(const Block & block,
-    const IColumn::Permutation * permutation,
-    const Block & primary_key_block, const Block & skip_indexes_block)
+void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Permutation * permutation)
 {
     /// Fill index granularity for this block
     /// if it's unknown (in case of insert data or horizontal merge,
@@ -99,6 +97,11 @@ void MergeTreeDataPartWriterWide::write(const Block & block,
     }
 
     auto offset_columns = written_offset_columns ? *written_offset_columns : WrittenOffsetColumns{};
+    Block primary_key_block;
+    if (settings.rewrite_primary_key)
+        primary_key_block = getBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), permutation);
+
+    Block skip_indexes_block = getBlockAndPermute(block, metadata_snapshot->getSecondaryIndices().getDistinctColumnNames(), permutation);
 
     auto it = columns_list.begin();
     for (size_t i = 0; i < columns_list.size(); ++i, ++it)
@@ -129,6 +132,12 @@ void MergeTreeDataPartWriterWide::write(const Block & block,
             writeColumn(column.name, *column.type, *column.column, offset_columns);
         }
     }
+
+    if (settings.rewrite_primary_key)
+        calculateAndSerializePrimaryIndex(primary_key_block);
+
+    calculateAndSerializeSkipIndices(skip_indexes_block);
+    next();
 }
 
 void MergeTreeDataPartWriterWide::writeSingleMark(
@@ -310,6 +319,15 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Ch
 
     column_streams.clear();
     serialization_states.clear();
+}
+
+void MergeTreeDataPartWriterWide::finish(IMergeTreeDataPart::Checksums & checksums, bool sync)
+{
+    finishDataSerialization(checksums, sync);
+    if (settings.rewrite_primary_key)
+        finishPrimaryIndexSerialization(checksums, sync);
+
+    finishSkipIndicesSerialization(checksums, sync);
 }
 
 void MergeTreeDataPartWriterWide::writeFinalMark(

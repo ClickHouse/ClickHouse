@@ -63,6 +63,8 @@ struct IndexDescription
 /// All secondary indices in storage
 struct IndicesDescription : public std::vector<IndexDescription>
 {
+    /// Return distinct names for all index columns
+    Names getDistinctColumnNames() const;
     /// Index with name exists
     bool has(const String & name) const;
     /// Convert description to string

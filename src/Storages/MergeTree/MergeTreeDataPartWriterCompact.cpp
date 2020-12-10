@@ -64,9 +64,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const String & name, const IData
     type.enumerateStreams(callback, stream_path);
 }
 
-void MergeTreeDataPartWriterCompact::write(
-    const Block & block, const IColumn::Permutation * permutation,
-    const Block & primary_key_block, const Block & skip_indexes_block)
+void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumn::Permutation * permutation)
 {
     /// Fill index granularity for this block
     /// if it's unknown (in case of insert data or horizontal merge,
@@ -76,6 +74,14 @@ void MergeTreeDataPartWriterCompact::write(
         size_t index_granularity_for_block = computeIndexGranularity(block);
         fillIndexGranularity(index_granularity_for_block, block.rows());
     }
+
+    Block primary_key_block;
+    if (settings.rewrite_primary_key)
+    {
+        primary_key_block = getBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), permutation);
+    }
+
+    Block skip_indexes_block = getBlockAndPermute(block, metadata_snapshot->getSecondaryIndices().getDistinctColumnNames(), permutation);
 
     Block result_block;
 
@@ -112,10 +118,18 @@ void MergeTreeDataPartWriterCompact::write(
         /// If it's not enough rows for granule, accumulate blocks
         ///  and save how much rows we already have.
         next_index_offset = last_mark_rows - rows_in_buffer;
-        return;
+    }
+    else
+    {
+        writeBlock(header.cloneWithColumns(columns_buffer.releaseColumns()));
     }
 
-    writeBlock(header.cloneWithColumns(columns_buffer.releaseColumns()));
+    if (settings.rewrite_primary_key)
+        calculateAndSerializePrimaryIndex(primary_key_block);
+
+    calculateAndSerializeSkipIndices(skip_indexes_block);
+
+    next();
 }
 
 namespace
@@ -332,6 +346,16 @@ size_t MergeTreeDataPartWriterCompact::ColumnsBuffer::size() const
     if (accumulated_columns.empty())
         return 0;
     return accumulated_columns.at(0)->size();
+}
+
+void MergeTreeDataPartWriterCompact::finish(IMergeTreeDataPart::Checksums & checksums, bool sync)
+{
+    finishDataSerialization(checksums, sync);
+
+    if (settings.rewrite_primary_key)
+        finishPrimaryIndexSerialization(checksums, sync);
+
+    finishSkipIndicesSerialization(checksums, sync);
 }
 
 }
