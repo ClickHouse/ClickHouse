@@ -1,6 +1,6 @@
 # system.distribution_queue {#system_tables-distribution_queue}
 
-Contains information about local files that are in the queue to be sent to the shards. This local files contain new parts that are created by inserting new data into the table.
+Contains information about local files that are in the queue to be sent to the shards. This local files contain new parts that are created by inserting new data into the Distributed table in asynchronous mode.
 
 Columns:
 
@@ -18,7 +18,7 @@ Columns:
 
 -   `data_compressed_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Size of compressed data in local files, in bytes.
 
--   `last_exception` ([String](../../sql-reference/data-types/string.md)) — Text message about the last error that occurred.
+-   `last_exception` ([String](../../sql-reference/data-types/string.md)) — Text message about the last error that occurred (if any).
 
 **Example**
 
