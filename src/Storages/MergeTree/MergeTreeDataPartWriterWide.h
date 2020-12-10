@@ -47,6 +47,17 @@ private:
         size_t number_of_rows,
         bool write_marks);
 
+
+    void flushMarkToFile(
+        const StreamNameAndMark & stream_with_mark,
+        size_t rows_in_mark);
+
+    StreamsWithMarks getCurrentMarksForColumn(
+        const String & name,
+        const IDataType & type,
+        WrittenOffsetColumns & offset_columns,
+        DB::IDataType::SubstreamPath & path);
+
     /// Write mark for column
     void writeSingleMark(
         const String & name,

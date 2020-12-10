@@ -13,6 +13,15 @@
 namespace DB
 {
 
+struct StreamNameAndMark
+{
+    String stream_name;
+    MarkInCompressedFile mark;
+};
+
+using StreamsWithMarks = std::vector<StreamNameAndMark>;
+using ColumnNameToMark = std::unordered_map<String, StreamsWithMarks>;
+
 Block getBlockAndPermute(const Block & block, const Names & names, const IColumn::Permutation * permutation);
 
 /// Writes data part to disk in different formats.
