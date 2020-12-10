@@ -143,6 +143,16 @@ String IndicesDescription::toString() const
 }
 
 
+Names IndicesDescription::getDistinctColumnNames() const
+{
+    std::unordered_set<String> skip_indexes_column_names_set;
+    for (const auto & index : *this)
+        std::copy(index.column_names.cbegin(), index.column_names.cend(),
+                std::inserter(skip_indexes_column_names_set, skip_indexes_column_names_set.end()));
+
+    return Names(skip_indexes_column_names_set.begin(), skip_indexes_column_names_set.end());
+}
+
 IndicesDescription IndicesDescription::parse(const String & str, const ColumnsDescription & columns, const Context & context)
 {
     IndicesDescription result;

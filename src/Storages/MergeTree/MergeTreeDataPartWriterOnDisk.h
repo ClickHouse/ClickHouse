@@ -14,7 +14,6 @@
 namespace DB
 {
 
-
 /// Writes data part to disk in different formats.
 /// Calculates and serializes primary and skip indices if needed.
 class MergeTreeDataPartWriterOnDisk : public IMergeTreeDataPartWriter
@@ -71,11 +70,6 @@ public:
         const MergeTreeWriterSettings & settings,
         const MergeTreeIndexGranularity & index_granularity);
 
-    void calculateAndSerializePrimaryIndex(const Block & primary_index_block) final;
-    void calculateAndSerializeSkipIndices(const Block & skip_indexes_block) final;
-
-    void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums, bool sync) final;
-    void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums, bool sync) final;
 
     void setWrittenOffsetColumns(WrittenOffsetColumns * written_offset_columns_)
     {
@@ -85,6 +79,12 @@ public:
 protected:
      /// Count index_granularity for block and store in `index_granularity`
     size_t computeIndexGranularity(const Block & block) const;
+    void calculateAndSerializePrimaryIndex(const Block & primary_index_block);
+    void calculateAndSerializeSkipIndices(const Block & skip_indexes_block);
+
+    void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums, bool sync);
+    void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums, bool sync);
+
 
     const String part_path;
     const String marks_file_extension;

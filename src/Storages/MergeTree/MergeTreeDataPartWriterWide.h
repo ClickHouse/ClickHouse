@@ -18,12 +18,14 @@ public:
         const MergeTreeWriterSettings & settings,
         const MergeTreeIndexGranularity & index_granularity);
 
-    void write(const Block & block, const IColumn::Permutation * permutation,
-        const Block & primary_key_block, const Block & skip_indexes_block) override;
+    void write(const Block & block, const IColumn::Permutation * permutation) override;
 
-    void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync) override;
+    void finish(IMergeTreeDataPart::Checksums & checksums, bool sync) final;
 
 private:
+
+    void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync);
+
     /// Write data of one column.
     /// Return how many marks were written and
     /// how many rows were written for last mark
