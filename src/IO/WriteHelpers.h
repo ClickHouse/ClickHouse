@@ -604,17 +604,20 @@ inline void writeXMLStringForTextElementOrAttributeValue(const char * begin, con
             buf.write(pos, next_pos - pos);
             ++next_pos;
             writeCString("&amp;", buf);
-        }else if (*next_pos == '>')
+        }
+        else if (*next_pos == '>')
         {
             buf.write(pos, next_pos - pos);
             ++next_pos;
             writeCString("&gt;", buf);
-        }else if (*next_pos == '"')
+        }
+        else if (*next_pos == '"')
         {
             buf.write(pos, next_pos - pos);
             ++next_pos;
             writeCString("&quot;", buf);
-        }else if (*next_pos == '\'')
+        }
+        else if (*next_pos == '\'')
         {
             buf.write(pos, next_pos - pos);
             ++next_pos;
