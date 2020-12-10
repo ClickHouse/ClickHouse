@@ -46,6 +46,7 @@ public:
         /// and n threads for formatting.
         processing_units.resize(params.max_threads_for_parallel_formatting + 2);
         collector_thread = ThreadFromGlobalPool([&] { collectorThreadFunction(); });
+        LOG_TRACE(&Poco::Logger::get("ParallelFormattingOutputFormat"), "Parallel formatting is being used.");
     }
 
     ~ParallelFormattingOutputFormat() override
