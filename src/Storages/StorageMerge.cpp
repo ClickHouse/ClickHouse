@@ -430,7 +430,15 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(
 
 DatabaseTablesIteratorPtr StorageMerge::getDatabaseIterator(const Context & context) const
 {
-    checkStackSize();
+    try
+    {
+        checkStackSize();
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while getting table iterator of Merge table. Maybe caused by two Merge tables that will endlessly try to read each other's data");
+        throw;
+    }
     auto database = DatabaseCatalog::instance().getDatabase(source_database);
     auto table_name_match = [this](const String & table_name_) { return table_name_regexp.match(table_name_); };
     return database->getTablesIterator(context, table_name_match);
