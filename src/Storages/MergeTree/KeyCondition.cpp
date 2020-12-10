@@ -946,6 +946,9 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
 
     if (const auto * func = node->as<ASTFunction>())
     {
+        if (!func->arguments)
+            return false;
+
         const auto & args = func->arguments->children;
         if (args.size() > 2 || args.empty())
             return false;

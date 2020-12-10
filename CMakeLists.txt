@@ -223,8 +223,8 @@ if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 endif ()
 
-if (UNBUNDLED AND (COMPILER_GCC OR COMPILER_CLANG))
-    # to make numeric_limits<__int128> works for unbundled build
+if (COMPILER_GCC OR COMPILER_CLANG)
+    # to make numeric_limits<__int128> works with GCC
     set (_CXX_STANDARD "-std=gnu++2a")
 else()
     set (_CXX_STANDARD "-std=c++2a")
@@ -256,6 +256,8 @@ if (WITH_COVERAGE AND COMPILER_GCC)
     set(COVERAGE_OPTION "-lgcov")
     set(WITHOUT_COVERAGE "-fno-profile-arcs -fno-test-coverage")
 endif()
+
+set(COMPILER_FLAGS "${COMPILER_FLAGS}")
 
 set (CMAKE_BUILD_COLOR_MAKEFILE          ON)
 set (CMAKE_CXX_FLAGS                     "${CMAKE_CXX_FLAGS} ${COMPILER_FLAGS} ${PLATFORM_EXTRA_CXX_FLAG} ${COMMON_WARNING_FLAGS} ${CXX_WARNING_FLAGS}")
@@ -455,6 +457,7 @@ include (cmake/find/s3.cmake)
 include (cmake/find/base64.cmake)
 include (cmake/find/parquet.cmake)
 include (cmake/find/simdjson.cmake)
+include (cmake/find/fast_float.cmake)
 include (cmake/find/rapidjson.cmake)
 include (cmake/find/fastops.cmake)
 include (cmake/find/odbc.cmake)

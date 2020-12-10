@@ -2364,4 +2364,63 @@ Allows configurable `NULL` representation for [TSV](../../interfaces/formats.md#
 
 Default value: `\N`.
 
+## output_format_json_array_of_rows {#output-format-json-array-of-rows}
+
+Enables the ability to output all rows as a JSON array in the [JSONEachRow](../../interfaces/formats.md#jsoneachrow) format.
+
+Possible values:
+
+-   1 — ClickHouse outputs all rows as an array, each row in the `JSONEachRow` format.
+-   0 — ClickHouse outputs each row separately in the `JSONEachRow` format.
+
+Default value: `0`.
+
+**Example of a query with the enabled setting**
+
+Query:
+
+```sql
+SET output_format_json_array_of_rows = 1;
+SELECT number FROM numbers(3) FORMAT JSONEachRow;
+```
+
+Result:
+
+```text
+[
+{"number":"0"},
+{"number":"1"},
+{"number":"2"}                                                                                                                                                                                  
+]
+```
+
+**Example of a query with the disabled setting**
+
+Query:
+
+```sql
+SET output_format_json_array_of_rows = 0;
+SELECT number FROM numbers(3) FORMAT JSONEachRow;
+```
+
+Result:
+
+```text
+{"number":"0"}
+{"number":"1"}
+{"number":"2"}
+```
+
+=======
+## allow_nullable_key {#allow-nullable-key}
+
+Allows using of the [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable)-typed values in a sorting and a primary key for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree) tables.
+
+Possible values:
+
+- 1 — `Nullable`-type expressions are allowed in keys.
+- 0 — `Nullable`-type expressions are not allowed in keys.
+
+Default value: `0`.
+
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

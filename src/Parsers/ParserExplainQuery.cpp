@@ -1,6 +1,8 @@
 #include <Parsers/ParserExplainQuery.h>
+
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserSetQuery.h>
 
@@ -46,12 +48,14 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             pos = begin;
     }
 
+    ParserCreateTableQuery create_p;
     ParserSelectWithUnionQuery select_p;
     ASTPtr query;
-    if (!select_p.parse(pos, query, expected))
+    if (select_p.parse(pos, query, expected) ||
+        create_p.parse(pos, query, expected))
+        explain_query->setExplainedQuery(std::move(query));
+    else
         return false;
-
-    explain_query->setExplainedQuery(std::move(query));
 
     node = std::move(explain_query);
     return true;

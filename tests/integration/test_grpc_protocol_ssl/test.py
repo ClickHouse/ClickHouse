@@ -73,18 +73,15 @@ def start_cluster():
 
 # Actual tests
 
-@pytest.mark.skip(reason="Flaky")
 def test_secure_channel():
     with create_secure_channel() as channel:
         assert query("SELECT 'ok'", channel) == "ok\n"
 
-@pytest.mark.skip(reason="Flaky")
 def test_insecure_channel():
     with pytest.raises(grpc.FutureTimeoutError):
         with create_insecure_channel() as channel:
             query("SELECT 'ok'", channel)
 
-@pytest.mark.skip(reason="Flaky")
 def test_wrong_client_certificate():
     with pytest.raises(grpc.FutureTimeoutError):
         with create_insecure_channel() as channel:
