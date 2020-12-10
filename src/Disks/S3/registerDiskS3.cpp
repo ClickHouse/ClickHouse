@@ -134,6 +134,7 @@ void registerDiskS3(DiskFactory & factory)
             uri.is_virtual_hosted_style,
             config.getString(config_prefix + ".access_key_id", ""),
             config.getString(config_prefix + ".secret_access_key", ""),
+            config.getBool(config_prefix + ".use_environment_credentials", config.getBool("s3.use_environment_credentials", false)),
             context.getRemoteHostFilter(),
             context.getGlobalContext().getSettingsRef().s3_max_redirects);
 
