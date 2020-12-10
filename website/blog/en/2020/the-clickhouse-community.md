@@ -6,9 +6,7 @@ author: '[Robert Hodges](https://github.com/hodgesrm)'
 tags: ['community', 'open source', 'telegram', 'meetup']
 ---
 
-One of the great “features” of ClickHouse is a friendly and welcoming community. In this article we would like to outline how the ClickHouse
-community arose, what it is today, and how you can get involved. There is a role for everyone, from end users to contributors to corporate
-friends. Our goal is to make the community welcoming to every person who wants to join.
+One of the great “features” of ClickHouse is a friendly and welcoming community. In this article we would like to outline how the ClickHouse community arose, what it is today, and how you can get involved. There is a role for everyone, from end users to contributors to corporate friends. Our goal is to make the community welcoming to every person who wants to join.
 
 But first, let’s review a bit of history, starting with how ClickHouse first developed at [Yandex](https://yandex.com/company/).
 
