@@ -1,9 +1,8 @@
 <yandex>
     <openSSL>
         <server>
-            <certificateFile>/etc/clickhouse-server/config.d/server.crt</certificateFile>
-            <privateKeyFile>/etc/clickhouse-server/config.d/server.key</privateKeyFile>
-            <dhParamsFile>/etc/clickhouse-server/config.d/dhparam.pem</dhParamsFile>
+            <certificateFile>/etc/clickhouse-server/server.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/server.key</privateKeyFile>
             <verificationMode>none</verificationMode>
             <cacheSessions>true</cacheSessions>
         </server>
@@ -16,5 +15,4 @@
         </client>
     </openSSL>
     <interserver_https_port>9010</interserver_https_port>
-    <interserver_http_port remove="1"/>
 </yandex>

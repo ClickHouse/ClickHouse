@@ -19,7 +19,7 @@ toc_title: "\u0645\u062C\u0648\u0632 \u0628\u0631\u0627\u06CC \u0646\u0645\u0627
 تنظیمات زیر تنظیم مجوز کاربر بر اساس نوع پرس و جو:
 
 -   [فقط خواندنی](#settings_readonly) — Restricts permissions for all types of queries except DDL queries.
--   [اجازه دادن به _نشانی](#settings_allow_ddl) — Restricts permissions for DDL queries.
+-   [اجازه دادن به \_نشانی](#settings_allow_ddl) — Restricts permissions for DDL queries.
 
 `KILL QUERY` را می توان با هر تنظیمات انجام می شود.
 
@@ -44,7 +44,7 @@ toc_title: "\u0645\u062C\u0648\u0632 \u0628\u0631\u0627\u06CC \u0646\u0645\u0627
 
 مقدار پیشفرض: 0
 
-## اجازه دادن به _نشانی {#settings_allow_ddl}
+## اجازه دادن به \_نشانی {#settings_allow_ddl}
 
 اجازه می دهد یا رد می کند [DDL](https://en.wikipedia.org/wiki/Data_definition_language) نمایش داده شد.
 

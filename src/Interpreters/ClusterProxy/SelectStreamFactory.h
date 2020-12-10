@@ -39,9 +39,7 @@ public:
         const String & query, const ASTPtr & query_ast,
         const Context & context, const ThrottlerPtr & throttler,
         const SelectQueryInfo & query_info,
-        std::vector<QueryPlanPtr> & plans,
-        Pipes & remote_pipes,
-        Pipes & delayed_pipes) override;
+        Pipes & pipes) override;
 
 private:
     const Block header;

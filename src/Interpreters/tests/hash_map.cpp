@@ -11,7 +11,7 @@
 /*
 #define DBMS_HASH_MAP_COUNT_COLLISIONS
 */
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Core/Row.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>

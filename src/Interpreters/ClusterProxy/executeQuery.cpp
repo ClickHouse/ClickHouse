@@ -4,13 +4,9 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/IInterpreter.h>
-#include <Interpreters/ProcessList.h>
 #include <Parsers/queryToString.h>
+#include <Interpreters/ProcessList.h>
 #include <Processors/Pipe.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Processors/QueryPlan/UnionStep.h>
-#include <Storages/SelectQueryInfo.h>
 
 
 namespace DB
@@ -19,24 +15,18 @@ namespace DB
 namespace ClusterProxy
 {
 
-Context updateSettingsForCluster(const Cluster & cluster, const Context & context, const Settings & settings, Poco::Logger * log)
+Context removeUserRestrictionsFromSettings(const Context & context, const Settings & settings, Poco::Logger * log)
 {
     Settings new_settings = settings;
     new_settings.queue_max_wait_ms = Cluster::saturate(new_settings.queue_max_wait_ms, settings.max_execution_time);
 
-    /// If "secret" (in remote_servers) is not in use,
-    /// user on the shard is not the same as the user on the initiator,
-    /// hence per-user limits should not be applied.
-    if (cluster.getSecret().empty())
-    {
-        /// Does not matter on remote servers, because queries are sent under different user.
-        new_settings.max_concurrent_queries_for_user = 0;
-        new_settings.max_memory_usage_for_user = 0;
+    /// Does not matter on remote servers, because queries are sent under different user.
+    new_settings.max_concurrent_queries_for_user = 0;
+    new_settings.max_memory_usage_for_user = 0;
 
-        /// Set as unchanged to avoid sending to remote server.
-        new_settings.max_concurrent_queries_for_user.changed = false;
-        new_settings.max_memory_usage_for_user.changed = false;
-    }
+    /// Set as unchanged to avoid sending to remote server.
+    new_settings.max_concurrent_queries_for_user.changed = false;
+    new_settings.max_memory_usage_for_user.changed = false;
 
     if (settings.force_optimize_skip_unused_shards_nesting && settings.force_optimize_skip_unused_shards)
     {
@@ -84,22 +74,17 @@ Context updateSettingsForCluster(const Cluster & cluster, const Context & contex
     return new_context;
 }
 
-void executeQuery(
-    QueryPlan & query_plan,
-    IStreamFactory & stream_factory, Poco::Logger * log,
-    const ASTPtr & query_ast, const Context & context, const SelectQueryInfo & query_info)
+Pipe executeQuery(
+    IStreamFactory & stream_factory, const ClusterPtr & cluster, Poco::Logger * log,
+    const ASTPtr & query_ast, const Context & context, const Settings & settings, const SelectQueryInfo & query_info)
 {
     assert(log);
 
-    const Settings & settings = context.getSettingsRef();
-
-    std::vector<QueryPlanPtr> plans;
-    Pipes remote_pipes;
-    Pipes delayed_pipes;
+    Pipes res;
 
     const std::string query = queryToString(query_ast);
 
-    Context new_context = updateSettingsForCluster(*query_info.cluster, context, settings, log);
+    Context new_context = removeUserRestrictionsFromSettings(context, settings, log);
 
     ThrottlerPtr user_level_throttler;
     if (auto * process_list_element = context.getProcessListElement())
@@ -118,44 +103,10 @@ void executeQuery(
     else
         throttler = user_level_throttler;
 
-    for (const auto & shard_info : query_info.cluster->getShardsInfo())
-        stream_factory.createForShard(shard_info, query, query_ast, new_context, throttler, query_info, plans, remote_pipes, delayed_pipes);
+    for (const auto & shard_info : cluster->getShardsInfo())
+        stream_factory.createForShard(shard_info, query, query_ast, new_context, throttler, query_info, res);
 
-    if (!remote_pipes.empty())
-    {
-        auto plan = std::make_unique<QueryPlan>();
-        auto read_from_remote = std::make_unique<ReadFromPreparedSource>(Pipe::unitePipes(std::move(remote_pipes)));
-        read_from_remote->setStepDescription("Read from remote replica");
-        plan->addStep(std::move(read_from_remote));
-        plans.emplace_back(std::move(plan));
-    }
-
-    if (!delayed_pipes.empty())
-    {
-        auto plan = std::make_unique<QueryPlan>();
-        auto read_from_remote = std::make_unique<ReadFromPreparedSource>(Pipe::unitePipes(std::move(delayed_pipes)));
-        read_from_remote->setStepDescription("Read from delayed local replica");
-        plan->addStep(std::move(read_from_remote));
-        plans.emplace_back(std::move(plan));
-    }
-
-    if (plans.empty())
-        return;
-
-    if (plans.size() == 1)
-    {
-        query_plan = std::move(*plans.front());
-        return;
-    }
-
-    DataStreams input_streams;
-    input_streams.reserve(plans.size());
-    for (auto & plan : plans)
-        input_streams.emplace_back(plan->getCurrentDataStream());
-
-    auto header = input_streams.front().header;
-    auto union_step = std::make_unique<UnionStep>(std::move(input_streams), header);
-    query_plan.unitePlans(std::move(union_step), std::move(plans));
+    return Pipe::unitePipes(std::move(res));
 }
 
 }

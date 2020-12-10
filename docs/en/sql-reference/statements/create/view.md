@@ -1,5 +1,5 @@
 ---
-toc_priority: 37
+toc_priority: 3
 toc_title: VIEW
 ---
 
@@ -15,7 +15,7 @@ Syntax:
 CREATE [OR REPLACE] VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] AS SELECT ...
 ```
 
-Normal views don’t store any data. They just perform a read from another table on each access. In other words, a normal view is nothing more than a saved query. When reading from a view, this saved query is used as a subquery in the [FROM](../../../sql-reference/statements/select/from.md) clause.
+Normal views don’t store any data, they just perform a read from another table on each access. In other words, a normal view is nothing more than a saved query. When reading from a view, this saved query is used as a subquery in the [FROM](../../../sql-reference/statements/select/from.md) clause.
 
 As an example, assume you’ve created a view:
 

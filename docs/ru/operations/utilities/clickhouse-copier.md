@@ -1,8 +1,3 @@
----
-toc_priority: 59
-toc_title: clickhouse-copier
----
-
 # clickhouse-copier {#clickhouse-copier}
 
 Копирует данные из таблиц одного кластера в таблицы другого (или этого же) кластера.
@@ -29,7 +24,7 @@ toc_title: clickhouse-copier
 Утилиту следует запускать вручную следующим образом:
 
 ``` bash
-$ clickhouse-copier --daemon --config zookeeper.xml --task-path /task/path --base-dir /path/to/dir
+$ clickhouse-copier copier --daemon --config zookeeper.xml --task-path /task/path --base-dir /path/to/dir
 ```
 
 Параметры запуска:

@@ -6,8 +6,6 @@
 
 namespace DB
 {
-namespace
-{
 
 struct NameMultiSearchAllPositionsUTF8
 {
@@ -16,8 +14,6 @@ struct NameMultiSearchAllPositionsUTF8
 
 using FunctionMultiSearchAllPositionsUTF8
     = FunctionsMultiStringPosition<MultiSearchAllPositionsImpl<PositionCaseSensitiveUTF8>, NameMultiSearchAllPositionsUTF8>;
-
-}
 
 void registerFunctionMultiSearchAllPositionsUTF8(FunctionFactory & factory)
 {

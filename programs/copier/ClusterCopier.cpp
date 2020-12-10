@@ -162,7 +162,7 @@ void ClusterCopier::discoverShardPartitions(const ConnectionTimeouts & timeouts,
 
     if (!missing_partitions.empty())
     {
-        WriteBufferFromOwnString ss;
+        std::stringstream ss;
         for (const String & missing_partition : missing_partitions)
             ss << " " << missing_partition;
 

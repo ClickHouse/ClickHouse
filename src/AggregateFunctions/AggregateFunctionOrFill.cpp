@@ -6,26 +6,17 @@
 
 namespace DB
 {
-namespace
-{
 
-enum class Kind
-{
-    OrNull,
-    OrDefault
-};
-
+template <bool UseNull>
 class AggregateFunctionCombinatorOrFill final : public IAggregateFunctionCombinator
 {
-private:
-    Kind kind;
-
 public:
-    explicit AggregateFunctionCombinatorOrFill(Kind kind_) : kind(kind_) {}
-
     String getName() const override
     {
-        return kind == Kind::OrNull ? "OrNull" : "OrDefault";
+        if constexpr (UseNull)
+            return "OrNull";
+        else
+            return "OrDefault";
     }
 
     AggregateFunctionPtr transformAggregateFunction(
@@ -34,19 +25,17 @@ public:
         const DataTypes & arguments,
         const Array & params) const override
     {
-        if (kind == Kind::OrNull)
-            return std::make_shared<AggregateFunctionOrFill<true>>(nested_function, arguments, params);
-        else
-            return std::make_shared<AggregateFunctionOrFill<false>>(nested_function, arguments, params);
+        return std::make_shared<AggregateFunctionOrFill<UseNull>>(
+            nested_function,
+            arguments,
+            params);
     }
 };
 
-}
-
 void registerAggregateFunctionCombinatorOrFill(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorOrFill>(Kind::OrNull));
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorOrFill>(Kind::OrDefault));
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorOrFill<false>>());
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorOrFill<true>>());
 }
 
 }

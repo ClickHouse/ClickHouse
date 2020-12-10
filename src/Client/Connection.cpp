@@ -17,15 +17,12 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/DNSResolver.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/OpenSSLHelpers.h>
-#include <Common/randomSeed.h>
 #include <Interpreters/ClientInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <Processors/Pipe.h>
-#include <Processors/QueryPipeline.h>
 #include <Processors/ISink.h>
 #include <Processors/Executors/PipelineExecutor.h>
-#include <pcg_random.hpp>
+#include <Processors/ConcatProcessor.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
@@ -170,33 +167,17 @@ void Connection::sendHello()
         || has_control_character(password))
         throw Exception("Parameters 'default_database', 'user' and 'password' must not contain ASCII control characters", ErrorCodes::BAD_ARGUMENTS);
 
+    auto client_revision = ClickHouseRevision::get();
+
     writeVarUInt(Protocol::Client::Hello, *out);
     writeStringBinary((DBMS_NAME " ") + client_name, *out);
     writeVarUInt(DBMS_VERSION_MAJOR, *out);
     writeVarUInt(DBMS_VERSION_MINOR, *out);
     // NOTE For backward compatibility of the protocol, client cannot send its version_patch.
-    writeVarUInt(DBMS_TCP_PROTOCOL_VERSION, *out);
+    writeVarUInt(client_revision, *out);
     writeStringBinary(default_database, *out);
-    /// If interserver-secret is used, one do not need password
-    /// (NOTE we do not check for DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET, since we cannot ignore inter-server secret if it was requested)
-    if (!cluster_secret.empty())
-    {
-        writeStringBinary(USER_INTERSERVER_MARKER, *out);
-        writeStringBinary("" /* password */, *out);
-
-#if USE_SSL
-        sendClusterNameAndSalt();
-#else
-        throw Exception(
-            "Inter-server secret support is disabled, because ClickHouse was built without SSL library",
-            ErrorCodes::SUPPORT_IS_DISABLED);
-#endif
-    }
-    else
-    {
-        writeStringBinary(user, *out);
-        writeStringBinary(password, *out);
-    }
+    writeStringBinary(user, *out);
+    writeStringBinary(password, *out);
 
     out->next();
 }
@@ -311,19 +292,6 @@ void Connection::forceConnected(const ConnectionTimeouts & timeouts)
         connect(timeouts);
     }
 }
-
-#if USE_SSL
-void Connection::sendClusterNameAndSalt()
-{
-    pcg64_fast rng(randomSeed());
-    UInt64 rand = rng();
-
-    salt = encodeSHA256(&rand, sizeof(rand));
-
-    writeStringBinary(cluster, *out);
-    writeStringBinary(salt, *out);
-}
-#endif
 
 bool Connection::ping()
 {
@@ -442,37 +410,6 @@ void Connection::sendQuery(
     }
     else
         writeStringBinary("" /* empty string is a marker of the end of settings */, *out);
-
-    /// Interserver secret
-    if (server_revision >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET)
-    {
-        /// Hash
-        ///
-        /// Send correct hash only for !INITIAL_QUERY, due to:
-        /// - this will avoid extra protocol complexity for simplest cases
-        /// - there is no need in hash for the INITIAL_QUERY anyway
-        ///   (since there is no secure/unsecure changes)
-        if (client_info && !cluster_secret.empty() && client_info->query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
-        {
-#if USE_SSL
-            std::string data(salt);
-            data += cluster_secret;
-            data += query;
-            data += query_id;
-            data += client_info->initial_user;
-            /// TODO: add source/target host/ip-address
-
-            std::string hash = encodeSHA256(data);
-            writeStringBinary(hash, *out);
-#else
-        throw Exception(
-            "Inter-server secret support is disabled, because ClickHouse was built without SSL library",
-            ErrorCodes::SUPPORT_IS_DISABLED);
-#endif
-        }
-        else
-            writeStringBinary("", *out);
-    }
 
     writeVarUInt(stage, *out);
     writeVarUInt(static_cast<bool>(compression), *out);
@@ -651,17 +588,16 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
         PipelineExecutorPtr executor;
         auto on_cancel = [& executor]() { executor->cancel(); };
 
-        QueryPipeline pipeline;
-        pipeline.init(std::move(*elem->pipe));
-        pipeline.resize(1);
-        auto sink = std::make_shared<ExternalTableDataSink>(pipeline.getHeader(), *this, *elem, std::move(on_cancel));
-        pipeline.setSinks([&](const Block &, QueryPipeline::StreamType type) -> ProcessorPtr
-        {
-            if (type != QueryPipeline::StreamType::Main)
-                return nullptr;
-            return sink;
-        });
-        executor = pipeline.execute();
+        if (elem->pipe->numOutputPorts() > 1)
+            elem->pipe->addTransform(std::make_shared<ConcatProcessor>(elem->pipe->getHeader(), elem->pipe->numOutputPorts()));
+
+        auto sink = std::make_shared<ExternalTableDataSink>(elem->pipe->getHeader(), *this, *elem, std::move(on_cancel));
+        DB::connect(*elem->pipe->getOutputPort(0), sink->getPort());
+
+        auto processors = Pipe::detachProcessors(std::move(*elem->pipe));
+        processors.push_back(sink);
+
+        executor = std::make_shared<PipelineExecutor>(processors);
         executor->execute(/*num_threads = */ 1);
 
         auto read_rows = sink->getNumReadRows();

@@ -1,8 +1,10 @@
 #pragma once
 
 #include <bitset>
+#include <iostream>
 #include <map>
 #include <queue>
+#include <sstream>
 #include <unordered_set>
 #include <utility>
 #include <Columns/ColumnArray.h>
@@ -90,7 +92,7 @@ struct AggregateFunctionTimeSeriesGroupSumData
             it_ss->second.add(t, v);
         }
         if (result.size() > 0 && t < result.back().first)
-            throw Exception{"timeSeriesGroupSum or timeSeriesGroupRateSum must order by timestamp asc.", ErrorCodes::LOGICAL_ERROR};
+            throw Exception{"timeSeriesGroupSum or timeSeriesGroupRateSum must order by timestamp asc!!!", ErrorCodes::LOGICAL_ERROR};
         if (result.size() > 0 && t == result.back().first)
         {
             //do not add new point

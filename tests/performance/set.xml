@@ -34,19 +34,4 @@
 
     <query>SELECT count() FROM {table_large} WHERE rand64() IN (SELECT number FROM system.numbers LIMIT {size_small})</query>
     <query>SELECT count() FROM {table_small} WHERE rand64() IN (SELECT number FROM system.numbers LIMIT {size_large})</query>
-    <query>
-        SELECT number
-        FROM numbers(10)
-        WHERE (number IN
-        (
-            SELECT sum(number)
-            FROM numbers(100000000)
-            GROUP BY bitAnd(number, 15)
-        )) OR (number IN
-        (
-            SELECT sum(number)
-            FROM numbers(100000000)
-            GROUP BY bitAnd(number, 17)
-        ))
-    </query>
 </test>
