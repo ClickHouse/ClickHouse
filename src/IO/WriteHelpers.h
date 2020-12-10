@@ -29,7 +29,12 @@
 #include <IO/DoubleConverter.h>
 #include <IO/WriteBufferFromString.h>
 
-#include <dragonbox/dragonbox_to_chars.h>
+/// There is no dragonbox in Arcadia
+#if !defined(ARCADIA_BUILD)
+#   include <dragonbox/dragonbox_to_chars.h>
+#else 
+#   include <ryu/ryu.h>
+#endif 
 
 #include <Formats/FormatSettings.h>
 
@@ -228,14 +233,22 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
         if (DecomposedFloat64(x).is_inside_int64())
             result = itoa(Int64(x), buffer) - buffer;
         else
+#if !defined(ARCADIA_BUILD)
             result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
+#else
+            result = d2s_buffered_n(x, buffer);
+#endif
     }
     else
     {
         if (DecomposedFloat32(x).is_inside_int32())
             result = itoa(Int32(x), buffer) - buffer;
         else
+#if !defined(ARCADIA_BUILD)
             result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
+#else
+            result = f2s_buffered_n(x, buffer);
+#endif
     }
 
     if (result <= 0)
