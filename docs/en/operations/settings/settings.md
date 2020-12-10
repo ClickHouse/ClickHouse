@@ -2369,37 +2369,22 @@ Default value: `\N`.
 Query
 
 ```sql
-SELECT *
-FROM tsv_custom_null
-FORMAT TSV
+SELECT * FROM tsv_custom_null FORMAT TSV;
 ```
 
 Result
 
 ```text
-\N
 788
 \N
+\N
 ```
 
 Query
 
 ```sql
-SET output_format_tsv_null_representation = 'My NULL'
-```
-
-Result
-
-```text
-Ok.
-```
-
-Query
-
-```sql
-SELECT *
-FROM tsv_custom_null
-FORMAT TSV
+SET output_format_tsv_null_representation = 'My NULL';
+SELECT * FROM tsv_custom_null FORMAT TSV;
 ```
 
 Result
