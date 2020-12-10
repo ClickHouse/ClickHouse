@@ -72,7 +72,7 @@ The real success, however, has been the huge number of commits to ClickHouse cor
 * Simon Podlipsky
 * Silviu Caragea
 * Flynn ucasFL
-* [And over 550 more](https://github.com/ClickHouse/ClickHouse/graphs/contributors)...
+* [And over 550 more...](https://github.com/ClickHouse/ClickHouse/graphs/contributors)
 
 ClickHouse ecosystem projects are also growing rapidly. Here is a selected list of active Github projects that help enable ClickHouse applications, sorted by number of stars.
 
@@ -89,7 +89,7 @@ ClickHouse ecosystem projects are also growing rapidly. Here is a selected list 
 * [smi2/phpClickHouse](https://github.com/smi2/phpClickHouse) — PHP ClickHouse client
 * [Altinity/clickhouse-operator](https://github.com/Altinity/clickhouse-operator) — Kubernetes operator for ClickHouse
 * [AlexAkulov/clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup) — ClickHouse backup and restore using cloud storage
-* [And almost 1200 more](https://github.com/search?o=desc&p=1&q=clickhouse&s=stars&type=Repositories)...
+* [And almost 1200 more...](https://github.com/search?o=desc&p=1&q=clickhouse&s=stars&type=Repositories)
 
 ## Resources
 
