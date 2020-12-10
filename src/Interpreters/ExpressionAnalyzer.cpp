@@ -428,11 +428,11 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions)
     for (const ASTFunction * node : aggregates())
     {
         AggregateDescription aggregate;
-        getRootActionsNoMakeSet(node->arguments, true, actions);
+        if (node->arguments) getRootActionsNoMakeSet(node->arguments, true, actions);
 
         aggregate.column_name = node->getColumnName();
 
-        const ASTs & arguments = node->arguments->children;
+        const ASTs & arguments = node->arguments ? node->arguments->children : ASTs();
         aggregate.argument_names.resize(arguments.size());
         DataTypes types(arguments.size());
 
@@ -995,8 +995,9 @@ void SelectQueryExpressionAnalyzer::appendAggregateFunctionsArguments(Expression
 
     /// TODO: data.aggregates -> aggregates()
     for (const ASTFunction * node : data.aggregates)
-        for (auto & argument : node->arguments->children)
-            getRootActions(argument, only_types, step.actions());
+        if (node->arguments)
+            for (auto & argument : node->arguments->children)
+                getRootActions(argument, only_types, step.actions());
 
 
     fmt::print(stderr, "actions after appendAggregateFunctionsArguments: \n{} at \n{}\n", chain.dumpChain(), StackTrace().toString());

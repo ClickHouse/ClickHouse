@@ -354,13 +354,14 @@
       * 5.2.8.296 [RQ.SRS-006.RBAC.RowPolicy.ShowRowPolicies.Syntax](#rqsrs-006rbacrowpolicyshowrowpoliciessyntax)
     * 5.2.9 [Table Privileges](#table-privileges)
       * 5.2.9.1 [RQ.SRS-006.RBAC.Table.PublicTables](#rqsrs-006rbactablepublictables)
-      * 5.2.9.2 [Distributed Tables](#distributed-tables)
-        * 5.2.9.2.1 [RQ.SRS-006.RBAC.Table.DistributedTable.Create](#rqsrs-006rbactabledistributedtablecreate)
-        * 5.2.9.2.2 [RQ.SRS-006.RBAC.Table.DistributedTable.Select](#rqsrs-006rbactabledistributedtableselect)
-        * 5.2.9.2.3 [RQ.SRS-006.RBAC.Table.DistributedTable.Insert](#rqsrs-006rbactabledistributedtableinsert)
-        * 5.2.9.2.4 [RQ.SRS-006.RBAC.Table.DistributedTable.SpecialTables](#rqsrs-006rbactabledistributedtablespecialtables)
-        * 5.2.9.2.5 [RQ.SRS-006.RBAC.Table.DistributedTable.LocalUser](#rqsrs-006rbactabledistributedtablelocaluser)
-        * 5.2.9.2.6 [RQ.SRS-006.RBAC.Table.DistributedTable.SameUserDifferentNodesDifferentPrivileges](#rqsrs-006rbactabledistributedtablesameuserdifferentnodesdifferentprivileges)
+      * 5.2.9.2 [RQ.SRS-006.RBAC.Table.QueryLog](#rqsrs-006rbactablequerylog)
+      * 5.2.9.3 [Distributed Tables](#distributed-tables)
+        * 5.2.9.3.1 [RQ.SRS-006.RBAC.Table.DistributedTable.Create](#rqsrs-006rbactabledistributedtablecreate)
+        * 5.2.9.3.2 [RQ.SRS-006.RBAC.Table.DistributedTable.Select](#rqsrs-006rbactabledistributedtableselect)
+        * 5.2.9.3.3 [RQ.SRS-006.RBAC.Table.DistributedTable.Insert](#rqsrs-006rbactabledistributedtableinsert)
+        * 5.2.9.3.4 [RQ.SRS-006.RBAC.Table.DistributedTable.SpecialTables](#rqsrs-006rbactabledistributedtablespecialtables)
+        * 5.2.9.3.5 [RQ.SRS-006.RBAC.Table.DistributedTable.LocalUser](#rqsrs-006rbactabledistributedtablelocaluser)
+        * 5.2.9.3.6 [RQ.SRS-006.RBAC.Table.DistributedTable.SameUserDifferentNodesDifferentPrivileges](#rqsrs-006rbactabledistributedtablesameuserdifferentnodesdifferentprivileges)
     * 5.2.10 [Views](#views)
       * 5.2.10.1 [View](#view)
         * 5.2.10.1.1 [RQ.SRS-006.RBAC.View](#rqsrs-006rbacview)
@@ -489,11 +490,43 @@
       * 5.2.11.48 [RQ.SRS-006.RBAC.Privileges.ShowDictionaries.Query](#rqsrs-006rbacprivilegesshowdictionariesquery)
       * 5.2.11.49 [RQ.SRS-006.RBAC.Privileges.ShowCreateDictionary](#rqsrs-006rbacprivilegesshowcreatedictionary)
       * 5.2.11.50 [RQ.SRS-006.RBAC.Privileges.ExistsDictionary](#rqsrs-006rbacprivilegesexistsdictionary)
-      * 5.2.11.51 [Grant Option](#grant-option)
-        * 5.2.11.51.1 [RQ.SRS-006.RBAC.Privileges.GrantOption](#rqsrs-006rbacprivilegesgrantoption)
-      * 5.2.11.52 [RQ.SRS-006.RBAC.Privileges.All](#rqsrs-006rbacprivilegesall)
-      * 5.2.11.53 [RQ.SRS-006.RBAC.Privileges.All.GrantRevoke](#rqsrs-006rbacprivilegesallgrantrevoke)
-      * 5.2.11.54 [RQ.SRS-006.RBAC.Privileges.AdminOption](#rqsrs-006rbacprivilegesadminoption)
+      * 5.2.11.51 [RQ.SRS-006.RBAC.Privileges.CreateUser](#rqsrs-006rbacprivilegescreateuser)
+      * 5.2.11.52 [RQ.SRS-006.RBAC.Privileges.CreateUser.DefaultRole](#rqsrs-006rbacprivilegescreateuserdefaultrole)
+      * 5.2.11.53 [RQ.SRS-006.RBAC.Privileges.AlterUser](#rqsrs-006rbacprivilegesalteruser)
+      * 5.2.11.54 [RQ.SRS-006.RBAC.Privileges.DropUser](#rqsrs-006rbacprivilegesdropuser)
+      * 5.2.11.55 [RQ.SRS-006.RBAC.Privileges.CreateRole](#rqsrs-006rbacprivilegescreaterole)
+      * 5.2.11.56 [RQ.SRS-006.RBAC.Privileges.AlterRole](#rqsrs-006rbacprivilegesalterrole)
+      * 5.2.11.57 [RQ.SRS-006.RBAC.Privileges.DropRole](#rqsrs-006rbacprivilegesdroprole)
+      * 5.2.11.58 [RQ.SRS-006.RBAC.Privileges.CreateRowPolicy](#rqsrs-006rbacprivilegescreaterowpolicy)
+      * 5.2.11.59 [RQ.SRS-006.RBAC.Privileges.AlterRowPolicy](#rqsrs-006rbacprivilegesalterrowpolicy)
+      * 5.2.11.60 [RQ.SRS-006.RBAC.Privileges.DropRowPolicy](#rqsrs-006rbacprivilegesdroprowpolicy)
+      * 5.2.11.61 [RQ.SRS-006.RBAC.Privileges.CreateQuota](#rqsrs-006rbacprivilegescreatequota)
+      * 5.2.11.62 [RQ.SRS-006.RBAC.Privileges.AlterQuota](#rqsrs-006rbacprivilegesalterquota)
+      * 5.2.11.63 [RQ.SRS-006.RBAC.Privileges.DropQuota](#rqsrs-006rbacprivilegesdropquota)
+      * 5.2.11.64 [RQ.SRS-006.RBAC.Privileges.CreateSettingsProfile](#rqsrs-006rbacprivilegescreatesettingsprofile)
+      * 5.2.11.65 [RQ.SRS-006.RBAC.Privileges.AlterSettingsProfile](#rqsrs-006rbacprivilegesaltersettingsprofile)
+      * 5.2.11.66 [RQ.SRS-006.RBAC.Privileges.DropSettingsProfile](#rqsrs-006rbacprivilegesdropsettingsprofile)
+      * 5.2.11.67 [RQ.SRS-006.RBAC.Privileges.RoleAdmin](#rqsrs-006rbacprivilegesroleadmin)
+      * 5.2.11.68 [RQ.SRS-006.RBAC.Privileges.ShowUsers](#rqsrs-006rbacprivilegesshowusers)
+      * 5.2.11.69 [RQ.SRS-006.RBAC.Privileges.ShowUsers.Query](#rqsrs-006rbacprivilegesshowusersquery)
+      * 5.2.11.70 [RQ.SRS-006.RBAC.Privileges.ShowCreateUser](#rqsrs-006rbacprivilegesshowcreateuser)
+      * 5.2.11.71 [RQ.SRS-006.RBAC.Privileges.ShowRoles](#rqsrs-006rbacprivilegesshowroles)
+      * 5.2.11.72 [RQ.SRS-006.RBAC.Privileges.ShowRoles.Query](#rqsrs-006rbacprivilegesshowrolesquery)
+      * 5.2.11.73 [RQ.SRS-006.RBAC.Privileges.ShowCreateRole](#rqsrs-006rbacprivilegesshowcreaterole)
+      * 5.2.11.74 [RQ.SRS-006.RBAC.Privileges.ShowRowPolicies](#rqsrs-006rbacprivilegesshowrowpolicies)
+      * 5.2.11.75 [RQ.SRS-006.RBAC.Privileges.ShowRowPolicies.Query](#rqsrs-006rbacprivilegesshowrowpoliciesquery)
+      * 5.2.11.76 [RQ.SRS-006.RBAC.Privileges.ShowCreateRowPolicy](#rqsrs-006rbacprivilegesshowcreaterowpolicy)
+      * 5.2.11.77 [RQ.SRS-006.RBAC.Privileges.ShowQuotas](#rqsrs-006rbacprivilegesshowquotas)
+      * 5.2.11.78 [RQ.SRS-006.RBAC.Privileges.ShowQuotas.Query](#rqsrs-006rbacprivilegesshowquotasquery)
+      * 5.2.11.79 [RQ.SRS-006.RBAC.Privileges.ShowCreateQuota](#rqsrs-006rbacprivilegesshowcreatequota)
+      * 5.2.11.80 [RQ.SRS-006.RBAC.Privileges.ShowSettingsProfiles](#rqsrs-006rbacprivilegesshowsettingsprofiles)
+      * 5.2.11.81 [RQ.SRS-006.RBAC.Privileges.ShowSettingsProfiles.Query](#rqsrs-006rbacprivilegesshowsettingsprofilesquery)
+      * 5.2.11.82 [RQ.SRS-006.RBAC.Privileges.ShowCreateSettingsProfile](#rqsrs-006rbacprivilegesshowcreatesettingsprofile)
+      * 5.2.11.83 [Grant Option](#grant-option)
+        * 5.2.11.83.1 [RQ.SRS-006.RBAC.Privileges.GrantOption](#rqsrs-006rbacprivilegesgrantoption)
+      * 5.2.11.84 [RQ.SRS-006.RBAC.Privileges.All](#rqsrs-006rbacprivilegesall)
+      * 5.2.11.85 [RQ.SRS-006.RBAC.Privileges.All.GrantRevoke](#rqsrs-006rbacprivilegesallgrantrevoke)
+      * 5.2.11.86 [RQ.SRS-006.RBAC.Privileges.AdminOption](#rqsrs-006rbacprivilegesadminoption)
     * 5.2.12 [Required Privileges](#required-privileges)
       * 5.2.12.1 [RQ.SRS-006.RBAC.RequiredPrivileges.Create](#rqsrs-006rbacrequiredprivilegescreate)
       * 5.2.12.2 [RQ.SRS-006.RBAC.RequiredPrivileges.Alter](#rqsrs-006rbacrequiredprivilegesalter)
@@ -2864,6 +2897,11 @@ version: 1.0
 * system.contributors
 * system.functions
 
+##### RQ.SRS-006.RBAC.Table.QueryLog
+version: 1.0
+
+[ClickHouse] SHALL return only queries executed by the user when the user is selecting from system.query_log.
+
 ##### Distributed Tables
 
 ###### RQ.SRS-006.RBAC.Table.DistributedTable.Create
@@ -3931,6 +3969,199 @@ version: 1.0
 
 [ClickHouse] SHALL successfully execute `EXISTS dictionary` statement if and only if the user has **show dictionaries** privilege,
 or any privilege on the dictionary either directly or through a role.
+
+##### RQ.SRS-006.RBAC.Privileges.CreateUser
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `CREATE USER` statement if and only if the user has **create user** privilege,
+or either directly or through a role.
+
+##### RQ.SRS-006.RBAC.Privileges.CreateUser.DefaultRole
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `CREATE USER` statement with `DEFAULT ROLE <role>` clause if and only if
+the user has **create user** privilege and the role with **admin option**, or either directly or through a role.
+
+##### RQ.SRS-006.RBAC.Privileges.AlterUser
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `ALTER USER` statement if and only if the user has **alter user** privilege,
+or either directly or through a role.
+
+##### RQ.SRS-006.RBAC.Privileges.DropUser
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `DROP USER` statement if and only if the user has **drop user** privilege,
+or either directly or through a role.
+
+##### RQ.SRS-006.RBAC.Privileges.CreateRole
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `CREATE ROLE` statement if and only if the user has **create role** privilege,
+or either directly or through a role.
+
+##### RQ.SRS-006.RBAC.Privileges.AlterRole
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `ALTER ROLE` statement if and only if the user has **alter role** privilege,
+or either directly or through a role.
+
+##### RQ.SRS-006.RBAC.Privileges.DropRole
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `DROP ROLE` statement if and only if the user has **drop role** privilege,
+or either directly or through a role.
+
+##### RQ.SRS-006.RBAC.Privileges.CreateRowPolicy
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `CREATE ROW POLICY` statement if and only if the user has **create row policy** privilege,
+or either directly or through a role.
+
+##### RQ.SRS-006.RBAC.Privileges.AlterRowPolicy
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `ALTER ROW POLICY` statement if and only if the user has **alter row policy** privilege,
+or either directly or through a role.
+
+##### RQ.SRS-006.RBAC.Privileges.DropRowPolicy
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `DROP ROW POLICY` statement if and only if the user has **drop row policy** privilege,
+or either directly or through a role.
+
+##### RQ.SRS-006.RBAC.Privileges.CreateQuota
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `CREATE QUOTA` statement if and only if the user has **create quota** privilege,
+or either directly or through a role.
+
+##### RQ.SRS-006.RBAC.Privileges.AlterQuota
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `ALTER QUOTA` statement if and only if the user has **alter quota** privilege,
+or either directly or through a role.
+
+##### RQ.SRS-006.RBAC.Privileges.DropQuota
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `DROP QUOTA` statement if and only if the user has **drop quota** privilege,
+or either directly or through a role.
+
+##### RQ.SRS-006.RBAC.Privileges.CreateSettingsProfile
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `CREATE SETTINGS PROFILE` statement if and only if the user has **create settings profile** privilege,
+or either directly or through a role.
+
+##### RQ.SRS-006.RBAC.Privileges.AlterSettingsProfile
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `ALTER SETTINGS PROFILE` statement if and only if the user has **alter settings profile** privilege,
+or either directly or through a role.
+
+##### RQ.SRS-006.RBAC.Privileges.DropSettingsProfile
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `DROP SETTINGS PROFILE` statement if and only if the user has **drop settings profile** privilege,
+or either directly or through a role.
+
+##### RQ.SRS-006.RBAC.Privileges.RoleAdmin
+version: 1.0
+
+[ClickHouse] SHALL successfully execute any role grant or revoke by a user with `ROLE ADMIN` privilege.
+
+##### RQ.SRS-006.RBAC.Privileges.ShowUsers
+version: 1.0
+
+[ClickHouse] SHALL successfully grant `SHOW USERS` privilege when
+the user is granted `SHOW USERS`, `SHOW CREATE USER`, `SHOW ACCESS`, or `ACCESS MANAGEMENT`.
+
+##### RQ.SRS-006.RBAC.Privileges.ShowUsers.Query
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `SHOW USERS` statement if and only if the user has **show users** privilege,
+either directly or through a role.
+
+##### RQ.SRS-006.RBAC.Privileges.ShowCreateUser
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `SHOW CREATE USER` statement if and only if the user has **show create user** privilege,
+either directly or through a role.
+
+##### RQ.SRS-006.RBAC.Privileges.ShowRoles
+version: 1.0
+
+[ClickHouse] SHALL successfully grant `SHOW ROLES` privilege when
+the user is granted `SHOW ROLES`, `SHOW CREATE ROLE`, `SHOW ACCESS`, or `ACCESS MANAGEMENT`.
+
+##### RQ.SRS-006.RBAC.Privileges.ShowRoles.Query
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `SHOW ROLES` statement if and only if the user has **show roles** privilege,
+either directly or through a role.
+
+##### RQ.SRS-006.RBAC.Privileges.ShowCreateRole
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `SHOW CREATE ROLE` statement if and only if the user has **show create role** privilege,
+either directly or through a role.
+
+##### RQ.SRS-006.RBAC.Privileges.ShowRowPolicies
+version: 1.0
+
+[ClickHouse] SHALL successfully grant `SHOW ROW POLICIES` privilege when
+the user is granted `SHOW ROW POLICIES`, `SHOW POLICIES`, `SHOW CREATE ROW POLICY`,
+`SHOW CREATE POLICY`, `SHOW ACCESS`, or `ACCESS MANAGEMENT`.
+
+##### RQ.SRS-006.RBAC.Privileges.ShowRowPolicies.Query
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `SHOW ROW POLICIES` or `SHOW POLICIES` statement if and only if the user has **show row policies** privilege,
+either directly or through a role.
+
+##### RQ.SRS-006.RBAC.Privileges.ShowCreateRowPolicy
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `SHOW CREATE ROW POLICY` or `SHOW CREATE POLICY` statement if and only if the user has **show create row policy** privilege,
+either directly or through a role.
+
+##### RQ.SRS-006.RBAC.Privileges.ShowQuotas
+version: 1.0
+
+[ClickHouse] SHALL successfully grant `SHOW QUOTAS` privilege when
+the user is granted `SHOW QUOTAS`, `SHOW CREATE QUOTA`, `SHOW ACCESS`, or `ACCESS MANAGEMENT`.
+
+##### RQ.SRS-006.RBAC.Privileges.ShowQuotas.Query
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `SHOW QUOTAS` statement if and only if the user has **show quotas** privilege,
+either directly or through a role.
+
+##### RQ.SRS-006.RBAC.Privileges.ShowCreateQuota
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `SHOW CREATE QUOTA` statement if and only if the user has **show create quota** privilege,
+either directly or through a role.
+
+##### RQ.SRS-006.RBAC.Privileges.ShowSettingsProfiles
+version: 1.0
+
+[ClickHouse] SHALL successfully grant `SHOW SETTINGS PROFILES` privilege when
+the user is granted `SHOW SETTINGS PROFILES`, `SHOW PROFILES`, `SHOW CREATE SETTINGS PROFILE`,
+`SHOW SETTINGS PROFILE`, `SHOW ACCESS`, or `ACCESS MANAGEMENT`.
+
+##### RQ.SRS-006.RBAC.Privileges.ShowSettingsProfiles.Query
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `SHOW SETTINGS PROFILES` or `SHOW PROFILES` statement if and only if the user has **show settings profiles** privilege,
+either directly or through a role.
+
+##### RQ.SRS-006.RBAC.Privileges.ShowCreateSettingsProfile
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `SHOW CREATE SETTINGS PROFILE` or `SHOW CREATE PROFILE` statement if and only if the user has **show create settings profile** privilege,
+either directly or through a role.
 
 ##### Grant Option
 

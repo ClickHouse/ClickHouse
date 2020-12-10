@@ -208,6 +208,7 @@ SRCS(
     cos.cpp
     cosh.cpp
     countDigits.cpp
+    countMatches.cpp
     countSubstrings.cpp
     countSubstringsCaseInsensitive.cpp
     countSubstringsCaseInsensitiveUTF8.cpp
@@ -246,6 +247,7 @@ SRCS(
     formatReadableTimeDelta.cpp
     formatRow.cpp
     formatString.cpp
+    fromModifiedJulianDay.cpp
     fromUnixTimestamp64Micro.cpp
     fromUnixTimestamp64Milli.cpp
     fromUnixTimestamp64Nano.cpp
@@ -454,6 +456,7 @@ SRCS(
     toISOYear.cpp
     toLowCardinality.cpp
     toMinute.cpp
+    toModifiedJulianDay.cpp
     toMonday.cpp
     toMonth.cpp
     toNullable.cpp
