@@ -98,12 +98,13 @@ private:
 
 /// Special class of exceptions, used mostly in ParallelParsingInputFormat for 
 /// more convinient calculation of problem line number.
-class ParsingException : public Exception 
+class ParsingException : public Exception
 {
 public:
     using Exception::Exception;
 
-    void formatInternalMessage() {
+    void formatInternalMessage()
+    {
         try
         {
             message(fmt::format(message(), line_number_));
@@ -111,13 +112,9 @@ public:
         catch (...) {}
     }
 
-    int getLineNumber() {
-        return line_number_;
-    }
+    int getLineNumber() { return line_number_; }
 
-    void setLineNumber(int line_number) {
-        line_number_ = line_number;
-    }
+    void setLineNumber(int line_number) { line_number_ = line_number;}
 
 private:
     int line_number_;

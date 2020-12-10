@@ -475,7 +475,7 @@ static std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB
                 {
                     ++pos;
                     ++number_of_rows;
-                }  
+                }
             }
         }
     }
