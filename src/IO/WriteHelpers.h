@@ -32,9 +32,9 @@
 /// There is no dragonbox in Arcadia
 #if !defined(ARCADIA_BUILD)
 #   include <dragonbox/dragonbox_to_chars.h>
-#else 
+#else
 #   include <ryu/ryu.h>
-#endif 
+#endif
 
 #include <Formats/FormatSettings.h>
 
