@@ -15,6 +15,7 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int NETWORK_ERROR;
 extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
+extern const int NO_ELEMENTS_IN_CONFIG;
 }
 
 const String HDFSBuilderWrapper::CONFIG_PREFIX = "hdfs";
@@ -32,13 +33,13 @@ void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration 
         String key_name;
         if (key == "hadoop_kerberos_keytab")
         {
-            needKinit = true;
+            need_kinit = true;
             hadoop_kerberos_keytab = config.getString(key_path);
             continue;
         }
         else if (key == "hadoop_kerberos_principal")
         {
-            needKinit = true;
+            need_kinit = true;
             hadoop_kerberos_principal = config.getString(key_path);
 
 #if USE_INTERNAL_HDFS3_LIBRARY
@@ -49,7 +50,7 @@ void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration 
         }
         else if (key == "hadoop_kerberos_kinit_command")
         {
-            needKinit = true;
+            need_kinit = true;
             hadoop_kerberos_kinit_command = config.getString(key_path);
             continue;
         }
@@ -74,12 +75,21 @@ void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration 
 
 String HDFSBuilderWrapper::getKinitCmd()
 {
+
+    if (hadoop_kerberos_keytab.empty() || hadoop_kerberos_principal.empty())
+    {
+        throw Exception("Not enough parameters to run kinit",
+            ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+    }
+
     WriteBufferFromOwnString ss;
 
     String cache_name =  hadoop_security_kerberos_ticket_cache_path.empty() ?
         String() :
         (String(" -c \"") + hadoop_security_kerberos_ticket_cache_path + "\"");
 
+    // command to run looks like
+    // kinit -R -t /keytab_dir/clickhouse.keytab -k somebody@TEST.CLICKHOUSE.TECH || ..
     ss << hadoop_kerberos_kinit_command << cache_name <<
         " -R -t \"" << hadoop_kerberos_keytab << "\" -k " << hadoop_kerberos_principal <<
         "|| " << hadoop_kerberos_kinit_command << cache_name << " -t \"" <<
@@ -158,7 +168,7 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
         }
     }
 
-    if (builder.needKinit)
+    if (builder.need_kinit)
     {
         builder.runKinit();
     }

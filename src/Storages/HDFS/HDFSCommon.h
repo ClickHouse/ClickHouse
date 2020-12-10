@@ -67,15 +67,17 @@ class HDFSBuilderWrapper
         return config_stor.emplace_back(std::make_pair(k, v));
     }
 
+    bool need_kinit{false};
+
+    static const String CONFIG_PREFIX;
+
+private:
+
     void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_path, bool isUser = false);
 
     String getKinitCmd();
 
-    bool needKinit{false};
-
     void runKinit();
-
-    static const String CONFIG_PREFIX;
 
 public:
 
