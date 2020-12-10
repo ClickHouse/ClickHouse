@@ -205,19 +205,18 @@ void ParallelParsingBlockInputStream::parserThreadFunction(ThreadGroupStatusPtr 
 
 void ParallelParsingBlockInputStream::onBackgroundException(size_t offset)
 {
-    tryLogCurrentException(__PRETTY_FUNCTION__);
-
     std::unique_lock<std::mutex> lock(mutex);
     if (!background_exception)
     {
         background_exception = std::current_exception();
  
-        if (Exception * e = exception_cast<Exception *>(background_exception))
-            e->addMessage(fmt::format(
-                "Offset: {}. P.S. You have to sum up offset and the row number from"
-                "the previous message to calculate the true row number where the"
-                "error occured due to parallel parsing algorithm specificity", offset));
+        if (ParsingException * e = exception_cast<ParsingException *>(background_exception)) 
+        {
+            e->setLineNumber(e->getLineNumber() + offset);
+            e->formatInternalMessage();
+        }
     }
+    tryLogCurrentException(__PRETTY_FUNCTION__);
     finished = true;
     reader_condvar.notify_all();
     segmentator_condvar.notify_all();
