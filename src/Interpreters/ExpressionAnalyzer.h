@@ -76,7 +76,7 @@ struct ExpressionAnalyzerData
   *
   * NOTE: if `ast` is a SELECT query from a table, the structure of this table should not change during the lifetime of ExpressionAnalyzer.
   */
-class ExpressionAnalyzer : protected ExpressionAnalyzerData, private boost::noncopyable
+class ExpressionAnalyzer : public ExpressionAnalyzerData, private boost::noncopyable
 {
 private:
     /// Extracts settings to enlight which are used (and avoid copy of others).

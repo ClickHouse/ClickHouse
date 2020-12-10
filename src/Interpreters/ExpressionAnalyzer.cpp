@@ -463,16 +463,63 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions)
     return !aggregates().empty();
 }
 
+// Parses order by & partition by from window() wrapper function.
+// Remove this when we have proper grammar.
+static SortDescription windowArgumentToSortDescription(IAST* ast, const WindowDescription & w)
+{
+    SortDescription result;
+    if (const auto * as_tuple = ast->as<ASTFunction>();
+        as_tuple
+        && as_tuple->name == "tuple"
+        && as_tuple->arguments)
+    {
+        // untuple it
+        for (const auto & element_ast
+            : as_tuple->arguments->children)
+        {
+            const auto * with_alias = dynamic_cast<
+                const ASTWithAlias *>(element_ast.get());
+            if (!with_alias)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "(1) Expected column in PARTITION BY"
+                    " for window '{}', got '{}'",
+                    w.window_name,
+                    element_ast->formatForErrorMessage());
+            }
+            result.push_back(
+                SortColumnDescription(
+                    with_alias->getColumnName(),
+                    1 /* direction */,
+                    1 /* nulls_direction */));
+        }
+    }
+    else if (const auto * with_alias
+        = dynamic_cast<const ASTWithAlias *>(ast))
+    {
+        result.push_back(
+            SortColumnDescription(
+                with_alias->getColumnName(),
+                1 /* direction */,
+                1 /* nulls_direction */));
+    }
+    else
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "(2) Expected tuple or column in PARTITION BY"
+            " for window '{}', got '{}'",
+            w.window_name,
+            ast->formatForErrorMessage());
+    }
+
+    return result;
+}
 
 bool ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr & actions)
 {
     for (const ASTFunction * wrapper_node : windowFunctions())
     {
         fmt::print(stderr, "window function ast: {}\n", wrapper_node->dumpTree());
-
-        // Not sure why NoMakeSet, copied from aggregate functions.
-        getRootActionsNoMakeSet(wrapper_node->arguments, true /* no subqueries */,
-            actions);
 
         // FIXME not thread-safe, should use a per-query counter.
         static int window_index = 1;
@@ -490,45 +537,33 @@ bool ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr & actions)
                 const auto partition_by_ast = elist->children[1];
                 fmt::print(stderr, "partition by ast {}\n",
                     partition_by_ast->dumpTree());
-                if (const auto * as_tuple = partition_by_ast->as<ASTFunction>();
-                    as_tuple
-                    && as_tuple->name == "tuple"
-                    && as_tuple->arguments)
-                {
-                    // untuple it
-                    for (const auto & element_ast
-                        : as_tuple->arguments->children)
-                    {
-                        const auto * with_alias = dynamic_cast<
-                            const ASTWithAlias *>(element_ast.get());
-                        if (!with_alias)
-                        {
-                            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "(1) Expected column in PARTITION BY"
-                                " for window '{}', got '{}'",
-                                window_description.window_name,
-                                element_ast->formatForErrorMessage());
-                        }
-                        window_description.partition_by.push_back(
-                            with_alias->getColumnName());
-                    }
-                }
-                else if (const auto * with_alias
-                    = dynamic_cast<const ASTWithAlias *>(partition_by_ast.get()))
-                {
-                    window_description.partition_by.push_back(
-                        with_alias->getColumnName());
-                }
-                else
-                {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "(2) Expected tuple or column in PARTITION BY"
-                        " for window '{}', got '{}'",
-                        window_description.window_name,
-                        partition_by_ast->formatForErrorMessage());
-                }
+
+                window_description.partition_by = windowArgumentToSortDescription(
+                    partition_by_ast.get(), window_description);
+            }
+
+            if (elist->children.size() == 3)
+            {
+                const auto order_by_ast = elist->children[2];
+                fmt::print(stderr, "order by ast {}\n",
+                    order_by_ast->dumpTree());
+
+                window_description.order_by = windowArgumentToSortDescription(
+                    order_by_ast.get(), window_description);
+            }
+
+            if (elist->children.size() > 3)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Too many arguments to window function '{}'",
+                    wrapper_node->formatForErrorMessage());
             }
         }
+        window_description.full_sort_description = window_description.partition_by;
+        window_description.full_sort_description.insert(
+            window_description.full_sort_description.end(),
+            window_description.order_by.begin(),
+            window_description.order_by.end());
 
         WindowFunctionDescription window_function;
         window_function.window_name = window_description.window_name;
@@ -542,6 +577,18 @@ bool ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr & actions)
                 ? getAggregateFunctionParametersArray(
                     window_function.function_node->parameters)
                 : Array();
+
+        // We have to fill actions for window function arguments, so that we are
+        // then able to find their argumen types. The `actions` passed to this
+        // functions are temporary and are discarded.
+        // The same calculation is done in appendWindowFunctionsArguments.
+        getRootActionsNoMakeSet(wrapper_node->arguments, true /* no subqueries */,
+            actions);
+        // We have to separately get actions for the arguments of the aggregate
+        // function we calculate over window, because the ActionsVisitor does
+        // not descend into aggregate functions.
+        getRootActionsNoMakeSet(window_function.function_node->arguments,
+            true /* no subqueries */, actions);
 
         const ASTs & arguments
             = window_function.function_node->arguments->children;
@@ -956,29 +1003,77 @@ void SelectQueryExpressionAnalyzer::appendAggregateFunctionsArguments(Expression
 }
 
 void SelectQueryExpressionAnalyzer::appendWindowFunctionsArguments(
-    ExpressionActionsChain & chain, bool only_types)
+    ExpressionActionsChain & chain, bool /* only_types */)
 {
     fmt::print(stderr, "actions before window: {}\n", chain.dumpChain());
-    const auto * select_query = getSelectQuery();
 
     ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
 
-    /*
-    for (const auto & desc : aggregate_descriptions)
-        for (const auto & name : desc.argument_names)
-            step.required_output.emplace_back(name);
-    */
+    for (const auto & f : window_functions)
+    {
+        // Not sure why NoMakeSet, copied from aggregate functions.
+        getRootActionsNoMakeSet(f.wrapper_node->arguments,
+            true /* no subqueries */, step.actions());
 
-    /// Collect aggregates removing duplicates by node.getColumnName()
-    /// It's not clear why we recollect aggregates (for query parts) while we're able to use previously collected ones (for entire query)
-    /// @note The original recollection logic didn't remove duplicates.
-    GetAggregatesVisitor::Data data;
-    GetAggregatesVisitor(data).visit(select_query->select());
+        // We have to separately get actions for the arguments of the aggregate
+        // function we calculate over window, because the ActionsVisitor does
+        // not descend into aggregate functions.
+        // Not sure why NoMakeSet, copied from aggregate functions.
+        getRootActionsNoMakeSet(f.function_node->arguments,
+            true /* no subqueries */, step.actions());
 
-    /// TODO: data.aggregates -> aggregates()
-    for (const ASTFunction * node : data.window_functions)
-        for (auto & argument : node->arguments->children)
-            getRootActions(argument, only_types, step.actions());
+        // Add column with window function name and value "1".
+        // It is an aggregate function, so it won't be added by getRootActions.
+        ColumnWithTypeAndName col;
+        col.type = std::make_shared<DataTypeInt64>();
+        col.column = col.type->createColumnConst(1 /* size */, UInt64(1) /* field */);
+        col.name = f.column_name;
+
+        step.actions()->addColumn(col);
+    }
+
+    // /*
+    // for (const auto & desc : aggregate_descriptions)
+    //     for (const auto & name : desc.argument_names)
+    //         step.required_output.emplace_back(name);
+    // */
+
+    // const auto * select_query = getSelectQuery();
+    // /// Collect aggregates removing duplicates by node.getColumnName()
+    // /// It's not clear why we recollect aggregates (for query parts) while we're able to use previously collected ones (for entire query)
+    // /// @note The original recollection logic didn't remove duplicates.
+    // GetAggregatesVisitor::Data data;
+    // GetAggregatesVisitor(data).visit(select_query->select());
+
+    // // 1) just add everything there is in the AST,
+    // for (const ASTFunction * node : data.window_functions)
+    // {
+    //     for (auto & argument : node->arguments->children)
+    //     {
+    //         getRootActions(argument, only_types, step.actions());
+    //     }
+    // }
+
+    // 2) mark the columns that are really required:
+    for (const auto & f : window_functions)
+    {
+        for (const auto & a : f.function_node->arguments->children)
+        {
+            // 2.1) function arguments,
+            step.required_output.push_back(a->getColumnName());
+        }
+        // 2.2) function result,
+        step.required_output.push_back(f.column_name);
+    }
+
+    // 2.3) PARTITION BY and ORDER BY columns.
+    for (const auto & [_, w] : window_descriptions)
+    {
+        for (const auto & c : w.full_sort_description)
+        {
+            step.required_output.push_back(c.column_name);
+        }
+    }
 
     fmt::print(stderr, "actions after window: {}\n", chain.dumpChain());
 }
@@ -1155,6 +1250,18 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActio
         }
     }
 
+    for (const auto & f : window_functions)
+    {
+        if (required_result_columns.empty()
+            || required_result_columns.count(f.column_name))
+        {
+            result_columns.emplace_back(f.column_name, f.column_name);
+            step.required_output.push_back(f.column_name);
+        }
+    }
+
+    fmt::print(stderr, "chain before last projection: {}\n",
+        chain.dumpChain());
     auto actions = chain.getLastActions();
     actions->project(result_columns);
     return actions;
@@ -1407,6 +1514,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             && !query.final()
             && join_allow_read_in_order;
 
+        /*
         if (has_window)
         {
             query_analyzer.appendWindowFunctionsArguments(chain, only_types || !first_stage);
@@ -1414,10 +1522,14 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
             finalize_chain(chain);
         }
+        */
 
         /// If there is aggregation, we execute expressions in SELECT and ORDER BY on the initiating server, otherwise on the source servers.
         query_analyzer.appendSelect(chain, only_types || (need_aggregate ? !second_stage : !first_stage));
         fmt::print(stderr, "chain after select: {}\n", chain.dumpChain());
+
+        query_analyzer.appendWindowFunctionsArguments(chain, only_types || !first_stage);
+        fmt::print(stderr, "chain after window: {}\n", chain.dumpChain());
 
         selected_columns = chain.getLastStep().required_output;
         has_order_by = query.orderBy() != nullptr;
@@ -1605,6 +1717,17 @@ std::string WindowFunctionDescription::dump() const
     {
         ss << "parameters " << toString(function_parameters) << "\n";
     }
+
+    return ss.str();
+}
+
+std::string WindowDescription::dump() const
+{
+    std::stringstream ss;
+    ss << "window '" << window_name << "'\n";
+    ss << "partition_by " << dumpSortDescription(partition_by) << "\n";
+    ss << "order_by " << dumpSortDescription(order_by) << "\n";
+    ss << "full_sort_description " << dumpSortDescription(full_sort_description) << "\n";
 
     return ss.str();
 }
