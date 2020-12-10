@@ -1379,9 +1379,9 @@ Below is a comparison of the formats `RawBLOB` and [TabSeparatedRaw](#tabseparat
 - there are no delimiters between values;
 - no newline at the end of each value.
 [TabSeparatedRaw] (#tabseparatedraw):
-- data is output without screening;
-- the string contains values ​​separated by tabs;
-- there is a line feed after the last value in the line.
+- data is output without escaping;
+- the rows contain values separated by tabs;
+- there is a line feed after the last value in every row.
 
 The following is a comparison of the `RawBLOB` and [RowBinary](#rowbinary) formats.
 `RawBLOB`:
