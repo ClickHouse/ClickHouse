@@ -1385,8 +1385,9 @@ Below is a comparison of the formats `RawBLOB` and [TabSeparatedRaw](#tabseparat
 
 The following is a comparison of the `RawBLOB` and [RowBinary](#rowbinary) formats.
 `RawBLOB`:
-- strings are output without their length.
-- strings are represented as length in varint format (unsigned [LEB128] (https://en.wikipedia.org/wiki/LEB128)), followed by the bytes of the string.
+- String fields are output without being prefixed by length.
+`RowBinary`:
+- String fields are represented as length in varint format (unsigned [LEB128] (https://en.wikipedia.org/wiki/LEB128)), followed by the bytes of the string.
 
 When an empty data is passed to the `RawBLOB` input, ClickHouse throws an exception:
 
