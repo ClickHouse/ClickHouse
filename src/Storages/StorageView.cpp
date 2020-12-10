@@ -113,15 +113,19 @@ static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_quer
     return select_element->table_expression->as<ASTTableExpression>();
 }
 
-void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_query, ASTPtr & view_name)
+void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_query)
 {
+    ASTPtr view_name;
     ASTTableExpression * table_expression = getFirstTableExpression(outer_query);
 
     if (!table_expression->database_and_table_name)
     {
-        // If it's a view table function, add a fake db.table name.
+        // If it's a view table function, add a fake db.table name and set view_name to the table function.
         if (table_expression->table_function && table_expression->table_function->as<ASTFunction>()->name == "view")
+        {
             table_expression->database_and_table_name = std::make_shared<ASTIdentifier>("__view");
+            view_name = table_expression->table_function;
+        }
         else
             throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
     }
@@ -129,32 +133,17 @@ void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_
     DatabaseAndTableWithAlias db_table(table_expression->database_and_table_name);
     String alias = db_table.alias.empty() ? db_table.table : db_table.alias;
 
-    view_name = table_expression->database_and_table_name;
+    if (!view_name)
+        view_name = table_expression->database_and_table_name;
     table_expression->database_and_table_name = {};
     table_expression->subquery = std::make_shared<ASTSubquery>();
     table_expression->subquery->children.push_back(view_query);
     table_expression->subquery->setAlias(alias);
+    table_expression->table_function = {};
 
     for (auto & child : table_expression->children)
         if (child.get() == view_name.get())
             child = view_query;
-}
-
-ASTPtr StorageView::restoreViewName(ASTSelectQuery & select_query, const ASTPtr & view_name)
-{
-    ASTTableExpression * table_expression = getFirstTableExpression(select_query);
-
-    if (!table_expression->subquery)
-        throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
-
-    ASTPtr subquery = table_expression->subquery;
-    table_expression->subquery = {};
-    table_expression->database_and_table_name = view_name;
-
-    for (auto & child : table_expression->children)
-        if (child.get() == subquery.get())
-            child = view_name;
-    return subquery->children[0];
 }
 
 void registerStorageView(StorageFactory & factory)

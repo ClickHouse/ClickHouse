@@ -257,10 +257,19 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (storage)
     {
-        table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
-        table_id = storage->getStorageID();
-        if (metadata_snapshot == nullptr)
-            metadata_snapshot = storage->getInMemoryMetadataPtr();
+        if (StorageView * view = dynamic_cast<StorageView *>(storage.get()))
+        {
+            view->replaceWithSubquery(getSelectQuery(), storage->getInMemoryMetadataPtr());
+            joined_tables.reset(getSelectQuery());
+            storage = {};
+        }
+        else
+        {
+            table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
+            table_id = storage->getStorageID();
+            if (metadata_snapshot == nullptr)
+                metadata_snapshot = storage->getInMemoryMetadataPtr();
+        }
     }
 
     if (has_input || !joined_tables.resolveTables())
@@ -300,19 +309,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (storage)
         row_policy_filter = context->getRowPolicyCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER);
 
-    StorageView * view = nullptr;
-    if (storage)
-        view = dynamic_cast<StorageView *>(storage.get());
-
     SubqueriesForSets subquery_for_sets;
 
     auto analyze = [&] (bool try_move_to_prewhere)
     {
-        /// Allow push down and other optimizations for VIEW: replace with subquery and rewrite it.
-        ASTPtr view_table;
-        if (view)
-            view->replaceWithSubquery(getSelectQuery(), view_table, metadata_snapshot);
-
         syntax_analyzer_result = TreeRewriter(*context).analyzeSelect(
             query_ptr,
             TreeRewriterResult(source_header.getNamesAndTypesList(), storage, metadata_snapshot),
@@ -322,13 +322,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (!options.only_analyze && context->hasQueryContext())
             for (const auto & it : syntax_analyzer_result->getScalars())
                 context->getQueryContext().addScalar(it.first, it.second);
-
-        if (view)
-        {
-            /// Restore original view name. Save rewritten subquery for future usage in StorageView.
-            query_info.view_query = view->restoreViewName(getSelectQuery(), view_table);
-            view = nullptr;
-        }
 
         if (try_move_to_prewhere && storage && !row_policy_filter && query.where() && !query.prewhere() && !query.final())
         {

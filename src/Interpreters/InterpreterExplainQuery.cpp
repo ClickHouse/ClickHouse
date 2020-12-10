@@ -55,8 +55,7 @@ namespace
             const SelectQueryInfo & query_info = interpreter.getQueryInfo();
             if (query_info.view_query)
             {
-                ASTPtr tmp;
-                StorageView::replaceWithSubquery(select, query_info.view_query->clone(), tmp);
+                StorageView::replaceWithSubquery(select, query_info.view_query->clone());
             }
         }
     };
