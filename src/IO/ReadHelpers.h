@@ -300,7 +300,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
                 else
                 {
                     if constexpr (throw_exception)
-                        throw Exception("Unsigned type must not contain '-' symbol", ErrorCodes::CANNOT_PARSE_NUMBER);
+                        throw ParsingException("Unsigned type must not contain '-' symbol", ErrorCodes::CANNOT_PARSE_NUMBER);
                     else
                         return ReturnType(false);
                 }
@@ -648,7 +648,7 @@ inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
 
                 if constexpr (throw_exception)
                 {
-                    throw Exception(std::string("Cannot parse uuid ") + s, ErrorCodes::CANNOT_PARSE_UUID);
+                    throw ParsingException(std::string("Cannot parse uuid ") + s, ErrorCodes::CANNOT_PARSE_UUID);
                 }
                 else
                 {
@@ -669,7 +669,7 @@ inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
 
         if constexpr (throw_exception)
         {
-            throw Exception(std::string("Cannot parse uuid ") + s, ErrorCodes::CANNOT_PARSE_UUID);
+            throw ParsingException(std::string("Cannot parse uuid ") + s, ErrorCodes::CANNOT_PARSE_UUID);
         }
         else
         {
@@ -824,7 +824,7 @@ inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)
     if (19 != size)
     {
         s[size] = 0;
-        throw Exception(std::string("Cannot parse datetime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
+        throw ParsingException(std::string("Cannot parse datetime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
     }
 
     datetime.year((s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0'));
@@ -1016,7 +1016,7 @@ void readQuoted(std::vector<T> & x, ReadBuffer & buf)
             if (*buf.position() == ',')
                 ++buf.position();
             else
-                throw Exception("Cannot read array from text", ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT);
+                throw ParsingException("Cannot read array from text", ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT);
         }
 
         first = false;
@@ -1039,7 +1039,7 @@ void readDoubleQuoted(std::vector<T> & x, ReadBuffer & buf)
             if (*buf.position() == ',')
                 ++buf.position();
             else
-                throw Exception("Cannot read array from text", ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT);
+                throw ParsingException("Cannot read array from text", ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT);
         }
 
         first = false;

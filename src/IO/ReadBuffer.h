@@ -165,7 +165,7 @@ public:
     {
         auto read_bytes = read(to, n);
         if (n != read_bytes)
-            throw Exception("Cannot read all data. Bytes read: " + std::to_string(read_bytes) + ". Bytes expected: " + std::to_string(n) + ".", ErrorCodes::CANNOT_READ_ALL_DATA);
+            throw ParsingException("Cannot read all data. Bytes read: " + std::to_string(read_bytes) + ". Bytes expected: " + std::to_string(n) + ".", ErrorCodes::CANNOT_READ_ALL_DATA);
     }
 
     /** A method that can be more efficiently implemented in derived classes, in the case of reading large enough blocks.

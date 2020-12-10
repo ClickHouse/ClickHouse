@@ -153,7 +153,7 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
         if (unlikely(res.ec != std::errc()))
         {
             if constexpr (throw_exception)
-                throw Exception("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
+                throw ParsingException("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
             else
                 return ReturnType(false);
         }
@@ -236,7 +236,7 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
         if (unlikely(res.ec != std::errc()))
         {
             if constexpr (throw_exception)
-                throw Exception("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
+                throw ParsingException("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
             else
                 return ReturnType(false);
         }
@@ -308,7 +308,7 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
     if (in.eof())
     {
         if constexpr (throw_exception)
-            throw Exception("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
+            throw ParsingException("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
         else
             return false;
     }
@@ -365,7 +365,7 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
         if (in.eof())
         {
             if constexpr (throw_exception)
-                throw Exception("Cannot read floating point value: nothing after exponent", ErrorCodes::CANNOT_PARSE_NUMBER);
+                throw ParsingException("Cannot read floating point value: nothing after exponent", ErrorCodes::CANNOT_PARSE_NUMBER);
             else
                 return false;
         }
@@ -403,7 +403,7 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
         if (in.eof())
         {
             if constexpr (throw_exception)
-                throw Exception("Cannot read floating point value: no digits read", ErrorCodes::CANNOT_PARSE_NUMBER);
+                throw ParsingException("Cannot read floating point value: no digits read", ErrorCodes::CANNOT_PARSE_NUMBER);
             else
                 return false;
         }
@@ -414,14 +414,14 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
             if (in.eof())
             {
                 if constexpr (throw_exception)
-                    throw Exception("Cannot read floating point value: nothing after plus sign", ErrorCodes::CANNOT_PARSE_NUMBER);
+                    throw ParsingException("Cannot read floating point value: nothing after plus sign", ErrorCodes::CANNOT_PARSE_NUMBER);
                 else
                     return false;
             }
             else if (negative)
             {
                 if constexpr (throw_exception)
-                    throw Exception("Cannot read floating point value: plus after minus sign", ErrorCodes::CANNOT_PARSE_NUMBER);
+                    throw ParsingException("Cannot read floating point value: plus after minus sign", ErrorCodes::CANNOT_PARSE_NUMBER);
                 else
                     return false;
             }
