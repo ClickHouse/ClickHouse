@@ -32,7 +32,7 @@ Yandex open sourced ClickHouse under an Apache 2.0 license in 2016. There were n
 * Ensure that ClickHouse would continue to evolve by creating a community to nurture it.
 * Motivate developers to contribute to and use ClickHouse due to the open source “cool” factor.
 * Improve ClickHouse quality by making the code public. Nobody wants their name visible on bad code. ;-)
-* Showcase Yandex innovation to a worldwide audience
+* Showcase Yandex innovation to a worldwide audience.
 
 Alexey and the development team moved ClickHouse code to a Github repo under the Yandex organization and began issuing community builds as well as accepting external contributions. They simultaneously began regular meetups to popularize ClickHouse and build a community around it. The result was a burst of adoption across multiple regions of the globe.
 
