@@ -7,6 +7,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/checkStackSize.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <IO/ConnectionTimeoutsContext.h>
 
 #include <common/logger_useful.h>
 #include <Processors/Pipe.h>
@@ -143,7 +144,7 @@ void SelectStreamFactory::createForShard(
     auto emplace_remote_stream = [&]()
     {
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            shard_info.pool, modified_query, header, context, nullptr, throttler, scalars, external_tables, processed_stage);
+            shard_info.pool, modified_query, header, context, throttler, scalars, external_tables, processed_stage);
         remote_query_executor->setLogger(log);
 
         remote_query_executor->setPoolMode(PoolMode::GET_MANY);
@@ -288,7 +289,7 @@ void SelectStreamFactory::createForShard(
                     connections.emplace_back(std::move(try_result.entry));
 
                 auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                    std::move(connections), modified_query, header, context, nullptr, throttler, scalars, external_tables, stage);
+                    std::move(connections), modified_query, header, context, throttler, scalars, external_tables, stage);
 
                 return createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes);
             }
