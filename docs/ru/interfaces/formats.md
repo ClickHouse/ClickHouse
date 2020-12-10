@@ -1256,7 +1256,7 @@ SELECT * FROM line_as_string;
 `RawBLOB`:
 -   данные выводятся в бинарном виде, без экранирования;
 -   нет разделителей между значениями;
--   нет новой строки в конце каждого значения.
+-   нет перевода строки в конце каждого значения.
 [TabSeparatedRaw](#tabseparatedraw):
 -   данные выводятся без экранирования;
 -   строка содержит значения, разделённые табуляцией;
@@ -1264,11 +1264,11 @@ SELECT * FROM line_as_string;
 
 Далее рассмотрено сравнение форматов `RawBLOB` и [RowBinary](#rowbinary).
 `RawBLOB`:
--   строки выводятся без их длины.
-[TabSeparatedRaw](#tabseparatedraw):
+-   строки выводятся без их длины в начале.
+`RowBinary`:
 -   строки представлены как длина в формате varint (unsigned [LEB128](https://en.wikipedia.org/wiki/LEB128)), а затем байты строки.
 
-При передаче на вход `RawBLOB` пустого значения ClickHouse сгенерирует исключение:
+При передаче на вход `RawBLOB` пустых данных, ClickHouse бросает исключение:
  
 ``` text
 Code: 108. DB::Exception: No data to insert
