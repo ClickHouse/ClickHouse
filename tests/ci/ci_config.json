@@ -32,7 +32,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "gcc-10",
+            "compiler": "clang-11",
             "build-type": "",
             "sanitizer": "address",
             "package-type": "deb",
@@ -42,7 +42,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "gcc-10",
+            "compiler": "clang-11",
             "build-type": "",
             "sanitizer": "undefined",
             "package-type": "deb",
@@ -52,7 +52,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "gcc-10",
+            "compiler": "clang-11",
             "build-type": "",
             "sanitizer": "thread",
             "package-type": "deb",
@@ -167,7 +167,7 @@
     "tests_config": {
         "Functional stateful tests (address)": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "address",
@@ -179,7 +179,7 @@
         },
         "Functional stateful tests (thread)": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "thread",
@@ -203,7 +203,7 @@
         },
         "Functional stateful tests (ubsan)": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "undefined",
@@ -251,7 +251,7 @@
         },
         "Functional stateless tests (address)": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "address",
@@ -263,7 +263,7 @@
         },
         "Functional stateless tests (thread)": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "thread",
@@ -287,7 +287,7 @@
         },
         "Functional stateless tests (ubsan)": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "undefined",
@@ -371,7 +371,7 @@
         },
         "Stress test (address)": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "address",
@@ -383,7 +383,7 @@
         },
         "Stress test (thread)": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "thread",
@@ -395,7 +395,7 @@
         },
         "Stress test (undefined)": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "undefined",
@@ -431,7 +431,7 @@
         },
         "Integration tests (asan)": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "address",
@@ -443,7 +443,7 @@
         },
         "Integration tests (thread)": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "thread",
@@ -467,7 +467,7 @@
         },
         "Integration tests flaky check (asan)": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "address",
@@ -539,7 +539,7 @@
         },
         "Unit tests ASAN": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "clang-11",
                 "package_type": "binary",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "address",
@@ -563,7 +563,7 @@
         },
         "Unit tests TSAN": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "clang-11",
                 "package_type": "binary",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "thread",
@@ -575,7 +575,7 @@
         },
         "Unit tests UBSAN": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "clang-11",
                 "package_type": "binary",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "thread",
@@ -611,7 +611,7 @@
         },
         "Functional stateless tests flaky check (address)": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "address",
