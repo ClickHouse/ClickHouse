@@ -434,7 +434,10 @@ JSON совместим с JavaScript. Для этого, дополнитель
 
 ClickHouse поддерживает [NULL](../sql-reference/syntax.md), который при выводе JSON будет отображен как `null`. Чтобы включить отображение в результате значений  `+nan`, `-nan`, `+inf`, `-inf`, установите параметр [output_format_json_quote_denormals](../operations/settings/settings.md#settings-output_format_json_quote_denormals) равным 1.
 
-Смотрите также формат [JSONEachRow](#jsoneachrow).
+**Смотрите также**
+
+-   Формат [JSONEachRow](#jsoneachrow)
+-   Настройка [output_format_json_array_of_rows](../operations/settings/settings.md#output-format-json-array-of-rows)
 
 ## JSONString {#jsonstring}
 
