@@ -179,9 +179,10 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 
 #### ClickHouse extras {#clickhouse-extras}
 
-hadoop\_kerberos\_keytab
-hadoop\_kerberos\_principal
-hadoop\_kerberos\_kinit\_command
+| **parameter**                                         | **default value**       |
+|hadoop\_kerberos\_keytab                               | ""                      |
+|hadoop\_kerberos\_principal                            | ""                      |
+|hadoop\_kerberos\_kinit\_command                       | kinit                   |
 
 #### Limitations {#limitations}
 
@@ -195,7 +196,7 @@ Note that due to libhdfs3 limitations only old-fashioned approach is supported,
 datanode communications are not secured by SASL (HADOOP\_SECURE\_DN\_USER is a reliable indicator of such
 security approach). Use tests/integration/test\_storage\_kerberized\_hdfs/hdfs_configs/bootstrap.sh for reference.
 
-kinit tool and configuration files are required.
+If hadoop\_kerberos\_keytab, hadoop\_kerberos\_principal or hadoop\_kerberos\_kinit\_command is specified, kinit will be invoked. hadoop\_kerberos\_keytab and hadoop\_kerberos\_principal are mandatory in this case. kinit tool and krb5 configuration files are required.
 
 ## Virtual Columns {#virtual-columns}
 
