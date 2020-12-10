@@ -31,7 +31,7 @@ struct WindowFunctionDescription
 {
     std::string window_name;
     std::string column_name;
-    const IAST * wrapper_node;
+    const ASTFunction * wrapper_node;
     const ASTFunction * function_node;
     AggregateFunctionPtr aggregate_function;
     Array function_parameters;
@@ -45,9 +45,12 @@ struct WindowDescription
 {
     std::string window_name;
     // Always ASC for now.
-    std::vector<std::string> partition_by;
-    std::vector<std::string> order_by;
+    SortDescription partition_by;
+    SortDescription order_by;
+    SortDescription full_sort_description;
     // No frame info as of yet.
+
+    std::string dump() const;
 };
 
 using WindowFunctionDescriptions = std::vector<WindowFunctionDescription>;
