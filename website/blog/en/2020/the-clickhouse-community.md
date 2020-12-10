@@ -86,7 +86,7 @@ ClickHouse ecosystem projects are also growing rapidly. Here is a selected list 
 * [brockercap/Bifrost](https://github.com/brokercap/Bifrost) — Middleware to sync MySQL binlog to ClickHouse
 * [mymarilyn/clickhouse-driver](https://github.com/mymarilyn/clickhouse-driver) — ClickHouse Python driver with native interface support
 * [Vertamedia/clickhouse-grafana](https://github.com/Vertamedia/clickhouse-grafana) — Grafana datasource for ClickHouse
-* [smi2/phpClickHouse](https://github.com/smi2/phpClickHouse) — PHP Clickhouse client
+* [smi2/phpClickHouse](https://github.com/smi2/phpClickHouse) — PHP ClickHouse client
 * [Altinity/clickhouse-operator](https://github.com/Altinity/clickhouse-operator) — Kubernetes operator for ClickHouse
 * [AlexAkulov/clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup) — ClickHouse backup and restore using cloud storage
 * [And almost 1200 more](https://github.com/search?o=desc&p=1&q=clickhouse&s=stars&type=Repositories)...
@@ -101,10 +101,10 @@ In addition, ClickHouse users have a wide range of ways to engage with the commu
 * [SF Bay Area ClickHouse Meetup](https://www.meetup.com/San-Francisco-Bay-Area-ClickHouse-Meetup/) — The largest US ClickHouse meetup, with meetings approximately every 2 months.
 * Chinese meetups occur at regular intervals with different sponsors.  Watch for announcements on clickhouse.tech.
 * Telegram - By far the largest forum for ClickHouse. It is the best place to talk to ClickHouse devs. There are two groups.
-* [ClickHouse не тормозит](https://t.me/clickhouse_ru) (“Clickhouse does not slow down”) - Russian language Telegram group with 4,629 members currently.
+* [ClickHouse не тормозит](https://t.me/clickhouse_ru) (“ClickHouse does not slow down”) - Russian language Telegram group with 4,629 members currently.
 * [ClickHouse](https://t.me/clickhouse_en) — English language group with 1,286 members.
 * [ClickHouse Community Slack Channel](http://clickhousedb.slack.com) — Public channel for Slack users. It currently has 551 members.
-* [Clickhouse.com.cn](http://clickhouse.com.cn/) — Chinese language site for ClickHouse-related announcements and questions.
+* [ClickHouse.com.cn](http://clickhouse.com.cn/) — Chinese language site for ClickHouse-related announcements and questions.
 * [Conference Presentations](https://github.com/ClickHouse/clickhouse-presentations) — ClickHouse developers like to talk and do so whenever they can.  Many recent presentations are stored in Github.  Also, look for ClickHouse presentations at Linux Foundation conferences, Data Con LA, Percona Live, and many other venues where there are presentations about data.
 * Technical webinars — Altinity has a large library of technical presentations on ClickHouse and related applications on the [Altinity Youtube channel](https://www.youtube.com/channel/UCE3Y2lDKl_ZfjaCrh62onYA/featured).
 
