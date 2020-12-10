@@ -83,7 +83,7 @@ void NativeBlockInputStream::readData(const IDataType & type, IColumn & column, 
     type.deserializeBinaryBulkWithMultipleStreams(column, rows, settings, state);
 
     if (column.size() != rows)
-        throw Exception("Cannot read all data in NativeBlockInputStream. Rows read: " + toString(column.size()) + ". Rows expected: " + toString(rows) + ".",
+        throw ParsingException("Cannot read all data in NativeBlockInputStream. Rows read: " + toString(column.size()) + ". Rows expected: " + toString(rows) + ".",
             ErrorCodes::CANNOT_READ_ALL_DATA);
 }
 
@@ -106,7 +106,7 @@ Block NativeBlockInputStream::readImpl()
     if (istr.eof())
     {
         if (use_index)
-            throw Exception("Input doesn't contain all data for index.", ErrorCodes::CANNOT_READ_ALL_DATA);
+            throw ParsingException("Input doesn't contain all data for index.", ErrorCodes::CANNOT_READ_ALL_DATA);
 
         return res;
     }
