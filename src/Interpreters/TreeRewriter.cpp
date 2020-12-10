@@ -121,18 +121,18 @@ struct CustomizeAggregateFunctionsSuffixData
     void visit(ASTFunction & func, ASTPtr &) const
     {
         const auto & instance = AggregateFunctionFactory::instance();
-        if (instance.isAggregateFunctionName(func.name) && !endsWith(func.name, "OrNull"))
+        if (instance.isAggregateFunctionName(func.name) && !endsWith(func.name, customized_func_suffix))
         {
             auto properties = instance.tryGetProperties(func.name);
             if (properties && !properties->returns_default_when_only_null)
             {
-                if (!endsWith(func.name, customized_func_suffix))
-                    func.name += customized_func_suffix;
+                func.name += customized_func_suffix;
             }
         }
     }
 };
 
+// Used to rewrite aggregate functions with -OrNull suffix in some cases, such as sumIfOrNull, we shoule rewrite to sumOrNullIf
 struct CustomizeAggregateFunctionsMoveSuffixData
 {
     using TypeToVisit = ASTFunction;
@@ -165,7 +165,7 @@ struct CustomizeAggregateFunctionsMoveSuffixData
         const auto & instance = AggregateFunctionFactory::instance();
         if (instance.isAggregateFunctionName(func.name))
         {
-            if (endsWith(func.name, "OrNull"))
+            if (endsWith(func.name, customized_func_suffix))
             {
                 auto properties = instance.tryGetProperties(func.name);
                 if (properties && !properties->returns_default_when_only_null)
