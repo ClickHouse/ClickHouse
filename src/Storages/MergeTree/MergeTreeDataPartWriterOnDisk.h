@@ -75,7 +75,7 @@ public:
     {
         written_offset_columns = written_offset_columns_;
     }
-
+    const MergeTreeIndices & getSkipIndices() { return skip_indices; }
 protected:
      /// Count index_granularity for block and store in `index_granularity`
     size_t computeIndexGranularity(const Block & block) const;
@@ -85,6 +85,7 @@ protected:
     void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums, bool sync);
     void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums, bool sync);
 
+    const MergeTreeIndices skip_indices;
 
     const String part_path;
     const String marks_file_extension;

@@ -24,15 +24,8 @@ public:
         const MergeTreeData::DataPartPtr & data_part_,
         const NamesAndTypesList & columns_list_,
         const StorageMetadataPtr & metadata_snapshot_,
-        const MergeTreeWriterSettings & settings_);
-
-    IMergeTreeDataPartWriter(
-        const MergeTreeData::DataPartPtr & data_part_,
-        const NamesAndTypesList & columns_list_,
-        const StorageMetadataPtr & metadata_snapshot_,
-        const MergeTreeIndices & skip_indices_,
-        const MergeTreeIndexGranularity & index_granularity_,
-        const MergeTreeWriterSettings & settings_);
+        const MergeTreeWriterSettings & settings_,
+        const MergeTreeIndexGranularity & index_granularity_ = {});
 
     virtual ~IMergeTreeDataPartWriter();
 
@@ -40,10 +33,8 @@ public:
 
     virtual void finish(IMergeTreeDataPart::Checksums & checksums, bool sync) = 0;
 
-
     Columns releaseIndexColumns();
     const MergeTreeIndexGranularity & getIndexGranularity() const { return index_granularity; }
-    const MergeTreeIndices & getSkipIndices() { return skip_indices; }
 
 protected:
     /// Shift mark and offset to prepare read next mark.
@@ -58,9 +49,8 @@ protected:
     const MergeTreeData & storage;
     const StorageMetadataPtr metadata_snapshot;
     const NamesAndTypesList columns_list;
-    const MergeTreeIndices skip_indices;
-    MergeTreeIndexGranularity index_granularity;
     const MergeTreeWriterSettings settings;
+    MergeTreeIndexGranularity index_granularity;
     const bool with_final_mark;
 
     size_t next_mark = 0;
