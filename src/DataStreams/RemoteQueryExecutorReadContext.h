@@ -1,5 +1,8 @@
 #pragma once
 #include <sys/epoll.h>
+#include <Common/Fiber.h>
+#include <Common/FiberStack.h>
+#include <Common/TimerDescriptor.h>
 
 namespace DB
 {
@@ -174,7 +177,7 @@ public:
         MultiplexedConnections & connections;
         Self & read_context;
 
-        boost::context::fiber operator()(boost::context::fiber && sink) const
+        Fiber operator()(Fiber && sink) const
         {
             try
             {

@@ -67,7 +67,7 @@ public:
     /// Without locking, because sendCancel() does not change the state of the replicas.
     bool hasActiveConnections() const { return active_connection_count > 0; }
 
-    void setFiber(boost::context::fiber * fiber_) { fiber = fiber_; }
+    void setFiber(Fiber * fiber_) { fiber = fiber_; }
     Poco::Net::Socket & getSocket() { return current_connection->getSocket(); }
 
 private:
