@@ -122,7 +122,7 @@ Chunk IRowInputFormat::generate()
             }
         }
     }
-    catch (ParsingException & e) 
+    catch (ParsingException & e)
     {
         String verbose_diagnostic;
         try

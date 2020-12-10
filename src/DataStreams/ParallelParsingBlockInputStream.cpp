@@ -132,7 +132,6 @@ void ParallelParsingBlockInputStream::segmentatorThreadFunction(ThreadGroupStatu
             unit.offset = successfully_read_rows_count;
             successfully_read_rows_count += currently_read_rows;
 
-            
             unit.is_last = !have_more_data;
             unit.status = READY_TO_PARSE;
             scheduleParserThreadForUnitWithNumber(segmentator_ticket_number);
@@ -209,8 +208,8 @@ void ParallelParsingBlockInputStream::onBackgroundException(size_t offset)
     if (!background_exception)
     {
         background_exception = std::current_exception();
- 
-        if (ParsingException * e = exception_cast<ParsingException *>(background_exception)) 
+
+        if (ParsingException * e = exception_cast<ParsingException *>(background_exception))
         {
             e->setLineNumber(e->getLineNumber() + offset);
             e->formatInternalMessage();
