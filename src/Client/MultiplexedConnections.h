@@ -110,6 +110,8 @@ private:
     mutable std::mutex cancel_mutex;
 
     boost::context::fiber * fiber = nullptr;
+
+    friend class RemoteQueryExecutorReadContext;
 };
 
 }

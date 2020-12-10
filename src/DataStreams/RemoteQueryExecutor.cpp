@@ -223,7 +223,7 @@ std::variant<Block, int> RemoteQueryExecutor::read(std::unique_ptr<ReadContext> 
 
     do
     {
-        if (!read_context->resumeRoutine())
+        if (!read_context->resumeRoutine(was_cancelled_mutex))
             return Block();
 
         if (read_context->is_read_in_progress)
@@ -317,7 +317,7 @@ void RemoteQueryExecutor::finish(std::unique_ptr<ReadContext> * read_context)
         return;
 
     if (read_context && *read_context)
-        (*read_context)->cancel();
+        (*read_context)->cancel(was_cancelled_mutex);
 
     /** If you have not read all the data yet, but they are no longer needed.
       * This may be due to the fact that the data is sufficient (for example, when using LIMIT).
@@ -368,7 +368,7 @@ void RemoteQueryExecutor::cancel(std::unique_ptr<ReadContext> * read_context)
         return;
 
     if (read_context && *read_context)
-        (*read_context)->cancel();
+        (*read_context)->cancel(was_cancelled_mutex);
 
     tryCancel("Cancelling query");
 }

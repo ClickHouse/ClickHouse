@@ -24,7 +24,6 @@ public:
 
     std::exception_ptr exception;
     FiberStack<> stack;
-    std::mutex fiber_mutex;
     boost::context::fiber fiber;
 
     Poco::Timespan receive_timeout;
@@ -33,12 +32,25 @@ public:
     TimerDescriptor timer{CLOCK_MONOTONIC, 0};
     int socket_fd = -1;
     int epoll_fd;
+    int pipe_fd[2];
 
     explicit RemoteQueryExecutorReadContext(MultiplexedConnections & connections_) : connections(connections_)
     {
         epoll_fd = epoll_create(2);
         if (-1 == epoll_fd)
             throwFromErrno("Cannot create epoll descriptor", ErrorCodes::CANNOT_OPEN_FILE);
+
+        if (-1 == pipe2(pipe_fd, O_NONBLOCK))
+            throwFromErrno("Cannot create pipe", ErrorCodes::CANNOT_OPEN_FILE);
+
+        {
+            epoll_event socket_event;
+            socket_event.events = EPOLLIN | EPOLLPRI;
+            socket_event.data.fd = pipe_fd[0];
+
+            if (-1 == epoll_ctl(epoll_fd, EPOLL_CTL_ADD, pipe_fd[0], &socket_event))
+                throwFromErrno("Cannot add pipe descriptor to epoll", ErrorCodes::CANNOT_OPEN_FILE);
+        }
 
         {
             epoll_event timer_event;
@@ -76,11 +88,11 @@ public:
         receive_timeout = socket.impl()->getReceiveTimeout();
     }
 
-    void checkTimeout() const
+    bool checkTimeout() const
     {
         try
         {
-            checkTimeoutImpl();
+            return checkTimeoutImpl();
         }
         catch (DB::Exception & e)
         {
@@ -89,16 +101,18 @@ public:
         }
     }
 
-    void checkTimeoutImpl() const
+    bool checkTimeoutImpl() const
     {
-        epoll_event events[2];
+        epoll_event events[3];
+        events[0].data.fd = events[1].data.fd = events[2].data.fd = -1;
 
         /// Wait for epoll_fd will not block if it was polled externally.
-        int num_events = epoll_wait(epoll_fd, events, 2, 0);
+        int num_events = epoll_wait(epoll_fd, events, 3, 0);
         if (num_events == -1)
             throwFromErrno("Failed to epoll_wait", ErrorCodes::CANNOT_READ_FROM_SOCKET);
 
         bool is_socket_ready = false;
+        bool is_pipe_alarmed = false;
         bool has_timer_alarm = false;
 
         for (int i = 0; i < num_events; ++i)
@@ -107,7 +121,12 @@ public:
                 is_socket_ready = true;
             if (events[i].data.fd == timer.getDescriptor())
                 has_timer_alarm = true;
+            if (events[i].data.fd == pipe_fd[0])
+                is_pipe_alarmed = true;
         }
+
+        if (is_pipe_alarmed)
+            return false;
 
         if (has_timer_alarm && !is_socket_ready)
         {
@@ -115,6 +134,8 @@ public:
             timer.drain();
             throw NetException("Timeout exceeded", ErrorCodes::SOCKET_TIMEOUT);
         }
+
+        return true;
     }
 
     void setTimer() const
@@ -126,13 +147,13 @@ public:
             timer.setRelative(receive_timeout);
     }
 
-    bool resumeRoutine()
+    bool resumeRoutine(std::mutex & mutex)
     {
-        if (is_read_in_progress)
-            checkTimeout();
+        if (is_read_in_progress && !checkTimeout())
+            return false;
 
         {
-            std::lock_guard guard(fiber_mutex);
+            std::lock_guard guard(mutex);
             if (!fiber)
                 return false;
 
@@ -159,10 +180,20 @@ public:
         return true;
     }
 
-    void cancel()
+    void cancel(std::mutex & mutex)
     {
-        std::lock_guard guard(fiber_mutex);
+        std::lock_guard guard(mutex);
         boost::context::fiber to_destroy = std::move(fiber);
+
+        uint64_t buf = 0;
+        while (-1 == write(pipe_fd[1], &buf, sizeof(buf)))
+        {
+            if (errno == EAGAIN)
+                break;
+
+            if (errno != EINTR)
+                throwFromErrno("Cannot write to pipe", ErrorCodes::CANNOT_READ_FROM_SOCKET);
+        }
     }
 
     ~RemoteQueryExecutorReadContext()
@@ -186,7 +217,7 @@ public:
                     connections.setFiber(&sink);
 
                     read_context.is_read_in_progress = true;
-                    read_context.packet = connections.receivePacket();
+                    read_context.packet = connections.receivePacketUnlocked();
                     read_context.is_read_in_progress = false;
 
                     sink = std::move(sink).resume();

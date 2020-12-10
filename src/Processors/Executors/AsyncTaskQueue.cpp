@@ -92,7 +92,7 @@ void AsyncTaskQueue::finish()
     uint64_t buf = 0;
     while (-1 == write(pipe_fd[1], &buf, sizeof(buf)))
     {
-        if (errno == EAGAIN || errno == EWOULDBLOCK)
+        if (errno == EAGAIN)
             break;
 
         if (errno != EINTR)

@@ -105,6 +105,16 @@ void RemoteSource::onCancel()
     is_async_state = false;
 }
 
+void RemoteSource::onUpdatePorts()
+{
+    if (getPort().isFinished())
+    {
+        was_query_canceled = true;
+        query_executor->finish(&read_context);
+        is_async_state = false;
+    }
+}
+
 
 RemoteTotalsSource::RemoteTotalsSource(RemoteQueryExecutorPtr executor)
     : ISource(executor->getHeader())
