@@ -1,6 +1,6 @@
 ---
 title: 'The ClickHouse Community'
-image: 'https://blog-images.clickhouse.tech/en/2020/the-clickhouse-community/clickhouse-community-history.png
+image: 'https://blog-images.clickhouse.tech/en/2020/the-clickhouse-community/clickhouse-community-history.png'
 date: '2020-12-10'
 author: '[Robert Hodges](https://github.com/hodgesrm)'
 tags: ['community', 'open source', 'telegram', 'meetup']
