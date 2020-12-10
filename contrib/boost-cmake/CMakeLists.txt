@@ -15,7 +15,7 @@ if (NOT USE_INTERNAL_BOOST_LIBRARY)
     )
 
     if(Boost_INCLUDE_DIR AND Boost_FILESYSTEM_LIBRARY AND Boost_FILESYSTEM_LIBRARY AND
-       Boost_PROGRAM_OPTIONS_LIBRARY AND Boost_REGEX_LIBRARY AND Boost_SYSTEM_LIBRARY)
+       Boost_PROGRAM_OPTIONS_LIBRARY AND Boost_REGEX_LIBRARY AND Boost_SYSTEM_LIBRARY AND Boost_CONTEXT_LIBRARY)
 
         set(EXTERNAL_BOOST_FOUND 1)
 
@@ -151,7 +151,7 @@ if (NOT EXTERNAL_BOOST_FOUND)
     enable_language(ASM)
     SET(ASM_OPTIONS "-x assembler-with-cpp")
 
-    if (SANITIZE)
+    if (SANITIZE AND SANITIZE STREQUAL "address")
         add_compile_definitions(BOOST_USE_UCONTEXT)
         add_compile_definitions(BOOST_USE_ASAN)
 

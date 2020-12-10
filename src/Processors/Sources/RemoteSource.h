@@ -29,11 +29,7 @@ public:
     void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) { rows_before_limit.swap(counter); }
 
     /// Stop reading from stream if output port is finished.
-    void onUpdatePorts() override
-    {
-        if (getPort().isFinished())
-            cancel();
-    }
+    void onUpdatePorts() override;
 
     int schedule() override { return fd; }
 
