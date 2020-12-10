@@ -241,6 +241,8 @@ if (USE_EMBEDDED_COMPILER AND USE_INTERNAL_LLVM_LIBRARY)
     set (LLVM_ENABLE_RTTI 1 CACHE INTERNAL "")
     set (LLVM_ENABLE_PIC 0 CACHE INTERNAL "")
     set (LLVM_TARGETS_TO_BUILD "X86;AArch64" CACHE STRING "")
+    # Yes it is set globally, but this is not enough, since llvm will add -std=c++11 after default
+    set (LLVM_CXX_STD ${_CXX_STANDARD} CACHE STRING "" FORCE)
     add_subdirectory (llvm/llvm)
     target_include_directories(LLVMSupport SYSTEM BEFORE PRIVATE ${ZLIB_INCLUDE_DIR})
 endif ()
