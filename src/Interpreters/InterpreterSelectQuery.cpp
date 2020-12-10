@@ -14,6 +14,8 @@
 
 #include <Access/AccessFlags.h>
 
+#include <AggregateFunctions/AggregateFunctionCount.h>
+
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/InterpreterSelectQuery.h>
