@@ -59,6 +59,7 @@ AsyncTaskQueue::TaskData AsyncTaskQueue::wait(std::unique_lock<std::mutex> & loc
     lock.unlock();
 
     epoll_event event;
+    event.data.ptr = nullptr;
     int num_events = 0;
 
     while (num_events == 0)

@@ -4,9 +4,7 @@
 
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
-
-#include <boost/context/fiber.hpp>
-
+#include <Common/Fiber.h>
 
 namespace DB
 {
@@ -31,11 +29,11 @@ public:
 
     bool poll(size_t timeout_microseconds);
 
-    void setFiber(boost::context::fiber * fiber_) { fiber = fiber_; }
+    void setFiber(Fiber * fiber_) { fiber = fiber_; }
     Poco::Net::Socket & getSocket() { return socket; }
 
 private:
-    boost::context::fiber * fiber = nullptr;
+    Fiber * fiber = nullptr;
 };
 
 }

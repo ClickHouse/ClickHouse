@@ -151,7 +151,18 @@ if (NOT EXTERNAL_BOOST_FOUND)
     enable_language(ASM)
     SET(ASM_OPTIONS "-x assembler-with-cpp")
 
-    if (ARCH_ARM)
+    if (SANITIZE)
+        add_compile_definitions(BOOST_USE_UCONTEXT)
+        add_compile_definitions(BOOST_USE_ASAN)
+
+        set (SRCS_CONTEXT
+                ${LIBRARY_DIR}/libs/context/src/fiber.cpp
+                ${LIBRARY_DIR}/libs/context/src/continuation.cpp
+                ${LIBRARY_DIR}/libs/context/src/dummy.cpp
+                ${LIBRARY_DIR}/libs/context/src/execution_context.cpp
+                ${LIBRARY_DIR}/libs/context/src/posix/stack_traits.cpp
+        )
+    elseif (ARCH_ARM)
         set (SRCS_CONTEXT
             ${LIBRARY_DIR}/libs/context/src/asm/jump_arm64_aapcs_elf_gas.S
             ${LIBRARY_DIR}/libs/context/src/asm/make_arm64_aapcs_elf_gas.S

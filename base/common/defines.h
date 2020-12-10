@@ -61,6 +61,11 @@
 #    endif
 #endif
 
+#if defined(ADDRESS_SANITIZER)
+#    define BOOST_USE_ASAN 1
+#    define BOOST_USE_UCONTEXT 1
+#endif
+
 /// TODO: Strange enough, there is no way to detect UB sanitizer.
 
 /// Explicitly allow undefined behaviour for certain functions. Use it as a function attribute.
