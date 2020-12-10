@@ -1385,11 +1385,10 @@ Below is a comparison of the formats `RawBLOB` and [TabSeparatedRaw](#tabseparat
 
 The following is a comparison of the `RawBLOB` and [RowBinary](#rowbinary) formats.
 `RawBLOB`:
-- lines are output without their length.
-[TabSeparatedRaw](#tabseparatedraw):
+- strings are output without their length.
 - strings are represented as length in varint format (unsigned [LEB128] (https://en.wikipedia.org/wiki/LEB128)), followed by the bytes of the string.
 
-When an empty value is passed to the `RawBLOB` input, ClickHouse generates an exception:
+When an empty data is passed to the `RawBLOB` input, ClickHouse throws an exception:
 
 ``` text
 Code: 108. DB::Exception: No data to insert
