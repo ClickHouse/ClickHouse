@@ -576,6 +576,8 @@ public:
     {
         if (isSmall())
         {
+            if (small.size())
+                return 0;
             auto min_val = std::numeric_limits<std::make_unsigned_t<T>>::max();
             for (const auto & x : small)
             {
@@ -593,11 +595,13 @@ public:
     {
         if (isSmall())
         {
+            if (small.size())
+                return 0;
             auto max_val = std::numeric_limits<std::make_unsigned_t<T>>::min();
             for (const auto & x : small)
             {
                 auto val = x.getValue();
-                if (val < max_val)
+                if (val > max_val)
                     max_val = val;
             }
             return max_val;
