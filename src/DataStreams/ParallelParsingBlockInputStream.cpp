@@ -212,7 +212,6 @@ void ParallelParsingBlockInputStream::onBackgroundException(size_t offset)
         if (ParsingException * e = exception_cast<ParsingException *>(background_exception))
         {
             e->setLineNumber(e->getLineNumber() + offset);
-            e->formatInternalMessage();
         }
     }
     tryLogCurrentException(__PRETTY_FUNCTION__);
