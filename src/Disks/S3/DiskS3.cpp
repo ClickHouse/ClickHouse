@@ -345,7 +345,8 @@ public:
         const String & bucket_,
         DiskS3::Metadata metadata_,
         const String & s3_path_,
-        std::optional<DiskS3::ObjectMetadata> object_metadata_,bool is_multipart,
+        std::optional<DiskS3::ObjectMetadata> object_metadata_,
+        bool is_multipart,
         size_t min_upload_part_size,
         size_t buf_size_)
         : WriteBufferFromFileBase(buf_size_, nullptr, 0)
