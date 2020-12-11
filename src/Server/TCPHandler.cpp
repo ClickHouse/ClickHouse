@@ -83,7 +83,7 @@ void TCPHandler::runImpl()
 
     if (in->eof())
     {
-        LOG_WARNING(log, "Client has not sent any data.");
+        LOG_INFO(log, "Client has not sent any data.");
         return;
     }
 
@@ -102,7 +102,7 @@ void TCPHandler::runImpl()
 
         if (e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
         {
-            LOG_WARNING(log, "Client has gone away.");
+            LOG_INFO(log, "Client has gone away.");
             return;
         }
 
