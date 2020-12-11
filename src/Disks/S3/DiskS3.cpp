@@ -728,7 +728,15 @@ void DiskS3::removeMeta(const String & path, AwsS3KeyKeeper & keys)
     {
         /// If it's impossible to read meta - just remove it from FS.
         if (e.code() == ErrorCodes::UNKNOWN_FORMAT)
+        {
+            LOG_WARNING(
+                &Poco::Logger::get("DiskS3"),
+                "Metadata file {} can't be read by reason: {}. Removing it forcibly.",
+                backQuote(path),
+                e.message());
+
             file.remove();
+        }
         else
             throw;
     }
