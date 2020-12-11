@@ -184,3 +184,14 @@ TEST(MySQLCreateRewritten, RewrittenQueryWithPrimaryKey)
         "ReplacingMergeTree(_version) PARTITION BY intDiv(key_2, 4294967) ORDER BY (key_1, key_2)");
 }
 
+TEST(MySQLCreateRewritten, RewrittenQueryWithPrefixKey)
+{
+    tryRegisterFunctions();
+    const auto & context_holder = getContext();
+
+    EXPECT_EQ(queryToString(tryRewrittenCreateQuery(
+        "CREATE TABLE `test_database`.`test_table_1` (`key` int NOT NULL PRIMARY KEY, `prefix_key` varchar(200) NOT NULL, KEY prefix_key_index(prefix_key(2))) ENGINE=InnoDB DEFAULT CHARSET=utf8", context_holder.context)),
+        "CREATE TABLE test_database.test_table_1 (`key` Int32, `prefix_key` String, `_sign` Int8() MATERIALIZED 1, `_version` UInt64() MATERIALIZED 1) ENGINE = "
+        "ReplacingMergeTree(_version) PARTITION BY intDiv(key, 4294967) ORDER BY (key, prefix_key)");
+}
+
