@@ -19,6 +19,7 @@ toc_title: Bibliotecas de terceros utilizadas
 | Más información    | [Licencia de 3 cláusulas BSD](https://github.com/google/googletest/blob/master/LICENSE)                                                          |
 | H3                 | [Licencia Apache 2.0](https://github.com/uber/h3/blob/master/LICENSE)                                                                            |
 | hyperscan          | [Licencia de 3 cláusulas BSD](https://github.com/intel/hyperscan/blob/master/LICENSE)                                                            |
+| libbtrie           | [Licencia BSD de 2 cláusulas](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libbtrie/LICENSE)                                     |
 | libcxxabi          | [BSD + MIT](https://github.com/ClickHouse/ClickHouse/blob/master/libs/libglibc-compatibility/libcxxabi/LICENSE.TXT)                              |
 | libdivide          | [Licencia Zlib](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libdivide/LICENSE.txt)                                              |
 | libgsasl           | [Información adicional](https://github.com/ClickHouse-Extras/libgsasl/blob/3b8948a4042e34fb00b4fb987535dc9e02e39040/LICENSE)                     |
@@ -27,7 +28,7 @@ toc_title: Bibliotecas de terceros utilizadas
 | libpcg-al azar     | [Licencia Apache 2.0](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libpcg-random/LICENSE-APACHE.txt)                             |
 | Libressl           | [Licencia OpenSSL](https://github.com/ClickHouse-Extras/ssl/blob/master/COPYING)                                                                 |
 | Librdkafka         | [Licencia BSD de 2 cláusulas](https://github.com/edenhill/librdkafka/blob/363dcad5a23dc29381cc626620e68ae418b3af19/LICENSE)                      |
-| libwidechar_width | [CC0 1.0 Universal](https://github.com/ClickHouse/ClickHouse/blob/master/libs/libwidechar_width/LICENSE)                                         |
+| libwidechar\_width | [CC0 1.0 Universal](https://github.com/ClickHouse/ClickHouse/blob/master/libs/libwidechar_width/LICENSE)                                         |
 | llvm               | [Licencia de 3 cláusulas BSD](https://github.com/ClickHouse-Extras/llvm/blob/163def217817c90fb982a6daf384744d8472b92b/llvm/LICENSE.TXT)          |
 | lz4                | [Licencia BSD de 2 cláusulas](https://github.com/lz4/lz4/blob/c10863b98e1503af90616ae99725ecd120265dfb/LICENSE)                                  |
 | mariadb-conector-c | [Información adicional](https://github.com/ClickHouse-Extras/mariadb-connector-c/blob/3.1/COPYING.LIB)                                           |

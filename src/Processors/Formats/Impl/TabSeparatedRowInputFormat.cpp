@@ -20,7 +20,7 @@ namespace ErrorCodes
 
 static void skipTSVRow(ReadBuffer & in, const size_t num_columns)
 {
-    NullOutput null_sink;
+    NullSink null_sink;
 
     for (size_t i = 0; i < num_columns; ++i)
     {
@@ -196,7 +196,7 @@ bool TabSeparatedRowInputFormat::readRow(MutableColumns & columns, RowReadExtens
         }
         else
         {
-            NullOutput null_sink;
+            NullSink null_sink;
             readEscapedStringInto(null_sink, in);
         }
 
@@ -353,7 +353,7 @@ void TabSeparatedRowInputFormat::tryDeserializeField(const DataTypePtr & type, I
     }
     else
     {
-        NullOutput null_sink;
+        NullSink null_sink;
         readEscapedStringInto(null_sink, in);
     }
 }

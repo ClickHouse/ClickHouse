@@ -2,10 +2,9 @@
 
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/Types.h>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
-#include <Storages/MergeTree/MergeType.h>
 
 #include <mutex>
 #include <condition_variable>
@@ -77,11 +76,9 @@ struct ReplicatedMergeTreeLogEntryData
     MergeTreeDataPartType new_part_type;
     String block_id;                        /// For parts of level zero, the block identifier for deduplication (node name in /blocks/).
     mutable String actual_new_part_name;    /// GET_PART could actually fetch a part covering 'new_part_name'.
-    UUID new_part_uuid = UUIDHelpers::Nil;
 
     Strings source_parts;
     bool deduplicate = false; /// Do deduplicate on merge
-    MergeType merge_type = MergeType::REGULAR;
     String column_name;
     String index_name;
 

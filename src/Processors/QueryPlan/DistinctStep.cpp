@@ -8,16 +8,12 @@ namespace DB
 
 static bool checkColumnsAlreadyDistinct(const Names & columns, const NameSet & distinct_names)
 {
-    if (distinct_names.empty())
-        return false;
+    bool columns_already_distinct = true;
+    for (const auto & name : columns)
+        if (distinct_names.count(name) == 0)
+            columns_already_distinct = false;
 
-    /// Now we need to check that distinct_names is a subset of columns.
-    std::unordered_set<std::string_view> columns_set(columns.begin(), columns.end());
-    for (const auto & name : distinct_names)
-        if (columns_set.count(name) == 0)
-            return false;
-
-    return true;
+    return columns_already_distinct;
 }
 
 static ITransformingStep::Traits getTraits(bool pre_distinct, bool already_distinct_columns)

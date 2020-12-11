@@ -1,8 +1,3 @@
----
-toc_priority: 60
-toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0434\u043b\u044f\u0020\u0440\u0435\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u0438\u0020\u043e\u043f\u0435\u0440\u0430\u0442\u043e\u0440\u0430\u0020\u0049\u004e"
----
-
 # Функции для реализации оператора IN {#funktsii-dlia-realizatsii-operatora-in}
 
 ## in, notIn, globalIn, globalNotIn {#in-functions}
@@ -15,18 +10,10 @@ toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0434\u043b\u044f\u
 Для столбцов, имеющих типы T1, T2, … возвращает кортеж типа Tuple(T1, T2, …), содержащий эти столбцы. Выполнение функции ничего не стоит.
 Кортежи обычно используются как промежуточное значение в качестве аргумента операторов IN, или для создания списка формальных параметров лямбда-функций. Кортежи не могут быть записаны в таблицу.
 
-**Смотрите также**
-
--   [Tuple](../../sql-reference/functions/tuple-functions.md#tuple)
-
 ## tupleElement(tuple, n), оператор x.N {#tupleelementtuple-n-operator-x-n}
 
 Функция, позволяющая достать столбец из кортежа.
 N - индекс столбца начиная с 1. N должно быть константой. N должно быть целым строго положительным числом не большим размера кортежа.
 Выполнение функции ничего не стоит.
-
-**Смотрите также**
-
--   [TupleElement](../../sql-reference/functions/tuple-functions.md#tupleelement)
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/in_functions/) <!--hide-->

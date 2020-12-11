@@ -18,7 +18,6 @@ struct TraceLogElement
     static const TraceDataType::Values trace_values;
 
     time_t event_time{};
-    Decimal64 event_time_microseconds{};
     UInt64 timestamp_ns{};
     TraceType trace_type{};
     UInt64 thread_id{};

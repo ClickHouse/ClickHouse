@@ -8,7 +8,7 @@ Syntax: `minMap(key, value)` or `minMap(Tuple(key, value))`
 
 Calculates the minimum from `value` array according to the keys specified in the `key` array.
 
-Passing a tuple of keys and value ​​arrays is identical to passing two arrays of keys and values.
+Passing tuple of keys and values arrays is a synonym to passing two arrays of keys and values.
 
 The number of elements in `key` and `value` must be the same for each row that is totaled.
 

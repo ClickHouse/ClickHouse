@@ -1,6 +1,4 @@
 #include <Parsers/parseQuery.h>
-
-#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/Lexer.h>

@@ -1,4 +1,4 @@
-SELECT
+SELECT 
     date,
     id,
     name,
@@ -10,7 +10,7 @@ FROM
     HAVING id = 1
 ) AS test_view
 WHERE id = 1
-SELECT
+SELECT 
     date,
     id,
     name,

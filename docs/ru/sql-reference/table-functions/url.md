@@ -1,8 +1,3 @@
----
-toc_priority: 41
-toc_title: url
----
-
 # url {#url}
 
 `url(URL, format, structure)` - возвращает таблицу со столбцами, указанными в
