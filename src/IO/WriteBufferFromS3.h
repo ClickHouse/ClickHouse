@@ -34,6 +34,7 @@ class WriteBufferFromS3 : public BufferWithOwnMemory<WriteBuffer>
 private:
     String bucket;
     String key;
+    std::optional<std::map<String, String>> object_metadata;
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
     size_t minimum_upload_part_size;
     size_t max_single_part_upload_size;
@@ -55,6 +56,7 @@ public:
         const String & key_,
         size_t minimum_upload_part_size_,
         size_t max_single_part_upload_size_,
+        std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE);
 
     void nextImpl() override;

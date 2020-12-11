@@ -40,10 +40,12 @@ WriteBufferFromS3::WriteBufferFromS3(
     const String & key_,
     size_t minimum_upload_part_size_,
     size_t max_single_part_upload_size_,
+    std::optional<std::map<String, String>> object_metadata_,
     size_t buffer_size_)
     : BufferWithOwnMemory<WriteBuffer>(buffer_size_, nullptr, 0)
     , bucket(bucket_)
     , key(key_)
+    , object_metadata(std::move(object_metadata_))
     , client_ptr(std::move(client_ptr_))
     , minimum_upload_part_size(minimum_upload_part_size_)
     , max_single_part_upload_size(max_single_part_upload_size_)
@@ -117,6 +119,8 @@ void WriteBufferFromS3::createMultipartUpload()
     Aws::S3::Model::CreateMultipartUploadRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);
+    if (object_metadata.has_value())
+        req.SetMetadata(object_metadata.value());
 
     auto outcome = client_ptr->CreateMultipartUpload(req);
 
@@ -202,6 +206,8 @@ void WriteBufferFromS3::makeSinglepartUpload()
     req.SetKey(key);
     req.SetContentLength(temporary_buffer->tellp());
     req.SetBody(temporary_buffer);
+    if (object_metadata.has_value())
+        req.SetMetadata(object_metadata.value());
 
     auto outcome = client_ptr->PutObject(req);
 
