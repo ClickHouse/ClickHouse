@@ -208,3 +208,6 @@
 [submodule "contrib/dragonbox"]
 	path = contrib/dragonbox
 	url = https://github.com/ClickHouse-Extras/dragonbox.git
+[submodule "contrib/fast_float"]
+	path = contrib/fast_float
+	url = https://github.com/fastfloat/fast_float
