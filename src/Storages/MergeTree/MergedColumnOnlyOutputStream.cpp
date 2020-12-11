@@ -22,8 +22,11 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     , header(header_)
 {
     const auto & global_settings = data_part->storage.global_context.getSettings();
+    const auto & storage_settings = data_part->storage.getSettings();
+
     MergeTreeWriterSettings writer_settings(
         global_settings,
+        storage_settings,
         index_granularity_info ? index_granularity_info->is_adaptive : data_part->storage.canUseAdaptiveGranularity(),
         global_settings.min_bytes_to_use_direct_io);
 

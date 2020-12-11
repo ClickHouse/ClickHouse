@@ -3,6 +3,7 @@
 #include "Disks/DiskFactory.h"
 
 #include <random>
+#include <optional>
 #include <utility>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromS3.h>
@@ -344,11 +345,11 @@ public:
         const String & bucket_,
         DiskS3::Metadata metadata_,
         const String & s3_path_,
-        bool is_multipart,
+        std::optional<DiskS3::ObjectMetadata> object_metadata_,bool is_multipart,
         size_t min_upload_part_size,
         size_t buf_size_)
         : WriteBufferFromFileBase(buf_size_, nullptr, 0)
-        , impl(WriteBufferFromS3(client_ptr_, bucket_, metadata_.s3_root_path + s3_path_, min_upload_part_size, is_multipart, buf_size_))
+        , impl(WriteBufferFromS3(client_ptr_, bucket_, metadata_.s3_root_path + s3_path_, min_upload_part_size, is_multipart,std::move(object_metadata_), buf_size_))
         , metadata(std::move(metadata_))
         , s3_path(s3_path_)
     {
@@ -539,7 +540,8 @@ DiskS3::DiskS3(
     String metadata_path_,
     size_t min_upload_part_size_,
     size_t min_multi_part_upload_size_,
-    size_t min_bytes_for_seek_)
+    size_t min_bytes_for_seek_,
+    bool send_metadata_)
     : IDisk(std::make_unique<AsyncExecutor>())
     , name(std::move(name_))
     , client(std::move(client_))
@@ -550,6 +552,7 @@ DiskS3::DiskS3(
     , min_upload_part_size(min_upload_part_size_)
     , min_multi_part_upload_size(min_multi_part_upload_size_)
     , min_bytes_for_seek(min_bytes_for_seek_)
+    , send_metadata(send_metadata_)
 {
 }
 
@@ -667,6 +670,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
 
     /// Path to store new S3 object.
     auto s3_path = getRandomName();
+    auto object_metadata = createObjectMetadata(path);
     bool is_multipart = estimated_size >= min_multi_part_upload_size;
     if (!exist || mode == WriteMode::Rewrite)
     {
@@ -678,9 +682,9 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
         /// Save empty metadata to disk to have ability to get file size while buffer is not finalized.
         metadata.save();
 
-        LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Write to file by path: {} New S3 path: {}", backQuote(metadata_path + path), s3_root_path + s3_path);
+        LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Write to file by path: {}. New S3 path: {}", backQuote(metadata_path + path), s3_root_path + s3_path);
 
-        return std::make_unique<WriteIndirectBufferFromS3>(client, bucket, metadata, s3_path, is_multipart, min_upload_part_size, buf_size);
+        return std::make_unique<WriteIndirectBufferFromS3>(client, bucket, metadata, s3_path, object_metadata, is_multipart, min_upload_part_size, buf_size);
     }
     else
     {
@@ -689,7 +693,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
         LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Append to file by path: {}. New S3 path: {}. Existing S3 objects: {}.",
             backQuote(metadata_path + path), s3_root_path + s3_path, metadata.s3_objects.size());
 
-        return std::make_unique<WriteIndirectBufferFromS3>(client, bucket, metadata, s3_path, is_multipart, min_upload_part_size, buf_size);
+        return std::make_unique<WriteIndirectBufferFromS3>(client, bucket, metadata, s3_path, object_metadata, is_multipart, min_upload_part_size, buf_size);
     }
 }
 
@@ -879,6 +883,14 @@ void DiskS3::shutdown()
     /// If S3 is healthy nothing wrong will be happened and S3 requests will be processed in a regular way without errors.
     /// This should significantly speed up shutdown process if S3 is unhealthy.
     client->DisableRequestProcessing();
+}
+
+std::optional<DiskS3::ObjectMetadata> DiskS3::createObjectMetadata(const String & path) const
+{
+    if (send_metadata)
+        return (DiskS3::ObjectMetadata){{"path", path}};
+
+    return {};
 }
 
 }

@@ -28,6 +28,7 @@ private:
 
     String bucket;
     String key;
+    std::optional<std::map<String, String>> object_metadata;
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
     size_t minimum_upload_part_size;
     std::unique_ptr<WriteBufferFromOwnString> temporary_buffer;
@@ -47,6 +48,7 @@ public:
         const String & key_,
         size_t minimum_upload_part_size_,
         bool is_multipart,
+        std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE);
 
     void nextImpl() override;

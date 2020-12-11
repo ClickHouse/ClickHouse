@@ -223,8 +223,8 @@ if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 endif ()
 
-if (UNBUNDLED AND (COMPILER_GCC OR COMPILER_CLANG))
-    # to make numeric_limits<__int128> works for unbundled build
+if (COMPILER_GCC OR COMPILER_CLANG)
+    # to make numeric_limits<__int128> works with GCC
     set (_CXX_STANDARD "-std=gnu++2a")
 else()
     set (_CXX_STANDARD "-std=c++2a")
@@ -457,6 +457,7 @@ include (cmake/find/s3.cmake)
 include (cmake/find/base64.cmake)
 include (cmake/find/parquet.cmake)
 include (cmake/find/simdjson.cmake)
+include (cmake/find/fast_float.cmake)
 include (cmake/find/rapidjson.cmake)
 include (cmake/find/fastops.cmake)
 include (cmake/find/odbc.cmake)
