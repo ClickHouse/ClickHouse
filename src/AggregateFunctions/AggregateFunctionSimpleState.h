@@ -34,7 +34,8 @@ public:
         DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(nested_func);
         // Need to make a clone because it'll be customized.
         auto storage_type = DataTypeFactory::instance().get(nested_func->getReturnType()->getName());
-        DataTypeCustomNamePtr custom_name = std::make_unique<DataTypeCustomSimpleAggregateFunction>(nested_func, arguments, params);
+        DataTypeCustomNamePtr custom_name
+            = std::make_unique<DataTypeCustomSimpleAggregateFunction>(nested_func, DataTypes{nested_func->getReturnType()}, params);
         storage_type->setCustomization(std::make_unique<DataTypeCustomDesc>(std::move(custom_name), nullptr));
         return storage_type;
     }
