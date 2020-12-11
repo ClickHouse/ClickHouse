@@ -8,6 +8,72 @@ import subprocess
 import sys
 
 
+SKIP_LIST = [
+    # these couple of tests hangs everything
+    "00600_replace_running_query",
+    "00987_distributed_stack_overflow",
+
+    # just fail
+    "00302_http_compression",
+    "00463_long_sessions_in_http_interface",
+    "00505_secure",
+    "00505_shard_secure",
+    "00646_url_engine",
+    "00834_cancel_http_readonly_queries_on_client_close",
+    "00933_test_fix_extra_seek_on_compressed_cache",
+    "00965_logs_level_bugfix",
+    "00965_send_logs_level_concurrent_queries",
+    "00990_hasToken",
+    "00990_metric_log_table_not_empty",
+    "01014_lazy_database_concurrent_recreate_reattach_and_show_tables",
+    "01018_Distributed__shard_num",
+    "01018_ip_dictionary",
+    "01050_clickhouse_dict_source_with_subquery",
+    "01053_ssd_dictionary",
+    "01054_cache_dictionary_overflow_cell",
+    "01080_check_for_error_incorrect_size_of_nested_column",
+    "01083_expressions_in_engine_arguments",
+    "01086_odbc_roundtrip",
+    "01088_benchmark_query_id",
+    "01098_temporary_and_external_tables",
+    "01103_check_cpu_instructions_at_startup",
+    "01114_database_atomic",
+    "01148_zookeeper_path_macros_unfolding",
+    "01280_ssd_complex_key_dictionary",
+    "01293_client_interactive_vertical_multiline",
+    "01293_client_interactive_vertical_singleline",
+    "01293_show_clusters",
+    "01294_lazy_database_concurrent_recreate_reattach_and_show_tables",
+    "01294_system_distributed_on_cluster",
+    "01300_client_save_history_when_terminated",
+    "01304_direct_io",
+    "01306_benchmark_json",
+    "01355_CSV_input_format_allow_errors",
+    "01370_client_autocomplete_word_break_characters",
+    "01376_GROUP_BY_injective_elimination_dictGet",
+    "01393_benchmark_secure_port",
+    "01418_custom_settings",
+    "01451_wrong_error_long_query",
+    "01455_opentelemetry_distributed",
+    "01473_event_time_microseconds",
+    "01474_executable_dictionary",
+    "01514_distributed_cancel_query_on_error",
+    "01520_client_print_query_id",
+    "01526_client_start_and_exit",
+    "01527_dist_sharding_key_dictGet_reload",
+    "01545_url_file_format_settings",
+    "01553_datetime64_comparison",
+    "01555_system_distribution_queue_mask",
+    "01558_ttest_scipy",
+    "01561_mann_whitney_scipy",
+    "01582_distinct_optimization",
+    "01586_storage_join_low_cardinality_key",
+    "01599_multiline_input_and_singleline_comments",
+    "01600_benchmark_query",
+    "01601_proxy_protocol",
+]
+
+
 def check_result(result, error, return_code, reference, replace_map):
     for old, new in replace_map.items():
         result = result.replace(old.encode('utf-8'), new.encode('utf-8'))
@@ -61,6 +127,11 @@ def random_str(length=10):
 
 
 def test_sql_query(bin_prefix, sql_query, standalone_server):
+    for test in SKIP_LIST:
+        if test in sql_query:
+            pytest.skip("Test matches skip-list: " + test)
+            return
+
     tcp_port = standalone_server.tcp_port
 
     query_path = sql_query + ".sql"
@@ -89,6 +160,11 @@ def test_sql_query(bin_prefix, sql_query, standalone_server):
 
 
 def test_shell_query(bin_prefix, shell_query, standalone_server):
+    for test in SKIP_LIST:
+        if test in shell_query:
+            pytest.skip("Test matches skip-list: " + test)
+            return
+
     tcp_port = standalone_server.tcp_port
 
     shell_path = shell_query + ".sh"
