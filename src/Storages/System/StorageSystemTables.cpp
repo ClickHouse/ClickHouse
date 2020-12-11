@@ -199,7 +199,11 @@ protected:
 
                         // create_table_query
                         if (columns_mask[src_index++])
-                            res_columns[res_index++]->insertDefault();
+                        {
+                            auto temp_db = DatabaseCatalog::instance().getDatabaseForTemporaryTables();
+                            ASTPtr ast = temp_db ? temp_db->tryGetCreateTableQuery(table.second->getStorageID().getTableName(), context) : nullptr;
+                            res_columns[res_index++]->insert(ast ? queryToString(ast) : "");
+                        }
 
                         // engine_full
                         if (columns_mask[src_index++])
