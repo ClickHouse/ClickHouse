@@ -7,12 +7,27 @@
 namespace DB
 {
 
+struct FirstSignificantSubdomainDefaultLookup
+{
+    bool operator()(const char *src, size_t len) const
+    {
+        return tldLookup::isValid(src, len);
+    }
+};
+
 template <bool without_www>
 struct ExtractFirstSignificantSubdomain
 {
     static size_t getReserveLengthForElement() { return 10; }
 
     static void execute(const Pos data, const size_t size, Pos & res_data, size_t & res_size, Pos * out_domain_end = nullptr)
+    {
+        FirstSignificantSubdomainDefaultLookup loookup;
+        return execute(loookup, data, size, res_data, res_size, out_domain_end);
+    }
+
+    template <class Lookup>
+    static void execute(const Lookup & lookup, const Pos data, const size_t size, Pos & res_data, size_t & res_size, Pos * out_domain_end = nullptr)
     {
         res_data = data;
         res_size = 0;
@@ -65,7 +80,7 @@ struct ExtractFirstSignificantSubdomain
             end_of_level_domain = end;
         }
 
-        if (tldLookup::isValid(last_3_periods[1] + 1, end_of_level_domain - last_3_periods[1] - 1) != nullptr)
+        if (lookup(last_3_periods[1] + 1, end_of_level_domain - last_3_periods[1] - 1))
         {
             res_data += last_3_periods[2] + 1 - begin;
             res_size = last_3_periods[1] - last_3_periods[2] - 1;
