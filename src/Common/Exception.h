@@ -96,7 +96,7 @@ private:
 };
 
 
-/// Special class of exceptions, used mostly in ParallelParsingInputFormat for 
+/// Special class of exceptions, used mostly in ParallelParsingInputFormat for
 /// more convinient calculation of problem line number.
 class ParsingException : public Exception
 {
@@ -104,13 +104,15 @@ public:
     using Exception::Exception;
 
     /// We use additional field formatted_message_ to make this method const.
-    std::string displayText() const override {
+    std::string displayText() const override
+    {
         try
         {
             formatted_message_ = fmt::format(message(), line_number_);
         }
-        catch (...) {}
-        
+        catch (...)
+        {}
+
         if (!formatted_message_.empty())
         {
             std::string result = name();
@@ -118,7 +120,7 @@ public:
             result.append(formatted_message_);
             return result;
         }
-        else 
+        else
         {
             return Exception::displayText();
         }
