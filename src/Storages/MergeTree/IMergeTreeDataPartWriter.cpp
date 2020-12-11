@@ -9,7 +9,7 @@ Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity,
     if (rows_written_in_last_mark > 0)
     {
         size_t rows_left_in_last_mark = index_granularity.getMarkRows(current_mark) - rows_written_in_last_mark;
-        result.emplace_back(current_row, rows_left_in_last_mark, false, true);
+        result.emplace_back(Granule{current_row, rows_left_in_last_mark, current_mark, false, true});
         current_row += rows_left_in_last_mark;
         current_mark++;
     }
@@ -19,9 +19,11 @@ Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity,
         size_t expected_rows = index_granularity.getMarkRows(current_mark);
         size_t rest_rows = block_rows - current_row;
         if (rest_rows < expected_rows)
-            result.emplace_back(current_row, rest_rows, true, false);
+            result.emplace_back(Granule{current_row, rest_rows, current_mark, true, false});
         else
-            result.emplace_back(current_row, expected_rows, true, true);
+            result.emplace_back(Granule{current_row, expected_rows, current_mark, true, true});
+
+        current_mark++;
     }
 
     return result;

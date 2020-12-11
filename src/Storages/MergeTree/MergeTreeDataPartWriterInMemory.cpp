@@ -56,8 +56,6 @@ void MergeTreeDataPartWriterInMemory::write(
 
     if (settings.rewrite_primary_key)
         calculateAndSerializePrimaryIndex(primary_key_block);
-
-    next();
 }
 
 void MergeTreeDataPartWriterInMemory::calculateAndSerializePrimaryIndex(const Block & primary_index_block)

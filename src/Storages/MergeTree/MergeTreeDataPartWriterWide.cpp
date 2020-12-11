@@ -115,7 +115,7 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
             if (primary_key_block.has(it->name))
             {
                 const auto & primary_column = *primary_key_block.getByName(it->name).column;
-                writeColumn(column.name, *column.type, primary_column, offset_columns, ganules_to_write);
+                writeColumn(column.name, *column.type, primary_column, offset_columns, granules_to_write);
             }
             else if (skip_indexes_block.has(it->name))
             {

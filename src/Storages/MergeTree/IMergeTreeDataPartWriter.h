@@ -17,6 +17,7 @@ struct Granule
 {
     size_t start;
     size_t rows_count;
+    size_t mark_number;
     bool mark_on_start;
     bool is_completed;
 };
