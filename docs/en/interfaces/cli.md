@@ -113,7 +113,8 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 -   `--port` – The port to connect to. Default value: 9000. Note that the HTTP interface and the native interface use different ports.
 -   `--user, -u` – The username. Default value: default.
 -   `--password` – The password. Default value: empty string.
--   `--query, -q` – The query to process when using non-interactive mode.
+-   `--query, -q` – The query to process when using non-interactive mode. You must specify either `query` or `queries-file` option.
+-   `--queries-file, -qf` - file path with queries to execute. You must specify either `query` or `queries-file` option.
 -   `--database, -d` – Select the current default database. Default value: the current database from the server settings (‘default’ by default).
 -   `--multiline, -m` – If specified, allow multiline queries (do not send the query on Enter).
 -   `--multiquery, -n` – If specified, allow processing multiple queries separated by semicolons.
