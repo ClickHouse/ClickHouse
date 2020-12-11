@@ -25,6 +25,7 @@ struct MergeTreeWriterSettings
         const MergeTreeSettingsPtr & storage_settings,
         bool can_use_adaptive_granularity_,
         size_t aio_threshold_,
+        bool rewrite_primary_key_,
         bool blocks_are_granules_size_ = false)
         : min_compress_block_size(
             storage_settings->min_compress_block_size ? storage_settings->min_compress_block_size : global_settings.min_compress_block_size)

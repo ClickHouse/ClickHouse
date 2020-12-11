@@ -338,4 +338,13 @@ void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(
     skip_index_filling.clear();
 }
 
+Names MergeTreeDataPartWriterOnDisk::getSkipIndicesColumns() const
+{
+    std::unordered_set<String> skip_indexes_column_names_set;
+    for (const auto & index : skip_indices)
+        std::copy(index->index.column_names.cbegin(), index->index.column_names.cend(),
+                  std::inserter(skip_indexes_column_names_set, skip_indexes_column_names_set.end()));
+    return Names(skip_indexes_column_names_set.begin(), skip_indexes_column_names_set.end());
+}
+
 }
