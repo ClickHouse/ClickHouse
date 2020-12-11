@@ -140,7 +140,7 @@ void RemoteQueryExecutor::sendQuery()
 
     multiplexed_connections = create_multiplexed_connections();
 
-    const auto& settings = context.getSettingsRef();
+    const auto & settings = context.getSettingsRef();
     if (settings.skip_unavailable_shards && 0 == multiplexed_connections->size())
         return;
 
