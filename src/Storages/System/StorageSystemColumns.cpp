@@ -272,17 +272,20 @@ Pipe StorageSystemColumns::read(
     Pipes pipes;
 
     {
-        Databases databases = DatabaseCatalog::instance().getDatabases();
-
         /// Add `database` column.
         MutableColumnPtr database_column_mut = ColumnString::create();
-        for (const auto & database : databases)
+
+        const auto databases = DatabaseCatalog::instance().getDatabases();
+        for (const auto & [database_name, database] : databases)
         {
+            if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
+                continue; /// We don't want to show the internal database for temporary tables in system.columns
+
             /// We are skipping "Lazy" database because we cannot afford initialization of all its tables.
             /// This should be documented.
 
-            if (database.second->getEngineName() != "Lazy")
-                database_column_mut->insert(database.first);
+            if (database->getEngineName() != "Lazy")
+                database_column_mut->insert(database_name);
         }
 
         block_to_filter.insert(ColumnWithTypeAndName(std::move(database_column_mut), std::make_shared<DataTypeString>(), "database"));
@@ -305,7 +308,7 @@ Pipe StorageSystemColumns::read(
         for (size_t i = 0; i < rows; ++i)
         {
             const std::string database_name = (*database_column)[i].get<std::string>();
-            const DatabasePtr database = databases.at(database_name);
+            const DatabasePtr & database = databases.at(database_name);
             offsets[i] = i ? offsets[i - 1] : 0;
 
             for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
