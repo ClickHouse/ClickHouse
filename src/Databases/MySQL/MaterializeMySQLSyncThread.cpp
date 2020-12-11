@@ -235,15 +235,24 @@ void MaterializeMySQLSyncThread::startSynchronization()
 
 static inline void cleanOutdatedTables(const String & database_name, const Context & context)
 {
-    auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
-    const DatabasePtr & clean_database = DatabaseCatalog::instance().getDatabase(database_name);
-
-    for (auto iterator = clean_database->getTablesIterator(context); iterator->isValid(); iterator->next())
+    String cleaning_table_name;
+    try
     {
-        Context query_context = createQueryContext(context);
-        String comment = "Materialize MySQL step 1: execute MySQL DDL for dump data";
-        String table_name = backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(iterator->name());
-        tryToExecuteQuery(" DROP TABLE " + table_name, query_context, database_name, comment);
+        auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
+        const DatabasePtr & clean_database = DatabaseCatalog::instance().getDatabase(database_name);
+
+        for (auto iterator = clean_database->getTablesIterator(context); iterator->isValid(); iterator->next())
+        {
+            Context query_context = createQueryContext(context);
+            String comment = "Materialize MySQL step 1: execute MySQL DDL for dump data";
+            cleaning_table_name = backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(iterator->name());
+            tryToExecuteQuery(" DROP TABLE " + cleaning_table_name, query_context, database_name, comment);
+        }
+    }
+    catch (Exception & exception)
+    {
+        exception.addMessage("While executing " + (cleaning_table_name.empty() ? "cleanOutdatedTables" : cleaning_table_name));
+        throw;
     }
 }
 
@@ -284,24 +293,32 @@ static inline void dumpDataForTables(
     auto iterator = master_info.need_dumping_tables.begin();
     for (; iterator != master_info.need_dumping_tables.end() && !is_cancelled(); ++iterator)
     {
-        const auto & table_name = iterator->first;
-        Context query_context = createQueryContext(context);
-        String comment = "Materialize MySQL step 1: execute MySQL DDL for dump data";
-        tryToExecuteQuery(query_prefix + " " + iterator->second, query_context, database_name, comment); /// create table.
+        try
+        {
+            const auto & table_name = iterator->first;
+            Context query_context = createQueryContext(context);
+            String comment = "Materialize MySQL step 1: execute MySQL DDL for dump data";
+            tryToExecuteQuery(query_prefix + " " + iterator->second, query_context, database_name, comment); /// create table.
 
-        auto out = std::make_shared<CountingBlockOutputStream>(getTableOutput(database_name, table_name, query_context));
-        MySQLBlockInputStream input(
-            connection, "SELECT * FROM " + backQuoteIfNeed(mysql_database_name) + "." + backQuoteIfNeed(table_name),
-            out->getHeader(), DEFAULT_BLOCK_SIZE);
+            auto out = std::make_shared<CountingBlockOutputStream>(getTableOutput(database_name, table_name, query_context));
+            MySQLBlockInputStream input(
+                connection, "SELECT * FROM " + backQuoteIfNeed(mysql_database_name) + "." + backQuoteIfNeed(table_name),
+                out->getHeader(), DEFAULT_BLOCK_SIZE);
 
-        Stopwatch watch;
-        copyData(input, *out, is_cancelled);
-        const Progress & progress = out->getProgress();
-        LOG_INFO(&Poco::Logger::get("MaterializeMySQLSyncThread(" + database_name + ")"),
-            "Materialize MySQL step 1: dump {}, {} rows, {} in {} sec., {} rows/sec., {}/sec."
-            , table_name, formatReadableQuantity(progress.written_rows), formatReadableSizeWithBinarySuffix(progress.written_bytes)
-            , watch.elapsedSeconds(), formatReadableQuantity(static_cast<size_t>(progress.written_rows / watch.elapsedSeconds()))
-            , formatReadableSizeWithBinarySuffix(static_cast<size_t>(progress.written_bytes / watch.elapsedSeconds())));
+            Stopwatch watch;
+            copyData(input, *out, is_cancelled);
+            const Progress & progress = out->getProgress();
+            LOG_INFO(&Poco::Logger::get("MaterializeMySQLSyncThread(" + database_name + ")"),
+                "Materialize MySQL step 1: dump {}, {} rows, {} in {} sec., {} rows/sec., {}/sec."
+                , table_name, formatReadableQuantity(progress.written_rows), formatReadableSizeWithBinarySuffix(progress.written_bytes)
+                , watch.elapsedSeconds(), formatReadableQuantity(static_cast<size_t>(progress.written_rows / watch.elapsedSeconds()))
+                , formatReadableSizeWithBinarySuffix(static_cast<size_t>(progress.written_bytes / watch.elapsedSeconds())));
+        }
+        catch (Exception & exception)
+        {
+            exception.addMessage("While executing dump MySQL {}.{} table data.", mysql_database_name, iterator->first);
+            throw;
+        }
     }
 }
 
@@ -673,6 +690,8 @@ void MaterializeMySQLSyncThread::executeDDLAtomic(const QueryEvent & query_event
     }
     catch (Exception & exception)
     {
+        exception.addMessage("While executing MYSQL_QUERY_EVENT. The query: " + query_event.query);
+
         tryLogCurrentException(log);
 
         /// If some DDL query was not successfully parsed and executed
