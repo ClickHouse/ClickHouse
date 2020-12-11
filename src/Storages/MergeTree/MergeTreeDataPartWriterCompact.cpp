@@ -104,27 +104,28 @@ void MergeTreeDataPartWriterCompact::write(
         header = result_block.cloneEmpty();
 
     columns_buffer.add(result_block.mutateColumns());
-    size_t last_mark_rows = index_granularity.getLastMarkRows();
+    size_t current_mark_rows = index_granularity.getMarkRows(getCurrentMark());
     size_t rows_in_buffer = columns_buffer.size();
 
-    if (rows_in_buffer < last_mark_rows)
+    if (rows_in_buffer < current_mark_rows)
     {
         /// If it's not enough rows for granule, accumulate blocks
         ///  and save how much rows we already have.
-        next_index_offset = last_mark_rows - rows_in_buffer;
-        return;
+        next_index_offset = current_mark_rows - rows_in_buffer;
     }
-
-    writeBlock(header.cloneWithColumns(columns_buffer.releaseColumns()));
+    else
+    {
+        writeBlock(header.cloneWithColumns(columns_buffer.releaseColumns()), false);
+    }
 }
 
-void MergeTreeDataPartWriterCompact::writeBlock(const Block & block)
+void MergeTreeDataPartWriterCompact::writeBlock(const Block & block, bool last)
 {
-    size_t total_rows = block.rows();
+    size_t rows_in_block = block.rows();
     size_t from_mark = getCurrentMark();
-    size_t current_row = 0;
+    size_t current_row_in_block = 0;
 
-    while (current_row < total_rows)
+    while (current_row_in_block < rows_in_block)
     {
         size_t rows_to_write = index_granularity.getMarkRows(from_mark);
 
@@ -161,25 +162,32 @@ void MergeTreeDataPartWriterCompact::writeBlock(const Block & block)
             writeIntBinary(plain_hashing.count(), marks);
             writeIntBinary(UInt64(0), marks);
 
-            writeColumnSingleGranule(block.getByName(name_and_type->name), stream_getter, current_row, rows_to_write);
+            writeColumnSingleGranule(block.getByName(name_and_type->name), stream_getter, current_row_in_block, rows_to_write);
 
             /// Each type always have at least one substream
             prev_stream->hashing_buf.next(); //-V522
         }
 
-        ++from_mark;
-        size_t rows_written = total_rows - current_row;
-        current_row += rows_to_write;
+        size_t rows_written = std::min(rows_to_write, rows_in_block - current_row_in_block);
 
         /// Correct last mark as it should contain exact amount of rows.
-        if (current_row >= total_rows && rows_written != rows_to_write)
+        if (rows_written != rows_to_write)
         {
-            rows_to_write = rows_written;
+            /// Invariant: we always have aligned amount of rows in each mark, except the last one
+            if (!last)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Required to write {} rows, but only {} rows was written for the non last granule", rows_to_write, rows_written);
+
             index_granularity.popMark();
             index_granularity.appendMark(rows_written);
+            writeIntBinary(rows_written, marks);
+        }
+        else
+        {
+            writeIntBinary(rows_to_write, marks);
         }
 
-        writeIntBinary(rows_to_write, marks);
+        ++from_mark;
+        current_row_in_block += rows_to_write;
     }
 
     next_index_offset = 0;
@@ -207,7 +215,7 @@ void MergeTreeDataPartWriterCompact::writeColumnSingleGranule(
 void MergeTreeDataPartWriterCompact::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync)
 {
     if (columns_buffer.size() != 0)
-        writeBlock(header.cloneWithColumns(columns_buffer.releaseColumns()));
+        writeBlock(header.cloneWithColumns(columns_buffer.releaseColumns()), true);
 
 #ifndef NDEBUG
     /// Offsets should be 0, because compressed block is written for every granule.
