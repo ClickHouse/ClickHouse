@@ -2,6 +2,30 @@
 
 namespace DB
 {
+Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity, size_t block_rows, size_t current_mark, size_t rows_written_in_last_mark)
+{
+    Granules result;
+    size_t current_row = 0;
+    if (rows_written_in_last_mark > 0)
+    {
+        size_t rows_left_in_last_mark = index_granularity.getMarkRows(current_mark) - rows_written_in_last_mark;
+        result.emplace_back(current_row, rows_left_in_last_mark, false, true);
+        current_row += rows_left_in_last_mark;
+        current_mark++;
+    }
+
+    for (; current_row < block_rows; current_row += index_granularity.getMarkRows(current_mark))
+    {
+        size_t expected_rows = index_granularity.getMarkRows(current_mark);
+        size_t rest_rows = block_rows - current_row;
+        if (rest_rows < expected_rows)
+            result.emplace_back(current_row, rest_rows, true, false);
+        else
+            result.emplace_back(current_row, expected_rows, true, true);
+    }
+
+    return result;
+}
 
 Block getBlockAndPermute(const Block & block, const Names & names, const IColumn::Permutation * permutation)
 {
@@ -41,12 +65,6 @@ Columns IMergeTreeDataPartWriter::releaseIndexColumns()
     return Columns(
         std::make_move_iterator(index_columns.begin()),
         std::make_move_iterator(index_columns.end()));
-}
-
-void IMergeTreeDataPartWriter::next()
-{
-    current_mark = next_mark;
-    index_offset = next_index_offset;
 }
 
 IMergeTreeDataPartWriter::~IMergeTreeDataPartWriter() = default;

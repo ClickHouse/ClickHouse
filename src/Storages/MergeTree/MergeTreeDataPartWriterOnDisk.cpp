@@ -171,7 +171,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
     }
 }
 
-void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Block & primary_index_block)
+void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Block & primary_index_block, const Granules & granules_to_write)
 {
     size_t rows = primary_index_block.rows();
     size_t primary_columns_num = primary_index_block.columns();
@@ -193,81 +193,53 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
     MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
 
     /// Write index. The index contains Primary Key value for each `index_granularity` row.
-
-    size_t current_row = getIndexOffset();
-    size_t total_marks = index_granularity.getMarksCount();
-
-    while (index_mark < total_marks && current_row < rows)
+    for (const auto & granule : granules_to_write)
     {
-        if (metadata_snapshot->hasPrimaryKey())
+        if (metadata_snapshot->hasPrimaryKey() && granule.mark_on_start)
         {
             for (size_t j = 0; j < primary_columns_num; ++j)
             {
                 const auto & primary_column = primary_index_block.getByPosition(j);
-                index_columns[j]->insertFrom(*primary_column.column, current_row);
-                primary_column.type->serializeBinary(*primary_column.column, current_row, *index_stream);
+                index_columns[j]->insertFrom(*primary_column.column, granule.start);
+                primary_column.type->serializeBinary(*primary_column.column, granule.start, *index_stream);
             }
         }
-
-        current_row += index_granularity.getMarkRows(index_mark++);
     }
-
     /// store last index row to write final mark at the end of column
     for (size_t j = 0; j < primary_columns_num; ++j)
         last_block_index_columns[j] = primary_index_block.getByPosition(j).column;
 }
 
-void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block & skip_indexes_block)
+void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block & skip_indexes_block, const Granules & granules_to_write)
 {
     size_t rows = skip_indexes_block.rows();
-    size_t skip_index_current_data_mark = 0;
 
     /// Filling and writing skip indices like in MergeTreeDataPartWriterWide::writeColumn
     for (size_t i = 0; i < skip_indices.size(); ++i)
     {
         const auto index_helper = skip_indices[i];
         auto & stream = *skip_indices_streams[i];
-        size_t prev_pos = 0;
-        skip_index_current_data_mark = skip_index_data_mark;
-        while (prev_pos < rows)
+        for (const auto & granule : granules_to_write)
         {
-            UInt64 limit = 0;
-            size_t current_index_offset = getIndexOffset();
-            if (prev_pos == 0 && current_index_offset != 0)
+            if (skip_indices_aggregators[i]->empty() && granule.mark_on_start)
             {
-                limit = current_index_offset;
-            }
-            else if (skip_index_current_data_mark == index_granularity.getMarksCount())
-            {
-                /// Case, when last granule was exceeded and no new granule was created.
-                limit = rows - prev_pos;
-            }
-            else
-            {
-                limit = index_granularity.getMarkRows(skip_index_current_data_mark);
-                if (skip_indices_aggregators[i]->empty())
-                {
-                    skip_indices_aggregators[i] = index_helper->createIndexAggregator();
-                    skip_index_filling[i] = 0;
+                skip_indices_aggregators[i] = index_helper->createIndexAggregator();
+                skip_index_filling[i] = 0;
 
-                    if (stream.compressed.offset() >= settings.min_compress_block_size)
-                        stream.compressed.next();
+                if (stream.compressed.offset() >= settings.min_compress_block_size)
+                    stream.compressed.next();
 
-                    writeIntBinary(stream.plain_hashing.count(), stream.marks);
-                    writeIntBinary(stream.compressed.offset(), stream.marks);
-                    /// Actually this numbers is redundant, but we have to store them
-                    /// to be compatible with normal .mrk2 file format
-                    if (settings.can_use_adaptive_granularity)
-                        writeIntBinary(1UL, stream.marks);
-                }
-                /// this mark is aggregated, go to the next one
-                skip_index_current_data_mark++;
+                writeIntBinary(stream.plain_hashing.count(), stream.marks);
+                writeIntBinary(stream.compressed.offset(), stream.marks);
+                /// Actually this numbers is redundant, but we have to store them
+                /// to be compatible with normal .mrk2 file format
+                if (settings.can_use_adaptive_granularity)
+                    writeIntBinary(1UL, stream.marks);
             }
 
-            size_t pos = prev_pos;
-            skip_indices_aggregators[i]->update(skip_indexes_block, &pos, limit);
-
-            if (pos == prev_pos + limit)
+            size_t pos = granule.start;
+            skip_indices_aggregators[i]->update(skip_indexes_block, &pos, granule.rows_count);
+            if (granule.is_completed)
             {
                 ++skip_index_filling[i];
 
@@ -278,10 +250,8 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
                     skip_index_filling[i] = 0;
                 }
             }
-            prev_pos = pos;
         }
     }
-    skip_index_data_mark = skip_index_current_data_mark;
 }
 
 void MergeTreeDataPartWriterOnDisk::finishPrimaryIndexSerialization(

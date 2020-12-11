@@ -33,10 +33,11 @@ private:
         const String & name,
         const IDataType & type,
         const IColumn & column,
-        WrittenOffsetColumns & offset_columns);
+        WrittenOffsetColumns & offset_columns,
+        const Granules & granules);
 
     /// Write single granule of one column (rows between 2 marks)
-    size_t writeSingleGranule(
+    void writeSingleGranule(
         const String & name,
         const IDataType & type,
         const IColumn & column,

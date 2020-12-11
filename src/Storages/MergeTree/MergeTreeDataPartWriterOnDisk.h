@@ -78,8 +78,8 @@ public:
 protected:
      /// Count index_granularity for block and store in `index_granularity`
     size_t computeIndexGranularity(const Block & block) const;
-    void calculateAndSerializePrimaryIndex(const Block & primary_index_block);
-    void calculateAndSerializeSkipIndices(const Block & skip_indexes_block);
+    void calculateAndSerializePrimaryIndex(const Block & primary_index_block, const Granules & granules_to_write);
+    void calculateAndSerializeSkipIndices(const Block & skip_indexes_block, const Granules & granules_to_write);
 
     void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums, bool sync);
     void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums, bool sync);

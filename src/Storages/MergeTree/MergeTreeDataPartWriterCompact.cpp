@@ -77,9 +77,7 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumn::P
 
     Block primary_key_block;
     if (settings.rewrite_primary_key)
-    {
         primary_key_block = getBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), permutation);
-    }
 
     Block skip_indexes_block = getBlockAndPermute(block, getSkipIndicesColumns(), permutation);
 
@@ -121,15 +119,13 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumn::P
     }
     else
     {
-        writeBlock(header.cloneWithColumns(columns_buffer.releaseColumns()));
+        auto granules_to_write = getGranulesToWrite(index_granularity, block.rows(), getCurrentMark(), getRowsWrittenInLastMark());
+        writeBlock(header.cloneWithColumns(columns_buffer.releaseColumns()), granules_to_write);
+        if (settings.rewrite_primary_key)
+            calculateAndSerializePrimaryIndex(primary_key_block, granules_to_write);
+
+        calculateAndSerializeSkipIndices(skip_indexes_block, granules_to_write);
     }
-
-    if (settings.rewrite_primary_key)
-        calculateAndSerializePrimaryIndex(primary_key_block);
-
-    calculateAndSerializeSkipIndices(skip_indexes_block);
-
-    next();
 }
 
 namespace
@@ -156,17 +152,13 @@ void writeColumnSingleGranule(
 
 }
 
-void MergeTreeDataPartWriterCompact::writeBlock(const Block & block)
+void MergeTreeDataPartWriterCompact::writeBlock(const Block & block, const Granules & granules)
 {
     size_t total_rows = block.rows();
     size_t from_mark = getCurrentMark();
-    size_t current_row = 0;
-
-    while (current_row < total_rows)
+    for (const auto & granule : granules)
     {
-        size_t rows_to_write = index_granularity.getMarkRows(from_mark);
-
-        if (rows_to_write)
+        if (granule.rows_count)
             data_written = true;
 
         auto name_and_type = columns_list.begin();
@@ -199,28 +191,22 @@ void MergeTreeDataPartWriterCompact::writeBlock(const Block & block)
             writeIntBinary(plain_hashing.count(), marks);
             writeIntBinary(UInt64(0), marks);
 
-            writeColumnSingleGranule(block.getByName(name_and_type->name), stream_getter, current_row, rows_to_write);
+            writeColumnSingleGranule(block.getByName(name_and_type->name), stream_getter, granule.start, granule.rows_count);
 
             /// Each type always have at least one substream
             prev_stream->hashing_buf.next(); //-V522
         }
 
-        ++from_mark;
-        size_t rows_written = total_rows - current_row;
-        current_row += rows_to_write;
-
         /// Correct last mark as it should contain exact amount of rows.
-        if (current_row >= total_rows && rows_written != rows_to_write)
+        if (granule.rows_count != index_granularity.getRowsCount(granule.mark_number))
         {
-            rows_to_write = rows_written;
             index_granularity.popMark();
-            index_granularity.appendMark(rows_written);
+            index_granularity.appendMark(granule.rows_count);
         }
 
-        writeIntBinary(rows_to_write, marks);
+        writeIntBinary(granule.rows_count, marks);
     }
 
-    next_index_offset = 0;
     next_mark = from_mark;
 }
 

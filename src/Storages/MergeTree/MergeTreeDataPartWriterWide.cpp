@@ -96,6 +96,8 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
         fillIndexGranularity(index_granularity_for_block, block.rows());
     }
 
+    auto granules_to_write = getGranulesToWrite(index_granularity, block.rows(), getCurrentMark(), getRowsWrittenInLastMark());
+
     auto offset_columns = written_offset_columns ? *written_offset_columns : WrittenOffsetColumns{};
     Block primary_key_block;
     if (settings.rewrite_primary_key)
@@ -113,31 +115,42 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
             if (primary_key_block.has(it->name))
             {
                 const auto & primary_column = *primary_key_block.getByName(it->name).column;
-                writeColumn(column.name, *column.type, primary_column, offset_columns);
+                writeColumn(column.name, *column.type, primary_column, offset_columns, ganules_to_write);
             }
             else if (skip_indexes_block.has(it->name))
             {
                 const auto & index_column = *skip_indexes_block.getByName(it->name).column;
-                writeColumn(column.name, *column.type, index_column, offset_columns);
+                writeColumn(column.name, *column.type, index_column, offset_columns, granules_to_write);
             }
             else
             {
                 /// We rearrange the columns that are not included in the primary key here; Then the result is released - to save RAM.
                 ColumnPtr permuted_column = column.column->permute(*permutation, 0);
-                writeColumn(column.name, *column.type, *permuted_column, offset_columns);
+                writeColumn(column.name, *column.type, *permuted_column, offset_columns, granules_to_write);
             }
         }
         else
         {
-            writeColumn(column.name, *column.type, *column.column, offset_columns);
+            writeColumn(column.name, *column.type, *column.column, offset_columns, granules_to_write);
         }
     }
 
     if (settings.rewrite_primary_key)
-        calculateAndSerializePrimaryIndex(primary_key_block);
+        calculateAndSerializePrimaryIndex(primary_key_block, granules_to_write);
 
-    calculateAndSerializeSkipIndices(skip_indexes_block);
-    next();
+    calculateAndSerializeSkipIndices(skip_indexes_block, granules_to_write);
+
+    auto last_granule = granules_to_write.back();
+    if (!last_granule.is_completed)
+    {
+        setCurrentMark(getCurrentMark() + granules_to_write.size() - 1);
+        setRowsWrittenInLastMark(last_granule.rows_count);
+    }
+    else
+    {
+        setCurrentMark(getCurrentMark() + granules_to_write.size());
+        setRowsWrittenInLastMark(0);
+    }
 }
 
 void MergeTreeDataPartWriterWide::writeSingleMark(
@@ -195,7 +208,7 @@ StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(
     return result;
 }
 
-size_t MergeTreeDataPartWriterWide::writeSingleGranule(
+void MergeTreeDataPartWriterWide::writeSingleGranule(
     const String & name,
     const IDataType & type,
     const IColumn & column,
@@ -224,8 +237,6 @@ size_t MergeTreeDataPartWriterWide::writeSingleGranule(
 
         column_streams[stream_name]->compressed.nextIfAtEnd();
     }, serialize_settings.path);
-
-    return from_row + number_of_rows;
 }
 
 /// Column must not be empty. (column.size() !== 0)
@@ -233,7 +244,8 @@ void MergeTreeDataPartWriterWide::writeColumn(
     const String & name,
     const IDataType & type,
     const IColumn & column,
-    WrittenOffsetColumns & offset_columns)
+    WrittenOffsetColumns & offset_columns,
+    const Granules & granules)
 {
     auto [it, inserted] = serialization_states.emplace(name, nullptr);
     if (inserted)
@@ -249,48 +261,19 @@ void MergeTreeDataPartWriterWide::writeColumn(
     serialize_settings.low_cardinality_max_dictionary_size = global_settings.low_cardinality_max_dictionary_size;
     serialize_settings.low_cardinality_use_single_dictionary_for_part = global_settings.low_cardinality_use_single_dictionary_for_part != 0;
 
-    size_t total_rows = column.size();
-    size_t current_row = 0;
-    size_t current_column_mark = getCurrentMark();
-    size_t current_index_offset = getIndexOffset();
-    while (current_row < total_rows)
+    for (const auto & granule : granules)
     {
-        size_t rows_to_write;
-        bool write_marks = true;
-
-        /// If there is `index_offset`, then the first mark goes not immediately, but after this number of rows.
-        if (current_row == 0 && current_index_offset != 0)
-        {
-            write_marks = false;
-            rows_to_write = current_index_offset;
-        }
-        else
-        {
-            if (index_granularity.getMarksCount() <= current_column_mark)
-                throw Exception(
-                    "Incorrect size of index granularity expect mark " + toString(current_column_mark) + " totally have marks " + toString(index_granularity.getMarksCount()),
-                    ErrorCodes::LOGICAL_ERROR);
-
-            rows_to_write = index_granularity.getMarkRows(current_column_mark);
-        }
-
-        if (rows_to_write != 0)
-            data_written = true;
-
-        current_row = writeSingleGranule(
+         writeSingleGranule(
             name,
             type,
             column,
             offset_columns,
             it->second,
             serialize_settings,
-            current_row,
-            rows_to_write,
-            write_marks
+            granule.start,
+            granule.rows_count,
+            granule.mark_on_start
         );
-
-        if (write_marks)
-            current_column_mark++;
     }
 
     type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
@@ -302,9 +285,6 @@ void MergeTreeDataPartWriterWide::writeColumn(
             offset_columns.insert(stream_name);
         }
     }, serialize_settings.path);
-
-    next_mark = current_column_mark;
-    next_index_offset = current_row - total_rows;
 }
 
 void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync)
@@ -376,11 +356,16 @@ void MergeTreeDataPartWriterWide::writeFinalMark(
 
 static void fillIndexGranularityImpl(
     MergeTreeIndexGranularity & index_granularity,
-    size_t index_offset,
+    size_t rows_in_last_granule,
     size_t index_granularity_for_block,
     size_t rows_in_block)
 {
-    for (size_t current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
+
+    size_t start = 0;
+    if (rows_in_last_granule != 0)
+        start = index_granularity.getLastMarkRows() - rows_in_last_granule;
+
+    for (size_t current_row = start; current_row < rows_in_block; current_row += index_granularity_for_block)
         index_granularity.appendMark(index_granularity_for_block);
 }
 
@@ -388,7 +373,7 @@ void MergeTreeDataPartWriterWide::fillIndexGranularity(size_t index_granularity_
 {
     fillIndexGranularityImpl(
         index_granularity,
-        getIndexOffset(),
+        getRowsWrittenInLastMark(),
         index_granularity_for_block,
         rows_in_block);
 }
