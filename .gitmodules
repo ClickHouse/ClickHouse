@@ -142,9 +142,6 @@
 [submodule "contrib/replxx"]
 	path = contrib/replxx
 	url = https://github.com/ClickHouse-Extras/replxx.git
-[submodule "contrib/ryu"]
-	path = contrib/ryu
-	url = https://github.com/ClickHouse-Extras/ryu.git
 [submodule "contrib/avro"]
 	path = contrib/avro
 	url = https://github.com/ClickHouse-Extras/avro.git
@@ -200,8 +197,7 @@
 	url = https://github.com/danlark1/miniselect
 [submodule "contrib/rocksdb"]
 	path = contrib/rocksdb
-	url = https://github.com/facebook/rocksdb
-	branch = v6.14.5
+	url = https://github.com/ClickHouse-Extras/rocksdb.git 
 [submodule "contrib/xz"]
 	path = contrib/xz
 	url = https://github.com/xz-mirror/xz
@@ -209,3 +205,9 @@
 	path = contrib/abseil-cpp
 	url = https://github.com/ClickHouse-Extras/abseil-cpp.git
 	branch = lts_2020_02_25
+[submodule "contrib/dragonbox"]
+	path = contrib/dragonbox
+	url = https://github.com/ClickHouse-Extras/dragonbox.git
+[submodule "contrib/fast_float"]
+	path = contrib/fast_float
+	url = https://github.com/fastfloat/fast_float

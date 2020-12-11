@@ -215,6 +215,8 @@ namespace
         String quota_config = "quotas." + quota_name;
         if (config.has(quota_config + ".keyed_by_ip"))
             quota->key_type = KeyType::IP_ADDRESS;
+        else if (config.has(quota_config + ".keyed_by_forwarded_ip"))
+            quota->key_type = KeyType::FORWARDED_IP_ADDRESS;
         else if (config.has(quota_config + ".keyed"))
             quota->key_type = KeyType::CLIENT_KEY_OR_USER_NAME;
         else

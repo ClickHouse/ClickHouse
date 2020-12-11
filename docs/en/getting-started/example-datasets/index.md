@@ -1,6 +1,6 @@
 ---
 toc_folder_title: Example Datasets
-toc_priority: 14
+toc_priority: 10
 toc_title: Introduction
 ---
 
