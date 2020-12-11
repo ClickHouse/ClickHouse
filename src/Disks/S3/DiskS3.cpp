@@ -119,52 +119,62 @@ struct DiskS3::Metadata
         if (create)
             return;
 
-        ReadBufferFromFile buf(disk_path + metadata_file_path, 1024); /* reasonable buffer size for small file */
+        try
+        {
+            ReadBufferFromFile buf(disk_path + metadata_file_path, 1024); /* reasonable buffer size for small file */
 
-        UInt32 version;
-        readIntText(version, buf);
+            UInt32 version;
+            readIntText(version, buf);
 
-        if (version < VERSION_ABSOLUTE_PATHS || version > VERSION_READ_ONLY_FLAG)
-            throw Exception(
-                "Unknown metadata file version. Path: " + disk_path + metadata_file_path
+            if (version < VERSION_ABSOLUTE_PATHS || version > VERSION_READ_ONLY_FLAG)
+                throw Exception(
+                    "Unknown metadata file version. Path: " + disk_path + metadata_file_path
                     + " Version: " + std::to_string(version) + ", Maximum expected version: " + std::to_string(VERSION_READ_ONLY_FLAG),
-                ErrorCodes::UNKNOWN_FORMAT);
+                    ErrorCodes::UNKNOWN_FORMAT);
 
-        assertChar('\n', buf);
+            assertChar('\n', buf);
 
-        UInt32 s3_objects_count;
-        readIntText(s3_objects_count, buf);
-        assertChar('\t', buf);
-        readIntText(total_size, buf);
-        assertChar('\n', buf);
-        s3_objects.resize(s3_objects_count);
-        for (UInt32 i = 0; i < s3_objects_count; ++i)
-        {
-            String s3_object_path;
-            size_t s3_object_size;
-            readIntText(s3_object_size, buf);
+            UInt32 s3_objects_count;
+            readIntText(s3_objects_count, buf);
             assertChar('\t', buf);
-            readEscapedString(s3_object_path, buf);
-            if (version == VERSION_ABSOLUTE_PATHS)
+            readIntText(total_size, buf);
+            assertChar('\n', buf);
+            s3_objects.resize(s3_objects_count);
+            for (UInt32 i = 0; i < s3_objects_count; ++i)
             {
-                if (!boost::algorithm::starts_with(s3_object_path, s3_root_path))
-                    throw Exception(
-                        "Path in metadata does not correspond S3 root path. Path: " + s3_object_path
-                        + ", root path: " + s3_root_path + ", disk path: " + disk_path_,
-                        ErrorCodes::UNKNOWN_FORMAT);
-                s3_object_path = s3_object_path.substr(s3_root_path.size());
+                String s3_object_path;
+                size_t s3_object_size;
+                readIntText(s3_object_size, buf);
+                assertChar('\t', buf);
+                readEscapedString(s3_object_path, buf);
+                if (version == VERSION_ABSOLUTE_PATHS)
+                {
+                    if (!boost::algorithm::starts_with(s3_object_path, s3_root_path))
+                        throw Exception(
+                            "Path in metadata does not correspond S3 root path. Path: " + s3_object_path
+                            + ", root path: " + s3_root_path + ", disk path: " + disk_path_,
+                            ErrorCodes::UNKNOWN_FORMAT);
+                    s3_object_path = s3_object_path.substr(s3_root_path.size());
+                }
+                assertChar('\n', buf);
+                s3_objects[i] = {s3_object_path, s3_object_size};
             }
+
+            readIntText(ref_count, buf);
             assertChar('\n', buf);
-            s3_objects[i] = {s3_object_path, s3_object_size};
+
+            if (version >= VERSION_READ_ONLY_FLAG)
+            {
+                readBoolText(read_only, buf);
+                assertChar('\n', buf);
+            }
         }
-
-        readIntText(ref_count, buf);
-        assertChar('\n', buf);
-
-        if (version >= VERSION_READ_ONLY_FLAG)
+        catch (Exception & e)
         {
-            readBoolText(read_only, buf);
-            assertChar('\n', buf);
+            if (e.code() == ErrorCodes::UNKNOWN_FORMAT)
+                throw;
+
+            throw Exception("Failed to read metadata file: " + e.message(), ErrorCodes::UNKNOWN_FORMAT);
         }
     }
 
@@ -714,10 +724,13 @@ void DiskS3::removeMeta(const String & path, AwsS3KeyKeeper & keys)
             file.remove();
         }
     }
-    catch (...)
+    catch (Exception & e)
     {
         /// If it's impossible to read meta - just remove it from FS.
-        file.remove();
+        if (e.code() == ErrorCodes::UNKNOWN_FORMAT)
+            file.remove();
+        else
+            throw;
     }
 }
 
