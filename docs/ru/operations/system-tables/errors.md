@@ -6,7 +6,7 @@
 
 -   `name` ([String](../../sql-reference/data-types/string.md)) — название ошибки (`errorCodeToName`).
 -   `code` ([Int32](../../sql-reference/data-types/int-uint.md)) — номер кода ошибки.
--   `value` ([UInt64](../../sql-reference/data-types/int-uint.md)) — число, возникающих ошибок.
+-   `value` ([UInt64](../../sql-reference/data-types/int-uint.md)) — количество ошибок.
 
 **Пример**
 
