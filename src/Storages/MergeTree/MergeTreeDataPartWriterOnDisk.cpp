@@ -173,7 +173,6 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
 
 void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Block & primary_index_block, const Granules & granules_to_write)
 {
-    size_t rows = primary_index_block.rows();
     size_t primary_columns_num = primary_index_block.columns();
     if (index_columns.empty())
     {
@@ -212,8 +211,6 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
 
 void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block & skip_indexes_block, const Granules & granules_to_write)
 {
-    size_t rows = skip_indexes_block.rows();
-
     /// Filling and writing skip indices like in MergeTreeDataPartWriterWide::writeColumn
     for (size_t i = 0; i < skip_indices.size(); ++i)
     {

@@ -119,8 +119,6 @@ private:
     void initPrimaryIndex();
 
     virtual void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) = 0;
-    /// Index is already serialized up to this mark.
-    size_t index_mark = 0;
 };
 
 }

@@ -79,6 +79,7 @@ private:
     /// marks -> marks_file
     std::unique_ptr<WriteBufferFromFileBase> marks_file;
     HashingWriteBuffer marks;
+    size_t index_offset = 0;
 };
 
 }
