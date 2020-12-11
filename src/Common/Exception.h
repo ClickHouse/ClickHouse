@@ -55,11 +55,6 @@ public:
         extendedMessage(fmt::format(format, std::forward<Args>(args)...));
     }
 
-    /// Note that base class has exactly the same, but not virtual function.
-    virtual std::string displayText() const {
-        return Poco::Exception::displayText();
-    }
-
     void addMessage(const std::string& message)
     {
         extendedMessage(message);
@@ -108,8 +103,7 @@ class ParsingException : public Exception
 public:
     using Exception::Exception;
 
-    /// In a good way we have to mark this function virtual in the base class Poco::Exception. 
-    /// For now it is virtual only since Exception (above class) in the hierarchy.
+    /// We use additional field formatted_message_ to make this method const.
     std::string displayText() const override {
         try
         {
