@@ -39,7 +39,7 @@
 23.0
 24.0
 === Try load data from datapage_v2.snappy.parquet
-Code: 33. DB::Ex---tion: Error while reading Parquet data: IOError: Not yet implemented: Unsupported encoding.: data for INSERT was parsed from stdin
+Code: 33. DB::ParsingEx---tion: Error while reading Parquet data: IOError: Not yet implemented: Unsupported encoding.: data for INSERT was parsed from stdin
 
 === Try load data from fixed_length_decimal_1.parquet
 1.0
@@ -171,7 +171,7 @@ Code: 33. DB::Ex---tion: Error while reading Parquet data: IOError: Not yet impl
 Code: 8. DB::Ex---tion: Column "element" is not presented in input data: data for INSERT was parsed from stdin
 
 === Try load data from nested_maps.snappy.parquet
-Code: 33. DB::Ex---tion: Error while reading Parquet data: NotImplemented: Reading lists of structs from Parquet files not yet supported: key_value: list<key_value: struct<key: string not null, value: struct<key_value: list<key_value: struct<key: int32 not null, value: bool not null> not null> not null>> not null> not null: data for INSERT was parsed from stdin
+Code: 33. DB::ParsingEx---tion: Error while reading Parquet data: NotImplemented: Reading lists of structs from Parquet files not yet supported: key_value: list<key_value: struct<key: string not null, value: struct<key_value: list<key_value: struct<key: int32 not null, value: bool not null> not null> not null>> not null> not null: data for INSERT was parsed from stdin
 
 === Try load data from nonnullable.impala.parquet
 Code: 8. DB::Ex---tion: Column "element" is not presented in input data: data for INSERT was parsed from stdin
