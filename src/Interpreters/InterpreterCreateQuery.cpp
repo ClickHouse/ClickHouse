@@ -79,6 +79,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
     extern const int PATH_ACCESS_DENIED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace fs = std::filesystem;
