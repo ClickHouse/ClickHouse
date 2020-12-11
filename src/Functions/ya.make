@@ -80,6 +80,7 @@ SRCS(
     URL/cutQueryString.cpp
     URL/cutQueryStringAndFragment.cpp
     URL/cutToFirstSignificantSubdomain.cpp
+    URL/cutToFirstSignificantSubdomainCustom.cpp
     URL/cutURLParameter.cpp
     URL/cutWWW.cpp
     URL/decodeURLComponent.cpp
@@ -89,6 +90,7 @@ SRCS(
     URL/extractURLParameterNames.cpp
     URL/extractURLParameters.cpp
     URL/firstSignificantSubdomain.cpp
+    URL/firstSignificantSubdomainCustom.cpp
     URL/fragment.cpp
     URL/netloc.cpp
     URL/path.cpp
@@ -247,6 +249,7 @@ SRCS(
     formatReadableTimeDelta.cpp
     formatRow.cpp
     formatString.cpp
+    fromModifiedJulianDay.cpp
     fromUnixTimestamp64Micro.cpp
     fromUnixTimestamp64Milli.cpp
     fromUnixTimestamp64Nano.cpp
@@ -455,6 +458,7 @@ SRCS(
     toISOYear.cpp
     toLowCardinality.cpp
     toMinute.cpp
+    toModifiedJulianDay.cpp
     toMonday.cpp
     toMonth.cpp
     toNullable.cpp
