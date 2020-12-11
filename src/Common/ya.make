@@ -68,6 +68,7 @@ SRCS(
     StringUtils/StringUtils.cpp
     StudentTTest.cpp
     SymbolIndex.cpp
+    TLDListsHolder.cpp
     TaskStatsInfoGetter.cpp
     TerminalSize.cpp
     ThreadFuzzer.cpp
