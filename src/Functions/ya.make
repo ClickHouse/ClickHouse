@@ -80,6 +80,7 @@ SRCS(
     URL/cutQueryString.cpp
     URL/cutQueryStringAndFragment.cpp
     URL/cutToFirstSignificantSubdomain.cpp
+    URL/cutToFirstSignificantSubdomainCustom.cpp
     URL/cutURLParameter.cpp
     URL/cutWWW.cpp
     URL/decodeURLComponent.cpp
@@ -89,6 +90,7 @@ SRCS(
     URL/extractURLParameterNames.cpp
     URL/extractURLParameters.cpp
     URL/firstSignificantSubdomain.cpp
+    URL/firstSignificantSubdomainCustom.cpp
     URL/fragment.cpp
     URL/netloc.cpp
     URL/path.cpp
