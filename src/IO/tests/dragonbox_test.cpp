@@ -1,8 +1,7 @@
 #include <string>
 #include <iostream>
 #include <cstring>
-#include <ryu/ryu.h>
-
+#include <dragonbox/dragonbox_to_chars.h>
 
 struct DecomposedFloat64
 {
@@ -84,7 +83,8 @@ int main(int argc, char ** argv)
     double x = argc > 1 ? std::stod(argv[1]) : 0;
     char buf[32];
 
-    d2s_buffered(x, buf);
+    std::cout << "dragonbox output" << std::endl;
+    jkj::dragonbox::to_chars(x, buf);
     std::cout << buf << "\n";
 
     std::cout << DecomposedFloat64(x).isInsideInt64() << "\n";
