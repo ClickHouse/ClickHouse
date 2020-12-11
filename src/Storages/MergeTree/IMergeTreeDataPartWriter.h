@@ -13,6 +13,18 @@
 namespace DB
 {
 
+struct Granule
+{
+    size_t start;
+    size_t rows_count;
+    bool mark_on_start;
+    bool is_completed;
+};
+
+using Granules = std::vector<Granule>;
+
+Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity, size_t block_rows, size_t current_mark, size_t rows_written_in_last_mark);
+
 struct StreamNameAndMark
 {
     String stream_name;
@@ -46,13 +58,12 @@ public:
     const MergeTreeIndexGranularity & getIndexGranularity() const { return index_granularity; }
 
 protected:
-    /// Shift mark and offset to prepare read next mark.
-    /// You must call it after calling write method and optionally
-    ///  calling calculations of primary and skip indices.
-    void next();
 
     size_t getCurrentMark() const { return current_mark; }
-    size_t getIndexOffset() const { return index_offset; }
+    void setCurrentMark(size_t mark) { current_mark = mark; }
+
+    size_t getRowsWrittenInLastMark() const { return rows_written_in_last_mark; }
+    void setRowsWrittenInLastMark(size_t rows_written) { rows_written_in_last_mark = rows_written; }
 
     const MergeTreeData::DataPartPtr data_part;
     const MergeTreeData & storage;
@@ -63,7 +74,6 @@ protected:
     const bool with_final_mark;
 
     size_t next_mark = 0;
-    size_t next_index_offset = 0;
 
     MutableColumns index_columns;
 
@@ -71,7 +81,7 @@ private:
     /// Data is already written up to this mark.
     size_t current_mark = 0;
     /// The offset to the first row of the block for which you want to write the index.
-    size_t index_offset = 0;
+    size_t rows_written_in_last_mark = 0;
 };
 
 }

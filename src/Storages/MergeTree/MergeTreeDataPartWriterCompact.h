@@ -28,7 +28,7 @@ private:
 
     void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) override;
 
-    void writeBlock(const Block & block);
+    void writeBlock(const Block & block, const Granules & granules);
 
     void addToChecksums(MergeTreeDataPartChecksums & checksums);
 
