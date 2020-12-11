@@ -101,7 +101,7 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
     if (settings.rewrite_primary_key)
         primary_key_block = getBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), permutation);
 
-    Block skip_indexes_block = getBlockAndPermute(block, metadata_snapshot->getSecondaryIndices().getDistinctColumnNames(), permutation);
+    Block skip_indexes_block = getBlockAndPermute(block, getSkipIndicesColumns(), permutation);
 
     auto it = columns_list.begin();
     for (size_t i = 0; i < columns_list.size(); ++i, ++it)

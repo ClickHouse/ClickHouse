@@ -81,7 +81,7 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumn::P
         primary_key_block = getBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), permutation);
     }
 
-    Block skip_indexes_block = getBlockAndPermute(block, metadata_snapshot->getSecondaryIndices().getDistinctColumnNames(), permutation);
+    Block skip_indexes_block = getBlockAndPermute(block, getSkipIndicesColumns(), permutation);
 
     Block result_block;
 
