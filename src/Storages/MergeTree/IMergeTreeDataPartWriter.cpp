@@ -4,6 +4,9 @@ namespace DB
 {
 Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity, size_t block_rows, size_t current_mark, size_t rows_written_in_last_mark)
 {
+    if (current_mark >= index_granularity.getMarksCount())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Request to get granules from mark {} but index granularity size is {}", current_mark, index_granularity.getMarksCount());
+
     Granules result;
     size_t current_row = 0;
     if (rows_written_in_last_mark > 0)
@@ -14,14 +17,20 @@ Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity,
         current_mark++;
     }
 
-    for (; current_row < block_rows; current_row += index_granularity.getMarkRows(current_mark))
+    while (current_row < block_rows)
     {
         size_t expected_rows = index_granularity.getMarkRows(current_mark);
         size_t rest_rows = block_rows - current_row;
         if (rest_rows < expected_rows)
+        {
             result.emplace_back(Granule{current_row, rest_rows, current_mark, true, false});
+            current_row += rest_rows;
+        }
         else
+        {
             result.emplace_back(Granule{current_row, expected_rows, current_mark, true, true});
+            current_row += expected_rows;
+        }
 
         current_mark++;
     }
