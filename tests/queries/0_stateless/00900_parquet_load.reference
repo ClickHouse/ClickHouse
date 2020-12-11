@@ -52,7 +52,7 @@
 23.00
 24.00
 === Try load data from datapage_v2.snappy.parquet
-Code: 33. DB::Ex---tion: Error while reading Parquet data: IOError: Not yet implemented: Unsupported encoding.: data for INSERT was parsed from stdin
+Code: 33. DB::ParsingEx---tion: Error while reading Parquet data: IOError: Not yet implemented: Unsupported encoding.: data for INSERT was parsed from stdin
 
 === Try load data from dict-page-offset-zero.parquet
 1552
@@ -257,7 +257,7 @@ Code: 70. DB::Ex---tion: The type "list" of an input column "int64_list" is not 
 Code: 70. DB::Ex---tion: The type "list" of an input column "a" is not supported for conversion from a Parquet data format: data for INSERT was parsed from stdin
 
 === Try load data from nested_maps.snappy.parquet
-Code: 70. DB::Ex---tion: The type "map" of an input column "a" is not supported for conversion from a Parquet data format: data for INSERT was parsed from stdin
+Code: 70. DB::ParsingEx---tion: The type "map" of an input column "a" is not supported for conversion from a Parquet data format: data for INSERT was parsed from stdin
 
 === Try load data from non_hadoop_lz4_compressed.parquet
 1593604800	abc	42
