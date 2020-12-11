@@ -79,7 +79,7 @@ String HDFSBuilderWrapper::getKinitCmd()
     if (hadoop_kerberos_keytab.empty() || hadoop_kerberos_principal.empty())
     {
         throw Exception("Not enough parameters to run kinit",
-            ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+            ErrorCodes::NO_ELEMENTS_IN_CONFIG);
     }
 
     WriteBufferFromOwnString ss;
