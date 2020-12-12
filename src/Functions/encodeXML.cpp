@@ -76,7 +76,7 @@ namespace
                     memcpy(dst_pos, "&lt;", 4);
                     dst_pos += 4;
                     src_prev_pos = src_curr_pos + 1;
-                    src_curr_pos++;
+                    ++src_curr_pos;
                 }
                 else if (*src_curr_pos == '&')
                 {
@@ -86,7 +86,7 @@ namespace
                     memcpy(dst_pos, "&amp;", 5);
                     dst_pos += 5;
                     src_prev_pos = src_curr_pos + 1;
-                    src_curr_pos++;
+                    ++src_curr_pos;
                 }
                 else if (*src_curr_pos == '>')
                 {
@@ -96,7 +96,7 @@ namespace
                     memcpy(dst_pos, "&gt;", 4);
                     dst_pos += 4;
                     src_prev_pos = src_curr_pos + 1;
-                    src_curr_pos++;
+                    ++src_curr_pos;
                 }
                 else if (*src_curr_pos == '"')
                 {
@@ -106,7 +106,7 @@ namespace
                     memcpy(dst_pos, "&quot;", 6);
                     dst_pos += 6;
                     src_prev_pos = src_curr_pos + 1;
-                    src_curr_pos++;
+                    ++src_curr_pos;
                 }
                 else if (*src_curr_pos == '\'')
                 {
@@ -116,7 +116,7 @@ namespace
                     memcpy(dst_pos, "&apos;", 6);
                     dst_pos += 6;
                     src_prev_pos = src_curr_pos + 1;
-                    src_curr_pos++;
+                    ++src_curr_pos;
                 }
             }
 
