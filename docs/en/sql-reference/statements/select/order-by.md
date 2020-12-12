@@ -56,15 +56,15 @@ When floating point numbers are sorted, NaNs are separate from the other values.
 
 ## Collation Support {#collation-support}
 
-For sorting by [String](../../../sql-reference/data-types/string.md#string) values, you can specify collation (comparison). Example: `ORDER BY SearchPhrase COLLATE 'tr'` - for sorting by keyword in ascending order, using the Turkish alphabet, case insensitive, assuming that strings are UTF-8 encoded. `COLLATE` can be specified or not for each expression in ORDER BY independently. If `ASC` or `DESC` is specified, `COLLATE` is specified after it. When using `COLLATE`, sorting is always case-insensitive.
+For sorting by [String](../../../sql-reference/data-types/string.md) values, you can specify collation (comparison). Example: `ORDER BY SearchPhrase COLLATE 'tr'` - for sorting by keyword in ascending order, using the Turkish alphabet, case insensitive, assuming that strings are UTF-8 encoded. `COLLATE` can be specified or not for each expression in ORDER BY independently. If `ASC` or `DESC` is specified, `COLLATE` is specified after it. When using `COLLATE`, sorting is always case-insensitive.
 
-Collate is supported in [LowCardinality](../../../sql-reference/data-types/lowcardinality.md#lowcardinality-data-type), [Nullable](../../../sql-reference/data-types/nullable.md#data_type-nullable), [Array](../../../sql-reference/data-types/array.md#data-type-array) and [Tuple](../../../sql-reference/data-types/tuple.md#tuplet1-t2).
+Collate is supported in [LowCardinality](../../../sql-reference/data-types/lowcardinality.md), [Nullable](../../../sql-reference/data-types/nullable.md), [Array](../../../sql-reference/data-types/array.md) and [Tuple](../../../sql-reference/data-types/tuple.md).
 
 We only recommend using `COLLATE` for final sorting of a small number of rows, since sorting with `COLLATE` is less efficient than normal sorting by bytes.
 
 ### Collation Examples {#collation-examples}
 
-Example only with [String](../../../sql-reference/data-types/string.md#string) values:
+Example only with [String](../../../sql-reference/data-types/string.md) values:
 
 Input table:
 
@@ -96,7 +96,7 @@ Result:
 └───┴──────┘
 ```
 
-Example with [Nullable](../../../sql-reference/data-types/nullable.md#data_type-nullable):
+Example with [Nullable](../../../sql-reference/data-types/nullable.md):
 
 Input table:
 
@@ -132,7 +132,7 @@ Result:
 └───┴──────┘
 ```
 
-Example with [Array](../../../sql-reference/data-types/array.md#data-type-array):
+Example with [Array](../../../sql-reference/data-types/array.md):
 
 Input table:
 
@@ -168,7 +168,7 @@ Result:
 └───┴───────────────┘
 ```
 
-Example with [LowCardinality](../../../sql-reference/data-types/lowcardinality.md#lowcardinality-data-type) string:
+Example with [LowCardinality](../../../sql-reference/data-types/lowcardinality.md) string:
 
 Input table:
 
@@ -204,7 +204,7 @@ Result:
 └───┴─────┘
 ```
 
-Example with [Tuple](../../../sql-reference/data-types/tuple.md#tuplet1-t2):
+Example with [Tuple](../../../sql-reference/data-types/tuple.md):
 
 ```text
 ┌─x─┬─s───────┐
