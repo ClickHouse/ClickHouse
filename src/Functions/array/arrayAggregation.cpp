@@ -24,39 +24,40 @@ enum class AggregateOperation
     average
 };
 
-template<typename ArrayElement, AggregateOperation operation>
+template <typename ArrayElement, AggregateOperation operation>
 struct ArrayAggregateResultImpl;
 
-template<typename ArrayElement>
+template <typename ArrayElement>
 struct ArrayAggregateResultImpl<ArrayElement, AggregateOperation::min>
 {
     using Result = ArrayElement;
 };
 
-template<typename ArrayElement>
+template <typename ArrayElement>
 struct ArrayAggregateResultImpl<ArrayElement, AggregateOperation::max>
 {
-    using Result = ArrayElement; 
+    using Result = ArrayElement;
 };
 
-template<typename ArrayElement>
+template <typename ArrayElement>
 struct ArrayAggregateResultImpl<ArrayElement, AggregateOperation::average>
 {
     using Result = std::conditional_t<IsDecimalNumber<ArrayElement>, Decimal128, Float64>;
 };
 
-template<typename ArrayElement>
+template <typename ArrayElement>
 struct ArrayAggregateResultImpl<ArrayElement, AggregateOperation::sum>
 {
-    using Result = 
-        std::conditional_t<IsDecimalNumber<ArrayElement>, Decimal128,
-            std::conditional_t<std::is_floating_point_v<ArrayElement>, Float64,
-                std::conditional_t<std::is_signed_v<ArrayElement>, Int64, UInt64>            
-            >
-        >;
+    using Result = std::conditional_t<
+        IsDecimalNumber<ArrayElement>,
+        Decimal128,
+        std::conditional_t<
+            std::is_floating_point_v<ArrayElement>,
+            Float64,
+            std::conditional_t<std::is_signed_v<ArrayElement>, Int64, UInt64>>>;
 };
 
-template<typename ArrayElement, AggregateOperation operation>
+template <typename ArrayElement, AggregateOperation operation>
 using ArrayAggregateResult = typename ArrayAggregateResultImpl<ArrayElement, operation>::Result;
 
 template<AggregateOperation aggregate_operation>
@@ -73,7 +74,7 @@ struct ArrayAggregateImpl
         auto call = [&](const auto & types) {
             using Types = std::decay_t<decltype(types)>;
             using DataType = typename Types::LeftType;
-            
+
             if constexpr (IsDataTypeNumber<DataType>)
             {
                 using NumberReturnType = ArrayAggregateResult<typename DataType::FieldType, aggregate_operation>;
@@ -93,8 +94,11 @@ struct ArrayAggregateImpl
             return false;
         };
 
-        if (!callOnIndexAndDataType<void>(expression_return->getTypeId(), call)) {
-            throw Exception("arraySum cannot add values of type " + expression_return->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        if (!callOnIndexAndDataType<void>(expression_return->getTypeId(), call))
+        {
+            throw Exception(
+                "array aggregation function cannot be performed on type " + expression_return->getName(),
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
         return result;
@@ -170,7 +174,8 @@ struct ArrayAggregateImpl
             Result s = 0;
 
             /// Array is empty
-            if (offsets[i] == pos) {
+            if (offsets[i] == pos)
+            {
                 res[i] = s;
                 continue;
             }
@@ -242,7 +247,7 @@ struct ArrayAggregateImpl
     }
 };
 
-struct NameArrayMin { static constexpr auto name = "arrayMin"; }; 
+struct NameArrayMin { static constexpr auto name = "arrayMin"; };
 using FunctionArrayMin = FunctionArrayMapped<ArrayAggregateImpl<AggregateOperation::min>, NameArrayMin>;
 
 struct NameArrayMax { static constexpr auto name = "arrayMax"; };
