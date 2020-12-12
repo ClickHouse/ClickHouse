@@ -985,10 +985,10 @@ public:
         }
 
         size_t hash_value = hash(x);
-        size_t i = findCell(x, hash_value, grower.place(hash_value));
+        size_t erased_key_position = findCell(x, hash_value, grower.place(hash_value));
 
         /// Key is not found
-        if (buf[i].isZero(*this))
+        if (buf[erased_key_position].isZero(*this))
         {
             return;
         }
@@ -996,27 +996,29 @@ public:
         /// We need to guarantee loop termination because there will be empty position
         assert(m_size < grower.bufSize());
 
-        size_t j = i;
+        size_t next_position = erased_key_position;
 
         while (true)
         {
-            j = grower.next(j);
+            /// Walk through collision resolution chain
+            next_position = grower.next(next_position);
 
-            if (buf[j].isZero(*this))
-            {
+            /// If there's no more elements in the chain
+            if (buf[next_position].isZero(*this))
                 break;
-            }
 
-            size_t k = grower.place(buf[j].getHash(*this));
+            /// The optimal position of the element in the cell at next_position
+            size_t optimal_position = grower.place(buf[next_position].getHash(*this));
 
-            if (i <= j ? ((k <= i) || (k > j)) : ((k <= i) && (k > j)))
+            if ((erased_key_position < next_position && ((optimal_position <= erased_key_position) || (optimal_position > next_position)))
+                || ((optimal_position <= erased_key_position) && (optimal_position > next_position)))
             {
-                memcpy(static_cast<void *>(&buf[i]), static_cast<void *>(&buf[j]), sizeof(Cell));
-                i = j;
+                memcpy(static_cast<void *>(&buf[erased_key_position]), static_cast<void *>(&buf[next_position]), sizeof(Cell));
+                erased_key_position = next_position;
             }
         }
 
-        buf[i].setZero();
+        buf[erased_key_position].setZero();
         --m_size;
     }
 
