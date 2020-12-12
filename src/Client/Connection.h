@@ -5,6 +5,7 @@
 #include <Poco/Net/StreamSocket.h>
 
 #include <Common/Throttler.h>
+#include <Common/config.h>
 
 #include <Core/Block.h>
 #include <Core/Defines.h>
@@ -17,7 +18,6 @@
 
 #include <IO/ConnectionTimeouts.h>
 
-#include <Core/Settings.h>
 #include <Interpreters/TablesStatus.h>
 
 #include <Compression/ICompressionCodec.h>
@@ -31,6 +31,7 @@ namespace DB
 
 class ClientInfo;
 class Pipe;
+struct Settings;
 
 /// Struct which represents data we are going to send for external table.
 struct ExternalTableData

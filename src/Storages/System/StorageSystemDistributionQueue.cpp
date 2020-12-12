@@ -9,6 +9,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/ContextAccess.h>
 #include <Common/typeid_cast.h>
+#include <Interpreters/Context.h>
 #include <Databases/IDatabase.h>
 
 namespace DB
