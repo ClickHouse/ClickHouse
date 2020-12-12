@@ -20,7 +20,7 @@ enum class AggregateOperation
 {
     min,
     max,
-    summ,
+    sum,
     average
 };
 
@@ -46,7 +46,7 @@ struct ArrayAggregateResultImpl<ArrayElement, AggregateOperation::average>
 };
 
 template<typename ArrayElement>
-struct ArrayAggregateResultImpl<ArrayElement, AggregateOperation::summ>
+struct ArrayAggregateResultImpl<ArrayElement, AggregateOperation::sum>
 {
     using Result = 
         std::conditional_t<IsDecimalNumber<ArrayElement>, Decimal128,
@@ -57,7 +57,7 @@ struct ArrayAggregateResultImpl<ArrayElement, AggregateOperation::summ>
 };
 
 template<typename ArrayElement, AggregateOperation operation>
-using ArrayAggregateResult = ArrayAggregateResultImpl<ArrayElement, operation>::Result;
+using ArrayAggregateResult = typename ArrayAggregateResultImpl<ArrayElement, operation>::Result;
 
 template<AggregateOperation aggregate_operation>
 struct ArrayAggregateImpl
@@ -134,7 +134,7 @@ struct ArrayAggregateImpl
             size_t pos = 0;
             for (size_t i = 0; i < offsets.size(); ++i)
             {
-                if constexpr (aggregate_operation == AggregateOperation::summ)
+                if constexpr (aggregate_operation == AggregateOperation::sum)
                 {
                     size_t array_size = offsets[i] - pos;
                     /// Just multiply the value by array size.
@@ -183,7 +183,7 @@ struct ArrayAggregateImpl
             {
                 auto element = data[pos];
 
-                if constexpr (aggregate_operation == AggregateOperation::summ ||
+                if constexpr (aggregate_operation == AggregateOperation::sum ||
                             aggregate_operation == AggregateOperation::average)
                 {
                     s += element;
@@ -249,7 +249,7 @@ struct NameArrayMax { static constexpr auto name = "arrayMax"; };
 using FunctionArrayMax = FunctionArrayMapped<ArrayAggregateImpl<AggregateOperation::max>, NameArrayMax>;
 
 struct NameArraySum { static constexpr auto name = "arraySum"; };
-using FunctionArraySum = FunctionArrayMapped<ArrayAggregateImpl<AggregateOperation::summ>, NameArraySum>;
+using FunctionArraySum = FunctionArrayMapped<ArrayAggregateImpl<AggregateOperation::sum>, NameArraySum>;
 
 struct NameArrayAverage { static constexpr auto name = "arrayAvg"; };
 using FunctionArrayAverage = FunctionArrayMapped<ArrayAggregateImpl<AggregateOperation::average>, NameArrayAverage>;
