@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/Cluster.h>
+#include <Interpreters/Context.h>
 #include <DataStreams/BlockIO.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>

@@ -17,6 +17,8 @@
 #include <Common/createHardLink.h>
 #include <Common/quoteString.h>
 #include <Common/thread_local_rng.h>
+#include <Common/ThreadPool.h>
+#include <common/logger_useful.h>
 
 #include <aws/s3/model/CopyObjectRequest.h>
 #include <aws/s3/model/DeleteObjectsRequest.h>

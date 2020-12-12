@@ -5,6 +5,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/setThreadName.h>
+#include <IO/ConnectionTimeoutsContext.h>
 
 
 namespace DB
@@ -1588,11 +1589,14 @@ void ClusterCopier::dropParticularPartitionPieceFromAllHelpingTables(const TaskT
     LOG_DEBUG(log, "All helping tables dropped partition {}", partition_name);
 }
 
-String ClusterCopier::getRemoteCreateTable(const DatabaseAndTableName & table, Connection & connection, const Settings * settings)
+String ClusterCopier::getRemoteCreateTable(const DatabaseAndTableName & table, Connection & connection, const Settings & settings)
 {
+    Context remote_context(context);
+    remote_context.setSettings(settings);
+
     String query = "SHOW CREATE TABLE " + getQuotedTable(table);
     Block block = getBlockWithAllStreamData(std::make_shared<RemoteBlockInputStream>(
-            connection, query, InterpreterShowCreateQuery::getSampleBlock(), context, settings));
+            connection, query, InterpreterShowCreateQuery::getSampleBlock(), remote_context));
 
     return typeid_cast<const ColumnString &>(*block.safeGetByPosition(0).column).getDataAt(0).toString();
 }
@@ -1604,7 +1608,7 @@ ASTPtr ClusterCopier::getCreateTableForPullShard(const ConnectionTimeouts & time
     String create_query_pull_str = getRemoteCreateTable(
             task_shard.task_table.table_pull,
             *connection_entry,
-            &task_cluster->settings_pull);
+            task_cluster->settings_pull);
 
     ParserCreateQuery parser_create_query;
     const auto & settings = context.getSettingsRef();
@@ -1856,6 +1860,9 @@ UInt64 ClusterCopier::executeQueryOnCluster(
             auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(shard_settings).getSaturated(shard_settings.max_execution_time);
             auto connections = shard.pool->getMany(timeouts, &shard_settings, pool_mode);
 
+            Context shard_context(context);
+            shard_context.setSettings(shard_settings);
+
             for (auto & connection : connections)
             {
                 if (connection.isNull())
@@ -1864,7 +1871,7 @@ UInt64 ClusterCopier::executeQueryOnCluster(
                 try
                 {
                     /// CREATE TABLE and DROP PARTITION queries return empty block
-                    RemoteBlockInputStream stream{*connection, query, Block{}, context, &shard_settings};
+                    RemoteBlockInputStream stream{*connection, query, Block{}, shard_context};
                     NullBlockOutputStream output{Block{}};
                     copyData(stream, output);
 
