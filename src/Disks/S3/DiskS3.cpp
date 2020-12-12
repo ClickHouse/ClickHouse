@@ -175,7 +175,7 @@ struct DiskS3::Metadata
             if (e.code() == ErrorCodes::UNKNOWN_FORMAT)
                 throw;
 
-            throw Exception("Failed to read metadata file: " + e.message(), ErrorCodes::UNKNOWN_FORMAT);
+            throw Exception("Failed to read metadata file", e, ErrorCodes::UNKNOWN_FORMAT);
         }
     }
 
@@ -729,7 +729,7 @@ void DiskS3::removeMeta(const String & path, AwsS3KeyKeeper & keys)
             file.remove();
         }
     }
-    catch (Exception & e)
+    catch (const Exception & e)
     {
         /// If it's impossible to read meta - just remove it from FS.
         if (e.code() == ErrorCodes::UNKNOWN_FORMAT)
@@ -738,7 +738,7 @@ void DiskS3::removeMeta(const String & path, AwsS3KeyKeeper & keys)
                 &Poco::Logger::get("DiskS3"),
                 "Metadata file {} can't be read by reason: {}. Removing it forcibly.",
                 backQuote(path),
-                e.message());
+                e.nested() ? e.nested()->message() : e.message());
 
             file.remove();
         }
