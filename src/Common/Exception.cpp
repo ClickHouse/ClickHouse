@@ -36,7 +36,7 @@ namespace ErrorCodes
 
 /// Aborts the process if error code is LOGICAL_ERROR.
 /// Increments error codes statistics.
-void handle_error_code(const std::string & msg, int code) // NOLINT
+void handle_error_code([[maybe_unused]] const std::string & msg, int code)
 {
     // In debug builds and builds with sanitizers, treat LOGICAL_ERROR as an assertion failure.
     // Log the message before we fail.
