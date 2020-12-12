@@ -134,7 +134,7 @@ MergeTreeData::MergeTreeData(
     bool attach,
     BrokenPartCallback broken_part_callback_)
     : IStorage(table_id_)
-    , global_context(context_)
+    , global_context(context_.getGlobalContext())
     , merging_params(merging_params_)
     , require_part_metadata(require_part_metadata_)
     , relative_data_path(relative_data_path_)
@@ -734,7 +734,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                 for (auto && part : write_ahead_log->restore(metadata_snapshot))
                     parts_from_wal.push_back(std::move(part));
             }
-            else if (startsWith(it->name(), MergeTreeWriteAheadLog::WAL_FILE_NAME))
+            else if (startsWith(it->name(), MergeTreeWriteAheadLog::WAL_FILE_NAME) && settings->in_memory_parts_enable_wal)
             {
                 MergeTreeWriteAheadLog wal(*this, disk_ptr, it->name());
                 for (auto && part : wal.restore(metadata_snapshot))
@@ -1217,6 +1217,9 @@ void MergeTreeData::clearOldWriteAheadLogs()
 
 void MergeTreeData::clearEmptyParts()
 {
+    if (!getSettings()->remove_empty_parts)
+        return;
+
     auto parts = getDataPartsVector();
     for (const auto & part : parts)
     {
@@ -2000,7 +2003,7 @@ bool MergeTreeData::renameTempPartAndReplace(
     if (part_in_memory && getSettings()->in_memory_parts_enable_wal)
     {
         auto wal = getWriteAheadLog();
-        wal->addPart(part_in_memory->block, part_in_memory->name);
+        wal->addPart(part_in_memory);
     }
 
     if (out_covered_parts)
@@ -3137,8 +3140,7 @@ inline ReservationPtr checkAndReturnReservation(UInt64 expected_size, Reservatio
 ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size) const
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
-    auto reservation = getStoragePolicy()->reserve(expected_size);
-    return checkAndReturnReservation(expected_size, std::move(reservation));
+    return getStoragePolicy()->reserveAndCheck(expected_size);
 }
 
 ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size, SpacePtr space)
@@ -3892,7 +3894,7 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
 
 MergeTreeData::AlterConversions MergeTreeData::getAlterConversionsForPart(const MergeTreeDataPartPtr part) const
 {
-    MutationCommands commands = getFirtsAlterMutationCommandsForPart(part);
+    MutationCommands commands = getFirstAlterMutationCommandsForPart(part);
 
     AlterConversions result{};
     for (const auto & command : commands)

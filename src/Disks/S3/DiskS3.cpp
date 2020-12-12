@@ -3,6 +3,7 @@
 #include "Disks/DiskFactory.h"
 
 #include <random>
+#include <optional>
 #include <utility>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromS3.h>
@@ -34,6 +35,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_FORMAT;
     extern const int INCORRECT_DISK_INDEX;
     extern const int NOT_IMPLEMENTED;
+    extern const int PATH_ACCESS_DENIED;
 }
 
 
@@ -93,6 +95,7 @@ namespace
         /// Metadata file version.
         static constexpr UInt32 VERSION_ABSOLUTE_PATHS = 1;
         static constexpr UInt32 VERSION_RELATIVE_PATHS = 2;
+        static constexpr UInt32 VERSION_READ_ONLY_FLAG = 3;
 
         using PathAndSize = std::pair<String, size_t>;
 
@@ -109,6 +112,8 @@ namespace
         std::vector<PathAndSize> s3_objects;
         /// Number of references (hardlinks) to this metadata file.
         UInt32 ref_count;
+        /// Flag indicates that file is read only.
+        bool read_only = false;
 
         /// Load metadata by path or create empty if `create` flag is set.
         explicit Metadata(const String & s3_root_path_, const String & disk_path_, const String & metadata_file_path_, bool create = false)
@@ -122,10 +127,10 @@ namespace
             UInt32 version;
             readIntText(version, buf);
 
-            if (version != VERSION_RELATIVE_PATHS && version != VERSION_ABSOLUTE_PATHS)
+            if (version < VERSION_ABSOLUTE_PATHS || version > VERSION_READ_ONLY_FLAG)
                 throw Exception(
                     "Unknown metadata file version. Path: " + disk_path + metadata_file_path
-                        + " Version: " + std::to_string(version) + ", Maximum expected version: " + std::to_string(VERSION_RELATIVE_PATHS),
+                        + " Version: " + std::to_string(version) + ", Maximum expected version: " + std::to_string(VERSION_READ_ONLY_FLAG),
                     ErrorCodes::UNKNOWN_FORMAT);
 
             assertChar('\n', buf);
@@ -158,6 +163,12 @@ namespace
 
             readIntText(ref_count, buf);
             assertChar('\n', buf);
+
+            if (version >= VERSION_READ_ONLY_FLAG)
+            {
+                readBoolText(read_only, buf);
+                assertChar('\n', buf);
+            }
         }
 
         void addObject(const String & path, size_t size)
@@ -187,6 +198,9 @@ namespace
             }
 
             writeIntText(ref_count, buf);
+            writeChar('\n', buf);
+
+            writeBoolText(read_only, buf);
             writeChar('\n', buf);
 
             buf.finalize();
@@ -313,11 +327,19 @@ namespace
             const String & bucket_,
             Metadata metadata_,
             const String & s3_path_,
+            std::optional<DiskS3::ObjectMetadata> object_metadata_,
             bool is_multipart,
             size_t min_upload_part_size,
             size_t buf_size_)
             : WriteBufferFromFileBase(buf_size_, nullptr, 0)
-            , impl(WriteBufferFromS3(client_ptr_, bucket_, metadata_.s3_root_path + s3_path_, min_upload_part_size, is_multipart, buf_size_))
+            , impl(WriteBufferFromS3(
+                  client_ptr_,
+                  bucket_,
+                  metadata_.s3_root_path + s3_path_,
+                  min_upload_part_size,
+                  is_multipart,
+                  std::move(object_metadata_),
+                  buf_size_))
             , metadata(std::move(metadata_))
             , s3_path(s3_path_)
         {
@@ -509,7 +531,8 @@ DiskS3::DiskS3(
     String metadata_path_,
     size_t min_upload_part_size_,
     size_t min_multi_part_upload_size_,
-    size_t min_bytes_for_seek_)
+    size_t min_bytes_for_seek_,
+    bool send_metadata_)
     : IDisk(std::make_unique<AsyncExecutor>())
     , name(std::move(name_))
     , client(std::move(client_))
@@ -520,6 +543,7 @@ DiskS3::DiskS3(
     , min_upload_part_size(min_upload_part_size_)
     , min_multi_part_upload_size(min_multi_part_upload_size_)
     , min_bytes_for_seek(min_bytes_for_seek_)
+    , send_metadata(send_metadata_)
 {
 }
 
@@ -632,8 +656,15 @@ std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, si
 std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, size_t buf_size, WriteMode mode, size_t estimated_size, size_t)
 {
     bool exist = exists(path);
+    if (exist)
+    {
+        Metadata metadata(s3_root_path, metadata_path, path);
+        if (metadata.read_only)
+            throw Exception("File is read-only: " + path, ErrorCodes::PATH_ACCESS_DENIED);
+    }
     /// Path to store new S3 object.
     auto s3_path = getRandomName();
+    auto object_metadata = createObjectMetadata(path);
     bool is_multipart = estimated_size >= min_multi_part_upload_size;
     if (!exist || mode == WriteMode::Rewrite)
     {
@@ -645,9 +676,9 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
         /// Save empty metadata to disk to have ability to get file size while buffer is not finalized.
         metadata.save();
 
-        LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Write to file by path: {} New S3 path: {}", backQuote(metadata_path + path), s3_root_path + s3_path);
+        LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Write to file by path: {}. New S3 path: {}", backQuote(metadata_path + path), s3_root_path + s3_path);
 
-        return std::make_unique<WriteIndirectBufferFromS3>(client, bucket, metadata, s3_path, is_multipart, min_upload_part_size, buf_size);
+        return std::make_unique<WriteIndirectBufferFromS3>(client, bucket, metadata, s3_path, object_metadata, is_multipart, min_upload_part_size, buf_size);
     }
     else
     {
@@ -656,7 +687,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
         LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Append to file by path: {}. New S3 path: {}. Existing S3 objects: {}.",
             backQuote(metadata_path + path), s3_root_path + s3_path, metadata.s3_objects.size());
 
-        return std::make_unique<WriteIndirectBufferFromS3>(client, bucket, metadata, s3_path, is_multipart, min_upload_part_size, buf_size);
+        return std::make_unique<WriteIndirectBufferFromS3>(client, bucket, metadata, s3_path, object_metadata, is_multipart, min_upload_part_size, buf_size);
     }
 }
 
@@ -797,7 +828,11 @@ void DiskS3::createFile(const String & path)
 
 void DiskS3::setReadOnly(const String & path)
 {
-    Poco::File(metadata_path + path).setReadOnly(true);
+    /// We should store read only flag inside metadata file (instead of using FS flag),
+    /// because we modify metadata file when create hard-links from it.
+    Metadata metadata(s3_root_path, metadata_path, path);
+    metadata.read_only = true;
+    metadata.save();
 }
 
 int DiskS3::open(const String & /*path*/, mode_t /*mode*/) const
@@ -822,6 +857,14 @@ void DiskS3::shutdown()
     /// If S3 is healthy nothing wrong will be happened and S3 requests will be processed in a regular way without errors.
     /// This should significantly speed up shutdown process if S3 is unhealthy.
     client->DisableRequestProcessing();
+}
+
+std::optional<DiskS3::ObjectMetadata> DiskS3::createObjectMetadata(const String & path) const
+{
+    if (send_metadata)
+        return (DiskS3::ObjectMetadata){{"path", path}};
+
+    return {};
 }
 
 }

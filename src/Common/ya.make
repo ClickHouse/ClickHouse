@@ -1,4 +1,6 @@
 # This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
+OWNER(g:clickhouse)
+
 LIBRARY()
 
 ADDINCL (
@@ -66,6 +68,7 @@ SRCS(
     StringUtils/StringUtils.cpp
     StudentTTest.cpp
     SymbolIndex.cpp
+    TLDListsHolder.cpp
     TaskStatsInfoGetter.cpp
     TerminalSize.cpp
     ThreadFuzzer.cpp
@@ -78,7 +81,11 @@ SRCS(
     WeakHash.cpp
     ZooKeeper/IKeeper.cpp
     ZooKeeper/TestKeeper.cpp
+    ZooKeeper/TestKeeperStorage.cpp
     ZooKeeper/ZooKeeper.cpp
+    ZooKeeper/ZooKeeperCommon.cpp
+    ZooKeeper/ZooKeeperConstants.cpp
+    ZooKeeper/ZooKeeperIO.cpp
     ZooKeeper/ZooKeeperImpl.cpp
     ZooKeeper/ZooKeeperNodeCache.cpp
     checkStackSize.cpp

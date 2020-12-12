@@ -22,7 +22,7 @@
 #include <common/logger_useful.h>
 #include <common/getThreadId.h>
 #include <ext/range.h>
-#include <Processors/QueryPlan/ConvertingStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Sources/SourceFromInputStream.h>
@@ -65,14 +65,14 @@ StorageBuffer::StorageBuffer(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    Context & context_,
+    const Context & context_,
     size_t num_shards_,
     const Thresholds & min_thresholds_,
     const Thresholds & max_thresholds_,
     const StorageID & destination_id_,
     bool allow_materialized_)
     : IStorage(table_id_)
-    , global_context(context_)
+    , global_context(context_.getGlobalContext())
     , num_shards(num_shards_), buffers(num_shards_)
     , min_thresholds(min_thresholds_)
     , max_thresholds(max_thresholds_)
@@ -248,9 +248,12 @@ void StorageBuffer::read(
                     adding_missed->setStepDescription("Add columns missing in destination table");
                     query_plan.addStep(std::move(adding_missed));
 
-                    auto converting = std::make_unique<ConvertingStep>(
-                            query_plan.getCurrentDataStream(),
-                            header);
+                    auto actions_dag = ActionsDAG::makeConvertingActions(
+                            query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
+                            header.getColumnsWithTypeAndName(),
+                            ActionsDAG::MatchColumnsMode::Name);
+
+                    auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), actions_dag);
 
                     converting->setStepDescription("Convert destination table columns to Buffer table structure");
                     query_plan.addStep(std::move(converting));
@@ -339,7 +342,12 @@ void StorageBuffer::read(
     /// Convert structure from table to structure from buffer.
     if (!blocksHaveEqualStructure(query_plan.getCurrentDataStream().header, result_header))
     {
-        auto converting = std::make_unique<ConvertingStep>(query_plan.getCurrentDataStream(), result_header);
+        auto convert_actions_dag = ActionsDAG::makeConvertingActions(
+                query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
+                result_header.getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Name);
+
+        auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), convert_actions_dag);
         query_plan.addStep(std::move(converting));
     }
 
@@ -859,13 +867,13 @@ void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, const S
     }
 }
 
-std::optional<UInt64> StorageBuffer::totalRows() const
+std::optional<UInt64> StorageBuffer::totalRows(const Settings & settings) const
 {
     std::optional<UInt64> underlying_rows;
     auto underlying = DatabaseCatalog::instance().tryGetTable(destination_id, global_context);
 
     if (underlying)
-        underlying_rows = underlying->totalRows();
+        underlying_rows = underlying->totalRows(settings);
     if (!underlying_rows)
         return underlying_rows;
 
@@ -878,7 +886,7 @@ std::optional<UInt64> StorageBuffer::totalRows() const
     return rows + *underlying_rows;
 }
 
-std::optional<UInt64> StorageBuffer::totalBytes() const
+std::optional<UInt64> StorageBuffer::totalBytes(const Settings & /*settings*/) const
 {
     UInt64 bytes = 0;
     for (const auto & buffer : buffers)

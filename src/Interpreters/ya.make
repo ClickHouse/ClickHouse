@@ -1,4 +1,6 @@
 # This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
+OWNER(g:clickhouse)
+
 LIBRARY()
 
 ADDINCL(
@@ -17,6 +19,7 @@ NO_COMPILER_WARNINGS()
 
 SRCS(
     ActionLocksManager.cpp
+    ActionsDAG.cpp
     ActionsVisitor.cpp
     AggregateDescription.cpp
     Aggregator.cpp

@@ -1,4 +1,6 @@
 # This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
+OWNER(g:clickhouse)
+
 LIBRARY()
 
 CFLAGS(
@@ -78,6 +80,7 @@ SRCS(
     URL/cutQueryString.cpp
     URL/cutQueryStringAndFragment.cpp
     URL/cutToFirstSignificantSubdomain.cpp
+    URL/cutToFirstSignificantSubdomainCustom.cpp
     URL/cutURLParameter.cpp
     URL/cutWWW.cpp
     URL/decodeURLComponent.cpp
@@ -87,6 +90,7 @@ SRCS(
     URL/extractURLParameterNames.cpp
     URL/extractURLParameters.cpp
     URL/firstSignificantSubdomain.cpp
+    URL/firstSignificantSubdomainCustom.cpp
     URL/fragment.cpp
     URL/netloc.cpp
     URL/path.cpp
@@ -100,6 +104,7 @@ SRCS(
     URL/topLevelDomain.cpp
     abs.cpp
     acos.cpp
+    acosh.cpp
     addDays.cpp
     addHours.cpp
     addMinutes.cpp
@@ -168,8 +173,11 @@ SRCS(
     array/range.cpp
     array/registerFunctionsArray.cpp
     asin.cpp
+    asinh.cpp
     assumeNotNull.cpp
     atan.cpp
+    atan2.cpp
+    atanh.cpp
     bar.cpp
     base64Decode.cpp
     base64Encode.cpp
@@ -200,7 +208,12 @@ SRCS(
     concat.cpp
     convertCharset.cpp
     cos.cpp
+    cosh.cpp
     countDigits.cpp
+    countMatches.cpp
+    countSubstrings.cpp
+    countSubstringsCaseInsensitive.cpp
+    countSubstringsCaseInsensitiveUTF8.cpp
     currentDatabase.cpp
     currentUser.cpp
     dateDiff.cpp
@@ -236,6 +249,7 @@ SRCS(
     formatReadableTimeDelta.cpp
     formatRow.cpp
     formatString.cpp
+    fromModifiedJulianDay.cpp
     fromUnixTimestamp64Micro.cpp
     fromUnixTimestamp64Milli.cpp
     fromUnixTimestamp64Nano.cpp
@@ -271,6 +285,7 @@ SRCS(
     hasToken.cpp
     hasTokenCaseInsensitive.cpp
     hostName.cpp
+    hypot.cpp
     identity.cpp
     if.cpp
     ifNotFinite.cpp
@@ -302,6 +317,7 @@ SRCS(
     like.cpp
     log.cpp
     log10.cpp
+    log1p.cpp
     log2.cpp
     logTrace.cpp
     lowCardinalityIndices.cpp
@@ -407,6 +423,7 @@ SRCS(
     runningDifferenceStartingWithFirstValue.cpp
     sigmoid.cpp
     sin.cpp
+    sinh.cpp
     sleep.cpp
     sleepEachRow.cpp
     sqrt.cpp
@@ -423,6 +440,7 @@ SRCS(
     subtractYears.cpp
     tan.cpp
     tanh.cpp
+    tcpPort.cpp
     tgamma.cpp
     throwIf.cpp
     tid.cpp
@@ -440,6 +458,7 @@ SRCS(
     toISOYear.cpp
     toLowCardinality.cpp
     toMinute.cpp
+    toModifiedJulianDay.cpp
     toMonday.cpp
     toMonth.cpp
     toNullable.cpp

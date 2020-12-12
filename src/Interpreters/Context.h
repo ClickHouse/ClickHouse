@@ -10,9 +10,9 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/IAST_fwd.h>
 #include <Access/RowPolicy.h>
-#include <Common/LRUCache.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Storages/IStorage_fwd.h>
 #include <atomic>
 #include <chrono>
@@ -40,6 +40,7 @@ namespace Poco
 namespace zkutil
 {
     class ZooKeeper;
+    class TestKeeperStorage;
 }
 
 
@@ -198,6 +199,12 @@ private:
     Context * session_context = nullptr;    /// Session context or nullptr. Could be equal to this.
     Context * global_context = nullptr;     /// Global context. Could be equal to this.
 
+public:
+    // Top-level OpenTelemetry trace context for the query. Makes sense only for
+    // a query context.
+    OpenTelemetryTraceContext query_trace_context;
+
+private:
     friend class NamedSessions;
 
     using SampleBlockCache = std::unordered_map<std::string, Block>;
@@ -488,10 +495,15 @@ public:
     /// Same as above but return a zookeeper connection from auxiliary_zookeepers configuration entry.
     std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
 
+
+    std::shared_ptr<zkutil::TestKeeperStorage> & getTestKeeperStorage() const;
+
     /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
     void reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config);
     /// Has ready or expired ZooKeeper
     bool hasZooKeeper() const;
+    /// Has ready or expired auxiliary ZooKeeper
+    bool hasAuxiliaryZooKeeper(const String & name) const;
     /// Reset current zookeeper session. Do not create a new one.
     void resetZooKeeper() const;
     // Reload Zookeeper
@@ -519,10 +531,12 @@ public:
     BackgroundTaskSchedulingSettings getBackgroundProcessingTaskSchedulingSettings() const;
     BackgroundTaskSchedulingSettings getBackgroundMoveTaskSchedulingSettings() const;
 
-    BackgroundSchedulePool & getBufferFlushSchedulePool();
-    BackgroundSchedulePool & getSchedulePool();
-    BackgroundSchedulePool & getDistributedSchedulePool();
+    BackgroundSchedulePool & getBufferFlushSchedulePool() const;
+    BackgroundSchedulePool & getSchedulePool() const;
+    BackgroundSchedulePool & getDistributedSchedulePool() const;
 
+    /// Has distributed_ddl configuration or not.
+    bool hasDistributedDDL() const;
     void setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker);
     DDLWorker & getDDLWorker() const;
 

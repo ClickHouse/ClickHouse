@@ -259,5 +259,5 @@ CREATE DICTIONARY [IF NOT EXISTS] [db.]dictionary_name [ON CLUSTER cluster]
 PRIMARY KEY key1, key2
 SOURCE(SOURCE_NAME([param1 value1 ... paramN valueN]))
 LAYOUT(LAYOUT_NAME([param_name param_value]))
-LIFETIME([MIN val1] MAX val2)
+LIFETIME({MIN min_val MAX max_val | max_val})
 ```
