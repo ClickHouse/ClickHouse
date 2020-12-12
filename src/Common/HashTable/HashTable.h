@@ -958,8 +958,8 @@ public:
         return const_cast<std::decay_t<decltype(*this)> *>(this)->find(x, hash_value);
     }
 
-    template <typename = std::enable_if<Grower::performs_linear_probing_with_single_step, void>>
-    void ALWAYS_INLINE erase(const Key & x)
+    std::enable_if_t<Grower::performs_linear_probing_with_single_step, void>
+    ALWAYS_INLINE erase(const Key & x)
     {
         /** Deletion from open addressing hash table without tombstones
           *
