@@ -227,6 +227,7 @@ struct HashTableGrower
     UInt8 size_degree = initial_size_degree;
     static constexpr auto initial_count = 1ULL << initial_size_degree;
 
+    /// If collision resolution chains are contiguous, we can implement erase operation by moving the elements.
     static constexpr auto performs_linear_probing_with_single_step = true;
 
     /// The size of the hash table in the cells.
