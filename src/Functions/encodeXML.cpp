@@ -26,6 +26,7 @@ namespace
             ColumnString::Chars & res_data,
             ColumnString::Offsets & res_offsets)
         {
+            /// 6 is the maximum size amplification (the maximum length of encoded entity: &quot;)
             res_data.resize(data.size() * 6);
             size_t size = offsets.size();
             res_offsets.resize(size);
