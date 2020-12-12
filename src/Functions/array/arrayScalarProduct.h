@@ -31,7 +31,7 @@ private:
     using ResultColumnType = ColumnVector<typename Method::ResultType>;
 
     template <typename T>
-    ColumnPtr executeNumber(ColumnsWithTypeAndName & arguments) const
+    ColumnPtr executeNumber(const ColumnsWithTypeAndName & arguments) const
     {
         ColumnPtr res;
         if (   (res = executeNumberNumber<T, UInt8>(arguments))
@@ -51,7 +51,7 @@ private:
 
 
     template <typename T, typename U>
-    ColumnPtr executeNumberNumber(ColumnsWithTypeAndName & arguments) const
+    ColumnPtr executeNumberNumber(const ColumnsWithTypeAndName & arguments) const
     {
         ColumnPtr col1 = arguments[0].column->convertToFullColumnIfConst();
         ColumnPtr col2 = arguments[1].column->convertToFullColumnIfConst();
@@ -126,7 +126,7 @@ public:
         return Method::getReturnType(nested_types[0], nested_types[1]);
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /* input_rows_count */) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /* input_rows_count */) const override
     {
         ColumnPtr res;
         if (!((res = executeNumber<UInt8>(arguments))
@@ -139,9 +139,11 @@ public:
             || (res = executeNumber<Int64>(arguments))
             || (res = executeNumber<Float32>(arguments))
             || (res = executeNumber<Float64>(arguments))))
-            throw Exception{"Illegal column " + arguments[0].column->getName() + " of first argument of function "
-                                + getName(),
-                            ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception
+            {
+                "Illegal column " + arguments[0].column->getName() + " of first argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN
+            };
 
         return res;
     }

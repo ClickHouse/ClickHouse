@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Storages/System/StorageSystemTables.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 #include <Access/ContextAccess.h>
@@ -429,7 +430,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     assert(table != nullptr);
-                    auto total_rows = table->totalRows();
+                    auto total_rows = table->totalRows(context.getSettingsRef());
                     if (total_rows)
                         res_columns[res_index++]->insert(*total_rows);
                     else
@@ -439,7 +440,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     assert(table != nullptr);
-                    auto total_bytes = table->totalBytes();
+                    auto total_bytes = table->totalBytes(context.getSettingsRef());
                     if (total_bytes)
                         res_columns[res_index++]->insert(*total_bytes);
                     else

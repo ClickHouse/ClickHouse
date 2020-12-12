@@ -7,7 +7,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
-#include <Common/LRUCache.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/ProfileEvents.h>
@@ -277,7 +276,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t block_size) override
+    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t block_size) const override
     {
         auto col_res = result_type->createColumn();
 
