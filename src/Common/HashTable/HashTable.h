@@ -958,19 +958,18 @@ public:
         return const_cast<std::decay_t<decltype(*this)> *>(this)->find(x, hash_value);
     }
 
-    template<typename = std::enable_if<Grower::performs_linear_probing_with_single_step, void>>
+    template <typename = std::enable_if<Grower::performs_linear_probing_with_single_step, void>>
     void ALWAYS_INLINE erase(const Key & x)
     {
-        /*
-        Deletion of open address hash table without tombstones
-
-        https://en.wikipedia.org/wiki/Linear_probing
-        https://en.wikipedia.org/wiki/Open_addressing
-        Algorithm without recomputing hash but keep probes difference value (difference of natural cell position and inserted one)
-        in cell https://arxiv.org/ftp/arxiv/papers/0909/0909.2547.pdf
-
-        Currently we use algorithm with hash recomputing on each step from https://en.wikipedia.org/wiki/Open_addressing.
-        */
+        /** Deletion from open addressing hash table without tombstones
+          *
+          * https://en.wikipedia.org/wiki/Linear_probing
+          * https://en.wikipedia.org/wiki/Open_addressing
+          * Algorithm without recomputing hash but keep probes difference value (difference of natural cell position and inserted one)
+          *  in cell https://arxiv.org/ftp/arxiv/papers/0909/0909.2547.pdf
+          *
+          * Currently we use algorithm with hash recomputing on each step from https://en.wikipedia.org/wiki/Open_addressing
+          */
 
         if (Cell::isZero(x, *this))
         {
