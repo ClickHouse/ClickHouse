@@ -3,6 +3,7 @@
 #include <Functions/FunctionStringToString.h>
 #include <common/find_symbols.h>
 
+
 namespace DB
 {
 namespace ErrorCodes
@@ -12,12 +13,12 @@ namespace ErrorCodes
 
 namespace
 {
-    struct EncodeXMLName
+    struct EncodeXMLComponentName
     {
         static constexpr auto name = "encodeXMLComponent";
     };
 
-    class FunctionEncodeXMLImpl
+    class FunctionEncodeXMLComponentImpl
     {
     public:
         static void vector(
@@ -132,12 +133,12 @@ namespace
         }
     };
 
-    using FunctionEncodeXML = FunctionStringToString<FunctionEncodeXMLImpl, EncodeXMLName>;
+    using FunctionEncodeXMLComponent = FunctionStringToString<FunctionEncodeXMLComponentImpl, EncodeXMLComponentName>;
 
 }
 
-void registerFunctionEncodeXML(FunctionFactory & factory)
+void registerFunctionEncodeXMLComponent(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionEncodeXML>();
+    factory.registerFunction<FunctionEncodeXMLComponent>();
 }
 }
