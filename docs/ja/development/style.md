@@ -579,7 +579,7 @@ Forkは並列化には使用されません。
 
 **14.** 戻り値。
 
-ほとんどの場合、 `return`. 書かない `[return std::move(res)]{.strike}`.
+ほとんどの場合、 `return`. 書かない `return std::move(res)`.
 
 関数がオブジェクトをヒープに割り当てて返す場合は、次のようにします `shared_ptr` または `unique_ptr`.
 
@@ -673,7 +673,7 @@ Loader() {}
 **24.** 使用しない `trailing return type` 必要がない限り機能のため。
 
 ``` cpp
-[auto f() -&gt; void;]{.strike}
+auto f() -> void
 ```
 
 **25.** 変数の宣言と初期化。
