@@ -39,4 +39,8 @@ data_compressed_bytes: 499
 last_exception:        
 ```
 
+**See also**
+
+-   [Distributed table engine](../../engines/table-engines/special/distributed.md)
+
 [Original article](https://clickhouse.tech/docs/en/operations/system_tables/distribution_queue) <!--hide-->

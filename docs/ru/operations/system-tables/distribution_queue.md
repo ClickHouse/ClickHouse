@@ -41,6 +41,6 @@ last_exception:
 
 **Смотрите также**
 
--   [Движок Distributed](../../engines/table-engines/special/distributed.md)
+-   [Движок таблиц Distributed](../../engines/table-engines/special/distributed.md)
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/distribution_queue) <!--hide-->
