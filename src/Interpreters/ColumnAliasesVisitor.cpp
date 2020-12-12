@@ -1,5 +1,6 @@
 #include <Interpreters/ColumnAliasesVisitor.h>
 #include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -8,43 +9,90 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/queryToString.h>
 
 namespace DB
 {
 
 bool ColumnAliasesMatcher::needChildVisit(const ASTPtr & node, const ASTPtr &)
 {
+    if (const auto * f = node->as<ASTFunction>())
+    {
+        /// "lambda" visit children itself.
+        if (f->name == "lambda")
+            return false;
+    }
+
     return !(node->as<ASTTableExpression>()
             || node->as<ASTSubquery>()
             || node->as<ASTArrayJoin>()
+            || node->as<ASTSelectQuery>()
             || node->as<ASTSelectWithUnionQuery>());
 }
 
 void ColumnAliasesMatcher::visit(ASTPtr & ast, Data & data)
 {
+    auto aa = queryToString(ast);
+    // If it's select query, only replace filters.
+    if (auto * query = ast->as<ASTSelectQuery>())
+    {
+        if (query->where())
+             Visitor(data).visit(query->refWhere());
+        if (query->prewhere())
+             Visitor(data).visit(query->refPrewhere());
+
+        return;
+    }
+
+    if (auto * node = ast->as<ASTFunction>())
+    {
+        visit(*node, ast, data);
+        return;
+    }
+
     if (auto * node = ast->as<ASTIdentifier>())
     {
-        if (auto column_name = IdentifierSemantic::getColumnName(*node))
-        {
-            if (const auto column_default = data.columns.getDefault(*column_name))
+        visit(*node, ast, data);
+        return;
+    }
+}
+
+void ColumnAliasesMatcher::visit(ASTFunction & node, ASTPtr & /*ast*/, Data & data)
+{
+    /// Do not add formal parameters of the lambda expression
+    if (node.name == "lambda")
+    {
+        Names local_aliases;
+        for (const auto & name : RequiredSourceColumnsMatcher::extractNamesFromLambda(node))
+            if (data.private_aliases.insert(name).second)
             {
-                if (column_default->kind == ColumnDefaultKind::Alias)
-                {
-                    const auto alias_columns = data.columns.getAliases();
-                    for (const auto & alias_column : alias_columns)
-                    {
-                        if (alias_column.name == *column_name)
-                        {
-                            ast = addTypeConversionToAST(column_default->expression->clone(), alias_column.type->getName());
-                            //revisit ast to track recursive alias columns
-                            Visitor(data).visit(ast);
-                            break;
-                        }
-                    }
-                }
+                local_aliases.push_back(name);
             }
+        /// visit child with masked local aliases
+        Visitor(data).visit(node.arguments->children[1]);
+        for (const auto & name : local_aliases)
+            data.private_aliases.erase(name);
+    }
+}
+
+void ColumnAliasesMatcher::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
+{
+    if (auto column_name = IdentifierSemantic::getColumnName(node))
+    {
+        if (data.forbidden_columns.count(*column_name) || data.private_aliases.count(*column_name))
+            return;
+
+        const auto & col = data.columns.get(*column_name);
+        if (col.default_desc.kind == ColumnDefaultKind::Alias)
+        {
+            ast = addTypeConversionToAST(col.default_desc.expression->clone(), col.type->getName(), data.columns.getAll(), data.context);
+            auto str = queryToString(ast);
+            //revisit ast to track recursive alias columns
+            Visitor(data).visit(ast);
         }
     }
 }
+
 
 }

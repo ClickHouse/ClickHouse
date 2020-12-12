@@ -22,8 +22,6 @@
 #include <Parsers/ASTSampleRatio.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/ColumnAliasesVisitor.h>
-#include <Interpreters/replaceAliasColumnsInFilter.h>
 #include <Interpreters/Context.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -211,14 +209,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     Names primary_key_columns = primary_key.column_names;
 
-    // query_info_for_index is a cloned SelectQueryInfo just for index
-    SelectQueryInfo query_info_for_index = query_info;
-    if (!metadata_snapshot->getColumns().getAliases().empty())
-    {
-        query_info_for_index.query = replaceAliasColumnsInFilter(query_info.query->clone(), metadata_snapshot->getColumns());
-    }
-
-    KeyCondition key_condition(query_info_for_index, context, primary_key_columns, primary_key.expression);
+    KeyCondition key_condition(query_info, context, primary_key_columns, primary_key.expression);
 
     if (settings.force_primary_key && key_condition.alwaysUnknownOrTrue())
     {
@@ -230,8 +221,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     std::optional<PartitionPruner> partition_pruner;
     if (data.minmax_idx_expr)
     {
-        minmax_idx_condition.emplace(query_info_for_index, context, data.minmax_idx_columns, data.minmax_idx_expr);
-        partition_pruner.emplace(metadata_snapshot->getPartitionKey(), query_info_for_index, context, false /* strict */);
+        minmax_idx_condition.emplace(query_info, context, data.minmax_idx_columns, data.minmax_idx_expr);
+        partition_pruner.emplace(metadata_snapshot->getPartitionKey(), query_info, context, false /* strict */);
 
         if (settings.force_index_by_date && (minmax_idx_condition->alwaysUnknownOrTrue() && partition_pruner->isUseless()))
         {
@@ -295,6 +286,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     RelativeSize relative_sample_offset = 0;
 
     const auto & select = query_info.query->as<ASTSelectQuery &>();
+
     auto select_sample_size = select.sampleSize();
     auto select_sample_offset = select.sampleOffset();
 
@@ -567,7 +559,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     for (const auto & index : metadata_snapshot->getSecondaryIndices())
     {
         auto index_helper = MergeTreeIndexFactory::instance().get(index);
-        auto condition = index_helper->createIndexCondition(query_info_for_index, context);
+        auto condition = index_helper->createIndexCondition(query_info, context);
         if (!condition->alwaysUnknownOrTrue())
             useful_indices.emplace_back(index_helper, condition);
     }

@@ -21,7 +21,6 @@
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
-#include <Interpreters/replaceAliasColumnsInFilter.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/getTableExpressions.h>
@@ -31,7 +30,7 @@
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/QueryAliasesVisitor.h>
-#include <Interpreters/ColumnAliasesVisitor.h>
+#include <Interpreters/replaceAliasColumnsInQuery.h>
 
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SourceFromInputStream.h>
@@ -1183,9 +1182,10 @@ void InterpreterSelectQuery::executeFetchColumns(
         else // It's possible to optimize count() given only partition predicates
         {
             SelectQueryInfo temp_query_info;
-            temp_query_info.query = replaceAliasColumnsInFilter(query_ptr->clone(), storage->getInMemoryMetadata().getColumns());
+            temp_query_info.query = query_ptr;
             temp_query_info.syntax_analyzer_result = syntax_analyzer_result;
             temp_query_info.sets = query_analyzer->getPreparedSets();
+
             num_rows = storage->totalRowsByPartitionPredicate(temp_query_info, *context);
         }
         if (num_rows)
@@ -1292,11 +1292,10 @@ void InterpreterSelectQuery::executeFetchColumns(
                 if (is_alias)
                 {
                     auto column_decl = storage_columns.get(column);
-                    /// TODO: can make CAST only if the type is different (but requires SyntaxAnalyzer).
-                    column_expr = addTypeConversionToAST(column_default->expression->clone(), column_decl.type->getName());
+                    column_expr = column_default->expression->clone();
+
                     // recursive visit for alias to alias
-                    ColumnAliasesVisitor::Data data(storage_columns);
-                    ColumnAliasesVisitor(data).visit(column_expr);
+                    replaceAliasColumnsInQuery(column_expr, metadata_snapshot->getColumns(), syntax_analyzer_result->getArrayJoinSourceNameSet(), *context);
                     column_expr = setAlias(column_expr, column);
                 }
                 else
@@ -1509,7 +1508,7 @@ void InterpreterSelectQuery::executeFetchColumns(
                     getSortDescriptionFromGroupBy(query),
                     query_info.syntax_analyzer_result);
 
-            query_info.input_order_info = query_info.order_optimizer->getInputOrder(metadata_snapshot);
+            query_info.input_order_info = query_info.order_optimizer->getInputOrder(metadata_snapshot, *context);
         }
 
         StreamLocalLimits limits;

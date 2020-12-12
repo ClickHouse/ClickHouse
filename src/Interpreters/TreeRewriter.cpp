@@ -18,6 +18,7 @@
 #include <Interpreters/ExpressionActions.h> /// getSmallestColumn()
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/TreeOptimizer.h>
+#include <Interpreters/replaceAliasColumnsInQuery.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -367,6 +368,7 @@ void collectJoinedColumns(TableJoin & analyzed_join, const ASTSelectQuery & sele
     }
 }
 
+
 std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQuery & select_query)
 {
     /// There can not be aggregate functions inside the WHERE and PREWHERE.
@@ -512,8 +514,8 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
                 if (std::find(partition_source_columns.begin(), partition_source_columns.end(), required_column)
                     == partition_source_columns.end())
                 {
-                    optimize_trivial_count = false;
-                    break;
+                        optimize_trivial_count = false;
+                        break;
                 }
             }
         }
@@ -591,6 +593,13 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
     required_source_columns.swap(source_columns);
 }
 
+NameSet TreeRewriterResult::getArrayJoinSourceNameSet() const
+{
+    NameSet forbidden_columns;
+    for (const auto & elem : array_join_result_to_source)
+        forbidden_columns.insert(elem.first);
+    return forbidden_columns;
+}
 
 TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     ASTPtr & query,
@@ -654,6 +663,12 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
                         result.analyzed_join->table_join);
     collectJoinedColumns(*result.analyzed_join, *select_query, tables_with_columns, result.aliases);
 
+    /// rewrite filters for select query, must after getArrayJoinedColumns
+    if (settings.optimize_alias_column_prediction && result.metadata_snapshot)
+    {
+        replaceAliasColumnsInQuery(query, result.metadata_snapshot->getColumns(), result.getArrayJoinSourceNameSet(), context);
+    }
+
     result.aggregates = getAggregates(query, *select_query);
     result.collectUsedColumns(query, true);
     result.ast_join = select_query->join();
@@ -702,7 +717,7 @@ TreeRewriterResultPtr TreeRewriter::analyze(
     else
         assertNoAggregates(query, "in wrong place");
 
-    result.collectUsedColumns(query, false);
+    result.collectUsedColumns(query ,false);
     return std::make_shared<const TreeRewriterResult>(result);
 }
 

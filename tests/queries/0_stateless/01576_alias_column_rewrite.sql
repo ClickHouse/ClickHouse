@@ -1,5 +1,5 @@
-DROP TABLE IF EXISTS table_with_alias_column;
-CREATE TABLE table_with_alias_column
+DROP TABLE IF EXISTS test_table;
+CREATE TABLE test_table
 (
  `timestamp` DateTime,
  `value` UInt64,
@@ -13,22 +13,21 @@ PARTITION BY toYYYYMMDD(timestamp)
 ORDER BY timestamp SETTINGS index_granularity = 1;
 
 
-INSERT INTO table_with_alias_column(timestamp, value) SELECT toDateTime('2020-01-01 12:00:00'), 1 FROM numbers(10);
+INSERT INTO test_table(timestamp, value) SELECT toDateTime('2020-01-01 12:00:00'), 1 FROM numbers(10);
+INSERT INTO test_table(timestamp, value) SELECT toDateTime('2020-01-02 12:00:00'), 1 FROM numbers(10);
+INSERT INTO test_table(timestamp, value) SELECT toDateTime('2020-01-03 12:00:00'), 1 FROM numbers(10);
 
-INSERT INTO table_with_alias_column(timestamp, value) SELECT toDateTime('2020-01-02 12:00:00'), 1 FROM numbers(10);
-
-INSERT INTO table_with_alias_column(timestamp, value) SELECT toDateTime('2020-01-03 12:00:00'), 1 FROM numbers(10);
-
-
+set optimize_alias_column_prediction = 1;
 SELECT 'test-partition-prune';
 
-SELECT COUNT() = 10 FROM table_with_alias_column WHERE day = '2020-01-01' SETTINGS max_rows_to_read = 10;
-SELECT t = '2020-01-03' FROM (SELECT day as t FROM table_with_alias_column WHERE t = '2020-01-03' GROUP BY t SETTINGS max_rows_to_read = 10);
-SELECT COUNT() = 10 FROM table_with_alias_column WHERE day = '2020-01-01' UNION ALL select 1 from numbers(1) SETTINGS max_rows_to_read = 11;
-SELECT  COUNT() = 0 FROM (SELECT  toDate('2019-01-01') as  day, day as t   FROM table_with_alias_column PREWHERE t = '2020-01-03'  WHERE t  = '2020-01-03' GROUP BY t );
+SELECT COUNT() = 10 FROM test_table WHERE day = '2020-01-01' SETTINGS max_rows_to_read = 10;
+SELECT t = '2020-01-03' FROM (SELECT day AS t FROM test_table WHERE t = '2020-01-03' GROUP BY t SETTINGS max_rows_to_read = 10);
+SELECT COUNT() = 10 FROM test_table WHERE day = '2020-01-01' UNION ALL SELECT 1 FROM numbers(1) SETTINGS max_rows_to_read = 11;
+SELECT  COUNT() = 0 FROM (SELECT  toDate('2019-01-01') AS  day, day AS t   FROM test_table PREWHERE t = '2020-01-03'  WHERE t  = '2020-01-03' GROUP BY t );
+
+
 
 SELECT 'test-join';
-
 SELECT day = '2020-01-03'
 FROM
 (
@@ -38,39 +37,61 @@ FROM
 INNER JOIN
 (
  SELECT day
- FROM table_with_alias_column
+ FROM test_table
  WHERE day = '2020-01-03'
- GROUP BY day SETTINGS max_rows_to_read = 11
-) AS b ON a.day = b.day;
+ GROUP BY day
+) AS b ON a.day = b.day SETTINGS max_rows_to_read = 11;
 
 SELECT day = '2020-01-01'
 FROM
 (
  SELECT day
- FROM table_with_alias_column
+ FROM test_table
  WHERE day = '2020-01-01'
- GROUP BY day SETTINGS max_rows_to_read = 11
+ GROUP BY day
 ) AS a
 INNER JOIN
 (
  SELECT toDate('2020-01-01') AS day
  FROM numbers(1)
-) AS b ON a.day = b.day;
+) AS b ON a.day = b.day SETTINGS max_rows_to_read = 11;
 
 
 SELECT 'alias2alias';
-SELECT COUNT() = 10 FROM table_with_alias_column WHERE day1 = '2020-01-02' SETTINGS max_rows_to_read = 10;
-SELECT t = '2020-01-03' FROM (SELECT day1 as t FROM table_with_alias_column WHERE t = '2020-01-03' GROUP BY t SETTINGS max_rows_to_read = 10);
-SELECT t = '2020-01-03' FROM (SELECT day2 as t FROM table_with_alias_column WHERE t = '2020-01-03' GROUP BY t SETTINGS max_rows_to_read = 10);
-SELECT COUNT() = 10 FROM table_with_alias_column WHERE day1 = '2020-01-03' UNION ALL select 1 from numbers(1) SETTINGS max_rows_to_read = 11;
-SELECT  COUNT() = 0 FROM (SELECT  toDate('2019-01-01') as  day1, day1 as t   FROM table_with_alias_column PREWHERE t = '2020-01-03'  WHERE t  = '2020-01-03' GROUP BY t );
-SELECT day1 = '2020-01-04' FROM table_with_alias_column PREWHERE day1 = '2020-01-04'  WHERE day1 = '2020-01-04' GROUP BY day1 SETTINGS max_rows_to_read = 10;
-
-DROP TABLE table_with_alias_column;
+SELECT COUNT() = 10 FROM test_table WHERE day1 = '2020-01-02' SETTINGS max_rows_to_read = 10;
+SELECT t = '2020-01-03' FROM (SELECT day1 AS t FROM test_table WHERE t = '2020-01-03' GROUP BY t SETTINGS max_rows_to_read = 10);
+SELECT t = '2020-01-03' FROM (SELECT day2 AS t FROM test_table WHERE t = '2020-01-03' GROUP BY t SETTINGS max_rows_to_read = 10);
+SELECT COUNT() = 10 FROM test_table WHERE day1 = '2020-01-03' UNION ALL SELECT 1 FROM numbers(1) SETTINGS max_rows_to_read = 11;
+SELECT  COUNT() = 0 FROM (SELECT  toDate('2019-01-01') AS  day1, day1 AS t   FROM test_table PREWHERE t = '2020-01-03'  WHERE t  = '2020-01-03' GROUP BY t );
+SELECT day1 = '2020-01-04' FROM test_table PREWHERE day1 = '2020-01-04'  WHERE day1 = '2020-01-04' GROUP BY day1 SETTINGS max_rows_to_read = 10;
 
 
-SELECT 'second_index';
+ALTER TABLE test_table add column array Array(UInt8) default [1, 2, 3];
+ALTER TABLE test_table add column struct.key Array(UInt8) default [2, 4, 6], add column struct.value Array(UInt8) alias array;
 
+SELECT 'array-join';
+set max_rows_to_read = 10;
+SELECT count() == 10 FROM test_table WHERE day = '2020-01-01';
+SELECT sum(struct.key) == 30, sum(struct.value) == 30 FROM (SELECT struct.key, struct.value FROM test_table array join struct WHERE day = '2020-01-01');
+
+SELECT 'lambda';
+-- lambda parameters in filter should not be rewrite
+SELECT count() == 10 FROM test_table WHERE  arrayMap((day) -> day + 1, [1,2,3]) [1] = 2 AND day = '2020-01-03';
+
+set max_rows_to_read = 0;
+-- how to test it? currently just check logs, eg: 00940_order_by_read_in_order
+SELECT 'optimize_read_in_order';
+SET optimize_read_in_order = 1;
+SELECT day AS s FROM test_table ORDER BY s LIMIT 1;
+
+SELECT 'optimize_aggregation_in_order';
+SET optimize_aggregation_in_order = 1;
+SELECT day, count() AS s FROM test_table GROUP BY day;
+SELECT toDate(timestamp), count() AS s FROM test_table GROUP BY toDate(timestamp);
+
+DROP TABLE test_table;
+
+SELECT 'second-index';
 DROP TABLE IF EXISTS test_index;
 CREATE TABLE test_index
 (
@@ -84,6 +105,8 @@ PRIMARY KEY tuple()
 ORDER BY key_string SETTINGS index_granularity = 1;
 
 INSERT INTO test_index SELECT * FROM numbers(10);
-SELECT COUNT() == 1 FROM test_index WHERE key_uint32 = 1 SETTINGS max_rows_to_read = 10;
-SELECT COUNT() == 1 FROM test_index WHERE toUInt32(key_string) = 1 SETTINGS max_rows_to_read = 10;
+set max_rows_to_read = 1;
+SELECT COUNT() == 1 FROM test_index WHERE key_uint32 = 1;
+SELECT COUNT() == 1 FROM test_index WHERE toUInt32(key_string) = 1;
 DROP TABLE IF EXISTS test_index;
+

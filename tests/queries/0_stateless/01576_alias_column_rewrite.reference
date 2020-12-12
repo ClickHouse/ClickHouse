@@ -15,6 +15,20 @@ alias2alias
 1
 1
 1
-second_index
+array-join
+1
+0	0
+lambda
+1
+optimize_read_in_order
+2020-01-01
+optimize_aggregation_in_order
+2020-01-01	10
+2020-01-02	10
+2020-01-03	10
+2020-01-01	10
+2020-01-02	10
+2020-01-03	10
+second-index
 1
 1
