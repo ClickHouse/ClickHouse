@@ -47,7 +47,7 @@ namespace
 
     LazyPipeFDs notification_pipe;
 
-    void signalHandler(int, siginfo_t * info, void * context)
+    void NO_SANITIZE_THREAD signalHandler(int, siginfo_t * info, void * context)
     {
         auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
@@ -79,7 +79,7 @@ namespace
     }
 
     /// Wait for data in pipe and read it.
-    bool wait(int timeout_ms)
+    bool NO_SANITIZE_THREAD wait(int timeout_ms)
     {
         while (true)
         {
@@ -127,7 +127,7 @@ namespace
 }
 
 
-StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
+NO_SANITIZE_THREAD StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
     : IStorageSystemOneBlock<StorageSystemStackTrace>(table_id_)
 {
     notification_pipe.open();
@@ -160,7 +160,7 @@ NamesAndTypesList StorageSystemStackTrace::getNamesAndTypes()
 }
 
 
-void StorageSystemStackTrace::fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const
+void NO_SANITIZE_THREAD StorageSystemStackTrace::fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const
 {
     /// It shouldn't be possible to do concurrent reads from this table.
     std::lock_guard lock(mutex);
