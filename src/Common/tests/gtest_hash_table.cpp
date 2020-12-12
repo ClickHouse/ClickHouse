@@ -21,7 +21,7 @@ template<typename HashTable>
 std::set<typename HashTable::value_type> convertToSet(const HashTable& table)
 {
     std::set<typename HashTable::value_type> result;
-    
+
     for (auto v: table)
         result.emplace(v.getValue());
 
