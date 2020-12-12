@@ -987,6 +987,7 @@ public:
         size_t hash_value = hash(x);
         size_t i = findCell(x, hash_value, grower.place(hash_value));
 
+        /// Key is not found
         if (buf[i].isZero(*this))
         {
             return;
