@@ -58,7 +58,7 @@ toc_title: ORDER BY
 
 Для сортировки по значениям типа [String](../../../sql-reference/data-types/string.md#string) есть возможность указать collation (сравнение). Пример: `ORDER BY SearchPhrase COLLATE 'tr'` - для сортировки по поисковой фразе, по возрастанию, с учётом турецкого алфавита, регистронезависимо, при допущении, что строки в кодировке UTF-8. `COLLATE` может быть указан или не указан для каждого выражения в ORDER BY независимо. Если есть `ASC` или `DESC`, то `COLLATE` указывается после них. При использовании `COLLATE` сортировка всегда регистронезависима.
 
-Сравнение поддерживается при использовании типов [LowCardinality](../../../sql-reference/data-types/lowcardinality.md#lowcardinality-data-type), [Nullable](../../../sql-reference/data-types/nullable.md#data_type-nullable), [Array](../../../sql-reference/data-types/array.md#data-type-array) and [Tuple](../../../sql-reference/data-types/tuple.md#tuplet1-t2).
+Сравнение поддерживается при использовании типов [LowCardinality](../../../sql-reference/data-types/lowcardinality.md#lowcardinality-data-type), [Nullable](../../../sql-reference/data-types/nullable.md#data_type-nullable), [Array](../../../sql-reference/data-types/array.md#data-type-array) и [Tuple](../../../sql-reference/data-types/tuple.md#tuplet1-t2).
 
 Рекомендуется использовать `COLLATE` только для окончательной сортировки небольшого количества строк, так как производительность сортировки с указанием `COLLATE` меньше, чем обычной сортировки по байтам.
 
