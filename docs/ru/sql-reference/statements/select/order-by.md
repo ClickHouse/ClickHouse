@@ -56,15 +56,15 @@ toc_title: ORDER BY
 
 ## Поддержка collation {#collation-support}
 
-Для сортировки по значениям типа [String](../../../sql-reference/data-types/string.md#string) есть возможность указать collation (сравнение). Пример: `ORDER BY SearchPhrase COLLATE 'tr'` - для сортировки по поисковой фразе, по возрастанию, с учётом турецкого алфавита, регистронезависимо, при допущении, что строки в кодировке UTF-8. `COLLATE` может быть указан или не указан для каждого выражения в ORDER BY независимо. Если есть `ASC` или `DESC`, то `COLLATE` указывается после них. При использовании `COLLATE` сортировка всегда регистронезависима.
+Для сортировки по значениям типа [String](../../../sql-reference/data-types/string.md) есть возможность указать collation (сравнение). Пример: `ORDER BY SearchPhrase COLLATE 'tr'` - для сортировки по поисковой фразе, по возрастанию, с учётом турецкого алфавита, регистронезависимо, при допущении, что строки в кодировке UTF-8. `COLLATE` может быть указан или не указан для каждого выражения в ORDER BY независимо. Если есть `ASC` или `DESC`, то `COLLATE` указывается после них. При использовании `COLLATE` сортировка всегда регистронезависима.
 
-Сравнение поддерживается при использовании типов [LowCardinality](../../../sql-reference/data-types/lowcardinality.md#lowcardinality-data-type), [Nullable](../../../sql-reference/data-types/nullable.md#data_type-nullable), [Array](../../../sql-reference/data-types/array.md#data-type-array) и [Tuple](../../../sql-reference/data-types/tuple.md#tuplet1-t2).
+Сравнение поддерживается при использовании типов [LowCardinality](../../../sql-reference/data-types/lowcardinality.md), [Nullable](../../../sql-reference/data-types/nullable.md), [Array](../../../sql-reference/data-types/array.md) и [Tuple](../../../sql-reference/data-types/tuple.md).
 
 Рекомендуется использовать `COLLATE` только для окончательной сортировки небольшого количества строк, так как производительность сортировки с указанием `COLLATE` меньше, чем обычной сортировки по байтам.
 
 ### Примеры с использованием сравнения {#collation-examples}
 
-Пример с значениями типа [String](../../../sql-reference/data-types/string.md#string):
+Пример с значениями типа [String](../../../sql-reference/data-types/string.md):
 
 Входная таблица:
 
@@ -96,7 +96,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 └───┴──────┘
 ```
 
-Пример со строками типа [Nullable](../../../sql-reference/data-types/nullable.md#data_type-nullable):
+Пример со строками типа [Nullable](../../../sql-reference/data-types/nullable.md):
 
 Входная таблица:
 
@@ -132,7 +132,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 └───┴──────┘
 ```
 
-Пример со строками в [Array](../../../sql-reference/data-types/array.md#data-type-array):
+Пример со строками в [Array](../../../sql-reference/data-types/array.md):
 
 Входная таблица:
 
@@ -168,7 +168,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 └───┴───────────────┘
 ```
 
-Пример со строками типа [LowCardinality](../../../sql-reference/data-types/lowcardinality.md#lowcardinality-data-type):
+Пример со строками типа [LowCardinality](../../../sql-reference/data-types/lowcardinality.md):
 
 Входная таблица:
 
@@ -204,7 +204,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 └───┴─────┘
 ```
 
-Пример со строками в [Tuple](../../../sql-reference/data-types/tuple.md#tuplet1-t2):
+Пример со строками в [Tuple](../../../sql-reference/data-types/tuple.md):
 
 ```text
 ┌─x─┬─s───────┐
