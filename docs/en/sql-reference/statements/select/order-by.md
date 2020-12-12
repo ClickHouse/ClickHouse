@@ -120,7 +120,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 
 Result:
 
-```
+``` text
 ┌─x─┬─s────┐
 │ 4 │ 123a │
 │ 5 │ abc  │
