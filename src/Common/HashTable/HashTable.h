@@ -1009,7 +1009,7 @@ public:
 
             /// The optimal position of the element in the cell at next_position
             size_t optimal_position = grower.place(buf[next_position].getHash(*this));
-            
+
             /// If position of this element is already optimal - proceed to the next element.
             if (optimal_position == next_position)
                 continue;
@@ -1030,7 +1030,7 @@ public:
             {
                 continue;
             }
-            
+
             /// The case of overlapping chain
             if (next_position < erased_key_position
                 /// Cannot move this element because optimal position is after the freed place
@@ -1038,7 +1038,7 @@ public:
             {
                 continue;
             }
-            
+
             /// Move the element to the freed place
             memcpy(static_cast<void *>(&buf[erased_key_position]), static_cast<void *>(&buf[next_position]), sizeof(Cell));
             /// Now we have another freed place
