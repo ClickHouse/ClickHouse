@@ -998,9 +998,9 @@ public:
 
         size_t next_position = erased_key_position;
 
+        /// Walk to the right through collision resolution chain and move elements to better positions
         while (true)
         {
-            /// Walk through collision resolution chain
             next_position = grower.next(next_position);
 
             /// If there's no more elements in the chain
@@ -1009,13 +1009,40 @@ public:
 
             /// The optimal position of the element in the cell at next_position
             size_t optimal_position = grower.place(buf[next_position].getHash(*this));
+            
+            /// If position of this element is already optimal - proceed to the next element.
+            if (optimal_position == next_position)
+                continue;
 
-            if ((erased_key_position < next_position && ((optimal_position <= erased_key_position) || (optimal_position > next_position)))
-                || ((optimal_position <= erased_key_position) && (optimal_position > next_position)))
+            /// The case of non overlapping part of chain
+            if (next_position > erased_key_position
+                /// Cannot move this element because optimal position is after the freed place
+                /// The second condition is tricky - if the chain was overlapped before erased_key_position,
+                ///  and the optimal position is actually before in collision resolution chain:
+                ///
+                /// [*xn***----------------***]
+                ///   ^^-next elem          ^
+                ///   |                     |
+                ///   erased elem           the optimal position of the next elem
+                ///
+                /// so, the next elem should be moved to position of erased elem
+                && (optimal_position > erased_key_position) && (optimal_position < next_position))
             {
-                memcpy(static_cast<void *>(&buf[erased_key_position]), static_cast<void *>(&buf[next_position]), sizeof(Cell));
-                erased_key_position = next_position;
+                continue;
             }
+            
+            /// The case of overlapping chain
+            if (next_position < erased_key_position
+                /// Cannot move this element because optimal position is after the freed place
+                && ((optimal_position > erased_key_position) || (optimal_position < next_position)))
+            {
+                continue;
+            }
+            
+            /// Move the element to the freed place
+            memcpy(static_cast<void *>(&buf[erased_key_position]), static_cast<void *>(&buf[next_position]), sizeof(Cell));
+            /// Now we have another freed place
+            erased_key_position = next_position;
         }
 
         buf[erased_key_position].setZero();
