@@ -62,7 +62,7 @@ Collate is supported in [LowCardinality](../../../sql-reference/data-types/lowca
 
 We only recommend using `COLLATE` for final sorting of a small number of rows, since sorting with `COLLATE` is less efficient than normal sorting by bytes.
 
-### Collation Examples {#collation-examples}
+## Collation Examples {#collation-examples}
 
 Example only with [String](../../../sql-reference/data-types/string.md) values:
 
