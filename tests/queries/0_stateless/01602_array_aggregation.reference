@@ -1,0 +1,36 @@
+Array min 	1
+Array max 	6
+Array sum 	21
+Array avg 	3.5
+Table array int min
+1
+0
+1
+Table array int max
+6
+0
+3
+Table array int sum
+21
+0
+6
+Table array int avg
+3.5
+0
+2
+Table array decimal min
+1.00000000
+0.00000000
+1.00000000
+Table array decimal max
+6.00000000
+0.00000000
+3.00000000
+Table array decimal sum
+21.00000000
+0.00000000
+6.00000000
+Table array decimal avg
+3.50000000
+0.00000000
+2.00000000
