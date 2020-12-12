@@ -24,6 +24,14 @@ enum class AggregateOperation
     average
 };
 
+/**
+ * During array aggregation we derive result type from operation. 
+ * For array min or array max we use arryy element as result type.
+ * For array average if element is decimal we use decimal type, for other numeric types we use Float64.
+ * For array sum for decimal numbers we use Decimal128, for floating point numbers Float64, for numeric unsigned Int64,
+ * and for numeric signed UInt64.
+ */
+
 template <typename ArrayElement, AggregateOperation operation>
 struct ArrayAggregateResultImpl;
 
