@@ -9,7 +9,7 @@ FROM
         number % 7 AS k,
         arrayMap(x -> arrayMap(x -> if(x = 0, NULL, toString(x)), range(x)), range(intDiv(number, 1))) AS v
     FROM system.numbers
-    LIMIT 512
+    LIMIT 10
 )
 GROUP BY k
 ORDER BY k ASC
