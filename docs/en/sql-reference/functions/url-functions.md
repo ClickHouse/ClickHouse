@@ -131,6 +131,40 @@ For example:
 -   `cutToFirstSignificantSubdomain('www.tr') = 'www.tr'`.
 -   `cutToFirstSignificantSubdomain('tr') = ''`.
 
+### cutToFirstSignificantSubdomainCustom {#cuttofirstsignificantsubdomaincustom}
+
+Same as `cutToFirstSignificantSubdomain` but accept custom TLD list name, useful if:
+
+- you need fresh TLD list,
+- or you have custom.
+
+Configuration example:
+
+```xml
+<!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
+<top_level_domains_lists>
+    <!-- https://publicsuffix.org/list/public_suffix_list.dat -->
+    <public_suffix_list>public_suffix_list.dat</public_suffix_list>
+    <!-- NOTE: path is under top_level_domains_path -->
+</top_level_domains_lists>
+```
+
+Example:
+
+-   `cutToFirstSignificantSubdomain('https://news.yandex.com.tr/', 'public_suffix_list') = 'yandex.com.tr'`.
+
+### cutToFirstSignificantSubdomainCustomWithWWW {#cuttofirstsignificantsubdomaincustomwithwww}
+
+Same as `cutToFirstSignificantSubdomainWithWWW` but accept custom TLD list name.
+
+### firstSignificantSubdomainCustom {#firstsignificantsubdomaincustom}
+
+Same as `firstSignificantSubdomain` but accept custom TLD list name.
+
+### cutToFirstSignificantSubdomainCustomWithWWW {#cuttofirstsignificantsubdomaincustomwithwww}
+
+Same as `cutToFirstSignificantSubdomainWithWWW` but accept custom TLD list name.
+
 ### port(URL\[, default_port = 0\]) {#port}
 
 Returns the port or `default_port` if there is no port in the URL (or in case of validation error).
