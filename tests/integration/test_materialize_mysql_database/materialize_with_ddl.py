@@ -562,6 +562,12 @@ def err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, mysql_n
     assert 'MySQL SYNC USER ACCESS ERR:' in str(exception.value)
     assert "priv_err_db" not in clickhouse_node.query("SHOW DATABASES")
 
+    mysql_node.query("GRANT SELECT ON priv_err_db.* TO 'test'@'%'")
+    time.sleep(3)
+    clickhouse_node.query("ATTACH DATABASE priv_err_db")
+    clickhouse_node.query("DROP DATABASE priv_err_db")
+    mysql_node.query("REVOKE SELECT ON priv_err_db.* FROM 'test'@'%'")
+
     mysql_node.query("DROP DATABASE priv_err_db;")
     mysql_node.query("DROP USER 'test'@'%'")
 
