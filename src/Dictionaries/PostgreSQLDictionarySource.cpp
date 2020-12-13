@@ -1,20 +1,19 @@
 #include "PostgreSQLDictionarySource.h"
 
-#if USE_LIBPQXX
+#include <Poco/Util/AbstractConfiguration.h>
+#include "DictionarySourceFactory.h"
+#include "registerDictionaries.h"
 
-#    include <Columns/ColumnString.h>
-#    include <DataTypes/DataTypeString.h>
-#    include <IO/WriteBufferFromString.h>
-#    include <IO/WriteHelpers.h>
-#    include <common/LocalDateTime.h>
+#if USE_LIBPQXX
+#include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataStreams/PostgreSQLBlockInputStream.h>
 #include "readInvalidateQuery.h"
-#include "DictionarySourceFactory.h"
+
 
 namespace DB
 {
 static const UInt64 max_block_size = 8192;
-
 
 PostgreSQLDictionarySource::PostgreSQLDictionarySource(
     const DictionaryStructure & dict_struct_,
@@ -32,6 +31,7 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(
     , query_builder(dict_struct, "", "", table, where, IdentifierQuotingStyle::DoubleQuotes)
     , load_all_query(query_builder.composeLoadAllQuery())
     , invalidate_query(config_.getString(fmt::format("{}.invalidate_query", config_prefix), ""))
+    , update_field(config_.getString(fmt::format("{}.update_field", config_prefix), ""))
 {
 }
 
@@ -49,6 +49,7 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(const PostgreSQLDictionar
     , load_all_query(query_builder.composeLoadAllQuery())
     , invalidate_query(other.invalidate_query)
     , update_time(other.update_time)
+    , update_field(other.update_field)
     , invalidate_query_response(other.invalidate_query_response)
 {
 }
@@ -68,7 +69,6 @@ BlockInputStreamPtr PostgreSQLDictionarySource::loadUpdatedAll()
     LOG_TRACE(log, load_update_query);
     return std::make_shared<PostgreSQLBlockInputStream>(connection, load_update_query, sample_block, max_block_size);
 }
-
 
 BlockInputStreamPtr PostgreSQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
@@ -159,6 +159,7 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
                                  const std::string & /* default_database */,
                                  bool /* check_config */) -> DictionarySourcePtr
     {
+#if USE_LIBPQXX
         const auto config_prefix = root_config_prefix + ".postgresql";
         auto connection_str = fmt::format("dbname={} host={} port={} user={} password={}",
             config.getString(fmt::format("{}.db", config_prefix), ""),
@@ -169,9 +170,17 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 
         return std::make_unique<PostgreSQLDictionarySource>(
                 dict_struct, config, config_prefix, connection_str, sample_block);
+#else
+        (void)dict_struct;
+        (void)config;
+        (void)root_config_prefix;
+        (void)sample_block;
+        throw Exception{"Dictionary source of type `postgresql` is disabled because ClickHouse was built without postgresql support.",
+                        ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
     };
     factory.registerSource("postgresql", create_table_source);
 }
 }
-
 #endif
+

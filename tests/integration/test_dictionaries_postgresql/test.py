@@ -36,8 +36,7 @@ def create_postgres_table(conn, table_name):
     cursor = conn.cursor()
     cursor.execute(postgres_dict_table_template.format(table_name))
 
-def create_and_fill_postgres_table(table_name, index=0):
-    table_name = table_name + str(index)
+def create_and_fill_postgres_table(table_name):
     conn = get_postgres_conn(True)
     create_postgres_table(conn, table_name)
     # Fill postgres table using clickhouse postgres table function and check
@@ -48,7 +47,7 @@ def create_and_fill_postgres_table(table_name, index=0):
     assert result.rstrip() == '10000'
 
 def create_dict(table_name, index=0):
-    node1.query(click_dict_table_template.format(table_name + str(index), 'dict' + str(index)))
+    node1.query(click_dict_table_template.format(table_name, 'dict' + str(index)))
 
 
 @pytest.fixture(scope="module")
@@ -68,10 +67,9 @@ def started_cluster():
 def test_load_dictionaries(started_cluster):
     conn = get_postgres_conn(True)
     cursor = conn.cursor()
-    table_name = 'test'
+    table_name = 'test0'
     create_and_fill_postgres_table(table_name)
     create_dict(table_name)
-    table_name += str(0)
     dict_name = 'dict0'
 
     node1.query("SYSTEM RELOAD DICTIONARIES")
@@ -84,36 +82,34 @@ def test_load_dictionaries(started_cluster):
 def test_invalidate_query(started_cluster):
     conn = get_postgres_conn(True)
     cursor = conn.cursor()
-    table_name = 'test'
-    create_and_fill_postgres_table(table_name, 0)
-    create_and_fill_postgres_table(table_name, 1)
+    table_name = 'test0'
+    create_and_fill_postgres_table(table_name)
 
-    # this dict has no invalidate query
+    # invalidate query: SELECT value FROM test0 WHERE id = 0
     dict_name = 'dict0'
     create_dict(table_name)
-    node1.query("SYSTEM RELOAD DICTIONARIES")
-    first_update_time = node1.query("SELECT last_successful_update_time FROM system.dictionaries WHERE name = '{}'".format(dict_name))
-    time.sleep(4)
-    second_update_time = node1.query("SELECT last_successful_update_time FROM system.dictionaries WHERE name = '{}'".format(dict_name))
-    assert first_update_time != second_update_time
-
-    # this dict has invalidate query: SELECT value FROM test1 WHERE id = 0
-    dict_name = 'dict1'
-    create_dict(table_name, 1)
+    node1.query("SYSTEM RELOAD DICTIONARY {}".format(dict_name))
+    assert node1.query("SELECT dictGetUInt32('{}', 'value', toUInt64(0))".format(dict_name)) ==  "0\n"
     assert node1.query("SELECT dictGetUInt32('{}', 'value', toUInt64(1))".format(dict_name)) ==  "1\n"
 
-    first_update_time = node1.query("SELECT last_successful_update_time FROM system.dictionaries WHERE name = '{}'".format(dict_name))
-    time.sleep(4)
-    second_update_time = node1.query("SELECT last_successful_update_time FROM system.dictionaries WHERE name = '{}'".format(table_name))
-    assert first_update_time != second_update_time
+    # update should happen
+    cursor.execute("UPDATE {} SET value=value+1 WHERE id = 0".format(table_name))
+    while True:
+        result = node1.query("SELECT dictGetUInt32('{}', 'value', toUInt64(0))".format(dict_name))
+        if result != '0\n':
+            break
+    assert node1.query("SELECT dictGetUInt32('{}', 'value', toUInt64(0))".format(dict_name)) == '1\n'
 
-    # no update should be made
-    cursor.execute("UPDATE {} SET value=value*2 WHERE id > 0".format(table_name+str(1)))
+    # no update should happen
+    cursor.execute("UPDATE {} SET value=value*2 WHERE id != 0".format(table_name))
+    time.sleep(5)
+    assert node1.query("SELECT dictGetUInt32('{}', 'value', toUInt64(0))".format(dict_name)) == '1\n'
     assert node1.query("SELECT dictGetUInt32('{}', 'value', toUInt64(1))".format(dict_name)) == '1\n'
 
     # update should happen
-    cursor.execute("UPDATE {} SET value=value+1 WHERE id=0".format(table_name+str(1)))
+    cursor.execute("UPDATE {} SET value=value+1 WHERE id = 0".format(table_name))
     time.sleep(5)
+    assert node1.query("SELECT dictGetUInt32('{}', 'value', toUInt64(0))".format(dict_name)) == '2\n'
     assert node1.query("SELECT dictGetUInt32('{}', 'value', toUInt64(1))".format(dict_name)) == '2\n'
 
 
