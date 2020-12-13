@@ -31,6 +31,26 @@ Table array decimal sum
 0.00000000
 6.00000000
 Table array decimal avg
-3.50000000
-0.00000000
-2.00000000
+3.5
+0
+2
+Types of aggregation result array min
+Int8	Int16	Int32	Int64
+UInt8	UInt16	UInt32	UInt64
+Float32	Float64
+Decimal(9, 8)	Decimal(18, 8)	Decimal(38, 8)
+Types of aggregation result array max
+Int8	Int16	Int32	Int64
+UInt8	UInt16	UInt32	UInt64
+Float32	Float64
+Decimal(9, 8)	Decimal(18, 8)	Decimal(38, 8)
+Types of aggregation result array summ
+Int64	Int64	Int64	Int64
+UInt64	UInt64	UInt64	UInt64
+Float64	Float64
+Decimal(38, 8)	Decimal(38, 8)	Decimal(38, 8)
+Types of aggregation result array avg
+Float64	Float64	Float64	Float64
+Float64	Float64	Float64	Float64
+Float64	Float64
+Float64	Float64	Float64

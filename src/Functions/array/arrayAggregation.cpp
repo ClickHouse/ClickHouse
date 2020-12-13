@@ -27,7 +27,7 @@ enum class AggregateOperation
 /**
  * During array aggregation we derive result type from operation.
  * For array min or array max we use arryy element as result type.
- * For array average if element is decimal we use decimal type, for other numeric types we use Float64.
+ * For array average we use Float64.
  * For array sum for decimal numbers we use Decimal128, for floating point numbers Float64, for numeric unsigned Int64,
  * and for numeric signed UInt64.
  */
@@ -50,7 +50,7 @@ struct ArrayAggregateResultImpl<ArrayElement, AggregateOperation::max>
 template <typename ArrayElement>
 struct ArrayAggregateResultImpl<ArrayElement, AggregateOperation::average>
 {
-    using Result = std::conditional_t<IsDecimalNumber<ArrayElement>, Decimal128, Float64>;
+    using Result = Float64;
 };
 
 template <typename ArrayElement>
@@ -84,7 +84,13 @@ struct ArrayAggregateImpl
             using Types = std::decay_t<decltype(types)>;
             using DataType = typename Types::LeftType;
 
-            if constexpr (IsDataTypeNumber<DataType>)
+            if constexpr (aggregate_operation == AggregateOperation::average)
+            {
+                result = std::make_shared<DataTypeFloat64>();
+
+                return true;
+            }
+            else if constexpr (IsDataTypeNumber<DataType>)
             {
                 using NumberReturnType = ArrayAggregateResult<typename DataType::FieldType, aggregate_operation>;
                 result = std::make_shared<DataTypeNumber<NumberReturnType>>();
@@ -120,6 +126,14 @@ struct ArrayAggregateImpl
         using ColVecType = std::conditional_t<IsDecimalNumber<Element>, ColumnDecimal<Element>, ColumnVector<Element>>;
         using ColVecResult = std::conditional_t<IsDecimalNumber<Result>, ColumnDecimal<Result>, ColumnVector<Result>>;
 
+        /// For average on decimal array we return Float64 as result,
+        /// but to keep decimal presisision we convert to Float64 as last step of average computation
+        static constexpr bool use_decimal_for_average_aggregation
+            = aggregate_operation == AggregateOperation::average && IsDecimalNumber<Element>;
+
+        using AggregationType = std::conditional_t<use_decimal_for_average_aggregation, Decimal128, Result>;
+
+
         const ColVecType * column = checkAndGetColumn<ColVecType>(&*mapped);
 
         /// Constant case.
@@ -130,13 +144,13 @@ struct ArrayAggregateImpl
             if (!column_const)
                 return false;
 
-            const Result x = column_const->template getValue<Element>(); // NOLINT
+            const AggregationType x = column_const->template getValue<Element>(); // NOLINT
+            const typename ColVecType::Container & data
+                = checkAndGetColumn<ColVecType>(&column_const->getDataColumn())->getData();
 
             typename ColVecResult::MutablePtr res_column;
             if constexpr (IsDecimalNumber<Element>)
             {
-                const typename ColVecType::Container & data =
-                    checkAndGetColumn<ColVecType>(&column_const->getDataColumn())->getData();
                 res_column = ColVecResult::create(offsets.size(), data.getScale());
             }
             else
@@ -154,10 +168,20 @@ struct ArrayAggregateImpl
                     res[i] = x * array_size;
                 }
                 else if constexpr (aggregate_operation == AggregateOperation::min ||
-                                aggregate_operation == AggregateOperation::max ||
-                                aggregate_operation == AggregateOperation::average)
+                                aggregate_operation == AggregateOperation::max)
                 {
                     res[i] = x;
+                }
+                else if constexpr (aggregate_operation == AggregateOperation::average)
+                {
+                    if constexpr (IsDecimalNumber<Element>)
+                    {
+                        res[i] = DecimalUtils::convertTo<Result>(x, data.getScale());
+                    }
+                    else
+                    {
+                        res[i] = x;
+                    }
                 }
 
                 pos = offsets[i];
@@ -180,7 +204,7 @@ struct ArrayAggregateImpl
         size_t pos = 0;
         for (size_t i = 0; i < offsets.size(); ++i)
         {
-            Result s = 0;
+            AggregationType s = 0;
 
             /// Array is empty
             if (offsets[i] == pos)
@@ -190,7 +214,7 @@ struct ArrayAggregateImpl
             }
 
             size_t count = 1;
-            s = data[pos];
+            s = data[pos]; // NOLINT
             ++pos;
 
             for (; pos < offsets[i]; ++pos)
@@ -225,7 +249,14 @@ struct ArrayAggregateImpl
                 s = s / count;
             }
 
-            res[i] = s;
+            if constexpr (use_decimal_for_average_aggregation)
+            {
+                res[i] = DecimalUtils::convertTo<Result>(s, data.getScale());
+            }
+            else
+            {
+                res[i] = s;
+            }
         }
 
         res_ptr = std::move(res_column);
