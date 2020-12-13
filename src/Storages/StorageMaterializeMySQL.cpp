@@ -8,6 +8,8 @@
 
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -20,6 +22,7 @@
 #include <Processors/Transforms/FilterTransform.h>
 
 #include <Databases/MySQL/DatabaseMaterializeMySQL.h>
+#include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {
