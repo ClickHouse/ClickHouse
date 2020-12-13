@@ -226,7 +226,7 @@ SRCS(
     dumpColumnStructure.cpp
     e.cpp
     empty.cpp
-    encodeXML.cpp
+    encodeXMLComponent.cpp
     encrypt.cpp
     endsWith.cpp
     equals.cpp
