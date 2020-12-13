@@ -25,22 +25,32 @@ ALTER TABLE table_name MODIFY column_name REMOVE TTL
 
 **Example**
 
-<!--Попробовать: 
-посмотреть установленные TTL, 
-показать состояние таблицы до, 
-удалить TTL 
-и показать состояние после.-->
+Requests and results:
 
-Request
+To start the background cleaning using TTL, make this:
 
 ```sql
-ALTER TABLE r_no_prop_table MODIFY COLUMN some_column REMOVE TTL;
+OPTIMIZE TABLE table_with_ttl FINAL;
+SELECT * FROM table_with_ttl;
 ```
-
-Result
+As a result you see that the second line was deleted.
 
 ```text
+2020-12-11 12:44:57    1       username1
+```
 
+```sql
+ALTER TABLE table_with_ttl REMOVE TTL;
+INSERT INTO table_with_ttl VALUES (now() - INTERVAL 4 MONTH, 2, 'username2');
+OPTIMIZE TABLE table_with_ttl FINAL;
+SELECT * FROM table_with_ttl;
+```
+
+And now we have nothing to delete.
+
+```text
+--2020-12-11 12:44:57    1       username1
+--2020-08-11 12:44:57    2       username2
 ```
 
 ### See Also
