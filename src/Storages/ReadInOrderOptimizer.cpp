@@ -1,14 +1,13 @@
 #include <Storages/ReadInOrderOptimizer.h>
 
-#include <Functions/IFunction.h>
-#include <Interpreters/TableJoin.h>
-#include <Interpreters/TreeRewriter.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/TableJoin.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/TableJoin.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 
 namespace DB
 {

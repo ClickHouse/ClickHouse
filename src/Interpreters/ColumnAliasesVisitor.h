@@ -40,7 +40,7 @@ public:
     static bool needChildVisit(const ASTPtr & node, const ASTPtr & child);
 
 private:
-    static void visit(ASTIdentifier & node, ASTPtr & ast,  Data & data);
+    static void visit(ASTIdentifier & node, ASTPtr & ast, Data & data);
     static void visit(ASTFunction & node, ASTPtr & ast, Data & data);
 };
 
