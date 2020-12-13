@@ -57,8 +57,9 @@ protected:
         }
 
         size_t current_index = getAndIncrementExecutionIndex();
-        
-        if (current_index >= data->size()) {
+
+        if (current_index >= data->size())
+        {
             return {};
         }
 
@@ -82,7 +83,7 @@ private:
         }
         else
         {
-            return execution_index;
+            return execution_index++;
         }
     }
 
