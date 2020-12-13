@@ -50,8 +50,6 @@ public:
     ASTPtr & refPrewhere()  { return getExpression(Expression::PREWHERE); }
     ASTPtr & refWhere()     { return getExpression(Expression::WHERE); }
     ASTPtr & refHaving()    { return getExpression(Expression::HAVING); }
-    ASTPtr & refOrderBy()    { return getExpression(Expression::ORDER_BY); }
-    ASTPtr & refGroupBy()    { return getExpression(Expression::GROUP_BY); }
 
     const ASTPtr with()           const { return getExpression(Expression::WITH); }
     const ASTPtr select()         const { return getExpression(Expression::SELECT); }
