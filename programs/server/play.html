@@ -534,6 +534,23 @@
     var theme = window.localStorage.getItem('theme');
     if (theme) {
         setColorTheme(theme);
+    } else {
+        /// Obtain system-level user preference
+        var media_query_list = window.matchMedia('prefers-color-scheme: dark')
+
+        if (media_query_list.matches) {
+            /// Set without saving to localstorage
+            document.documentElement.setAttribute('data-theme', 'dark');
+        }
+
+        /// There is a rumor that on some computers, the theme is changing automatically on day/night.
+        media_query_list.addEventListener('change', function(e) {
+            if (e.matches) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            } else {
+                document.documentElement.setAttribute('data-theme', 'light');
+            }
+        });
     }
 
     document.getElementById('toggle-light').onclick = function()
