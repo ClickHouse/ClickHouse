@@ -3,16 +3,14 @@
 #if !defined(ARCADIA_BUILD)
 #include "config_core.h"
 #endif
+#include "DictionaryStructure.h"
+#include "IDictionarySource.h"
 
 #if USE_LIBPQXX
-
-#    include <common/LocalDateTime.h>
-#    include "DictionaryStructure.h"
-#    include "ExternalQueryBuilder.h"
-#    include "IDictionarySource.h"
+#include "ExternalQueryBuilder.h"
 #include <Core/Block.h>
+#include <common/LocalDateTime.h>
 #include <common/logger_useful.h>
-
 #include <pqxx/pqxx>
 
 namespace DB

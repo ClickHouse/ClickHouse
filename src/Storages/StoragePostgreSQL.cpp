@@ -130,7 +130,6 @@ void PostgreSQLBlockOutputStream::write(const Block & block)
                 }
             }
         }
-
         /// pqxx::stream_to is much faster than simple insert, especially for large number of rows
         stream_inserter->write_values(row);
     }
