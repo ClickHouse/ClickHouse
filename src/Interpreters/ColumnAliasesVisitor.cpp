@@ -80,7 +80,7 @@ void ColumnAliasesMatcher::visit(ASTIdentifier & node, ASTPtr & ast, Data & data
 {
     if (auto column_name = IdentifierSemantic::getColumnName(node))
     {
-        if (data.forbidden_columns.count(*column_name) || data.private_aliases.count(*column_name))
+        if (data.forbidden_columns.count(*column_name) || data.private_aliases.count(*column_name) || !data.columns.has(*column_name))
             return;
 
         const auto & col = data.columns.get(*column_name);

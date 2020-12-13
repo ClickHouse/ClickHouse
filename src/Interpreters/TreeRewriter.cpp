@@ -576,8 +576,8 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
                 if (std::find(partition_source_columns.begin(), partition_source_columns.end(), required_column)
                     == partition_source_columns.end())
                 {
-                        optimize_trivial_count = false;
-                        break;
+                    optimize_trivial_count = false;
+                    break;
                 }
             }
         }
@@ -779,7 +779,7 @@ TreeRewriterResultPtr TreeRewriter::analyze(
     else
         assertNoAggregates(query, "in wrong place");
 
-    result.collectUsedColumns(query ,false);
+    result.collectUsedColumns(query, false);
     return std::make_shared<const TreeRewriterResult>(result);
 }
 

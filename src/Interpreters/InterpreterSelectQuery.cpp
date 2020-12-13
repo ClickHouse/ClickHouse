@@ -1295,9 +1295,10 @@ void InterpreterSelectQuery::executeFetchColumns(
                 {
                     auto column_decl = storage_columns.get(column);
                     column_expr = column_default->expression->clone();
-
                     // recursive visit for alias to alias
                     replaceAliasColumnsInQuery(column_expr, metadata_snapshot->getColumns(), syntax_analyzer_result->getArrayJoinSourceNameSet(), *context);
+
+                    column_expr = addTypeConversionToAST(std::move(column_expr), column_decl.type->getName(), metadata_snapshot->getColumns().getAll(), *context);
                     column_expr = setAlias(column_expr, column);
                 }
                 else
