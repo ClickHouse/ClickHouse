@@ -1,5 +1,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
