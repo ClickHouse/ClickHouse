@@ -37,12 +37,14 @@ public:
         const StorageMemory & storage,
         const StorageMetadataPtr & metadata_snapshot,
         std::shared_ptr<const BlocksList> data_,
+        std::shared_ptr<std::mutex> parallel_execution_lock_,
         InitializerFunc initializer_func_ = [](BlocksList::const_iterator &, size_t &, std::shared_ptr<const BlocksList> &) {})
         : SourceWithProgress(metadata_snapshot->getSampleBlockForColumns(column_names_, storage.getVirtuals(), storage.getStorageID()))
         , column_names(std::move(column_names_))
         , current_it(first_)
         , num_blocks(num_blocks_)
         , data(data_)
+        , parallel_execution_lock(parallel_execution_lock_)
         , initializer_func(std::move(initializer_func_))
     {
     }
@@ -70,7 +72,14 @@ protected:
             columns.push_back(src.getByName(name).column);
 
         if (++current_block_idx < num_blocks)
-            ++current_it;
+        {
+            if (parallel_execution_lock) {
+                std::lock_guard lock(*parallel_execution_lock);
+                ++current_it;
+            } else {
+                ++current_it;
+            }
+        }
 
         return Chunk(std::move(columns), src.rows());
     }
@@ -83,6 +92,7 @@ private:
 
     std::shared_ptr<const BlocksList> data;
     bool postponed_init_done = false;
+    std::shared_ptr<std::mutex> parallel_execution_lock;
     InitializerFunc initializer_func;
 };
 
@@ -160,6 +170,7 @@ Pipe StorageMemory::read(
             *this,
             metadata_snapshot,
             data.get(),
+            nullptr,
             [this](BlocksList::const_iterator & current_it, size_t & num_blocks, std::shared_ptr<const BlocksList> & current_data)
             {
                 current_data = data.get();
@@ -177,23 +188,12 @@ Pipe StorageMemory::read(
 
     Pipes pipes;
 
-    BlocksList::const_iterator it = current_data->begin();
+    auto it = current_data->begin();
+    auto parallel_execution_lock = std::make_shared<std::mutex>();
 
-    size_t offset = 0;
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
-        size_t next_offset = (stream + 1) * size / num_streams;
-        size_t num_blocks = next_offset - offset;
-
-        assert(num_blocks > 0);
-
-        pipes.emplace_back(std::make_shared<MemorySource>(column_names, it, num_blocks, *this, metadata_snapshot, current_data));
-
-        while (offset < next_offset)
-        {
-            ++it;
-            ++offset;
-        }
+        pipes.emplace_back(std::make_shared<MemorySource>(column_names, it, size, *this, metadata_snapshot, current_data, parallel_execution_lock));
     }
 
     return Pipe::unitePipes(std::move(pipes));
