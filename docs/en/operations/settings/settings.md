@@ -1093,9 +1093,14 @@ See the section “WITH TOTALS modifier”.
 
 ## max_parallel_replicas {#settings-max_parallel_replicas}
 
-The maximum number of replicas for each shard when executing a query.
-For consistency (to get different parts of the same data split), this option only works when the sampling key is set.
-Replica lag is not controlled.
+The maximum number of replicas for each shard when executing a query. In limited circumstances, this can make a query faster by executing it on more servers. This setting is only useful for replicated tables with a sampling key. There are cases where performance will not improve or even worsen:
+
+- the position of the sampling key in the partitioning key's order doesn't allow efficient range scans
+- adding a sampling key to the table makes filtering by other columns less efficient
+- the sampling key is an expression that is expensive to calculate
+- the cluster's latency distribution has a long tail, so that querying more servers increases the query's overall latency
+
+In addition, this setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain conditions. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md/#max_parallel_replica-subqueries) for more details.
 
 ## compile {#compile}
 
