@@ -191,6 +191,7 @@ private:
     TemporaryTablesMapping external_tables_mapping;
     Scalars scalars;
 
+    /// Record entities accessed by current query, and store this information in system.query_log.
     struct QueryAccessInfo
     {
         std::set<std::string> databases;
