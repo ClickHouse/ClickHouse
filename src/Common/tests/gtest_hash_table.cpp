@@ -105,8 +105,11 @@ TEST(HashTable, Erase)
         Cont cont;
 
         cont.insert(0);
+
         ASSERT_TRUE(cont.find(0) != nullptr && cont.find(0)->getKey() == 0);
+
         cont.erase(0);
+
         ASSERT_TRUE(cont.find(0) == nullptr);
     }
     {
@@ -115,8 +118,11 @@ TEST(HashTable, Erase)
 
         /// [.(1)..............] erase of (1).
         cont.insert(1);
+
         ASSERT_TRUE(cont.find(1) != nullptr && cont.find(1)->getKey() == 1);
+
         cont.erase(1);
+
         ASSERT_TRUE(cont.find(1) == nullptr);
     }
     {
@@ -128,9 +134,11 @@ TEST(HashTable, Erase)
         cont.insert(2);
         cont.insert(3);
         cont.erase(1);
+
         ASSERT_TRUE(cont.find(1) == nullptr);
         ASSERT_TRUE(cont.find(2) != nullptr && cont.find(2)->getKey() == 2);
         ASSERT_TRUE(cont.find(3) != nullptr && cont.find(3)->getKey() == 3);
+
         cont.erase(2);
         cont.erase(3);
         ASSERT_TRUE(cont.find(2) == nullptr);
@@ -145,6 +153,7 @@ TEST(HashTable, Erase)
         cont.insert(1);
         cont.insert(17);
         cont.erase(1);
+
         ASSERT_TRUE(cont.find(1) == nullptr);
         ASSERT_TRUE(cont.find(17) != nullptr && cont.find(17)->getKey() == 17);
     }
@@ -159,6 +168,7 @@ TEST(HashTable, Erase)
         cont.insert(3);
         cont.insert(17);
         cont.erase(2);
+
         ASSERT_TRUE(cont.find(2) == nullptr);
         ASSERT_TRUE(cont.find(1) != nullptr && cont.find(1)->getKey() == 1);
         ASSERT_TRUE(cont.find(3) != nullptr && cont.find(3)->getKey() == 3);
@@ -174,7 +184,7 @@ TEST(HashTable, Erase)
         cont.insert(16);
         cont.insert(30);
         cont.erase(16);
-        
+
         ASSERT_TRUE(cont.find(16) == nullptr);
         ASSERT_TRUE(cont.find(14) != nullptr && cont.find(14)->getKey() == 14);
         ASSERT_TRUE(cont.find(15) != nullptr && cont.find(15)->getKey() == 15);
@@ -190,7 +200,7 @@ TEST(HashTable, Erase)
         cont.insert(16);
         cont.insert(30);
         cont.erase(15);
-        
+
         ASSERT_TRUE(cont.find(15) == nullptr);
         ASSERT_TRUE(cont.find(14) != nullptr && cont.find(14)->getKey() == 14);
         ASSERT_TRUE(cont.find(16) != nullptr && cont.find(16)->getKey() == 16);
