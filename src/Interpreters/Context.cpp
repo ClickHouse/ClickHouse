@@ -942,7 +942,7 @@ void Context::addQueryAccessInfo(const String & database_name, const String & ta
     query_access_info.databases.emplace(database_name);
     query_access_info.tables.emplace(table_name);
     for (const auto & column_name : column_names)
-        query_access_info.columns.emplace(table_name + "." + column_name);
+        query_access_info.columns.emplace(table_name + "." + backQuoteIfNeed(column_name));
 }
 
 
