@@ -139,11 +139,12 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(const StorageMetadataPtr &
 
         if (ok)
             order_key_prefix_descr.push_back(required_sort_description[i]);
+        else
+            break;
     }
 
     if (order_key_prefix_descr.empty())
         return {};
-
     return std::make_shared<InputOrderInfo>(std::move(order_key_prefix_descr), read_direction);
 }
 
