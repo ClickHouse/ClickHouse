@@ -873,20 +873,17 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             part->modification_time = part_disk_ptr->getLastModified(relative_data_path + part_name).epochTime();
             /// Assume that all parts are Committed, covered parts will be detected and marked as Outdated later
             part->state = DataPartState::Committed;
-            /// Update data volume
-            addPartContributionToDataVolume(part);
 
             std::lock_guard loading_lock(mutex);
             if (!data_parts_indexes.insert(part).second)
                 throw Exception("Part " + part->name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
+
+            /// Update data volume
+            addPartContributionToDataVolume(part);
         });
     }
 
     pool.wait();
-
-    size_t bytes = 0;
-    size_t rows = 0;
-    size_t add_parts = 0;
 
     for (auto & part : parts_from_wal)
     {
@@ -897,16 +894,11 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         /// Assume that all parts are Committed, covered parts will be detected and marked as Outdated later
         part->state = DataPartState::Committed;
 
-        bytes += part->getBytesOnDisk();
-        rows += part->rows_count;
-        ++add_parts;
-
         if (!data_parts_indexes.insert(part).second)
             throw Exception("Part " + part->name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
+        
+        addPartContributionToDataVolume(part);
     }
-
-    /// Update data volume
-    increaseDataVolume(bytes, rows, add_parts);
 
     if (has_non_adaptive_parts && has_adaptive_parts && !settings->enable_mixed_granularity_parts)
         throw Exception("Table contains parts with adaptive and non adaptive marks, but `setting enable_mixed_granularity_parts` is disabled", ErrorCodes::LOGICAL_ERROR);
