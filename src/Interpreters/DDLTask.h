@@ -29,11 +29,12 @@ struct HostID
 {
     String host_name;
     UInt16 port;
+    UInt16 status;
 
     HostID() = default;
 
     explicit HostID(const Cluster::Address & address)
-        : host_name(address.host_name), port(address.port) {}
+        : host_name(address.host_name), port(address.port), status(address.status) {}
 
     static HostID fromString(const String & host_port_str);
 

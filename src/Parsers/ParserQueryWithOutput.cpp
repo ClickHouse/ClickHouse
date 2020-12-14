@@ -8,6 +8,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserRenameQuery.h>
 #include <Parsers/ParserAlterQuery.h>
+#include <Parsers/ParserClusterQuery.h>
 #include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserKillQueryQuery.h>
 #include <Parsers/ParserOptimizeQuery.h>
@@ -43,6 +44,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserOptimizeQuery optimize_p;
     ParserKillQueryQuery kill_query_p;
     ParserWatchQuery watch_p;
+    ParserClusterQuery cluster_p;
     ParserShowAccessQuery show_access_p;
     ParserShowAccessEntitiesQuery show_access_entities_p;
     ParserShowCreateAccessEntityQuery show_create_access_entity_p;

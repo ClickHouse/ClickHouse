@@ -47,6 +47,7 @@ namespace ErrorCodes
     extern const int CANNOT_ASSIGN_ALTER;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int MEMORY_LIMIT_EXCEEDED;
+
 }
 
 constexpr const char * TASK_PROCESSED_OUT_REASON = "Task has been already processed";

@@ -57,6 +57,7 @@ SRCS(
     ASTShowTablesQuery.cpp
     ASTSubquery.cpp
     ASTSystemQuery.cpp
+    ASTClusterQuery.cpp
     ASTTTLElement.cpp
     ASTTablesInSelectQuery.cpp
     ASTUserNameWithHost.cpp
@@ -122,6 +123,7 @@ SRCS(
     ParserShowPrivilegesQuery.cpp
     ParserShowTablesQuery.cpp
     ParserSystemQuery.cpp
+    ParserClusterQuery.cpp
     ParserTablePropertiesQuery.cpp
     ParserTablesInSelectQuery.cpp
     ParserUnionQueryElement.cpp

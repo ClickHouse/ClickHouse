@@ -16,6 +16,7 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserSetRoleQuery.h>
 #include <Parsers/ParserSystemQuery.h>
+#include <Parsers/ParserClusterQuery.h>
 #include <Parsers/ParserUseQuery.h>
 #include <Parsers/ParserExternalDDLQuery.h>
 
@@ -31,6 +32,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserUseQuery use_p;
     ParserSetQuery set_p;
     ParserSystemQuery system_p;
+    ParserClusterQuery cluster_p;
     ParserCreateUserQuery create_user_p;
     ParserCreateRoleQuery create_role_p;
     ParserCreateQuotaQuery create_quota_p;
@@ -47,6 +49,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || set_role_p.parse(pos, node, expected)
         || set_p.parse(pos, node, expected)
         || system_p.parse(pos, node, expected)
+        || cluster_p.parse(pos, node, expected)
         || create_user_p.parse(pos, node, expected)
         || create_role_p.parse(pos, node, expected)
         || create_quota_p.parse(pos, node, expected)

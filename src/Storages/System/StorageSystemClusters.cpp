@@ -19,6 +19,7 @@ NamesAndTypesList StorageSystemClusters::getNamesAndTypes()
         {"host_name", std::make_shared<DataTypeString>()},
         {"host_address", std::make_shared<DataTypeString>()},
         {"port", std::make_shared<DataTypeUInt16>()},
+        {"status", std::make_shared<DataTypeUInt16>()},
         {"is_local", std::make_shared<DataTypeUInt8>()},
         {"user", std::make_shared<DataTypeString>()},
         {"default_database", std::make_shared<DataTypeString>()},
@@ -82,6 +83,7 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const Nam
             auto resolved = address.getResolvedAddress();
             res_columns[i++]->insert(resolved ? resolved->host().toString() : String());
             res_columns[i++]->insert(address.port);
+            res_columns[i++]->insert(address.status);
             res_columns[i++]->insert(address.is_local);
             res_columns[i++]->insert(address.user);
             res_columns[i++]->insert(address.default_database);

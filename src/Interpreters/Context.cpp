@@ -56,6 +56,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DDLTask.h>
+#include <Interpreters/ClusterWorker.h>
+#include <Common/DNSResolver.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
@@ -357,6 +359,7 @@ struct ContextSharedPart
     mutable std::optional<BackgroundSchedulePool> message_broker_schedule_pool; /// A thread pool that can run different jobs in background (used for message brokers, like RabbitMQ and Kafka)
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
+    std::unique_ptr<ClusterWorker> cluster_worker;          /// Process cluster commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
     mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector;
     /// Storage disk chooser for MergeTree engines
@@ -1598,6 +1601,28 @@ DDLWorker & Context::getDDLWorker() const
         throw Exception("DDL background thread is not initialized", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
     }
     return *shared->ddl_worker;
+}
+
+void Context::setClusterWorker(std::unique_ptr<ClusterWorker> cluster_worker)
+{
+    auto lock = getLock();
+    if (shared->cluster_worker)
+        throw Exception("Cluster background thread has already been initialized.", ErrorCodes::LOGICAL_ERROR);
+    shared->cluster_worker = std::move(cluster_worker);
+}
+
+ClusterWorker & Context::getClusterWorker() const
+{
+    auto lock = getLock();
+    if (!shared->cluster_worker)
+        throw Exception("Cluster background thread is not initialized.", ErrorCodes::LOGICAL_ERROR);
+    return *shared->cluster_worker;
+}
+
+bool Context::hasClusterWorker() const
+{
+    auto lock = getLock();
+    return (shared->cluster_worker != nullptr);
 }
 
 zkutil::ZooKeeperPtr Context::getZooKeeper() const

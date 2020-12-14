@@ -230,7 +230,12 @@ DDLQueryStatusInputStream::DDLQueryStatusInputStream(const String & zk_node_path
     else
     {
         for (const HostID & host : entry.hosts)
-            waiting_hosts.emplace(host.toString());
+        {
+            if (host.status == 1)
+                waiting_hosts.emplace(host.toString());
+            else
+                ignoring_hosts.emplace(host.toString());
+        }
     }
 
     addTotalRowsApprox(waiting_hosts.size());

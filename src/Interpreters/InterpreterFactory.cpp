@@ -63,12 +63,14 @@
 #include <Interpreters/InterpreterShowProcesslistQuery.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
+#include <Interpreters/InterpreterClusterQuery.h>
 #include <Interpreters/InterpreterUseQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
 #include <Interpreters/InterpreterExternalDDLQuery.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 
 #include <Parsers/ASTSystemQuery.h>
+#include <Parsers/ASTClusterQuery.h>
 
 #include <Databases/MySQL/MaterializeMySQLSyncThread.h>
 #include <Parsers/ASTExternalDDLQuery.h>
@@ -207,6 +209,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextPtr
     else if (query->as<ASTSystemQuery>())
     {
         return std::make_unique<InterpreterSystemQuery>(query, context);
+    }
+    else if (query->as<ASTClusterQuery>())
+    {
+        return std::make_unique<InterpreterClusterQuery>(query, context);       
     }
     else if (query->as<ASTWatchQuery>())
     {

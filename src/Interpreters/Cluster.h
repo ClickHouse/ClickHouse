@@ -87,6 +87,8 @@ public:
         UInt32 shard_index{}; /// shard serial number in configuration file, starting from 1.
         UInt32 replica_index{}; /// replica serial number in this shard, starting from 1; zero means no replicas.
 
+        UInt16 status = 1;
+
         /// This database is selected when no database is specified for Distributed table
         String default_database;
         /// The locality is determined at the initialization, and is not changed even if DNS is changed
@@ -198,6 +200,7 @@ public:
     String getHashOfAddresses() const { return hash_of_addresses; }
     const ShardsInfo & getShardsInfo() const { return shards_info; }
     const AddressesWithFailover & getShardsAddresses() const { return addresses_with_failover; }
+    AddressesWithFailover * getClusterShardsAddresses() { return &addresses_with_failover; }
 
     const ShardInfo & getAnyShardInfo() const
     {

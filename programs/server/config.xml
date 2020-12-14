@@ -613,6 +613,30 @@
                 </replica>
             </shard>
         </test_unavailable_shard>
+        <test_cluster_node>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>node3</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node4</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_cluster_node>
     </remote_servers>
 
     <!-- The list of hosts allowed to use in URL-related storage engines and table functions.

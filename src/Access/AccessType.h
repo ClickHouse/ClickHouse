@@ -148,6 +148,8 @@ enum class AccessType
     M(SYSTEM_FLUSH, "", GROUP, SYSTEM) \
     M(SYSTEM, "", GROUP, ALL) /* allows to execute SYSTEM {SHUTDOWN|RELOAD CONFIG|...} */ \
     \
+    M(CLUSTER_NODE, "", GLOBAL, CLUSTER_NODE) \
+    \
     M(dictGet, "dictHas, dictGetHierarchy, dictIsIn", DICTIONARY, ALL) /* allows to execute functions dictGet(), dictHas(), dictGetHierarchy(), dictIsIn() */\
     \
     M(addressToLine, "", GLOBAL, INTROSPECTION) /* allows to execute function addressToLine() */\

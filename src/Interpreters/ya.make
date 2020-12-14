@@ -43,6 +43,7 @@ SRCS(
     CrossToInnerJoinVisitor.cpp
     DDLTask.cpp
     DDLWorker.cpp
+    ClusterWorker.cpp
     DNSCacheUpdater.cpp
     DatabaseAndTableWithAlias.cpp
     DatabaseCatalog.cpp
@@ -143,6 +144,7 @@ SRCS(
     StorageID.cpp
     SubqueryForSet.cpp
     SystemLog.cpp
+    SystemWorker.cpp
     TableJoin.cpp
     TablesStatus.cpp
     TextLog.cpp

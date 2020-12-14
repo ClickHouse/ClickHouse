@@ -80,6 +80,7 @@ struct MergeTreeSettings;
 class StorageS3Settings;
 class IDatabase;
 class DDLWorker;
+class ClusterWorker;
 class ITableFunction;
 class Block;
 class ActionLocksManager;
@@ -648,6 +649,10 @@ public:
     bool hasDistributedDDL() const;
     void setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker);
     DDLWorker & getDDLWorker() const;
+
+    void setClusterWorker(std::unique_ptr<ClusterWorker> cluster_worker);
+    bool hasClusterWorker() const;
+    ClusterWorker & getClusterWorker() const;
 
     Clusters & getClusters() const;
     std::shared_ptr<Cluster> getCluster(const std::string & cluster_name) const;
