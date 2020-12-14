@@ -34,6 +34,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageFactory.h>
 #include <Parsers/ASTSystemQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <csignal>
@@ -359,7 +360,7 @@ BlockIO InterpreterSystemQuery::execute()
                 [&] { if (auto trace_log = context.getTraceLog()) trace_log->flush(true); },
                 [&] { if (auto text_log = context.getTextLog()) text_log->flush(true); },
                 [&] { if (auto metric_log = context.getMetricLog()) metric_log->flush(true); },
-                [&] { if (auto asynchronous_metric_log = context.getAsynchronousMetricLog()) asynchronous_metric_log->flush(true); }
+                [&] { if (auto asynchronous_metric_log = context.getAsynchronousMetricLog()) asynchronous_metric_log->flush(true); },
                 [&] { if (auto opentelemetry_span_log = context.getOpenTelemetrySpanLog()) opentelemetry_span_log->flush(true); }
             );
             break;
