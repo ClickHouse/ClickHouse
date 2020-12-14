@@ -37,7 +37,7 @@
 #include <Dictionaries/ComplexKeyCacheDictionary.h>
 #include <Dictionaries/ComplexKeyDirectDictionary.h>
 #include <Dictionaries/RangeHashedDictionary.h>
-#include <Dictionaries/TrieDictionary.h>
+#include <Dictionaries/IPAddressDictionary.h>
 #include <Dictionaries/PolygonDictionaryImplementations.h>
 #include <Dictionaries/DirectDictionary.h>
 
@@ -192,7 +192,7 @@ private:
             || (res = executeDispatchComplex<SSDComplexKeyCacheDictionary>(arguments, dict))
 #endif
 #if !defined(ARCADIA_BUILD)
-            || (res = executeDispatchComplex<TrieDictionary>(arguments, dict))
+            || (res = executeDispatchComplex<IPAddressDictionary>(arguments, dict))
 #endif
             || (res = executeDispatchComplex<PolygonDictionarySimple>(arguments, dict))
             || (res = executeDispatchComplex<PolygonDictionaryIndexEach>(arguments, dict))
@@ -346,7 +346,7 @@ private:
             || (res = executeDispatchComplex<SSDComplexKeyCacheDictionary>(arguments, dict))
 #endif
 #if !defined(ARCADIA_BUILD)
-            || (res = executeDispatchComplex<TrieDictionary>(arguments, dict))
+            || (res = executeDispatchComplex<IPAddressDictionary>(arguments, dict))
 #endif
             || (res = executeDispatchComplex<PolygonDictionarySimple>(arguments, dict))
             || (res = executeDispatchComplex<PolygonDictionaryIndexEach>(arguments, dict))
@@ -524,7 +524,7 @@ private:
             || (res = executeDispatchComplex<SSDComplexKeyCacheDictionary>(arguments, dict))
 #endif
 #if !defined(ARCADIA_BUILD)
-            || (res = executeDispatchComplex<TrieDictionary>(arguments, dict))
+            || (res = executeDispatchComplex<IPAddressDictionary>(arguments, dict))
 #endif
             || (res = executeDispatchComplex<PolygonDictionarySimple>(arguments, dict))
             || (res = executeDispatchComplex<PolygonDictionaryIndexEach>(arguments, dict))
@@ -861,7 +861,7 @@ private:
             || (res = executeDispatchComplex<SSDComplexKeyCacheDictionary>(arguments, dict))
 #endif
 #if !defined(ARCADIA_BUILD)
-            || (res = executeDispatchComplex<TrieDictionary>(arguments, dict))
+            || (res = executeDispatchComplex<IPAddressDictionary>(arguments, dict))
 #endif
             || (res = executeDispatchComplex<PolygonDictionarySimple>(arguments, dict))
             || (res = executeDispatchComplex<PolygonDictionaryIndexEach>(arguments, dict))
@@ -1116,7 +1116,7 @@ private:
             || (res = executeDispatchComplex<SSDComplexKeyCacheDictionary>(arguments, dict))
 #endif
 #if !defined(ARCADIA_BUILD)
-            || (res = executeDispatchComplex<TrieDictionary>(arguments, dict))
+            || (res = executeDispatchComplex<IPAddressDictionary>(arguments, dict))
 #endif
             || (res = executeDispatchComplex<PolygonDictionarySimple>(arguments, dict))
             || (res = executeDispatchComplex<PolygonDictionaryIndexEach>(arguments, dict))

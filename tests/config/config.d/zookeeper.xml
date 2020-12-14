@@ -1,5 +1,8 @@
 <yandex>
     <zookeeper>
-        <implementation>testkeeper</implementation>
+        <node index="1">
+            <host>localhost</host>
+            <port>9181</port>
+        </node>
     </zookeeper>
 </yandex>

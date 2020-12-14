@@ -19,7 +19,7 @@ CREATE DICTIONARY dictdb.dict
   insert_time DateTime
 )
 PRIMARY KEY x
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table' DB 'dictdb' UPDATE_FIELD 'insert_time'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table' DB 'dictdb' UPDATE_FIELD 'insert_time'))
 LAYOUT(FLAT())
 LIFETIME(1);
 EOF

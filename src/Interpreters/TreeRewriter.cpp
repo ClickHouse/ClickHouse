@@ -125,12 +125,60 @@ struct CustomizeAggregateFunctionsSuffixData
         {
             auto properties = instance.tryGetProperties(func.name);
             if (properties && !properties->returns_default_when_only_null)
-                func.name = func.name + customized_func_suffix;
+            {
+                func.name += customized_func_suffix;
+            }
+        }
+    }
+};
+
+// Used to rewrite aggregate functions with -OrNull suffix in some cases, such as sumIfOrNull, we shoule rewrite to sumOrNullIf
+struct CustomizeAggregateFunctionsMoveSuffixData
+{
+    using TypeToVisit = ASTFunction;
+
+    const String & customized_func_suffix;
+
+    String moveSuffixAhead(const String & name) const
+    {
+        auto prefix = name.substr(0, name.size() - customized_func_suffix.size());
+
+        auto prefix_size = prefix.size();
+
+        if (endsWith(prefix, "MergeState"))
+            return prefix.substr(0, prefix_size - 10) + customized_func_suffix + "MergeState";
+
+        if (endsWith(prefix, "Merge"))
+            return prefix.substr(0, prefix_size - 5) + customized_func_suffix + "Merge";
+
+        if (endsWith(prefix, "State"))
+            return prefix.substr(0, prefix_size - 5) + customized_func_suffix + "State";
+
+        if (endsWith(prefix, "If"))
+            return prefix.substr(0, prefix_size - 2) + customized_func_suffix + "If";
+
+        return name;
+    }
+
+    void visit(ASTFunction & func, ASTPtr &) const
+    {
+        const auto & instance = AggregateFunctionFactory::instance();
+        if (instance.isAggregateFunctionName(func.name))
+        {
+            if (endsWith(func.name, customized_func_suffix))
+            {
+                auto properties = instance.tryGetProperties(func.name);
+                if (properties && !properties->returns_default_when_only_null)
+                {
+                    func.name = moveSuffixAhead(func.name);
+                }
+            }
         }
     }
 };
 
 using CustomizeAggregateFunctionsOrNullVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeAggregateFunctionsSuffixData>, true>;
+using CustomizeAggregateFunctionsMoveOrNullVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeAggregateFunctionsMoveSuffixData>, true>;
 
 /// Translate qualified names such as db.table.column, table.column, table_alias.column to names' normal form.
 /// Expand asterisks and qualified asterisks with column names.
@@ -380,11 +428,25 @@ std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQu
 
     /// There can not be other aggregate functions within the aggregate functions.
     for (const ASTFunction * node : data.aggregates)
-        for (auto & arg : node->arguments->children)
-            assertNoAggregates(arg, "inside another aggregate function");
+        if (node->arguments)
+            for (auto & arg : node->arguments->children)
+                assertNoAggregates(arg, "inside another aggregate function");
     return data.aggregates;
 }
 
+}
+
+TreeRewriterResult::TreeRewriterResult(
+    const NamesAndTypesList & source_columns_,
+    ConstStoragePtr storage_,
+    const StorageMetadataPtr & metadata_snapshot_,
+    bool add_special)
+    : storage(storage_)
+    , metadata_snapshot(metadata_snapshot_)
+    , source_columns(source_columns_)
+{
+    collectSourceColumns(add_special);
+    is_remote_storage = storage && storage->isRemote();
 }
 
 /// Add columns from storage to source_columns list. Deduplicate resulted list.
@@ -500,7 +562,7 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
             /// If we have no information about columns sizes, choose a column of minimum size of its data type.
             required.insert(ExpressionActions::getSmallestColumn(source_columns));
     }
-    else if (is_select && metadata_snapshot)
+    else if (is_select && metadata_snapshot && !columns_context.has_array_join)
     {
         const auto & partition_desc = metadata_snapshot->getPartitionKey();
         if (partition_desc.expression)
@@ -645,7 +707,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     /// Executing scalar subqueries - replacing them with constant values.
     executeScalarSubqueries(query, context, subquery_depth, result.scalars, select_options.only_analyze);
 
-    TreeOptimizer::apply(query, result.aliases, source_columns_set, tables_with_columns, context, result.rewrite_subqueries);
+    TreeOptimizer::apply(query, result.aliases, source_columns_set, tables_with_columns, context, result.metadata_snapshot, result.rewrite_subqueries);
 
     /// array_join_alias_to_name, array_join_result_to_source.
     getArrayJoinedColumns(query, result, select_query, result.source_columns, source_columns_set);
@@ -738,6 +800,10 @@ void TreeRewriter::normalize(ASTPtr & query, Aliases & aliases, const Settings &
         CustomizeAggregateFunctionsOrNullVisitor::Data data_or_null{"OrNull"};
         CustomizeAggregateFunctionsOrNullVisitor(data_or_null).visit(query);
     }
+
+    /// Move -OrNull suffix ahead, this should execute after add -OrNull suffix
+    CustomizeAggregateFunctionsMoveOrNullVisitor::Data data_or_null{"OrNull"};
+    CustomizeAggregateFunctionsMoveOrNullVisitor(data_or_null).visit(query);
 
     /// Creates a dictionary `aliases`: alias -> ASTPtr
     QueryAliasesVisitor(aliases).visit(query);

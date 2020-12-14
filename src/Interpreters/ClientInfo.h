@@ -26,6 +26,8 @@ public:
         TCP = 1,
         HTTP = 2,
         GRPC = 3,
+        MYSQL = 4,
+        POSTGRESQL = 5,
     };
 
     enum class HTTPMethod : uint8_t
@@ -80,6 +82,12 @@ public:
     /// For http
     HTTPMethod http_method = HTTPMethod::UNKNOWN;
     String http_user_agent;
+
+    /// Comma separated list of forwarded IP addresses (from X-Forwarded-For for HTTP interface).
+    /// It's expected that proxy appends the forwarded address to the end of the list.
+    /// The element can be trusted only if you trust the corresponding proxy.
+    /// NOTE This field can also be reused in future for TCP interface with PROXY v1/v2 protocols.
+    String forwarded_for;
 
     /// Common
     String quota_key;
