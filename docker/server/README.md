@@ -48,7 +48,7 @@ $ echo 'SELECT version()' | curl 'http://localhost:18123/' --data-binary @-
 20.12.3.3
 ```
 
-or by allowing container to use [host ports directly](https://docs.docker.com/network/host/) using `--network=host` (also allow to archive better network performance):
+or by allowing container to use [host ports directly](https://docs.docker.com/network/host/) using `--network=host` (also allows archiving better network performance):
 
 ```bash
 $ docker run -d --network=host --name some-clickhouse-server --ulimit nofile=262144:262144 yandex/clickhouse-server
@@ -78,7 +78,7 @@ You may also want to mount:
 
 ### Linux capabilities 
 
-ClickHouse has some anvanced functionality which requite enabling several [linux capabilities](https://man7.org/linux/man-pages/man7/capabilities.7.html).
+ClickHouse has some advanced functionality which requite enabling several [linux capabilities](https://man7.org/linux/man-pages/man7/capabilities.7.html).
 
 It is optional and can be enabled using the following [docker command line agruments](https://docs.docker.com/engine/reference/run/#runtime-privilege-and-linux-capabilities):
 
@@ -96,7 +96,7 @@ ClickHouse configuration represented with a file "config.xml" ([documentation](h
 
 ### Start server instance with custom configuration
 ```bash
-$ docker run -d -p 8123:8123 --name some-clickhouse-server --ulimit nofile=262144:262144 -v /path/to/your/config.xml:/etc/clickhouse-server/config.xml yandex/clickhouse-server
+$ docker run -d --name some-clickhouse-server --ulimit nofile=262144:262144 -v /path/to/your/config.xml:/etc/clickhouse-server/config.xml yandex/clickhouse-server
 ```
 
 ### Start server as custom user
