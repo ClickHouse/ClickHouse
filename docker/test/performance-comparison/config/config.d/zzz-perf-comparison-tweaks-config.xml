@@ -5,7 +5,6 @@
     <tcp_with_proxy_port remove="remove"/>
     <test_keeper_server remove="remove"/>
     <listen_host>::</listen_host>
-    <test_keeper_server remove="remove"/>
 
     <logger>
         <console>true</console>
