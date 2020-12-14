@@ -368,7 +368,7 @@ namespace S3
                 throw Exception(
                     "Bucket name length is out of bounds in virtual hosted style S3 URI: " + bucket + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
 
-            if (uri.getPath().size() > 0)
+            if (!uri.getPath().empty())
             {
                 /// Remove leading '/' from path to extract key.
                 key = uri.getPath().substr(1);
