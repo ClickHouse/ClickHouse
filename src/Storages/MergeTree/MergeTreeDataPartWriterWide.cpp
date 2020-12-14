@@ -184,10 +184,10 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
     std::unique_ptr<ThreadPool> writing_thread_pool;
     std::vector<WrittenOffsetColumns> offset_columns_per_column;
     std::vector<ColumnWriteResult> write_results(columns_list.size());
-    if (settings.max_threads != 1)
+    if (settings.max_threads_per_block != 1)
     {
         offset_columns_per_column.reserve(columns_list.size());
-        writing_thread_pool = std::make_unique<ThreadPool>(settings.max_threads);
+        writing_thread_pool = std::make_unique<ThreadPool>(settings.max_threads_per_block);
     }
 
     offset_columns_per_column.emplace_back(written_offset_columns ? *written_offset_columns : WrittenOffsetColumns{});
@@ -246,7 +246,23 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
         };
 
         if (writing_thread_pool)
-            writing_thread_pool->scheduleOrThrowOnError(write_column_job);
+        {
+            auto thread_group = CurrentThread::getGroup();
+            writing_thread_pool->scheduleOrThrowOnError([&write_column_job, thread_group] ()
+            {
+                setThreadName("QueryPipelineEx");
+
+                if (thread_group)
+                    CurrentThread::attachTo(thread_group);
+
+                SCOPE_EXIT(
+                        if (thread_group)
+                            CurrentThread::detachQueryIfNotDetached();
+                );
+
+                write_column_job();
+            });
+        }
         else
             write_column_job();
     }
