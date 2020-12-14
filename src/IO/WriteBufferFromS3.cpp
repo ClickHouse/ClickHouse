@@ -43,11 +43,13 @@ WriteBufferFromS3::WriteBufferFromS3(
     const String & key_,
     size_t minimum_upload_part_size_,
     bool is_multipart_,
+    std::optional<std::map<String, String>> object_metadata_,
     size_t buffer_size_)
     : BufferWithOwnMemory<WriteBuffer>(buffer_size_, nullptr, 0)
     , is_multipart(is_multipart_)
     , bucket(bucket_)
     , key(key_)
+    , object_metadata(std::move(object_metadata_))
     , client_ptr(std::move(client_ptr_))
     , minimum_upload_part_size{minimum_upload_part_size_}
     , temporary_buffer{std::make_unique<WriteBufferFromOwnString>()}
@@ -116,6 +118,8 @@ void WriteBufferFromS3::initiate()
     Aws::S3::Model::CreateMultipartUploadRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);
+    if (object_metadata.has_value())
+        req.SetMetadata(object_metadata.value());
 
     auto outcome = client_ptr->CreateMultipartUpload(req);
 
@@ -217,6 +221,8 @@ void WriteBufferFromS3::complete()
         Aws::S3::Model::PutObjectRequest req;
         req.SetBucket(bucket);
         req.SetKey(key);
+        if (object_metadata.has_value())
+            req.SetMetadata(object_metadata.value());
 
         /// This could be improved using an adapter to WriteBuffer.
         const std::shared_ptr<Aws::IOStream> input_data = Aws::MakeShared<Aws::StringStream>("temporary buffer", temporary_buffer->str());
