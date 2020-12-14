@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # just import cluster setup from test_didstributed_ddl to avoid code duplication
 from test_distributed_ddl.cluster import ClickHouseClusterWithDDLHelpers
+from helpers.test_tools import assert_eq_with_retry
 
 
 @pytest.fixture(scope="module", params=["configs"])
@@ -35,7 +36,7 @@ def test_cluster(request):
 
 
 def test_ddl_worker_queue_table_entries(test_cluster):
-    instance = test_cluster.instances['ch2']
+    instance = test_cluster.instances['ch1']
     test_cluster.ddl_check_query(instance, "DROP TABLE IF EXISTS merge ON CLUSTER '{cluster}'")
     test_cluster.ddl_check_query(instance, """
 CREATE TABLE IF NOT EXISTS merge ON CLUSTER '{cluster}' (p Date, i Int32)
@@ -48,11 +49,12 @@ ENGINE = MergeTree(p, p, 1)
     test_cluster.ddl_check_query(instance, "ALTER TABLE merge ON CLUSTER '{cluster}' DETACH PARTITION 197002")
     time.sleep(2)
     # query the ddl_worker_queue table to ensure that the columns are populated as expected
-    assert "ok\n" in instance.query(
-        "SELECT If((SELECT count(finished) FROM system.ddl_worker_queue WHERE name='query-0000000000') > 0, 'ok', 'fail')");
-    assert "ok\n" in instance.query(
-        "SELECT If((SELECT count(active) FROM system.ddl_worker_queue WHERE name='query-0000000000') >= 0, 'ok', 'fail')")
-
+    assert_eq_with_retry(instance,
+                         "SELECT If((SELECT count(*) FROM system.ddl_worker_queue  WHERE cluster='cluster' AND status='finished') > 0, 'ok', 'fail')",
+                         "ok\n");
+    assert_eq_with_retry(instance,
+                         "SELECT If((SELECT count(*) FROM system.ddl_worker_queue  WHERE cluster='cluster' AND status='active') >= 0, 'ok', 'fail')",
+                         "ok\n")
     test_cluster.ddl_check_query(instance, "DROP TABLE merge ON CLUSTER '{cluster}'")
 
 
