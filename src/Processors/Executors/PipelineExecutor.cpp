@@ -531,6 +531,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
                     break;
                 }
 
+#if defined(OS_LINUX)
                 if (num_threads == 1)
                 {
                     /// If we execute in single thread, wait for async tasks here.
@@ -541,6 +542,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
                     node = static_cast<ExecutingGraph::Node *>(res.data);
                     break;
                 }
+#endif
 
                 threads_queue.push(thread_num);
             }
@@ -619,11 +621,13 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
                 {
                     std::unique_lock lock(task_queue_mutex);
 
+#if defined(OS_LINUX)
                     while (!async_queue.empty() && !finished)
                     {
                         async_task_queue.addTask(thread_num, async_queue.front(), async_queue.front()->processor->schedule());
                         async_queue.pop();
                     }
+#endif
 
                     while (!queue.empty() && !finished)
                     {
@@ -772,6 +776,7 @@ void PipelineExecutor::executeImpl(size_t num_threads)
             });
         }
 
+#if defined(OS_LINUX)
         {
             /// Wait for async tasks.
             std::unique_lock lock(task_queue_mutex);
@@ -788,6 +793,7 @@ void PipelineExecutor::executeImpl(size_t num_threads)
                 }
             }
         }
+#endif
 
         for (auto & thread : threads)
             if (thread.joinable())

@@ -1,4 +1,7 @@
 #include <Processors/Executors/AsyncTaskQueue.h>
+
+#if defined(OS_LINUX)
+
 #include <Common/Exception.h>
 #include <sys/epoll.h>
 #include <unistd.h>
@@ -101,3 +104,4 @@ void AsyncTaskQueue::finish()
 }
 
 }
+#endif

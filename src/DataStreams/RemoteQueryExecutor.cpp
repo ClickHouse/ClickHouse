@@ -201,6 +201,7 @@ Block RemoteQueryExecutor::read()
     }
 }
 
+#if defined(OS_LINUX)
 std::variant<Block, int> RemoteQueryExecutor::read(std::unique_ptr<ReadContext> & read_context)
 {
     if (!sent_query)
@@ -232,6 +233,7 @@ std::variant<Block, int> RemoteQueryExecutor::read(std::unique_ptr<ReadContext> 
     }
     while (true);
 }
+#endif
 
 std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
 {

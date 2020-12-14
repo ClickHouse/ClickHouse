@@ -7,6 +7,7 @@
 namespace DB
 {
 
+#if defined(OS_LINUX)
 class AsyncTaskQueue
 {
 public:
@@ -46,5 +47,12 @@ public:
     /// Interrupt waiting.
     void finish();
 };
+#else
+class AsyncTaskQueue
+{
+    bool empty() { return true; }
+    void finish() {}
+};
+#endif
 
 }
