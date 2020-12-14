@@ -106,8 +106,8 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumn::P
     }
     else
     {
-        auto granules_to_write = getGranulesToWrite(index_granularity, block.rows(), getCurrentMark(), 0);
         Block flushed_block = header.cloneWithColumns(columns_buffer.releaseColumns());
+        auto granules_to_write = getGranulesToWrite(index_granularity, flushed_block.rows(), getCurrentMark(), 0);
         writeBlock(flushed_block, granules_to_write);
 
         if (settings.rewrite_primary_key)
@@ -119,6 +119,7 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumn::P
         Block skip_indices_block = getBlockAndPermute(flushed_block, getSkipIndicesColumns(), nullptr);
         calculateAndSerializeSkipIndices(skip_indices_block, granules_to_write);
         setCurrentMark(getCurrentMark() + granules_to_write.size());
+        index_offset = 0;
     }
 }
 
@@ -193,10 +194,10 @@ void MergeTreeDataPartWriterCompact::writeBlock(const Block & block, const Granu
         if (granule.rows_count != granule.actual_rows_count)
         {
             index_granularity.popMark();
-            index_granularity.appendMark(granule.rows_count);
+            index_granularity.appendMark(granule.actual_rows_count);
         }
 
-        writeIntBinary(granule.rows_count, marks);
+        writeIntBinary(granule.actual_rows_count, marks);
     }
 }
 
@@ -207,6 +208,14 @@ void MergeTreeDataPartWriterCompact::finishDataSerialization(IMergeTreeDataPart:
         auto block = header.cloneWithColumns(columns_buffer.releaseColumns());
         auto granules_to_write = getGranulesToWrite(index_granularity, block.rows(), getCurrentMark(), 0);
         writeBlock(block, granules_to_write);
+        if (settings.rewrite_primary_key)
+        {
+            Block primary_key_block = getBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), nullptr);
+            calculateAndSerializePrimaryIndex(primary_key_block, granules_to_write);
+        }
+
+        Block skip_indices_block = getBlockAndPermute(block, getSkipIndicesColumns(), nullptr);
+        calculateAndSerializeSkipIndices(skip_indices_block, granules_to_write);
     }
 
 #ifndef NDEBUG
