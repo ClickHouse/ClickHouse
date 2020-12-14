@@ -67,7 +67,6 @@ struct IndicesDescription : public std::vector<IndexDescription>
     bool has(const String & name) const;
     /// Convert description to string
     String toString() const;
-
     /// Parse description from string
     static IndicesDescription parse(const String & str, const ColumnsDescription & columns, const Context & context);
 
