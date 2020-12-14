@@ -252,10 +252,16 @@ Packet MultiplexedConnections::receivePacketUnlocked()
     if (fiber)
         current_connection->setFiber(fiber);
 
-    Packet packet = current_connection->receivePacket();
+    Packet packet;
+    {
+        SCOPE_EXIT(
+        {
+           fiber = nullptr;
+           current_connection->setFiber(fiber);
+        });
 
-    fiber = nullptr;
-    current_connection->setFiber(fiber);
+        packet = current_connection->receivePacket();
+    }
 
     switch (packet.type)
     {
