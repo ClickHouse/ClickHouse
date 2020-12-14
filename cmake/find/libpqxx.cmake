@@ -11,7 +11,7 @@ if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/libpqxx/CMakeLists.txt")
     return()
 endif()
 
-if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/libpq")
+if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/libpq/include")
     message (ERROR "submodule contrib/libpq is missing. to fix try run: \n git submodule update --init --recursive")
     message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal libpq needed for libpqxx")
     set (USE_LIBPQXX 0)

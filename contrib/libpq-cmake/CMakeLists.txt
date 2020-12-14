@@ -5,7 +5,6 @@ set(SRCS
         ${LIBPQ_SOURCE_DIR}/fe-auth-scram.c
         ${LIBPQ_SOURCE_DIR}/fe-connect.c
         ${LIBPQ_SOURCE_DIR}/fe-exec.c
-#        ${LIBPQ_SOURCE_DIR}/fe-gssapi-common.c
         ${LIBPQ_SOURCE_DIR}/fe-lobj.c
         ${LIBPQ_SOURCE_DIR}/fe-misc.c
         ${LIBPQ_SOURCE_DIR}/fe-print.c
@@ -13,7 +12,6 @@ set(SRCS
         ${LIBPQ_SOURCE_DIR}/fe-protocol3.c
         ${LIBPQ_SOURCE_DIR}/fe-secure.c
         ${LIBPQ_SOURCE_DIR}/fe-secure-common.c
-#        ${LIBPQ_SOURCE_DIR}/fe-secure-gssapi.c
         ${LIBPQ_SOURCE_DIR}/fe-secure-openssl.c
         ${LIBPQ_SOURCE_DIR}/legacy-pqsignal.c
         ${LIBPQ_SOURCE_DIR}/libpq-events.c
@@ -30,8 +28,6 @@ set(SRCS
         ${LIBPQ_SOURCE_DIR}/common/base64.c
         ${LIBPQ_SOURCE_DIR}/common/link-canary.c
         ${LIBPQ_SOURCE_DIR}/common/fe_memutils.c
-        ${LIBPQ_SOURCE_DIR}/common/sha2.c
-        ${LIBPQ_SOURCE_DIR}/common/sha2_openssl.c
         ${LIBPQ_SOURCE_DIR}/common/string.c
         ${LIBPQ_SOURCE_DIR}/common/pg_get_line.c
         ${LIBPQ_SOURCE_DIR}/common/stringinfo.c
@@ -43,34 +39,19 @@ set(SRCS
         ${LIBPQ_SOURCE_DIR}/port/strerror.c
         ${LIBPQ_SOURCE_DIR}/port/inet_net_ntop.c
         ${LIBPQ_SOURCE_DIR}/port/getpeereid.c
-
         ${LIBPQ_SOURCE_DIR}/port/chklocale.c
-        ${LIBPQ_SOURCE_DIR}/port/dirmod.c
-        ${LIBPQ_SOURCE_DIR}/port/dlopen.c
-        ${LIBPQ_SOURCE_DIR}/port/erand48.c
-        ${LIBPQ_SOURCE_DIR}/port/explicit_bzero.c
-        ${LIBPQ_SOURCE_DIR}/port/fls.c
-        ${LIBPQ_SOURCE_DIR}/port/getopt.c
-        ${LIBPQ_SOURCE_DIR}/port/kill.c
-        ${LIBPQ_SOURCE_DIR}/port/link.c
         ${LIBPQ_SOURCE_DIR}/port/noblock.c
-        ${LIBPQ_SOURCE_DIR}/port/open.c
-        ${LIBPQ_SOURCE_DIR}/port/path.c
         ${LIBPQ_SOURCE_DIR}/port/pg_strong_random.c
         ${LIBPQ_SOURCE_DIR}/port/pgstrcasecmp.c
         ${LIBPQ_SOURCE_DIR}/port/thread.c
-
-        ${LIBPQ_SOURCE_DIR}/error/elog.c
-        ${LIBPQ_SOURCE_DIR}/error/errlog.c
         )
 
 add_library(libpq ${SRCS})
 
-target_include_directories (libpq PUBLIC ${LIBPQ_SOURCE_DIR}/configs)
-
 target_include_directories (libpq PUBLIC ${LIBPQ_SOURCE_DIR})
 target_include_directories (libpq PUBLIC ${LIBPQ_SOURCE_DIR}/include)
 
+target_include_directories (libpq PRIVATE ${LIBPQ_SOURCE_DIR}/configs)
 target_include_directories (libpq PRIVATE ${LIBPQ_SOURCE_DIR}/include/common)
 target_include_directories (libpq PRIVATE ${LIBPQ_SOURCE_DIR}/include/libpq)
 
