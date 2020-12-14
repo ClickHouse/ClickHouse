@@ -355,7 +355,6 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
         ++in.position();
     }
 
-
     auto count_after_sign = in.count();
 
     constexpr int significant_digits = std::numeric_limits<UInt64>::digits10;
