@@ -26,7 +26,7 @@ enum class AggregateOperation
 
 /**
  * During array aggregation we derive result type from operation.
- * For array min or array max we use arryy element as result type.
+ * For array min or array max we use array element as result type.
  * For array average we use Float64.
  * For array sum for decimal numbers we use Decimal128, for floating point numbers Float64, for numeric unsigned Int64,
  * and for numeric signed UInt64.
