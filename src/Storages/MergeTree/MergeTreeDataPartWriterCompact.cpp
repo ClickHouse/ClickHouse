@@ -64,6 +64,53 @@ void MergeTreeDataPartWriterCompact::addStreams(const String & name, const IData
     type.enumerateStreams(callback, stream_path);
 }
 
+namespace
+{
+
+Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity, size_t block_rows, size_t current_mark)
+{
+    if (current_mark >= index_granularity.getMarksCount())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Request to get granules from mark {} but index granularity size is {}", current_mark, index_granularity.getMarksCount());
+
+    Granules result;
+    size_t current_row = 0;
+    while (current_row < block_rows)
+    {
+        size_t expected_rows = index_granularity.getMarkRows(current_mark);
+        size_t rest_rows = block_rows - current_row;
+        if (rest_rows < expected_rows)
+            result.emplace_back(Granule{current_row, expected_rows, rest_rows, current_mark, true, false});
+        else
+            result.emplace_back(Granule{current_row, expected_rows, expected_rows, current_mark, true, true});
+
+        current_row += expected_rows;
+        current_mark++;
+    }
+
+    return result;
+}
+
+/// Write single granule of one column (rows between 2 marks)
+void writeColumnSingleGranule(
+    const ColumnWithTypeAndName & column,
+    IDataType::OutputStreamGetter stream_getter,
+    size_t from_row,
+    size_t number_of_rows)
+{
+    IDataType::SerializeBinaryBulkStatePtr state;
+    IDataType::SerializeBinaryBulkSettings serialize_settings;
+
+    serialize_settings.getter = stream_getter;
+    serialize_settings.position_independent_encoding = true;
+    serialize_settings.low_cardinality_max_dictionary_size = 0;
+
+    column.type->serializeBinaryBulkStatePrefix(serialize_settings, state);
+    column.type->serializeBinaryBulkWithMultipleStreams(*column.column, from_row, number_of_rows, serialize_settings, state);
+    column.type->serializeBinaryBulkStateSuffix(serialize_settings, state);
+}
+
+}
+
 void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumn::Permutation * permutation)
 {
     /// Fill index granularity for this block
@@ -107,7 +154,7 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumn::P
     else
     {
         Block flushed_block = header.cloneWithColumns(columns_buffer.releaseColumns());
-        auto granules_to_write = getGranulesToWrite(index_granularity, flushed_block.rows(), getCurrentMark(), 0);
+        auto granules_to_write = getGranulesToWrite(index_granularity, flushed_block.rows(), getCurrentMark());
         writeBlock(flushed_block, granules_to_write);
 
         if (settings.rewrite_primary_key)
@@ -121,30 +168,6 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumn::P
         setCurrentMark(getCurrentMark() + granules_to_write.size());
         index_offset = 0;
     }
-}
-
-namespace
-{
-
-/// Write single granule of one column (rows between 2 marks)
-void writeColumnSingleGranule(
-    const ColumnWithTypeAndName & column,
-    IDataType::OutputStreamGetter stream_getter,
-    size_t from_row,
-    size_t number_of_rows)
-{
-    IDataType::SerializeBinaryBulkStatePtr state;
-    IDataType::SerializeBinaryBulkSettings serialize_settings;
-
-    serialize_settings.getter = stream_getter;
-    serialize_settings.position_independent_encoding = true;
-    serialize_settings.low_cardinality_max_dictionary_size = 0;
-
-    column.type->serializeBinaryBulkStatePrefix(serialize_settings, state);
-    column.type->serializeBinaryBulkWithMultipleStreams(*column.column, from_row, number_of_rows, serialize_settings, state);
-    column.type->serializeBinaryBulkStateSuffix(serialize_settings, state);
-}
-
 }
 
 void MergeTreeDataPartWriterCompact::writeBlock(const Block & block, const Granules & granules)
@@ -206,7 +229,7 @@ void MergeTreeDataPartWriterCompact::finishDataSerialization(IMergeTreeDataPart:
     if (columns_buffer.size() != 0)
     {
         auto block = header.cloneWithColumns(columns_buffer.releaseColumns());
-        auto granules_to_write = getGranulesToWrite(index_granularity, block.rows(), getCurrentMark(), 0);
+        auto granules_to_write = getGranulesToWrite(index_granularity, block.rows(), getCurrentMark());
         writeBlock(block, granules_to_write);
         if (settings.rewrite_primary_key)
         {

@@ -14,6 +14,18 @@
 namespace DB
 {
 
+struct Granule
+{
+    size_t start;
+    size_t rows_count;
+    size_t actual_rows_count;
+    size_t mark_number;
+    bool mark_on_start;
+    bool is_completed;
+};
+
+using Granules = std::vector<Granule>;
+
 /// Writes data part to disk in different formats.
 /// Calculates and serializes primary and skip indices if needed.
 class MergeTreeDataPartWriterOnDisk : public IMergeTreeDataPartWriter
@@ -70,7 +82,6 @@ public:
         const MergeTreeWriterSettings & settings,
         const MergeTreeIndexGranularity & index_granularity);
 
-
     void setWrittenOffsetColumns(WrittenOffsetColumns * written_offset_columns_)
     {
         written_offset_columns = written_offset_columns_;
@@ -83,6 +94,8 @@ protected:
 
     void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums, bool sync);
     void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums, bool sync);
+    size_t getCurrentMark() const { return current_mark; }
+    void setCurrentMark(size_t mark) { current_mark = mark; }
 
     Names getSkipIndicesColumns() const;
 
@@ -113,6 +126,9 @@ protected:
 
     /// To correctly write Nested elements column-by-column.
     WrittenOffsetColumns * written_offset_columns = nullptr;
+
+    /// Data is already written up to this mark.
+    size_t current_mark = 0;
 
 private:
     void initSkipIndices();

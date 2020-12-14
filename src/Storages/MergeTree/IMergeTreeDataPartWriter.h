@@ -13,29 +13,6 @@
 namespace DB
 {
 
-struct Granule
-{
-    size_t start;
-    size_t rows_count;
-    size_t actual_rows_count;
-    size_t mark_number;
-    bool mark_on_start;
-    bool is_completed;
-};
-
-using Granules = std::vector<Granule>;
-
-Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity, size_t block_rows, size_t current_mark, size_t rows_written_in_last_mark);
-
-struct StreamNameAndMark
-{
-    String stream_name;
-    MarkInCompressedFile mark;
-};
-
-using StreamsWithMarks = std::vector<StreamNameAndMark>;
-using ColumnNameToMark = std::unordered_map<String, StreamsWithMarks>;
-
 Block getBlockAndPermute(const Block & block, const Names & names, const IColumn::Permutation * permutation);
 
 /// Writes data part to disk in different formats.
@@ -61,12 +38,6 @@ public:
 
 protected:
 
-    size_t getCurrentMark() const { return current_mark; }
-    void setCurrentMark(size_t mark) { current_mark = mark; }
-
-    size_t getRowsWrittenInLastMark() const { return rows_written_in_last_mark; }
-    void setRowsWrittenInLastMark(size_t rows_written) { rows_written_in_last_mark = rows_written; }
-
     const MergeTreeData::DataPartPtr data_part;
     const MergeTreeData & storage;
     const StorageMetadataPtr metadata_snapshot;
@@ -76,12 +47,6 @@ protected:
     const bool with_final_mark;
 
     MutableColumns index_columns;
-
-private:
-    /// Data is already written up to this mark.
-    size_t current_mark = 0;
-    /// The offset to the first row of the block for which you want to write the index.
-    size_t rows_written_in_last_mark = 0;
 };
 
 }

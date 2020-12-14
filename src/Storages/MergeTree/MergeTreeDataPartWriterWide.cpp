@@ -15,6 +15,46 @@ namespace
     constexpr auto DATA_FILE_EXTENSION = ".bin";
 }
 
+namespace
+{
+
+Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity, size_t block_rows, size_t current_mark, size_t rows_written_in_last_mark)
+{
+    if (current_mark >= index_granularity.getMarksCount())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Request to get granules from mark {} but index granularity size is {}", current_mark, index_granularity.getMarksCount());
+
+    Granules result;
+    size_t current_row = 0;
+    if (rows_written_in_last_mark > 0)
+    {
+        size_t rows_left_in_last_mark = index_granularity.getMarkRows(current_mark) - rows_written_in_last_mark;
+        size_t rest_rows = block_rows - current_row;
+        if (rest_rows < rows_left_in_last_mark)
+            result.emplace_back(Granule{current_row, rows_left_in_last_mark, rest_rows, current_mark, false, false});
+        else
+            result.emplace_back(Granule{current_row, rows_left_in_last_mark, rows_left_in_last_mark, current_mark, false, true});
+        current_row += rows_left_in_last_mark;
+        current_mark++;
+    }
+
+    while (current_row < block_rows)
+    {
+        size_t expected_rows = index_granularity.getMarkRows(current_mark);
+        size_t rest_rows = block_rows - current_row;
+        if (rest_rows < expected_rows)
+            result.emplace_back(Granule{current_row, expected_rows, rest_rows, current_mark, true, false});
+        else
+            result.emplace_back(Granule{current_row, expected_rows, expected_rows, current_mark, true, true});
+
+        current_row += expected_rows;
+        current_mark++;
+    }
+
+    return result;
+}
+
+}
+
 MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
     const MergeTreeData::DataPartPtr & data_part_,
     const NamesAndTypesList & columns_list_,
@@ -351,13 +391,6 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
 
             break;
         }
-
-        //if (compressed_bin_position != offset_in_compressed_file)
-        //    throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect compressed offset, in mark {}, in bin {}", offset_in_compressed_file, compressed_bin_position);
-
-        //if (uncompressed_bin_position != offset_in_decompressed_block)
-        //    throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect uncompressed offset, in mark {}, in bin {}", offset_in_decompressed_block, uncompressed_bin_position);
-
 
         if (index_granularity_rows == 0)
         {

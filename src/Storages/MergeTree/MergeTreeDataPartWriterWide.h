@@ -4,6 +4,15 @@
 namespace DB
 {
 
+struct StreamNameAndMark
+{
+    String stream_name;
+    MarkInCompressedFile mark;
+};
+
+using StreamsWithMarks = std::vector<StreamNameAndMark>;
+using ColumnNameToMark = std::unordered_map<String, StreamsWithMarks>;
+
 /// Writes data part in wide format.
 class MergeTreeDataPartWriterWide : public MergeTreeDataPartWriterOnDisk
 {
@@ -85,6 +94,9 @@ private:
 
     IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns) const;
 
+    size_t getRowsWrittenInLastMark() const { return rows_written_in_last_mark; }
+    void setRowsWrittenInLastMark(size_t rows_written) { rows_written_in_last_mark = rows_written; }
+
     using SerializationState = IDataType::SerializeBinaryBulkStatePtr;
     using SerializationStates = std::unordered_map<String, SerializationState>;
 
@@ -92,6 +104,9 @@ private:
 
     using ColumnStreams = std::map<String, StreamPtr>;
     ColumnStreams column_streams;
+
+    /// The offset to the first row of the block for which you want to write the index.
+    size_t rows_written_in_last_mark = 0;
 };
 
 }
