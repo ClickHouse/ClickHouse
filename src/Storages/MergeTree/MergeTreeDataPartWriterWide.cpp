@@ -509,16 +509,11 @@ void MergeTreeDataPartWriterWide::writeFinalMark(
 
 static void fillIndexGranularityImpl(
     MergeTreeIndexGranularity & index_granularity,
-    size_t rows_in_last_granule,
+    size_t index_offset,
     size_t index_granularity_for_block,
     size_t rows_in_block)
 {
-
-    size_t start = 0;
-    if (rows_in_last_granule != 0)
-        start = index_granularity.getLastMarkRows() - rows_in_last_granule;
-
-    for (size_t current_row = start; current_row < rows_in_block; current_row += index_granularity_for_block)
+    for (size_t current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
         index_granularity.appendMark(index_granularity_for_block);
 }
 
@@ -527,9 +522,13 @@ void MergeTreeDataPartWriterWide::fillIndexGranularity(size_t index_granularity_
     if (getCurrentMark() < index_granularity.getMarksCount() && getCurrentMark() != index_granularity.getMarksCount() - 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to add marks, while current mark {}, but total marks {}", getCurrentMark(), index_granularity.getMarksCount());
 
+    size_t index_offset = 0;
+    if (rows_written_in_last_mark != 0)
+        index_offset = index_granularity.getLastMarkRows() - rows_written_in_last_mark;
+
     fillIndexGranularityImpl(
         index_granularity,
-        rows_written_in_last_mark,
+        index_offset,
         index_granularity_for_block,
         rows_in_block);
 }
