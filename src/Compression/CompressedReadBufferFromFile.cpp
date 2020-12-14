@@ -54,11 +54,6 @@ CompressedReadBufferFromFile::CompressedReadBufferFromFile(
     allow_different_codecs = allow_different_codecs_;
 }
 
-std::pair<size_t, size_t> CompressedReadBufferFromFile::getCurrentPosition() const
-{
-    return std::make_pair(file_in.getPosition(), offset());
-}
-
 void CompressedReadBufferFromFile::seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block)
 {
     if (size_compressed &&

@@ -94,9 +94,6 @@ private:
 
     IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns) const;
 
-    size_t getRowsWrittenInLastMark() const { return rows_written_in_last_mark; }
-    void setRowsWrittenInLastMark(size_t rows_written) { rows_written_in_last_mark = rows_written; }
-
     using SerializationState = IDataType::SerializeBinaryBulkStatePtr;
     using SerializationStates = std::unordered_map<String, SerializationState>;
 
@@ -105,7 +102,6 @@ private:
     using ColumnStreams = std::map<String, StreamPtr>;
     ColumnStreams column_streams;
 
-    /// The offset to the first row of the block for which you want to write the index.
     size_t rows_written_in_last_mark = 0;
 };
 

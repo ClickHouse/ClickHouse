@@ -137,9 +137,9 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
         fillIndexGranularity(index_granularity_for_block, block.rows());
     }
 
-    auto * log = &Poco::Logger::get(storage.getLogName());
-    auto granules_to_write = getGranulesToWrite(index_granularity, block.rows(), getCurrentMark(), getRowsWrittenInLastMark());
-    LOG_DEBUG(log, "Block rows {}, granules to write {}", block.rows(), granules_to_write.size());
+    //auto * log = &Poco::Logger::get(storage.getLogName());
+    auto granules_to_write = getGranulesToWrite(index_granularity, block.rows(), getCurrentMark(), rows_written_in_last_mark);
+    //LOG_DEBUG(log, "Block rows {}, granules to write {}", block.rows(), granules_to_write.size());
 
     auto offset_columns = written_offset_columns ? *written_offset_columns : WrittenOffsetColumns{};
     Block primary_key_block;
@@ -186,17 +186,17 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
     auto last_granule = granules_to_write.back();
     if (!last_granule.is_completed)
     {
-        size_t next_mark = getCurrentMark() + granules_to_write.size() - 1;
-        setCurrentMark(next_mark);
-        if (granules_to_write.size() == 1)
-            setRowsWrittenInLastMark(getRowsWrittenInLastMark() + last_granule.actual_rows_count);
+        setCurrentMark(getCurrentMark() + granules_to_write.size() - 1);
+        bool still_in_the_same_granule = granules_to_write.size() == 1;
+        if (still_in_the_same_granule)
+            rows_written_in_last_mark += last_granule.rows_written_from_block;
         else
-            setRowsWrittenInLastMark(last_granule.actual_rows_count);
+            rows_written_in_last_mark = last_granule.rows_written_from_block;
     }
     else
     {
         setCurrentMark(getCurrentMark() + granules_to_write.size());
-        setRowsWrittenInLastMark(0);
+        rows_written_in_last_mark = 0;
     }
 }
 
@@ -310,7 +310,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
 
     for (const auto & granule : granules)
     {
-        if (granule.rows_count > 0)
+        if (granule.granularity_rows > 0)
             data_written = true;
 
         writeSingleGranule(
@@ -321,7 +321,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
            it->second,
            serialize_settings,
            granule.start,
-           granule.rows_count,
+           granule.granularity_rows,
            granule.mark_on_start
         );
     }
@@ -349,18 +349,15 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
     DB::ReadBufferFromFile mrk_in(mrk_path);
     DB::CompressedReadBufferFromFile bin_in(bin_path, 0, 0, 0);
     bool must_be_last = false;
-    auto * log = &Poco::Logger::get(storage.getLogName());
+    //auto * log = &Poco::Logger::get(storage.getLogName());
     UInt64 offset_in_compressed_file = 0;
     UInt64 offset_in_decompressed_block = 0;
     UInt64 index_granularity_rows = 0;
     size_t total_rows = 0;
 
     size_t mark_num;
-    size_t marks_file_size = disk->getFileSize(part_path + name + marks_file_extension);
-    LOG_DEBUG(log, "Marks file size {} bytes marks count {}", marks_file_size, index_granularity.getMarksCount());
+    //LOG_DEBUG(log, "Marks file size {} bytes marks count {}", marks_file_size, index_granularity.getMarksCount());
 
-    size_t compressed_bin_position = 0;
-    size_t uncompressed_bin_position = 0;
     for (mark_num = 0; !mrk_in.eof(); ++mark_num)
     {
         if (mark_num > index_granularity.getMarksCount())
@@ -373,13 +370,8 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
         else
             index_granularity_rows = storage.getSettings()->index_granularity;
 
-        auto [new_bin_compressed, new_bin_uncompressed] = bin_in.getCurrentPosition();
-        if (uncompressed_bin_position >= new_bin_uncompressed)
-            compressed_bin_position = new_bin_compressed;
-        uncompressed_bin_position = new_bin_uncompressed;
-
-        LOG_TRACE(log, "Position in bin [{}, {}]", compressed_bin_position, uncompressed_bin_position);
-        LOG_TRACE(log, "Validating column {} mark [{}, {}] with rows {}, must be last {}", name, offset_in_compressed_file, offset_in_decompressed_block, index_granularity_rows, must_be_last);
+        //LOG_TRACE(log, "Position in bin [{}, {}]", compressed_bin_position, uncompressed_bin_position);
+        //LOG_TRACE(log, "Validating column {} mark [{}, {}] with rows {}, must be last {}", name, offset_in_compressed_file, offset_in_decompressed_block, index_granularity_rows, must_be_last);
 
         if (must_be_last)
         {
@@ -412,11 +404,11 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
         type.deserializeBinaryBulk(*column, bin_in, index_granularity_rows, 0.0);
 
         total_rows += column->size();
-        LOG_TRACE(log, "Read rows {} for mark #{}, expected {}, total {}", column->size(), mark_num, index_granularity_rows, total_rows);
+        //LOG_TRACE(log, "Read rows {} for mark #{}, expected {}, total {}", column->size(), mark_num, index_granularity_rows, total_rows);
 
         if (bin_in.eof())
         {
-            LOG_TRACE(log, "Bin EOF");
+            //LOG_TRACE(log, "Bin EOF");
             must_be_last = true;
         }
         else if (column->size() != index_granularity_rows)
@@ -537,7 +529,7 @@ void MergeTreeDataPartWriterWide::fillIndexGranularity(size_t index_granularity_
 
     fillIndexGranularityImpl(
         index_granularity,
-        getRowsWrittenInLastMark(),
+        rows_written_in_last_mark,
         index_granularity_for_block,
         rows_in_block);
 }
