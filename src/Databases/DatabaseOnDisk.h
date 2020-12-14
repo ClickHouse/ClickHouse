@@ -69,6 +69,11 @@ public:
 
     static ASTPtr parseQueryFromMetadata(Poco::Logger * log, const Context & context, const String & metadata_file_path, bool throw_on_error = true, bool remove_empty = false);
 
+    /// will throw when the table we want to attach already exists (in active / detached / detached permanently form)
+    /// still allow to overwrite the detached table if the table we want to attach is the old one
+    /// uses locks.
+    void checkTableAttachPossible(const Context & context, const ASTCreateQuery & create) const;
+
 protected:
     static constexpr const char * create_suffix = ".tmp";
     static constexpr const char * drop_suffix = ".tmp_drop";
@@ -95,8 +100,6 @@ protected:
     const String metadata_path;
     const String data_path;
 
-private:
-    void checkTableAttachPossible(const Context & context, const String & table_name, const ASTCreateQuery & create);
 };
 
 }
