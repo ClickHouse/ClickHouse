@@ -31,7 +31,7 @@ echo "SELECT 'Hello, ClickHouse!'" | docker run -i --rm --link some-clickhouse-s
 ```
 More information about [ClickHouse HTTP Interface](https://clickhouse.tech/docs/en/interfaces/http/).
 
-### stopping the containter
+### stopping / removing the containter
 
 ```bash
 $ docker stop some-clickhouse-server
