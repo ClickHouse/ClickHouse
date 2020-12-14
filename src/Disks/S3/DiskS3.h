@@ -24,6 +24,7 @@ public:
     friend class DiskS3Reservation;
 
     class AwsS3KeyKeeper;
+    struct Metadata;
 
     DiskS3(
         String name_,
@@ -120,6 +121,9 @@ private:
     void removeMetaRecursive(const String & path, AwsS3KeyKeeper & keys);
     void removeAws(const AwsS3KeyKeeper & keys);
     std::optional<ObjectMetadata> createObjectMetadata(const String & path) const;
+
+    Metadata readMeta(const String & path) const;
+    Metadata createMeta(const String & path) const;
 
 private:
     const String name;
