@@ -68,6 +68,7 @@ SRCS(
     StringUtils/StringUtils.cpp
     StudentTTest.cpp
     SymbolIndex.cpp
+    TLDListsHolder.cpp
     TaskStatsInfoGetter.cpp
     TerminalSize.cpp
     ThreadFuzzer.cpp
@@ -81,7 +82,11 @@ SRCS(
     WeakHash.cpp
     ZooKeeper/IKeeper.cpp
     ZooKeeper/TestKeeper.cpp
+    ZooKeeper/TestKeeperStorage.cpp
     ZooKeeper/ZooKeeper.cpp
+    ZooKeeper/ZooKeeperCommon.cpp
+    ZooKeeper/ZooKeeperConstants.cpp
+    ZooKeeper/ZooKeeperIO.cpp
     ZooKeeper/ZooKeeperImpl.cpp
     ZooKeeper/ZooKeeperNodeCache.cpp
     checkStackSize.cpp
