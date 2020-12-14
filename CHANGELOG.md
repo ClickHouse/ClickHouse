@@ -18,7 +18,7 @@
 * New `tcpPort` function returns TCP port listened by this server. [#17134](https://github.com/ClickHouse/ClickHouse/pull/17134) ([Ivan](https://github.com/abyss7)).
 * Add new math functions: `acosh`, `asinh`, `atan2`, `atanh`, `cosh`, `hypot`, `log1p`, `sinh`. [#16636](https://github.com/ClickHouse/ClickHouse/pull/16636) ([Konstantin Malanchev](https://github.com/hombit)).
 * Possibility to distribute the merges between different replicas. Introduces the `execute_merges_on_single_replica_time_threshold` mergetree setting. [#16424](https://github.com/ClickHouse/ClickHouse/pull/16424) ([filimonov](https://github.com/filimonov)).
-* Add setting `aggregate_functions_null_for_empty`, this option will rewrite all aggregate functions in a query, adding -OrNull suffix to them. fix [10273](https://github.com/ClickHouse/ClickHouse/issues/10273). [#16123](https://github.com/ClickHouse/ClickHouse/pull/16123) ([flynn](https://github.com/ucasFL)).
+* Add setting `aggregate_functions_null_for_empty` for SQL standard compatibility. This option will rewrite all aggregate functions in a query, adding -OrNull suffix to them. Implements [10273](https://github.com/ClickHouse/ClickHouse/issues/10273). [#16123](https://github.com/ClickHouse/ClickHouse/pull/16123) ([flynn](https://github.com/ucasFL)).
 * Updated DateTime, DateTime64 parsing to accept string Date literal format. [#16040](https://github.com/ClickHouse/ClickHouse/pull/16040) ([Maksim Kita](https://github.com/kitaisreal)).
 * Make it possible to change the path to history file in `clickhouse-client` using the `--history_file` parameter. [#15960](https://github.com/ClickHouse/ClickHouse/pull/15960) ([Maksim Kita](https://github.com/kitaisreal)).
 
