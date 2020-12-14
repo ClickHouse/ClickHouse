@@ -4,7 +4,7 @@ services:
   kerberizedhdfs1:
     cap_add:
       - DAC_READ_SEARCH
-    image: ilejn/kerberized-hadoop:latest
+    image: yandex/clickhouse-kerberized-hadoop:latest
     hostname: kerberizedhdfs1
     restart: always
     volumes:

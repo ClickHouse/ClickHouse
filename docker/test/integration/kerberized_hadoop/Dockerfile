@@ -1,4 +1,5 @@
-# docker build -t ilejn/kerberized-hadoop .
+# docker build -t yandex/clickhouse-kerberized-hadoop .
+
 FROM sequenceiq/hadoop-docker:2.7.0
 RUN yum --quiet --assumeyes install krb5-workstation.x86_64
 RUN cd /tmp && \
