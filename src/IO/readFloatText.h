@@ -270,12 +270,12 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
 
 
 // credit: https://johnnylee-sde.github.io/Fast-numeric-string-to-int/
-inline bool is_made_of_eight_digits_fast(uint64_t val) noexcept
+static inline bool is_made_of_eight_digits_fast(uint64_t val) noexcept
 {
     return (((val & 0xF0F0F0F0F0F0F0F0) | (((val + 0x0606060606060606) & 0xF0F0F0F0F0F0F0F0) >> 4)) == 0x3333333333333333);
 }
 
-inline bool is_made_of_eight_digits_fast(const char * chars) noexcept
+static inline bool is_made_of_eight_digits_fast(const char * chars) noexcept
 {
     uint64_t val;
     ::memcpy(&val, chars, 8);
