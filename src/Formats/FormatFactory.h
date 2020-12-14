@@ -16,7 +16,6 @@ namespace DB
 
 class Block;
 class Context;
-struct FormatSettings;
 struct Settings;
 struct FormatFactorySettings;
 

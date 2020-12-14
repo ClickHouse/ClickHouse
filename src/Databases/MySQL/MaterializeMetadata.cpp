@@ -36,7 +36,7 @@ static std::unordered_map<String, String> fetchTablesCreateQuery(
 
         MySQLBlockInputStream show_create_table(
             connection, "SHOW CREATE TABLE " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(fetch_table_name),
-            show_create_table_header, DEFAULT_BLOCK_SIZE);
+            show_create_table_header, DEFAULT_BLOCK_SIZE, false, true);
 
         Block create_query_block = show_create_table.read();
         if (!create_query_block || create_query_block.rows() != 1)
@@ -77,7 +77,7 @@ void MaterializeMetadata::fetchMasterStatus(mysqlxx::PoolWithFailover::Entry & c
         {std::make_shared<DataTypeString>(), "Executed_Gtid_Set"},
     };
 
-    MySQLBlockInputStream input(connection, "SHOW MASTER STATUS;", header, DEFAULT_BLOCK_SIZE);
+    MySQLBlockInputStream input(connection, "SHOW MASTER STATUS;", header, DEFAULT_BLOCK_SIZE, false, true);
     Block master_status = input.read();
 
     if (!master_status || master_status.rows() != 1)
@@ -99,7 +99,7 @@ void MaterializeMetadata::fetchMasterVariablesValue(const mysqlxx::PoolWithFailo
     };
 
     const String & fetch_query = "SHOW VARIABLES WHERE Variable_name = 'binlog_checksum'";
-    MySQLBlockInputStream variables_input(connection, fetch_query, variables_header, DEFAULT_BLOCK_SIZE);
+    MySQLBlockInputStream variables_input(connection, fetch_query, variables_header, DEFAULT_BLOCK_SIZE, false, true);
 
     while (Block variables_block = variables_input.read())
     {
@@ -112,23 +112,6 @@ void MaterializeMetadata::fetchMasterVariablesValue(const mysqlxx::PoolWithFailo
                 binlog_checksum = variables_value->getDataAt(index).toString();
         }
     }
-}
-
-static Block getShowMasterLogHeader(const String & mysql_version)
-{
-    if (startsWith(mysql_version, "5."))
-    {
-        return Block {
-            {std::make_shared<DataTypeString>(), "Log_name"},
-            {std::make_shared<DataTypeUInt64>(), "File_size"}
-        };
-    }
-
-    return Block {
-        {std::make_shared<DataTypeString>(), "Log_name"},
-        {std::make_shared<DataTypeUInt64>(), "File_size"},
-        {std::make_shared<DataTypeString>(), "Encrypted"}
-    };
 }
 
 static bool checkSyncUserPrivImpl(const mysqlxx::PoolWithFailover::Entry & connection, WriteBuffer & out)
@@ -174,9 +157,14 @@ static void checkSyncUserPriv(const mysqlxx::PoolWithFailover::Entry & connectio
                         "But the SYNC USER grant query is: " + out.str(), ErrorCodes::SYNC_MYSQL_USER_ACCESS_ERROR);
 }
 
-bool MaterializeMetadata::checkBinlogFileExists(const mysqlxx::PoolWithFailover::Entry & connection, const String & mysql_version) const
+bool MaterializeMetadata::checkBinlogFileExists(const mysqlxx::PoolWithFailover::Entry & connection) const
 {
-    MySQLBlockInputStream input(connection, "SHOW MASTER LOGS", getShowMasterLogHeader(mysql_version), DEFAULT_BLOCK_SIZE);
+    Block logs_header {
+        {std::make_shared<DataTypeString>(), "Log_name"},
+        {std::make_shared<DataTypeUInt64>(), "File_size"}
+    };
+
+    MySQLBlockInputStream input(connection, "SHOW MASTER LOGS", logs_header, DEFAULT_BLOCK_SIZE, false, true);
 
     while (Block block = input.read())
     {
@@ -233,7 +221,7 @@ void MaterializeMetadata::transaction(const MySQLReplication::Position & positio
 
 MaterializeMetadata::MaterializeMetadata(
     mysqlxx::PoolWithFailover::Entry & connection, const String & path_,
-    const String & database, bool & opened_transaction, const String & mysql_version)
+    const String & database, bool & opened_transaction)
     : persistent_path(path_)
 {
     checkSyncUserPriv(connection);
@@ -251,7 +239,7 @@ MaterializeMetadata::MaterializeMetadata(
         assertString("\nData Version:\t", in);
         readIntText(data_version, in);
 
-        if (checkBinlogFileExists(connection, mysql_version))
+        if (checkBinlogFileExists(connection))
             return;
     }
 
