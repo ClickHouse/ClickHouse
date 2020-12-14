@@ -1994,16 +1994,18 @@ private:
             written_first_block = true;
         }
 
-        bool clear_progess = std_out.offset() > 0;
+        bool clear_progress = false;
+        if (need_render_progress)
+            clear_progress = std_out.offset() > 0;
 
-        if (clear_progess)
+        if (clear_progress)
             clearProgress();
 
         /// Received data block is immediately displayed to the user.
         block_out_stream->flush();
 
         /// Restore progress bar after data block.
-        if (clear_progess)
+        if (clear_progress)
             writeProgress();
     }
 
