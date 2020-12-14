@@ -1,5 +1,5 @@
 <yandex>
-    <grpc_port replace="replace">9100</grpc_port>
+    <grpc_port>9100</grpc_port>
     <grpc replace="replace">
         <enable_ssl>true</enable_ssl>
 
@@ -20,5 +20,8 @@
         <!-- Default compression level (applied if client doesn't specify another level).
              Supported levels: none, low, medium, high -->
         <compression_level>high</compression_level>
+
+        <!-- Enable if you want very detailed logs -->
+        <verbose_logs>false</verbose_logs>
     </grpc>
 </yandex>

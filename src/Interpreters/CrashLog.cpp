@@ -53,7 +53,7 @@ void CrashLogElement::appendToBlock(MutableColumns & columns) const
 
     String build_id_hex;
 #if defined(__ELF__) && !defined(__FreeBSD__)
-    build_id_hex = SymbolIndex::instance().getBuildIDHex();
+    build_id_hex = SymbolIndex::instance()->getBuildIDHex();
 #endif
     columns[i++]->insert(build_id_hex);
 }
