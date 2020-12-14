@@ -22,6 +22,21 @@ Block getBlockAndPermute(const Block & block, const Names & names, const IColumn
     return result;
 }
 
+Block permuteBlockIfNeeded(const Block & block, const IColumn::Permutation * permutation)
+{
+    Block result;
+    for (size_t i = 0; i < block.columns(); ++i)
+    {
+        result.insert(i, block.getByPosition(i));
+        if (permutation)
+        {
+            auto & column = result.getByPosition(i);
+            column.column = column.column->permute(*permutation, 0);
+        }
+    }
+    return result;
+}
+
 IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     const MergeTreeData::DataPartPtr & data_part_,
     const NamesAndTypesList & columns_list_,

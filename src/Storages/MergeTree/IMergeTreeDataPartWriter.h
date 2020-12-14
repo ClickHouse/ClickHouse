@@ -15,6 +15,8 @@ namespace DB
 
 Block getBlockAndPermute(const Block & block, const Names & names, const IColumn::Permutation * permutation);
 
+Block permuteBlockIfNeeded(const Block & block, const IColumn::Permutation * permutation);
+
 /// Writes data part to disk in different formats.
 /// Calculates and serializes primary and skip indices if needed.
 class IMergeTreeDataPartWriter : private boost::noncopyable

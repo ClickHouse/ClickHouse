@@ -127,21 +127,7 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumn::P
         fillIndexGranularity(index_granularity_for_block, block.rows());
     }
 
-    Block result_block;
-
-    if (permutation)
-    {
-        for (const auto & it : columns_list)
-        {
-            auto column = block.getByName(it.name);
-            column.column = column.column->permute(*permutation, 0);
-            result_block.insert(column);
-        }
-    }
-    else
-    {
-        result_block = block;
-    }
+    Block result_block = permuteBlockIfNeeded(block, permutation);
 
     if (!header)
         header = result_block.cloneEmpty();
