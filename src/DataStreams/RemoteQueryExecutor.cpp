@@ -8,7 +8,9 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
+#include <IO/ConnectionTimeoutsContext.h>
 
 namespace DB
 {
@@ -20,14 +22,11 @@ namespace ErrorCodes
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     Connection & connection,
-    const String & query_, const Block & header_, const Context & context_, const Settings * settings,
+    const String & query_, const Block & header_, const Context & context_,
     ThrottlerPtr throttler, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
     : header(header_), query(query_), context(context_)
     , scalars(scalars_), external_tables(external_tables_), stage(stage_)
 {
-    if (settings)
-        context.setSettings(*settings);
-
     create_multiplexed_connections = [this, &connection, throttler]()
     {
         return std::make_unique<MultiplexedConnections>(connection, context.getSettingsRef(), throttler);
@@ -36,14 +35,11 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     std::vector<IConnectionPool::Entry> && connections,
-    const String & query_, const Block & header_, const Context & context_, const Settings * settings,
+    const String & query_, const Block & header_, const Context & context_,
     const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
     : header(header_), query(query_), context(context_)
     , scalars(scalars_), external_tables(external_tables_), stage(stage_)
 {
-    if (settings)
-        context.setSettings(*settings);
-
     create_multiplexed_connections = [this, connections, throttler]() mutable
     {
         return std::make_unique<MultiplexedConnections>(
@@ -53,14 +49,11 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     const ConnectionPoolWithFailoverPtr & pool,
-    const String & query_, const Block & header_, const Context & context_, const Settings * settings,
+    const String & query_, const Block & header_, const Context & context_,
     const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
     : header(header_), query(query_), context(context_)
     , scalars(scalars_), external_tables(external_tables_), stage(stage_)
 {
-    if (settings)
-        context.setSettings(*settings);
-
     create_multiplexed_connections = [this, pool, throttler]()
     {
         const Settings & current_settings = context.getSettingsRef();
@@ -147,7 +140,7 @@ void RemoteQueryExecutor::sendQuery()
 
     multiplexed_connections = create_multiplexed_connections();
 
-    const auto& settings = context.getSettingsRef();
+    const auto & settings = context.getSettingsRef();
     if (settings.skip_unavailable_shards && 0 == multiplexed_connections->size())
         return;
 

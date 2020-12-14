@@ -6,6 +6,18 @@ if (USE_CLANG_TIDY)
     set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
 endif ()
 
+if(COMPILER_PIPE)
+    set(MAX_COMPILER_MEMORY 2500)
+else()
+    set(MAX_COMPILER_MEMORY 1500)
+endif()
+if(MAKE_STATIC_LIBRARIES)
+    set(MAX_LINKER_MEMORY 3500)
+else()
+    set(MAX_LINKER_MEMORY 2500)
+endif()
+include(../cmake/limit_jobs.cmake)
+
 set (CONFIG_VERSION ${CMAKE_CURRENT_BINARY_DIR}/Common/config_version.h)
 set (CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/Common/config.h)
 
