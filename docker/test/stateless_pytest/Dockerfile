@@ -4,9 +4,11 @@ FROM yandex/clickhouse-test-base
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \
         python3-pip \
-        python3-setuptools
+        python3-setuptools \
+        python3-wheel
 
 RUN python3 -m pip install \
+    wheel \
     pytest \
     pytest-html \
     pytest-json \
