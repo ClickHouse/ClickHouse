@@ -896,7 +896,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
         if (!data_parts_indexes.insert(part).second)
             throw Exception("Part " + part->name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
-        
+
         addPartContributionToDataVolume(part);
     }
 
