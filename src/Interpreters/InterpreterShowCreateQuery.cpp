@@ -43,12 +43,19 @@ BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
 {
     ASTPtr create_query;
     ASTQueryWithTableAndOutput * show_query;
-    if ((show_query = query_ptr->as<ASTShowCreateTableQuery>()))
+    if ((show_query = query_ptr->as<ASTShowCreateTableQuery>()) ||
+        (show_query = query_ptr->as<ASTShowCreateViewQuery>()))
     {
         auto resolve_table_type = show_query->temporary ? Context::ResolveExternal : Context::ResolveOrdinary;
         auto table_id = context.resolveStorageID(*show_query, resolve_table_type);
         context.checkAccess(AccessType::SHOW_COLUMNS, table_id);
         create_query = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(table_id.table_name, context);
+        if (query_ptr->as<ASTShowCreateViewQuery>())
+        {
+            auto & ast_create_query = create_query->as<ASTCreateQuery &>();
+            if (!ast_create_query.isView())
+                throw Exception("'" + ast_create_query.database + "." + ast_create_query.table +"' is not VIEW", ErrorCodes::NOT_VIEW);
+        }
     }
     else if ((show_query = query_ptr->as<ASTShowCreateDatabaseQuery>()))
     {

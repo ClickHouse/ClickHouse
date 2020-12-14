@@ -91,6 +91,8 @@ public:
         return removeOnCluster<ASTCreateQuery>(clone(), new_database);
     }
 
+    bool isView() { return is_view || is_materialized_view || is_live_view; }
+
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
