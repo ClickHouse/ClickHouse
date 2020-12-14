@@ -503,7 +503,7 @@ void InterpreterSystemQuery::restoreReplica(ASTSystemQuery & query)
         move_parts_query.uuid = uuid;
 
         ASTPtr move_parts_alter_command_ptr = std::make_shared<ASTAlterCommand>();
-        ASTAlterCommand& move_parts_alter_command = move_parts_alter_command_ptr->as<ASTAlterCommand>();
+        ASTAlterCommand& move_parts_alter_command = move_parts_alter_command_ptr->as<ASTAlterCommand&>();
 
         move_parts_alter_command.type = ASTAlterCommand::Type::MOVE_PARTITION;
         move_parts_alter_command.move_destination_type = DataDestinationType::TABLE;
