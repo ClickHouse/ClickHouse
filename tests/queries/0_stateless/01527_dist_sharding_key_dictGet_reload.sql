@@ -28,5 +28,5 @@ select _shard_num from dist_01527 where key=1;
 drop table data_01527;
 drop table dist_01527;
 drop table db_01527_ranges.data;
-drop table db_01527_ranges.dict;
+drop dictionary db_01527_ranges.dict;
 drop database db_01527_ranges;
