@@ -197,7 +197,6 @@ public:
     void cancel()
     {
         std::lock_guard guard(fiber_lock);
-        connections.setFiber(nullptr);
         boost::context::fiber to_destroy = std::move(fiber);
 
         uint64_t buf = 0;
