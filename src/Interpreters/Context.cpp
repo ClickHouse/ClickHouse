@@ -935,14 +935,14 @@ bool Context::hasScalar(const String & name) const
 }
 
 
-void Context::addQueryAccessInfo(const String & database_name, const String & table_name, const Names & column_names)
+void Context::addQueryAccessInfo(const String & quoted_database_name, const String & full_quoted_table_name, const Names & column_names)
 {
     assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
     auto lock = getLock();
-    query_access_info.databases.emplace(database_name);
-    query_access_info.tables.emplace(table_name);
+    query_access_info.databases.emplace(quoted_database_name);
+    query_access_info.tables.emplace(full_quoted_table_name);
     for (const auto & column_name : column_names)
-        query_access_info.columns.emplace(table_name + "." + backQuoteIfNeed(column_name));
+        query_access_info.columns.emplace(full_quoted_table_name + "." + backQuoteIfNeed(column_name));
 }
 
 

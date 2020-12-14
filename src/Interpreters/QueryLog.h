@@ -53,7 +53,7 @@ struct QueryLogElement
     String query;
     UInt64 normalized_query_hash;
 
-    String query_kind = "Other";
+    String query_kind;
     std::set<String> query_databases;
     std::set<String> query_tables;
     std::set<String> query_columns;
