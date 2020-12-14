@@ -190,7 +190,7 @@ void MergeTreeDataPartWriterCompact::writeBlock(const Block & block, const Granu
         }
 
         /// Correct last mark as it should contain exact amount of rows.
-        if (granule.rows_count != index_granularity.getMarkRows(granule.mark_number))
+        if (granule.rows_count != granule.actual_rows_count)
         {
             index_granularity.popMark();
             index_granularity.appendMark(granule.rows_count);
