@@ -1,4 +1,3 @@
-#include <Interpreters/InterpreterSystemQuery.h>
 #include <Common/DNSResolver.h>
 #include <Common/ActionLock.h>
 #include <Common/typeid_cast.h>
@@ -6,10 +5,10 @@
 #include <Common/SymbolIndex.h>
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
-#include "Interpreters/InterpreterAlterQuery.h"
-#include "Interpreters/InterpreterSelectQuery.h"
-#include "Parsers/ASTPartition.h"
-#include "Processors/Executors/PullingPipelineExecutor.h"
+
+#include <Interpreters/InterpreterSystemQuery.h>
+#include <Interpreters/InterpreterAlterQuery.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -27,16 +26,22 @@
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
+
 #include <Access/ContextAccess.h>
 #include <Access/AllowedClientHosts.h>
 #include <Databases/IDatabase.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageFactory.h>
+#include "Processors/Executors/PullingPipelineExecutor.h"
+
+#include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSystemQuery.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+
 #include <csignal>
 #include <algorithm>
 #include <memory>
@@ -45,11 +50,8 @@
 #    include "config_core.h"
 #endif
 
-
 namespace DB
 {
-
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
