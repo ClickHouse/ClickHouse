@@ -4,6 +4,7 @@
     <interserver_http_port remove="remove"/>
     <tcp_with_proxy_port remove="remove"/>
     <listen_host>::</listen_host>
+    <test_keeper_server remove="remove"/>
 
     <logger>
         <console>true</console>
