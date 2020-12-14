@@ -36,8 +36,6 @@ public:
 
     void seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block);
 
-    std::pair<size_t, size_t> getCurrentPosition() const;
-
     size_t readBig(char * to, size_t n) override;
 
     void setProfileCallback(const ReadBufferFromFileBase::ProfileCallback & profile_callback_, clockid_t clock_type_ = CLOCK_MONOTONIC_COARSE)

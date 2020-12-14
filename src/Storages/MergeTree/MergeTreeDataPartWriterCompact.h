@@ -28,7 +28,9 @@ private:
 
     void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) override;
 
-    void writeBlock(const Block & block, const Granules & granules);
+    void writeDataBlock(const Block & block, const Granules & granules);
+
+    void writeDataBlockPrimaryIndexAndSkipIndices(const Block & block, const Granules & granules);
 
     void addToChecksums(MergeTreeDataPartChecksums & checksums);
 
@@ -79,7 +81,6 @@ private:
     /// marks -> marks_file
     std::unique_ptr<WriteBufferFromFileBase> marks_file;
     HashingWriteBuffer marks;
-    size_t index_offset = 0;
 };
 
 }

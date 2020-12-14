@@ -145,36 +145,34 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumn::P
     size_t last_mark_rows = index_granularity.getLastMarkRows();
     size_t rows_in_buffer = columns_buffer.size();
 
-    if (rows_in_buffer < last_mark_rows)
-    {
-        /// If it's not enough rows for granule, accumulate blocks
-        ///  and save how much rows we already have.
-        index_offset = last_mark_rows - rows_in_buffer;
-    }
-    else
+    if (rows_in_buffer >= last_mark_rows)
     {
         Block flushed_block = header.cloneWithColumns(columns_buffer.releaseColumns());
         auto granules_to_write = getGranulesToWrite(index_granularity, flushed_block.rows(), getCurrentMark());
-        writeBlock(flushed_block, granules_to_write);
-
-        if (settings.rewrite_primary_key)
-        {
-            Block primary_key_block = getBlockAndPermute(flushed_block, metadata_snapshot->getPrimaryKeyColumns(), nullptr);
-            calculateAndSerializePrimaryIndex(primary_key_block, granules_to_write);
-        }
-
-        Block skip_indices_block = getBlockAndPermute(flushed_block, getSkipIndicesColumns(), nullptr);
-        calculateAndSerializeSkipIndices(skip_indices_block, granules_to_write);
+        writeDataBlockPrimaryIndexAndSkipIndices(flushed_block, granules_to_write);
         setCurrentMark(getCurrentMark() + granules_to_write.size());
-        index_offset = 0;
     }
 }
 
-void MergeTreeDataPartWriterCompact::writeBlock(const Block & block, const Granules & granules)
+void MergeTreeDataPartWriterCompact::writeDataBlockPrimaryIndexAndSkipIndices(const Block & block, const Granules & granules_to_write)
+{
+    writeDataBlock(block, granules_to_write);
+
+    if (settings.rewrite_primary_key)
+    {
+        Block primary_key_block = getBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), nullptr);
+        calculateAndSerializePrimaryIndex(primary_key_block, granules_to_write);
+    }
+
+    Block skip_indices_block = getBlockAndPermute(block, getSkipIndicesColumns(), nullptr);
+    calculateAndSerializeSkipIndices(skip_indices_block, granules_to_write);
+}
+
+void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const Granules & granules)
 {
     for (const auto & granule : granules)
     {
-        if (granule.rows_count)
+        if (granule.granularity_rows)
             data_written = true;
 
         auto name_and_type = columns_list.begin();
@@ -207,20 +205,20 @@ void MergeTreeDataPartWriterCompact::writeBlock(const Block & block, const Granu
             writeIntBinary(plain_hashing.count(), marks);
             writeIntBinary(UInt64(0), marks);
 
-            writeColumnSingleGranule(block.getByName(name_and_type->name), stream_getter, granule.start, granule.rows_count);
+            writeColumnSingleGranule(block.getByName(name_and_type->name), stream_getter, granule.start, granule.granularity_rows);
 
             /// Each type always have at least one substream
             prev_stream->hashing_buf.next(); //-V522
         }
 
         /// Correct last mark as it should contain exact amount of rows.
-        if (granule.rows_count != granule.actual_rows_count)
+        if (granule.rows_written_from_block != granule.granularity_rows)
         {
             index_granularity.popMark();
-            index_granularity.appendMark(granule.actual_rows_count);
+            index_granularity.appendMark(granule.rows_written_from_block);
         }
 
-        writeIntBinary(granule.actual_rows_count, marks);
+        writeIntBinary(granule.rows_written_from_block, marks);
     }
 }
 
@@ -230,15 +228,7 @@ void MergeTreeDataPartWriterCompact::finishDataSerialization(IMergeTreeDataPart:
     {
         auto block = header.cloneWithColumns(columns_buffer.releaseColumns());
         auto granules_to_write = getGranulesToWrite(index_granularity, block.rows(), getCurrentMark());
-        writeBlock(block, granules_to_write);
-        if (settings.rewrite_primary_key)
-        {
-            Block primary_key_block = getBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), nullptr);
-            calculateAndSerializePrimaryIndex(primary_key_block, granules_to_write);
-        }
-
-        Block skip_indices_block = getBlockAndPermute(block, getSkipIndicesColumns(), nullptr);
-        calculateAndSerializeSkipIndices(skip_indices_block, granules_to_write);
+        writeDataBlockPrimaryIndexAndSkipIndices(block, granules_to_write);
     }
 
 #ifndef NDEBUG
@@ -301,6 +291,10 @@ static void fillIndexGranularityImpl(
 
 void MergeTreeDataPartWriterCompact::fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block)
 {
+    size_t index_offset = 0;
+    if (index_granularity.getMarksCount() > getCurrentMark())
+        index_offset = index_granularity.getMarkRows(getCurrentMark()) - columns_buffer.size();
+
     fillIndexGranularityImpl(
         index_granularity,
         index_offset,

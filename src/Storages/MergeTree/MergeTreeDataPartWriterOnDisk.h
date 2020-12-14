@@ -17,8 +17,8 @@ namespace DB
 struct Granule
 {
     size_t start;
-    size_t rows_count;
-    size_t actual_rows_count;
+    size_t granularity_rows;
+    size_t rows_written_from_block;
     size_t mark_number;
     bool mark_on_start;
     bool is_completed;
@@ -89,11 +89,13 @@ public:
 protected:
      /// Count index_granularity for block and store in `index_granularity`
     size_t computeIndexGranularity(const Block & block) const;
+
     void calculateAndSerializePrimaryIndex(const Block & primary_index_block, const Granules & granules_to_write);
     void calculateAndSerializeSkipIndices(const Block & skip_indexes_block, const Granules & granules_to_write);
 
     void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums, bool sync);
     void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums, bool sync);
+
     size_t getCurrentMark() const { return current_mark; }
     void setCurrentMark(size_t mark) { current_mark = mark; }
 
