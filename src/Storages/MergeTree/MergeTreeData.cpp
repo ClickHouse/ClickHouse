@@ -2331,19 +2331,19 @@ void MergeTreeData::tryRemovePartImmediately(DataPartPtr && part)
 
 size_t MergeTreeData::getTotalActiveSizeInBytes() const
 {
-    return total_active_size_bytes.load(std::memory_order_relaxed);
+    return total_active_size_bytes.load(std::memory_order_acquire);
 }
 
 
 size_t MergeTreeData::getTotalActiveSizeInRows() const
 {
-    return total_active_size_rows.load(std::memory_order_relaxed);
+    return total_active_size_rows.load(std::memory_order_acquire);
 }
 
 
 size_t MergeTreeData::getPartsCount() const
 {
-    return total_active_size_parts.load(std::memory_order_relaxed);
+    return total_active_size_parts.load(std::memory_order_acquire);
 }
 
 
@@ -3992,22 +3992,22 @@ void MergeTreeData::removePartContributionToDataVolume(const DataPartPtr & part)
 
 void MergeTreeData::increaseDataVolume(size_t bytes, size_t rows, size_t parts)
 {
-    total_active_size_bytes.fetch_add(bytes, std::memory_order_relaxed);
-    total_active_size_rows.fetch_add(rows, std::memory_order_relaxed);
-    total_active_size_parts.fetch_add(parts, std::memory_order_relaxed);
+    total_active_size_bytes.fetch_add(bytes, std::memory_order_acq_rel);
+    total_active_size_rows.fetch_add(rows, std::memory_order_acq_rel);
+    total_active_size_parts.fetch_add(parts, std::memory_order_acq_rel);
 }
 
 void MergeTreeData::decreaseDataVolume(size_t bytes, size_t rows, size_t parts)
 {
-    total_active_size_bytes.fetch_sub(bytes, std::memory_order_relaxed);
-    total_active_size_rows.fetch_sub(rows, std::memory_order_relaxed);
-    total_active_size_parts.fetch_sub(parts, std::memory_order_relaxed);
+    total_active_size_bytes.fetch_sub(bytes, std::memory_order_acq_rel);
+    total_active_size_rows.fetch_sub(rows, std::memory_order_acq_rel);
+    total_active_size_parts.fetch_sub(parts, std::memory_order_acq_rel);
 }
 
 void MergeTreeData::setDataVolume(size_t bytes, size_t rows, size_t parts)
 {
-    total_active_size_bytes.store(bytes, std::memory_order_relaxed);
-    total_active_size_rows.store(rows, std::memory_order_relaxed);
-    total_active_size_parts.store(parts, std::memory_order_relaxed);
+    total_active_size_bytes.store(bytes, std::memory_order_release);
+    total_active_size_rows.store(rows, std::memory_order_release);
+    total_active_size_parts.store(parts, std::memory_order_release);
 }
 }
