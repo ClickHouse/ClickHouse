@@ -496,13 +496,15 @@ void InterpreterSystemQuery::restoreReplica(ASTSystemQuery & query)
         /// (ALTER TABLE old MOVE PARTITION ID x TO TABLE new).
 
         ASTPtr move_parts_ptr = std::make_shared<ASTAlterQuery>();
-
         ASTAlterQuery& move_parts_query = move_parts_ptr->as<ASTAlterQuery&>();
+
         move_parts_query.database = db_name;
         move_parts_query.table = old_table_name;
         move_parts_query.uuid = uuid;
 
-        ASTAlterCommand move_parts_alter_command{};
+        ASTPtr move_parts_alter_command_ptr = std::make_shared<ASTAlterCommand>();
+        ASTAlterCommand& move_parts_alter_command = move_parts_alter_command_ptr->as<ASTAlterCommand>();
+
         move_parts_alter_command.type = ASTAlterCommand::Type::MOVE_PARTITION;
         move_parts_alter_command.move_destination_type = DataDestinationType::TABLE;
         move_parts_alter_command.partition = std::make_shared<ASTPartition>();
@@ -510,7 +512,7 @@ void InterpreterSystemQuery::restoreReplica(ASTSystemQuery & query)
         move_parts_alter_command.to_table = new_table_name;
 
         ASTExpressionList move_parts_command_list{};
-        move_parts_command_list.children = {&move_parts_alter_command}; // ok storing pointer to stack value as
+        move_parts_command_list.children = {move_parts_alter_command_ptr}; // ok storing pointer to stack value as
         move_parts_query.command_list = &move_parts_command_list;       // it will be alive by the executor end.
 
         InterpreterAlterQuery move_parts_interpreter(move_parts_ptr, context);
