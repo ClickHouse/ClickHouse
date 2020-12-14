@@ -17,6 +17,7 @@ struct Granule
 {
     size_t start;
     size_t rows_count;
+    size_t actual_rows_count;
     size_t mark_number;
     bool mark_on_start;
     bool is_completed;
@@ -73,8 +74,6 @@ protected:
     const MergeTreeWriterSettings settings;
     MergeTreeIndexGranularity index_granularity;
     const bool with_final_mark;
-
-    size_t next_mark = 0;
 
     MutableColumns index_columns;
 

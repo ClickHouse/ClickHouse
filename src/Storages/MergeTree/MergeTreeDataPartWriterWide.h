@@ -79,6 +79,8 @@ private:
         const ASTPtr & effective_codec_desc,
         size_t estimated_size);
 
+    void validateColumnOfFixedSize(const String & name, const IDataType & type);
+
     void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) override;
 
     IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns) const;

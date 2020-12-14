@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
 #include <Interpreters/Context.h>
 #include <Compression/CompressionFactory.h>
+#include <Compression/CompressedReadBufferFromFile.h>
 
 namespace DB
 {
@@ -144,7 +145,7 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
     if (!last_granule.is_completed)
     {
         setCurrentMark(getCurrentMark() + granules_to_write.size() - 1);
-        setRowsWrittenInLastMark(last_granule.rows_count);
+        setRowsWrittenInLastMark(last_granule.actual_rows_count);
     }
     else
     {
@@ -287,6 +288,80 @@ void MergeTreeDataPartWriterWide::writeColumn(
     }, serialize_settings.path);
 }
 
+
+void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name, const IDataType & type)
+{
+    if (!type.isValueRepresentedByNumber() || type.haveSubtypes())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot validate column of non fixed type {}", type.getName());
+
+    auto disk = data_part->volume->getDisk();
+    String mrk_path = fullPath(disk, part_path + name + marks_file_extension);
+    String bin_path = fullPath(disk, part_path + name + DATA_FILE_EXTENSION);
+    DB::ReadBufferFromFile mrk_in(mrk_path);
+    DB::CompressedReadBufferFromFile bin_in(bin_path, 0, 0, 0);
+    bool must_be_last = false;
+    auto * log = &Poco::Logger::get(storage.getLogName());
+    UInt64 offset_in_compressed_file = 0;
+    UInt64 offset_in_decompressed_block = 0;
+    UInt64 index_granularity_rows = 0;
+
+    size_t mark_num;
+    for (mark_num = 0; !mrk_in.eof(); ++mark_num)
+    {
+        if (mark_num >= index_granularity.getMarksCount())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect number of marks in memory {}, on disk (at least) {}", index_granularity.getMarksCount(), mark_num);
+
+        DB::readBinary(offset_in_compressed_file, mrk_in);
+        DB::readBinary(offset_in_decompressed_block, mrk_in);
+        if (settings.can_use_adaptive_granularity)
+            DB::readBinary(index_granularity_rows, mrk_in);
+        else
+            index_granularity_rows = storage.getSettings()->index_granularity;
+
+        LOG_TRACE(log, "Validating column {} mark [{}, {}] with rows {}, must be last {}", name, offset_in_compressed_file, offset_in_decompressed_block, index_granularity_rows, must_be_last);
+
+        if (must_be_last)
+        {
+            if (index_granularity_rows != 0)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "We ran out of binary data but still have non empty mark #{} with rows number {}", mark_num, index_granularity_rows);
+
+            if (!mrk_in.eof())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark #{} must be last, but we still have some to read", mark_num);
+        }
+
+        if (index_granularity_rows != index_granularity.getMarkRows(mark_num))
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Incorrect mark rows for mark #{} (compressed offset {}, decompressed offset {}), in-memory {}, on disk {}",
+                mark_num, offset_in_compressed_file, offset_in_decompressed_block, index_granularity.getMarkRows(mark_num), index_granularity_rows);
+
+        if (must_be_last)
+            break;
+
+        auto column = type.createColumn();
+
+        type.deserializeBinaryBulk(*column, bin_in, index_granularity_rows, 0.0);
+
+        if (bin_in.eof())
+        {
+            must_be_last = true;
+        }
+        else if (column->size() != index_granularity_rows)
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Incorrect mark rows for mark #{} (compressed offset {}, decompressed offset {}), actually in bin file {}, in mrk file {}",
+                mark_num, offset_in_compressed_file, offset_in_decompressed_block, column->size(), index_granularity.getMarkRows(mark_num));
+        }
+    }
+
+    if (!mrk_in.eof())
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Still have something in marks stream, last mark #{} index granularity size {}, last rows {}", mark_num, index_granularity.getMarksCount(), index_granularity_rows);
+    }
+    if (!bin_in.eof())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Still have something in bin stream, last mark #{} index granularity size {}, last rows {}", mark_num, index_granularity.getMarksCount(), index_granularity_rows);
+
+}
+
 void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync)
 {
     const auto & global_settings = storage.global_context.getSettingsRef();
@@ -308,9 +383,7 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Ch
             }
 
             if (write_final_mark)
-            {
                 writeFinalMark(it->name, it->type, offset_columns, serialize_settings.path);
-            }
         }
     }
 
@@ -324,6 +397,15 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Ch
 
     column_streams.clear();
     serialization_states.clear();
+
+#ifndef NDEBUG
+    for (const auto & column : columns_list)
+    {
+        if (column.type->isValueRepresentedByNumber() && !column.type->haveSubtypes())
+            validateColumnOfFixedSize(column.name, *column.type);
+    }
+#endif
+
 }
 
 void MergeTreeDataPartWriterWide::finish(IMergeTreeDataPart::Checksums & checksums, bool sync)
