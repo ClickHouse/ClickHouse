@@ -21,6 +21,8 @@
 #include <Common/assert_cast.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Storages/IStorage.h>
 
 namespace DB
