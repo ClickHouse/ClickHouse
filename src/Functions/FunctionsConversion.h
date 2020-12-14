@@ -2169,6 +2169,20 @@ private:
         };
     }
 
+    using ElementWrappers = std::vector<WrapperType>;
+
+    ElementWrappers getElementWrappers(const DataTypes & from_element_types, const DataTypes & to_element_types) const
+    {
+        ElementWrappers element_wrappers;
+        element_wrappers.reserve(from_element_types.size());
+
+        /// Create conversion wrapper for each element in tuple
+        for (const auto idx_type : ext::enumerate(from_element_types))
+            element_wrappers.push_back(prepareUnpackDictionaries(idx_type.second, to_element_types[idx_type.first]));
+
+        return element_wrappers;
+    }
+
     WrapperType createTupleWrapper(const DataTypePtr & from_type_untyped, const DataTypeTuple * to_type) const
     {
         /// Conversion from String through parsing.
@@ -2191,12 +2205,7 @@ private:
 
         const auto & from_element_types = from_type->getElements();
         const auto & to_element_types = to_type->getElements();
-        std::vector<WrapperType> element_wrappers;
-        element_wrappers.reserve(from_element_types.size());
-
-        /// Create conversion wrapper for each element in tuple
-        for (const auto idx_type : ext::enumerate(from_type->getElements()))
-            element_wrappers.push_back(prepareUnpackDictionaries(idx_type.second, to_element_types[idx_type.first]));
+        auto element_wrappers = getElementWrappers(from_element_types, to_element_types);
 
         return [element_wrappers, from_element_types, to_element_types]
             (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t input_rows_count) -> ColumnPtr
@@ -2219,6 +2228,76 @@ private:
         };
     }
 
+    WrapperType createTupleToMapWrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const
+    {
+        return [element_wrappers = getElementWrappers(from_kv_types, to_kv_types), from_kv_types, to_kv_types]
+            (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t input_rows_count) -> ColumnPtr
+        {
+            const auto * col = arguments.front().column.get();
+            const auto & column_tuple = assert_cast<const ColumnTuple &>(*col);
+
+            if (column_tuple.getColumn(0).size() != column_tuple.getColumn(1).size())
+                throw Exception(ErrorCodes::TYPE_MISMATCH,
+                    "CAST AS Map can only be performed from tuple of arrays with equal sizes."
+                    " Size of keys: {}. Size of values: {}", column_tuple.getColumn(0).size(), column_tuple.getColumn(1).size());
+
+            ColumnPtr offsets;
+            Columns converted_columns(2);
+            for (size_t i = 0; i < 2; ++i)
+            {
+                const auto & column_array = assert_cast<const ColumnArray &>(column_tuple.getColumn(i));
+                ColumnsWithTypeAndName element = {{column_array.getDataPtr(), from_kv_types[i], ""}};
+                converted_columns[i] = element_wrappers[i](element, to_kv_types[i], nullable_source, input_rows_count);
+
+                if (!offsets)
+                    offsets = column_array.getOffsetsPtr();
+            }
+
+            return ColumnMap::create(converted_columns[0], converted_columns[1], offsets);
+        };
+    }
+
+    WrapperType createMapToMapWrrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const
+    {
+        return [element_wrappers = getElementWrappers(from_kv_types, to_kv_types), from_kv_types, to_kv_types]
+            (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t input_rows_count) -> ColumnPtr
+        {
+            const auto * col = arguments.front().column.get();
+            const auto & column_map = typeid_cast<const ColumnMap &>(*col);
+            const auto & nested_data = column_map.getNestedData();
+
+            Columns converted_columns(2);
+            for (size_t i = 0; i < 2; ++i)
+            {
+                ColumnsWithTypeAndName element = {{nested_data.getColumnPtr(i), from_kv_types[i], ""}};
+                converted_columns[i] = element_wrappers[i](element, to_kv_types[i], nullable_source, input_rows_count);
+            }
+
+            return ColumnMap::create(converted_columns[0], converted_columns[1], column_map.getNestedColumn().getOffsetsPtr());
+        };
+    }
+
+    WrapperType createArrayToMapWrrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const
+    {
+        return [element_wrappers = getElementWrappers(from_kv_types, to_kv_types), from_kv_types, to_kv_types]
+            (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t input_rows_count) -> ColumnPtr
+        {
+            const auto * col = arguments.front().column.get();
+            const auto & column_array = typeid_cast<const ColumnArray &>(*col);
+            const auto & nested_data = typeid_cast<const ColumnTuple &>(column_array.getData());
+
+            Columns converted_columns(2);
+            for (size_t i = 0; i < 2; ++i)
+            {
+                ColumnsWithTypeAndName element = {{nested_data.getColumnPtr(i), from_kv_types[i], ""}};
+                converted_columns[i] = element_wrappers[i](element, to_kv_types[i], nullable_source, input_rows_count);
+            }
+
+            return ColumnMap::create(converted_columns[0], converted_columns[1], column_array.getOffsetsPtr());
+        };
+    }
+
+
     WrapperType createMapWrapper(const DataTypePtr & from_type_untyped, const DataTypeMap * to_type) const
     {
         if (const auto * from_tuple = checkAndGetDataType<DataTypeTuple>(from_type_untyped.get()))
@@ -2240,78 +2319,20 @@ private:
                 from_kv_types.push_back(type_array->getNestedType());
             }
 
-            std::vector<WrapperType> element_wrappers;
-            element_wrappers.reserve(2);
+            return createTupleToMapWrapper(from_kv_types, to_kv_types);
+        }
+        else if (const auto * from_array = typeid_cast<const DataTypeArray *>(from_type_untyped.get()))
+        {
+            const auto * nested_tuple = typeid_cast<const DataTypeTuple *>(from_array->getNestedType().get());
+            if (!nested_tuple || nested_tuple->getElements().size() != 2)
+                throw Exception{"CAST AS Map from array requeires nested tuple of 2 elements.\n"
+                    "Left type: " + from_tuple->getName() + ", right type: " + to_type->getName(), ErrorCodes::TYPE_MISMATCH};
 
-            /// Create conversion wrapper for each element in tuple
-            for (const auto idx_type : ext::enumerate(from_kv_types))
-                element_wrappers.push_back(prepareUnpackDictionaries(idx_type.second, to_kv_types[idx_type.first]));
-
-            return [element_wrappers, from_kv_types, to_kv_types]
-                (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t input_rows_count) -> ColumnPtr
-            {
-                const auto col = arguments.front().column.get();
-                const auto & column_tuple = assert_cast<const ColumnTuple &>(*col);
-
-                if (column_tuple.getColumn(0).size() != column_tuple.getColumn(1).size())
-                    throw Exception(ErrorCodes::TYPE_MISMATCH,
-                        "CAST AS Map can only be performed from tuple of arrays with equal sizes."
-                        " Size of keys: {}. Size of values: {}", column_tuple.getColumn(0).size(), column_tuple.getColumn(1).size());
-
-                Columns converted_columns(2);
-                ColumnPtr offsets;
-
-                /// invoke conversion for each element
-                for (size_t i = 0; i < 2; ++i)
-                {
-                    const auto & column_array = assert_cast<const ColumnArray &>(column_tuple.getColumn(i));
-                    ColumnsWithTypeAndName element = {{column_array.getDataPtr(), from_kv_types[i], ""}};
-                    converted_columns[i] = element_wrappers[i](element, to_kv_types[i], nullable_source, input_rows_count);
-
-                    if (!offsets)
-                        offsets = column_array.getOffsetsPtr();
-                }
-
-                auto nested_column = ColumnArray::create(
-                    ColumnTuple::create(std::move(converted_columns)), offsets);
-
-                return ColumnMap::create(nested_column);
-            };
+            return createArrayToMapWrrapper(nested_tuple->getElements(), to_type->getKeyValueTypes());
         }
         else if (const auto * from_type = checkAndGetDataType<DataTypeMap>(from_type_untyped.get()))
         {
-            const auto & from_kv_types = from_type->getKeyValueTypes();
-            const auto & to_kv_types = to_type->getKeyValueTypes();
-
-            std::vector<WrapperType> element_wrappers;
-            element_wrappers.reserve(2);
-
-            /// Create conversion wrapper for each element in tuple
-            for (const auto idx_type : ext::enumerate(from_kv_types))
-                element_wrappers.push_back(prepareUnpackDictionaries(idx_type.second, to_kv_types[idx_type.first]));
-
-            return [element_wrappers, from_kv_types, to_kv_types]
-                (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t input_rows_count) -> ColumnPtr
-            {
-                const auto * col = arguments.front().column.get();
-                const auto & column_map = typeid_cast<const ColumnMap &>(*col);
-                const auto & nested_data = column_map.getNestedData();
-
-                Columns converted_columns(2);
-
-                /// invoke conversion for each element
-                for (size_t i = 0; i < 2; ++i)
-                {
-                    ColumnsWithTypeAndName element = {{nested_data.getColumnPtr(i), from_kv_types[i], ""}};
-                    converted_columns[i] = element_wrappers[i](element, to_kv_types[i], nullable_source, input_rows_count);
-                }
-
-                auto nested_column = ColumnArray::create(
-                    ColumnTuple::create(std::move(converted_columns)),
-                    column_map.getNestedColumn().getOffsetsPtr());
-
-                return ColumnMap::create(nested_column);
-            };
+            return createMapToMapWrrapper(from_type->getKeyValueTypes(), to_type->getKeyValueTypes());
         }
         else
         {

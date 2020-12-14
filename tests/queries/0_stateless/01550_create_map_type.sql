@@ -1,3 +1,5 @@
+set allow_experimental_map_type = 1;
+
 -- String type
 drop table if exists table_map;
 create table table_map (a Map(String, String)) engine = Memory;
@@ -37,4 +39,27 @@ insert into table_map select map('k2', [number, number + 2, number * 2]) from nu
 select a['k1'] as col1 from table_map order by col1;
 drop table if exists table_map;
 
-SELECT CAST(([1, 2, 3], ['1', '2', 'foo']), 'Map(UInt8, String)') AS map, map[1]
+SELECT CAST(([1, 2, 3], ['1', '2', 'foo']), 'Map(UInt8, String)') AS map, map[1];
+
+CREATE TABLE table_map (n UInt32, m Map(String, Int))
+ENGINE = MergeTree ORDER BY n SETTINGS min_bytes_for_wide_part = 0;
+
+-- coversion from Tuple(Array(K), Array(V))
+INSERT INTO table_map SELECT number, (arrayMap(x -> toString(x), range(number % 10 + 2)), range(number % 10 + 2)) FROM numbers(100000);
+-- coversion from Array(Tuple(K, V))
+INSERT INTO table_map SELECT number, arrayMap(x -> (toString(x), x), range(number % 10 + 2)) FROM numbers(100000);
+SELECT sum(m['1']), sum(m['7']), sum(m['100']) FROM table_map;
+
+DROP TABLE IF EXISTS table_map;
+
+CREATE TABLE table_map (n UInt32, m Map(String, Int))
+ENGINE = MergeTree ORDER BY n;
+
+-- coversion from Tuple(Array(K), Array(V))
+INSERT INTO table_map SELECT number, (arrayMap(x -> toString(x), range(number % 10 + 2)), range(number % 10 + 2)) FROM numbers(100000);
+-- coversion from Array(Tuple(K, V))
+INSERT INTO table_map SELECT number, arrayMap(x -> (toString(x), x), range(number % 10 + 2)) FROM numbers(100000);
+SELECT sum(m['1']), sum(m['7']), sum(m['100']) FROM table_map;
+
+DROP TABLE IF EXISTS table_map;
+

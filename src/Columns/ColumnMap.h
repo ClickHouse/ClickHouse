@@ -19,7 +19,6 @@ private:
     WrappedPtr nested;
 
     explicit ColumnMap(MutableColumnPtr && nested_);
-    // ColumnMap(MutableColumnPtr && keys, MutableColumnPtr && values);
 
     ColumnMap(const ColumnMap &) = default;
 
@@ -28,6 +27,13 @@ public:
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
       */
     using Base = COWHelper<IColumn, ColumnMap>;
+
+    static Ptr create(const ColumnPtr & keys, const ColumnPtr & values, const ColumnPtr & offsets)
+    {
+        auto nested_column = ColumnArray::create(ColumnTuple::create(Columns{keys, values}), offsets);
+        return ColumnMap::create(nested_column);
+    }
+
     static Ptr create(const ColumnPtr & column) { return ColumnMap::create(column->assumeMutable()); }
     static Ptr create(ColumnPtr && arg) { return create(arg); }
 
