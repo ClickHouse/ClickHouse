@@ -66,8 +66,9 @@ public:
                 throwFromErrno("Cannot add timer descriptor to epoll", ErrorCodes::CANNOT_OPEN_FILE);
         }
 
-        auto routine = Routine{connections, *this, std::unique_lock(connections.cancel_mutex, std::defer_lock)};
-        connection_lock = &routine.connection_lock;
+        auto lock = std::make_unique<std::unique_lock<std::mutex>>(connections.cancel_mutex, std::defer_lock);
+        auto routine = Routine{connections, *this, std::move(lock)};
+        connection_lock = routine.connection_lock.get();
         fiber = boost::context::fiber(std::allocator_arg_t(), stack, std::move(routine));
     }
 
@@ -220,7 +221,7 @@ public:
     {
         MultiplexedConnections & connections;
         Self & read_context;
-        std::unique_lock<std::mutex> connection_lock;
+        std::unique_ptr<std::unique_lock<std::mutex>> connection_lock;
 
         Fiber operator()(Fiber && sink) const
         {
