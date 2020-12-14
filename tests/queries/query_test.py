@@ -28,6 +28,8 @@ SKIP_LIST = [
     "01014_lazy_database_concurrent_recreate_reattach_and_show_tables",
     "01018_Distributed__shard_num",
     "01018_ip_dictionary",
+    "01023_materialized_view_query_context",  # flaky
+    "01046_materialized_view_with_join_over_distributed.sql",  # flaky
     "01050_clickhouse_dict_source_with_subquery",
     "01053_ssd_dictionary",
     "01054_cache_dictionary_overflow_cell",
