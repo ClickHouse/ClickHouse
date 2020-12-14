@@ -143,8 +143,12 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, const C
     /* [zk: localhost:2181(CONNECTED) 51] ls /clickhouse/task_queue/ddl
        [query-0000000000, query-0000000001, query-0000000002, query-0000000003, query-0000000004]
     */
-    zkutil::Strings queries = zookeeper->getChildren(ddl_zookeeper_path);
 
+    // if there is error querying the root path of the ddl directory throw exception and stop
+    zkutil::Strings queries;
+    Coordination::Error code = zookeeper->tryGetChildren(ddl_zookeeper_path, queries);
+    if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+        throw Coordination::Exception(code, ddl_zookeeper_path);
 
     const auto & cluster = context.tryGetCluster(cluster_name);
     const auto & shards_info = cluster->getShardsInfo();
@@ -152,7 +156,6 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, const C
 
     if (cluster == nullptr)
         throw Exception("No cluster with the name: " + cluster_name + " was found.", ErrorCodes::BAD_ARGUMENTS);
-
 
     for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
     {
@@ -182,10 +185,26 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, const C
                 res_columns[i++]->insert(resolved ? resolved->host().toString() : String()); // host_address
                 res_columns[i++]->insert(address.port); // port
                 ddl_query_path = fs::path(ddl_zookeeper_path) / queries[query_id];
-                zkutil::Strings active_nodes = zookeeper->getChildren(fs::path(ddl_query_path) / "active");
-                zkutil::Strings finished_nodes = zookeeper->getChildren(fs::path(ddl_query_path) / "finished");
 
-                // status
+                zkutil::Strings active_nodes;
+                zkutil::Strings finished_nodes;
+
+                // on error just skip and continue.
+
+                code = zookeeper->tryGetChildren(fs::path(ddl_query_path) / "active", active_nodes);
+                if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+                    continue;
+
+                code = zookeeper->tryGetChildren(fs::path(ddl_query_path) / "finished", finished_nodes);
+                if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+                    continue;
+
+                /* status:
+                 * active: If the hostname:port entry is present under active path.
+                 * finished: If the hostname:port entry is present under the finished path.
+                 * errored: If the hostname:port entry is present under the finished path but the error count is not 0.
+                 * unknown: If the above cases don't hold true, then status is unknown.
+                 */
                 if (std::find(active_nodes.begin(), active_nodes.end(), address.toString()) != active_nodes.end())
                 {
                     res_columns[i++]->insert(static_cast<Int8>(Status::active));
