@@ -917,6 +917,11 @@ public:
 // Members
 
 template <size_t Bits, typename Signed>
+constexpr integer<Bits, Signed>::integer() noexcept
+    : items{}
+{}
+
+template <size_t Bits, typename Signed>
 template <typename T>
 constexpr integer<Bits, Signed>::integer(T rhs) noexcept
     : items{}

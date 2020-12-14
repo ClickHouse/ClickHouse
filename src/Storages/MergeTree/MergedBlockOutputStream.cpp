@@ -48,6 +48,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
 {
     MergeTreeWriterSettings writer_settings(
         storage.global_context.getSettings(),
+        storage.getSettings(),
         data_part->index_granularity_info.is_adaptive,
         aio_threshold,
         blocks_are_granules_size);

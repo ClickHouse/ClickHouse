@@ -29,6 +29,9 @@ target_link_libraries (string_hash_map PRIVATE dbms)
 add_executable (string_hash_map_aggregation string_hash_map.cpp)
 target_link_libraries (string_hash_map_aggregation PRIVATE dbms)
 
+add_executable (string_hash_set string_hash_set.cpp)
+target_link_libraries (string_hash_set PRIVATE dbms)
+
 add_executable (context context.cpp)
 target_link_libraries (context PRIVATE dbms)
 
