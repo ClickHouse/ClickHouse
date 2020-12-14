@@ -1216,10 +1216,7 @@ public:
         {
             return res;
         }
-        else if ((isColumnedAsDecimal(left_type) || isColumnedAsDecimal(right_type))
-                 // Comparing Date and DateTime64 requires implicit conversion,
-                 // otherwise Date is treated as number.
-                 && !(date_and_datetime && (isDate(left_type) || isDate(right_type))))
+        else if (isColumnedAsDecimal(left_type) || isColumnedAsDecimal(right_type))
         {
             // compare
             if (!allowDecimalComparison(left_type, right_type) && !date_and_datetime)

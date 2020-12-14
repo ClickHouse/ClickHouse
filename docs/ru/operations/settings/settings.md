@@ -2231,9 +2231,40 @@ SELECT CAST(toNullable(toInt32(0)) AS Int32) as x, toTypeName(x);
 
 ## output_format_tsv_null_representation {#output_format_tsv_null_representation}
 
-Позволяет настраивать представление `NULL` для формата выходных данных [TSV](../../interfaces/formats.md#tabseparated). Настройка управляет форматом выходных данных, `\N` является единственным поддерживаемым представлением для формата входных данных TSV.
+Определяет представление `NULL` для формата выходных данных [TSV](../../interfaces/formats.md#tabseparated). Пользователь может установить в качестве значения любую строку.
 
 Значение по умолчанию: `\N`.
+
+**Примеры**
+
+Запрос
+
+```sql
+SELECT * FROM tsv_custom_null FORMAT TSV;
+```
+
+Результат
+
+```text
+788
+\N
+\N
+```
+
+Запрос
+
+```sql
+SET output_format_tsv_null_representation = 'My NULL';
+SELECT * FROM tsv_custom_null FORMAT TSV;
+```
+
+Результат
+
+```text
+788
+My NULL
+My NULL
+```
 
 ## output_format_json_array_of_rows {#output-format-json-array-of-rows}
 
