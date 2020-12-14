@@ -510,7 +510,7 @@ void InterpreterSystemQuery::restoreReplica(ASTSystemQuery & query)
         move_parts_alter_command.to_table = new_table_name;
 
         ASTExpressionList move_parts_command_list{};
-        move_parts_command_list.commands = {&move_parts_alter_command}; // ok storing pointer to stack value as
+        move_parts_command_list.children = {&move_parts_alter_command}; // ok storing pointer to stack value as
         move_parts_query.command_list = &move_parts_command_list;       // it will be alive by the executor end.
 
         InterpreterAlterQuery move_parts_interpreter(move_parts_ptr, context);
