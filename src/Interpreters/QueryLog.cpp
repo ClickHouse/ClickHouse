@@ -57,9 +57,12 @@ Block QueryLogElement::createBlock()
         {std::make_shared<DataTypeString>(),                                  "query"},
         {std::make_shared<DataTypeUInt64>(),                                  "normalized_query_hash"},
         {std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "query_kind"},
-        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "databases"},
-        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "tables"},
-        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "columns"},
+        {std::make_shared<DataTypeArray>(
+            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())), "databases"},
+        {std::make_shared<DataTypeArray>(
+            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())), "tables"},
+        {std::make_shared<DataTypeArray>(
+            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())), "columns"},
         {std::make_shared<DataTypeInt32>(),                                   "exception_code"},
         {std::make_shared<DataTypeString>(),                                  "exception"},
         {std::make_shared<DataTypeString>(),                                  "stack_trace"},

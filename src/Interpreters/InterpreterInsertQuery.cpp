@@ -31,6 +31,7 @@
 #include <Storages/StorageDistributed.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/checkStackSize.h>
+#include <Interpreters/QueryLog.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/getTableExpressions.h>
 
@@ -443,6 +444,18 @@ BlockIO InterpreterInsertQuery::execute()
 StorageID InterpreterInsertQuery::getDatabaseTable() const
 {
     return query_ptr->as<ASTInsertQuery &>().table_id;
+}
+
+
+void InterpreterInsertQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, const Context & context_) const
+{
+    elem.query_kind = "Insert";
+    const auto & insert_table = context_.getInsertionTable();
+    if (!insert_table.empty())
+    {
+        elem.query_databases.insert(insert_table.getDatabaseName());
+        elem.query_tables.insert(insert_table.getFullNameNotQuoted());
+    }
 }
 
 }

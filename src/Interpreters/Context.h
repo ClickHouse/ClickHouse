@@ -367,7 +367,7 @@ public:
     bool hasScalar(const String & name) const;
 
     const QueryAccessInfo & getQueryAccessInfo() const { return query_access_info; }
-    void addQueryAccessInfo(const std::string & database_name, const std::string & table_name, const Names & column_names);
+    void addQueryAccessInfo(const String & quoted_database_name, const String & full_quoted_table_name, const Names & column_names);
 
     StoragePtr executeTableFunction(const ASTPtr & table_expression);
 
