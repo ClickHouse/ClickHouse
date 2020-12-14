@@ -129,26 +129,31 @@ Removes something from a column. For example, TTL-property.
 Syntax:
 
 ```sql
-ALTER TABLE table_name MODIFY column_name REMOVE property
+ALTER TABLE table_name MODIFY column_name REMOVE property;
 ```
 
 **Example**
 
 Request
+
 ```sql
-ALTER TABLE table_name MODIFY column_name REMOVE removing_property
+ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
+```
+
+```sql
+SELECT column_ttl FROM table_with_ttl;
 ```
 
 Result
-```text
-
+```
+As a result after removing the TTL-property from the specified column, you will see full list with removed after TTL functioning lines.
 ```
 
 ## See Also
 
+- [REMOVE TTL](ttl.md).
 - [ALTER](../../sql-reference/statements/alter/#query_language_queries_alter).
 - [MODIFY column](../../sql-reference/statements/alter/column/#alter_modify-column).
-- [REMOVE TTL](ttl.md).
 
 Changing the column type is the only complex action – it changes the contents of files with data. For large tables, this may take a long time.
 
