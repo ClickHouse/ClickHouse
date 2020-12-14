@@ -65,7 +65,7 @@ std::optional<Chunk> RemoteSource::tryGenerate()
 
         was_query_sent = true;
     }
-
+#if defined(OS_LINUX)
     auto res = query_executor->read(read_context);
     if (std::holds_alternative<int>(res))
     {
@@ -77,6 +77,9 @@ std::optional<Chunk> RemoteSource::tryGenerate()
     is_async_state = false;
 
     auto block = std::get<Block>(std::move(res));
+#else
+    auto block = query_executor->read();
+#endif
 
     if (!block)
     {

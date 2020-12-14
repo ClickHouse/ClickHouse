@@ -1,4 +1,7 @@
 #pragma once
+
+#if defined(OS_LINUX)
+
 #include <sys/epoll.h>
 #include <Common/Fiber.h>
 #include <Common/FiberStack.h>
@@ -25,6 +28,8 @@ public:
     std::exception_ptr exception;
     FiberStack<> stack;
     boost::context::fiber fiber;
+    std::mutex fiber_lock;
+    std::unique_lock<std::mutex> * connection_lock;
 
     Poco::Timespan receive_timeout;
     MultiplexedConnections & connections;
@@ -61,7 +66,9 @@ public:
                 throwFromErrno("Cannot add timer descriptor to epoll", ErrorCodes::CANNOT_OPEN_FILE);
         }
 
-        fiber = boost::context::fiber(std::allocator_arg_t(), stack, Routine{connections, *this});
+        auto routine = Routine{connections, *this, std::unique_lock(connections.cancel_mutex, std::defer_lock)};
+        connection_lock = &routine.connection_lock;
+        fiber = boost::context::fiber(std::allocator_arg_t(), stack, std::move(routine));
     }
 
     void setSocket(Poco::Net::Socket & socket)
@@ -147,17 +154,23 @@ public:
             timer.setRelative(receive_timeout);
     }
 
-    bool resumeRoutine(std::mutex & mutex)
+    bool resumeRoutine()
     {
         if (is_read_in_progress && !checkTimeout())
             return false;
 
         {
-            std::lock_guard guard(mutex);
+            std::lock_guard guard(fiber_lock);
             if (!fiber)
                 return false;
 
+            if (!connection_lock->owns_lock())
+                connection_lock->lock();
+
             fiber = std::move(fiber).resume();
+
+            if (!is_read_in_progress)
+                connection_lock->unlock();
         }
 
         if (exception)
@@ -180,9 +193,9 @@ public:
         return true;
     }
 
-    void cancel(std::mutex & mutex)
+    void cancel()
     {
-        std::lock_guard guard(mutex);
+        std::lock_guard guard(fiber_lock);
         boost::context::fiber to_destroy = std::move(fiber);
 
         uint64_t buf = 0;
@@ -207,6 +220,7 @@ public:
     {
         MultiplexedConnections & connections;
         Self & read_context;
+        std::unique_lock<std::mutex> connection_lock;
 
         Fiber operator()(Fiber && sink) const
         {
@@ -236,5 +250,13 @@ public:
         }
     };
 };
+}
+#else
+namespace DB
+{
+class RemoteQueryExecutorReadContext
+{
+};
 
 }
+#endif
