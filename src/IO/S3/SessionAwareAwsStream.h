@@ -11,10 +11,10 @@ namespace DB::S3
  * Wrapper of IOStream to store response stream and corresponding HTTP session.
  */
 template <typename Session>
-class SessionAwareAwsStream : public Aws::IOStream
+class SessionAwareAwsStream : public Aws::IStream
 {
 public:
-    SessionAwareAwsStream(Session session_, std::iostream & response_stream_)
+    SessionAwareAwsStream(Session session_, std::istream & response_stream_)
         : Aws::IStream(response_stream_.rdbuf()), session(std::move(session_))
     {
     }
