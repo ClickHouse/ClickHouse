@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <Storages/System/StorageSystemZooKeeper.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>

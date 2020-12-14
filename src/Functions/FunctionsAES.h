@@ -82,10 +82,9 @@ struct KeyHolder<CipherMode::MySQLCompatibility>
         return foldEncryptionKeyInMySQLCompatitableMode(cipher_key_size, key, folded_key);
     }
 
-    ~KeyHolder()
-    {
-        OPENSSL_cleanse(folded_key.data(), folded_key.size());
-    }
+    /// There is a function to clear key securely.
+    /// It makes absolutely zero sense to call it here because
+    /// key comes from column and already copied multiple times through various memory buffers.
 
 private:
     std::array<char, EVP_MAX_KEY_LENGTH> folded_key;
@@ -119,7 +118,7 @@ inline void validateCipherMode(const EVP_CIPHER * evp_cipher)
         }
     }
 
-    throw DB::Exception("Unsupported cipher mode " + std::string(EVP_CIPHER_name(evp_cipher)), DB::ErrorCodes::BAD_ARGUMENTS);
+    throw DB::Exception("Unsupported cipher mode", DB::ErrorCodes::BAD_ARGUMENTS);
 }
 
 template <CipherMode mode>

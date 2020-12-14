@@ -14,6 +14,7 @@
 #include <Poco/DirectoryIterator.h>
 #include <Common/renameat2.h>
 #include <Common/CurrentMetrics.h>
+#include <common/logger_useful.h>
 
 #include <filesystem>
 

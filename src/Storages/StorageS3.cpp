@@ -216,8 +216,14 @@ StorageS3::StorageS3(
         credentials = Aws::Auth::AWSCredentials(std::move(settings.access_key_id), std::move(settings.secret_access_key));
 
     client = S3::ClientFactory::instance().create(
-        uri_.endpoint, uri_.is_virtual_hosted_style, access_key_id_, secret_access_key_, std::move(settings.headers),
-        context_.getRemoteHostFilter(), context_.getGlobalContext().getSettingsRef().s3_max_redirects);
+        uri_.endpoint,
+        uri_.is_virtual_hosted_style,
+        credentials.GetAWSAccessKeyId(),
+        credentials.GetAWSSecretKey(),
+        std::move(settings.headers),
+        settings.use_environment_credentials.value_or(global_context.getConfigRef().getBool("s3.use_environment_credentials", false)),
+        context_.getRemoteHostFilter(),
+        context_.getGlobalContext().getSettingsRef().s3_max_redirects);
 }
 
 

@@ -652,3 +652,67 @@ def mysql_kill_sync_thread_restore_test(clickhouse_node, mysql_node, service_nam
     mysql_node.query("DROP DATABASE test_database")
 
 
+def mysql_killed_while_insert(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("CREATE DATABASE kill_mysql_while_insert")
+    mysql_node.query("CREATE TABLE kill_mysql_while_insert.test ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;")
+    clickhouse_node.query("CREATE DATABASE kill_mysql_while_insert ENGINE = MaterializeMySQL('{}:3306', 'kill_mysql_while_insert', 'root', 'clickhouse')".format(service_name))
+    check_query(clickhouse_node, "SHOW TABLES FROM kill_mysql_while_insert FORMAT TSV", 'test\n')
+
+    try:
+        def insert(num):
+            for i in range(num):
+                query = "INSERT INTO kill_mysql_while_insert.test VALUES({v});".format( v = i + 1 )
+                mysql_node.query(query)
+
+        t = threading.Thread(target=insert, args=(10000,))
+        t.start()
+
+        subprocess.check_call(
+            ['docker-compose', '-p', mysql_node.project_name, '-f', mysql_node.docker_compose, 'stop'])
+    finally:
+        with pytest.raises(QueryRuntimeException) as execption:
+            time.sleep(5)
+            clickhouse_node.query("SELECT count() FROM kill_mysql_while_insert.test")
+        assert "Master maybe lost." in str(execption.value)
+
+        subprocess.check_call(
+            ['docker-compose', '-p', mysql_node.project_name, '-f', mysql_node.docker_compose, 'start'])
+        mysql_node.wait_mysql_to_start(120)
+
+        clickhouse_node.query("DETACH DATABASE kill_mysql_while_insert")
+        clickhouse_node.query("ATTACH DATABASE kill_mysql_while_insert")
+
+        result = mysql_node.query_and_get_data("SELECT COUNT(1) FROM kill_mysql_while_insert.test")
+        for row in result:
+            res = str(row[0]) + '\n'
+            check_query(clickhouse_node, "SELECT count() FROM kill_mysql_while_insert.test", res)
+
+        mysql_node.query("DROP DATABASE kill_mysql_while_insert")
+        clickhouse_node.query("DROP DATABASE kill_mysql_while_insert")
+
+
+def clickhouse_killed_while_insert(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("CREATE DATABASE kill_clickhouse_while_insert")
+    mysql_node.query("CREATE TABLE kill_clickhouse_while_insert.test ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;")
+    clickhouse_node.query("CREATE DATABASE kill_clickhouse_while_insert ENGINE = MaterializeMySQL('{}:3306', 'kill_clickhouse_while_insert', 'root', 'clickhouse')".format(service_name))
+    check_query(clickhouse_node, "SHOW TABLES FROM kill_clickhouse_while_insert FORMAT TSV", 'test\n')
+
+    def insert(num):
+        for i in range(num):
+            query = "INSERT INTO kill_clickhouse_while_insert.test VALUES({v});".format( v = i + 1 )
+            mysql_node.query(query)
+
+    t = threading.Thread(target=insert, args=(1000,))
+    t.start()
+    
+    # TODO: add clickhouse_node.restart_clickhouse(20, kill=False) test
+    clickhouse_node.restart_clickhouse(20, kill=True)
+    t.join()
+
+    result = mysql_node.query_and_get_data("SELECT COUNT(1) FROM kill_clickhouse_while_insert.test")
+    for row in result:
+        res = str(row[0]) + '\n'
+        check_query(clickhouse_node, "SELECT count() FROM kill_clickhouse_while_insert.test FORMAT TSV", res)
+
+    mysql_node.query("DROP DATABASE kill_clickhouse_while_insert")
+    clickhouse_node.query("DROP DATABASE kill_clickhouse_while_insert")
