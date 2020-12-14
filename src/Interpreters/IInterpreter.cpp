@@ -4,7 +4,7 @@
 namespace DB
 {
 void IInterpreter::extendQueryLogElem(
-    QueryLogElement & elem, const ASTPtr & ast, const Context & context, const String & query_database, const String & query_table)
+    QueryLogElement & elem, const ASTPtr & ast, const Context & context, const String & query_database, const String & query_table) const
 {
     if (!query_database.empty() && query_table.empty())
     {
