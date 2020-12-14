@@ -2410,7 +2410,6 @@ Result:
 {"number":"1"}
 {"number":"2"}
 ```
-
 =======
 ## allow_nullable_key {#allow-nullable-key}
 
@@ -2422,5 +2421,20 @@ Possible values:
 - 0 — `Nullable`-type expressions are not allowed in keys.
 
 Default value: `0`.
+
+## execute_merges_on_single_replica_time_threshold {#execute-merges-on-single-replica-time-threshold}
+
+Enables special logic to perform merges on replicas.
+
+Possible values:
+
+-   Positive integer (in seconds).
+-   0 — Special merge logic is not executed.
+
+Default value: `0`.
+
+**Special logic to perform merges**
+
+Selects one replica to perform the merge on. Sets the time threshold from the start of the merge. Other replicas wait for the merge to finish, then download the result. If the time threshold passes and the selected replica does not perform merges, then the merge is performed manually.
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
