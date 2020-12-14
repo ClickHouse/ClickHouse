@@ -453,7 +453,8 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
         if (storage_parse_result && s_as.ignore(pos, expected))
         {
-            select_p.parse(pos, select, expected);
+            if (!select_p.parse(pos, select, expected))
+                return false;
         }
 
         if (!storage_parse_result && !is_temporary)
