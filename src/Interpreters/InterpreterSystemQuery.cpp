@@ -1,4 +1,3 @@
-#include <Interpreters/InterpreterSystemQuery.h>
 #include <Common/DNSResolver.h>
 #include <Common/ActionLock.h>
 #include <Common/typeid_cast.h>
@@ -6,10 +5,10 @@
 #include <Common/SymbolIndex.h>
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
-#include "Interpreters/InterpreterAlterQuery.h"
-#include "Interpreters/InterpreterSelectQuery.h"
-#include "Parsers/ASTPartition.h"
-#include "Processors/Executors/PullingPipelineExecutor.h"
+
+#include <Interpreters/InterpreterSystemQuery.h>
+#include <Interpreters/InterpreterAlterQuery.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -27,15 +26,22 @@
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
+
 #include <Access/ContextAccess.h>
 #include <Access/AllowedClientHosts.h>
 #include <Databases/IDatabase.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageFactory.h>
+#include "Processors/Executors/PullingPipelineExecutor.h"
+
+#include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSystemQuery.h>
+#include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+
 #include <csignal>
 #include <algorithm>
 #include <memory>
@@ -44,11 +50,8 @@
 #    include "config_core.h"
 #endif
 
-
 namespace DB
 {
-
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -359,7 +362,7 @@ BlockIO InterpreterSystemQuery::execute()
                 [&] { if (auto trace_log = context.getTraceLog()) trace_log->flush(true); },
                 [&] { if (auto text_log = context.getTextLog()) text_log->flush(true); },
                 [&] { if (auto metric_log = context.getMetricLog()) metric_log->flush(true); },
-                [&] { if (auto asynchronous_metric_log = context.getAsynchronousMetricLog()) asynchronous_metric_log->flush(true); }
+                [&] { if (auto asynchronous_metric_log = context.getAsynchronousMetricLog()) asynchronous_metric_log->flush(true); },
                 [&] { if (auto opentelemetry_span_log = context.getOpenTelemetrySpanLog()) opentelemetry_span_log->flush(true); }
             );
             break;
@@ -499,8 +502,8 @@ void InterpreterSystemQuery::restoreReplica(ASTSystemQuery & query)
         move_parts_query.table = old_table_name;
         move_parts_query.uuid = uuid;
 
-        ASTAlterCommand move_parts_alter_command{};
-        ASTAlterCommandList move_parts_command_list{};
+        ASTPtr move_parts_alter_command_ptr = std::make_shared<ASTAlterCommand>();
+        ASTAlterCommand& move_parts_alter_command = move_parts_alter_command_ptr->as<ASTAlterCommand&>();
 
         move_parts_alter_command.type = ASTAlterCommand::Type::MOVE_PARTITION;
         move_parts_alter_command.move_destination_type = DataDestinationType::TABLE;
@@ -508,7 +511,8 @@ void InterpreterSystemQuery::restoreReplica(ASTSystemQuery & query)
         move_parts_alter_command.to_database = db_name;
         move_parts_alter_command.to_table = new_table_name;
 
-        move_parts_command_list.commands = {&move_parts_alter_command}; // ok storing pointer to stack value as
+        ASTExpressionList move_parts_command_list{};
+        move_parts_command_list.children = {move_parts_alter_command_ptr}; // ok storing pointer to stack value as
         move_parts_query.command_list = &move_parts_command_list;       // it will be alive by the executor end.
 
         InterpreterAlterQuery move_parts_interpreter(move_parts_ptr, context);
