@@ -4,6 +4,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     const MergeTreeData::DataPartPtr & data_part_,
     const NamesAndTypesList & columns_list_,
