@@ -54,6 +54,7 @@ CompressedReadBufferFromFile::CompressedReadBufferFromFile(
     allow_different_codecs = allow_different_codecs_;
 }
 
+
 void CompressedReadBufferFromFile::seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block)
 {
     if (size_compressed &&

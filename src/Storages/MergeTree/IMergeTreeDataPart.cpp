@@ -342,7 +342,6 @@ void IMergeTreeDataPart::assertOnDisk() const
 
 UInt64 IMergeTreeDataPart::getMarksCount() const
 {
-    LOG_DEBUG(storage.log, "Marks count {} for part {}", index_granularity.getMarksCount(), name);
     return index_granularity.getMarksCount();
 }
 
