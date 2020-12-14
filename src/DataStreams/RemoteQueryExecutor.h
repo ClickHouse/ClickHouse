@@ -1,11 +1,14 @@
 #pragma once
 
-#include <Interpreters/Context.h>
 #include <Client/ConnectionPool.h>
 #include <Client/MultiplexedConnections.h>
+#include <Storages/IStorage_fwd.h>
+#include <Interpreters/StorageID.h>
 
 namespace DB
 {
+
+class Context;
 
 class Throttler;
 using ThrottlerPtr = std::shared_ptr<Throttler>;
@@ -21,26 +24,23 @@ class RemoteQueryExecutor
 {
 public:
     /// Takes already set connection.
-    /// If `settings` is nullptr, settings will be taken from context.
     RemoteQueryExecutor(
         Connection & connection,
-        const String & query_, const Block & header_, const Context & context_, const Settings * settings = nullptr,
+        const String & query_, const Block & header_, const Context & context_,
         ThrottlerPtr throttler_ = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
     /// Accepts several connections already taken from pool.
-    /// If `settings` is nullptr, settings will be taken from context.
     RemoteQueryExecutor(
         std::vector<IConnectionPool::Entry> && connections,
-        const String & query_, const Block & header_, const Context & context_, const Settings * settings = nullptr,
+        const String & query_, const Block & header_, const Context & context_,
         const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
     /// Takes a pool and gets one or several connections from it.
-    /// If `settings` is nullptr, settings will be taken from context.
     RemoteQueryExecutor(
         const ConnectionPoolWithFailoverPtr & pool,
-        const String & query_, const Block & header_, const Context & context_, const Settings * settings = nullptr,
+        const String & query_, const Block & header_, const Context & context_,
         const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
@@ -93,7 +93,7 @@ private:
 
     const String query;
     String query_id = "";
-    Context context;
+    const Context & context;
 
     ProgressCallback progress_callback;
     ProfileInfoCallback profile_info_callback;
