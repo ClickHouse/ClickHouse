@@ -427,7 +427,7 @@ struct TestKeeperStorageMultiRequest final : public TestKeeperStorageRequest
 
         for (const auto & sub_request : request.requests)
         {
-            auto sub_zk_request = dynamic_pointer_cast<Coordination::ZooKeeperRequest>(sub_request);
+            auto sub_zk_request = std::dynamic_pointer_cast<Coordination::ZooKeeperRequest>(sub_request);
             if (sub_zk_request->getOpNum() == Coordination::OpNum::Create)
             {
                 concrete_requests.push_back(std::make_shared<TestKeeperStorageCreateRequest>(sub_zk_request));
