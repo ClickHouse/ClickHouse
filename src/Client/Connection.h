@@ -171,7 +171,7 @@ public:
     std::optional<UInt64> checkPacket(size_t timeout_microseconds = 0);
 
     /// Receive packet from server.
-    Packet receivePacket(Fiber * fiber);
+    Packet receivePacket(Fiber * fiber = nullptr);
 
     /// If not connected yet, or if connection is broken - then connect. If cannot connect - throw an exception.
     void forceConnected(const ConnectionTimeouts & timeouts);
