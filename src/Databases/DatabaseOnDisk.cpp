@@ -169,17 +169,33 @@ void DatabaseOnDisk::createTable(
     if (isTableExist(table_name, global_context))
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists", backQuote(getDatabaseName()), backQuote(table_name));
 
-    if (!create.attach)
-        checkMetadataFilenameAvailability(table_name);
+    String table_metadata_path = getObjectMetadataPath(table_name);
 
     if (create.attach_short_syntax)
     {
         /// Metadata already exists, table was detached
         attachTable(table_name, table, getTableDataPath(create));
+        removeDetachedPermanentlyFlag(table_name, table_metadata_path);
         return;
     }
 
-    String table_metadata_path = getObjectMetadataPath(table_name);
+    if (!create.attach)
+        checkMetadataFilenameAvailability(table_name);
+
+    if (create.attach && Poco::File(table_metadata_path).exists())
+    {
+        ASTPtr ast_detached = parseQueryFromMetadata(log, context, table_metadata_path);
+        auto & create_detached = ast_detached->as<ASTCreateQuery &>();
+
+        // either both should be Nil, either values should be equal
+        if (create.uuid != create_detached.uuid)
+            throw Exception(
+                    ErrorCodes::TABLE_ALREADY_EXISTS,
+                    "Table {}.{} already exist (detached permanently). To attach it back "
+                    "you need to use short ATTACH syntax or a full statement with the same UUID",
+                    backQuote(getDatabaseName()), backQuote(table_name));
+    }
+
     String table_metadata_tmp_path = table_metadata_path + create_suffix;
     String statement;
 
@@ -196,6 +212,26 @@ void DatabaseOnDisk::createTable(
     }
 
     commitCreateTable(create, table, table_metadata_tmp_path, table_metadata_path);
+
+    removeDetachedPermanentlyFlag(table_name, table_metadata_path);
+}
+
+/// If the table was detached permanently we will have a flag file with
+/// .sql.detached extension, is not needed anymore since we attached the table back
+void DatabaseOnDisk::removeDetachedPermanentlyFlag(const String & table_name, const String & table_metadata_path) const
+{
+    try
+    {
+        auto detached_permanently_flag = Poco::File(table_metadata_path + detached_suffix);
+
+        if (detached_permanently_flag.exists())
+            detached_permanently_flag.remove();
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while trying to remove permanenty detached flag. Table {}.{} may still be marked as permanently detached, and will not be reattached during server restart.", backQuote(getDatabaseName()), backQuote(table_name));
+        throw;
+    }
 }
 
 void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
@@ -213,20 +249,6 @@ void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const Stora
     catch (...)
     {
         Poco::File(table_metadata_tmp_path).remove();
-        throw;
-    }
-
-    try
-    {
-        /// If the table was detached permanently we will have a flag file with
-        /// .sql.detached extension, which is not needed anymore since we attached the table back
-        auto detached_permanently_flag = Poco::File(table_metadata_path + detached_suffix);
-        if (detached_permanently_flag.exists())
-            detached_permanently_flag.remove();
-    }
-    catch (Exception & e)
-    {
-        e.addMessage("while trying to remove permanenty detached flag. Table {}.{} may still be marked as permanently detached, and will not be reattached during server restart.", backQuote(getDatabaseName()), backQuote(query.table));
         throw;
     }
 }
@@ -288,7 +310,7 @@ void DatabaseOnDisk::dropTable(const Context & context, const String & table_nam
 void DatabaseOnDisk::checkMetadataFilenameAvailability(const String & to_table_name) const
 {
     std::unique_lock lock(mutex);
-    checkMetadataFilenameAvailabilityUnlocked(create, lock);
+    checkMetadataFilenameAvailabilityUnlocked(to_table_name, lock);
 }
 
 void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name, std::unique_lock<std::mutex> &) const

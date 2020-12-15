@@ -94,6 +94,9 @@ protected:
 
     const String metadata_path;
     const String data_path;
+
+private:
+    void removeDetachedPermanentlyFlag(const String & table_name, const String & table_metadata_path) const;
 };
 
 }
