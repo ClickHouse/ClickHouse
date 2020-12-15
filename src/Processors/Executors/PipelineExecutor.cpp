@@ -502,6 +502,9 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
                     node = context->async_tasks.front();
                     context->async_tasks.pop();
                     --num_waiting_async_tasks;
+
+                    if (context->async_tasks.empty())
+                        context->has_async_tasks = false;
                 }
                 else if (!task_queue.empty())
                     node = task_queue.pop(thread_num);
@@ -610,7 +613,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
                 node = nullptr;
 
                 /// Take local task from queue if has one.
-                if (!queue.empty())
+                if (!queue.empty() && !context->has_async_tasks)
                 {
                     node = queue.front();
                     queue.pop();
@@ -784,6 +787,7 @@ void PipelineExecutor::executeImpl(size_t num_threads)
             {
                 auto * node = static_cast<ExecutingGraph::Node *>(task.data);
                 executor_contexts[task.thread_num]->async_tasks.push(node);
+                executor_contexts[task.thread_num]->has_async_tasks = true;
                 ++num_waiting_async_tasks;
 
                 if (threads_queue.has(task.thread_num))

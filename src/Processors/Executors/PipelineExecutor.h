@@ -98,6 +98,7 @@ private:
         std::list<ExpandPipelineTask> task_list;
 
         std::queue<ExecutingGraph::Node *> async_tasks;
+        std::atomic_bool has_async_tasks = false;
 
         std::condition_variable condvar;
         std::mutex mutex;
