@@ -7,34 +7,3 @@ toc_priority: 10
 ## Как экспортировать данные из ClickHouse в файл? {#how-to-export-to-file-rus}
 
 ### Секция INTO OUTFILE {#sektsiia-into-outfile-rus}
-
-Добавьте секцию [INTO OUTFILE../sql-reference/statements/select/into-outfile.md#into-outfile-clause) к своему запросу.
-
-Например:
-
-``` sql
-SELECT * FROM table INTO OUTFILE 'file'
-```
-
-По умолчанию, для выдачи данных ClickHouse использует формат [TabSeparated../interfaces/formats.md#tabseparated). Чтобы выбрать [формат данных../interfaces/formats.md), используйте [секцию FORMAT../sql-reference/statements/select/format.md#format-clause).
-
-Например:
-
-``` sql
-SELECT * FROM table INTO OUTFILE 'file' FORMAT CSV
-```
-
-### Таблица с движком File {#tablitsa-s-dvizhkom-file-rus}
-
-Смотрите [File../engines/table-engines/special/file.md).
-
-### Перенаправление в командой строке {#perenapravlenie-v-komandoi-stroke-rus}
-
-``` sql
-$ clickhouse-client --query "SELECT * from table" --format FormatName > result.txt
-```
-
-Смотрите [clickhouse-client../interfaces/cli.md).
-
-[Оригинальная статья](https://clickhouse.tech/docs/en/faq/general/) <!--hide-->
-

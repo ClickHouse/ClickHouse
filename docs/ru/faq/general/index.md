@@ -10,10 +10,3 @@ toc_priority: 1
 
 This section of the documentation is a place to collect answers to ClickHouse-related questions that arise often.
 
-Вопросы:
-
--   [Что такое ClickHouse?../index.md#what-is-clickhouse)
--   [Почему бы не использовать системы типа MapReduce?mapreduce.md)
-
-{## [Original article](https://clickhouse.tech/docs/ru/faq) ##}
-
