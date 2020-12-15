@@ -123,8 +123,6 @@ String IDataType::getFileNameForStream(const String & column_name, const IDataTy
             ///  and name is encoded as a whole.
             stream_name += "%2E" + escapeForFileName(elem.tuple_element_name);
         }
-        else if (elem.type == Substream::MapElement)
-            stream_name += ".map." + escapeForFileName(elem.map_element_name);
         else if (elem.type == Substream::DictionaryKeys)
             stream_name += ".dict";
     }

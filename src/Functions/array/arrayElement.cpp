@@ -85,7 +85,9 @@ private:
       */
     ColumnPtr executeTuple(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const;
 
-    /** For a Map, the function is to find the matched key's value
+    /** For a map the function finds the matched value for a key.
+     *  Currently implemented just as linear seach in array.
+     *  However, optimizations are possible.
      */
     ColumnPtr executeMap(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
 

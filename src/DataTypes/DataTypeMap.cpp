@@ -196,9 +196,9 @@ void DataTypeMap::deserializeTextImpl(IColumn & column, ReadBuffer & istr, bool 
 void DataTypeMap::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     serializeTextImpl(column, row_num, ostr,
-        [&](const DataTypePtr & nested_type, const IColumn & nested_column, size_t pos)
+        [&](const DataTypePtr & subcolumn_type, const IColumn & subcolumn, size_t pos)
         {
-            nested_type->serializeAsTextQuoted(nested_column, pos, ostr, settings);
+            subcolumn_type->serializeAsTextQuoted(subcolumn, pos, ostr, settings);
         });
 }
 
@@ -208,9 +208,9 @@ void DataTypeMap::deserializeText(IColumn & column, ReadBuffer & istr, const For
     bool need_safe_get_int_key = isInteger(key_type);
 
     deserializeTextImpl(column, istr, need_safe_get_int_key,
-        [&](const DataTypePtr & nested_type, IColumn & nested_column)
+        [&](const DataTypePtr & subcolumn_type, IColumn & subcolumn)
         {
-            nested_type->deserializeAsTextQuoted(nested_column, istr, settings);
+            subcolumn_type->deserializeAsTextQuoted(subcolumn, istr, settings);
         });
 }
 
@@ -218,9 +218,9 @@ void DataTypeMap::deserializeText(IColumn & column, ReadBuffer & istr, const For
 void DataTypeMap::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     serializeTextImpl(column, row_num, ostr,
-        [&](const DataTypePtr & nested_type, const IColumn & nested_column, size_t pos)
+        [&](const DataTypePtr & subcolumn_type, const IColumn & subcolumn, size_t pos)
         {
-            nested_type->serializeAsTextJSON(nested_column, pos, ostr, settings);
+            subcolumn_type->serializeAsTextJSON(subcolumn, pos, ostr, settings);
         });
 }
 
@@ -230,9 +230,9 @@ void DataTypeMap::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const
     bool need_safe_get_int_key = isInteger(key_type);
 
     deserializeTextImpl(column, istr, need_safe_get_int_key,
-        [&](const DataTypePtr & nested_type, IColumn & nested_column)
+        [&](const DataTypePtr & subcolumn_type, IColumn & subcolumn)
         {
-            nested_type->deserializeAsTextJSON(nested_column, istr, settings);
+            subcolumn_type->deserializeAsTextJSON(subcolumn, istr, settings);
         });
 }
 
