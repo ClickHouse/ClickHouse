@@ -23,13 +23,16 @@ public:
     void finish(IMergeTreeDataPart::Checksums & checksums, bool sync) override;
 
 private:
-
+    /// Finish serialization of the data. Flush rows in buffer to disk, compute checksums.
     void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync);
 
     void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) override;
 
+    /// Write block of rows into .bin file and marks in .mrk files
     void writeDataBlock(const Block & block, const Granules & granules);
 
+    /// Write block of rows into .bin file and marks in .mrk files, primary index in .idx file
+    /// and skip indices in their corresponding files.
     void writeDataBlockPrimaryIndexAndSkipIndices(const Block & block, const Granules & granules);
 
     void addToChecksums(MergeTreeDataPartChecksums & checksums);

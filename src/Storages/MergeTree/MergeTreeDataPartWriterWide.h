@@ -32,7 +32,8 @@ public:
     void finish(IMergeTreeDataPart::Checksums & checksums, bool sync) final;
 
 private:
-
+    /// Finish serialization of data: write final mark if required and compute checksums
+    /// Also validate written data in debug mode
     void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync);
 
     /// Write data of one column.
@@ -45,7 +46,7 @@ private:
         WrittenOffsetColumns & offset_columns,
         const Granules & granules);
 
-    /// Write single granule of one column (rows between 2 marks)
+    /// Write single granule of one column.
     void writeSingleGranule(
         const String & name,
         const IDataType & type,
@@ -53,22 +54,21 @@ private:
         WrittenOffsetColumns & offset_columns,
         IDataType::SerializeBinaryBulkStatePtr & serialization_state,
         IDataType::SerializeBinaryBulkSettings & serialize_settings,
-        size_t from_row,
-        size_t number_of_rows,
-        bool write_marks);
+        const Granule & granule);
 
-
-    void flushMarkToFile(
-        const StreamNameAndMark & stream_with_mark,
-        size_t rows_in_mark);
-
+    /// Take offsets from column and return as MarkInCompressed file with stream name
     StreamsWithMarks getCurrentMarksForColumn(
         const String & name,
         const IDataType & type,
         WrittenOffsetColumns & offset_columns,
         DB::IDataType::SubstreamPath & path);
 
-    /// Write mark for column
+    /// Write mark to disk using stream and rows count
+    void flushMarkToFile(
+        const StreamNameAndMark & stream_with_mark,
+        size_t rows_in_mark);
+
+    /// Write mark for column taking offsets from column stream
     void writeSingleMark(
         const String & name,
         const IDataType & type,
@@ -88,10 +88,15 @@ private:
         const ASTPtr & effective_codec_desc,
         size_t estimated_size);
 
+    /// Method for self check (used in debug-build only). Checks that written
+    /// data and corresponding marks are consistent. Otherwise throws logical
+    /// errors.
     void validateColumnOfFixedSize(const String & name, const IDataType & type);
 
     void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) override;
 
+    /// Use information from just written granules to shift current mark
+    /// in our index_granularity array.
     void shiftCurrentMark(const Granules & granules_written);
 
     IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns) const;
@@ -104,6 +109,8 @@ private:
     using ColumnStreams = std::map<String, StreamPtr>;
     ColumnStreams column_streams;
 
+    /// How many rows we have already written in the current mark.
+    /// More than zero when incoming blocks are smaller then their granularity.
     size_t rows_written_in_last_mark = 0;
 };
 
