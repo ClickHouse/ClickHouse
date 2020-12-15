@@ -51,9 +51,14 @@ public:
     struct Data
     {
         const ColumnsDescription & columns;
+
+        /// forbidden_columns are from array join, we can't rewrite alias columns involved in array join.
+        /// Do not analyze joined columns.
+        /// They may have aliases and come to description as is.
         const NameSet & forbidden_columns;
         const Context & context;
 
+        /// private_aliases are from lambda, so these are local names.
         NameSet private_aliases;
 
         Data(const ColumnsDescription & columns_, const NameSet & forbidden_columns_, const Context & context_)

@@ -123,6 +123,8 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(const StorageMetadataPtr &
         bool ok;
         /// check if it's alias column
         /// currently we only support alias column without any function wrapper
+        /// ie: `order by aliased_column` can have this optimization, but `order by function(aliased_column)` can not.
+        /// This suits most cases.
         if (context.getSettingsRef().optimize_alias_column_prediction && aliase_columns.contains(required_sort_description[i].column_name))
         {
             auto column_expr = metadata_snapshot->getColumns().get(required_sort_description[i].column_name).default_desc.expression->clone();
