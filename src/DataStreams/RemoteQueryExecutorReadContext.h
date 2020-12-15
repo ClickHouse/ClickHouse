@@ -29,7 +29,7 @@ public:
     FiberStack<> stack;
     boost::context::fiber fiber;
     std::mutex fiber_lock;
-    std::unique_lock<std::mutex> * connection_lock;
+    // std::unique_lock<std::mutex> * connection_lock;
 
     Poco::Timespan receive_timeout;
     MultiplexedConnections & connections;
@@ -68,7 +68,7 @@ public:
 
         auto lock = std::make_unique<std::unique_lock<std::mutex>>(connections.cancel_mutex, std::defer_lock);
         auto routine = Routine{connections, *this, std::move(lock)};
-        connection_lock = routine.connection_lock.get();
+        // connection_lock = routine.connection_lock.get();
         fiber = boost::context::fiber(std::allocator_arg_t(), stack, std::move(routine));
     }
 
@@ -165,13 +165,13 @@ public:
             if (!fiber)
                 return false;
 
-            if (!connection_lock->owns_lock())
-                connection_lock->lock();
+//            if (!connection_lock->owns_lock())
+//                connection_lock->lock();
 
             fiber = std::move(fiber).resume();
 
-            if (!is_read_in_progress)
-                connection_lock->unlock();
+//            if (!is_read_in_progress)
+//                connection_lock->unlock();
         }
 
         if (exception)
