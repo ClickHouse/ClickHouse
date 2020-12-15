@@ -22,7 +22,7 @@ void MergeTreeBlockOutputStream::write(const Block & block)
     {
         Stopwatch watch;
 
-        MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, metadata_snapshot);
+        MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, metadata_snapshot, optimize_on_insert);
         storage.renameTempPartAndAdd(part, &storage.increment);
 
         PartLog::addNewPart(storage.global_context, part, watch.elapsed());
