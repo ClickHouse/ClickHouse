@@ -29,7 +29,7 @@ public:
 
     explicit FiberStack(size_t stack_size_ = default_stack_size) : stack_size(stack_size_)
     {
-        page_size = ::sysconf( _SC_PAGESIZE);
+        page_size = ::sysconf(_SC_PAGESIZE);
     }
 
     boost::context::stack_context allocate()
@@ -37,11 +37,11 @@ public:
         size_t num_pages = 1 + (stack_size - 1) / page_size;
         size_t num_bytes = (num_pages + 1) * page_size; /// Add one page at bottom that will be used as guard-page
 
-        void * vp = ::mmap( nullptr, num_bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        void * vp = ::mmap(nullptr, num_bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         if (MAP_FAILED == vp)
             DB::throwFromErrno(fmt::format("FiberStack: Cannot mmap {}.", ReadableSize(num_bytes)), DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
-        if (-1 == ::mprotect( vp, page_size, PROT_NONE))
+        if (-1 == ::mprotect(vp, page_size, PROT_NONE))
         {
             ::munmap(vp, num_bytes);
             DB::throwFromErrno("FiberStack: cannot protect guard page", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
@@ -65,7 +65,7 @@ public:
         VALGRIND_STACK_DEREGISTER(sctx.valgrind_stack_id);
 #endif
         void * vp = static_cast< char * >(sctx.sp) - sctx.size;
-        ::munmap( vp, sctx.size);
+        ::munmap(vp, sctx.size);
 
         /// Do not count guard page in memory usage.
         CurrentMemoryTracker::free(sctx.size - page_size);
