@@ -151,24 +151,6 @@ void DatabaseAtomic::renameTable(const Context & context, const String & table_n
     String old_metadata_path = getObjectMetadataPath(table_name);
     String new_metadata_path = to_database.getObjectMetadataPath(to_table_name);
 
-    if (!exchange)
-    {
-        if (auto target_db = dynamic_cast<DatabaseOnDisk *>(&to_database))
-        {
-            auto attach_query = parseQueryFromMetadata(log, context, old_metadata_path);
-            auto & create = attach_query->as<ASTCreateQuery &>();
-            create.database = to_database.getDatabaseName();
-            create.table = to_table_name;
-
-            // we run checks for rename same way as for create table (attach has more relaxed checks)
-            create.attach = false;
-
-            /// if after that check and before the actual rename the dest table
-            /// will be created & detached permanently the rename will overwrite it.
-            target_db->checkTableAttachPossible(context, create);
-        }
-    }
-
     auto detach = [](DatabaseAtomic & db, const String & table_name_, bool has_symlink)
     {
         auto it = db.table_name_to_path.find(table_name_);
@@ -234,6 +216,9 @@ void DatabaseAtomic::renameTable(const Context & context, const String & table_n
 
     if (is_dictionary && !inside_database)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot move dictionary to other database");
+
+    if (!exchange)
+        other_db.checkMetadataFilenameAvailabilityUnlocked(to_table_name, inside_database ? db_lock : other_db_lock);
 
     StoragePtr table = getTableUnlocked(table_name, db_lock);
     table->checkTableCanBeRenamed();
