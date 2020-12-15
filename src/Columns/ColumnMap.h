@@ -8,9 +8,8 @@
 namespace DB
 {
 
-/** Column, that is just group of 2 columns.
-  *
-  */
+/** Column, that stores a nested Array(Tuple(key, value)) column.
+ */
 class ColumnMap final : public COWHelper<IColumn, ColumnMap>
 {
 private:

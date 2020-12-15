@@ -7,15 +7,17 @@ namespace DB
 {
 
 /** Map data type.
-  *
-  * Map's key and value only have types.
-  * If only one type is set, then key's type is "String" in default.
+  * Map is implemented as two arrays of keys and values.
+  * Serialization of type 'Map(K, V)' is similar to serialization.
+  * of 'Array(Tuple(keys K, values V))' or in other words of 'Nested(keys K, valuev V)'.
   */
 class DataTypeMap final : public DataTypeWithSimpleSerialization
 {
 private:
     DataTypePtr key_type;
     DataTypePtr value_type;
+
+    /// 'nested' is an Array(Tuple(key_type, value_type))
     DataTypePtr nested;
 
 public:

@@ -131,7 +131,7 @@ DataTypePtr FieldToDataType::operator() (const Map & map) const
         const auto & tuple = elem.safeGet<const Tuple &>();
         assert(tuple.size() == 2);
         key_types.push_back(applyVisitor(FieldToDataType(), tuple[0]));
-        value_types.push_back(applyVisitor(FieldToDataType(), tuple[0]));
+        value_types.push_back(applyVisitor(FieldToDataType(), tuple[1]));
     }
 
     return std::make_shared<DataTypeMap>(getLeastSupertype(key_types), getLeastSupertype(value_types));
