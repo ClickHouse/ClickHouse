@@ -19,6 +19,7 @@ public:
     bool cluster{false};
     bool dictionaries{false};
     bool m_settings{false};
+    bool changed{false};
     bool temporary{false};
 
     String cluster_str;

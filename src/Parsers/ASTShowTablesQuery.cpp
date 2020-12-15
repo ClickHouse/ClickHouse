@@ -57,7 +57,8 @@ void ASTShowTablesQuery::formatQueryImpl(const FormatSettings & settings, Format
     }
     else if (m_settings)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW SETTINGS" << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW " << (changed ? "CHANGED " : "") << "SETTINGS" <<
+            (settings.hilite ? hilite_none : "");
         formatLike(settings);
     }
     else
