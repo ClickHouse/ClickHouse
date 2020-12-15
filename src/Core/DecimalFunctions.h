@@ -207,7 +207,7 @@ inline typename DecimalType::NativeType getFractionalPart(const DecimalType & de
 
 /// Decimal to integer/float conversion
 template <typename To, typename DecimalType, typename ReturnType>
-ReturnType convertToImpl(const DecimalType & decimal, size_t scale, To &result)
+ReturnType convertToImpl(const DecimalType & decimal, size_t scale, To & result)
 {
     using NativeT = typename DecimalType::NativeType;
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
@@ -269,7 +269,7 @@ To convertTo(const DecimalType & decimal, size_t scale)
 }
 
 template <typename To, typename DecimalType>
-bool tryConvertTo(const DecimalType & decimal, size_t scale, To& result)
+bool tryConvertTo(const DecimalType & decimal, size_t scale, To & result)
 {
     return convertToImpl<To, DecimalType, bool>(decimal, scale, result);
 }
