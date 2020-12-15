@@ -1,4 +1,5 @@
 #pragma once
+#if defined(OS_LINUX)
 #include <Poco/Timespan.h>
 
 namespace DB
@@ -26,3 +27,4 @@ public:
 };
 
 }
+#endif

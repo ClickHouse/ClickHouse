@@ -1,3 +1,4 @@
+#if defined(OS_LINUX)
 #include <Common/TimerDescriptor.h>
 #include <Common/Exception.h>
 
@@ -80,3 +81,4 @@ void TimerDescriptor::setRelative(const Poco::Timespan & timespan) const
 }
 
 }
+#endif
