@@ -21,7 +21,6 @@ public:
 
     String getName() const override
     {
-        fmt::print(stderr, "et getname at \n{}\n", StackTrace().toString());
         return "ExpressionTransform";
     }
 

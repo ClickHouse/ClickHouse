@@ -1788,20 +1788,10 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
             + w.window_name + "'");
         query_plan.addStep(std::move(merging_sorted));
 
-        // Add column with window function name and value "1".
-        ColumnWithTypeAndName col;
-        col.type = std::make_shared<DataTypeInt64>();
-        col.column = col.type->createColumnConst(1 /* size */, UInt64(1) /* field */);
-        col.name = f.column_name;
-
-        ActionsDAGPtr window_dag = std::make_shared<ActionsDAG>();
-        window_dag->addColumn(col);
-
-        fmt::print(stderr, "window dag: {}\n", window_dag->dumpDAG());
-
         auto window_step = std::make_unique<WindowStep>(
             query_plan.getCurrentDataStream(),
-            window_dag);
+            w,
+            std::vector<WindowFunctionDescription>(1, f));
         window_step->setStepDescription("Window step for function '"
             + f.column_name + "'");
 
