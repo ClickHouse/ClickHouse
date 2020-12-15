@@ -8,6 +8,7 @@
 #include <Interpreters/Cluster.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -59,6 +60,9 @@ NamesAndTypesList StorageSystemDDLWorkerQueue::getNamesAndTypes()
         {"status", std::make_shared<DataTypeEnum8>(getStatusEnumsAndValues())},
         {"cluster", std::make_shared<DataTypeString>()},
         {"values", std::make_shared<DataTypeString>()},
+        {"query_start_time", std::make_shared<DataTypeDateTime>()},
+        {"query_finish_time", std::make_shared<DataTypeDateTime>()},
+        {"query_duration_ms", std::make_shared<DataTypeUInt64>()},
 
     };
 }
@@ -177,6 +181,7 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, const C
             }
             for (size_t query_id = 0; query_id < queries.size(); query_id++)
             {
+                Int64 query_finish_time = 0;
                 size_t i = 0;
                 res_columns[i++]->insert(queries[query_id]); // entry
                 const auto & address = shard_addresses[replica_index];
@@ -219,6 +224,11 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, const C
                     {
                         res_columns[i++]->insert(static_cast<Int8>(Status::finished));
                     }
+                    // regardless of the status finished or errored, the node host_name:port entry was found under the /finished path
+                    // & should be able to get the contents of the znode at /finished path.
+                    auto res_fn = zookeeper->asyncTryGet(fs::path(ddl_query_path) / "finished");
+                    auto stat_fn = res_fn.get().stat;
+                    query_finish_time = stat_fn.mtime;
                 }
                 else
                 {
@@ -232,9 +242,12 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, const C
                 if (futures.empty())
                     continue;
                 auto res = futures[query_id].get();
-                if (res.error == Coordination::Error::ZNONODE)
-                    continue; /// Node was deleted meanwhile.
                 res_columns[i++]->insert(res.data);
+                auto query_start_time = res.stat.mtime;
+
+                res_columns[i++]->insert(UInt64(query_start_time / 1000)); // query_start_time
+                res_columns[i++]->insert(UInt64(query_finish_time / 1000)); // query_finish_time
+                res_columns[i++]->insert(UInt64(query_finish_time - query_start_time)); // query_duration_ms
             }
         }
     }
