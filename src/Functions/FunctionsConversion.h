@@ -2326,7 +2326,7 @@ private:
             const auto * nested_tuple = typeid_cast<const DataTypeTuple *>(from_array->getNestedType().get());
             if (!nested_tuple || nested_tuple->getElements().size() != 2)
                 throw Exception{"CAST AS Map from array requeires nested tuple of 2 elements.\n"
-                    "Left type: " + from_tuple->getName() + ", right type: " + to_type->getName(), ErrorCodes::TYPE_MISMATCH};
+                    "Left type: " + from_array->getName() + ", right type: " + to_type->getName(), ErrorCodes::TYPE_MISMATCH};
 
             return createArrayToMapWrrapper(nested_tuple->getElements(), to_type->getKeyValueTypes());
         }

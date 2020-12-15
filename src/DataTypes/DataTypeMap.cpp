@@ -102,7 +102,9 @@ void DataTypeMap::deserializeBinary(IColumn & column, ReadBuffer & istr) const
     nested->deserializeBinary(extractNestedColumn(column), istr);
 }
 
-void DataTypeMap::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+
+template <typename Writer>
+void DataTypeMap::serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, Writer && writer) const
 {
     const auto & column_map = assert_cast<const ColumnMap &>(column);
 
@@ -118,15 +120,15 @@ void DataTypeMap::serializeText(const IColumn & column, size_t row_num, WriteBuf
     {
         if (i != offset)
             writeChar(',', ostr);
-        key_type->serializeAsTextQuoted(nested_tuple.getColumn(0), i, ostr, settings);
+        writer(key_type, nested_tuple.getColumn(0), i);
         writeChar(':', ostr);
-        value_type->serializeAsTextQuoted(nested_tuple.getColumn(1), i, ostr, settings);
+        writer(value_type, nested_tuple.getColumn(1), i);
     }
     writeChar('}', ostr);
 }
 
 template <typename Reader>
-static void deserializeTextImpl(IColumn & column, ReadBuffer & istr, bool need_safe_get_int_key, Reader && read_kv)
+void DataTypeMap::deserializeTextImpl(IColumn & column, ReadBuffer & istr, bool need_safe_get_int_key, Reader && reader) const
 {
     auto & column_map = assert_cast<ColumnMap &>(column);
 
@@ -166,18 +168,18 @@ static void deserializeTextImpl(IColumn & column, ReadBuffer & istr, bool need_s
                 while (*tmp != ':' && *tmp != '}')
                     ++tmp;
                 *tmp = ' ';
-                read_kv(key_column, true);
+                reader(key_type, key_column);
             }
             else
             {
-                read_kv(key_column, true);
+                reader(key_type, key_column);
                 skipWhitespaceIfAny(istr);
                 assertChar(':', istr);
             }
 
             ++size;
             skipWhitespaceIfAny(istr);
-            read_kv(value_column, false);
+            reader(value_type, value_column);
 
             skipWhitespaceIfAny(istr);
         }
@@ -191,30 +193,47 @@ static void deserializeTextImpl(IColumn & column, ReadBuffer & istr, bool need_s
     }
 }
 
+void DataTypeMap::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    serializeTextImpl(column, row_num, ostr,
+        [&](const DataTypePtr & nested_type, const IColumn & nested_column, size_t pos)
+        {
+            nested_type->serializeAsTextQuoted(nested_column, pos, ostr, settings);
+        });
+}
+
 void DataTypeMap::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     // need_safe_get_int_key is set for Interger to prevent to readIntTextUnsafe
     bool need_safe_get_int_key = isInteger(key_type);
 
     deserializeTextImpl(column, istr, need_safe_get_int_key,
-        [&](IColumn & nested_column, bool is_key)
+        [&](const DataTypePtr & nested_type, IColumn & nested_column)
         {
-            if (is_key)
-                key_type->deserializeAsTextQuoted(nested_column, istr, settings);
-            else
-                value_type->deserializeAsTextQuoted(nested_column, istr, settings);
+            nested_type->deserializeAsTextQuoted(nested_column, istr, settings);
         });
 }
 
 
 void DataTypeMap::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    serializeText(column, row_num, ostr, settings);
+    serializeTextImpl(column, row_num, ostr,
+        [&](const DataTypePtr & nested_type, const IColumn & nested_column, size_t pos)
+        {
+            nested_type->serializeAsTextJSON(nested_column, pos, ostr, settings);
+        });
 }
 
 void DataTypeMap::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    deserializeText(column, istr, settings);
+    // need_safe_get_int_key is set for Interger to prevent to readIntTextUnsafe
+    bool need_safe_get_int_key = isInteger(key_type);
+
+    deserializeTextImpl(column, istr, need_safe_get_int_key,
+        [&](const DataTypePtr & nested_type, IColumn & nested_column)
+        {
+            nested_type->deserializeAsTextJSON(nested_column, istr, settings);
+        });
 }
 
 void DataTypeMap::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const

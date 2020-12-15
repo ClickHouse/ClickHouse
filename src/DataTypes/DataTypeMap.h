@@ -88,6 +88,13 @@ public:
     const DataTypePtr & getKeyType() const { return key_type; }
     const DataTypePtr & getValueType() const { return value_type; }
     DataTypes getKeyValueTypes() const { return {key_type, value_type}; }
+
+private:
+    template <typename Writer>
+    void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, Writer && writer) const;
+
+    template <typename Reader>
+    void deserializeTextImpl(IColumn & column, ReadBuffer & istr, bool need_safe_get_int_key, Reader && reader) const;
 };
 
 }
