@@ -5,7 +5,7 @@ LIBRARY()
 
 ADDINCL(
     contrib/libs/zstd
-    contrib/restricted/fast_float
+    contrib/restricted/fast_float/include
 )
 
 PEERDIR(
@@ -14,7 +14,6 @@ PEERDIR(
     contrib/libs/brotli/enc
     contrib/libs/poco/NetSSL_OpenSSL
     contrib/libs/zstd
-    contrib/restricted/fast_float
 )
 
 
