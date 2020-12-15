@@ -45,16 +45,6 @@
         "name": "yandex/clickhouse-pvs-test",
         "dependent": []
     },
-    "docker/test/stateful": {
-        "name": "yandex/clickhouse-stateful-test",
-        "dependent": [
-            "docker/test/stress"
-        ]
-    },
-    "docker/test/stateful_with_coverage": {
-        "name": "yandex/clickhouse-stateful-test-with-coverage",
-        "dependent": []
-    },
     "docker/test/stateless": {
         "name": "yandex/clickhouse-stateless-test",
         "dependent": [
@@ -68,6 +58,16 @@
     },
     "docker/test/stateless_with_coverage": {
         "name": "yandex/clickhouse-stateless-test-with-coverage",
+        "dependent": []
+    },
+    "docker/test/stateful": {
+        "name": "yandex/clickhouse-stateful-test",
+        "dependent": [
+            "docker/test/stress"
+        ]
+    },
+    "docker/test/stateful_with_coverage": {
+        "name": "yandex/clickhouse-stateful-test-with-coverage",
         "dependent": []
     },
     "docker/test/unit": {
