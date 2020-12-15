@@ -15,6 +15,7 @@ from subprocess import check_call
 from subprocess import Popen
 from subprocess import PIPE
 from subprocess import CalledProcessError
+from subprocess import TimeoutExpired
 from datetime import datetime
 from time import time, sleep
 from errno import ESRCH
@@ -114,6 +115,7 @@ def get_db_engine(args):
 def run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file):
     # print(client_options)
 
+    start_time = datetime.now()
     if args.database:
         database = args.database
         os.environ.setdefault("CLICKHOUSE_DATABASE", database)
@@ -129,7 +131,11 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
         database = 'test_{suffix}'.format(suffix=random_str())
 
         clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
-        clickhouse_proc_create.communicate(("CREATE DATABASE " + database + get_db_engine(args)))
+        try:
+            clickhouse_proc_create.communicate(("CREATE DATABASE " + database + get_db_engine(args)), timeout=args.timeout)
+        except TimeoutExpired:
+            total_time = (datetime.now() - start_time).total_seconds()
+            return clickhouse_proc_create, "", "Timeout creating database {} before test".format(database), total_time
 
         os.environ["CLICKHOUSE_DATABASE"] = database
 
@@ -152,14 +158,24 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
     # print(command)
 
     proc = Popen(command, shell=True, env=os.environ)
-    start_time = datetime.now()
 
     while (datetime.now() - start_time).total_seconds() < args.timeout and proc.poll() is None:
         sleep(0.01)
 
     if not args.database:
         clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
-        clickhouse_proc_create.communicate(("DROP DATABASE " + database))
+        seconds_left = max(args.timeout - (datetime.now() - start_time).total_seconds(), 10)
+        try:
+            clickhouse_proc_create.communicate(("DROP DATABASE " + database), timeout=seconds_left)
+        except TimeoutExpired:
+            # kill test process because it can also hung
+            if proc.returncode is None:
+                try:
+                    proc.kill()
+                except OSError as e:
+                    if e.errno != ESRCH:
+                        raise
+            return clickhouse_proc_create, "", "Timeout dropping database {} after test".format(database), total_time
 
     total_time = (datetime.now() - start_time).total_seconds()
 
@@ -305,7 +321,7 @@ def run_tests_array(all_tests_with_params):
 
                     if args.testname:
                         clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
-                        clickhouse_proc.communicate(("SELECT 'Running test {suite}/{case} from pid={pid}';".format(pid = os.getpid(), case = case, suite = suite)))
+                        clickhouse_proc.communicate(("SELECT 'Running test {suite}/{case} from pid={pid}';".format(pid = os.getpid(), case = case, suite = suite)), timeout=10)
 
                         if clickhouse_proc.returncode != 0:
                             failures += 1
@@ -330,6 +346,8 @@ def run_tests_array(all_tests_with_params):
                         print(MSG_FAIL, end='')
                         print_test_time(total_time)
                         print(" - Timeout!")
+                        if stderr:
+                            print(stderr)
                     else:
                         counter = 1
                         while proc.returncode != 0 and need_retry(stderr):
