@@ -2,6 +2,7 @@
 #include <common/defines.h>
 #include <boost/context/stack_context.hpp>
 #include <Common/formatReadable.h>
+#include <Common/MemoryTracker.h>
 
 #include <sys/time.h>
 #include <sys/resource.h>
