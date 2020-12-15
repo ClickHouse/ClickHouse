@@ -168,7 +168,13 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
         try:
             clickhouse_proc_create.communicate(("DROP DATABASE " + database), timeout=seconds_left)
         except TimeoutExpired:
-            total_time = (datetime.now() - start_time).total_seconds()
+            # kill test process because it can also hung
+            if proc.returncode is None:
+                try:
+                    proc.kill()
+                except OSError as e:
+                    if e.errno != ESRCH:
+                        raise
             return clickhouse_proc_create, "", "Timeout dropping database {} after test".format(database), total_time
 
     total_time = (datetime.now() - start_time).total_seconds()
