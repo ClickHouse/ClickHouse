@@ -112,6 +112,11 @@ bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column)
     return true;
 }
 
+ExpressionAnalyzer::ExtractedSettings::ExtractedSettings(const Settings & settings_)
+    : use_index_for_in_with_subqueries(settings_.use_index_for_in_with_subqueries)
+    , size_limits_for_set(settings_.max_rows_in_set, settings_.max_bytes_in_set, settings_.set_overflow_mode)
+{}
+
 
 ExpressionAnalyzer::ExpressionAnalyzer(
     const ASTPtr & query_,
