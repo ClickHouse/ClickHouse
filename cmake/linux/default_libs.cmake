@@ -31,10 +31,6 @@ if (ARCH_AMD64 AND NOT_UNBUNDLED)
     set(CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES ${ClickHouse_SOURCE_DIR}/contrib/libc-headers/x86_64-linux-gnu ${ClickHouse_SOURCE_DIR}/contrib/libc-headers)
 endif ()
 
-# Global libraries
-
-add_library(global-libs INTERFACE)
-
 # Unfortunately '-pthread' doesn't work with '-nodefaultlibs'.
 # Just make sure we have pthreads at all.
 set(THREADS_PREFER_PTHREAD_FLAG ON)
