@@ -7,7 +7,7 @@
 #include <Common/Throttler.h>
 #if !defined(ARCADIA_BUILD)
 #   include <Common/config.h>
-#endif 
+#endif
 #include <Core/Block.h>
 #include <Core/Defines.h>
 #include <IO/Progress.h>
