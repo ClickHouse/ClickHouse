@@ -257,8 +257,12 @@ namespace S3
                 throw Exception(
                     "Bucket name length is out of bounds in virtual hosted style S3 URI: " + bucket + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
 
-            /// Remove leading '/' from path to extract key.
-            key = uri.getPath().substr(1);
+            if (!uri.getPath().empty())
+            {
+                /// Remove leading '/' from path to extract key.
+                key = uri.getPath().substr(1);
+            }
+
             if (key.empty() || key == "/")
                 throw Exception("Key name is empty in virtual hosted style S3 URI: " + key + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
             boost::to_upper(name);
