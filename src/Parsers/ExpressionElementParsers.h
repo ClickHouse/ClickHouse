@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Field.h>
+#include <Core/MultiEnum.h>
 #include <Parsers/IParserBase.h>
 
 
