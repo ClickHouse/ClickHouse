@@ -84,6 +84,22 @@ StorageMerge::StorageMerge(
     setInMemoryMetadata(storage_metadata);
 }
 
+StorageMerge::StorageMerge(
+    const StorageID & table_id_,
+    const ColumnsDescription & columns_,
+    const String & source_database_,
+    const Tables & tables_,
+    const Context & context_)
+    : IStorage(table_id_)
+    , source_database(source_database_)
+    , tables(tables_)
+    , global_context(context_.getGlobalContext())
+{
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(columns_);
+    setInMemoryMetadata(storage_metadata);
+}
+
 template <typename F>
 StoragePtr StorageMerge::getFirstTable(F && predicate) const
 {
@@ -430,9 +446,21 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(
 
 DatabaseTablesIteratorPtr StorageMerge::getDatabaseIterator(const Context & context) const
 {
-    checkStackSize();
+    try
+    {
+        checkStackSize();
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while getting table iterator of Merge table. Maybe caused by two Merge tables that will endlessly try to read each other's data");
+        throw;
+    }
+
+    if (tables)
+        return std::make_unique<DatabaseTablesSnapshotIterator>(*tables, source_database);
+
     auto database = DatabaseCatalog::instance().getDatabase(source_database);
-    auto table_name_match = [this](const String & table_name_) { return table_name_regexp.match(table_name_); };
+    auto table_name_match = [this](const String & table_name_) { return table_name_regexp->match(table_name_); };
     return database->getTablesIterator(context, table_name_match);
 }
 
