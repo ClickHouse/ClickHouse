@@ -12,6 +12,7 @@
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ShellCommand.h>
+#include <IO/ConnectionTimeoutsContext.h>
 #include <common/logger_useful.h>
 #include <ext/range.h>
 

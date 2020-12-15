@@ -761,7 +761,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     static KillingErrorHandler killing_error_handler;
     Poco::ErrorHandler::set(&killing_error_handler);
 
-    signal_pipe.setNonBlocking();
+    signal_pipe.setNonBlockingWrite();
     signal_pipe.tryIncreaseSize(1 << 20);
 
     signal_listener = std::make_unique<SignalListener>(*this);

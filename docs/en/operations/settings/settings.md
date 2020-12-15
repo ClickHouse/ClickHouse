@@ -1093,9 +1093,14 @@ See the section “WITH TOTALS modifier”.
 
 ## max_parallel_replicas {#settings-max_parallel_replicas}
 
-The maximum number of replicas for each shard when executing a query.
-For consistency (to get different parts of the same data split), this option only works when the sampling key is set.
-Replica lag is not controlled.
+The maximum number of replicas for each shard when executing a query. In limited circumstances, this can make a query faster by executing it on more servers. This setting is only useful for replicated tables with a sampling key. There are cases where performance will not improve or even worsen:
+
+- the position of the sampling key in the partitioning key's order doesn't allow efficient range scans
+- adding a sampling key to the table makes filtering by other columns less efficient
+- the sampling key is an expression that is expensive to calculate
+- the cluster's latency distribution has a long tail, so that querying more servers increases the query's overall latency
+
+In addition, this setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain conditions. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md/#max_parallel_replica-subqueries) for more details.
 
 ## compile {#compile}
 
@@ -2360,10 +2365,89 @@ Default value: `1`.
 
 ## output_format_tsv_null_representation {#output_format_tsv_null_representation}
 
-Allows configurable `NULL` representation for [TSV](../../interfaces/formats.md#tabseparated) output format. The setting only controls output format and `\N` is the only supported `NULL` representation for TSV input format.
+Defines the representation of `NULL` for [TSV](../../interfaces/formats.md#tabseparated) output format. User can set any string as a value, for example, `My NULL`.
 
 Default value: `\N`.
 
+**Examples**
+
+Query
+
+```sql
+SELECT * FROM tsv_custom_null FORMAT TSV;
+```
+
+Result
+
+```text
+788
+\N
+\N
+```
+
+Query
+
+```sql
+SET output_format_tsv_null_representation = 'My NULL';
+SELECT * FROM tsv_custom_null FORMAT TSV;
+```
+
+Result
+
+```text
+788
+My NULL
+My NULL
+```
+
+## output_format_json_array_of_rows {#output-format-json-array-of-rows}
+
+Enables the ability to output all rows as a JSON array in the [JSONEachRow](../../interfaces/formats.md#jsoneachrow) format.
+
+Possible values:
+
+-   1 — ClickHouse outputs all rows as an array, each row in the `JSONEachRow` format.
+-   0 — ClickHouse outputs each row separately in the `JSONEachRow` format.
+
+Default value: `0`.
+
+**Example of a query with the enabled setting**
+
+Query:
+
+```sql
+SET output_format_json_array_of_rows = 1;
+SELECT number FROM numbers(3) FORMAT JSONEachRow;
+```
+
+Result:
+
+```text
+[
+{"number":"0"},
+{"number":"1"},
+{"number":"2"}                                                                                                                                                                                  
+]
+```
+
+**Example of a query with the disabled setting**
+
+Query:
+
+```sql
+SET output_format_json_array_of_rows = 0;
+SELECT number FROM numbers(3) FORMAT JSONEachRow;
+```
+
+Result:
+
+```text
+{"number":"0"}
+{"number":"1"}
+{"number":"2"}
+```
+
+=======
 ## allow_nullable_key {#allow-nullable-key}
 
 Allows using of the [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable)-typed values in a sorting and a primary key for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree) tables.

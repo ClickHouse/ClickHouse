@@ -20,15 +20,17 @@ public:
         const std::string & query_str,
         const Block & sample_block,
         const UInt64 max_block_size_,
-        const bool auto_close_ = false);
+        const bool auto_close_ = false,
+        const bool fetch_by_name_ = false);
 
     String getName() const override { return "MySQL"; }
 
     Block getHeader() const override { return description.sample_block.cloneEmpty(); }
 
 protected:
-    MySQLBlockInputStream(const Block & sample_block_, UInt64 max_block_size_, bool auto_close_);
+    MySQLBlockInputStream(const Block & sample_block_, UInt64 max_block_size_, bool auto_close_, bool fetch_by_name_);
     Block readImpl() override;
+    void initPositionMappingFromQueryResultStructure();
 
     struct Connection
     {
@@ -43,6 +45,8 @@ protected:
 
     const UInt64 max_block_size;
     const bool auto_close;
+    const bool fetch_by_name;
+    std::vector<size_t> position_mapping;
     ExternalResultDescription description;
 };
 
@@ -56,7 +60,8 @@ public:
         const std::string & query_str_,
         const Block & sample_block_,
         const UInt64 max_block_size_,
-        const bool auto_close_ = false);
+        const bool auto_close_ = false,
+        const bool fetch_by_name_ = false);
 
 private:
     void readPrefix() override;
