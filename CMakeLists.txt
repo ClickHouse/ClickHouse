@@ -112,6 +112,12 @@ if (ENABLE_FUZZING)
     set (FUZZER "libfuzzer")
 endif()
 
+# Global libraries
+# See:
+# - default_libs.cmake
+# - sanitize.cmake
+add_library(global-libs INTERFACE)
+
 include (cmake/fuzzer.cmake)
 include (cmake/sanitize.cmake)
 

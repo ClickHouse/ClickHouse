@@ -8,6 +8,12 @@ option (SANITIZE "Enable one of the code sanitizers" "")
 
 set (SAN_FLAGS "${SAN_FLAGS} -g -fno-omit-frame-pointer -DSANITIZER")
 
+# gcc with -nodefaultlibs does not add sanitizer libraries
+# with -static-libasan and similar
+macro(add_explicit_sanitizer_library lib)
+    target_link_libraries(global-libs INTERFACE "-Wl,-static -l${lib} -Wl,-Bdynamic")
+endmacro()
+
 if (SANITIZE)
     if (SANITIZE STREQUAL "address")
         set (ASAN_FLAGS "-fsanitize=address -fsanitize-address-use-after-scope")
@@ -20,6 +26,9 @@ if (SANITIZE)
         if (MAKE_STATIC_LIBRARIES AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
             set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libasan")
         endif ()
+        if (COMPILER_GCC)
+            add_explicit_sanitizer_library(asan)
+        endif()
 
     elseif (SANITIZE STREQUAL "memory")
         # MemorySanitizer flags are set according to the official documentation:
@@ -63,6 +72,9 @@ if (SANITIZE)
         if (MAKE_STATIC_LIBRARIES AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
             set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libtsan")
         endif ()
+        if (COMPILER_GCC)
+            add_explicit_sanitizer_library(tsan)
+        endif()
 
     elseif (SANITIZE STREQUAL "undefined")
         set (UBSAN_FLAGS "-fsanitize=undefined -fno-sanitize-recover=all -fno-sanitize=float-divide-by-zero")
@@ -83,6 +95,9 @@ if (SANITIZE)
         if (MAKE_STATIC_LIBRARIES AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
             set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libubsan")
         endif ()
+        if (COMPILER_GCC)
+            add_explicit_sanitizer_library(ubsan)
+        endif()
 
         # llvm-tblgen, that is used during LLVM build, doesn't work with UBSan.
         set (ENABLE_EMBEDDED_COMPILER 0 CACHE BOOL "")
