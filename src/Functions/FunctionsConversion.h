@@ -71,7 +71,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
-    extern const int DECIMAL_OVERFLOW;
 }
 
 
@@ -197,11 +196,11 @@ struct ConvertImpl
                             bool convert_result = false;
 
                             if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
-                                tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], vec_from.getScale(), vec_to.getScale(), result);
+                                convert_result = tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], vec_from.getScale(), vec_to.getScale(), result);
                             else if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeNumber<ToDataType>)
-                                tryConvertFromDecimal<FromDataType, ToDataType>(vec_from[i], vec_from.getScale(), result);
+                                convert_result = tryConvertFromDecimal<FromDataType, ToDataType>(vec_from[i], vec_from.getScale(), result);
                             else if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDataType>)
-                                tryConvertToDecimal<FromDataType, ToDataType>(vec_from[i], vec_to.getScale(), result);
+                                convert_result = tryConvertToDecimal<FromDataType, ToDataType>(vec_from[i], vec_to.getScale(), result);
 
                             if (convert_result)
                                 vec_to[i] = result;
