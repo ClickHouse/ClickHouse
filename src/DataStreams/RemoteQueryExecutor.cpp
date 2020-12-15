@@ -14,8 +14,6 @@
 #include <IO/ConnectionTimeoutsContext.h>
 #include <Common/FiberStack.h>
 
-#include <sys/epoll.h>
-
 namespace DB
 {
 
