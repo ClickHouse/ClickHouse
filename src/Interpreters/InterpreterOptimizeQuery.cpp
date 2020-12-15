@@ -46,19 +46,25 @@ BlockIO InterpreterOptimizeQuery::execute()
         }
 
         metadata_snapshot->check(column_names, NamesAndTypesList{}, table_id);
-        const auto & sorting_keys = metadata_snapshot->getColumnsRequiredForSortingKey();
-        for (const auto & sorting_key : sorting_keys)
+        Names required_columns;
+        {
+            required_columns = metadata_snapshot->getColumnsRequiredForSortingKey();
+            const auto partitioning_cols = metadata_snapshot->getColumnsRequiredForPartitionKey();
+            required_columns.reserve(required_columns.size() + partitioning_cols.size());
+            required_columns.insert(required_columns.end(), partitioning_cols.begin(), partitioning_cols.end());
+        }
+        for (const auto & required_col : required_columns)
         {
             // Deduplication is performed only for adjacent rows in a block,
-            // and all rows in block are in the sorting key order,
-            // hence deduplication always implicitly takes sorting keys in account.
+            // and all rows in block are in the sorting key order within a single partition,
+            // hence deduplication always implicitly takes sorting keys and parition keys in account.
             // So we just explicitly state that limitation in order to avoid confusion.
-            if (std::find(column_names.begin(), column_names.end(), sorting_key) == column_names.end())
+            if (std::find(column_names.begin(), column_names.end(), required_col) == column_names.end())
                 throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
-                        "DEDUPLICATE BY expression must include all columns used in table's ORDER BY or PRIMARY KEY,"
-                        " but '{}' is missing."
-                        " Expanded deduplicate columns expression: ['{}']",
-                        sorting_key, fmt::join(column_names, "', '"));
+                        "DEDUPLICATE BY expression must include all columns used in table's"
+                        " ORDER BY, PRIMARY KEY, or PARTITION BY but '{}' is missing."
+                        " Expanded DEDUPLICATE BY columns expression: ['{}']",
+                        required_col, fmt::join(column_names, "', '"));
         }
     }
 
