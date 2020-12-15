@@ -1,14 +1,21 @@
-# Possible values: `address` (ASan), `memory` (MSan), `thread` (TSan), `undefined` (UBSan), and "" (no sanitizing)
+# Possible values:
+# - `address` (ASan)
+# - `memory` (MSan)
+# - `thread` (TSan)
+# - `undefined` (UBSan)
+# - "" (no sanitizing)
 option (SANITIZE "Enable one of the code sanitizers" "")
 
 set (SAN_FLAGS "${SAN_FLAGS} -g -fno-omit-frame-pointer -DSANITIZER")
 
 if (SANITIZE)
     if (SANITIZE STREQUAL "address")
-        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} -fsanitize=address -fsanitize-address-use-after-scope")
-        set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SAN_FLAGS} -fsanitize=address -fsanitize-address-use-after-scope")
+        set (ASAN_FLAGS "-fsanitize=address -fsanitize-address-use-after-scope")
+        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} ${ASAN_FLAGS}")
+        set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SAN_FLAGS} ${ASAN_FLAGS}")
+
         if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-            set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address -fsanitize-address-use-after-scope")
+            set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${ASAN_FLAGS}")
         endif()
         if (MAKE_STATIC_LIBRARIES AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
             set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libasan")
