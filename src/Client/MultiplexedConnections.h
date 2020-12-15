@@ -67,12 +67,11 @@ public:
     /// Without locking, because sendCancel() does not change the state of the replicas.
     bool hasActiveConnections() const { return active_connection_count > 0; }
 
-    void setFiber(Fiber * fiber_) { fiber = fiber_; }
     Poco::Net::Socket & getSocket() { return current_connection->getSocket(); }
 
 private:
     /// Internal version of `receivePacket` function without locking.
-    Packet receivePacketUnlocked();
+    Packet receivePacketUnlocked(Fiber * fiber = nullptr);
 
     /// Internal version of `dumpAddresses` function without locking.
     std::string dumpAddressesUnlocked() const;
@@ -108,8 +107,6 @@ private:
     /// A mutex for the sendCancel function to execute safely
     /// in separate thread.
     mutable std::mutex cancel_mutex;
-
-    boost::context::fiber * fiber = nullptr;
 
     friend class RemoteQueryExecutorReadContext;
 };

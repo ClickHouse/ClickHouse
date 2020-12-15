@@ -237,7 +237,7 @@ std::string MultiplexedConnections::dumpAddressesUnlocked() const
     return buf.str();
 }
 
-Packet MultiplexedConnections::receivePacketUnlocked()
+Packet MultiplexedConnections::receivePacketUnlocked(Fiber * fiber)
 {
     if (!sent_query)
         throw Exception("Cannot receive packets: no query sent.", ErrorCodes::LOGICAL_ERROR);
@@ -249,19 +249,7 @@ Packet MultiplexedConnections::receivePacketUnlocked()
     if (current_connection == nullptr)
         throw Exception("Logical error: no available replica", ErrorCodes::NO_AVAILABLE_REPLICA);
 
-    if (fiber)
-        current_connection->setFiber(fiber);
-
-    Packet packet;
-    {
-        SCOPE_EXIT(
-        {
-           fiber = nullptr;
-           current_connection->setFiber(fiber);
-        });
-
-        packet = current_connection->receivePacket();
-    }
+    Packet packet = current_connection->receivePacket(fiber);
 
     switch (packet.type)
     {
