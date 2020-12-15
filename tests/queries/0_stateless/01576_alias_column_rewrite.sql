@@ -69,27 +69,32 @@ SELECT day1 = '2020-01-04' FROM test_table PREWHERE day1 = '2020-01-04'  WHERE d
 ALTER TABLE test_table add column array Array(UInt8) default [1, 2, 3];
 ALTER TABLE test_table add column struct.key Array(UInt8) default [2, 4, 6], add column struct.value Array(UInt8) alias array;
 
+
 SELECT 'array-join';
 set max_rows_to_read = 10;
 SELECT count() == 10 FROM test_table WHERE day = '2020-01-01';
 SELECT sum(struct.key) == 30, sum(struct.value) == 30 FROM (SELECT struct.key, struct.value FROM test_table array join struct WHERE day = '2020-01-01');
+
 
 SELECT 'lambda';
 -- lambda parameters in filter should not be rewrite
 SELECT count() == 10 FROM test_table WHERE  arrayMap((day) -> day + 1, [1,2,3]) [1] = 2 AND day = '2020-01-03';
 
 set max_rows_to_read = 0;
--- how to test it? currently just check logs, eg: 00940_order_by_read_in_order
+
 SELECT 'optimize_read_in_order';
-SET optimize_read_in_order = 1;
-SELECT day AS s FROM test_table ORDER BY s LIMIT 1;
+EXPLAIN SELECT day AS s FROM test_table ORDER BY s LIMIT 1 SETTINGS optimize_read_in_order = 0;
+EXPLAIN SELECT day AS s FROM test_table ORDER BY s LIMIT 1 SETTINGS optimize_read_in_order = 1;
+EXPLAIN SELECT toDate(timestamp) AS s FROM test_table ORDER BY toDate(timestamp) LIMIT 1 SETTINGS optimize_read_in_order = 1;
+
 
 SELECT 'optimize_aggregation_in_order';
-SET optimize_aggregation_in_order = 1;
-SELECT day, count() AS s FROM test_table GROUP BY day;
-SELECT toDate(timestamp), count() AS s FROM test_table GROUP BY toDate(timestamp);
+EXPLAIN SELECT day, count() AS s FROM test_table GROUP BY day SETTINGS optimize_aggregation_in_order = 0;
+EXPLAIN SELECT day, count() AS s FROM test_table GROUP BY day SETTINGS optimize_aggregation_in_order = 1;
+EXPLAIN SELECT toDate(timestamp), count() AS s FROM test_table GROUP BY toDate(timestamp) SETTINGS optimize_aggregation_in_order = 1;
 
 DROP TABLE test_table;
+
 
 SELECT 'second-index';
 DROP TABLE IF EXISTS test_index;

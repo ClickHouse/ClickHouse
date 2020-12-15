@@ -33,7 +33,6 @@ bool ColumnAliasesMatcher::needChildVisit(const ASTPtr & node, const ASTPtr &)
 
 void ColumnAliasesMatcher::visit(ASTPtr & ast, Data & data)
 {
-    auto aa = queryToString(ast);
     // If it's select query, only replace filters.
     if (auto * query = ast->as<ASTSelectQuery>())
     {
@@ -64,11 +63,14 @@ void ColumnAliasesMatcher::visit(ASTFunction & node, ASTPtr & /*ast*/, Data & da
     if (node.name == "lambda")
     {
         Names local_aliases;
-        for (const auto & name : RequiredSourceColumnsMatcher::extractNamesFromLambda(node))
+        auto names_from_lambda = RequiredSourceColumnsMatcher::extractNamesFromLambda(node);
+        for (const auto & name : names_from_lambda)
+        {
             if (data.private_aliases.insert(name).second)
             {
                 local_aliases.push_back(name);
             }
+        }
         /// visit child with masked local aliases
         Visitor(data).visit(node.arguments->children[1]);
         for (const auto & name : local_aliases)
@@ -88,7 +90,7 @@ void ColumnAliasesMatcher::visit(ASTIdentifier & node, ASTPtr & ast, Data & data
         {
             ast = addTypeConversionToAST(col.default_desc.expression->clone(), col.type->getName(), data.columns.getAll(), data.context);
             auto str = queryToString(ast);
-            //revisit ast to track recursive alias columns
+            // revisit ast to track recursive alias columns
             Visitor(data).visit(ast);
         }
     }

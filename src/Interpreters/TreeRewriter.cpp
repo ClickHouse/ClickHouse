@@ -725,7 +725,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
                         result.analyzed_join->table_join);
     collectJoinedColumns(*result.analyzed_join, *select_query, tables_with_columns, result.aliases);
 
-    /// rewrite filters for select query, must after getArrayJoinedColumns
+    /// rewrite filters for select query, must goes after getArrayJoinedColumns
     if (settings.optimize_alias_column_prediction && result.metadata_snapshot)
     {
         replaceAliasColumnsInQuery(query, result.metadata_snapshot->getColumns(), result.getArrayJoinSourceNameSet(), context);
