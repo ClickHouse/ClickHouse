@@ -307,7 +307,6 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 stopDatabaseSynchronization(database);
 #endif
 
-
             if (database->shouldBeEmptyOnDetach())
             {
                 /// DETACH or DROP all tables and dictionaries inside database.

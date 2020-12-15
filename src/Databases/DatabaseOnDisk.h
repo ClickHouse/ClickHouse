@@ -70,18 +70,13 @@ public:
     static ASTPtr parseQueryFromMetadata(Poco::Logger * log, const Context & context, const String & metadata_file_path, bool throw_on_error = true, bool remove_empty = false);
 
     /// will throw when the table we want to attach already exists (in active / detached / detached permanently form)
-    /// still allow to overwrite the detached table if the table we want to attach is the old one
-    /// uses locks.
-    void checkTableAttachPossible(const Context & context, const ASTCreateQuery & create) const;
+    void checkMetadataFilenameAvailability(const String & to_table_name) const;
+    void checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name, std::unique_lock<std::mutex> &) const;
 
 protected:
     static constexpr const char * create_suffix = ".tmp";
     static constexpr const char * drop_suffix = ".tmp_drop";
-
-    /// engine=Atomic takes the table name from basename of metadata file (also for detached table)
-    /// in case of double dots (table_name.sql.detached) it would extract 'table_name.sql'
-    /// so we use simpler option "table_name.sql_detached" and get 'table_name' correctly.
-    static constexpr const char * detached_suffix = "_detached";
+    static constexpr const char * detached_suffix = ".detached";
 
     using IteratingFunction = std::function<void(const String &)>;
 
@@ -99,7 +94,6 @@ protected:
 
     const String metadata_path;
     const String data_path;
-
 };
 
 }
