@@ -50,6 +50,7 @@ public:
 #else
 class AsyncTaskQueue
 {
+public:
     bool empty() { return true; }
     void finish() {}
 };
