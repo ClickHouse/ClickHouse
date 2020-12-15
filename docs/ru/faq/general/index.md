@@ -12,8 +12,8 @@ This section of the documentation is a place to collect answers to ClickHouse-re
 
 Вопросы:
 
-    -   [Что такое ClickHouse?](../index.md#what-is-clickhouse)
-    -   [Почему бы не использовать системы типа MapReduce?](mapreduce.md)
+-   [Что такое ClickHouse?../index.md#what-is-clickhouse)
+-   [Почему бы не использовать системы типа MapReduce?mapreduce.md)
 
 {## [Original article](https://clickhouse.tech/docs/ru/faq) ##}
 
