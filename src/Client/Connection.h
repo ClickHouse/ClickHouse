@@ -171,7 +171,7 @@ public:
     std::optional<UInt64> checkPacket(size_t timeout_microseconds = 0);
 
     /// Receive packet from server.
-    Packet receivePacket();
+    Packet receivePacket(Fiber * fiber);
 
     /// If not connected yet, or if connection is broken - then connect. If cannot connect - throw an exception.
     void forceConnected(const ConnectionTimeouts & timeouts);
@@ -190,7 +190,6 @@ public:
     size_t outBytesCount() const { return out ? out->count() : 0; }
     size_t inBytesCount() const { return in ? in->count() : 0; }
 
-    void setFiber(Fiber * fiber) { in->setFiber(fiber); }
     Poco::Net::Socket & getSocket() { return in->getSocket(); }
 
 private:

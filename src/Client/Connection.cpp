@@ -742,8 +742,11 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
 }
 
 
-Packet Connection::receivePacket()
+Packet Connection::receivePacket(Fiber * fiber)
 {
+    in->setFiber(fiber);
+    SCOPE_EXIT(in->setFiber(nullptr));
+
     try
     {
         Packet res;
