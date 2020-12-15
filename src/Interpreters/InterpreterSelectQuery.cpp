@@ -1552,7 +1552,12 @@ void InterpreterSelectQuery::executeFetchColumns(
         throw Exception("Logical error in InterpreterSelectQuery: nowhere to read", ErrorCodes::LOGICAL_ERROR);
 
     /// Specify the number of threads only if it wasn't specified in storage.
-    if (!query_plan.getMaxThreads())
+    ///
+    /// But in case of remote query and prefer_localhost_replica=1 (default)
+    /// The inner local query (that is done in the same process, without
+    /// network interaction), it will setMaxThreads earlier and distributed
+    /// query will not update it.
+    if (!query_plan.getMaxThreads() || is_remote)
         query_plan.setMaxThreads(max_threads_execute_query);
 
     /// Aliases in table declaration.
