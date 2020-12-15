@@ -15,7 +15,9 @@ ORDER BY tuple()
 SETTINGS index_granularity = 8192
 can not attach with bad uuid
 can attach with short syntax
+100
 can not detach permanently the table which is already detached (temporary)
+100
 After database reattachement the table is back (it was detached temporary)
 And we can detach it permanently
 After database reattachement the table is still absent (it was detached permamently)
