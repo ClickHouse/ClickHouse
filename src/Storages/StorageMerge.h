@@ -48,7 +48,8 @@ public:
 
 private:
     String source_database;
-    OptimizedRegularExpression table_name_regexp;
+    std::optional<OptimizedRegularExpression> table_name_regexp;
+    std::optional<Tables> tables;
     const Context & global_context;
 
     using StorageWithLockAndName = std::tuple<StoragePtr, TableLockHolder, String>;
@@ -73,6 +74,13 @@ protected:
         const ColumnsDescription & columns_,
         const String & source_database_,
         const String & table_name_regexp_,
+        const Context & context_);
+
+    StorageMerge(
+        const StorageID & table_id_,
+        const ColumnsDescription & columns_,
+        const String & source_database_,
+        const Tables & source_tables_,
         const Context & context_);
 
     Pipe createSources(
