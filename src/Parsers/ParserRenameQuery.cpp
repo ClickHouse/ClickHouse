@@ -89,18 +89,18 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     ASTRenameQuery::Elements elements;
 
-    auto ignore_delim = [&] { return exchange ? s_and.ignore(pos) : s_to.ignore(pos); };
+    const auto ignore_delim = [&] { return exchange ? s_and.ignore(pos) : s_to.ignore(pos); };
 
     while (true)
     {
         if (!elements.empty() && !s_comma.ignore(pos))
             break;
 
-        auto it = elements.emplace_back();
+        ASTRenameQuery::Element& ref = elements.emplace_back();
 
-        if (!parseDatabaseAndTable(it.from, pos, expected)
+        if (!parseDatabaseAndTable(ref.from, pos, expected)
             || !ignore_delim()
-            || !parseDatabaseAndTable(it.to, pos, expected))
+            || !parseDatabaseAndTable(ref.to, pos, expected))
             return false;
     }
 
