@@ -3,6 +3,7 @@
 #include <Client/ConnectionPool.h>
 #include <Client/MultiplexedConnections.h>
 #include <Storages/IStorage_fwd.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
 
 namespace DB
