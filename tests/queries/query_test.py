@@ -33,6 +33,7 @@ SKIP_LIST = [
     "01050_clickhouse_dict_source_with_subquery",
     "01053_ssd_dictionary",
     "01054_cache_dictionary_overflow_cell",
+    "01057_http_compression_prefer_brotli",
     "01080_check_for_error_incorrect_size_of_nested_column",
     "01083_expressions_in_engine_arguments",
     "01086_odbc_roundtrip",
@@ -59,6 +60,7 @@ SKIP_LIST = [
     "01455_opentelemetry_distributed",
     "01473_event_time_microseconds",
     "01474_executable_dictionary",
+    "01507_clickhouse_server_start_with_embedded_config",
     "01514_distributed_cancel_query_on_error",
     "01520_client_print_query_id",
     "01526_client_start_and_exit",
@@ -72,6 +74,7 @@ SKIP_LIST = [
     "01586_storage_join_low_cardinality_key",
     "01599_multiline_input_and_singleline_comments",
     "01600_benchmark_query",
+    "01601_custom_tld.sql",
     "01601_proxy_protocol",
 ]
 
