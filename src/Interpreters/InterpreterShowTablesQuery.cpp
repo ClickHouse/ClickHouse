@@ -85,10 +85,13 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         WriteBufferFromOwnString rewritten_query;
         rewritten_query << "SELECT name, type, value FROM system.settings";
 
+        if (query.changed)
+            rewritten_query << " WHERE changed = 1";
+
         if (!query.like.empty())
         {
             rewritten_query
-                << " WHERE name "
+                << (query.changed ? " AND name " : " WHERE name ")
                 << (query.case_insensitive_like ? "ILIKE " : "LIKE ")
                 << DB::quote << query.like;
         }
