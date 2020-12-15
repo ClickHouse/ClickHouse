@@ -199,8 +199,8 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
             for (size_t j = 0; j < primary_columns_num; ++j)
             {
                 const auto & primary_column = primary_index_block.getByPosition(j);
-                index_columns[j]->insertFrom(*primary_column.column, granule.start);
-                primary_column.type->serializeBinary(*primary_column.column, granule.start, *index_stream);
+                index_columns[j]->insertFrom(*primary_column.column, granule.start_row);
+                primary_column.type->serializeBinary(*primary_column.column, granule.start_row, *index_stream);
             }
         }
     }
@@ -234,9 +234,9 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
                     writeIntBinary(1UL, stream.marks);
             }
 
-            size_t pos = granule.start;
+            size_t pos = granule.start_row;
             skip_indices_aggregators[i]->update(skip_indexes_block, &pos, granule.granularity_rows);
-            if (granule.is_completed)
+            if (granule.isCompleted())
             {
                 ++skip_index_filling[i];
 

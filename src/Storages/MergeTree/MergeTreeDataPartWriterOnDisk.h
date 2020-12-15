@@ -16,12 +16,16 @@ namespace DB
 
 struct Granule
 {
-    size_t start;
+    size_t start_row;
     size_t granularity_rows;
-    size_t rows_written_from_block;
+    size_t block_rows;
     size_t mark_number;
     bool mark_on_start;
-    bool is_completed;
+
+    bool isCompleted() const
+    {
+        return granularity_rows == block_rows;
+    }
 };
 
 using Granules = std::vector<Granule>;
