@@ -85,7 +85,7 @@ void DataTypeCustomSimpleTextSerialization::deserializeTextJSON(IColumn & column
 
 void DataTypeCustomSimpleTextSerialization::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeXMLString(serializeToString(*this, column, row_num, settings), ostr);
+    writeXMLStringForTextElement(serializeToString(*this, column, row_num, settings), ostr);
 }
 
 }

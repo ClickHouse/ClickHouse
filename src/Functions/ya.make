@@ -80,6 +80,7 @@ SRCS(
     URL/cutQueryString.cpp
     URL/cutQueryStringAndFragment.cpp
     URL/cutToFirstSignificantSubdomain.cpp
+    URL/cutToFirstSignificantSubdomainCustom.cpp
     URL/cutURLParameter.cpp
     URL/cutWWW.cpp
     URL/decodeURLComponent.cpp
@@ -89,6 +90,7 @@ SRCS(
     URL/extractURLParameterNames.cpp
     URL/extractURLParameters.cpp
     URL/firstSignificantSubdomain.cpp
+    URL/firstSignificantSubdomainCustom.cpp
     URL/fragment.cpp
     URL/netloc.cpp
     URL/path.cpp
@@ -118,6 +120,7 @@ SRCS(
     appendTrailingCharIfAbsent.cpp
     array/array.cpp
     array/arrayAUC.cpp
+    array/arrayAggregation.cpp
     array/arrayAll.cpp
     array/arrayCompact.cpp
     array/arrayConcat.cpp
@@ -153,7 +156,6 @@ SRCS(
     array/arraySlice.cpp
     array/arraySort.cpp
     array/arraySplit.cpp
-    array/arraySum.cpp
     array/arrayUniq.cpp
     array/arrayWithConstant.cpp
     array/arrayZip.cpp
@@ -224,6 +226,7 @@ SRCS(
     dumpColumnStructure.cpp
     e.cpp
     empty.cpp
+    encodeXMLComponent.cpp
     encrypt.cpp
     endsWith.cpp
     equals.cpp
