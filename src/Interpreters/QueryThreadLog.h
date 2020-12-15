@@ -41,7 +41,7 @@ struct QueryThreadLogElement
 
     String current_database;
     String query;
-    UInt64 normalized_query_hash;
+    UInt64 normalized_query_hash{};
 
     ClientInfo client_info;
 
