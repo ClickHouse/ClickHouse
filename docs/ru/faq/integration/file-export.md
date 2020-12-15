@@ -8,7 +8,7 @@ toc_priority: 10
 
 ### Секция INTO OUTFILE {#sektsiia-into-outfile-rus}
 
-Добавьте секцию [INTO OUTFILE](../sql-reference/statements/select/into-outfile.md#into-outfile-clause) к своему запросу.
+Добавьте секцию [INTO OUTFILE../sql-reference/statements/select/into-outfile.md#into-outfile-clause) к своему запросу.
 
 Например:
 
