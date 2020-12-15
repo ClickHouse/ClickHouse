@@ -1,15 +1,33 @@
+---
+toc_folder_title: F.A.Q.
+toc_hidden: true
+toc_priority: 76
+---
+
 # Общие вопросы {#obshchie-voprosy}
 
-## Почему бы не использовать системы типа MapReduce? {#pochemu-by-ne-ispolzovat-sistemy-tipa-mapreduce}
+This section of the documentation is a place to collect answers to ClickHouse-related questions that arise often.
 
-Системами типа MapReduce будем называть системы распределённых вычислений, в которых операция reduce сделана на основе распределённой сортировки. Наиболее распространённым opensource решением данного класса является [Apache Hadoop](http://hadoop.apache.org). Яндекс использует собственное решение — YT.
+Categories:
 
-Такие системы не подходят для онлайн запросов в силу слишком большой latency. То есть, не могут быть использованы в качестве бэкенда для веб-интерфейса.
-Такие системы не подходят для обновления данных в реальном времени.
-Распределённая сортировка не является оптимальным способом выполнения операции reduce, если результат выполнения операции и все промежуточные результаты, при их наличии, помещаются в оперативку на одном сервере, как обычно бывает в запросах, выполняющихся в режиме онлайн. В таком случае, оптимальным способом выполнения операции reduce является хэш-таблица. Частым способом оптимизации map-reduce задач является предагрегация (частичный reduce) с использованием хэш-таблицы в оперативной памяти. Эта оптимизация делается пользователем в ручном режиме.
-Распределённая сортировка является основной причиной тормозов при выполнении несложных map-reduce задач.
-
-Большинство реализаций MapReduce позволяют выполнять произвольный код на кластере. Но для OLAP задач лучше подходит декларативный язык запросов, который позволяет быстро проводить исследования. Для примера, для Hadoop существует Hive и Pig. Также смотрите Cloudera Impala, Shark (устаревший) для Spark, а также Spark SQL, Presto, Apache Drill. Впрочем, производительность при выполнении таких задач является сильно неоптимальной по сравнению со специализированными системами, а сравнительно высокая latency не позволяет использовать эти системы в качестве бэкенда для веб-интерфейса.
+-   **[General](../faq/general/index.md)**
+    -   [What is ClickHouse?](../index.md#what-is-clickhouse)
+    -   [Why ClickHouse is so fast?](../faq/general/why-clickhouse-is-so-fast.md)
+    -   [Who is using ClickHouse?](../faq/general/who-is-using-clickhouse.md)
+    -   [What does “ClickHouse” mean?](../faq/general/dbms-naming.md)
+    -   [What does “Не тормозит” mean?](../faq/general/ne-tormozit.md)
+    -   [What is OLAP?](../faq/general/olap.md)
+    -   [What is a columnar database?](../faq/general/columnar-database.md)
+    -   [Почему бы не использовать системы типа MapReduce?](../faq/general/mapreduce.md)
+-   **[Use Cases](../faq/use-cases/index.md)**
+    -   [Can I use ClickHouse as a time-series database?](../faq/use-cases/time-series.md)
+    -   [Can I use ClickHouse as a key-value storage?](../faq/use-cases/key-value.md)
+-   **[Operations](../faq/operations/index.md)**
+    -   [Which ClickHouse version to use in production?](../faq/operations/production.md)
+    -   [Is it possible to delete old records from a ClickHouse table?](../faq/operations/delete-old-data.md)
+-   **[Integration](../faq/integration/index.md)**
+    -   [How do I export data from ClickHouse to a file?](../faq/integration/file-export.md)
+    -   [What if I have a problem with encodings when connecting to Oracle via ODBC?](../faq/integration/oracle-odbc.md)
 
 ## Что делать, если у меня проблема с кодировками при использовании Oracle через ODBC? {#oracle-odbc-encodings}
 
