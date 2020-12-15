@@ -164,7 +164,7 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
 
     if not args.database:
         clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
-        seconds_left = args.timeout - (datetime.now() - start_time).total_seconds()
+        seconds_left = max(args.timeout - (datetime.now() - start_time).total_seconds(), 10)
         try:
             clickhouse_proc_create.communicate(("DROP DATABASE " + database), timeout=seconds_left)
         except TimeoutExpired:
