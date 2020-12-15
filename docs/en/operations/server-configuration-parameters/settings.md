@@ -567,6 +567,21 @@ For more information, see the MergeTreeSettings.h header file.
 </merge_tree>
 ```
 
+## metric_log {#metric_log}
+
+To turn on metrics history collection on `system.metric_log`, create `/etc/clickhouse-server/config.d/metric_log.xml` with following content:
+
+``` xml
+<yandex>
+    <metric_log>
+        <database>system</database>
+        <table>metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+    </metric_log>
+</yandex>
+```
+
 ## replicated_merge_tree {#server_configuration_parameters-replicated_merge_tree}
 
 Fine tuning for tables in the [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
@@ -756,21 +771,6 @@ If the table doesn’t exist, ClickHouse will create it. If the structure of the
     <partition_by>toMonday(event_date)</partition_by>
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
 </query_thread_log>
-```
-
-## metric_log {#metric_log}
-
-To turn on metrics history collection on `system.metric_log`, create `/etc/clickhouse-server/config.d/metric_log.xml` with following content:
-
-``` xml
-<yandex>
-    <metric_log>
-        <database>system</database>
-        <table>metric_log</table>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
-    </metric_log>
-</yandex>
 ```
 
 ## text_log {#server_configuration_parameters-text_log}
