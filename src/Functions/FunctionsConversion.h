@@ -191,7 +191,24 @@ struct ConvertImpl
                 {
                     if constexpr (IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
                     {
-                        try
+                        if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                        {
+                            ToFieldType result;
+                            bool convert_result = false;
+
+                            if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
+                                tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], vec_from.getScale(), vec_to.getScale(), result);
+                            else if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeNumber<ToDataType>)
+                                tryConvertFromDecimal<FromDataType, ToDataType>(vec_from[i], vec_from.getScale(), result);
+                            else if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDataType>)
+                                tryConvertToDecimal<FromDataType, ToDataType>(vec_from[i], vec_to.getScale(), result);
+
+                            if (convert_result)
+                                vec_to[i] = result;
+                            else
+                                (*vec_null_map_to)[i] = true;
+                        }
+                        else
                         {
                             if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
                                 vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], vec_from.getScale(), vec_to.getScale());
@@ -200,21 +217,7 @@ struct ConvertImpl
                             else if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDataType>)
                                 vec_to[i] = convertToDecimal<FromDataType, ToDataType>(vec_from[i], vec_to.getScale());
                             else
-                            {
                                 throw Exception("Unsupported data type in conversion function", ErrorCodes::CANNOT_CONVERT_TYPE);
-                            }
-                        }
-                        catch (const Exception & exception)
-                        {
-                            if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
-                            {
-                                if (exception.code() == ErrorCodes::CANNOT_CONVERT_TYPE || exception.code() == ErrorCodes::DECIMAL_OVERFLOW)
-                                    (*vec_null_map_to)[i] = true;
-                                else
-                                    throw exception;
-                            }
-                            else
-                                throw exception;
                         }
                     }
                     else
