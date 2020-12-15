@@ -93,7 +93,7 @@ private:
 
     const String query;
     String query_id = "";
-    const Context & context;
+    Context context;
 
     ProgressCallback progress_callback;
     ProfileInfoCallback profile_info_callback;
