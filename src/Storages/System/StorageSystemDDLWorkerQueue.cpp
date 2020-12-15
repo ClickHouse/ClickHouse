@@ -38,6 +38,9 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 }
 
+
+namespace DB
+{
 std::vector<std::pair<String, Int8>> getStatusEnumsAndValues()
 {
     return std::vector<std::pair<String, Int8>>{
@@ -48,8 +51,7 @@ std::vector<std::pair<String, Int8>> getStatusEnumsAndValues()
     };
 }
 
-namespace DB
-{
+
 std::vector<std::pair<String, Int8>> getZooKeeperErrorEnumsAndValues()
 {
     return std::vector<std::pair<String, Int8>>{
@@ -110,7 +112,6 @@ static bool extractPathImpl(const IAST & elem, String & res, const Context & con
         for (const auto & child : function->arguments->children)
             if (extractPathImpl(*child, res, context))
                 return true;
-
         return false;
     }
 
@@ -144,7 +145,6 @@ static bool extractPathImpl(const IAST & elem, String & res, const Context & con
         res = literal->value.safeGet<String>();
         return true;
     }
-
     return false;
 }
 
@@ -156,7 +156,6 @@ static String extractPath(const ASTPtr & query, const Context & context)
     const auto & select = query->as<ASTSelectQuery &>();
     if (!select.where())
         return "";
-
     String res;
     return extractPathImpl(*select.where(), res, context) ? res : "";
 }
@@ -179,7 +178,6 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, const C
        [query-0000000000, query-0000000001, query-0000000002, query-0000000003, query-0000000004]
     */
 
-    // if there is error querying the root path of the ddl directory throw exception and stop
     zkutil::Strings queries;
 
     Coordination::Error code = zookeeper->tryGetChildren(ddl_zookeeper_path, queries);
@@ -275,9 +273,10 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, const C
                 Coordination::GetResponse res;
                 if (!futures.empty())
                     res = futures[query_id].get();
-                res_columns[i++]->insert(res.data); // value
+
                 auto query_start_time = res.stat.mtime;
 
+                res_columns[i++]->insert(res.data); // value
                 res_columns[i++]->insert(UInt64(query_start_time / 1000)); // query_start_time
                 res_columns[i++]->insert(UInt64(query_finish_time / 1000)); // query_finish_time
                 res_columns[i++]->insert(UInt64(query_finish_time - query_start_time)); // query_duration_ms

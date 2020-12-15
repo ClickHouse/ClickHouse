@@ -12,7 +12,7 @@ namespace DB
 class Context;
 
 
-/** System table "ddl_worker_queue" with list of queries that are currently in the DDL worker queue.
+/** System table "distributed_ddl_queue" with list of queries that are currently in the DDL worker queue.
   */
 class StorageSystemDDLWorkerQueue final : public ext::shared_ptr_helper<StorageSystemDDLWorkerQueue>,
                                           public IStorageSystemOneBlock<StorageSystemDDLWorkerQueue>
