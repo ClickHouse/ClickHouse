@@ -26,7 +26,7 @@ private:
     size_t stack_size;
     size_t page_size = 0;
 public:
-    static constexpr size_t default_stack_size = 64 * 1024;
+    static constexpr size_t default_stack_size = 128 * 1024; /// 64KB was not enough for tests
 
     explicit FiberStack(size_t stack_size_ = default_stack_size) : stack_size(stack_size_)
     {
