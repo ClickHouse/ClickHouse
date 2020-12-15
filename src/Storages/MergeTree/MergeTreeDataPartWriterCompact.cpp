@@ -84,9 +84,21 @@ Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity,
         size_t expected_rows = index_granularity.getMarkRows(current_mark);
         size_t rest_rows = block_rows - current_row;
         if (rest_rows < expected_rows)
-            result.emplace_back(Granule{current_row, expected_rows, rest_rows, current_mark, true, false});
+            result.emplace_back(Granule{
+                .start_row = current_row,
+                .granularity_rows = expected_rows,
+                .block_rows = rest_rows,
+                .mark_number = current_mark,
+                .mark_on_start = true
+            });
         else
-            result.emplace_back(Granule{current_row, expected_rows, expected_rows, current_mark, true, true});
+            result.emplace_back(Granule{
+                .start_row = current_row,
+                .granularity_rows = expected_rows,
+                .block_rows = expected_rows,
+                .mark_number = current_mark,
+                .mark_on_start = true
+            });
 
         current_row += expected_rows;
         current_mark++;
@@ -196,20 +208,20 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
             writeIntBinary(plain_hashing.count(), marks);
             writeIntBinary(UInt64(0), marks);
 
-            writeColumnSingleGranule(block.getByName(name_and_type->name), stream_getter, granule.start, granule.granularity_rows);
+            writeColumnSingleGranule(block.getByName(name_and_type->name), stream_getter, granule.start_row, granule.granularity_rows);
 
             /// Each type always have at least one substream
             prev_stream->hashing_buf.next(); //-V522
         }
 
         /// Correct last mark as it should contain exact amount of rows.
-        if (granule.rows_written_from_block != granule.granularity_rows)
+        if (granule.block_rows != granule.granularity_rows)
         {
             index_granularity.popMark();
-            index_granularity.appendMark(granule.rows_written_from_block);
+            index_granularity.appendMark(granule.block_rows);
         }
 
-        writeIntBinary(granule.rows_written_from_block, marks);
+        writeIntBinary(granule.block_rows, marks);
     }
 }
 

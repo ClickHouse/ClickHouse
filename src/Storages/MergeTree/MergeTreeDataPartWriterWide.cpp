@@ -30,9 +30,21 @@ Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity,
         size_t rows_left_in_last_mark = index_granularity.getMarkRows(current_mark) - rows_written_in_last_mark;
         size_t rest_rows = block_rows - current_row;
         if (rest_rows < rows_left_in_last_mark)
-            result.emplace_back(Granule{current_row, rows_left_in_last_mark, rest_rows, current_mark, false, false});
+            result.emplace_back(Granule{
+                .start_row = current_row,
+                .granularity_rows = rows_left_in_last_mark,
+                .block_rows = rest_rows,
+                .mark_number = current_mark,
+                .mark_on_start = false,
+            });
         else
-            result.emplace_back(Granule{current_row, rows_left_in_last_mark, rows_left_in_last_mark, current_mark, false, true});
+            result.emplace_back(Granule{
+                .start_row = current_row,
+                .granularity_rows = rows_left_in_last_mark,
+                .block_rows = rows_left_in_last_mark,
+                .mark_number = current_mark,
+                .mark_on_start = false,
+            });
         current_row += rows_left_in_last_mark;
         current_mark++;
     }
@@ -42,9 +54,21 @@ Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity,
         size_t expected_rows = index_granularity.getMarkRows(current_mark);
         size_t rest_rows = block_rows - current_row;
         if (rest_rows < expected_rows)
-            result.emplace_back(Granule{current_row, expected_rows, rest_rows, current_mark, true, false});
+            result.emplace_back(Granule{
+                .start_row = current_row,
+                .granularity_rows = expected_rows,
+                .block_rows = rest_rows,
+                .mark_number = current_mark,
+                .mark_on_start = true,
+            });
         else
-            result.emplace_back(Granule{current_row, expected_rows, expected_rows, current_mark, true, true});
+            result.emplace_back(Granule{
+                .start_row = current_row,
+                .granularity_rows = expected_rows,
+                .block_rows = expected_rows,
+                .mark_number = current_mark,
+                .mark_on_start = true,
+            });
 
         current_row += expected_rows;
         current_mark++;
@@ -137,9 +161,7 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
         fillIndexGranularity(index_granularity_for_block, block.rows());
     }
 
-    //auto * log = &Poco::Logger::get(storage.getLogName());
     auto granules_to_write = getGranulesToWrite(index_granularity, block.rows(), getCurrentMark(), rows_written_in_last_mark);
-    //LOG_DEBUG(log, "Block rows {}, granules to write {}", block.rows(), granules_to_write.size());
 
     auto offset_columns = written_offset_columns ? *written_offset_columns : WrittenOffsetColumns{};
     Block primary_key_block;
@@ -184,14 +206,14 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
     calculateAndSerializeSkipIndices(skip_indexes_block, granules_to_write);
 
     auto last_granule = granules_to_write.back();
-    if (!last_granule.is_completed)
+    if (!last_granule.isCompleted())
     {
         setCurrentMark(getCurrentMark() + granules_to_write.size() - 1);
         bool still_in_the_same_granule = granules_to_write.size() == 1;
         if (still_in_the_same_granule)
-            rows_written_in_last_mark += last_granule.rows_written_from_block;
+            rows_written_in_last_mark += last_granule.block_rows;
         else
-            rows_written_in_last_mark = last_granule.rows_written_from_block;
+            rows_written_in_last_mark = last_granule.block_rows;
     }
     else
     {
@@ -320,7 +342,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
            offset_columns,
            it->second,
            serialize_settings,
-           granule.start,
+           granule.start_row,
            granule.granularity_rows,
            granule.mark_on_start
         );
@@ -356,7 +378,6 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
     size_t total_rows = 0;
 
     size_t mark_num;
-    //LOG_DEBUG(log, "Marks file size {} bytes marks count {}", marks_file_size, index_granularity.getMarksCount());
 
     for (mark_num = 0; !mrk_in.eof(); ++mark_num)
     {
@@ -369,9 +390,6 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
             DB::readBinary(index_granularity_rows, mrk_in);
         else
             index_granularity_rows = storage.getSettings()->index_granularity;
-
-        //LOG_TRACE(log, "Position in bin [{}, {}]", compressed_bin_position, uncompressed_bin_position);
-        //LOG_TRACE(log, "Validating column {} mark [{}, {}] with rows {}, must be last {}", name, offset_in_compressed_file, offset_in_decompressed_block, index_granularity_rows, must_be_last);
 
         if (must_be_last)
         {
@@ -404,11 +422,9 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
         type.deserializeBinaryBulk(*column, bin_in, index_granularity_rows, 0.0);
 
         total_rows += column->size();
-        //LOG_TRACE(log, "Read rows {} for mark #{}, expected {}, total {}", column->size(), mark_num, index_granularity_rows, total_rows);
 
         if (bin_in.eof())
         {
-            //LOG_TRACE(log, "Bin EOF");
             must_be_last = true;
         }
         else if (column->size() != index_granularity_rows)
