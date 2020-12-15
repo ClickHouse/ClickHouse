@@ -44,12 +44,7 @@ static ITransformingStep::Traits getJoinTraits()
 static Block addWindowFunctionColumns(const Block & block,
     std::vector<WindowFunctionDescription> window_functions)
 {
-    fmt::print(stderr, "input header: {}\n", block.dumpStructure());
-
-    //auto result = block.cloneWithoutColumns();
     auto result = block;
-
-    fmt::print(stderr, "header after clone: {}\n", result.dumpStructure());
 
     for (const auto & f : window_functions)
     {
@@ -60,8 +55,6 @@ static Block addWindowFunctionColumns(const Block & block,
 
         result.insert(column_with_type);
     }
-
-    fmt::print(stderr, "header after insert: {}\n", result.dumpStructure());
 
     return result;
 }
@@ -97,16 +90,7 @@ void WindowStep::describeActions(FormatSettings & settings) const
 {
     String prefix(settings.offset, ' ');
     (void) prefix;
-    //bool first = true;
-
-    //auto expression = std::make_shared<ExpressionActions>(actions_dag);
-    //for (const auto & action : expression->getActions())
-    //{
-    //    settings.out << prefix << (first ? "Actions: "
-    //                                     : "         ");
-    //    first = false;
-    //    settings.out << action.toString() << '\n';
-    //}
+    /// FIXME add some printing
 }
 
 }

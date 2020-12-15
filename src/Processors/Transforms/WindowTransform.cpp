@@ -12,14 +12,11 @@ WindowTransform::WindowTransform(const Block & input_header_,
         const WindowDescription & window_description_,
         const std::vector<WindowFunctionDescription> & window_function_descriptions
         )
-    // FIXME this is where the output column is added
     : ISimpleTransform(input_header_, output_header_,
         false /* skip_empty_chunks */)
     , input_header(input_header_)
     , window_description(window_description_)
 {
-    fmt::print(stderr, "input header {}\n", input_header.dumpStructure());
-
     workspaces.reserve(window_function_descriptions.size());
     for (size_t i = 0; i < window_function_descriptions.size(); ++i)
     {
@@ -41,12 +38,6 @@ WindowTransform::WindowTransform(const Block & input_header_,
         {
             workspace.argument_column_indices.push_back(
                 input_header.getPositionByName(argument_name));
-
-            fmt::print(stderr,
-                "window function '{}' argument column '{}' at '{}'\n",
-                workspace.window_function.column_name,
-                argument_name,
-                workspace.argument_column_indices.back());
 
         }
 
@@ -80,14 +71,11 @@ void WindowTransform::transform(Chunk & chunk)
     const size_t num_rows = chunk.getNumRows();
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
-    fmt::print(stderr, "block before window transform:\n{}\n", block.dumpStructure());
-
     for (auto & workspace : workspaces)
     {
         workspace.argument_columns.clear();
         for (const auto column_index : workspace.argument_column_indices)
         {
-            fmt::print(stderr, "argument column index '{}'\n", column_index);
             workspace.argument_columns.push_back(
                 block.getColumns()[column_index].get());
         }
@@ -105,7 +93,6 @@ void WindowTransform::transform(Chunk & chunk)
         auto c = column_with_type.type->createColumn();
         column_with_type.column.reset(c.get());
 
-        size_t partition_start = 0;
         for (size_t row = 0; row < num_rows; row++)
         {
             // Check whether the new partition has started and reinitialize the
@@ -151,8 +138,6 @@ void WindowTransform::transform(Chunk & chunk)
         column_with_type.column.reset(c.get());
         //*/
     }
-
-    fmt::print(stderr, "block after window transform:\n{}\n", block.dumpStructure());
 
     chunk.setColumns(block.getColumns(), num_rows);
 }
