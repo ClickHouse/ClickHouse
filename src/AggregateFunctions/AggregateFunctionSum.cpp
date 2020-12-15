@@ -52,7 +52,6 @@ template <typename T> using AggregateFunctionSumKahan =
 template <template <typename> class Function>
 AggregateFunctionPtr createAggregateFunctionSum(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
-    fmt::print(stderr, "create sum at \n{}\n", StackTrace().toString());
     assertNoParameters(name, parameters);
     assertUnary(name, argument_types);
 

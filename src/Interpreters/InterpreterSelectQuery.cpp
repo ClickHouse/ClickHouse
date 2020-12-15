@@ -958,7 +958,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             }
             else
             {
-                /// FIXME calculate windows here
                 executeExpression(query_plan, expressions.before_order_and_select, "Before ORDER BY and SELECT");
                 executeWindow(query_plan);
                 executeDistinct(query_plan, true, expressions.selected_columns, true);
@@ -1006,7 +1005,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 else if (expressions.hasHaving())
                     executeHaving(query_plan, expressions.before_having);
 
-                /// FIXME calculate windows here
                 executeExpression(query_plan, expressions.before_order_and_select, "Before ORDER BY and SELECT");
                 executeWindow(query_plan);
                 executeDistinct(query_plan, true, expressions.selected_columns, true);
@@ -1747,10 +1745,6 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
     for (const auto & f : query_analyzer->window_functions)
     {
         const auto & w = query_analyzer->window_descriptions[f.window_name];
-
-        fmt::print(stderr, "window function '{}' over window '{}'\n",
-            f.column_name, f.window_name);
-        fmt::print(stderr, "{}\n{}\n", f.dump(), w.dump());
 
         const Settings & settings = context->getSettingsRef();
 

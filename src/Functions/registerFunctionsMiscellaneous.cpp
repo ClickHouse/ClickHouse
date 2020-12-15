@@ -43,7 +43,6 @@ void registerFunctionBuildId(FunctionFactory &);
 void registerFunctionUptime(FunctionFactory &);
 void registerFunctionTimeZone(FunctionFactory &);
 void registerFunctionRunningAccumulate(FunctionFactory &);
-void registerFunctionWindow(FunctionFactory &);
 void registerFunctionRunningDifference(FunctionFactory &);
 void registerFunctionRunningDifferenceStartingWithFirstValue(FunctionFactory &);
 void registerFunctionFinalizeAggregation(FunctionFactory &);
@@ -110,7 +109,6 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionUptime(factory);
     registerFunctionTimeZone(factory);
     registerFunctionRunningAccumulate(factory);
-    registerFunctionWindow(factory);
     registerFunctionRunningDifference(factory);
     registerFunctionRunningDifferenceStartingWithFirstValue(factory);
     registerFunctionFinalizeAggregation(factory);

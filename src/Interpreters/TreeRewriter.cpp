@@ -443,7 +443,7 @@ std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQu
 
 std::vector<const ASTFunction *> getWindowFunctions(ASTPtr & query, const ASTSelectQuery & select_query)
 {
-    /// There can not be aggregate functions inside the WHERE and PREWHERE.
+    /// There can not be window functions inside the WHERE and PREWHERE.
     if (select_query.where())
         assertNoWindows(select_query.where(), "in WHERE");
     if (select_query.prewhere())
@@ -452,7 +452,7 @@ std::vector<const ASTFunction *> getWindowFunctions(ASTPtr & query, const ASTSel
     GetAggregatesVisitor::Data data;
     GetAggregatesVisitor(data).visit(query);
 
-    /// There can not be other aggregate functions within the aggregate functions.
+    /// There can not be other window functions within the aggregate functions.
     for (const ASTFunction * node : data.window_functions)
     {
         if (node->arguments)
@@ -464,10 +464,6 @@ std::vector<const ASTFunction *> getWindowFunctions(ASTPtr & query, const ASTSel
             }
         }
     }
-
-    fmt::print(stderr, "getWindowFunctions ({}) for \n{}\n at \n{}\n",
-        data.window_functions.size(), query->formatForErrorMessage(),
-        StackTrace().toString());
 
     return data.window_functions;
 }
@@ -485,8 +481,6 @@ TreeRewriterResult::TreeRewriterResult(
 {
     collectSourceColumns(add_special);
     is_remote_storage = storage && storage->isRemote();
-
-    fmt::print(stderr, "TreeRewriterResult created at \n{}\n", StackTrace().toString());
 }
 
 /// Add columns from storage to source_columns list. Deduplicate resulted list.

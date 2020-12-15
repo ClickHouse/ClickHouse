@@ -1004,16 +1004,11 @@ void SelectQueryExpressionAnalyzer::appendAggregateFunctionsArguments(Expression
         if (node->arguments)
             for (auto & argument : node->arguments->children)
                 getRootActions(argument, only_types, step.actions());
-
-
-    fmt::print(stderr, "actions after appendAggregateFunctionsArguments: \n{} at \n{}\n", chain.dumpChain(), StackTrace().toString());
 }
 
 void SelectQueryExpressionAnalyzer::appendWindowFunctionsArguments(
     ExpressionActionsChain & chain, bool /* only_types */)
 {
-    fmt::print(stderr, "actions before window: {}\n", chain.dumpChain());
-
     ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
 
     for (const auto & f : window_functions)
@@ -1039,28 +1034,6 @@ void SelectQueryExpressionAnalyzer::appendWindowFunctionsArguments(
         step.actions()->addInput(col);
     }
 
-    // /*
-    // for (const auto & desc : aggregate_descriptions)
-    //     for (const auto & name : desc.argument_names)
-    //         step.required_output.emplace_back(name);
-    // */
-
-    // const auto * select_query = getSelectQuery();
-    // /// Collect aggregates removing duplicates by node.getColumnName()
-    // /// It's not clear why we recollect aggregates (for query parts) while we're able to use previously collected ones (for entire query)
-    // /// @note The original recollection logic didn't remove duplicates.
-    // GetAggregatesVisitor::Data data;
-    // GetAggregatesVisitor(data).visit(select_query->select());
-
-    // // 1) just add everything there is in the AST,
-    // for (const ASTFunction * node : data.window_functions)
-    // {
-    //     for (auto & argument : node->arguments->children)
-    //     {
-    //         getRootActions(argument, only_types, step.actions());
-    //     }
-    // }
-
     // 2) mark the columns that are really required:
     for (const auto & f : window_functions)
     {
@@ -1081,8 +1054,6 @@ void SelectQueryExpressionAnalyzer::appendWindowFunctionsArguments(
             step.required_output.push_back(c.column_name);
         }
     }
-
-    fmt::print(stderr, "actions after window: {}\n", chain.dumpChain());
 }
 
 bool SelectQueryExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain, bool only_types)
@@ -1091,8 +1062,6 @@ bool SelectQueryExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain,
 
     if (!select_query->having())
         return false;
-
-    fmt::print(stderr, "has having\n");
 
     ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
 
@@ -1267,8 +1236,6 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActio
         }
     }
 
-    fmt::print(stderr, "chain before last projection: {}\n",
-        chain.dumpChain());
     auto actions = chain.getLastActions();
     actions->project(result_columns);
     return actions;
@@ -1473,8 +1440,6 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             chain.addStep();
         }
 
-        fmt::print(stderr, "chain before aggregate: {}\n", chain.dumpChain());
-
         if (need_aggregate)
         {
             /// TODO correct conditions
@@ -1483,28 +1448,17 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                     && storage && query.groupBy();
 
             query_analyzer.appendGroupBy(chain, only_types || !first_stage, optimize_aggregation_in_order, group_by_elements_actions);
-
-            fmt::print(stderr, "chain after appendGroupBy: {}\n", chain.dumpChain());
-
             query_analyzer.appendAggregateFunctionsArguments(chain, only_types || !first_stage);
-
-            fmt::print(stderr, "chain after appendAggregateFunctionsArguments: {}\n", chain.dumpChain());
-
             before_aggregation = chain.getLastActions();
 
             finalize_chain(chain);
 
-            fmt::print(stderr, "chain after finalize_chain: {}\n", chain.dumpChain());
-
             if (query_analyzer.appendHaving(chain, only_types || !second_stage))
             {
-                fmt::print(stderr, "chain after appendHaving: {}\n", chain.dumpChain());
                 before_having = chain.getLastActions();
                 chain.addStep();
             }
         }
-
-        fmt::print(stderr, "chain after aggregate: {}\n", chain.dumpChain());
 
         bool join_allow_read_in_order = true;
         if (hasJoin())
@@ -1521,22 +1475,10 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             && !query.final()
             && join_allow_read_in_order;
 
-        /*
-        if (has_window)
-        {
-            query_analyzer.appendWindowFunctionsArguments(chain, only_types || !first_stage);
-            before_window = chain.getLastActions();
-
-            finalize_chain(chain);
-        }
-        */
-
         /// If there is aggregation, we execute expressions in SELECT and ORDER BY on the initiating server, otherwise on the source servers.
         query_analyzer.appendSelect(chain, only_types || (need_aggregate ? !second_stage : !first_stage));
-        fmt::print(stderr, "chain after select: {}\n", chain.dumpChain());
 
         query_analyzer.appendWindowFunctionsArguments(chain, only_types || !first_stage);
-        fmt::print(stderr, "chain after window: {}\n", chain.dumpChain());
 
         selected_columns = chain.getLastStep().required_output;
         has_order_by = query.orderBy() != nullptr;
@@ -1545,10 +1487,6 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 only_types || (need_aggregate ? !second_stage : !first_stage),
                 optimize_read_in_order,
                 order_by_elements_actions);
-
-        fmt::print(stderr, "chain after order by: {}\n", chain.dumpChain());
-
-        //if (h
 
         if (query_analyzer.appendLimitBy(chain, only_types || !second_stage))
         {
@@ -1565,10 +1503,6 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
     removeExtraColumns();
 
     checkActions();
-
-    fmt::print(stderr, "ExpressionAnalysisResult created at \n{}\n",
-        StackTrace().toString());
-    fmt::print(stderr, "ExpressionAnalysisResult: \n{}\n", dump());
 }
 
 void ExpressionAnalysisResult::finalize(const ExpressionActionsChain & chain, size_t where_step_num)
