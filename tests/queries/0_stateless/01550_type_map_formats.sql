@@ -8,12 +8,12 @@ INSERT INTO map_formats VALUES(map('k1', 1, 'k2', 2, 'k3', 3), map('k1', toDate(
 INSERT INTO map_formats VALUES(map('k1', 10, 'k3', 30), map('k2', toDate('2020-06-06')), map());
 
 SELECT 'JSON';
-SELECT * FROM map_formats FORMAT JSON;
+SELECT * FROM map_formats ORDER BY m['k1'] FORMAT JSON;
 SELECT 'JSONEachRow';
-SELECT * FROM map_formats FORMAT JSONEachRow;
+SELECT * FROM map_formats ORDER BY m['k1'] FORMAT JSONEachRow;
 SELECT 'CSV';
-SELECT * FROM map_formats FORMAT CSV;
+SELECT * FROM map_formats ORDER BY m['k1'] FORMAT CSV;
 SELECT 'TSV';
-SELECT * FROM map_formats FORMAT TSV;
+SELECT * FROM map_formats ORDER BY m['k1'] FORMAT TSV;
 SELECT 'TSKV';
-SELECT * FROM map_formats FORMAT TSKV;
+SELECT * FROM map_formats ORDER BY m['k1'] FORMAT TSKV;
