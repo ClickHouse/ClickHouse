@@ -30,7 +30,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int CANNOT_GET_CREATE_DICTIONARY_QUERY;
-    extern const int NOT_VIEW;
 }
 
 class IDatabaseTablesIterator
