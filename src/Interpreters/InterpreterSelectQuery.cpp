@@ -1552,7 +1552,12 @@ void InterpreterSelectQuery::executeFetchColumns(
         throw Exception("Logical error in InterpreterSelectQuery: nowhere to read", ErrorCodes::LOGICAL_ERROR);
 
     /// Specify the number of threads only if it wasn't specified in storage.
-    if (!query_plan.getMaxThreads())
+    ///
+    /// But in case of remote query and prefer_localhost_replica=1 (default)
+    /// The inner local query (that is done in the same process, without
+    /// network interaction), it will setMaxThreads earlier and distributed
+    /// query will not update it.
+    if (!query_plan.getMaxThreads() || is_remote)
         query_plan.setMaxThreads(max_threads_execute_query);
 
     /// Aliases in table declaration.
@@ -1784,7 +1789,7 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
     auto merge_sorting_step = std::make_unique<MergeSortingStep>(
             query_plan.getCurrentDataStream(),
             output_order_descr, settings.max_block_size, limit,
-            settings.max_bytes_before_remerge_sort,
+            settings.max_bytes_before_remerge_sort, settings.remerge_sort_lowered_memory_bytes_ratio,
             settings.max_bytes_before_external_sort, context->getTemporaryVolume(),
             settings.min_free_disk_space_for_temporary_data);
 
