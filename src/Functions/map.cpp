@@ -56,8 +56,8 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (arguments.empty() || arguments.size() % 2 != 0)
-            throw Exception("Function " + getName() + " requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        if (arguments.size() % 2 != 0)
+            throw Exception("Function " + getName() + " even number of arguments.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         DataTypes keys, values;
         for (size_t i = 0; i < arguments.size(); i += 2)
