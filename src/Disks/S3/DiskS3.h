@@ -34,7 +34,7 @@ public:
         String s3_root_path_,
         String metadata_path_,
         size_t min_upload_part_size_,
-        size_t min_multi_part_upload_size_,
+        size_t max_single_part_upload_size_,
         size_t min_bytes_for_seek_,
         bool send_metadata_);
 
@@ -133,7 +133,7 @@ private:
     const String s3_root_path;
     const String metadata_path;
     size_t min_upload_part_size;
-    size_t min_multi_part_upload_size;
+    size_t max_single_part_upload_size;
     size_t min_bytes_for_seek;
     bool send_metadata;
 
