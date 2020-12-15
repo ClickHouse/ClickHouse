@@ -229,10 +229,8 @@ public:
             {
                 while (true)
                 {
-                    connections.setFiber(&sink);
-
                     read_context.is_read_in_progress = true;
-                    read_context.packet = connections.receivePacketUnlocked();
+                    read_context.packet = connections.receivePacketUnlocked(&sink);
                     read_context.is_read_in_progress = false;
 
                     sink = std::move(sink).resume();
