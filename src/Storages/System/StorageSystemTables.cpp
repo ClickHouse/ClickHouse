@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Storages/System/StorageSystemTables.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 #include <Access/ContextAccess.h>
