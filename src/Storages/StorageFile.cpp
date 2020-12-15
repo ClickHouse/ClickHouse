@@ -528,7 +528,10 @@ BlockOutputStreamPtr StorageFile::write(
 
     std::string path;
     if (!paths.empty())
+    {
         path = paths[0];
+        Poco::File(Poco::Path(path).makeParent()).createDirectories();
+    }
 
     return std::make_shared<StorageFileBlockOutputStream>(*this, metadata_snapshot,
         chooseCompressionMethod(path, compression_method), context,

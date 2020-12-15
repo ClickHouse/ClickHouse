@@ -180,7 +180,7 @@ static inline std::tuple<NamesAndTypesList, NamesAndTypesList, NamesAndTypesList
                 if (const auto & function = index_expression->as<ASTFunction>())
                 {
                     /// column_name(int64 literal)
-                    if (columns_name_set.contains(function->name) && function->arguments->children.size() == 1)
+                    if (columns_name_set.count(function->name) && function->arguments->children.size() == 1)
                     {
                         const auto & prefix_limit = function->arguments->children[0]->as<ASTLiteral>();
 
