@@ -167,7 +167,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
                         default_codec, settings.max_compress_block_size,
                         0, settings.aio_threshold));
         skip_indices_aggregators.push_back(index_helper->createIndexAggregator());
-        skip_index_filling.push_back(0);
+        skip_index_accumulated_marks.push_back(0);
     }
 }
 
@@ -221,7 +221,6 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
             if (skip_indices_aggregators[i]->empty() && granule.mark_on_start)
             {
                 skip_indices_aggregators[i] = index_helper->createIndexAggregator();
-                skip_index_filling[i] = 0;
 
                 if (stream.compressed.offset() >= settings.min_compress_block_size)
                     stream.compressed.next();
@@ -238,13 +237,13 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
             skip_indices_aggregators[i]->update(skip_indexes_block, &pos, granule.granularity_rows);
             if (granule.isCompleted())
             {
-                ++skip_index_filling[i];
+                ++skip_index_accumulated_marks[i];
 
                 /// write index if it is filled
-                if (skip_index_filling[i] == index_helper->index.granularity)
+                if (skip_index_accumulated_marks[i] == index_helper->index.granularity)
                 {
                     skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed);
-                    skip_index_filling[i] = 0;
+                    skip_index_accumulated_marks[i] = 0;
                 }
             }
         }
@@ -302,7 +301,7 @@ void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(
 
     skip_indices_streams.clear();
     skip_indices_aggregators.clear();
-    skip_index_filling.clear();
+    skip_index_accumulated_marks.clear();
 }
 
 Names MergeTreeDataPartWriterOnDisk::getSkipIndicesColumns() const

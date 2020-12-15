@@ -14,20 +14,34 @@
 namespace DB
 {
 
+/// Single unit for writing data to disk. Contains information about
+/// amount of rows to write and marks.
 struct Granule
 {
+    /// Start row in block for granule
     size_t start_row;
+    /// Amount of rows which granule have to contain according to index
+    /// granularity.
+    /// NOTE: Sometimes it's not equal to actually written rows, for example
+    /// for the last granule if it's smaller than computed granularity.
     size_t granularity_rows;
+    /// Amount of rows from block which have to be written to disk from start_row
     size_t block_rows;
+    /// Global mark number in the list of all marks (index_granularity) for this part
     size_t mark_number;
+    /// Should writer write mark for the first of this granule to disk.
+    /// NOTE: Sometimes we don't write mark for the start row, because
+    /// this granule can be continuation of the previous one.
     bool mark_on_start;
 
+    /// Is this granule contain amout of rows equal to the value in index granularity
     bool isCompleted() const
     {
         return granularity_rows == block_rows;
     }
 };
 
+/// Multiple granules to write for concrete block.
 using Granules = std::vector<Granule>;
 
 /// Writes data part to disk in different formats.
@@ -90,19 +104,29 @@ public:
     {
         written_offset_columns = written_offset_columns_;
     }
+
 protected:
      /// Count index_granularity for block and store in `index_granularity`
     size_t computeIndexGranularity(const Block & block) const;
 
+    /// Write primary index according to granules_to_write
     void calculateAndSerializePrimaryIndex(const Block & primary_index_block, const Granules & granules_to_write);
+    /// Write skip indices according to granules_to_write. Skip indices also have their own marks
+    /// and one skip index granule can contain multiple "normal" marks. So skip indices serialization
+    /// require additional state: skip_indices_aggregators and skip_index_accumulated_marks
     void calculateAndSerializeSkipIndices(const Block & skip_indexes_block, const Granules & granules_to_write);
 
+    /// Finishes primary index serialization: write final primary index row (if required) and compute checksums
     void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums, bool sync);
+    /// Finishes skip indices serialization: write all accumulated data to disk and compute checksums
     void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums, bool sync);
 
+    /// Get global number of the current which we are writing (or going to start to write)
     size_t getCurrentMark() const { return current_mark; }
+
     void setCurrentMark(size_t mark) { current_mark = mark; }
 
+    /// Get unique non ordered skip indices column.
     Names getSkipIndicesColumns() const;
 
     const MergeTreeIndices skip_indices;
@@ -113,13 +137,9 @@ protected:
 
     const bool compute_granularity;
 
-    /// Number of marsk in data from which skip indices have to start
-    /// aggregation. I.e. it's data mark number, not skip indices mark.
-    size_t skip_index_data_mark = 0;
-
     std::vector<StreamPtr> skip_indices_streams;
     MergeTreeIndexAggregators skip_indices_aggregators;
-    std::vector<size_t> skip_index_filling;
+    std::vector<size_t> skip_index_accumulated_marks;
 
     std::unique_ptr<WriteBufferFromFileBase> index_file_stream;
     std::unique_ptr<HashingWriteBuffer> index_stream;

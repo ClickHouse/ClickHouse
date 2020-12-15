@@ -72,6 +72,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const String & name, const IData
 namespace
 {
 
+/// Get granules for block using index_granularity
 Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity, size_t block_rows, size_t current_mark, bool last_block)
 {
     if (current_mark >= index_granularity.getMarksCount())
@@ -85,6 +86,8 @@ Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity,
         size_t rest_rows = block_rows - current_row;
         if (rest_rows < expected_rows)
         {
+            /// Invariant: we always have equal amount of rows for block in compact parts because we accumulate them in buffer.
+            /// The only exclusion is the last block, when we cannot accumulate more rows.
             if (!last_block)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Required to write {} rows, but only {} rows was written for the non last granule", expected_rows, rest_rows);
 
@@ -98,6 +101,7 @@ Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity,
         }
         else
         {
+            /// Normal granule with amount of rows equal to rows in compute granularity
             result.emplace_back(Granule{
                 .start_row = current_row,
                 .granularity_rows = expected_rows,
