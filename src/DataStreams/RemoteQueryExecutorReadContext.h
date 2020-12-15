@@ -26,7 +26,7 @@ public:
     Packet packet;
 
     std::exception_ptr exception;
-    FiberStack<> stack;
+    FiberStack stack;
     boost::context::fiber fiber;
     std::mutex fiber_lock;
     // std::unique_lock<std::mutex> * connection_lock;
@@ -257,6 +257,8 @@ namespace DB
 {
 class RemoteQueryExecutorReadContext
 {
+public:
+    void cancel() {}
 };
 
 }
