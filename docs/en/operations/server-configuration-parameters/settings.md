@@ -773,11 +773,6 @@ To turn on metrics history collection on `system.metric_log`, create `/etc/click
 </yandex>
 ```
 
-**See also**
-
--   [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md) — Contains periodically calculated metrics.
--   [Monitoring](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.
-
 ## text_log {#server_configuration_parameters-text_log}
 
 Settings for the [text_log](../../operations/system-tables/text_log.md#system_tables-text_log) system table for logging text messages.
