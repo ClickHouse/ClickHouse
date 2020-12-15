@@ -373,6 +373,10 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
             res_column.column = action.node->column->cloneResized(num_rows);
             res_column.type = action.node->result_type;
             res_column.name = action.node->result_name;
+
+
+            fmt::print(stderr, "execute column action {} at\n{}\n",
+                action.toString(), StackTrace().toString());
             break;
         }
 

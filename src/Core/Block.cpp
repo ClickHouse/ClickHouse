@@ -56,6 +56,10 @@ void Block::insert(size_t position, const ColumnWithTypeAndName & elem)
 
     index_by_name.emplace(elem.name, position);
     data.emplace(data.begin() + position, elem);
+
+//    fmt::print(stderr, "block: {}\n", dumpStructure());
+//    fmt::print(stderr, "(1) insert column {} at \n{}\n", elem.name,
+//        StackTrace().toString());
 }
 
 void Block::insert(size_t position, ColumnWithTypeAndName && elem)
@@ -70,17 +74,29 @@ void Block::insert(size_t position, ColumnWithTypeAndName && elem)
 
     index_by_name.emplace(elem.name, position);
     data.emplace(data.begin() + position, std::move(elem));
+
+//    fmt::print(stderr, "block: {}\n", dumpStructure());
+//    fmt::print(stderr, "(2) insert column {} at \n{}\n", elem.name,
+//        StackTrace().toString());
 }
 
 
 void Block::insert(const ColumnWithTypeAndName & elem)
 {
+//    fmt::print(stderr, "block: {}\n", dumpStructure());
+//    fmt::print(stderr, "(3) insert column {} at \n{}\n", elem.name,
+//        StackTrace().toString());
+
     index_by_name.emplace(elem.name, data.size());
     data.emplace_back(elem);
 }
 
 void Block::insert(ColumnWithTypeAndName && elem)
 {
+//    fmt::print(stderr, "block: {}\n", dumpStructure());
+//    fmt::print(stderr, "(4) insert column {} at \n{}\n", elem.name,
+//        StackTrace().toString());
+
     index_by_name.emplace(elem.name, data.size());
     data.emplace_back(std::move(elem));
 }

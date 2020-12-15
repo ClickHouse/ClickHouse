@@ -1,6 +1,8 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
 
+#include <Interpreters/AggregateDescription.h>
+
 namespace DB
 {
 
@@ -14,19 +16,20 @@ class WindowStep : public ITransformingStep
 public:
     using Transform = WindowTransform;
 
-    explicit WindowStep(const DataStream & input_stream_, ActionsDAGPtr actions_dag_);
+    explicit WindowStep(const DataStream & input_stream_,
+            const WindowDescription & window_description_,
+            const std::vector<WindowFunctionDescription> & window_functions_);
+
     String getName() const override { return "Expression"; }
 
     void transformPipeline(QueryPipeline & pipeline) override;
 
-    void updateInputStream(DataStream input_stream, bool keep_header);
-
     void describeActions(FormatSettings & settings) const override;
 
-    const ActionsDAGPtr & getExpression() const { return actions_dag; }
-
 private:
-    ActionsDAGPtr actions_dag;
+    WindowDescription window_description;
+    std::vector<WindowFunctionDescription> window_functions;
+    Block input_header;
 };
 
 }

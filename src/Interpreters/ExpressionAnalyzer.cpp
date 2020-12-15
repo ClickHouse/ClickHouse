@@ -1024,14 +1024,14 @@ void SelectQueryExpressionAnalyzer::appendWindowFunctionsArguments(
         getRootActionsNoMakeSet(f.function_node->arguments,
             true /* no subqueries */, step.actions());
 
-        // Add column with window function name and value "1".
+        // Add empty INPUT with window function name.
         // It is an aggregate function, so it won't be added by getRootActions.
         ColumnWithTypeAndName col;
         col.type = std::make_shared<DataTypeInt64>();
-        col.column = col.type->createColumnConst(1 /* size */, UInt64(1) /* field */);
+        col.column = col.type->createColumn();
         col.name = f.column_name;
 
-        step.actions()->addColumn(col);
+        step.actions()->addInput(col);
     }
 
     // /*

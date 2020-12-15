@@ -2,30 +2,157 @@
 
 #include <Interpreters/ExpressionActions.h>
 
+#include <Common/Arena.h>
+
 namespace DB
 {
 
-Block WindowTransform::transformHeader(Block header, const ExpressionActionsPtr & expression)
+WindowTransform::WindowTransform(const Block & input_header_,
+        const Block & output_header_,
+        const WindowDescription & window_description_,
+        const std::vector<WindowFunctionDescription> & window_function_descriptions
+        )
+    // FIXME this is where the output column is added
+    : ISimpleTransform(input_header_, output_header_,
+        false /* skip_empty_chunks */)
+    , input_header(input_header_)
+    , window_description(window_description_)
 {
-    size_t num_rows = header.rows();
-    expression->execute(header, num_rows, true);
-    return header;
+    fmt::print(stderr, "input header {}\n", input_header.dumpStructure());
+
+    workspaces.reserve(window_function_descriptions.size());
+    for (size_t i = 0; i < window_function_descriptions.size(); ++i)
+    {
+        WindowFunctionWorkspace workspace;
+        workspace.window_function = window_function_descriptions[i];
+
+        const auto & aggregate_function
+            = workspace.window_function.aggregate_function;
+        if (!arena && aggregate_function->allocatesMemoryInArena())
+        {
+            arena = std::make_unique<Arena>();
+        }
+
+        workspace.argument_column_indices.reserve(
+            workspace.window_function.argument_names.size());
+        workspace.argument_columns.reserve(
+            workspace.window_function.argument_names.size());
+        for (const auto & argument_name : workspace.window_function.argument_names)
+        {
+            workspace.argument_column_indices.push_back(
+                input_header.getPositionByName(argument_name));
+
+            fmt::print(stderr,
+                "window function '{}' argument column '{}' at '{}'\n",
+                workspace.window_function.column_name,
+                argument_name,
+                workspace.argument_column_indices.back());
+
+        }
+
+        workspace.aggregate_function_state.reset(aggregate_function->sizeOfData(),
+            aggregate_function->alignOfData());
+        aggregate_function->create(workspace.aggregate_function_state.data());
+
+        workspaces.push_back(std::move(workspace));
+    }
+
+    partition_by_indices.reserve(window_description.partition_by.size());
+    for (const auto & column : window_description.partition_by)
+    {
+        partition_by_indices.push_back(
+            input_header.getPositionByName(column.column_name));
+    }
 }
 
-
-WindowTransform::WindowTransform(const Block & header_,
-        ExpressionActionsPtr expression_)
-    : ISimpleTransform(header_, transformHeader(header_, expression_), false)
-    , expression(std::move(expression_))
+WindowTransform::~WindowTransform()
 {
+    // Some states may be not created yet if the creation failed.
+    for (size_t i = 0; i < workspaces.size(); i++)
+    {
+        workspaces[i].window_function.aggregate_function->destroy(
+            workspaces[i].aggregate_function_state.data());
+    }
 }
 
 void WindowTransform::transform(Chunk & chunk)
 {
-    size_t num_rows = chunk.getNumRows();
+    const size_t num_rows = chunk.getNumRows();
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
-    expression->execute(block, num_rows);
+    fmt::print(stderr, "block before window transform:\n{}\n", block.dumpStructure());
+
+    for (auto & workspace : workspaces)
+    {
+        workspace.argument_columns.clear();
+        for (const auto column_index : workspace.argument_column_indices)
+        {
+            fmt::print(stderr, "argument column index '{}'\n", column_index);
+            workspace.argument_columns.push_back(
+                block.getColumns()[column_index].get());
+        }
+    }
+
+    for (auto & ws : workspaces)
+    {
+        const auto & f = ws.window_function;
+        const auto * a = f.aggregate_function.get();
+
+        //*
+        ColumnWithTypeAndName column_with_type;
+        column_with_type.name = f.column_name;
+        column_with_type.type = a->getReturnType();
+        auto c = column_with_type.type->createColumn();
+        column_with_type.column.reset(c.get());
+
+        size_t partition_start = 0;
+        for (size_t row = 0; row < num_rows; row++)
+        {
+            // Check whether the new partition has started and reinitialize the
+            // aggregate function states.
+            if (row > 0)
+            {
+                for (const size_t column_index : partition_by_indices)
+                {
+                    const auto * column = block.getColumns()[column_index].get();
+                    if (column->compareAt(row, row - 1, *column,
+                        1 /* nan_direction_hint */) != 0)
+                    {
+                        ws.window_function.aggregate_function->destroy(
+                            ws.aggregate_function_state.data());
+                        ws.window_function.aggregate_function->create(
+                            ws.aggregate_function_state.data());
+                        break;
+                    }
+                }
+            }
+
+            // Update the aggregate function state and save the result.
+            a->add(ws.aggregate_function_state.data(),
+                ws.argument_columns.data(),
+                row,
+                arena.get());
+
+            a->insertResultInto(ws.aggregate_function_state.data(),
+                *c,
+                arena.get());
+        }
+
+        block.insert(column_with_type);
+        /*/
+        auto & column_with_type = block.getByName(f.column_name);
+        auto c = IColumn::mutate(std::move(column_with_type.column));
+
+        for (size_t i = 0; i < num_rows; i++)
+        {
+            c->insert(UInt64(i));
+        }
+
+        column_with_type.column.reset(c.get());
+        //*/
+    }
+
+    fmt::print(stderr, "block after window transform:\n{}\n", block.dumpStructure());
 
     chunk.setColumns(block.getColumns(), num_rows);
 }
