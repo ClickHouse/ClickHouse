@@ -54,7 +54,7 @@ BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
         {
             auto & ast_create_query = create_query->as<ASTCreateQuery &>();
             if (!ast_create_query.isView())
-                throw Exception("'" + ast_create_query.database + "." + ast_create_query.table +"' is not VIEW", ErrorCodes::NOT_VIEW);
+                throw Exception("'" + ast_create_query.database + "." + ast_create_query.table +"' is not VIEW", ErrorCodes::BAD_ARGUMENTS);
         }
     }
     else if ((show_query = query_ptr->as<ASTShowCreateDatabaseQuery>()))
