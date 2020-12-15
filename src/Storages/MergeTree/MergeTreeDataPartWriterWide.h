@@ -92,6 +92,8 @@ private:
 
     void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) override;
 
+    void shiftCurrentMark(const Granules & granules_written);
+
     IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns) const;
 
     using SerializationState = IDataType::SerializeBinaryBulkStatePtr;

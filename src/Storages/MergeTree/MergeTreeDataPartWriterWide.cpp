@@ -150,6 +150,25 @@ IDataType::OutputStreamGetter MergeTreeDataPartWriterWide::createStreamGetter(
     };
 }
 
+void MergeTreeDataPartWriterWide::shiftCurrentMark(const Granules & granules_written)
+{
+    auto last_granule = granules_written.back();
+    if (!last_granule.isCompleted())
+    {
+        setCurrentMark(getCurrentMark() + granules_written.size() - 1);
+        bool still_in_the_same_granule = granules_written.size() == 1;
+        if (still_in_the_same_granule)
+            rows_written_in_last_mark += last_granule.block_rows;
+        else
+            rows_written_in_last_mark = last_granule.block_rows;
+    }
+    else
+    {
+        setCurrentMark(getCurrentMark() + granules_written.size());
+        rows_written_in_last_mark = 0;
+    }
+}
+
 void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Permutation * permutation)
 {
     /// Fill index granularity for this block
@@ -205,21 +224,7 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
 
     calculateAndSerializeSkipIndices(skip_indexes_block, granules_to_write);
 
-    auto last_granule = granules_to_write.back();
-    if (!last_granule.isCompleted())
-    {
-        setCurrentMark(getCurrentMark() + granules_to_write.size() - 1);
-        bool still_in_the_same_granule = granules_to_write.size() == 1;
-        if (still_in_the_same_granule)
-            rows_written_in_last_mark += last_granule.block_rows;
-        else
-            rows_written_in_last_mark = last_granule.block_rows;
-    }
-    else
-    {
-        setCurrentMark(getCurrentMark() + granules_to_write.size());
-        rows_written_in_last_mark = 0;
-    }
+    shiftCurrentMark(granules_to_write);
 }
 
 void MergeTreeDataPartWriterWide::writeSingleMark(

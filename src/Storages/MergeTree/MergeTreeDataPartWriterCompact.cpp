@@ -72,7 +72,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const String & name, const IData
 namespace
 {
 
-Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity, size_t block_rows, size_t current_mark)
+Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity, size_t block_rows, size_t current_mark, bool last_block)
 {
     if (current_mark >= index_granularity.getMarksCount())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Request to get granules from mark {} but index granularity size is {}", current_mark, index_granularity.getMarksCount());
@@ -84,6 +84,10 @@ Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity,
         size_t expected_rows = index_granularity.getMarkRows(current_mark);
         size_t rest_rows = block_rows - current_row;
         if (rest_rows < expected_rows)
+        {
+            if (!last_block)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Required to write {} rows, but only {} rows was written for the non last granule", expected_rows, rest_rows);
+
             result.emplace_back(Granule{
                 .start_row = current_row,
                 .granularity_rows = expected_rows,
@@ -91,7 +95,9 @@ Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity,
                 .mark_number = current_mark,
                 .mark_on_start = true
             });
+        }
         else
+        {
             result.emplace_back(Granule{
                 .start_row = current_row,
                 .granularity_rows = expected_rows,
@@ -99,6 +105,7 @@ Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity,
                 .mark_number = current_mark,
                 .mark_on_start = true
             });
+        }
 
         current_row += expected_rows;
         current_mark++;
@@ -151,7 +158,7 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumn::P
     if (rows_in_buffer >= last_mark_rows)
     {
         Block flushed_block = header.cloneWithColumns(columns_buffer.releaseColumns());
-        auto granules_to_write = getGranulesToWrite(index_granularity, flushed_block.rows(), getCurrentMark());
+        auto granules_to_write = getGranulesToWrite(index_granularity, flushed_block.rows(), getCurrentMark(), /* last_block = */ false);
         writeDataBlockPrimaryIndexAndSkipIndices(flushed_block, granules_to_write);
         setCurrentMark(getCurrentMark() + granules_to_write.size());
     }
@@ -214,13 +221,6 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
             prev_stream->hashing_buf.next(); //-V522
         }
 
-        /// Correct last mark as it should contain exact amount of rows.
-        if (granule.block_rows != granule.granularity_rows)
-        {
-            index_granularity.popMark();
-            index_granularity.appendMark(granule.block_rows);
-        }
-
         writeIntBinary(granule.block_rows, marks);
     }
 }
@@ -230,7 +230,13 @@ void MergeTreeDataPartWriterCompact::finishDataSerialization(IMergeTreeDataPart:
     if (columns_buffer.size() != 0)
     {
         auto block = header.cloneWithColumns(columns_buffer.releaseColumns());
-        auto granules_to_write = getGranulesToWrite(index_granularity, block.rows(), getCurrentMark());
+        auto granules_to_write = getGranulesToWrite(index_granularity, block.rows(), getCurrentMark(), /* last_block = */ true);
+        if (!granules_to_write.back().isCompleted())
+        {
+            /// Correct last mark as it should contain exact amount of rows.
+            index_granularity.popMark();
+            index_granularity.appendMark(granules_to_write.back().block_rows);
+        }
         writeDataBlockPrimaryIndexAndSkipIndices(block, granules_to_write);
     }
 
