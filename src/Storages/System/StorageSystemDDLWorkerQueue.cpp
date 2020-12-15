@@ -90,7 +90,7 @@ NamesAndTypesList StorageSystemDDLWorkerQueue::getNamesAndTypes()
         {"port", std::make_shared<DataTypeUInt16>()},
         {"status", std::make_shared<DataTypeEnum8>(getStatusEnumsAndValues())},
         {"cluster", std::make_shared<DataTypeString>()},
-        {"values", std::make_shared<DataTypeString>()},
+        {"value", std::make_shared<DataTypeString>()},
         {"query_start_time", std::make_shared<DataTypeDateTime>()},
         {"query_finish_time", std::make_shared<DataTypeDateTime>()},
         {"query_duration_ms", std::make_shared<DataTypeUInt64>()},
@@ -275,7 +275,7 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, const C
                 Coordination::GetResponse res;
                 if (!futures.empty())
                     res = futures[query_id].get();
-                res_columns[i++]->insert(res.data); // values
+                res_columns[i++]->insert(res.data); // value
                 auto query_start_time = res.stat.mtime;
 
                 res_columns[i++]->insert(UInt64(query_start_time / 1000)); // query_start_time
