@@ -2520,7 +2520,7 @@ Result:
 └───┘
 ```
 
-**Example of using the '' value**
+**Example of using an empty string as a setting value**
 
 Query:
 
