@@ -231,7 +231,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
     if (!is_dictionary)
     {
         std::string what = "TABLE";
-        if (is_view)
+        if (is_ordinary_view)
             what = "VIEW";
         if (is_materialized_view)
             what = "MATERIALIZED VIEW";

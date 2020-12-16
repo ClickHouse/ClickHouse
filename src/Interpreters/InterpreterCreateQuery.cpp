@@ -624,7 +624,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
         const String qualified_name = backQuoteIfNeed(as_database_name) + "." + backQuoteIfNeed(as_table_name);
 
-        if (as_create.is_view)
+        if (as_create.is_ordinary_view)
             throw Exception(
                 "Cannot CREATE a table AS " + qualified_name + ", it is a View",
                 ErrorCodes::INCORRECT_QUERY);
@@ -1030,7 +1030,7 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     {
         required_access.emplace_back(AccessType::CREATE_DICTIONARY, create.database, create.table);
     }
-    else if (create.is_view || create.is_materialized_view || create.is_live_view)
+    else if (create.isView())
     {
         if (create.temporary)
             required_access.emplace_back(AccessType::CREATE_TEMPORARY_TABLE);
