@@ -52,7 +52,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "clang-10",
+            "compiler": "clang-11",
             "build-type": "",
             "sanitizer": "thread",
             "package-type": "deb",
@@ -179,7 +179,7 @@
         },
         "Functional stateful tests (thread)": {
             "required_build_properties": {
-                "compiler": "clang-10",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "thread",
@@ -263,7 +263,7 @@
         },
         "Functional stateless tests (thread)": {
             "required_build_properties": {
-                "compiler": "clang-10",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "thread",
@@ -371,7 +371,7 @@
         },
         "Stress test (thread)": {
             "required_build_properties": {
-                "compiler": "clang-10",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "thread",
@@ -419,7 +419,7 @@
         },
         "Integration tests (thread)": {
             "required_build_properties": {
-                "compiler": "clang-10",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "thread",
@@ -539,7 +539,7 @@
         },
         "Unit tests TSAN": {
             "required_build_properties": {
-                "compiler": "clang-10",
+                "compiler": "clang-11",
                 "package_type": "binary",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "thread",
@@ -551,7 +551,7 @@
         },
         "Unit tests UBSAN": {
             "required_build_properties": {
-                "compiler": "clang-10",
+                "compiler": "clang-11",
                 "package_type": "binary",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "thread",
