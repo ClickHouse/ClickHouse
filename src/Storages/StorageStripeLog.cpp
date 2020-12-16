@@ -6,7 +6,6 @@
 #include <optional>
 
 #include <Common/escapeForFileName.h>
-#include <Common/getPageSize.h>
 #include <Common/Exception.h>
 
 #include <IO/WriteBufferFromFileBase.h>
@@ -318,8 +317,7 @@ Pipe StorageStripeLog::read(
         return Pipe(std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
     }
 
-    size_t page_size = static_cast<size_t>(::getPageSize());
-    CompressedReadBufferFromFile index_in(disk->readFile(index_file, page_size));
+    CompressedReadBufferFromFile index_in(disk->readFile(index_file, 4096));
     std::shared_ptr<const IndexForNativeFormat> index{std::make_shared<IndexForNativeFormat>(index_in, column_names_set)};
 
     size_t size = index->blocks.size();

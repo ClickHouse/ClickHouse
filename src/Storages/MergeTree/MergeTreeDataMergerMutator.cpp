@@ -29,7 +29,6 @@
 #include <Common/interpolate.h>
 #include <Common/typeid_cast.h>
 #include <Common/escapeForFileName.h>
-#include <Common/getPageSize.h>
 #include <Common/FileSyncGuard.h>
 #include <Parsers/queryToString.h>
 
@@ -1830,8 +1829,6 @@ void MergeTreeDataMergerMutator::finalizeMutatedPart(
     bool need_remove_expired_values,
     const CompressionCodecPtr & codec)
 {
-    size_t page_size = static_cast<size_t>(::getPageSize());
-
     auto disk = new_data_part->volume->getDisk();
 
     if (new_data_part->uuid != UUIDHelpers::Nil)
@@ -1846,7 +1843,7 @@ void MergeTreeDataMergerMutator::finalizeMutatedPart(
     if (need_remove_expired_values)
     {
         /// Write a file with ttl infos in json format.
-        auto out_ttl = disk->writeFile(new_data_part->getFullRelativePath() + "ttl.txt", page_size);
+        auto out_ttl = disk->writeFile(new_data_part->getFullRelativePath() + "ttl.txt", 4096);
         HashingWriteBuffer out_hashing(*out_ttl);
         new_data_part->ttl_infos.write(out_hashing);
         new_data_part->checksums.files["ttl.txt"].file_size = out_hashing.count();
@@ -1855,18 +1852,18 @@ void MergeTreeDataMergerMutator::finalizeMutatedPart(
 
     {
         /// Write file with checksums.
-        auto out_checksums = disk->writeFile(new_data_part->getFullRelativePath() + "checksums.txt", page_size);
+        auto out_checksums = disk->writeFile(new_data_part->getFullRelativePath() + "checksums.txt", 4096);
         new_data_part->checksums.write(*out_checksums);
     } /// close fd
 
     {
-        auto out = disk->writeFile(new_data_part->getFullRelativePath() + IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, page_size);
+        auto out = disk->writeFile(new_data_part->getFullRelativePath() + IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096);
         DB::writeText(queryToString(codec->getFullCodecDesc()), *out);
     }
 
     {
         /// Write a file with a description of columns.
-        auto out_columns = disk->writeFile(new_data_part->getFullRelativePath() + "columns.txt", page_size);
+        auto out_columns = disk->writeFile(new_data_part->getFullRelativePath() + "columns.txt", 4096);
         new_data_part->getColumns().writeText(*out_columns);
     } /// close fd
 

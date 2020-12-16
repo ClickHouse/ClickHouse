@@ -1,4 +1,3 @@
-#include <Common/getPageSize.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 
 #include <utility>
@@ -48,7 +47,7 @@ MergeTreeDataPartWriterOnDisk::Stream::Stream(
     marks_file_extension{marks_file_extension_},
     plain_file(disk_->writeFile(data_path_ + data_file_extension, max_compress_block_size_, WriteMode::Rewrite, estimated_size_, aio_threshold_)),
     plain_hashing(*plain_file), compressed_buf(plain_hashing, compression_codec_), compressed(compressed_buf),
-    marks_file(disk_->writeFile(marks_path_ + marks_file_extension, static_cast<size_t>(::getPageSize()), WriteMode::Rewrite)), marks(*marks_file)
+    marks_file(disk_->writeFile(marks_path_ + marks_file_extension, 4096, WriteMode::Rewrite)), marks(*marks_file)
 {
 }
 
