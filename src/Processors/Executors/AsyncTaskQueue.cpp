@@ -14,6 +14,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_OPEN_FILE;
     extern const int CANNOT_READ_FROM_SOCKET;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -43,12 +44,14 @@ AsyncTaskQueue::~AsyncTaskQueue()
 
 void AsyncTaskQueue::addTask(size_t thread_number, void * data, int fd)
 {
-    auto it = tasks.insert(tasks.end(), TaskData{thread_number, data, fd, {}});
-    it->self = it;
+    if (tasks.count(data))
+        throw Exception("Task was already added to task queue", ErrorCodes::LOGICAL_ERROR);
+
+    tasks[data] = TaskData{thread_number, data, fd};
 
     epoll_event socket_event;
     socket_event.events = EPOLLIN | EPOLLPRI;
-    socket_event.data.ptr = &(*it);
+    socket_event.data.ptr = data;
 
     if (-1 == epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &socket_event))
         throwFromErrno("Cannot add socket descriptor to epoll", ErrorCodes::CANNOT_OPEN_FILE);
@@ -77,13 +80,16 @@ AsyncTaskQueue::TaskData AsyncTaskQueue::wait(std::unique_lock<std::mutex> & loc
     if (event.data.ptr == pipe_fd)
         return {};
 
-    auto it = static_cast<TaskData *>(event.data.ptr)->self;
+    auto it = tasks.find(event.data.ptr);
+    if (it == tasks.end())
+        throw Exception("Task was not found in task queue", ErrorCodes::LOGICAL_ERROR);
 
-    if (-1 == epoll_ctl(epoll_fd, EPOLL_CTL_DEL, it->fd, &event))
+    auto res = it->second;
+    tasks.erase(it);
+
+    if (-1 == epoll_ctl(epoll_fd, EPOLL_CTL_DEL, res.fd, &event))
         throwFromErrno("Cannot remove socket descriptor to epoll", ErrorCodes::CANNOT_OPEN_FILE);
 
-    auto res = *it;
-    tasks.erase(it);
     return res;
 }
 

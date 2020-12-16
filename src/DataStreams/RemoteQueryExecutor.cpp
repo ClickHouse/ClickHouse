@@ -210,8 +210,11 @@ std::variant<Block, int> RemoteQueryExecutor::read(std::unique_ptr<ReadContext> 
             return Block();
     }
 
-    if (!read_context)
-        read_context = std::make_unique<ReadContext>(*multiplexed_connections);
+    {
+        std::lock_guard lock(was_cancelled_mutex);
+        if (!read_context)
+            read_context = std::make_unique<ReadContext>(*multiplexed_connections);
+    }
 
     do
     {
@@ -360,8 +363,11 @@ void RemoteQueryExecutor::cancel(std::unique_ptr<ReadContext> * read_context)
     if (!isQueryPending() || hasThrownException())
         return;
 
-    if (read_context && *read_context)
-        (*read_context)->cancel();
+    {
+        std::lock_guard lock(was_cancelled_mutex);
+        if (read_context && *read_context)
+            (*read_context)->cancel();
+    }
 
     tryCancel("Cancelling query");
 }

@@ -2,7 +2,7 @@
 #include <cstddef>
 #include <mutex>
 #include <atomic>
-#include <list>
+#include <unordered_map>
 
 namespace DB
 {
@@ -18,7 +18,6 @@ public:
         void * data = nullptr;
         int fd = -1;
 
-        std::list<TaskData>::iterator self;
 
         explicit operator bool() const { return data; }
     };
@@ -27,7 +26,7 @@ private:
     int epoll_fd;
     int pipe_fd[2];
     std::atomic_bool is_finished = false;
-    std::list<TaskData> tasks;
+    std::unordered_map<void *, TaskData> tasks;
 
 public:
     AsyncTaskQueue();
