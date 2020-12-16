@@ -151,9 +151,14 @@ if (NOT EXTERNAL_BOOST_FOUND)
     enable_language(ASM)
     SET(ASM_OPTIONS "-x assembler-with-cpp")
 
-    if (SANITIZE AND SANITIZE STREQUAL "address")
+    if (SANITIZE AND (SANITIZE STREQUAL "address" OR SANITIZE STREQUAL "thread"))
         add_compile_definitions(BOOST_USE_UCONTEXT)
-        add_compile_definitions(BOOST_USE_ASAN)
+
+        if (SANITIZE STREQUAL "address")
+            add_compile_definitions(BOOST_USE_ASAN)
+        elseif (SANITIZE STREQUAL "thread")
+            add_compile_definitions(BOOST_USE_TSAN)
+        endif()
 
         set (SRCS_CONTEXT
                 ${LIBRARY_DIR}/libs/context/src/fiber.cpp
