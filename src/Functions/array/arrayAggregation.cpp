@@ -131,7 +131,6 @@ struct ArrayAggregateImpl
         /// so we convert to Float64 as last step, but intermediate sum is represented as result of sum operation
         static constexpr bool is_average_operation = aggregate_operation == AggregateOperation::average;
         using SummAggregationType = ArrayAggregateResult<Element, AggregateOperation::sum>;
-        using AverageAggregationType = ArrayAggregateResult<Element, AggregateOperation::average>;
 
         using AggregationType = std::conditional_t<is_average_operation, SummAggregationType, Result>;
 
@@ -255,7 +254,7 @@ struct ArrayAggregateImpl
                 }
                 else
                 {
-                    res[i] = static_cast<AverageAggregationType>(s) / count;
+                    res[i] = static_cast<Result>(s) / count;
                 }
             }
             else
