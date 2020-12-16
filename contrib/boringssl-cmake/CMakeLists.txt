@@ -420,10 +420,8 @@ add_library(
   ${BORINGSSL_SOURCE_DIR}/crypto/crypto.c
   ${BORINGSSL_SOURCE_DIR}/crypto/curve25519/curve25519.c
   ${BORINGSSL_SOURCE_DIR}/crypto/curve25519/spake25519.c
-  ${BORINGSSL_SOURCE_DIR}/crypto/dh/check.c
-  ${BORINGSSL_SOURCE_DIR}/crypto/dh/dh.c
-  ${BORINGSSL_SOURCE_DIR}/crypto/dh/dh_asn1.c
-  ${BORINGSSL_SOURCE_DIR}/crypto/dh/params.c
+  ${BORINGSSL_SOURCE_DIR}/crypto/dh_extra/dh_asn1.c
+  ${BORINGSSL_SOURCE_DIR}/crypto/dh_extra/params.c
   ${BORINGSSL_SOURCE_DIR}/crypto/digest_extra/digest_extra.c
   ${BORINGSSL_SOURCE_DIR}/crypto/dsa/dsa.c
   ${BORINGSSL_SOURCE_DIR}/crypto/dsa/dsa_asn1.c
@@ -482,6 +480,7 @@ add_library(
   ${BORINGSSL_SOURCE_DIR}/crypto/rand_extra/deterministic.c
   ${BORINGSSL_SOURCE_DIR}/crypto/rand_extra/forkunsafe.c
   ${BORINGSSL_SOURCE_DIR}/crypto/rand_extra/fuchsia.c
+  ${BORINGSSL_SOURCE_DIR}/crypto/rand_extra/passive.c
   ${BORINGSSL_SOURCE_DIR}/crypto/rand_extra/rand_extra.c
   ${BORINGSSL_SOURCE_DIR}/crypto/rand_extra/windows.c
   ${BORINGSSL_SOURCE_DIR}/crypto/rc4/rc4.c
