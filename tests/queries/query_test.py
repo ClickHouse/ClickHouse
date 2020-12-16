@@ -18,6 +18,7 @@ SKIP_LIST = [
     "00463_long_sessions_in_http_interface",
     "00505_secure",
     "00505_shard_secure",
+    "00506_union_distributed",  # flaky
     "00646_url_engine",
     "00834_cancel_http_readonly_queries_on_client_close",
     "00933_test_fix_extra_seek_on_compressed_cache",
@@ -39,6 +40,7 @@ SKIP_LIST = [
     "01086_odbc_roundtrip",
     "01088_benchmark_query_id",
     "01098_temporary_and_external_tables",
+    "01099_parallel_distributed_insert_select",  # flaky
     "01103_check_cpu_instructions_at_startup",
     "01114_database_atomic",
     "01148_zookeeper_path_macros_unfolding",

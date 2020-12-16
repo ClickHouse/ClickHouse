@@ -5,7 +5,7 @@ set timeout 5
 match_max 100000
 
 # originally was: spawn bash -c "$env(CLICKHOUSE_CLIENT) --port $env(CLICKHOUSE_PORT_TCP) && echo $?"
-spawn $env(CLICKHOUSE_CLIENT_BINARY) $env(CLICKHOUSE_CLIENT_OPT0) $env(CLICKHOUSE_CLIENT_OPT)
+spawn $env(CLICKHOUSE_CLIENT_BINARY) $env(CLICKHOUSE_CLIENT_OPT)
 expect ":) "
 send -- "\4"
 expect eof
