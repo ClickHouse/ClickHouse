@@ -470,37 +470,42 @@ public:
         Case<IsDataTypeDecimal<LeftDataType> && IsIntegralOrExtended<RightDataType>, LeftDataType>,
         Case<IsDataTypeDecimal<RightDataType> && IsIntegralOrExtended<LeftDataType>, RightDataType>,
 
-        /// e.g Decimal * Float64 = Float64
-        Case<IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>, RightDataType>,
-        Case<IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>, LeftDataType>,
-
         /// Decimal <op> Real is not supported (traditional DBs convert Decimal <op> Real to Real)
         Case<IsDataTypeDecimal<LeftDataType> && !IsIntegralOrExtendedOrDecimal<RightDataType>, InvalidType>,
         Case<IsDataTypeDecimal<RightDataType> && !IsIntegralOrExtendedOrDecimal<LeftDataType>, InvalidType>,
+
         /// number <op> number -> see corresponding impl
         Case<!IsDateOrDateTime<LeftDataType> && !IsDateOrDateTime<RightDataType>,
             DataTypeFromFieldType<typename Op::ResultType>>,
+
+        /// e.g Decimal * Float64 = Float64
+        Case<IsOperation<Operation>::multiply, Switch<
+            Case<IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>, RightDataType>,
+            Case<IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>, LeftDataType>>>,
+
         /// Date + Integral -> Date
         /// Integral + Date -> Date
         Case<IsOperation<Operation>::plus, Switch<
             Case<IsIntegral<RightDataType>, LeftDataType>,
             Case<IsIntegral<LeftDataType>, RightDataType>>>,
+
         /// Date - Date     -> Int32
         /// Date - Integral -> Date
         Case<IsOperation<Operation>::minus, Switch<
             Case<std::is_same_v<LeftDataType, RightDataType>, DataTypeInt32>,
             Case<IsDateOrDateTime<LeftDataType> && IsIntegral<RightDataType>, LeftDataType>>>,
+
         /// least(Date, Date) -> Date
         /// greatest(Date, Date) -> Date
         Case<std::is_same_v<LeftDataType, RightDataType> && (IsOperation<Operation>::least || IsOperation<Operation>::greatest),
             LeftDataType>,
+
         /// Date % Int32 -> Int32
         /// Date % Float -> Float64
         Case<IsOperation<Operation>::modulo, Switch<
             Case<IsDateOrDateTime<LeftDataType> && IsIntegral<RightDataType>, RightDataType>,
             Case<IsDateOrDateTime<LeftDataType> && IsFloatingPoint<RightDataType>, DataTypeFloat64>>>>;
 };
-
 
 template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true>
 class FunctionBinaryArithmetic : public IFunction
@@ -974,15 +979,7 @@ public:
                 using OpImpl = DecimalBinaryOperation<Op, ResultType, false>;
                 using OpImplCheck = DecimalBinaryOperation<Op, ResultType, true>;
 
-                ResultDataType type;
-
-                if constexpr (IsFloatingPoint<NativeResultType>)
-                {
-                    if constexpr (IsFloatingPoint<LeftDataType>)
-                        type = ...
-
-                } else
-                    type = decimalResultType<is_multiply, is_division>(left, right);
+                ResultDataType type = decimalResultType<is_multiply, is_division>(left, right);
 
                 static constexpr const bool dec_a = IsDecimalNumber<T0>;
                 static constexpr const bool dec_b = IsDecimalNumber<T1>;
