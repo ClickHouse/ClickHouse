@@ -270,6 +270,18 @@ protected:
     }
 };
 
+class ParserMapOfLiterals : public IParserBase
+{
+public:
+    ParserCollectionOfLiterals<Map> map_parser{TokenType::OpeningCurlyBrace, TokenType::ClosingCurlyBrace};
+protected:
+    const char * getName() const override { return "map"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    {
+        return map_parser.parse(pos, node, expected);
+    }
+};
+
 class ParserArrayOfLiterals : public IParserBase
 {
 public:

@@ -325,6 +325,7 @@ SRCS(
     lowCardinalityKeys.cpp
     lower.cpp
     lowerUTF8.cpp
+    map.cpp
     match.cpp
     materialize.cpp
     minus.cpp
