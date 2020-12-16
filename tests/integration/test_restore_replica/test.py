@@ -38,20 +38,32 @@ def start_cluster():
         cluster.shutdown()
 
 def test_restore_replica(start_cluster):
+    def check_data():
+        res: str = node_1_1.query("SELECT sum(n), count(n) FROM test.test_table")
+        assert res == node_1_2.query("SELECT sum(n), count(n) FROM test.test_table")
+        assert res == node_1_3.query("SELECT sum(n), count(n) FROM test.test_table")
+
     zk = cluster.get_kazoo_client('zoo1')
 
     node_1_1.query("INSERT INTO test.test_table SELECT * FROM numbers(1000, 2000)")
 
-    # 1. delete metadata
+    # 0. Assert all the replicas have the data
+    check_data()
+
+    # 1. Delete metadata (emulating a Zookeeper error)
     zk.delete("/clickhouse/tables/test/01/test_table", recursive=True)
     assert zk.exists("/clickhouse/tables/test/01/test_table") is None
-    time.sleep(10)
 
-    # 2. Assert there is an exception
+    # 2. Assert there is an exception as the metadata is missing
     node_1_1.query("SYSTEM RESTART REPLICA test.test_table")
     node_1_1.query_and_get_error("INSERT INTO test.test_table SELECT * FROM numbers(1000,2000)")
 
     # 3. restore replica
     node_1_1.query("SYSTEM RESTORE REPLICA test.test_table")
 
-    # 4. check if the data is present
+    # 4. Check if the data is same on all nodes
+    check_data()
+
+    #5. Check the initial table being attached (not in readonly) and the result being replicated.
+    node_1_1.query("INSERT INTO test.test_table SELECT * FROM numbers(1000, 2000)")
+    check_data()
