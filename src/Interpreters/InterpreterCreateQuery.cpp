@@ -615,6 +615,23 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
             }
         }
     }
+
+    if (!create.attach && !settings.allow_experimental_map_type)
+    {
+        for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
+        {
+            WhichDataType which(*name_and_type_pair.type);
+            if (which.isMap())
+            {
+                const auto & type_name = name_and_type_pair.type->getName();
+                String message = "Cannot create table with column '" + name_and_type_pair.name + "' which type is '"
+                                 + type_name + "' because experimental Map type is not allowed. "
+                                 + "Set 'allow_experimental_map_type = 1' setting to enable";
+                throw Exception(message, ErrorCodes::ILLEGAL_COLUMN);
+            }
+        }
+
+    }
 }
 
 void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const

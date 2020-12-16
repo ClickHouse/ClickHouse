@@ -91,6 +91,8 @@ public:
 
             TupleElement,
 
+            MapElement,
+
             DictionaryKeys,
             DictionaryIndexes,
         };
@@ -517,6 +519,7 @@ struct WhichDataType
     constexpr bool isUUID() const { return idx == TypeIndex::UUID; }
     constexpr bool isArray() const { return idx == TypeIndex::Array; }
     constexpr bool isTuple() const { return idx == TypeIndex::Tuple; }
+    constexpr bool isMap() const {return idx == TypeIndex::Map; }
     constexpr bool isSet() const { return idx == TypeIndex::Set; }
     constexpr bool isInterval() const { return idx == TypeIndex::Interval; }
 
