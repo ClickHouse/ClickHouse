@@ -186,6 +186,12 @@ StorageID ASTTableIdentifier::getTableId() const
     else return {{}, name_parts[0], uuid};
 }
 
+String ASTTableIdentifier::getDatabaseName() const
+{
+    if (name_parts.size() == 2) return name_parts[0];
+    else return {};
+}
+
 void ASTTableIdentifier::resetTable(const String & database_name, const String & table_name)
 {
     auto identifier = std::make_shared<ASTTableIdentifier>(database_name, table_name);

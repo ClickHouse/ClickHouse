@@ -78,6 +78,7 @@ class ASTTableIdentifier : public ASTIdentifier
         UUID uuid = UUIDHelpers::Nil;  // FIXME(ilezhankin): make private
 
         StorageID getTableId() const;
+        String getDatabaseName() const;
 
         // FIXME: used only when it's needed to rewrite distributed table name to real remote table name.
         void resetTable(const String & database_name, const String & table_name);  // TODO(ilezhankin): get rid of this
