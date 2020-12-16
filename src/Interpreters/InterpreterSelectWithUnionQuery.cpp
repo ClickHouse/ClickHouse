@@ -196,7 +196,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
 
     if (num_children == 1 && settings_limit_offset_needed)
     {
-        const ASTPtr first_select_ast = ast.list_of_selects->children.at(0);
+        const ASTPtr first_select_ast = ast->list_of_selects->children.at(0);
         ASTSelectQuery * select_query = first_select_ast->as<ASTSelectQuery>();
 
         if (!select_query->withFill() && !select_query->limit_with_ties)
