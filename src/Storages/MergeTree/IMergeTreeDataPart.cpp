@@ -11,7 +11,6 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
-#include <Common/getPageSize.h>
 #include <Common/FileSyncGuard.h>
 #include <common/JSON.h>
 #include <common/logger_useful.h>
@@ -614,8 +613,7 @@ void IMergeTreeDataPart::loadChecksums(bool require)
         LOG_WARNING(storage.log, "Checksums for part {} not found. Will calculate them from data on disk.", name);
         checksums = checkDataPart(shared_from_this(), false);
         {
-            size_t page_size = static_cast<size_t>(::getPageSize());
-            auto out = volume->getDisk()->writeFile(getFullRelativePath() + "checksums.txt.tmp", page_size);
+            auto out = volume->getDisk()->writeFile(getFullRelativePath() + "checksums.txt.tmp", 4096);
             checksums.write(*out);
         }
 
@@ -785,8 +783,7 @@ void IMergeTreeDataPart::loadColumns(bool require)
             throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
         {
-            size_t page_size = static_cast<size_t>(::getPageSize());
-            auto buf = volume->getDisk()->writeFile(path + ".tmp", page_size);
+            auto buf = volume->getDisk()->writeFile(path + ".tmp", 4096);
             columns.writeText(*buf);
         }
         volume->getDisk()->moveFile(path + ".tmp", path);

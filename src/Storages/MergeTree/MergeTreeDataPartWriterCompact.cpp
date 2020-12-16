@@ -1,4 +1,3 @@
-#include <Common/getPageSize.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 
@@ -26,7 +25,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     , plain_hashing(*plain_file)
     , marks_file(data_part->volume->getDisk()->writeFile(
         part_path + MergeTreeDataPartCompact::DATA_FILE_NAME + marks_file_extension_,
-        static_cast<size_t>(::getPageSize()),
+        4096,
         WriteMode::Rewrite))
     , marks(*marks_file)
 {

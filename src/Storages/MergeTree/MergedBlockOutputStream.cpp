@@ -1,4 +1,3 @@
-#include <Common/getPageSize.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Interpreters/Context.h>
 #include <Poco/File.h>
@@ -135,11 +134,9 @@ void MergedBlockOutputStream::finalizePartOnDisk(
     MergeTreeData::DataPart::Checksums & checksums,
     bool sync)
 {
-    size_t page_size = static_cast<size_t>(::getPageSize());
-
     if (new_part->uuid != UUIDHelpers::Nil)
     {
-        auto out = volume->getDisk()->writeFile(part_path + IMergeTreeDataPart::UUID_FILE_NAME, page_size);
+        auto out = volume->getDisk()->writeFile(part_path + IMergeTreeDataPart::UUID_FILE_NAME, 4096);
         HashingWriteBuffer out_hashing(*out);
         writeUUIDText(new_part->uuid, out_hashing);
         checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_size = out_hashing.count();
@@ -158,7 +155,7 @@ void MergedBlockOutputStream::finalizePartOnDisk(
             throw Exception("MinMax index was not initialized for new non-empty part " + new_part->name
                 + ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-        auto count_out = volume->getDisk()->writeFile(part_path + "count.txt", page_size);
+        auto count_out = volume->getDisk()->writeFile(part_path + "count.txt", 4096);
         HashingWriteBuffer count_out_hashing(*count_out);
         writeIntText(rows_count, count_out_hashing);
         count_out_hashing.next();
@@ -172,7 +169,7 @@ void MergedBlockOutputStream::finalizePartOnDisk(
     if (!new_part->ttl_infos.empty())
     {
         /// Write a file with ttl infos in json format.
-        auto out = volume->getDisk()->writeFile(part_path + "ttl.txt", page_size);
+        auto out = volume->getDisk()->writeFile(part_path + "ttl.txt", 4096);
         HashingWriteBuffer out_hashing(*out);
         new_part->ttl_infos.write(out_hashing);
         checksums.files["ttl.txt"].file_size = out_hashing.count();
@@ -186,7 +183,7 @@ void MergedBlockOutputStream::finalizePartOnDisk(
 
     {
         /// Write a file with a description of columns.
-        auto out = volume->getDisk()->writeFile(part_path + "columns.txt", page_size);
+        auto out = volume->getDisk()->writeFile(part_path + "columns.txt", 4096);
         part_columns.writeText(*out);
         out->finalize();
         if (sync)
@@ -195,7 +192,7 @@ void MergedBlockOutputStream::finalizePartOnDisk(
 
     if (default_codec != nullptr)
     {
-        auto out = volume->getDisk()->writeFile(part_path + IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, page_size);
+        auto out = volume->getDisk()->writeFile(part_path + IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096);
         DB::writeText(queryToString(default_codec->getFullCodecDesc()), *out);
         out->finalize();
     }
@@ -207,7 +204,7 @@ void MergedBlockOutputStream::finalizePartOnDisk(
 
     {
         /// Write file with checksums.
-        auto out = volume->getDisk()->writeFile(part_path + "checksums.txt", page_size);
+        auto out = volume->getDisk()->writeFile(part_path + "checksums.txt", 4096);
         checksums.write(*out);
         out->finalize();
         if (sync)
