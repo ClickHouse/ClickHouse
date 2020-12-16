@@ -45,11 +45,7 @@ DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support,
     // 4. type_with_params(param1, param2, ...) options
     // The options can be unsigned, zerofill, or some other strings.
     auto data_type = std::string_view(mysql_data_type);
-    const auto type_end_pos = data_type.find('('); // for case 3 & 4
-    if(type_end_pos == data_type.end())
-    {
-        type_end_pos = data_type.find(' '); // for case 2
-    }
+    const auto type_end_pos = data_type.find_first_of("( ");
     const auto type_name = data_type.substr(0, type_end_pos);
 
     DataTypePtr res;
