@@ -38,8 +38,8 @@ try
 
     FormatSettings format_settings;
 
-    RowInputFormatParams in_params{DEFAULT_INSERT_BLOCK_SIZE, 0, 0};
-    RowOutputFormatParams out_params{[](const Columns & /* columns */, size_t /* row */){}};
+    RowInputFormatParams in_params{DEFAULT_INSERT_BLOCK_SIZE, 0, 0, []{}};
+    RowOutputFormatParams out_params{[](const Columns & /* columns */, size_t /* row */){},false};
 
     InputFormatPtr input_format = std::make_shared<TabSeparatedRowInputFormat>(sample, in_buf, in_params, false, false, format_settings);
     BlockInputStreamPtr block_input = std::make_shared<InputStreamFromInputFormat>(std::move(input_format));

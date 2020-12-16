@@ -4,12 +4,10 @@
 #include <Interpreters/Context.h>
 #include <Poco/File.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <common/logger_useful.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "registerDictionaries.h"
 #include "DictionarySourceHelpers.h"
-
 
 namespace DB
 {

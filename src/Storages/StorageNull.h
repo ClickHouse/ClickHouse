@@ -24,7 +24,7 @@ public:
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
-        SelectQueryInfo &,
+        const SelectQueryInfo &,
         const Context & /*context*/,
         QueryProcessingStage::Enum /*processing_stage*/,
         size_t,

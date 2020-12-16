@@ -16,8 +16,6 @@ class Context;
 class ASTCreateQuery;
 class ASTExpressionList;
 class ASTConstraintDeclaration;
-class IDatabase;
-using DatabasePtr = std::shared_ptr<IDatabase>;
 
 
 /** Allows to create new table or database,

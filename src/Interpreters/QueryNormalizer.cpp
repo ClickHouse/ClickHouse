@@ -164,17 +164,14 @@ void QueryNormalizer::visitChildren(const ASTPtr & node, Data & data)
         if (func_node->name == "lambda")
             first_pos = 1;
 
-        if (func_node->arguments)
+        auto & func_children = func_node->arguments->children;
+
+        for (size_t i = first_pos; i < func_children.size(); ++i)
         {
-            auto & func_children = func_node->arguments->children;
+            auto & child = func_children[i];
 
-            for (size_t i = first_pos; i < func_children.size(); ++i)
-            {
-                auto & child = func_children[i];
-
-                if (needVisitChild(child))
-                    visit(child, data);
-            }
+            if (needVisitChild(child))
+                visit(child, data);
         }
     }
     else if (!node->as<ASTSelectQuery>())

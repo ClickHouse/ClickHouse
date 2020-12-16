@@ -2,6 +2,8 @@
 #include <Interpreters/ProcessList.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
+#include <iomanip>
+#include <sstream>
 
 namespace DB
 {

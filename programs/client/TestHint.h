@@ -93,7 +93,7 @@ private:
 
     void parse(const String & hint)
     {
-        std::stringstream ss;       // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        std::stringstream ss;
         ss << hint;
         String item;
 

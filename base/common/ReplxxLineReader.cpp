@@ -58,8 +58,6 @@ ReplxxLineReader::ReplxxLineReader(
         }
     }
 
-    rx.install_window_change_handler();
-
     auto callback = [&suggest] (const String & context, size_t context_size)
     {
         if (auto range = suggest.getCompletions(context, context_size))

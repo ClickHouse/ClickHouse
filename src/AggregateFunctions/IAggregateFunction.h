@@ -61,7 +61,7 @@ public:
         throw Exception("Prediction is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    virtual ~IAggregateFunction() = default;
+    virtual ~IAggregateFunction() {}
 
     /** Data manipulating functions. */
 
@@ -114,7 +114,7 @@ public:
     virtual void predictValues(
         ConstAggregateDataPtr /* place */,
         IColumn & /*to*/,
-        const ColumnsWithTypeAndName & /*arguments*/,
+        ColumnsWithTypeAndName & /*arguments*/,
         size_t /*offset*/,
         size_t /*limit*/,
         const Context & /*context*/) const
@@ -310,9 +310,6 @@ protected:
     static const Data & data(ConstAggregateDataPtr place) { return *reinterpret_cast<const Data*>(place); }
 
 public:
-    // Derived class can `override` this to flag that DateTime64 is not supported.
-    static constexpr bool DateTime64Supported = true;
-
     IAggregateFunctionDataHelper(const DataTypes & argument_types_, const Array & parameters_)
         : IAggregateFunctionHelper<Derived>(argument_types_, parameters_) {}
 

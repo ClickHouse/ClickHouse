@@ -20,8 +20,8 @@ namespace DB
 class DatabaseAtomic : public DatabaseOrdinary
 {
 public:
-    DatabaseAtomic(String name_, String metadata_path_, UUID uuid, const String & logger_name, const Context & context_);
-    DatabaseAtomic(String name_, String metadata_path_, UUID uuid, const Context & context_);
+
+    DatabaseAtomic(String name_, String metadata_path_, UUID uuid, Context & context_);
 
     String getEngineName() const override { return "Atomic"; }
     UUID getUUID() const override { return db_uuid; }
@@ -51,14 +51,14 @@ public:
     void loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool force_attach) override;
 
     /// Atomic database cannot be detached if there is detached table which still in use
-    void assertCanBeDetached(bool cleanup) override;
+    void assertCanBeDetached(bool cleanup);
 
     UUID tryGetTableUUID(const String & table_name) const override;
 
     void tryCreateSymlink(const String & table_name, const String & actual_data_path, bool if_data_path_exist = false);
     void tryRemoveSymlink(const String & table_name);
 
-    void waitDetachedTableNotInUse(const UUID & uuid) override;
+    void waitDetachedTableNotInUse(const UUID & uuid);
 
 private:
     void commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path) override;

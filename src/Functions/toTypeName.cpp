@@ -22,7 +22,7 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     /// Execute the function on the columns.
-    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) override
     {
         return DataTypeString().createColumnConst(input_rows_count, arguments[0].type->getName());
     }

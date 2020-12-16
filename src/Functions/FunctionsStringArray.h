@@ -75,7 +75,7 @@ public:
     }
 
     /// Initialize by the function arguments.
-    void init(const ColumnsWithTypeAndName & /*arguments*/) {}
+    void init(ColumnsWithTypeAndName & /*arguments*/) {}
 
     /// Called for each next string.
     void set(Pos pos_, Pos end_)
@@ -136,7 +136,7 @@ public:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    void init(const ColumnsWithTypeAndName & arguments)
+    void init(ColumnsWithTypeAndName & arguments)
     {
         const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(arguments[0].column.get());
 
@@ -204,7 +204,7 @@ public:
         SplitByCharImpl::checkArguments(arguments);
     }
 
-    void init(const ColumnsWithTypeAndName & arguments)
+    void init(ColumnsWithTypeAndName & arguments)
     {
         const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(arguments[0].column.get());
 
@@ -284,7 +284,7 @@ public:
     }
 
     /// Initialize by the function arguments.
-    void init(const ColumnsWithTypeAndName & arguments)
+    void init(ColumnsWithTypeAndName & arguments)
     {
         const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(arguments[1].column.get());
 
@@ -361,7 +361,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         Generator generator;
         generator.init(arguments);
@@ -536,7 +536,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         String delimiter;
         if (arguments.size() == 2)

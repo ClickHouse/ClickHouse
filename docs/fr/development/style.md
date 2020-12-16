@@ -579,7 +579,7 @@ Si une fonction capture la propriété d'un objet créé dans le tas, définisse
 
 **14.** Les valeurs de retour.
 
-Dans la plupart des cas, il suffit d'utiliser `return`. Ne pas écrire `return std::move(res)`.
+Dans la plupart des cas, il suffit d'utiliser `return`. Ne pas écrire `[return std::move(res)]{.strike}`.
 
 Si la fonction alloue un objet sur le tas et le renvoie, utilisez `shared_ptr` ou `unique_ptr`.
 
@@ -673,7 +673,7 @@ Toujours utiliser `#pragma once` au lieu d'inclure des gardes.
 **24.** Ne pas utiliser de `trailing return type` pour les fonctions, sauf si nécessaire.
 
 ``` cpp
-auto f() -> void
+[auto f() -&gt; void;]{.strike}
 ```
 
 **25.** Déclaration et initialisation des variables.

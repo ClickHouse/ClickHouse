@@ -5,7 +5,6 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Common/quoteString.h>
 #include <Interpreters/StorageID.h>
-#include <IO/Operators.h>
 
 
 namespace DB
@@ -251,12 +250,6 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         if (uuid != UUIDHelpers::Nil)
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " UUID " << (settings.hilite ? hilite_none : "")
                           << quoteString(toString(uuid));
-
-        assert(attach || !attach_from_path);
-        if (attach_from_path)
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "")
-                          << quoteString(*attach_from_path);
-
         if (live_view_timeout)
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH TIMEOUT " << (settings.hilite ? hilite_none : "")
                           << *live_view_timeout;

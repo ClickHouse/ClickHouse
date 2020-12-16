@@ -5,7 +5,7 @@
 #include <Common/quoteString.h>
 #include <ext/range.h>
 #include <boost/range/algorithm/transform.hpp>
-#include <IO/Operators.h>
+#include <sstream>
 
 
 namespace DB
@@ -62,13 +62,13 @@ namespace
     void formatForClauses(const std::vector<std::pair<ConditionType, ASTPtr>> & conditions, bool alter, const IAST::FormatSettings & settings)
     {
         std::vector<std::pair<ConditionType, String>> conditions_as_strings;
-        WriteBufferFromOwnString temp_buf;
-        IAST::FormatSettings temp_settings(temp_buf, settings);
+        std::stringstream temp_sstream;
+        IAST::FormatSettings temp_settings(temp_sstream, settings);
         for (const auto & [condition_type, condition] : conditions)
         {
             formatConditionalExpression(condition, temp_settings);
-            conditions_as_strings.emplace_back(condition_type, temp_buf.str());
-            temp_buf.restart();
+            conditions_as_strings.emplace_back(condition_type, temp_sstream.str());
+            temp_sstream.str("");
         }
 
         boost::container::flat_set<std::string_view> commands;

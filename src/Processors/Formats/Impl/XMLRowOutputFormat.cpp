@@ -67,10 +67,10 @@ void XMLRowOutputFormat::writePrefix()
         writeCString("\t\t\t<column>\n", *ostr);
 
         writeCString("\t\t\t\t<name>", *ostr);
-        writeXMLStringForTextElement(field.name, *ostr);
+        writeXMLString(field.name, *ostr);
         writeCString("</name>\n", *ostr);
         writeCString("\t\t\t\t<type>", *ostr);
-        writeXMLStringForTextElement(field.type->getName(), *ostr);
+        writeXMLString(field.type->getName(), *ostr);
         writeCString("</type>\n", *ostr);
 
         writeCString("\t\t\t</column>\n", *ostr);

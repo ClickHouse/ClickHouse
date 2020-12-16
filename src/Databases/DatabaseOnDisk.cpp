@@ -94,9 +94,9 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
 
     if (!create)
     {
-        WriteBufferFromOwnString query_buf;
-        formatAST(*query, query_buf, true);
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query '{}' is not CREATE query", query_buf.str());
+        std::ostringstream query_stream;
+        formatAST(*query, query_stream, true);
+        throw Exception("Query '" + query_stream.str() + "' is not CREATE query", ErrorCodes::LOGICAL_ERROR);
     }
 
     if (!create->is_dictionary)
@@ -120,10 +120,10 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
     if (create->uuid != UUIDHelpers::Nil)
         create->table = TABLE_WITH_UUID_NAME_PLACEHOLDER;
 
-    WriteBufferFromOwnString statement_buf;
-    formatAST(*create, statement_buf, false);
-    writeChar('\n', statement_buf);
-    return statement_buf.str();
+    std::ostringstream statement_stream;
+    formatAST(*create, statement_stream, false);
+    statement_stream << '\n';
+    return statement_stream.str();
 }
 
 DatabaseOnDisk::DatabaseOnDisk(
@@ -400,7 +400,7 @@ void DatabaseOnDisk::iterateMetadataFiles(const Context & context, const Iterati
 {
     auto process_tmp_drop_metadata_file = [&](const String & file_name)
     {
-        assert(getUUID() == UUIDHelpers::Nil);
+        assert(getEngineName() != "Atomic");
         static const char * tmp_drop_ext = ".sql.tmp_drop";
         const std::string object_name = file_name.substr(0, file_name.size() - strlen(tmp_drop_ext));
         if (Poco::File(context.getPath() + getDataPath() + '/' + object_name).exists())

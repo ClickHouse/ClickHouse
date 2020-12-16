@@ -300,13 +300,13 @@ void collectSymbolsFromELF(dl_phdr_info * info,
 
     String our_build_id = getBuildIDFromProgramHeaders(info);
 
-    /// If the name is empty and there is a non-empty build-id - it's main executable.
-    /// Find a elf file for the main executable and set the build-id.
+    /// If the name is empty - it's main executable.
+    /// Find a elf file for the main executable.
+
     if (object_name.empty())
     {
         object_name = "/proc/self/exe";
-        if (build_id.empty())
-            build_id = our_build_id;
+        build_id = our_build_id;
     }
 
     std::error_code ec;
@@ -316,16 +316,9 @@ void collectSymbolsFromELF(dl_phdr_info * info,
         return;
 
     /// Debug info and symbol table sections may be split to separate binary.
-    std::filesystem::path local_debug_info_path = canonical_path.parent_path() / canonical_path.stem();
-    local_debug_info_path += ".debug";
     std::filesystem::path debug_info_path = std::filesystem::path("/usr/lib/debug") / canonical_path.relative_path();
 
-    if (std::filesystem::exists(local_debug_info_path))
-        object_name = local_debug_info_path;
-    else if (std::filesystem::exists(debug_info_path))
-        object_name = debug_info_path;
-    else
-        object_name = canonical_path;
+    object_name = std::filesystem::exists(debug_info_path) ? debug_info_path : canonical_path;
 
     /// But we have to compare Build ID to check that debug info corresponds to the same executable.
 
@@ -441,12 +434,10 @@ String SymbolIndex::getBuildIDHex() const
     return build_id_hex;
 }
 
-MultiVersion<SymbolIndex>::Version SymbolIndex::instance(bool reload)
+SymbolIndex & SymbolIndex::instance()
 {
-    static MultiVersion<SymbolIndex> instance(std::unique_ptr<SymbolIndex>(new SymbolIndex));
-    if (reload)
-        instance.set(std::unique_ptr<SymbolIndex>(new SymbolIndex));
-    return instance.get();
+    static SymbolIndex instance;
+    return instance;
 }
 
 }

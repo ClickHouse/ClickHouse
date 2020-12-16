@@ -6,7 +6,7 @@
 
 我们使用RoaringBitmap实际存储位图对象，当基数小于或等于32时，它使用Set保存。当基数大于32时，它使用RoaringBitmap保存。这也是为什么低基数集的存储更快的原因。
 
-有关RoaringBitmap的更多信息，请参阅：[RoaringBitmap](https://github.com/RoaringBitmap/CRoaring)。
+有关RoaringBitmap的更多信息，请参阅：[呻吟声](https://github.com/RoaringBitmap/CRoaring)。
 
 ## bitmapBuild {#bitmapbuild}
 

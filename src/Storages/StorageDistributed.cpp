@@ -49,8 +49,6 @@
 #include <Core/Settings.h>
 
 #include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
 
 #include <Poco/DirectoryIterator.h>
 
@@ -177,18 +175,18 @@ UInt64 getMaximumFileNumber(const std::string & dir_path)
 
 std::string makeFormattedListOfShards(const ClusterPtr & cluster)
 {
-    WriteBufferFromOwnString buf;
+    std::ostringstream os;
 
     bool head = true;
-    buf << "[";
+    os << "[";
     for (const auto & shard_info : cluster->getShardsInfo())
     {
-        (head ? buf : buf << ", ") << shard_info.shard_num;
+        (head ? os : os << ", ") << shard_info.shard_num;
         head = false;
     }
-    buf << "]";
+    os << "]";
 
-    return buf.str();
+    return os.str();
 }
 
 ExpressionActionsPtr buildShardingKeyExpression(const ASTPtr & sharding_key, const Context & context, const NamesAndTypesList & columns, bool project)
@@ -202,9 +200,9 @@ bool isExpressionActionsDeterministics(const ExpressionActionsPtr & actions)
 {
     for (const auto & action : actions->getActions())
     {
-        if (action.node->type != ActionsDAG::ActionType::FUNCTION)
+        if (action.type != ExpressionAction::APPLY_FUNCTION)
             continue;
-        if (!action.node->function_base->isDeterministic())
+        if (!action.function_base->isDeterministic())
             return false;
     }
     return true;
@@ -315,8 +313,7 @@ std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const
 
     // LIMIT BY
     // LIMIT
-    // OFFSET
-    if (select.limitBy() || select.limitLength() || select.limitOffset())
+    if (select.limitBy() || select.limitLength())
         return QueryProcessingStage::WithMergeableStateAfterAggregation;
 
     // Only simple SELECT FROM GROUP BY sharding_key can use Complete state.
@@ -367,10 +364,10 @@ StorageDistributed::StorageDistributed(
     : IStorage(id_)
     , remote_database(remote_database_)
     , remote_table(remote_table_)
-    , global_context(context_.getGlobalContext())
+    , global_context(std::make_unique<Context>(context_))
     , log(&Poco::Logger::get("StorageDistributed (" + id_.table_name + ")"))
     , owned_cluster(std::move(owned_cluster_))
-    , cluster_name(global_context.getMacros()->expand(cluster_name_))
+    , cluster_name(global_context->getMacros()->expand(cluster_name_))
     , has_sharding_key(sharding_key_)
     , relative_data_path(relative_data_path_)
 {
@@ -381,14 +378,14 @@ StorageDistributed::StorageDistributed(
 
     if (sharding_key_)
     {
-        sharding_key_expr = buildShardingKeyExpression(sharding_key_, global_context, storage_metadata.getColumns().getAllPhysical(), false);
+        sharding_key_expr = buildShardingKeyExpression(sharding_key_, *global_context, storage_metadata.getColumns().getAllPhysical(), false);
         sharding_key_column_name = sharding_key_->getColumnName();
         sharding_key_is_deterministic = isExpressionActionsDeterministics(sharding_key_expr);
     }
 
     if (!relative_data_path.empty())
     {
-        storage_policy = global_context.getStoragePolicy(storage_policy_name_);
+        storage_policy = global_context->getStoragePolicy(storage_policy_name_);
         data_volume = storage_policy->getVolume(0);
         if (storage_policy->getVolumes().size() > 1)
             LOG_WARNING(log, "Storage policy for Distributed table has multiple volumes. "
@@ -398,7 +395,7 @@ StorageDistributed::StorageDistributed(
     /// Sanity check. Skip check if the table is already created to allow the server to start.
     if (!attach_ && !cluster_name.empty())
     {
-        size_t num_local_shards = global_context.getCluster(cluster_name)->getLocalShardCount();
+        size_t num_local_shards = global_context->getCluster(cluster_name)->getLocalShardCount();
         if (num_local_shards && remote_database == id_.database_name && remote_table == id_.table_name)
             throw Exception("Distributed table " + id_.table_name + " looks at itself", ErrorCodes::INFINITE_LOOP);
     }
@@ -422,31 +419,10 @@ StorageDistributed::StorageDistributed(
     remote_table_function_ptr = std::move(remote_table_function_ptr_);
 }
 
-QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
-    const Context & context, QueryProcessingStage::Enum to_stage, SelectQueryInfo & query_info) const
+QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context &context, QueryProcessingStage::Enum to_stage, const ASTPtr & query_ptr) const
 {
     const auto & settings = context.getSettingsRef();
     auto metadata_snapshot = getInMemoryMetadataPtr();
-
-    ClusterPtr cluster = getCluster();
-    query_info.cluster = cluster;
-
-    /// Always calculate optimized cluster here, to avoid conditions during read()
-    /// (Anyway it will be calculated in the read())
-    if (settings.optimize_skip_unused_shards)
-    {
-        ClusterPtr optimized_cluster = getOptimizedCluster(context, metadata_snapshot, query_info.query);
-        if (optimized_cluster)
-        {
-            LOG_DEBUG(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): {}", makeFormattedListOfShards(optimized_cluster));
-            cluster = optimized_cluster;
-            query_info.cluster = cluster;
-        }
-        else
-        {
-            LOG_DEBUG(log, "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - the query will be sent to all shards of the cluster{}", has_sharding_key ? "" : " (no sharding key)");
-        }
-    }
 
     if (settings.distributed_group_by_no_merge)
     {
@@ -461,6 +437,14 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     if (to_stage == QueryProcessingStage::WithMergeableState)
         return QueryProcessingStage::WithMergeableState;
 
+    ClusterPtr cluster = getCluster();
+    if (settings.optimize_skip_unused_shards)
+    {
+        ClusterPtr optimized_cluster = getOptimizedCluster(context, metadata_snapshot, query_ptr);
+        if (optimized_cluster)
+            cluster = optimized_cluster;
+    }
+
     /// If there is only one node, the query can be fully processed by the
     /// shard, initiator will work as a proxy only.
     if (getClusterQueriedNodes(settings, cluster) == 1)
@@ -472,7 +456,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         (settings.allow_nondeterministic_optimize_skip_unused_shards || sharding_key_is_deterministic))
     {
         Block sharding_key_block = sharding_key_expr->getSampleBlock();
-        auto stage = getOptimizedQueryProcessingStage(query_info.query, settings.extremes, sharding_key_block);
+        auto stage = getOptimizedQueryProcessingStage(query_ptr, settings.extremes, sharding_key_block);
         if (stage)
         {
             LOG_DEBUG(log, "Force processing stage to {}", QueryProcessingStage::toString(*stage));
@@ -486,27 +470,29 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 Pipe StorageDistributed::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & query_info,
-    const Context & context,
-    QueryProcessingStage::Enum processed_stage,
-    const size_t max_block_size,
-    const unsigned num_streams)
-{
-    QueryPlan plan;
-    read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe();
-}
-
-void StorageDistributed::read(
-    QueryPlan & query_plan,
-    const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & query_info,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
+    const auto & settings = context.getSettingsRef();
+
+    ClusterPtr cluster = getCluster();
+    if (settings.optimize_skip_unused_shards)
+    {
+        ClusterPtr optimized_cluster = getOptimizedCluster(context, metadata_snapshot, query_info.query);
+        if (optimized_cluster)
+        {
+            LOG_DEBUG(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): {}", makeFormattedListOfShards(optimized_cluster));
+            cluster = optimized_cluster;
+        }
+        else
+        {
+            LOG_DEBUG(log, "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - the query will be sent to all shards of the cluster{}", has_sharding_key ? "" : " (no sharding key)");
+        }
+    }
+
     const auto & modified_query_ast = rewriteSelectQuery(
         query_info.query, remote_database, remote_table, remote_table_function_ptr);
 
@@ -525,8 +511,8 @@ void StorageDistributed::read(
         : ClusterProxy::SelectStreamFactory(
             header, processed_stage, StorageID{remote_database, remote_table}, scalars, has_virtual_shard_num_column, context.getExternalTables());
 
-    ClusterProxy::executeQuery(query_plan, select_stream_factory, log,
-        modified_query_ast, context, query_info);
+    return ClusterProxy::executeQuery(select_stream_factory, cluster, log,
+        modified_query_ast, context, context.getSettingsRef(), query_info);
 }
 
 
@@ -684,28 +670,8 @@ void StorageDistributed::createDirectoryMonitors(const std::string & disk)
     std::filesystem::directory_iterator begin(path);
     std::filesystem::directory_iterator end;
     for (auto it = begin; it != end; ++it)
-    {
-        const auto & dir_path = it->path();
-        if (std::filesystem::is_directory(dir_path))
-        {
-            const auto & tmp_path = dir_path / "tmp";
-
-            /// "tmp" created by DistributedBlockOutputStream
-            if (std::filesystem::is_directory(tmp_path) && std::filesystem::is_empty(tmp_path))
-                std::filesystem::remove(tmp_path);
-
-            if (std::filesystem::is_empty(dir_path))
-            {
-                LOG_DEBUG(log, "Removing {} (used for async INSERT into Distributed)", dir_path.string());
-                /// Will be created by DistributedBlockOutputStream on demand.
-                std::filesystem::remove(dir_path);
-            }
-            else
-            {
-                requireDirectoryMonitor(disk, dir_path.filename().string());
-            }
-        }
-    }
+        if (std::filesystem::is_directory(*it))
+            requireDirectoryMonitor(disk, it->path().filename().string());
 }
 
 
@@ -720,7 +686,7 @@ StorageDistributedDirectoryMonitor& StorageDistributed::requireDirectoryMonitor(
     {
         node_data.connection_pool = StorageDistributedDirectoryMonitor::createPool(name, *this);
         node_data.directory_monitor = std::make_unique<StorageDistributedDirectoryMonitor>(
-            *this, path, node_data.connection_pool, monitors_blocker, global_context.getDistributedSchedulePool());
+            *this, path, node_data.connection_pool, monitors_blocker, global_context->getDistributedSchedulePool());
     }
     return *node_data.directory_monitor;
 }
@@ -742,7 +708,7 @@ size_t StorageDistributed::getShardCount() const
 
 ClusterPtr StorageDistributed::getCluster() const
 {
-    return owned_cluster ? owned_cluster : global_context.getCluster(cluster_name);
+    return owned_cluster ? owned_cluster : global_context->getCluster(cluster_name);
 }
 
 ClusterPtr StorageDistributed::getOptimizedCluster(const Context & context, const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query_ptr) const
@@ -762,7 +728,7 @@ ClusterPtr StorageDistributed::getOptimizedCluster(const Context & context, cons
     UInt64 force = settings.force_optimize_skip_unused_shards;
     if (force)
     {
-        WriteBufferFromOwnString exception_message;
+        std::stringstream exception_message;
         if (!has_sharding_key)
             exception_message << "No sharding key";
         else if (!sharding_key_is_usable)

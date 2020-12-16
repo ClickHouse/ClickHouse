@@ -22,7 +22,7 @@ public:
 
 bool useDefaultImplementationForNulls() const override { return false; }
 
-    ColumnPtr execute(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr execute(ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) override
     {
         return DataTypeNumber<ToType>().createColumnConst(input_rows_count, value);
     }

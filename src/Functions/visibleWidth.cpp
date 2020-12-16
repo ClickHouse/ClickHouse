@@ -46,9 +46,9 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
 
     /// Execute the function on the columns.
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto & src = arguments[0];
+        auto & src = arguments[0];
         size_t size = input_rows_count;
 
         auto res_col = ColumnUInt64::create(size);

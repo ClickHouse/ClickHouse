@@ -87,7 +87,8 @@ public:
             return;
 
         /// TODO: monotonicity for functions of several arguments
-        if (!ast_function.arguments || ast_function.arguments->children.size() != 1)
+        auto arguments = ast_function.arguments;
+        if (arguments->children.size() != 1)
         {
             data.reject();
             return;

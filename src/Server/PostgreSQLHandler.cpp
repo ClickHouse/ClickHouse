@@ -50,7 +50,6 @@ void PostgreSQLHandler::changeIO(Poco::Net::StreamSocket & socket)
 void PostgreSQLHandler::run()
 {
     connection_context.makeSessionContext();
-    connection_context.getClientInfo().interface = ClientInfo::Interface::POSTGRESQL;
     connection_context.setDefaultFormat("PostgreSQLWire");
 
     try

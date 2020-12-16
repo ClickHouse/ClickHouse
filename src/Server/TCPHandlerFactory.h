@@ -15,7 +15,6 @@ class TCPHandlerFactory : public Poco::Net::TCPServerConnectionFactory
 {
 private:
     IServer & server;
-    bool parse_proxy_protocol = false;
     Poco::Logger * log;
 
     class DummyTCPHandler : public Poco::Net::TCPServerConnection
@@ -26,12 +25,8 @@ private:
     };
 
 public:
-    /** parse_proxy_protocol_ - if true, expect and parse the header of PROXY protocol in every connection
-      * and set the information about forwarded address accordingly.
-      * See https://github.com/wolfeidau/proxyv2/blob/master/docs/proxy-protocol.txt
-      */
-    TCPHandlerFactory(IServer & server_, bool secure_, bool parse_proxy_protocol_)
-        : server(server_), parse_proxy_protocol(parse_proxy_protocol_)
+    explicit TCPHandlerFactory(IServer & server_, bool secure_ = false)
+        : server(server_)
         , log(&Poco::Logger::get(std::string("TCP") + (secure_ ? "S" : "") + "HandlerFactory"))
     {
     }
@@ -41,8 +36,7 @@ public:
         try
         {
             LOG_TRACE(log, "TCP Request. Address: {}", socket.peerAddress().toString());
-
-            return new TCPHandler(server, socket, parse_proxy_protocol);
+            return new TCPHandler(server, socket);
         }
         catch (const Poco::Net::NetException &)
         {

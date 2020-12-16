@@ -966,7 +966,7 @@ public:
           * https://en.wikipedia.org/wiki/Linear_probing
           * https://en.wikipedia.org/wiki/Open_addressing
           * Algorithm without recomputing hash but keep probes difference value (difference of natural cell position and inserted one)
-          * in cell https://arxiv.org/ftp/arxiv/papers/0909/0909.2547.pdf
+          *  in cell https://arxiv.org/ftp/arxiv/papers/0909/0909.2547.pdf
           *
           * Currently we use algorithm with hash recomputing on each step from https://en.wikipedia.org/wiki/Open_addressing
           */
@@ -998,20 +998,6 @@ public:
 
         size_t next_position = erased_key_position;
 
-        /**
-         * During element deletion there is a possibility that the search will be broken for one
-         * of the following elements, because this place erased_key_position is empty. We will check
-         * next_element. Consider a sequence from (erased_key_position, next_element], if the
-         * optimal_position of next_element falls into it, then removing erased_key_position
-         * will not break search for next_element.
-         * If optimal_position of the element does not fall into the sequence (erased_key_position, next_element]
-         * then deleting a erased_key_position will break search for it, so we need to move next_element
-         * to erased_key_position. Now we have empty place at next_element, so we apply the identical
-         * procedure for it.
-         * If an empty element is encoutered then means that there is no more next elements for which we can
-         * break the search so we can exit.
-        */
-
         /// Walk to the right through collision resolution chain and move elements to better positions
         while (true)
         {
@@ -1028,20 +1014,19 @@ public:
             if (optimal_position == next_position)
                 continue;
 
-            /// Cannot move this element because optimal position is after the freed place
-            /// The second condition is tricky - if the chain was overlapped before erased_key_position,
-            ///  and the optimal position is actually before in collision resolution chain:
-            ///
-            /// [*xn***----------------***]
-            ///   ^^-next elem          ^
-            ///   |                     |
-            ///   erased elem           the optimal position of the next elem
-            ///
-            /// so, the next elem should be moved to position of erased elem
-
             /// The case of non overlapping part of chain
             if (next_position > erased_key_position
-               && (optimal_position > erased_key_position) && (optimal_position < next_position))
+                /// Cannot move this element because optimal position is after the freed place
+                /// The second condition is tricky - if the chain was overlapped before erased_key_position,
+                ///  and the optimal position is actually before in collision resolution chain:
+                ///
+                /// [*xn***----------------***]
+                ///   ^^-next elem          ^
+                ///   |                     |
+                ///   erased elem           the optimal position of the next elem
+                ///
+                /// so, the next elem should be moved to position of erased elem
+                && (optimal_position > erased_key_position) && (optimal_position < next_position))
             {
                 continue;
             }

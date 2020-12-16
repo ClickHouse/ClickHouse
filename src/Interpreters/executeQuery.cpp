@@ -15,22 +15,17 @@
 #include <DataStreams/InputStreamFromASTInsertQuery.h>
 #include <DataStreams/CountingBlockOutputStream.h>
 
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ParserQuery.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/queryToString.h>
 #include <Parsers/ASTWatchQuery.h>
 #include <Parsers/Lexer.h>
-
-#if !defined(ARCADIA_BUILD)
-#    include <Parsers/New/parseQuery.h>  // Y_IGNORE
-#endif
-
-#include <Parsers/parseQuery.h>
-#include <Parsers/ParserQuery.h>
-#include <Parsers/queryToString.h>
 
 #include <Storages/StorageInput.h>
 
@@ -152,18 +147,19 @@ static void logQuery(const String & query, const Context & context, bool interna
         const auto & initial_query_id = client_info.initial_query_id;
         const auto & current_user = client_info.current_user;
 
-        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(from {}{}{}, using {} parser) {}",
+        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(from {}{}{}) {}",
             client_info.current_address.toString(),
             (current_user != "default" ? ", user: " + current_user : ""),
             (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
-            (context.getSettingsRef().use_antlr_parser ? "new" : "old"),
             joinLines(query));
 
-        if (client_info.client_trace_context.trace_id)
+        if (client_info.opentelemetry_trace_id)
         {
             LOG_TRACE(&Poco::Logger::get("executeQuery"),
-                "OpenTelemetry traceparent '{}'",
-                client_info.client_trace_context.composeTraceparentHeader());
+                "OpenTelemetry trace id {:x}, span id {}, parent span id {}",
+                client_info.opentelemetry_trace_id,
+                client_info.opentelemetry_span_id,
+                client_info.opentelemetry_parent_span_id);
         }
     }
 }
@@ -251,18 +247,19 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
             query_log->add(elem);
 
     if (auto opentelemetry_span_log = context.getOpenTelemetrySpanLog();
-        context.query_trace_context.trace_id
+        context.getClientInfo().opentelemetry_trace_id
             && opentelemetry_span_log)
     {
         OpenTelemetrySpanLogElement span;
-        span.trace_id = context.query_trace_context.trace_id;
-        span.span_id = context.query_trace_context.span_id;
-        span.parent_span_id = context.getClientInfo().client_trace_context.span_id;
+        span.trace_id = context.getClientInfo().opentelemetry_trace_id;
+        span.span_id = context.getClientInfo().opentelemetry_span_id;
+        span.parent_span_id = context.getClientInfo().opentelemetry_parent_span_id;
         span.operation_name = "query";
         span.start_time_us = current_time_us;
         span.finish_time_us = current_time_us;
+        span.duration_ns = 0;
 
-        /// Keep values synchronized to type enum in QueryLogElement::createBlock.
+        // keep values synchonized to type enum in QueryLogElement::createBlock
         span.attribute_names.push_back("clickhouse.query_status");
         span.attribute_values.push_back("ExceptionBeforeStart");
 
@@ -272,11 +269,11 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
         span.attribute_names.push_back("clickhouse.query_id");
         span.attribute_values.push_back(elem.client_info.current_query_id);
 
-        if (!context.query_trace_context.tracestate.empty())
+        if (!context.getClientInfo().opentelemetry_tracestate.empty())
         {
             span.attribute_names.push_back("clickhouse.tracestate");
             span.attribute_values.push_back(
-                context.query_trace_context.tracestate);
+                context.getClientInfo().opentelemetry_tracestate);
         }
 
         opentelemetry_span_log->add(span);
@@ -327,33 +324,19 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
     const Settings & settings = context.getSettingsRef();
 
+    ParserQuery parser(end);
     ASTPtr ast;
     const char * query_end;
 
     /// Don't limit the size of internal queries.
     size_t max_query_size = 0;
-    if (!internal) max_query_size = settings.max_query_size;
+    if (!internal)
+        max_query_size = settings.max_query_size;
 
     try
     {
-#if !defined(ARCADIA_BUILD)
-        if (settings.use_antlr_parser)
-        {
-            ast = parseQuery(begin, end, max_query_size, settings.max_parser_depth);
-        }
-        else
-        {
-            ParserQuery parser(end);
-
-            /// TODO: parser should fail early when max_query_size limit is reached.
-            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
-        }
-#else
-        ParserQuery parser(end);
-
-        /// TODO: parser should fail early when max_query_size limit is reached.
+        /// TODO Parser should fail early when max_query_size limit is reached.
         ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
-#endif
 
         /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
         /// to allow settings to take effect.
@@ -366,14 +349,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         {
             if (!select_with_union_query->list_of_selects->children.empty())
             {
-                // We might have an arbitrarily complex UNION tree, so just give
-                // up if the last first-order child is not a plain SELECT.
-                // It is flattened later, when we process UNION ALL/DISTINCT.
-                const auto * last_select = select_with_union_query->list_of_selects->children.back()->as<ASTSelectQuery>();
-                if (last_select && last_select->settings())
-                {
-                    InterpreterSetQuery(last_select->settings(), context).executeForCurrentContext();
-                }
+                if (auto new_settings = select_with_union_query->list_of_selects->children.back()->as<ASTSelectQuery>()->settings())
+                    InterpreterSetQuery(new_settings, context).executeForCurrentContext();
             }
         }
         else if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
@@ -502,11 +479,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             limits.size_limits = SizeLimits(settings.max_result_rows, settings.max_result_bytes, settings.result_overflow_mode);
         }
 
-        {
-            OpenTelemetrySpanHolder span("IInterpreter::execute()");
-            res = interpreter->execute();
-        }
-
+        res = interpreter->execute();
         QueryPipeline & pipeline = res.pipeline;
         bool use_processors = pipeline.initialized();
 
@@ -712,18 +685,19 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 }
 
                 if (auto opentelemetry_span_log = context.getOpenTelemetrySpanLog();
-                    context.query_trace_context.trace_id
+                    context.getClientInfo().opentelemetry_trace_id
                         && opentelemetry_span_log)
                 {
                     OpenTelemetrySpanLogElement span;
-                    span.trace_id = context.query_trace_context.trace_id;
-                    span.span_id = context.query_trace_context.span_id;
-                    span.parent_span_id = context.getClientInfo().client_trace_context.span_id;
+                    span.trace_id = context.getClientInfo().opentelemetry_trace_id;
+                    span.span_id = context.getClientInfo().opentelemetry_span_id;
+                    span.parent_span_id = context.getClientInfo().opentelemetry_parent_span_id;
                     span.operation_name = "query";
                     span.start_time_us = elem.query_start_time_microseconds;
                     span.finish_time_us = time_in_microseconds(finish_time);
+                    span.duration_ns = elapsed_seconds * 1000000000;
 
-                    /// Keep values synchronized to type enum in QueryLogElement::createBlock.
+                    // keep values synchonized to type enum in QueryLogElement::createBlock
                     span.attribute_names.push_back("clickhouse.query_status");
                     span.attribute_values.push_back("QueryFinish");
 
@@ -732,11 +706,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                     span.attribute_names.push_back("clickhouse.query_id");
                     span.attribute_values.push_back(elem.client_info.current_query_id);
-                    if (!context.query_trace_context.tracestate.empty())
+                    if (!context.getClientInfo().opentelemetry_tracestate.empty())
                     {
                         span.attribute_names.push_back("clickhouse.tracestate");
                         span.attribute_values.push_back(
-                            context.query_trace_context.tracestate);
+                            context.getClientInfo().opentelemetry_tracestate);
                     }
 
                     opentelemetry_span_log->add(span);
@@ -804,9 +778,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             if (!internal && res.in)
             {
-                WriteBufferFromOwnString msg_buf;
-                res.in->dumpTree(msg_buf);
-                LOG_DEBUG(&Poco::Logger::get("executeQuery"), "Query pipeline:\n{}", msg_buf.str());
+                std::stringstream log_str;
+                log_str << "Query pipeline:\n";
+                res.in->dumpTree(log_str);
+                LOG_DEBUG(&Poco::Logger::get("executeQuery"), log_str.str());
             }
         }
     }
@@ -894,7 +869,7 @@ void executeQuery(
         end = istr.buffer().end();
         istr.position() += end - begin;
         /// Actually we don't know will query has additional data or not.
-        /// But we can't check istr.eof(), because begin and end pointers will become invalid
+        /// But we can't check istr.eof(), because begin and end pointers will became invalid
         may_have_tail = true;
     }
     else

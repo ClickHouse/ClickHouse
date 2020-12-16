@@ -5,6 +5,7 @@
 #if USE_MYSQL
 
 #include <Storages/StorageProxy.h>
+#include <Databases/MySQL/DatabaseMaterializeMySQL.h>
 
 namespace DB
 {
@@ -20,10 +21,10 @@ class StorageMaterializeMySQL final : public ext::shared_ptr_helper<StorageMater
 public:
     String getName() const override { return "MaterializeMySQL"; }
 
-    StorageMaterializeMySQL(const StoragePtr & nested_storage_, const IDatabase * database_);
+    StorageMaterializeMySQL(const StoragePtr & nested_storage_, const DatabaseMaterializeMySQL * database_);
 
     Pipe read(
-        const Names & column_names, const StorageMetadataPtr & metadata_snapshot, SelectQueryInfo & query_info,
+        const Names & column_names, const StorageMetadataPtr & metadata_snapshot, const SelectQueryInfo & query_info,
         const Context & context, QueryProcessingStage::Enum processed_stage, size_t max_block_size, unsigned num_streams) override;
 
     BlockOutputStreamPtr write(const ASTPtr &, const StorageMetadataPtr &, const Context &) override { throwNotAllowed(); }
@@ -31,18 +32,15 @@ public:
     NamesAndTypesList getVirtuals() const override;
     ColumnSizeByName getColumnSizes() const override;
 
-    StoragePtr getNested() const override { return nested_storage; }
-
-    void drop() override { nested_storage->drop(); }
-
 private:
+    StoragePtr getNested() const override { return nested_storage; }
     [[noreturn]] void throwNotAllowed() const
     {
-        throw Exception("This method is not allowed for MaterializeMySQL", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("This method is not allowed for MaterializeMySQ", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     StoragePtr nested_storage;
-    const IDatabase * database;
+    const DatabaseMaterializeMySQL * database;
 };
 
 }

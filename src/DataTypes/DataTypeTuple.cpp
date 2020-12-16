@@ -25,13 +25,12 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
-    extern const int DUPLICATE_COLUMN;
-    extern const int EMPTY_DATA_PASSED;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+    extern const int EMPTY_DATA_PASSED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int SIZES_OF_COLUMNS_IN_TUPLE_DOESNT_MATCH;
+    extern const int DUPLICATE_COLUMN;
+    extern const int BAD_ARGUMENTS;
+    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
 }
 
 
@@ -146,20 +145,6 @@ static void addElementSafe(const DataTypes & elems, IColumn & column, F && impl)
     try
     {
         impl();
-
-        // Check that all columns now have the same size.
-        size_t new_size = column.size();
-        for (auto i : ext::range(1, ext::size(elems)))
-        {
-            const auto & element_column = extractElementColumn(column, i);
-            if (element_column.size() != new_size)
-            {
-                // This is not a logical error because it may work with
-                // user-supplied data.
-                throw Exception(ErrorCodes::SIZES_OF_COLUMNS_IN_TUPLE_DOESNT_MATCH,
-                    "Cannot read a tuple because not all elements are present");
-            }
-        }
     }
     catch (...)
     {
@@ -228,93 +213,37 @@ void DataTypeTuple::deserializeText(IColumn & column, ReadBuffer & istr, const F
 
 void DataTypeTuple::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    if (settings.json.named_tuples_as_objects
-        && have_explicit_names)
+    writeChar('[', ostr);
+    for (const auto i : ext::range(0, ext::size(elems)))
     {
-        writeChar('{', ostr);
-        for (const auto i : ext::range(0, ext::size(elems)))
-        {
-            if (i != 0)
-            {
-                writeChar(',', ostr);
-            }
-            writeJSONString(names[i], ostr, settings);
-            writeChar(':', ostr);
-            elems[i]->serializeAsTextJSON(extractElementColumn(column, i), row_num, ostr, settings);
-        }
-        writeChar('}', ostr);
+        if (i != 0)
+            writeChar(',', ostr);
+        elems[i]->serializeAsTextJSON(extractElementColumn(column, i), row_num, ostr, settings);
     }
-    else
-    {
-        writeChar('[', ostr);
-        for (const auto i : ext::range(0, ext::size(elems)))
-        {
-            if (i != 0)
-                writeChar(',', ostr);
-            elems[i]->serializeAsTextJSON(extractElementColumn(column, i), row_num, ostr, settings);
-        }
-        writeChar(']', ostr);
-    }
+    writeChar(']', ostr);
 }
 
 void DataTypeTuple::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    if (settings.json.named_tuples_as_objects
-        && have_explicit_names)
+    const size_t size = elems.size();
+    assertChar('[', istr);
+
+    addElementSafe(elems, column, [&]
     {
-        skipWhitespaceIfAny(istr);
-        assertChar('{', istr);
-        skipWhitespaceIfAny(istr);
-
-        addElementSafe(elems, column, [&]
+        for (const auto i : ext::range(0, size))
         {
-            // Require all elements but in arbitrary order.
-            for (auto i : ext::range(0, ext::size(elems)))
+            skipWhitespaceIfAny(istr);
+            if (i != 0)
             {
-                if (i > 0)
-                {
-                    skipWhitespaceIfAny(istr);
-                    assertChar(',', istr);
-                    skipWhitespaceIfAny(istr);
-                }
-
-                std::string name;
-                readDoubleQuotedString(name, istr);
+                assertChar(',', istr);
                 skipWhitespaceIfAny(istr);
-                assertChar(':', istr);
-                skipWhitespaceIfAny(istr);
-
-                const size_t element_pos = getPositionByName(name);
-                auto & element_column = extractElementColumn(column, element_pos);
-                elems[element_pos]->deserializeAsTextJSON(element_column, istr, settings);
             }
-        });
+            elems[i]->deserializeAsTextJSON(extractElementColumn(column, i), istr, settings);
+        }
+    });
 
-        skipWhitespaceIfAny(istr);
-        assertChar('}', istr);
-    }
-    else
-    {
-        const size_t size = elems.size();
-        assertChar('[', istr);
-
-        addElementSafe(elems, column, [&]
-        {
-            for (const auto i : ext::range(0, size))
-            {
-                skipWhitespaceIfAny(istr);
-                if (i != 0)
-                {
-                    assertChar(',', istr);
-                    skipWhitespaceIfAny(istr);
-                }
-                elems[i]->deserializeAsTextJSON(extractElementColumn(column, i), istr, settings);
-            }
-        });
-
-        skipWhitespaceIfAny(istr);
-        assertChar(']', istr);
-    }
+    skipWhitespaceIfAny(istr);
+    assertChar(']', istr);
 }
 
 void DataTypeTuple::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
