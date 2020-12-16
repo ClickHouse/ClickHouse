@@ -148,7 +148,7 @@ void registerDiskS3(DiskFactory & factory)
             uri.key,
             metadata_path,
             context.getSettingsRef().s3_min_upload_part_size,
-            config.getUInt64(config_prefix + ".min_multi_part_upload_size", 10 * 1024 * 1024),
+            context.getSettingsRef().s3_max_single_part_upload_size,
             config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
             config.getBool(config_prefix + ".send_object_metadata", false));
 
