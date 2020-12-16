@@ -593,7 +593,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     if (create.as_table_function)
         return;
 
-    if (create.storage || create.is_view || create.is_materialized_view || create.is_live_view || create.is_dictionary)
+    if (create.storage || create.is_dictionary || create.isView())
     {
         if (create.temporary && create.storage && create.storage->engine && create.storage->engine->name != "Memory")
             throw Exception(
@@ -748,7 +748,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.to_table_id && create.to_table_id.database_name.empty())
         create.to_table_id.database_name = current_database;
 
-    if (create.select && (create.is_view || create.is_materialized_view || create.is_live_view))
+    if (create.select && create.isView())
     {
         AddDefaultDatabaseVisitor visitor(current_database);
         visitor.visit(*create.select);
@@ -884,7 +884,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
 {
     /// If the query is a CREATE SELECT, insert the data into the table.
     if (create.select && !create.attach
-        && !create.is_view && !create.is_live_view && (!create.is_materialized_view || create.is_populate))
+        && !create.is_ordinary_view && !create.is_live_view && (!create.is_materialized_view || create.is_populate))
     {
         auto insert = std::make_shared<ASTInsertQuery>();
         insert->table_id = {create.database, create.table, create.uuid};

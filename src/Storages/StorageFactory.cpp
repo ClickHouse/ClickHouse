@@ -53,7 +53,7 @@ StoragePtr StorageFactory::get(
 
     bool has_engine_args = false;
 
-    if (query.is_view)
+    if (query.is_ordinary_view)
     {
         if (query.storage)
             throw Exception("Specifying ENGINE is not allowed for a View", ErrorCodes::INCORRECT_QUERY);

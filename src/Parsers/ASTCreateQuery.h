@@ -57,7 +57,7 @@ class ASTCreateQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnC
 public:
     bool attach{false};    /// Query ATTACH TABLE, not CREATE TABLE.
     bool if_not_exists{false};
-    bool is_view{false};
+    bool is_ordinary_view{false};
     bool is_materialized_view{false};
     bool is_live_view{false};
     bool is_populate{false};

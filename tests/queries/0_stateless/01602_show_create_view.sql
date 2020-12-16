@@ -22,4 +22,6 @@ SHOW CREATE VIEW test_1602.not_exist_view; -- { serverError 390 }
 
 SHOW CREATE VIEW test_1602.tbl; -- { serverError 36 }
 
+SHOW CREATE TEMPORARY VIEW; -- { serverError 60 }
+
 DROP DATABASE IF EXISTS test_1602;
