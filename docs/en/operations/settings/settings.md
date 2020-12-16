@@ -2423,4 +2423,83 @@ Possible values:
 
 Default value: `0`.
 
+## union_default_mode {#union-default-mode}
+
+Sets a special mode for combining `SELECT` query results using the [UNION](../../sql-reference/statements/select/union-all.md) expression.
+
+Possible values:
+
+-   `'DISTINCT'` — ClickHouse outputs rows as a result of combining queries removing duplicate rows.
+-   `'ALL'` — ClickHouse outputs all rows as a result of combining queries including duplicate rows.
+-   `''` — Clickhouse generates an exception when used with `UNION`.
+
+Default value: `'DISTINCT'`.
+
+**Example of using the 'DISTINCT' value**
+
+Query:
+
+```sql
+SET union_default_mode = 'DISTINCT';
+SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 2;
+```
+
+Result:
+
+```text
+┌─1─┐
+│ 1 │
+└───┘
+┌─1─┐
+│ 2 │
+└───┘
+┌─1─┐
+│ 3 │
+└───┘
+```
+
+**Example of using the 'ALL' value**
+
+Query:
+
+```sql
+SET union_default_mode = 'ALL';
+SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 2;
+```
+
+Result:
+
+```text
+┌─1─┐
+│ 1 │
+└───┘
+┌─1─┐
+│ 2 │
+└───┘
+┌─1─┐
+│ 2 │
+└───┘
+┌─1─┐
+│ 3 │
+└───┘
+```
+
+**Example of using the '' value**
+
+Query:
+
+```sql
+SET union_default_mode = '';
+SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 2;
+```
+
+Result:
+
+```text
+Query id: 8f3755e8-ef76-4d1a-bdb2-7f6fc8a669ec
+
+Received exception from server (version 20.11.1):
+Code: 2005. DB::Exception: Received from localhost:9000. DB::Exception: Expected ALL or DISTINCT in SelectWithUnion query, because setting (union_default_mode) is empty.
+```
+
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

@@ -29,6 +29,12 @@ SELECT CounterID, 2 AS table, sum(Sign) AS c
 
 Поддерживается только `UNION ALL`. Обычный `UNION` (`UNION DISTINCT`) не поддерживается. Если вам это нужно `UNION DISTINCT`, вы можете написать `SELECT DISTINCT` из подзапроса, содержащего `UNION ALL`.
 
+# Секция UNION {#union-clause}
+
+По умолчанию, `UNION` ведет себя так же, как и `UNION DISTINCT`. Но вы можете указать режим объединения с помощью настройки [union_default_mode](../../../operations/settings/settings.md#union-default-mode), значениями которой могут быть `ALL`, `DISTINCT` или пустая строка. Однако, если вы используете `UNION` с настройкой `union_default_mode`, значением которой является пустая строка, то сгенерируется исключение.
+
 ## Детали реализации {#implementation-details}
 
 Запросы, которые являются частью `UNION ALL` выполняются параллельно, и их результаты могут быть смешаны вместе.
+
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/select/union-all/) <!-- hide -->
