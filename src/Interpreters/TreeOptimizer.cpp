@@ -15,6 +15,7 @@
 #include <Interpreters/PredicateExpressionsOptimizer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/DatabaseCatalog.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -24,9 +25,23 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTPartition.h>
+#include <Parsers/queryToString.h>
+
+#include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/IStorage.h>
 
 #include <Functions/FunctionFactory.h>
-#include <Storages/StorageInMemoryMetadata.h>
+#include <Functions/FunctionsConversion.h>
+
+#include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeDate.h>
+
+#include <Databases/IDatabase.h>
+#include <IO/ReadBufferFromMemory.h>
 
 
 namespace DB
@@ -566,6 +581,127 @@ void transformIfStringsIntoEnum(ASTPtr & query)
     ConvertStringsToEnumVisitor(convert_data).visit(query);
 }
 
+
+bool shouldOptimizeAlterDeleteByPartitionKey(ASTPtr & query, const Context & context, Field& partition)
+{
+    // Setting optimize_alter_delete_by_partition_key must be enabled
+    const auto & settings = context.getSettingsRef();
+    if (! settings.optimize_alter_delete_by_partition_key)
+        return false;
+
+    // Must be alter query.
+    auto alter_query = query->as<ASTAlterQuery>();
+    if (! alter_query) 
+        return false;
+    
+    // ALTER query must contains and only contain DELETE command
+    auto cmd_list = alter_query->command_list;
+    if (! cmd_list || cmd_list->children.size() > 1) 
+        return false;
+    auto cmd = cmd_list->children[0]->as<ASTAlterCommand>();
+    if (! cmd || cmd->type != ASTAlterCommand::Type::DELETE)
+        return false;
+    
+    // ALTER DELETE query must like: WHERE Identifier = Literal
+    auto predicate = cmd->predicate;
+    if (! predicate)
+        return false;
+    auto predict_func = predicate->as<ASTFunction>();
+    if (! predict_func || predict_func->name != "equals")
+        return false;
+    auto ast_predict_column = predict_func->arguments->children[0]->as<ASTIdentifier>();
+    auto ast_predict_value = predict_func->arguments->children[1]->as<ASTLiteral>();
+    if (! ast_predict_column || ! ast_predict_value)
+        return false;
+    String predict_column = ast_predict_column->name();
+    Field predict_value = ast_predict_value->value;
+
+    // Parse partition_by in create query and get partition id to apply in ALTER DROP PARTITION.
+    StorageID table_id(*dynamic_pointer_cast<ASTQueryWithTableAndOutput>(query));
+    if (table_id.database_name.empty()) 
+        table_id.database_name = context.getCurrentDatabase();
+    auto db_tbl = DatabaseCatalog::instance().getDatabaseAndTable(table_id, context);
+    auto database = db_tbl.first;
+    auto table = db_tbl.second;
+    ASTPtr create_ptr = database->getCreateTableQuery(table_id.getTableName(), context);
+    auto create_query = create_ptr->as<ASTCreateQuery>();
+    if (! create_query || ! create_query->storage)
+        return false;
+    auto partition_by = create_query->storage->partition_by;
+    if (auto partition_by1 = partition_by->as<ASTIdentifier>())
+    {
+        // Partition key must be equal to predict_column
+        if (partition_by1->name() != predict_column)
+            return false;
+        partition = predict_value;
+        return true;
+    }
+
+    if (auto partition_by2 = partition_by->as<ASTFunction>())
+    {
+        // Partition key must be equal to predict_column
+        const auto& children = partition_by2->arguments->children;
+        if (children.size() != 1 || ! children[0]->as<ASTIdentifier>() ||
+            children[0]->as<ASTIdentifier>()->name() != predict_column)
+            return false;
+
+        const auto& func_name = partition_by2->name;
+        auto metadata = table->getInMemoryMetadataPtr();
+        const auto& col_desc = metadata->getColumns().get(predict_column);
+        if (predict_value.getType() == Field::Types::String) 
+        {
+            DataTypeDate::FieldType to;
+            const auto& tmp = predict_value.get<String>();
+            ReadBufferFromMemory read_buffer(tmp.c_str(), tmp.size());
+            parseImpl<DataTypeDate>(to, read_buffer, nullptr);
+            predict_value = to;
+        }
+        auto column = col_desc.type->createColumnConst(1, predict_value);
+        const ColumnWithTypeAndName arg{column, col_desc.type, predict_column};
+        const ColumnsWithTypeAndName args{std::move(arg)};
+        const FunctionFactory & func_factory = FunctionFactory::instance();
+        auto func_builder = func_factory.get(func_name, context);
+
+        // Funtion must satisfy one of those conditions:
+        // 1. Function must be injective 
+        // 2. Function is "toYYYYMMDD", and partition_key column has Date Type
+        if (func_name != "toYYYYMMDD" && ! func_builder->isInjective(args))
+            return false;
+        if (func_name == "toYYYYMMDD" && ! isDate(col_desc.type))
+            return false;
+
+        auto func = func_builder->build(args);
+        auto result_column = func->execute(args, func->getResultType(), column->size());
+        partition = (*result_column)[0];
+        return true;
+    } 
+    return false;
+}
+
+void optimizeAlterDeleteByPartitionKey(ASTPtr & query, const Field & partition)
+{
+    auto alter_query = query->as<ASTAlterQuery>();
+    if (! alter_query)
+        return;
+
+    auto ast_value = std::make_shared<ASTLiteral>(partition);
+    auto ast_partition = std::make_shared<ASTPartition>();
+    ast_partition->value = ast_value;
+    ast_partition->children.push_back(ast_value);
+
+    WriteBufferFromOwnString write_buffer;
+    writeFieldText(partition, write_buffer);
+    ast_partition->fields_str = write_buffer.str();
+    ast_partition->fields_count = 1;
+
+    auto ast_cmd = std::make_shared<ASTAlterCommand>();
+    ast_cmd->type = ASTAlterCommand::DROP_PARTITION;
+    ast_cmd->detach = false;
+    ast_cmd->partition = ast_partition;
+    alter_query->command_list->children.clear();
+    alter_query->command_list->children.push_back(ast_cmd);
+}
+
 }
 
 void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_multiif)
@@ -575,6 +711,15 @@ void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_
 
     if (if_chain_to_multiif)
         OptimizeIfChainsVisitor().visit(query);
+}
+
+void TreeOptimizer::optimizeAlterDeleteByPartitionKeyIfPossible(ASTPtr & query, const Context & context)
+{
+    // std::cout << queryToString(query) << std::endl;
+    Field partition;
+    if (shouldOptimizeAlterDeleteByPartitionKey(query, context, partition))
+        optimizeAlterDeleteByPartitionKey(query, partition);
+    // std::cout << queryToString(query) << std::endl;
 }
 
 void TreeOptimizer::apply(ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set,
@@ -589,6 +734,7 @@ void TreeOptimizer::apply(ASTPtr & query, Aliases & aliases, const NameSet & sou
         throw Exception("Select analyze for not select asts.", ErrorCodes::LOGICAL_ERROR);
 
     optimizeIf(query, aliases, settings.optimize_if_chain_to_multiif);
+    // optimizeAlterDelete(query);
 
     /// Move arithmetic operations out of aggregation functions
     if (settings.optimize_arithmetic_operations_in_aggregate_functions)

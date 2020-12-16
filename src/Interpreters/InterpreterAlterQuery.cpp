@@ -3,8 +3,10 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/TreeOptimizer.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
+#include <Parsers/queryToString.h>
 #include <Storages/IStorage.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MutationCommands.h>
@@ -30,6 +32,7 @@ namespace ErrorCodes
 InterpreterAlterQuery::InterpreterAlterQuery(const ASTPtr & query_ptr_, const Context & context_)
     : query_ptr(query_ptr_), context(context_)
 {
+    TreeOptimizer::optimizeAlterDeleteByPartitionKeyIfPossible(query_ptr, context);
 }
 
 BlockIO InterpreterAlterQuery::execute()

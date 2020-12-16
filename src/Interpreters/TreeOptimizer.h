@@ -22,6 +22,7 @@ public:
                       bool & rewrite_subqueries);
 
     static void optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_multiif);
+    static void optimizeAlterDeleteByPartitionKeyIfPossible(ASTPtr & query, const Context & context);
 };
 
 }
