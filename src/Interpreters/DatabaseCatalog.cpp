@@ -4,7 +4,7 @@
 #include <Storages/IStorage.h>
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseMemory.h>
-#include <Databases/DatabaseAtomic.h>
+#include <Databases/DatabaseOnDisk.h>
 #include <Poco/File.h>
 #include <Common/quoteString.h>
 #include <Storages/StorageMemory.h>
@@ -15,6 +15,15 @@
 #include <Common/renameat2.h>
 #include <Common/CurrentMetrics.h>
 #include <common/logger_useful.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
+#if USE_MYSQL
+#    include <Databases/MySQL/MaterializeMySQLSyncThread.h>
+#    include <Storages/StorageMaterializeMySQL.h>
+#endif
 
 #include <filesystem>
 
@@ -217,6 +226,15 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
                 exception->emplace("Table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
             return {};
         }
+
+#if USE_MYSQL
+        /// It's definitely not the best place for this logic, but behaviour must be consistent with DatabaseMaterializeMySQL::tryGetTable(...)
+        if (db_and_table.first->getEngineName() == "MaterializeMySQL")
+        {
+            if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
+                db_and_table.second = std::make_shared<StorageMaterializeMySQL>(std::move(db_and_table.second), db_and_table.first.get());
+        }
+#endif
         return db_and_table;
     }
 
@@ -286,7 +304,6 @@ void DatabaseCatalog::attachDatabase(const String & database_name, const Databas
     assertDatabaseDoesntExistUnlocked(database_name);
     databases.emplace(database_name, database);
     UUID db_uuid = database->getUUID();
-    assert((db_uuid != UUIDHelpers::Nil) ^ (dynamic_cast<DatabaseAtomic *>(database.get()) == nullptr));
     if (db_uuid != UUIDHelpers::Nil)
         db_uuid_map.emplace(db_uuid, database);
 }
@@ -313,9 +330,8 @@ DatabasePtr DatabaseCatalog::detachDatabase(const String & database_name, bool d
             if (!db->empty())
                 throw Exception("New table appeared in database being dropped or detached. Try again.",
                                 ErrorCodes::DATABASE_NOT_EMPTY);
-            auto * database_atomic = typeid_cast<DatabaseAtomic *>(db.get());
-            if (!drop && database_atomic)
-                database_atomic->assertCanBeDetached(false);
+            if (!drop)
+                db->assertCanBeDetached(false);
         }
         catch (...)
         {
