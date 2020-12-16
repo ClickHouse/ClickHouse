@@ -56,13 +56,13 @@ struct ArrayAggregateResultImpl<ArrayElement, AggregateOperation::average>
 template <typename ArrayElement>
 struct ArrayAggregateResultImpl<ArrayElement, AggregateOperation::sum>
 {
-    using Result = 
+    using Result =
         std::conditional_t<std::is_same_v<ArrayElement, Int128>, Int128,
             std::conditional_t<std::is_same_v<ArrayElement, Int256>, Int256,
                 std::conditional_t<std::is_same_v<ArrayElement, UInt256>, UInt256,
                     std::conditional_t<IsDecimalNumber<ArrayElement>, Decimal128,
                         std::conditional_t<std::is_floating_point_v<ArrayElement>, Float64,
-                            std::conditional_t<std::is_signed_v<ArrayElement>, Int64, 
+                            std::conditional_t<std::is_signed_v<ArrayElement>, Int64,
                                 UInt64>>>>>>;
 };
 
