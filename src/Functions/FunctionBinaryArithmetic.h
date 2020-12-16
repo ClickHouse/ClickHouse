@@ -3,6 +3,8 @@
 // Include this first, because `#define _asan_poison_address` from
 // llvm/Support/Compiler.h conflicts with its forward declaration in
 // sanitizer/asan_interface.h
+#include <memory>
+#include <type_traits>
 #include <Common/Arena.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -467,6 +469,11 @@ public:
         Case<IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType>, RightDataType>,
         Case<IsDataTypeDecimal<LeftDataType> && IsIntegralOrExtended<RightDataType>, LeftDataType>,
         Case<IsDataTypeDecimal<RightDataType> && IsIntegralOrExtended<LeftDataType>, RightDataType>,
+
+        /// e.g Decimal * Float64 = Float64
+        Case<IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>, RightDataType>,
+        Case<IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>, LeftDataType>,
+
         /// Decimal <op> Real is not supported (traditional DBs convert Decimal <op> Real to Real)
         Case<IsDataTypeDecimal<LeftDataType> && !IsIntegralOrExtendedOrDecimal<RightDataType>, InvalidType>,
         Case<IsDataTypeDecimal<RightDataType> && !IsIntegralOrExtendedOrDecimal<LeftDataType>, InvalidType>,
@@ -790,10 +797,12 @@ public:
         }
 
         DataTypePtr type_res;
-        bool valid = castBothTypes(arguments[0].get(), arguments[1].get(), [&](const auto & left, const auto & right)
+
+        const bool valid = castBothTypes(arguments[0].get(), arguments[1].get(), [&](const auto & left, const auto & right)
         {
             using LeftDataType = std::decay_t<decltype(left)>;
             using RightDataType = std::decay_t<decltype(right)>;
+
             if constexpr (std::is_same_v<DataTypeFixedString, LeftDataType> || std::is_same_v<DataTypeFixedString, RightDataType>)
             {
                 if constexpr (!Op<DataTypeFixedString, DataTypeFixedString>::allow_fixed_string)
@@ -810,6 +819,7 @@ public:
             else
             {
                 using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
+
                 if constexpr (!std::is_same_v<ResultDataType, InvalidType>)
                 {
                     if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType>)
@@ -817,6 +827,10 @@ public:
                         ResultDataType result_type = decimalResultType<is_multiply, is_division>(left, right);
                         type_res = std::make_shared<ResultDataType>(result_type.getPrecision(), result_type.getScale());
                     }
+                    else if constexpr ((IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>) ||
+                        (IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>))
+                        type_res = std::make_shared<std::conditional_t<IsFloatingPoint<LeftDataType>,
+                            LeftDataType, RightDataType>>();
                     else if constexpr (IsDataTypeDecimal<LeftDataType>)
                         type_res = std::make_shared<LeftDataType>(left.getPrecision(), left.getScale());
                     else if constexpr (IsDataTypeDecimal<RightDataType>)
@@ -841,10 +855,15 @@ public:
             }
             return false;
         });
-        if (!valid)
-            throw Exception("Illegal types " + arguments[0]->getName() + " and " + arguments[1]->getName() + " of arguments of function " + String(name),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        return type_res;
+
+        if (valid)
+            return type_res;
+
+        throw Exception(
+            "Illegal types " + arguments[0]->getName() +
+            " and " + arguments[1]->getName() +
+            " of arguments of function " + String(name),
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     ColumnPtr executeFixedString(const ColumnsWithTypeAndName & arguments) const
