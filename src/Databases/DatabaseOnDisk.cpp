@@ -400,7 +400,7 @@ void DatabaseOnDisk::iterateMetadataFiles(const Context & context, const Iterati
 {
     auto process_tmp_drop_metadata_file = [&](const String & file_name)
     {
-        assert(getEngineName() != "Atomic");
+        assert(getUUID() == UUIDHelpers::Nil);
         static const char * tmp_drop_ext = ".sql.tmp_drop";
         const std::string object_name = file_name.substr(0, file_name.size() - strlen(tmp_drop_ext));
         if (Poco::File(context.getPath() + getDataPath() + '/' + object_name).exists())
