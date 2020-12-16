@@ -15,16 +15,6 @@ install (
     COMPONENT clickhouse
     PATTERN "CMakeLists.txt" EXCLUDE
     PATTERN ".gitignore" EXCLUDE
-    PATTERN "top_level_domains" EXCLUDE
-)
-
-# Dereference symlink
-get_filename_component(TOP_LEVEL_DOMAINS_ABS_DIR config/top_level_domains REALPATH)
-install (
-    DIRECTORY "${TOP_LEVEL_DOMAINS_ABS_DIR}"
-    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/clickhouse-test/config
-    USE_SOURCE_PERMISSIONS
-    COMPONENT clickhouse
 )
 
 install (FILES server-test.xml DESTINATION  ${CLICKHOUSE_ETC_DIR}/clickhouse-server COMPONENT clickhouse)
