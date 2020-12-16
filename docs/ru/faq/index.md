@@ -4,13 +4,11 @@ toc_hidden: true
 toc_priority: 76
 ---
 
-# Содержание {#soderzhanie}
+# Содержание F.A.Q. {#soderzhanie}
 
-Здесь должна остаться структура FAQ.
+В этом разделе документации собрали вопросы о ClickHouse, которые задают чаще всего.
 
-This section of the documentation is a place to collect answers to ClickHouse-related questions that arise often.
-
-Categories:
+Категории:
 
 -   **[Общие вопросы](../faq/general/index.md)** 
 -   **[Применение](../faq/use-cases/index.md)**
