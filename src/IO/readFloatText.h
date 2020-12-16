@@ -6,10 +6,14 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <double-conversion/double-conversion.h>
 
+#ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunneeded-internal-declaration"
+#endif
 #include <fast_float/fast_float.h>
+#ifdef __clang__
 #pragma clang diagnostic pop
+#endif
 
 /** Methods for reading floating point numbers from text with decimal representation.
   * There are "precise", "fast" and "simple" implementations.
