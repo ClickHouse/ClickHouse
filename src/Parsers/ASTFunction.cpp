@@ -5,6 +5,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
@@ -417,6 +418,19 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 arguments->children[i]->formatImpl(settings, state, nested_dont_need_parens);
             }
             settings.ostr << (settings.hilite ? hilite_operator : "") << ')' << (settings.hilite ? hilite_none : "");
+            written = true;
+        }
+
+        if (!written && 0 == strcmp(name.c_str(), "map"))
+        {
+            settings.ostr << (settings.hilite ? hilite_operator : "") << '{' << (settings.hilite ? hilite_none : "");
+            for (size_t i = 0; i < arguments->children.size(); ++i)
+            {
+                if (i != 0)
+                    settings.ostr << ", ";
+                arguments->children[i]->formatImpl(settings, state, nested_dont_need_parens);
+            }
+            settings.ostr << (settings.hilite ? hilite_operator : "") << '}' << (settings.hilite ? hilite_none : "");
             written = true;
         }
     }
