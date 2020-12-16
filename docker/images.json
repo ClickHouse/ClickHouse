@@ -58,8 +58,7 @@
     "docker/test/stateless": {
         "name": "yandex/clickhouse-stateless-test",
         "dependent": [
-            "docker/test/stateful",
-            "docker/test/stateful_with_coverage"
+            "docker/test/stateful"
         ]
     },
     "docker/test/stateless_pytest": {
@@ -68,7 +67,9 @@
     },
     "docker/test/stateless_with_coverage": {
         "name": "yandex/clickhouse-stateless-test-with-coverage",
-        "dependent": []
+        "dependent": [
+            "docker/test/stateful_with_coverage"
+        ]
     },
     "docker/test/unit": {
         "name": "yandex/clickhouse-unit-test",
