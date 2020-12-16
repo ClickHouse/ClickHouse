@@ -49,7 +49,7 @@ void registerFunctionBayesAB(FunctionFactory &);
 void registerFunctionTid(FunctionFactory & factory);
 void registerFunctionLogTrace(FunctionFactory & factory);
 
-#if USE_SSL
+#if 0 //USE_SSL
 void registerFunctionEncrypt(FunctionFactory & factory);
 void registerFunctionDecrypt(FunctionFactory & factory);
 void registerFunctionAESEncryptMysql(FunctionFactory & factory);
@@ -104,7 +104,7 @@ void registerFunctions()
     registerFunctionBayesAB(factory);
 #endif
 
-#if USE_SSL
+#if 0 //USE_SSL
     registerFunctionEncrypt(factory);
     registerFunctionDecrypt(factory);
     registerFunctionAESEncryptMysql(factory);

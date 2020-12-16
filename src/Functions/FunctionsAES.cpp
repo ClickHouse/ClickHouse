@@ -1,6 +1,6 @@
 #include <Functions/FunctionsAES.h>
 
-#if USE_SSL
+#if 0 //USE_SSL
 
 #include <openssl/evp.h>
 #include <openssl/err.h>

@@ -4,7 +4,7 @@
 #    include <Common/config.h>
 #endif
 
-#if USE_SSL
+#if 0 //USE_SSL
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Functions/IFunction.h>
