@@ -1,6 +1,7 @@
 #include <Common/DNSResolver.h>
 #include <Common/ActionLock.h>
 #include <Common/typeid_cast.h>
+#include <Common/thread_local_rng.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/SymbolIndex.h>
 #include <Common/ThreadPool.h>
@@ -402,7 +403,7 @@ void InterpreterSystemQuery::restoreReplica(ASTSystemQuery & query)
     const UUID uuid = table_id.uuid;
     const String& db_name = table_id.database_name;
     const String& old_table_name = table_id.table_name;
-    const String new_table_name = old_table_name + "_" + std::to_string(rand());
+    const String new_table_name = old_table_name + "_" + std::to_string(thread_local_rng());
 
     /// 1. Create a new replicated table out of current one (CREATE TABLE new AS old).
     {
