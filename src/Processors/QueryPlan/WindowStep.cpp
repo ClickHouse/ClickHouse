@@ -25,22 +25,6 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-static ITransformingStep::Traits getJoinTraits()
-{
-    return ITransformingStep::Traits
-    {
-        {
-            .preserves_distinct_columns = false,
-            .returns_single_stream = false,
-            .preserves_number_of_streams = true,
-            .preserves_sorting = false,
-        },
-        {
-            .preserves_number_of_rows = false,
-        }
-    };
-}
-
 static Block addWindowFunctionColumns(const Block & block,
     std::vector<WindowFunctionDescription> window_functions)
 {

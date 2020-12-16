@@ -54,6 +54,8 @@ WindowTransform::WindowTransform(const Block & input_header_,
         partition_by_indices.push_back(
             input_header.getPositionByName(column.column_name));
     }
+    partition_start_columns.resize(partition_by_indices.size(), nullptr);
+    partition_start_row = 0;
 }
 
 WindowTransform::~WindowTransform()
@@ -87,6 +89,7 @@ void WindowTransform::transform(Chunk & chunk)
         const auto * a = f.aggregate_function.get();
 
         //*
+        // Create the resulting column.
         ColumnWithTypeAndName column_with_type;
         column_with_type.name = f.column_name;
         column_with_type.type = a->getReturnType();
@@ -97,20 +100,56 @@ void WindowTransform::transform(Chunk & chunk)
         {
             // Check whether the new partition has started and reinitialize the
             // aggregate function states.
-            if (row > 0)
+            assert(partition_start_columns.size() == partition_by_indices.size());
+            if (partition_start_columns.size() == 0)
             {
-                for (const size_t column_index : partition_by_indices)
+                // No PARTITION BY at all, do nothing.
+            }
+            else if (partition_start_columns[0] == nullptr)
+            {
+                // This is the first partition.
+                partition_start_columns.clear();
+                for (const auto i : partition_by_indices)
                 {
-                    const auto * column = block.getColumns()[column_index].get();
-                    if (column->compareAt(row, row - 1, *column,
+                    partition_start_columns.push_back(block.getColumns()[i]);
+                }
+                partition_start_row = row;
+            }
+            else
+            {
+                // Check whether the new partition started, by comparing all the
+                // PARTITION BY columns.
+                size_t first_inequal_column = 0;
+                for ( ; first_inequal_column < partition_start_columns.size();
+                      ++first_inequal_column)
+                {
+                    const auto * current_column = block.getColumns()[
+                        partition_by_indices[first_inequal_column]].get();
+
+                    if (current_column->compareAt(row, partition_start_row,
+                        *partition_start_columns[first_inequal_column],
                         1 /* nan_direction_hint */) != 0)
                     {
-                        ws.window_function.aggregate_function->destroy(
-                            ws.aggregate_function_state.data());
-                        ws.window_function.aggregate_function->create(
-                            ws.aggregate_function_state.data());
                         break;
                     }
+                }
+
+                if (first_inequal_column < partition_start_columns.size())
+                {
+                    // The new partition has started.
+                    // 1) Remember it.
+                    partition_start_columns.clear();
+                    for (const auto i : partition_by_indices)
+                    {
+                        partition_start_columns.push_back(block.getColumns()[i]);
+                    }
+                    partition_start_row = row;
+
+                    // 2) Reset the aggregate function states.
+                    ws.window_function.aggregate_function->destroy(
+                        ws.aggregate_function_state.data());
+                    ws.window_function.aggregate_function->create(
+                        ws.aggregate_function_state.data());
                 }
             }
 
