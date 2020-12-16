@@ -19,9 +19,15 @@ void ExpressionInfoMatcher::visit(const ASTPtr & ast, Data & data)
 void ExpressionInfoMatcher::visit(const ASTFunction & ast_function, const ASTPtr &, Data & data)
 {
     if (ast_function.name == "arrayJoin")
+    {
         data.is_array_join = true;
-    else if (AggregateFunctionFactory::instance().isAggregateFunctionName(ast_function.name))
+    }
+    else if (!ast_function.is_window_function
+        && AggregateFunctionFactory::instance().isAggregateFunctionName(
+            ast_function.name))
+    {
         data.is_aggregate_function = true;
+    }
     else
     {
         const auto & function = FunctionFactory::instance().tryGet(ast_function.name, data.context);

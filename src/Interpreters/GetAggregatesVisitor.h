@@ -31,9 +31,8 @@ public:
             return false;
         if (auto * func = node->as<ASTFunction>())
         {
-            if (isAggregateFunction(func->name)
-                // FIXME temporary hack while we don't have grammar
-                || func->name == "window")
+            if (isAggregateFunction(*func)
+                || func->is_window_function)
             {
                 return false;
             }
@@ -50,7 +49,7 @@ public:
 private:
     static void visit(const ASTFunction & node, const ASTPtr &, Data & data)
     {
-        if (isAggregateFunction(node.name))
+        if (isAggregateFunction(node))
         {
             if (data.assert_no_aggregates)
                 throw Exception("Aggregate function " + node.getColumnName()  + " is found " + String(data.assert_no_aggregates) + " in query",
@@ -63,7 +62,7 @@ private:
             data.uniq_names.insert(column_name);
             data.aggregates.push_back(&node);
         }
-        else if (node.name == "window")
+        else if (node.is_window_function)
         {
             if (data.assert_no_windows)
                 throw Exception("Window function " + node.getColumnName()  + " is found " + String(data.assert_no_windows) + " in query",
@@ -78,9 +77,13 @@ private:
         }
     }
 
-    static bool isAggregateFunction(const String & name)
+    static bool isAggregateFunction(const ASTFunction & node)
     {
-        return AggregateFunctionFactory::instance().isAggregateFunctionName(name);
+        // Aggregate functions can also be calculated as window functions, but
+        // here we are interested in aggregate functions calculated in GROUP BY.
+        return !node.is_window_function
+            && AggregateFunctionFactory::instance().isAggregateFunctionName(
+                node.name);
     }
 };
 

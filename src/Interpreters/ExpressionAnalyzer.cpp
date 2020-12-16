@@ -469,63 +469,14 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions)
     return !aggregates().empty();
 }
 
-// Parses order by & partition by from window() wrapper function.
-// Remove this when we have proper grammar.
-static SortDescription windowArgumentToSortDescription(IAST* ast, const WindowDescription & w)
-{
-    SortDescription result;
-    if (const auto * as_tuple = ast->as<ASTFunction>();
-        as_tuple
-        && as_tuple->name == "tuple"
-        && as_tuple->arguments)
-    {
-        // untuple it
-        for (const auto & element_ast
-            : as_tuple->arguments->children)
-        {
-            const auto * with_alias = dynamic_cast<
-                const ASTWithAlias *>(element_ast.get());
-            if (!with_alias)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "(1) Expected column in PARTITION BY"
-                    " for window '{}', got '{}'",
-                    w.window_name,
-                    element_ast->formatForErrorMessage());
-            }
-            result.push_back(
-                SortColumnDescription(
-                    with_alias->getColumnName(),
-                    1 /* direction */,
-                    1 /* nulls_direction */));
-        }
-    }
-    else if (const auto * with_alias
-        = dynamic_cast<const ASTWithAlias *>(ast))
-    {
-        result.push_back(
-            SortColumnDescription(
-                with_alias->getColumnName(),
-                1 /* direction */,
-                1 /* nulls_direction */));
-    }
-    else
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "(2) Expected tuple or column in PARTITION BY"
-            " for window '{}', got '{}'",
-            w.window_name,
-            ast->formatForErrorMessage());
-    }
-
-    return result;
-}
 
 bool ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr & actions)
 {
-    for (const ASTFunction * wrapper_node : windowFunctions())
+    for (const ASTFunction * function_node : windowFunctions())
     {
-        fmt::print(stderr, "window function ast: {}\n", wrapper_node->dumpTree());
+        fmt::print(stderr, "window function ast: {}\n", function_node->dumpTree());
+
+        assert(function_node->is_window_function);
 
         // FIXME not thread-safe, should use a per-query counter.
         static int window_index = 1;
@@ -533,38 +484,44 @@ bool ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr & actions)
         WindowDescription window_description;
         window_description.window_name = fmt::format("window_{}", window_index++);
 
-        const auto * elist = wrapper_node->arguments
-            ? wrapper_node->arguments->as<const ASTExpressionList>()
-            : nullptr;
-        if (elist)
+        if (function_node->window_partition_by)
         {
-            if (elist->children.size() >= 2)
+            for (const auto & column_ast
+                : function_node->window_partition_by->children)
             {
-                const auto partition_by_ast = elist->children[1];
-                fmt::print(stderr, "partition by ast {}\n",
-                    partition_by_ast->dumpTree());
-
-                window_description.partition_by = windowArgumentToSortDescription(
-                    partition_by_ast.get(), window_description);
-            }
-
-            if (elist->children.size() == 3)
-            {
-                const auto order_by_ast = elist->children[2];
-                fmt::print(stderr, "order by ast {}\n",
-                    order_by_ast->dumpTree());
-
-                window_description.order_by = windowArgumentToSortDescription(
-                    order_by_ast.get(), window_description);
-            }
-
-            if (elist->children.size() > 3)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Too many arguments to window function '{}'",
-                    wrapper_node->formatForErrorMessage());
+                const auto * with_alias = dynamic_cast<const ASTWithAlias *>(
+                    column_ast.get());
+                if (!with_alias)
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Expected a column in PARTITION BY for window '{}',"
+                        " got '{}'", window_description.window_name,
+                        column_ast->formatForErrorMessage());
+                }
+                window_description.partition_by.push_back(
+                    SortColumnDescription(
+                        with_alias->getColumnName(), 1 /* direction */,
+                        1 /* nulls_direction */));
             }
         }
+
+        if (function_node->window_order_by)
+        {
+            for (const auto & column_ast
+                : function_node->window_order_by->children)
+            {
+                // Parser should have checked that we have a proper element here.
+                const auto & order_by_element
+                    = column_ast->as<ASTOrderByElement &>();
+                // Ignore collation for now.
+                window_description.order_by.push_back(
+                    SortColumnDescription(
+                        order_by_element.children.front()->getColumnName(),
+                        order_by_element.direction,
+                        order_by_element.nulls_direction));
+            }
+        }
+
         window_description.full_sort_description = window_description.partition_by;
         window_description.full_sort_description.insert(
             window_description.full_sort_description.end(),
@@ -573,9 +530,7 @@ bool ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr & actions)
 
         WindowFunctionDescription window_function;
         window_function.window_name = window_description.window_name;
-        window_function.wrapper_node = wrapper_node;
-        window_function.function_node
-            = &elist->children.at(0)->as<ASTFunction &>();
+        window_function.function_node = function_node;
         window_function.column_name
             = window_function.function_node->getColumnName();
         window_function.function_parameters
@@ -584,17 +539,10 @@ bool ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr & actions)
                     window_function.function_node->parameters)
                 : Array();
 
-        // We have to fill actions for window function arguments, so that we are
-        // then able to find their argumen types. The `actions` passed to this
-        // functions are temporary and are discarded.
-        // The same calculation is done in appendWindowFunctionsArguments.
-        getRootActionsNoMakeSet(wrapper_node->arguments, true /* no subqueries */,
-            actions);
-        // We have to separately get actions for the arguments of the aggregate
-        // function we calculate over window, because the ActionsVisitor does
-        // not descend into aggregate functions.
-        getRootActionsNoMakeSet(window_function.function_node->arguments,
-            true /* no subqueries */, actions);
+        // Requiring a constant reference to a shared pointer to non-const AST
+        // doesn't really look sane, but the visitor does indeed require it.
+        getRootActionsNoMakeSet(window_function.function_node->clone(),
+            true, actions);
 
         const ASTs & arguments
             = window_function.function_node->arguments->children;
@@ -1013,16 +961,9 @@ void SelectQueryExpressionAnalyzer::appendWindowFunctionsArguments(
 
     for (const auto & f : window_functions)
     {
-        // Not sure why NoMakeSet, copied from aggregate functions.
-        getRootActionsNoMakeSet(f.wrapper_node->arguments,
-            true /* no subqueries */, step.actions());
-
-        // We have to separately get actions for the arguments of the aggregate
-        // function we calculate over window, because the ActionsVisitor does
-        // not descend into aggregate functions.
-        // Not sure why NoMakeSet, copied from aggregate functions.
-        getRootActionsNoMakeSet(f.function_node->arguments,
-            true /* no subqueries */, step.actions());
+        // Requiring a constant reference to a shared pointer to non-const AST
+        // doesn't really look sane, but the visitor does indeed require it.
+        getRootActionsNoMakeSet(f.function_node->clone(), true, step.actions());
 
         // Add empty INPUT with window function name.
         // It is an aggregate function, so it won't be added by getRootActions.
@@ -1081,13 +1022,6 @@ void SelectQueryExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain,
 
     for (const auto & child : select_query->select()->children)
     {
-        /// FIXME add proper grammar for window functions
-        if (const auto * as_function = child->as<ASTFunction>();
-            as_function && as_function->name == "window")
-        {
-            continue;
-        }
-
         step.required_output.push_back(child->getColumnName());
     }
 }
@@ -1184,13 +1118,6 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActio
     ASTs asts = select_query->select()->children;
     for (const auto & ast : asts)
     {
-        /// FIXME add proper grammar for window functions
-        if (const auto * as_function = ast->as<ASTFunction>();
-            as_function && as_function->name == "window")
-        {
-            continue;
-        }
-
         String result_name = ast->getAliasOrColumnName();
         if (required_result_columns.empty() || required_result_columns.count(result_name))
         {
@@ -1223,16 +1150,6 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActio
 
             result_columns.emplace_back(source_name, result_name);
             step.required_output.push_back(result_columns.back().second);
-        }
-    }
-
-    for (const auto & f : window_functions)
-    {
-        if (required_result_columns.empty()
-            || required_result_columns.count(f.column_name))
-        {
-            result_columns.emplace_back(f.column_name, f.column_name);
-            step.required_output.push_back(f.column_name);
         }
     }
 
@@ -1651,7 +1568,6 @@ std::string WindowFunctionDescription::dump() const
 {
     std::stringstream ss;
     ss << "window function '" << column_name << "' over '" << window_name <<"\n";
-    ss << "wrapper node " << wrapper_node->dumpTree() << "\n";
     ss << "function node " << function_node->dumpTree() << "\n";
     ss << "aggregate function '" << aggregate_function->getName() << "'\n";
     if (function_parameters.size())

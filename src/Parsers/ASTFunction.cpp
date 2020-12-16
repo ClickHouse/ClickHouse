@@ -1,13 +1,14 @@
-#include <Common/typeid_cast.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTWithAlias.h>
-#include <Parsers/ASTSubquery.h>
-#include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromString.h>
-#include <Common/SipHash.h>
-#include <IO/Operators.h>
 
+#include <Common/SipHash.h>
+#include <Common/typeid_cast.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTWithAlias.h>
 
 namespace DB
 {
@@ -37,6 +38,14 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
             (*it)->appendColumnName(ostr);
         }
     writeChar(')', ostr);
+
+    /*
+    if (window_name)
+    {
+        writeCString(" over ", ostr);
+        window_name->appendColumnName(ostr);
+    }
+    */
 }
 
 /** Get the text that identifies this element. */
@@ -52,6 +61,21 @@ ASTPtr ASTFunction::clone() const
 
     if (arguments) { res->arguments = arguments->clone(); res->children.push_back(res->arguments); }
     if (parameters) { res->parameters = parameters->clone(); res->children.push_back(res->parameters); }
+
+    if (window_name)
+    {
+        res->set(res->window_name, window_name->clone());
+    }
+
+    if (window_partition_by)
+    {
+        res->set(res->window_partition_by, window_partition_by->clone());
+    }
+
+    if (window_order_by)
+    {
+        res->set(res->window_order_by, window_order_by->clone());
+    }
 
     return res;
 }
