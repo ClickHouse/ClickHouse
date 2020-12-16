@@ -51,6 +51,7 @@ SKIP_LIST = [
     "01300_client_save_history_when_terminated",
     "01304_direct_io",
     "01306_benchmark_json",
+    "01320_create_sync_race_condition_zookeeper",
     "01355_CSV_input_format_allow_errors",
     "01370_client_autocomplete_word_break_characters",
     "01376_GROUP_BY_injective_elimination_dictGet",
@@ -74,7 +75,7 @@ SKIP_LIST = [
     "01586_storage_join_low_cardinality_key",
     "01599_multiline_input_and_singleline_comments",
     "01600_benchmark_query",
-    "01601_custom_tld.sql",
+    "01601_custom_tld",
     "01601_proxy_protocol",
 ]
 
