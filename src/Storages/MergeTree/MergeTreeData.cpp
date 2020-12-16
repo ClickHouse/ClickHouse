@@ -1282,12 +1282,12 @@ void MergeTreeData::dropAllData()
     DataPartsVector all_parts(data_parts_by_info.begin(), data_parts_by_info.end());
     DataPartsVector committed_parts = getDataPartsVector({DataPartState::Committed});
 
-    data_parts_indexes.clear();
-    column_sizes.clear();
-
     CurrentMetrics::sub(CurrentMetrics::Parts, all_parts.size());
     CurrentMetrics::sub(CurrentMetrics::PartsActive, committed_parts.size());
     CurrentMetrics::sub(CurrentMetrics::PartsInactive, all_parts.size() - committed_parts.size());
+
+    data_parts_indexes.clear();
+    column_sizes.clear();
 
     /// Tables in atomic databases have UUID and stored in persistent locations.
     /// No need to drop caches (that are keyed by filesystem path) because collision is not possible.
