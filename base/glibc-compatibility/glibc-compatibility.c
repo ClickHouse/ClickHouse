@@ -4,10 +4,6 @@
   * Also look at http://www.lightofdawn.org/wiki/wiki.cgi/NewAppsOnOldGlibc
   */
 
-#if defined (__cplusplus)
-extern "C" {
-#endif
-
 #include <pthread.h>
 
 size_t __pthread_get_minstack(const pthread_attr_t * attr)
@@ -179,8 +175,3 @@ void __explicit_bzero_chk(void * buf, size_t len, size_t unused)
 {
     return explicit_bzero(buf, len);
 }
-
-
-#if defined (__cplusplus)
-}
-#endif

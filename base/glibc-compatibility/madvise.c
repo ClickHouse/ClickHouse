@@ -11,10 +11,6 @@
 
 static int MADV_DONTNEED_works = -1;
 
-#if defined (__cplusplus)
-extern "C" {
-#endif
-
 static int __madvise(void * addr, size_t len, int advice)
 {
     return syscall(SYS_madvise, addr, len, advice);
@@ -94,7 +90,3 @@ int madvise(void * addr, size_t len, int advice)
 {
     return __madvise_safe(addr, len, advice);
 }
-
-#if defined (__cplusplus)
-}
-#endif
