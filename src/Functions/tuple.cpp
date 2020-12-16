@@ -66,14 +66,18 @@ public:
             names.emplace_back(argument.name);
         }
 
-        /// Create named tuple if possible.
+        /// Create named tuple if possible. We don't print tuple element names
+        /// because they are bad anyway -- aliases are not used, e.g. tuple(1 a)
+        /// will have element name '1' and not 'a'. If we ever change this, and
+        /// add the ability to access tuple elements by name, like tuple(1 a).a,
+        /// we should probably enable printing for better discoverability.
         if (DataTypeTuple::canBeCreatedWithNames(names))
-            return std::make_shared<DataTypeTuple>(types, names, false);
+            return std::make_shared<DataTypeTuple>(types, names, false /*print names*/);
 
         return std::make_shared<DataTypeTuple>(types);
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         size_t tuple_size = arguments.size();
         Columns tuple_columns(tuple_size);

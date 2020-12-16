@@ -10,6 +10,7 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/ConnectionTimeoutsContext.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/RemoteBlockOutputStream.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
@@ -147,7 +148,7 @@ void DistributedBlockOutputStream::writeAsync(const Block & block)
 
 std::string DistributedBlockOutputStream::getCurrentStateDescription()
 {
-    std::stringstream buffer;
+    WriteBufferFromOwnString buffer;
     const auto & addresses = cluster->getShardsAddresses();
 
     buffer << "Insertion status:\n";
@@ -523,7 +524,14 @@ void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, const siz
             /// Prefer insert into current instance directly
             writeToLocal(block, shard_info.getLocalNodeCount());
         else
-            writeToShard(block, {shard_info.pathForInsert(settings.prefer_localhost_replica)});
+        {
+            const auto & path = shard_info.insertPathForInternalReplication(
+                settings.prefer_localhost_replica,
+                settings.use_compact_format_in_distributed_parts_names);
+            if (path.empty())
+                throw Exception("Directory name for async inserts is empty", ErrorCodes::LOGICAL_ERROR);
+            writeToShard(block, {path});
+        }
     }
     else
     {
@@ -560,7 +568,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
     /// and keep monitor thread out from reading incomplete data
     std::string first_file_tmp_path{};
 
-    auto reservation = storage.getStoragePolicy()->reserve(block.bytes());
+    auto reservation = storage.getStoragePolicy()->reserveAndCheck(block.bytes());
     auto disk = reservation->getDisk()->getPath();
     auto data_path = storage.getRelativeDataPath();
 

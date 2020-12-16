@@ -1,6 +1,6 @@
 ## system.asynchronous_metric_log {#system-tables-async-log}
 
-Contains the historical values for `system.asynchronous_metrics`, which are saved once per minute. This feature is enabled by default.
+Contains the historical values for `system.asynchronous_metrics`, which are saved once per minute. Enabled by default.
 
 Columns:
 
@@ -33,7 +33,7 @@ SELECT * FROM system.asynchronous_metric_log LIMIT 10
 
 **See Also**
 
-- [system.asynchronous_metrics](../system-tables/asynchronous_metrics.md) — Contains metrics that are calculated periodically in the background. 
+- [system.asynchronous_metrics](../system-tables/asynchronous_metrics.md) — Contains metrics, calculated periodically in the background. 
 - [system.metric_log](../system-tables/metric_log.md) — Contains history of metrics values from tables `system.metrics` and `system.events`, periodically flushed to disk.
 
 [Original article](https://clickhouse.tech/docs/en/operations/system_tables/asynchronous_metric_log) <!--hide-->

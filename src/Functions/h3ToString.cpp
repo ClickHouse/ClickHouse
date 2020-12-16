@@ -1,3 +1,9 @@
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
+
+#if USE_H3
+
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
@@ -42,7 +48,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * col_hindex = arguments[0].column.get();
 
@@ -86,3 +92,5 @@ void registerFunctionH3ToString(FunctionFactory & factory)
 }
 
 }
+
+#endif
