@@ -79,6 +79,26 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         return rewritten_query.str();
     }
 
+    /// SHOW SETTINGS
+    if (query.m_settings)
+    {
+        WriteBufferFromOwnString rewritten_query;
+        rewritten_query << "SELECT name, type, value FROM system.settings";
+
+        if (query.changed)
+            rewritten_query << " WHERE changed = 1";
+
+        if (!query.like.empty())
+        {
+            rewritten_query
+                << (query.changed ? " AND name " : " WHERE name ")
+                << (query.case_insensitive_like ? "ILIKE " : "LIKE ")
+                << DB::quote << query.like;
+        }
+
+        return rewritten_query.str();
+    }
+
     if (query.temporary && !query.from.empty())
         throw Exception("The `FROM` and `TEMPORARY` cannot be used together in `SHOW TABLES`", ErrorCodes::SYNTAX_ERROR);
 
