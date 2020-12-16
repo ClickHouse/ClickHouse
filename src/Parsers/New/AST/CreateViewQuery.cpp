@@ -35,7 +35,7 @@ ASTPtr CreateViewQuery::convertToOld() const
     query->attach = attach;
     query->replace_view = replace;
     query->if_not_exists = if_not_exists;
-    query->is_view = true;
+    query->is_ordinary_view = true;
     query->cluster = cluster_name;
 
     if (has(SCHEMA)) query->set(query->columns_list, get(SCHEMA)->convertToOld());
