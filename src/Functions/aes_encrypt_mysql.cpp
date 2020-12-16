@@ -2,7 +2,7 @@
 #    include <Common/config.h>
 #endif
 
-#if 0 //USE_SSL
+#if USE_SSL
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsAES.h>
