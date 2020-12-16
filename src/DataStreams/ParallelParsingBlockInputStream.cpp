@@ -17,7 +17,7 @@ ParallelParsingBlockInputStream::ParallelParsingBlockInputStream(const Params & 
       // Subtract one thread that we use for segmentation and one for
       // reading. After that, must have at least two threads left for
       // parsing. See the assertion below.
-      pool(std::max(2, static_cast<int>(params.max_threads) - 2)),
+      pool(std::max(2, params.max_threads - 2)),
       file_segmentation_engine(params.file_segmentation_engine)
 {
     // See comment above.

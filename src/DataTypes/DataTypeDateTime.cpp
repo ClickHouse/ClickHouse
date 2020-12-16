@@ -59,21 +59,9 @@ String DataTypeDateTime::doGetName() const
     return out.str();
 }
 
-void DataTypeDateTime::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void DataTypeDateTime::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    auto value = assert_cast<const ColumnType &>(column).getData()[row_num];
-    switch (settings.date_time_output_format)
-    {
-        case FormatSettings::DateTimeOutputFormat::Simple:
-            writeDateTimeText(value, ostr, time_zone);
-            return;
-        case FormatSettings::DateTimeOutputFormat::UnixTimestamp:
-            writeIntText(value, ostr);
-            return;
-        case FormatSettings::DateTimeOutputFormat::ISO:
-            writeDateTimeTextISO(value, ostr, utc_time_zone);
-            return;
-    }
+    writeDateTimeText(assert_cast<const ColumnType &>(column).getData()[row_num], ostr, time_zone);
 }
 
 void DataTypeDateTime::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const

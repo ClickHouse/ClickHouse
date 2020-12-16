@@ -2,7 +2,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <Storages/System/StorageSystemZooKeeper.h>
-#include <Storages/SelectQueryInfo.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -75,7 +74,7 @@ static bool extractPathImpl(const IAST & elem, String & res, const Context & con
         else
             return false;
 
-        if (ident->name() != "path")
+        if (ident->name != "path")
             return false;
 
         auto evaluated = evaluateConstantExpressionAsLiteral(value, context);

@@ -14,9 +14,6 @@
                 we might also add time check to perf.py script.
             -->
             <max_execution_time>300</max_execution_time>
-
-            <!-- One NUMA node w/o hyperthreading -->
-            <max_threads>12</max_threads>
         </default>
     </profiles>
 </yandex>

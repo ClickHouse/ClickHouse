@@ -23,8 +23,8 @@ option (WEVERYTHING "Enable -Weverything option with some exceptions." ON)
 
 # Control maximum size of stack frames. It can be important if the code is run in fibers with small stack size.
 # Only in release build because debug has too large stack frames.
-if ((NOT CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG") AND (NOT SANITIZE) AND (NOT CMAKE_CXX_COMPILER_ID MATCHES "AppleClang"))
-    add_warning(frame-larger-than=65536)
+if ((NOT CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG") AND (NOT SANITIZE))
+    add_warning(frame-larger-than=32768)
 endif ()
 
 if (COMPILER_CLANG)
@@ -58,10 +58,7 @@ if (COMPILER_CLANG)
     add_warning(unused-exception-parameter)
     add_warning(unused-macros)
     add_warning(unused-member-function)
-    # XXX: libstdc++ has some of these for 3way compare
-    if (USE_LIBCXX)
-        add_warning(zero-as-null-pointer-constant)
-    endif()
+    add_warning(zero-as-null-pointer-constant)
 
     if (WEVERYTHING)
         add_warning(everything)
@@ -91,11 +88,6 @@ if (COMPILER_CLANG)
         no_warning(vla)
         no_warning(weak-template-vtables)
         no_warning(weak-vtables)
-
-        # XXX: libstdc++ has some of these for 3way compare
-        if (NOT USE_LIBCXX)
-            no_warning(zero-as-null-pointer-constant)
-        endif()
 
         # TODO Enable conversion, sign-conversion, double-promotion warnings.
     endif ()
@@ -178,11 +170,6 @@ elseif (COMPILER_GCC)
     add_cxx_compile_options(-Wunused)
     # Warn if vector operation is not implemented via SIMD capabilities of the architecture
     add_cxx_compile_options(-Wvector-operation-performance)
-    # XXX: libstdc++ has some of these for 3way compare
-    if (USE_LIBCXX)
-        # Warn when a literal 0 is used as null pointer constant.
-        add_cxx_compile_options(-Wzero-as-null-pointer-constant)
-    endif()
 
     if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 10)
         # XXX: gcc10 stuck with this option while compiling GatherUtils code

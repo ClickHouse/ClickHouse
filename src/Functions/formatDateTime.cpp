@@ -340,44 +340,42 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, [[maybe_unused]] size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, [[maybe_unused]] size_t input_rows_count) const override
     {
-        ColumnPtr res;
         if constexpr (support_integer)
         {
             if (arguments.size() == 1)
             {
-                if (!castType(arguments[0].type.get(), [&](const auto & type)
+                if (!castType(block.getByPosition(arguments[0]).type.get(), [&](const auto & type)
                     {
                         using FromDataType = std::decay_t<decltype(type)>;
-                        res = ConvertImpl<FromDataType, DataTypeDateTime, Name>::execute(arguments, result_type, input_rows_count);
+                        ConvertImpl<FromDataType, DataTypeDateTime, Name>::execute(block, arguments, result, input_rows_count);
                         return true;
                     }))
                 {
                     throw Exception(
-                        "Illegal column " + arguments[0].column->getName() + " of function " + getName()
+                        "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of function " + getName()
                             + ", must be Integer or DateTime when arguments size is 1.",
                         ErrorCodes::ILLEGAL_COLUMN);
                 }
             }
             else
             {
-                if (!castType(arguments[0].type.get(), [&](const auto & type)
+                if (!castType(block.getByPosition(arguments[0]).type.get(), [&](const auto & type)
                     {
                         using FromDataType = std::decay_t<decltype(type)>;
-                        if (!(res = executeType<FromDataType>(arguments, result_type)))
+                        if (!executeType<FromDataType>(block, arguments, result))
                             throw Exception(
-                                "Illegal column " + arguments[0].column->getName() + " of function " + getName()
+                                "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of function " + getName()
                                     + ", must be Integer or DateTime.",
                                 ErrorCodes::ILLEGAL_COLUMN);
                         return true;
                     }))
                 {
-                    if (!((res = executeType<DataTypeDate>(arguments, result_type))
-                        || (res = executeType<DataTypeDateTime>(arguments, result_type))
-                        || (res = executeType<DataTypeDateTime64>(arguments, result_type))))
+                    if (!executeType<DataTypeDate>(block, arguments, result) && !executeType<DataTypeDateTime>(block, arguments, result)
+                        && !executeType<DataTypeDateTime64>(block, arguments, result))
                         throw Exception(
-                            "Illegal column " + arguments[0].column->getName() + " of function " + getName()
+                            "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of function " + getName()
                                 + ", must be Integer or DateTime.",
                             ErrorCodes::ILLEGAL_COLUMN);
                 }
@@ -385,28 +383,25 @@ public:
         }
         else
         {
-            if (!((res = executeType<DataTypeDate>(arguments, result_type))
-                || (res = executeType<DataTypeDateTime>(arguments, result_type))
-                || (res = executeType<DataTypeDateTime64>(arguments, result_type))))
+            if (!executeType<DataTypeDate>(block, arguments, result) && !executeType<DataTypeDateTime>(block, arguments, result)
+                && !executeType<DataTypeDateTime64>(block, arguments, result))
                 throw Exception(
-                    "Illegal column " + arguments[0].column->getName() + " of function " + getName()
+                    "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of function " + getName()
                         + ", must be Date or DateTime.",
                     ErrorCodes::ILLEGAL_COLUMN);
         }
-
-        return res;
     }
 
     template <typename DataType>
-    ColumnPtr executeType(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const
+    bool executeType(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
-        auto * times = checkAndGetColumn<typename DataType::ColumnType>(arguments[0].column.get());
+        auto * times = checkAndGetColumn<typename DataType::ColumnType>(block.getByPosition(arguments[0]).column.get());
         if (!times)
-            return nullptr;
+            return false;
 
-        const ColumnConst * pattern_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
+        const ColumnConst * pattern_column = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[1]).column.get());
         if (!pattern_column)
-            throw Exception("Illegal column " + arguments[1].column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
                             + " of second ('format') argument of function " + getName()
                             + ". Must be constant string.",
                             ErrorCodes::ILLEGAL_COLUMN);
@@ -419,12 +414,12 @@ public:
         size_t result_size = pattern_to_fill.size();
 
         const DateLUTImpl * time_zone_tmp = nullptr;
-        if (castType(arguments[0].type.get(), [&]([[maybe_unused]] const auto & type) { return true; }))
+        if (castType(block.getByPosition(arguments[0]).type.get(), [&]([[maybe_unused]] const auto & type) { return true; }))
         {
-            time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, 2, 0);
+            time_zone_tmp = &extractTimeZoneFromFunctionArguments(block.data, arguments, 2, 0);
         }
         else if (std::is_same_v<DataType, DataTypeDateTime64> || std::is_same_v<DataType, DataTypeDateTime>)
-            time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, 2, 0);
+            time_zone_tmp = &extractTimeZoneFromFunctionArguments(block.data, arguments, 2, 0);
         else
             time_zone_tmp = &DateLUT::instance();
 
@@ -490,7 +485,8 @@ public:
         }
 
         dst_data.resize(pos - begin);
-        return col_res;
+        block.getByPosition(result).column = std::move(col_res);
+        return true;
     }
 
     template <typename T>

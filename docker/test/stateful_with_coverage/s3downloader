@@ -29,7 +29,7 @@ def dowload_with_progress(url, path):
     logging.info("Downloading from %s to temp path %s", url, path)
     for i in range(RETRIES_COUNT):
         try:
-            with open(path, 'wb') as f:
+            with open(path, 'w') as f:
                 response = requests.get(url, stream=True)
                 response.raise_for_status()
                 total_length = response.headers.get('content-length')

@@ -39,7 +39,6 @@ void callWithType(TypeIndex which, F && f)
         case TypeIndex::Decimal32: return f(Decimal32());
         case TypeIndex::Decimal64: return f(Decimal64());
         case TypeIndex::Decimal128: return f(Decimal128());
-        case TypeIndex::DateTime64: return f(DateTime64());
         default:
             break;
     }
@@ -153,9 +152,6 @@ std::optional<TypeIndex> AsofRowRefs::getTypeSize(const IColumn & asof_column, s
             return idx;
         case TypeIndex::Decimal128:
             size = sizeof(Decimal128);
-            return idx;
-        case TypeIndex::DateTime64:
-            size = sizeof(DateTime64);
             return idx;
         default:
             break;

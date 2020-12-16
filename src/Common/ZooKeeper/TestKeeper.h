@@ -125,6 +125,8 @@ private:
     Watches watches;
     Watches list_watches;   /// Watches for 'list' request (watches on children).
 
+    void createWatchCallBack(const String & path);
+
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
     RequestsQueue requests_queue{1};
 

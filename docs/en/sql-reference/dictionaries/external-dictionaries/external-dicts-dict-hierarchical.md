@@ -25,7 +25,7 @@ Look at the following hierarchical structure:
 
 This hierarchy can be expressed as the following dictionary table.
 
-| region_id | parent_region | region_name  |
+| region\_id | parent\_region | region\_name  |
 |------------|----------------|---------------|
 | 1          | 0              | Russia        |
 | 2          | 1              | Moscow        |

@@ -7,13 +7,10 @@ INSERT INTO test_order_by SELECT now() + toIntervalSecond(number), number % 4 FR
 OPTIMIZE TABLE test_order_by FINAL;
 
 EXPLAIN SYNTAX SELECT * FROM test_order_by ORDER BY timestamp LIMIT 10;
-EXPLAIN PLAN SELECT * FROM test_order_by ORDER BY timestamp LIMIT 10;
 
 EXPLAIN SYNTAX SELECT * FROM test_order_by ORDER BY toDate(timestamp) LIMIT 10;
-EXPLAIN PLAN SELECT * FROM test_order_by ORDER BY toDate(timestamp) LIMIT 10;
 
 EXPLAIN SYNTAX SELECT * FROM test_order_by ORDER BY toDate(timestamp), timestamp LIMIT 10;
-EXPLAIN PLAN SELECT * FROM test_order_by ORDER BY toDate(timestamp), timestamp LIMIT 10;
 
 DROP TABLE IF EXISTS test_order_by;
 

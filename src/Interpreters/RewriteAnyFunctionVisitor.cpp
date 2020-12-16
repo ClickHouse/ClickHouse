@@ -62,7 +62,7 @@ void RewriteAnyFunctionMatcher::visit(ASTPtr & ast, Data & data)
 
 void RewriteAnyFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, Data & data)
 {
-    if (!func.arguments || func.arguments->children.empty() || !func.arguments->children[0])
+    if (func.arguments->children.empty() || !func.arguments->children[0])
         return;
 
     if (func.name != "any" && func.name != "anyLast")

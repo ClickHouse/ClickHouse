@@ -58,7 +58,8 @@ public:
     using signed_base_type = int64_t;
 
     // ctors
-    constexpr integer() noexcept;
+    integer() = default;
+
     template <typename T>
     constexpr integer(T rhs) noexcept;
     template <typename T>
