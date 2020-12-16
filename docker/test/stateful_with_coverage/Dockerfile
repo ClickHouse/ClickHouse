@@ -1,5 +1,5 @@
 # docker build -t yandex/clickhouse-stateful-test-with-coverage .
-FROM yandex/clickhouse-stateless-test
+FROM yandex/clickhouse-stateless-test-with-coverage
 
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \
