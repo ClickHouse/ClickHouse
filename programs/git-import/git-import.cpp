@@ -680,7 +680,7 @@ void updateSnapshot(Snapshot & snapshot, const Commit & commit, CommitDiff & fil
     for (auto & elem : file_changes)
     {
         auto & file = elem.second.file_change;
-        if (file.path != file.old_path)
+        if (!file.old_path.empty() && file.path != file.old_path)
             snapshot[file.path] = snapshot[file.old_path];
     }
 

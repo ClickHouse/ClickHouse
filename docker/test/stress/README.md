@@ -1,7 +1,6 @@
 Allow to run simple ClickHouse stress test in Docker from debian packages.
-Actually it runs single copy of clickhouse-performance-test and multiple copies
-of clickhouse-test (functional tests). This allows to find problems like
-segmentation fault which cause shutdown of server.
+Actually it runs multiple copies of clickhouse-test (functional tests).
+This allows to find problems like segmentation fault which cause shutdown of server.
 
 Usage:
 ```

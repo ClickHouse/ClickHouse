@@ -1,11 +1,11 @@
 #pragma once
 
 #include <tuple>
-#include <sstream>
 #include <iomanip>
 #include <city.h>
 
 #include <Core/Types.h>
+#include <Common/hex.h>
 
 #ifdef __SSE4_2__
 #include <nmmintrin.h>
@@ -48,9 +48,9 @@ struct UInt128
 
     String toHexString() const
     {
-        std::ostringstream os;
-        os << std::setw(16) << std::setfill('0') << std::hex << high << low;
-        return String(os.str());
+        String res(2 * sizeof(UInt128), 0);
+        writeHexUIntLowercase(*this, res.data());
+        return res;
     }
 
     bool inline operator== (const UInt128 rhs) const { return tuple() == rhs.tuple(); }

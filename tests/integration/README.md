@@ -135,3 +135,13 @@ named `test.py` containing tests in it. All functions with names starting with `
 To assert that two TSV files must be equal, wrap them in the `TSV` class and use the regular `assert`
 statement. Example: `assert TSV(result) == TSV(reference)`. In case the assertion fails, `pytest`
 will automagically detect the types of variables and only the small diff of two files is printed.
+
+### Troubleshooting
+
+If tests failing for misterious reasons, this may help:
+
+```
+sudo service docker stop
+sudo bash -c 'rm -rf /var/lib/docker/*'
+sudo service docker start
+```

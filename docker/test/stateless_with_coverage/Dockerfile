@@ -1,4 +1,4 @@
-# docker build -t yandex/clickhouse-stateless-with-coverage-test .
+# docker build -t yandex/clickhouse-stateless-test-with-coverage .
 # TODO: that can be based on yandex/clickhouse-stateless-test (llvm version and CMD differs)
 FROM yandex/clickhouse-test-base
 
@@ -24,11 +24,14 @@ RUN apt-get update -y \
             tree \
             moreutils \
             brotli \
+            zstd \
             gdb \
             lsof \
             unixodbc \
             wget \
-            qemu-user-static
+            qemu-user-static \
+            procps \
+            psmisc
 
 RUN mkdir -p /tmp/clickhouse-odbc-tmp \
    && wget -nv -O - ${odbc_driver_url} | tar --strip-components=1 -xz -C /tmp/clickhouse-odbc-tmp \

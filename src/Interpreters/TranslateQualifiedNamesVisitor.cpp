@@ -126,6 +126,8 @@ void TranslateQualifiedNamesMatcher::visit(ASTFunction & node, const ASTPtr &, D
 {
     ASTPtr & func_arguments = node.arguments;
 
+    if (!func_arguments) return;
+
     String func_name_lowercase = Poco::toLower(node.name);
     if (func_name_lowercase == "count" &&
         func_arguments->children.size() == 1 &&

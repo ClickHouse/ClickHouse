@@ -1,3 +1,9 @@
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
+
+#if USE_H3
+
 #include <array>
 #include <math.h>
 #include <Columns/ColumnsNumber.h>
@@ -57,7 +63,7 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * col_lon = arguments[0].column.get();
         const auto * col_lat = arguments[1].column.get();
@@ -94,3 +100,5 @@ void registerFunctionGeoToH3(FunctionFactory & factory)
 }
 
 }
+
+#endif

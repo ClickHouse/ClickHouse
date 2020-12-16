@@ -14,6 +14,7 @@
 #include <common/errnoToString.h>
 #include <Common/formatReadable.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/ErrorCodes.h>
 #include <filesystem>
 
 #if !defined(ARCADIA_BUILD)
@@ -33,9 +34,9 @@ namespace ErrorCodes
     extern const int CANNOT_MREMAP;
 }
 
-
-Exception::Exception(const std::string & msg, int code)
-    : Poco::Exception(msg, code)
+/// Aborts the process if error code is LOGICAL_ERROR.
+/// Increments error codes statistics.
+void handle_error_code([[maybe_unused]] const std::string & msg, int code)
 {
     // In debug builds and builds with sanitizers, treat LOGICAL_ERROR as an assertion failure.
     // Log the message before we fail.
@@ -46,6 +47,19 @@ Exception::Exception(const std::string & msg, int code)
         abort();
     }
 #endif
+    ErrorCodes::increment(code);
+}
+
+Exception::Exception(const std::string & msg, int code)
+    : Poco::Exception(msg, code)
+{
+    handle_error_code(msg, code);
+}
+
+Exception::Exception(const std::string & msg, const Exception & nested, int code)
+    : Poco::Exception(msg, nested, code)
+{
+    handle_error_code(msg, code);
 }
 
 Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
@@ -243,7 +257,7 @@ static std::string getExtraExceptionInfo(const std::exception & e)
 
 std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded_stacktrace /*= false*/, bool with_extra_info /*= true*/)
 {
-    std::stringstream stream;
+    WriteBufferFromOwnString stream;
 
     try
     {
@@ -362,7 +376,7 @@ void tryLogException(std::exception_ptr e, Poco::Logger * logger, const std::str
 
 std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace)
 {
-    std::stringstream stream;
+    WriteBufferFromOwnString stream;
 
     try
     {

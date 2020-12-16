@@ -26,7 +26,7 @@ static auto typeFromString(const std::string & str)
 
 static auto typesFromString(const std::string & str)
 {
-    std::istringstream data_types_stream(str);
+    std::istringstream data_types_stream(str);      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     DataTypes data_types;
     std::string data_type;
     while (data_types_stream >> data_type)
