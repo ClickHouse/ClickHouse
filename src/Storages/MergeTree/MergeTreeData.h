@@ -43,6 +43,7 @@ struct JobAndPool;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 
 namespace ErrorCodes
 {
@@ -905,7 +906,7 @@ protected:
     /// Used to receive AlterConversions for part and apply them on fly. This
     /// method has different implementations for replicated and non replicated
     /// MergeTree because they store mutations in different way.
-    virtual MutationCommands getFirtsAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
+    virtual MutationCommands getFirstAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
     /// Moves part to specified space, used in ALTER ... MOVE ... queries
     bool movePartsToSpace(const DataPartsVector & parts, SpacePtr space);
 

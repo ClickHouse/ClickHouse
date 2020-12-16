@@ -135,6 +135,18 @@ bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, cons
 
 QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, SelectQueryInfo & query_info) const
 {
+    ASTPtr modified_query = query_info.query->clone();
+    auto & modified_select = modified_query->as<ASTSelectQuery &>();
+    /// In case of JOIN the first stage (which includes JOIN)
+    /// should be done on the initiator always.
+    ///
+    /// Since in case of JOIN query on shards will receive query w/o JOIN (and their columns).
+    /// (see modifySelect()/removeJoin())
+    ///
+    /// And for this we need to return FetchColumns.
+    if (removeJoin(modified_select))
+        return QueryProcessingStage::FetchColumns;
+
     auto stage_in_source_tables = QueryProcessingStage::FetchColumns;
 
     DatabaseTablesIteratorPtr iterator = getDatabaseIterator(context);
@@ -418,7 +430,15 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(
 
 DatabaseTablesIteratorPtr StorageMerge::getDatabaseIterator(const Context & context) const
 {
-    checkStackSize();
+    try
+    {
+        checkStackSize();
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while getting table iterator of Merge table. Maybe caused by two Merge tables that will endlessly try to read each other's data");
+        throw;
+    }
     auto database = DatabaseCatalog::instance().getDatabase(source_database);
     auto table_name_match = [this](const String & table_name_) { return table_name_regexp.match(table_name_); };
     return database->getTablesIterator(context, table_name_match);
