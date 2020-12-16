@@ -35,8 +35,8 @@ public:
 };
 
 
-DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, Context & context_)
-    : DatabaseOrdinary(name_, std::move(metadata_path_), "store/", "DatabaseAtomic (" + name_ + ")", context_)
+DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, const String & logger_name, const Context & context_)
+    : DatabaseOrdinary(name_, std::move(metadata_path_), "store/", logger_name, context_)
     , path_to_table_symlinks(global_context.getPath() + "data/" + escapeForFileName(name_) + "/")
     , path_to_metadata_symlink(global_context.getPath() + "metadata/" + escapeForFileName(name_))
     , db_uuid(uuid)
@@ -44,6 +44,11 @@ DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, C
     assert(db_uuid != UUIDHelpers::Nil);
     Poco::File(path_to_table_symlinks).createDirectories();
     tryCreateMetadataSymlink();
+}
+
+DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, const Context & context_)
+    : DatabaseAtomic(name_, std::move(metadata_path_), uuid, "DatabaseAtomic (" + name_ + ")", context_)
+{
 }
 
 String DatabaseAtomic::getTableDataPath(const String & table_name) const
