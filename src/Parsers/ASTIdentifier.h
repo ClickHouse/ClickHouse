@@ -65,7 +65,6 @@ private:
     void resetFullName();
 };
 
-
 class ASTTableIdentifier : public ASTIdentifier
 {
     public:

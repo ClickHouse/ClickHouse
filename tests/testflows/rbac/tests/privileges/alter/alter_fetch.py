@@ -10,9 +10,6 @@ import rbac.helper.errors as errors
 aliases = {"ALTER FETCH PARTITION", "FETCH PARTITION"}
 
 @TestSuite
-@Requirements(
-    RQ_SRS_006_RBAC_Privileges_AlterFetch_Access("1.0"),
-)
 def privilege_granted_directly_or_via_role(self, table_type, privilege, node=None):
     """Check that user is only able to execute ALTER FETCH PARTITION when they have required privilege, either directly or via role.
     """
@@ -24,13 +21,16 @@ def privilege_granted_directly_or_via_role(self, table_type, privilege, node=Non
 
     with Suite("user with direct privilege", setup=instrument_clickhouse_server_log):
         with user(node, user_name):
+
             with When(f"I run checks that {user_name} is only able to execute ALTER FETCH PARTITION with required privileges"):
                 privilege_check(grant_target_name=user_name, user_name=user_name, table_type=table_type, privilege=privilege, node=node)
 
     with Suite("user with privilege via role", setup=instrument_clickhouse_server_log):
         with user(node, user_name), role(node, role_name):
+
             with When("I grant the role to the user"):
                 node.query(f"GRANT {role_name} TO {user_name}")
+
             with And(f"I run checks that {user_name} with {role_name} is only able to execute ALTER FETCH PARTITION with required privileges"):
                 privilege_check(grant_target_name=role_name, user_name=user_name, table_type=table_type, privilege=privilege, node=node)
 
@@ -42,6 +42,7 @@ def privilege_check(grant_target_name, user_name, table_type, privilege, node=No
     with Scenario("user without privilege", setup=instrument_clickhouse_server_log):
         table_name = f"merge_tree_{getuid()}"
         with table(node, table_name, table_type):
+
             with When("I attempt to fetch a partition without privilege"):
                 node.query(f"ALTER TABLE {table_name} FETCH PARTITION 1 FROM '/clickhouse/tables/{{shard}}/{table_name}'", settings = [("user", user_name)],
                     exitcode=exitcode, message=message)
@@ -49,8 +50,10 @@ def privilege_check(grant_target_name, user_name, table_type, privilege, node=No
     with Scenario("user with privilege", setup=instrument_clickhouse_server_log):
         table_name = f"merge_tree_{getuid()}"
         with table(node, table_name, table_type):
+
             with When("I grant the fetch privilege"):
                 node.query(f"GRANT {privilege} ON {table_name} TO {grant_target_name}")
+
             with Then("I attempt to fetch a partition"):
                 node.query(f"ALTER TABLE {table_name} FETCH PARTITION 1 FROM '/clickhouse/tables/{{shard}}/{table_name}'", settings = [("user", user_name)],
                     exitcode=231, message="DB::Exception: No node")
@@ -58,10 +61,13 @@ def privilege_check(grant_target_name, user_name, table_type, privilege, node=No
     with Scenario("user with revoked privilege", setup=instrument_clickhouse_server_log):
         table_name = f"merge_tree_{getuid()}"
         with table(node, table_name, table_type):
+
             with When("I grant the fetch privilege"):
                 node.query(f"GRANT {privilege} ON {table_name} TO {grant_target_name}")
+
             with And("I revoke the fetch privilege"):
                 node.query(f"REVOKE {privilege} ON {table_name} FROM {grant_target_name}")
+
             with Then("I attempt to fetch a partition"):
                 node.query(f"ALTER TABLE {table_name} FETCH PARTITION 1 FROM '/clickhouse/tables/{{shard}}/{table_name}'", settings = [("user", user_name)],
                     exitcode=exitcode, message=message)

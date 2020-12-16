@@ -28,6 +28,7 @@ class ASTQueryWithTableAndOutput;
 class ASTTableIdentifier;
 class Context;
 
+// TODO(ilezhankin): refactor and merge |ASTTableIdentifier|
 struct StorageID
 {
     String database_name;
