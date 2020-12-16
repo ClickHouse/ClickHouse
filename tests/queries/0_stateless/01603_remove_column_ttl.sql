@@ -6,7 +6,8 @@ CREATE TABLE table_with_column_ttl
     Age UInt8 TTL EventTime + INTERVAL 3 MONTH
 )
 ENGINE MergeTree()
-ORDER BY tuple();
+ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0; -- column TTL doesn't work for compact parts
 
 INSERT INTO table_with_column_ttl VALUES (now(), 1, 32);
 
