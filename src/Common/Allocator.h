@@ -30,7 +30,7 @@
 #include <Common/MemoryTracker.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
-#include <Common/getPageSize.h> 
+#include <Common/getPageSize.h>
 
 #include <Common/Allocator_fwd.h>
 
