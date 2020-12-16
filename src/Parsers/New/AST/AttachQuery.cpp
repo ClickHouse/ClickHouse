@@ -29,9 +29,9 @@ ASTPtr AttachQuery::convertToOld() const
         case QueryType::DICTIONARY:
             query->is_dictionary = true;
             {
-                auto table_id = getTableIdentifier(get(NAME)->convertToOld());
-                query->database = table_id.database_name;
-                query->table = table_id.table_name;
+                auto table = get(NAME)->convertToOld();
+                query->database = table->as<ASTTableIdentifier>()->getDatabaseName();
+                query->table = table->as<ASTTableIdentifier>()->shortName();
             }
             break;
     }
