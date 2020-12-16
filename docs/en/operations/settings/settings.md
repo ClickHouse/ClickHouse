@@ -2447,7 +2447,6 @@ Result:
 {"number":"2"}
 ```
 
-=======
 ## allow_nullable_key {#allow-nullable-key}
 
 Allows using of the [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable)-typed values in a sorting and a primary key for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree) tables.
