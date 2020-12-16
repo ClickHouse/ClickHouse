@@ -5,7 +5,7 @@
 #include <Common/TaskStatsInfoGetter.h>
 #include <Poco/File.h>
 #include <Common/Stopwatch.h>
-#include <Common/getPageSize.h>
+#include <common/getPageSize.h>
 #include <common/getThreadId.h>
 #include <IO/WriteBufferFromString.h>
 #include <linux/taskstats.h>

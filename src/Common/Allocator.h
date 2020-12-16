@@ -26,11 +26,11 @@
     #define DISABLE_MREMAP 1
 #endif
 #include <common/mremap.h>
+#include <common/getPageSize.h>
 
 #include <Common/MemoryTracker.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
-#include <Common/getPageSize.h>
 
 #include <Common/Allocator_fwd.h>
 

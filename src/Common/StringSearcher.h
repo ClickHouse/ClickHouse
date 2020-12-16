@@ -1,9 +1,9 @@
 #pragma once
 
+#include <common/getPageSize.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/UTF8Helpers.h>
-#include <Common/getPageSize.h>
 #include <Core/Defines.h>
 #include <ext/range.h>
 #include <Poco/Unicode.h>

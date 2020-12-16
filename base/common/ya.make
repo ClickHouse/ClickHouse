@@ -44,6 +44,7 @@ SRCS(
     argsToConfig.cpp
     coverage.cpp
     demangle.cpp
+    getPageSize.cpp
     errnoToString.cpp
     getFQDNOrHostName.cpp
     getMemoryAmount.cpp
