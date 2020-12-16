@@ -20,9 +20,26 @@ class Backport:
     def getPullRequests(self, from_commit):
         return self._gh.get_pull_requests(from_commit)
 
-    def execute(self, repo, until_commit, number, run_cherrypick):
+    def getBranchesWithLTS(self, release_branches):
+        # it's convenient to return branches keeping their precedence order
+        branches = []  # [(branch_name, base_commit)]
+        for pull_request in self._gh.find_pull_requests("release-lts"):
+            if not pull_request['merged'] and not pull_request['closed']:
+                for branch in release_branches:
+                    if branch[0] == pull_request['headRefName']:
+                        branches.append(branch)
+                        break
+        return branches
+
+    def execute(self, repo, until_commit, number, find_lts, run_cherrypick):
         repo = LocalRepo(repo, 'origin', self.default_branch_name)
+        all_branches = repo.get_release_branches()
+
+        # assume that LTS branches are always older than recent ones
         branches = repo.get_release_branches()[-number:]  # [(branch_name, base_commit)]
+        branches_lts = self.getBranchesWithLTS(all_branches) if find_lts else []
+        branches_lts.extend(branch for branch in branches if branch not in branches_lts)
+        branches = branches_lts
 
         if not branches:
             logging.info('No release branches found!')
