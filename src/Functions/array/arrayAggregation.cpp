@@ -28,8 +28,8 @@ enum class AggregateOperation
  * During array aggregation we derive result type from operation.
  * For array min or array max we use array element as result type.
  * For array average we use Float64.
- * For array sum for decimal numbers we use Decimal128, for floating point numbers Float64, for numeric unsigned Int64,
- * and for numeric signed UInt64.
+ * For array sum for for big integers, we use same type representation, decimal numbers we use Decimal128,
+ * for floating point numbers Float64, for numeric unsigned Int64, and for numeric signed UInt64.
  */
 
 template <typename ArrayElement, AggregateOperation operation>
@@ -127,10 +127,11 @@ struct ArrayAggregateImpl
         using ColVecType = std::conditional_t<IsDecimalNumber<Element>, ColumnDecimal<Element>, ColumnVector<Element>>;
         using ColVecResult = std::conditional_t<IsDecimalNumber<Result>, ColumnDecimal<Result>, ColumnVector<Result>>;
 
-        /// For average on decimal array we return Float64 as result, but we want to keep presision
-        /// so we convert to float64 as last step, but intermediate summ is represented as result of summ operation
+        /// For average of array we return Float64 as result, but we want to keep precision
+        /// so we convert to Float64 as last step, but intermediate sum is represented as result of sum operation
         static constexpr bool is_average_operation = aggregate_operation == AggregateOperation::average;
         using SummAggregationType = ArrayAggregateResult<Element, AggregateOperation::sum>;
+        using AverageAggregationType = ArrayAggregateResult<Element, AggregateOperation::average>;
 
         using AggregationType = std::conditional_t<is_average_operation, SummAggregationType, Result>;
 
@@ -247,12 +248,15 @@ struct ArrayAggregateImpl
 
             if constexpr (aggregate_operation == AggregateOperation::average)
             {
-                s = s / count;
-            }
-
-            if constexpr (IsDecimalNumber<Element> && aggregate_operation == AggregateOperation::average)
-            {
-                res[i] = DecimalUtils::convertTo<Result>(s, data.getScale());
+                if constexpr (IsDecimalNumber<Element>)
+                {
+                    s = s / count;
+                    res[i] = DecimalUtils::convertTo<Result>(s, data.getScale());
+                }
+                else
+                {
+                    res[i] = static_cast<AverageAggregationType>(s) / count;
+                }
             }
             else
             {

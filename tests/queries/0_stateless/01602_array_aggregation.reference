@@ -1,7 +1,7 @@
 Array min 	1
 Array max 	6
 Array sum 	21
-Array avg 	3
+Array avg 	3.5
 Table array int min
 1
 0
@@ -15,7 +15,7 @@ Table array int sum
 0
 6
 Table array int avg
-3
+3.5
 0
 2
 Table array decimal min
