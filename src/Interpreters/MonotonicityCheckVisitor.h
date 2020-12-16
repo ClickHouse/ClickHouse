@@ -87,7 +87,8 @@ public:
             return;
 
         /// TODO: monotonicity for functions of several arguments
-        if (!ast_function.arguments || ast_function.arguments->children.size() != 1)
+        auto arguments = ast_function.arguments;
+        if (arguments->children.size() != 1)
         {
             data.reject();
             return;
@@ -124,7 +125,7 @@ public:
 
             if (!is_positive)
                 data.monotonicity.is_positive = !data.monotonicity.is_positive;
-            data.arg_data_type = function_base->getResultType();
+            data.arg_data_type = function_base->getReturnType();
         }
         else
             data.reject();

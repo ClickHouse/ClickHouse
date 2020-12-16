@@ -5,12 +5,9 @@
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Storages/IStorage.h>
-#include <Storages/SelectQueryInfo.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Cluster.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
-#include <IO/ConnectionTimeoutsContext.h>
 
 namespace DB
 {
@@ -22,11 +19,14 @@ namespace ErrorCodes
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     Connection & connection,
-    const String & query_, const Block & header_, const Context & context_,
+    const String & query_, const Block & header_, const Context & context_, const Settings * settings,
     ThrottlerPtr throttler, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
     : header(header_), query(query_), context(context_)
     , scalars(scalars_), external_tables(external_tables_), stage(stage_)
 {
+    if (settings)
+        context.setSettings(*settings);
+
     create_multiplexed_connections = [this, &connection, throttler]()
     {
         return std::make_unique<MultiplexedConnections>(connection, context.getSettingsRef(), throttler);
@@ -35,11 +35,14 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     std::vector<IConnectionPool::Entry> && connections,
-    const String & query_, const Block & header_, const Context & context_,
+    const String & query_, const Block & header_, const Context & context_, const Settings * settings,
     const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
     : header(header_), query(query_), context(context_)
     , scalars(scalars_), external_tables(external_tables_), stage(stage_)
 {
+    if (settings)
+        context.setSettings(*settings);
+
     create_multiplexed_connections = [this, connections, throttler]() mutable
     {
         return std::make_unique<MultiplexedConnections>(
@@ -49,11 +52,14 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     const ConnectionPoolWithFailoverPtr & pool,
-    const String & query_, const Block & header_, const Context & context_,
+    const String & query_, const Block & header_, const Context & context_, const Settings * settings,
     const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
     : header(header_), query(query_), context(context_)
     , scalars(scalars_), external_tables(external_tables_), stage(stage_)
 {
+    if (settings)
+        context.setSettings(*settings);
+
     create_multiplexed_connections = [this, pool, throttler]()
     {
         const Settings & current_settings = context.getSettingsRef();
@@ -140,30 +146,15 @@ void RemoteQueryExecutor::sendQuery()
 
     multiplexed_connections = create_multiplexed_connections();
 
-    const auto & settings = context.getSettingsRef();
+    const auto& settings = context.getSettingsRef();
     if (settings.skip_unavailable_shards && 0 == multiplexed_connections->size())
         return;
-
-    /// Query cannot be canceled in the middle of the send query,
-    /// since there are multiple packets:
-    /// - Query
-    /// - Data (multiple times)
-    ///
-    /// And after the Cancel packet none Data packet can be sent, otherwise the remote side will throw:
-    ///
-    ///     Unexpected packet Data received from client
-    ///
-    std::lock_guard guard(was_cancelled_mutex);
 
     established = true;
 
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
     ClientInfo modified_client_info = context.getClientInfo();
     modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-    if (CurrentThread::isInitialized())
-    {
-        modified_client_info.client_trace_context = CurrentThread::get().thread_trace_context;
-    }
 
     multiplexed_connections->sendQuery(timeouts, query, query_id, stage, modified_client_info, true);
 
@@ -323,8 +314,6 @@ void RemoteQueryExecutor::sendScalars()
 
 void RemoteQueryExecutor::sendExternalTables()
 {
-    SelectQueryInfo query_info;
-
     size_t count = multiplexed_connections->size();
 
     {
@@ -339,12 +328,11 @@ void RemoteQueryExecutor::sendExternalTables()
             {
                 StoragePtr cur = table.second;
                 auto metadata_snapshot = cur->getInMemoryMetadataPtr();
-                QueryProcessingStage::Enum read_from_table_stage = cur->getQueryProcessingStage(
-                    context, QueryProcessingStage::Complete, query_info);
+                QueryProcessingStage::Enum read_from_table_stage = cur->getQueryProcessingStage(context);
 
                 Pipe pipe = cur->read(
                     metadata_snapshot->getColumns().getNamesOfPhysical(),
-                    metadata_snapshot, query_info, context,
+                    metadata_snapshot, {}, context,
                     read_from_table_stage, DEFAULT_BLOCK_SIZE, 1);
 
                 auto data = std::make_unique<ExternalTableData>();

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -333,10 +333,6 @@ public:
 
     /// All tables and dictionaries should be detached before detaching the database.
     virtual bool shouldBeEmptyOnDetach() const { return true; }
-
-    virtual void assertCanBeDetached(bool /*cleanup*/) {}
-
-    virtual void waitDetachedTableNotInUse(const UUID & /*uuid*/) { assert(false); }
 
     /// Ask all tables to complete the background threads they are using and delete all table objects.
     virtual void shutdown() = 0;

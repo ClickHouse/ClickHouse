@@ -43,7 +43,7 @@ La Structure de la `users` section:
 </users>
 ```
 
-### nom_utilisateur/mot de passe {#user-namepassword}
+### nom\_utilisateur/mot de passe {#user-namepassword}
 
 Le mot de passe peut être spécifié en texte clair ou en SHA256 (format hexadécimal).
 
@@ -75,7 +75,7 @@ Le mot de passe peut être spécifié en texte clair ou en SHA256 (format hexad�
 
     La première ligne du résultat est le mot de passe. La deuxième ligne est le double hachage SHA1 correspondant.
 
-### access_management {#access_management-user-setting}
+### access\_management {#access_management-user-setting}
 
 Ce paramètre active de désactive l'utilisation de SQL-driven [le contrôle d'accès et de gestion de compte](../access-rights.md#access-control) pour l'utilisateur.
 
@@ -86,7 +86,7 @@ Valeurs possibles:
 
 Valeur par défaut: 0.
 
-### nom_utilisateur / réseaux {#user-namenetworks}
+### nom\_utilisateur / réseaux {#user-namenetworks}
 
 Liste des réseaux à partir desquels L'utilisateur peut se connecter au serveur ClickHouse.
 
@@ -128,18 +128,18 @@ Pour ouvrir l'accès uniquement à partir de localhost, spécifier:
 <ip>127.0.0.1</ip>
 ```
 
-### nom_utilisateur / profil {#user-nameprofile}
+### nom\_utilisateur / profil {#user-nameprofile}
 
 Vous pouvez attribuer un profil des paramètres pour l'utilisateur. Les profils de paramètres sont configurés dans une section distincte du `users.xml` fichier. Pour plus d'informations, voir [Profils des paramètres](settings-profiles.md).
 
-### nom_utilisateur / quota {#user-namequota}
+### nom\_utilisateur / quota {#user-namequota}
 
 Les Quotas vous permettent de suivre ou de limiter l'utilisation des ressources sur une période donnée. Les Quotas sont configurés dans le `quotas`
 la section de la `users.xml` fichier de configuration.
 
 Vous pouvez attribuer un jeu de quotas à l'utilisateur. Pour une description détaillée de la configuration des quotas, voir [Quota](../quotas.md#quotas).
 
-### nom_utilisateur/bases de données {#user-namedatabases}
+### nom\_utilisateur/bases de données {#user-namedatabases}
 
 Dans cette section, vous pouvez limiter les lignes renvoyées par ClickHouse pour `SELECT` requêtes faites par l'utilisateur actuel, implémentant ainsi la sécurité de base au niveau de la ligne.
 

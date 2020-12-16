@@ -107,5 +107,3 @@ ${CLICKHOUSE_CLIENT} -n -q "
 #    DROP DATABASE $CURR_DATABASE; -- This fails for some reason
 
 echo "Test OK"
-
-# TODO: it doesn't work! $CLICKHOUSE_CLIENT -q "DROP DATABASE $CURR_DATABASE"

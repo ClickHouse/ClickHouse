@@ -3,8 +3,6 @@
 
 namespace DB
 {
-namespace
-{
 
 struct TransformToMilli
 {
@@ -13,8 +11,6 @@ struct TransformToMilli
     using SourceDataType = DataTypeDateTime64;
     using ResultDataType = DataTypeInt64;
 };
-
-}
 
 void registerToUnixTimestamp64Milli(FunctionFactory & factory)
 {

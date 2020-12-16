@@ -1,5 +1,4 @@
 #include "StaticRequestHandler.h"
-#include "IServer.h"
 
 #include "HTTPHandlerFactory.h"
 #include "HTTPHandlerRequestFilter.h"
@@ -10,7 +9,6 @@
 #include <IO/copyData.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromHTTPServerResponse.h>
-#include <Interpreters/Context.h>
 
 #include <Common/Exception.h>
 
@@ -19,8 +17,6 @@
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
-#include <Poco/Util/LayeredConfiguration.h>
-
 
 namespace DB
 {

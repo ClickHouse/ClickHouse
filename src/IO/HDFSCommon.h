@@ -1,4 +1,3 @@
-#pragma once
 #include <Common/config.h>
 #include <memory>
 #include <type_traits>

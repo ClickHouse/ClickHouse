@@ -5,13 +5,11 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
 }
-
-namespace
-{
 
 template <typename T>
 inline std::enable_if_t<std::is_integral_v<T> && (sizeof(T) <= sizeof(UInt32)), T>
@@ -89,8 +87,6 @@ struct RoundToExp2Impl
 
 struct NameRoundToExp2 { static constexpr auto name = "roundToExp2"; };
 using FunctionRoundToExp2 = FunctionUnaryArithmetic<RoundToExp2Impl, NameRoundToExp2, false>;
-
-}
 
 template <> struct FunctionUnaryArithmeticMonotonicity<NameRoundToExp2> : PositiveMonotonicity {};
 

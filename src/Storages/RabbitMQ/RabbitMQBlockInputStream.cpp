@@ -1,8 +1,6 @@
-#include <Storages/RabbitMQ/RabbitMQBlockInputStream.h>
-
 #include <Formats/FormatFactory.h>
-#include <Interpreters/Context.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
+#include <Storages/RabbitMQ/RabbitMQBlockInputStream.h>
 #include <Storages/RabbitMQ/ReadBufferFromRabbitMQConsumer.h>
 
 namespace ErrorCodes
@@ -16,7 +14,7 @@ namespace DB
 RabbitMQBlockInputStream::RabbitMQBlockInputStream(
     StorageRabbitMQ & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
-    std::shared_ptr<Context> context_,
+    const Context & context_,
     const Names & columns,
     size_t max_block_size_,
     bool ack_in_suffix_)
@@ -29,7 +27,7 @@ RabbitMQBlockInputStream::RabbitMQBlockInputStream(
     , non_virtual_header(metadata_snapshot->getSampleBlockNonMaterialized())
     , sample_block(non_virtual_header)
     , virtual_header(metadata_snapshot->getSampleBlockForColumns(
-                {"_exchange_name", "_channel_id", "_delivery_tag", "_redelivered", "_message_id", "_timestamp"},
+                {"_exchange_name", "_channel_id", "_delivery_tag", "_redelivered", "_message_id"},
                 storage.getVirtuals(), storage.getStorageID()))
 {
     for (const auto & column : virtual_header)
@@ -54,17 +52,22 @@ Block RabbitMQBlockInputStream::getHeader() const
 
 void RabbitMQBlockInputStream::readPrefixImpl()
 {
-    auto timeout = std::chrono::milliseconds(context->getSettingsRef().rabbitmq_max_wait_ms.totalMilliseconds());
+    auto timeout = std::chrono::milliseconds(context.getSettingsRef().rabbitmq_max_wait_ms.totalMilliseconds());
     buffer = storage.popReadBuffer(timeout);
 }
 
 
 bool RabbitMQBlockInputStream::needChannelUpdate()
 {
-    if (!buffer)
+    if (!buffer || !buffer->isChannelUpdateAllowed())
         return false;
 
-    return buffer->needChannelUpdate();
+    if (buffer->isChannelError())
+        return true;
+
+    ChannelPtr channel = buffer->getChannel();
+
+    return !channel || !channel->usable();
 }
 
 
@@ -75,8 +78,8 @@ void RabbitMQBlockInputStream::updateChannel()
 
     buffer->updateAckTracker();
 
-    if (storage.updateChannel(buffer->getChannel()))
-        buffer->setupChannel();
+    storage.updateChannel(buffer->getChannel());
+    buffer->setupChannel();
 }
 
 
@@ -91,7 +94,7 @@ Block RabbitMQBlockInputStream::readImpl()
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
 
     auto input_format = FormatFactory::instance().getInputFormat(
-            storage.getFormatName(), *buffer, non_virtual_header, *context, max_block_size);
+            storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size);
 
     InputPort port(input_format->getPort().getHeader(), input_format.get());
     connect(input_format->getPort(), port);
@@ -155,7 +158,6 @@ Block RabbitMQBlockInputStream::readImpl()
             auto delivery_tag = buffer->getDeliveryTag();
             auto redelivered = buffer->getRedelivered();
             auto message_id = buffer->getMessageID();
-            auto timestamp = buffer->getTimestamp();
 
             buffer->updateAckTracker({delivery_tag, channel_id});
 
@@ -166,7 +168,6 @@ Block RabbitMQBlockInputStream::readImpl()
                 virtual_columns[2]->insert(delivery_tag);
                 virtual_columns[3]->insert(redelivered);
                 virtual_columns[4]->insert(message_id);
-                virtual_columns[5]->insert(timestamp);
             }
 
             total_rows = total_rows + new_rows;

@@ -16,6 +16,7 @@
 
 #include <Common/ThreadPool.h>
 #include <Common/UInt128.h>
+#include <Common/LRUCache.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/assert_cast.h>
 #include <Common/filesystemHelpers.h>
@@ -227,7 +228,7 @@ struct AggregationMethodString
 
     static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
     {
-        static_cast<ColumnString *>(key_columns[0].get())->insertData(key.data, key.size);
+        key_columns[0]->insertData(key.data, key.size);
     }
 };
 
@@ -253,7 +254,7 @@ struct AggregationMethodStringNoCache
 
     static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
     {
-        static_cast<ColumnString *>(key_columns[0].get())->insertData(key.data, key.size);
+        key_columns[0]->insertData(key.data, key.size);
     }
 };
 
@@ -279,7 +280,7 @@ struct AggregationMethodFixedString
 
     static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
     {
-        static_cast<ColumnFixedString *>(key_columns[0].get())->insertData(key.data, key.size);
+        key_columns[0]->insertData(key.data, key.size);
     }
 };
 
@@ -304,7 +305,7 @@ struct AggregationMethodFixedStringNoCache
 
     static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
     {
-        static_cast<ColumnFixedString *>(key_columns[0].get())->insertData(key.data, key.size);
+        key_columns[0]->insertData(key.data, key.size);
     }
 };
 

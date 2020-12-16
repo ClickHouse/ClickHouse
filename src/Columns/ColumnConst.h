@@ -244,8 +244,6 @@ public:
     /// The constant value. It is valid even if the size of the column is 0.
     template <typename T>
     T getValue() const { return getField().safeGet<NearestFieldType<T>>(); }
-
-    bool isCollationSupported() const override { return data->isCollationSupported(); }
 };
 
 }

@@ -20,7 +20,7 @@ class ASTStorage;
     M(Milliseconds, kafka_poll_timeout_ms, 0, "Timeout for single poll from Kafka.", 0) \
     /* default is min(max_block_size, kafka_max_block_size)*/ \
     M(UInt64, kafka_poll_max_batch_size, 0, "Maximum amount of messages to be polled in a single Kafka poll.", 0) \
-    /* default is = max_insert_block_size / kafka_num_consumers  */ \
+    /* default is = min_insert_block_size / kafka_num_consumers  */ \
     M(UInt64, kafka_max_block_size, 0, "Number of row collected by poll(s) for flushing data from Kafka.", 0) \
     /* default is stream_flush_interval_ms */ \
     M(Milliseconds, kafka_flush_interval_ms, 0, "Timeout for flushing data from Kafka.", 0) \

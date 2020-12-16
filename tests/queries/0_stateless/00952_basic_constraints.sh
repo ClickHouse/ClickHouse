@@ -5,6 +5,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 EXCEPTION_TEXT=violated
 EXCEPTION_SUCCESS_TEXT=ok
+$CLICKHOUSE_CLIENT --query="CREATE DATABASE IF NOT EXISTS test;"
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS test_constraints;"
 
 $CLICKHOUSE_CLIENT --query="CREATE TABLE test_constraints

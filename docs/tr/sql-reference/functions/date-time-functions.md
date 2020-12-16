@@ -163,7 +163,7 @@ On dakikalık aralığın başlangıcına kadar bir tarih aşağı yuvarlar.
 
 On beş dakikalık aralığın başlangıcına kadar tarih aşağı yuvarlar.
 
-## toStartOfİnterval (time_or_data, Aralık x birimi \[, time_zone\]) {#tostartofintervaltime-or-data-interval-x-unit-time-zone}
+## toStartOfİnterval (time\_or\_data, Aralık x birimi \[, time\_zone\]) {#tostartofintervaltime-or-data-interval-x-unit-time-zone}
 
 Bu, diğer işlevlerin bir genellemesidir `toStartOf*`. Mesela,
 `toStartOfInterval(t, INTERVAL 1 year)` aynı döndürür `toStartOfYear(t)`,

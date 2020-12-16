@@ -1,8 +1,3 @@
----
-toc_priority: 2
-toc_title: JDBC
----
-
 # JDBC {#table-engine-jdbc}
 
 Позволяет ClickHouse подключаться к внешним базам данных с помощью [JDBC](https://en.wikipedia.org/wiki/Java_Database_Connectivity).

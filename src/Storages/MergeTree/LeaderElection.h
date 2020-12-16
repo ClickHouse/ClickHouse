@@ -124,8 +124,7 @@ private:
 
             /// Watch for the node in front of us.
             --my_node_it;
-            std::string get_path_value;
-            if (!zookeeper.tryGetWatch(path + "/" + *my_node_it, get_path_value, nullptr, task->getWatchCallback()))
+            if (!zookeeper.existsWatch(path + "/" + *my_node_it, nullptr, task->getWatchCallback()))
                 task->schedule();
 
             success = true;
