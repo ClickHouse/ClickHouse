@@ -128,24 +128,24 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     const ASTPtr & query_ptr_, const Context & context_, const SelectQueryOptions & options_, const Names & required_result_column_names)
     : IInterpreterUnionOrSelectQuery(query_ptr_, context_, options_)
 {
-    auto & ast = query_ptr->as<ASTSelectWithUnionQuery &>();
+    ASTSelectWithUnionQuery * ast = query_ptr->as<ASTSelectWithUnionQuery>();
 
     /// Normalize AST Tree
-    if (!ast.is_normalized)
+    if (!ast->is_normalized)
     {
         CustomizeASTSelectWithUnionQueryNormalizeVisitor::Data union_default_mode{context->getSettingsRef().union_default_mode};
         CustomizeASTSelectWithUnionQueryNormalizeVisitor(union_default_mode).visit(query_ptr);
 
         /// After normalization, if it only has one ASTSelectWithUnionQuery child,
         /// we can lift it up, this can reduce one unnecessary recursion later.
-        if (ast.list_of_selects->children.size() == 1 && ast.list_of_selects->children.at(0)->as<ASTSelectWithUnionQuery>())
+        if (ast->list_of_selects->children.size() == 1 && ast->list_of_selects->children.at(0)->as<ASTSelectWithUnionQuery>())
         {
-            query_ptr = std::move(ast.list_of_selects->children.at(0));
-            ast = query_ptr->as<ASTSelectWithUnionQuery &>();
+            query_ptr = std::move(ast->list_of_selects->children.at(0));
+            ast = query_ptr->as<ASTSelectWithUnionQuery>();
         }
     }
 
-    size_t num_children = ast.list_of_selects->children.size();
+    size_t num_children = ast->list_of_selects->children.size();
     if (!num_children)
         throw Exception("Logical error: no children in ASTSelectWithUnionQuery", ErrorCodes::LOGICAL_ERROR);
 
@@ -161,7 +161,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
         /// Result header if there are no filtering by 'required_result_column_names'.
         /// We use it to determine positions of 'required_result_column_names' in SELECT clause.
 
-        Block full_result_header = getCurrentChildResultHeader(ast.list_of_selects->children.at(0), required_result_column_names);
+        Block full_result_header = getCurrentChildResultHeader(ast->list_of_selects->children.at(0), required_result_column_names);
 
         std::vector<size_t> positions_of_required_result_columns(required_result_column_names.size());
 
@@ -171,7 +171,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
         for (size_t query_num = 1; query_num < num_children; ++query_num)
         {
             Block full_result_header_for_current_select
-                = getCurrentChildResultHeader(ast.list_of_selects->children.at(query_num), required_result_column_names);
+                = getCurrentChildResultHeader(ast->list_of_selects->children.at(query_num), required_result_column_names);
 
             if (full_result_header_for_current_select.columns() != full_result_header.columns())
                 throw Exception("Different number of columns in UNION ALL elements:\n"
@@ -192,7 +192,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
             = query_num == 0 ? required_result_column_names : required_result_column_names_for_other_selects[query_num];
 
         nested_interpreters.emplace_back(
-            buildCurrentChildInterpreter(ast.list_of_selects->children.at(query_num), current_required_result_column_names));
+            buildCurrentChildInterpreter(ast->list_of_selects->children.at(query_num), current_required_result_column_names));
     }
 
     /// Determine structure of the result.

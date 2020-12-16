@@ -14,7 +14,10 @@ from . import materialize_with_ddl
 DOCKER_COMPOSE_PATH = get_docker_compose_path()
 
 cluster = ClickHouseCluster(__file__)
-clickhouse_node = cluster.add_instance('node1', user_configs=["configs/users.xml"], with_mysql=False, stay_alive=True)
+
+node_db_ordinary = cluster.add_instance('node1', user_configs=["configs/users.xml"], with_mysql=False, stay_alive=True)
+node_db_atomic = cluster.add_instance('node2', user_configs=["configs/users_db_atomic.xml"], with_mysql=False, stay_alive=True)
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -119,39 +122,30 @@ def started_mysql_8_0():
                                '--remove-orphans'])
 
 
-def test_materialize_database_dml_with_mysql_5_7(started_cluster, started_mysql_5_7):
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_atomic])
+def test_materialize_database_dml_with_mysql_5_7(started_cluster, started_mysql_5_7, clickhouse_node):
     materialize_with_ddl.dml_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1")
     materialize_with_ddl.materialize_mysql_database_with_datetime_and_decimal(clickhouse_node, started_mysql_5_7, "mysql1")
 
-
-def test_materialize_database_dml_with_mysql_8_0(started_cluster, started_mysql_8_0):
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_atomic])
+def test_materialize_database_dml_with_mysql_8_0(started_cluster, started_mysql_8_0, clickhouse_node):
     materialize_with_ddl.dml_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0, "mysql8_0")
     materialize_with_ddl.materialize_mysql_database_with_datetime_and_decimal(clickhouse_node, started_mysql_8_0, "mysql8_0")
 
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_atomic])
+def test_materialize_database_ddl_with_mysql_5_7(started_cluster, started_mysql_5_7, clickhouse_node):
+    materialize_with_ddl.drop_table_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1")
+    materialize_with_ddl.create_table_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1")
+    materialize_with_ddl.rename_table_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1")
+    materialize_with_ddl.alter_add_column_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1")
+    materialize_with_ddl.alter_drop_column_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1")
+    # mysql 5.7 cannot support alter rename column
+    # materialize_with_ddl.alter_rename_column_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1")
+    materialize_with_ddl.alter_rename_table_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1")
+    materialize_with_ddl.alter_modify_column_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1")
 
-
-def test_materialize_database_ddl_with_mysql_5_7(started_cluster, started_mysql_5_7):
-    try:
-        materialize_with_ddl.drop_table_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1")
-        materialize_with_ddl.create_table_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1")
-        materialize_with_ddl.rename_table_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1")
-        materialize_with_ddl.alter_add_column_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7,
-                                                                              "mysql1")
-        materialize_with_ddl.alter_drop_column_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7,
-                                                                               "mysql1")
-        # mysql 5.7 cannot support alter rename column
-        # materialize_with_ddl.alter_rename_column_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1")
-        materialize_with_ddl.alter_rename_table_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7,
-                                                                                "mysql1")
-        materialize_with_ddl.alter_modify_column_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7,
-                                                                                 "mysql1")
-    except:
-        print((clickhouse_node.query(
-            "select '\n', thread_id, query_id, arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym from system.stack_trace format TSVRaw")))
-        raise
-
-
-def test_materialize_database_ddl_with_mysql_8_0(started_cluster, started_mysql_8_0):
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_atomic])
+def test_materialize_database_ddl_with_mysql_8_0(started_cluster, started_mysql_8_0, clickhouse_node):
     materialize_with_ddl.drop_table_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0, "mysql8_0")
     materialize_with_ddl.create_table_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0, "mysql8_0")
     materialize_with_ddl.rename_table_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0, "mysql8_0")
@@ -166,61 +160,72 @@ def test_materialize_database_ddl_with_mysql_8_0(started_cluster, started_mysql_
     materialize_with_ddl.alter_modify_column_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0,
                                                                              "mysql8_0")
 
-
-def test_materialize_database_ddl_with_empty_transaction_5_7(started_cluster, started_mysql_5_7):
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_atomic])
+def test_materialize_database_ddl_with_empty_transaction_5_7(started_cluster, started_mysql_5_7, clickhouse_node):
     materialize_with_ddl.query_event_with_empty_transaction(clickhouse_node, started_mysql_5_7, "mysql1")
 
-
-def test_materialize_database_ddl_with_empty_transaction_8_0(started_cluster, started_mysql_8_0):
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_atomic])
+def test_materialize_database_ddl_with_empty_transaction_8_0(started_cluster, started_mysql_8_0, clickhouse_node):
     materialize_with_ddl.query_event_with_empty_transaction(clickhouse_node, started_mysql_8_0, "mysql8_0")
 
 
-def test_select_without_columns_5_7(started_cluster, started_mysql_5_7):
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_atomic])
+def test_select_without_columns_5_7(started_cluster, started_mysql_5_7, clickhouse_node):
     materialize_with_ddl.select_without_columns(clickhouse_node, started_mysql_5_7, "mysql1")
 
 
-def test_select_without_columns_8_0(started_cluster, started_mysql_8_0):
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_atomic])
+def test_select_without_columns_8_0(started_cluster, started_mysql_8_0, clickhouse_node):
     materialize_with_ddl.select_without_columns(clickhouse_node, started_mysql_8_0, "mysql8_0")
 
 
-def test_insert_with_modify_binlog_checksum_5_7(started_cluster, started_mysql_5_7):
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_atomic])
+def test_insert_with_modify_binlog_checksum_5_7(started_cluster, started_mysql_5_7, clickhouse_node):
     materialize_with_ddl.insert_with_modify_binlog_checksum(clickhouse_node, started_mysql_5_7, "mysql1")
 
 
-def test_insert_with_modify_binlog_checksum_8_0(started_cluster, started_mysql_8_0):
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_atomic])
+def test_insert_with_modify_binlog_checksum_8_0(started_cluster, started_mysql_8_0, clickhouse_node):
     materialize_with_ddl.insert_with_modify_binlog_checksum(clickhouse_node, started_mysql_8_0, "mysql8_0")
 
 
-def test_materialize_database_err_sync_user_privs_5_7(started_cluster, started_mysql_5_7):
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_atomic])
+def test_materialize_database_err_sync_user_privs_5_7(started_cluster, started_mysql_5_7, clickhouse_node):
     materialize_with_ddl.err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1")
 
-def test_materialize_database_err_sync_user_privs_8_0(started_cluster, started_mysql_8_0):
+
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_atomic])
+def test_materialize_database_err_sync_user_privs_8_0(started_cluster, started_mysql_8_0, clickhouse_node):
     materialize_with_ddl.err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0, "mysql8_0")
 
-
-def test_network_partition_5_7(started_cluster, started_mysql_5_7):
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_atomic])
+def test_network_partition_5_7(started_cluster, started_mysql_5_7, clickhouse_node):
     materialize_with_ddl.network_partition_test(clickhouse_node, started_mysql_5_7, "mysql1")
 
-def test_network_partition_8_0(started_cluster, started_mysql_8_0):
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_atomic])
+def test_network_partition_8_0(started_cluster, started_mysql_8_0, clickhouse_node):
     materialize_with_ddl.network_partition_test(clickhouse_node, started_mysql_8_0, "mysql8_0")
 
-
-def test_mysql_kill_sync_thread_restore_5_7(started_cluster, started_mysql_5_7):
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_atomic])
+def test_mysql_kill_sync_thread_restore_5_7(started_cluster, started_mysql_5_7, clickhouse_node):
     materialize_with_ddl.mysql_kill_sync_thread_restore_test(clickhouse_node, started_mysql_5_7, "mysql1")
 
-def test_mysql_kill_sync_thread_restore_8_0(started_cluster, started_mysql_8_0):
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_atomic])
+def test_mysql_kill_sync_thread_restore_8_0(started_cluster, started_mysql_8_0, clickhouse_node):
     materialize_with_ddl.mysql_kill_sync_thread_restore_test(clickhouse_node, started_mysql_8_0, "mysql8_0")
 
-
-def test_mysql_killed_while_insert_5_7(started_cluster, started_mysql_5_7):
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_atomic])
+def test_mysql_killed_while_insert_5_7(started_cluster, started_mysql_5_7, clickhouse_node):
     materialize_with_ddl.mysql_killed_while_insert(clickhouse_node, started_mysql_5_7, "mysql1")
 
-def test_mysql_killed_while_insert_8_0(started_cluster, started_mysql_8_0):
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_atomic])
+def test_mysql_killed_while_insert_8_0(started_cluster, started_mysql_8_0, clickhouse_node):
     materialize_with_ddl.mysql_killed_while_insert(clickhouse_node, started_mysql_8_0, "mysql8_0")
 
-
-def test_clickhouse_killed_while_insert_5_7(started_cluster, started_mysql_5_7):
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_atomic])
+def test_clickhouse_killed_while_insert_5_7(started_cluster, started_mysql_5_7, clickhouse_node):
     materialize_with_ddl.clickhouse_killed_while_insert(clickhouse_node, started_mysql_5_7, "mysql1")
 
-def test_clickhouse_killed_while_insert_8_0(started_cluster, started_mysql_8_0):
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_atomic])
+def test_clickhouse_killed_while_insert_8_0(started_cluster, started_mysql_8_0, clickhouse_node):
     materialize_with_ddl.clickhouse_killed_while_insert(clickhouse_node, started_mysql_8_0, "mysql8_0")

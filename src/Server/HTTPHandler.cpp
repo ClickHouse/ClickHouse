@@ -36,6 +36,7 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/QueryParameterVisitor.h>
+#include <Interpreters/Context.h>
 #include <Common/typeid_cast.h>
 #include <Poco/Net/HTTPStream.h>
 
