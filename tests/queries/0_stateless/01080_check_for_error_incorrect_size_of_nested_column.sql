@@ -1,11 +1,13 @@
+-- TODO: can't just default prefix, it breaks the test!
+
 drop table if exists default.test_table_01080;
 CREATE TABLE default.test_table_01080 (dim_key Int64, dim_id String) ENGINE = MergeTree Order by (dim_key);
 insert into default.test_table_01080 values(1,'test1');
 
 drop DICTIONARY if exists default.test_dict_01080;
 
-CREATE DICTIONARY default.test_dict_01080 ( dim_key Int64, dim_id String ) 
-PRIMARY KEY dim_key 
+CREATE DICTIONARY default.test_dict_01080 ( dim_key Int64, dim_id String )
+PRIMARY KEY dim_key
 source(clickhouse(host 'localhost' port '9000' user 'default' password '' db 'default' table 'test_table_01080'))
 LIFETIME(MIN 0 MAX 0) LAYOUT(complex_key_hashed());
 

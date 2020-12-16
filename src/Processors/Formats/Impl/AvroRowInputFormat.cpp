@@ -7,6 +7,8 @@
 #include <Core/Defines.h>
 #include <Core/Field.h>
 
+#include <Common/LRUCache.h>
+
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <IO/HTTPCommon.h>
