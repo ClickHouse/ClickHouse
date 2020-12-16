@@ -31,7 +31,6 @@ struct WindowFunctionDescription
 {
     std::string window_name;
     std::string column_name;
-    const ASTFunction * wrapper_node;
     const ASTFunction * function_node;
     AggregateFunctionPtr aggregate_function;
     Array function_parameters;

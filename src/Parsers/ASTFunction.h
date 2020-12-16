@@ -8,6 +8,8 @@
 namespace DB
 {
 
+class ASTIdentifier;
+
 /** AST for function application or operator.
   */
 class ASTFunction : public ASTWithAlias
@@ -17,6 +19,11 @@ public:
     ASTPtr arguments;
     /// parameters - for parametric aggregate function. Example: quantile(0.9)(x) - what in first parens are 'parameters'.
     ASTPtr parameters;
+
+    bool is_window_function = false;
+    ASTIdentifier * window_name;
+    ASTExpressionList * window_partition_by;
+    ASTExpressionList * window_order_by;
 
     /// do not print empty parentheses if there are no args - compatibility with new AST for data types and engine names.
     bool no_empty_args = false;

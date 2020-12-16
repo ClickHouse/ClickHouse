@@ -19,9 +19,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NOT_A_COLUMN;
-    extern const int UNKNOWN_TYPE_OF_AST_NODE;
-    extern const int UNKNOWN_ELEMENT_IN_AST;
     extern const int LOGICAL_ERROR;
 }
 
@@ -46,7 +43,7 @@ public:
     String getColumnName() const;
     virtual void appendColumnName(WriteBuffer &) const
     {
-        throw Exception("Trying to get name of not a column: " + getID(), ErrorCodes::NOT_A_COLUMN);
+        throw Exception("Trying to get name of not a column: " + getID(), ErrorCodes::LOGICAL_ERROR);
     }
 
     /** Get the alias, if any, or the canonical name of the column, if it is not. */
@@ -58,7 +55,7 @@ public:
     /** Set the alias. */
     virtual void setAlias(const String & /*to*/)
     {
-        throw Exception("Can't set alias of " + getColumnName(), ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
+        throw Exception("Can't set alias of " + getColumnName(), ErrorCodes::LOGICAL_ERROR);
     }
 
     /** Get the text that identifies this element. */
@@ -209,7 +206,7 @@ public:
 
     virtual void formatImpl(const FormatSettings & /*settings*/, FormatState & /*state*/, FormatStateStacked /*frame*/) const
     {
-        throw Exception("Unknown element in AST: " + getID(), ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
+        throw Exception("Unknown element in AST: " + getID(), ErrorCodes::LOGICAL_ERROR);
     }
 
     // A simple way to add some user-readable context to an error message.

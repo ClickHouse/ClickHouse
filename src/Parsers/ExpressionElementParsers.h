@@ -124,6 +124,15 @@ protected:
     bool allow_function_parameters;
 };
 
+struct ParserWindowDefinition : public IParserBase
+{
+
+protected:
+    const char * getName() const override { return "window definition"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+
+};
+
 class ParserCodecDeclarationList : public IParserBase
 {
 protected:
