@@ -27,6 +27,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/ConnectionTimeoutsContext.h>
 #include <IO/UseSSL.h>
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <Interpreters/Context.h>
@@ -95,6 +96,7 @@ public:
         }
 
         global_context.makeGlobalContext();
+        global_context.setSettings(settings);
 
         std::cerr << std::fixed << std::setprecision(3);
 
@@ -404,7 +406,7 @@ private:
         Stopwatch watch;
         RemoteBlockInputStream stream(
             *(*connection_entries[connection_index]),
-            query, {}, global_context, &settings, nullptr, Scalars(), Tables(), query_processing_stage);
+            query, {}, global_context, nullptr, Scalars(), Tables(), query_processing_stage);
         if (!query_id.empty())
             stream.setQueryId(query_id);
 
