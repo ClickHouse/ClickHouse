@@ -1,8 +1,8 @@
-#include "getPageSize.h"
+#include "common/getPageSize.h"
 
 #include <unistd.h>
 
-long getPageSize()
+Int64 getPageSize()
 {
     return sysconf(_SC_PAGESIZE);
 }

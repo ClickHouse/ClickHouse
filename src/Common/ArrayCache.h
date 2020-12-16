@@ -13,10 +13,11 @@
 #include <boost/noncopyable.hpp>
 #include <ext/scope_guard.h>
 
+#include <common/getPageSize.h>
+
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
 #include <Common/formatReadable.h>
-#include <Common/getPageSize.h>
 
 /// Required for older Darwin builds, that lack definition of MAP_ANONYMOUS
 #ifndef MAP_ANONYMOUS

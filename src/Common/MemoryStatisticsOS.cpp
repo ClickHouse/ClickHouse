@@ -8,11 +8,11 @@
 
 #include "MemoryStatisticsOS.h"
 
+#include <common/logger_useful.h>
+#include <common/getPageSize.h>
 #include <Common/Exception.h>
-#include <Common/getPageSize.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
-#include <common/logger_useful.h>
 
 
 namespace DB

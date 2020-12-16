@@ -3,7 +3,7 @@
 #include <iostream>
 
 #include <common/types.h>
-#include <Common/getPageSize.h>
+#include <common/getPageSize.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
