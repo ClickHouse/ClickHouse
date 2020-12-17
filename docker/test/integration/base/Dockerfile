@@ -1,5 +1,5 @@
 # docker build -t yandex/clickhouse-integration-test .
-FROM ubuntu:19.10
+FROM ubuntu:20.04
 
 RUN apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get -y install \
