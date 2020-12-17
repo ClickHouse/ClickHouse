@@ -164,7 +164,7 @@ private:
     void sendExternalTables();
 
     /// If wasn't sent yet, send request to cancel all connections to replicas
-    void tryCancel(const char * reason);
+    void tryCancel(const char * reason, std::unique_ptr<ReadContext> * read_context);
 
     /// Returns true if query was sent
     bool isQueryPending() const;
