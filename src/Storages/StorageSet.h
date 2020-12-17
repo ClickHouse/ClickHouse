@@ -2,6 +2,7 @@
 
 #include <ext/shared_ptr_helper.h>
 
+#include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <Storages/SetSettings.h>
 
@@ -29,14 +30,14 @@ public:
 
 protected:
     StorageSetOrJoinBase(
+        DiskPtr disk_,
         const String & relative_path_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const Context & context_,
         bool persistent_);
 
-    String base_path;
+    DiskPtr disk;
     String path;
     bool persistent;
 
@@ -85,11 +86,11 @@ private:
 
 protected:
     StorageSet(
+        DiskPtr disk_,
         const String & relative_path_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const Context & context_,
         bool persistent_);
 };
 
