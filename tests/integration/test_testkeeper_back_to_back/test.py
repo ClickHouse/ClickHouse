@@ -6,7 +6,7 @@ import os
 import time
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance('node', main_configs=['configs/enable_test_keeper.xml'], with_zookeeper=True)
+node = cluster.add_instance('node', main_configs=['configs/enable_test_keeper.xml', 'configs/logs_conf.xml'], with_zookeeper=True)
 from kazoo.client import KazooClient
 
 _genuine_zk_instance = None
@@ -395,6 +395,47 @@ def test_end_of_session(started_cluster):
     finally:
         try:
             for zk in [fake_zk1, fake_zk2, genuine_zk1, genuine_zk2]:
+                if zk:
+                    zk.stop()
+                    zk.close()
+        except:
+            pass
+
+def test_end_of_watches_session(started_cluster):
+    fake_zk1 = None
+    fake_zk2 = None
+    try:
+        fake_zk1 = KazooClient(hosts=cluster.get_instance_ip("node") + ":9181")
+        fake_zk1.start()
+
+        fake_zk2 = KazooClient(hosts=cluster.get_instance_ip("node") + ":9181")
+        fake_zk2.start()
+
+        fake_zk1.create("/test_end_of_watches_session")
+
+        dummy_set = 0
+        def dummy_callback(event):
+            nonlocal dummy_set
+            dummy_set += 1
+            print(event)
+
+        for child_node in range(100):
+            fake_zk1.create("/test_end_of_watches_session/" + str(child_node))
+            fake_zk1.get_children("/test_end_of_watches_session/" + str(child_node), watch=dummy_callback)
+
+        fake_zk2.get_children("/test_end_of_watches_session/" + str(0), watch=dummy_callback)
+        fake_zk2.get_children("/test_end_of_watches_session/" + str(1), watch=dummy_callback)
+
+        fake_zk1.stop()
+        fake_zk1.close()
+
+        for child_node in range(100):
+            fake_zk2.create("/test_end_of_watches_session/" + str(child_node) + "/" + str(child_node), b"somebytes")
+
+        assert dummy_set == 2
+    finally:
+        try:
+            for zk in [fake_zk1, fake_zk2]:
                 if zk:
                     zk.stop()
                     zk.close()
