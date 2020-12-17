@@ -145,7 +145,7 @@ public:
 
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
-    String getColumnNameWithMinumumCompressedSize(const StorageMetadataPtr & metadata_snapshot) const;
+    String getColumnNameWithMinimumCompressedSize(const StorageMetadataPtr & metadata_snapshot) const;
 
     bool contains(const IMergeTreeDataPart & other) const { return info.contains(other.info); }
 
@@ -163,6 +163,11 @@ public:
 
     String name;
     MergeTreePartInfo info;
+
+    /// Part unique identifier.
+    /// The intention is to use it for identifying cases where the same part is
+    /// processed by multiple shards.
+    UUID uuid = UUIDHelpers::Nil;
 
     VolumePtr volume;
 
@@ -348,6 +353,8 @@ public:
 
     static inline constexpr auto DELETE_ON_DESTROY_MARKER_FILE_NAME = "delete-on-destroy.txt";
 
+    static inline constexpr auto UUID_FILE_NAME = "uuid.txt";
+
     /// Checks that all TTLs (table min/max, column ttls, so on) for part
     /// calculated. Part without calculated TTL may exist if TTL was added after
     /// part creation (using alter query with materialize_ttl setting).
@@ -383,6 +390,9 @@ protected:
 private:
     /// In compact parts order of columns is necessary
     NameToPosition column_name_to_position;
+
+    /// Reads part unique identifier (if exists) from uuid.txt
+    void loadUUID();
 
     /// Reads columns names and types from columns.txt
     void loadColumns(bool require);

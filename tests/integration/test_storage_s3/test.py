@@ -85,6 +85,7 @@ def cluster():
         cluster.add_instance("restricted_dummy", main_configs=["configs/config_for_test_remote_host_filter.xml"],
                              with_minio=True)
         cluster.add_instance("dummy", with_minio=True, main_configs=["configs/defaultS3.xml"])
+        cluster.add_instance("s3_max_redirects", with_minio=True, main_configs=["configs/defaultS3.xml"], user_configs=["configs/s3_max_redirects.xml"])
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
@@ -134,6 +135,40 @@ def test_put(cluster, maybe_auth, positive):
     else:
         assert positive
         assert values_csv == get_s3_file_content(cluster, bucket, filename)
+
+
+# Test put no data to S3.
+@pytest.mark.parametrize("auth", [
+    "'minio','minio123',"
+])
+def test_empty_put(cluster, auth):
+    # type: (ClickHouseCluster) -> None
+
+    bucket = cluster.minio_bucket
+    instance = cluster.instances["dummy"]  # type: ClickHouseInstance
+    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
+
+    create_empty_table_query = """
+        CREATE TABLE empty_table (
+        {}
+        ) ENGINE = Null()
+    """.format(table_format)
+
+    run_query(instance, create_empty_table_query)
+
+    filename = "empty_put_test.csv"
+    put_query = "insert into table function s3('http://{}:{}/{}/{}', {}'CSV', '{}') select * from empty_table".format(
+        cluster.minio_host, cluster.minio_port, bucket, filename, auth, table_format)
+
+    run_query(instance, put_query)
+
+    try:
+        run_query(instance, "select count(*) from s3('http://{}:{}/{}/{}', {}'CSV', '{}')".format(
+            cluster.minio_host, cluster.minio_port, bucket, filename, auth, table_format))
+
+        assert False, "Query should be failed."
+    except helpers.client.QueryRuntimeException as e:
+        assert str(e).find("The specified key does not exist") != 0
 
 
 # Test put values in CSV format.
@@ -190,6 +225,34 @@ def test_put_get_with_redirect(cluster):
     ]
 
 
+# Test put with restricted S3 server redirect.
+def test_put_with_zero_redirect(cluster):
+    # type: (ClickHouseCluster) -> None
+
+    bucket = cluster.minio_bucket
+    instance = cluster.instances["s3_max_redirects"]  # type: ClickHouseInstance
+    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
+    values = "(1, 1, 1), (1, 1, 1), (11, 11, 11)"
+    filename = "test.csv"
+
+    # Should work without redirect
+    query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values {}".format(
+        cluster.minio_host, cluster.minio_port, bucket, filename, table_format, values)
+    run_query(instance, query)
+
+    # Should not work with redirect
+    query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values {}".format(
+        cluster.minio_redirect_host, cluster.minio_redirect_port, bucket, filename, table_format, values)
+    exception_raised = False
+    try:
+        run_query(instance, query)
+    except Exception as e:
+        assert str(e).find("Too many redirects while trying to access") != -1
+        exception_raised = True
+    finally:
+        assert exception_raised
+
+
 def test_put_get_with_globs(cluster):
     # type: (ClickHouseCluster) -> None
 
@@ -243,7 +306,8 @@ def test_multipart_put(cluster, maybe_auth, positive):
         cluster.minio_redirect_host, cluster.minio_redirect_port, bucket, filename, maybe_auth, table_format)
 
     try:
-        run_query(instance, put_query, stdin=csv_data, settings={'s3_min_upload_part_size': min_part_size_bytes})
+        run_query(instance, put_query, stdin=csv_data, settings={'s3_min_upload_part_size': min_part_size_bytes,
+                                                                 's3_max_single_part_upload_size': 0})
     except helpers.client.QueryRuntimeException:
         if positive:
             raise
@@ -317,14 +381,23 @@ def run_s3_mock(cluster):
     current_dir = os.path.dirname(__file__)
     cluster.copy_file_to_container(container_id, os.path.join(current_dir, "s3_mock", "mock_s3.py"), "mock_s3.py")
     cluster.exec_in_container(container_id, ["python", "mock_s3.py"], detach=True)
+
+    # Wait for S3 mock start
+    for attempt in range(10):
+        ping_response = cluster.exec_in_container(cluster.get_container_id('resolver'),
+                                                  ["curl", "-s", "http://resolver:8080/"], nothrow=True)
+        if ping_response != 'OK':
+            if attempt == 9:
+                assert ping_response == 'OK', 'Expected "OK", but got "{}"'.format(ping_response)
+            else:
+                time.sleep(1)
+        else:
+            break
+
     logging.info("S3 mock started")
 
 
 def test_custom_auth_headers(cluster):
-    ping_response = cluster.exec_in_container(cluster.get_container_id('resolver'),
-                                              ["curl", "-s", "http://resolver:8080"])
-    assert ping_response == 'OK', 'Expected "OK", but got "{}"'.format(ping_response)
-
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     filename = "test.csv"
     get_query = "select * from s3('http://resolver:8080/{bucket}/{file}', 'CSV', '{table_format}')".format(

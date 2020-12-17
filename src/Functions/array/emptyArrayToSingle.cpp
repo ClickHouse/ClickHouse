@@ -45,7 +45,7 @@ public:
         return arguments[0];
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 };
 
 
@@ -53,7 +53,7 @@ namespace
 {
     namespace FunctionEmptyArrayToSingleImpl
     {
-        ColumnPtr executeConst(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count)
+        ColumnPtr executeConst(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count)
         {
             if (const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(arguments[0].column.get()))
             {
@@ -367,7 +367,7 @@ namespace
 }
 
 
-ColumnPtr FunctionEmptyArrayToSingle::executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+ColumnPtr FunctionEmptyArrayToSingle::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
     if (auto res = FunctionEmptyArrayToSingleImpl::executeConst(arguments, result_type, input_rows_count))
         return res;

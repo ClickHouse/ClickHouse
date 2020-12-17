@@ -201,7 +201,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
     {
         index_types = primary_index_block.getDataTypes();
         index_columns.resize(primary_columns_num);
-        last_index_row.resize(primary_columns_num);
+        last_block_index_columns.resize(primary_columns_num);
         for (size_t i = 0; i < primary_columns_num; ++i)
             index_columns[i] = primary_index_block.getByPosition(i).column->cloneEmpty();
     }
@@ -236,10 +236,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
 
     /// store last index row to write final mark at the end of column
     for (size_t j = 0; j < primary_columns_num; ++j)
-    {
-        const IColumn & primary_column = *primary_index_block.getByPosition(j).column.get();
-        primary_column.get(rows - 1, last_index_row[j]);
-    }
+        last_block_index_columns[j] = primary_index_block.getByPosition(j).column;
 }
 
 void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block & skip_indexes_block)
@@ -325,11 +322,12 @@ void MergeTreeDataPartWriterOnDisk::finishPrimaryIndexSerialization(
         {
             for (size_t j = 0; j < index_columns.size(); ++j)
             {
-                index_columns[j]->insert(last_index_row[j]);
-                index_types[j]->serializeBinary(last_index_row[j], *index_stream);
+                const auto & column = *last_block_index_columns[j];
+                size_t last_row_number = column.size() - 1;
+                index_columns[j]->insertFrom(column, last_row_number);
+                index_types[j]->serializeBinary(column, last_row_number, *index_stream);
             }
-
-            last_index_row.clear();
+            last_block_index_columns.clear();
         }
 
         index_stream->next();

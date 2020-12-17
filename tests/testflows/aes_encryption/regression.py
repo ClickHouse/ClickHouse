@@ -48,12 +48,13 @@ xfails = {
 @TestFeature
 @Name("aes encryption")
 @ArgumentParser(argparser)
+@Specifications(SRS_008_ClickHouse_AES_Encryption_Functions)
 @Requirements(
     RQ_SRS008_AES_Functions("1.0"),
     RQ_SRS008_AES_Functions_DifferentModes("1.0")
 )
 @XFails(xfails)
-def regression(self, local, clickhouse_binary_path):
+def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
     """ClickHouse AES encryption functions regression module.
     """
     nodes = {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/Cluster.h>
+#include <Interpreters/Context.h>
 #include <DataStreams/BlockIO.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
@@ -104,8 +105,7 @@ private:
     void attachToThreadGroup();
 
 private:
-    std::atomic<bool> is_circular_replicated = false;
-    Context & context;
+    Context context;
     Poco::Logger * log;
 
     std::string host_fqdn;      /// current host domain name
@@ -137,6 +137,8 @@ private:
     size_t max_tasks_in_queue = 1000;
 
     ThreadGroupStatusPtr thread_group;
+
+    std::atomic<UInt64> max_id = 0;
 
     friend class DDLQueryStatusInputStream;
     friend struct DDLTask;

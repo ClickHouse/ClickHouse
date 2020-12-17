@@ -10,7 +10,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_SETTING;
 }
 
@@ -27,9 +26,8 @@ void SetSettings::loadFromQuery(ASTStorage & storage_def)
         catch (Exception & e)
         {
             if (e.code() == ErrorCodes::UNKNOWN_SETTING)
-                throw Exception(e.message() + " for storage " + storage_def.engine->name, ErrorCodes::BAD_ARGUMENTS);
-            else
-                e.rethrow();
+                e.addMessage("for storage " + storage_def.engine->name);
+            throw;
         }
     }
     else

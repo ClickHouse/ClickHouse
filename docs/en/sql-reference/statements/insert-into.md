@@ -13,12 +13,61 @@ Basic query format:
 INSERT INTO [db.]table [(c1, c2, c3)] VALUES (v11, v12, v13), (v21, v22, v23), ...
 ```
 
-The query can specify a list of columns to insert `[(c1, c2, c3)]`. In this case, the rest of the columns are filled with:
+You can specify a list of columns to insert using  the `(c1, c2, c3)` or `COLUMNS(c1,c2,c3)` syntax. 
+
+Instead of listing all the required columns you can use the `(* EXCEPT(column_list))` syntax.
+
+For example, consider the table:
+
+``` sql
+SHOW CREATE insert_select_testtable;
+```
+
+```
+┌─statement────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ CREATE TABLE insert_select_testtable
+(
+    `a` Int8,
+    `b` String,
+    `c` Int8
+)
+ENGINE = MergeTree()
+ORDER BY a
+SETTINGS index_granularity = 8192 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+``` sql
+INSERT INTO insert_select_testtable (*) VALUES (1, 'a', 1) ;
+```
+
+If you want to insert data in all the columns, except 'b', you need to pass so many values how many columns you chose in parenthesis then:
+
+``` sql
+INSERT INTO insert_select_testtable (* EXCEPT(b)) Values (2, 2);
+```
+
+``` sql
+SELECT * FROM insert_select_testtable;
+```
+
+```
+┌─a─┬─b─┬─c─┐
+│ 2 │   │ 2 │
+└───┴───┴───┘
+┌─a─┬─b─┬─c─┐
+│ 1 │ a │ 1 │
+└───┴───┴───┘
+```
+ 
+In this example, we see that the second inserted row has `a` and `c` columns filled by the passed values, and `b` filled with value by default.
+
+If a list of columns doesn't include all existing columns, the rest of the columns are filled with:
 
 -   The values calculated from the `DEFAULT` expressions specified in the table definition.
 -   Zeros and empty strings, if `DEFAULT` expressions are not defined.
 
-If [strict_insert_defaults=1](../../operations/settings/settings.md), columns that do not have `DEFAULT` defined must be listed in the query.
+If [strict\_insert\_defaults=1](../../operations/settings/settings.md), columns that do not have `DEFAULT` defined must be listed in the query.
 
 Data can be passed to the INSERT in any [format](../../interfaces/formats.md#formats) supported by ClickHouse. The format must be specified explicitly in the query:
 

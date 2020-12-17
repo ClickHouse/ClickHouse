@@ -20,7 +20,17 @@ using QueryPipelinePtr = std::unique_ptr<QueryPipeline>;
 
 /// Return false if the data isn't going to be changed by mutations.
 bool isStorageTouchedByMutations(
-    StoragePtr storage, const StorageMetadataPtr & metadata_snapshot, const std::vector<MutationCommand> & commands, Context context_copy);
+    const StoragePtr & storage,
+    const StorageMetadataPtr & metadata_snapshot,
+    const std::vector<MutationCommand> & commands,
+    Context context_copy
+);
+
+ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
+    const MutationCommand & command,
+    const StoragePtr & storage,
+    const Context & context
+);
 
 /// Create an input stream that will read data from storage and apply mutation commands (UPDATEs, DELETEs, MATERIALIZEs)
 /// to this data.
@@ -58,6 +68,8 @@ private:
     QueryPipelinePtr addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const;
 
     std::optional<SortDescription> getStorageSortDescriptionIfPossible(const Block & header) const;
+
+    ASTPtr getPartitionAndPredicateExpressionForMutationCommand(const MutationCommand & command) const;
 
     StoragePtr storage;
     StorageMetadataPtr metadata_snapshot;

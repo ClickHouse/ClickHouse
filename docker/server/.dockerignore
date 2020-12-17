@@ -1,0 +1,8 @@
+# post / preinstall scripts (not needed, we do it in Dockerfile)
+alpine-root/install/*
+
+# docs (looks useless)
+alpine-root/usr/share/doc/*
+
+# packages, etc. (used by prepare.sh)
+alpine-root/tgz-packages/*
