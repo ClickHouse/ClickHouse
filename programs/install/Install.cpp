@@ -151,17 +151,17 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
     try
     {
         /// We need to copy binary to the binary directory.
-        /// The binary is currently run. We need to obtain its path from procfs.
+        /// The binary is currently run. We need to obtain its path from procfs (on Linux).
 
 #if defined(OS_DARWIN)
-        uint32_t lenght = 0;
-        _NSGetExecutablePath(nullptr, &length);
-        if (length <= 1) 
+        uint32_t path_length = 0;
+        _NSGetExecutablePath(nullptr, &path_length);
+        if (path_length <= 1) 
             Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot obtain path to the binary");
 
-        std::string path(length, std::string::value_type());
-        auto result = _NSGetExecutablePath(&path[0], &length);
-        if (result != 0)
+        std::string path(path_length, std::string::value_type());
+        auto res = _NSGetExecutablePath(&path[0], &path_length);
+        if (res != 0)
             Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot obtain path to the binary");
 
         fs::path binary_self_path(path);
