@@ -61,6 +61,6 @@ FROM system.metrics) as a INNER JOIN
     toInt64(SUM(IF(active = 1, 1, 0))) AS PartsActive,
     toInt64(SUM(IF(active = 0, 1, 0))) AS PartsInactive
 FROM system.parts
-) as b USING (Parts,PartsActive,PartsInactive)
+) as b USING (Parts,PartsActive,PartsInactive);
 
 DROP TABLE test_table;
