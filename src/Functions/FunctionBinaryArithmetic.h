@@ -990,14 +990,14 @@ public:
                 static constexpr const bool dec_a = IsDecimalNumber<T0>;
                 static constexpr const bool dec_b = IsDecimalNumber<T1>;
 
-                ResultDataType type;
-
-                if constexpr(dec_a && IsFloatingPoint<RightDataType>)
-                    type = RightDataType();
-                else if constexpr(dec_b && IsFloatingPoint<LeftDataType>)
-                    type = LeftDataType();
-                else
-                    type = decimalResultType<is_multiply, is_division>(left, right);
+                const ResultDataType type = [&] {
+                    if constexpr(dec_a && IsFloatingPoint<RightDataType>)
+                        return RightDataType();
+                    else if constexpr(dec_b && IsFloatingPoint<LeftDataType>)
+                        return LeftDataType();
+                    else
+                        return decimalResultType<is_multiply, is_division>(left, right);
+                }();
 
                 typename ResultDataType::FieldType scale_a = type.scaleFactorFor(left, is_multiply);
                 typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
