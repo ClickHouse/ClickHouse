@@ -957,11 +957,11 @@ public:
     }
 
     template <class T, class ResultDataType>
-    static auto helperGetOrConvert(const auto& col, const auto& scale) {
+    static auto helperGetOrConvert(const auto & col, const auto & scale) {
         using ResultType = typename ResultDataType::FieldType;
         using NativeResultType = typename NativeType<ResultType>::Type;
 
-        if constexpr(IsFloatingPoint<ResultDataType> && IsDecimalNumber<T>)
+        if constexpr (IsFloatingPoint<ResultDataType> && IsDecimalNumber<T>)
             return DecimalUtils::convertTo<NativeResultType>(col->template getValue<T>(), scale);
         else
             return col->template getValue<T>();
@@ -1006,9 +1006,9 @@ public:
                 static constexpr const bool result_is_decimal = IsDataTypeDecimal<ResultDataType>;
 
                 const ResultDataType type = [&] {
-                    if constexpr(dec_a && IsFloatingPoint<RightDataType>)
+                    if constexpr (dec_a && IsFloatingPoint<RightDataType>)
                         return RightDataType();
-                    else if constexpr(dec_b && IsFloatingPoint<LeftDataType>)
+                    else if constexpr (dec_b && IsFloatingPoint<LeftDataType>)
                         return LeftDataType();
                     else
                         return decimalResultType<is_multiply, is_division>(left, right);
@@ -1019,16 +1019,16 @@ public:
 
                 if constexpr (IsDataTypeDecimal<RightDataType> && is_division)
                     scale_a = right.getScaleMultiplier();
-                else if constexpr(result_is_decimal)
+                else if constexpr (result_is_decimal)
                     scale_a = type.scaleFactorFor(left, is_multiply);
-                else if constexpr(dec_a)
+                else if constexpr (dec_a)
                     scale_a = left.getScale();
                 else
                     scale_a = 0.0; //won't be used, just to silence the warning
 
-                if constexpr(result_is_decimal)
+                if constexpr (result_is_decimal)
                     scale_b = type.scaleFactorFor(right, is_multiply || is_division);
-                else if constexpr(dec_b)
+                else if constexpr (dec_b)
                     scale_b = right.getScale();
                 else
                     scale_b = 0.0; //same
@@ -1052,7 +1052,7 @@ public:
                          return ResultDataType().createColumnConst(col_left_const->size(), toField(res));
                 }
 
-                if constexpr(IsDecimalNumber<ResultType>)
+                if constexpr (IsDecimalNumber<ResultType>)
                     col_res = ColVecResult::create(0, type.getScale());
                 else
                     col_res = ColVecResult::create(0);
