@@ -42,6 +42,11 @@ RUN apt-get update \
         lld-11 \
         llvm-11 \
         llvm-11-dev \
+        clang-12 \
+        clang-tidy-12 \
+        lld-12 \
+        llvm-12 \
+        llvm-12-dev \
         libicu-dev \
         libreadline-dev \
         ninja-build \

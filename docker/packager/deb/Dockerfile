@@ -36,6 +36,11 @@ RUN apt-get update \
     && apt-get install \
         gcc-9 \
         g++-9 \
+        clang-12 \
+        clang-tidy-12 \
+        lld-12 \
+        llvm-12 \
+        llvm-12-dev \
         clang-11 \
         clang-tidy-11 \
         lld-11 \
