@@ -30,8 +30,8 @@ jobs:
     - name: Run the local Anchore scan action itself with GitHub Advanced Security code scanning integration enabled
       uses: anchore/scan-action@main
       with:
-        image-reference: "localbuild/testimage:latest"
-        dockerfile-path: "docker/server/Dockerfile"
+        image: "localbuild/testimage:latest"
+        path: "docker/server/Dockerfile"
         acs-report-enable: true
         fail-build: true
     - name: Upload artifact
