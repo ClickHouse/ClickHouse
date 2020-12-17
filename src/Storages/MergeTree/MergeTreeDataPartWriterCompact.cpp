@@ -143,16 +143,15 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumn::P
         header = result_block.cloneEmpty();
 
     columns_buffer.add(result_block.mutateColumns());
-    size_t current_mark = getCurrentMark();
-    size_t current_mark_rows = index_granularity.getMarkRows(current_mark);
+    size_t current_mark_rows = index_granularity.getMarkRows(getCurrentMark());
     size_t rows_in_buffer = columns_buffer.size();
 
     if (rows_in_buffer >= current_mark_rows)
     {
         Block flushed_block = header.cloneWithColumns(columns_buffer.releaseColumns());
-        auto granules_to_write = getGranulesToWrite(index_granularity, flushed_block.rows(), current_mark, /* last_block = */ false);
+        auto granules_to_write = getGranulesToWrite(index_granularity, flushed_block.rows(), getCurrentMark(), /* last_block = */ false);
         writeDataBlockPrimaryIndexAndSkipIndices(flushed_block, granules_to_write);
-        setCurrentMark(current_mark + granules_to_write.size());
+        setCurrentMark(getCurrentMark() + granules_to_write.size());
     }
 }
 
