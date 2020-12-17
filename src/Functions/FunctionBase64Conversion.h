@@ -166,8 +166,6 @@ public:
             src_offset_prev = src_offsets[row];
         }
 
-        __msan_unpoison(dst_pos, reserve);
-
         dst_data.resize(dst_pos - dst);
 
         return dst_column;
