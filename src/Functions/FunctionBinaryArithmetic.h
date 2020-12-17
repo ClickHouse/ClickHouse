@@ -986,9 +986,11 @@ public:
                 using NativeResultType = typename NativeType<ResultType>::Type;
                 using OpImpl = DecimalBinaryOperation<Op, ResultType, false>;
                 using OpImplCheck = DecimalBinaryOperation<Op, ResultType, true>;
+                using FieldType = typename ResultDataType::FieldType;
 
                 static constexpr const bool dec_a = IsDecimalNumber<T0>;
                 static constexpr const bool dec_b = IsDecimalNumber<T1>;
+                static constexpr const bool result_is_decimal = IsDataTypeDecimal<ResultDataType>;
 
                 const ResultDataType type = [&] {
                     if constexpr(dec_a && IsFloatingPoint<RightDataType>)
@@ -999,11 +1001,16 @@ public:
                         return decimalResultType<is_multiply, is_division>(left, right);
                 }();
 
-                typename ResultDataType::FieldType scale_a = type.scaleFactorFor(left, is_multiply);
-                typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
+                FieldType scale_a;
+                FieldType scale_b;
 
                 if constexpr (IsDataTypeDecimal<RightDataType> && is_division)
                     scale_a = right.getScaleMultiplier();
+                else if constexpr(result_is_decimal)
+                    scale_a = type.scaleFactorFor(left, is_multiply);
+
+                if constexpr(result_is_decimal)
+                    scale_b = type.scaleFactorFor(right, is_multiply || is_division);
 
                 /// non-vector result
                 if (col_left_const && col_right_const)
@@ -1027,7 +1034,7 @@ public:
                         OpImplCheck::template constantConstant<dec_a, dec_b>(const_a, const_b, scale_a, scale_b) :
                         OpImpl::template constantConstant<dec_a, dec_b>(const_a, const_b, scale_a, scale_b);
 
-                    if constexpr (IsDataTypeDecimal<ResultDataType>)
+                    if constexpr (result_is_decimal)
                         return ResultDataType(type.getPrecision(), type.getScale()).createColumnConst(
                             col_left_const->size(), toField(res, type.getScale()));
                     else
