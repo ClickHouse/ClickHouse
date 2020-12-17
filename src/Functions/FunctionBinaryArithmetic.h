@@ -45,6 +45,8 @@
 #    pragma GCC diagnostic pop
 #endif
 
+#include <cassert>
+
 
 namespace DB
 {
@@ -548,6 +550,18 @@ class FunctionBinaryArithmetic : public IFunction
     template <typename F>
     static bool castBothTypes(const IDataType * left, const IDataType * right, F && f)
     {
+        const bool l = castType(left, [](const auto& c){
+            assert(std::is_same_v<decltype(c), Decimal32>);
+        });
+
+        assert(l);
+
+        const bool r = castType(right, [](const auto& c){
+            assert(std::is_same_v<decltype(c), Float32>);
+        });
+
+        assert(r);
+
         return castType(left, [&](const auto & left_)
         {
             return castType(right, [&](const auto & right_)
