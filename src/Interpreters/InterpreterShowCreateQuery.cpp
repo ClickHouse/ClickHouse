@@ -20,6 +20,7 @@ namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
     extern const int THERE_IS_NO_QUERY;
+    extern const int BAD_ARGUMENTS;
 }
 
 BlockIO InterpreterShowCreateQuery::execute()
