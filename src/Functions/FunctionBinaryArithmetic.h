@@ -553,7 +553,7 @@ class FunctionBinaryArithmetic : public IFunction
         const bool l = castType(left, [](const auto& c){ 
             return std::is_same_v<std::decay_t<decltype(c)>, DataTypeDecimal<Decimal32>>; });
         const bool r = castType(right, [](const auto& c){ 
-            return std::is_same_v<std::decay_t<decltype(c)>, DataTypeFloat32>; });
+            return std::is_same_v<std::decay_t<decltype(c)>, DataTypeFloat64>; });
 
         assert(l);
         assert(r);
