@@ -1015,20 +1015,8 @@ public:
                 /// non-vector result
                 if (col_left_const && col_right_const)
                 {
-                    NativeResultType const_a;
-                    NativeResultType const_b;
-
-                    if constexpr (!result_is_decimal && dec_a)
-                        const_a = DecimalUtils::convertTo<NativeResultType>(
-                            col_left_const->template getValue<T0>(), scale_a);
-                    else
-                        const_a = col_left_const->template getValue<T0>();
-
-                    if constexpr (!result_is_decimal && dec_b)
-                        const_b = DecimalUtils::convertTo<NativeResultType>(
-                            col_right_const->template getValue<T1>(), scale_b);
-                    else
-                        const_b = col_right_const->template getValue<T1>();
+                    auto const_a = col_left_const->template getValue<T0>();
+                    auto const_b = col_right_const->template getValue<T1>();
 
                     auto res = check_decimal_overflow ?
                         OpImplCheck::template constantConstant<dec_a, dec_b>(const_a, const_b, scale_a, scale_b) :
