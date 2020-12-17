@@ -1,4 +1,4 @@
-#if 0
+#if 1
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -61,7 +61,8 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    [[clang::optnone]] ColumnPtr executeImpl(ColumnsWithTypeAndName & block, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[clang::optnone]]
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & block, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (const ColumnConst * column = checkAndGetColumnConst<ColumnString>(block[0].column.get()))
         {
