@@ -30,7 +30,7 @@ using DataTypePtr = std::shared_ptr<const IDataType>;
 //    PARTITION BY toYYYYMMDD(timestamp)
 //    ORDER BY timestamp SETTINGS index_granularity = 1;
 
-/// 1. Rewrite the filters in query when enable optimize_alias_column_prediction
+/// 1. Rewrite the filters in query when enable optimize_respect_aliases
 ///  this could help with `optimize_trivial_count`, Partition Prune in `KeyCondition` and secondary indexes.
 ///  eg: select max(value) from  test_table where day2 = today(), filters will be: ((toDate(timestamp) + 1) + 1) = today() .
 
