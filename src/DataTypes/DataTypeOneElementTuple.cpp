@@ -22,7 +22,7 @@ private:
     bool escape_delimiter;
 
 public:
-    DataTypeOneElementTupleStreams(const DataTypePtr & nested_, const String & name_, bool escape_delimiter_ = true)
+    DataTypeOneElementTupleStreams(const DataTypePtr & nested_, const String & name_, bool escape_delimiter_)
         : nested(nested_), name(name_), escape_delimiter(escape_delimiter_) {}
 
     void enumerateStreams(
@@ -99,7 +99,7 @@ private:
 DataTypePtr createOneElementTuple(const DataTypePtr & type, const String & name, bool escape_delimiter)
 {
     auto custom_desc = std::make_unique<DataTypeCustomDesc>(
-        std::make_unique<DataTypeCustomFixedName>(type->getName()), nullptr,
+        std::make_unique<DataTypeCustomFixedName>(type->getName()),nullptr,
         std::make_unique<DataTypeOneElementTupleStreams>(type, name, escape_delimiter));
 
     return DataTypeFactory::instance().getCustom(std::move(custom_desc));

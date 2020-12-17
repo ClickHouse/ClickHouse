@@ -100,7 +100,7 @@ public:
     size_t getSizeOfValueInMemory() const override;
 
     DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const override;
-    MutableColumnPtr getSubcolumn(const String & subcolumn_name, IColumn & column) const override;
+    ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const override;
 
     const DataTypes & getElements() const { return elems; }
     const Strings & getElementNames() const { return names; }

@@ -69,7 +69,7 @@ protected:
         {
             auto current_column = src.getByName(elem.getStorageName()).column;
             if (elem.isSubcolumn())
-                columns.emplace_back(elem.getStorageType()->getSubcolumn(elem.getSubcolumnName(), *current_column->assumeMutable()));
+                columns.emplace_back(elem.getStorageType()->getSubcolumn(elem.getSubcolumnName(), *current_column));
             else
                 columns.emplace_back(std::move(current_column));
         }

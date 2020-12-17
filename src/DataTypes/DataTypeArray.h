@@ -113,7 +113,7 @@ public:
     }
 
     DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const override;
-    MutableColumnPtr getSubcolumn(const String & subcolumn_name, IColumn & column) const override;
+    ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const override;
 
     const DataTypePtr & getNestedType() const { return nested; }
 
@@ -121,7 +121,7 @@ public:
     size_t getNumberOfDimensions() const;
 
 private:
-    MutableColumnPtr getSubcolumnImpl(const String & subcolumn_name, IColumn & column, size_t level) const;
+    ColumnPtr getSubcolumnImpl(const String & subcolumn_name, const IColumn & column, size_t level) const;
     DataTypePtr tryGetSubcolumnTypeImpl(const String & subcolumn_name, size_t level) const;
 };
 

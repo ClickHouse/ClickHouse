@@ -126,7 +126,7 @@ public:
 
     virtual DataTypePtr tryGetSubcolumnType(const String & /* subcolumn_name */) const { return nullptr; }
     DataTypePtr getSubcolumnType(const String & subcolumn_name) const;
-    virtual MutableColumnPtr getSubcolumn(const String & subcolumn_name, IColumn & column) const;
+    virtual ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const;
     Names getSubcolumnNames() const;
 
     using OutputStreamGetter = std::function<WriteBuffer*(const SubstreamPath &)>;

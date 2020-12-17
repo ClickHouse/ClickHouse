@@ -149,21 +149,42 @@ namespace
         offset_values.resize(i);
     }
 
-    MutableColumnPtr getArraySizesPositionIndependent(const ColumnArray & column_array)
+    ColumnPtr arrayOffsetsToSizes(const IColumn & column)
     {
-        const auto & offset_values = column_array.getOffsets();
-        MutableColumnPtr new_offsets = column_array.getOffsetsColumn().cloneEmpty();
+        const auto & column_offsets = assert_cast<const ColumnArray::ColumnOffsets &>(column);
+        MutableColumnPtr column_sizes = column_offsets.cloneEmpty();
 
-        if (offset_values.empty())
-            return new_offsets;
+        if (column_offsets.empty())
+            return column_sizes;
 
-        auto & new_offsets_values = assert_cast<ColumnVector<ColumnArray::Offset> &>(*new_offsets).getData();
-        new_offsets_values.reserve(offset_values.size());
-        new_offsets_values.push_back(offset_values[0]);
-        for (size_t i = 1; i < offset_values.size(); ++i)
-            new_offsets_values.push_back(offset_values[i] - offset_values[i - 1]);
+        const auto & offsets_data = column_offsets.getData();
+        auto & sizes_data = assert_cast<ColumnArray::ColumnOffsets &>(*column_sizes).getData();
 
-        return new_offsets;
+        sizes_data.resize(offsets_data.size());
+        sizes_data[0] = offsets_data[0];
+        for (size_t i = 1; i < offsets_data.size(); ++i)
+            sizes_data[i] = offsets_data[i] - offsets_data[i - 1];
+
+        return column_sizes;
+    }
+
+    ColumnPtr arraySizesToOffsets(const IColumn & column)
+    {
+        const auto & column_sizes = assert_cast<const ColumnArray::ColumnOffsets &>(column);
+        MutableColumnPtr column_offsets = column_sizes.cloneEmpty();
+
+        if (column_sizes.empty())
+            return column_offsets;
+
+        const auto & sizes_data = column_sizes.getData();
+        auto & offsets_data = assert_cast<ColumnArray::ColumnOffsets &>(*column_offsets).getData();
+
+        offsets_data.resize(sizes_data.size());
+        offsets_data[0] = sizes_data[0];
+        for (size_t i = 0; i < sizes_data.size(); ++i)
+            offsets_data[i] = offsets_data[i - 1] + sizes_data[i];
+
+        return column_offsets;
     }
 }
 
@@ -263,12 +284,11 @@ void DataTypeArray::deserializeBinaryBulkWithMultipleStreamsImpl(
     SubstreamsCache * cache) const
 {
     ColumnArray & column_array = typeid_cast<ColumnArray &>(column);
-
     settings.path.push_back(Substream::ArraySizes);
 
     if (auto cached_column = getFromSubstreamsCache(cache, settings.path))
     {
-        column_array.getOffsetsPtr() = cached_column;
+        column_array.getOffsetsPtr() = arraySizesToOffsets(*cached_column);
     }
     else if (auto * stream = settings.getter(settings.path))
     {
@@ -277,7 +297,7 @@ void DataTypeArray::deserializeBinaryBulkWithMultipleStreamsImpl(
         else
             DataTypeNumber<ColumnArray::Offset>().deserializeBinaryBulk(column_array.getOffsetsColumn(), *stream, limit, 0);
 
-        addToSubstreamsCache(cache, settings.path, column_array.getOffsetsPtr());
+        addToSubstreamsCache(cache, settings.path, arrayOffsetsToSizes(column_array.getOffsetsColumn()));
     }
 
     settings.path.back() = Substream::ArrayElements;
@@ -547,24 +567,24 @@ DataTypePtr DataTypeArray::tryGetSubcolumnTypeImpl(const String & subcolumn_name
     return (subcolumn ? std::make_shared<DataTypeArray>(std::move(subcolumn)) : subcolumn);
 }
 
-MutableColumnPtr DataTypeArray::getSubcolumn(const String & subcolumn_name, IColumn & column) const
+ColumnPtr DataTypeArray::getSubcolumn(const String & subcolumn_name, const IColumn & column) const
 {
     return getSubcolumnImpl(subcolumn_name, column, 0);
 }
 
-MutableColumnPtr DataTypeArray::getSubcolumnImpl(const String & subcolumn_name, IColumn & column, size_t level) const
+ColumnPtr DataTypeArray::getSubcolumnImpl(const String & subcolumn_name, const IColumn & column, size_t level) const
 {
-    auto & column_array = assert_cast<ColumnArray &>(column);
+    const auto & column_array = assert_cast<const ColumnArray &>(column);
     if (subcolumn_name == "size" + std::to_string(level))
-        return getArraySizesPositionIndependent(column_array);
+        return arrayOffsetsToSizes(column_array.getOffsetsColumn());
 
-    MutableColumnPtr subcolumn;
+    ColumnPtr subcolumn;
     if (const auto * nested_array = typeid_cast<const DataTypeArray *>(nested.get()))
         subcolumn = nested_array->getSubcolumnImpl(subcolumn_name, column_array.getData(), level + 1);
     else
         subcolumn = nested->getSubcolumn(subcolumn_name, column_array.getData());
 
-    return ColumnArray::create(std::move(subcolumn), column_array.getOffsetsPtr()->assumeMutable());
+    return ColumnArray::create(subcolumn, column_array.getOffsetsPtr());
 }
 
 size_t DataTypeArray::getNumberOfDimensions() const
