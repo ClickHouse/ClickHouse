@@ -999,10 +999,8 @@ public:
                         return decimalResultType<is_multiply, is_division>(left, right);
                 }();
 
-                typename ResultDataType::FieldType scale_a = dec_a ? type.scaleFactorFor(left, is_multiply) : 0;
-                typename ResultDataType::FieldType scale_b = dec_b
-                    ? type.scaleFactorFor(right, is_multiply || is_division)
-                    : 0;
+                typename ResultDataType::FieldType scale_a = type.scaleFactorFor(left, is_multiply);
+                typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
 
                 if constexpr (IsDataTypeDecimal<RightDataType> && is_division)
                     scale_a = right.getScaleMultiplier();
@@ -1025,13 +1023,15 @@ public:
                     //else
                     //    const_b = col_right_const->template getValue<T1>();
 
-
                     auto res = check_decimal_overflow ?
                         OpImplCheck::template constantConstant<dec_a, dec_b>(const_a, const_b, scale_a, scale_b) :
                         OpImpl::template constantConstant<dec_a, dec_b>(const_a, const_b, scale_a, scale_b);
 
-                    return ResultDataType(type.getPrecision(), type.getScale()).createColumnConst(
+                    if constexpr (IsDataTypeDecimal<ResultDataType>)
+                        return ResultDataType(type.getPrecision(), type.getScale()).createColumnConst(
                             col_left_const->size(), toField(res, type.getScale()));
+                    else
+                         return ResultDataType().createColumnConst(col_left_const->size(), toField(res));
                 }
 
                 col_res = ColVecResult::create(0, type.getScale());
