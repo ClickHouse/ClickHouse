@@ -30,6 +30,7 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_DICTIONARY;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -55,6 +56,8 @@ BlockIO InterpreterDropQuery::execute()
     {
         if (!drop.is_dictionary)
             return executeToTable(drop);
+        else if (drop.permanently && drop.kind == ASTDropQuery::Kind::Detach)
+            throw Exception("DETACH PERMANENTLY is not implemented for dictionaries", ErrorCodes::NOT_IMPLEMENTED);
         else
             return executeToDictionary(drop.database, drop.table, drop.kind, drop.if_exists, drop.temporary, drop.no_ddl_lock);
     }
@@ -128,8 +131,18 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ASTDropQuery & query, Dat
             TableExclusiveLockHolder table_lock;
             if (database->getUUID() == UUIDHelpers::Nil)
                 table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
-            /// Drop table from memory, don't touch data and metadata
-            database->detachTable(table_id.table_name);
+
+            if (query.permanently)
+            {
+                /// Drop table from memory, don't touch data, metadata file renamed and will be skipped during server restart
+                database->detachTablePermanently(table_id.table_name);
+            }
+            else
+            {
+                /// Drop table from memory, don't touch data and metadata
+                database->detachTable(table_id.table_name);
+            }
+
         }
         else if (query.kind == ASTDropQuery::Kind::Truncate)
         {
@@ -285,6 +298,9 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         {
             bool drop = query.kind == ASTDropQuery::Kind::Drop;
             context.checkAccess(AccessType::DROP_DATABASE, database_name);
+
+            if (query.kind == ASTDropQuery::Kind::Detach && query.permanently)
+                throw Exception("DETACH PERMANENTLY is not implemented for databases", ErrorCodes::NOT_IMPLEMENTED);
 
 #if USE_MYSQL
             if (database->getEngineName() == "MaterializeMySQL")
