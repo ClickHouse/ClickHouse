@@ -552,12 +552,14 @@ class FunctionBinaryArithmetic : public IFunction
     {
         const bool l = castType(left, [](const auto& c){
             assert((std::is_same_v<decltype(c), Decimal32>));
+            return true;
         });
 
         assert(l);
 
         const bool r = castType(right, [](const auto& c){
             assert((std::is_same_v<decltype(c), Float32>));
+            return true;
         });
 
         assert(r);
