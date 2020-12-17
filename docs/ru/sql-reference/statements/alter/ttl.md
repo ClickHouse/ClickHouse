@@ -15,7 +15,7 @@ ALTER TABLE table-name MODIFY TTL ttl-expression
 
 ## REMOVE TTL {remove-ttl}
 
-Убирает свойство TTL из определенного вами столбца.
+Убирает свойство TTL из выбранного вами столбца.
 
 Синтаксис:
 
@@ -46,7 +46,7 @@ OPTIMIZE TABLE table_with_ttl FINAL;
 SELECT * FROM table_with_ttl;
 ```
 
-А вот теперь удалять нечего.
+А вот теперь ничего не удалено.
 
 ```text
 --2020-12-11 12:44:57    1       username1
