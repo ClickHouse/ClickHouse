@@ -2380,14 +2380,15 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until) const
     }
 
     const size_t parts_count_in_partition = getMaxPartsCountForPartition();
-    if (parts_count_in_partition < settings->parts_to_delay_insert)
-        return;
 
     if (parts_count_in_partition >= settings->parts_to_throw_insert)
     {
         ProfileEvents::increment(ProfileEvents::RejectedInserts);
         throw Exception("Too many parts (" + toString(parts_count_in_partition) + "). Merges are processing significantly slower than inserts.", ErrorCodes::TOO_MANY_PARTS);
     }
+
+    if (parts_count_in_partition < settings->parts_to_delay_insert)
+        return;
 
     const size_t max_k = settings->parts_to_throw_insert - settings->parts_to_delay_insert; /// always > 0
     const size_t k = 1 + parts_count_in_partition - settings->parts_to_delay_insert; /// from 1 to max_k
