@@ -14,7 +14,7 @@
 #include <Processors/Formats/OutputStreamToOutputFormat.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
-#include <Processors/Formats/Impl/NativeFormat.cpp>
+#include <Processors/Formats/Impl/NativeFormat.h>
 #include <Processors/Formats/Impl/ParallelParsingInputFormat.h>
 #include <Processors/Formats/Impl/ParallelFormattingOutputFormat.h>
 #include <Poco/URI.h>
@@ -176,7 +176,6 @@ InputFormatPtr FormatFactory::getInput(
 
     if (parallel_parsing)
     {
-        std::cout << "parallel_parsing" << std::endl;
         const auto & input_getter = getCreators(name).input_processor_creator;
 
         RowInputFormatParams row_input_format_params;
@@ -186,13 +185,10 @@ InputFormatPtr FormatFactory::getInput(
         row_input_format_params.max_execution_time = settings.max_execution_time;
         row_input_format_params.timeout_overflow_mode = settings.timeout_overflow_mode;
 
-        std::cout << "format_settings.csv.delimiter " << format_settings.csv.delimiter << std::endl;
-
         /// Const reference is copied to lambda.
         auto parser_creator = [input_getter, sample, row_input_format_params, format_settings]
             (ReadBuffer & input) -> InputFormatPtr
-            {   std::cout << format_settings.csv.delimiter << std::endl;
-                return input_getter(input, sample, row_input_format_params, format_settings); };
+            { return input_getter(input, sample, row_input_format_params, format_settings); };
 
 
         ParallelParsingInputFormat::Params params{
