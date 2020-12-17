@@ -957,9 +957,12 @@ public:
         return nullptr;
     }
 
-    template <class T, class ResultType, class NativeResultType>
+    template <class T, class ResultDataType>
     static auto helperGetOrConvert(const auto& col, const auto& scale) {
-        if constexpr(IsFloatingPoint<ResultType> && IsDecimalNumber<T>)
+        using ResultType = typename ResultDataType::FieldType;
+        using NativeResultType = typename NativeType<ResultType>::Type;
+
+        if constexpr(IsFloatingPoint<ResultDataType> && IsDecimalNumber<T>)
             return DecimalUtils::convertTo<NativeResultType>(col->template getValue<T>(), scale);
         else
             return col->template getValue<T>();
@@ -1026,9 +1029,9 @@ public:
                 /// non-vector result
                 if (col_left_const && col_right_const)
                 {
-                    const NativeResultType const_a = helperGetOrConvert<T0, ResultType, NativeResultType>(
+                    const NativeResultType const_a = helperGetOrConvert<T0, ResultDataType>(
                         col_left_const, scale_a);
-                    const NativeResultType const_b = helperGetOrConvert<T1, ResultType, NativeResultType>(
+                    const NativeResultType const_b = helperGetOrConvert<T1, ResultDataType>(
                         col_right_const, scale_b);
 
                     auto res = check_decimal_overflow ?
@@ -1060,7 +1063,7 @@ public:
                 }
                 else if (col_left_const && col_right)
                 {
-                    const NativeResultType const_a = helperGetOrConvert<T0, ResultType, NativeResultType>(
+                    const NativeResultType const_a = helperGetOrConvert<T0, ResultDataType>(
                         col_left_const, scale_a);
 
                     if (check_decimal_overflow)
@@ -1070,7 +1073,7 @@ public:
                 }
                 else if (col_left && col_right_const)
                 {
-                    const NativeResultType const_b = helperGetOrConvert<T1, ResultType, NativeResultType>(
+                    const NativeResultType const_b = helperGetOrConvert<T1, ResultDataType>(
                         col_right_const, scale_b);
 
                     if (check_decimal_overflow)
