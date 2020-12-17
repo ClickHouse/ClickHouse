@@ -442,6 +442,7 @@ def test_end_of_watches_session(started_cluster):
                     zk.close()
         except:
             pass
+
 def test_concurrent_watches(started_cluster):
     fake_zk = get_fake_zk()
     fake_zk.restart()
@@ -483,7 +484,7 @@ def test_concurrent_watches(started_cluster):
     def call(total):
         for i in range(total):
             create_path_and_watch(random.randint(0, 1000))
-            time.sleep(0.2)
+            time.sleep(random.random() % 0.5)
             try:
                 rand_num = random.choice(existing_path)
                 trigger_watch(rand_num)
@@ -504,7 +505,12 @@ def test_concurrent_watches(started_cluster):
     p.map(call, arguments)
     p.close()
 
-    time.sleep(3)
+    # waiting for late watches
+    for i in range(50):
+        if dumb_watch_triggered_counter == watches_must_be_triggered:
+            break
+
+        time.sleep(0.1)
 
     assert watches_created == watches_must_be_created
     assert trigger_called >= watches_trigger_must_be_called
