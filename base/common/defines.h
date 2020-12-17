@@ -76,6 +76,8 @@
 #    define NO_SANITIZE_THREAD
 #endif
 
-/// A macro for suppressing warnings about unused variables or function results.
-/// Useful for structured bindings which have no standard way to declare this.
-#define UNUSED(...) (void)(__VA_ARGS__)
+/// A template function for suppressing warnings about unused variables or function results.
+template <typename... Args>
+constexpr void UNUSED(Args &&... args [[maybe_unused]])
+{
+}
