@@ -45,13 +45,17 @@ SKIP_LIST = [
     "01114_database_atomic",
     "01148_zookeeper_path_macros_unfolding",
     "01280_ssd_complex_key_dictionary",
+    "01293_client_interactive_vertical_multiline",  # expect-test
+    "01293_client_interactive_vertical_singleline",  # expect-test
     "01293_show_clusters",
     "01294_lazy_database_concurrent_recreate_reattach_and_show_tables",
     "01294_system_distributed_on_cluster",
+    "01300_client_save_history_when_terminated",  # expect-test
     "01304_direct_io",
     "01306_benchmark_json",
     "01320_create_sync_race_condition_zookeeper",
     "01355_CSV_input_format_allow_errors",
+    "01370_client_autocomplete_word_break_characters",  # expect-test
     "01376_GROUP_BY_injective_elimination_dictGet",
     "01393_benchmark_secure_port",
     "01418_custom_settings",
@@ -61,6 +65,7 @@ SKIP_LIST = [
     "01474_executable_dictionary",
     "01507_clickhouse_server_start_with_embedded_config",
     "01514_distributed_cancel_query_on_error",
+    "01520_client_print_query_id",  # expect-test
     "01527_dist_sharding_key_dictGet_reload",
     "01545_url_file_format_settings",
     "01553_datetime64_comparison",
