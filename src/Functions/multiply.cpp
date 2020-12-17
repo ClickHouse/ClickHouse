@@ -34,7 +34,8 @@ struct MultiplyImpl
         {
             c = static_cast<Result>(a) * b;
             return false;
-        } else
+        }
+        else
             return common::mulOverflow(static_cast<Result>(a), b, c);
     }
 
