@@ -9,6 +9,7 @@
 #include <random>
 #include <iterator>
 #include <algorithm>
+#include <chrono>
 
 #include <iostream>
 #include <sstream>
@@ -191,7 +192,8 @@ void createPathAndSetWatch(zkutil::ZooKeeper & zk, const String & path_prefix, s
             std::lock_guard lock(elements_mutex);
             current_elements.push_back(element);
         }
-        sleep(0.2);
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
         {
             std::lock_guard lock(elements_mutex);
@@ -227,7 +229,7 @@ void tryConcurrentWatches(zkutil::ZooKeeper & zk)
     size_t counter = 0;
     while (watches_triggered != 100 * 100)
     {
-        sleep(0.1);
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
         if (counter++ > 20)
             break;
     }
