@@ -1022,6 +1022,8 @@ public:
                     scale_a = right.getScaleMultiplier();
                 else if constexpr(result_is_decimal)
                     scale_a = type.scaleFactorFor(left, is_multiply);
+                else
+                    scale_a = 0.0; //won't be used
 
                 if constexpr(result_is_decimal)
                     scale_b = type.scaleFactorFor(right, is_multiply || is_division);
