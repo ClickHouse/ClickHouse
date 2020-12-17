@@ -316,26 +316,9 @@
                             The resulting filter will be constructed by replacing all '{username}', '{bind_dn}', and '{base_dn}'
                              substrings of the template with the actual user name, bind DN, and base DN during each LDAP search.
                             Note, that the special characters must be escaped properly in XML.
-                    fail_if_all_rules_mismatch - flag to trigger failure if none of the rules were able to match and transform any
-                             of the resulting strings returned by the LDAP search. By default, set to 'true'.
-                    rule - section with matching and mapping info.
-                            Each string will be matched to the regex and, if there is a full match, replaced using format string to
-                             get the name of the local role that needs to be assigned to the user.
-                            There can be multiple 'rule' sections defined inside the same 'role_mapping' section. Each of those rules
-                             will be applied in the order they are listed in 'role_mapping' section. If a rule does not match a string
-                             the next rule will be applied. If none of the rules matched a string and 'fail_if_all_rules_mismatch' is
-                             set to 'false', that particular string will be ignored. If a rule matched a string and 'continue_on_match'
-                             is set to 'false', the subsequent rules will not be applied to the current string.
-                        match - regular expression, in ECMAScript format, used to match each entire string retured by LDAP serach. If
-                             matched successfully, a replacement will be performed and the resulting string will be treated as local
-                             role name and assigned to the user. By default, set to '.+' (match any non-empty string).
-                            Note, that the special characters must be escaped properly in XML.
-                        replace - format string used as a replace expression after the match succeeded. References like '$&' (entire
-                             matched string), or '$n' (n-th subgroup) can be used. By default, set to '$&'.
-                            Note, that the special characters must be escaped properly in XML.
-                        continue_on_match - flag that indicates, whether to continue matching and mapping using the subsequent rules
-                             after this rule successfully matched and mapped the string. By default, set to 'false'.
-                            If set to 'true' and multiple rules match, multiple role names may be generated from one same input string.
+                    prefix - prefix, that will be expected to be in front of each string in the original list of strings returned by
+                             the LDAP search. Prefix will be removed from the original strings and resulting strings will be treated
+                             as local role names. Empty, by default.
              Example:
                 <ldap>
                     <server>my_ldap_server</server>
@@ -348,17 +331,7 @@
                         <attribute>cn</attribute>
                         <scope>subtree</scope>
                         <search_filter>(&amp;(objectClass=groupOfNames)(member={bind_dn}))</search_filter>
-                        <fail_if_all_rules_mismatch>true</fail_if_all_rules_mismatch>
-                        <rule>
-                            <match>clickhouse_(.+)</match>
-                            <replace>$1</replace>
-                            <continue_on_match>true</continue_on_match>
-                        </rule>
-                        <rule>
-                            <match>.+</match>
-                            <replace>$&amp;</replace>
-                            <continue_on_match>false</continue_on_match>
-                        </rule>
+                        <prefix>clickhouse_</prefix>
                     </role_mapping>
                 </ldap>
         -->

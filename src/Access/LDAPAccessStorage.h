@@ -67,7 +67,7 @@ private:
     void applyRoleChangeNoLock(bool grant, const UUID & role_id, const String & role_name);
     void grantRolesNoLock(User & user, const LDAPSearchResultsList & external_roles) const;
     void updateRolesNoLock(const UUID & id, const String & user_name, const LDAPSearchResultsList & external_roles) const;
-    std::set<String> mapExternalRolesNoLock(const String & user_name, const LDAPSearchResultsList & external_roles) const;
+    std::set<String> mapExternalRolesNoLock(const LDAPSearchResultsList & external_roles) const;
     bool isPasswordCorrectLDAPNoLock(const User & user, const String & password, const ExternalAuthenticators & external_authenticators, LDAPSearchResultsList & search_results) const;
 
     mutable std::recursive_mutex mutex;

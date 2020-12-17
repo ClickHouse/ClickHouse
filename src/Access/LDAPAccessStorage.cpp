@@ -13,7 +13,6 @@
 #include <boost/container_hash/hash.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <iterator>
-#include <regex>
 #include <sstream>
 #include <unordered_map>
 
@@ -85,7 +84,7 @@ void LDAPAccessStorage::setConfiguration(AccessControlManager * access_control_m
             rm_params.base_dn = config.getString(rm_prefix_str + "base_dn", "");
             rm_params.search_filter = config.getString(rm_prefix_str + "search_filter", "");
             rm_params.attribute = config.getString(rm_prefix_str + "attribute", "cn");
-            rm_params.fail_if_all_rules_mismatch = config.getBool(rm_prefix_str + "fail_if_all_rules_mismatch", true);
+            rm_params.prefix = config.getString(rm_prefix_str + "prefix", "");
 
             auto scope = config.getString(rm_prefix_str + "scope", "subtree");
             boost::algorithm::to_lower(scope);
@@ -95,33 +94,6 @@ void LDAPAccessStorage::setConfiguration(AccessControlManager * access_control_m
             else if (scope == "children")  rm_params.scope = LDAPSearchParams::Scope::CHILDREN;
             else
                 throw Exception("Invalid value of 'scope' field in '" + key + "' section of LDAP user directory, must be one of 'base', 'one_level', 'subtree', or 'children'", ErrorCodes::BAD_ARGUMENTS);
-
-            Poco::Util::AbstractConfiguration::Keys all_mapping_keys;
-            config.keys(rm_prefix, all_mapping_keys);
-            for (const auto & mkey : all_mapping_keys)
-            {
-                if (mkey != "rule" && mkey.find("rule[") != 0)
-                    continue;
-
-                const String rule_prefix = rm_prefix_str + mkey;
-                const String rule_prefix_str = rule_prefix + '.';
-                rm_params.rules.emplace_back();
-                auto & rule = rm_params.rules.back();
-
-                rule.match = config.getString(rule_prefix_str + "match", ".+");
-                try
-                {
-                    // Construct unused regex instance just to check the syntax.
-                    std::regex(rule.match, std::regex_constants::ECMAScript);
-                }
-                catch (const std::regex_error & e)
-                {
-                    throw Exception("ECMAScript regex syntax error in 'match' field in '" + mkey + "' rule of '" + key + "' section of LDAP user directory: " + e.what(), ErrorCodes::BAD_ARGUMENTS);
-                }
-
-                rule.replace = config.getString(rule_prefix_str + "replace", "$&");
-                rule.continue_on_match = config.getBool(rule_prefix_str + "continue_on_match", false);
-            }
         }
     }
 
@@ -255,7 +227,7 @@ void LDAPAccessStorage::grantRolesNoLock(User & user, const LDAPSearchResultsLis
     auto & granted_roles = user.granted_roles.roles;
 
     // Map external role names to local role names.
-    const auto user_role_names = mapExternalRolesNoLock(user_name, external_roles);
+    const auto user_role_names = mapExternalRolesNoLock(external_roles);
 
     external_role_hashes.erase(user_name);
     granted_roles.clear();
@@ -365,36 +337,27 @@ void LDAPAccessStorage::updateRolesNoLock(const UUID & id, const String & user_n
 }
 
 
-std::set<String> LDAPAccessStorage::mapExternalRolesNoLock(const String & user_name, const LDAPSearchResultsList & external_roles) const
+std::set<String> LDAPAccessStorage::mapExternalRolesNoLock(const LDAPSearchResultsList & external_roles) const
 {
     std::set<String> role_names;
 
     if (external_roles.size() != role_search_params.size())
-        throw Exception("Unable to match external roles to mapping rules", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("Unable to map external roles", ErrorCodes::BAD_ARGUMENTS);
 
-    std::unordered_map<String, std::regex> re_cache;
     for (std::size_t i = 0; i < external_roles.size(); ++i)
     {
         const auto & external_role_set = external_roles[i];
-        const auto & rules = role_search_params[i].rules;
+        const auto & prefix = role_search_params[i].prefix;
+
         for (const auto & external_role : external_role_set)
         {
-            bool have_match = false;
-            for (const auto & rule : rules)
+            if (
+                prefix.size() < external_role.size() &&
+                external_role.compare(0, prefix.size(), prefix) == 0
+            )
             {
-                const auto & re = re_cache.try_emplace(rule.match, rule.match, std::regex_constants::ECMAScript | std::regex_constants::optimize).first->second;
-                std::smatch match_results;
-                if (std::regex_match(external_role, match_results, re))
-                {
-                    role_names.emplace(match_results.format(rule.replace));
-                    have_match = true;
-                    if (!rule.continue_on_match)
-                        break;
-                }
+                role_names.emplace(external_role.substr(prefix.size()));
             }
-
-            if (!have_match && role_search_params[i].fail_if_all_rules_mismatch)
-                throw Exception("None of the external role mapping rules were able to match '" + external_role + "' string, received from LDAP server '" + ldap_server + "' for user '" + user_name + "'", ErrorCodes::BAD_ARGUMENTS);
         }
     }
 
@@ -436,7 +399,7 @@ String LDAPAccessStorage::getStorageParamsJSON() const
         role_mapping_json.set("base_dn", role_mapping.base_dn);
         role_mapping_json.set("search_filter", role_mapping.search_filter);
         role_mapping_json.set("attribute", role_mapping.attribute);
-        role_mapping_json.set("fail_if_all_rules_mismatch", role_mapping.fail_if_all_rules_mismatch);
+        role_mapping_json.set("prefix", role_mapping.prefix);
 
         String scope;
         switch (role_mapping.scope)
@@ -447,17 +410,6 @@ String LDAPAccessStorage::getStorageParamsJSON() const
             case LDAPSearchParams::Scope::CHILDREN:  scope = "children"; break;
         }
         role_mapping_json.set("scope", scope);
-
-        Poco::JSON::Array rules_json;
-        for (const auto & rule : role_mapping.rules)
-        {
-            Poco::JSON::Object rule_json;
-            rule_json.set("match", rule.match);
-            rule_json.set("replace", rule.replace);
-            rule_json.set("continue_on_match", rule.continue_on_match);
-            rules_json.add(rule_json);
-        }
-        role_mapping_json.set("rules", rules_json);
 
         role_mappings_json.add(role_mapping_json);
     }
