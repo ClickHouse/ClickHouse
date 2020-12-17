@@ -123,8 +123,6 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 {
     last_block_is_duplicate = false;
 
-    storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event);
-
     auto zookeeper = storage.getZooKeeper();
     assertSessionIsNotExpired(zookeeper);
 
@@ -524,7 +522,9 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
 
 void ReplicatedMergeTreeBlockOutputStream::writePrefix()
 {
-    storage.throwInsertIfNeeded();
+    /// Only check "too many parts" before write,
+    /// because interrupting long-running INSERT query in the middle is not convenient for users.
+    storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event);
 }
 
 
