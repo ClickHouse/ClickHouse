@@ -44,10 +44,11 @@ AsyncTaskQueue::~AsyncTaskQueue()
 
 void AsyncTaskQueue::addTask(size_t thread_number, void * data, int fd)
 {
-    if (tasks.count(data))
+    std::uintptr_t key = reinterpret_cast<uintptr_t>(data);
+    if (tasks.count(key))
         throw Exception("Task was already added to task queue", ErrorCodes::LOGICAL_ERROR);
 
-    tasks[data] = TaskData{thread_number, data, fd};
+    tasks[key] = TaskData{thread_number, data, fd};
 
     epoll_event socket_event;
     socket_event.events = EPOLLIN | EPOLLPRI;
@@ -80,7 +81,8 @@ AsyncTaskQueue::TaskData AsyncTaskQueue::wait(std::unique_lock<std::mutex> & loc
     if (event.data.ptr == pipe_fd)
         return {};
 
-    auto it = tasks.find(event.data.ptr);
+    std::uintptr_t key = reinterpret_cast<uintptr_t>(event.data.ptr);
+    auto it = tasks.find(key);
     if (it == tasks.end())
         throw Exception("Task was not found in task queue", ErrorCodes::LOGICAL_ERROR);
 

@@ -1,5 +1,6 @@
 #pragma once
 #include <cstddef>
+#include <cstdint>
 #include <mutex>
 #include <atomic>
 #include <unordered_map>
@@ -26,7 +27,7 @@ private:
     int epoll_fd;
     int pipe_fd[2];
     std::atomic_bool is_finished = false;
-    std::unordered_map<void *, TaskData> tasks;
+    std::unordered_map<std::uintptr_t, TaskData> tasks;
 
 public:
     AsyncTaskQueue();
