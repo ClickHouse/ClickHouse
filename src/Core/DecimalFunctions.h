@@ -6,6 +6,7 @@
 #include <common/arithmeticOverflow.h>
 
 #include <limits>
+#include <type_traits>
 
 
 namespace DB
@@ -205,10 +206,13 @@ inline typename DecimalType::NativeType getFractionalPart(const DecimalType & de
     return getFractionalPartWithScaleMultiplier(decimal, scaleMultiplier<typename DecimalType::NativeType>(scale));
 }
 
-/// Decimal to integer/float conversion
+/// Decimal to integer/float conversion with the ability to convert into itself (returns the original value);
 template <typename To, typename DecimalType>
 To convertTo(const DecimalType & decimal, size_t scale)
 {
+    if constexpr (std::is_same_v<To, DecimalType>)
+        return decimal;
+
     using NativeT = typename DecimalType::NativeType;
 
     if constexpr (std::is_floating_point_v<To>)
