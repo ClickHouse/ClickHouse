@@ -82,36 +82,23 @@ Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity,
     size_t current_row = 0;
     while (current_row < block_rows)
     {
-        size_t expected_rows = index_granularity.getMarkRows(current_mark);
-        size_t rest_rows = block_rows - current_row;
-        if (rest_rows < expected_rows)
+        size_t expected_rows_in_mark = index_granularity.getMarkRows(current_mark);
+        size_t rows_left_in_block = block_rows - current_row;
+        if (rows_left_in_block < expected_rows_in_mark && !last_block)
         {
             /// Invariant: we always have equal amount of rows for block in compact parts because we accumulate them in buffer.
             /// The only exclusion is the last block, when we cannot accumulate more rows.
-            if (!last_block)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Required to write {} rows, but only {} rows was written for the non last granule", expected_rows, rest_rows);
-
-            result.emplace_back(Granule{
-                .start_row = current_row,
-                .granularity_rows = expected_rows,
-                .block_rows = rest_rows,
-                .mark_number = current_mark,
-                .mark_on_start = true
-            });
-        }
-        else
-        {
-            /// Normal granule with amount of rows equal to rows in compute granularity
-            result.emplace_back(Granule{
-                .start_row = current_row,
-                .granularity_rows = expected_rows,
-                .block_rows = expected_rows,
-                .mark_number = current_mark,
-                .mark_on_start = true
-            });
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Required to write {} rows, but only {} rows was written for the non last granule", expected_rows_in_mark, rows_left_in_block);
         }
 
-        current_row += expected_rows;
+        result.emplace_back(Granule{
+            .start_row = current_row,
+            .granularity_rows = expected_rows_in_mark,
+            .block_rows = std::min(rows_left_in_block, expected_rows_in_mark),
+            .mark_number = current_mark,
+            .mark_on_start = true
+        });
+        current_row += expected_rows_in_mark;
         current_mark++;
     }
 
@@ -156,15 +143,16 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumn::P
         header = result_block.cloneEmpty();
 
     columns_buffer.add(result_block.mutateColumns());
-    size_t last_mark_rows = index_granularity.getLastMarkRows();
+    size_t current_mark = getCurrentMark();
+    size_t current_mark_rows = index_granularity.getMarkRows(current_mark);
     size_t rows_in_buffer = columns_buffer.size();
 
-    if (rows_in_buffer >= last_mark_rows)
+    if (rows_in_buffer >= current_mark_rows)
     {
         Block flushed_block = header.cloneWithColumns(columns_buffer.releaseColumns());
-        auto granules_to_write = getGranulesToWrite(index_granularity, flushed_block.rows(), getCurrentMark(), /* last_block = */ false);
+        auto granules_to_write = getGranulesToWrite(index_granularity, flushed_block.rows(), current_mark, /* last_block = */ false);
         writeDataBlockPrimaryIndexAndSkipIndices(flushed_block, granules_to_write);
-        setCurrentMark(getCurrentMark() + granules_to_write.size());
+        setCurrentMark(current_mark + granules_to_write.size());
     }
 }
 

@@ -30,23 +30,14 @@ Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity,
     if (rows_written_in_last_mark > 0)
     {
         size_t rows_left_in_last_mark = index_granularity.getMarkRows(current_mark) - rows_written_in_last_mark;
-        size_t rest_rows = block_rows - current_row;
-        if (rest_rows < rows_left_in_last_mark)
-            result.emplace_back(Granule{
-                .start_row = current_row,
-                .granularity_rows = rows_left_in_last_mark,
-                .block_rows = rest_rows,
-                .mark_number = current_mark,
-                .mark_on_start = false, /// Don't mark this granule because we have already marked it
-            });
-        else
-            result.emplace_back(Granule{
-                .start_row = current_row,
-                .granularity_rows = rows_left_in_last_mark,
-                .block_rows = rows_left_in_last_mark,
-                .mark_number = current_mark,
-                .mark_on_start = false, /// Don't mark this granule because we have already marked it
-            });
+        size_t rows_left_in_block = block_rows - current_row;
+        result.emplace_back(Granule{
+            .start_row = current_row,
+            .granularity_rows = rows_left_in_last_mark,
+            .block_rows = std::min(rows_left_in_block, rows_left_in_last_mark),
+            .mark_number = current_mark,
+            .mark_on_start = false, /// Don't mark this granule because we have already marked it
+        });
         current_row += rows_left_in_last_mark;
         current_mark++;
     }
@@ -54,28 +45,18 @@ Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity,
     /// Calculating normal granules for block
     while (current_row < block_rows)
     {
-        size_t expected_rows = index_granularity.getMarkRows(current_mark);
-        size_t rest_rows = block_rows - current_row;
+        size_t expected_rows_in_mark = index_granularity.getMarkRows(current_mark);
+        size_t rows_left_in_block  = block_rows - current_row;
         /// If we have less rows in block than expected in granularity
         /// save incomplete granule
-        if (rest_rows < expected_rows)
-            result.emplace_back(Granule{
-                .start_row = current_row,
-                .granularity_rows = expected_rows,
-                .block_rows = rest_rows,
-                .mark_number = current_mark,
-                .mark_on_start = true,
-            });
-        else
-            result.emplace_back(Granule{
-                .start_row = current_row,
-                .granularity_rows = expected_rows,
-                .block_rows = expected_rows,
-                .mark_number = current_mark,
-                .mark_on_start = true,
-            });
-
-        current_row += expected_rows;
+        result.emplace_back(Granule{
+            .start_row = current_row,
+            .granularity_rows = expected_rows_in_mark,
+            .block_rows = std::min(rows_left_in_block, expected_rows_in_mark),
+            .mark_number = current_mark,
+            .mark_on_start = true,
+        });
+        current_row += expected_rows_in_mark;
         current_mark++;
     }
 
@@ -385,7 +366,6 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
     UInt64 offset_in_compressed_file = 0;
     UInt64 offset_in_decompressed_block = 0;
     UInt64 index_granularity_rows = 0;
-    size_t total_rows = 0;
 
     size_t mark_num;
 
@@ -430,8 +410,6 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
         auto column = type.createColumn();
 
         type.deserializeBinaryBulk(*column, bin_in, index_granularity_rows, 0.0);
-
-        total_rows += column->size();
 
         if (bin_in.eof())
         {
