@@ -119,6 +119,19 @@ Chunk IRowInputFormat::generate()
                     if (column->size() > min_size)
                         column->popBack(column->size() - min_size);
                 }
+
+                if (e.code() == ErrorCodes::INCORRECT_DATA)
+                {
+                    /// remove the last row to skip inserting wrong column
+                    size_t new_min_size = std::numeric_limits<size_t>::max();
+                    for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
+                        new_min_size = std::min(new_min_size, columns[column_idx]->size());
+                    if (min_size == new_min_size)
+                    {
+                        for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
+                            columns[column_idx]->popBack(1);
+                    }
+                }
             }
         }
     }
