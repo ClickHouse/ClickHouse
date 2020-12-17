@@ -22,6 +22,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include "Core/DecimalFunctions.h"
 #include "IFunctionImpl.h"
 #include "FunctionHelpers.h"
 #include "IsOperation.h"
@@ -209,7 +210,9 @@ struct DecimalBinaryOperation
         DivideIntegralImpl<NativeResultType, NativeResultType>, /// substitute divide by intDiv (throw on division by zero)
         Operation<NativeResultType, NativeResultType>>;
 
-    using ArrayC = typename ColumnDecimal<ResultType>::Container;
+    using ArrayC = typename std::conditional_t<IsDecimalNumber<ResultType>,
+        ColumnDecimal<ResultType>,
+        ColumnVector<ResultType>>::Container;
 
     template <bool is_decimal_a, bool is_decimal_b, typename ArrayA, typename ArrayB>
     static void NO_INLINE vectorVector(const ArrayA & a, const ArrayB & b, ArrayC & c,
@@ -1015,8 +1018,8 @@ public:
                 /// non-vector result
                 if (col_left_const && col_right_const)
                 {
-                    const NativeResultType const_a = col_left_const->template getValue<T0>();
-                    const NativeResultType const_b = col_right_const->template getValue<T1>();
+                    NativeResultType const_a = col_left_const->template getValue<T0>();
+                    NativeResultType const_b = col_right_const->template getValue<T1>();
 
                     auto res = check_decimal_overflow ?
                         OpImplCheck::template constantConstant<dec_a, dec_b>(const_a, const_b, scale_a, scale_b) :
