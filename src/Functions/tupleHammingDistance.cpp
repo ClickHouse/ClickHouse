@@ -100,10 +100,10 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const ColumnWithTypeAndName & arg1 = block.getByPosition(arguments[0]);
-        const ColumnWithTypeAndName & arg2 = block.getByPosition(arguments[1]);
+        const ColumnWithTypeAndName & arg1 = arguments[0];
+        const ColumnWithTypeAndName & arg2 = arguments[1];
         const DataTypeTuple & type1 = static_cast<const DataTypeTuple &>(*arg1.type);
         const DataTypeTuple & type2 = static_cast<const DataTypeTuple &>(*arg2.type);
         const auto & left_elems = type1.getElements();
@@ -112,6 +112,9 @@ public:
             throw Exception(
                 "Illegal column of arguments of function " + getName() + ", tuple should have exactly two elements.",
                 ErrorCodes::ILLEGAL_COLUMN);
+
+        ColumnPtr result_column;
+
         bool valid = castBothTypes(left_elems[0].get(), right_elems[0].get(), [&](const auto & left, const auto & right)
         {
             using LeftDataType = std::decay_t<decltype(left)>;
@@ -139,7 +142,7 @@ public:
                     cols2[0]->get(0, a2);
                     cols2[1]->get(0, b2);
                     auto res = OpImpl::constantConstant(a1.get<UInt64>(), b1.get<UInt64>(), a2.get<UInt64>(), b2.get<UInt64>());
-                    block.getByPosition(result).column = DataTypeUInt8().createColumnConst(const_col_left->size(), toField(res));
+                    result_column = DataTypeUInt8().createColumnConst(const_col_left->size(), toField(res));
                     return true;
                 }
             }
@@ -147,7 +150,7 @@ public:
             typename ColVecResult::MutablePtr col_res = nullptr;
             col_res = ColVecResult::create();
             auto & vec_res = col_res->getData();
-            vec_res.resize(block.rows());
+            vec_res.resize(input_rows_count);
             // constant tuple - non-constant tuple
             if (const ColumnConst * const_col_left = checkAndGetColumnConst<ColumnTuple>(arg1.column.get()))
             {
@@ -200,11 +203,13 @@ public:
             }
             else
                 return false;
-            block.getByPosition(result).column = std::move(col_res);
+            result_column = std::move(col_res);
             return true;
         });
         if (!valid)
             throw Exception(getName() + "'s arguments do not match the expected data types", ErrorCodes::ILLEGAL_COLUMN);
+
+        return result_column;
     }
 };
 

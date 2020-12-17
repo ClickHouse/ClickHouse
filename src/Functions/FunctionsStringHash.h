@@ -45,9 +45,9 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
-        const ColumnPtr & column = block.getByPosition(arguments[0]).column;
+        const ColumnPtr & column = arguments[0].column;
         using ResultType = typename Impl::ResultType;
         if constexpr (is_simhash)
         {
@@ -57,7 +57,7 @@ public:
             vec_res.resize(column->size());
             const ColumnString * col_str_vector = checkAndGetColumn<ColumnString>(&*column);
             Impl::apply(col_str_vector->getChars(), col_str_vector->getOffsets(), vec_res);
-            block.getByPosition(result).column = std::move(col_res);
+            return std::move(col_res);
         }
         else // Min hash
         {
@@ -73,7 +73,7 @@ public:
             MutableColumns tuple_columns;
             tuple_columns.emplace_back(std::move(col_h1));
             tuple_columns.emplace_back(std::move(col_h2));
-            block.getByPosition(result).column = ColumnTuple::create(std::move(tuple_columns));
+            return ColumnTuple::create(std::move(tuple_columns));
         }
     }
 };
