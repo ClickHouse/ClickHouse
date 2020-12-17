@@ -920,9 +920,9 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                     continue;
             }
 
-            if (renamed_columns.count(column_name))
-                throw Exception{"Cannot rename and modify the same column " + backQuote(column_name) + " in a single ALTER query",
-                                ErrorCodes::NOT_IMPLEMENTED};
+//            if (renamed_columns.count(column_name))
+//                throw Exception{"Cannot rename and modify the same column " + backQuote(column_name) + " in a single ALTER query",
+//                                ErrorCodes::NOT_IMPLEMENTED};
 
             if (command.codec)
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context.getSettingsRef().allow_suspicious_codecs);
@@ -991,7 +991,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
 
             }
 
-            modified_columns.emplace(column_name);
+//            modified_columns.emplace(column_name);
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
         {
